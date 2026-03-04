@@ -232,6 +232,25 @@ export function sendMessage(sessionId, text, images, options = {}) {
       type: 'session',
       session: { ...session, status: 'idle' },
     });
+
+    // Handle compact completion: extract summary, reset session
+    if (l?.pendingCompact) {
+      l.pendingCompact = false;
+      const h = loadHistory(sessionId);
+      const lastAssistant = [...h].reverse().find(e => e.type === 'message' && e.role === 'assistant');
+      if (lastAssistant?.content) {
+        const match = lastAssistant.content.match(/<summary>([\s\S]*?)<\/summary>/i);
+        const summary = match ? match[1].trim() : lastAssistant.content;
+        l.claudeSessionId = undefined;
+        l.codexThreadId = undefined;
+        l.compactContext = `[Conversation summary]\n\n${summary}`;
+      }
+      const compactEvt = statusEvent('Context compacted — next message will resume from summary');
+      appendEvent(sessionId, compactEvt);
+      broadcast(sessionId, { type: 'event', event: compactEvt });
+      return; // skip triggerSummary and push for compact ops
+    }
+
     // Trigger async sidebar summary (non-blocking)
     triggerSummary(
       { id: sessionId, folder: session.folder, name: session.name || '' },
@@ -258,10 +277,10 @@ export function sendMessage(sessionId, text, images, options = {}) {
     spawnOptions.thinking = true;
   }
 
-  // If a compact context exists, inject the old text history as preamble
+  // If a compact/drop-tools context exists, inject it as preamble in the first new message
   let actualText = text;
   if (live.compactContext) {
-    actualText = `[Previous conversation — tool results removed for context compression]\n\n${live.compactContext}\n\n---\n\nContinuing: ${text}`;
+    actualText = `${live.compactContext}\n\n---\n\n${text}`;
     live.compactContext = undefined;
   }
 
@@ -298,18 +317,17 @@ export function getHistory(sessionId) {
 }
 
 /**
- * Compact a session: strip tool results, reset Claude context.
- * On the next sendMessage, the text-only history is injected as a preamble
- * so Claude has conversation continuity in a fresh session.
+ * Drop tool use: strip all tool_use/tool_result/file_change events from context.
+ * Resets the Claude session and injects a text-only transcript on the next message.
+ * No model call is made — instant, local operation.
  */
-export function compactSession(sessionId) {
+export function dropToolUse(sessionId) {
   const session = getSession(sessionId);
   if (!session) return false;
 
   const history = loadHistory(sessionId);
   const textEvents = history.filter(e => e.type === 'message');
 
-  // Build a plain transcript from text messages only
   const transcript = textEvents
     .map(e => `[${e.role === 'user' ? 'User' : 'Assistant'}]: ${e.content || ''}`)
     .join('\n\n');
@@ -320,21 +338,43 @@ export function compactSession(sessionId) {
     liveSessions.set(sessionId, live);
   }
 
-  // Clear Claude/Codex resume IDs so the next call starts a fresh session
   live.claudeSessionId = undefined;
   live.codexThreadId = undefined;
 
-  // Store transcript for injection on next sendMessage
   if (transcript.trim()) {
-    live.compactContext = transcript;
+    live.compactContext = `[Previous conversation — tool results removed]\n\n${transcript}`;
   }
 
   const kept = textEvents.length;
-  const dropped = history.length - kept;
-  const evt = statusEvent(`Context compacted — ${dropped} tool events removed, ${kept} messages kept`);
+  const dropped = history.filter(e => ['tool_use','tool_result','file_change'].includes(e.type)).length;
+  const evt = statusEvent(`Tool results dropped — ${dropped} tool events removed from context, ${kept} messages kept`);
   appendEvent(sessionId, evt);
   broadcast(sessionId, { type: 'event', event: evt });
 
+  return true;
+}
+
+const COMPACT_PROMPT = `Please write a concise summary of our conversation to preserve context for continuation. Include: main task/goal, key decisions made, current state of work, and any important next steps. Wrap your summary in <summary></summary> tags.`;
+
+/**
+ * Compact: sends a summarization request to the model.
+ * After the model responds, the session is reset and the summary becomes
+ * the context preamble for the next user message.
+ */
+export function compactSession(sessionId) {
+  const session = getSession(sessionId);
+  if (!session) return false;
+
+  let live = liveSessions.get(sessionId);
+  if (live?.status === 'running') return false;
+
+  if (!live) {
+    live = { status: 'idle', runner: null, listeners: new Set() };
+    liveSessions.set(sessionId, live);
+  }
+
+  live.pendingCompact = true;
+  sendMessage(sessionId, COMPACT_PROMPT, [], {});
   return true;
 }
 

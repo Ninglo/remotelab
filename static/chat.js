@@ -32,6 +32,7 @@
   const cancelBtn = document.getElementById("cancelBtn");
   const contextTokens = document.getElementById("contextTokens");
   const compactBtn = document.getElementById("compactBtn");
+  const dropToolsBtn = document.getElementById("dropToolsBtn");
   const tabSessions = document.getElementById("tabSessions");
   const tabProgress = document.getElementById("tabProgress");
   const progressPanel = document.getElementById("progressPanel");
@@ -603,6 +604,7 @@
       contextTokens.textContent = formatTokens(inputTokens);
       contextTokens.style.display = "";
       compactBtn.style.display = "";
+      dropToolsBtn.style.display = "";
     }
   }
 
@@ -780,6 +782,7 @@
     currentTokens = 0;
     contextTokens.style.display = "none";
     compactBtn.style.display = "none";
+    dropToolsBtn.style.display = "none";
     finishedUnread.delete(id);
     clearMessages();
     wsSend({ action: "attach", sessionId: id });
@@ -1009,6 +1012,11 @@
   compactBtn.addEventListener("click", () => {
     if (!currentSessionId) return;
     wsSend({ action: "compact" });
+  });
+
+  dropToolsBtn.addEventListener("click", () => {
+    if (!currentSessionId) return;
+    wsSend({ action: "drop_tools" });
   });
 
   sendBtn.addEventListener("click", sendMessage);
