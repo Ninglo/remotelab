@@ -234,6 +234,7 @@ body {
 .session-action-btn:hover { background: var(--bg-tertiary); color: var(--text); }
 .session-action-btn.del:hover { background: var(--error-bg); color: var(--error); }
 .session-action-btn.restore:hover { background: var(--bg-tertiary); color: var(--accent); }
+@media (hover: none) { .session-action-btn { opacity: 1; } }
 
 /* Archive section */
 .archived-section { margin-top: 8px; }
@@ -358,6 +359,42 @@ body {
 .msg-images img {
   max-width: 200px; max-height: 150px; border-radius: 8px; cursor: pointer;
   object-fit: cover;
+}
+
+/* Pending (optimistic) message — subtle sending indicator */
+.msg-user-bubble.msg-pending {
+  opacity: 0.6;
+}
+
+/* Failed/unconfirmed message — recovery UI */
+.msg-user-bubble.msg-failed {
+  border: 1px solid #e8883a;
+}
+.msg-failed-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+.msg-failed-actions button {
+  border: none;
+  border-radius: 12px;
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.msg-retry-btn {
+  background: var(--accent);
+  color: #fff;
+}
+.msg-edit-btn {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.msg-discard-btn {
+  background: transparent;
+  color: var(--text-secondary);
 }
 
 /* Assistant message — no bubble, plain text */
@@ -682,9 +719,6 @@ body {
   <h1 id="headerTitle">RemoteLab Chat</h1>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText">disconnected</span>
-  <span id="contextTokens" style="display:none"></span>
-  <button class="compact-btn" id="compactBtn" style="display:none" title="Ask model to summarize conversation, then reset context">Compact</button>
-  <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)">Drop tools</button>
 </div>
 
 <div class="app-container">
@@ -731,6 +765,10 @@ body {
           <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
           <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
           <button class="img-btn" id="imgBtn" disabled title="Attach image">&#128247;</button>
+          <span style="flex:1"></span>
+          <span id="contextTokens" style="display:none"></span>
+          <button class="compact-btn" id="compactBtn" style="display:none" title="Ask model to summarize conversation, then reset context">Compact</button>
+          <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)">Drop tools</button>
         </div>
         <div class="input-row">
           <input type="file" id="imgFileInput" accept="image/*" multiple hidden>

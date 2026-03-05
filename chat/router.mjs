@@ -116,7 +116,7 @@ export async function handleRequest(req, res) {
   // Login — GET (show form)
   if (pathname === '/login') {
     const hasError = parsedUrl.query.error === '1';
-    const mode = parsedUrl.query.mode === 'pw' ? 'pw' : 'token';
+    const mode = parsedUrl.query.mode === 'token' ? 'token' : 'pw';
     let loginHtml;
     try { loginHtml = readFileSync(loginTemplatePath, 'utf8'); } catch { loginHtml = '<h1>Login template missing</h1>'; }
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -222,7 +222,7 @@ export async function handleRequest(req, res) {
   }
 
   if (pathname === '/api/models' && req.method === 'GET') {
-    const toolId = url.query ? new URLSearchParams(url.query).get('tool') || '' : '';
+    const toolId = parsedUrl.query ? parsedUrl.query.tool || '' : '';
     const result = await getModelsForTool(toolId);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(result));

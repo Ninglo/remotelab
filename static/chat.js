@@ -388,16 +388,27 @@
           for (const evt of msg.events) renderEvent(evt, false);
           scrollToBottom();
         }
+        // Check for unconfirmed messages from a previous page load
+        checkPendingMessage(msg.events || []);
         break;
 
       case "event":
-        if (msg.event) renderEvent(msg.event, true);
+        if (msg.event) {
+          // Server confirmed our user message — remove optimistic bubble & clear pending
+          if (msg.event.type === "message" && msg.event.role === "user") {
+            const optimistic = document.getElementById("optimistic-msg");
+            if (optimistic) optimistic.remove();
+            clearPendingMessage();
+          }
+          renderEvent(msg.event, true);
+        }
         break;
 
       case "deleted":
       case "archived":
         sessions = sessions.filter((s) => s.id !== msg.sessionId);
         localStorage.removeItem(`draft_${msg.sessionId}`);
+        clearPendingMessage(msg.sessionId);
         if (currentSessionId === msg.sessionId) {
           messageQueue = [];
           currentSessionId = null;
@@ -829,13 +840,13 @@
           </div>
           <div class="session-item-actions">
             <button class="session-action-btn rename" title="Rename" data-id="${s.id}">&#9998;</button>
-            <button class="session-action-btn del" title="Delete" data-id="${s.id}">&times;</button>
+            <button class="session-action-btn archive" title="Archive" data-id="${s.id}">&#8615;</button>
           </div>`;
 
         div.addEventListener("click", (e) => {
           if (
             e.target.classList.contains("rename") ||
-            e.target.classList.contains("del")
+            e.target.classList.contains("archive")
           )
             return;
           attachSession(s.id, s);
@@ -847,7 +858,7 @@
           startRename(div, s);
         });
 
-        div.querySelector(".del").addEventListener("click", (e) => {
+        div.querySelector(".archive").addEventListener("click", (e) => {
           e.stopPropagation();
           wsSend({ action: "archive", sessionId: s.id });
         });
@@ -1156,6 +1167,13 @@
   function sendMessage() {
     const text = msgInput.value.trim();
     if ((!text && pendingImages.length === 0) || !currentSessionId) return;
+
+    // Protect the message: save to localStorage before anything else
+    savePendingMessage(text);
+
+    // Render optimistic bubble BEFORE revoking image URLs
+    renderOptimisticMessage(text, pendingImages);
+
     const msg = { action: "send", text: text || "(image)" };
     if (selectedTool) msg.tool = selectedTool;
     if (selectedModel) msg.model = selectedModel;
@@ -1239,6 +1257,143 @@
   });
   // Set initial height
   requestAnimationFrame(() => autoResizeInput());
+
+  // ---- Pending message protection ----
+  // Saves sent message to localStorage until server confirms receipt.
+  // Prevents message loss on refresh, network failure, or server crash.
+  function savePendingMessage(text) {
+    if (!currentSessionId) return;
+    localStorage.setItem(
+      `pending_msg_${currentSessionId}`,
+      JSON.stringify({ text, timestamp: Date.now() }),
+    );
+  }
+  function clearPendingMessage(sessionId) {
+    localStorage.removeItem(`pending_msg_${sessionId || currentSessionId}`);
+  }
+  function getPendingMessage(sessionId) {
+    const raw = localStorage.getItem(
+      `pending_msg_${sessionId || currentSessionId}`,
+    );
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function renderOptimisticMessage(text, images) {
+    if (emptyState.parentNode === messagesInner) emptyState.remove();
+    // Remove any previous optimistic message
+    const prev = document.getElementById("optimistic-msg");
+    if (prev) prev.remove();
+
+    const wrap = document.createElement("div");
+    wrap.className = "msg-user";
+    wrap.id = "optimistic-msg";
+    const bubble = document.createElement("div");
+    bubble.className = "msg-user-bubble msg-pending";
+
+    if (images && images.length > 0) {
+      const imgWrap = document.createElement("div");
+      imgWrap.className = "msg-images";
+      for (const img of images) {
+        const imgEl = document.createElement("img");
+        imgEl.src = `data:${img.mimeType};base64,${img.data}`;
+        imgEl.alt = "attached image";
+        imgWrap.appendChild(imgEl);
+      }
+      bubble.appendChild(imgWrap);
+    }
+
+    if (text) {
+      const span = document.createElement("span");
+      span.textContent = text;
+      bubble.appendChild(span);
+    }
+
+    wrap.appendChild(bubble);
+    messagesInner.appendChild(wrap);
+    scrollToBottom();
+  }
+
+  function renderPendingRecovery(pending) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg-user";
+    wrap.id = "pending-msg-recovery";
+    const bubble = document.createElement("div");
+    bubble.className = "msg-user-bubble msg-failed";
+
+    if (pending.text) {
+      const span = document.createElement("span");
+      span.textContent = pending.text;
+      bubble.appendChild(span);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "msg-failed-actions";
+
+    const retryBtn = document.createElement("button");
+    retryBtn.textContent = "Resend";
+    retryBtn.className = "msg-retry-btn";
+    retryBtn.onclick = () => {
+      wrap.remove();
+      clearPendingMessage();
+      msgInput.value = pending.text;
+      sendMessage();
+    };
+
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "Edit";
+    editBtn.className = "msg-edit-btn";
+    editBtn.onclick = () => {
+      msgInput.value = pending.text;
+      autoResizeInput();
+      wrap.remove();
+      clearPendingMessage();
+      msgInput.focus();
+    };
+
+    const discardBtn = document.createElement("button");
+    discardBtn.textContent = "Discard";
+    discardBtn.className = "msg-discard-btn";
+    discardBtn.onclick = () => {
+      wrap.remove();
+      clearPendingMessage();
+    };
+
+    actions.appendChild(retryBtn);
+    actions.appendChild(editBtn);
+    actions.appendChild(discardBtn);
+    bubble.appendChild(actions);
+
+    wrap.appendChild(bubble);
+    messagesInner.appendChild(wrap);
+    scrollToBottom();
+  }
+
+  function checkPendingMessage(historyEvents) {
+    const pending = getPendingMessage();
+    if (!pending) return;
+
+    // Check if the pending message already exists in history
+    // (server received it but client didn't get confirmation before refresh)
+    const lastUserMsg = [...historyEvents]
+      .reverse()
+      .find((e) => e.type === "message" && e.role === "user");
+    if (
+      lastUserMsg &&
+      lastUserMsg.content === pending.text &&
+      lastUserMsg.timestamp >= pending.timestamp - 5000
+    ) {
+      clearPendingMessage();
+      return;
+    }
+
+    // Show the pending message with recovery actions
+    renderPendingRecovery(pending);
+  }
 
   // ---- Progress sidebar ----
   let activeTab = "sessions"; // "sessions" | "progress"

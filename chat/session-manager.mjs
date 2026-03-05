@@ -277,11 +277,14 @@ export function sendMessage(sessionId, text, images, options = {}) {
       return; // skip triggerSummary and push for compact ops
     }
 
-    // Trigger async sidebar summary (non-blocking), only when progress is enabled
-    if (isProgressEnabled()) {
+    // Trigger async summary: always run for auto-rename, sidebar update only when progress is enabled
+    const needsRename = !session.name || session.name === 'new session';
+    const needsProgress = isProgressEnabled();
+    if (needsRename || needsProgress) {
       triggerSummary(
         { id: sessionId, folder: session.folder, name: session.name || '' },
         (newName) => renameSession(sessionId, newName),
+        { updateSidebar: needsProgress },
       );
     }
     // Send web push notification (non-blocking)

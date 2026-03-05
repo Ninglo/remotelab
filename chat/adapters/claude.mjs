@@ -15,6 +15,11 @@ import {
  * duplicated in complete messages).
  */
 export function createClaudeAdapter() {
+  // Track per-turn input tokens from assistant messages for accurate context display.
+  // Claude Code uses prompt caching, so the real context size is:
+  // input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+  let lastTurnInputTokens = 0;
+
   return {
     parseLine(line) {
       const trimmed = line.trim();
@@ -62,6 +67,14 @@ export function createClaudeAdapter() {
               }
             }
           }
+          // Track per-turn input tokens (including cached) for context display
+          const msgUsage = obj.message?.usage;
+          if (msgUsage) {
+            lastTurnInputTokens =
+              (msgUsage.input_tokens || 0) +
+              (msgUsage.cache_creation_input_tokens || 0) +
+              (msgUsage.cache_read_input_tokens || 0);
+          }
           break;
         }
 
@@ -92,10 +105,14 @@ export function createClaudeAdapter() {
           // Only emit usage + completed status.
           if (obj.cost_usd !== undefined || obj.usage) {
             const u = obj.usage || {};
-            events.push(usageEvent(
-              u.input_tokens || 0,
-              u.output_tokens || 0,
-            ));
+            // Use per-turn input tokens tracked from the last assistant message,
+            // which includes cached tokens. Fall back to summing the result event's fields.
+            const totalIn = lastTurnInputTokens || (
+              (u.input_tokens || 0) +
+              (u.cache_creation_input_tokens || 0) +
+              (u.cache_read_input_tokens || 0)
+            );
+            events.push(usageEvent(totalIn, u.output_tokens || 0));
           }
           events.push(statusEvent('completed'));
           break;

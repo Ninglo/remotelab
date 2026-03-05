@@ -135,18 +135,8 @@
 
     <div class="error {{ERROR_CLASS}}">Invalid credentials. Please try again.</div>
 
-    <!-- Token form -->
-    <form id="token-form" method="POST" action="/login">
-      <input type="hidden" name="type" value="token">
-      <label for="token-input">Access Token</label>
-      <input type="text" id="token-input" name="token" class="mono"
-             placeholder="Paste your token"
-             autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
-      <button type="submit" class="btn">Sign In</button>
-    </form>
-
     <!-- Password form -->
-    <form id="pw-form" class="hidden" method="POST" action="/login">
+    <form id="pw-form" method="POST" action="/login">
       <input type="hidden" name="type" value="password">
       <label for="username-input">Username</label>
       <input type="text" id="username-input" name="username"
@@ -159,8 +149,18 @@
       <button type="submit" class="btn">Sign In</button>
     </form>
 
+    <!-- Token form -->
+    <form id="token-form" class="hidden" method="POST" action="/login">
+      <input type="hidden" name="type" value="token">
+      <label for="token-input">Access Token</label>
+      <input type="text" id="token-input" name="token" class="mono"
+             placeholder="Paste your token"
+             autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+      <button type="submit" class="btn">Sign In</button>
+    </form>
+
     <div class="switch">
-      <a href="#" id="toggle-link">Use username &amp; password</a>
+      <a href="#" id="toggle-link">Use access token instead</a>
     </div>
   </div>
 

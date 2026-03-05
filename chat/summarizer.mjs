@@ -98,15 +98,16 @@ function formatTurnForPrompt(events) {
  * Trigger a non-blocking summary generation after a session turn completes.
  * sessionMeta: { id, folder, name }
  * onRename: optional callback (newName: string) => void — called when a better name is generated
+ * options.updateSidebar: whether to persist sidebar state (default true)
  */
-export function triggerSummary(sessionMeta, onRename) {
+export function triggerSummary(sessionMeta, onRename, options = {}) {
   console.log(`[summarizer] triggerSummary called for session ${sessionMeta.id?.slice(0, 8)}`);
-  setImmediate(() => runSummary(sessionMeta, onRename).catch(err => {
+  setImmediate(() => runSummary(sessionMeta, onRename, options).catch(err => {
     console.error(`[summarizer] Unexpected error for ${sessionMeta.id?.slice(0, 8)}: ${err.message}`);
   }));
 }
 
-async function runSummary(sessionMeta, onRename) {
+async function runSummary(sessionMeta, onRename, options = {}) {
   const { id: sessionId, folder, name } = sessionMeta;
 
   const allEvents = loadHistory(sessionId);
@@ -212,15 +213,17 @@ async function runSummary(sessionMeta, onRename) {
     return;
   }
 
-  state.sessions[sessionId] = {
-    name: name || '',
-    folder,
-    background: summary.background,
-    lastAction: summary.lastAction,
-    updatedAt: Date.now(),
-  };
-  saveSidebarState(state);
-  console.log(`[summarizer] Updated sidebar for session ${sessionId.slice(0, 8)}: ${summary.lastAction}`);
+  if (options.updateSidebar !== false) {
+    state.sessions[sessionId] = {
+      name: name || '',
+      folder,
+      background: summary.background,
+      lastAction: summary.lastAction,
+      updatedAt: Date.now(),
+    };
+    saveSidebarState(state);
+    console.log(`[summarizer] Updated sidebar for session ${sessionId.slice(0, 8)}: ${summary.lastAction}`);
+  }
 
   // Auto-rename session if it still has the default name and a title was generated
   if (onRename && summary.title && isDefaultName) {
