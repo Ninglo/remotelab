@@ -1,7 +1,8 @@
 import { WebSocketServer } from 'ws';
 import { isAuthenticated, parseCookies } from '../lib/auth.mjs';
 import {
-  createSession, deleteSession, getSession, listSessions,
+  createSession, getSession, listSessions, listArchivedSessions,
+  archiveSession, unarchiveSession,
   subscribe, unsubscribe, sendMessage, cancelSession, getHistory,
   renameSession, compactSession, dropToolUse,
 } from './session-manager.mjs';
@@ -105,17 +106,37 @@ function handleMessage(ws, msg, ctx) {
       break;
     }
 
-    case 'delete': {
+    case 'delete':
+    case 'archive': {
       if (!msg.sessionId) {
         wsSend(ws, { type: 'error', message: 'sessionId is required' });
         return;
       }
-      const ok = deleteSession(msg.sessionId);
+      const ok = archiveSession(msg.sessionId);
       if (ok) {
-        wsSend(ws, { type: 'deleted', sessionId: msg.sessionId });
+        wsSend(ws, { type: 'archived', sessionId: msg.sessionId });
       } else {
         wsSend(ws, { type: 'error', message: 'Session not found' });
       }
+      break;
+    }
+
+    case 'unarchive': {
+      if (!msg.sessionId) {
+        wsSend(ws, { type: 'error', message: 'sessionId is required' });
+        return;
+      }
+      const restored = unarchiveSession(msg.sessionId);
+      if (restored) {
+        wsSend(ws, { type: 'unarchived', session: restored });
+      } else {
+        wsSend(ws, { type: 'error', message: 'Session not found' });
+      }
+      break;
+    }
+
+    case 'list_archived': {
+      wsSend(ws, { type: 'archived_list', sessions: listArchivedSessions() });
       break;
     }
 

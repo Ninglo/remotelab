@@ -6,6 +6,7 @@ import { spawnTool } from './process-runner.mjs';
 import { loadHistory, appendEvent } from './history.mjs';
 import { messageEvent, statusEvent } from './normalizer.mjs';
 import { triggerSummary, removeSidebarEntry } from './summarizer.mjs';
+import { isProgressEnabled } from './settings.mjs';
 import { sendCompletionPush } from './push.mjs';
 
 const MIME_EXT = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
@@ -54,12 +55,21 @@ function saveSessionsMeta(list) {
 
 export function listSessions() {
   const metas = loadSessionsMeta();
-  return metas.map(m => ({
-    ...m,
-    status: liveSessions.has(m.id)
-      ? liveSessions.get(m.id).status
-      : 'idle',
-  }));
+  return metas
+    .filter(m => !m.archived)
+    .map(m => ({
+      ...m,
+      status: liveSessions.has(m.id)
+        ? liveSessions.get(m.id).status
+        : 'idle',
+    }));
+}
+
+export function listArchivedSessions() {
+  const metas = loadSessionsMeta();
+  return metas
+    .filter(m => m.archived)
+    .sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt));
 }
 
 export function getSession(id) {
@@ -90,7 +100,7 @@ export function createSession(folder, tool, name = 'new session') {
   return { ...session, status: 'idle' };
 }
 
-export function deleteSession(id) {
+export function archiveSession(id) {
   const live = liveSessions.get(id);
   if (live?.runner) {
     live.runner.cancel();
@@ -100,10 +110,26 @@ export function deleteSession(id) {
   const metas = loadSessionsMeta();
   const idx = metas.findIndex(m => m.id === id);
   if (idx === -1) return false;
-  metas.splice(idx, 1);
+  metas[idx].archived = true;
+  metas[idx].archivedAt = new Date().toISOString();
   saveSessionsMeta(metas);
   removeSidebarEntry(id);
   return true;
+}
+
+export function unarchiveSession(id) {
+  const metas = loadSessionsMeta();
+  const idx = metas.findIndex(m => m.id === id);
+  if (idx === -1) return null;
+  delete metas[idx].archived;
+  delete metas[idx].archivedAt;
+  saveSessionsMeta(metas);
+  return { ...metas[idx], status: 'idle' };
+}
+
+/** @deprecated Use archiveSession instead. Kept for emergency hard-delete if ever needed. */
+export function deleteSession(id) {
+  return archiveSession(id);
 }
 
 export function renameSession(id, name) {
@@ -251,11 +277,13 @@ export function sendMessage(sessionId, text, images, options = {}) {
       return; // skip triggerSummary and push for compact ops
     }
 
-    // Trigger async sidebar summary (non-blocking)
-    triggerSummary(
-      { id: sessionId, folder: session.folder, name: session.name || '' },
-      (newName) => renameSession(sessionId, newName),
-    );
+    // Trigger async sidebar summary (non-blocking), only when progress is enabled
+    if (isProgressEnabled()) {
+      triggerSummary(
+        { id: sessionId, folder: session.folder, name: session.name || '' },
+        (newName) => renameSession(sessionId, newName),
+      );
+    }
     // Send web push notification (non-blocking)
     sendCompletionPush({ ...session, id: sessionId }).catch(() => {});
   };

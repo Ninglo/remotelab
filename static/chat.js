@@ -47,6 +47,7 @@
   let sessionStatus = "idle";
   let reconnectTimer = null;
   let sessions = [];
+  let archivedSessions = []; // sessions sorted by archivedAt desc
   let pendingSummary = new Set(); // sessionIds awaiting summary generation
   let finishedUnread = new Set(); // sessionIds finished but not yet opened
   let lastSidebarUpdatedAt = {}; // sessionId -> last known updatedAt
@@ -294,6 +295,7 @@
     ws.onopen = () => {
       updateStatus("connected", "idle");
       ws.send(JSON.stringify({ action: "list" }));
+      ws.send(JSON.stringify({ action: "list_archived" }));
       if (currentSessionId) {
         ws.send(
           JSON.stringify({ action: "attach", sessionId: currentSessionId }),
@@ -368,8 +370,8 @@
               finishedUnread.add(msg.session.id);
             }
           }
-          // Mark as pending summary when any session goes running → idle
-          if (wasRunning && msg.session.status === "idle") {
+          // Mark as pending summary when any session goes running → idle (only if progress enabled)
+          if (wasRunning && msg.session.status === "idle" && progressEnabled) {
             pendingSummary.add(msg.session.id);
             if (activeTab === "progress") renderProgressPanel(lastProgressState);
           }
@@ -393,6 +395,7 @@
         break;
 
       case "deleted":
+      case "archived":
         sessions = sessions.filter((s) => s.id !== msg.sessionId);
         localStorage.removeItem(`draft_${msg.sessionId}`);
         if (currentSessionId === msg.sessionId) {
@@ -402,6 +405,22 @@
           showEmpty();
         }
         renderSessionList();
+        wsSend({ action: "list_archived" });
+        break;
+
+      case "archived_list":
+        archivedSessions = msg.sessions || [];
+        renderArchivedSection();
+        break;
+
+      case "unarchived":
+        if (msg.session) {
+          archivedSessions = archivedSessions.filter((s) => s.id !== msg.session.id);
+          const exists = sessions.find((s) => s.id === msg.session.id);
+          if (!exists) sessions.push(msg.session);
+          renderSessionList();
+          renderArchivedSection();
+        }
         break;
 
       case "error":
@@ -830,9 +849,7 @@
 
         div.querySelector(".del").addEventListener("click", (e) => {
           e.stopPropagation();
-          if (confirm("Delete this session?")) {
-            wsSend({ action: "delete", sessionId: s.id });
-          }
+          wsSend({ action: "archive", sessionId: s.id });
         });
 
         items.appendChild(div);
@@ -842,6 +859,55 @@
       group.appendChild(items);
       sessionList.appendChild(group);
     }
+  }
+
+  function renderArchivedSection() {
+    const existing = document.getElementById("archivedSection");
+    if (existing) existing.remove();
+    if (archivedSessions.length === 0) return;
+
+    const section = document.createElement("div");
+    section.id = "archivedSection";
+    section.className = "archived-section";
+
+    const header = document.createElement("div");
+    header.className = "archived-section-header";
+    const isCollapsed = localStorage.getItem("archivedCollapsed") !== "false";
+    if (isCollapsed) header.classList.add("collapsed");
+    header.innerHTML = `<span class="folder-chevron">&#9660;</span><span class="archived-label">Archive</span><span class="folder-count">${archivedSessions.length}</span>`;
+    header.addEventListener("click", () => {
+      header.classList.toggle("collapsed");
+      localStorage.setItem("archivedCollapsed", header.classList.contains("collapsed") ? "true" : "false");
+    });
+
+    const items = document.createElement("div");
+    items.className = "archived-items";
+
+    for (const s of archivedSessions) {
+      const div = document.createElement("div");
+      div.className = "session-item archived-item";
+      const displayName = s.name || s.tool || "session";
+      const shortFolder = (s.folder || "").replace(/^\/Users\/[^/]+/, "~");
+      const folderName = shortFolder.split("/").pop() || shortFolder;
+      const date = s.archivedAt ? new Date(s.archivedAt).toLocaleDateString() : "";
+      div.innerHTML = `
+        <div class="session-item-info">
+          <div class="session-item-name">${esc(displayName)}</div>
+          <div class="session-item-meta"><span title="${esc(shortFolder)}">${esc(folderName)}</span>${date ? ` · ${date}` : ""}</div>
+        </div>
+        <div class="session-item-actions">
+          <button class="session-action-btn restore" title="Restore" data-id="${s.id}">&#8617;</button>
+        </div>`;
+      div.querySelector(".restore").addEventListener("click", (e) => {
+        e.stopPropagation();
+        wsSend({ action: "unarchive", sessionId: s.id });
+      });
+      items.appendChild(div);
+    }
+
+    section.appendChild(header);
+    section.appendChild(items);
+    sessionList.appendChild(section);
   }
 
   function startRename(itemEl, session) {
@@ -1178,6 +1244,17 @@
   let activeTab = "sessions"; // "sessions" | "progress"
   let progressPollTimer = null;
   let lastProgressState = { sessions: {} };
+  let progressEnabled = false; // loaded from backend, default off
+
+  async function fetchSettings() {
+    try {
+      const res = await fetch("/api/settings");
+      if (!res.ok) return;
+      const s = await res.json();
+      progressEnabled = s.progressEnabled === true;
+    } catch {}
+  }
+  fetchSettings();
 
   function switchTab(tab) {
     activeTab = tab;
@@ -1188,7 +1265,7 @@
     newSessionBtn.classList.toggle("hidden", tab === "progress");
     if (tab === "progress") {
       fetchSidebarState();
-      if (!progressPollTimer) {
+      if (progressEnabled && !progressPollTimer) {
         progressPollTimer = setInterval(fetchSidebarState, 30_000);
       }
     } else {
@@ -1208,6 +1285,37 @@
     return `${Math.floor(diff / 86_400_000)}d ago`;
   }
 
+  function appendProgressToggle() {
+    const toggleRow = document.createElement("div");
+    toggleRow.className = "progress-toggle-row";
+    const label = document.createElement("span");
+    label.className = "progress-toggle-label";
+    label.textContent = "Auto-summarize";
+    const toggleBtn = document.createElement("button");
+    toggleBtn.className = "progress-toggle-btn" + (progressEnabled ? " active" : "");
+    toggleBtn.textContent = progressEnabled ? "On" : "Off";
+    toggleRow.appendChild(label);
+    toggleRow.appendChild(toggleBtn);
+    toggleBtn.addEventListener("click", async () => {
+      progressEnabled = !progressEnabled;
+      try {
+        await fetch("/api/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ progressEnabled }),
+        });
+      } catch {}
+      if (progressEnabled && !progressPollTimer) {
+        progressPollTimer = setInterval(fetchSidebarState, 30_000);
+      } else if (!progressEnabled) {
+        clearInterval(progressPollTimer);
+        progressPollTimer = null;
+      }
+      renderProgressPanel(lastProgressState);
+    });
+    progressPanel.appendChild(toggleRow);
+  }
+
   function renderProgressPanel(state) {
     progressPanel.innerHTML = "";
     const stateEntries = Object.entries(state.sessions || {});
@@ -1225,8 +1333,11 @@
     if (allEntries.length === 0) {
       const empty = document.createElement("div");
       empty.className = "progress-empty";
-      empty.textContent = "No summaries yet. Send a message in any session to generate one.";
+      empty.textContent = progressEnabled
+        ? "No summaries yet. Send a message in any session to generate one."
+        : "Auto-summarize is off. Enable it below to track AI progress.";
       progressPanel.appendChild(empty);
+      appendProgressToggle();
       return;
     }
 
@@ -1288,6 +1399,8 @@
 
       progressPanel.appendChild(card);
     }
+
+    appendProgressToggle();
   }
 
   function escapeHtml(str) {

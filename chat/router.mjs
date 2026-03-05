@@ -9,10 +9,11 @@ import {
   parseCookies, setCookie, clearCookie,
 } from '../lib/auth.mjs';
 import { getAvailableTools } from '../lib/tools.mjs';
-import { listSessions, getSession, createSession, deleteSession } from './session-manager.mjs';
+import { listSessions, listArchivedSessions, getSession, createSession, archiveSession, unarchiveSession } from './session-manager.mjs';
 import { getSidebarState } from './summarizer.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
 import { getModelsForTool } from './models.mjs';
+import { getSettings, updateSettings } from './settings.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
   getClientIp, isRateLimited, recordFailedAttempt, clearFailedAttempts,
@@ -187,9 +188,29 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (pathname === '/api/sessions/archived' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ sessions: listArchivedSessions() }));
+    return;
+  }
+
+  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/unarchive') && req.method === 'POST') {
+    const parts = pathname.split('/');
+    const id = parts[parts.length - 2];
+    const restored = unarchiveSession(id);
+    if (restored) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ session: restored }));
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Session not found' }));
+    }
+    return;
+  }
+
   if (pathname.startsWith('/api/sessions/') && req.method === 'DELETE') {
     const id = pathname.split('/').pop();
-    const ok = deleteSession(id);
+    const ok = archiveSession(id);
     if (ok) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: true }));
@@ -218,6 +239,22 @@ export async function handleRequest(req, res) {
   if (pathname === '/api/sidebar' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(getSidebarState()));
+    return;
+  }
+
+  if (pathname === '/api/settings' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(getSettings()));
+    return;
+  }
+
+  if (pathname === '/api/settings' && req.method === 'PATCH') {
+    const body = await readBody(req);
+    let patch;
+    try { patch = JSON.parse(body); } catch { patch = {}; }
+    const settings = updateSettings(patch);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(settings));
     return;
   }
 
