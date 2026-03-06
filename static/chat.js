@@ -35,6 +35,27 @@
   const progressPanel = document.getElementById("progressPanel");
   const inputArea = document.getElementById("inputArea");
   const inputResizeHandle = document.getElementById("inputResizeHandle");
+  const addToolModal = document.getElementById("addToolModal");
+  const closeAddToolModalBtn = document.getElementById("closeAddToolModal");
+  const closeAddToolModalFooterBtn = document.getElementById(
+    "closeAddToolModalFooter",
+  );
+  const addToolNameInput = document.getElementById("addToolNameInput");
+  const addToolCommandInput = document.getElementById("addToolCommandInput");
+  const addToolRuntimeFamilySelect = document.getElementById(
+    "addToolRuntimeFamilySelect",
+  );
+  const addToolModelsInput = document.getElementById("addToolModelsInput");
+  const addToolReasoningKindSelect = document.getElementById(
+    "addToolReasoningKindSelect",
+  );
+  const addToolReasoningLevelsInput = document.getElementById(
+    "addToolReasoningLevelsInput",
+  );
+  const addToolStatus = document.getElementById("addToolStatus");
+  const providerPromptCode = document.getElementById("providerPromptCode");
+  const saveToolConfigBtn = document.getElementById("saveToolConfigBtn");
+  const copyProviderPromptBtn = document.getElementById("copyProviderPromptBtn");
 
   let ws = null;
   let pendingImages = [];
@@ -64,9 +85,14 @@
   let selectedEffort = null;
   let currentToolModels = []; // model list for current tool
   let currentToolEffortLevels = null; // null = binary toggle, string[] = effort dropdown
+  let currentToolReasoningKind = "toggle";
+  let currentToolReasoningLabel = "Thinking";
+  let currentToolReasoningDefault = null;
   let sidebarCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
   let toolsList = [];
   let isDesktop = window.matchMedia("(min-width: 768px)").matches;
+  const ADD_MORE_TOOL_VALUE = "__add_more__";
+  let isSavingToolConfig = false;
   let collapsedFolders = JSON.parse(
     localStorage.getItem("collapsedFolders") || "{}",
   );
@@ -75,14 +101,60 @@
   let currentThinkingBlock = null; // { el, body, tools: Set }
   let inThinkingBlock = false;
 
-  // ---- Browser Notifications + Web Push ----
-  if ("Notification" in window && Notification.permission === "default") {
-    Notification.requestPermission().then((perm) => {
-      if (perm === "granted") setupPushNotifications();
+  function registerHiddenMarkdownExtensions() {
+    const hiddenTagStart = /<(private|hide)\b/i;
+    const hiddenBlockPattern = /^(?: {0,3})<(private|hide)\b[^>]*>[\s\S]*?<\/\1>(?:\n+|$)/i;
+    const hiddenInlinePattern = /^<(private|hide)\b[^>]*>[\s\S]*?<\/\1>/i;
+    marked.use({
+      extensions: [
+        {
+          name: "hiddenUiBlock",
+          level: "block",
+          start(src) {
+            const match = src.match(hiddenTagStart);
+            return match ? match.index : undefined;
+          },
+          tokenizer(src) {
+            const match = src.match(hiddenBlockPattern);
+            if (!match) return undefined;
+            return { type: "hiddenUiBlock", raw: match[0] };
+          },
+          renderer() {
+            return "";
+          },
+        },
+        {
+          name: "hiddenUiInline",
+          level: "inline",
+          start(src) {
+            const match = src.match(hiddenTagStart);
+            return match ? match.index : undefined;
+          },
+          tokenizer(src) {
+            const match = src.match(hiddenInlinePattern);
+            if (!match) return undefined;
+            return { type: "hiddenUiInline", raw: match[0] };
+          },
+          renderer() {
+            return "";
+          },
+        },
+      ],
     });
-  } else if ("Notification" in window && Notification.permission === "granted") {
-    setupPushNotifications();
   }
+
+  function initializePushNotifications() {
+    if (visitorMode || !("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().then((perm) => {
+        if (perm === "granted" && !visitorMode) setupPushNotifications();
+      });
+    } else if (Notification.permission === "granted") {
+      setupPushNotifications();
+    }
+  }
+
+  registerHiddenMarkdownExtensions();
 
   function notifyCompletion(session) {
     if (!("Notification" in window) || Notification.permission !== "granted")
@@ -113,6 +185,7 @@
   }
 
   async function setupPushNotifications() {
+    if (visitorMode) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
     try {
       const reg = await navigator.serviceWorker.register("/sw.js");
@@ -178,35 +251,296 @@
   });
 
   // ---- Inline tool select ----
+  function slugifyToolValue(value) {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return normalized || "my-agent";
+  }
+
+  function getSelectedToolDefinition(toolId = selectedTool) {
+    return toolsList.find((tool) => tool.id === toolId) || null;
+  }
+
+  function parseModelLines(raw) {
+    return String(raw || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const parts = line.split("|");
+        const id = String(parts.shift() || "").trim();
+        const label = String(parts.join("|") || id).trim() || id;
+        return id ? { id, label } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function parseReasoningLevels(raw) {
+    return [...new Set(
+      String(raw || "")
+        .split(",")
+        .map((level) => level.trim())
+        .filter(Boolean),
+    )];
+  }
+
+  function setAddToolStatus(message = "", tone = "") {
+    if (!addToolStatus) return;
+    addToolStatus.textContent = message;
+    addToolStatus.className = `provider-helper-status${tone ? ` ${tone}` : ""}`;
+  }
+
+  function syncQuickAddControls() {
+    const family = addToolRuntimeFamilySelect?.value || "claude-stream-json";
+    const allowedKinds = family === "codex-json" ? ["enum", "none"] : ["toggle", "none"];
+
+    for (const opt of addToolReasoningKindSelect.options) {
+      const allowed = allowedKinds.includes(opt.value);
+      opt.disabled = !allowed;
+      opt.hidden = !allowed;
+    }
+    if (!allowedKinds.includes(addToolReasoningKindSelect.value)) {
+      addToolReasoningKindSelect.value = allowedKinds[0];
+    }
+
+    const showLevels = addToolReasoningKindSelect.value === "enum";
+    const levelsField = addToolReasoningLevelsInput.closest(".provider-helper-field");
+    addToolReasoningLevelsInput.disabled = !showLevels;
+    if (levelsField) levelsField.style.opacity = showLevels ? "1" : "0.55";
+    if (family === "codex-json" && !addToolReasoningLevelsInput.value.trim()) {
+      addToolReasoningLevelsInput.value = "low, medium, high, xhigh";
+    }
+  }
+
+  function getAddToolDraft() {
+    const name = (addToolNameInput?.value || "").trim() || "My Agent";
+    const command = (addToolCommandInput?.value || "").trim() || "my-agent";
+    const runtimeFamily =
+      addToolRuntimeFamilySelect?.value || "claude-stream-json";
+    const models = parseModelLines(addToolModelsInput?.value || "");
+    const reasoningKind = addToolReasoningKindSelect?.value || "toggle";
+    const reasoning = { kind: reasoningKind, label: "Thinking" };
+    if (reasoningKind === "enum") {
+      reasoning.levels = parseReasoningLevels(addToolReasoningLevelsInput?.value || "")
+        .length > 0
+        ? parseReasoningLevels(addToolReasoningLevelsInput?.value || "")
+        : ["low", "medium", "high", "xhigh"];
+      reasoning.default = reasoning.levels[0];
+    }
+
+    return {
+      name,
+      command,
+      runtimeFamily,
+      commandSlug: slugifyToolValue(command),
+      models,
+      reasoning,
+    };
+  }
+
+  function buildProviderBasePrompt() {
+    const draft = getAddToolDraft();
+    const modelLines = draft.models.length > 0
+      ? draft.models.map((model) => `- ${model.id}${model.label !== model.id ? ` | ${model.label}` : ""}`).join("\n")
+      : "- none configured yet";
+    const reasoningLine = draft.reasoning.kind === "enum"
+      ? `${draft.reasoning.kind} (${draft.reasoning.levels.join(", ")})`
+      : draft.reasoning.kind;
+    return [
+      `I want to add a new agent/provider to RemoteLab.`,
+      ``,
+      `Target tool`,
+      `- Name: ${draft.name}`,
+      `- Command: ${draft.command}`,
+      `- Derived ID / slug: ${draft.commandSlug}`,
+      `- Runtime family: ${draft.runtimeFamily}`,
+      `- Reasoning mode: ${reasoningLine}`,
+      `- Models:`,
+      modelLines,
+      ``,
+      `Work in the RemoteLab repo root (usually \`~/code/remotelab\`; adjust if your checkout lives elsewhere).`,
+      `Read \`CLAUDE.md\` and \`notes/provider-architecture.md\` first.`,
+      ``,
+      `Please:`,
+      `1. Decide whether this can stay a simple provider bound to an existing runtime family or needs full provider code.`,
+      `2. If simple config is enough, explain the minimal runtimeFamily/models/reasoning config that should be saved.`,
+      `3. If the command is not compatible with the runtime family's normal CLI flags, implement the minimal arg-mapping/provider code needed to make it work.`,
+      `4. If full provider support is needed (models, thinking, runtime, parser, resume handling), implement the minimal code changes in the repo.`,
+      `5. Keep changes surgical, update docs if needed, and validate the flow end-to-end.`,
+      ``,
+      `Do not stop at planning — apply the changes if they are clear.`,
+    ].join("\n");
+  }
+
+  function updateCopyButtonLabel(button, label) {
+    if (!button) return;
+    const original = button.dataset.originalLabel || button.textContent;
+    button.dataset.originalLabel = original;
+    button.textContent = label;
+    window.clearTimeout(button._copyResetTimer);
+    button._copyResetTimer = window.setTimeout(() => {
+      button.textContent = button.dataset.originalLabel || original;
+    }, 1400);
+  }
+
+  function syncAddToolModal() {
+    if (!providerPromptCode) return;
+    syncQuickAddControls();
+    providerPromptCode.textContent = buildProviderBasePrompt();
+  }
+
+  function openAddToolModal() {
+    if (!addToolModal) return;
+    if (!addToolNameInput.value.trim()) addToolNameInput.value = "My Agent";
+    if (!addToolCommandInput.value.trim()) {
+      addToolCommandInput.value = "my-agent";
+    }
+    const selectedToolDef = getSelectedToolDefinition();
+    if (selectedToolDef?.runtimeFamily) {
+      addToolRuntimeFamilySelect.value = selectedToolDef.runtimeFamily;
+    }
+    setAddToolStatus("");
+    syncAddToolModal();
+    addToolModal.hidden = false;
+    addToolNameInput.focus();
+    addToolNameInput.select();
+  }
+
+  function closeAddToolModal() {
+    if (!addToolModal) return;
+    addToolModal.hidden = true;
+  }
+
+  async function saveSimpleToolConfig() {
+    if (isSavingToolConfig) return;
+    const draft = getAddToolDraft();
+
+    if (!draft.command) {
+      setAddToolStatus("Command is required.", "error");
+      addToolCommandInput.focus();
+      return;
+    }
+
+    isSavingToolConfig = true;
+    saveToolConfigBtn.disabled = true;
+    setAddToolStatus("Saving and refreshing picker...");
+
+    try {
+      const res = await fetch("/api/tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save tool config");
+      }
+
+      const savedTool = data.tool;
+      if (savedTool?.id) {
+        selectedTool = savedTool.id;
+        preferredTool = savedTool.id;
+        localStorage.setItem("preferredTool", preferredTool);
+        localStorage.setItem("selectedTool", selectedTool);
+      }
+
+      await loadInlineTools();
+      if (selectedTool) {
+        await loadModelsForCurrentTool();
+      }
+
+      if (savedTool?.available) {
+        setAddToolStatus("Saved. The new agent is ready in the picker.", "success");
+        closeAddToolModal();
+      } else {
+        setAddToolStatus(
+          "Saved, but the command is not currently available on PATH, so it will stay hidden until the binary is available.",
+          "error",
+        );
+      }
+    } catch (err) {
+      setAddToolStatus(err.message || "Failed to save tool config", "error");
+    } finally {
+      isSavingToolConfig = false;
+      saveToolConfigBtn.disabled = false;
+      syncAddToolModal();
+    }
+  }
+
+  function renderInlineToolOptions(selectedValue) {
+    inlineToolSelect.disabled = visitorMode;
+    inlineToolSelect.innerHTML = "";
+
+    if (toolsList.length === 0) {
+      const emptyOpt = document.createElement("option");
+      emptyOpt.value = "";
+      emptyOpt.textContent = "No agents found";
+      emptyOpt.disabled = true;
+      emptyOpt.selected = true;
+      inlineToolSelect.appendChild(emptyOpt);
+    } else {
+      for (const tool of toolsList) {
+        const opt = document.createElement("option");
+        opt.value = tool.id;
+        opt.textContent = tool.name;
+        inlineToolSelect.appendChild(opt);
+      }
+    }
+
+    const addMoreOpt = document.createElement("option");
+    addMoreOpt.value = ADD_MORE_TOOL_VALUE;
+    addMoreOpt.textContent = "+ Add more...";
+    inlineToolSelect.appendChild(addMoreOpt);
+
+    if (selectedValue && toolsList.some((tool) => tool.id === selectedValue)) {
+      inlineToolSelect.value = selectedValue;
+    } else if (toolsList[0]) {
+      inlineToolSelect.value = toolsList[0].id;
+    }
+  }
+
   async function loadInlineTools() {
+    if (visitorMode) {
+      toolsList = [];
+      selectedTool = null;
+      selectedModel = null;
+      selectedEffort = null;
+      return;
+    }
     try {
       const res = await fetch("/api/tools");
       const data = await res.json();
       toolsList = (data.tools || []).filter((t) => t.available);
-      inlineToolSelect.innerHTML = "";
-      for (const t of toolsList) {
-        const opt = document.createElement("option");
-        opt.value = t.id;
-        opt.textContent = t.name;
-        inlineToolSelect.appendChild(opt);
-      }
       const initialTool = [selectedTool, preferredTool, toolsList[0]?.id].find(
         (toolId) => toolId && toolsList.some((t) => t.id === toolId),
       );
+      renderInlineToolOptions(initialTool);
       if (initialTool) {
         selectedTool = initialTool;
-        inlineToolSelect.value = initialTool;
         if (!preferredTool) {
           preferredTool = initialTool;
           localStorage.setItem("preferredTool", preferredTool);
         }
       }
       await loadModelsForCurrentTool();
-    } catch {}
+    } catch {
+      toolsList = [];
+      renderInlineToolOptions("");
+    }
   }
 
   inlineToolSelect.addEventListener("change", async () => {
-    selectedTool = inlineToolSelect.value;
+    const nextTool = inlineToolSelect.value;
+    if (nextTool === ADD_MORE_TOOL_VALUE) {
+      renderInlineToolOptions(selectedTool || preferredTool || toolsList[0]?.id || "");
+      openAddToolModal();
+      return;
+    }
+
+    selectedTool = nextTool;
     preferredTool = selectedTool;
     localStorage.setItem("preferredTool", preferredTool);
     localStorage.setItem("selectedTool", selectedTool);
@@ -215,16 +549,47 @@
 
   // ---- Model select ----
   async function loadModelsForCurrentTool() {
-    if (!selectedTool) {
+    if (visitorMode) {
+      currentToolModels = [];
+      currentToolEffortLevels = null;
+      currentToolReasoningKind = "none";
+      currentToolReasoningLabel = "Thinking";
+      currentToolReasoningDefault = null;
+      selectedModel = null;
+      selectedEffort = null;
       inlineModelSelect.innerHTML = "";
       inlineModelSelect.style.display = "none";
+      thinkingToggle.style.display = "none";
+      effortSelect.style.display = "none";
+      return;
+    }
+    if (!selectedTool) {
+      currentToolModels = [];
+      currentToolEffortLevels = null;
+      currentToolReasoningKind = "none";
+      currentToolReasoningLabel = "Thinking";
+      currentToolReasoningDefault = null;
+      selectedModel = null;
+      selectedEffort = null;
+      inlineModelSelect.innerHTML = "";
+      inlineModelSelect.style.display = "none";
+      thinkingToggle.style.display = "none";
+      effortSelect.style.display = "none";
       return;
     }
     try {
       const res = await fetch(`/api/models?tool=${encodeURIComponent(selectedTool)}`);
       const data = await res.json();
       currentToolModels = data.models || [];
-      currentToolEffortLevels = data.effortLevels || null;
+      currentToolReasoningKind =
+        data.reasoning?.kind || (data.effortLevels ? "enum" : "toggle");
+      currentToolReasoningLabel = data.reasoning?.label || "Thinking";
+      currentToolReasoningDefault = data.reasoning?.default || null;
+      currentToolEffortLevels =
+        currentToolReasoningKind === "enum"
+          ? data.reasoning?.levels || data.effortLevels || []
+          : null;
+      thinkingToggle.textContent = currentToolReasoningLabel;
 
       // Populate model dropdown
       inlineModelSelect.innerHTML = "";
@@ -239,18 +604,21 @@
         inlineModelSelect.appendChild(opt);
       }
       // Restore saved model for this tool
-      selectedModel = localStorage.getItem(`selectedModel_${selectedTool}`) || "";
+      const savedModel = localStorage.getItem(`selectedModel_${selectedTool}`) || "";
+      const defaultModel = data.defaultModel || "";
+      selectedModel = savedModel;
       if (selectedModel && currentToolModels.some((m) => m.id === selectedModel)) {
         inlineModelSelect.value = selectedModel;
+      } else if (defaultModel && currentToolModels.some((m) => m.id === defaultModel)) {
+        inlineModelSelect.value = defaultModel;
+        selectedModel = defaultModel;
       } else {
         inlineModelSelect.value = "";
         selectedModel = "";
       }
       inlineModelSelect.style.display = currentToolModels.length > 0 ? "" : "none";
 
-      // Show thinking toggle (Claude) or effort dropdown (Codex)
-      if (currentToolEffortLevels) {
-        // Effort-based tool (Codex)
+      if (currentToolReasoningKind === "enum") {
         thinkingToggle.style.display = "none";
         effortSelect.style.display = "";
         effortSelect.innerHTML = "";
@@ -260,7 +628,7 @@
           opt.textContent = level;
           effortSelect.appendChild(opt);
         }
-        // Restore saved effort or use model's default
+
         selectedEffort = localStorage.getItem(`selectedEffort_${selectedTool}`) || "";
         const currentModelData = currentToolModels.find((m) => m.id === selectedModel);
         if (selectedEffort && currentToolEffortLevels.includes(selectedEffort)) {
@@ -268,31 +636,95 @@
         } else if (currentModelData?.defaultEffort) {
           effortSelect.value = currentModelData.defaultEffort;
           selectedEffort = currentModelData.defaultEffort;
+        } else if (
+          currentToolReasoningDefault
+          && currentToolEffortLevels.includes(currentToolReasoningDefault)
+        ) {
+          effortSelect.value = currentToolReasoningDefault;
+          selectedEffort = currentToolReasoningDefault;
         } else if (currentToolModels[0]?.defaultEffort) {
           effortSelect.value = currentToolModels[0].defaultEffort;
           selectedEffort = currentToolModels[0].defaultEffort;
+        } else if (currentToolEffortLevels[0]) {
+          effortSelect.value = currentToolEffortLevels[0];
+          selectedEffort = currentToolEffortLevels[0];
         }
-      } else {
-        // Toggle-based tool (Claude)
+      } else if (currentToolReasoningKind === "toggle") {
         thinkingToggle.style.display = "";
+        effortSelect.style.display = "none";
+        selectedEffort = null;
+      } else {
+        thinkingToggle.style.display = "none";
         effortSelect.style.display = "none";
         selectedEffort = null;
       }
     } catch {
+      currentToolModels = [];
+      currentToolEffortLevels = null;
+      currentToolReasoningKind = "none";
       inlineModelSelect.style.display = "none";
+      thinkingToggle.style.display = "none";
+      effortSelect.style.display = "none";
     }
   }
 
   inlineModelSelect.addEventListener("change", () => {
     selectedModel = inlineModelSelect.value;
     if (selectedTool) localStorage.setItem(`selectedModel_${selectedTool}`, selectedModel);
-    // Update default effort when model changes (Codex)
-    if (currentToolEffortLevels && selectedModel) {
+    // Update default effort when model changes (enum reasoning tools)
+    if (currentToolReasoningKind === "enum" && selectedModel) {
       const modelData = currentToolModels.find((m) => m.id === selectedModel);
       if (modelData?.defaultEffort && !localStorage.getItem(`selectedEffort_${selectedTool}`)) {
         effortSelect.value = modelData.defaultEffort;
         selectedEffort = modelData.defaultEffort;
       }
+    }
+  });
+
+  addToolNameInput.addEventListener("input", () => {
+    syncAddToolModal();
+  });
+
+  addToolCommandInput.addEventListener("input", () => {
+    syncAddToolModal();
+  });
+
+  addToolRuntimeFamilySelect.addEventListener("change", () => {
+    syncAddToolModal();
+  });
+
+  addToolModelsInput.addEventListener("input", () => {
+    syncAddToolModal();
+  });
+
+  addToolReasoningKindSelect.addEventListener("change", () => {
+    syncAddToolModal();
+  });
+
+  addToolReasoningLevelsInput.addEventListener("input", () => {
+    syncAddToolModal();
+  });
+
+  closeAddToolModalBtn.addEventListener("click", closeAddToolModal);
+  closeAddToolModalFooterBtn.addEventListener("click", closeAddToolModal);
+  addToolModal.addEventListener("click", (e) => {
+    if (e.target === addToolModal) closeAddToolModal();
+  });
+
+  saveToolConfigBtn.addEventListener("click", saveSimpleToolConfig);
+
+  copyProviderPromptBtn.addEventListener("click", async () => {
+    try {
+      await copyText(buildProviderBasePrompt());
+      updateCopyButtonLabel(copyProviderPromptBtn, "Copied");
+    } catch (err) {
+      console.warn("[copy] Failed to copy provider prompt:", err.message);
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && addToolModal && !addToolModal.hidden) {
+      closeAddToolModal();
     }
   });
 
@@ -379,9 +811,15 @@
           const wasRunning = prevEntry?.status === "running";
           const isCurrentSession = msg.session.id === currentSessionId;
           const prevStatus = isCurrentSession ? sessionStatus : prevEntry?.status || "idle";
+          const idx = sessions.findIndex((s) => s.id === msg.session.id);
+          if (idx >= 0) sessions[idx] = msg.session;
+          else sessions.push(msg.session);
           if (isCurrentSession) {
+            const displayName =
+              msg.session.name || msg.session.folder?.split("/").pop() || "Session";
+            headerTitle.textContent = displayName;
             sessionStatus = msg.session.status || "idle";
-            updateStatus("connected", sessionStatus);
+            updateStatus("connected", sessionStatus, msg.session.renameState);
           }
           if (
             isCurrentSession &&
@@ -404,9 +842,6 @@
             pendingSummary.add(msg.session.id);
             if (activeTab === "progress") renderProgressPanel(lastProgressState);
           }
-          const idx = sessions.findIndex((s) => s.id === msg.session.id);
-          if (idx >= 0) sessions[idx] = msg.session;
-          else sessions.push(msg.session);
           renderSessionList();
           updateResumeButton();
         }
@@ -489,7 +924,7 @@
   }
 
   // ---- Status ----
-  function updateStatus(connState, sessState) {
+  function updateStatus(connState, sessState, renameState) {
     if (connState === "disconnected") {
       statusDot.className = "status-dot";
       statusText.textContent = "reconnecting…";
@@ -506,12 +941,20 @@
     sessionStatus = sessState;
     const isRunning = sessState === "running";
     const isInterrupted = sessState === "interrupted";
+    const isRenaming = renameState === "pending";
+    const renameFailed = renameState === "failed";
     if (isRunning) {
       statusDot.className = "status-dot running";
       statusText.textContent = "running";
     } else if (isInterrupted) {
       statusDot.className = "status-dot interrupted";
       statusText.textContent = "interrupted";
+    } else if (isRenaming) {
+      statusDot.className = "status-dot renaming";
+      statusText.textContent = "renaming…";
+    } else if (renameFailed) {
+      statusDot.className = "status-dot rename-failed";
+      statusText.textContent = "rename failed";
     } else {
       statusDot.className = "status-dot";
       statusText.textContent = currentSessionId ? "idle" : "connected";
@@ -522,7 +965,7 @@
     sendBtn.disabled = !hasSession;
     cancelBtn.style.display = isRunning && hasSession ? "flex" : "none";
     imgBtn.disabled = !hasSession;
-    inlineToolSelect.disabled = !hasSession;
+    inlineToolSelect.disabled = visitorMode;
     inlineModelSelect.disabled = !hasSession;
     thinkingToggle.disabled = !hasSession;
     effortSelect.disabled = !hasSession;
@@ -736,7 +1179,9 @@
       const div = document.createElement("div");
       div.className = "msg-assistant md-content";
       if (evt.content) {
-        div.innerHTML = marked.parse(evt.content);
+        const rendered = marked.parse(evt.content);
+        if (!rendered.trim()) return;
+        div.innerHTML = rendered;
         enhanceCodeBlocks(div);
       }
       messagesInner.appendChild(div);
@@ -942,7 +1387,12 @@
         const metaParts = [];
         if (s.name && s.tool) metaParts.push(s.tool);
         if (s.status === "running") metaParts.push("●&nbsp;running");
-        const metaHtml = finishedUnread.has(s.id)
+        const renameReason = s.renameError ? ` title="${esc(s.renameError)}"` : "";
+        const metaHtml = s.renameState === "pending"
+          ? `<span class="status-renaming">● renaming</span>`
+          : s.renameState === "failed"
+            ? `<span class="status-rename-failed"${renameReason}>● rename failed</span>`
+          : finishedUnread.has(s.id)
           ? `<span class="status-done">● done</span>`
           : s.status === "running"
             ? `<span class="status-running">● running</span>`
@@ -1085,6 +1535,7 @@
     const displayName =
       session?.name || session?.folder?.split("/").pop() || "Session";
     headerTitle.textContent = displayName;
+    updateStatus("connected", session?.status || "idle", session?.renameState);
     msgInput.disabled = false;
     sendBtn.disabled = false;
     imgBtn.disabled = false;
@@ -1233,14 +1684,14 @@
     renderOptimisticMessage(text, pendingImages);
 
     const msg = { action: "send", text: text || "(image)" };
-    if (selectedTool) msg.tool = selectedTool;
-    if (selectedModel) msg.model = selectedModel;
-    if (currentToolEffortLevels) {
-      // Codex: send effort level (always), skip thinking flag
-      if (selectedEffort) msg.effort = selectedEffort;
-    } else {
-      // Claude: send thinking toggle
-      msg.thinking = thinkingEnabled;
+    if (!visitorMode) {
+      if (selectedTool) msg.tool = selectedTool;
+      if (selectedModel) msg.model = selectedModel;
+      if (currentToolReasoningKind === "enum") {
+        if (selectedEffort) msg.effort = selectedEffort;
+      } else if (currentToolReasoningKind === "toggle") {
+        msg.thinking = thinkingEnabled;
+      }
     }
     if (pendingImages.length > 0) {
       msg.images = pendingImages.map((img) => ({
@@ -1461,6 +1912,7 @@
   let progressEnabled = false; // loaded from backend, default off
 
   async function fetchSettings() {
+    if (visitorMode) return;
     try {
       const res = await fetch("/api/settings");
       if (!res.ok) return;
@@ -1468,7 +1920,6 @@
       progressEnabled = s.progressEnabled === true;
     } catch {}
   }
-  fetchSettings();
 
   function switchTab(tab) {
     activeTab = tab;
@@ -1626,6 +2077,7 @@
   }
 
   async function fetchSidebarState() {
+    if (visitorMode) return;
     try {
       const res = await fetch("/api/sidebar");
       if (!res.ok) return;
@@ -1701,6 +2153,9 @@
   // ---- Visitor mode setup ----
   function applyVisitorMode() {
     visitorMode = true;
+    selectedTool = null;
+    selectedModel = null;
+    selectedEffort = null;
     document.body.classList.add("visitor-mode");
     // Hide sidebar toggle, new session button, and management UI
     if (menuBtn) menuBtn.style.display = "none";
@@ -1719,28 +2174,31 @@
   // ---- Init ----
   initResponsiveLayout();
 
-  // Check if visitor mode via URL param or auth endpoint
-  const urlParams = new URLSearchParams(location.search);
-  if (urlParams.has("visitor")) {
-    // Fetch visitor session info, then connect
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((info) => {
+  async function initApp() {
+    const urlParams = new URLSearchParams(location.search);
+    try {
+      const res = await fetch("/api/auth/me");
+      if (res.ok) {
+        const info = await res.json();
         if (info.role === "visitor" && info.sessionId) {
           visitorSessionId = info.sessionId;
           applyVisitorMode();
-          // Clean URL
-          history.replaceState(null, "", "/");
         }
-        loadInlineTools();
-        connect();
-      })
-      .catch(() => {
-        loadInlineTools();
-        connect();
-      });
-  } else {
-    loadInlineTools();
+      }
+    } catch {}
+
+    if (urlParams.has("visitor")) {
+      history.replaceState(null, "", "/");
+    }
+
+    syncAddToolModal();
+    if (!visitorMode) {
+      await fetchSettings();
+      await loadInlineTools();
+      initializePushNotifications();
+    }
     connect();
   }
+
+  initApp();
 })();

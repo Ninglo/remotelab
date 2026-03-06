@@ -13,15 +13,15 @@ You can improve recovery. You cannot honestly promise zero-loss live streaming u
 
 ## Current reusable workflow
 
-### 1. Split operator plane from target plane
+### 1. Keep two chat-server planes with distinct jobs
 
-- **Operator plane:** stable `7690` chat service
-- **Target plane:** `7692` test service (or another manual port)
+- **Coding/operator plane:** stable `7690` chat service; do the actual coding conversation here
+- **Validation plane:** `7692` test service (or another manual port); use it to verify behavior and restart freely
 - **Emergency fallback:** `7681` auth-proxy terminal
 
-Rule: **do not drive development from the same instance you expect to restart repeatedly**.
+Rule: **do not drive development from the same instance you expect to restart repeatedly**. In practice, avoid using `7692` for active coding work; keep it as the disposable validation plane.
 
-Use `7690` to edit code, restart `7692`, inspect logs, and verify the test deployment.
+Use `7690` to edit code and maintain the live working conversation. Use `7692` to restart, inspect logs, and verify the test deployment.
 
 ### 2. Standardize manual test-instance management
 
@@ -52,11 +52,13 @@ This is the honest model:
 
 ### 4. Operational sequence
 
-1. Work from `7690`
+1. Work and code from `7690`
 2. Restart `7692`
 3. Re-open / reconnect `7692`
-4. If the previous turn was interrupted and recoverable, press **Resume**
-5. If both chat services are broken, fall back to `7681`
+4. Validate the change on `7692`
+5. If the previous `7692` turn was interrupted and recoverable, press **Resume**
+6. Once `7692` looks good, finish the current message on `7690`, then restart/reload `7690` if needed
+7. If both chat services are broken, fall back to `7681`
 
 ## Why this is only phase 1
 
@@ -98,7 +100,7 @@ This is the first architecture that can honestly claim **restart-safe active run
 
 Prioritize in this order:
 
-1. **Now:** use `7690` as operator plane, `7692` as target plane
+1. **Now:** use `7690` as the coding/operator plane and `7692` as the validation plane
 2. **Now:** use `scripts/chat-instance.sh` for custom-port instances
 3. **Now:** rely on interrupted-turn recovery instead of pretending restarts are harmless
 4. **Next major step:** design detached session runners

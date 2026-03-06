@@ -71,6 +71,8 @@ body {
 }
 .status-dot.running { background: var(--success); animation: pulse 1.5s infinite; }
 .status-dot.interrupted { background: var(--warning); }
+.status-dot.renaming { background: #3b82f6; animation: pulse 1.5s infinite; }
+.status-dot.rename-failed { background: var(--error); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 #statusText { font-size: 12px; color: var(--text-muted); }
 
@@ -226,6 +228,8 @@ body {
 .session-item-meta .status-running { color: var(--success); }
 .session-item-meta .status-interrupted { color: var(--warning); }
 .session-item-meta .status-done { color: #3b82f6; }
+.session-item-meta .status-renaming { color: #3b82f6; }
+.session-item-meta .status-rename-failed { color: var(--error); }
 .session-item-actions { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 .session-action-btn {
   background: none; border: none; color: var(--text-muted); cursor: pointer;
@@ -691,6 +695,188 @@ body {
   font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 
+/* Add-more modal */
+.modal-backdrop[hidden] { display: none !important; }
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 220;
+  background: rgba(0,0,0,0.42);
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px;
+}
+.modal {
+  width: min(720px, 100%);
+  max-height: min(88dvh, 820px);
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.24);
+}
+.modal-header,
+.modal-footer {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+}
+.modal-header { border-bottom: 1px solid var(--border); }
+.modal-footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+}
+.modal-title {
+  font-size: 16px; font-weight: 600; color: var(--text); flex: 1;
+}
+.modal-close,
+.modal-btn {
+  appearance: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.modal-close {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+}
+.modal-btn { padding: 8px 12px; }
+.modal-btn:hover,
+.modal-close:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--bg-secondary);
+}
+.modal-btn.primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+.modal-btn.primary:hover {
+  opacity: 0.9;
+  background: var(--text);
+  color: var(--bg);
+}
+.modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal-lead {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.provider-helper-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.provider-helper-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.provider-helper-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.provider-helper-field input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+}
+.provider-helper-field select,
+.provider-helper-field textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+}
+.provider-helper-field textarea {
+  min-height: 94px;
+  resize: vertical;
+}
+.provider-helper-field input:focus,
+.provider-helper-field select:focus,
+.provider-helper-field textarea:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+.provider-helper-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--bg-secondary);
+}
+.provider-helper-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.provider-helper-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.provider-helper-card p,
+.provider-helper-card ul {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.provider-helper-card ul {
+  padding-left: 18px;
+  margin-top: 8px;
+}
+.provider-helper-card code.inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+.provider-helper-code {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: auto;
+}
+.provider-helper-code code {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.provider-helper-note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.provider-helper-status {
+  min-height: 18px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.provider-helper-status.success { color: var(--success); }
+.provider-helper-status.error { color: var(--error); }
+
 /* ---- Desktop (>= 768px) ---- */
 @media (min-width: 768px) {
   .header #menuBtn { display: none; }
@@ -724,11 +910,20 @@ body {
   .input-area { padding: 0 0 14px; padding-bottom: calc(14px + var(--safe-bottom)); }
   .input-wrapper { width: 70%; margin: 0 auto; }
   .input-resize-handle { margin: 0 0 10px; }
+  .modal-backdrop { padding-left: calc(var(--sidebar-collapsed-width) + 24px); }
 }
 
 /* ---- Visitor mode: chat-only, no sidebar ---- */
 body.visitor-mode .sidebar-overlay { display: none !important; }
 body.visitor-mode .header #menuBtn { display: none !important; }
+
+@media (max-width: 640px) {
+  .provider-helper-grid { grid-template-columns: 1fr; }
+  .modal { width: 100%; max-height: calc(100dvh - 24px); }
+  .modal-body { padding: 14px; }
+  .modal-header,
+  .modal-footer { padding: 12px 14px; }
+}
 </style>
 </head>
 <body>
@@ -800,6 +995,90 @@ body.visitor-mode .header #menuBtn { display: none !important; }
       </div>
     </div>
   </main>
+</div>
+
+<div class="modal-backdrop" id="addToolModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addToolModalTitle">
+    <div class="modal-header">
+      <div class="modal-title" id="addToolModalTitle">Add more agents</div>
+      <button class="modal-close" id="closeAddToolModal" type="button" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-lead">
+        RemoteLab is not limited to the builtin agents. For simple tools, save a lightweight config here and the picker refreshes immediately.
+        If you need custom parsing or runtime behavior, use the advanced path below.
+      </p>
+
+        <div class="provider-helper-card">
+          <div class="provider-helper-card-header">
+            <div class="provider-helper-card-title">Quick add</div>
+            <button class="modal-btn primary" id="saveToolConfigBtn" type="button">Save &amp; refresh</button>
+          </div>
+        <p>
+          Use this for wrappers or simple command-based agents that speak an existing runtime family and accept that family's core prompt/model/thinking flags. We save the config for you and refresh the picker without restarting the service.
+        </p>
+        <div class="provider-helper-grid">
+          <div class="provider-helper-field">
+            <label for="addToolNameInput">Name</label>
+            <input id="addToolNameInput" type="text" value="My Agent" autocomplete="off">
+          </div>
+          <div class="provider-helper-field">
+            <label for="addToolCommandInput">Command</label>
+            <input id="addToolCommandInput" type="text" value="my-agent" autocomplete="off">
+          </div>
+          <div class="provider-helper-field">
+            <label for="addToolRuntimeFamilySelect">Runtime family</label>
+            <select id="addToolRuntimeFamilySelect">
+              <option value="claude-stream-json">Claude-style stream JSON</option>
+              <option value="codex-json">Codex JSON</option>
+            </select>
+          </div>
+        </div>
+        <div class="provider-helper-field">
+          <label for="addToolModelsInput">Models</label>
+          <textarea id="addToolModelsInput" placeholder="One model per line. Use `model-id | Label` or just `model-id`.&#10;Example:&#10;gpt-5-codex | GPT-5 Codex&#10;gpt-5-mini"></textarea>
+        </div>
+        <div class="provider-helper-grid">
+          <div class="provider-helper-field">
+            <label for="addToolReasoningKindSelect">Thinking mode</label>
+            <select id="addToolReasoningKindSelect">
+              <option value="toggle">Toggle</option>
+              <option value="enum">Levels</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+          <div class="provider-helper-field">
+            <label for="addToolReasoningLevelsInput">Thinking levels</label>
+            <input id="addToolReasoningLevelsInput" type="text" value="low, medium, high, xhigh" autocomplete="off">
+          </div>
+          <div class="provider-helper-field">
+            <label>Internal identity</label>
+            <div class="provider-helper-note">Derived automatically from the command. No separate ID field in simple mode.</div>
+          </div>
+        </div>
+        <div class="provider-helper-note">Use `none` if the tool has no model-side thinking control. For Claude-family tools, use `toggle`; for Codex-family tools, use `levels`. If the command needs different CLI flags, use the advanced path below.</div>
+        <div class="provider-helper-status" id="addToolStatus"></div>
+      </div>
+
+      <div class="provider-helper-card">
+        <div class="provider-helper-card-header">
+          <div class="provider-helper-card-title">Advanced provider code</div>
+          <button class="modal-btn primary" id="copyProviderPromptBtn" type="button">Copy base prompt</button>
+        </div>
+        <p>
+          If you need models, thinking controls, or custom runtime behavior, open a new session in the RemoteLab repo and paste this prompt.
+        </p>
+        <ul>
+          <li>It asks the agent to decide whether simple config is enough or whether full provider code is needed.</li>
+          <li>It points the agent at the provider architecture notes and keeps the changes minimal.</li>
+        </ul>
+        <div class="provider-helper-code"><code id="providerPromptCode"></code></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="modal-btn" id="closeAddToolModalFooter" type="button">Close</button>
+    </div>
+  </div>
 </div>
 
 

@@ -41,7 +41,20 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - If command discovery, model catalogs, reasoning controls, and runtime spawning live in separate hardcoded switches, "custom tool" support becomes fake: the dropdown works, but model selection and execution do not.
 - RemoteLab should treat a provider as the single source of truth for command availability, model catalog, reasoning schema, runtime adapter, and resume key.
 - Use the same provider contract for two extension paths: local static JSON for hardcoded catalogs, and JS modules for dynamic probing / PR-worthy integrations.
+
+### Provider Extensibility Works Best as Preset + Form + Code (2026-03-06)
+- Pure code-only plugin systems discourage casual contributions; pure GUI forms cannot express custom parsers or dynamic probing.
+- A good provider ecosystem has three layers: builtin presets, GUI-authored local JSON providers, and advanced JS providers.
+- To keep the GUI itself extensible, runtime families should expose a declarative authoring schema that the frontend renders, instead of hardcoding separate forms for each provider.
+- As a lightweight bridge, adding a synthetic `+ Add more...` action to the existing tool picker is enough to teach extensibility early, without waiting for a full provider-management page.
 - Background one-shot model calls (for example session auto-naming or sidebar summarization) must reuse the triggering turn's provider/model/reasoning config. Hardcoding those paths to Claude creates hidden availability bugs on Codex-only installs.
+- Claude Code and Codex do NOT emit the same raw JSON protocol, but both can be normalized into the same internal event stream. The parser boundary should therefore be runtime-family-specific, while the UI/session layer consumes the normalized events.
+
+### Cross-Provider Session Continuity Needs A History Handoff (2026-03-06)
+- Provider-native resume IDs (`claudeSessionId`, `codexThreadId`) preserve context only within the same runtime family; clearing them on tool switch without another handoff silently drops the session's prior context.
+- Once providers already normalize their raw output into a shared event history, the first turn of any fresh provider thread should inject a transcript reconstructed from that normalized history.
+- Build the handoff from user/assistant messages plus salient tool calls/results/file changes, not raw provider JSON and not prior reasoning traces.
+- Exclude the just-sent user message from the reconstructed transcript, or the new provider sees that message twice.
 
 ### Private Cross-Device Context Needs Its Own Layer (2026-03-06)
 - A simple split between repo-shared memory and machine-local memory breaks down when the same user runs RemoteLab on multiple computers.
@@ -52,6 +65,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - A public repo is only appropriate if the portable layer is intentionally curated as publishable and is audited for machine-local or secret-like content before push.
 - If the sync repo is private, include bootstrap/helper scripts in the repo as well so a newly provisioned machine can clone once and self-bootstrap without relying on an out-of-band bundle.
 - Bootstrap flows for active development should pin an explicit source branch when the desired code is ahead of the repo's default branch; otherwise fresh machines silently install stale code.
+- Any constraint that must apply from the very first assistant turn (for example output language or branch selection) must be stated in the bootstrap handoff prompt itself, not only in memory that gets imported later.
 
 ### Browser-Only Frontend Validation Without A Test Harness (2026-03-06)
 - For `static/*.js` browser IIFEs that hide internal functions, a low-friction regression check is: load the real source into a temporary `jsdom`, patch the final `})();` in-memory to expose the target functions, and exercise them against a minimal DOM fixture.
@@ -61,3 +75,33 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - On macOS, `nettop -P -x -k bytes_in,bytes_out` does NOT give a bytes-only table; it can still emit the default columns, which makes any parser silently wrong.
 - For machine-readable per-process byte counters, use `nettop -P -x -L 1 -J bytes_in,bytes_out -n` and parse the CSV output.
 - If you need interval deltas instead of cumulative counters, add `-d` and capture the second sample from `-L 2`.
+
+### End-to-End AI Workflows Usually Break At Input Sprawl, Not Model Quality (2026-03-06)
+- Once an AI workflow already runs end-to-end, the next bottleneck is often scattered inputs across files, env vars, chat instructions, and operator memory rather than raw model capability.
+- Before adding UI or broader feature surface, unify the workflow into a single job contract / manifest so prompts, CLIs, artifacts, and review all read the same source of truth.
+- A good smell test: if each run still requires re-explaining goals, policy, or runtime assumptions in chat, the workflow is not productized yet.
+
+### Auto-Renamed Titles Need An Explicit Pending Flag (2026-03-06)
+- If a session title can pass through multiple automatic states (for example default placeholder → first-message draft → model-generated summary title), do not key rename eligibility off the visible name alone.
+- Persist an explicit boolean like `autoRenamePending`; otherwise a temporary draft title blocks the later AI rename, and a late AI callback can overwrite a user's manual rename.
+- The rename callback itself should re-check that pending flag at execution time, not just when the background summary job started.
+
+### Open Local Config Should Fail Per Record, Not Per File (2026-03-06)
+- Once provider/tool extensibility relies on user-editable local JSON, a single bad record must be skipped with a clear log instead of breaking the entire picker/API response.
+- Treat malformed config files and unsupported provider fields as operator mistakes to isolate, not reasons to take down unrelated valid tools.
+- If quick-add stays lightweight, document its compatibility boundary explicitly in the UI: family-compatible CLIs can be saved live; anything with custom flag semantics should take the advanced path.
+
+### Owner / Visitor Splits Must Be Enforced Per Route (2026-03-06)
+- In RemoteLab, "authenticated" is not a sufficient authorization boundary once share-link visitors exist; a visitor session cookie is still a valid authenticated session.
+- Every HTTP route and WebSocket action must explicitly decide whether it is owner-only, visitor-scoped, or public. Relying on UI hiding or a generic `requireAuth` check lets share-link visitors reach owner surfaces.
+- High-risk examples are session CRUD/listing, filesystem browse/autocomplete, global settings/sidebar state, and push-subscription endpoints; those leak host metadata or allow state changes even when visitors cannot fully attach to owner sessions over WebSocket.
+- A safe regression pattern is to boot the server under a temporary `HOME` with `SECURE_COOKIES=0` on an isolated port, create both owner and visitor cookies, and verify each route class with `curl`/WebSocket probes without touching the live config.
+
+### Share-Link Visitor State Must Come From Auth, Not URL (2026-03-06)
+- A one-time `/?visitor=1` redirect is only a bootstrap hint. After the frontend cleans that query param, refreshes still carry the visitor cookie but no longer carry the URL marker.
+- If the UI only checks the URL to decide visitor mode, a refresh silently falls back into owner-style initialization and immediately calls owner-only APIs.
+- Reliable pattern: query `/api/auth/me` on every page load, derive mode from the authenticated role, and then decide whether to load owner-only surfaces like tools, models, settings, sidebar state, or push registration.
+
+### Hidden Markdown Blocks Work Best As Parser Extensions (2026-03-06)
+- For `marked`, custom block + inline extensions are a clean way to consume tags like `<private>...</private>` and `<hide>...</hide>` so the UI hides them while the raw message text stays intact for history and model context.
+- After rendering, skip empty assistant bubbles; otherwise a response that only contains hidden blocks still leaves blank UI chrome behind.

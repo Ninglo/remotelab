@@ -53,6 +53,11 @@
    - provider 没声明 runtime，就不能执行。
    - 少一点“看起来接上了，实际是错的”的伪抽象。
 
+6. **让 provider 创建有低门槛入口**
+   - 高阶用户可以写代码。
+   - 普通用户也应该能在 GUI 里通过表单完成一个“简单 provider”的配置。
+   - UI 本身要传达一个信号：RemoteLab 不只支持 Claude/Codex，provider 是可以扩展的。
+
 ---
 
 ## 3. 核心决策
@@ -414,6 +419,306 @@ runtime: {
 
 这样第二阶段前端再改 UI 时，不会牵动后端协议。
 
+### 7.4 Provider 管理 UI 要分三层
+
+如果只提供 code mode，会让“可扩展”停留在工程师视角。
+
+RemoteLab 更合适的产品形态是 **三层 authoring path**：
+
+#### A. Preset / One-click enable
+
+面向：绝大多数用户。
+
+形态：
+- 在 setup 或 settings 的 `Providers` 页面里直接显示内置 provider 卡片
+- 用户只需要点击启用/禁用、设默认 provider、设默认 model
+- 也可以从 builtin provider 派生一个 variant（例如 `codex-nightly`）
+
+价值：
+- 成本最低
+- 最能直观表达“这里不止两个 agent，可以继续加”
+
+#### B. Simple custom provider（GUI 表单）
+
+面向：会折腾命令行，但不想写 JS 的用户。
+
+形态：
+- 点击 `Add Provider`
+- 选择一个 runtime family / 模板
+- 在表单里填写：
+  - `id`
+  - `name`
+  - `command`
+  - `runtime family`
+  - model 来源（静态填写 / 从缓存文件读取 / 复用 builtin）
+  - reasoning 方式（none / toggle / enum）
+  - 默认 model / 默认 thinking
+  - 能力开关（images、resume、app-selectable）
+- 保存后写入：
+
+```text
+~/.config/remotelab/providers/<id>.json
+```
+
+本质上这就是 **GUI 驱动的 hardcode mode**。
+
+#### C. Advanced provider（代码模式）
+
+面向：要做动态探测、自定义 parser、特殊 buildArgs 的人。
+
+形态：
+- `Add Provider` 时选择 `Advanced`
+- 生成一个 provider 模板文件：
+
+```text
+~/.config/remotelab/providers/<id>.mjs
+```
+
+- 用户可以在本地编辑，验证后再 PR 到 repo builtin provider
+
+这就是 **GUI 入口 + code escape hatch**。
+
+### 7.5 GUI 不能写死 Claude/Codex 逻辑，要吃 runtime family schema
+
+如果 GUI 是手写页面：
+- Claude 一套表单
+- Codex 一套表单
+- 新增 provider 再写一套
+
+那最后又会回到硬编码泥潭。
+
+所以 GUI 的底层也必须抽象：
+
+**runtime family 不只定义运行时，还要定义 authoring schema。**
+
+例如：
+
+```js
+{
+  family: 'codex-json',
+  label: 'Codex JSON CLI',
+  authoringSchema: {
+    fields: [
+      { key: 'command', type: 'command', label: 'Command' },
+      { key: 'modelCatalog.mode', type: 'select', options: ['static', 'cache-file'] },
+      { key: 'reasoning.kind', type: 'select', options: ['none', 'enum'] },
+      { key: 'reasoning.levels', type: 'string-list' },
+      { key: 'runtime.resumeField', type: 'readonly', value: 'codexThreadId' }
+    ]
+  }
+}
+```
+
+这样前端的 provider 表单就是一个通用 renderer：
+
+- family 负责暴露字段
+- UI 负责把字段渲染出来
+- 保存时输出 JSON provider
+
+这样做的好处是：
+
+1. **GUI 本身是 extensible 的**，不是又一层硬编码
+2. **用户能明显看到系统支持多个 runtime family**
+3. **新增 provider family 时，不一定要同时改前端页面代码**
+
+### 7.6 推荐的产品流
+
+#### Setup 流程
+
+在 `remotelab setup` 或首次打开的 owner setup 页面里：
+
+1. 扫描常见命令是否存在（`claude`、`codex`、`cline` 等）
+2. 自动推荐对应 builtin provider
+3. 如果命令存在但没有现成 builtin，可以提示：
+   - `Create simple provider`
+   - `Use advanced template`
+4. 设置默认 provider / 默认 model
+
+这一步负责告诉用户：
+
+**RemoteLab 是一个 provider-based 系统，不是只内置两个 agent。**
+
+#### Settings → Providers 页面
+
+owner 侧增加一个轻量管理页：
+
+- 已启用 providers
+- builtin providers
+- local custom providers
+- `Add Provider`
+- `Import JSON`
+- `Export JSON`
+- `Duplicate from builtin`
+
+其中 `Import/Export JSON` 很重要，因为它能让“分享 provider”比“分享代码 PR”更轻量。
+
+#### Chat UI
+
+Chat UI 继续保持轻量：
+
+- 展示当前 provider / model / reasoning
+- 允许轻量切换
+- 不承担复杂 provider onboarding
+
+这和 RemoteLab 一贯的原则一致：
+
+- setup / settings 负责配置
+- chat 负责执行
+
+### 7.7 近期开口：tool picker 里的 `+ Add more...`
+
+如果现在就做完整的 settings / providers 页面，还是偏重。
+
+一个更合适的近期落点是：
+
+- 在现有 agent/tool 选择框里追加一项 `+ Add more...`
+- 这不是一个 provider 选项，而是一个 action
+- 点击后弹出轻量 modal
+- modal 里同时提供：
+  - **quick config**：产品直接写入简单配置，不要求用户手动粘贴 JSON
+  - **advanced path**：给出一段 base prompt，让用户开新 session 去实现 provider 代码
+
+这条路径的好处是：
+
+1. 改动极小，能马上落地
+2. UI 会自然暗示“agent 是可扩展的”
+3. 不需要等完整 provider 管理系统 ready 才开始教育用户心智
+
+### 7.8 Quick add 的产品原则
+
+`Quick add` 不是教程入口，而是一个 **完成任务的入口**。
+
+也就是说：
+
+- 用户填完表单后，产品应该直接保存配置
+- 不要求用户再去复制/粘贴 JSON
+- 保存后应该立刻刷新当前 tool picker
+- 简单配置路径不应该要求重启服务
+
+这背后的原则是：
+
+**只要是配置型能力，就优先做成动态加载，而不是 restart-driven workflow。**
+
+在当前 RemoteLab 里，这件事本来就具备基础条件：
+
+- tool 列表来自配置文件
+- `/api/tools` 是运行时读取
+- 前端 picker 可以主动重新拉取
+
+所以 quick add 的正确形态是：
+
+```text
+fill form
+→ save simple provider config
+→ refetch /api/tools
+→ update picker immediately
+→ optionally preselect the new tool
+```
+
+### 7.9 `id` 在 simple mode 应该隐藏或自动派生
+
+对于 simple mode 用户来说，显式填写 `id` 往往是多余负担。
+
+更好的规则是：
+
+- 默认以 `command` 作为主要身份
+- 内部如果需要稳定 key，可以从 `command` 自动派生 slug
+- 只有 advanced mode 或冲突场景才暴露 override id
+
+也就是说：
+
+- `command = codex` → auto id = `codex`
+- `command = my-agent` → auto id = `my-agent`
+
+simple mode 不应该把内部实现字段直接甩给用户。
+
+### 7.10 简单 provider 要支持 model / reasoning 配置，但只在已知 runtime family 内运行
+
+simple mode 不应该只支持 `name + command`。
+
+至少还要允许配置：
+
+- model list
+- reasoning / thinking 方式（none / toggle / enum）
+- 默认 model
+- 默认 reasoning
+
+但这里不能走“任意命令 + 任意解析”的幻想路线。
+
+更稳的边界是：
+
+**simple provider 只能绑定到一个已知 runtime family。**
+
+例如：
+
+- `claude-stream-json`
+- `codex-json`
+
+这样 simple mode 只需要额外配置“如何把 model / reasoning 选择映射成命令参数”，而不需要用户定义 parser。
+
+当前这一版 quick add 的落地边界可以更保守一点：
+
+- 先假设 command 与所选 runtime family 的核心 CLI flags 兼容
+- 这样 GUI 可以直接保存并即时刷新，不把表单做重
+- 如果 command 的参数风格不兼容，再走 advanced path 做 provider 代码或参数映射
+
+### 7.11 模板变量可以做，但应该只做 argv 模板，不做 shell 模板
+
+把用户选择映射进 CLI，确实需要模板变量。
+
+建议支持的变量类似：
+
+```text
+${model}
+${reasoning}
+${prompt}
+${resumeId}
+```
+
+但这层模板应该作用在 **argv 片段** 上，而不是整段 shell command 字符串上。
+
+原因：
+
+- RemoteLab 当前是 `spawn(command, args)`，不是 shell eval
+- shell 模板会把 quoting / escaping / 注入问题重新引进来
+- argv 模板更安全，也更容易做 runtime family 复用
+
+所以推荐形态是：
+
+```json
+{
+  "command": "my-agent",
+  "runtimeFamily": "codex-json",
+  "argTemplates": {
+    "model": ["-m", "${model}"],
+    "reasoning": ["-c", "model_reasoning_effort=${reasoning}"]
+  }
+}
+```
+
+而不是：
+
+```text
+my-agent --model ${model} --effort ${reasoning} "${prompt}"
+```
+
+### 7.12 高级路径保持 copy-only，不主动打断当前工作流
+
+advanced path 的正确克制是：
+
+- 只提供 base prompt 的复制能力
+- 不自动创建 session
+- 不自动切换当前 session
+- 不假设用户现在愿意中断当前任务
+
+因为用户可能：
+
+- 正在赶当前任务
+- 只是想先记住怎么扩展 provider
+- 想稍后再开一个新会话做集成
+
+所以 advanced path 负责“降低下一步成本”，不负责“替用户决定现在就切流程”。
+
 ---
 
 ## 8. 推荐迁移路径
@@ -512,13 +817,21 @@ chat/providers/builtin/foo.mjs
 3. **同时支持两种 catalog 模式**：
    - JS code mode（动态探测）
    - JSON hardcode mode（静态声明）
-4. **repo 内置 `.mjs` + 本地 `.mjs` + 本地 `.json` 三层来源**
-5. **前端改为消费显式 `reasoning.kind`**，而不是继续猜 `effortLevels`
-6. **移除未知 provider → Claude fallback**，避免假抽象
-7. **区分 setup 默认值 和 chat 运行时选择**：
+4. **provider authoring 走三层入口**：
+   - preset / one-click enable
+   - GUI 表单直接保存 simple provider 配置
+   - advanced code mode (`.mjs`)
+5. **repo 内置 `.mjs` + 本地 `.mjs` + 本地 `.json` 三层来源**
+6. **前端改为消费显式 `reasoning.kind`**，而不是继续猜 `effortLevels`
+7. **GUI 也要基于 runtime family schema 生成**，不要再写死某几个 provider 的页面逻辑
+8. **移除未知 provider → Claude fallback**，避免假抽象
+9. **区分 setup 默认值 和 chat 运行时选择**：
    - setup 负责通过 AI 对话向用户确认“我有哪些 provider / model 可用、默认用哪个”
    - chat UI 负责展示当前选择并允许轻量切换，不承担复杂 onboarding
    - 真正执行时（包括后台一次性调用，如 session 命名 / sidebar summarization）必须以当前 turn 的 provider/model/reasoning 选择为准
+10. **simple mode 不暴露多余内部字段**：`id` 默认从 `command` 自动派生，仅在 advanced 场景才需要 override
+11. **simple mode 的模板变量只作用于 argv 片段**，不引入 shell-template 机制
+12. **配置路径优先动态加载**：保存 simple provider 后立刻刷新 picker，不以服务重启作为正常流程的一部分
 
 如果后面真开始落地，第一刀应该切在：
 

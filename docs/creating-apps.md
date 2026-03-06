@@ -59,5 +59,7 @@ In any regular session, you can say:
 - Each App has a unique `shareToken` used in the URL
 - Visitor sessions are isolated — visitors can't see each other's conversations
 - The owner's session list hides visitor sessions by default
+- Share-link visitors are restricted to their assigned WebSocket session; owner APIs for sessions, tools, models, filesystem browsing, settings, sidebar state, and push registration stay unavailable to them
+- Assistant output can wrap model-visible but UI-hidden content in `<private>...</private>` or `<hide>...</hide>`; RemoteLab hides those blocks in chat while preserving the raw text in session context
 - App CRUD API: `GET/POST/PATCH/DELETE /api/apps` (owner auth required)
 - Visitor entry: `GET /app/{shareToken}` (no auth needed)

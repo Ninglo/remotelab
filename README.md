@@ -94,7 +94,7 @@ Each chat session is a subprocess. When you disconnect, the process keeps runnin
 
 If the `chat-server` itself restarts during an active run, that subprocess is interrupted. RemoteLab now marks the session as `interrupted` and exposes a `Resume` action when Claude/Codex resume metadata was captured, so restart recovery is explicit instead of silently losing the turn.
 
-For self-hosting development, do not drive work from the same instance you keep restarting. Use a stable operator plane (for example `7690`) to edit and restart the target test instance (`7692`). For custom-port dev instances, use `scripts/chat-instance.sh`.
+For self-hosting development, keep two chat-server planes active: use `7690` as the stable coding/operator plane and `7692` as the restartable validation plane. Avoid doing active coding work from `7692`; use it to verify changes, restart freely, and confirm behavior. Once `7692` is good, finish your current message on `7690` and only then restart/reload `7690` if needed. For custom-port dev instances, use `scripts/chat-instance.sh`.
 
 ---
 

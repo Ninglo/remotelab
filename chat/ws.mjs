@@ -201,12 +201,15 @@ function handleMessage(ws, msg, ctx) {
         wsSend(ws, { type: 'error', message: 'text is required' });
         return;
       }
-      sendMessage(sessionId, msg.text.trim(), msg.images, {
-        tool: msg.tool || undefined,
-        thinking: !!msg.thinking,
-        model: msg.model || undefined,
-        effort: msg.effort || undefined,
-      });
+      const sendOptions = role === 'visitor'
+        ? {}
+        : {
+            tool: msg.tool || undefined,
+            thinking: !!msg.thinking,
+            model: msg.model || undefined,
+            effort: msg.effort || undefined,
+          };
+      sendMessage(sessionId, msg.text.trim(), msg.images, sendOptions);
       break;
     }
 

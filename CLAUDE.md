@@ -39,9 +39,9 @@ Phone Browser ──HTTPS──→ Cloudflare Tunnel ──→ chat-server.mjs (
 | `chat-server.mjs` | **7692** | `ttest.jiujianian-dev-world.win` | **Test** — current development |
 | `auth-proxy.mjs` | **7681** | `claude.jiujianian-dev-world.win` | **Emergency terminal** — FROZEN, never modify |
 
-**Dev workflow**: All changes → test on 7692 first → verify → restart production 7690.
+**Dev workflow**: keep two chat-server planes active. Do all coding/conversation work on `7690`, do restart-heavy validation on `7692`, and only restart/reload `7690` after `7692` is verified.
 
-**Self-hosting rule**: do not use the same chat-server instance as both operator plane and restart target. Use `7690` to drive development, restart/test `7692`, and fall back to `7681` only for emergencies. Manual dev instances should use `scripts/chat-instance.sh`. Restarted in-flight turns are recoverable via the UI `Resume` flow when resume metadata was captured. See `notes/self-hosting-dev-restarts.md`.
+**Self-hosting rule**: maintain two distinct chat-server roles. `7690` is the coding/operator plane where the live development conversation happens; `7692` is the validation plane for restart/test checks and should avoid active coding work. Prefer restarting the other plane, not the one carrying the current conversation. After `7692` looks good, finish the current thought on `7690`, then restart/reload `7690` if needed. Fall back to `7681` only for emergencies. Manual dev instances should use `scripts/chat-instance.sh`. Restarted in-flight turns are recoverable via the UI `Resume` flow when resume metadata was captured. See `notes/self-hosting-dev-restarts.md`.
 
 ---
 
@@ -224,6 +224,7 @@ Shows all active sessions' status at a glance. Powered by `summarizer.mjs` — a
 - [ ] Remove folder dependency — Agent defaults to home directory
 - [ ] Skills framework (file storage + loading mechanism)
 - [ ] Provider registry abstraction — open model selection, local JS/JSON provider config, no more Claude/Codex-only model wiring
+- [ ] Provider management UX — setup/settings should support preset enablement, simple GUI JSON providers, and advanced code mode
 - [ ] Session metadata enrichment (project, status, priority, tags)
 - [ ] Session isolation for Apps — different App sessions should NOT see each other's chat history (privacy risk: cross-session history leakage)
 

@@ -6,7 +6,7 @@ import { createInterface } from 'readline';
 import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
 import { statusEvent } from './normalizer.mjs';
-import { getToolCommand, fullPath } from '../lib/tools.mjs';
+import { getToolDefinition, getToolCommand, fullPath } from '../lib/tools.mjs';
 
 export function resolveCwd(folder) {
   if (!folder || folder === '~') return homedir();
@@ -57,9 +57,12 @@ export function resolveCommand(cmd) {
 }
 
 export function createToolInvocation(toolId, prompt, options = {}) {
-  const command = getToolCommand(toolId);
-  const isClaudeFamily = ['claude'].includes(toolId);
-  const isCodexFamily = ['codex'].includes(toolId);
+  const tool = getToolDefinition(toolId);
+  const command = tool?.command || getToolCommand(toolId);
+  const runtimeFamily = tool?.runtimeFamily
+    || (toolId === 'claude' ? 'claude-stream-json' : toolId === 'codex' ? 'codex-json' : null);
+  const isClaudeFamily = runtimeFamily === 'claude-stream-json';
+  const isCodexFamily = runtimeFamily === 'codex-json';
 
   let adapter;
   let args;

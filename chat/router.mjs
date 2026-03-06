@@ -9,7 +9,7 @@ import {
   parseCookies, setCookie, clearCookie,
   getAuthSession,
 } from '../lib/auth.mjs';
-import { getAvailableTools } from '../lib/tools.mjs';
+import { getAvailableTools, saveSimpleTool } from '../lib/tools.mjs';
 import { listSessions, listArchivedSessions, getSession, createSession, archiveSession, unarchiveSession } from './session-manager.mjs';
 import { appendEvent } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
@@ -38,6 +38,29 @@ const staticMimeTypes = {
   'marked.min.js': 'application/javascript',
   'sw.js': 'application/javascript',
 };
+
+function writeJson(res, statusCode, payload) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+
+function isOwnerOnlyRoute(pathname, method) {
+  if (pathname === '/api/sessions' && (method === 'GET' || method === 'POST')) return true;
+  if (pathname === '/api/sessions/archived' && method === 'GET') return true;
+  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/unarchive') && method === 'POST') return true;
+  if (pathname.startsWith('/api/sessions/') && method === 'DELETE') return true;
+  if (pathname === '/api/models' && method === 'GET') return true;
+  if (pathname === '/api/tools' && (method === 'GET' || method === 'POST')) return true;
+  if (pathname === '/api/sidebar' && method === 'GET') return true;
+  if (pathname === '/api/settings' && (method === 'GET' || method === 'PATCH')) return true;
+  if (pathname === '/api/autocomplete' && method === 'GET') return true;
+  if (pathname === '/api/browse' && method === 'GET') return true;
+  if (pathname === '/api/push/vapid-public-key' && method === 'GET') return true;
+  if (pathname === '/api/push/subscribe' && method === 'POST') return true;
+  if (pathname === '/api/apps') return true;
+  if (pathname.startsWith('/api/apps/')) return true;
+  return false;
+}
 
 export async function handleRequest(req, res) {
   const parsedUrl = parseUrl(req.url, true);
@@ -186,6 +209,11 @@ export async function handleRequest(req, res) {
 
   // Auth required from here on
   if (!requireAuth(req, res)) return;
+  const authSession = getAuthSession(req);
+  if (authSession?.role !== 'owner' && isOwnerOnlyRoute(pathname, req.method)) {
+    writeJson(res, 403, { error: 'Owner access required' });
+    return;
+  }
 
   // ---- API endpoints ----
 
@@ -280,6 +308,33 @@ export async function handleRequest(req, res) {
     const tools = getAvailableTools();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ tools }));
+    return;
+  }
+
+  if (pathname === '/api/tools' && req.method === 'POST') {
+    const authSession = getAuthSession(req);
+    if (authSession?.role !== 'owner') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Owner access required' }));
+      return;
+    }
+
+    let body;
+    try { body = await readBody(req, 65536); } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Bad request' }));
+      return;
+    }
+
+    try {
+      const { name, command, runtimeFamily, models, reasoning } = JSON.parse(body);
+      const tool = saveSimpleTool({ name, command, runtimeFamily, models, reasoning });
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ tool }));
+    } catch (err) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message || 'Invalid request body' }));
+    }
     return;
   }
 
