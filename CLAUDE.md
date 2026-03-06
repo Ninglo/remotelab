@@ -1,174 +1,249 @@
-# CLAUDE.md
+# CLAUDE.md — RemoteLab Project Context
 
-## 产品定位
+> **Read this file first.** It gives you everything you need to work on this project without exploring blindly.
+> For deep-dive topics, reference docs are linked at the bottom.
 
-RemoteLab 是一个让用户通过手机浏览器远程操控 macOS/Linux 上 AI 编程工具（Claude Code、Copilot、Codex 等）的 Web 应用。核心场景是：用户不在电脑前，但想用手机指挥 AI 帮忙写代码、处理任务。
+---
 
-**目标用户**：有 macOS 或 Linux 开发机/服务器的程序员，需要在移动端（通勤、外出）远程控制 AI 编程工具。
+## What Is RemoteLab
 
-**核心价值**：不在电脑前也能让 AI 干活。
+A web app that lets users control AI coding tools (Claude Code, Codex) from a phone browser. The user is on mobile, the AI agent runs on their macOS/Linux machine.
 
-## 架构概览
+**Not** a terminal emulator, IDE, or chatbot. It's a **control console for AI workers** — the user gives intent, the AI executes.
+
+- Single owner, not multi-user
+- Node.js, no external frameworks (only `ws` for WebSocket)
+- Vanilla JS frontend, no build tools
+
+---
+
+## Architecture
 
 ```
-手机浏览器 ──HTTPS──→ Cloudflare Tunnel ──→ auth-proxy (Node.js :7681)
-                                                  │
-                                          ┌───────┼───────┐
-                                          ↓       ↓       ↓
-                                       ttyd:7700 ttyd:7701 ttyd:77xx  (每个 session 一个)
-                                          │       │       │
-                                       dtach    dtach   dtach  (会话持久化)
-                                          │       │       │
-                                       claude  copilot  codex  (实际 CLI 工具)
+Phone Browser ──HTTPS──→ Cloudflare Tunnel ──→ chat-server.mjs (:7690)
+                                                    │
+                                               WebSocket + HTTP API
+                                                    │
+                                            ┌───────┼───────┐
+                                            ↓       ↓       ↓
+                                     spawn claude  codex   (future tools)
+                                            │
+                                    parse output → stream events → frontend
 ```
 
-### 核心组件
+### Three-Service Architecture (permanent)
 
-| 组件 | 职责 |
-|------|------|
-| `auth-proxy.mjs` | HTTP 服务入口，监听 127.0.0.1:7681 |
-| `lib/router.mjs` | 所有 HTTP 路由和 API 处理 |
-| `lib/auth.mjs` | Token 验证、Cookie 会话管理 |
-| `lib/sessions.mjs` | Session CRUD、ttyd 进程生命周期（spawn/kill/respawn） |
-| `lib/proxy.mjs` | HTTP/WebSocket 反向代理，将 `/terminal/{id}` 转发到对应 ttyd 端口 |
-| `lib/tools.mjs` | CLI 工具发现（which）、自定义工具注册 |
-| `lib/config.mjs` | 端口、超时等环境变量配置 |
-| `lib/templates.mjs` | HTML 模板加载 |
-| `claude-ttyd-session` | zsh 脚本，ttyd 的 wrapper，负责 source 环境变量 → cd 工作目录 → dtach 启动工具 |
+| Service | Port | Domain | Role |
+|---------|------|--------|------|
+| `chat-server.mjs` | **7690** | `claude-v2.jiujianian-dev-world.win` | **Production** — stable, released |
+| `chat-server.mjs` | **7692** | `ttest.jiujianian-dev-world.win` | **Test** — current development |
+| `auth-proxy.mjs` | **7681** | `claude.jiujianian-dev-world.win` | **Emergency terminal** — FROZEN, never modify |
 
-### 数据流
+**Dev workflow**: All changes → test on 7692 first → verify → restart production 7690.
 
-1. **认证**：用户访问 `?token=xxx` → 验证 token → 种 HttpOnly Cookie → 后续请求用 Cookie
-2. **创建 Session**：POST `/api/sessions` → 分配端口 → spawn ttyd 进程 → ttyd 执行 wrapper → dtach 启动 CLI 工具
-3. **终端交互**：浏览器 iframe 加载 `/terminal/{id}` → auth-proxy 代理到 ttyd → WebSocket 双向传输终端 I/O
-4. **会话持久**：dtach 保持进程不死，浏览器断开再连时 ttyd 重新 attach 到同一个 dtach socket
+**Self-hosting rule**: do not use the same chat-server instance as both operator plane and restart target. Use `7690` to drive development, restart/test `7692`, and fall back to `7681` only for emergencies. Manual dev instances should use `scripts/chat-instance.sh`. Restarted in-flight turns are recoverable via the UI `Resume` flow when resume metadata was captured. See `notes/self-hosting-dev-restarts.md`.
 
-### 关键外部依赖
+---
 
-| 工具 | 用途 | 安装方式 |
-|------|------|----------|
-| ttyd | 将终端暴露为 HTTP/WebSocket 服务 | `brew install ttyd` |
-| dtach | 终端会话持久化（类似 tmux 但更轻量） | `brew install dtach` |
-| cloudflared | Cloudflare Tunnel，提供 HTTPS 公网访问 | `brew install cloudflared` |
+## File Structure
 
-### 文件存储
+```
+remotelab/
+├── chat-server.mjs          # PRIMARY entry point (HTTP server, port 7690/7692)
+├── auth-proxy.mjs           # Emergency terminal fallback (FROZEN — do not touch)
+├── cli.js                   # CLI entry: `remotelab start|stop|restart|setup|...`
+├── generate-token.mjs       # Generate 256-bit access tokens
+├── set-password.mjs         # Set password-based auth
+│
+├── chat/                    # ── Chat service modules ──
+│   ├── router.mjs           # All HTTP routes & API endpoints (538 lines)
+│   ├── session-manager.mjs  # Session CRUD, lifecycle, message handling (511 lines)
+│   ├── process-runner.mjs   # Spawn CLI tools, env setup, event streaming (277 lines)
+│   ├── ws.mjs               # WebSocket connection management (243 lines)
+│   ├── summarizer.mjs       # AI-driven session progress summaries for sidebar (248 lines)
+│   ├── apps.mjs             # App (template) CRUD & persistence (89 lines)
+│   ├── system-prompt.mjs    # Build system context injected into AI sessions (83 lines)
+│   ├── normalizer.mjs       # Convert tool output → standard event format (45 lines)
+│   ├── middleware.mjs        # Auth checks, rate limiting, IP detection (80 lines)
+│   ├── push.mjs             # Web push notifications (83 lines)
+│   ├── models.mjs           # Available LLM models per tool (46 lines)
+│   ├── settings.mjs         # User preferences persistence (35 lines)
+│   ├── history.mjs          # Chat history load/save (JSONL format) (40 lines)
+│   └── adapters/
+│       ├── claude.mjs       # Claude Code CLI output parser (201 lines)
+│       └── codex.mjs        # Codex CLI output parser (207 lines)
+│
+├── lib/                     # ── Shared modules (used by both services) ──
+│   ├── auth.mjs             # Token/password verification, session cookies
+│   ├── config.mjs           # Environment variables, paths, defaults
+│   ├── tools.mjs            # CLI tool discovery (which), custom tool registration
+│   ├── utils.mjs            # Utilities (read body, path handling)
+│   ├── templates.mjs        # HTML template loading
+│   ├── git-diff.mjs         # Git diff retrieval
+│   ├── router.mjs           # Terminal service routes (FROZEN)
+│   ├── sessions.mjs         # Terminal service sessions (FROZEN)
+│   └── proxy.mjs            # Terminal service proxy (FROZEN)
+│
+├── static/                  # ── Frontend assets ──
+│   ├── chat.js              # Main frontend logic (1624 lines, vanilla JS)
+│   ├── marked.min.js        # Markdown renderer
+│   ├── sw.js                # Service Worker (PWA)
+│   └── manifest.json        # PWA metadata
+│
+├── templates/               # ── HTML templates ──
+│   ├── chat.html            # Chat UI (primary, 765 lines)
+│   ├── login.html           # Login page (194 lines)
+│   ├── dashboard.html       # Legacy dashboard (1299 lines, terminal era)
+│   └── folder-view.html     # Legacy folder view (1986 lines, terminal era)
+│
+├── docs/                    # User-facing documentation
+├── notes/                   # Internal design & product thinking
+└── memory/system.md         # System-level memory (shared, in repo)
+```
 
-所有运行时数据存在 `~/.config/remotelab/`：
+### Data Storage
 
-- `auth.json` — 访问 token
-- `sessions.json` — 所有 session 元数据
-- `tools.json` — 自定义工具配置
-- `auth-sessions.json` — 浏览器会话 cookie
-- `sockets/` — dtach socket 文件
+All runtime data lives in `~/.config/remotelab/`:
 
-## 当前 UI 结构
+| File | Content |
+|------|---------|
+| `auth.json` | Access token + password hash |
+| `chat-sessions.json` | All session metadata |
+| `chat-history/` | Per-session event logs (JSONL) |
+| `sidebar-state.json` | Progress tracking state |
+| `apps.json` | App definitions (templates) |
 
-三个页面，全部是 Vanilla JS + HTML，无框架：
+---
 
-| 页面 | 路径 | 模板文件 | 用途 |
-|------|------|----------|------|
-| 登录页 | `/login` | `templates/login.html` | Token 输入/跳转 |
-| 仪表盘 | `/` | `templates/dashboard.html` | 文件夹列表、新建 session、工具管理 |
-| 文件夹视图 | `/folder/{path}` | `templates/folder-view.html` | 多 tab 终端，每个 tab 是一个 session 的 iframe |
+## API Endpoints (chat-server)
 
-终端展示方式：ttyd 自带的 xterm.js 前端，通过 iframe 嵌入到 folder-view 页面。
+### Auth
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/login` | Login page |
+| POST | `/login` | Authenticate (token or password) |
+| GET | `/logout` | Clear session |
+| GET | `/api/auth/me` | Current user info (role: owner\|visitor) |
 
-## API 列表
+### Sessions
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/sessions` | List active sessions |
+| POST | `/api/sessions` | Create new session |
+| DELETE | `/api/sessions/{id}` | Archive session |
+| GET | `/api/sessions/archived` | List archived sessions |
+| POST | `/api/sessions/{id}/unarchive` | Restore archived session |
 
-| 方法 | 路径 | 用途 |
-|------|------|------|
-| GET | `/api/folders` | 获取按文件夹分组的 sessions |
-| GET | `/api/sessions?folder=` | 获取 sessions（可按文件夹过滤） |
-| POST | `/api/sessions` | 创建新 session |
-| DELETE | `/api/sessions/{id}` | 删除 session |
-| GET | `/api/tools` | 获取所有可用工具 |
-| POST | `/api/tools` | 添加自定义工具 |
-| DELETE | `/api/tools/{id}` | 删除自定义工具 |
-| GET | `/api/autocomplete?q=` | 文件夹路径自动补全 |
-| GET | `/api/browse?path=` | 目录浏览 |
-| GET | `/api/diff?folder=` | 获取 Git diff |
-| POST | `/api/clipboard-image` | 将图片写入 macOS 剪贴板 |
-| ALL | `/terminal/{sessionId}/*` | 代理到 ttyd（HTTP + WebSocket） |
+### Apps (Owner only)
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/apps` | List all apps |
+| POST | `/api/apps` | Create app |
+| PATCH | `/api/apps/{id}` | Update app |
+| DELETE | `/api/apps/{id}` | Delete app |
+| GET | `/app/{shareToken}` | Visitor entry (public, no auth) |
 
-## 安全机制
+### Tools & Models
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/tools` | Available AI tools |
+| GET | `/api/models` | Models per tool |
 
-- Token：256-bit 随机 hex，timing-safe 比较
-- Cookie：HttpOnly + Secure + SameSite=Strict，默认 24h 过期
-- 限流：登录失败指数退避（最长 15min），API 写操作 30次/分钟
-- 网络：服务只监听 127.0.0.1，外部通过 Cloudflare Tunnel 访问
-- CSP：nonce-based script allowlist
-- 输入校验：工具命令禁止 shell 元字符，文件夹必须存在
+### Other
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/sidebar` | Progress tracking state |
+| GET | `/api/settings` | Get user settings |
+| PATCH | `/api/settings` | Update user settings |
+| GET | `/api/browse?path=` | Browse directories |
+| GET | `/api/autocomplete?q=` | Path autocomplete |
+| GET | `/api/push/vapid-public-key` | Web push public key |
+| POST | `/api/push/subscribe` | Register push subscription |
+| WebSocket | `/ws` | Real-time messaging & events |
 
-## 已知问题与技术债
+---
 
-详见 `notes/体验问题与需求思考.md`，核心问题：
+## Key Product Concepts
 
-1. **手机上看终端体验差** — 终端原始输出在小屏幕上难以阅读，需要考虑做 chat UI 封装
-2. **移动端无法新建 tab** — 功能缺失
-3. **切换文件夹成本高** — 操作繁琐
-4. **Login 流程不完善** — PWA 场景下异常兜底不足
-5. **部分功能仅限 macOS** — 剪贴板（osascript）等功能依赖 macOS 特有工具；核心服务已支持 Linux
-6. **HTML 模板巨大** — login.html 1500+ 行，folder-view.html 2000+ 行，全是 inline JS
+### Sessions
+Unit of work = one chat conversation with one AI tool. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts.
 
-## 开发约定
+### Apps (Templates)
+Reusable AI workflows shareable via link. Each App defines: name, systemPrompt, skills, tool. When a Visitor clicks the share link → auto-creates a scoped Session with the App's system prompt injected.
 
-- **语言**：Node.js ES Modules（`"type": "module"`），纯 Node.js 内置模块，不用 Express
-- **前端**：Vanilla JS，无构建工具，无框架
-- **平台**：macOS 和 Linux（`"os": ["darwin", "linux"]`）
-- **CLI 入口**：`cli.js` → `remotelab` 命令
-- **服务管理**：macOS LaunchAgent plist / Linux systemd user service
-- **代码风格**：模板用 `{{PLACEHOLDER}}` 占位符，nonce 注入防 XSS
+### Owner / Visitor Model
+- **Owner**: Full access. Logs in with token or password.
+- **Visitor**: Accesses only a specific App via share link. Sees chat-only UI (no sidebar). Each Visitor gets an independent Session. This is NOT multi-user — Visitors are scoped guests.
 
-## 迭代方向（已决定）
+### Sidebar (Progress Tracking)
+Shows all active sessions' status at a glance. Powered by `summarizer.mjs` — after each AI turn completes (`onExit`), a separate one-shot LLM call summarizes the session state into `sidebar-state.json`. UI polls every 30s.
 
-**路线 B 已选定**：chat server (`chat-server.mjs` + `chat/`) 是主线，终端架构是备用。
+### Memory System (Two-Tier)
+1. **System-level** (`memory/system.md` in repo): Universal learnings shared across deployments
+2. **User-level** (`~/.remotelab/memory/`): Machine-specific knowledge, private
 
-### 三服务架构（永久规范）
+---
 
-永远维持三个服务同时运行：
+## Security
 
-| 服务 | 端口 | 域名 | 状态 |
-|------|------|------|------|
-| `chat-server.mjs` | 7690 | `claude-v2.jiujianian-dev-world.win` | **生产稳定服务，已发布的版本** |
-| `chat-server.mjs` | 7692 | `ttest.jiujianian-dev-world.win` | **测试服务，当前开发版本** |
-| `auth-proxy.mjs` | 7681 | `claude.jiujianian-dev-world.win` | **终端应急通道，冻结不改** |
+- **Token**: 256-bit random hex, timing-safe comparison
+- **Password**: scrypt-hashed alternative
+- **Cookies**: HttpOnly + Secure + SameSite=Strict, 24h expiry
+- **Rate limiting**: Exponential backoff on login failures (max 15min)
+- **Network**: Services listen on 127.0.0.1 only; external access via Cloudflare Tunnel
+- **CSP**: Nonce-based script allowlist
+- **Input validation**: Tool commands reject shell metacharacters
 
-**工作流程**：
-- 所有代码改动先在 `ttest` 服务（7692）上验证
-- 验证通过后，重启生产服务（7690）使其生效
-- `ttest` 服务用 `CHAT_PORT=7692 node chat-server.mjs` 启动，手动管理
-- 生产服务（7690）由 LaunchAgent `com.chatserver.claude` 管理
+---
 
-终端服务（auth-proxy + lib/ + ttyd）**不做功能迭代，不做改动**。它存在的唯一价值是：chat server 崩了的时候，还有一条路能接触到终端去修问题。
+## Hard Constraints (Non-Negotiable)
 
-`lib/` 目录下的公共模块（`auth.mjs`、`config.mjs`、`tools.mjs`、`utils.mjs`）两个服务都可以使用，不需要复制。
+1. **Terminal service is FROZEN** — `auth-proxy.mjs`, `lib/router.mjs`, `lib/sessions.mjs`, `lib/proxy.mjs` must never be modified
+2. **No external frameworks** — Node.js built-ins + `ws` only
+3. **Three-service architecture** — always maintain production (7690) + test (7692) + emergency terminal (7681)
+4. **Vanilla JS frontend** — no build tools, no framework
+5. **Every change = new commit** — never use `--amend`, only new commits
+6. **Single Owner** — no multi-user auth infrastructure
+7. **Agent-driven first** — new features prefer conversation/Skill over dedicated UI
+8. **ES Modules** — `"type": "module"`, all `.mjs` files
+9. **Template style** — `{{PLACEHOLDER}}` substitution, nonce-injected scripts
 
-## 记忆系统（Two-Tier Memory）
+---
 
-RemoteLab 的 AI agent 拥有两层记忆：
+## Current Priorities
 
-### 系统级（代码仓库内，共享）
-- 路径：`memory/system.md`（相对于项目根目录）
-- 内容：放之四海而皆准的通用经验 — 跨平台差异、工具使用技巧、常见故障模式、有效的 prompt 模式
-- 特点：随代码仓库推送到远程，所有使用 RemoteLab 的人都能受益
+### Done (recent)
+- [x] Owner/Visitor dual-role identity
+- [x] App system (CRUD API, share tokens, visitor flow)
+- [x] Sidebar progress tracking (summarizer)
+- [x] Resume ID persistence (survives server restarts)
+- [x] Web push notifications
 
-### 用户级（本地，私有）
-- 路径：`~/.remotelab/memory/`
-- 内容：机器特定信息、用户偏好、本地路径、项目私有上下文、协作习惯
-- 特点：永远不离开本地，不进代码仓库
+### P1 — Next Up
+- [ ] Visitor "new conversation" button (currently must re-click share link)
+- [ ] Remove folder dependency — Agent defaults to home directory
+- [ ] Skills framework (file storage + loading mechanism)
+- [ ] Provider registry abstraction — open model selection, local JS/JSON provider config, no more Claude/Codex-only model wiring
+- [ ] Session metadata enrichment (project, status, priority, tags)
+- [ ] Session isolation for Apps — different App sessions should NOT see each other's chat history (privacy risk: cross-session history leakage)
 
-### 学习积累流程
-每个 session 结束时，模型**必须**主动反思本次会话的收获，并将有价值的发现写入对应层级的记忆文件。这是强制流程，不可跳过。
+### P2 — Future
+- [ ] Deferred triggers (AI-initiated actions, scheduled follow-ups)
+- [ ] Autonomous execution (background sessions, event-driven resumption)
+- [ ] Post-LLM output processing (layered output: decision / summary / details)
 
-相关代码：
-- `chat/system-prompt.mjs` — 系统提示词，定义记忆系统和学习流程
-- `lib/config.mjs` — `MEMORY_DIR`（用户级）和 `SYSTEM_MEMORY_DIR`（系统级）路径配置
+---
 
-## 项目原则
+## Reference Docs (for deep dives)
 
-1. **单用户项目，速度优先**：只有一个用户（自己），搞崩了可以慢慢修。不要让完美主义阻碍迭代速度。
-2. **终端服务冻结**：`auth-proxy.mjs`、`lib/router.mjs`、`lib/sessions.mjs`、`lib/proxy.mjs` 这些文件不做改动，不做功能演进。
-3. **必要的抽象可以做**：公共实现（如认证、安全中间件）可以提取复用，但不过度抽象。
-4. **不引外部框架**：Node.js 内置模块 + `ws` 包，保持依赖最小。
-5. **每次改动立即 commit**：每完成一个任务就提交一个新 commit，永远不用 `--amend`，只增加新 commit。
-6. **始终保持三服务运行**：生产（7690）+ 测试（7692）+ 终端应急（7681），每次开发前先确认测试服务（7692）在跑，改完在测试服务验证，再视情况重启生产服务。
+| Doc | Path | When to read |
+|-----|------|-------------|
+| Core Philosophy | `notes/core-philosophy.md` | Design principles, App concept details, identity model, branding |
+| Provider Architecture | `notes/provider-architecture.md` | Open provider/model abstraction, local JS/JSON extension path, migration plan |
+| Product Vision | `notes/product-vision.md` | Sidebar design rationale, cognitive load thesis, App status tracking |
+| AI-Driven Interaction | `notes/ai-driven-interaction.md` | Deferred triggers design, session metadata schema, future phases |
+| Autonomous Execution | `notes/autonomous-execution.md` | P2 background execution vision |
+| UX Issues | `notes/体验问题与需求思考.md` | Known UX problems, mobile pain points |
+| Creating Apps | `docs/creating-apps.md` | User-facing guide for App creation |
+| Setup Guide | `docs/setup.md` | Installation, service setup (LaunchAgent/systemd) |
+| System Memory | `memory/system.md` | Cross-deployment learnings (context continuity, testing strategy) |

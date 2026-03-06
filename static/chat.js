@@ -29,6 +29,7 @@
   const contextTokens = document.getElementById("contextTokens");
   const compactBtn = document.getElementById("compactBtn");
   const dropToolsBtn = document.getElementById("dropToolsBtn");
+  const resumeBtn = document.getElementById("resumeBtn");
   const tabSessions = document.getElementById("tabSessions");
   const tabProgress = document.getElementById("tabProgress");
   const progressPanel = document.getElementById("progressPanel");
@@ -51,7 +52,11 @@
 
   let currentTokens = 0;
 
-  let selectedTool = localStorage.getItem("selectedTool") || null;
+  let preferredTool =
+    localStorage.getItem("preferredTool") ||
+    localStorage.getItem("selectedTool") ||
+    null;
+  let selectedTool = preferredTool;
   // Default thinking to enabled; only disable if explicitly set to 'false'
   let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
   // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
@@ -185,10 +190,16 @@
         opt.textContent = t.name;
         inlineToolSelect.appendChild(opt);
       }
-      if (selectedTool && toolsList.some((t) => t.id === selectedTool)) {
-        inlineToolSelect.value = selectedTool;
-      } else if (toolsList.length > 0) {
-        selectedTool = toolsList[0].id;
+      const initialTool = [selectedTool, preferredTool, toolsList[0]?.id].find(
+        (toolId) => toolId && toolsList.some((t) => t.id === toolId),
+      );
+      if (initialTool) {
+        selectedTool = initialTool;
+        inlineToolSelect.value = initialTool;
+        if (!preferredTool) {
+          preferredTool = initialTool;
+          localStorage.setItem("preferredTool", preferredTool);
+        }
       }
       await loadModelsForCurrentTool();
     } catch {}
@@ -196,6 +207,8 @@
 
   inlineToolSelect.addEventListener("change", async () => {
     selectedTool = inlineToolSelect.value;
+    preferredTool = selectedTool;
+    localStorage.setItem("preferredTool", preferredTool);
     localStorage.setItem("selectedTool", selectedTool);
     await loadModelsForCurrentTool();
   });
@@ -342,6 +355,17 @@
     }
   }
 
+  function getCurrentSession() {
+    return sessions.find((s) => s.id === currentSessionId) || null;
+  }
+
+  function updateResumeButton() {
+    const session = getCurrentSession();
+    const canResume = !!session && session.status === "interrupted" && session.recoverable;
+    resumeBtn.style.display = canResume ? "" : "none";
+    resumeBtn.disabled = !canResume;
+  }
+
   function handleWsMessage(msg) {
     switch (msg.type) {
       case "sessions":
@@ -351,13 +375,16 @@
 
       case "session":
         if (msg.session) {
-          const prevStatus = sessionStatus;
-          sessionStatus = msg.session.status || "idle";
-          updateStatus("connected", sessionStatus);
           const prevEntry = sessions.find((s) => s.id === msg.session.id);
           const wasRunning = prevEntry?.status === "running";
+          const isCurrentSession = msg.session.id === currentSessionId;
+          const prevStatus = isCurrentSession ? sessionStatus : prevEntry?.status || "idle";
+          if (isCurrentSession) {
+            sessionStatus = msg.session.status || "idle";
+            updateStatus("connected", sessionStatus);
+          }
           if (
-            msg.session.id === currentSessionId &&
+            isCurrentSession &&
             prevStatus === "running" &&
             sessionStatus === "idle"
           ) {
@@ -381,6 +408,7 @@
           if (idx >= 0) sessions[idx] = msg.session;
           else sessions.push(msg.session);
           renderSessionList();
+          updateResumeButton();
         }
         break;
 
@@ -392,6 +420,7 @@
         }
         // Check for unconfirmed messages from a previous page load
         checkPendingMessage(msg.events || []);
+        updateResumeButton();
         break;
 
       case "event":
@@ -436,6 +465,23 @@
         }
         break;
 
+      case "sidebar_update":
+        if (msg.state) {
+          // Clear pending flags for sessions with new data
+          for (const [sessionId, entry] of Object.entries(msg.state.sessions || {})) {
+            if (pendingSummary.has(sessionId)) {
+              const prev = lastSidebarUpdatedAt[sessionId] || 0;
+              if ((entry.updatedAt || 0) > prev) {
+                pendingSummary.delete(sessionId);
+              }
+            }
+            lastSidebarUpdatedAt[sessionId] = entry.updatedAt || 0;
+          }
+          lastProgressState = msg.state;
+          if (activeTab === "progress") renderProgressPanel(msg.state);
+        }
+        break;
+
       case "error":
         console.error("WS error:", msg.message);
         break;
@@ -454,13 +500,18 @@
         sendBtn.disabled = true;
       }
       cancelBtn.style.display = "none";
+      resumeBtn.style.display = "none";
       return;
     }
     sessionStatus = sessState;
     const isRunning = sessState === "running";
+    const isInterrupted = sessState === "interrupted";
     if (isRunning) {
       statusDot.className = "status-dot running";
       statusText.textContent = "running";
+    } else if (isInterrupted) {
+      statusDot.className = "status-dot interrupted";
+      statusText.textContent = "interrupted";
     } else {
       statusDot.className = "status-dot";
       statusText.textContent = currentSessionId ? "idle" : "connected";
@@ -475,6 +526,7 @@
     inlineModelSelect.disabled = !hasSession;
     thinkingToggle.disabled = !hasSession;
     effortSelect.disabled = !hasSession;
+    updateResumeButton();
   }
 
   // ---- Message rendering ----
@@ -578,6 +630,70 @@
     currentThinkingBlock = null;
   }
 
+  async function copyText(text) {
+    if (!text) return;
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("copy failed");
+  }
+
+  function setCopyButtonState(button, copied) {
+    const icon = copied
+      ? `<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.5 4.5 6.5 11.5 3 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>`
+      : `<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5" y="3" width="8" height="10" rx="1.5" ry="1.5" fill="none" stroke="currentColor" stroke-width="1.4"></rect><path d="M3 10.5V4.5C3 3.67 3.67 3 4.5 3H10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>`;
+    button.innerHTML = icon;
+    button.classList.toggle("copied", copied);
+    button.title = copied ? "Copied" : "Copy code";
+    button.setAttribute("aria-label", copied ? "Copied" : "Copy code");
+  }
+
+  function enhanceCodeBlocks(root) {
+    const blocks = root.querySelectorAll("pre > code");
+    for (const code of blocks) {
+      const pre = code.parentElement;
+      if (!pre || pre.parentElement?.classList.contains("code-block-wrap")) continue;
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "code-block-wrap";
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "code-copy-btn";
+      setCopyButtonState(button, false);
+
+      let resetTimer = null;
+      button.addEventListener("click", async () => {
+        try {
+          await copyText(code.textContent || "");
+          setCopyButtonState(button, true);
+          window.clearTimeout(resetTimer);
+          resetTimer = window.setTimeout(() => {
+            setCopyButtonState(button, false);
+          }, 1600);
+        } catch (err) {
+          console.warn("[copy] Failed to copy code block:", err.message);
+        }
+      });
+
+      wrapper.appendChild(button);
+    }
+  }
+
   function getThinkingBody() {
     if (!inThinkingBlock) openThinkingBlock();
     return currentThinkingBlock.body;
@@ -587,7 +703,7 @@
   function renderMessage(evt) {
     const role = evt.role || "assistant";
 
-    if (role === "assistant" && inThinkingBlock) {
+    if (inThinkingBlock) {
       finalizeThinkingBlock();
     }
 
@@ -619,7 +735,10 @@
     } else {
       const div = document.createElement("div");
       div.className = "msg-assistant md-content";
-      if (evt.content) div.innerHTML = marked.parse(evt.content);
+      if (evt.content) {
+        div.innerHTML = marked.parse(evt.content);
+        enhanceCodeBlocks(div);
+      }
       messagesInner.appendChild(div);
     }
   }
@@ -712,6 +831,10 @@
   }
 
   function renderStatusMsg(evt) {
+    // Finalize thinking block when the AI turn ends (completed/error)
+    if (inThinkingBlock && evt.content !== "thinking") {
+      finalizeThinkingBlock();
+    }
     if (
       !evt.content ||
       evt.content === "completed" ||
@@ -791,7 +914,7 @@
       });
       header.querySelector(".folder-add-btn").addEventListener("click", (e) => {
         e.stopPropagation();
-        const tool = selectedTool || toolsList[0]?.id;
+        const tool = preferredTool || selectedTool || toolsList[0]?.id;
         if (!tool) return;
         if (!isDesktop) closeSidebarFn();
         wsSend({ action: "create", folder, tool });
@@ -823,6 +946,8 @@
           ? `<span class="status-done">● done</span>`
           : s.status === "running"
             ? `<span class="status-running">● running</span>`
+            : s.status === "interrupted"
+              ? `<span class="status-interrupted">● interrupted</span>`
             : s.tool && s.name
               ? `<span>${esc(s.tool)}</span>`
               : "";
@@ -972,7 +1097,6 @@
       inlineToolSelect.value = session.tool;
       const prevTool = selectedTool;
       selectedTool = session.tool;
-      localStorage.setItem("selectedTool", selectedTool);
       if (prevTool !== selectedTool) {
         loadModelsForCurrentTool();
       }
@@ -981,6 +1105,7 @@
     restoreDraft();
     msgInput.focus();
     renderSessionList();
+    updateResumeButton();
   }
 
   // ---- Sidebar ----
@@ -1007,7 +1132,7 @@
   // ---- New Session ----
   newSessionBtn.addEventListener("click", () => {
     if (!isDesktop) closeSidebarFn();
-    const tool = selectedTool || toolsList[0]?.id;
+    const tool = preferredTool || selectedTool || toolsList[0]?.id;
     if (!tool) return;
     wsSend({ action: "create", folder: "~", tool });
     const handler = (e) => {
@@ -1137,6 +1262,7 @@
   }
 
   cancelBtn.addEventListener("click", () => wsSend({ action: "cancel" }));
+  resumeBtn.addEventListener("click", () => wsSend({ action: "resume_interrupted" }));
 
   compactBtn.addEventListener("click", () => {
     if (!currentSessionId) return;

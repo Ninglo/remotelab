@@ -33,6 +33,23 @@ Two services that auto-start on boot:
 
 Before starting, verify the following. If anything is missing, install it or inform the user.
 
+## Configuration principle
+
+RemoteLab should treat **setup as the primary configuration UX**, not the chat page.
+
+- The AI running setup should explicitly ask the user which installed tool(s) they actually have access to and want to use.
+- The AI should also ask for the user's preferred default model / reasoning mode for each enabled tool if multiple choices exist.
+- These answers should seed RemoteLab's defaults for new sessions.
+- The chat UI should stay lightweight: show the current selection, allow changing it, but avoid heavy onboarding or wizard-like guidance.
+- **Runtime source of truth:** the model/tool selected on the current chat turn wins. Background one-shot calls (for example auto-naming or sidebar summarization) should inherit that exact per-turn selection rather than falling back to a hardcoded provider or only using setup defaults.
+
+At minimum, the AI doing setup should confirm these items with the user:
+
+1. Which provider/tool should be enabled by default for new sessions
+2. Which model should be the default for each enabled provider
+3. Which reasoning default should be used (`thinking` / effort level) where supported
+4. Whether progress sidebar summarization should be enabled by default
+
 ### macOS
 
 ```bash

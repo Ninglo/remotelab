@@ -70,6 +70,7 @@ body {
   display: inline-block; flex-shrink: 0;
 }
 .status-dot.running { background: var(--success); animation: pulse 1.5s infinite; }
+.status-dot.interrupted { background: var(--warning); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 #statusText { font-size: 12px; color: var(--text-muted); }
 
@@ -223,6 +224,7 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .session-item-meta .status-running { color: var(--success); }
+.session-item-meta .status-interrupted { color: var(--warning); }
 .session-item-meta .status-done { color: #3b82f6; }
 .session-item-actions { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 .session-action-btn {
@@ -410,6 +412,47 @@ body {
   background: var(--bg-tertiary); border-radius: 8px;
   padding: 12px 14px; margin-bottom: 0.75em;
   overflow-x: auto; line-height: 1.5;
+}
+.md-content .code-block-wrap {
+  position: relative;
+}
+.md-content .code-block-wrap pre {
+  padding-top: 40px;
+}
+.code-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.82);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.code-copy-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.code-copy-btn:active {
+  transform: scale(0.96);
+}
+.code-copy-btn.copied {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: rgba(22, 163, 74, 0.18);
+}
+.code-copy-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 .md-content pre code {
   background: none; padding: 0; font-size: 0.85em; border-radius: 0;
@@ -744,6 +787,7 @@ body.visitor-mode .header #menuBtn { display: none !important; }
           <button class="img-btn" id="imgBtn" disabled title="Attach image">&#128247;</button>
           <span style="flex:1"></span>
           <span id="contextTokens" style="display:none"></span>
+          <button class="compact-btn" id="resumeBtn" style="display:none" title="Resume the last turn interrupted by a server restart">Resume</button>
           <button class="compact-btn" id="compactBtn" style="display:none" title="Ask model to summarize conversation, then reset context">Compact</button>
           <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)">Drop tools</button>
         </div>

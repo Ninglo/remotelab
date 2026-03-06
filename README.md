@@ -92,6 +92,10 @@ Phone ──HTTPS──→ Cloudflare Tunnel ──→ chat-server :7690
 
 Each chat session is a subprocess. When you disconnect, the process keeps running. When you reconnect, the server replays history and reattaches to the live stream.
 
+If the `chat-server` itself restarts during an active run, that subprocess is interrupted. RemoteLab now marks the session as `interrupted` and exposes a `Resume` action when Claude/Codex resume metadata was captured, so restart recovery is explicit instead of silently losing the turn.
+
+For self-hosting development, do not drive work from the same instance you keep restarting. Use a stable operator plane (for example `7690`) to edit and restart the target test instance (`7692`). For custom-port dev instances, use `scripts/chat-instance.sh`.
+
 ---
 
 ## CLI Reference
@@ -166,6 +170,13 @@ lsof -i :7681   # auth proxy
 remotelab restart chat
 remotelab restart proxy
 remotelab restart tunnel
+```
+
+**Manage a custom dev chat instance:**
+```bash
+scripts/chat-instance.sh restart --port 7692 --name test
+scripts/chat-instance.sh status --port 7692 --name test
+scripts/chat-instance.sh logs --port 7692 --name test
 ```
 
 ---

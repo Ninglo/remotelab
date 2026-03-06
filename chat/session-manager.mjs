@@ -52,6 +52,17 @@ function saveSessionsMeta(list) {
   writeFileSync(CHAT_SESSIONS_FILE, JSON.stringify(list, null, 2), 'utf8');
 }
 
+function updateSessionMeta(sessionId, updater) {
+  const metas = loadSessionsMeta();
+  const idx = metas.findIndex(m => m.id === sessionId);
+  if (idx === -1) return null;
+  const draft = { ...metas[idx] };
+  const next = updater(draft) || draft;
+  metas[idx] = next;
+  saveSessionsMeta(metas);
+  return next;
+}
+
 /**
  * Persist resume IDs (claudeSessionId / codexThreadId) to session metadata on disk.
  * This ensures context continuity survives server restarts.
@@ -88,6 +99,53 @@ function clearPersistedResumeIds(sessionId) {
   console.log(`[session-mgr] Cleared persisted resume IDs for session ${sessionId.slice(0,8)}`);
 }
 
+function setActiveRun(sessionId, runMeta) {
+  updateSessionMeta(sessionId, (session) => {
+    session.activeRun = {
+      startedAt: new Date().toISOString(),
+      ...runMeta,
+    };
+    return session;
+  });
+}
+
+function clearActiveRun(sessionId) {
+  updateSessionMeta(sessionId, (session) => {
+    delete session.activeRun;
+    return session;
+  });
+}
+
+function markRunInterrupted(sessionId, reason = 'server_shutdown') {
+  return updateSessionMeta(sessionId, (session) => {
+    if (!session.activeRun) return session;
+    session.activeRun = {
+      ...session.activeRun,
+      interruptedAt: new Date().toISOString(),
+      interruptionReason: reason,
+    };
+    return session;
+  });
+}
+
+function getPersistedStatus(meta) {
+  return meta.activeRun ? 'interrupted' : 'idle';
+}
+
+function enrichSessionMeta(meta) {
+  return {
+    ...meta,
+    status: liveSessions.has(meta.id)
+      ? liveSessions.get(meta.id).status
+      : getPersistedStatus(meta),
+    recoverable: !!meta.activeRun && !!(meta.claudeSessionId || meta.codexThreadId),
+  };
+}
+
+const INTERRUPTED_RESUME_PROMPT =
+  'Please continue where you left off. The previous turn was interrupted by a RemoteLab server restart. ' +
+  'Pick up from the last unfinished task without repeating completed work unless necessary.';
+
 // ---- Public API ----
 
 export function listSessions({ includeVisitor = false } = {}) {
@@ -95,12 +153,7 @@ export function listSessions({ includeVisitor = false } = {}) {
   return metas
     .filter(m => !m.archived)
     .filter(m => includeVisitor || !m.visitorId)
-    .map(m => ({
-      ...m,
-      status: liveSessions.has(m.id)
-        ? liveSessions.get(m.id).status
-        : 'idle',
-    }));
+    .map(enrichSessionMeta);
 }
 
 export function listArchivedSessions() {
@@ -114,11 +167,7 @@ export function getSession(id) {
   const metas = loadSessionsMeta();
   const meta = metas.find(m => m.id === id);
   if (!meta) return null;
-  const live = liveSessions.get(id);
-  return {
-    ...meta,
-    status: live ? live.status : 'idle',
-  };
+  return enrichSessionMeta(meta);
 }
 
 export function createSession(folder, tool, name = 'new session', extra = {}) {
@@ -153,6 +202,7 @@ export function archiveSession(id) {
   const metas = loadSessionsMeta();
   const idx = metas.findIndex(m => m.id === id);
   if (idx === -1) return false;
+  delete metas[idx].activeRun;
   metas[idx].archived = true;
   metas[idx].archivedAt = new Date().toISOString();
   saveSessionsMeta(metas);
@@ -181,8 +231,18 @@ export function renameSession(id, name) {
   if (idx === -1) return null;
   metas[idx].name = name;
   saveSessionsMeta(metas);
-  const live = liveSessions.get(id);
-  const updated = { ...metas[idx], status: live ? live.status : 'idle' };
+  const updated = enrichSessionMeta(metas[idx]);
+  broadcast(id, { type: 'session', session: updated });
+  return updated;
+}
+
+export function updateSessionTool(id, tool) {
+  const metas = loadSessionsMeta();
+  const idx = metas.findIndex(m => m.id === id);
+  if (idx === -1) return null;
+  metas[idx].tool = tool;
+  saveSessionsMeta(metas);
+  const updated = enrichSessionMeta(metas[idx]);
   broadcast(id, { type: 'session', session: updated });
   return updated;
 }
@@ -226,7 +286,7 @@ function broadcast(sessionId, msg) {
  * Send a user message to a session. Spawns a new process if needed.
  */
 export function sendMessage(sessionId, text, images, options = {}) {
-  const session = getSession(sessionId);
+  let session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
   // Determine effective tool: per-message override or session default
@@ -238,10 +298,12 @@ export function sendMessage(sessionId, text, images, options = {}) {
   // For history/display: store filenames (not base64) so history files stay small
   const imageRefs = savedImages.map(img => ({ filename: img.filename, mimeType: img.mimeType }));
 
-  // Store user message in history
-  const userEvt = messageEvent('user', text, imageRefs.length > 0 ? imageRefs : undefined);
-  appendEvent(sessionId, userEvt);
-  broadcast(sessionId, { type: 'event', event: userEvt });
+  // Store user message in history unless this is an internal recovery action.
+  if (options.recordUserMessage !== false) {
+    const userEvt = messageEvent('user', text, imageRefs.length > 0 ? imageRefs : undefined);
+    appendEvent(sessionId, userEvt);
+    broadcast(sessionId, { type: 'event', event: userEvt });
+  }
 
   let live = liveSessions.get(sessionId);
   if (!live) {
@@ -269,6 +331,10 @@ export function sendMessage(sessionId, text, images, options = {}) {
     live.claudeSessionId = undefined;
     live.codexThreadId = undefined;
     clearPersistedResumeIds(sessionId);
+    const updatedSession = updateSessionTool(sessionId, effectiveTool);
+    if (updatedSession) {
+      session = updatedSession;
+    }
   }
 
   // If a process is still running, cancel it (all modes are oneshot now)
@@ -281,11 +347,20 @@ export function sendMessage(sessionId, text, images, options = {}) {
     if (live.runner.codexThreadId) {
       live.codexThreadId = live.runner.codexThreadId;
     }
+    if (live.claudeSessionId || live.codexThreadId) {
+      persistResumeIds(sessionId, live.claudeSessionId, live.codexThreadId);
+    }
     live.runner.cancel();
     live.runner = null;
   }
 
   live.status = 'running';
+  setActiveRun(sessionId, {
+    tool: effectiveTool,
+    model: options.model || null,
+    effort: options.effort || null,
+    thinking: !!options.thinking,
+  });
   broadcast(sessionId, { type: 'session', session: { ...session, status: 'running' } });
 
   const onEvent = (evt) => {
@@ -314,9 +389,10 @@ export function sendMessage(sessionId, text, images, options = {}) {
       l.status = 'idle';
       l.runner = null;
     }
+    clearActiveRun(sessionId);
     broadcast(sessionId, {
       type: 'session',
-      session: { ...session, status: 'idle' },
+      session: { ...(getSession(sessionId) || session), status: 'idle', recoverable: false },
     });
 
     // Handle compact completion: extract summary, reset session
@@ -340,11 +416,20 @@ export function sendMessage(sessionId, text, images, options = {}) {
     }
 
     // Trigger async summary: always run for auto-rename, sidebar update only when progress is enabled
-    const needsRename = !session.name || session.name === 'new session';
+    const latestSession = getSession(sessionId) || session;
+    const needsRename = !latestSession.name || latestSession.name === 'new session';
     const needsProgress = isProgressEnabled();
     if (needsRename || needsProgress) {
       const summaryDone = triggerSummary(
-        { id: sessionId, folder: session.folder, name: session.name || '' },
+        {
+          id: sessionId,
+          folder: latestSession.folder,
+          name: latestSession.name || '',
+          tool: effectiveTool,
+          model: options.model || undefined,
+          effort: options.effort || undefined,
+          thinking: !!options.thinking,
+        },
         (newName) => renameSession(sessionId, newName),
         { updateSidebar: needsProgress },
       );
@@ -404,8 +489,39 @@ export function sendMessage(sessionId, text, images, options = {}) {
   }
 
   console.log(`[session-mgr] Spawning tool=${effectiveTool} model=${options.model || 'default'} effort=${options.effort || 'default'} thinking=${!!options.thinking}`);
-  const runner = spawnTool(effectiveTool, session.folder, actualText, onEvent, onExit, spawnOptions);
+  const runner = spawnTool(effectiveTool, session.folder, actualText, onEvent, onExit, {
+    ...spawnOptions,
+    onResumeIds: ({ claudeSessionId, codexThreadId }) => {
+      if (claudeSessionId) live.claudeSessionId = claudeSessionId;
+      if (codexThreadId) live.codexThreadId = codexThreadId;
+      if (live.claudeSessionId || live.codexThreadId) {
+        persistResumeIds(sessionId, live.claudeSessionId, live.codexThreadId);
+      }
+    },
+  });
   live.runner = runner;
+}
+
+export function resumeInterruptedSession(sessionId) {
+  const session = getSession(sessionId);
+  if (!session?.activeRun) return false;
+  if (!(session.claudeSessionId || session.codexThreadId)) return false;
+
+  const live = liveSessions.get(sessionId);
+  if (live?.status === 'running') return false;
+
+  const evt = statusEvent('Resuming interrupted turn…');
+  appendEvent(sessionId, evt);
+  broadcast(sessionId, { type: 'event', event: evt });
+
+  sendMessage(sessionId, INTERRUPTED_RESUME_PROMPT, [], {
+    tool: session.activeRun.tool || session.tool,
+    thinking: !!session.activeRun.thinking,
+    model: session.activeRun.model || undefined,
+    effort: session.activeRun.effort || undefined,
+    recordUserMessage: false,
+  });
+  return true;
 }
 
 /**
@@ -414,9 +530,19 @@ export function sendMessage(sessionId, text, images, options = {}) {
 export function cancelSession(sessionId) {
   const live = liveSessions.get(sessionId);
   if (live?.runner) {
+    if (live.runner.claudeSessionId) {
+      live.claudeSessionId = live.runner.claudeSessionId;
+    }
+    if (live.runner.codexThreadId) {
+      live.codexThreadId = live.runner.codexThreadId;
+    }
+    if (live.claudeSessionId || live.codexThreadId) {
+      persistResumeIds(sessionId, live.claudeSessionId, live.codexThreadId);
+    }
     live.runner.cancel();
     live.runner = null;
     live.status = 'idle';
+    clearActiveRun(sessionId);
     const session = getSession(sessionId);
     broadcast(sessionId, {
       type: 'session',
@@ -502,8 +628,23 @@ export function compactSession(sessionId) {
  * Kill all running processes (for shutdown).
  */
 export function killAll() {
-  for (const [, live] of liveSessions) {
+  for (const [sessionId, live] of liveSessions) {
     if (live.runner) {
+      if (live.runner.claudeSessionId) {
+        live.claudeSessionId = live.runner.claudeSessionId;
+      }
+      if (live.runner.codexThreadId) {
+        live.codexThreadId = live.runner.codexThreadId;
+      }
+      if (live.claudeSessionId || live.codexThreadId) {
+        persistResumeIds(sessionId, live.claudeSessionId, live.codexThreadId);
+      }
+      markRunInterrupted(sessionId);
+      appendEvent(sessionId, statusEvent(
+        (live.claudeSessionId || live.codexThreadId)
+          ? 'RemoteLab server restarted during an active run — use Resume to continue.'
+          : 'RemoteLab server restarted during an active run — the turn was interrupted before recovery metadata was captured.'
+      ));
       live.runner.cancel();
     }
   }

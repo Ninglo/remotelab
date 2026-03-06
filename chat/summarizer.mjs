@@ -1,43 +1,12 @@
-import { spawn, execFileSync } from 'child_process';
+import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { dirname } from 'path';
-import { homedir } from 'os';
-import { join } from 'path';
 import { SIDEBAR_STATE_FILE } from '../lib/config.mjs';
 import { loadHistory } from './history.mjs';
 import { fullPath } from '../lib/tools.mjs';
-import { createClaudeAdapter } from './adapters/claude.mjs';
-
-function resolveClaudeCmd() {
-  const home = process.env.HOME || homedir();
-  const isMac = process.platform === 'darwin';
-  const preferred = [
-    join(home, '.local', 'bin', 'claude'),
-    // macOS-specific paths
-    ...(isMac ? [
-      join(home, 'Library', 'pnpm', 'claude'),
-      '/opt/homebrew/bin/claude',
-    ] : [
-      // Linux-specific paths
-      '/snap/bin/claude',
-    ]),
-    '/usr/local/bin/claude',
-    '/usr/bin/claude',
-  ];
-  for (const p of preferred) {
-    if (existsSync(p)) return p;
-  }
-  try {
-    return execFileSync('which', ['claude'], {
-      encoding: 'utf8',
-      env: { ...process.env, PATH: fullPath },
-      timeout: 3000,
-    }).trim();
-  } catch {
-    return 'claude';
-  }
-}
+import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
+import { broadcastAll } from './ws-clients.mjs';
 
 function loadSidebarState() {
   try {
@@ -96,7 +65,7 @@ function formatTurnForPrompt(events) {
 
 /**
  * Trigger a non-blocking summary generation after a session turn completes.
- * sessionMeta: { id, folder, name }
+ * sessionMeta: { id, folder, name, tool?, model?, effort?, thinking? }
  * onRename: optional callback (newName: string) => void — called when a better name is generated
  * options.updateSidebar: whether to persist sidebar state (default true)
  */
@@ -108,7 +77,15 @@ export function triggerSummary(sessionMeta, onRename, options = {}) {
 }
 
 async function runSummary(sessionMeta, onRename, options = {}) {
-  const { id: sessionId, folder, name } = sessionMeta;
+  const {
+    id: sessionId,
+    folder,
+    name,
+    tool = 'claude',
+    model,
+    effort,
+    thinking,
+  } = sessionMeta;
 
   const allEvents = loadHistory(sessionId);
   if (allEvents.length === 0) {
@@ -145,22 +122,31 @@ async function runSummary(sessionMeta, onRename, options = {}) {
     'Respond with ONLY valid JSON. No markdown, no explanation.',
   ].filter(l => l !== null && l !== '').join('\n');
 
-  const claudeCmd = resolveClaudeCmd();
-  console.log(`[summarizer] Calling Claude CLI (${claudeCmd}) for session ${sessionId.slice(0, 8)}`);
+  const { command, adapter, args } = createToolInvocation(tool, prompt, {
+    dangerouslySkipPermissions: true,
+    model,
+    effort,
+    thinking,
+    systemPrefix: '',
+  });
+  const resolvedCmd = resolveCommand(command);
+  const resolvedFolder = resolveCwd(folder);
+  console.log(
+    `[summarizer] Calling tool=${tool} cmd=${resolvedCmd} model=${model || 'default'} effort=${effort || 'default'} thinking=${!!thinking} for session ${sessionId.slice(0, 8)}`
+  );
 
   const subEnv = { ...process.env, PATH: fullPath };
   delete subEnv.CLAUDECODE;
   delete subEnv.CLAUDE_CODE_ENTRYPOINT;
 
   const modelText = await new Promise((resolve, reject) => {
-    const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
-    const proc = spawn(claudeCmd, args, {
+    const proc = spawn(resolvedCmd, args, {
+      cwd: resolvedFolder,
       env: subEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     proc.stdin.end();
 
-    const adapter = createClaudeAdapter();
     const rl = createInterface({ input: proc.stdout });
     const textParts = [];
 
@@ -179,7 +165,7 @@ async function runSummary(sessionMeta, onRename, options = {}) {
     });
 
     proc.on('error', (err) => {
-      console.error(`[summarizer] Claude CLI error for ${sessionId.slice(0, 8)}: ${err.message}`);
+      console.error(`[summarizer] ${tool} summary error for ${sessionId.slice(0, 8)}: ${err.message}`);
       reject(err);
     });
 
@@ -189,7 +175,7 @@ async function runSummary(sessionMeta, onRename, options = {}) {
         if (evt.type === 'message' && evt.role === 'assistant') textParts.push(evt.content || '');
       }
       if (code !== 0 && textParts.length === 0) {
-        reject(new Error(`Claude exited with code ${code}`));
+        reject(new Error(`${tool} exited with code ${code}`));
       } else {
         resolve(textParts.join(''));
       }
@@ -222,6 +208,7 @@ async function runSummary(sessionMeta, onRename, options = {}) {
       updatedAt: Date.now(),
     };
     saveSidebarState(state);
+    broadcastAll({ type: 'sidebar_update', state });
     console.log(`[summarizer] Updated sidebar for session ${sessionId.slice(0, 8)}: ${summary.lastAction}`);
   }
 

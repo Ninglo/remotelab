@@ -8,7 +8,7 @@ import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
 import { statusEvent } from './normalizer.mjs';
 import { getToolCommand, fullPath } from '../lib/tools.mjs';
 
-function resolveCwd(folder) {
+export function resolveCwd(folder) {
   if (!folder || folder === '~') return homedir();
   if (folder.startsWith('~/')) return join(homedir(), folder.slice(2));
   return resolve(folder);
@@ -19,7 +19,7 @@ const TAG = '[process-runner]';
 /**
  * Resolve a command name to its full absolute path.
  */
-function resolveCommand(cmd) {
+export function resolveCommand(cmd) {
   const home = process.env.HOME || '';
   const isMac = process.platform === 'darwin';
   const preferred = [
@@ -54,6 +54,48 @@ function resolveCommand(cmd) {
     console.log(`${TAG} Could not resolve "${cmd}", using bare name`);
     return cmd;
   }
+}
+
+export function createToolInvocation(toolId, prompt, options = {}) {
+  const command = getToolCommand(toolId);
+  const isClaudeFamily = ['claude'].includes(toolId);
+  const isCodexFamily = ['codex'].includes(toolId);
+
+  let adapter;
+  let args;
+
+  if (isClaudeFamily) {
+    adapter = createClaudeAdapter();
+    args = buildClaudeArgs(prompt, {
+      dangerouslySkipPermissions: options.dangerouslySkipPermissions,
+      resume: options.claudeSessionId,
+      maxTurns: options.maxTurns,
+      continue: options.continue,
+      allowedTools: options.allowedTools,
+      thinking: options.thinking,
+      model: options.model,
+    });
+  } else if (isCodexFamily) {
+    adapter = createCodexAdapter();
+    args = buildCodexArgs(prompt, {
+      threadId: options.codexThreadId,
+      model: options.model,
+      reasoningEffort: options.effort,
+      systemPrefix: options.systemPrefix,
+    });
+  } else {
+    adapter = createClaudeAdapter();
+    args = buildClaudeArgs(prompt, {
+      dangerouslySkipPermissions: options.dangerouslySkipPermissions,
+      maxTurns: options.maxTurns,
+      continue: options.continue,
+      allowedTools: options.allowedTools,
+      thinking: options.thinking,
+      model: options.model,
+    });
+  }
+
+  return { command, adapter, args, isClaudeFamily, isCodexFamily };
 }
 
 /**
@@ -98,40 +140,19 @@ function codexTurnLooksIncomplete(lastAgentMessage, hadFileChanges, hadCommands)
 }
 
 export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {}) {
-  const command = getToolCommand(toolId);
-  const isClaudeFamily = ['claude'].includes(toolId);
-  const isCodexFamily = ['codex'].includes(toolId);
   const hasImages = options.images && options.images.length > 0;
 
   // For all tools: prepend image file paths to prompt
   const effectivePrompt = hasImages ? prependImagePaths(prompt, options.images) : prompt;
 
-  let adapter;
-  let args;
-
-  if (isClaudeFamily) {
-    adapter = createClaudeAdapter();
-    args = buildClaudeArgs(effectivePrompt, {
-      dangerouslySkipPermissions: true,
-      resume: options.claudeSessionId,
-      thinking: options.thinking,
-      model: options.model,
-    });
-  } else if (isCodexFamily) {
-    adapter = createCodexAdapter();
-    args = buildCodexArgs(effectivePrompt, {
-      threadId: options.codexThreadId,
-      model: options.model,
-      reasoningEffort: options.effort,
-    });
-  } else {
-    adapter = createClaudeAdapter();
-    args = buildClaudeArgs(effectivePrompt, {
-      dangerouslySkipPermissions: true,
-      thinking: options.thinking,
-      model: options.model,
-    });
-  }
+  const { command, adapter, args, isClaudeFamily, isCodexFamily } = createToolInvocation(toolId, effectivePrompt, {
+    dangerouslySkipPermissions: true,
+    claudeSessionId: options.claudeSessionId,
+    codexThreadId: options.codexThreadId,
+    thinking: options.thinking,
+    model: options.model,
+    effort: options.effort,
+  });
 
   const resolvedCmd = resolveCommand(command);
   const resolvedFolder = resolveCwd(folder);
@@ -184,10 +205,12 @@ export function spawnTool(toolId, folder, prompt, onEvent, onExit, options = {})
         if (isClaudeFamily && !state.capturedClaudeSessionId && obj.session_id) {
           state.capturedClaudeSessionId = obj.session_id;
           console.log(`${TAG} Captured Claude session_id: ${state.capturedClaudeSessionId}`);
+          options.onResumeIds?.({ claudeSessionId: state.capturedClaudeSessionId });
         }
         if (isCodexFamily && !state.capturedCodexThreadId && obj.type === 'thread.started' && obj.thread_id) {
           state.capturedCodexThreadId = obj.thread_id;
           console.log(`${TAG} Captured Codex thread_id: ${state.capturedCodexThreadId}`);
+          options.onResumeIds?.({ codexThreadId: state.capturedCodexThreadId });
         }
 
         // Track what this turn actually did

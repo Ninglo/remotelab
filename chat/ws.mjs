@@ -1,9 +1,11 @@
 import { WebSocketServer } from 'ws';
 import { isAuthenticated, getAuthSession, parseCookies } from '../lib/auth.mjs';
+import { setWss } from './ws-clients.mjs';
 import {
   createSession, getSession, listSessions, listArchivedSessions,
   archiveSession, unarchiveSession,
   subscribe, unsubscribe, sendMessage, cancelSession, getHistory,
+  resumeInterruptedSession,
   renameSession, compactSession, dropToolUse,
 } from './session-manager.mjs';
 
@@ -12,6 +14,7 @@ import {
  */
 export function attachWebSocket(server) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 10 * 1024 * 1024 });
+  setWss(wss);
 
   server.on('upgrade', (req, socket, head) => {
     // Only handle /ws path
@@ -83,7 +86,7 @@ function wsSend(ws, data) {
 }
 
 // Actions allowed for visitors (scoped to their assigned session)
-const VISITOR_ALLOWED = new Set(['attach', 'send', 'cancel']);
+const VISITOR_ALLOWED = new Set(['attach', 'send', 'cancel', 'resume_interrupted']);
 
 function handleMessage(ws, msg, ctx) {
   const { role, authSession } = ctx;
@@ -214,6 +217,18 @@ function handleMessage(ws, msg, ctx) {
         return;
       }
       cancelSession(sessionId);
+      break;
+    }
+
+    case 'resume_interrupted': {
+      const sessionId = ctx.getAttached();
+      if (!sessionId) {
+        wsSend(ws, { type: 'error', message: 'Not attached to a session' });
+        return;
+      }
+      if (!resumeInterruptedSession(sessionId)) {
+        wsSend(ws, { type: 'error', message: 'Interrupted run is not recoverable' });
+      }
       break;
     }
 

@@ -187,6 +187,7 @@ export function buildCodexArgs(prompt, options = {}) {
 
   args.push('--json');
   args.push('--dangerously-bypass-approvals-and-sandbox');
+  args.push('--skip-git-repo-check');
 
   if (options.model) {
     args.push('-m', options.model);
@@ -195,7 +196,7 @@ export function buildCodexArgs(prompt, options = {}) {
     args.push('-c', `model_reasoning_effort=${options.reasoningEffort}`);
   }
 
-  const effectivePrompt = CODEX_SYSTEM_PREFIX + prompt;
+  const effectivePrompt = (options.systemPrefix ?? CODEX_SYSTEM_PREFIX) + prompt;
 
   if (options.threadId) {
     args.push('resume', options.threadId, effectivePrompt);
