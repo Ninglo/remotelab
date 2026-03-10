@@ -300,17 +300,10 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Before concluding that Cloudflare control is unavailable, check both surfaces separately: `cloudflared tunnel list` / `cloudflared tunnel info ...` for tunnel control, and `wrangler whoami` for Worker/API deploy auth.
 - This distinction matters for staged rollouts: tunnel/webhook exposure may already be possible while Email Routing or Worker deployment still needs a one-time operator login.
 
-### Forward Email Webhooks Can Bypass Missing Cloudflare Email Routing Permissions (2026-03-09)
-- If you control DNS for a zone but lack Cloudflare Email Routing API access, `Forward Email` can still provide inbound mail delivery using only MX + TXT records such as `forward-email=alias:https://your-webhook.example.com/path`.
-- This is a practical way to bootstrap an AI mailbox: inbound mail hits a self-hosted HTTPS webhook, then the local runtime can enforce allowlist and manual-review gates before any AI processing.
-- Forward Email's own webhook docs say free-plan inbound webhook requests can be verified by reverse PTR to `mx1.forwardemail.net` or `mx2.forwardemail.net`, while paid plans can additionally verify `X-Webhook-Signature` with a per-domain key.
-- Do not require forward-confirming those PTR hostnames against current A records on machines whose resolver/network synthesizes placeholder addresses (for example `198.18.x.x` responses), because genuine Forward Email webhook source IPs can fail that check and real mail will be rejected.
-- A practical verifier order is: loopback for local tests, trusted PTR host match for `mx1`/`mx2`/`smtp`, optional signature verification when available, and current-hostname-IP matching only as a secondary fallback.
-
-### Forward Email Free Tier Can Reject Entire TLDs Before Your Webhook Ever Runs (2026-03-09)
-- A healthy webhook, working tunnel, and correct MX/TXT records are still not enough to prove inbound delivery with `Forward Email`.
-- On the free tier, recipient domains are limited to Forward Email's published allowlist of TLDs. Domains like `.win` bounce at SMTP time with `550 5.1.1 ... requires an upgrade to Enhanced Protection` before any webhook call reaches your machine.
-- When bootstrapping an AI mailbox on Forward Email, validate the root TLD against `https://forwardemail.net/faq#what-domain-name-extensions-can-be-used-for-free` and surface that compatibility check in local status tooling instead of claiming the mailbox is live based only on webhook health.
+### Email Replies Must Preserve Empty Subjects For Threading (2026-03-10)
+- For mailbox reply automation, do not synthesize a fallback subject like `Reply from Rowan` when the inbound email had no `Subject`.
+- Even with correct `In-Reply-To` and `References`, changing an empty subject into a new non-empty subject can make clients like Gmail open a fresh conversation instead of keeping the visible thread continuous.
+- Allow empty `Subject:` headers on reply-mode raw MIME sends; only require a subject for brand-new outbound emails that are not replying into an existing thread.
 
 ### `cloudflared tunnel route dns` Can Mislead When A Default Config Pins Another Tunnel (2026-03-09)
 - If `~/.cloudflared/config.yml` already specifies a tunnel, `cloudflared tunnel route dns <tunnel> <hostname>` may create a DNS record pointing at the config-pinned tunnel instead of the tunnel name you expected.
@@ -338,3 +331,8 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - In RemoteLab, the chat input control row naturally grows over time as tool/model/thinking/status/resume/compact actions are added.
 - On mobile, wrapping or clipping these controls is worse than horizontal scrolling because the right-side actions become unreachable precisely when they matter most.
 - A robust pattern is: keep the row single-line, split it into left/right flex groups with `min-width: max-content`, and make the parent row `overflow-x: auto` with touch scrolling enabled.
+
+### IM Connectors Should Ack Fast And Finish In Background (2026-03-10)
+- Chat-platform event subscriptions often require handlers to finish within a few seconds and may retry on timeout, so do not hold the provider callback open while waiting for a full agent run.
+- For local-first agent products, a provider's long-connection / SDK event mode can be the fastest connector path because it avoids public webhook setup, signature verification, and payload decryption.
+- A reliable pattern is: receive event -> dedupe / enqueue immediately -> acknowledge the provider -> run the canonical session/message/run flow in background -> publish the final assistant reply afterward.

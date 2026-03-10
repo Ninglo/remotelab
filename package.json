@@ -63,6 +63,9 @@
   "scripts": {
     "start": "node auth-proxy.mjs",
     "chat": "node chat-server.mjs",
+    "feishu:check": "node scripts/feishu-check.mjs",
+    "feishu:connect": "node scripts/feishu-connector.mjs",
+    "feishu:connect:instance": "./scripts/feishu-connector-instance.sh start",
     "test": "npm run test:smoke",
     "test:smoke": "node tests/test-session-naming.mjs && node tests/test-cloudflared-config.mjs && node tests/test-history-index-contract.mjs && node tests/test-session-route-utils.mjs && node tests/test-session-external-trigger-refresh.mjs && node tests/test-session-label-prompt-context.mjs && node tests/test-agent-mailbox.mjs && node tests/test-agent-mail-worker.mjs && node tests/test-agent-mail-reply.mjs",
     "stop": "./stop.sh",
@@ -71,6 +74,7 @@
     "prepublishOnly": "chmod +x cli.js setup.sh start.sh stop.sh claude-ttyd-session"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "web-push": "^3.6.7",
     "ws": "^8.19.0"
   }

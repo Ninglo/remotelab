@@ -8,6 +8,8 @@ import {
   DEFAULT_ROOT_DIR,
   buildEmailThreadExternalTriggerId,
   buildThreadReferencesHeader,
+  decodeMaybeEncodedMailboxText,
+  extractNormalizedMailboxContent,
   loadMailboxAutomation,
   listQueue,
   updateQueueItem,
@@ -111,7 +113,7 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
 
 function buildReplySubject(subject) {
   const trimmed = trimString(subject);
-  if (!trimmed) return 'Reply from Rowan';
+  if (!trimmed) return '';
   return /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
 }
 
@@ -130,12 +132,34 @@ function buildSessionDescription(item, fallbackDescription) {
   return trimString(`Inbound email${sender ? ` from ${sender}` : ''}${subject ? ` about ${subject}` : ''}`) || fallback;
 }
 
+function extractReadableBodyFromRaw(item) {
+  const rawPath = trimString(item?.storage?.rawPath);
+  if (!rawPath) {
+    return '';
+  }
+
+  try {
+    const normalized = extractNormalizedMailboxContent({
+      rawMessage: readFileSync(rawPath, 'utf8'),
+    });
+    return trimString(normalized.messageText) || trimString(normalized.previewText);
+  } catch {
+    return '';
+  }
+}
+
 function buildReplyPrompt(item) {
   const sender = trimString(item?.message?.fromAddress);
   const subject = trimString(item?.message?.subject);
   const date = trimString(item?.message?.date);
   const messageId = trimString(item?.message?.messageId);
-  const body = trimString(item?.content?.extractedText) || trimString(item?.content?.preview);
+  const rawDerivedBody = extractReadableBodyFromRaw(item);
+  const bodySource = trimString(item?.content?.extractedText) || trimString(item?.content?.preview);
+  const decodedStoredBody = decodeMaybeEncodedMailboxText(bodySource, {
+    contentType: trimString(item?.message?.headers?.['content-type']) || 'text/plain; charset=UTF-8',
+    transferEncoding: trimString(item?.message?.headers?.['content-transfer-encoding']),
+  });
+  const body = rawDerivedBody || decodedStoredBody;
 
   return [
     'An approved inbound email needs a reply.',

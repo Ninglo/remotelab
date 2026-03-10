@@ -29,9 +29,7 @@ function firstNonEmpty(...values) {
 }
 
 function normalizeSubject(value) {
-  const subject = trimString(value);
-  if (!subject) return 'Reply from Rowan';
-  return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+  return trimString(value);
 }
 
 function targetStateIsStale(state) {

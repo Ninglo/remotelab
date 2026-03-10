@@ -205,6 +205,76 @@ try {
   assert.equal(updatedCloudflare?.automation?.status, 'reply_sent');
   assert.equal(updatedCloudflare?.automation?.runId, cloudflareRun.id);
   assert.equal(updatedCloudflare?.automation?.delivery?.provider, 'cloudflare_worker');
+
+  const ingestedBlankSubject = ingestRawMessage(
+    [
+      'From: owner@example.com',
+      'To: rowan@example.com',
+      'Date: Tue, 10 Mar 2026 03:05:00 +0800',
+      'Message-ID: <mail-cloudflare-blank-subject@example.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'please preserve the empty subject when replying.',
+    ].join('\n'),
+    'cloudflare-worker-blank-subject.eml',
+    mailboxRoot,
+    { text: 'please preserve the empty subject when replying.' },
+  );
+
+  const approvedBlankSubject = approveMessage(ingestedBlankSubject.id, mailboxRoot, 'tester');
+  const blankSubjectRequestId = `mailbox_reply_${approvedBlankSubject.id}`;
+  const blankSubjectSession = await createSession(workspace, 'codex', 'Cloudflare blank subject reply test', {
+    completionTargets: [{
+      type: 'email',
+      requestId: blankSubjectRequestId,
+      to: 'owner@example.com',
+      subject: '',
+      inReplyTo: '<mail-cloudflare-blank-subject@example.com>',
+      references: '<mail-cloudflare-blank-subject@example.com>',
+      mailboxRoot,
+      mailboxItemId: approvedBlankSubject.id,
+    }],
+  });
+  const blankSubjectRun = await createRun({
+    status: {
+      sessionId: blankSubjectSession.id,
+      requestId: blankSubjectRequestId,
+      state: 'completed',
+      tool: 'codex',
+    },
+    manifest: {
+      sessionId: blankSubjectSession.id,
+      requestId: blankSubjectRequestId,
+      folder: workspace,
+      tool: 'codex',
+      prompt: 'reply to the blank-subject email via Cloudflare Worker',
+      options: {},
+    },
+  });
+
+  await appendEvent(blankSubjectSession.id, messageEvent('assistant', 'Blank subject reply successful.', undefined, {
+    runId: blankSubjectRun.id,
+    requestId: blankSubjectRequestId,
+  }));
+
+  const blankSubjectDeliveries = await dispatchSessionCompletionTargets(blankSubjectSession, blankSubjectRun);
+  assert.equal(blankSubjectDeliveries.length, 1);
+  assert.equal(blankSubjectDeliveries[0].state, 'sent');
+  assert.equal(requests.length, 2);
+  assert.deepEqual(JSON.parse(requests[1].body), {
+    to: ['owner@example.com'],
+    from: 'rowan@example.com',
+    subject: '',
+    text: 'Blank subject reply successful.',
+    inReplyTo: '<mail-cloudflare-blank-subject@example.com>',
+    references: '<mail-cloudflare-blank-subject@example.com>',
+  });
+
+  const updatedBlankSubject = findQueueItem(approvedBlankSubject.id, mailboxRoot)?.item;
+  assert.equal(updatedBlankSubject?.status, 'reply_sent');
+  assert.equal(updatedBlankSubject?.automation?.status, 'reply_sent');
+  assert.equal(updatedBlankSubject?.automation?.runId, blankSubjectRun.id);
+  assert.equal(updatedBlankSubject?.automation?.delivery?.provider, 'cloudflare_worker');
 } finally {
   server.close();
   rmSync(tempHome, { recursive: true, force: true });

@@ -392,25 +392,12 @@ export async function getHistorySnapshot(sessionId) {
   };
 }
 
-export async function saveHistory(sessionId, events) {
-  return runSessionMutation(sessionId, async () => {
-    await clearHistoryUnlocked(sessionId);
-    return appendEventsUnlocked(sessionId, events || []);
-  });
-}
-
 export async function appendEvent(sessionId, event) {
   return runSessionMutation(sessionId, async () => appendEventUnlocked(sessionId, event));
 }
 
 export async function appendEvents(sessionId, events) {
   return runSessionMutation(sessionId, async () => appendEventsUnlocked(sessionId, events));
-}
-
-export async function readEventBySeq(sessionId, seq, options = {}) {
-  const stored = await loadStoredEvent(sessionId, seq);
-  if (!stored) return null;
-  return options.includeBodies === false ? stored : hydrateEvent(sessionId, stored);
 }
 
 export async function readEventsAfter(sessionId, afterSeq = 0, options = {}) {
@@ -468,12 +455,5 @@ export async function clearContextHead(sessionId) {
   return runSessionMutation(sessionId, async () => {
     await clearContextUnlocked(sessionId);
     return null;
-  });
-}
-
-export async function clearHistory(sessionId) {
-  return runSessionMutation(sessionId, async () => {
-    await clearHistoryUnlocked(sessionId);
-    return true;
   });
 }

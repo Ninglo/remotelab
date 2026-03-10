@@ -86,10 +86,6 @@ export function triggerSessionLabelSuggestion(sessionMeta, onRename, options = {
   });
 }
 
-export function triggerTitleSuggestion(sessionMeta, onRename, options = {}) {
-  return triggerSessionLabelSuggestion(sessionMeta, onRename, options);
-}
-
 async function runToolJsonPrompt(sessionMeta, prompt) {
   const {
     id: sessionId,
@@ -444,15 +440,6 @@ async function runSummary(sessionMeta, onRename, options = {}) {
 
 export async function getSidebarState() {
   return loadSidebarState();
-}
-
-export async function removeSidebarEntry(sessionId) {
-  const state = await loadSidebarState();
-  if (state.sessions[sessionId]) {
-    delete state.sessions[sessionId];
-    await saveSidebarState(state);
-    broadcastSidebarInvalidation();
-  }
 }
 
 export async function renameSidebarEntry(sessionId, name) {

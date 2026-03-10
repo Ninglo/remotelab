@@ -18,6 +18,7 @@ import {
   compactSession,
   createSession,
   dropToolUse,
+  forkSession,
   getHistory,
   getRunState,
   getSession,
@@ -60,6 +61,13 @@ const staticMimeTypes = {
   'icon.svg': 'image/svg+xml',
   'apple-touch-icon.png': 'image/png',
   'chat.js': 'application/javascript',
+  'chat/bootstrap.js': 'application/javascript',
+  'chat/session-http.js': 'application/javascript',
+  'chat/tooling.js': 'application/javascript',
+  'chat/realtime.js': 'application/javascript',
+  'chat/ui.js': 'application/javascript',
+  'chat/compose.js': 'application/javascript',
+  'chat/init.js': 'application/javascript',
   'marked.min.js': 'application/javascript',
   'share.js': 'application/javascript',
   'sw.js': 'application/javascript',
@@ -235,6 +243,7 @@ function serializeJsonForScript(value) {
 function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/sessions' && (method === 'GET' || method === 'POST')) return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
+  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/fork') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && method === 'PATCH') return true;
   if (pathname === '/api/models' && method === 'GET') return true;
   if (pathname === '/api/tools' && (method === 'GET' || method === 'POST')) return true;
@@ -622,6 +631,30 @@ export async function handleRequest(req, res) {
         return;
       }
       writeJson(res, 200, { ok: true, session: await getSession(sessionId) });
+      return;
+    }
+
+    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'fork') {
+      if (!requireSessionAccess(res, authSession, sessionId)) return;
+      const source = await getSession(sessionId);
+      if (!source) {
+        writeJson(res, 404, { error: 'Session not found' });
+        return;
+      }
+      if (source.visitorId) {
+        writeJson(res, 409, { error: 'Visitor sessions cannot be forked' });
+        return;
+      }
+      if (source.status === 'running') {
+        writeJson(res, 409, { error: 'Session is running' });
+        return;
+      }
+      const session = await forkSession(sessionId);
+      if (!session) {
+        writeJson(res, 409, { error: 'Unable to fork session' });
+        return;
+      }
+      writeJson(res, 201, { session });
       return;
     }
   }

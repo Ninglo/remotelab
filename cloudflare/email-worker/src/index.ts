@@ -169,6 +169,9 @@ async function handleOutboundSend(request: Request, env: Env): Promise<Response>
   const recipients = normalizeRecipients(payload.to);
   const subject = trimString(payload.subject);
   const text = trimString(payload.text);
+  const inReplyTo = trimString(payload.inReplyTo);
+  const references = trimString(payload.references) || inReplyTo;
+  const useRawMimeReply = Boolean(inReplyTo || references || !subject);
 
   if (!sender) {
     return jsonResponse({ error: 'A sender address is required' }, 400);
@@ -179,7 +182,7 @@ async function handleOutboundSend(request: Request, env: Env): Promise<Response>
   if (recipients.length === 0) {
     return jsonResponse({ error: 'At least one recipient is required' }, 400);
   }
-  if (!subject) {
+  if (!subject && !useRawMimeReply) {
     return jsonResponse({ error: 'A subject is required' }, 400);
   }
   if (!text) {
@@ -187,11 +190,9 @@ async function handleOutboundSend(request: Request, env: Env): Promise<Response>
   }
 
   const generatedMessageId = buildGeneratedMessageId(sender);
-  const inReplyTo = trimString(payload.inReplyTo);
-  const references = trimString(payload.references) || inReplyTo;
 
   try {
-    if (inReplyTo || references) {
+    if (useRawMimeReply) {
       for (const recipient of recipients) {
         const rawMime = buildPlainTextMime({
           fromAddress: sender,

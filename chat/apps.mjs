@@ -78,14 +78,3 @@ export async function deleteApp(id) {
     return true;
   });
 }
-
-export async function regenerateShareToken(id) {
-  return runAppsMutation(async () => {
-    const apps = await loadApps();
-    const idx = apps.findIndex((app) => app.id === id && !app.deleted);
-    if (idx === -1) return null;
-    apps[idx].shareToken = `share_${randomBytes(32).toString('hex')}`;
-    await saveApps(apps);
-    return apps[idx];
-  });
-}

@@ -181,6 +181,25 @@ function generateId() {
   return randomBytes(16).toString('hex');
 }
 
+function buildForkSessionName(session) {
+  const sourceName = typeof session?.name === 'string' ? session.name.trim() : '';
+  return `fork - ${sourceName || 'session'}`;
+}
+
+function sanitizeForkedEvent(event) {
+  if (!event || typeof event !== 'object') return null;
+  const next = JSON.parse(JSON.stringify(event));
+  delete next.seq;
+  delete next.runId;
+  delete next.requestId;
+  delete next.bodyRef;
+  delete next.bodyField;
+  delete next.bodyAvailable;
+  delete next.bodyLoaded;
+  delete next.bodyBytes;
+  return next;
+}
+
 function createInternalRequestId(prefix = 'internal') {
   return `${prefix}_${Date.now().toString(36)}_${randomBytes(6).toString('hex')}`;
 }
@@ -1094,6 +1113,10 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (extra.visitorId) session.visitorId = extra.visitorId;
     if (extra.systemPrompt) session.systemPrompt = extra.systemPrompt;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
+    if (extra.forkedFromSessionId) session.forkedFromSessionId = extra.forkedFromSessionId;
+    if (Number.isInteger(extra.forkedFromSeq)) session.forkedFromSeq = extra.forkedFromSeq;
+    if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;
+    if (extra.forkedAt) session.forkedAt = extra.forkedAt;
     if (completionTargets.length > 0) session.completionTargets = completionTargets;
 
     metas.push(session);
@@ -1206,7 +1229,7 @@ export async function updateSessionGrouping(id, patch = {}) {
   return enrichSessionMeta(result.meta);
 }
 
-export async function updateSessionTool(id, tool) {
+async function updateSessionTool(id, tool) {
   const nextTool = typeof tool === 'string' ? tool.trim() : '';
   if (!nextTool) return null;
 
@@ -1426,13 +1449,52 @@ export async function cancelActiveRun(sessionId) {
   return updated;
 }
 
-export async function cancelSession(sessionId) {
-  return cancelActiveRun(sessionId);
-}
-
 export async function getHistory(sessionId) {
   await reconcileSessionMeta(await findSessionMeta(sessionId));
   return loadHistory(sessionId);
+}
+
+export async function forkSession(sessionId) {
+  const source = await getSession(sessionId);
+  if (!source) return null;
+  if (source.visitorId) return null;
+  if (source.status === 'running') return null;
+
+  const [history, contextHead] = await Promise.all([
+    loadHistory(sessionId, { includeBodies: true }),
+    getContextHead(sessionId),
+  ]);
+
+  const child = await createSession(source.folder, source.tool, buildForkSessionName(source), {
+    group: source.group || '',
+    description: source.description || '',
+    appId: source.appId || '',
+    systemPrompt: source.systemPrompt || '',
+    forkedFromSessionId: source.id,
+    forkedFromSeq: source.latestSeq || 0,
+    rootSessionId: source.rootSessionId || source.id,
+    forkedAt: nowIso(),
+  });
+  if (!child) return null;
+
+  const copiedEvents = history
+    .map((event) => sanitizeForkedEvent(event))
+    .filter(Boolean);
+  if (copiedEvents.length > 0) {
+    await appendEvents(child.id, copiedEvents);
+  }
+
+  if (contextHead) {
+    await setContextHead(child.id, {
+      ...contextHead,
+      updatedAt: contextHead.updatedAt || nowIso(),
+    });
+  } else {
+    await clearContextHead(child.id);
+  }
+
+  broadcastSessionsInvalidation();
+  return getSession(child.id);
 }
 
 export async function dropToolUse(sessionId) {

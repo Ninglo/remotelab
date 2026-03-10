@@ -5,8 +5,9 @@
 If you need the current system first, start with:
 
 1. `../AGENTS.md`
-2. `../docs/project-architecture.md`
-3. `current/core-domain-contract.md`
+2. `../README.md` / `../README.zh.md`
+3. `../docs/project-architecture.md`
+4. `current/core-domain-contract.md`
 
 ## Buckets
 
@@ -62,6 +63,15 @@ Current exceptions:
 
 - `message-transport-architecture.md` — still referenced by ongoing design threads and left in place for path stability
 - `feishu-bot-connector.md` — intentionally left untouched while Feishu research is still in motion
+
+## Promotion And Trimming Rule
+
+When a note stops being “just a note,” do not leave it as the only place the truth lives.
+
+- if a note becomes current shipped behavior, summarize it in `../docs/project-architecture.md` and update `../README.md` / `../README.zh.md` when the change is user-visible
+- if a note is mostly current operational truth but too specialized for `docs/`, move it under `current/`
+- if a note conflicts with `../AGENTS.md`, `../docs/project-architecture.md`, or `current/core-domain-contract.md`, treat the note as stale until it is updated or archived
+- if a note only preserves landed rationale, move it to `archive/` instead of keeping it in a current bucket
 
 ## Authoring Rule
 

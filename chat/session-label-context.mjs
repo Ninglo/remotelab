@@ -160,7 +160,7 @@ function scoreScopeRouterEntry(entry, context = {}) {
   return score;
 }
 
-export function buildScopeRouterPromptContext(markdown, context = {}) {
+function buildScopeRouterPromptContext(markdown, context = {}) {
   const entries = parseScopeRouterEntries(markdown);
   if (entries.length === 0) return '';
 
@@ -202,7 +202,7 @@ function sortSessionsByRecency(a, b) {
   return bTime - aTime;
 }
 
-export function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
+function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
   if (!Array.isArray(sessions)) return '';
 
   const relevant = sessions

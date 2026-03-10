@@ -6,8 +6,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="remotelab-build" content="{{BUILD_TITLE}}">
-<link rel="manifest" href="/manifest.json?v={{ASSET_VERSION}}">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>RemoteLab Chat</title>
 <style nonce="{{NONCE}}">
 :root {
@@ -986,6 +986,7 @@ body.visitor-mode .header #menuBtn { display: none !important; }
 <div class="header">
   <button class="header-btn" id="menuBtn" title="Sessions">&#9776;</button>
   <h1 id="headerTitle">RemoteLab Chat</h1>
+  <button class="header-share-btn" id="forkSessionBtn" title="Create an isolated copy of this session" style="display:none">Fork</button>
   <button class="header-share-btn" id="shareSnapshotBtn" title="Create a read-only snapshot link" style="display:none">Share</button>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText">disconnected</span>
@@ -1141,7 +1142,13 @@ body.visitor-mode .header #menuBtn { display: none !important; }
 </div>
 
 <script nonce="{{NONCE}}">window.__REMOTELAB_BUILD__ = {{BUILD_JSON}};</script>
-<script src="/marked.min.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="/marked.min.js" nonce="{{NONCE}}"></script>
+<script src="/chat/bootstrap.js" nonce="{{NONCE}}"></script>
+<script src="/chat/session-http.js" nonce="{{NONCE}}"></script>
+<script src="/chat/tooling.js" nonce="{{NONCE}}"></script>
+<script src="/chat/realtime.js" nonce="{{NONCE}}"></script>
+<script src="/chat/ui.js" nonce="{{NONCE}}"></script>
+<script src="/chat/compose.js" nonce="{{NONCE}}"></script>
+<script src="/chat/init.js" nonce="{{NONCE}}"></script>
 </body>
 </html>

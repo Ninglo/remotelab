@@ -28,6 +28,14 @@ When docs overlap, use this order:
 3. `notes/current/core-domain-contract.md` — current domain/refactor baseline
 4. other `notes/` docs — deeper discussion, interpreted by their bucket (`current`, `directional`, `archive`, `local`)
 
+### 0.1 Surface docs that should move with architecture
+
+When the architecture changes materially, keep these docs aligned as part of the same pass:
+
+- `README.md` / `README.zh.md` — user-facing product shape, setup path, and operator expectations
+- `docs/README.md` / `notes/README.md` — doc taxonomy and cleanup rules
+- `AGENTS.md` — repo operating rules and self-hosting workflow constraints
+
 ---
 
 ## 1. What RemoteLab is
@@ -67,13 +75,13 @@ If you need to understand the repo fast, read in this order:
 3. `chat-server.mjs`
 4. `chat/router.mjs`
 5. `chat/session-manager.mjs`
-6. `static/chat.js`
+6. `static/chat/` (or `static/chat.js` as the compatibility loader)
 
 Then branch by the change you need:
 
 - runtime / message execution → `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `chat/adapters/*.mjs`
 - HTTP / API / role checks → `chat/router.mjs`, `lib/auth.mjs`, `chat/middleware.mjs`
-- UI / mobile behavior → `templates/chat.html`, `static/chat.js`, `static/sw.js`
+- UI / mobile behavior → `templates/chat.html`, `static/chat/`, `static/sw.js`
 - Apps / visitor flow → `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`
 - progress sidebar / rename / grouping → `chat/summarizer.mjs`, `chat/session-naming.mjs`
 - memory activation / startup prompt → `chat/system-prompt.mjs`, `notes/current/memory-activation-architecture.md`
@@ -199,7 +207,8 @@ Responsible for rendering HTTP-derived state in a mobile-friendly UI.
 - `templates/chat.html`
 - `templates/share.html`
 - `templates/login.html`
-- `static/chat.js`
+- `static/chat/`
+- `static/chat.js` (compatibility loader)
 - `static/share.js`
 - `static/sw.js`
 
@@ -464,7 +473,7 @@ This is the most important flow in the current architecture.
 
 ### 8.1 Browser boot
 
-1. Browser loads `templates/chat.html` and `static/chat.js`
+1. Browser loads `templates/chat.html` and `static/chat.js`, which boots the module split under `static/chat/`
 2. Frontend calls `/api/auth/me` to detect owner vs visitor
 3. Frontend bootstraps via HTTP:
    - list sessions
@@ -476,7 +485,7 @@ This is the most important flow in the current architecture.
 
 ### 8.2 Send message
 
-1. `static/chat.js` generates a `requestId`
+1. the chat frontend (`static/chat/` via `static/chat.js`) generates a `requestId`
 2. browser `POST`s to `/api/sessions/:id/messages`
 3. `chat/router.mjs` validates access and payload
 4. router calls `submitHttpMessage()` in `chat/session-manager.mjs`
@@ -656,7 +665,7 @@ The frontend is intentionally simple but still architecturally important.
 - no framework
 - no bundler
 - no compile step
-- one large browser controller script: `static/chat.js`
+- modular browser controller files under `static/chat/`, booted by `static/chat.js`
 
 ### 10.2 Core frontend rules
 
@@ -668,7 +677,7 @@ The frontend is intentionally simple but still architecturally important.
 
 ### 10.3 Main frontend responsibilities
 
-`static/chat.js` is responsible for:
+The main chat frontend (`static/chat/`, loaded by `static/chat.js`) is responsible for:
 
 - bootstrapping owner vs visitor mode
 - listing sessions and rendering the sidebar
@@ -833,16 +842,16 @@ Use this as the practical code-finding guide.
 | If you need to change... | Open these files first |
 |---|---|
 | login, cookies, owner/visitor roles | `lib/auth.mjs`, `chat/router.mjs`, `chat/middleware.mjs` |
-| session creation / rename / archive | `chat/router.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat.js` |
-| message submission or run lifecycle | `static/chat.js`, `chat/router.mjs`, `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs` |
+| session creation / rename / archive | `chat/router.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
+| message submission or run lifecycle | `static/chat/`, `chat/router.mjs`, `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs` |
 | tool execution details | `chat/process-runner.mjs`, `chat/adapters/*.mjs`, `lib/tools.mjs` |
 | restart recovery behavior | `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `notes/archive/http-runtime-phase1.md` |
 | event persistence / long-output handling | `chat/history.mjs`, `chat/runs.mjs`, `chat/fs-utils.mjs` |
-| sidebar summaries / auto-rename / grouping | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat.js` |
-| App templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat.js`, `docs/creating-apps.md` |
+| sidebar summaries / auto-rename / grouping | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
+| App templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
 | share snapshots | `chat/shares.mjs`, `templates/share.html`, `static/share.js` |
-| push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat.js` |
-| model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat.js` |
+| push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
+| model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat/` |
 | pointer-first memory startup | `chat/system-prompt.mjs`, `notes/current/memory-activation-architecture.md` |
 | inbound/outbound mail automation | `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-outbound.mjs`, `chat/completion-targets.mjs`, `scripts/agent-mail-*.mjs` |
 | frozen fallback terminal plane | `auth-proxy.mjs`, `lib/router.mjs`, `lib/sessions.mjs`, `lib/proxy.mjs` — only if you truly mean to touch the emergency plane |
@@ -865,11 +874,12 @@ High-value clusters:
   - `tests/test-session-route-utils.mjs`
   - `tests/test-session-tool-reuse.mjs`
 - Codex integration and resume behavior:
-  - `tests/test-codex-fixed.mjs`
+  - `tests/test-codex-singleshot.mjs`
   - `tests/test-codex-resume.mjs`
   - `tests/test-codex-resume-bug.mjs`
   - `tests/test-codex-multistep.mjs`
   - `tests/test-codex-realworld.mjs`
+  - `tests/test-codex-issues.mjs`
 - sharing and push-adjacent surfaces:
   - `tests/test-share-snapshot.mjs`
 - agent-mail subsystem:

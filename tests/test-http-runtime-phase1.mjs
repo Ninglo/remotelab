@@ -9,7 +9,7 @@ import { spawn } from 'child_process';
 import WebSocket from 'ws';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = __dirname;
+const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
 
 function randomPort() {
@@ -592,6 +592,50 @@ async function phase10EventIndexContract() {
   }
 }
 
+async function phase11ForkSession() {
+  const { home } = setupTempHome();
+  const port = randomPort();
+  const server = await startServer({ home, port, delayMs: 1200 });
+  try {
+    const session = await createSession(port, { name: 'Fork parent', group: 'Tests', description: 'Fork route contract' });
+    const submit = await submitMessage(port, session.id, 'req-fork-parent', 'Run the fake tool before forking');
+    await waitForRunTerminal(port, submit.json.run.id);
+
+    const fork = await request(port, 'POST', `/api/sessions/${session.id}/fork`);
+    assert.equal(fork.status, 201, 'fork should create a new child session');
+    assert.ok(fork.json.session?.id, 'fork should return the child session');
+    assert.notEqual(fork.json.session.id, session.id, 'fork should create a distinct child id');
+    assert.equal(fork.json.session.name, 'fork - Fork parent', 'fork should use the fixed child naming convention');
+    assert.equal(fork.json.session.forkedFromSessionId, session.id, 'fork should record the parent session id');
+
+    const parentEvents = await getEvents(port, session.id);
+    const childEvents = await getEvents(port, fork.json.session.id);
+    assert.equal(childEvents.events.length, parentEvents.events.length, 'fork should copy the full event history');
+    assert.equal(
+      childEvents.events.some((event) => Object.prototype.hasOwnProperty.call(event, 'runId')),
+      false,
+      'forked history should strip run ids',
+    );
+    assert.equal(
+      childEvents.events.some((event) => Object.prototype.hasOwnProperty.call(event, 'requestId')),
+      false,
+      'forked history should strip request ids',
+    );
+
+    const running = await createSession(port, { name: 'Fork busy', group: 'Tests', description: 'Fork rejection while running' });
+    const runningSubmit = await submitMessage(port, running.id, 'req-fork-busy', 'slow run for rejection');
+    await waitForRunState(port, runningSubmit.json.run.id, 'running');
+    const reject = await request(port, 'POST', `/api/sessions/${running.id}/fork`);
+    assert.equal(reject.status, 409, 'fork should reject running sessions');
+    assert.equal(reject.json.error, 'Session is running');
+
+    console.log('phase11-fork-session: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 const phase = process.argv[2] || 'all';
 const phases = {
   phase1: phase1Contract,
@@ -605,6 +649,7 @@ const phases = {
   phase8: phase8CancelRecovery,
   phase9: phase9StaleResultReconciliation,
   phase10: phase10EventIndexContract,
+  phase11: phase11ForkSession,
 };
 
 if (phase === 'all') {

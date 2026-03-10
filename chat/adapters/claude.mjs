@@ -178,30 +178,3 @@ export function buildClaudeArgs(prompt, options = {}) {
 
   return args;
 }
-
-/**
- * Build args for stdin-based multi-turn (stream-json input).
- */
-export function buildClaudeStreamArgs(options = {}) {
-  const args = [
-    '-p',
-    '--output-format', 'stream-json',
-    '--input-format', 'stream-json',
-    '--verbose',
-  ];
-
-  if (options.resume) {
-    args.push('--resume', options.resume);
-  }
-  if (options.sessionId) {
-    args.push('--session-id', options.sessionId);
-  }
-  if (options.allowedTools) {
-    args.push('--allowedTools', ...options.allowedTools);
-  }
-  if (options.dangerouslySkipPermissions) {
-    args.push('--dangerously-skip-permissions');
-  }
-
-  return args;
-}

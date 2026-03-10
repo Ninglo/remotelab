@@ -32,6 +32,18 @@ ingress:
   - service: http_status:404
 `;
 
+const remotelabFallbackConfig = `tunnel: claude-code-remote
+credentials-file: /Users/example/.cloudflared/example-tunnel.json
+protocol: http2
+
+ingress:
+  - hostname: legacy.example.com
+    service: http://127.0.0.1:7690
+  - hostname: remotelab.example.com
+    service: http://127.0.0.1:7690
+  - service: http_status:404
+`;
+
 assert.deepEqual(parseCloudflaredIngress(baseConfig), [
   {
     hostname: 'terminal.example.com',
@@ -76,6 +88,15 @@ assert.equal(
     hostnameResolves: async () => true,
   }),
   null
+);
+
+assert.equal(
+  await selectCloudflaredAccessDomain(remotelabFallbackConfig, {
+    hostnameResolves: async () => {
+      throw new Error('dns unavailable');
+    },
+  }),
+  'remotelab.example.com'
 );
 
 console.log('test-cloudflared-config: ok');

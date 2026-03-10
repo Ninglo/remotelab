@@ -1,7 +1,7 @@
 export const DEFAULT_SESSION_NAME = 'new session';
-export const TEMP_SESSION_NAME_MAX_CHARS = 12;
-export const SESSION_GROUP_MAX_CHARS = 32;
-export const SESSION_DESCRIPTION_MAX_CHARS = 160;
+const TEMP_SESSION_NAME_MAX_CHARS = 12;
+const SESSION_GROUP_MAX_CHARS = 32;
+const SESSION_DESCRIPTION_MAX_CHARS = 160;
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

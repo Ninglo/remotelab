@@ -88,7 +88,8 @@ remotelab/
 │   └── proxy.mjs            # Terminal service proxy (FROZEN)
 │
 ├── static/                  # ── Frontend assets ──
-│   ├── chat.js              # Main frontend logic (1624 lines, vanilla JS)
+│   ├── chat.js              # Backward-compatible loader for split chat frontend assets
+│   ├── chat/                # Chat frontend split by concern (bootstrap / data / realtime / UI)
 │   ├── marked.min.js        # Markdown renderer
 │   ├── sw.js                # Service Worker (PWA)
 │   └── manifest.json        # PWA metadata
@@ -236,7 +237,7 @@ Shows all active sessions' status at a glance. Powered by `summarizer.mjs` — a
 
 ### P2 — Future
 - [ ] Deferred triggers (AI-initiated actions, scheduled follow-ups)
-- [ ] Session fork / hard-clone branching — copy a session into a brand-new isolated session with no shared resume/thread state so one good discussion can split into multiple independent follow-up threads; keep v1 lineage lightweight instead of adding a full tree UI immediately
+- [ ] Session fork follow-ups — extend the shipped hard-clone head-fork with optional `Fork from here`, lightweight lineage navigation, and exact historical fork support when compaction-safe snapshots exist
 - [ ] Post-LLM output processing (layered output: decision / summary / details)
 - [ ] Revisit product naming/brand and possible repo rename after the product philosophy is more mature; treat this as intentionally deferred while the product itself is still taking shape
 

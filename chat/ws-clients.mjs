@@ -19,13 +19,6 @@ export function getClientsMatching(predicate = () => true) {
   return matches;
 }
 
-export function broadcastAll(msg) {
-  const data = JSON.stringify(msg);
-  for (const client of getClientsMatching()) {
-    try { client.send(data); } catch {}
-  }
-}
-
 export function broadcastOwners(msg) {
   if (!wss) return;
   const data = JSON.stringify(msg);

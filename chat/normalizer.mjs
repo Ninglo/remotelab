@@ -1,6 +1,6 @@
 let counter = 0;
 
-export function createEvent(type, fields = {}) {
+function createEvent(type, fields = {}) {
   counter += 1;
   return {
     type,
@@ -8,10 +8,6 @@ export function createEvent(type, fields = {}) {
     timestamp: Date.now(),
     ...fields,
   };
-}
-
-export function resetCounter() {
-  counter = 0;
 }
 
 export function messageEvent(role, content, images, extra = {}) {
