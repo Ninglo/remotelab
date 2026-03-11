@@ -7,12 +7,10 @@ credentials-file: /Users/example/.cloudflared/example-tunnel.json
 protocol: http2
 
 ingress:
-  - hostname: terminal.example.com
-    service: http://127.0.0.1:7681
   - hostname: legacy.example.com
     service: http://127.0.0.1:7690
-  - hostname: test.example.com
-    service: http://127.0.0.1:7692
+  - hostname: secondary.example.com
+    service: http://127.0.0.1:7688
   - service: http_status:404
 `;
 
@@ -21,14 +19,12 @@ credentials-file: /Users/example/.cloudflared/example-tunnel.json
 protocol: http2
 
 ingress:
-  - hostname: terminal.example.com
-    service: http://127.0.0.1:7681
   - hostname: chat.example.com
     service: http://127.0.0.1:7690
   - hostname: legacy.example.com
     service: http://127.0.0.1:7690
-  - hostname: test.example.com
-    service: http://127.0.0.1:7692
+  - hostname: secondary.example.com
+    service: http://127.0.0.1:7688
   - service: http_status:404
 `;
 
@@ -46,16 +42,12 @@ ingress:
 
 assert.deepEqual(parseCloudflaredIngress(baseConfig), [
   {
-    hostname: 'terminal.example.com',
-    service: 'http://127.0.0.1:7681',
-  },
-  {
     hostname: 'legacy.example.com',
     service: 'http://127.0.0.1:7690',
   },
   {
-    hostname: 'test.example.com',
-    service: 'http://127.0.0.1:7692',
+    hostname: 'secondary.example.com',
+    service: 'http://127.0.0.1:7688',
   },
 ]);
 
@@ -84,7 +76,7 @@ assert.equal(
 );
 
 assert.equal(
-  await selectCloudflaredAccessDomain('ingress:\n  - hostname: terminal.example.com\n    service: http://127.0.0.1:7681\n', {
+  await selectCloudflaredAccessDomain('ingress:\n  - hostname: other.example.com\n    service: http://127.0.0.1:7688\n', {
     hostnameResolves: async () => true,
   }),
   null

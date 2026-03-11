@@ -826,7 +826,7 @@ That makes caching and reasoning harder.
 
 **Goal**
 
-Make sidebar/progress fully optional and clearly separate from canonical session metadata.
+Remove Progress-specific derived state and clearly separate canonical session metadata from any future secondary sidebar surface.
 
 **Why it matters**
 
@@ -846,13 +846,13 @@ The code should reflect that more clearly.
 - `chat/summarizer.mjs`
 - `static/chat.js`
 - `templates/chat.html`
-- maybe route docs for `/api/sidebar`
+- route/docs references that still assume Progress has backend state
 
 **Tasks**
 
-- Separate “derived sidebar state” from “canonical session naming/grouping metadata” in code organization and comments.
-- Decide whether progress UI remains visible, hidden, or deprecated.
-- Ensure future code does not treat sidebar state as domain truth.
+- Remove Progress-specific backend state, routes, and frontend rendering logic.
+- Keep only the tab-shell behavior in the UI so the slot can host future non-session surfaces.
+- Ensure future task-progress UX is modeled through session-list grouping rather than a separate derived summary board.
 
 **Keep out of scope**
 
@@ -861,8 +861,9 @@ The code should reflect that more clearly.
 
 **Done means**
 
-- derived sidebar state is clearly optional
-- canonical session title/group/description no longer feel conceptually owned by the sidebar system
+- no separate Progress state exists in the shipped backend
+- canonical session title/group/description no longer feel conceptually owned by a Progress system
+- the remaining empty tab shell is explicitly future-facing, not a hidden dependency
 
 ---
 
@@ -950,6 +951,7 @@ Even after code changes, stale vocabulary like `visitor` or “app as template o
 - Clarify default app behavior.
 - Clarify share semantics.
 - Demote sidebar/progress in docs if still overemphasized.
+- Add a precise file-level concept→implementation guide so future sessions can route to the right files without broad repo searches.
 
 **Keep out of scope**
 

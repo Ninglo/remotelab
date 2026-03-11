@@ -238,34 +238,26 @@ function checkPendingMessage(historyEvents) {
   renderPendingRecovery(pending);
 }
 
-// ---- Progress sidebar ----
+// ---- Sidebar tabs ----
 let activeTab = normalizeSidebarTab(
   pendingNavigationState.tab ||
     localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY) ||
     "sessions",
 ); // "sessions" | "progress"
-let lastProgressState = { sessions: {} };
-let progressEnabled = false; // loaded from backend, default off
-
-async function fetchSettings() {
-  if (visitorMode) return;
-  try {
-    const s = await fetchJsonOrRedirect("/api/settings");
-    progressEnabled = s.progressEnabled === true;
-  } catch {}
-}
 
 function switchTab(tab, { syncState = true } = {}) {
   activeTab = normalizeSidebarTab(tab);
+  const showingSessions = activeTab === "sessions";
   tabSessions.classList.toggle("active", activeTab === "sessions");
   tabProgress.classList.toggle("active", activeTab === "progress");
-  sessionList.style.display = activeTab === "sessions" ? "" : "none";
-  progressPanel.classList.toggle("visible", activeTab === "progress");
-  sessionListFooter.classList.toggle("hidden", activeTab !== "sessions");
-  newSessionBtn.classList.toggle("hidden", activeTab === "progress");
-  if (activeTab === "progress") {
-    fetchSidebarState();
+  if (sidebarFilters) {
+    sidebarFilters.classList.toggle("hidden", !showingSessions);
   }
+  sessionList.style.display = showingSessions ? "" : "none";
+  progressPanel.classList.toggle("visible", activeTab === "progress");
+  progressPanel.textContent = "";
+  sessionListFooter.classList.toggle("hidden", !showingSessions);
+  newSessionBtn.classList.toggle("hidden", !showingSessions);
   if (syncState) {
     syncBrowserState();
   }
@@ -274,164 +266,3 @@ function switchTab(tab, { syncState = true } = {}) {
 tabSessions.addEventListener("click", () => switchTab("sessions"));
 tabProgress.addEventListener("click", () => switchTab("progress"));
 switchTab(activeTab, { syncState: false });
-
-function relativeTime(ts) {
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
-}
-
-function appendProgressToggle() {
-  const toggleRow = document.createElement("div");
-  toggleRow.className = "progress-toggle-row";
-  const label = document.createElement("span");
-  label.className = "progress-toggle-label";
-  label.textContent = "Auto-summarize";
-  const toggleBtn = document.createElement("button");
-  toggleBtn.className = "progress-toggle-btn" + (progressEnabled ? " active" : "");
-  toggleBtn.textContent = progressEnabled ? "On" : "Off";
-  toggleRow.appendChild(label);
-  toggleRow.appendChild(toggleBtn);
-  toggleBtn.addEventListener("click", async () => {
-    progressEnabled = !progressEnabled;
-    try {
-      await fetchJsonOrRedirect("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ progressEnabled }),
-      });
-    } catch {}
-    if (progressEnabled && activeTab === "progress") {
-      fetchSidebarState().catch(() => {});
-    }
-    renderProgressPanel(lastProgressState);
-  });
-  progressPanel.appendChild(toggleRow);
-}
-
-function renderProgressPanel(state) {
-  progressPanel.innerHTML = "";
-  const stateEntries = Object.entries(state.sessions || {}).filter(([sessionId]) => {
-    const session = sessions.find((entry) => entry.id === sessionId);
-    return !session?.archived;
-  });
-
-  // Collect all session IDs to render: those with data + those pending without data yet
-  const pendingOnly = [...pendingSummary].filter((id) => {
-    if (state.sessions[id]) return false;
-    const session = sessions.find((entry) => entry.id === id);
-    return !session?.archived;
-  });
-  const allEntries = [
-    ...stateEntries,
-    ...pendingOnly.map(id => {
-      const s = sessions.find(sess => sess.id === id);
-      return [id, { folder: s?.folder || "", name: s?.name || "", _pendingOnly: true }];
-    }),
-  ];
-
-  if (allEntries.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "progress-empty";
-    empty.textContent = progressEnabled
-      ? "No summaries yet. Send a message in any session to generate one."
-      : "Auto-summarize is off. Enable it below to track AI progress.";
-    progressPanel.appendChild(empty);
-    appendProgressToggle();
-    return;
-  }
-
-  // Sort by most recently updated; pending-only entries sort to top
-  allEntries.sort((a, b) => {
-    const aPending = pendingSummary.has(a[0]);
-    const bPending = pendingSummary.has(b[0]);
-    if (aPending !== bPending) return aPending ? -1 : 1;
-    return (b[1].updatedAt || 0) - (a[1].updatedAt || 0);
-  });
-
-  for (const [sessionId, entry] of allEntries) {
-    const isRunning = sessions.some(s => s.id === sessionId && s.status === "running");
-    const isSummarizing = pendingSummary.has(sessionId);
-    const card = document.createElement("div");
-    card.className = "progress-card";
-
-    const groupInfo = getSessionGroupInfo(entry);
-    const displayName = entry.name || getFolderLabel(entry.folder) || "Session";
-    const groupingTitle = entry.group
-      ? entry.description || entry.folder || groupInfo.title
-      : groupInfo.title;
-
-    const summaryIndicator = isSummarizing
-      ? '<div class="progress-summarizing">Summarizing...</div>'
-      : "";
-
-    if (entry._pendingOnly) {
-      card.innerHTML = `
-        <div class="progress-card-header">
-          <div class="progress-card-name">${escapeHtml(displayName)}</div>
-        </div>
-        <div class="progress-card-folder" title="${escapeHtml(groupingTitle || "")}">${escapeHtml(groupInfo.label)}</div>
-        <div class="progress-summarizing">Summarizing...</div>
-      `;
-    } else {
-      card.innerHTML = `
-        <div class="progress-card-header">
-          ${isRunning ? '<div class="progress-running-dot"></div>' : ''}
-          <div class="progress-card-name">${escapeHtml(displayName)}</div>
-        </div>
-        <div class="progress-card-folder" title="${escapeHtml(groupingTitle || "")}">${escapeHtml(groupInfo.label)}</div>
-        <div class="progress-card-bg">${escapeHtml(entry.background || "")}</div>
-        <div class="progress-card-action">↳ ${escapeHtml(entry.lastAction || "")}</div>
-        <div class="progress-card-footer">
-          ${entry.updatedAt ? `<span class="progress-card-time">${relativeTime(entry.updatedAt)}</span>` : ""}
-          ${summaryIndicator}
-        </div>
-      `;
-    }
-
-    // Click card to switch to that session
-    card.addEventListener("click", () => {
-      const session = sessions.find(s => s.id === sessionId);
-      if (session) {
-        switchTab("sessions");
-        attachSession(session.id, session);
-        if (!isDesktop) closeSidebarFn();
-      }
-    });
-    card.style.cursor = "pointer";
-
-    progressPanel.appendChild(card);
-  }
-
-  appendProgressToggle();
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-async function fetchSidebarState() {
-  if (visitorMode) return;
-  try {
-    const state = await fetchJsonOrRedirect("/api/sidebar");
-    // Clear pending flag for sessions whose summary just arrived or updated
-    for (const [sessionId, entry] of Object.entries(state.sessions || {})) {
-      if (pendingSummary.has(sessionId)) {
-        const prev = lastSidebarUpdatedAt[sessionId] || 0;
-        if ((entry.updatedAt || 0) > prev) {
-          pendingSummary.delete(sessionId);
-        }
-      }
-      lastSidebarUpdatedAt[sessionId] = entry.updatedAt || 0;
-    }
-    lastProgressState = state;
-    renderProgressPanel(state);
-  } catch {}
-}
-

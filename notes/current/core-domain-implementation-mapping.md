@@ -43,7 +43,7 @@ Short version:
 | `App` | `chat/apps.mjs`, `chat/router.mjs` | `apps.json` | `/api/apps*`, `/app/:shareToken` | Partial |
 | `Principal` | `lib/auth.mjs`, `chat/router.mjs` | `auth-sessions.json` cookie sessions | `/login`, `/logout`, `/api/auth/me` | Mismatch |
 | `ShareSnapshot` | `chat/shares.mjs`, `chat/router.mjs` | `shared-snapshots/<snapId>.json` | `POST /api/sessions/:id/share`, `GET /share/:id` | Partial |
-| derived UI state | `chat/summarizer.mjs`, `static/chat.js` | `sidebar-state.json` | `/api/sidebar`, Progress tab | Partial |
+| session presentation metadata | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `static/chat.js` | `chat-sessions.json` | session list, empty Progress tab shell | Partial |
 
 ---
 
@@ -516,12 +516,12 @@ Treat the current share implementation as:
 
 ### Current storage
 
-Derived sidebar/progress state lives in `~/.config/remotelab/sidebar-state.json` via `SIDEBAR_STATE_FILE`.
+There is no separate Progress storage anymore. Session labeling suggestions write only into canonical session metadata inside `chat-sessions.json`.
 
 ### Current routes/surfaces
 
-- `GET /api/sidebar`
-- Progress tab in the main chat UI
+- Session list in the main chat UI
+- Empty `Progress` tab shell in the main chat UI
 
 ### Current alignment with the contract
 
@@ -529,27 +529,25 @@ Derived sidebar/progress state lives in `~/.config/remotelab/sidebar-state.json`
 
 The good news:
 
-- sidebar/progress data is already stored separately from session history
-- it is already fetchable as a derived surface
+- session presentation metadata is canonical and lives with the session itself
+- there is no separate Progress state pretending to be part of the domain
 
 The important nuance:
 
-- the sidebar state file itself is derived
-- but the current summarizer pipeline also writes back canonical session metadata such as title/group/description via rename/grouping logic
+- the summarizer pipeline now exists only to suggest canonical session metadata such as title/group/description
+- the empty Progress tab is a reserved shell, not a data surface
 
-So the system currently mixes two behaviors:
+The remaining architectural distinction is simply between:
 
-- derived sidebar rollup state
-- model-assisted updates to canonical session presentation metadata
-
-Those should not be confused.
+- canonical session metadata
+- future non-core sidebar surfaces that must stay optional
 
 ### Current working interpretation
 
 Use the following distinction when reading the code:
 
-- `sidebar-state.json` = derived UI state
-- `session.name`, `session.group`, `session.description` = canonical session metadata, even if a summarizer currently helps generate them
+- `session.name`, `session.group`, `session.description` = canonical session metadata
+- the Progress tab is currently only an empty slot for future UI experiments
 
 ---
 
@@ -595,7 +593,6 @@ This section groups the current routes by the contract object they primarily ser
 ### Derived/share surfaces
 
 - `GET /share/:shareId`
-- `GET /api/sidebar`
 
 ---
 

@@ -22,6 +22,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - If a bot needs human-friendly group names without calling the chat-detail API on every message, cache them from chat metadata signals such as `im.chat.member.bot.added_v1` and `im.chat.updated_v1`, which carry `name` and `i18n_names`.
 - If the bot starts after it was already added to a group and no metadata-change event has fired yet, an initial one-time chat-detail lookup is still needed to seed the cache.
 
+### Feishu @ Mentions Need Token Translation (2026-03-11)
+- In `im.message.receive_v1`, group-message text can contain placeholder tokens like `@_user_1` while the actual mentioned-user identity arrives separately in `message.mentions`.
+- If the connector forwards only the raw text preview, the model cannot tell who was mentioned; if outbound replies send those tokens back as plain text, Feishu shows the literal token instead of a real `@` mention.
+- Fix both directions together: render inbound prompt text with a token→name map from `message.mentions`, and translate reply tokens back into Feishu mention markup before calling `im.v1.message.create`.
+
 ### Feishu Self-Built App Rollout Is Tenant-Scoped (2026-03-11)
 - A Feishu self-built app is a good fast path for local or same-tenant validation, but it is the wrong mental model for cross-tenant distribution.
 - If coworkers cannot search the bot or add it to groups, first check app availability scope, current version publish/apply status, and tenant policy before touching connector code.
@@ -41,6 +46,15 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 ### Testing Strategy for Self-Hosted Services (2026-03-06)
 - Never restart the server you're running on to test restart-survival features. Spin up a separate instance on a different port (e.g., 7694) and run the full test cycle there.
 - Use node WebSocket client for API testing — match the actual protocol (`action` field, attach-before-send flow).
+
+### Similar UI Totals Often Have Separate Code Paths (2026-03-11)
+- In RemoteLab, session row counts, folder counts, archive counts, and app-filter totals can look like one product concept while still coming from different frontend functions.
+- When a screenshot reports a "count bug", first identify the exact UI surface and trace that specific DOM/data path; fixing an adjacent counter can create false confidence while the real bug remains.
+- For the session sidebar specifically, per-session row counts live in `static/chat/ui.js`, while the app-filter totals are computed separately in `static/chat/bootstrap.js`.
+
+### Template-Literal Prompt Edits Can Break Server Boot (2026-03-11)
+- `chat/system-prompt.mjs` builds a large template literal, so inserting raw backticks inside the embedded prompt text creates a syntax error that prevents `chat-server.mjs` from starting.
+- After touching server-loaded modules or large inline prompt/template strings, run `node --check` before restart, then verify both the listener and a real HTTP endpoint; do not rely only on a helper script printing "restarted".
 
 ### Project Path Persistence (2026-03-06)
 - When a user has already confirmed a repo path for an active task, persist that path immediately into user-level memory or a task note.
@@ -139,6 +153,15 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 ### External Reply Connectors Should Treat Empty Output As Silence (2026-03-11)
 - When a connector asks the model to output the exact outbound reply body, an empty assistant message should mean "send nothing", not "send a fallback apology".
 - Mark the inbound item as handled with a silent/no-reply status and log the reason; otherwise connector-level fallbacks override deliberate quiet-mode behavior and make response suppression unreliable.
+
+### External Reply Connectors Need Shared Reply Selection (2026-03-11)
+- Do not blindly publish the raw latest assistant `message` event for a run; provider adapters can append assistant-side artifacts after the real reply, such as Codex `todo_list` checklists.
+- Keep that selection logic out of the core chat-history/domain primitives. A better boundary is: chat core exposes raw normalized events, while connectors or other business-facing layers apply a shared helper library to choose the outbound reply they want.
+- A practical default rule is: skip known artifact kinds such as `todo_list`, and if the trailing assistant text is only a checklist block, fall back to the nearest earlier substantive assistant reply from the same run.
+
+### Post-Run Integrations Should Live Outside `chat/` (2026-03-11)
+- Business-specific side effects triggered by finished runs, such as outbound email delivery, should not live under the core `chat/` domain modules even when the chat server invokes them.
+- A cleaner split is: `chat/` owns sessions, runs, and event history; integration modules under `lib/` or connector-specific areas consume those primitives and perform provider-specific delivery work.
 
 ### Deferred Event Bodies Must Stay User-Triggered (2026-03-10)
 - If thinking/tool bodies are deferred behind `GET /api/sessions/:sessionId/events/:seq/body`, the frontend should only fetch them when the user explicitly expands the corresponding UI block.

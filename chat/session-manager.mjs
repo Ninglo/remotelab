@@ -8,7 +8,6 @@ import {
   appendEvent,
   appendEvents,
   clearContextHead,
-  findLatestAssistantMessage,
   getContextHead,
   getHistorySnapshot,
   loadHistory,
@@ -16,13 +15,7 @@ import {
   setContextHead,
 } from './history.mjs';
 import { messageEvent, statusEvent } from './normalizer.mjs';
-import {
-  triggerSummary,
-  triggerSessionLabelSuggestion,
-  renameSidebarEntry,
-  updateSidebarEntry,
-} from './summarizer.mjs';
-import { isProgressEnabled } from './settings.mjs';
+import { triggerSessionLabelSuggestion } from './summarizer.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
 import { buildSessionContinuationContext } from './session-continuation.mjs';
@@ -49,7 +42,8 @@ import {
   updateRun,
 } from './runs.mjs';
 import { spawnDetachedRunner } from './runner-supervisor.mjs';
-import { dispatchSessionCompletionTargets, sanitizeCompletionTargets } from './completion-targets.mjs';
+import { dispatchSessionEmailCompletionTargets, sanitizeEmailCompletionTargets } from '../lib/agent-mail-completion-targets.mjs';
+import { normalizeAppId, resolveEffectiveAppId } from './apps.mjs';
 import {
   createSerialTaskQueue,
   ensureDir,
@@ -392,13 +386,13 @@ async function touchSessionMeta(sessionId, extra = {}) {
 
 function queueSessionCompletionTargets(session, run, manifest) {
   if (!session?.id || !run?.id || manifest?.internalOperation) return false;
-  const targets = sanitizeCompletionTargets(session.completionTargets || []);
+  const targets = sanitizeEmailCompletionTargets(session.completionTargets || []);
   if (targets.length === 0) return false;
-  dispatchSessionCompletionTargets({
+  dispatchSessionEmailCompletionTargets({
     ...session,
     completionTargets: targets,
   }, run).catch((error) => {
-    console.error(`[completion-targets] ${session.id}/${run.id}: ${error.message}`);
+    console.error(`[agent-mail-completion-targets] ${session.id}/${run.id}: ${error.message}`);
   });
   return true;
 }
@@ -475,8 +469,11 @@ async function enrichSessionMeta(meta) {
   const snapshot = await getHistorySnapshot(meta.id);
   return {
     ...meta,
+    appId: resolveEffectiveAppId(meta.appId),
     latestSeq: snapshot.latestSeq,
     lastEventAt: snapshot.lastEventAt,
+    messageCount: snapshot.messageCount,
+    activeMessageCount: snapshot.activeMessageCount,
     contextMode: snapshot.contextMode,
     activeFromSeq: snapshot.activeFromSeq,
     compactedThroughSeq: snapshot.compactedThroughSeq,
@@ -740,22 +737,33 @@ async function maybeAutoCompact(sessionId, session, run, manifest) {
   return queueContextCompaction(sessionId, session, run, { automatic: true });
 }
 
+async function findLatestCompactionSummaryEvent(sessionId) {
+  const events = await loadHistory(sessionId, { includeBodies: true });
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== 'message' || event.role !== 'assistant') continue;
+    const content = typeof event.content === 'string' ? event.content : '';
+    const match = content.match(/<summary>([\s\S]*?)<\/summary>/i);
+    const summary = (match ? match[1] : '').trim();
+    if (!summary) continue;
+    return { event, summary };
+  }
+  return { event: null, summary: '' };
+}
+
 async function extractCompactionSummaryText(sessionId) {
-  const lastAssistant = await findLatestAssistantMessage(sessionId, { includeBodies: true });
-  if (!lastAssistant?.content) return '';
-  const match = lastAssistant.content.match(/<summary>([\s\S]*?)<\/summary>/i);
-  return (match ? match[1] : lastAssistant.content).trim();
+  const { summary } = await findLatestCompactionSummaryEvent(sessionId);
+  return summary;
 }
 
 async function updateCompactedContext(sessionId, run) {
-  const summary = await extractCompactionSummaryText(sessionId);
-  const lastAssistant = await findLatestAssistantMessage(sessionId, { includeBodies: false });
-  if (!summary || !lastAssistant?.seq) return false;
+  const { summary, event } = await findLatestCompactionSummaryEvent(sessionId);
+  if (!summary || !event?.seq) return false;
   await setContextHead(sessionId, {
     mode: 'summary',
     summary,
-    activeFromSeq: lastAssistant.seq,
-    compactedThroughSeq: lastAssistant.seq,
+    activeFromSeq: event.seq,
+    compactedThroughSeq: event.seq,
     inputTokens: run.contextInputTokens || null,
     updatedAt: nowIso(),
     source: 'context_compaction',
@@ -846,14 +854,13 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
 
   const needsRename = isSessionAutoRenamePending(latestSession);
   const needsGrouping = !latestSession.group || !latestSession.description;
-  const needsProgress = await isProgressEnabled();
 
-  if (needsRename || needsGrouping || needsProgress) {
+  if (needsRename || needsGrouping) {
     if (needsRename) {
       setRenameState(sessionId, 'pending');
     }
 
-    const summaryDone = triggerSummary(
+    const labelSuggestionDone = triggerSessionLabelSuggestion(
       {
         id: sessionId,
         folder: latestSession.folder,
@@ -871,26 +878,18 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
         if (!isSessionAutoRenamePending(currentSession)) return null;
         return renameSession(sessionId, newName);
       },
-      { updateSidebar: needsProgress },
     );
 
     if (needsRename) {
-      summaryDone.then(async (summaryResult) => {
-        const grouped = await applyGeneratedSessionGrouping(sessionId, summaryResult);
+      labelSuggestionDone.then(async (labelResult) => {
+        const grouped = await applyGeneratedSessionGrouping(sessionId, labelResult);
         const updated = grouped || await getSession(sessionId);
-        if (needsProgress && updated) {
-          await updateSidebarEntry(sessionId, {
-            name: updated.name || '',
-            group: updated.group || '',
-            description: updated.description || '',
-          });
-        }
         const stillPendingRename = !!updated && isSessionAutoRenamePending(updated);
         if (stillPendingRename) {
           setRenameState(
             sessionId,
             'failed',
-            summaryResult?.rename?.error || summaryResult?.error || 'No title generated',
+            labelResult?.rename?.error || labelResult?.error || 'No title generated',
           );
         } else {
           clearRenameState(sessionId, { broadcast: true });
@@ -900,16 +899,8 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
       return { historyChanged, sessionChanged };
     }
 
-    summaryDone.then(async (summaryResult) => {
-      const grouped = await applyGeneratedSessionGrouping(sessionId, summaryResult);
-      const updated = grouped || await getSession(sessionId);
-      if (needsProgress && updated) {
-        await updateSidebarEntry(sessionId, {
-          name: updated.name || '',
-          group: updated.group || '',
-          description: updated.description || '',
-        });
-      }
+    labelSuggestionDone.then(async (labelResult) => {
+      await applyGeneratedSessionGrouping(sessionId, labelResult);
     });
   }
 
@@ -1041,11 +1032,13 @@ export async function startDetachedRunObservers() {
   await resumePendingCompletionTargets();
 }
 
-export async function listSessions({ includeVisitor = false, includeArchived = true } = {}) {
+export async function listSessions({ includeVisitor = false, includeArchived = true, appId = '' } = {}) {
   const metas = await reconcileSessionsMetaList(await loadSessionsMeta());
+  const normalizedAppId = normalizeAppId(appId);
   const filtered = metas
     .filter((meta) => includeVisitor || !meta.visitorId)
     .filter((meta) => includeArchived || !meta.archived)
+    .filter((meta) => !normalizedAppId || resolveEffectiveAppId(meta.appId) === normalizedAppId)
     .sort((a, b) => getSessionSortTime(b) - getSessionSortTime(a));
   return Promise.all(filtered.map((meta) => enrichSessionMeta(meta)));
 }
@@ -1069,6 +1062,7 @@ export async function getRunState(runId) {
 
 export async function createSession(folder, tool, name, extra = {}) {
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
+  const requestedAppId = normalizeAppId(extra.appId);
   const created = await runSessionsMetaMutation(async () => {
     const metas = await loadSessionsMeta();
     if (externalTriggerId) {
@@ -1096,9 +1090,15 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        const completionTargets = sanitizeCompletionTargets(extra.completionTargets || []);
+        const completionTargets = sanitizeEmailCompletionTargets(extra.completionTargets || []);
         if (completionTargets.length > 0 && JSON.stringify(updated.completionTargets || []) !== JSON.stringify(completionTargets)) {
           updated.completionTargets = completionTargets;
+          changed = true;
+        }
+
+        const nextAppId = requestedAppId || resolveEffectiveAppId(updated.appId);
+        if (updated.appId !== nextAppId) {
+          updated.appId = nextAppId;
           changed = true;
         }
 
@@ -1118,12 +1118,13 @@ export async function createSession(folder, tool, name, extra = {}) {
     const now = nowIso();
     const group = normalizeSessionGroup(extra.group || '');
     const description = normalizeSessionDescription(extra.description || '');
-    const completionTargets = sanitizeCompletionTargets(extra.completionTargets || []);
+    const completionTargets = sanitizeEmailCompletionTargets(extra.completionTargets || []);
 
     const session = {
       id,
       folder,
       tool,
+      appId: resolveEffectiveAppId(extra.appId),
       name: initialNaming.name,
       autoRenamePending: initialNaming.autoRenamePending,
       created: now,
@@ -1132,7 +1133,6 @@ export async function createSession(folder, tool, name, extra = {}) {
 
     if (group) session.group = group;
     if (description) session.description = description;
-    if (extra.appId) session.appId = extra.appId;
     if (extra.visitorId) session.visitorId = extra.visitorId;
     if (extra.systemPrompt) session.systemPrompt = extra.systemPrompt;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
@@ -1203,7 +1203,6 @@ export async function renameSession(id, name, options = {}) {
 
   if (!result.meta) return null;
   clearRenameState(id);
-  await renameSidebarEntry(id, nextName);
   broadcastSessionInvalidation(id);
   return enrichSessionMeta(result.meta);
 }
@@ -1243,10 +1242,6 @@ export async function updateSessionGrouping(id, patch = {}) {
 
   if (!result.meta) return null;
   if (result.changed) {
-    await updateSidebarEntry(id, {
-      group: result.meta.group || '',
-      description: result.meta.description || '',
-    });
     broadcastSessionInvalidation(id);
   }
   return enrichSessionMeta(result.meta);

@@ -6,6 +6,7 @@ import { homedir, tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
+import { selectAssistantReplyEvent } from '../lib/reply-selection.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
@@ -1211,20 +1212,24 @@ async function loadAssistantReply(baseUrl, sessionId, runId, requestId, cookie) 
     throw new Error(eventsResult.json?.error || eventsResult.text || `Failed to load session events for ${sessionId}`);
   }
 
-  const candidate = [...eventsResult.json.events].reverse().find((event) => (
-    event.type === 'message'
-    && event.role === 'assistant'
-    && ((runId && event.runId === runId) || (requestId && event.requestId === requestId))
-  ));
+  const candidate = await selectAssistantReplyEvent(eventsResult.json.events, {
+    match: (event) => (
+      (runId && event.runId === runId)
+      || (requestId && event.requestId === requestId)
+    ),
+    hydrate: async (event) => {
+      const bodyResult = await requestJson(baseUrl, `/api/sessions/${sessionId}/events/${event.seq}/body`, { cookie });
+      if (!bodyResult.response.ok || bodyResult.json?.body?.value === undefined) {
+        return event;
+      }
+      return {
+        ...event,
+        content: bodyResult.json.body.value,
+        bodyLoaded: true,
+      };
+    },
+  });
   if (!candidate) return null;
-
-  if (candidate.bodyAvailable && candidate.bodyLoaded === false) {
-    const bodyResult = await requestJson(baseUrl, `/api/sessions/${sessionId}/events/${candidate.seq}/body`, { cookie });
-    if (bodyResult.response.ok && bodyResult.json?.body?.value !== undefined) {
-      candidate.content = bodyResult.json.body.value;
-      candidate.bodyLoaded = true;
-    }
-  }
 
   return candidate;
 }
@@ -1249,6 +1254,7 @@ async function submitInboundUpdate(
     folder: options.sessionFolder,
     tool: options.sessionTool,
     name: buildSessionName(options.repo, item),
+    appId: 'github',
     group: 'GitHub',
     description: buildSessionDescription(options.repo, item, kind),
     systemPrompt: buildSessionSystemPrompt(),

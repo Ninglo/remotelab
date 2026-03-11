@@ -26,7 +26,7 @@ show_status() {
   echo -e "${BOLD}=== 服务状态 (${OS_TYPE}) ===${RESET}"
 
   if [[ "$OS_TYPE" == "macos" ]]; then
-    for label in com.chatserver.claude com.cloudflared.tunnel com.authproxy.claude; do
+    for label in com.chatserver.claude com.cloudflared.tunnel; do
       info=$(launchctl list 2>/dev/null | grep "$label")
       if [ -n "$info" ]; then
         pid=$(echo "$info" | awk '{print $1}')
@@ -41,7 +41,7 @@ show_status() {
       fi
     done
   else
-    for unit in remotelab-chat remotelab-proxy remotelab-tunnel; do
+    for unit in remotelab-chat remotelab-tunnel; do
       if systemctl --user list-unit-files "${unit}.service" &>/dev/null 2>&1; then
         if systemctl --user is-active --quiet "${unit}.service" 2>/dev/null; then
           pid=$(systemctl --user show -p MainPID --value "${unit}.service" 2>/dev/null || echo "?")
@@ -120,9 +120,6 @@ case "$CMD" in
     show_recent_logs "cloudflared" \
       "$LOG_DIR/cloudflared.log" \
       "$LOG_DIR/cloudflared.error.log"
-    show_recent_logs "auth-proxy" \
-      "$LOG_DIR/auth-proxy.log" \
-      "$LOG_DIR/auth-proxy.error.log"
 
     echo -e "${BOLD}── 快速命令参考 ──${RESET}"
     echo "  logs.sh chat    # 实时跟踪 chat-server"
@@ -132,7 +129,7 @@ case "$CMD" in
       echo ""
       echo "  # systemd 日志 (更完整):"
       echo "  journalctl --user -u remotelab-chat -f"
-      echo "  journalctl --user -u remotelab-proxy -f"
+      echo "  journalctl --user -u remotelab-tunnel -f"
     fi
     ;;
 esac

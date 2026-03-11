@@ -150,6 +150,7 @@ try {
     messageId: '<root-thread@example.com>',
   });
   assert.equal(sessionCreates.length, 1);
+  assert.equal(sessionCreates[0].appId, 'email');
   assert.equal(sessionCreates[0].externalTriggerId, expectedThreadTriggerId);
   assert.equal(sessionCreates[0].completionTargets[0].inReplyTo, '<root-thread@example.com>');
   assert.equal(sessionCreates[0].completionTargets[0].references, '<root-thread@example.com>');
@@ -227,6 +228,7 @@ try {
   assert.equal(requests.length, 6);
   assert.equal(sessionCreates.length, 2);
   assert.equal(messageSubmissions.length, 2);
+  assert.equal(sessionCreates[1].appId, 'email');
   assert.equal(sessionCreates[1].externalTriggerId, expectedThreadTriggerId);
   assert.equal(sessionCreates[1].completionTargets[0].inReplyTo, '<follow-up@example.com>');
   assert.equal(sessionCreates[1].completionTargets[0].references, '<root-thread@example.com> <follow-up@example.com>');
@@ -309,6 +311,7 @@ try {
   assert.equal(requests.length, 9);
   assert.equal(sessionCreates.length, 3);
   assert.equal(messageSubmissions.length, 3);
+  assert.equal(sessionCreates[2].appId, 'email');
   assert.equal(sessionCreates[2].externalTriggerId, expectedThreadTriggerId);
   assert.equal(sessionCreates[2].completionTargets[0].inReplyTo, '<base64-follow-up@example.com>');
   assert.equal(sessionCreates[2].completionTargets[0].references, '<root-thread@example.com> <base64-follow-up@example.com>');
@@ -367,6 +370,7 @@ try {
   assert.equal(fourthSummary.failures.length, 0);
   assert.equal(sessionCreates.length, 4);
   assert.equal(messageSubmissions.length, 4);
+  assert.equal(sessionCreates[3].appId, 'email');
   assert.equal(sessionCreates[3].completionTargets[0].inReplyTo, '<blank-subject-thread@example.com>');
   assert.equal(sessionCreates[3].completionTargets[0].references, '<blank-subject-thread@example.com>');
   assert.equal(sessionCreates[3].completionTargets[0].subject, '', 'blank-subject replies should preserve an empty subject');

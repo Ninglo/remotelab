@@ -47,7 +47,7 @@ The local mailbox flow spans intake, approval, AI processing, and optional outbo
 - `scripts/agent-mail.mjs`
 - `scripts/agent-mail-worker.mjs`
 - `scripts/agent-mail-http-bridge.mjs`
-- `chat/completion-targets.mjs`
+- `lib/agent-mail-completion-targets.mjs`
 
 The CLI supports:
 

@@ -251,6 +251,16 @@ function getSessionDisplayName(session) {
   return session?.name || getFolderLabel(session?.folder) || "Session";
 }
 
+function renderSessionMessageCount(session) {
+  const total = Number.isInteger(session?.messageCount) ? session.messageCount : 0;
+  const active = Number.isInteger(session?.activeMessageCount)
+    ? session.activeMessageCount
+    : total;
+  if (total <= 0 && active <= 0) return "";
+  const label = `${active} msg${active === 1 ? "" : "s"}`;
+  return `<span class="session-item-count" title="Active messages in the current context">${label}</span>`;
+}
+
 function getSessionGroupInfo(session) {
   const group = typeof session?.group === "string" ? session.group.trim() : "";
   if (group) {
@@ -273,9 +283,10 @@ function getSessionGroupInfo(session) {
 // ---- Session list ----
 function renderSessionList() {
   sessionList.innerHTML = "";
+  const visibleSessions = getVisibleActiveSessions();
 
   const groups = new Map();
-  for (const s of getActiveSessions()) {
+  for (const s of visibleSessions) {
     const groupInfo = getSessionGroupInfo(s);
     if (!groups.has(groupInfo.key)) {
       groups.set(groupInfo.key, { ...groupInfo, sessions: [] });
@@ -314,10 +325,10 @@ function renderSessionList() {
 
       const displayName = getSessionDisplayName(s);
       const metaParts = [];
-      if (s.name && s.tool) metaParts.push(s.tool);
-      if (s.status === "running") metaParts.push("●&nbsp;running");
+      const countHtml = renderSessionMessageCount(s);
+      if (countHtml) metaParts.push(countHtml);
       const renameReason = s.renameError ? ` title="${esc(s.renameError)}"` : "";
-      const metaHtml = s.status === "done" || finishedUnread.has(s.id)
+      const statusHtml = s.status === "done" || finishedUnread.has(s.id)
         ? `<span class="status-done">● done</span>`
         : s.renameState === "pending"
         ? `<span class="status-renaming">● renaming</span>`
@@ -326,10 +337,12 @@ function renderSessionList() {
         : s.status === "running"
           ? `<span class="status-running">● running</span>`
           : s.status === "interrupted"
-            ? `<span class="status-interrupted">● interrupted</span>`
+          ? `<span class="status-interrupted">● interrupted</span>`
           : s.tool && s.name
             ? `<span>${esc(s.tool)}</span>`
             : "";
+      if (statusHtml) metaParts.push(statusHtml);
+      const metaHtml = metaParts.join(" · ");
 
       div.innerHTML = `
         <div class="session-item-info">
@@ -369,11 +382,20 @@ function renderSessionList() {
     sessionList.appendChild(group);
   }
 
+  if (visibleSessions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "session-filter-empty";
+    empty.textContent = activeAppFilter === APP_FILTER_ALL_VALUE
+      ? "No sessions yet"
+      : `No sessions in ${getAppCatalogEntry(activeAppFilter).name}`;
+    sessionList.appendChild(empty);
+  }
+
   renderArchivedSection();
 }
 
 function renderArchivedSection() {
-  const archivedSessions = getArchivedSessions();
+  const archivedSessions = getVisibleArchivedSessions();
   const existing = document.getElementById("archivedSection");
   if (existing) existing.remove();
 
@@ -397,7 +419,9 @@ function renderArchivedSection() {
   if (archivedSessions.length === 0) {
     const empty = document.createElement("div");
     empty.className = "archived-empty";
-    empty.textContent = "No archived sessions";
+    empty.textContent = activeAppFilter === APP_FILTER_ALL_VALUE
+      ? "No archived sessions"
+      : `No archived sessions in ${getAppCatalogEntry(activeAppFilter).name}`;
     items.appendChild(empty);
   } else {
     for (const s of archivedSessions) {
@@ -502,7 +526,12 @@ newSessionBtn.addEventListener("click", () => {
   if (!isDesktop) closeSidebarFn();
   const tool = preferredTool || selectedTool || toolsList[0]?.id;
   if (!tool) return;
-  dispatchAction({ action: "create", folder: "~", tool });
+  dispatchAction({
+    action: "create",
+    folder: "~",
+    tool,
+    appId: activeAppFilter !== APP_FILTER_ALL_VALUE ? activeAppFilter : DEFAULT_APP_ID,
+  });
 });
 
 // ---- Image handling ----
@@ -578,4 +607,3 @@ msgInput.addEventListener("paste", (e) => {
     addImageFiles(imageFiles);
   }
 });
-

@@ -32,11 +32,17 @@ import {
 } from './session-manager.mjs';
 import { appendEvent, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
-import { getSidebarState } from './summarizer.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
 import { getModelsForTool } from './models.mjs';
-import { getSettings, updateSettings } from './settings.mjs';
-import { listApps, getApp, getAppByShareToken, createApp, updateApp, deleteApp } from './apps.mjs';
+import {
+  listApps,
+  getApp,
+  getAppByShareToken,
+  createApp,
+  updateApp,
+  deleteApp,
+  isBuiltinAppId,
+} from './apps.mjs';
 import { createShareSnapshot, getShareSnapshot } from './shares.mjs';
 import { parseSessionGetRoute } from './session-route-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -247,8 +253,6 @@ function isOwnerOnlyRoute(pathname, method) {
   if (pathname.startsWith('/api/sessions/') && method === 'PATCH') return true;
   if (pathname === '/api/models' && method === 'GET') return true;
   if (pathname === '/api/tools' && (method === 'GET' || method === 'POST')) return true;
-  if (pathname === '/api/sidebar' && method === 'GET') return true;
-  if (pathname === '/api/settings' && (method === 'GET' || method === 'PATCH')) return true;
   if (pathname === '/api/autocomplete' && method === 'GET') return true;
   if (pathname === '/api/browse' && method === 'GET') return true;
   if (pathname === '/api/push/vapid-public-key' && method === 'GET') return true;
@@ -386,7 +390,7 @@ export async function handleRequest(req, res) {
     const visitorId = 'visitor_' + generateToken().slice(0, 16);
     const chatSession = await createSession(
       '~',
-      app.tool || 'claude',
+      app.tool || 'codex',
       app.name,
       { appId: app.id, visitorId, systemPrompt: app.systemPrompt }
     );
@@ -449,7 +453,9 @@ export async function handleRequest(req, res) {
   const sessionGetRoute = req.method === 'GET' ? parseSessionGetRoute(pathname) : null;
 
   if (sessionGetRoute?.kind === 'list') {
-    const sessionList = await listSessions();
+    const sessionList = await listSessions({
+      appId: typeof parsedUrl.query.appId === 'string' ? parsedUrl.query.appId : '',
+    });
     const folderFilter = parsedUrl.query.folder;
     const filtered = folderFilter
       ? sessionList.filter((session) => session.folder === folderFilter)
@@ -699,6 +705,7 @@ export async function handleRequest(req, res) {
         folder,
         tool,
         name,
+        appId,
         group,
         description,
         systemPrompt,
@@ -719,6 +726,7 @@ export async function handleRequest(req, res) {
         return;
       }
       const session = await createSession(resolvedFolder, tool, name || '', {
+        appId: typeof appId === 'string' ? appId : '',
         group: group || '',
         description: description || '',
         systemPrompt: typeof systemPrompt === 'string' ? systemPrompt : '',
@@ -814,26 +822,6 @@ export async function handleRequest(req, res) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message || 'Invalid request body' }));
     }
-    return;
-  }
-
-  if (pathname === '/api/sidebar' && req.method === 'GET') {
-    writeJsonCached(req, res, await getSidebarState());
-    return;
-  }
-
-  if (pathname === '/api/settings' && req.method === 'GET') {
-    writeJsonCached(req, res, await getSettings());
-    return;
-  }
-
-  if (pathname === '/api/settings' && req.method === 'PATCH') {
-    const body = await readBody(req);
-    let patch;
-    try { patch = JSON.parse(body); } catch { patch = {}; }
-    const settings = await updateSettings(patch);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(settings));
     return;
   }
 
@@ -985,6 +973,11 @@ export async function handleRequest(req, res) {
       return;
     }
     const id = pathname.split('/').pop();
+    if (isBuiltinAppId(id)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Built-in apps cannot be modified' }));
+      return;
+    }
     let body;
     try { body = await readBody(req, 10240); } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1016,6 +1009,11 @@ export async function handleRequest(req, res) {
       return;
     }
     const id = pathname.split('/').pop();
+    if (isBuiltinAppId(id)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Built-in apps cannot be deleted' }));
+      return;
+    }
     const ok = await deleteApp(id);
     if (ok) {
       res.writeHead(200, { 'Content-Type': 'application/json' });

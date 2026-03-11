@@ -163,7 +163,9 @@ function parseItem(item) {
         const text = item.items
           .map(i => `${i.completed ? '[x]' : '[ ]'} ${i.text}`)
           .join('\n');
-        events.push(messageEvent('assistant', text));
+        events.push(messageEvent('assistant', text, undefined, {
+          messageKind: 'todo_list',
+        }));
       }
       break;
 

@@ -124,9 +124,38 @@ async function main() {
     assert.match(page.text, /<script src="\/chat\/ui\.js"/);
     assert.match(page.text, /<script src="\/chat\/compose\.js"/);
     assert.match(page.text, /<script src="\/chat\/init\.js"/);
+    assert.match(page.text, /id="appFilterSelect"/);
     assert.ok(!page.text.includes('/chat.js?v='), 'chat page should not pin the chat frontend to a versioned URL');
     assert.ok(!page.text.includes('/marked.min.js?v='), 'chat page should let marked.min.js use normal revalidation');
     assert.ok(!page.text.includes('/manifest.json?v='), 'chat page should let manifest use normal revalidation');
+
+    const apps = await request(port, 'GET', '/api/apps');
+    assert.equal(apps.status, 200, 'owner apps endpoint should be available');
+    assert.match(apps.text, /"id":"chat"/);
+    assert.match(apps.text, /"id":"feishu"/);
+    assert.match(apps.text, /"id":"email"/);
+    assert.match(apps.text, /"id":"github"/);
+    assert.match(apps.text, /"id":"automation"/);
+
+    const createdChat = await request(port, 'POST', '/api/sessions', {
+      folder: home,
+      tool: 'codex',
+      name: 'Owner chat session',
+    });
+    assert.equal(createdChat.status, 201, 'owner chat session should be creatable over HTTP');
+
+    const createdGithub = await request(port, 'POST', '/api/sessions', {
+      folder: home,
+      tool: 'codex',
+      name: 'GitHub session',
+      appId: 'github',
+    });
+    assert.equal(createdGithub.status, 201, 'GitHub-scoped session should be creatable over HTTP');
+
+    const githubOnly = await request(port, 'GET', '/api/sessions?appId=github');
+    assert.equal(githubOnly.status, 200, 'app-filtered session list should load');
+    assert.match(githubOnly.text, /"appId":"github"/);
+    assert.doesNotMatch(githubOnly.text, /"name":"Owner chat session"/);
 
     const splitAsset = await request(port, 'GET', '/chat/bootstrap.js');
     assert.equal(splitAsset.status, 200, 'split chat asset should load');

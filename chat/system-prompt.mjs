@@ -92,11 +92,10 @@ Skills are reusable capabilities (scripts, knowledge docs, SOPs). Treat ~/.remot
 - Use these blocks sparingly for model-visible notes that should stay out of the user-facing chat UI.
 
 ## RemoteLab self-hosting development
-- When working on RemoteLab itself, prefer two chat-server planes: 7690 is the stable coding/operator plane and 7692 is the restartable validation plane.
-- Do active coding and the main development conversation on 7690.
-- Use 7692 to verify changes, reproduce behavior, and restart freely; avoid treating it as the long-lived coding plane.
-- Avoid restarting the plane carrying your current conversation unless there is no alternative.
-- After 7692 passes validation, finish the current thought on 7690, then restart/reload 7690 only if needed.`;
+- When working on RemoteLab itself, use the normal \`7690\` chat-server as the primary plane.
+- Clean restarts are acceptable: treat them as transport interruptions with durable recovery, not as a reason to maintain a permanent validation plane.
+- If you launch any extra manual instance for debugging, keep it explicitly ad hoc rather than part of the default architecture.
+- Prefer verifying behavior through HTTP/state recovery after restart instead of assuming socket continuity.`;
 
   if (!hasBootstrap && hasGlobal) {
     context += `

@@ -13,7 +13,7 @@ else
   DEFAULT_LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/remotelab/logs"
 fi
 
-PORT="7692"
+PORT=""
 NAME=""
 LOG_PATH=""
 NODE_BIN="${NODE_BIN:-$(command -v node)}"
@@ -24,18 +24,18 @@ Usage:
   scripts/chat-instance.sh <start|stop|restart|status|logs> [options]
 
 Options:
-  --port <port>    Chat server port (default: 7692)
+  --port <port>    Chat server port (required)
   --name <name>    Optional label used for pid/log filenames
   --log <path>     Explicit log path override
   --node <path>    Explicit node binary override
 
 Examples:
-  scripts/chat-instance.sh restart --port 7692 --name test
-  scripts/chat-instance.sh status --port 7694
-  scripts/chat-instance.sh logs --port 7692
+  scripts/chat-instance.sh restart --port 7695 --name scratch
+  scripts/chat-instance.sh status --port 7695
+  scripts/chat-instance.sh logs --port 7695
 
 Notes:
-  - This is for custom/dev chat-server instances started manually on arbitrary ports.
+  - This is for optional ad-hoc chat-server instances started manually on arbitrary ports.
   - Production service management still uses launchd/systemd via `remotelab restart chat`.
 EOF
 }
@@ -71,6 +71,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$ACTION" ]]; then
+  usage >&2
+  exit 1
+fi
+
+if [[ -z "$PORT" ]]; then
+  echo "Missing required argument: --port <port>" >&2
   usage >&2
   exit 1
 fi

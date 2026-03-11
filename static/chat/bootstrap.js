@@ -12,6 +12,7 @@ const closeSidebar = document.getElementById("closeSidebar");
 const collapseBtn = document.getElementById("collapseBtn");
 const forkSessionBtn = document.getElementById("forkSessionBtn");
 const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
+const sidebarFilters = document.getElementById("sidebarFilters");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
 const newSessionBtn = document.getElementById("newSessionBtn");
@@ -37,6 +38,7 @@ const dropToolsBtn = document.getElementById("dropToolsBtn");
 const resumeBtn = document.getElementById("resumeBtn");
 const tabSessions = document.getElementById("tabSessions");
 const tabProgress = document.getElementById("tabProgress");
+const appFilterSelect = document.getElementById("appFilterSelect");
 const progressPanel = document.getElementById("progressPanel");
 const inputArea = document.getElementById("inputArea");
 const inputResizeHandle = document.getElementById("inputResizeHandle");
@@ -66,6 +68,17 @@ let ws = null;
 let pendingImages = [];
 const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
+const ACTIVE_APP_FILTER_STORAGE_KEY = "activeAppFilter";
+const APP_FILTER_ALL_VALUE = "__all__";
+const DEFAULT_APP_ID = "chat";
+const BUILTIN_APP_LABELS = {
+  chat: "Chat",
+  feishu: "Lark",
+  email: "Email",
+  github: "GitHub",
+  automation: "Automation",
+};
+const BUILTIN_APP_ORDER = Object.keys(BUILTIN_APP_LABELS);
 let pendingNavigationState = readNavigationStateFromLocation();
 let currentSessionId =
   pendingNavigationState.sessionId ||
@@ -75,11 +88,10 @@ let hasAttachedSession = false;
 let sessionStatus = "idle";
 let reconnectTimer = null;
 let sessions = [];
+let appCatalog = [];
 let visitorMode = false;
 let visitorSessionId = null;
-let pendingSummary = new Set(); // sessionIds awaiting summary generation
 let finishedUnread = new Set(); // sessionIds finished but not yet opened
-let lastSidebarUpdatedAt = {}; // sessionId -> last known updatedAt
 let currentSessionRefreshPromise = null;
 let pendingCurrentSessionRefresh = false;
 let hasSeenWsOpen = false;
@@ -94,6 +106,11 @@ const messageTimeFormatter = new Intl.DateTimeFormat(undefined, {
   second: "2-digit",
   hour12: false,
 });
+const renderedEventState = {
+  sessionId: null,
+  latestSeq: 0,
+  eventCount: 0,
+};
 
 let currentTokens = 0;
 
@@ -105,11 +122,6 @@ let selectedTool = preferredTool;
 // Default thinking to enabled; only disable if explicitly set to 'false'
 let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
 // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
-const renderedEventState = {
-  sessionId: null,
-  latestSeq: 0,
-  eventCount: 0,
-};
 let selectedModel = null;
 let selectedEffort = null;
 let currentToolModels = []; // model list for current tool
@@ -132,6 +144,10 @@ let collapsedFolders = JSON.parse(
 // Thinking block state
 let currentThinkingBlock = null; // { el, body, tools: Set }
 let inThinkingBlock = false;
+
+let activeAppFilter = normalizeAppFilter(
+  localStorage.getItem(ACTIVE_APP_FILTER_STORAGE_KEY) || APP_FILTER_ALL_VALUE,
+);
 
 function registerHiddenMarkdownExtensions() {
   const hiddenTagStart = /<(private|hide)\b/i;
@@ -275,6 +291,163 @@ function syncBrowserState(state = {}) {
     history.replaceState(null, "", nextUrl);
   }
 }
+
+function normalizeAppId(appId, { fallbackDefault = false } = {}) {
+  const trimmed = typeof appId === "string" ? appId.trim() : "";
+  if (!trimmed) {
+    return fallbackDefault ? DEFAULT_APP_ID : "";
+  }
+  const builtinId = trimmed.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(BUILTIN_APP_LABELS, builtinId)) {
+    return builtinId;
+  }
+  return trimmed;
+}
+
+function normalizeAppFilter(appId) {
+  const normalized = normalizeAppId(appId);
+  return normalized || APP_FILTER_ALL_VALUE;
+}
+
+function persistActiveAppFilter(appId) {
+  if (visitorMode) return;
+  localStorage.setItem(ACTIVE_APP_FILTER_STORAGE_KEY, normalizeAppFilter(appId));
+}
+
+function formatAppNameFromId(appId) {
+  const normalized = normalizeAppId(appId);
+  if (!normalized) return BUILTIN_APP_LABELS[DEFAULT_APP_ID];
+  if (BUILTIN_APP_LABELS[normalized]) return BUILTIN_APP_LABELS[normalized];
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function createAppCatalogEntry(app) {
+  const id = normalizeAppId(app?.id);
+  if (!id) return null;
+  const name =
+    typeof app?.name === "string" && app.name.trim()
+      ? app.name.trim()
+      : formatAppNameFromId(id);
+  return {
+    ...app,
+    id,
+    name,
+  };
+}
+
+function sortAppCatalogEntries(a, b) {
+  const aBuiltinIndex = BUILTIN_APP_ORDER.indexOf(a.id);
+  const bBuiltinIndex = BUILTIN_APP_ORDER.indexOf(b.id);
+  if (aBuiltinIndex !== -1 || bBuiltinIndex !== -1) {
+    if (aBuiltinIndex === -1) return 1;
+    if (bBuiltinIndex === -1) return -1;
+    return aBuiltinIndex - bBuiltinIndex;
+  }
+  return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function refreshAppCatalog(apps = []) {
+  const next = new Map();
+
+  for (const builtinId of BUILTIN_APP_ORDER) {
+    next.set(builtinId, createAppCatalogEntry({ id: builtinId }));
+  }
+
+  for (const app of apps) {
+    const entry = createAppCatalogEntry(app);
+    if (!entry) continue;
+    next.set(entry.id, entry);
+  }
+
+  for (const session of sessions) {
+    const entry = createAppCatalogEntry({ id: session?.appId });
+    if (!entry) continue;
+    if (!next.has(entry.id)) {
+      next.set(entry.id, entry);
+    }
+  }
+
+  if (activeAppFilter !== APP_FILTER_ALL_VALUE && !next.has(activeAppFilter)) {
+    next.set(
+      activeAppFilter,
+      createAppCatalogEntry({ id: activeAppFilter }),
+    );
+  }
+
+  appCatalog = [...next.values()].filter(Boolean).sort(sortAppCatalogEntries);
+  renderAppFilterOptions();
+}
+
+function getAppCatalogEntry(appId) {
+  const normalized = normalizeAppId(appId, { fallbackDefault: true });
+  return (
+    appCatalog.find((entry) => entry.id === normalized)
+    || createAppCatalogEntry({ id: normalized })
+  );
+}
+
+function getEffectiveSessionAppId(session) {
+  return normalizeAppId(session?.appId, { fallbackDefault: true });
+}
+
+function matchesCurrentAppFilter(session) {
+  return (
+    activeAppFilter === APP_FILTER_ALL_VALUE
+    || getEffectiveSessionAppId(session) === activeAppFilter
+  );
+}
+
+function getVisibleActiveSessions() {
+  return getActiveSessions().filter((session) => matchesCurrentAppFilter(session));
+}
+
+function getVisibleArchivedSessions() {
+  return getArchivedSessions().filter((session) => matchesCurrentAppFilter(session));
+}
+
+function getSessionCountForApp(appId) {
+  const activeSessions = getActiveSessions();
+  if (appId === APP_FILTER_ALL_VALUE) return activeSessions.length;
+  return activeSessions.filter((session) => getEffectiveSessionAppId(session) === appId).length;
+}
+
+function renderAppFilterOptions() {
+  if (!appFilterSelect || visitorMode) return;
+
+  const previousValue = normalizeAppFilter(appFilterSelect.value || activeAppFilter);
+  const selectedValue = appCatalog.some((app) => app.id === previousValue)
+    ? previousValue
+    : activeAppFilter;
+
+  appFilterSelect.innerHTML = "";
+
+  const allOption = document.createElement("option");
+  allOption.value = APP_FILTER_ALL_VALUE;
+  allOption.textContent = `All Apps (${getSessionCountForApp(APP_FILTER_ALL_VALUE)})`;
+  appFilterSelect.appendChild(allOption);
+
+  for (const app of appCatalog) {
+    const option = document.createElement("option");
+    option.value = app.id;
+    option.textContent = `${app.name} (${getSessionCountForApp(app.id)})`;
+    appFilterSelect.appendChild(option);
+  }
+
+  appFilterSelect.value = normalizeAppFilter(selectedValue);
+}
+
+if (appFilterSelect) {
+  appFilterSelect.addEventListener("change", () => {
+    activeAppFilter = normalizeAppFilter(appFilterSelect.value);
+    persistActiveAppFilter(activeAppFilter);
+    renderAppFilterOptions();
+    renderSessionList();
+  });
+}
+
+refreshAppCatalog();
 
 function getSessionSortTime(session) {
   const stamp = session?.updatedAt || session?.created || "";

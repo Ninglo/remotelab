@@ -101,9 +101,6 @@ function classifyApiRoute(method, pathname) {
   if (pathname === '/api/models' && method === 'GET') return 'GET /api/models';
   if (pathname === '/api/tools' && method === 'GET') return 'GET /api/tools';
   if (pathname === '/api/tools' && method === 'POST') return 'POST /api/tools';
-  if (pathname === '/api/sidebar' && method === 'GET') return 'GET /api/sidebar';
-  if (pathname === '/api/settings' && method === 'GET') return 'GET /api/settings';
-  if (pathname === '/api/settings' && method === 'PATCH') return 'PATCH /api/settings';
   if (pathname === '/api/autocomplete' && method === 'GET') return 'GET /api/autocomplete';
   if (pathname === '/api/browse' && method === 'GET') return 'GET /api/browse';
   if (pathname === '/api/push/vapid-public-key' && method === 'GET') return 'GET /api/push/vapid-public-key';

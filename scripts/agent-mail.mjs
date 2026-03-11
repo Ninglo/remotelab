@@ -106,7 +106,7 @@ Examples:
   node scripts/agent-mail.mjs approve mail_123 --reviewer operator
   node scripts/agent-mail.mjs outbound configure-apple-mail --account Google
   node scripts/agent-mail.mjs outbound configure-cloudflare-worker --from agent@example.com --worker-base-url https://remotelab-email-worker.example.workers.dev
-  node scripts/agent-mail.mjs automation configure --allowlist-auto-approve true --chat-base-url http://127.0.0.1:7692`);
+  node scripts/agent-mail.mjs automation configure --allowlist-auto-approve true --chat-base-url http://127.0.0.1:7690`);
 }
 
 function printJson(value) {

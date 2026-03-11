@@ -142,65 +142,32 @@ body {
 .sidebar-tab.active { color: var(--text); border-bottom-color: var(--text); }
 .sidebar-tab:hover:not(.active) { color: var(--text-secondary); }
 
+.sidebar-filters {
+  padding: 8px 8px 0;
+  flex-shrink: 0;
+}
+.sidebar-filters.hidden { display: none; }
+.sidebar-filter-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+}
+.sidebar-filter-select:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
 /* Progress panel */
 .progress-panel {
-  flex: 1; overflow-y: auto; padding: 8px;
-  display: none; flex-direction: column; gap: 6px;
+  flex: 1;
+  display: none;
 }
-.progress-panel.visible { display: flex; }
-.progress-card {
-  padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--bg-secondary); cursor: default;
-}
-.progress-card-header {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 5px;
-}
-.progress-card-name {
-  font-size: 12px; font-weight: 600; color: var(--text); flex: 1;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.progress-card-folder {
-  font-size: 10px; color: var(--text-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.progress-card-bg {
-  font-size: 12px; color: var(--text-secondary); line-height: 1.45; margin-bottom: 5px;
-}
-.progress-card-action {
-  font-size: 11px; color: var(--text-muted); line-height: 1.4;
-  border-top: 1px solid var(--border); padding-top: 5px; margin-top: 2px;
-}
-.progress-card-time {
-  font-size: 10px; color: var(--text-muted); margin-top: 4px;
-}
-.progress-empty {
-  padding: 32px 16px; text-align: center; color: var(--text-muted);
-  font-size: 12px; line-height: 1.6;
-}
-.progress-running-dot {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--success);
-  flex-shrink: 0; animation: pulse 1.5s infinite;
-}
-.progress-card-footer {
-  display: flex; align-items: center; justify-content: space-between; margin-top: 4px;
-}
-.progress-summarizing {
-  font-size: 10px; color: var(--text-muted); font-style: italic;
-  animation: pulse 1.5s infinite; margin-top: 4px;
-}
-.progress-toggle-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; border-top: 1px solid var(--border); margin-top: auto; flex-shrink: 0;
-}
-.progress-toggle-label { font-size: 12px; color: var(--text-muted); }
-.progress-toggle-btn {
-  padding: 3px 10px; font-size: 11px; border-radius: 4px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--text-muted); cursor: pointer; font-family: inherit; transition: all 0.15s;
-}
-.progress-toggle-btn.active {
-  background: var(--bg-tertiary); border-color: var(--border-strong); color: var(--text);
-}
+.progress-panel.visible { display: block; }
 
 /* Folder groups */
 .folder-group { margin-bottom: 4px; }
@@ -240,6 +207,7 @@ body {
   font-size: 11px; color: var(--text-muted); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.session-item-count { font-variant-numeric: tabular-nums; }
 .session-item-meta .status-running { color: var(--success); }
 .session-item-meta .status-interrupted { color: var(--warning); }
 .session-item-meta .status-done { color: #3b82f6; }
@@ -274,6 +242,11 @@ body {
 .archived-item:hover { opacity: 1; }
 .archived-empty {
   padding: 6px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.session-filter-empty {
+  padding: 12px 10px;
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -557,6 +530,39 @@ body {
   padding-top: 4px;
 }
 .thinking-block.collapsed .thinking-body { display: none; }
+
+.turn-collapse-drawer {
+  margin: 8px 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+.turn-collapse-summary {
+  cursor: pointer;
+  padding: 9px 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  user-select: none;
+  list-style: none;
+}
+.turn-collapse-summary::-webkit-details-marker { display: none; }
+.turn-collapse-summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 7px;
+  color: var(--text-muted);
+  transition: transform 0.18s ease;
+}
+.turn-collapse-drawer[open] .turn-collapse-summary::before {
+  transform: rotate(90deg);
+}
+.turn-collapse-drawer[open] .turn-collapse-summary {
+  border-bottom: 1px solid var(--border);
+}
+.turn-collapse-body {
+  padding: 10px 12px 4px;
+}
 
 /* Reasoning text inside thinking block */
 .reasoning {
@@ -951,6 +957,7 @@ body {
   .sidebar-collapse-btn { display: inline-flex; }
 
   .sidebar-overlay.collapsed .sidebar-header h2,
+  .sidebar-overlay.collapsed .sidebar-filters,
   .sidebar-overlay.collapsed .sidebar-list,
   .sidebar-overlay.collapsed .session-list-footer,
   .sidebar-overlay.collapsed .new-session-btn { display: none; }
@@ -1004,6 +1011,11 @@ body.visitor-mode .header #menuBtn { display: none !important; }
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" id="tabSessions">Sessions</button>
         <button class="sidebar-tab" id="tabProgress">Progress</button>
+      </div>
+      <div class="sidebar-filters" id="sidebarFilters">
+        <select class="sidebar-filter-select" id="appFilterSelect" aria-label="Filter sessions by app">
+          <option value="__all__">All Apps</option>
+        </select>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
       <div class="progress-panel" id="progressPanel"></div>

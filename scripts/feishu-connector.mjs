@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { appendFile, mkdir, readFile, writeFile } from 'fs/promises';
+import { appendFile, mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { setTimeout as delay } from 'timers/promises';
@@ -8,9 +8,11 @@ import { pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
+import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs';
 
 const DEFAULT_CONFIG_PATH = join(homedir(), '.config', 'remotelab', 'feishu-connector', 'config.json');
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
+const DEFAULT_ACCESS_STATE_FILENAME = 'access-state.json';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
 const DEFAULT_SESSION_TOOL = 'codex';
 const DEFAULT_SESSION_SYSTEM_PROMPT = [
@@ -23,6 +25,23 @@ const DEFAULT_SESSION_SYSTEM_PROMPT = [
 const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_FEISHU_TEXT_LENGTH = 5000;
+const REMOTELAB_SESSION_APP_ID = 'feishu';
+const APPROVE_CURRENT_CHAT_COMMANDS = new Set([
+  '授权本群',
+  '授权这个群',
+  'approve this group',
+  'approve group',
+  'trust this group',
+  'trust this chat',
+]);
+const CHAT_ACCESS_STATUS_COMMANDS = new Set([
+  '本群状态',
+  '本群权限',
+  '查看本群状态',
+  '查看本群权限',
+  'group access status',
+  'chat access status',
+]);
 
 function parseArgs(argv) {
   const options = {
@@ -93,6 +112,7 @@ Config shape:
     "systemPrompt": "${DEFAULT_SESSION_SYSTEM_PROMPT.replace(/"/g, '\\"')}",
     "intakePolicy": {
       "mode": "allow_all",
+      "accessStatePath": "~/.config/remotelab/feishu-connector/${DEFAULT_ACCESS_STATE_FILENAME}",
       "allowedSendersPath": "~/.config/remotelab/feishu-connector/${DEFAULT_ALLOWED_SENDERS_FILENAME}",
       "allowedSenders": {
         "openIds": [],
@@ -150,6 +170,104 @@ function normalizeAllowedSenders(value) {
   };
 }
 
+function normalizeApprovedChatRecord(value, fallbackChatId = '') {
+  const chatId = trimString(value?.chatId || fallbackChatId);
+  if (!chatId) return null;
+  return {
+    chatId,
+    name: trimString(value?.name),
+    tenantKey: trimString(value?.tenantKey),
+    autoApproveNewMembers: value?.autoApproveNewMembers !== false,
+    source: trimString(value?.source || 'manual'),
+    createdAt: trimString(value?.createdAt),
+    updatedAt: trimString(value?.updatedAt),
+  };
+}
+
+function normalizeApprovedChats(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const normalized = {};
+  for (const [key, chat] of Object.entries(value)) {
+    const record = normalizeApprovedChatRecord(chat, key);
+    if (!record) continue;
+    normalized[record.chatId] = record;
+  }
+  return normalized;
+}
+
+function normalizeMembershipGrantRecord(value, fallbackKey = '') {
+  const chatId = trimString(value?.chatId || fallbackKey.split(':', 1)[0]);
+  const openId = trimString(value?.openId);
+  const userId = trimString(value?.userId);
+  const unionId = trimString(value?.unionId);
+  const tenantKey = trimString(value?.tenantKey);
+  if (!chatId) return null;
+  if (!openId && !userId && !unionId && !tenantKey) return null;
+  return {
+    chatId,
+    openId,
+    userId,
+    unionId,
+    tenantKey,
+    source: trimString(value?.source || 'manual'),
+    grantedAt: trimString(value?.grantedAt),
+    updatedAt: trimString(value?.updatedAt),
+  };
+}
+
+function normalizeMembershipGrants(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const normalized = {};
+  for (const [key, grant] of Object.entries(value)) {
+    const record = normalizeMembershipGrantRecord(grant, key);
+    if (!record) continue;
+    const recordKey = key || `${record.chatId}:${record.openId || record.userId || record.unionId || record.tenantKey}`;
+    normalized[recordKey] = record;
+  }
+  return normalized;
+}
+
+function normalizeAccessState(value) {
+  return {
+    version: 1,
+    allowedSenders: normalizeAllowedSenders(value?.allowedSenders),
+    approvedChats: normalizeApprovedChats(value?.approvedChats),
+    membershipGrants: normalizeMembershipGrants(value?.membershipGrants),
+  };
+}
+
+function createAllowedSendersCache(allowedSenders) {
+  const normalized = normalizeAllowedSenders(allowedSenders);
+  return {
+    openIds: new Set(normalized.openIds),
+    userIds: new Set(normalized.userIds),
+    unionIds: new Set(normalized.unionIds),
+    tenantKeys: new Set(normalized.tenantKeys),
+  };
+}
+
+function snapshotAllowedSendersCache(cache) {
+  return {
+    openIds: Array.from(cache?.openIds || []).sort(),
+    userIds: Array.from(cache?.userIds || []).sort(),
+    unionIds: Array.from(cache?.unionIds || []).sort(),
+    tenantKeys: Array.from(cache?.tenantKeys || []).sort(),
+  };
+}
+
+function sortObjectKeys(value) {
+  return Object.fromEntries(Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function snapshotAccessState(access) {
+  return {
+    version: 1,
+    allowedSenders: snapshotAllowedSendersCache(access?.allowedSendersCache),
+    approvedChats: sortObjectKeys(access?.approvedChats),
+    membershipGrants: sortObjectKeys(access?.membershipGrants),
+  };
+}
+
 function resolveOptionalPath(value, baseDir, fallbackPath) {
   const normalized = trimString(value);
   if (!normalized) return fallbackPath;
@@ -170,8 +288,10 @@ function normalizeIntakePolicy(value, options = {}) {
 
   const baseDir = options.baseDir || homedir();
   const defaultAllowedSendersPath = options.defaultAllowedSendersPath || join(baseDir, DEFAULT_ALLOWED_SENDERS_FILENAME);
+  const defaultAccessStatePath = options.defaultAccessStatePath || join(baseDir, DEFAULT_ACCESS_STATE_FILENAME);
   return {
     mode,
+    accessStatePath: resolveOptionalPath(value?.accessStatePath, baseDir, defaultAccessStatePath),
     allowedSendersPath: resolveOptionalPath(value?.allowedSendersPath, baseDir, defaultAllowedSendersPath),
     allowedSenders: normalizeAllowedSenders(value?.allowedSenders),
   };
@@ -217,6 +337,7 @@ async function loadConfig(pathname) {
     storageDir,
     intakePolicy: normalizeIntakePolicy(parsed?.intakePolicy, {
       baseDir: configDir,
+      defaultAccessStatePath: join(configDir, DEFAULT_ACCESS_STATE_FILENAME),
       defaultAllowedSendersPath: join(configDir, DEFAULT_ALLOWED_SENDERS_FILENAME),
     }),
     storeRawEvents: parsed?.storeRawEvents === true,
@@ -331,6 +452,13 @@ async function writeJson(pathname, value) {
   await writeFile(pathname, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
+async function writeJsonAtomic(pathname, value) {
+  await ensureDir(dirname(pathname));
+  const tempPath = `${pathname}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  await rename(tempPath, pathname);
+}
+
 async function readAllowedSendersFile(pathname) {
   try {
     const raw = await readFile(pathname, 'utf8');
@@ -344,6 +472,22 @@ async function readAllowedSendersFile(pathname) {
     }
     console.error(`[feishu-connector] failed to read whitelist file ${pathname}:`, error?.stack || error?.message || error);
     return { status: 'error', allowedSenders: null };
+  }
+}
+
+async function readAccessStateFile(pathname) {
+  try {
+    const raw = await readFile(pathname, 'utf8');
+    return {
+      status: 'ok',
+      accessState: normalizeAccessState(JSON.parse(raw)),
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return { status: 'missing', accessState: null };
+    }
+    console.error(`[feishu-connector] failed to read access state file ${pathname}:`, error?.stack || error?.message || error);
+    return { status: 'error', accessState: null };
   }
 }
 
@@ -367,12 +511,141 @@ async function ensureAllowedSendersFile(pathname, seedAllowedSenders) {
   return seeded;
 }
 
+async function loadPersistedAccessState(policy) {
+  const accessStateFile = await readAccessStateFile(policy.accessStatePath);
+  const allowedSendersFile = await readAllowedSendersFile(policy.allowedSendersPath);
+  const merged = normalizeAccessState({
+    allowedSenders: mergeAllowedSenders(
+      policy.allowedSenders,
+      accessStateFile.accessState?.allowedSenders,
+      allowedSendersFile.allowedSenders,
+    ),
+    approvedChats: accessStateFile.accessState?.approvedChats,
+    membershipGrants: accessStateFile.accessState?.membershipGrants,
+  });
+  await writeJsonAtomic(policy.accessStatePath, merged);
+  await writeJsonAtomic(policy.allowedSendersPath, merged.allowedSenders);
+  return merged;
+}
+
 async function loadEffectiveAllowedSenders(policy) {
   const fileState = await readAllowedSendersFile(policy.allowedSendersPath);
   if (fileState.status === 'ok' && fileState.allowedSenders) {
     return fileState.allowedSenders;
   }
   return normalizeAllowedSenders(policy.allowedSenders);
+}
+
+function senderHasAllowedAccess(cache, summary) {
+  const sender = summary?.sender || {};
+  const tenantKey = trimString(sender?.tenantKey || summary?.tenantKey);
+  return (
+    cache?.openIds?.has(trimString(sender?.openId))
+    || cache?.userIds?.has(trimString(sender?.userId))
+    || cache?.unionIds?.has(trimString(sender?.unionId))
+    || cache?.tenantKeys?.has(tenantKey)
+  );
+}
+
+function normalizeGrantIdentity(sender, fallbackTenantKey = '') {
+  return {
+    openId: trimString(sender?.openId),
+    userId: trimString(sender?.userId),
+    unionId: trimString(sender?.unionId),
+    tenantKey: trimString(sender?.tenantKey || fallbackTenantKey),
+  };
+}
+
+function membershipGrantKey(chatId, sender) {
+  const normalizedChatId = trimString(chatId);
+  const normalizedSender = normalizeGrantIdentity(sender);
+  const identityKey = normalizedSender.openId || normalizedSender.userId || normalizedSender.unionId || normalizedSender.tenantKey;
+  if (!normalizedChatId || !identityKey) return '';
+  return `${normalizedChatId}:${identityKey}`;
+}
+
+function grantSenderAccess(runtime, sender, options = {}) {
+  if (!runtime?.access) return { changed: false, grantKey: '' };
+  const identity = normalizeGrantIdentity(sender, options.tenantKey);
+  if (!identity.openId && !identity.userId && !identity.unionId && !identity.tenantKey) {
+    return { changed: false, grantKey: '' };
+  }
+
+  let changed = false;
+  if (identity.openId && !runtime.access.allowedSendersCache.openIds.has(identity.openId)) {
+    runtime.access.allowedSendersCache.openIds.add(identity.openId);
+    changed = true;
+  }
+  if (identity.userId && !runtime.access.allowedSendersCache.userIds.has(identity.userId)) {
+    runtime.access.allowedSendersCache.userIds.add(identity.userId);
+    changed = true;
+  }
+  if (identity.unionId && !runtime.access.allowedSendersCache.unionIds.has(identity.unionId)) {
+    runtime.access.allowedSendersCache.unionIds.add(identity.unionId);
+    changed = true;
+  }
+  if (identity.tenantKey && !runtime.access.allowedSendersCache.tenantKeys.has(identity.tenantKey)) {
+    runtime.access.allowedSendersCache.tenantKeys.add(identity.tenantKey);
+    changed = true;
+  }
+
+  const grantKey = membershipGrantKey(options.chatId, identity);
+  if (!grantKey) {
+    return { changed, grantKey };
+  }
+
+  const existing = runtime.access.membershipGrants[grantKey] || {};
+  const next = {
+    chatId: trimString(options.chatId),
+    openId: identity.openId,
+    userId: identity.userId,
+    unionId: identity.unionId,
+    tenantKey: identity.tenantKey,
+    source: trimString(options.source || existing.source || 'manual'),
+    grantedAt: trimString(existing.grantedAt) || nowIso(),
+    updatedAt: nowIso(),
+  };
+  if (JSON.stringify(existing) !== JSON.stringify(next)) {
+    runtime.access.membershipGrants[grantKey] = next;
+    changed = true;
+  }
+  return { changed, grantKey };
+}
+
+function upsertApprovedChat(runtime, chat) {
+  if (!runtime?.access) return null;
+  const normalized = normalizeApprovedChatRecord(chat, chat?.chatId || '');
+  if (!normalized) return null;
+  const existing = runtime.access.approvedChats[normalized.chatId] || {};
+  const next = {
+    chatId: normalized.chatId,
+    name: normalized.name || trimString(existing.name),
+    tenantKey: normalized.tenantKey || trimString(existing.tenantKey),
+    autoApproveNewMembers: normalized.autoApproveNewMembers !== false,
+    source: normalized.source || trimString(existing.source) || 'manual',
+    createdAt: trimString(existing.createdAt) || normalized.createdAt || nowIso(),
+    updatedAt: nowIso(),
+  };
+  runtime.access.approvedChats[next.chatId] = next;
+  return next;
+}
+
+function isApprovedChat(runtime, chatId) {
+  const normalizedChatId = trimString(chatId);
+  const approved = runtime?.access?.approvedChats?.[normalizedChatId];
+  return Boolean(approved) && approved.autoApproveNewMembers !== false;
+}
+
+function queueAccessStateFlush(runtime) {
+  if (!runtime?.access || !runtime?.config?.intakePolicy) return Promise.resolve();
+  runtime.access.flushPromise = (runtime.access.flushPromise || Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      const snapshot = snapshotAccessState(runtime.access);
+      await writeJsonAtomic(runtime.config.intakePolicy.accessStatePath, snapshot);
+      await writeJsonAtomic(runtime.config.intakePolicy.allowedSendersPath, snapshot.allowedSenders);
+    });
+  return runtime.access.flushPromise;
 }
 
 function senderIdentity(summary) {
@@ -419,8 +692,11 @@ async function updateKnownSenders(pathname, summary) {
   await writeJson(pathname, current);
 }
 
-async function isAllowedByPolicy(policy, summary) {
+async function isAllowedByPolicy(policy, summary, access = null) {
   if (policy.mode !== 'whitelist') return true;
+  if (access?.allowedSendersCache) {
+    return senderHasAllowedAccess(access.allowedSendersCache, summary);
+  }
   const sender = summary.sender || {};
   const allowed = await loadEffectiveAllowedSenders(policy);
   return (
@@ -431,18 +707,23 @@ async function isAllowedByPolicy(policy, summary) {
   );
 }
 
-async function recordInboundEvent(config, eventsLogPath, knownSendersPath, summary, raw, sourceLabel) {
-  const allowed = await isAllowedByPolicy(config.intakePolicy, summary);
+async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed) {
   const record = {
     receivedAt: nowIso(),
     sourceLabel,
     allowed,
     summary,
-    raw: config.storeRawEvents ? raw : undefined,
+    raw: runtime.config.storeRawEvents ? raw : undefined,
   };
-  await appendJsonl(eventsLogPath, record);
-  await updateKnownSenders(knownSendersPath, summary);
+  await appendJsonl(runtime.storagePaths.eventsLogPath, record);
   console.log(`[feishu-connector] inbound event ${sourceLabel} (${allowed ? 'allowed' : 'blocked'})`, JSON.stringify(summary));
+  return allowed;
+}
+
+async function recordInboundEvent(runtime, summary, raw, sourceLabel) {
+  const allowed = await isAllowedByPolicy(runtime.config.intakePolicy, summary, runtime.access);
+  await recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed);
+  await updateKnownSenders(runtime.storagePaths.knownSendersPath, summary);
   if (!allowed) {
     console.log('[feishu-connector] sender blocked by whitelist policy');
   }
@@ -487,7 +768,51 @@ function buildSessionDescription(summary) {
   return parts.join(' | ');
 }
 
+function mentionDisplayName(mention) {
+  const name = trimString(mention?.name);
+  if (name) return name;
+  const token = trimString(mention?.key).replace(/^@+/, '');
+  return token || 'user';
+}
+
+function renderMentionPreview(text, mentions) {
+  let rendered = trimString(text);
+  if (!rendered) return '';
+  for (const mention of Array.isArray(mentions) ? mentions : []) {
+    const token = trimString(mention?.key);
+    if (!token) continue;
+    rendered = rendered.split(token).join(`@${mentionDisplayName(mention)}`);
+  }
+  return rendered;
+}
+
+function buildMentionPrompt(summary, rawMessage) {
+  const mentions = Array.isArray(summary?.mentions) ? summary.mentions : [];
+  if (!mentions.length) return [];
+  return [
+    '',
+    'Original mention-token message:',
+    rawMessage || '[non-text or empty message]',
+    '',
+    'Mention map:',
+    ...mentions.map((mention) => {
+      const details = [
+        `${trimString(mention?.key) || '(unknown token)'} => @${mentionDisplayName(mention)}`,
+        trimString(mention?.openId) ? `open_id=${trimString(mention.openId)}` : '',
+        trimString(mention?.userId) ? `user_id=${trimString(mention.userId)}` : '',
+        trimString(mention?.unionId) ? `union_id=${trimString(mention.unionId)}` : '',
+      ].filter(Boolean);
+      return `- ${details.join(' | ')}`;
+    }),
+    '',
+    'If you want to mention someone in your reply, include their exact mention token (for example @_user_1). The connector will convert it into a real Feishu @ mention.',
+  ];
+}
+
 function buildRemoteLabMessage(summary) {
+  const rawMessage = trimString(summary.textPreview);
+  const renderedMessage = renderMentionPreview(rawMessage, summary.mentions);
+  const hasMentions = Array.isArray(summary?.mentions) && summary.mentions.length > 0;
   return [
     'Inbound Feishu message.',
     `Chat type: ${summary.chatType || 'unknown'}`,
@@ -499,8 +824,9 @@ function buildRemoteLabMessage(summary) {
     summary.sender?.unionId ? `Sender union_id: ${summary.sender.unionId}` : '',
     summary.tenantKey ? `Tenant key: ${summary.tenantKey}` : '',
     '',
-    'User message:',
-    trimString(summary.textPreview) || '[non-text or empty message]',
+    hasMentions ? 'User message (rendered mentions):' : 'User message:',
+    (hasMentions ? renderedMessage : rawMessage) || '[non-text or empty message]',
+    ...buildMentionPrompt(summary, rawMessage),
     '',
     'Write the exact plain-text Feishu reply to send back.',
   ].filter(Boolean).join('\n');
@@ -555,26 +881,30 @@ async function loadAssistantReply(requester, sessionId, runId, requestId) {
     throw new Error(eventsResult.json?.error || eventsResult.text || `Failed to load session events for ${sessionId}`);
   }
 
-  const candidate = [...eventsResult.json.events].reverse().find((event) => (
-    event.type === 'message'
-    && event.role === 'assistant'
-    && ((runId && event.runId === runId) || (requestId && event.requestId === requestId))
-  ));
+  const candidate = await selectAssistantReplyEvent(eventsResult.json.events, {
+    match: (event) => (
+      (runId && event.runId === runId)
+      || (requestId && event.requestId === requestId)
+    ),
+    hydrate: async (event) => {
+      const bodyResult = await requester(`/api/sessions/${sessionId}/events/${event.seq}/body`);
+      if (!bodyResult.response.ok || bodyResult.json?.body?.value === undefined) {
+        return event;
+      }
+      return {
+        ...event,
+        content: bodyResult.json.body.value,
+        bodyLoaded: true,
+      };
+    },
+  });
   if (!candidate) return null;
-
-  if (candidate.bodyAvailable && candidate.bodyLoaded === false) {
-    const bodyResult = await requester(`/api/sessions/${sessionId}/events/${candidate.seq}/body`);
-    if (bodyResult.response.ok && bodyResult.json?.body?.value !== undefined) {
-      candidate.content = bodyResult.json.body.value;
-      candidate.bodyLoaded = true;
-    }
-  }
 
   return candidate;
 }
 
 function normalizeReplyText(text) {
-  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+  const normalized = stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n')).trim();
   if (!normalized) return '';
   if (normalized.length <= MAX_FEISHU_TEXT_LENGTH) return normalized;
   return `${normalized.slice(0, MAX_FEISHU_TEXT_LENGTH - 16).trimEnd()}\n\n[truncated]`;
@@ -632,10 +962,16 @@ async function loadLatestReplayableSummary(eventsLogPath) {
   return null;
 }
 
-function createRuntimeContext(config, storagePaths) {
+function createRuntimeContext(config, storagePaths, accessState) {
   return {
     config,
     storagePaths,
+    access: {
+      allowedSendersCache: createAllowedSendersCache(accessState?.allowedSenders),
+      approvedChats: normalizeApprovedChats(accessState?.approvedChats),
+      membershipGrants: normalizeMembershipGrants(accessState?.membershipGrants),
+      flushPromise: Promise.resolve(),
+    },
     appClient: new Lark.Client({
       appId: config.appId,
       appSecret: config.appSecret,
@@ -692,6 +1028,7 @@ async function createOrReuseSession(runtime, summary) {
     folder: runtime.config.sessionFolder,
     tool: runtime.config.sessionTool,
     name: buildSessionName(summary),
+    appId: REMOTELAB_SESSION_APP_ID,
     group: 'Feishu',
     description: buildSessionDescription(summary),
     systemPrompt: runtime.config.systemPrompt,
@@ -772,6 +1109,30 @@ async function generateRemoteLabReply(runtime, summary) {
   };
 }
 
+function resolveMentionTargetId(mention) {
+  return trimString(mention?.openId) || trimString(mention?.userId) || trimString(mention?.unionId);
+}
+
+function escapeFeishuMentionValue(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function compileFeishuReplyText(text, mentions) {
+  let compiled = normalizeReplyText(text);
+  for (const mention of Array.isArray(mentions) ? mentions : []) {
+    const token = trimString(mention?.key);
+    const targetId = resolveMentionTargetId(mention);
+    if (!token || !targetId) continue;
+    const tag = `<at user_id="${escapeFeishuMentionValue(targetId)}">${escapeFeishuMentionValue(mentionDisplayName(mention))}</at>`;
+    compiled = compiled.split(token).join(tag);
+  }
+  return compiled;
+}
+
 async function sendFeishuText(runtime, summary, text) {
   const response = await runtime.appClient.im.v1.message.create({
     params: {
@@ -780,7 +1141,7 @@ async function sendFeishuText(runtime, summary, text) {
     data: {
       receive_id: summary.chatId,
       msg_type: 'text',
-      content: JSON.stringify({ text: normalizeReplyText(text) }),
+      content: JSON.stringify({ text: compileFeishuReplyText(text, summary?.mentions) }),
       uuid: buildReplyUuid(summary),
     },
   });
@@ -795,6 +1156,171 @@ function isProcessableMessage(summary) {
   const senderType = trimString(summary?.sender?.senderType).toLowerCase();
   if (senderType && senderType !== 'user') return false;
   return true;
+}
+
+function stripMentionTokens(text) {
+  return String(text || '').replace(/@_[A-Za-z0-9_]+/g, ' ');
+}
+
+function normalizeLocalCommandText(text) {
+  return trimString(
+    stripMentionTokens(text)
+      .replace(/[。！？!?]+$/g, '')
+      .replace(/\s+/g, ' ')
+      .toLowerCase(),
+  );
+}
+
+function extractLocalCommand(summary) {
+  const chatType = trimString(summary?.chatType).toLowerCase();
+  if (!['group', 'topic'].includes(chatType)) return null;
+  const normalized = normalizeLocalCommandText(summary?.textPreview || summary?.rawContent);
+  if (!normalized) return null;
+  if (APPROVE_CURRENT_CHAT_COMMANDS.has(normalized)) {
+    return { type: 'approve_current_chat' };
+  }
+  if (CHAT_ACCESS_STATUS_COMMANDS.has(normalized)) {
+    return { type: 'chat_access_status' };
+  }
+  return null;
+}
+
+function buildApprovedChatReply(runtime, summary) {
+  const approved = runtime?.access?.approvedChats?.[summary.chatId] || {};
+  const name = trimString(approved.name);
+  const chatLabel = name ? `${name}（chat_id=${summary.chatId}）` : `chat_id=${summary.chatId}`;
+  return `已授权本群 ${chatLabel}。我已经写入本地状态；后续新成员进群后会自动开通权限，无需重启服务。`;
+}
+
+function buildChatAccessStatusReply(runtime, summary) {
+  const approved = runtime?.access?.approvedChats?.[summary.chatId];
+  if (!approved) {
+    return `本群尚未授权（chat_id=${summary.chatId}）。如需授权，请发送“@我 授权本群”。`;
+  }
+  const name = trimString(approved.name);
+  const label = name ? `${name}（chat_id=${approved.chatId}）` : `chat_id=${approved.chatId}`;
+  return `本群已授权 ${label}。新成员自动开通：开启。状态已保存在本地。`;
+}
+
+async function handleLocalCommand(runtime, summary, command, sendText) {
+  if (!runtime?.access) return { handled: false };
+
+  if (command.type === 'approve_current_chat') {
+    upsertApprovedChat(runtime, {
+      chatId: summary.chatId,
+      tenantKey: summary.tenantKey,
+      source: 'manual_group_command',
+      autoApproveNewMembers: true,
+    });
+    grantSenderAccess(runtime, summary.sender, {
+      chatId: summary.chatId,
+      tenantKey: summary.tenantKey,
+      source: 'manual_group_command',
+    });
+    await queueAccessStateFlush(runtime);
+    const reply = await sendText(runtime, summary, buildApprovedChatReply(runtime, summary));
+    return {
+      handled: true,
+      status: 'approved_chat',
+      commandType: command.type,
+      responseMessageId: reply.message_id || '',
+    };
+  }
+
+  if (command.type === 'chat_access_status') {
+    const reply = await sendText(runtime, summary, buildChatAccessStatusReply(runtime, summary));
+    return {
+      handled: true,
+      status: 'chat_access_status',
+      commandType: command.type,
+      responseMessageId: reply.message_id || '',
+    };
+  }
+
+  return { handled: false };
+}
+
+function summarizeChatMemberUserAddedEvent(data) {
+  const users = Array.isArray(data?.users) ? data.users : [];
+  return {
+    eventId: data?.event_id || '',
+    eventType: data?.event_type || 'im.chat.member.user.added_v1',
+    tenantKey: data?.tenant_key || '',
+    appId: data?.app_id || '',
+    createTime: data?.create_time || '',
+    chatId: data?.chat_id || '',
+    chatName: trimString(data?.name) || trimString(data?.i18n_names?.zh_cn) || trimString(data?.i18n_names?.en_us) || '',
+    operator: {
+      openId: data?.operator_id?.open_id || '',
+      userId: data?.operator_id?.user_id || '',
+      unionId: data?.operator_id?.union_id || '',
+      tenantKey: data?.operator_tenant_key || '',
+    },
+    users: users.map((user) => ({
+      name: trimString(user?.name),
+      tenantKey: trimString(user?.tenant_key || data?.tenant_key),
+      openId: trimString(user?.user_id?.open_id),
+      userId: trimString(user?.user_id?.user_id),
+      unionId: trimString(user?.user_id?.union_id),
+    })).filter((user) => user.openId || user.userId || user.unionId || user.tenantKey),
+  };
+}
+
+function joinEventSenderSummary(eventSummary, user) {
+  const identityKey = user.openId || user.userId || user.unionId || user.tenantKey || 'unknown_sender';
+  return {
+    tenantKey: eventSummary.tenantKey,
+    chatId: eventSummary.chatId,
+    chatType: 'group',
+    messageId: `join:${eventSummary.eventId || identityKey}`,
+    messageType: 'event',
+    textPreview: '',
+    mentions: [],
+    sender: {
+      openId: user.openId,
+      userId: user.userId,
+      unionId: user.unionId,
+      senderType: 'user',
+      tenantKey: user.tenantKey || eventSummary.tenantKey,
+    },
+  };
+}
+
+async function handleChatMemberUserAdded(runtime, summary, raw, sourceLabel) {
+  const approved = isApprovedChat(runtime, summary.chatId);
+  await recordConnectorEvent(runtime, sourceLabel, summary, raw, approved);
+  if (!approved) {
+    console.log(`[feishu-connector] user joined unapproved chat ${summary.chatId}; no access granted`);
+    return { grantedCount: 0, approved: false };
+  }
+
+  let grantedCount = 0;
+  let changed = false;
+  for (const user of summary.users) {
+    const result = grantSenderAccess(runtime, user, {
+      chatId: summary.chatId,
+      tenantKey: user.tenantKey || summary.tenantKey,
+      source: 'chat_member_join',
+    });
+    if (result.changed) {
+      changed = true;
+      grantedCount += 1;
+    }
+    await updateKnownSenders(runtime.storagePaths.knownSendersPath, joinEventSenderSummary(summary, user));
+  }
+
+  const approvedChat = runtime?.access?.approvedChats?.[summary.chatId];
+  if (approvedChat && summary.chatName && approvedChat.name !== summary.chatName) {
+    approvedChat.name = summary.chatName;
+    approvedChat.updatedAt = nowIso();
+    changed = true;
+  }
+
+  if (changed) {
+    await queueAccessStateFlush(runtime);
+  }
+  console.log(`[feishu-connector] auto-approved ${grantedCount} new member(s) for chat ${summary.chatId}`);
+  return { grantedCount, approved: true, changed };
 }
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
@@ -829,8 +1355,25 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       return;
     }
 
+    const localCommand = extractLocalCommand(summary);
+    if (localCommand) {
+      const localResult = await handleLocalCommand(runtime, summary, localCommand, sendText);
+      if (localResult?.handled) {
+        await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
+          status: localResult.status,
+          sourceLabel,
+          chatId: summary.chatId,
+          localCommand: localResult.commandType,
+          responseMessageId: localResult.responseMessageId,
+          repliedAt: nowIso(),
+        });
+        return;
+      }
+    }
+
     const generated = await generateReply(runtime, summary);
-    if (!generated.replyText) {
+    const replyText = normalizeReplyText(generated.replyText);
+    if (!replyText) {
       await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
         status: 'silent_no_reply',
         sourceLabel,
@@ -844,7 +1387,7 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       console.log(`[feishu-connector] no reply sent for ${summary.messageId} (empty assistant reply)`);
       return;
     }
-    const reply = await sendText(runtime, summary, generated.replyText);
+    const reply = await sendText(runtime, summary, replyText);
     await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
       status: 'sent',
       sourceLabel,
@@ -879,26 +1422,37 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 }
 
 export {
+  buildApprovedChatReply,
+  buildChatAccessStatusReply,
+  buildRemoteLabMessage,
+  compileFeishuReplyText,
+  createRuntimeContext,
   ensureAllowedSendersFile,
+  extractLocalCommand,
   generateRemoteLabReply,
+  grantSenderAccess,
+  handleChatMemberUserAdded,
   handleMessage,
   isAllowedByPolicy,
+  loadPersistedAccessState,
   normalizeAllowedSenders,
   normalizeReplyText,
+  queueAccessStateFlush,
+  snapshotAccessState,
+  summarizeChatMemberUserAddedEvent,
+  upsertApprovedChat,
 };
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = await loadConfig(options.configPath);
-  if (config.intakePolicy.mode === 'whitelist') {
-    await ensureAllowedSendersFile(config.intakePolicy.allowedSendersPath, config.intakePolicy.allowedSenders);
-  }
+  const accessState = await loadPersistedAccessState(config.intakePolicy);
   const storagePaths = {
     eventsLogPath: join(config.storageDir, 'events.jsonl'),
     knownSendersPath: join(config.storageDir, 'known-senders.json'),
     handledMessagesPath: join(config.storageDir, 'handled-messages.json'),
   };
-  const runtime = createRuntimeContext(config, storagePaths);
+  const runtime = createRuntimeContext(config, storagePaths, accessState);
   const wsClient = new Lark.WSClient({
     appId: config.appId,
     appSecret: config.appSecret,
@@ -926,15 +1480,20 @@ async function main() {
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': async (data) => {
       const summary = summarizeEvent(data);
-      const allowed = await recordInboundEvent(config, storagePaths.eventsLogPath, storagePaths.knownSendersPath, summary, data, 'im.message.receive_v1');
+      const allowed = await recordInboundEvent(runtime, summary, data, 'im.message.receive_v1');
       if (allowed) {
         enqueueByChat(runtime, summary, () => handleMessage(runtime, summary, 'im.message.receive_v1'));
       }
       return {};
     },
+    'im.chat.member.user.added_v1': async (data) => {
+      const summary = summarizeChatMemberUserAddedEvent(data);
+      enqueueByChat(runtime, { chatId: summary.chatId, messageId: summary.eventId }, () => handleChatMemberUserAdded(runtime, summary, data, 'im.chat.member.user.added_v1'));
+      return {};
+    },
     message: async (data) => {
       const summary = summarizeLegacyMessageEvent(data);
-      const allowed = await recordInboundEvent(config, storagePaths.eventsLogPath, storagePaths.knownSendersPath, summary, data, 'message');
+      const allowed = await recordInboundEvent(runtime, summary, data, 'message');
       if (allowed) {
         enqueueByChat(runtime, summary, () => handleMessage(runtime, summary, 'message'));
       }
@@ -945,9 +1504,8 @@ async function main() {
   await wsClient.start({ eventDispatcher });
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] intake policy: ${config.intakePolicy.mode}`);
-  if (config.intakePolicy.mode === 'whitelist') {
-    console.log(`[feishu-connector] whitelist file: ${config.intakePolicy.allowedSendersPath} (hot reloaded per inbound event)`);
-  }
+  console.log(`[feishu-connector] access state file: ${config.intakePolicy.accessStatePath}`);
+  console.log(`[feishu-connector] whitelist mirror: ${config.intakePolicy.allowedSendersPath}`);
   console.log(`[feishu-connector] event log: ${storagePaths.eventsLogPath}`);
   console.log(`[feishu-connector] known senders: ${storagePaths.knownSendersPath}`);
   console.log(`[feishu-connector] handled messages: ${storagePaths.handledMessagesPath}`);

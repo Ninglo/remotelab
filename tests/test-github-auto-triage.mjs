@@ -151,6 +151,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/api/sessions') {
     const payload = JSON.parse(body || '{}');
+    assert.equal(payload.appId, 'github');
     assert.equal(payload.externalTriggerId, 'github:owner/repo#7');
     assert.equal(payload.tool, 'codex');
     assert.equal(payload.folder, repoRoot);

@@ -63,7 +63,12 @@ async function dispatchAction(msg) {
         const data = await fetchJsonOrRedirect("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folder: msg.folder || "~", tool: msg.tool, name: msg.name || "" }),
+          body: JSON.stringify({
+            folder: msg.folder || "~",
+            tool: msg.tool,
+            name: msg.name || "",
+            appId: msg.appId || "",
+          }),
         });
         if (data.session) {
           const session = upsertSession(data.session) || data.session;
@@ -202,12 +207,6 @@ function handleWsMessage(msg) {
       }
       break;
 
-    case "sidebar_invalidated":
-      if (!visitorMode) {
-        fetchSidebarState().catch(() => {});
-      }
-      break;
-
     case "error":
       console.error("WS error:", msg.message);
       break;
@@ -271,8 +270,8 @@ function updateStatus(connState, sessState, renameState, archived = false) {
 
 // ---- Message rendering ----
 function clearMessages() {
-  resetRenderedEventState();
   messagesInner.innerHTML = "";
+  resetRenderedEventState();
   // Reset thinking block state
   inThinkingBlock = false;
   currentThinkingBlock = null;
@@ -290,6 +289,17 @@ function showEmpty() {
 function scrollToBottom() {
   requestAnimationFrame(() => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+}
+
+function scrollNodeToTop(node, { margin = 10 } = {}) {
+  if (!node) return;
+  requestAnimationFrame(() => {
+    const containerRect = messagesEl.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const nextTop =
+      messagesEl.scrollTop + (nodeRect.top - containerRect.top) - margin;
+    messagesEl.scrollTop = Math.max(0, nextTop);
   });
 }
 
@@ -345,6 +355,115 @@ function renderEvent(evt, autoScroll) {
   }
 
   if (shouldScroll) scrollToBottom();
+}
+
+function unwrapTurnCollapseDrawers() {
+  const drawers = messagesInner.querySelectorAll(".turn-collapse-drawer");
+  for (const drawer of drawers) {
+    const body = drawer.querySelector(".turn-collapse-body");
+    if (!body) {
+      drawer.remove();
+      continue;
+    }
+    const fragment = document.createDocumentFragment();
+    while (body.firstChild) {
+      fragment.appendChild(body.firstChild);
+    }
+    drawer.replaceWith(fragment);
+  }
+}
+
+function collectRenderedTurns() {
+  const turns = [];
+  let currentTurn = null;
+  for (const node of messagesInner.children) {
+    if (node === emptyState || node.classList.contains("turn-collapse-drawer")) {
+      continue;
+    }
+    if (node.classList.contains("msg-user")) {
+      currentTurn = { userNode: node, bodyNodes: [] };
+      turns.push(currentTurn);
+      continue;
+    }
+    if (currentTurn) {
+      currentTurn.bodyNodes.push(node);
+    }
+  }
+  return turns;
+}
+
+function getLastThinkingNodeIndex(nodes) {
+  for (let index = nodes.length - 1; index >= 0; index -= 1) {
+    if (nodes[index]?.classList?.contains("thinking-block")) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function buildTurnCollapseLabel(hiddenNodes) {
+  const thoughtCount = hiddenNodes.filter((node) =>
+    node.classList?.contains("thinking-block"),
+  ).length;
+  if (thoughtCount > 1) {
+    return `Earlier reasoning & tool steps · ${thoughtCount} thoughts`;
+  }
+  return "Earlier reasoning & tool steps";
+}
+
+function applyFinishedTurnCollapseState() {
+  unwrapTurnCollapseDrawers();
+  const turns = collectRenderedTurns();
+  let latestTurnStart = null;
+
+  for (let index = 0; index < turns.length; index += 1) {
+    const turn = turns[index];
+    if (!turn?.userNode || turn.bodyNodes.length === 0) continue;
+    latestTurnStart = turn.userNode;
+
+    const isLastTurn = index === turns.length - 1;
+    if (isLastTurn && (sessionStatus === "running" || inThinkingBlock)) {
+      continue;
+    }
+
+    const lastThinkingIndex = getLastThinkingNodeIndex(turn.bodyNodes);
+    if (lastThinkingIndex < 0) continue;
+
+    const hiddenNodes = turn.bodyNodes.slice(0, lastThinkingIndex + 1);
+    const visibleNodes = turn.bodyNodes.slice(lastThinkingIndex + 1);
+    if (hiddenNodes.length === 0 || visibleNodes.length === 0) continue;
+
+    const hasVisibleTail = visibleNodes.some(
+      (node) =>
+        node.classList?.contains("msg-assistant")
+        || node.classList?.contains("msg-system")
+        || node.classList?.contains("usage-info"),
+    );
+    if (!hasVisibleTail) continue;
+
+    const drawer = document.createElement("details");
+    drawer.className = "turn-collapse-drawer";
+
+    const summary = document.createElement("summary");
+    summary.className = "turn-collapse-summary";
+    summary.textContent = buildTurnCollapseLabel(hiddenNodes);
+
+    const body = document.createElement("div");
+    body.className = "turn-collapse-body";
+    for (const node of hiddenNodes) {
+      body.appendChild(node);
+    }
+
+    drawer.appendChild(summary);
+    drawer.appendChild(body);
+    turn.userNode.insertAdjacentElement("afterend", drawer);
+  }
+
+  return latestTurnStart;
+}
+
+function shouldFocusLatestTurnStart(node) {
+  return !!node && sessionStatus !== "running" && !inThinkingBlock;
 }
 
 // ---- Thinking block helpers ----

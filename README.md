@@ -4,7 +4,7 @@
 
 Mobile-first control console for AI workers running on your own Mac or Linux machine.
 
-Control Claude Code, Codex, Cline, and compatible local tools from a phone browser. RemoteLab is not a terminal emulator or mobile IDE; it is a durable chat/control plane that keeps sessions, runs, and history on disk.
+Control CodeX (`codex`), Claude Code, Cline, and compatible local tools from a phone browser. RemoteLab is not a terminal emulator or mobile IDE; it is a durable chat/control plane that keeps sessions, runs, and history on disk.
 
 ![Chat UI](docs/demo.gif)
 
@@ -43,17 +43,24 @@ The important architectural assumptions are:
 - create immutable read-only share snapshots
 - create App links for visitor-scoped entry flows
 
+### Provider note
+
+- RemoteLab now treats `CodeX` (`codex`) as the default built-in tool and shows it first in the picker.
+- The main reason is policy clarity: API-key / local-CLI style integrations are usually a cleaner fit for a self-hosted control plane than consumer-login-based remote wrappers.
+- `Claude Code` still works in RemoteLab, and Claude-flavored local setups that talk to other backends are a separate decision, but you should review the current provider terms yourself before routing any proprietary CLI through a third-party UI like RemoteLab.
+- In practice, the risk is usually about the underlying provider auth / terms, not the binary name by itself. Make your own call based on the provider and account type behind that tool.
+
 ### Get set up in 5 minutes — hand it to an AI
 
-The fastest path is still to paste a setup prompt into Claude Code on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login.
+The fastest path is still to paste a setup prompt into CodeX, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login.
 
 **Prerequisites before you paste the prompt:**
 - **macOS**: Homebrew installed + Node.js 18+
-- **Linux**: Node.js 18+ + `dtach` + `ttyd` (the setup flow can install these)
-- At least one AI tool installed (`claude`, `codex`, `cline`, or a compatible local tool)
+- **Linux**: Node.js 18+
+- At least one AI tool installed (`codex`, `claude`, `cline`, or a compatible local tool)
 - A domain pointed at Cloudflare ([free account](https://cloudflare.com), domain ~$1–12/yr from Namecheap or Porkbun)
 
-**Copy this prompt into Claude Code:**
+**Copy this prompt into CodeX or another coding agent:**
 
 ```text
 I want to set up RemoteLab on this machine so I can control AI coding tools from my phone.
@@ -75,7 +82,7 @@ Open `https://[subdomain].[domain]/?token=YOUR_TOKEN` on your phone:
 
 ![Dashboard](docs/new-dashboard.png)
 
-- create a session with a local AI tool
+- create a session with a local AI tool, with CodeX first by default
 - start from `~` by default, or point the agent at another repo when needed
 - send messages while the UI re-fetches canonical HTTP state in the background
 - leave and come back later without losing the conversation thread
@@ -112,8 +119,6 @@ RemoteLab’s shipped architecture is now centered on a stable chat control plan
 | Service | Port | Role |
 |---------|------|------|
 | `chat-server.mjs` | `7690` | Primary chat/control plane for production use |
-| `scripts/chat-instance.sh` → `chat-server.mjs` | `7692` | Restartable validation plane for self-hosting RemoteLab development |
-| `auth-proxy.mjs` | `7681` | Frozen emergency terminal fallback |
 
 ```
 Phone Browser
@@ -122,7 +127,7 @@ Phone Browser
 Cloudflare Tunnel
    │
    ▼
-chat-server.mjs (:7690 / :7692)
+chat-server.mjs (:7690)
    │
    ├── HTTP control plane
    ├── auth + policy
@@ -138,7 +143,7 @@ Key architectural rules:
 - browser state always converges back to HTTP reads
 - WebSocket is an invalidation channel, not the canonical transcript
 - active work can recover after control-plane restarts because the durable state is on disk
-- `7690` is the stable operator plane and `7692` is the restart-heavy validation plane when developing RemoteLab itself
+- `7690` is the shipped chat/control plane; restart recovery now removes the need for a permanent second validation service
 
 For the full code map and flow breakdown, read `docs/project-architecture.md`.
 
@@ -152,9 +157,8 @@ For the canonical contract that external channels should follow, read `docs/exte
 remotelab setup                Run interactive setup wizard
 remotelab start                Start all services
 remotelab stop                 Stop all services
-remotelab restart [service]    Restart: chat | proxy | tunnel | all
+remotelab restart [service]    Restart: chat | tunnel | all
 remotelab chat                 Run chat server in foreground (debug)
-remotelab server               Run auth proxy in foreground (debug)
 remotelab generate-token       Generate a new access token
 remotelab set-password         Set username & password login
 remotelab --help               Show help
@@ -165,7 +169,6 @@ remotelab --help               Show help
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CHAT_PORT` | `7690` | Chat server port |
-| `LISTEN_PORT` | `7681` | Auth proxy port |
 | `SESSION_EXPIRY` | `86400000` | Cookie lifetime in ms (24h) |
 | `SECURE_COOKIES` | `1` | Set `0` only for local HTTP debugging |
 | `REMOTELAB_LIVE_CONTEXT_COMPACT_TOKENS` | `window overflow` | Optional auto-compact override in live-context tokens; unset = compact only after live context exceeds 100% of a known context window, `Inf` = disable |
@@ -183,10 +186,8 @@ remotelab --help               Show help
 | `~/.config/remotelab/shared-snapshots/` | Immutable read-only session share snapshots |
 | `~/.remotelab/memory/` | Private machine-specific memory used for pointer-first startup |
 | `~/Library/Logs/chat-server.log` | Chat server stdout **(macOS)** |
-| `~/Library/Logs/auth-proxy.log` | Auth proxy stdout **(macOS)** |
 | `~/Library/Logs/cloudflared.log` | Tunnel stdout **(macOS)** |
 | `~/.local/share/remotelab/logs/chat-server.log` | Chat server stdout **(Linux)** |
-| `~/.local/share/remotelab/logs/auth-proxy.log` | Auth proxy stdout **(Linux)** |
 | `~/.local/share/remotelab/logs/cloudflared.log` | Tunnel stdout **(Linux)** |
 
 ## Storage growth and manual cleanup
@@ -216,7 +217,6 @@ remotelab --help               Show help
 ```bash
 # macOS
 tail -50 ~/Library/Logs/chat-server.error.log
-tail -50 ~/Library/Logs/auth-proxy.error.log
 
 # Linux
 journalctl --user -u remotelab-chat -n 50
@@ -235,23 +235,13 @@ dig SUBDOMAIN.DOMAIN +short
 
 ```bash
 lsof -i :7690
-lsof -i :7681
 ```
 
 **Restart a single service**
 
 ```bash
 remotelab restart chat
-remotelab restart proxy
 remotelab restart tunnel
-```
-
-**Manage a disposable validation plane**
-
-```bash
-scripts/chat-instance.sh restart --port 7692 --name test
-scripts/chat-instance.sh status --port 7692 --name test
-scripts/chat-instance.sh logs --port 7692 --name test
 ```
 
 ---

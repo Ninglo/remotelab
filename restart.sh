@@ -3,7 +3,6 @@
 # Usage:
 #   restart.sh          — restart all services
 #   restart.sh chat     — restart only chat-server
-#   restart.sh proxy    — restart only auth-proxy
 #   restart.sh tunnel   — restart only cloudflared
 
 set -e
@@ -71,23 +70,18 @@ case "$SERVICE" in
     echo "Restarting chat-server..."
     restart_service "chat-server" "com.chatserver.claude" "remotelab-chat"
     ;;
-  proxy)
-    echo "Restarting auth-proxy..."
-    restart_service "auth-proxy" "com.authproxy.claude" "remotelab-proxy"
-    ;;
   tunnel)
     echo "Restarting cloudflared..."
     restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
     ;;
   all)
     echo "Restarting all services..."
-    restart_service "auth-proxy"  "com.authproxy.claude"   "remotelab-proxy"
     restart_service "chat-server" "com.chatserver.claude"  "remotelab-chat"
     restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
     ;;
   *)
     echo "Unknown service: $SERVICE"
-    echo "Usage: restart.sh [chat|proxy|tunnel|all]"
+    echo "Usage: restart.sh [chat|tunnel|all]"
     exit 1
     ;;
 esac

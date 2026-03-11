@@ -224,6 +224,7 @@ async function submitApprovedItem(item, rootDir, automation, baseUrl, cookie) {
     folder: automation.session.folder,
     tool: automation.session.tool,
     name: buildSessionName(item),
+    appId: 'email',
     group: automation.session.group,
     description: buildSessionDescription(item, automation.session.description),
     systemPrompt: automation.session.systemPrompt,

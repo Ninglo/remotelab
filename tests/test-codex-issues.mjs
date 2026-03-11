@@ -185,7 +185,7 @@ async function testC_LongTask() {
 3. Run "ls lib/" to list library files
 4. Run "head -20 lib/config.mjs" to read config
 5. Run "head -20 lib/tools.mjs" to read tools
-6. Run "head -20 lib/sessions.mjs" to read sessions
+6. Run "head -20 chat/session-manager.mjs" to read session orchestration
 7. Run "git log --oneline -5" to show recent commits
 8. After all steps, give me a comprehensive summary.
 Do NOT modify any files. Do NOT skip any command.`;

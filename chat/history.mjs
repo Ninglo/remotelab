@@ -252,6 +252,18 @@ async function loadStoredEvent(sessionId, seq) {
   return clone(stored);
 }
 
+async function countMessageEventsAfter(sessionId, afterSeq = 0) {
+  const meta = await loadMeta(sessionId);
+  let count = 0;
+  for (let seq = Math.max(1, afterSeq + 1); seq <= meta.latestSeq; seq += 1) {
+    const stored = await loadStoredEvent(sessionId, seq);
+    if (stored?.type === 'message') {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 async function hydrateEvent(sessionId, event) {
   if (!event?.bodyRef || !event?.bodyField) return event;
   const hydrated = { ...event };
@@ -378,14 +390,21 @@ export async function getHistorySnapshot(sessionId) {
     loadMeta(sessionId),
     loadContext(sessionId),
   ]);
+  const activeFromSeq = Number.isInteger(context?.activeFromSeq) ? context.activeFromSeq : 0;
+  const messageCount = (meta.counts?.message_user || 0) + (meta.counts?.message_assistant || 0);
+  const activeMessageCount = activeFromSeq > 0
+    ? await countMessageEventsAfter(sessionId, activeFromSeq)
+    : messageCount;
   return {
     latestSeq: meta.latestSeq || 0,
     lastEventAt: meta.lastEventAt || null,
     size: meta.size || 0,
     counts: { ...(meta.counts || {}) },
+    messageCount,
+    activeMessageCount,
     userMessageCount: meta.counts?.message_user || 0,
     contextMode: context?.mode || 'history',
-    activeFromSeq: Number.isInteger(context?.activeFromSeq) ? context.activeFromSeq : 0,
+    activeFromSeq,
     compactedThroughSeq: Number.isInteger(context?.compactedThroughSeq) ? context.compactedThroughSeq : 0,
     contextTokenEstimate: Number.isInteger(context?.inputTokens) ? context.inputTokens : null,
     contextUpdatedAt: context?.updatedAt || null,

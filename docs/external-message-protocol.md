@@ -282,7 +282,7 @@ Current normalized event types include:
 - `file_change`
 - `usage`
 
-For most connectors, the primary outbound signal is simply the latest assistant `message` event for the run they care about.
+RemoteLab returns raw normalized events. Connectors that want a single outbound reply should derive it on their side from those events. This repo ships a shared helper in `lib/reply-selection.mjs` for that purpose; it skips assistant-side artifacts such as Codex `todo_list` tails and can fall back past a trailing checklist-only message when an earlier substantive assistant reply exists in the same run.
 
 ---
 

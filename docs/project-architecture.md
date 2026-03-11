@@ -83,10 +83,10 @@ Then branch by the change you need:
 - HTTP / API / role checks → `chat/router.mjs`, `lib/auth.mjs`, `chat/middleware.mjs`
 - UI / mobile behavior → `templates/chat.html`, `static/chat/`, `static/sw.js`
 - Apps / visitor flow → `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`
-- progress sidebar / rename / grouping → `chat/summarizer.mjs`, `chat/session-naming.mjs`
+- session labeling / rename / grouping → `chat/summarizer.mjs`, `chat/session-naming.mjs`
 - memory activation / startup prompt → `chat/system-prompt.mjs`, `notes/current/memory-activation-architecture.md`
 - provider/tool extensibility → `lib/tools.mjs`, `chat/models.mjs`, `notes/directional/provider-architecture.md`
-- external mail / webhook automation → `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `scripts/agent-mail-*.mjs`, `chat/completion-targets.mjs`
+- external mail / webhook automation → `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-completion-targets.mjs`, `scripts/agent-mail-*.mjs`
 
 ---
 
@@ -94,13 +94,11 @@ Then branch by the change you need:
 
 ### 3.1 Permanent service topology
 
-RemoteLab currently works as a **three-service architecture** plus optional side subsystems:
+RemoteLab currently works as a **single chat/control plane** plus optional side subsystems:
 
 | Service | Port | Role | Status |
 |---|---:|---|---|
 | `chat-server.mjs` | `7690` | main chat/control plane | primary / stable |
-| `chat-server.mjs` | `7692` | validation plane for restart-heavy testing | active dev pattern |
-| `auth-proxy.mjs` | `7681` | emergency terminal fallback | frozen / do not modify |
 
 Optional side subsystem:
 
@@ -117,7 +115,7 @@ Phone Browser
 Cloudflare Tunnel
    │
    ▼
-chat-server.mjs  (:7690 or :7692)
+chat-server.mjs  (:7690)
    │
    ├── HTTP control plane
    ├── auth / owner-visitor policy
@@ -137,17 +135,16 @@ chat-server.mjs  (:7690 or :7692)
 
 When developing RemoteLab itself, the intended workflow is:
 
-- use `7690` as the **stable coding/operator plane**
-- use `7692` as the **restartable validation plane**
-- use `7681` only as an emergency fallback when chat planes fail badly
+- use `7690` as the default coding/operator plane
+- rely on clean restart recovery instead of a permanent second validation plane
 
-Operationally this matters because RemoteLab optimizes for **logical continuity after restart**, not for pretending transport continuity exists when you restart the active process.
+Operationally this matters because RemoteLab optimizes for **logical continuity after restart**, not for pretending transport continuity exists while the active process restarts.
 
 ---
 
 ## 4. Architecture layers
 
-The chat plane can be understood as five layers.
+The chat plane can be understood as four layers.
 
 ### 4.1 Entry and transport layer
 
@@ -178,9 +175,8 @@ Responsible for product semantics and long-lived business rules.
 - `chat/summarizer.mjs`
 - `chat/apps.mjs`
 - `chat/shares.mjs`
-- `chat/settings.mjs`
 - `chat/push.mjs`
-- `chat/completion-targets.mjs`
+- `lib/agent-mail-completion-targets.mjs`
 - `chat/session-continuation.mjs`
 - `chat/session-naming.mjs`
 
@@ -214,27 +210,11 @@ Responsible for rendering HTTP-derived state in a mobile-friendly UI.
 
 Important: the frontend is **vanilla JS** with **no build step**.
 
-### 4.5 Legacy / fallback plane
-
-Responsible for the frozen terminal fallback experience, not the primary chat architecture.
-
-- `auth-proxy.mjs`
-- `lib/router.mjs`
-- `lib/sessions.mjs`
-- `lib/proxy.mjs`
-- `templates/dashboard.html`
-- `templates/folder-view.html`
-
-This plane is intentionally frozen and should be treated as a safety net, not an active architecture surface.
-
----
-
 ## 5. Repo map by concern
 
 ```text
 remotelab/
 ├── chat-server.mjs                 # main HTTP + WS server for chat plane
-├── auth-proxy.mjs                  # frozen emergency terminal plane
 ├── cli.js                          # `remotelab ...` entrypoint
 ├── chat/                           # chat-plane business logic
 │   ├── router.mjs                  # all primary HTTP routes
@@ -254,7 +234,7 @@ remotelab/
 │   ├── session-continuation.mjs    # cross-turn / cross-tool handoff context
 │   ├── session-naming.mjs          # session title/group normalization helpers
 │   └── adapters/                   # CLI-output → normalized-events adapters
-├── lib/                            # shared helpers + fallback plane modules
+├── lib/                            # shared helpers
 │   ├── auth.mjs                    # token/password auth + auth sessions
 │   ├── config.mjs                  # ports, config paths, memory paths
 │   ├── tools.mjs                   # tool discovery + simple provider configs
@@ -403,8 +383,6 @@ auth-sessions.json
 tools.json
 chat-sessions.json
 apps.json
-chat-settings.json
-sidebar-state.json
 vapid-keys.json
 push-subscriptions.json
 images/
@@ -549,14 +527,13 @@ When a run becomes terminal:
   - final session title
   - display group
   - hidden description
-  - sidebar progress card state
 - auto-compaction may run as a conservative fallback if live context exceeds the known model window (or an explicit token override)
 
 ### 8.8 Browser convergence
 
 After any of the above changes:
 
-- server sends a WS invalidation such as `session_invalidated`, `sessions_invalidated`, or `sidebar_invalidated`
+- server sends a WS invalidation such as `session_invalidated` or `sessions_invalidated`
 - browser re-fetches the affected HTTP resources
 - UI renders canonical state from HTTP data, not from streamed partial mutations
 
@@ -607,19 +584,18 @@ The flow is:
 
 The shared page is intentionally read-only and more tightly sandboxed than the main app.
 
-### 9.4 Progress sidebar flow
+### 9.4 Session label suggestion flow
 
 After a turn completes, `chat/summarizer.mjs` makes a **separate one-shot tool call** using the same tool family/config when possible.
 
-That call generates JSON describing:
+That call generates JSON describing canonical presentation metadata:
 
-- `background`
-- `lastAction`
 - maybe `title`
 - maybe `group`
 - maybe `description`
 
-The result is written into `sidebar-state.json` and surfaced in the UI’s progress tab.
+The result is written back into canonical session metadata.
+The current `Progress` tab is intentionally just an empty shell kept for future surfaces; long-term task-progress management should piggyback on session-list grouping instead of a separate summary board.
 
 ### 9.5 Context compaction and “drop tools”
 
@@ -649,7 +625,7 @@ Pieces:
 - `lib/agent-mailbox.mjs` — mailbox queues, message ingest, allowlists, identity
 - `lib/agent-mail-http-bridge.mjs` — trust evaluation for inbound webhook sources
 - `scripts/agent-mail-http-bridge.mjs` — small HTTP ingress service for Cloudflare Email Worker webhooks
-- `chat/completion-targets.mjs` — attach outbound reply delivery to finished runs
+- `lib/agent-mail-completion-targets.mjs` — attach outbound email reply delivery to finished runs
 - `lib/agent-mail-outbound.mjs` — outbound email delivery
 
 This subsystem shows the direction that **external channels should behave as clients of the same durable session protocol**, not as a separate architecture universe.
@@ -735,9 +711,6 @@ Tooling and settings:
 - `GET /api/tools`
 - `POST /api/tools`
 - `GET /api/models?tool=...`
-- `GET /api/settings`
-- `PATCH /api/settings`
-- `GET /api/sidebar`
 - `GET /api/autocomplete`
 - `GET /api/browse`
 - `GET /api/images/:filename`
@@ -824,7 +797,7 @@ This matters because future model-driven development sessions depend on loading 
 
 These constraints are part of the architecture, not incidental implementation details.
 
-- `auth-proxy.mjs` and its supporting terminal-plane files are frozen
+- the shipped architecture no longer includes a built-in terminal fallback plane
 - RemoteLab stays framework-light: Node built-ins + `ws`
 - frontend remains vanilla JS without build tooling
 - single-owner model remains the default product assumption
@@ -847,14 +820,13 @@ Use this as the practical code-finding guide.
 | tool execution details | `chat/process-runner.mjs`, `chat/adapters/*.mjs`, `lib/tools.mjs` |
 | restart recovery behavior | `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `notes/archive/http-runtime-phase1.md` |
 | event persistence / long-output handling | `chat/history.mjs`, `chat/runs.mjs`, `chat/fs-utils.mjs` |
-| sidebar summaries / auto-rename / grouping | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
+| session labeling / auto-rename / grouping | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
 | App templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
 | share snapshots | `chat/shares.mjs`, `templates/share.html`, `static/share.js` |
 | push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
 | model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat/` |
 | pointer-first memory startup | `chat/system-prompt.mjs`, `notes/current/memory-activation-architecture.md` |
-| inbound/outbound mail automation | `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-outbound.mjs`, `chat/completion-targets.mjs`, `scripts/agent-mail-*.mjs` |
-| frozen fallback terminal plane | `auth-proxy.mjs`, `lib/router.mjs`, `lib/sessions.mjs`, `lib/proxy.mjs` — only if you truly mean to touch the emergency plane |
+| inbound/outbound mail automation | `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-outbound.mjs`, `lib/agent-mail-completion-targets.mjs`, `scripts/agent-mail-*.mjs` |
 
 ---
 
@@ -890,7 +862,7 @@ High-value clusters:
 
 Operational validation also matters:
 
-- `scripts/chat-instance.sh` is the intended helper for disposable validation planes such as `7692`
+- `scripts/chat-instance.sh` is only an ad-hoc helper for optional manual instances on explicitly chosen ports; it is not part of the shipped service topology
 
 ---
 
@@ -905,7 +877,7 @@ This repo already contains several design notes that point beyond the current co
 - restart-safe recovery from durable run + history files
 - owner / visitor identity split
 - App templates + share links
-- sidebar progress summaries
+- session label suggestions
 - pointer-first memory activation
 
 ### 17.2 Directional but not fully realized yet
@@ -937,5 +909,4 @@ If you only remember one mental model, remember this:
 Everything else in the repo is either:
 
 - product semantics layered on top of that core
-- a legacy fallback plane
 - or a future-direction note about making that core more general

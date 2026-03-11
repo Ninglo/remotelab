@@ -25,7 +25,7 @@ const { createSession } = await import(pathToFileURL(join(repoRoot, 'chat', 'ses
 const { appendEvent } = await import(pathToFileURL(join(repoRoot, 'chat', 'history.mjs')).href);
 const { messageEvent } = await import(pathToFileURL(join(repoRoot, 'chat', 'normalizer.mjs')).href);
 const { createRun } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
-const { dispatchSessionCompletionTargets } = await import(pathToFileURL(join(repoRoot, 'chat', 'completion-targets.mjs')).href);
+const { dispatchSessionEmailCompletionTargets } = await import(pathToFileURL(join(repoRoot, 'lib', 'agent-mail-completion-targets.mjs')).href);
 
 const requests = [];
 const server = http.createServer(async (req, res) => {
@@ -110,7 +110,7 @@ try {
     requestId: appleRequestId,
   }));
 
-  const appleDeliveries = await dispatchSessionCompletionTargets(appleSession, appleRun, {
+  const appleDeliveries = await dispatchSessionEmailCompletionTargets(appleSession, appleRun, {
     sendAppleMailMessageImpl: async (message) => ({
       sender: `${message.account || 'Google'} <owner@example.com>`,
     }),
@@ -184,7 +184,7 @@ try {
     requestId: cloudflareRequestId,
   }));
 
-  const cloudflareDeliveries = await dispatchSessionCompletionTargets(cloudflareSession, cloudflareRun);
+  const cloudflareDeliveries = await dispatchSessionEmailCompletionTargets(cloudflareSession, cloudflareRun);
   assert.equal(cloudflareDeliveries.length, 1);
   assert.equal(cloudflareDeliveries[0].state, 'sent');
   assert.equal(requests.length, 1);
@@ -257,7 +257,7 @@ try {
     requestId: blankSubjectRequestId,
   }));
 
-  const blankSubjectDeliveries = await dispatchSessionCompletionTargets(blankSubjectSession, blankSubjectRun);
+  const blankSubjectDeliveries = await dispatchSessionEmailCompletionTargets(blankSubjectSession, blankSubjectRun);
   assert.equal(blankSubjectDeliveries.length, 1);
   assert.equal(blankSubjectDeliveries[0].state, 'sent');
   assert.equal(requests.length, 2);
@@ -275,6 +275,81 @@ try {
   assert.equal(updatedBlankSubject?.automation?.status, 'reply_sent');
   assert.equal(updatedBlankSubject?.automation?.runId, blankSubjectRun.id);
   assert.equal(updatedBlankSubject?.automation?.delivery?.provider, 'cloudflare_worker');
+
+  const ingestedTodoTail = ingestRawMessage(
+    [
+      'From: owner@example.com',
+      'To: rowan@example.com',
+      'Subject: choose the real summary',
+      'Date: Tue, 10 Mar 2026 03:10:00 +0800',
+      'Message-ID: <mail-cloudflare-todo-tail@example.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'please ignore any trailing todo artifact.',
+    ].join('\n'),
+    'cloudflare-worker-todo-tail.eml',
+    mailboxRoot,
+    { text: 'please ignore any trailing todo artifact.' },
+  );
+
+  const approvedTodoTail = approveMessage(ingestedTodoTail.id, mailboxRoot, 'tester');
+  const todoTailRequestId = `mailbox_reply_${approvedTodoTail.id}`;
+  const todoTailSession = await createSession(workspace, 'codex', 'Cloudflare todo tail reply test', {
+    completionTargets: [{
+      type: 'email',
+      requestId: todoTailRequestId,
+      to: 'owner@example.com',
+      subject: 'Re: choose the real summary',
+      inReplyTo: '<mail-cloudflare-todo-tail@example.com>',
+      references: '<mail-cloudflare-todo-tail@example.com>',
+      mailboxRoot,
+      mailboxItemId: approvedTodoTail.id,
+    }],
+  });
+  const todoTailRun = await createRun({
+    status: {
+      sessionId: todoTailSession.id,
+      requestId: todoTailRequestId,
+      state: 'completed',
+      tool: 'codex',
+    },
+    manifest: {
+      sessionId: todoTailSession.id,
+      requestId: todoTailRequestId,
+      folder: workspace,
+      tool: 'codex',
+      prompt: 'reply to the email and then emit a trailing checklist artifact',
+      options: {},
+    },
+  });
+
+  await appendEvent(todoTailSession.id, messageEvent('assistant', 'This is the real reply summary.', undefined, {
+    runId: todoTailRun.id,
+    requestId: todoTailRequestId,
+  }));
+  await appendEvent(todoTailSession.id, messageEvent('assistant', '[x] Inspect request\n[x] Draft reply\n[x] Send response', undefined, {
+    runId: todoTailRun.id,
+    requestId: todoTailRequestId,
+  }));
+
+  const todoTailDeliveries = await dispatchSessionEmailCompletionTargets(todoTailSession, todoTailRun);
+  assert.equal(todoTailDeliveries.length, 1);
+  assert.equal(todoTailDeliveries[0].state, 'sent');
+  assert.equal(requests.length, 3);
+  assert.deepEqual(JSON.parse(requests[2].body), {
+    to: ['owner@example.com'],
+    from: 'rowan@example.com',
+    subject: 'Re: choose the real summary',
+    text: 'This is the real reply summary.',
+    inReplyTo: '<mail-cloudflare-todo-tail@example.com>',
+    references: '<mail-cloudflare-todo-tail@example.com>',
+  });
+
+  const updatedTodoTail = findQueueItem(approvedTodoTail.id, mailboxRoot)?.item;
+  assert.equal(updatedTodoTail?.status, 'reply_sent');
+  assert.equal(updatedTodoTail?.automation?.status, 'reply_sent');
+  assert.equal(updatedTodoTail?.automation?.runId, todoTailRun.id);
+  assert.equal(updatedTodoTail?.automation?.delivery?.provider, 'cloudflare_worker');
 } finally {
   server.close();
   rmSync(tempHome, { recursive: true, force: true });

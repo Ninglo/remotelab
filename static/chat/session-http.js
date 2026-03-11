@@ -217,6 +217,7 @@ function upsertSession(session) {
   const previous = sessions.find((entry) => entry.id === session.id);
   const normalized = {
     ...session,
+    appId: getEffectiveSessionAppId(session),
     status: normalizeSessionStatus(session.status, previous?.status),
   };
   const index = sessions.findIndex((entry) => entry.id === session.id);
@@ -226,7 +227,19 @@ function upsertSession(session) {
     sessions[index] = normalized;
   }
   sortSessionsInPlace();
+  refreshAppCatalog();
   return normalized;
+}
+
+async function fetchAppsList() {
+  if (visitorMode) return [];
+  try {
+    const data = await fetchJsonOrRedirect("/api/apps");
+    refreshAppCatalog(data.apps || []);
+  } catch {
+    refreshAppCatalog();
+  }
+  return appCatalog;
 }
 
 async function fetchSessionsList() {
@@ -235,13 +248,12 @@ async function fetchSessionsList() {
   const previousMap = new Map(sessions.map((session) => [session.id, session]));
   sessions = (data.sessions || []).map((session) => ({
     ...session,
+    appId: getEffectiveSessionAppId(session),
     status: normalizeSessionStatus(session.status, previousMap.get(session.id)?.status),
   }));
   sortSessionsInPlace();
+  refreshAppCatalog();
   renderSessionList();
-  if (activeTab === "progress") {
-    renderProgressPanel(lastProgressState);
-  }
   if (currentSessionId && !sessions.some((session) => session.id === currentSessionId)) {
     currentSessionId = null;
     hasAttachedSession = false;
@@ -313,7 +325,12 @@ async function fetchSessionEvents(sessionId) {
       renderEvent(event, false);
     }
     updateRenderedEventState(sessionId, events);
-    if (events.length > 0 && shouldStickToBottom) scrollToBottom();
+    const latestTurnStart = applyFinishedTurnCollapseState();
+    if (shouldFocusLatestTurnStart(latestTurnStart)) {
+      scrollNodeToTop(latestTurnStart);
+    } else if (events.length > 0 && shouldStickToBottom) {
+      scrollToBottom();
+    }
     checkPendingMessage(events);
     return events;
   }
@@ -324,11 +341,20 @@ async function fetchSessionEvents(sessionId) {
       renderEvent(event, false);
     }
     updateRenderedEventState(sessionId, events);
-    if (renderPlan.events.length > 0 && shouldStickToBottom) scrollToBottom();
+    const latestTurnStart = applyFinishedTurnCollapseState();
+    if (shouldFocusLatestTurnStart(latestTurnStart)) {
+      scrollNodeToTop(latestTurnStart);
+    } else if (renderPlan.events.length > 0 && shouldStickToBottom) {
+      scrollToBottom();
+    }
     return renderPlan.events;
   }
 
   updateRenderedEventState(sessionId, events);
+  const latestTurnStart = applyFinishedTurnCollapseState();
+  if (shouldFocusLatestTurnStart(latestTurnStart)) {
+    scrollNodeToTop(latestTurnStart);
+  }
   return events;
 }
 
@@ -377,6 +403,7 @@ async function refreshSidebarSession(sessionId) {
         const nextSessions = sessions.filter((session) => session.id !== sessionId);
         if (nextSessions.length !== sessions.length) {
           sessions = nextSessions;
+          refreshAppCatalog();
           renderSessionList();
         }
         return null;
@@ -404,9 +431,6 @@ async function refreshRealtimeViews() {
   await fetchSessionsList().catch(() => {});
   if (currentSessionId) {
     await refreshCurrentSession().catch(() => {});
-  }
-  if (activeTab === "progress") {
-    await fetchSidebarState().catch(() => {});
   }
 }
 

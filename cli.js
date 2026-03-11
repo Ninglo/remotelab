@@ -30,8 +30,7 @@ Usage:
   remotelab setup                    Run interactive setup
   remotelab start                    Start all services
   remotelab stop                     Stop all services
-  remotelab restart [service]        Restart services (chat|proxy|tunnel|all)
-  remotelab server                   Run auth proxy in foreground
+  remotelab restart [service]        Restart services (chat|tunnel|all)
   remotelab chat                     Run chat server in foreground
   remotelab generate-token           Generate a new access token
   remotelab set-password             Set username & password for login
@@ -61,10 +60,6 @@ switch (command) {
     }
     break;
   }
-
-  case 'server':
-    await import(scriptPath('auth-proxy.mjs'));
-    break;
 
   case 'chat':
     await import(scriptPath('chat-server.mjs'));

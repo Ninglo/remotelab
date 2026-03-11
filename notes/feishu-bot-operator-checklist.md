@@ -68,6 +68,20 @@ After the setup above, send me these exact items:
 - Add the bot into one test group
 - Create a dedicated test group for multi-session validation
 
+### Optional manual setup for group-based auto-approval
+
+If you want the connector to auto-grant access to people who join an approved group, also subscribe to:
+
+- `im.chat.member.user.added_v1`
+
+Then the operator flow becomes:
+
+1. create a group
+2. add the bot
+3. send `@bot 授权本群`
+4. the connector stores that `chat_id` locally
+5. later, when new people join that group, the connector auto-adds them to local access state without restart
+
 ---
 
 ## How to let other people use the bot

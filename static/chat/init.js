@@ -96,8 +96,8 @@ async function initApp() {
   syncForkButton();
   syncShareButton();
   if (!visitorMode) {
-    await fetchSettings();
     await loadInlineTools();
+    await fetchAppsList();
     initializePushNotifications();
   }
   await bootstrapViaHttp();

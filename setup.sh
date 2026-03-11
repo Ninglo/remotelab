@@ -130,24 +130,6 @@ else
     print_warning "No AI CLI tool found (claude / codex / cline). Install at least one before using RemoteLab."
 fi
 
-# Check dtach
-if ! command -v dtach &> /dev/null; then
-    print_warning "dtach not found, will install"
-    INSTALL_DTACH=true
-else
-    print_success "dtach installed"
-    INSTALL_DTACH=false
-fi
-
-# Check ttyd
-if ! command -v ttyd &> /dev/null; then
-    print_warning "ttyd not found, will install"
-    INSTALL_TTYD=true
-else
-    print_success "ttyd installed"
-    INSTALL_TTYD=false
-fi
-
 # Check cloudflared (only needed in Cloudflare mode)
 INSTALL_CLOUDFLARED=false
 if [[ "$USE_CLOUDFLARE" == true ]]; then
@@ -192,13 +174,11 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
 fi
 
 # Step 3: Install missing packages
-if [[ "$INSTALL_DTACH" == true ]] || [[ "$INSTALL_TTYD" == true ]] || [[ "$INSTALL_CLOUDFLARED" == true ]]; then
+if [[ "$INSTALL_CLOUDFLARED" == true ]]; then
     print_header "Step 3: Installing Packages"
 
     if [[ "$OS_TYPE" == "macos" ]]; then
         PACKAGES=()
-        [[ "$INSTALL_DTACH" == true ]] && PACKAGES+=("dtach")
-        [[ "$INSTALL_TTYD" == true ]] && PACKAGES+=("ttyd")
         [[ "$INSTALL_CLOUDFLARED" == true ]] && PACKAGES+=("cloudflared")
 
         print_info "Installing via Homebrew: ${PACKAGES[*]}"
@@ -206,46 +186,6 @@ if [[ "$INSTALL_DTACH" == true ]] || [[ "$INSTALL_TTYD" == true ]] || [[ "$INSTA
         print_success "Packages installed"
     else
         # Linux installation
-        if [[ "$INSTALL_DTACH" == true ]]; then
-            print_info "Installing dtach..."
-            if command -v apt-get &> /dev/null; then
-                sudo apt-get install -y dtach
-            elif command -v yum &> /dev/null; then
-                sudo yum install -y dtach
-            elif command -v dnf &> /dev/null; then
-                sudo dnf install -y dtach
-            else
-                print_error "Cannot install dtach automatically. Please install it manually: https://github.com/crigler/dtach"
-                exit 1
-            fi
-            print_success "dtach installed"
-        fi
-
-        if [[ "$INSTALL_TTYD" == true ]]; then
-            print_info "Installing ttyd..."
-            # Try package manager first, fall back to GitHub release
-            TTYD_INSTALLED=false
-            if command -v apt-get &> /dev/null; then
-                sudo apt-get install -y ttyd 2>/dev/null && TTYD_INSTALLED=true || true
-            fi
-            if [[ "$TTYD_INSTALLED" == false ]]; then
-                print_info "Installing ttyd from GitHub releases..."
-                TTYD_VERSION=$(curl -s https://api.github.com/repos/tsl0922/ttyd/releases/latest | grep '"tag_name"' | sed 's/.*"tag_name": "\(.*\)".*/\1/')
-                ARCH=$(uname -m)
-                case "$ARCH" in
-                    x86_64)  TTYD_ARCH="x86_64" ;;
-                    aarch64) TTYD_ARCH="aarch64" ;;
-                    armv7l)  TTYD_ARCH="armv7l" ;;
-                    *)       print_error "Unsupported architecture: $ARCH"; exit 1 ;;
-                esac
-                curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${TTYD_ARCH}" -o /tmp/ttyd
-                chmod +x /tmp/ttyd
-                sudo mv /tmp/ttyd /usr/local/bin/ttyd
-                TTYD_INSTALLED=true
-            fi
-            print_success "ttyd installed"
-        fi
-
         if [[ "$INSTALL_CLOUDFLARED" == true ]]; then
             print_info "Installing cloudflared..."
             ARCH=$(uname -m)
@@ -350,11 +290,8 @@ EOF
     print_success "Created: ~/.cloudflared/config.yml"
 fi
 
-# Create dtach wrapper script
-print_info "Creating dtach wrapper script..."
-cp "$SCRIPT_DIR/claude-ttyd-session" "$HOME/.local/bin/claude-ttyd-session"
-chmod +x "$HOME/.local/bin/claude-ttyd-session"
-print_success "Created: ~/.local/bin/claude-ttyd-session"
+# Remove old terminal fallback helper if present
+rm -f "$HOME/.local/bin/claude-ttyd-session"
 
 # Set up log directory
 if [[ "$OS_TYPE" == "macos" ]]; then
@@ -371,78 +308,17 @@ if [[ "$OS_TYPE" == "macos" ]]; then
     # ── macOS: LaunchAgent plists ─────────────────────────────────────────────
     mkdir -p "$HOME/Library/LaunchAgents"
 
-    # Remove legacy shared ttyd plist if present
+    # Remove legacy terminal-fallback plists if present
     if [ -f "$HOME/Library/LaunchAgents/com.ttyd.claude.plist" ]; then
         launchctl unload "$HOME/Library/LaunchAgents/com.ttyd.claude.plist" 2>/dev/null || true
         rm -f "$HOME/Library/LaunchAgents/com.ttyd.claude.plist"
         print_success "Removed legacy shared ttyd service plist"
     fi
-
-    # Create auth-proxy launchd plist
-    print_info "Creating auth-proxy service..."
-    if [[ "$USE_CLOUDFLARE" == true ]]; then
-        cat > "$HOME/Library/LaunchAgents/com.authproxy.claude.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.authproxy.claude</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/bin/caffeinate</string>
-        <string>-s</string>
-        <string>$(which node)</string>
-        <string>$SCRIPT_DIR/auth-proxy.mjs</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>WorkingDirectory</key>
-    <string>$USER_HOME</string>
-    <key>StandardOutPath</key>
-    <string>$LOG_DIR/auth-proxy.log</string>
-    <key>StandardErrorPath</key>
-    <string>$LOG_DIR/auth-proxy.error.log</string>
-</dict>
-</plist>
-EOF
-    else
-        cat > "$HOME/Library/LaunchAgents/com.authproxy.claude.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.authproxy.claude</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$(which node)</string>
-        <string>$SCRIPT_DIR/auth-proxy.mjs</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>SECURE_COOKIES</key>
-        <string>0</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>WorkingDirectory</key>
-    <string>$USER_HOME</string>
-    <key>StandardOutPath</key>
-    <string>$LOG_DIR/auth-proxy.log</string>
-    <key>StandardErrorPath</key>
-    <string>$LOG_DIR/auth-proxy.error.log</string>
-</dict>
-</plist>
-EOF
+    if [ -f "$HOME/Library/LaunchAgents/com.authproxy.claude.plist" ]; then
+        launchctl unload "$HOME/Library/LaunchAgents/com.authproxy.claude.plist" 2>/dev/null || true
+        rm -f "$HOME/Library/LaunchAgents/com.authproxy.claude.plist"
+        print_success "Removed legacy auth-proxy service plist"
     fi
-    print_success "Created: ~/Library/LaunchAgents/com.authproxy.claude.plist"
 
     # Create chat-server launchd plist
     print_info "Creating chat-server service..."
@@ -547,21 +423,16 @@ EOF
     cat > "$SCRIPT_DIR/start.sh" << 'STARTEOF'
 #!/bin/bash
 echo "Starting RemoteLab services..."
-if launchctl list | grep -q 'com.ttyd.claude'; then
-  launchctl unload ~/Library/LaunchAgents/com.ttyd.claude.plist 2>/dev/null || true
-  echo "Unloaded legacy shared ttyd service"
-fi
 if [ -f ~/Library/LaunchAgents/com.chatserver.claude.plist ]; then
   launchctl load ~/Library/LaunchAgents/com.chatserver.claude.plist 2>/dev/null || echo "chat-server already loaded"
 fi
-launchctl load ~/Library/LaunchAgents/com.authproxy.claude.plist 2>/dev/null || echo "auth-proxy already loaded"
 if [ -f ~/Library/LaunchAgents/com.cloudflared.tunnel.plist ]; then
   launchctl load ~/Library/LaunchAgents/com.cloudflared.tunnel.plist 2>/dev/null || echo "cloudflared already loaded"
 fi
 echo "Services started!"
 echo ""
 echo "Check status with:"
-echo "  launchctl list | grep -E 'chatserver|authproxy|cloudflared'"
+echo "  launchctl list | grep -E 'chatserver|cloudflared'"
 STARTEOF
     chmod +x "$SCRIPT_DIR/start.sh"
     print_success "Created: start.sh"
@@ -571,8 +442,6 @@ STARTEOF
     cat > "$SCRIPT_DIR/stop.sh" << 'STOPEOF'
 #!/bin/bash
 echo "Stopping RemoteLab services..."
-launchctl unload ~/Library/LaunchAgents/com.ttyd.claude.plist 2>/dev/null || true
-launchctl unload ~/Library/LaunchAgents/com.authproxy.claude.plist 2>/dev/null || echo "auth-proxy not loaded"
 launchctl unload ~/Library/LaunchAgents/com.chatserver.claude.plist 2>/dev/null || echo "chat-server not loaded"
 if [ -f ~/Library/LaunchAgents/com.cloudflared.tunnel.plist ]; then
   launchctl unload ~/Library/LaunchAgents/com.cloudflared.tunnel.plist 2>/dev/null || echo "cloudflared not loaded"
@@ -633,49 +502,12 @@ EOF
     fi
     print_success "Created: ~/.config/systemd/user/remotelab-chat.service"
 
-    # Create auth-proxy systemd service
-    print_info "Creating auth-proxy systemd service..."
-    if [[ "$USE_CLOUDFLARE" == true ]]; then
-        cat > "$SYSTEMD_DIR/remotelab-proxy.service" << EOF
-[Unit]
-Description=RemoteLab Auth Proxy (terminal fallback)
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=$USER_HOME
-ExecStart=$NODE_BIN $SCRIPT_DIR/auth-proxy.mjs
-Restart=always
-RestartSec=5
-StandardOutput=append:$LOG_DIR/auth-proxy.log
-StandardError=append:$LOG_DIR/auth-proxy.error.log
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=default.target
-EOF
-    else
-        cat > "$SYSTEMD_DIR/remotelab-proxy.service" << EOF
-[Unit]
-Description=RemoteLab Auth Proxy (terminal fallback)
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=$USER_HOME
-ExecStart=$NODE_BIN $SCRIPT_DIR/auth-proxy.mjs
-Restart=always
-RestartSec=5
-StandardOutput=append:$LOG_DIR/auth-proxy.log
-StandardError=append:$LOG_DIR/auth-proxy.error.log
-Environment=NODE_ENV=production
-Environment=SECURE_COOKIES=0
-
-[Install]
-WantedBy=default.target
-EOF
+    if [[ -f "$SYSTEMD_DIR/remotelab-proxy.service" ]]; then
+        systemctl --user stop remotelab-proxy.service 2>/dev/null || true
+        systemctl --user disable remotelab-proxy.service 2>/dev/null || true
+        rm -f "$SYSTEMD_DIR/remotelab-proxy.service"
+        print_success "Removed legacy remotelab-proxy.service"
     fi
-    print_success "Created: ~/.config/systemd/user/remotelab-proxy.service"
 
     if [[ "$USE_CLOUDFLARE" == true ]]; then
         print_info "Creating cloudflared systemd service..."
@@ -709,18 +541,16 @@ EOF
 #!/bin/bash
 echo "Starting RemoteLab services..."
 systemctl --user start remotelab-chat.service
-systemctl --user start remotelab-proxy.service
 if systemctl --user list-unit-files remotelab-tunnel.service &>/dev/null; then
   systemctl --user start remotelab-tunnel.service
 fi
 echo "Services started!"
 echo ""
 echo "Check status with:"
-echo "  systemctl --user status remotelab-chat remotelab-proxy"
+echo "  systemctl --user status remotelab-chat"
 echo ""
 echo "View logs:"
 echo "  journalctl --user -u remotelab-chat -f"
-echo "  journalctl --user -u remotelab-proxy -f"
 STARTEOF
     chmod +x "$SCRIPT_DIR/start.sh"
     print_success "Created: start.sh"
@@ -731,7 +561,6 @@ STARTEOF
 #!/bin/bash
 echo "Stopping RemoteLab services..."
 systemctl --user stop remotelab-chat.service 2>/dev/null || echo "chat-server not running"
-systemctl --user stop remotelab-proxy.service 2>/dev/null || echo "auth-proxy not running"
 systemctl --user stop remotelab-tunnel.service 2>/dev/null || true
 echo "Services stopped!"
 STOPEOF
@@ -809,13 +638,11 @@ fi
 pkill -f chat-server.mjs 2>/dev/null || true
 pkill -f auth-proxy.mjs 2>/dev/null || true
 lsof -ti :7690 2>/dev/null | xargs kill -9 2>/dev/null || true
-lsof -ti :7681 2>/dev/null | xargs kill -9 2>/dev/null || true
 sleep 2
 
 print_info "Loading services..."
 if [[ "$OS_TYPE" == "macos" ]]; then
     launchctl load "$HOME/Library/LaunchAgents/com.chatserver.claude.plist"
-    launchctl load "$HOME/Library/LaunchAgents/com.authproxy.claude.plist"
     if [[ "$USE_CLOUDFLARE" == true ]]; then
         launchctl load "$HOME/Library/LaunchAgents/com.cloudflared.tunnel.plist"
     fi
@@ -828,12 +655,6 @@ if [[ "$OS_TYPE" == "macos" ]]; then
     else
         print_error "chat-server failed to start — check $LOG_DIR/chat-server.error.log"
     fi
-    AUTHPROXY_PID=$(service_pid "com.authproxy.claude")
-    if [[ -n "$AUTHPROXY_PID" ]]; then
-        print_success "auth-proxy running (PID $AUTHPROXY_PID)"
-    else
-        print_error "auth-proxy failed to start — check $LOG_DIR/auth-proxy.error.log"
-    fi
     if [[ "$USE_CLOUDFLARE" == true ]]; then
         CLOUDFLARED_PID=$(service_pid "com.cloudflared.tunnel")
         if [[ -n "$CLOUDFLARED_PID" ]]; then
@@ -843,8 +664,8 @@ if [[ "$OS_TYPE" == "macos" ]]; then
         fi
     fi
 else
-    systemctl --user enable remotelab-chat.service remotelab-proxy.service 2>/dev/null || true
-    systemctl --user start remotelab-chat.service remotelab-proxy.service
+    systemctl --user enable remotelab-chat.service 2>/dev/null || true
+    systemctl --user start remotelab-chat.service
     if [[ "$USE_CLOUDFLARE" == true ]]; then
         systemctl --user enable remotelab-tunnel.service 2>/dev/null || true
         systemctl --user start remotelab-tunnel.service
@@ -855,11 +676,6 @@ else
         print_success "chat-server running"
     else
         print_error "chat-server failed to start — check $LOG_DIR/chat-server.error.log"
-    fi
-    if systemctl --user is-active --quiet remotelab-proxy.service; then
-        print_success "auth-proxy running"
-    else
-        print_error "auth-proxy failed to start — check $LOG_DIR/auth-proxy.error.log"
     fi
     if [[ "$USE_CLOUDFLARE" == true ]]; then
         if systemctl --user is-active --quiet remotelab-tunnel.service; then
