@@ -160,6 +160,11 @@ async function main() {
     const initial = initialBuild.payload;
     assert.ok(initial.serviceLabel, 'build info should expose a service label');
     assert.ok(initial.serviceTitle, 'build info should expose a service title');
+    assert.match(
+      initial.serviceLabel,
+      new RegExp(`^Ver ${escapeRegex(initial.serviceVersion)}(?: · |$)`),
+      'service label should lead with the user-facing release version',
+    );
     assert.ok(initial.frontendFingerprint, 'build info should expose a frontend fingerprint');
     assert.match(initial.frontendLabel, /^ui:/, 'frontend label should be compact and explicit');
     assert.equal(

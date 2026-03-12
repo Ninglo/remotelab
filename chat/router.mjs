@@ -165,17 +165,20 @@ function loadBuildInfo() {
       0,
     ))
     : '';
-  const serviceLabelBase = commit || version;
-  const serviceLabel = serviceDirty ? `${serviceLabelBase}*` : serviceLabelBase;
+  const serviceRevisionBase = commit || '';
+  const serviceRevisionLabel = serviceRevisionBase
+    ? (serviceDirty ? `${serviceRevisionBase}*` : serviceRevisionBase)
+    : (serviceDirty ? 'working*' : '');
+  const serviceLabelParts = [`Ver ${version}`];
+  if (serviceRevisionLabel) serviceLabelParts.push(serviceRevisionLabel);
+  const serviceLabel = serviceLabelParts.join(' · ');
   const serviceAssetVersion = sanitizeAssetVersion([
     version,
     commit || 'working',
     serviceDirty && serviceFingerprint ? `dirty-${serviceFingerprint}` : 'clean',
   ].filter(Boolean).join('-'));
-  const serviceTitleParts = [
-    `Service v${version}`,
-    serviceLabel,
-  ];
+  const serviceTitleParts = [`Service v${version}`];
+  if (serviceRevisionLabel) serviceTitleParts.push(serviceRevisionLabel);
   if (serviceFingerprint) serviceTitleParts.push(`srv:${serviceFingerprint}`);
   const serviceTitle = serviceTitleParts.join(' · ');
   return {
