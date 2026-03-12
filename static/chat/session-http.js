@@ -13,6 +13,7 @@ function restoreOwnerSessionSelection() {
     persistActiveSessionId(null);
     syncBrowserState({ sessionId: null, tab: activeTab });
     showEmpty();
+    restoreDraft();
     updateStatus("connected", "idle");
     pendingNavigationState = null;
     return;
@@ -263,6 +264,7 @@ async function fetchSessionsList() {
     hasAttachedSession = false;
     clearMessages();
     showEmpty();
+    restoreDraft();
   }
   return sessions;
 }

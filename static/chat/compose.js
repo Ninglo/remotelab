@@ -72,15 +72,18 @@ function autoResizeInput() {
 // ---- Draft persistence ----
 function saveDraft() {
   if (!currentSessionId) return;
-  localStorage.setItem(`draft_${currentSessionId}`, msgInput.value);
+  if (msgInput.value) {
+    localStorage.setItem(`draft_${currentSessionId}`, msgInput.value);
+    return;
+  }
+  localStorage.removeItem(`draft_${currentSessionId}`);
 }
 function restoreDraft() {
-  if (!currentSessionId) return;
-  const draft = localStorage.getItem(`draft_${currentSessionId}`);
-  if (draft) {
-    msgInput.value = draft;
-    autoResizeInput();
-  }
+  const draft = currentSessionId
+    ? localStorage.getItem(`draft_${currentSessionId}`)
+    : "";
+  msgInput.value = draft ?? "";
+  autoResizeInput();
 }
 function clearDraft() {
   if (!currentSessionId) return;
