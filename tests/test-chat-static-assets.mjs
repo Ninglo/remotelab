@@ -217,6 +217,16 @@ async function main() {
     assert.ok(splitAsset.headers.etag, 'split asset should expose an ETag');
     assert.match(splitAsset.text, /const buildInfo = window\.__REMOTELAB_BUILD__ \|\| \{\};/);
 
+    const stateModelAsset = await request(port, 'GET', '/chat/session-state-model.js');
+    assert.equal(stateModelAsset.status, 200, 'session state model asset should load');
+    assert.equal(
+      stateModelAsset.headers['cache-control'],
+      'public, no-cache, max-age=0, must-revalidate',
+      'session state model should use safe revalidation caching',
+    );
+    assert.ok(stateModelAsset.headers.etag, 'session state model asset should expose an ETag');
+    assert.match(stateModelAsset.text, /RemoteLabSessionStateModel/);
+
     const toolingAsset = await request(port, 'GET', '/chat/tooling.js');
     assert.equal(toolingAsset.status, 200, 'tooling asset should load');
     assert.match(toolingAsset.text, /document\.documentElement\.style\.setProperty\("--app-height"/);
