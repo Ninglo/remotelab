@@ -1,15 +1,13 @@
 const gesturePill = document.getElementById("gesturePill");
 
-const EDGE_GESTURE_START_ZONE_RATIO = 0.28;
-const EDGE_GESTURE_START_ZONE_MAX_PX = 140;
-const EDGE_GESTURE_LOCK_DISTANCE_PX = 8;
-const EDGE_GESTURE_TRIGGER_DISTANCE_PX = 32;
-const EDGE_GESTURE_DIRECTION_RATIO = 0.85;
+const SWIPE_GESTURE_LOCK_DISTANCE_PX = 18;
+const SWIPE_GESTURE_TRIGGER_DISTANCE_PX = 64;
+const SWIPE_GESTURE_DIRECTION_RATIO = 1.1;
 
-let edgeGestureState = null;
-let edgeGestureActionInFlight = false;
+let swipeGestureState = null;
+let swipeGestureActionInFlight = false;
 
-function canUseEdgeGestures() {
+function canUseSwipeGestures() {
   if (!gesturePill) return false;
   if (isDesktop || visitorMode) return false;
   if (sidebarOverlay?.classList.contains("open")) return false;
@@ -17,7 +15,7 @@ function canUseEdgeGestures() {
   return true;
 }
 
-function isEdgeGestureBlockedTarget(target) {
+function isSwipeGestureBlockedTarget(target) {
   if (!(target instanceof Element)) return false;
   return Boolean(
     target.closest(
@@ -33,61 +31,79 @@ function resetGesturePill() {
   gesturePill.style.removeProperty("--gesture-scale");
 }
 
-function showGesturePill(side, progress, distance) {
+function getSwipeGestureDirection(deltaX) {
+  if (!Number.isFinite(deltaX) || deltaX === 0) return null;
+  return deltaX > 0 ? "right" : "left";
+}
+
+function getSwipeGestureDistance(deltaX, direction) {
+  if (direction === "right") return deltaX;
+  if (direction === "left") return -deltaX;
+  return 0;
+}
+
+function getSwipeGestureAction(direction) {
+  if (direction === "right") {
+    return {
+      pillSide: "left",
+      label: "Sessions",
+      run: () => Promise.resolve(openSessionsSidebar()),
+    };
+  }
+  if (direction === "left") {
+    return {
+      pillSide: "right",
+      label: "New Session",
+      run: () => Promise.resolve(createNewSessionShortcut()),
+    };
+  }
+  return null;
+}
+
+function showGesturePill(direction, progress, distance) {
   if (!gesturePill) return;
+  const action = getSwipeGestureAction(direction);
+  if (!action) {
+    resetGesturePill();
+    return;
+  }
   const clampedProgress = Math.max(0, Math.min(progress, 1.25));
   const offset = Math.min(Math.max(distance * 0.22, 0), 18);
-  const directionOffset = side === "left" ? offset : -offset;
+  const directionOffset = action.pillSide === "left" ? offset : -offset;
   const scale = Math.min(1, 0.96 + clampedProgress * 0.06);
-  gesturePill.textContent = side === "left" ? "Sessions" : "New Session";
-  gesturePill.classList.toggle("left", side === "left");
-  gesturePill.classList.toggle("right", side === "right");
+  gesturePill.textContent = action.label;
+  gesturePill.classList.toggle("left", action.pillSide === "left");
+  gesturePill.classList.toggle("right", action.pillSide === "right");
   gesturePill.classList.toggle("visible", clampedProgress > 0.05);
   gesturePill.classList.toggle("ready", clampedProgress >= 1);
   gesturePill.style.setProperty("--gesture-offset", `${directionOffset}px`);
   gesturePill.style.setProperty("--gesture-scale", String(scale));
 }
 
-function cancelEdgeGesture() {
-  edgeGestureState = null;
+function cancelSwipeGesture() {
+  swipeGestureState = null;
   resetGesturePill();
 }
 
-function getEdgeGestureStartZonePx(viewportWidth) {
-  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
-    return EDGE_GESTURE_START_ZONE_MAX_PX;
-  }
-  return Math.min(
-    EDGE_GESTURE_START_ZONE_MAX_PX,
-    Math.max(64, Math.round(viewportWidth * EDGE_GESTURE_START_ZONE_RATIO)),
-  );
+function shouldCancelSwipeGesture(deltaX, deltaY) {
+  if (Math.abs(deltaY) < SWIPE_GESTURE_LOCK_DISTANCE_PX) return false;
+  return Math.abs(deltaY) > Math.abs(deltaX) * SWIPE_GESTURE_DIRECTION_RATIO;
 }
 
-function shouldLockEdgeGesture(deltaX, deltaY, inwardDistance) {
-  if (inwardDistance < EDGE_GESTURE_LOCK_DISTANCE_PX) return false;
-  return Math.abs(deltaX) >= Math.abs(deltaY) * EDGE_GESTURE_DIRECTION_RATIO;
+function shouldLockSwipeGesture(deltaX, deltaY) {
+  if (Math.abs(deltaX) < SWIPE_GESTURE_LOCK_DISTANCE_PX) return false;
+  return Math.abs(deltaX) >= Math.abs(deltaY) * SWIPE_GESTURE_DIRECTION_RATIO;
 }
 
-function getEdgeGestureDistance(touch, side) {
-  const deltaX = touch.clientX - edgeGestureState.startX;
-  return side === "left" ? deltaX : -deltaX;
-}
-
-function handleEdgeGestureStart(event) {
-  if (!canUseEdgeGestures()) return;
-  if (edgeGestureActionInFlight || edgeGestureState) return;
+function handleSwipeGestureStart(event) {
+  if (!canUseSwipeGestures()) return;
+  if (swipeGestureActionInFlight || swipeGestureState) return;
   if (event.touches.length !== 1) return;
-  if (isEdgeGestureBlockedTarget(event.target)) return;
+  if (isSwipeGestureBlockedTarget(event.target)) return;
 
   const touch = event.touches[0];
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-  const startZone = getEdgeGestureStartZonePx(viewportWidth);
-  const fromLeftEdge = touch.clientX <= startZone;
-  const fromRightEdge = viewportWidth > 0 && touch.clientX >= viewportWidth - startZone;
-  if (!fromLeftEdge && !fromRightEdge) return;
-
-  edgeGestureState = {
-    side: fromLeftEdge ? "left" : "right",
+  swipeGestureState = {
+    direction: null,
     startX: touch.clientX,
     startY: touch.clientY,
     locked: false,
@@ -95,78 +111,85 @@ function handleEdgeGestureStart(event) {
   };
 }
 
-function handleEdgeGestureMove(event) {
-  if (!edgeGestureState) return;
+function handleSwipeGestureMove(event) {
+  if (!swipeGestureState) return;
   if (event.touches.length !== 1) {
-    cancelEdgeGesture();
+    cancelSwipeGesture();
     return;
   }
 
   const touch = event.touches[0];
-  const deltaX = touch.clientX - edgeGestureState.startX;
-  const deltaY = touch.clientY - edgeGestureState.startY;
-  const inwardDistance = getEdgeGestureDistance(touch, edgeGestureState.side);
-  edgeGestureState.distance = inwardDistance;
+  const deltaX = touch.clientX - swipeGestureState.startX;
+  const deltaY = touch.clientY - swipeGestureState.startY;
 
-  if (!edgeGestureState.locked) {
-    if (Math.abs(deltaY) > Math.abs(deltaX) * EDGE_GESTURE_DIRECTION_RATIO) {
-      cancelEdgeGesture();
+  if (!swipeGestureState.locked) {
+    if (shouldCancelSwipeGesture(deltaX, deltaY)) {
+      cancelSwipeGesture();
       return;
     }
-    if (!shouldLockEdgeGesture(deltaX, deltaY, inwardDistance)) {
+    if (!shouldLockSwipeGesture(deltaX, deltaY)) {
       return;
     }
-    edgeGestureState.locked = true;
+    swipeGestureState.locked = true;
+    swipeGestureState.direction = getSwipeGestureDirection(deltaX);
   }
 
-  if (inwardDistance <= 0) {
+  if (!swipeGestureState.direction) {
+    resetGesturePill();
+    return;
+  }
+
+  const swipeDistance = getSwipeGestureDistance(deltaX, swipeGestureState.direction);
+  swipeGestureState.distance = swipeDistance;
+
+  if (swipeDistance <= 0) {
     resetGesturePill();
     return;
   }
 
   event.preventDefault();
   showGesturePill(
-    edgeGestureState.side,
-    inwardDistance / EDGE_GESTURE_TRIGGER_DISTANCE_PX,
-    inwardDistance,
+    swipeGestureState.direction,
+    swipeDistance / SWIPE_GESTURE_TRIGGER_DISTANCE_PX,
+    swipeDistance,
   );
 }
 
-function handleEdgeGestureEnd(event) {
-  if (!edgeGestureState) return;
+function handleSwipeGestureEnd(event) {
+  if (!swipeGestureState) return;
 
   const finalTouch = event.changedTouches?.[0] || null;
   if (finalTouch) {
-    const deltaX = finalTouch.clientX - edgeGestureState.startX;
-    const deltaY = finalTouch.clientY - edgeGestureState.startY;
-    const finalDistance = getEdgeGestureDistance(finalTouch, edgeGestureState.side);
-    edgeGestureState.distance = finalDistance;
-    if (!edgeGestureState.locked && shouldLockEdgeGesture(deltaX, deltaY, finalDistance)) {
-      edgeGestureState.locked = true;
+    const deltaX = finalTouch.clientX - swipeGestureState.startX;
+    const deltaY = finalTouch.clientY - swipeGestureState.startY;
+    if (!swipeGestureState.locked && shouldLockSwipeGesture(deltaX, deltaY)) {
+      swipeGestureState.locked = true;
+      swipeGestureState.direction = getSwipeGestureDirection(deltaX);
     }
+    swipeGestureState.distance = getSwipeGestureDistance(deltaX, swipeGestureState.direction);
   }
 
   const shouldTrigger =
-    edgeGestureState.locked && edgeGestureState.distance >= EDGE_GESTURE_TRIGGER_DISTANCE_PX;
-  const side = edgeGestureState.side;
-  cancelEdgeGesture();
-  if (!shouldTrigger || edgeGestureActionInFlight) return;
+    swipeGestureState.locked &&
+    Boolean(swipeGestureState.direction) &&
+    swipeGestureState.distance >= SWIPE_GESTURE_TRIGGER_DISTANCE_PX;
+  const direction = swipeGestureState.direction;
+  cancelSwipeGesture();
+  if (!shouldTrigger || swipeGestureActionInFlight) return;
 
-  edgeGestureActionInFlight = true;
-  const action =
-    side === "left"
-      ? Promise.resolve(openSessionsSidebar())
-      : Promise.resolve(createNewSessionShortcut());
+  const action = getSwipeGestureAction(direction);
+  if (!action) return;
 
-  action.finally(() => {
-    edgeGestureActionInFlight = false;
+  swipeGestureActionInFlight = true;
+  action.run().finally(() => {
+    swipeGestureActionInFlight = false;
   });
 }
 
-document.addEventListener("touchstart", handleEdgeGestureStart, {
+document.addEventListener("touchstart", handleSwipeGestureStart, {
   passive: true,
   capture: true,
 });
-document.addEventListener("touchmove", handleEdgeGestureMove, { passive: false });
-document.addEventListener("touchend", handleEdgeGestureEnd, { passive: true });
-document.addEventListener("touchcancel", cancelEdgeGesture, { passive: true });
+document.addEventListener("touchmove", handleSwipeGestureMove, { passive: false });
+document.addEventListener("touchend", handleSwipeGestureEnd, { passive: true });
+document.addEventListener("touchcancel", cancelSwipeGesture, { passive: true });
