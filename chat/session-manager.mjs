@@ -19,7 +19,10 @@ import {
   setContextHead,
 } from './history.mjs';
 import { messageEvent, statusEvent } from './normalizer.mjs';
-import { triggerSessionLabelSuggestion } from './summarizer.mjs';
+import {
+  triggerSessionLabelSuggestion,
+  triggerSessionWorkflowStateSuggestion,
+} from './summarizer.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
 import {
@@ -35,6 +38,7 @@ import {
   normalizeSessionGroup,
   resolveInitialSessionName,
 } from './session-naming.mjs';
+import { normalizeSessionWorkflowState } from './session-workflow-state.mjs';
 import {
   createRun,
   findRunByRequest,
@@ -275,6 +279,11 @@ function normalizeSessionSourceName(value) {
 }
 
 function normalizeSessionVisitorName(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeSessionUserName(value) {
   if (typeof value !== 'string') return '';
   return value.trim().replace(/\s+/g, ' ');
 }
@@ -1536,6 +1545,36 @@ async function applyGeneratedSessionGrouping(sessionId, summaryResult) {
   });
 }
 
+function scheduleSessionWorkflowStateSuggestion(session, run) {
+  if (!session?.id || !run || session.archived || isInternalSession(session)) {
+    return false;
+  }
+
+  const suggestionDone = triggerSessionWorkflowStateSuggestion({
+    id: session.id,
+    folder: session.folder,
+    name: session.name || '',
+    group: session.group || '',
+    description: session.description || '',
+    workflowState: session.workflowState || '',
+    tool: run.tool || session.tool,
+    model: run.model || undefined,
+    thinking: false,
+    runState: run.state,
+    queuedCount: getSessionQueueCount(session),
+  });
+
+  suggestionDone.then(async (result) => {
+    const nextWorkflowState = normalizeSessionWorkflowState(result?.workflowState || '');
+    if (!nextWorkflowState) return;
+    await updateSessionWorkflowState(session.id, nextWorkflowState);
+  }).catch((error) => {
+    console.error(`[workflow-state] Failed to update workflow state for ${session.id?.slice(0, 8)}: ${error.message}`);
+  });
+
+  return true;
+}
+
 function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
   const live = ensureLiveSession(sessionId);
   if (live.earlyTitlePromise) {
@@ -1810,6 +1849,9 @@ async function finalizeDetachedRun(sessionId, run, manifest) {
   }
 
   queueSessionCompletionTargets(latestSession, finalizedRun, manifest);
+  if (!manifest?.internalOperation) {
+    scheduleSessionWorkflowStateSuggestion(latestSession, finalizedRun);
+  }
 
   const needsRename = isSessionAutoRenamePending(latestSession);
   const needsGrouping = !latestSession.group || !latestSession.description;
@@ -2079,6 +2121,8 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedSourceId = normalizeAppId(extra.sourceId);
   const requestedSourceName = normalizeSessionSourceName(extra.sourceName);
   const requestedVisitorName = normalizeSessionVisitorName(extra.visitorName);
+  const requestedUserId = typeof extra.userId === 'string' ? extra.userId.trim() : '';
+  const requestedUserName = normalizeSessionUserName(extra.userName);
   const created = await withSessionsMetaMutation(async (metas, saveSessionsMeta) => {
     if (externalTriggerId) {
       const existingIndex = metas.findIndex((meta) => meta.externalTriggerId === externalTriggerId && !meta.archived);
@@ -2099,6 +2143,12 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
+        const workflowState = normalizeSessionWorkflowState(extra.workflowState || '');
+        if (workflowState && updated.workflowState !== workflowState) {
+          updated.workflowState = workflowState;
+          changed = true;
+        }
+
         if (requestedAppName && updated.appName !== requestedAppName) {
           updated.appName = requestedAppName;
           changed = true;
@@ -2116,6 +2166,16 @@ export async function createSession(folder, tool, name, extra = {}) {
 
         if (requestedVisitorName && updated.visitorName !== requestedVisitorName) {
           updated.visitorName = requestedVisitorName;
+          changed = true;
+        }
+
+        if (requestedUserId && updated.userId !== requestedUserId) {
+          updated.userId = requestedUserId;
+          changed = true;
+        }
+
+        if (requestedUserName && updated.userName !== requestedUserName) {
+          updated.userName = requestedUserName;
           changed = true;
         }
 
@@ -2153,6 +2213,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     const now = nowIso();
     const group = normalizeSessionGroup(extra.group || '');
     const description = normalizeSessionDescription(extra.description || '');
+    const workflowState = normalizeSessionWorkflowState(extra.workflowState || '');
     const completionTargets = sanitizeEmailCompletionTargets(extra.completionTargets || []);
 
     const session = {
@@ -2168,11 +2229,14 @@ export async function createSession(folder, tool, name, extra = {}) {
 
     if (group) session.group = group;
     if (description) session.description = description;
+    if (workflowState) session.workflowState = workflowState;
     if (requestedAppName) session.appName = requestedAppName;
     if (requestedSourceId) session.sourceId = requestedSourceId;
     if (requestedSourceName) session.sourceName = requestedSourceName;
     if (extra.visitorId) session.visitorId = extra.visitorId;
     if (requestedVisitorName) session.visitorName = requestedVisitorName;
+    if (requestedUserId) session.userId = requestedUserId;
+    if (requestedUserName) session.userName = requestedUserName;
     if (extra.systemPrompt) session.systemPrompt = extra.systemPrompt;
     if (extra.internalRole) session.internalRole = extra.internalRole;
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
@@ -2304,6 +2368,27 @@ export async function updateSessionGrouping(id, patch = {}) {
       session.updatedAt = nowIso();
     }
     return changed;
+  });
+
+  if (!result.meta) return null;
+  if (result.changed) {
+    broadcastSessionInvalidation(id);
+  }
+  return enrichSessionMeta(result.meta);
+}
+
+export async function updateSessionWorkflowState(id, workflowState) {
+  const nextWorkflowState = normalizeSessionWorkflowState(workflowState || '');
+  const result = await mutateSessionMeta(id, (session) => {
+    const currentWorkflowState = normalizeSessionWorkflowState(session.workflowState || '');
+    if (nextWorkflowState) {
+      if (currentWorkflowState === nextWorkflowState) return false;
+      session.workflowState = nextWorkflowState;
+      return true;
+    }
+    if (!currentWorkflowState) return false;
+    delete session.workflowState;
+    return true;
   });
 
   if (!result.meta) return null;
@@ -2845,6 +2930,8 @@ export async function forkSession(sessionId) {
     appId: source.appId || '',
     appName: source.appName || '',
     systemPrompt: source.systemPrompt || '',
+    userId: source.userId || '',
+    userName: source.userName || '',
     forkedFromSessionId: source.id,
     forkedFromSeq: source.latestSeq || 0,
     rootSessionId: source.rootSessionId || source.id,

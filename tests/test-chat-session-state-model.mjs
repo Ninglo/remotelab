@@ -102,6 +102,35 @@ const renameFailedStatus = model.getSessionStatusSummary(renameFailedSession);
 assert.equal(renameFailedStatus.primary.key, 'rename-failed');
 assert.equal(renameFailedStatus.primary.title, 'rename crashed');
 
+assert.deepEqual(
+  model.getBoardColumns().map((column) => column.key),
+  ['parked', 'running', 'waiting_user', 'done'],
+  'board columns should stay in the left-to-right workflow order',
+);
+
+const parkedBoardColumn = model.getSessionBoardColumn(makeSession());
+assert.equal(parkedBoardColumn.key, 'parked');
+
+const waitingBoardColumn = model.getSessionBoardColumn(
+  makeSession({ workflowState: 'waiting-user' }),
+);
+assert.equal(waitingBoardColumn.key, 'waiting_user');
+
+const doneBoardColumn = model.getSessionBoardColumn(
+  makeSession({ workflowState: 'done' }),
+);
+assert.equal(doneBoardColumn.key, 'done');
+
+const runningBoardColumn = model.getSessionBoardColumn(
+  makeSession({
+    workflowState: 'done',
+    activity: makeActivity({
+      run: { state: 'running', phase: 'accepted', runId: 'run-2' },
+    }),
+  }),
+);
+assert.equal(runningBoardColumn.key, 'running', 'live runtime should override stored workflow state in the board');
+
 const toolFallbackStatus = model.getSessionStatusSummary(
   makeSession({ tool: 'codex' }),
   { includeToolFallback: true },

@@ -7,6 +7,7 @@ import {
   statOrNull,
   writeJsonAtomic,
 } from './fs-utils.mjs';
+import { normalizeSessionWorkflowState } from './session-workflow-state.mjs';
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheMtimeMs = null;
@@ -23,6 +24,19 @@ function normalizeStoredSessionMeta(meta) {
   for (const legacyField of ['activeRun', 'status', 'queuedMessageCount', 'pendingCompact', 'renameState', 'renameError', 'recoverable']) {
     if (Object.prototype.hasOwnProperty.call(normalized, legacyField)) {
       delete normalized[legacyField];
+      changed = true;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'workflowState')) {
+    const nextWorkflowState = normalizeSessionWorkflowState(normalized.workflowState || '');
+    if (nextWorkflowState) {
+      if (normalized.workflowState !== nextWorkflowState) {
+        normalized.workflowState = nextWorkflowState;
+        changed = true;
+      }
+    } else {
+      delete normalized.workflowState;
       changed = true;
     }
   }

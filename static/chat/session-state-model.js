@@ -1,6 +1,33 @@
 "use strict";
 
 (function attachRemoteLabSessionStateModel(root) {
+  const boardColumns = [
+    {
+      key: "parked",
+      label: "Parked",
+      title: "Paused or parked work that is not currently waiting on the user.",
+      emptyText: "No parked sessions",
+    },
+    {
+      key: "running",
+      label: "Running",
+      title: "Sessions actively executing, compacting, or draining queued follow-ups.",
+      emptyText: "No running sessions",
+    },
+    {
+      key: "waiting_user",
+      label: "Waiting",
+      title: "Sessions blocked on user input, approval, files, or manual validation.",
+      emptyText: "Nothing waiting for you",
+    },
+    {
+      key: "done",
+      label: "Done",
+      title: "Sessions whose current task looks complete.",
+      emptyText: "No completed sessions",
+    },
+  ];
+
   function createEmptyStatus() {
     return {
       key: "idle",
@@ -21,6 +48,23 @@
       itemClass,
       title,
     };
+  }
+
+  function normalizeSessionWorkflowState(value) {
+    const normalized = typeof value === "string"
+      ? value.trim().toLowerCase().replace(/[\s-]+/g, "_")
+      : "";
+    if (!normalized) return "";
+    if (["waiting", "waiting_user", "waiting_for_user", "waiting_on_user", "needs_user", "needs_input"].includes(normalized)) {
+      return "waiting_user";
+    }
+    if (["done", "complete", "completed", "finished"].includes(normalized)) {
+      return "done";
+    }
+    if (["parked", "paused", "pause", "backlog", "todo"].includes(normalized)) {
+      return "parked";
+    }
+    return "";
   }
 
   function normalizeSessionActivity(session) {
@@ -136,12 +180,34 @@
     return getSessionStatusSummary(session, options).primary;
   }
 
+  function getBoardColumns() {
+    return boardColumns.map((column) => ({ ...column }));
+  }
+
+  function getSessionBoardColumn(session) {
+    if (isSessionBusy(session)) {
+      return boardColumns[1];
+    }
+
+    const workflowState = normalizeSessionWorkflowState(session?.workflowState || "");
+    if (workflowState === "waiting_user") {
+      return boardColumns[2];
+    }
+    if (workflowState === "done") {
+      return boardColumns[3];
+    }
+    return boardColumns[0];
+  }
+
   root.RemoteLabSessionStateModel = {
     createEmptyStatus,
+    normalizeSessionWorkflowState,
     normalizeSessionActivity,
     isSessionBusy,
     getSessionPrimaryStatus,
     getSessionStatusSummary,
     getSessionVisualStatus,
+    getBoardColumns,
+    getSessionBoardColumn,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

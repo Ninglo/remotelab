@@ -555,6 +555,102 @@ function renderSessionStatusHtml(statusInfo) {
   return `<span class="${statusInfo.className}"${title}>● ${esc(statusInfo.label)}</span>`;
 }
 
+function formatBoardSessionTimestamp(session) {
+  const stamp = session?.lastEventAt || session?.updatedAt || session?.created || "";
+  const parsed = new Date(stamp).getTime();
+  if (!Number.isFinite(parsed)) return "";
+  return messageTimeFormatter.format(parsed);
+}
+
+function createBoardSessionCard(session) {
+  const statusSummary = getSessionStatusSummary(session, {
+    includeToolFallback: true,
+  });
+  const card = document.createElement("div");
+  card.className = "board-card" + (session.id === currentSessionId ? " active" : "");
+
+  const displayName = getSessionDisplayName(session);
+  const metaParts = [];
+  metaParts.push(...renderSessionScopeContext(session));
+  const countHtml = renderSessionMessageCount(session);
+  if (countHtml) metaParts.push(countHtml);
+  for (const indicator of statusSummary.indicators) {
+    const statusHtml = renderSessionStatusHtml(indicator);
+    if (statusHtml) metaParts.push(statusHtml);
+  }
+
+  const description = typeof session?.description === "string"
+    ? session.description.trim()
+    : "";
+  const timestamp = formatBoardSessionTimestamp(session);
+
+  card.innerHTML = `
+    <div class="board-card-title">${session.pinned ? `<span class="session-pin-badge" title="Pinned">${renderUiIcon("pinned")}</span>` : ""}${esc(displayName)}</div>
+    ${metaParts.length > 0 ? `<div class="board-card-meta">${metaParts.join(" · ")}</div>` : ""}
+    ${description ? `<div class="board-card-description">${esc(description)}</div>` : ""}
+    ${timestamp ? `<div class="board-card-time">Updated ${esc(timestamp)}</div>` : ""}`;
+
+  card.addEventListener("click", () => {
+    attachSession(session.id, session);
+    if (!isDesktop) closeSidebarFn();
+  });
+
+  return card;
+}
+
+function renderSessionBoard() {
+  if (!boardPanel) return;
+  boardPanel.innerHTML = "";
+
+  const scroller = document.createElement("div");
+  scroller.className = "board-scroller";
+
+  const columns = getSessionBoardColumns();
+  const grouped = new Map(columns.map((column) => [column.key, {
+    column,
+    sessions: [],
+  }]));
+  const visibleSessions = getActiveSessions().filter((session) => matchesCurrentFilters(session));
+
+  for (const session of visibleSessions) {
+    const boardColumn = getSessionBoardColumn(session);
+    const target = grouped.get(boardColumn.key) || grouped.get("parked");
+    target?.sessions.push(session);
+  }
+
+  for (const { column, sessions: columnSessions } of grouped.values()) {
+    const columnEl = document.createElement("div");
+    columnEl.className = "board-column";
+    columnEl.dataset.column = column.key;
+
+    const header = document.createElement("div");
+    header.className = "board-column-header";
+    header.innerHTML = `
+      <span class="board-column-dot"></span>
+      <span class="board-column-title" title="${esc(column.title || column.label)}">${esc(column.label)}</span>
+      <span class="board-column-count">${columnSessions.length}</span>`;
+
+    const body = document.createElement("div");
+    body.className = "board-column-body";
+    if (columnSessions.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "board-card-empty";
+      empty.textContent = column.emptyText || "No sessions";
+      body.appendChild(empty);
+    } else {
+      for (const session of columnSessions) {
+        body.appendChild(createBoardSessionCard(session));
+      }
+    }
+
+    columnEl.appendChild(header);
+    columnEl.appendChild(body);
+    scroller.appendChild(columnEl);
+  }
+
+  boardPanel.appendChild(scroller);
+}
+
 function createActiveSessionItem(session) {
   const statusSummary = getSessionStatusSummary(session, {
     includeToolFallback: true,
@@ -618,6 +714,7 @@ function createActiveSessionItem(session) {
 
 // ---- Session list ----
 function renderSessionList() {
+  renderSessionBoard();
   sessionList.innerHTML = "";
   const pinnedSessions = getVisiblePinnedSessions();
   const visibleSessions = getVisibleActiveSessions();

@@ -348,12 +348,14 @@ let activeTab = normalizeSidebarTab(
   pendingNavigationState.tab ||
     localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY) ||
     "sessions",
-); // "sessions" | "settings"
+); // "sessions" | "board" | "settings"
 
 function switchTab(tab, { syncState = true } = {}) {
   activeTab = normalizeSidebarTab(tab);
   const showingSessions = activeTab === "sessions";
+  const showingBoard = activeTab === "board";
   tabSessions.classList.toggle("active", activeTab === "sessions");
+  tabBoard?.classList.toggle("active", activeTab === "board");
   tabSettings.classList.toggle("active", activeTab === "settings");
   if (typeof syncSidebarFiltersVisibility === "function") {
     syncSidebarFiltersVisibility(showingSessions);
@@ -361,10 +363,12 @@ function switchTab(tab, { syncState = true } = {}) {
     sidebarFilters.classList.toggle("hidden", !showingSessions);
   }
   sessionList.style.display = showingSessions ? "" : "none";
+  boardPanel?.classList.toggle("visible", showingBoard);
   settingsPanel.classList.toggle("visible", activeTab === "settings");
-  sessionListFooter.classList.toggle("hidden", !showingSessions);
-  newAppBtn.classList.toggle("hidden", !showingSessions);
-  newSessionBtn.classList.toggle("hidden", !showingSessions);
+  document.body.classList.toggle("board-tab-active", showingBoard);
+  sessionListFooter.classList.toggle("hidden", activeTab === "settings");
+  newAppBtn.classList.toggle("hidden", activeTab === "settings");
+  newSessionBtn.classList.toggle("hidden", activeTab === "settings");
   if (activeTab === "settings" && !visitorMode && typeof fetchAppsList === "function") {
     void fetchAppsList().catch((error) => {
       console.warn("[apps] Failed to refresh apps for settings:", error.message);
@@ -381,5 +385,6 @@ function switchTab(tab, { syncState = true } = {}) {
 }
 
 tabSessions.addEventListener("click", () => switchTab("sessions"));
+tabBoard?.addEventListener("click", () => switchTab("board"));
 tabSettings.addEventListener("click", () => switchTab("settings"));
 switchTab(activeTab, { syncState: false });

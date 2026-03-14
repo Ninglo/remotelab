@@ -54,6 +54,9 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   --sidebar-width: 300px;
+  --sidebar-width-board: 520px;
+  --sidebar-mobile-width: 320px;
+  --sidebar-mobile-width-board: min(92vw, 560px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -119,6 +122,11 @@ body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior-y: none;
+}
+
+body.board-tab-active {
+  --sidebar-width: var(--sidebar-width-board);
+  --sidebar-mobile-width: var(--sidebar-mobile-width-board);
 }
 
 .app-shell {
@@ -219,7 +227,7 @@ body {
 }
 .sidebar-overlay.open { display: block; }
 .sidebar {
-  position: fixed; left: -320px; top: 0; bottom: 0; width: 320px;
+  position: fixed; left: calc(-1 * var(--sidebar-mobile-width)); top: 0; bottom: 0; width: var(--sidebar-mobile-width);
   background: var(--bg); border-right: 1px solid var(--border);
   z-index: 101; transition: left 0.2s ease; display: flex; flex-direction: column;
   padding-top: var(--safe-top);
@@ -276,10 +284,11 @@ body {
 .sidebar-tab:hover:not(.active) { color: var(--text-secondary); }
 
 .sidebar-filters {
-  padding: 8px 8px 0;
+  padding: 10px 8px;
   flex-shrink: 0;
   display: grid;
   gap: 8px;
+  border-top: 1px solid var(--border);
 }
 .sidebar-filters.hidden { display: none; }
 .sidebar-filter-select {
@@ -301,16 +310,130 @@ body {
 .settings-panel {
   flex: 1;
   display: none;
-  padding: 12px;
+  padding: 14px 12px 16px;
   overflow-y: auto;
 }
 .settings-panel.visible { display: block; }
-.settings-section {
+.board-panel {
+  flex: 1;
+  display: none;
+  min-height: 0;
+  overflow: hidden;
+}
+.board-panel.visible { display: flex; }
+.board-scroller {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 12px 10px 14px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  gap: 12px;
+}
+.board-column {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg-secondary);
-  padding: 12px;
-  margin-bottom: 12px;
+}
+.board-column-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.board-column-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+.board-column[data-column="running"] .board-column-dot { background: var(--queue); }
+.board-column[data-column="waiting_user"] .board-column-dot { background: var(--warning); }
+.board-column[data-column="done"] .board-column-dot { background: var(--success); }
+.board-column-title {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.board-column-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+.board-column-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.board-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+}
+.board-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.board-card.active {
+  border-color: var(--border-strong);
+  background: var(--bg-tertiary);
+}
+.board-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+.board-card-title .session-pin-badge {
+  margin-right: 4px;
+}
+.board-card-meta,
+.board-card-time,
+.board-card-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.board-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.board-card-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+.board-card-empty {
+  padding: 8px 2px;
+}
+.settings-section {
+  border-top: 1px solid var(--border);
+  padding: 16px 0 0;
+  margin: 0;
+}
+.settings-section:first-child {
+  border-top: 0;
+  padding-top: 0;
 }
 .settings-section-title {
   font-size: 13px;
@@ -325,11 +448,12 @@ body {
 }
 .settings-inline-form {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   margin-top: 12px;
 }
 .settings-inline-input,
-.settings-inline-select {
+.settings-inline-select,
+.settings-inline-textarea {
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
@@ -343,9 +467,14 @@ body {
   color: var(--text-muted);
 }
 .settings-inline-input:focus,
-.settings-inline-select:focus {
+.settings-inline-select:focus,
+.settings-inline-textarea:focus {
   outline: none;
   border-color: var(--border-strong);
+}
+.settings-inline-textarea {
+  min-height: 84px;
+  resize: vertical;
 }
 .settings-inline-row {
   display: grid;
@@ -354,16 +483,42 @@ body {
 .settings-inline-primary {
   justify-self: start;
 }
+.settings-app-picker {
+  display: grid;
+  gap: 8px;
+}
+.settings-app-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-app-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 12px;
+}
+.settings-app-chip input {
+  margin: 0;
+}
 .settings-apps-list {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 0;
+  margin-top: 14px;
 }
 .settings-app-card {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  padding: 10px;
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+  background: none;
+}
+.settings-app-card:first-child {
+  border-top: 0;
+  padding-top: 0;
 }
 .settings-app-card-header {
   display: flex;
@@ -381,7 +536,7 @@ body {
   color: var(--text-muted);
 }
 .settings-app-description {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.45;
@@ -396,7 +551,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .settings-app-btn {
   padding: 7px 10px;
@@ -419,14 +574,24 @@ body {
 .settings-app-empty.inline-status {
   margin-top: 8px;
 }
-.settings-placeholder {
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  background: var(--bg-secondary);
+.settings-app-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.settings-app-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 11px;
+}
+.settings-placeholder {
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
   line-height: 1.45;
-  padding: 14px;
 }
 
 .pinned-section { margin-bottom: 8px; }
@@ -498,6 +663,11 @@ body {
 .session-item-meta .status-compacting { color: var(--notice); }
 .session-item-meta .status-renaming { color: var(--naming); }
 .session-item-meta .status-rename-failed { color: var(--issue); }
+.board-card-meta .status-running { color: var(--success); }
+.board-card-meta .status-queued { color: var(--queue); }
+.board-card-meta .status-compacting { color: var(--notice); }
+.board-card-meta .status-renaming { color: var(--naming); }
+.board-card-meta .status-rename-failed { color: var(--issue); }
 .session-item-meta .status-archived { color: var(--text-muted); }
 .session-item-actions { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 .session-action-btn {
@@ -1488,33 +1658,49 @@ body.visitor-mode .gesture-pill { display: none !important; }
       </div>
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" id="tabSessions">Sessions</button>
+        <button class="sidebar-tab" id="tabBoard">Board</button>
         <button class="sidebar-tab" id="tabSettings">Settings</button>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
+      <div class="sidebar-filters" id="sidebarFilters">
+        <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin"></select>
+        <select class="sidebar-filter-select" id="sessionAppFilterSelect" aria-label="Filter sessions by app"></select>
+        <select class="sidebar-filter-select" id="userFilterSelect" aria-label="Filter sessions by user"></select>
+      </div>
+      <div class="board-panel" id="boardPanel"></div>
       <div class="settings-panel" id="settingsPanel">
         <div class="settings-section">
-          <div class="settings-section-title">Visitors</div>
-          <div class="settings-section-note">Create a lightweight visitor link for a specific person and assign which shareable app they should use.</div>
-          <div class="settings-inline-form" id="newVisitorForm">
-            <input class="settings-inline-input" id="newVisitorNameInput" type="text" placeholder="Visitor name, e.g. Judge iPhone">
+          <div class="settings-section-title">Users</div>
+          <div class="settings-section-note">Create extra identities, choose which apps they can use, and seed a first session when they are empty.</div>
+          <div class="settings-inline-form" id="newUserForm">
+            <input class="settings-inline-input" id="newUserNameInput" type="text" placeholder="User name, e.g. Video Editor">
+            <div class="settings-app-picker" id="newUserAppsPicker"></div>
             <div class="settings-inline-row">
-              <select class="settings-inline-select" id="newVisitorAppSelect" aria-label="Choose app for visitor"></select>
-              <button class="settings-app-btn settings-inline-primary" id="createVisitorBtn" type="button">Create Visitor</button>
+              <select class="settings-inline-select" id="newUserDefaultAppSelect" aria-label="Choose default app for user"></select>
+              <button class="settings-app-btn settings-inline-primary" id="createUserBtn" type="button">Create User</button>
             </div>
-            <div class="settings-app-empty inline-status" id="visitorFormStatus">Each visitor gets a dedicated link and can only use the selected app.</div>
+            <div class="settings-app-empty inline-status" id="userFormStatus">Admin stays the default view. New users get a starter session automatically.</div>
           </div>
-          <div class="settings-apps-list" id="settingsVisitorsList">
-            <div class="settings-app-empty">Loading visitors…</div>
+          <div class="settings-apps-list" id="settingsUsersList">
+            <div class="settings-app-empty">Loading users…</div>
           </div>
         </div>
         <div class="settings-section">
           <div class="settings-section-title">Apps</div>
-          <div class="settings-section-note">Open an owner session for an app, or copy the generic public share link for shareable apps like `Video Cut`.</div>
+          <div class="settings-section-note">Define the reusable app layer. Chat stays lightweight; other apps can attach a first assistant message and system prompt.</div>
+          <div class="settings-inline-form" id="newAppForm">
+            <input class="settings-inline-input" id="newAppNameInput" type="text" placeholder="App name, e.g. VideoCut">
+            <select class="settings-inline-select" id="newAppToolSelect" aria-label="Choose tool for app"></select>
+            <textarea class="settings-inline-textarea" id="newAppWelcomeInput" placeholder="Optional first assistant message shown when a new session starts"></textarea>
+            <textarea class="settings-inline-textarea" id="newAppSystemPromptInput" placeholder="Optional system prompt for this app"></textarea>
+            <button class="settings-app-btn settings-inline-primary" id="createAppConfigBtn" type="button">Create App</button>
+            <div class="settings-app-empty inline-status" id="appFormStatus">Create a reusable app here, then start sessions under it from the sidebar filter.</div>
+          </div>
           <div class="settings-apps-list" id="settingsAppsList">
             <div class="settings-app-empty">Loading apps…</div>
           </div>
         </div>
-        <div class="settings-placeholder">This is the lightweight control surface for Apps and Visitors in v1. More advanced management can grow here later.</div>
+        <div class="settings-placeholder">Sessions stay flat. Filters below the session list decide source, app, and user; Settings only manages the reusable entities behind them.</div>
       </div>
       <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}">Build {{BUILD_LABEL}}</div>
       <button class="new-session-btn secondary" id="newAppBtn">+ New App</button>

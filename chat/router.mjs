@@ -32,8 +32,10 @@ import {
   setSessionArchived,
   setSessionPinned,
   submitHttpMessage,
+  updateSessionWorkflowState,
   updateSessionRuntimePreferences,
 } from './session-manager.mjs';
+import { normalizeSessionWorkflowState } from './session-workflow-state.mjs';
 import { appendEvent, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
@@ -47,6 +49,13 @@ import {
   deleteApp,
   isBuiltinAppId,
 } from './apps.mjs';
+import {
+  createUser,
+  deleteUser,
+  getUser,
+  listUsers,
+  updateUser,
+} from './users.mjs';
 import {
   createVisitor,
   deleteVisitor,
@@ -327,6 +336,71 @@ function buildChatPageBootstrap(authSession) {
   return {
     auth: buildAuthInfo(authSession),
   };
+}
+
+function normalizeTemplateAppIds(appIds) {
+  if (!Array.isArray(appIds)) return [];
+  return [...new Set(appIds
+    .map((appId) => (typeof appId === 'string' ? appId.trim() : ''))
+    .filter(Boolean))];
+}
+
+async function resolveTemplateApps(appIds) {
+  const resolved = [];
+  for (const appId of normalizeTemplateAppIds(appIds)) {
+    const app = await getApp(appId);
+    if (!app || !isTemplateAppScopeId(app.id)) continue;
+    resolved.push(app);
+  }
+  return resolved;
+}
+
+async function normalizeSessionFolderInput(folder) {
+  const trimmed = typeof folder === 'string' && folder.trim() ? folder.trim() : '~';
+  const resolvedFolder = trimmed.startsWith('~')
+    ? join(homedir(), trimmed.slice(1))
+    : resolve(trimmed);
+  if (!await isDirectoryPath(resolvedFolder)) return null;
+  return trimmed.startsWith('~') ? trimmed : resolvedFolder;
+}
+
+async function createOwnerTemplatedSession({ folder = '~', tool = '', name = '', app, userId = '', userName = '' } = {}) {
+  if (!app?.id || !isTemplateAppScopeId(app.id)) return null;
+  let session = await createSession(
+    folder,
+    tool || app.tool || 'codex',
+    name || app.name || 'Session',
+    {
+      appId: app.id,
+      appName: app.name || '',
+      sourceId: 'chat',
+      sourceName: 'Chat',
+      userId,
+      userName,
+    },
+  );
+  session = await applyAppTemplateToSession(session.id, app.id) || session;
+  if (app.welcomeMessage) {
+    await appendEvent(session.id, messageEvent('assistant', app.welcomeMessage));
+    session = await getSession(session.id) || session;
+  }
+  return session;
+}
+
+async function ensureUserSeedSession(user, { folder = '~', tool = '' } = {}) {
+  if (!user?.id) return null;
+  const existing = (await listSessions({ includeVisitor: true })).find((session) => session.userId === user.id);
+  if (existing) return existing;
+  const app = await getApp(user.defaultAppId || user.appIds?.[0] || '');
+  if (!app || !isTemplateAppScopeId(app.id)) return null;
+  return createOwnerTemplatedSession({
+    folder,
+    tool: tool || app.tool || 'codex',
+    name: `${user.name || 'User'} · ${app.name || 'Session'}`,
+    app,
+    userId: user.id,
+    userName: user.name || '',
+  });
 }
 
 async function bootstrapPublicVisitorSession(app, { visitorId, visitorName = '', sessionName = '' } = {}) {
@@ -690,6 +764,8 @@ function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/push/subscribe' && method === 'POST') return true;
   if (pathname === '/api/apps') return true;
   if (pathname.startsWith('/api/apps/')) return true;
+  if (pathname === '/api/users') return true;
+  if (pathname.startsWith('/api/users/')) return true;
   return false;
 }
 
@@ -1039,6 +1115,7 @@ export async function handleRequest(req, res) {
     const hasModelPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'model');
     const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
     const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
+    const hasWorkflowStatePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workflowState');
     if (hasArchivedPatch && typeof patch.archived !== 'boolean') {
       writeJson(res, 400, { error: 'archived must be a boolean' });
       return;
@@ -1063,6 +1140,19 @@ export async function handleRequest(req, res) {
       writeJson(res, 400, { error: 'thinking must be a boolean' });
       return;
     }
+    if (hasWorkflowStatePatch && patch.workflowState !== null && typeof patch.workflowState !== 'string') {
+      writeJson(res, 400, { error: 'workflowState must be a string or null' });
+      return;
+    }
+    if (
+      hasWorkflowStatePatch
+      && patch.workflowState !== null
+      && String(patch.workflowState).trim()
+      && !normalizeSessionWorkflowState(String(patch.workflowState))
+    ) {
+      writeJson(res, 400, { error: 'workflowState must be parked, waiting_user, or done' });
+      return;
+    }
     let session = null;
     if (typeof patch.name === 'string' && patch.name.trim()) {
       session = await renameSession(sessionId, patch.name.trim());
@@ -1072,6 +1162,9 @@ export async function handleRequest(req, res) {
     }
     if (hasPinnedPatch) {
       session = await setSessionPinned(sessionId, patch.pinned) || session;
+    }
+    if (hasWorkflowStatePatch) {
+      session = await updateSessionWorkflowState(sessionId, patch.workflowState || '') || session;
     }
     if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch) {
       session = await updateSessionRuntimePreferences(sessionId, {
@@ -1330,6 +1423,8 @@ export async function handleRequest(req, res) {
         name,
         appId,
         appName,
+        userId,
+        userName,
         sourceId,
         sourceName,
         group,
@@ -1351,9 +1446,35 @@ export async function handleRequest(req, res) {
         res.end(JSON.stringify({ error: 'Folder does not exist' }));
         return;
       }
+      const requestedUserId = typeof userId === 'string' ? userId.trim() : '';
+      const resolvedUser = requestedUserId ? await getUser(requestedUserId) : null;
+      if (requestedUserId && !resolvedUser) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'User not found' }));
+        return;
+      }
+      let resolvedApp = typeof appId === 'string' && appId.trim()
+        ? await getApp(appId.trim())
+        : null;
+      if (resolvedUser) {
+        const userAppId = resolvedApp?.id || resolvedUser.defaultAppId || resolvedUser.appIds?.[0] || '';
+        if (!resolvedUser.appIds.includes(userAppId)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Selected app is not allowed for this user' }));
+          return;
+        }
+        resolvedApp = await getApp(userAppId);
+        if (!resolvedApp || !isTemplateAppScopeId(resolvedApp.id)) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'User sessions require a valid template app' }));
+          return;
+        }
+      }
       let session = await createSession(resolvedFolder, tool, name || '', {
-        appId: typeof appId === 'string' ? appId : '',
-        appName: typeof appName === 'string' ? appName : '',
+        appId: resolvedApp?.id || (typeof appId === 'string' ? appId : ''),
+        appName: resolvedApp?.name || (typeof appName === 'string' ? appName : ''),
+        userId: resolvedUser?.id || '',
+        userName: resolvedUser?.name || (typeof userName === 'string' ? userName : ''),
         sourceId: typeof sourceId === 'string' ? sourceId : '',
         sourceName: typeof sourceName === 'string' ? sourceName : '',
         group: group || '',
@@ -1363,9 +1484,11 @@ export async function handleRequest(req, res) {
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
       });
 
-      const requestedApp = typeof appId === 'string' && appId.trim()
-        ? await getApp(appId.trim())
-        : null;
+      const requestedApp = resolvedApp || (
+        typeof appId === 'string' && appId.trim()
+          ? await getApp(appId.trim())
+          : null
+      );
       if (requestedApp && isTemplateAppScopeId(requestedApp.id) && Number(session?.messageCount || 0) === 0) {
         session = await applyAppTemplateToSession(session.id, requestedApp.id) || session;
         if (requestedApp.welcomeMessage) {
@@ -1688,6 +1811,147 @@ export async function handleRequest(req, res) {
     } else {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'App not found' }));
+    }
+    return;
+  }
+
+  // ---- User profile APIs (owner only) ----
+
+  if (pathname === '/api/users' && req.method === 'GET') {
+    const authSession = getAuthSession(req);
+    if (authSession?.role !== 'owner') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Owner access required' }));
+      return;
+    }
+    writeJsonCached(req, res, { users: await listUsers() });
+    return;
+  }
+
+  if (pathname === '/api/users' && req.method === 'POST') {
+    const authSession = getAuthSession(req);
+    if (authSession?.role !== 'owner') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Owner access required' }));
+      return;
+    }
+    let body;
+    try { body = await readBody(req, 16384); } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Bad request' }));
+      return;
+    }
+    try {
+      const payload = JSON.parse(body);
+      const apps = await resolveTemplateApps(payload.appIds);
+      if (apps.length === 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'At least one template app is required' }));
+        return;
+      }
+      const defaultAppId = typeof payload.defaultAppId === 'string' && payload.defaultAppId.trim()
+        ? payload.defaultAppId.trim()
+        : apps[0].id;
+      if (!apps.some((app) => app.id === defaultAppId)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'defaultAppId must be one of the allowed apps' }));
+        return;
+      }
+      const folder = await normalizeSessionFolderInput(payload.folder);
+      if (!folder) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Folder does not exist' }));
+        return;
+      }
+      const user = await createUser({
+        name: typeof payload.name === 'string' ? payload.name : '',
+        appIds: apps.map((app) => app.id),
+        defaultAppId,
+      });
+      const session = payload.autoCreateSession === false
+        ? null
+        : await ensureUserSeedSession(user, {
+          folder,
+          tool: typeof payload.tool === 'string' ? payload.tool.trim() : '',
+        });
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ user, session }));
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
+  }
+
+  if (pathname.startsWith('/api/users/') && req.method === 'PATCH') {
+    const authSession = getAuthSession(req);
+    if (authSession?.role !== 'owner') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Owner access required' }));
+      return;
+    }
+    const id = pathname.split('/').pop();
+    let body;
+    try { body = await readBody(req, 16384); } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Bad request' }));
+      return;
+    }
+    try {
+      const payload = JSON.parse(body);
+      const updates = {};
+      if (typeof payload.name === 'string') {
+        updates.name = payload.name;
+      }
+      if (Object.prototype.hasOwnProperty.call(payload, 'appIds')) {
+        const apps = await resolveTemplateApps(payload.appIds);
+        if (apps.length === 0) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'At least one template app is required' }));
+          return;
+        }
+        updates.appIds = apps.map((app) => app.id);
+        if (typeof payload.defaultAppId === 'string' && payload.defaultAppId.trim()) {
+          if (!updates.appIds.includes(payload.defaultAppId.trim())) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'defaultAppId must be one of the allowed apps' }));
+            return;
+          }
+          updates.defaultAppId = payload.defaultAppId.trim();
+        }
+      } else if (typeof payload.defaultAppId === 'string' && payload.defaultAppId.trim()) {
+        updates.defaultAppId = payload.defaultAppId.trim();
+      }
+      const updated = await updateUser(id, updates);
+      if (updated) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ user: updated }));
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'User not found' }));
+      }
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid request body' }));
+    }
+    return;
+  }
+
+  if (pathname.startsWith('/api/users/') && req.method === 'DELETE') {
+    const authSession = getAuthSession(req);
+    if (authSession?.role !== 'owner') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Owner access required' }));
+      return;
+    }
+    const id = pathname.split('/').pop();
+    const ok = await deleteUser(id);
+    if (ok) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'User not found' }));
     }
     return;
   }

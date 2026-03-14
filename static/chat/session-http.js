@@ -380,40 +380,81 @@ async function fetchAppsList() {
   if (typeof renderSettingsAppsPanel === "function") {
     renderSettingsAppsPanel();
   }
-  if (typeof renderVisitorAppOptions === "function") {
-    renderVisitorAppOptions();
+  if (typeof renderUserAppOptions === "function") {
+    renderUserAppOptions();
   }
-  if (typeof renderSettingsVisitorsPanel === "function") {
-    renderSettingsVisitorsPanel();
+  if (typeof renderSettingsUsersPanel === "function") {
+    renderSettingsUsersPanel();
   }
   return availableApps;
 }
 
-async function fetchVisitorsList() {
-  if (visitorMode) return [];
-  const data = await fetchJsonOrRedirect("/api/visitors");
-  availableVisitors = Array.isArray(data.visitors) ? data.visitors : [];
-  if (typeof renderSettingsVisitorsPanel === "function") {
-    renderSettingsVisitorsPanel();
-  }
-  return availableVisitors;
-}
-
-async function createVisitorRecord(payload = {}) {
-  const data = await fetchJsonOrRedirect("/api/visitors", {
+async function createAppRecord(payload = {}) {
+  const data = await fetchJsonOrRedirect("/api/apps", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  await fetchVisitorsList();
-  return data.visitor || null;
+  await fetchAppsList();
+  return data.app || null;
 }
 
-async function deleteVisitorRecord(visitorId) {
-  await fetchJsonOrRedirect(`/api/visitors/${encodeURIComponent(visitorId)}`, {
+async function updateAppRecord(appId, payload = {}) {
+  const data = await fetchJsonOrRedirect(`/api/apps/${encodeURIComponent(appId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await fetchAppsList();
+  return data.app || null;
+}
+
+async function deleteAppRecord(appId) {
+  await fetchJsonOrRedirect(`/api/apps/${encodeURIComponent(appId)}`, {
     method: "DELETE",
   });
-  await fetchVisitorsList();
+  await fetchAppsList();
+}
+
+async function fetchUsersList() {
+  if (visitorMode) return [];
+  const data = await fetchJsonOrRedirect("/api/users");
+  availableUsers = Array.isArray(data.users) ? data.users : [];
+  refreshAppCatalog();
+  if (typeof renderSettingsUsersPanel === "function") {
+    renderSettingsUsersPanel();
+  }
+  return availableUsers;
+}
+
+async function createUserRecord(payload = {}) {
+  const data = await fetchJsonOrRedirect("/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await fetchUsersList();
+  if (data.session) {
+    upsertSession(data.session);
+  }
+  return { user: data.user || null, session: data.session || null };
+}
+
+async function updateUserRecord(userId, payload = {}) {
+  const data = await fetchJsonOrRedirect(`/api/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await fetchUsersList();
+  return data.user || null;
+}
+
+async function deleteUserRecord(userId) {
+  await fetchJsonOrRedirect(`/api/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  });
+  await fetchUsersList();
 }
 
 async function fetchSessionsList() {

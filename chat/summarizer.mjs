@@ -10,6 +10,7 @@ import {
   normalizeSessionGroup,
 } from './session-naming.mjs';
 import { loadSessionLabelPromptContext } from './session-label-context.mjs';
+import { normalizeSessionWorkflowState } from './session-workflow-state.mjs';
 
 function formatTurnForPrompt(events) {
   const lines = [];
@@ -127,6 +128,17 @@ export function triggerSessionLabelSuggestion(sessionMeta, onRename, options = {
       ok: false,
       error: err.message,
       rename: { attempted: false, renamed: false },
+    };
+  });
+}
+
+export function triggerSessionWorkflowStateSuggestion(sessionMeta, options = {}) {
+  console.log(`[workflow-state] triggerSessionWorkflowStateSuggestion called for session ${sessionMeta.id?.slice(0, 8)}`);
+  return runSessionWorkflowStateSuggestion(sessionMeta, options).catch((err) => {
+    console.error(`[workflow-state] Session workflow suggestion error for ${sessionMeta.id?.slice(0, 8)}: ${err.message}`);
+    return {
+      ok: false,
+      error: err.message,
     };
   });
 }
@@ -265,5 +277,89 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     rename: renamed
       ? { attempted: true, renamed: true, title: newName }
       : { attempted: true, renamed: false, error: options.skipReason || 'Auto-rename no longer needed' },
+  };
+}
+
+async function runSessionWorkflowStateSuggestion(sessionMeta, _options = {}) {
+  const {
+    id: sessionId,
+    folder,
+    name,
+    group,
+    description,
+    workflowState,
+    runState,
+    queuedCount,
+  } = sessionMeta;
+
+  const lastTurnEvents = await readLastTurnEvents(sessionId, { includeBodies: true });
+  if (lastTurnEvents.length === 0) {
+    console.log(`[workflow-state] Skipping workflow state suggestion for ${sessionId.slice(0, 8)}: no history events`);
+    return {
+      ok: false,
+      skipped: 'no_history',
+    };
+  }
+
+  const turnText = formatTurnForPrompt(lastTurnEvents);
+  if (!turnText.trim()) {
+    console.log(`[workflow-state] Skipping workflow state suggestion for ${sessionId.slice(0, 8)}: empty turn text`);
+    return {
+      ok: false,
+      skipped: 'empty_turn',
+    };
+  }
+
+  const currentGroup = normalizeSessionGroup(group || '');
+  const currentDescription = normalizeSessionDescription(description || '');
+  const currentWorkflowState = normalizeSessionWorkflowState(workflowState || '');
+
+  const prompt = [
+    'You are updating RemoteLab workflow state for a developer session.',
+    'Choose the single best durable state after the latest assistant turn.',
+    'Valid states:',
+    '- "parked": not currently running and not blocked on immediate user input; paused, deferred, or left open for later.',
+    '- "waiting_user": the assistant needs the user before meaningful progress can continue, such as approval, an answer, files, credentials, a choice, or manual validation.',
+    '- "done": the current request is complete; follow-up is optional, not required to finish the current goal.',
+    'Important rules:',
+    '- Never output a running state. Live runtime already handles running separately.',
+    '- If the assistant asked a direct question or requested approval/input needed to proceed, prefer "waiting_user".',
+    '- If the assistant delivered the requested result or clearly closed the task, prefer "done".',
+    '- If the session is paused, open-ended, or only loosely pending without needing the user right now, choose "parked".',
+    '- On failures that require user intervention, prefer "waiting_user". On failures that simply stop progress without a clear ask, prefer "parked".',
+    '',
+    `Session folder: ${folder}`,
+    `Current session name: ${name || '(unnamed)'}`,
+    currentGroup ? `Current display group: ${currentGroup}` : '',
+    currentDescription ? `Current session description: ${currentDescription}` : '',
+    currentWorkflowState ? `Current workflow state: ${currentWorkflowState}` : '',
+    typeof runState === 'string' && runState ? `Latest run state: ${runState}` : '',
+    Number.isInteger(queuedCount) ? `Queued follow-ups after this turn: ${queuedCount}` : '',
+    '',
+    'Latest turn:',
+    turnText,
+    '',
+    'Write a JSON object with exactly these fields:',
+    '- "workflowState": one of "parked", "waiting_user", or "done".',
+    '- "reason": one short sentence explaining the choice.',
+    '',
+    'Respond with ONLY valid JSON. No markdown, no explanation.',
+  ].filter((line) => line !== '').join('\n');
+
+  const modelText = await runToolJsonPrompt(sessionMeta, prompt);
+  const stateResult = parseJsonObject(modelText);
+  const nextWorkflowState = normalizeSessionWorkflowState(stateResult?.workflowState || '');
+  if (!nextWorkflowState) {
+    console.error(`[workflow-state] Unexpected workflow output for ${sessionId.slice(0, 8)}: ${modelText.slice(0, 200)}`);
+    return {
+      ok: false,
+      error: `Unexpected model output: ${modelText.slice(0, 200)}`,
+    };
+  }
+
+  return {
+    ok: true,
+    workflowState: nextWorkflowState,
+    reason: typeof stateResult?.reason === 'string' ? stateResult.reason.trim() : '',
   };
 }
