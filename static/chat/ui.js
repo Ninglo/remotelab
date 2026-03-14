@@ -1780,8 +1780,17 @@ function createNewSessionShortcut({ closeSidebar = true } = {}) {
   return createSessionForApp(app, { closeSidebar, principal });
 }
 
-function createNewAppShortcut() {
-  return focusNewAppComposer();
+function createNewAppShortcut({ closeSidebar = true } = {}) {
+  const app = getAppRecordById(CREATE_APP_TEMPLATE_APP_ID);
+  if (!app) return false;
+  const principal = getAdminSessionPrincipal();
+  activeUserFilter = normalizeUserFilter(ADMIN_USER_FILTER_VALUE);
+  persistActiveUserFilter(activeUserFilter);
+  activeSessionAppFilter = normalizeSessionAppFilter(app.id);
+  persistActiveSessionAppFilter(activeSessionAppFilter);
+  refreshAppCatalog();
+  renderSessionList();
+  return createSessionForApp(app, { closeSidebar, principal });
 }
 
 menuBtn.addEventListener("click", openSidebar);
