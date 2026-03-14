@@ -141,6 +141,7 @@ const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
+const newAppBtn = document.getElementById("newAppBtn");
 const newSessionBtn = document.getElementById("newSessionBtn");
 const messagesEl = document.getElementById("messages");
 const messagesInner = document.getElementById("messagesInner");

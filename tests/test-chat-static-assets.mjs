@@ -198,6 +198,7 @@ async function main() {
     );
     assert.match(page.text, /<script src="\/chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /id="appFilterSelect"/);
+    assert.match(page.text, /id="newAppBtn"/);
     assert.match(page.text, /id="tabSettings"/);
     assert.doesNotMatch(page.text, /id="collapseBtn"/, 'desktop sidebar should no longer expose a collapse control');
     assert.doesNotMatch(page.text, /id="tabProgress"/);
@@ -242,6 +243,8 @@ async function main() {
     assert.equal(apps.status, 200, 'owner apps endpoint should be available');
     assert.match(apps.text, /"id":"chat"/);
     assert.match(apps.text, /"id":"email"/);
+    assert.match(apps.text, /"id":"app_create_app"/);
+    assert.match(apps.text, /"id":"app_video_cut"/);
     assert.doesNotMatch(apps.text, /"id":"feishu"/);
     assert.doesNotMatch(apps.text, /"id":"github"/);
     assert.doesNotMatch(apps.text, /"id":"automation"/);

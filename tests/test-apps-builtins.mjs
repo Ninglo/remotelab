@@ -12,11 +12,14 @@ process.env.HOME = tempHome;
 const appsModule = await import(pathToFileURL(join(repoRoot, 'chat', 'apps.mjs')).href);
 
 const {
+  CREATE_APP_APP_ID,
   DEFAULT_APP_ID,
   EMAIL_APP_ID,
+  VIDEO_CUT_APP_ID,
   createApp,
   deleteApp,
   getApp,
+  getAppByShareToken,
   isBuiltinAppId,
   listApps,
   updateApp,
@@ -26,13 +29,17 @@ try {
   const initial = await listApps();
   assert.deepEqual(
     initial.map((app) => app.id),
-    ['chat', 'email'],
-    'built-in apps should include chat plus shipped connector app scopes',
+    ['chat', 'email', 'app_create_app', 'app_video_cut'],
+    'built-in apps should include connector scopes plus shipped starter apps',
   );
   assert.equal(DEFAULT_APP_ID, 'chat');
   assert.equal(EMAIL_APP_ID, 'email');
+  assert.equal(CREATE_APP_APP_ID, 'app_create_app');
+  assert.equal(VIDEO_CUT_APP_ID, 'app_video_cut');
   assert.equal(isBuiltinAppId('Chat'), true);
   assert.equal(isBuiltinAppId('Email'), true);
+  assert.equal(isBuiltinAppId('app_create_app'), true);
+  assert.equal(isBuiltinAppId('app_video_cut'), true);
   assert.equal(isBuiltinAppId('github'), false);
   assert.equal(isBuiltinAppId('custom-app'), false);
 
@@ -48,6 +55,21 @@ try {
   assert.equal(emailApp?.builtin, true);
   assert.equal(emailApp?.templateSelectable, false);
   assert.equal(emailApp?.showInSidebarWhenEmpty, false);
+
+  const createAppStarter = await getApp(CREATE_APP_APP_ID);
+  assert.equal(createAppStarter?.id, CREATE_APP_APP_ID);
+  assert.equal(createAppStarter?.builtin, true);
+  assert.equal(createAppStarter?.templateSelectable, true);
+  assert.equal(createAppStarter?.tool, 'codex');
+  assert.match(createAppStarter?.welcomeMessage || '', /创建什么 App|app specification/i);
+
+  const videoCutApp = await getApp(VIDEO_CUT_APP_ID);
+  assert.equal(videoCutApp?.id, VIDEO_CUT_APP_ID);
+  assert.equal(videoCutApp?.builtin, true);
+  assert.equal(videoCutApp?.templateSelectable, true);
+  assert.equal(videoCutApp?.tool, 'codex');
+  assert.match(videoCutApp?.welcomeMessage || '', /上传一段原始视频|uploaded source video/i);
+  assert.equal((await getAppByShareToken(videoCutApp?.shareToken))?.id, VIDEO_CUT_APP_ID);
 
   assert.equal(await getApp('feishu'), null);
 

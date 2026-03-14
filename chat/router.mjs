@@ -70,6 +70,10 @@ const serviceBuildRoots = [
   join(__dirname, '..', 'chat-server.mjs'),
   packageJsonPath,
 ];
+
+function isTemplateAppScopeId(appId) {
+  return /^app[_-]/i.test(typeof appId === 'string' ? appId.trim() : '');
+}
 const serviceBuildStatusPaths = ['chat', 'lib', 'chat-server.mjs', 'package.json'];
 
 const BUILD_INFO = loadBuildInfo();
@@ -1318,7 +1322,7 @@ export async function handleRequest(req, res) {
       const requestedApp = typeof appId === 'string' && appId.trim()
         ? await getApp(appId.trim())
         : null;
-      if (requestedApp && !isBuiltinAppId(requestedApp.id) && Number(session?.messageCount || 0) === 0) {
+      if (requestedApp && isTemplateAppScopeId(requestedApp.id) && Number(session?.messageCount || 0) === 0) {
         session = await applyAppTemplateToSession(session.id, requestedApp.id) || session;
         if (requestedApp.welcomeMessage) {
           await appendEvent(session.id, messageEvent('assistant', requestedApp.welcomeMessage));

@@ -363,6 +363,7 @@ function switchTab(tab, { syncState = true } = {}) {
   sessionList.style.display = showingSessions ? "" : "none";
   settingsPanel.classList.toggle("visible", activeTab === "settings");
   sessionListFooter.classList.toggle("hidden", !showingSessions);
+  newAppBtn.classList.toggle("hidden", !showingSessions);
   newSessionBtn.classList.toggle("hidden", !showingSessions);
   if (syncState) {
     syncBrowserState();

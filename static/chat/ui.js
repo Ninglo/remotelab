@@ -821,6 +821,8 @@ function openSessionsSidebar() {
   return true;
 }
 
+const CREATE_APP_TEMPLATE_APP_ID = "app_create_app";
+
 function createNewSessionShortcut({ closeSidebar = true } = {}) {
   if (closeSidebar && !isDesktop) closeSidebarFn();
   const tool = preferredTool || selectedTool || toolsList[0]?.id;
@@ -837,6 +839,20 @@ function createNewSessionShortcut({ closeSidebar = true } = {}) {
   });
 }
 
+function createNewAppShortcut({ closeSidebar = true } = {}) {
+  if (closeSidebar && !isDesktop) closeSidebarFn();
+  const tool = preferredTool || selectedTool || toolsList[0]?.id;
+  if (!tool) return false;
+  return dispatchAction({
+    action: "create",
+    folder: "~",
+    tool,
+    sourceId: DEFAULT_APP_ID,
+    sourceName: DEFAULT_APP_NAME,
+    appId: CREATE_APP_TEMPLATE_APP_ID,
+  });
+}
+
 menuBtn.addEventListener("click", openSidebar);
 closeSidebar.addEventListener("click", closeSidebarFn);
 sidebarOverlay.addEventListener("click", (e) => {
@@ -844,6 +860,10 @@ sidebarOverlay.addEventListener("click", (e) => {
 });
 
 // ---- New Session ----
+newAppBtn.addEventListener("click", () => {
+  createNewAppShortcut();
+});
+
 newSessionBtn.addEventListener("click", () => {
   createNewSessionShortcut();
 });

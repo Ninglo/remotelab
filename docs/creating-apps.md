@@ -15,6 +15,11 @@ The visitor doesn't need to know anything about prompts, tools, or configuration
 
 ## How to Create an App
 
+RemoteLab now ships two starter Apps out of the box:
+
+- **Create App** — a built-in app-building assistant; the sidebar `New App` button opens a fresh session scoped to this starter
+- **Video Cut** — a built-in review-first video editing app that can be shared directly for upload + cut-planning flows
+
 Open a regular session in RemoteLab and tell the AI what App you want in one concentrated message so it can do most of the work without repeated back-and-forth:
 
 > "I want to create an App. It should [describe what it does]."

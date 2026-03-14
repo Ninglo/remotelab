@@ -441,6 +441,16 @@ body {
   border: none; border-radius: 8px; font-size: 13px; cursor: pointer;
   font-weight: 500; text-align: center;
 }
+.new-session-btn.secondary {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.new-session-btn.secondary:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
 .new-session-btn:active { opacity: 0.85; }
 .new-session-btn.hidden { display: none; }
 
@@ -1382,6 +1392,7 @@ body.visitor-mode .gesture-pill { display: none !important; }
         <div class="settings-placeholder">Settings will live here later. For now this replaces the retired Progress tab.</div>
       </div>
       <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}">Build {{BUILD_LABEL}}</div>
+      <button class="new-session-btn secondary" id="newAppBtn">+ New App</button>
       <button class="new-session-btn" id="newSessionBtn">+ New Session</button>
     </aside>
   </div>

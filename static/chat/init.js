@@ -7,6 +7,7 @@ function applyVisitorMode() {
   document.body.classList.add("visitor-mode");
   // Hide sidebar toggle, new session button, and management UI
   if (menuBtn) menuBtn.style.display = "none";
+  if (newAppBtn) newAppBtn.style.display = "none";
   if (newSessionBtn) newSessionBtn.style.display = "none";
   // Hide tool/model selectors and context management (visitors use defaults)
   if (inlineToolSelect) inlineToolSelect.style.display = "none";
