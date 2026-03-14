@@ -1302,6 +1302,28 @@ body {
   overflow-y: auto;
 }
 .input-row textarea::placeholder { color: var(--text-muted); }
+.input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 4px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  flex-wrap: wrap;
+}
+.input-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+.input-footer a:hover {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+.input-footer-tagline {
+  margin-left: auto;
+}
 .send-btn {
   width: 34px; height: 34px; border-radius: 50%; border: none;
   background: var(--text); color: var(--bg); font-size: 16px; cursor: pointer;
@@ -1624,7 +1646,8 @@ body {
   .messages { padding: 28px 0; }
   .messages-inner,
   .queued-panel,
-  .input-wrapper {
+  .input-wrapper,
+  .input-footer {
     width: var(--chat-column-width);
     margin-left: auto;
     margin-right: auto;
@@ -1797,6 +1820,10 @@ body.visitor-mode .gesture-pill { display: none !important; }
           <button class="send-btn" id="sendBtn" disabled title="Send" aria-label="Send" data-icon="send">&#9654;</button>
           <button class="cancel-btn" id="cancelBtn" title="Stop" aria-label="Stop" data-icon="debug-stop" style="display:none">&#9632;</button>
         </div>
+      </div>
+      <div class="input-footer">
+        <a href="https://github.com/Ninglo/remotelab" target="_blank" rel="noreferrer noopener">Open source on GitHub ↗</a>
+        <span class="input-footer-tagline">Built with AI &amp; ❤️</span>
       </div>
     </div>
   </main>
