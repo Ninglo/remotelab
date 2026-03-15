@@ -133,6 +133,13 @@ const VISITOR_TURN_GUARDRAIL = [
 
 const INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR = 'context_compactor';
 const AUTO_COMPACT_MARKER_TEXT = 'Older messages above this marker are no longer in the model\'s live context. They remain visible in the transcript, but only the compressed handoff and newer messages below are loaded for continued work.';
+
+const AUTO_BOARD_UPDATES_ENABLED = /^(1|true|yes|on)$/i.test(
+  process.env.REMOTELAB_BOARD_AUTO_UPDATES ||
+  process.env.REMOTELAB_BOARD_AUTO_UPDATE ||
+  process.env.REMOTELAB_AUTO_BOARD_UPDATES ||
+  '',
+);
 const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
   'You are RemoteLab\'s hidden context compactor for a user-facing session.',
   'Your job is to condense older session context into a compact continuation package.',
@@ -1775,6 +1782,9 @@ function scheduleSessionBoardLayoutSuggestion(session, run) {
   if (!session?.id || !run || session.archived || isInternalSession(session)) {
     return false;
   }
+  if (!AUTO_BOARD_UPDATES_ENABLED) {
+    return false;
+  }
 
   rebuildSessionBoardLayout({
     sessionId: session.id,
@@ -1791,6 +1801,9 @@ function scheduleSessionBoardLayoutSuggestion(session, run) {
 
 function scheduleSessionTaskBoardSuggestion(session, run) {
   if (!session?.id || !run || session.archived || isInternalSession(session)) {
+    return false;
+  }
+  if (!AUTO_BOARD_UPDATES_ENABLED) {
     return false;
   }
 
