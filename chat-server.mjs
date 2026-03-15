@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import http from 'http';
-import { CHAT_PORT, SECURE_COOKIES, MEMORY_DIR } from './lib/config.mjs';
+import { CHAT_PORT, CHAT_HOST, SECURE_COOKIES, MEMORY_DIR } from './lib/config.mjs';
 import { handleRequest } from './chat/router.mjs';
 import { closeApiRequestLog, initApiRequestLog, startApiRequestLog } from './chat/api-request-log.mjs';
 import { attachWebSocket } from './chat/ws.mjs';
@@ -43,7 +43,7 @@ async function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-server.listen(CHAT_PORT, '127.0.0.1', () => {
-  console.log(`Chat server listening on http://127.0.0.1:${CHAT_PORT}`);
+server.listen(CHAT_PORT, CHAT_HOST, () => {
+  console.log(`Chat server listening on http://${CHAT_HOST}:${CHAT_PORT}`);
   console.log(`Cookie mode: ${SECURE_COOKIES ? 'Secure (HTTPS)' : 'Non-secure (localhost)'}`);
 });
