@@ -235,7 +235,7 @@ try {
     assert.equal(publicVisit.headers.location, '/?visitor=1');
     assert.ok(publicVisit.headers['set-cookie']?.length, 'custom Video Cut app visit should set a visitor cookie');
 
-    const visitorCookie = findCookie(publicVisit.headers, 'session_token').split(';', 1)[0];
+    const visitorCookie = findCookie(publicVisit.headers, 'visitor_session_token').split(';', 1)[0];
     const visitorBrowserCookie = findCookie(publicVisit.headers, 'visitor_browser_id').split(';', 1)[0];
     assert.ok(visitorCookie, 'custom Video Cut app visit should set a visitor auth session cookie');
     assert.ok(visitorBrowserCookie, 'custom Video Cut app visit should set a stable browser identity cookie');
@@ -253,7 +253,7 @@ try {
       Cookie: visitorBrowserCookie,
     });
     assert.equal(repeatVisit.status, 302, 'reopening the same app link in the same browser should still redirect into visitor mode');
-    const repeatVisitorCookie = findCookie(repeatVisit.headers, 'session_token').split(';', 1)[0];
+    const repeatVisitorCookie = findCookie(repeatVisit.headers, 'visitor_session_token').split(';', 1)[0];
     const repeatVisitorAuth = await request(port, 'GET', '/api/auth/me', null, {
       Cookie: repeatVisitorCookie,
     });
@@ -263,7 +263,7 @@ try {
 
     const secondBrowserVisit = await request(port, 'GET', `/app/${videoCutShareToken}`);
     assert.equal(secondBrowserVisit.status, 302, 'opening the same app link from another browser should still bootstrap visitor mode');
-    const secondBrowserVisitorCookie = findCookie(secondBrowserVisit.headers, 'session_token').split(';', 1)[0];
+    const secondBrowserVisitorCookie = findCookie(secondBrowserVisit.headers, 'visitor_session_token').split(';', 1)[0];
     const secondBrowserAuth = await request(port, 'GET', '/api/auth/me', null, {
       Cookie: secondBrowserVisitorCookie,
     });

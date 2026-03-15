@@ -10,7 +10,8 @@ import {
   sessions, saveAuthSessionsAsync,
   verifyTokenAsync, verifyPasswordAsync, generateToken,
   parseCookies, setCookie, clearCookie,
-  getAuthSession, refreshAuthSession,
+  setVisitorCookie, clearVisitorCookie,
+  getAuthSession, getVisitorAuthSession, refreshAuthSession,
 } from '../lib/auth.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
@@ -952,12 +953,18 @@ export async function handleRequest(req, res) {
     return;
   }
 
-  // Logout
+  // Logout — clear both owner and visitor session cookies
   if (pathname === '/logout') {
     const cookies = parseCookies(req.headers.cookie || '');
-    const token = cookies.session_token;
-    if (token) { sessions.delete(token); await saveAuthSessionsAsync(); }
-    res.writeHead(302, { 'Location': '/login', 'Set-Cookie': clearCookie() });
+    const ownerToken = cookies.session_token;
+    const visitorToken = cookies.visitor_session_token;
+    if (ownerToken) { sessions.delete(ownerToken); }
+    if (visitorToken) { sessions.delete(visitorToken); }
+    if (ownerToken || visitorToken) { await saveAuthSessionsAsync(); }
+    res.writeHead(302, {
+      'Location': '/login',
+      'Set-Cookie': [clearCookie(), clearVisitorCookie()],
+    });
     res.end();
     return;
   }
@@ -982,7 +989,7 @@ export async function handleRequest(req, res) {
     res.writeHead(302, {
       'Location': '/?visitor=1',
       'Set-Cookie': [
-        setCookie(sessionToken),
+        setVisitorCookie(sessionToken),
         setVisitorBrowserCookie(visitorBrowserId),
       ],
     });
@@ -1016,7 +1023,7 @@ export async function handleRequest(req, res) {
     });
     res.writeHead(302, {
       'Location': '/?visitor=1',
-      'Set-Cookie': setCookie(sessionToken),
+      'Set-Cookie': setVisitorCookie(sessionToken),
     });
     res.end();
     return;
@@ -2236,7 +2243,12 @@ export async function handleRequest(req, res) {
   // Main page (chat UI) — read from disk each time for hot-reload
   if (pathname === '/') {
     try {
-      const authSession = getAuthSession(req);
+      // Use visitor cookie when explicitly in visitor mode, otherwise use owner cookie.
+      // This prevents visitor share links from hijacking the owner's session cookie.
+      const isVisitorMode = parsedUrl.query.visitor === '1';
+      const authSession = isVisitorMode
+        ? getVisitorAuthSession(req)
+        : getAuthSession(req);
       const pageBootstrap = buildChatPageBootstrap(authSession);
       const [pageBuildInfo, chatPage, refreshedCookie] = await Promise.all([
         getPageBuildInfo(),
