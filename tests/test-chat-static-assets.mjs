@@ -10,7 +10,7 @@ import { spawn } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
-const visitorCookie = 'session_token=visitor-session';
+const visitorCookie = 'visitor_session_token=visitor-session';
 
 function randomPort() {
   return 43000 + Math.floor(Math.random() * 10000);
@@ -189,7 +189,7 @@ async function main() {
     assert.match(page.text, /<script src="\/chat\/ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/compose\.js(?:\?v=[^"]*)?"/);
 
-    const visitorPage = await request(port, 'GET', '/', null, { Cookie: visitorCookie });
+    const visitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: visitorCookie });
     assert.equal(visitorPage.status, 200, 'chat page should also render for visitor session');
     assert.match(
       visitorPage.text,
