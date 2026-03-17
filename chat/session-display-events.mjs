@@ -82,20 +82,12 @@ function pushVisibleEvent(target, event) {
   target.push(stripDeferredBodyFields(event));
 }
 
-function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
-  if (!turn?.user) return;
-  target.push(stripDeferredBodyFields(turn.user));
-
-  const bodyEvents = Array.isArray(turn.body) ? turn.body : [];
+function emitSegmentedTurnBody(target, bodyEvents, { sessionRunning = false } = {}) {
   const hiddenSegment = [];
 
   for (const event of bodyEvents) {
     if (isHiddenEvent(event)) {
       hiddenSegment.push(event);
-      continue;
-    }
-
-    if (isIgnoredStatusEvent(event)) {
       continue;
     }
 
@@ -108,6 +100,47 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
 
   if (hiddenSegment.length > 0) {
     target.push(buildCollapsedBlockEvent(hiddenSegment, sessionRunning ? 'running' : 'completed'));
+  }
+}
+
+function getTurnEventsWithoutIgnoredStatuses(events = []) {
+  return (Array.isArray(events) ? events : []).filter((event) => !isIgnoredStatusEvent(event));
+}
+
+function findLastHiddenEventIndex(events = []) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (isHiddenEvent(events[index])) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
+  if (!turn?.user) return;
+  target.push(stripDeferredBodyFields(turn.user));
+
+  const bodyEvents = getTurnEventsWithoutIgnoredStatuses(turn.body);
+  if (bodyEvents.length === 0) return;
+
+  const lastHiddenIndex = findLastHiddenEventIndex(bodyEvents);
+  if (lastHiddenIndex < 0) {
+    emitSegmentedTurnBody(target, bodyEvents, { sessionRunning });
+    return;
+  }
+
+  const visibleTail = bodyEvents.slice(lastHiddenIndex + 1).filter(isVisibleEvent);
+  if (visibleTail.length === 0) {
+    emitSegmentedTurnBody(target, bodyEvents, { sessionRunning });
+    return;
+  }
+
+  const collapsedPrefix = bodyEvents.slice(0, lastHiddenIndex + 1);
+  if (collapsedPrefix.length > 0) {
+    target.push(buildCollapsedBlockEvent(collapsedPrefix, 'completed'));
+  }
+  for (const event of visibleTail) {
+    pushVisibleEvent(target, event);
   }
 }
 
