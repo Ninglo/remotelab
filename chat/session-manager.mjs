@@ -2503,6 +2503,12 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedUserName = normalizeSessionUserName(extra.userName);
   const requestedGroup = normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
+  const hasRequestedModel = Object.prototype.hasOwnProperty.call(extra, 'model');
+  const requestedModel = typeof extra.model === 'string' ? extra.model.trim() : '';
+  const hasRequestedEffort = Object.prototype.hasOwnProperty.call(extra, 'effort');
+  const requestedEffort = typeof extra.effort === 'string' ? extra.effort.trim() : '';
+  const hasRequestedThinking = Object.prototype.hasOwnProperty.call(extra, 'thinking');
+  const requestedThinking = extra.thinking === true;
   const requestedInitialNaming = resolveInitialSessionName(name, {
     group: requestedGroup,
     appName: requestedAppName,
@@ -2591,6 +2597,24 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
+        if (hasRequestedModel && (updated.model || '') !== requestedModel) {
+          if (requestedModel) updated.model = requestedModel;
+          else delete updated.model;
+          changed = true;
+        }
+
+        if (hasRequestedEffort && (updated.effort || '') !== requestedEffort) {
+          if (requestedEffort) updated.effort = requestedEffort;
+          else delete updated.effort;
+          changed = true;
+        }
+
+        if (hasRequestedThinking && updated.thinking !== requestedThinking) {
+          if (requestedThinking) updated.thinking = true;
+          else delete updated.thinking;
+          changed = true;
+        }
+
         const completionTargets = sanitizeEmailCompletionTargets(extra.completionTargets || []);
         if (completionTargets.length > 0 && JSON.stringify(updated.completionTargets || []) !== JSON.stringify(completionTargets)) {
           updated.completionTargets = completionTargets;
@@ -2644,6 +2668,9 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedUserId) session.userId = requestedUserId;
     if (requestedUserName) session.userName = requestedUserName;
     if (extra.systemPrompt) session.systemPrompt = extra.systemPrompt;
+    if (requestedModel) session.model = requestedModel;
+    if (requestedEffort) session.effort = requestedEffort;
+    if (requestedThinking) session.thinking = true;
     if (extra.internalRole) session.internalRole = extra.internalRole;
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
@@ -3444,6 +3471,9 @@ export async function delegateSession(sessionId, payload = {}) {
     sourceId: source.sourceId || '',
     sourceName: source.sourceName || '',
     systemPrompt: source.systemPrompt || '',
+    model: source.model || '',
+    effort: source.effort || '',
+    thinking: source.thinking === true,
     userId: source.userId || '',
     userName: source.userName || '',
   });
@@ -3458,6 +3488,9 @@ export async function delegateSession(sessionId, payload = {}) {
   });
   const outcome = await submitHttpMessage(child.id, handoffText, [], {
     requestId: createInternalRequestId('delegate'),
+    model: source.model || undefined,
+    effort: source.effort || undefined,
+    thinking: source.thinking === true,
   });
 
   await appendEvent(source.id, messageEvent('assistant', buildDelegationNoticeMessage(task, child), undefined, {
