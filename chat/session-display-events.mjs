@@ -47,31 +47,31 @@ function collectToolNames(events = []) {
   return names;
 }
 
-function buildCollapsedBlockLabel(hiddenEvents, state = 'completed') {
+function buildThinkingBlockLabel(hiddenEvents, state = 'completed') {
   const toolNames = collectToolNames(hiddenEvents);
   if (state === 'running') {
     if (toolNames.length > 0) {
-      return `Earlier reasoning & tool steps · using ${toolNames.join(', ')}`;
+      return `Thinking · using ${toolNames.join(', ')}`;
     }
-    return 'Earlier reasoning & tool steps';
+    return 'Thinking…';
   }
   if (toolNames.length > 0) {
-    return `Earlier reasoning & tool steps · used ${toolNames.join(', ')}`;
+    return `Thought · used ${toolNames.join(', ')}`;
   }
-  return 'Earlier reasoning & tool steps';
+  return 'Thought';
 }
 
-function buildCollapsedBlockEvent(hiddenEvents, state = 'completed') {
+function buildThinkingBlockEvent(hiddenEvents, state = 'completed') {
   const first = hiddenEvents[0] || null;
   const last = hiddenEvents[hiddenEvents.length - 1] || first;
   const toolNames = collectToolNames(hiddenEvents);
   return {
-    type: state === 'running' ? 'thinking_block' : 'collapsed_block',
+    type: 'thinking_block',
     seq: Number.isInteger(first?.seq) ? first.seq : 0,
     blockStartSeq: Number.isInteger(first?.seq) ? first.seq : 0,
     blockEndSeq: Number.isInteger(last?.seq) ? last.seq : 0,
     state,
-    label: buildCollapsedBlockLabel(hiddenEvents, state),
+    label: buildThinkingBlockLabel(hiddenEvents, state),
     hiddenEventCount: hiddenEvents.length,
     ...(toolNames.length > 0 ? { toolNames } : {}),
   };
@@ -92,14 +92,14 @@ function emitSegmentedTurnBody(target, bodyEvents, { sessionRunning = false } = 
     }
 
     if (hiddenSegment.length > 0) {
-      target.push(buildCollapsedBlockEvent(hiddenSegment.splice(0), 'completed'));
+      target.push(buildThinkingBlockEvent(hiddenSegment.splice(0), 'completed'));
     }
 
     pushVisibleEvent(target, event);
   }
 
   if (hiddenSegment.length > 0) {
-    target.push(buildCollapsedBlockEvent(hiddenSegment, sessionRunning ? 'running' : 'completed'));
+    target.push(buildThinkingBlockEvent(hiddenSegment, sessionRunning ? 'running' : 'completed'));
   }
 }
 
@@ -124,7 +124,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   if (bodyEvents.length === 0) return;
 
   if (sessionRunning) {
-    target.push(buildCollapsedBlockEvent(bodyEvents, 'running'));
+    target.push(buildThinkingBlockEvent(bodyEvents, 'running'));
     return;
   }
 
@@ -142,7 +142,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
 
   const collapsedPrefix = bodyEvents.slice(0, lastHiddenIndex + 1);
   if (collapsedPrefix.length > 0) {
-    target.push(buildCollapsedBlockEvent(collapsedPrefix, 'completed'));
+    target.push(buildThinkingBlockEvent(collapsedPrefix, 'completed'));
   }
   for (const event of visibleTail) {
     pushVisibleEvent(target, event);

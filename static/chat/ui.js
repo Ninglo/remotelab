@@ -373,8 +373,8 @@ function hasRenderedEventBlockContent(body) {
   return Array.isArray(body.children) ? body.children.length > 0 : false;
 }
 
-function shouldAppendEventBlockContent(body, evt, { nestedThinkingBlock = false } = {}) {
-  if (!body || nestedThinkingBlock) return false;
+function shouldAppendEventBlockContent(body, evt) {
+  if (!body) return false;
   const nextStartSeq = parseEventBlockSeq(evt?.blockStartSeq);
   const nextEndSeq = parseEventBlockSeq(evt?.blockEndSeq);
   const renderedStartSeq = getRenderedEventBlockStartSeq(body);
@@ -390,20 +390,9 @@ function clearEventBlockBody(body) {
   body.innerHTML = "";
 }
 
-function renderEventBlockBody(body, hiddenEvents, { nestedThinkingBlock = false } = {}) {
+function renderEventBlockBody(body, hiddenEvents) {
   if (!body) return;
   clearEventBlockBody(body);
-  if (nestedThinkingBlock) {
-    const thinking = createDeferredThinkingBlock(buildLoadedHiddenBlockLabel(hiddenEvents), {
-      collapsed: false,
-    });
-    thinking.header.addEventListener("click", () => {
-      thinking.block.classList.toggle("collapsed");
-    });
-    body.appendChild(thinking.block);
-    renderHiddenBlockEventsInto(thinking.body, hiddenEvents);
-    return;
-  }
   renderHiddenBlockEventsInto(body, hiddenEvents);
 }
 
@@ -427,7 +416,7 @@ function renderHiddenBlockEventsInto(container, events) {
   }
 }
 
-async function ensureEventBlockLoaded(sessionId, body, evt, { nestedThinkingBlock = false } = {}) {
+async function ensureEventBlockLoaded(sessionId, body, evt) {
   if (!body || !evt) return;
   const nextStartSeq = parseEventBlockSeq(evt?.blockStartSeq);
   const nextEndSeq = parseEventBlockSeq(evt?.blockEndSeq);
@@ -443,7 +432,7 @@ async function ensureEventBlockLoaded(sessionId, body, evt, { nestedThinkingBloc
     return;
   }
 
-  const appendMode = shouldAppendEventBlockContent(body, evt, { nestedThinkingBlock });
+  const appendMode = shouldAppendEventBlockContent(body, evt);
   const previousRenderedEndSeq = renderedEndSeq;
 
   body.dataset.blockRange = rangeKey;
@@ -466,10 +455,10 @@ async function ensureEventBlockLoaded(sessionId, body, evt, { nestedThinkingBloc
         getRenderedEventBlockStartSeq(body) !== nextStartSeq
         || getRenderedEventBlockEndSeq(body) < previousRenderedEndSeq
       ) {
-        renderEventBlockBody(body, hiddenEvents, { nestedThinkingBlock });
+        renderEventBlockBody(body, hiddenEvents);
       }
     } else {
-      renderEventBlockBody(body, hiddenEvents, { nestedThinkingBlock });
+      renderEventBlockBody(body, hiddenEvents);
     }
 
     const updatedRenderedStartSeq = Number.isInteger(hiddenEvents[0]?.seq)
@@ -483,6 +472,17 @@ async function ensureEventBlockLoaded(sessionId, body, evt, { nestedThinkingBloc
     if ((body.dataset.blockRange || "") !== rangeKey) return;
     console.warn("[event-block] Failed to load hidden block:", error.message);
   }
+}
+
+function isRunningThinkingBlockEvent(evt) {
+  return evt?.state === "running";
+}
+
+function getThinkingBlockLabel(evt) {
+  if (typeof evt?.label === "string" && evt.label.trim()) {
+    return evt.label;
+  }
+  return isRunningThinkingBlockEvent(evt) ? "Thinking…" : "Thought";
 }
 
 function findRenderedThinkingBlock(seq) {
@@ -501,7 +501,7 @@ function refreshExpandedRunningThinkingBlock(sessionId, evt) {
   if (!block || block.classList?.contains("collapsed")) return false;
   const label = block.querySelector(".thinking-label");
   if (label) {
-    label.textContent = evt.label || "Thinking…";
+    label.textContent = getThinkingBlockLabel(evt);
   }
   block.dataset.blockStartSeq = String(Number.isInteger(evt?.blockStartSeq) ? evt.blockStartSeq : 0);
   block.dataset.blockEndSeq = String(Number.isInteger(evt?.blockEndSeq) ? evt.blockEndSeq : 0);
@@ -514,28 +514,10 @@ function refreshExpandedRunningThinkingBlock(sessionId, evt) {
 }
 
 function renderCollapsedBlock(evt) {
-  if (inThinkingBlock) {
-    finalizeThinkingBlock();
-  }
-
-  const sessionId = currentSessionId;
-  const drawer = document.createElement("details");
-  drawer.className = "turn-collapse-drawer";
-
-  const summary = document.createElement("summary");
-  summary.className = "turn-collapse-summary";
-  summary.textContent = evt.label || "Earlier reasoning & tool steps";
-
-  const body = document.createElement("div");
-  body.className = "turn-collapse-body";
-
-  drawer.appendChild(summary);
-  drawer.appendChild(body);
-  drawer.addEventListener("toggle", () => {
-    if (!drawer.open) return;
-    ensureEventBlockLoaded(sessionId, body, evt, { nestedThinkingBlock: true }).catch(() => {});
+  renderThinkingBlockEvent({
+    ...(evt && typeof evt === "object" ? evt : {}),
+    state: typeof evt?.state === "string" ? evt.state : "completed",
   });
-  messagesInner.appendChild(drawer);
 }
 
 function renderThinkingBlockEvent(evt) {
@@ -544,8 +526,9 @@ function renderThinkingBlockEvent(evt) {
   }
 
   const sessionId = currentSessionId;
-  const expandedByDefault = renderedEventState?.runningBlockExpanded === true;
-  const thinking = createDeferredThinkingBlock(evt.label || "Thinking…", {
+  const running = isRunningThinkingBlockEvent(evt);
+  const expandedByDefault = running && renderedEventState?.runningBlockExpanded === true;
+  const thinking = createDeferredThinkingBlock(getThinkingBlockLabel(evt), {
     collapsed: !expandedByDefault,
   });
   thinking.block.dataset.eventSeq = String(Number.isInteger(evt?.seq) ? evt.seq : 0);
@@ -555,19 +538,19 @@ function renderThinkingBlockEvent(evt) {
   thinking.body.dataset.blockStartSeq = thinking.block.dataset.blockStartSeq;
   thinking.body.dataset.blockEndSeq = thinking.block.dataset.blockEndSeq;
 
-  if (typeof setRunningEventBlockExpanded === "function") {
+  if (running && typeof setRunningEventBlockExpanded === "function") {
     setRunningEventBlockExpanded(sessionId, expandedByDefault);
   }
 
   thinking.header.addEventListener("click", () => {
     thinking.block.classList.toggle("collapsed");
     const expanded = !thinking.block.classList.contains("collapsed");
-    if (typeof setRunningEventBlockExpanded === "function") {
+    if (running && typeof setRunningEventBlockExpanded === "function") {
       setRunningEventBlockExpanded(sessionId, expanded);
     }
     if (!expanded) return;
     ensureEventBlockLoaded(sessionId, thinking.body, evt).catch(() => {});
-    if (typeof refreshCurrentSession === "function") {
+    if (running && typeof refreshCurrentSession === "function") {
       refreshCurrentSession().catch(() => {});
     }
   });

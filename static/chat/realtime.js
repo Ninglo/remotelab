@@ -603,60 +603,6 @@ function renderEvent(evt, autoScroll) {
   if (shouldScroll) scrollToBottom();
 }
 
-function unwrapTurnCollapseDrawers() {
-  const drawers = messagesInner.querySelectorAll(".turn-collapse-drawer");
-  for (const drawer of drawers) {
-    const body = drawer.querySelector(".turn-collapse-body");
-    if (!body) {
-      drawer.remove();
-      continue;
-    }
-    const fragment = document.createDocumentFragment();
-    while (body.firstChild) {
-      fragment.appendChild(body.firstChild);
-    }
-    drawer.replaceWith(fragment);
-  }
-}
-
-function collectRenderedTurns() {
-  const turns = [];
-  let currentTurn = null;
-  for (const node of messagesInner.children) {
-    if (node === emptyState || node.classList.contains("turn-collapse-drawer")) {
-      continue;
-    }
-    if (node.classList.contains("msg-user")) {
-      currentTurn = { userNode: node, bodyNodes: [] };
-      turns.push(currentTurn);
-      continue;
-    }
-    if (currentTurn) {
-      currentTurn.bodyNodes.push(node);
-    }
-  }
-  return turns;
-}
-
-function getLastThinkingNodeIndex(nodes) {
-  for (let index = nodes.length - 1; index >= 0; index -= 1) {
-    if (nodes[index]?.classList?.contains("thinking-block")) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-function buildTurnCollapseLabel(hiddenNodes) {
-  const thoughtCount = hiddenNodes.filter((node) =>
-    node.classList?.contains("thinking-block"),
-  ).length;
-  if (thoughtCount > 1) {
-    return `Earlier reasoning & tool steps · ${thoughtCount} thoughts`;
-  }
-  return "Earlier reasoning & tool steps";
-}
-
 function applyFinishedTurnCollapseState() {
   let latestTurnStart = null;
   for (const node of messagesInner.children) {

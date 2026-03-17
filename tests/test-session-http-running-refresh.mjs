@@ -237,7 +237,7 @@ const inPlaceRefreshPlan = context.getEventRenderPlan('current-session', [
     state: 'running',
     blockStartSeq: 2,
     blockEndSeq: 7,
-    label: 'Earlier reasoning & tool steps · using bash',
+    label: 'Thinking · using bash',
   },
 ]);
 

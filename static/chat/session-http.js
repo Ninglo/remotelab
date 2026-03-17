@@ -391,10 +391,20 @@ function getEventBoundarySeq(event) {
   return Number.isInteger(event?.seq) ? event.seq : 0;
 }
 
+function getNormalizedEventRenderType(event) {
+  const type = typeof event?.type === "string" ? event.type : "unknown";
+  return type === "collapsed_block" ? "thinking_block" : type;
+}
+
+function isRunningThinkingBlockEvent(event) {
+  return getNormalizedEventRenderType(event) === "thinking_block"
+    && event?.state === "running";
+}
+
 function getEventRenderBaseKey(event) {
   const seq = Number.isInteger(event?.seq) ? event.seq : 0;
-  const type = typeof event?.type === "string" ? event.type : "unknown";
-  if (type === "collapsed_block" || type === "thinking_block") {
+  const type = getNormalizedEventRenderType(event);
+  if (type === "thinking_block") {
     const state = typeof event?.state === "string" ? event.state : "";
     return `${seq}:${type}:${state}`;
   }
@@ -403,7 +413,7 @@ function getEventRenderBaseKey(event) {
 
 function getEventRenderKey(event) {
   const baseKey = getEventRenderBaseKey(event);
-  const dynamicBoundary = event?.type === "thinking_block" && renderedEventState.runningBlockExpanded === true
+  const dynamicBoundary = isRunningThinkingBlockEvent(event) && renderedEventState.runningBlockExpanded === true
     ? `:${Number.isInteger(event?.blockEndSeq) ? event.blockEndSeq : 0}`
     : "";
   return `${baseKey}${dynamicBoundary}`;
@@ -506,8 +516,7 @@ function getEventRenderPlan(sessionId, events) {
   ) {
     const lastEvent = normalizedEvents[normalizedEvents.length - 1];
     if (
-      lastEvent?.type === "thinking_block"
-      && lastEvent?.state === "running"
+      isRunningThinkingBlockEvent(lastEvent)
       && Number.isInteger(lastEvent?.blockEndSeq)
       && lastEvent.blockEndSeq > renderedEventState.latestSeq
     ) {

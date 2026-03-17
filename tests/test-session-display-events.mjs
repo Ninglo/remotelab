@@ -19,11 +19,12 @@ const interleavedTurnHistory = [
 const interleavedDisplay = buildSessionDisplayEvents(interleavedTurnHistory, { sessionRunning: false });
 assert.deepEqual(
   interleavedDisplay.map((event) => event.type),
-  ['message', 'collapsed_block', 'message', 'usage'],
+  ['message', 'thinking_block', 'message', 'usage'],
   'turn display should collapse intermediate turn content and keep only the final assistant summary visible',
 );
 assert.equal(interleavedDisplay[1].blockStartSeq, 3, 'collapsed range should begin with the first intermediate event after the user message');
 assert.equal(interleavedDisplay[1].blockEndSeq, 6, 'collapsed range should extend through the final hidden event before the summary');
+assert.equal(interleavedDisplay[1].label, 'Thought · used shell', 'completed blocks should reuse the same thought label family as the running block');
 
 const interleavedBlockEvents = buildEventBlockEvents(interleavedTurnHistory, 3, 6);
 assert.deepEqual(
@@ -43,11 +44,12 @@ const leadingVisibleStatusHistory = [
 const leadingVisibleDisplay = buildSessionDisplayEvents(leadingVisibleStatusHistory, { sessionRunning: false });
 assert.deepEqual(
   leadingVisibleDisplay.map((event) => event.type),
-  ['message', 'collapsed_block', 'message'],
+  ['message', 'thinking_block', 'message'],
   'leading visible status updates should also fold into the intermediate collapsed block when a final summary exists',
 );
 assert.equal(leadingVisibleDisplay[1].blockStartSeq, 2, 'collapsed range should include visible intermediate status events before hidden work');
 assert.equal(leadingVisibleDisplay[1].blockEndSeq, 4, 'collapsed range should end at the last hidden implementation event before the summary');
+assert.equal(leadingVisibleDisplay[1].label, 'Thought · used shell', 'completed folded blocks should keep the same thought header copy');
 
 const runningTurnHistory = [
   { seq: 1, type: 'message', role: 'user', content: 'Work on this task' },
@@ -64,7 +66,7 @@ assert.deepEqual(
   ['message', 'thinking_block'],
   'running turns should collapse into a single thinking block instead of streaming multiple visible intermediate fragments',
 );
-assert.equal(runningDisplay[1].label, 'Earlier reasoning & tool steps · using bash', 'running turns should reuse the earlier reasoning affordance instead of a separate live transcript label');
+assert.equal(runningDisplay[1].label, 'Thinking · using bash', 'running turns should use the same thought block label family as completed turns');
 assert.equal(runningDisplay[1].blockStartSeq, 2, 'running collapsed block should start with the first non-user event in the turn');
 assert.equal(runningDisplay[1].blockEndSeq, 6, 'running collapsed block should extend through the latest in-flight event');
 

@@ -835,7 +835,7 @@ function buildShareSnapshotClientPayload(snapshot) {
   });
   const eventBlocks = Object.create(null);
   for (const event of displayEvents) {
-    if ((event?.type !== 'collapsed_block' && event?.type !== 'thinking_block')) continue;
+    if (event?.type !== 'thinking_block') continue;
     const startSeq = Number.isInteger(event?.blockStartSeq) ? event.blockStartSeq : 0;
     const endSeq = Number.isInteger(event?.blockEndSeq) ? event.blockEndSeq : 0;
     if (startSeq < 1 || endSeq < startSeq) continue;

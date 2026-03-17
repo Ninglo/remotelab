@@ -611,8 +611,8 @@ async function phase10EventIndexContract() {
     assert.equal(assistantMessage.content, 'finished from fake codex', 'assistant summary should stay inline for the visible timeline');
     assert.equal(assistantMessage.bodyAvailable, undefined, 'visible assistant messages should not advertise a lazy body');
 
-    const collapsedBlock = events.json.events.find((event) => event.type === 'collapsed_block');
-    assert.ok(collapsedBlock, 'display timeline should expose a collapsed hidden block');
+    const collapsedBlock = events.json.events.find((event) => event.type === 'thinking_block' && event.state === 'completed');
+    assert.ok(collapsedBlock, 'display timeline should expose a completed thought block for hidden work');
     assert.ok(collapsedBlock.blockStartSeq >= 1, 'collapsed block should expose a starting sequence');
     assert.ok(collapsedBlock.blockEndSeq >= collapsedBlock.blockStartSeq, 'collapsed block should expose an ending sequence');
 
