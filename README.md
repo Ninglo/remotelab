@@ -8,9 +8,37 @@ RemoteLab exists to maximize the efficiency of human-AI collaboration for people
 
 It does not care much whether the control surface is a phone, tablet, or desktop. The point is to give the human the highest-leverage way to direct AI work while strong executors like `codex`, `claude`, and compatible local tools do the heavy lifting on a real machine.
 
-![Chat UI](docs/demo.gif)
+![RemoteLab across surfaces](docs/readme-multisurface-demo.png)
 
 > Current baseline: `v0.3` — owner-first session orchestration, durable on-disk history, executor adapters, App-based workflow packaging, and a no-build web UI that works across phone and desktop.
+
+> Reach the same system from desktop, phone, and integration surfaces like Feishu or email-driven flows.
+
+## Quick install
+
+If the demo makes sense, do not keep reading. Paste this into Codex, Claude Code, or another coding agent on the host machine and let it set RemoteLab up for you:
+
+```text
+I want to set up RemoteLab on this machine so I can control AI workers from any device and keep long-running AI work organized.
+
+Network mode: [cloudflare | tailscale]
+
+# For Cloudflare mode:
+My domain: [YOUR_DOMAIN]
+Subdomain I want to use: [SUBDOMAIN]
+
+# For Tailscale mode:
+(No extra config needed — the host machine and the client devices I want to use are on the same tailnet.)
+
+Please follow the full setup guide at docs/setup.md in this repository.
+Keep the workflow inside this chat.
+Before you start work, collect every missing piece of context in one message so I can answer once.
+Do every step you can automatically.
+After my reply, continue autonomously and only stop for real [HUMAN] steps, approvals, or final completion.
+When you stop, tell me exactly what I need to do and how you'll verify it after I reply.
+```
+
+Need the longer version first? Jump to [Setup details](#setup-details) or open `docs/setup.md`.
 
 ---
 
@@ -96,7 +124,7 @@ RemoteLab is opinionated in a few ways:
 - Over time, the goal is portability across executors, not loyalty to one closed runtime.
 - In practice, the main risk is usually the underlying provider auth / terms, not the binary name by itself. Make your own call based on the provider and account type behind that tool.
 
-### Get set up in 5 minutes — hand it to an AI
+### Setup details
 
 The fastest path is still to paste a setup prompt into Codex, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login when that mode is in play.
 
