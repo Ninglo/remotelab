@@ -207,6 +207,25 @@ In passive speech mode:
 
 This mode is intentionally simple and good for evaluation, but it will also react to background human speech or other nearby voice audio. It is a demo path, not yet a production-grade wake-word filter.
 
+## Wake-Gated Utterance Mode
+
+For a much lower false-trigger rate without reintroducing a two-stage pause workflow, `scripts/voice-utterance-loop.py` also supports a single-utterance wake phrase gate.
+
+In this mode:
+
+- the connector still captures one full utterance until trailing silence
+- the full utterance is transcribed locally first
+- only utterances that start with the configured wake phrase are accepted
+- the wake phrase can match fuzzily within a small edit distance
+- only the trailing content after the wake phrase is sent into RemoteLab
+
+Example:
+
+- spoken: `小罗小罗，帮我看一下今天下午的安排`
+- submitted transcript: `帮我看一下今天下午的安排`
+
+This is the recommended default when passive mode is too noisy but a separate wake-beep-then-follow-up flow feels awkward.
+
 ## Optional macOS prototype helpers
 
 The older Swift-based prototype remains in the repo as an optional macOS-only branch for experiments, but it is no longer the recommended core path:

@@ -47,6 +47,134 @@ def normalize_for_match(value):
     return normalized
 
 
+def is_compact_match_char(char):
+    lowered = char.lower()
+    return (
+        ("a" <= lowered <= "z")
+        or ("0" <= lowered <= "9")
+        or ("\u4e00" <= char <= "\u9fff")
+    )
+
+
+def compact_for_match(value):
+    return "".join(char.lower() for char in trim(value) if is_compact_match_char(char))
+
+
+def compact_for_match_with_map(value):
+    compact = []
+    mapping = []
+    original = str(value or "")
+    for index, char in enumerate(original):
+        if not is_compact_match_char(char):
+            continue
+        compact.append(char.lower())
+        mapping.append(index)
+    return "".join(compact), mapping
+
+
+def default_wake_max_distance(wake_phrase):
+    length = len(compact_for_match(wake_phrase))
+    if length <= 4:
+        return 1
+    if length <= 8:
+        return 2
+    return 3
+
+
+def levenshtein_distance(left, right, *, max_distance=None):
+    if left == right:
+        return 0
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+    if len(left) < len(right):
+        left, right = right, left
+    previous = list(range(len(right) + 1))
+    for row_index, left_char in enumerate(left, start=1):
+        current = [row_index]
+        row_min = current[0]
+        for col_index, right_char in enumerate(right, start=1):
+            insertion = current[col_index - 1] + 1
+            deletion = previous[col_index] + 1
+            substitution = previous[col_index - 1] + (0 if left_char == right_char else 1)
+            next_value = min(insertion, deletion, substitution)
+            current.append(next_value)
+            row_min = min(row_min, next_value)
+        if max_distance is not None and row_min > max_distance:
+            return max_distance + 1
+        previous = current
+    return previous[-1]
+
+
+def find_wake_phrase_match(original_text, wake_phrase, *, prefix_only=False, max_distance=None, max_prefix_gap=2, window_extra=1):
+    original = trim(original_text)
+    phrase = trim(wake_phrase)
+    if not original or not phrase:
+        return None
+
+    compact_original, mapping = compact_for_match_with_map(original)
+    compact_phrase = compact_for_match(phrase)
+    if not compact_original or not compact_phrase or not mapping:
+        return None
+
+    max_prefix_gap = max(0, int(max_prefix_gap))
+    window_extra = max(0, int(window_extra))
+    allowed_distance = default_wake_max_distance(phrase) if max_distance is None else max(0, int(max_distance))
+
+    def build_match(start, end, distance, match_type):
+        return {
+            "distance": distance,
+            "matchType": match_type,
+            "normalizedStart": start,
+            "normalizedEnd": end,
+            "originalStart": mapping[start],
+            "originalEnd": mapping[end - 1] + 1,
+            "matchedText": original[mapping[start]:mapping[end - 1] + 1],
+        }
+
+    search_start = 0
+    while True:
+        index = compact_original.find(compact_phrase, search_start)
+        if index < 0:
+            break
+        if not prefix_only or index <= max_prefix_gap:
+            return build_match(index, index + len(compact_phrase), 0, "exact")
+        search_start = index + 1
+
+    if allowed_distance <= 0:
+        return None
+
+    if prefix_only:
+        candidate_starts = range(0, min(len(compact_original), max_prefix_gap + 1))
+    else:
+        candidate_starts = range(len(compact_original))
+
+    target_length = len(compact_phrase)
+    best_match = None
+    for start in candidate_starts:
+        min_end = start + max(1, target_length - window_extra)
+        max_end = min(len(compact_original), start + target_length + window_extra)
+        for end in range(min_end, max_end + 1):
+            candidate = compact_original[start:end]
+            distance = levenshtein_distance(candidate, compact_phrase, max_distance=allowed_distance)
+            if distance > allowed_distance:
+                continue
+            next_match = build_match(start, end, distance, "fuzzy")
+            if best_match is None:
+                best_match = next_match
+                continue
+            current_key = (next_match["distance"], next_match["normalizedStart"], abs((end - start) - target_length))
+            best_key = (
+                best_match["distance"],
+                best_match["normalizedStart"],
+                abs((best_match["normalizedEnd"] - best_match["normalizedStart"]) - target_length),
+            )
+            if current_key < best_key:
+                best_match = next_match
+    return best_match
+
+
 def play_ack_sound(path):
     normalized = trim(path)
     if not normalized:
@@ -330,10 +458,16 @@ def make_temp_wav(prefix):
     return handle.name
 
 
-def extract_trailing_text(original_text, wake_phrase):
+def extract_trailing_text(original_text, wake_phrase, match=None):
     original = trim(original_text)
     phrase = trim(wake_phrase)
-    if not original or not phrase:
+    if not original:
+        return ""
+    if match and match.get("originalEnd") is not None:
+        suffix = original[int(match["originalEnd"]):]
+        suffix = suffix.strip().strip("，。！？；：,.!?;:-—…[](){}<>\"'“”‘’")
+        return trim(suffix)
+    if not phrase:
         return ""
     lowered_original = original.lower()
     lowered_phrase = phrase.lower()
@@ -345,11 +479,11 @@ def extract_trailing_text(original_text, wake_phrase):
     return trim(suffix)
 
 
-def resolve_trigger_transcript(original_text, wake_phrase, transcript_mode="full"):
+def resolve_trigger_transcript(original_text, wake_phrase, transcript_mode="full", match=None):
     raw_text = trim(original_text)
     mode = trim(transcript_mode).lower() or "full"
     if mode == "after-wake":
-        trailing = extract_trailing_text(raw_text, wake_phrase)
+        trailing = extract_trailing_text(raw_text, wake_phrase, match=match)
         return trailing or raw_text
     return raw_text
 

@@ -12,7 +12,10 @@ from voice_audio_common import (
     capture_until_silence,
     default_input_backend,
     emit_json,
+    extract_trailing_text,
+    find_wake_phrase_match,
     play_ack_sound,
+    resolve_trigger_transcript,
     transcribe_audio,
     trim,
 )
@@ -42,6 +45,11 @@ def parse_args():
     parser.add_argument("--input-backend", default="")
     parser.add_argument("--input-source", default="")
     parser.add_argument("--ack-sound-path", default="")
+    parser.add_argument("--wake-phrase", default="")
+    parser.add_argument("--transcript-mode", choices=["full", "after-wake"], default="after-wake")
+    parser.add_argument("--wake-max-distance", type=int, default=-1)
+    parser.add_argument("--wake-prefix-gap", type=int, default=2)
+    parser.add_argument("--wake-window-extra", type=int, default=1)
     parser.add_argument("--connector-id", default=os.environ.get("REMOTELAB_VOICE_CONNECTOR_ID", ""))
     parser.add_argument("--room-name", default=os.environ.get("REMOTELAB_VOICE_ROOM_NAME", ""))
     parser.add_argument("--test-file", default="")
@@ -51,6 +59,7 @@ def parse_args():
 def build_event(args, transcript, *, source, raw_transcript, duration_ms, peak):
     return {
         "eventId": f"voice-{uuid.uuid4().hex}",
+        "wakeWord": trim(args.wake_phrase),
         "transcript": transcript,
         "detectedAt": now_iso(),
         "connectorId": trim(args.connector_id),
@@ -62,6 +71,7 @@ def build_event(args, transcript, *, source, raw_transcript, duration_ms, peak):
             "durationMs": duration_ms,
             "peak": peak,
             "recognitionMode": "utterance_loop",
+            "transcriptMode": trim(args.transcript_mode) or "after-wake",
         },
     }
 
@@ -116,8 +126,9 @@ def main():
     active_backend = trim(args.input_backend) or default_input_backend()
 
     print(
-        f"[voice-utterance-loop] listening for any speech via {active_backend} + mlx_whisper"
-        f" (silence={args.silence_ms}ms, min={args.min_duration_ms}ms, continuation={args.continuation_window_ms}ms)",
+        f"[voice-utterance-loop] listening via {active_backend} + mlx_whisper"
+        f" (silence={args.silence_ms}ms, min={args.min_duration_ms}ms, continuation={args.continuation_window_ms}ms"
+        f"{', wake=' + args.wake_phrase if trim(args.wake_phrase) else ''})",
         file=sys.stderr,
     )
 
@@ -135,9 +146,25 @@ def main():
             language=args.language,
             initial_prompt=args.initial_prompt,
         )
-        transcript = trim(result["text"])
+        raw_transcript = trim(result["text"])
+        transcript = raw_transcript
+        if trim(args.wake_phrase):
+            wake_match = find_wake_phrase_match(
+                raw_transcript,
+                args.wake_phrase,
+                prefix_only=True,
+                max_distance=None if args.wake_max_distance < 0 else args.wake_max_distance,
+                max_prefix_gap=args.wake_prefix_gap,
+                window_extra=args.wake_window_extra,
+            )
+            if not wake_match:
+                return
+            if trim(args.transcript_mode).lower() == "after-wake":
+                transcript = extract_trailing_text(raw_transcript, args.wake_phrase, match=wake_match)
+            else:
+                transcript = resolve_trigger_transcript(raw_transcript, args.wake_phrase, args.transcript_mode, match=wake_match)
         if transcript:
-            emit_json(build_event(args, transcript, source="utterance_test_file", raw_transcript=transcript, duration_ms=0, peak=0.0))
+            emit_json(build_event(args, transcript, source="utterance_test_file", raw_transcript=raw_transcript, duration_ms=0, peak=0.0))
         return
 
     while running:
@@ -165,9 +192,27 @@ def main():
                     break
                 captured_segments.append(next_segment)
 
-            transcript = " ".join(segment["transcript"] for segment in captured_segments if trim(segment["transcript"]))
-            if not transcript:
+            raw_transcript = " ".join(segment["transcript"] for segment in captured_segments if trim(segment["transcript"]))
+            if not raw_transcript:
                 continue
+            transcript = raw_transcript
+            if trim(args.wake_phrase):
+                wake_match = find_wake_phrase_match(
+                    raw_transcript,
+                    args.wake_phrase,
+                    prefix_only=True,
+                    max_distance=None if args.wake_max_distance < 0 else args.wake_max_distance,
+                    max_prefix_gap=args.wake_prefix_gap,
+                    window_extra=args.wake_window_extra,
+                )
+                if not wake_match:
+                    continue
+                if trim(args.transcript_mode).lower() == "after-wake":
+                    transcript = extract_trailing_text(raw_transcript, args.wake_phrase, match=wake_match)
+                else:
+                    transcript = resolve_trigger_transcript(raw_transcript, args.wake_phrase, args.transcript_mode, match=wake_match)
+                if not transcript:
+                    continue
             duration_ms = sum(int(segment["durationMs"] or 0) for segment in captured_segments)
             peak = max(float(segment["peak"] or 0.0) for segment in captured_segments)
             last_emit_at = now
@@ -178,7 +223,7 @@ def main():
                     args,
                     transcript,
                     source="voice_activity",
-                    raw_transcript=transcript,
+                    raw_transcript=raw_transcript,
                     duration_ms=duration_ms,
                     peak=peak,
                 )
