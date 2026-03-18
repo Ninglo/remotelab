@@ -194,9 +194,35 @@ const CODEX_SYSTEM_PREFIX = process.env.REMOTELAB_CODEX_SYSTEM_PREFIX || '';
  * when the manager needs to shape the agent's default reply style.
  */
 const CODEX_DEVELOPER_INSTRUCTIONS = process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS || '';
+const HAS_CODEX_DEVELOPER_INSTRUCTIONS_ENV = Object.prototype.hasOwnProperty.call(
+  process.env,
+  'REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS',
+);
+export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = [
+  'You are running inside RemoteLab.',
+  'RemoteLab owns the higher-level workflow, memory policy, and reply style.',
+  'Do not impose a strong built-in persona, house style, or product-specific workflow beyond the context explicitly provided for this task.',
+  'For normal user-facing replies, default to plain connected prose rather than report formatting.',
+  'Do not use headings, bullet lists, or checklist formatting unless the user explicitly asks for them or the task truly cannot be answered clearly without them.',
+  'For short explanations, conceptual discussion, and back-and-forth conversation, answer in natural paragraphs instead of list form.',
+  'If the task explicitly asks for structured output, code, JSON, tables, checklists, or another format, follow that format exactly.',
+  'Treat unstated preferences as open and adaptable; let the user and session context shape tone and working style over time.',
+].join(' ');
 
 function encodeTomlString(value) {
   return JSON.stringify(String(value || ''));
+}
+
+function resolveDeveloperInstructions(options = {}) {
+  if (Object.prototype.hasOwnProperty.call(options, 'developerInstructions')) {
+    return typeof options.developerInstructions === 'string'
+      ? options.developerInstructions.trim()
+      : '';
+  }
+  if (HAS_CODEX_DEVELOPER_INSTRUCTIONS_ENV) {
+    return CODEX_DEVELOPER_INSTRUCTIONS.trim();
+  }
+  return DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS;
 }
 
 /**
@@ -204,9 +230,7 @@ function encodeTomlString(value) {
  */
 export function buildCodexArgs(prompt, options = {}) {
   const args = ['exec'];
-  const developerInstructions = typeof options.developerInstructions === 'string'
-    ? options.developerInstructions.trim()
-    : CODEX_DEVELOPER_INSTRUCTIONS.trim();
+  const developerInstructions = resolveDeveloperInstructions(options);
 
   args.push('--json');
   args.push('--dangerously-bypass-approvals-and-sandbox');
