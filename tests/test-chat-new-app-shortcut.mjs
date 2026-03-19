@@ -7,12 +7,12 @@ import vm from 'vm';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
-const uiSource = readFileSync(join(repoRoot, 'static', 'chat', 'ui.js'), 'utf8');
+const sidebarUiSource = readFileSync(join(repoRoot, 'static', 'chat', 'sidebar-ui.js'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
   const start = source.indexOf(marker);
-  assert.notEqual(start, -1, `${functionName} should exist in ui.js`);
+  assert.notEqual(start, -1, `${functionName} should exist in sidebar-ui.js`);
   const paramsStart = source.indexOf('(', start);
   assert.notEqual(paramsStart, -1, `${functionName} should have parameters`);
   let paramsDepth = 0;
@@ -43,7 +43,7 @@ function extractFunctionSource(source, functionName) {
   throw new Error(`Unable to extract ${functionName}`);
 }
 
-const createNewAppShortcutSource = extractFunctionSource(uiSource, 'createNewAppShortcut');
+const createNewAppShortcutSource = extractFunctionSource(sidebarUiSource, 'createNewAppShortcut');
 
 function createHarness({ focusResult = true } = {}) {
   const state = {
@@ -59,7 +59,7 @@ function createHarness({ focusResult = true } = {}) {
   context.globalThis = context;
   vm.runInNewContext(`${createNewAppShortcutSource}
 globalThis.createNewAppShortcut = createNewAppShortcut;`, context, {
-    filename: 'static/chat/ui.js',
+    filename: 'static/chat/sidebar-ui.js',
   });
   return { context, state };
 }

@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 
 const realtimeSource = readFileSync(join(repoRoot, 'static/chat/realtime.js'), 'utf8');
-const sessionHttpSource = readFileSync(join(repoRoot, 'static/chat/session-http.js'), 'utf8');
+const sessionHttpSource = readFileSync(join(repoRoot, 'static/chat/session-http-helpers.js'), 'utf8') + '\n' + readFileSync(join(repoRoot, 'static/chat/session-http-list-state.js'), 'utf8') + '\n' + readFileSync(join(repoRoot, 'static/chat/session-http.js'), 'utf8');
 
 function sliceBetween(source, startToken, endToken) {
   const start = source.indexOf(startToken);

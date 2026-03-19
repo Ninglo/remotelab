@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const uiSource = readFileSync(join(repoRoot, 'static', 'chat', 'ui.js'), 'utf8');
 const realtimeSource = readFileSync(join(repoRoot, 'static', 'chat', 'realtime.js'), 'utf8');
+const realtimeRenderSource = readFileSync(join(repoRoot, 'static', 'chat', 'realtime-render.js'), 'utf8');
 
 for (const snippet of [
   'Load message…',
@@ -25,7 +26,7 @@ for (const snippet of [
 }
 
 assert.equal(
-  realtimeSource.includes('node.dataset.bodyPending = "loading";'),
+  `${realtimeSource}\n${realtimeRenderSource}`.includes('node.dataset.bodyPending = "loading";'),
   false,
   'lazy transcript hydration should not introduce a separate loading state anymore',
 );

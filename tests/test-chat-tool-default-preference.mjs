@@ -8,7 +8,7 @@ import vm from 'vm';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const bootstrapSource = readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap.js'), 'utf8');
-const toolingSource = readFileSync(join(repoRoot, 'static', 'chat', 'tooling.js'), 'utf8');
+const layoutToolingSource = readFileSync(join(repoRoot, 'static', 'chat', 'layout-tooling.js'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
@@ -43,8 +43,8 @@ function extractFunctionSource(source, functionName) {
   throw new Error(`Unable to extract ${functionName}`);
 }
 
-const prioritizeToolOptionsSource = extractFunctionSource(toolingSource, 'prioritizeToolOptions');
-const resolvePreferredToolIdSource = extractFunctionSource(toolingSource, 'resolvePreferredToolId');
+const prioritizeToolOptionsSource = extractFunctionSource(layoutToolingSource, 'prioritizeToolOptions');
+const resolvePreferredToolIdSource = extractFunctionSource(layoutToolingSource, 'resolvePreferredToolId');
 const normalizeStoredToolIdSource = extractFunctionSource(bootstrapSource, 'normalizeStoredToolId');
 const derivePreferredToolIdSource = extractFunctionSource(bootstrapSource, 'derivePreferredToolId');
 
@@ -65,7 +65,7 @@ vm.runInNewContext(
     'globalThis.derivePreferredToolId = derivePreferredToolId;',
   ].join('\n\n'),
   context,
-  { filename: 'static/chat/tooling.js' },
+  { filename: 'static/chat/layout-tooling.js' },
 );
 
 const ordered = context.prioritizeToolOptions([

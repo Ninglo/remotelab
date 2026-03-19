@@ -182,11 +182,18 @@ async function main() {
     assert.match(page.text, /<meta name="theme-color" content="#1e1e1e" media="\(prefers-color-scheme: dark\)">/);
     assert.match(page.text, /window\.__REMOTELAB_BOOTSTRAP__ = \{"auth":\{"role":"owner"\}\};/);
     assert.match(page.text, /<script src="\/chat\/bootstrap\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/bootstrap-session-catalog\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/session-http-helpers\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/session-http-list-state\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/session-http\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/layout-tooling\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/tooling\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/realtime\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/realtime-render\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/session-surface-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/session-list-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="\/chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/compose\.js(?:\?v=[^"]*)?"/);
 
@@ -229,25 +236,52 @@ async function main() {
       'chat stylesheet should use safe revalidation caching',
     );
     assert.ok(chatStylesheet.headers.etag, 'chat stylesheet should expose an ETag');
-    assert.match(chatStylesheet.text, /\.header-btn,\s*\.sidebar-tab,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'sidebar interactions should suppress the mobile tap highlight flash');
-    assert.match(chatStylesheet.text, /--app-height:\s*100dvh/);
-    assert.match(chatStylesheet.text, /--keyboard-inset-height:\s*0px/);
-    assert.match(chatStylesheet.text, /--sidebar-width-expanded:\s*min\(80vw, calc\(100vw - 240px\)\);/);
-    assert.match(chatStylesheet.text, /body\.board-tab-expanded\s*\{[\s\S]*?--sidebar-width:\s*var\(--sidebar-width-expanded\);/, 'desktop board hover mode should widen the sidebar via CSS variables');
-    assert.match(chatStylesheet.text, /\.board-column-attention\s*\{[\s\S]*?border-radius:\s*999px;/, 'board columns should surface a compact high-priority count');
-    assert.match(chatStylesheet.text, /\.board-priority-pill\s*\{[\s\S]*?border-radius:\s*999px;/, 'board cards should render compact priority pills');
-    assert.match(chatStylesheet.text, /\.app-shell\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);/, 'app shell should reserve a fixed header row and a flexible body row');
-    assert.match(chatStylesheet.text, /\.app-container\s*\{[\s\S]*?min-height:\s*0;/);
-    assert.match(chatStylesheet.text, /\.chat-area\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) auto auto;[\s\S]*?min-height:\s*0;/, 'chat area should model content, queued panel, and composer as explicit rows');
-    assert.match(chatStylesheet.text, /\.chat-area > \*\s*\{[\s\S]*?min-width:\s*0;/, 'chat-area grid children should be allowed to shrink horizontally instead of expanding the column');
-    assert.match(chatStylesheet.text, /\.messages\s*\{[\s\S]*?min-height:\s*0;/);
-    assert.match(chatStylesheet.text, /\.messages-inner\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/, 'message column should stay bound to the available chat width');
-    assert.match(chatStylesheet.text, /\.input-resize-handle\s*\{[\s\S]*?margin:\s*0 calc\(var\(--chat-gutter\) \* -1\) 8px;/, 'resize handle should mirror the current chat gutter so it does not create horizontal overflow on mobile');
-    assert.doesNotMatch(chatStylesheet.text, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
-    assert.match(chatStylesheet.text, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'desktop modals should offset against the fixed-width sidebar');
-    assert.match(chatStylesheet.text, /body\.keyboard-open \.messages/);
-    assert.match(chatStylesheet.text, /body\.keyboard-open \.input-area/);
-    assert.doesNotMatch(chatStylesheet.text, /--app-top-offset/);
+    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-base\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-sidebar\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-messages\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-input\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-responsive\.css"\);/);
+
+    const chatBaseStylesheet = await request(port, 'GET', '/chat/chat-base.css');
+    const chatSidebarStylesheet = await request(port, 'GET', '/chat/chat-sidebar.css');
+    const chatMessagesStylesheet = await request(port, 'GET', '/chat/chat-messages.css');
+    const chatInputStylesheet = await request(port, 'GET', '/chat/chat-input.css');
+    const chatResponsiveStylesheet = await request(port, 'GET', '/chat/chat-responsive.css');
+    for (const stylesheet of [chatBaseStylesheet, chatSidebarStylesheet, chatMessagesStylesheet, chatInputStylesheet, chatResponsiveStylesheet]) {
+      assert.equal(stylesheet.status, 200, 'split chat stylesheet should load');
+      assert.equal(
+        stylesheet.headers['cache-control'],
+        'public, no-cache, max-age=0, must-revalidate',
+        'split chat stylesheet should use safe revalidation caching',
+      );
+      assert.ok(stylesheet.headers.etag, 'split chat stylesheet should expose an ETag');
+    }
+    const combinedChatStyles = [
+      chatBaseStylesheet.text,
+      chatSidebarStylesheet.text,
+      chatMessagesStylesheet.text,
+      chatInputStylesheet.text,
+      chatResponsiveStylesheet.text,
+    ].join('\n');
+    assert.match(combinedChatStyles, /\.header-btn,\s*\.sidebar-tab,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'sidebar interactions should suppress the mobile tap highlight flash');
+    assert.match(combinedChatStyles, /--app-height:\s*100dvh/);
+    assert.match(combinedChatStyles, /--keyboard-inset-height:\s*0px/);
+    assert.match(combinedChatStyles, /--sidebar-width-expanded:\s*min\(80vw, calc\(100vw - 240px\)\);/);
+    assert.match(combinedChatStyles, /body\.board-tab-expanded\s*\{[\s\S]*?--sidebar-width:\s*var\(--sidebar-width-expanded\);/, 'desktop board hover mode should widen the sidebar via CSS variables');
+    assert.match(combinedChatStyles, /\.board-column-attention\s*\{[\s\S]*?border-radius:\s*999px;/, 'board columns should surface a compact high-priority count');
+    assert.match(combinedChatStyles, /\.board-priority-pill\s*\{[\s\S]*?border-radius:\s*999px;/, 'board cards should render compact priority pills');
+    assert.match(combinedChatStyles, /\.app-shell\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);/, 'app shell should reserve a fixed header row and a flexible body row');
+    assert.match(combinedChatStyles, /\.app-container\s*\{[\s\S]*?min-height:\s*0;/);
+    assert.match(combinedChatStyles, /\.chat-area\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) auto auto;[\s\S]*?min-height:\s*0;/, 'chat area should model content, queued panel, and composer as explicit rows');
+    assert.match(combinedChatStyles, /\.chat-area > \*\s*\{[\s\S]*?min-width:\s*0;/, 'chat-area grid children should be allowed to shrink horizontally instead of expanding the column');
+    assert.match(combinedChatStyles, /\.messages\s*\{[\s\S]*?min-height:\s*0;/);
+    assert.match(combinedChatStyles, /\.messages-inner\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/, 'message column should stay bound to the available chat width');
+    assert.match(combinedChatStyles, /\.input-resize-handle\s*\{[\s\S]*?margin:\s*0 calc\(var\(--chat-gutter\) \* -1\) 8px;/, 'resize handle should mirror the current chat gutter so it does not create horizontal overflow on mobile');
+    assert.doesNotMatch(combinedChatStyles, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
+    assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'desktop modals should offset against the fixed-width sidebar');
+    assert.match(combinedChatStyles, /body\.keyboard-open \.messages/);
+    assert.match(combinedChatStyles, /body\.keyboard-open \.input-area/);
+    assert.doesNotMatch(combinedChatStyles, /--app-top-offset/);
     assert.ok(!page.text.includes('/chat.js?v='), 'chat page should not pin the chat frontend to a versioned URL');
     assert.match(page.text, /\/marked\.min\.js\?v=/, 'chat page should fingerprint marked.min.js alongside the split chat assets');
     assert.match(page.text, /\/manifest\.json\?v=/, 'chat page should fingerprint the manifest URL so installed PWAs refresh policy changes');
@@ -332,13 +366,28 @@ async function main() {
     assert.ok(splitAsset.headers.etag, 'split asset should expose an ETag');
     assert.match(splitAsset.text, /const buildInfo = window\.__REMOTELAB_BUILD__ \|\| \{\};/);
 
+    const sessionHttpHelpersAsset = await request(port, 'GET', '/chat/session-http-helpers.js');
+    assert.equal(sessionHttpHelpersAsset.status, 200, 'session http helpers asset should load');
+    assert.match(sessionHttpHelpersAsset.text, /function enhanceRenderedContentLinks\(/);
+    assert.match(sessionHttpHelpersAsset.text, /const SESSION_LIST_URL = "\/api\/sessions\?includeVisitor=1";/);
+
+    const sessionHttpListStateAsset = await request(port, 'GET', '/chat/session-http-list-state.js');
+    assert.equal(sessionHttpListStateAsset.status, 200, 'session http list state asset should load');
+    assert.match(sessionHttpListStateAsset.text, /function applySessionListState\(/);
+    assert.match(sessionHttpListStateAsset.text, /function applyArchivedSessionListState\(/);
+
     const sessionHttpAsset = await request(port, 'GET', '/chat/session-http.js');
     assert.equal(sessionHttpAsset.status, 200, 'session http asset should load');
+    const bootstrapCatalogAsset = await request(port, 'GET', '/chat/bootstrap-session-catalog.js');
+    assert.equal(bootstrapCatalogAsset.status, 200, 'bootstrap session catalog asset should load');
+    assert.match(bootstrapCatalogAsset.text, /function getEffectiveSessionAppId\(/);
+    assert.match(bootstrapCatalogAsset.text, /function sortSessionsInPlace\(/);
+
     if (/getEffectiveSessionAppId\(/.test(sessionHttpAsset.text)) {
       assert.match(
-        splitAsset.text,
+        bootstrapCatalogAsset.text,
         /function getEffectiveSessionAppId\(/,
-        'bootstrap asset should define the effective app helper used by session-http',
+        'bootstrap session catalog asset should define the effective app helper used by session-http',
       );
     }
 
@@ -350,12 +399,60 @@ async function main() {
       'versioned split assets should be immutable cache hits',
     );
 
+    const versionedBootstrapCatalogAsset = await request(port, 'GET', '/chat/bootstrap-session-catalog.js?v=test-build');
+    assert.equal(versionedBootstrapCatalogAsset.status, 200, 'versioned bootstrap session catalog asset should load');
+    assert.equal(
+      versionedBootstrapCatalogAsset.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned bootstrap session catalog asset should be immutable cache hits',
+    );
+
+    const versionedSessionHttpHelpersAsset = await request(port, 'GET', '/chat/session-http-helpers.js?v=test-build');
+    assert.equal(versionedSessionHttpHelpersAsset.status, 200, 'versioned session http helpers asset should load');
+    assert.equal(
+      versionedSessionHttpHelpersAsset.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned session http helpers asset should be immutable cache hits',
+    );
+
+    const versionedSessionHttpListStateAsset = await request(port, 'GET', '/chat/session-http-list-state.js?v=test-build');
+    assert.equal(versionedSessionHttpListStateAsset.status, 200, 'versioned session http list state asset should load');
+    assert.equal(
+      versionedSessionHttpListStateAsset.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned session http list state asset should be immutable cache hits',
+    );
+
+    const versionedLayoutToolingAsset = await request(port, 'GET', '/chat/layout-tooling.js?v=test-build');
+    assert.equal(versionedLayoutToolingAsset.status, 200, 'versioned layout tooling asset should load');
+    assert.equal(
+      versionedLayoutToolingAsset.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned layout tooling asset should be immutable cache hits',
+    );
+
+    const versionedRealtimeRenderAsset = await request(port, 'GET', '/chat/realtime-render.js?v=test-build');
+    assert.equal(versionedRealtimeRenderAsset.status, 200, 'versioned realtime render asset should load');
+    assert.equal(
+      versionedRealtimeRenderAsset.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned realtime render asset should be immutable cache hits',
+    );
+
     const versionedChatStylesheet = await request(port, 'GET', '/chat/chat.css?v=test-build');
     assert.equal(versionedChatStylesheet.status, 200, 'versioned chat stylesheet should load');
     assert.equal(
       versionedChatStylesheet.headers['cache-control'],
       'public, max-age=31536000, immutable',
       'versioned chat stylesheet should be immutable cache hits',
+    );
+
+    const versionedChatBaseStylesheet = await request(port, 'GET', '/chat/chat-base.css?v=test-build');
+    assert.equal(versionedChatBaseStylesheet.status, 200, 'versioned split chat stylesheet should load');
+    assert.equal(
+      versionedChatBaseStylesheet.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned split chat stylesheet should be immutable cache hits',
     );
 
     const stateModelAsset = await request(port, 'GET', '/chat/session-state-model.js');
@@ -368,21 +465,34 @@ async function main() {
     assert.ok(stateModelAsset.headers.etag, 'session state model asset should expose an ETag');
     assert.match(stateModelAsset.text, /RemoteLabSessionStateModel/);
 
+    const layoutToolingAsset = await request(port, 'GET', '/chat/layout-tooling.js');
+    assert.equal(layoutToolingAsset.status, 200, 'layout tooling asset should load');
+    assert.match(layoutToolingAsset.text, /document\.documentElement\.style\.setProperty\("--app-height"/);
+    assert.match(layoutToolingAsset.text, /document\.documentElement\.style\.setProperty\("--keyboard-inset-height"/);
+    assert.match(layoutToolingAsset.text, /function requestLayoutPass\(/);
+    assert.match(layoutToolingAsset.text, /window\.RemoteLabLayout = \{/);
+    assert.match(layoutToolingAsset.text, /window\.visualViewport\?\.addEventListener\("resize", \(\) => requestLayoutPass\("visual-viewport-resize"\)\)/);
+    assert.doesNotMatch(layoutToolingAsset.text, /window\.visualViewport\?\.addEventListener\("scroll"/);
+    assert.match(layoutToolingAsset.text, /function focusComposer\(/);
+
     const toolingAsset = await request(port, 'GET', '/chat/tooling.js');
     assert.equal(toolingAsset.status, 200, 'tooling asset should load');
-    assert.match(toolingAsset.text, /document\.documentElement\.style\.setProperty\("--app-height"/);
-    assert.match(toolingAsset.text, /document\.documentElement\.style\.setProperty\("--keyboard-inset-height"/);
-    assert.match(toolingAsset.text, /function requestLayoutPass\(/);
-    assert.match(toolingAsset.text, /window\.RemoteLabLayout = \{/);
-    assert.match(toolingAsset.text, /window\.visualViewport\?\.addEventListener\("resize", \(\) => requestLayoutPass\("visual-viewport-resize"\)\)/);
-    assert.doesNotMatch(toolingAsset.text, /window\.visualViewport\?\.addEventListener\("scroll"/);
-    assert.match(toolingAsset.text, /function focusComposer\(/);
     assert.match(toolingAsset.text, /const modelResponseCache = new Map\(\);/);
     assert.match(toolingAsset.text, /async function fetchModelResponse\(/);
+
+    const realtimeRenderAsset = await request(port, 'GET', '/chat/realtime-render.js');
+    assert.equal(realtimeRenderAsset.status, 200, 'realtime render asset should load');
+    assert.match(realtimeRenderAsset.text, /function renderEvent\(/);
+    assert.match(realtimeRenderAsset.text, /async function hydrateLazyNodes\(/);
 
     const uiAsset = await request(port, 'GET', '/chat/ui.js');
     assert.equal(uiAsset.status, 200, 'ui asset should load');
     assert.match(uiAsset.text, /\/api\/media\//, 'ui asset should load persisted media attachments from the media route');
+
+    const sessionSurfaceUiAsset = await request(port, 'GET', '/chat/session-surface-ui.js');
+    assert.equal(sessionSurfaceUiAsset.status, 200, 'session surface ui asset should load');
+    assert.match(sessionSurfaceUiAsset.text, /function createActiveSessionItem\(/);
+    assert.match(sessionSurfaceUiAsset.text, /function buildSessionMetaParts\(/);
 
     const sessionListUiAsset = await request(port, 'GET', '/chat/session-list-ui.js');
     assert.equal(sessionListUiAsset.status, 200, 'session list ui asset should load');
@@ -395,6 +505,11 @@ async function main() {
     assert.match(sidebarUiAsset.text, /function openSidebar\(/);
     assert.match(sidebarUiAsset.text, /function createNewSessionShortcut\(/);
     assert.match(sidebarUiAsset.text, /requestLayoutPass\("composer-images"\)/);
+
+    const settingsUiAsset = await request(port, 'GET', '/chat/settings-ui.js');
+    assert.equal(settingsUiAsset.status, 200, 'settings ui asset should load');
+    assert.match(settingsUiAsset.text, /function renderSettingsAppsPanel\(/);
+    assert.match(settingsUiAsset.text, /function renderSettingsUsersPanel\(/);
 
     const composeAsset = await request(port, 'GET', '/chat/compose.js');
     assert.equal(composeAsset.status, 200, 'compose asset should load');
@@ -425,6 +540,22 @@ async function main() {
     });
     assert.equal(splitAsset304.status, 304, 'split asset should support conditional GETs');
     assert.equal(splitAsset304.text, '', '304 response should not include a body');
+
+    const versionedSettingsUiAsset = await request(port, 'GET', '/chat/settings-ui.js?v=test-build');
+    assert.equal(versionedSettingsUiAsset.status, 200, 'versioned settings ui asset should load');
+    assert.equal(
+      versionedSettingsUiAsset.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned settings ui asset should be immutable cache hits',
+    );
+
+    const versionedSessionSurfaceUiAsset = await request(port, 'GET', '/chat/session-surface-ui.js?v=test-build');
+    assert.equal(versionedSessionSurfaceUiAsset.status, 200, 'versioned session surface ui asset should load');
+    assert.equal(
+      versionedSessionSurfaceUiAsset.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned session surface ui asset should be immutable cache hits',
+    );
 
     const loader = await request(port, 'GET', '/chat.js');
     assert.equal(loader.status, 200, 'compatibility loader should still exist');

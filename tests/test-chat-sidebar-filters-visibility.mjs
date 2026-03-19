@@ -7,7 +7,7 @@ import vm from 'vm';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
-const bootstrapSource = readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap.js'), 'utf8');
+const bootstrapSource = readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap.js'), 'utf8') + '\n' + readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap-session-catalog.js'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
@@ -66,7 +66,7 @@ function createHarness({ activeTab = 'sessions', visitorMode = false } = {}) {
   vm.runInNewContext(
     `${syncSidebarFiltersVisibilitySource}\nglobalThis.syncSidebarFiltersVisibility = syncSidebarFiltersVisibility;`,
     context,
-    { filename: 'static/chat/bootstrap.js' },
+    { filename: 'static/chat/bootstrap-session-catalog.js' },
   );
   return { context, state };
 }

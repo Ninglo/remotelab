@@ -1,0 +1,96 @@
+/* ---- Desktop (>= 768px) ---- */
+@media (min-width: 768px) {
+  :root {
+    --chat-column-width: 70%;
+  }
+
+  body.board-tab-expanded {
+    --sidebar-width: var(--sidebar-width-expanded);
+  }
+
+  .header #menuBtn { display: none; }
+
+  .sidebar-overlay {
+    display: block !important; position: static; background: none;
+    width: var(--sidebar-width); flex-shrink: 0;
+    border-right: 1px solid var(--border); z-index: auto;
+    transition: width 0.2s ease;
+  }
+
+  .sidebar {
+    position: static; left: auto; width: 100%; height: 100%;
+    border-right: none; z-index: auto; transition: none; padding-top: 0;
+  }
+  .sidebar-overlay.open .sidebar { left: auto; }
+  .sidebar-header #closeSidebar { display: none; }
+
+  /* Desktop: strip side padding from containers; 70% width on inner elements */
+  .messages { padding: 28px 0; }
+  .messages-inner,
+  .queued-panel,
+  .input-wrapper,
+  .input-footer {
+    width: var(--chat-column-width);
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .queued-panel { margin-bottom: 10px; }
+  .input-area { padding: 0 0 14px; padding-bottom: calc(14px + var(--safe-bottom)); }
+  .input-resize-handle { margin: 0 0 10px; }
+  .modal-backdrop { padding-left: calc(var(--sidebar-width) + 24px); }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --chat-gutter: 10px;
+  }
+
+  body.keyboard-open .messages {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  body.keyboard-open .input-area {
+    padding-bottom: calc(6px + var(--safe-bottom));
+  }
+
+  body.keyboard-open .input-resize-handle {
+    height: 12px;
+    margin-bottom: 4px;
+  }
+
+  body.keyboard-open .input-config-row {
+    padding-top: 6px;
+    padding-bottom: 4px;
+  }
+
+  body.keyboard-open .input-row {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+}
+
+/* ---- Visitor mode: chat-only, no sidebar ---- */
+body.visitor-mode .sidebar-overlay { display: none !important; }
+body.visitor-mode .header #menuBtn { display: none !important; }
+body.visitor-mode .gesture-pill { display: none !important; }
+body.share-snapshot-mode .input-area {
+  opacity: 0.72;
+}
+body.share-snapshot-mode .input-row textarea:disabled {
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .provider-helper-grid { grid-template-columns: 1fr; }
+  .modal { width: 100%; max-height: calc(100dvh - 24px); }
+  .modal-body { padding: 14px; }
+  .modal-header,
+  .modal-footer { padding: 12px 14px; }
+}
+
+@media (min-width: 768px) {
+  .gesture-pill { display: none !important; }
+}

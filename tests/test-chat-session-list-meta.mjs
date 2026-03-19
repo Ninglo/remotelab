@@ -7,7 +7,7 @@ import vm from 'vm';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
-const uiSource = readFileSync(join(repoRoot, 'static', 'chat', 'ui.js'), 'utf8');
+const sessionSurfaceUiSource = readFileSync(join(repoRoot, 'static', 'chat', 'session-surface-ui.js'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
@@ -43,8 +43,8 @@ function extractFunctionSource(source, functionName) {
   throw new Error(`Unable to extract ${functionName}`);
 }
 
-const renderSessionMessageCountSource = extractFunctionSource(uiSource, 'renderSessionMessageCount');
-const buildSessionMetaPartsSource = extractFunctionSource(uiSource, 'buildSessionMetaParts');
+const renderSessionMessageCountSource = extractFunctionSource(sessionSurfaceUiSource, 'renderSessionMessageCount');
+const buildSessionMetaPartsSource = extractFunctionSource(sessionSurfaceUiSource, 'buildSessionMetaParts');
 
 const state = { scopeCalls: 0, statusCalls: 0 };
 const context = {
@@ -69,7 +69,7 @@ context.globalThis = context;
 vm.runInNewContext(
   `${renderSessionMessageCountSource}\n${buildSessionMetaPartsSource}\nglobalThis.renderSessionMessageCount = renderSessionMessageCount;\nglobalThis.buildSessionMetaParts = buildSessionMetaParts;`,
   context,
-  { filename: 'static/chat/ui.js' },
+  { filename: 'static/chat/session-surface-ui.js' },
 );
 
 assert.equal(
