@@ -1797,6 +1797,41 @@ function buildManagerTurnContextText(session) {
   ].filter(Boolean).join('\n\n');
 }
 
+function resolveResumeState(toolId, session, options = {}) {
+  if (options.freshThread === true) {
+    return {
+      hasResume: false,
+      claudeSessionId: null,
+      codexThreadId: null,
+    };
+  }
+
+  const tool = typeof toolId === 'string' ? toolId.trim() : '';
+  if (tool === 'claude') {
+    const claudeSessionId = session?.claudeSessionId || null;
+    return {
+      hasResume: !!claudeSessionId,
+      claudeSessionId,
+      codexThreadId: null,
+    };
+  }
+
+  if (tool === 'codex') {
+    const codexThreadId = session?.codexThreadId || null;
+    return {
+      hasResume: !!codexThreadId,
+      claudeSessionId: null,
+      codexThreadId,
+    };
+  }
+
+  return {
+    hasResume: false,
+    claudeSessionId: null,
+    codexThreadId: null,
+  };
+}
+
 function wrapPrivatePromptBlock(text) {
   const normalized = typeof text === 'string' ? text.trim() : '';
   if (!normalized) return '';
@@ -1809,7 +1844,7 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
     ? 'bare-user'
     : 'default';
   const flattenPrompt = toolDefinition?.flattenPrompt === true;
-  const hasResume = !options.freshThread && (!!session.claudeSessionId || !!session.codexThreadId);
+  const { hasResume } = resolveResumeState(effectiveTool, session, options);
   let continuationContext = '';
   let contextToolIndex = '';
 
@@ -2966,9 +3001,6 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
     return enrichSessionMeta(result.meta);
   }
 
-  if (toolChanged) {
-    await clearPersistedResumeIds(id);
-  }
   broadcastSessionInvalidation(id);
   if (shouldExposeSession(result.meta)) {
     broadcastSessionsInvalidation();
@@ -3177,15 +3209,16 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
 
   if (effectiveTool !== session.tool) {
-    await clearPersistedResumeIds(sessionId);
     const updatedToolSession = await updateSessionTool(sessionId, effectiveTool);
     if (updatedToolSession) {
       session = updatedToolSession;
     }
   }
 
-  const persistedClaudeSessionId = options.freshThread === true ? null : (session.claudeSessionId || null);
-  const persistedCodexThreadId = options.freshThread === true ? null : (session.codexThreadId || null);
+  const {
+    claudeSessionId: persistedClaudeSessionId,
+    codexThreadId: persistedCodexThreadId,
+  } = resolveResumeState(effectiveTool, session, options);
 
   const run = await createRun({
     status: {

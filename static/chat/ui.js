@@ -4,15 +4,16 @@ function renderUiIcon(name, className = "") {
 
 function renderMarkdownIntoNode(node, markdown) {
   const source = typeof markdown === "string" ? markdown : "";
-  const rendered = marked.parse(source);
+  const visibleSource = formatDecodedDisplayText(source);
+  const rendered = marked.parse(visibleSource);
   if (rendered.trim()) {
     node.innerHTML = rendered;
     enhanceCodeBlocks(node);
     enhanceRenderedContentLinks(node);
     return true;
   }
-  node.textContent = formatDecodedDisplayText(source);
-  return !!source.trim();
+  node.textContent = visibleSource;
+  return !!visibleSource.trim();
 }
 
 function markLazyEventBodyNode(node, evt, { preview = "", renderMode = "text" } = {}) {
@@ -320,6 +321,41 @@ function renderReasoningInto(container, evt) {
   return div;
 }
 
+function renderManagerContextInto(container, evt) {
+  if (!container) return null;
+  const wrap = document.createElement("div");
+  wrap.className = "manager-context";
+
+  const label = document.createElement("div");
+  label.className = "msg-system";
+  label.textContent = "Manager context";
+  wrap.appendChild(label);
+
+  const body = document.createElement("div");
+  body.className = "reasoning md-content";
+  if (evt.content) {
+    const didRender = renderMarkdownIntoNode(body, evt.content);
+    if (!didRender && !evt.bodyAvailable) return null;
+  } else if (evt.bodyAvailable && evt.bodyPreview) {
+    renderMarkdownIntoNode(body, evt.bodyPreview);
+  } else if (!evt.bodyAvailable) {
+    return null;
+  }
+
+  if (markLazyEventBodyNode(body, evt, {
+    preview: evt.bodyPreview || evt.content || "",
+    renderMode: "markdown",
+  })) {
+    if (typeof queueHydrateLazyNodes === "function") {
+      queueHydrateLazyNodes(wrap);
+    }
+  }
+
+  wrap.appendChild(body);
+  container.appendChild(wrap);
+  return wrap;
+}
+
 function collectHiddenBlockToolNames(events) {
   const names = [];
   const seen = new Set();
@@ -424,6 +460,9 @@ function renderHiddenBlockEventsInto(container, events) {
         break;
       case "reasoning":
         renderReasoningInto(container, event);
+        break;
+      case "manager_context":
+        renderManagerContextInto(container, event);
         break;
       case "tool_use":
         renderToolUseInto(container, event);

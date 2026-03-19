@@ -18,11 +18,11 @@ The installer writes one custom tool record into `~/.config/remotelab/tools.json
 
 - `command: codex`
 - `runtimeFamily: codex-json`
-- `promptMode: bare-user`
-- `flattenPrompt: true`
+- `toolProfile: micro-agent`
 - `reasoning.kind: none`
 
 So the UI treats it like a lightweight preset, while the actual runtime stays the normal Codex CLI.
+Unlike the earlier bare-user version, it now follows RemoteLab's normal session prompt/context chain so memory activation, manager policy, and continuation behavior stay aligned with the built-in `codex` tool.
 
 When `micro-agent` is installed and available, the chat UI now prefers it as the default agent for new sessions and app tool pickers. Explicit per-session or per-app tool choices still win.
 
@@ -85,6 +85,7 @@ This setup does **not** turn Codex into a pure raw-completion API; Codex CLI is 
 
 But in practice it is close to the lightweight mode we want because:
 
+- it inherits the same RemoteLab session context, memory activation, and manager-layer prompt shaping as `codex`
 - it can answer directly without tool use when the task is simple
 - it can still use shell when the task genuinely needs it
 - it can call `remotelab api` or `remotelab session-spawn` explicitly instead of relying on hidden product-specific control messages

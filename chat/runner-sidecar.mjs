@@ -27,7 +27,7 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-async function cleanEnv(toolId, manifest = {}) {
+async function cleanEnv(toolId, manifest = {}, options = {}) {
   const env = buildToolProcessEnv();
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
@@ -39,7 +39,9 @@ async function cleanEnv(toolId, manifest = {}) {
   if (runId) {
     env.REMOTELAB_RUN_ID = runId;
   }
-  return applyManagedRuntimeEnv(toolId, env);
+  return applyManagedRuntimeEnv(toolId, env, {
+    runtimeFamily: typeof options.runtimeFamily === 'string' ? options.runtimeFamily : '',
+  });
 }
 
 function captureResume(run, parsed) {
@@ -98,7 +100,7 @@ async function main() {
   }
 
   const prompt = prependAttachmentPaths(manifest.prompt || '', manifest.options?.images || []);
-  const { command, args } = await createToolInvocation(manifest.tool, prompt, {
+  const { command, args, runtimeFamily } = await createToolInvocation(manifest.tool, prompt, {
     dangerouslySkipPermissions: true,
     claudeSessionId: manifest.options?.claudeSessionId,
     codexThreadId: manifest.options?.codexThreadId,
@@ -110,7 +112,7 @@ async function main() {
   const proc = spawn(await resolveCommand(command), args, {
     cwd: resolveCwd(manifest.folder),
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: await cleanEnv(manifest.tool, manifest),
+    env: await cleanEnv(manifest.tool, manifest, { runtimeFamily }),
   });
 
   await updateRun(runId, (current) => ({

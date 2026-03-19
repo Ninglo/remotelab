@@ -108,7 +108,11 @@ export async function ensureManagedCodexHome(options = {}) {
 
 export async function applyManagedRuntimeEnv(toolId, baseEnv = {}, options = {}) {
   const env = { ...baseEnv };
-  if (toolId !== 'codex') {
+  const runtimeFamily = typeof options.runtimeFamily === 'string'
+    ? options.runtimeFamily.trim()
+    : '';
+  const isCodexRuntime = toolId === 'codex' || runtimeFamily === 'codex-json';
+  if (!isCodexRuntime) {
     return env;
   }
 

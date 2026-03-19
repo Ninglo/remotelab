@@ -69,7 +69,14 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
     });
   }
 
-  return { command, adapter, args, isClaudeFamily, isCodexFamily };
+  return {
+    command,
+    adapter,
+    args,
+    isClaudeFamily,
+    isCodexFamily,
+    runtimeFamily,
+  };
 }
 
 function describeAttachmentLabel(attachment) {

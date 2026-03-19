@@ -120,10 +120,9 @@ async function main() {
   const record = {
     id: trimString(args.toolId) || DEFAULT_TOOL_ID,
     name: trimString(args.toolName) || DEFAULT_TOOL_NAME,
+    toolProfile: 'micro-agent',
     command: trimString(args.command) || DEFAULT_COMMAND,
     runtimeFamily: 'codex-json',
-    promptMode: 'bare-user',
-    flattenPrompt: true,
     models: [
       {
         id: model,

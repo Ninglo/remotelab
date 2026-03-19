@@ -91,4 +91,25 @@ assert.equal(
   'transport-only thinking markers should stay omitted from the folded block payload',
 );
 
+const managerContextHistory = [
+  { seq: 1, type: 'message', role: 'user', content: '继续这个讨论' },
+  { seq: 2, type: 'manager_context', role: 'system', content: 'Manager note: keep replies in natural paragraphs.' },
+  { seq: 3, type: 'reasoning', role: 'assistant', content: 'Refreshing working agreements' },
+  { seq: 4, type: 'message', role: 'assistant', content: '好的，我们继续。' },
+];
+
+const managerContextDisplay = buildSessionDisplayEvents(managerContextHistory, { sessionRunning: false });
+assert.deepEqual(
+  managerContextDisplay.map((event) => event.type),
+  ['message', 'thinking_block', 'message'],
+  'manager context events should stay hidden inside the folded implementation block by default',
+);
+
+const managerContextBlockEvents = buildEventBlockEvents(managerContextHistory, 2, 3);
+assert.deepEqual(
+  managerContextBlockEvents.map((event) => event.type),
+  ['manager_context', 'reasoning'],
+  'expanded folded blocks should still expose manager context when explicitly opened',
+);
+
 console.log('test-session-display-events: ok');

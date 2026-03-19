@@ -48,6 +48,15 @@ try {
   });
   assert.equal(personalEnv.CODEX_HOME, '/tmp/personal', 'personal mode should preserve the existing CODEX_HOME');
 
+  const customCodexEnv = await applyManagedRuntimeEnv('micro-agent', { FOO: 'baz' }, {
+    runtimeFamily: 'codex-json',
+    codexHomeDir: managedHome,
+    codexAuthSource: join(personalCodexHome, 'auth.json'),
+    codexHomeMode: 'managed',
+  });
+  assert.equal(customCodexEnv.FOO, 'baz', 'custom Codex runtime should preserve unrelated env values');
+  assert.equal(customCodexEnv.CODEX_HOME, managedHome, 'custom Codex runtimes should also use the manager-owned CODEX_HOME');
+
   const nonCodexEnv = await applyManagedRuntimeEnv('claude', { HOME: home }, {
     codexHomeDir: managedHome,
     codexAuthSource: join(personalCodexHome, 'auth.json'),

@@ -1,4 +1,4 @@
-const HIDDEN_EVENT_TYPES = new Set(['reasoning', 'tool_use', 'tool_result', 'file_change']);
+const HIDDEN_EVENT_TYPES = new Set(['reasoning', 'manager_context', 'tool_use', 'tool_result', 'file_change']);
 
 function cloneJson(value) {
   if (value === null || value === undefined) return value;

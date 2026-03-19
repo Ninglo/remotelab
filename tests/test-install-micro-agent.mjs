@@ -27,10 +27,11 @@ const record = tools.find((tool) => tool.id === 'micro-agent-test');
 
 assert(record, 'installed tool should exist');
 assert.equal(record.name, 'Micro Agent Test');
+assert.equal(record.toolProfile, 'micro-agent');
 assert.equal(record.command, 'codex');
 assert.equal(record.runtimeFamily, 'codex-json');
-assert.equal(record.promptMode, 'bare-user');
-assert.equal(record.flattenPrompt, true);
+assert.equal(Object.hasOwn(record, 'promptMode'), false);
+assert.equal(Object.hasOwn(record, 'flattenPrompt'), false);
 assert.deepEqual(record.models, [{ id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' }]);
 assert.deepEqual(record.reasoning, { kind: 'none', label: 'Thinking' });
 

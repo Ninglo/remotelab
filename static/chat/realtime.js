@@ -835,6 +835,13 @@ function cleanBase64TextForDisplay(text) {
   return String(text || "").replace(/\s+/g, "").trim();
 }
 
+function stripHiddenDisplayBlocks(text) {
+  return String(text || "")
+    .replace(/<private>[\s\S]*?<\/private>/gi, "")
+    .replace(/<hide>[\s\S]*?<\/hide>/gi, "")
+    .trim();
+}
+
 function looksLikeReadableDisplayText(text) {
   const value = String(text || "").trim();
   if (!value) return false;
@@ -865,7 +872,7 @@ function tryDecodeUtf8Base64Text(text) {
 }
 
 function formatDecodedDisplayText(text) {
-  const source = typeof text === "string" ? text : "";
+  const source = stripHiddenDisplayBlocks(typeof text === "string" ? text : "");
   const marker = "Original email:";
   const markerIndex = source.indexOf(marker);
   if (markerIndex === -1) return source;

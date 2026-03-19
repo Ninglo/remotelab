@@ -56,6 +56,10 @@ const context = {
     calls.push(`reasoning:${event.content}`);
     return { container, event };
   },
+  renderManagerContextInto(container, event) {
+    calls.push(`manager_context:${event.content}`);
+    return { container, event };
+  },
   renderToolUseInto(container, event) {
     calls.push(`tool_use:${event.toolName}`);
     return { container, event };
@@ -100,6 +104,7 @@ context.renderHiddenBlockEventsInto({}, [
   { type: 'message', role: 'assistant', content: 'draft' },
   { type: 'status', content: 'Preparing environment' },
   { type: 'reasoning', content: 'Inspecting files' },
+  { type: 'manager_context', content: 'Manager note: keep replies in prose.' },
   { type: 'tool_use', toolName: 'bash' },
   { type: 'tool_result', toolName: 'bash' },
   { type: 'file_change', filePath: 'src/app.js' },
@@ -112,6 +117,7 @@ assert.deepEqual(calls, [
   'message:assistant',
   'status:Preparing environment',
   'reasoning:Inspecting files',
+  'manager_context:Manager note: keep replies in prose.',
   'tool_use:bash',
   'tool_result:bash',
   'file_change:src/app.js',
