@@ -83,14 +83,16 @@ import {
 } from './middleware.mjs';
 import { pathExists, statOrNull } from './fs-utils.mjs';
 import { broadcastAll } from './ws-clients.mjs';
+import { handleAdminRoutes } from './router-admin-routes.mjs';
 
-// Paths (files are read from disk on each request for hot-reload)
+// Paths are resolved from the active runtime root on each request.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const chatTemplatePath = join(__dirname, '..', 'templates', 'chat.html');
 const loginTemplatePath = join(__dirname, '..', 'templates', 'login.html');
 const shareTemplatePath = join(__dirname, '..', 'templates', 'share.html');
 const staticDir = join(__dirname, '..', 'static');
 const packageJsonPath = join(__dirname, '..', 'package.json');
+const releaseMetadataPath = join(__dirname, '..', '.remotelab-release.json');
 const serviceBuildRoots = [
   join(__dirname, '..', 'chat'),
   join(__dirname, '..', 'lib'),
@@ -278,29 +280,55 @@ function hasDirtyRepoPaths(paths) {
   }
 }
 
+function normalizeReleaseText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readReleaseMetadata() {
+  try {
+    const payload = JSON.parse(readFileSync(releaseMetadataPath, 'utf8'));
+    return payload && typeof payload === 'object' ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
 function loadBuildInfo() {
+  const releaseMetadata = readReleaseMetadata();
   let version = 'dev';
-  try {
-    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-    if (pkg?.version) version = String(pkg.version);
-  } catch {}
+  const releasedVersion = normalizeReleaseText(releaseMetadata?.sourceVersion);
+  if (releasedVersion) {
+    version = releasedVersion;
+  } else {
+    try {
+      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+      if (pkg?.version) version = String(pkg.version);
+    } catch {}
+  }
 
-  let commit = '';
-  try {
-    commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
-      cwd: join(__dirname, '..'),
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {}
+  let commit = normalizeReleaseText(releaseMetadata?.sourceCommit);
+  if (!commit) {
+    try {
+      commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+        cwd: join(__dirname, '..'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+    } catch {}
+  }
 
-  const serviceDirty = hasDirtyRepoPaths(serviceBuildStatusPaths);
-  const serviceFingerprint = serviceDirty
-    ? formatMtimeFingerprint(serviceBuildRoots.reduce(
-      (latestMtime, root) => Math.max(latestMtime, getLatestMtimeMsSync(root)),
-      0,
-    ))
-    : '';
+  const releaseId = normalizeReleaseText(releaseMetadata?.releaseId);
+  const runtimeMode = releaseId ? 'release' : 'source';
+  const releasedDirty = typeof releaseMetadata?.sourceDirty === 'boolean'
+    ? releaseMetadata.sourceDirty
+    : null;
+  const serviceDirty = releasedDirty === null ? hasDirtyRepoPaths(serviceBuildStatusPaths) : releasedDirty;
+  const releasedFingerprint = normalizeReleaseText(releaseMetadata?.sourceFingerprint);
+  const computedFingerprint = formatMtimeFingerprint(serviceBuildRoots.reduce(
+    (latestMtime, root) => Math.max(latestMtime, getLatestMtimeMsSync(root)),
+    0,
+  ));
+  const serviceFingerprint = releasedFingerprint || (serviceDirty ? computedFingerprint : '');
   const serviceRevisionBase = commit || '';
   const serviceRevisionLabel = serviceRevisionBase
     ? (serviceDirty ? `${serviceRevisionBase}*` : serviceRevisionBase)
@@ -310,8 +338,9 @@ function loadBuildInfo() {
   const serviceLabel = serviceLabelParts.join(' · ');
   const serviceAssetVersion = sanitizeAssetVersion([
     version,
-    commit || 'working',
+    commit || releaseId || 'working',
     serviceDirty && serviceFingerprint ? `dirty-${serviceFingerprint}` : 'clean',
+    releaseId ? `rel-${releaseId}` : '',
   ].filter(Boolean).join('-'));
   const serviceTitleParts = [`Service v${version}`];
   if (serviceRevisionLabel) serviceTitleParts.push(serviceRevisionLabel);
@@ -330,6 +359,9 @@ function loadBuildInfo() {
     serviceAssetVersion,
     serviceLabel,
     serviceTitle,
+    runtimeMode,
+    releaseId: releaseId || null,
+    releaseCreatedAt: normalizeReleaseText(releaseMetadata?.createdAt) || null,
   };
 }
 
@@ -1252,6 +1284,8 @@ export async function handleRequest(req, res) {
       cacheControl: 'no-store, max-age=0, must-revalidate',
       vary: '',
       headers: {
+        'X-RemoteLab-Runtime-Mode': pageBuildInfo.runtimeMode,
+        'X-RemoteLab-Release-Id': pageBuildInfo.releaseId || '',
         'X-RemoteLab-Asset-Version': pageBuildInfo.assetVersion,
         'X-RemoteLab-Service-Build': pageBuildInfo.serviceTitle,
         'X-RemoteLab-Frontend-Build': pageBuildInfo.frontendTitle,
@@ -2128,353 +2162,15 @@ export async function handleRequest(req, res) {
     return;
   }
 
-  // ---- App CRUD APIs (owner only) ----
-
-  if (pathname === '/api/apps' && req.method === 'GET') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    writeJsonCached(req, res, { apps: await listApps() });
-    return;
-  }
-
-  if (pathname === '/api/apps' && req.method === 'POST') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    let body;
-    try { body = await readBody(req, 10240); } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Bad request' }));
-      return;
-    }
-    try {
-      const { name, systemPrompt, welcomeMessage, skills, tool } = JSON.parse(body);
-      const app = await createApp({ name, systemPrompt, welcomeMessage, skills, tool });
-      res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ app }));
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid request body' }));
-    }
-    return;
-  }
-
-  if (pathname.startsWith('/api/apps/') && req.method === 'PATCH') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    const id = pathname.split('/').pop();
-    if (isBuiltinAppId(id)) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Built-in apps cannot be modified' }));
-      return;
-    }
-    let body;
-    try { body = await readBody(req, 10240); } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Bad request' }));
-      return;
-    }
-    try {
-      const updates = JSON.parse(body);
-      const updated = await updateApp(id, updates);
-      if (updated) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ app: updated }));
-      } else {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'App not found' }));
-      }
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid request body' }));
-    }
-    return;
-  }
-
-  if (pathname.startsWith('/api/apps/') && req.method === 'DELETE') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    const id = pathname.split('/').pop();
-    if (isBuiltinAppId(id)) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Built-in apps cannot be deleted' }));
-      return;
-    }
-    const ok = await deleteApp(id);
-    if (ok) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-    } else {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'App not found' }));
-    }
-    return;
-  }
-
-  // ---- User profile APIs (owner only) ----
-
-  if (pathname === '/api/users' && req.method === 'GET') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    writeJsonCached(req, res, { users: await listUsers() });
-    return;
-  }
-
-  if (pathname === '/api/users' && req.method === 'POST') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    let body;
-    try { body = await readBody(req, 16384); } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Bad request' }));
-      return;
-    }
-    try {
-      const payload = JSON.parse(body);
-      const apps = await resolveTemplateApps(payload.appIds);
-      if (apps.length === 0) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'At least one template app is required' }));
-        return;
-      }
-      const defaultAppId = typeof payload.defaultAppId === 'string' && payload.defaultAppId.trim()
-        ? payload.defaultAppId.trim()
-        : apps[0].id;
-      if (!apps.some((app) => app.id === defaultAppId)) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'defaultAppId must be one of the allowed apps' }));
-        return;
-      }
-      const folder = await normalizeSessionFolderInput(payload.folder);
-      if (!folder) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Folder does not exist' }));
-        return;
-      }
-      const user = await createUser({
-        name: typeof payload.name === 'string' ? payload.name : '',
-        appIds: apps.map((app) => app.id),
-        defaultAppId,
-      });
-      const session = payload.autoCreateSession === false
-        ? null
-        : await ensureUserSeedSession(user, {
-          folder,
-          tool: typeof payload.tool === 'string' ? payload.tool.trim() : '',
-        });
-      res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ user, session: createClientSessionDetail(session) }));
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid request body' }));
-    }
-    return;
-  }
-
-  if (pathname.startsWith('/api/users/') && req.method === 'PATCH') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    const id = pathname.split('/').pop();
-    let body;
-    try { body = await readBody(req, 16384); } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Bad request' }));
-      return;
-    }
-    try {
-      const payload = JSON.parse(body);
-      const updates = {};
-      if (typeof payload.name === 'string') {
-        updates.name = payload.name;
-      }
-      if (Object.prototype.hasOwnProperty.call(payload, 'shareVisitorId')) {
-        updates.shareVisitorId = typeof payload.shareVisitorId === 'string'
-          ? payload.shareVisitorId.trim()
-          : '';
-      }
-      if (Object.prototype.hasOwnProperty.call(payload, 'appIds')) {
-        const apps = await resolveTemplateApps(payload.appIds);
-        if (apps.length === 0) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'At least one template app is required' }));
-          return;
-        }
-        updates.appIds = apps.map((app) => app.id);
-        if (typeof payload.defaultAppId === 'string' && payload.defaultAppId.trim()) {
-          if (!updates.appIds.includes(payload.defaultAppId.trim())) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'defaultAppId must be one of the allowed apps' }));
-            return;
-          }
-          updates.defaultAppId = payload.defaultAppId.trim();
-        }
-      } else if (typeof payload.defaultAppId === 'string' && payload.defaultAppId.trim()) {
-        updates.defaultAppId = payload.defaultAppId.trim();
-      }
-      const updated = await updateUser(id, updates);
-      if (updated) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ user: updated }));
-      } else {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'User not found' }));
-      }
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid request body' }));
-    }
-    return;
-  }
-
-  if (pathname.startsWith('/api/users/') && req.method === 'DELETE') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    const id = pathname.split('/').pop();
-    const user = await getUser(id);
-    const ok = await deleteUser(id);
-    if (ok) {
-      if (user?.shareVisitorId) {
-        await deleteVisitor(user.shareVisitorId).catch(() => false);
-      }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-    } else {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'User not found' }));
-    }
-    return;
-  }
-
-  // ---- Visitor preset APIs (owner only) ----
-
-  if (pathname === '/api/visitors' && req.method === 'GET') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    writeJsonCached(req, res, { visitors: await listVisitors() });
-    return;
-  }
-
-  if (pathname === '/api/visitors' && req.method === 'POST') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    let body;
-    try { body = await readBody(req, 10240); } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Bad request' }));
-      return;
-    }
-    try {
-      const { name, appId } = JSON.parse(body);
-      const app = await getApp(appId);
-      if (!app || app.shareEnabled === false) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Shareable app is required' }));
-        return;
-      }
-      const visitor = await createVisitor({ name, appId: app.id });
-      res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ visitor }));
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid request body' }));
-    }
-    return;
-  }
-
-  if (pathname.startsWith('/api/visitors/') && req.method === 'PATCH') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    const id = pathname.split('/').pop();
-    let body;
-    try { body = await readBody(req, 10240); } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Bad request' }));
-      return;
-    }
-    try {
-      const updates = JSON.parse(body);
-      if (updates.appId) {
-        const app = await getApp(updates.appId);
-        if (!app || app.shareEnabled === false) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Shareable app is required' }));
-          return;
-        }
-      }
-      const updated = await updateVisitor(id, updates);
-      if (updated) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ visitor: updated }));
-      } else {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Visitor not found' }));
-      }
-    } catch {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Invalid request body' }));
-    }
-    return;
-  }
-
-  if (pathname.startsWith('/api/visitors/') && req.method === 'DELETE') {
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return;
-    }
-    const id = pathname.split('/').pop();
-    const ok = await deleteVisitor(id);
-    if (ok) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true }));
-    } else {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Visitor not found' }));
-    }
+  if (await handleAdminRoutes({
+    req,
+    res,
+    pathname,
+    writeJsonCached,
+    normalizeSessionFolderInput,
+    resolveTemplateApps,
+    ensureUserSeedSession,
+  })) {
     return;
   }
 

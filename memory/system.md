@@ -310,6 +310,8 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Treat `sw.js` specially: use a versioned registration URL and send `no-store` so stale service workers do not survive a rollout window.
 - If the service worker is only needed for PWA installability or push, keep it fetch-passive: do not add asset-cache logic, clear Cache Storage on install/activate, and register with `updateViaCache: 'none'` so old worker-managed caches stop surviving browser rollout edges.
 - Exposing a tiny build marker in the UI and an `X-...-Build` response header makes stale-client reports much faster to confirm from mobile and `curl`.
+- Fingerprinted assets are still not enough if the shipped server reads HTML or JS directly from the live working tree; that leaks half-edited source into the production surface before any restart or test gate happens.
+- The safer self-hosted pattern is: keep a small active-release pointer, snapshot the shipped runtime into an immutable release directory, restart only after a release-gate test suite passes, and auto-rollback to the previous release if the post-restart health check fails.
 
 ### App-Centric Chat Still Needs Separate Policy And Run Layers (2026-03-08)
 - When generic chat and shared apps start converging, the clean model is: machine-owning agent kernel + auth principal + app policy + session/run instance, with optional environment leases.

@@ -338,6 +338,11 @@ if [[ "$OS_TYPE" == "macos" ]]; then
         <string>$(which node)</string>
         <string>$SCRIPT_DIR/chat-server.mjs</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REMOTELAB_ENABLE_ACTIVE_RELEASE</key>
+        <string>1</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -367,6 +372,8 @@ EOF
     </array>
     <key>EnvironmentVariables</key>
     <dict>
+        <key>REMOTELAB_ENABLE_ACTIVE_RELEASE</key>
+        <string>1</string>
         <key>SECURE_COOKIES</key>
         <string>0</string>
     </dict>
@@ -475,6 +482,7 @@ RestartSec=5
 StandardOutput=append:$LOG_DIR/chat-server.log
 StandardError=append:$LOG_DIR/chat-server.error.log
 Environment=NODE_ENV=production
+Environment=REMOTELAB_ENABLE_ACTIVE_RELEASE=1
 
 [Install]
 WantedBy=default.target
@@ -494,6 +502,7 @@ RestartSec=5
 StandardOutput=append:$LOG_DIR/chat-server.log
 StandardError=append:$LOG_DIR/chat-server.error.log
 Environment=NODE_ENV=production
+Environment=REMOTELAB_ENABLE_ACTIVE_RELEASE=1
 Environment=SECURE_COOKIES=0
 
 [Install]

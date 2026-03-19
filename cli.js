@@ -31,6 +31,7 @@ Usage:
   remotelab start                    Start all services
   remotelab stop                     Stop all services
   remotelab restart [service]        Restart services (chat|tunnel|all)
+  remotelab release                  Create, gate, and activate a release snapshot
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab usage-summary            Summarize local Codex token usage
@@ -67,6 +68,17 @@ switch (command) {
   case 'chat':
     await import(scriptPath('chat-server.mjs'));
     break;
+
+  case 'release': {
+    const { runReleaseCommand } = await import(scriptPath('lib/release-command.mjs'));
+    try {
+      process.exitCode = await runReleaseCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
 
   case 'api': {
     const { runRemoteLabApiCommand } = await import(scriptPath('lib/remotelab-api-command.mjs'));

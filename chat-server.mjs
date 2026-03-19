@@ -1,49 +1,79 @@
 #!/usr/bin/env node
-import http from 'http';
-import { CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR } from './lib/config.mjs';
-import { handleRequest } from './chat/router.mjs';
-import { closeApiRequestLog, initApiRequestLog, startApiRequestLog } from './chat/api-request-log.mjs';
-import { attachWebSocket } from './chat/ws.mjs';
-import { killAll, startDetachedRunObservers } from './chat/session-manager.mjs';
 import { join } from 'path';
-import { ensureDir } from './chat/fs-utils.mjs';
+import { fileURLToPath, pathToFileURL } from 'url';
 
-// Ensure memory directory structure exists
-for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
-  await ensureDir(dir);
-}
+import { readActiveReleaseManifest, shouldUseActiveRelease } from './lib/release-runtime.mjs';
 
-await initApiRequestLog();
+const sourceProjectRoot = fileURLToPath(new URL('.', import.meta.url));
+let delegatedToRelease = false;
 
-const server = http.createServer((req, res) => {
-  const requestLog = startApiRequestLog(req, res);
-  handleRequest(req, res).catch(err => {
-    requestLog.markError(err);
-    console.error('Unhandled request error:', err);
-    if (!res.headersSent) {
-      res.writeHead(500, { 'Content-Type': 'text/plain' });
-      res.end('Internal Server Error');
+if (shouldUseActiveRelease()) {
+  try {
+    const activeRelease = await readActiveReleaseManifest();
+    if (activeRelease?.snapshotRoot) {
+      delegatedToRelease = true;
+      process.env.REMOTELAB_PROJECT_ROOT = process.env.REMOTELAB_PROJECT_ROOT || sourceProjectRoot;
+      process.env.REMOTELAB_SOURCE_PROJECT_ROOT = process.env.REMOTELAB_SOURCE_PROJECT_ROOT || sourceProjectRoot;
+      delete process.env.REMOTELAB_ACTIVE_RELEASE_ROOT;
+      delete process.env.REMOTELAB_ACTIVE_RELEASE_FILE;
+      delete process.env.REMOTELAB_ACTIVE_RELEASE_ID;
+      process.env.REMOTELAB_DISABLE_ACTIVE_RELEASE = '1';
+      await import(pathToFileURL(join(activeRelease.snapshotRoot, 'chat-server.mjs')).href);
     }
+  } catch (error) {
+    console.error(`[release] Failed to boot the active release: ${error.message}`);
+    console.error('[release] Falling back to the source runtime');
+    delegatedToRelease = false;
+  }
+}
+
+if (!delegatedToRelease) {
+  const http = await import('http');
+  const [{ CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR }, { handleRequest }, apiRequestLog, ws, sessionManager, { ensureDir }] = await Promise.all([
+    import('./lib/config.mjs'),
+    import('./chat/router.mjs'),
+    import('./chat/api-request-log.mjs'),
+    import('./chat/ws.mjs'),
+    import('./chat/session-manager.mjs'),
+    import('./chat/fs-utils.mjs'),
+  ]);
+
+  for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
+    await ensureDir(dir);
+  }
+
+  await apiRequestLog.initApiRequestLog();
+
+  const server = http.createServer((req, res) => {
+    const requestLog = apiRequestLog.startApiRequestLog(req, res);
+    handleRequest(req, res).catch(err => {
+      requestLog.markError(err);
+      console.error('Unhandled request error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal Server Error');
+      }
+    });
   });
-});
 
-attachWebSocket(server);
-try {
-  await startDetachedRunObservers();
-} catch (error) {
-  console.error('Failed to rehydrate detached runs on startup:', error);
+  ws.attachWebSocket(server);
+  try {
+    await sessionManager.startDetachedRunObservers();
+  } catch (error) {
+    console.error('Failed to rehydrate detached runs on startup:', error);
+  }
+
+  async function shutdown() {
+    console.log('Shutting down chat server...');
+    await apiRequestLog.closeApiRequestLog();
+    sessionManager.killAll();
+    process.exit(0);
+  }
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+
+  server.listen(CHAT_PORT, CHAT_BIND_HOST, () => {
+    console.log(`Chat server listening on http://${CHAT_BIND_HOST}:${CHAT_PORT}`);
+    console.log(`Cookie mode: ${SECURE_COOKIES ? 'Secure (HTTPS)' : 'Non-secure (localhost)'}`);
+  });
 }
-
-async function shutdown() {
-  console.log('Shutting down chat server...');
-  await closeApiRequestLog();
-  killAll();
-  process.exit(0);
-}
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
-
-server.listen(CHAT_PORT, CHAT_BIND_HOST, () => {
-  console.log(`Chat server listening on http://${CHAT_BIND_HOST}:${CHAT_PORT}`);
-  console.log(`Cookie mode: ${SECURE_COOKIES ? 'Secure (HTTPS)' : 'Non-secure (localhost)'}`);
-});

@@ -188,6 +188,7 @@ Once set up, the service can auto-start on boot (macOS LaunchAgent / Linux syste
 ```bash
 remotelab start
 remotelab stop
+remotelab release
 remotelab restart chat
 ```
 
@@ -250,11 +251,14 @@ remotelab setup                Run interactive setup wizard
 remotelab start                Start all services
 remotelab stop                 Stop all services
 remotelab restart [service]    Restart: chat | tunnel | all
+remotelab release              Run tests, snapshot the runtime, restart, and health-check the active release
 remotelab chat                 Run chat server in foreground (debug)
 remotelab generate-token       Generate a new access token
 remotelab set-password         Set username & password login
 remotelab --help               Show help
 ```
+
+Production updates should go through `remotelab release` rather than live-editing the running `7690` surface. The release command snapshots the shipped runtime, restarts only after the test gate passes, and automatically restores the previous active release if the health check fails.
 
 ## Configuration
 
