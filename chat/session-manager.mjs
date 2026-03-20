@@ -151,11 +151,11 @@ const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
 ].join('\n');
 
 const TURN_ACTIVATION_CARD = wrapPrivatePromptBlock([
-  'Turn activation — keep these priorities active for this reply:',
-  '1. If the task is clear and low-risk, keep going until you reach a meaningful completed result; do not stop early just to ask for permission to continue.',
-  '2. Only pause when there is real ambiguity, missing required user input, or a meaningfully destructive / irreversible action.',
-  '3. Default to concise, state-first updates: current execution state, then whether the user is needed now or the work can stay parked; avoid implementation noise unless the user asks for it.',
-  '4. Treat multi-goal routing as a first-order judgment; split independently completable work instead of flattening it into one thread.',
+  'Turn activation — keep these principles active for this reply:',
+  '- Finish clear, low-risk work to a meaningful stopping point instead of pausing early for permission.',
+  '- Pause only for real ambiguity, missing required user input, or a meaningfully destructive / irreversible action.',
+  '- Default to concise, state-first updates: current execution state, then whether the user is needed now or the work can stay parked; avoid implementation noise unless the user asks for it.',
+  '- Treat multi-goal routing as a first-order judgment: bounded work deserves bounded context, so split independently completable work instead of flattening it into one thread.',
 ].join('\n'));
 
 const DEFAULT_AUTO_COMPACT_CONTEXT_WINDOW_PERCENT = 100;

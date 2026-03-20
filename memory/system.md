@@ -477,3 +477,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - In RemoteLab-style remote UIs, local absolute file links are fundamentally a desktop operator workflow; mobile users can understand that they are unsupported.
 - Prefer rewriting these links client-side to `vscode://file/...` for desktop-capable browsers, and degrade on mobile/visitor surfaces by disabling the link with a clear tooltip.
 - Avoid adding server routes that execute `code --goto` on the host just to make phone-originated clicks work; that adds auth and execution surface area for a scenario the product does not need to support.
+
+### Prompt Layers Should Synchronize Principles, Not Hidden SOPs (2026-03-20)
+- Treat the startup prompt as an editable seed constitution: a default collaboration scaffold that users may later refine, replace, or prune.
+- Keep continuity/handoff separate from scope and task. Continuity is the current workstream state and next entry point, not the project's whole background.
+- Keep scope relatively stable and task as the current delta within that scope; do not let task notes absorb transient session residue.
+- Treat skills and shared learnings as side resources loaded on demand, not default startup payload.
+- Make multi-session routing a first-class principle: bounded work should prefer bounded context, so independently completable goals often deserve separate sessions.
+- Turn-level reminders should reinforce judgment priorities and invariants, not narrate every action as a long hidden checklist.

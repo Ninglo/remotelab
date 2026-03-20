@@ -87,6 +87,7 @@ export function buildTurnRoutingHint(text) {
 
   return [
     'Routing principle for this turn:',
+    '- Bounded work should prefer bounded context.',
     `- This user turn contains ${analysis.workstreams.length} independently actionable goals.`,
     '- Prefer splitting them into child sessions instead of mixing them in one thread.',
     '- Only keep them together if they are tightly coupled; otherwise have a clear no-split reason.',

@@ -1,5 +1,7 @@
 # Memory Activation Architecture
 
+Related broader prompt topology: `notes/current/prompt-layer-topology.md`.
+
 ## Problem
 
 RemoteLab already has storage tiers, but the old startup contract eagerly told the agent to read memory at session start. That mixes up two different concerns:

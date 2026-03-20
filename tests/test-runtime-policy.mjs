@@ -70,6 +70,11 @@ try {
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /editable seed layer rather than rigid law/,
+    'default Codex developer instructions should treat startup guidance as editable seed context',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /lead with current execution state, then whether the user is needed now or the work can stay parked for later/,
     'default Codex developer instructions should enforce state-first summaries and handoffs',
   );
@@ -77,6 +82,11 @@ try {
     MANAGER_TURN_POLICY_REMINDER,
     /Do not mirror the manager prompt structure or provider-native report formatting back to the user by default/,
     'turn-level policy reminder should explicitly block prompt-structure mirroring',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /reinforce invariants and current state, not verbose step-by-step scripts/,
+    'turn-level policy reminder should stay principle-first rather than script every action',
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,

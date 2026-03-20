@@ -55,6 +55,7 @@ assert.match(freshPrompt, /active working agreements/);
 assert.match(freshPrompt, /默认用自然连贯的段落表达，不要自己起标题和列表/);
 assert.match(freshPrompt, /current execution state, then whether the user is needed now or the work can stay parked/);
 assert.match(freshPrompt, /multi-goal routing as a first-order judgment/);
+assert.match(freshPrompt, /bounded work deserves bounded context/);
 
 const resumedPrompt = await buildPrompt(
   'session-test-1',
@@ -87,6 +88,7 @@ const splitPrompt = await buildPrompt(
 );
 
 assert.match(splitPrompt, /Routing principle for this turn/);
+assert.match(splitPrompt, /Bounded work should prefer bounded context/);
 assert.match(splitPrompt, /Prefer splitting them into child sessions/);
 assert.match(splitPrompt, /1\. 现在都积压了哪些任务，我们看下接下来做什么/);
 assert.match(splitPrompt, /2\. 我们的 TODO 记录是标准流程吗，需不需要做一个定型/);

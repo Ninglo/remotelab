@@ -10,12 +10,18 @@ const { buildSystemContext } = await import('../chat/system-prompt.mjs');
 
 const context = await buildSystemContext({ sessionId: 'session-test-123' });
 
+assert.match(context, /Seed Layer — Editable Default Constitution/);
+assert.match(context, /editable seed layer, not permanent law/);
 assert.match(context, /Template-Session-First Routing/);
 assert.match(context, /Manager Policy Boundary/);
 assert.match(context, /Treat provider runtimes such as Codex or Claude as execution engines/);
+assert.match(context, /synchronize principles, boundaries, and default assembly rules/);
 assert.match(context, /For normal conversation and conceptual discussion, default to natural connected prose/);
 assert.match(context, /state-first reorientation: current execution state, whether the user is needed now, or whether the work can stay parked for later/);
 assert.match(context, /do not mirror its headings, bullets, or checklist structure back to the user/);
+assert.match(context, /Context Topology/);
+assert.match(context, /Session Continuity/);
+assert.match(context, /Bounded work should prefer bounded context/);
 assert.match(context, /reusable template\/base session likely exists/);
 assert.match(context, /clean, comprehensive project-task context/);
 assert.match(context, /improve it or derive a better template\/base/);

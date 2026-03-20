@@ -152,8 +152,8 @@ function buildContinuationIntro(options = {}) {
   const toTool = options.toTool || '';
   const switchedTools = fromTool && toTool && fromTool !== toTool;
   return switchedTools
-    ? `RemoteLab session handoff: the user switched tools from ${fromTool} to ${toTool}.`
-    : 'RemoteLab session handoff for this existing conversation.';
+    ? `RemoteLab session continuity handoff: the user switched tools from ${fromTool} to ${toTool}.`
+    : 'RemoteLab session continuity handoff for this existing conversation.';
 }
 
 export function prepareSessionContinuationBody(events) {
