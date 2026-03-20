@@ -207,6 +207,10 @@ function shouldFocusLatestTurnStartOnSessionEntry(sessionId, node) {
   return true;
 }
 
+function normalizeSessionViewportIntent(value) {
+  return value === "session_entry" ? "session_entry" : "preserve";
+}
+
 function hasShareSnapshotPayload() {
   const payload = getActiveShareSnapshotPayload();
   return !!(payload && typeof payload === "object");

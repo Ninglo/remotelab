@@ -247,12 +247,18 @@ assert.equal(shareContext.__metrics.scrollToBottomCalls, 0, 'share snapshots sho
 const regularContext = createContext({ shareSnapshotMode: false });
 vm.runInNewContext(sessionHttpSource, regularContext, { filename: 'static/chat/session-http.js' });
 
-await regularContext.fetchSessionEvents(regularContext.currentSessionId, { runState: 'idle' });
+await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
+  runState: 'idle',
+  viewportIntent: 'session_entry',
+});
 
 assert.equal(regularContext.__metrics.scrollNodeToTopCalls, 1, 'regular sessions should keep focusing the latest user turn');
 assert.equal(regularContext.messagesEl.scrollTop, 680, 'regular sessions should not be forced back to the top');
 
-await regularContext.fetchSessionEvents(regularContext.currentSessionId, { runState: 'idle' });
+await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
+  runState: 'idle',
+  viewportIntent: 'session_entry',
+});
 
 assert.equal(
   regularContext.__metrics.scrollNodeToTopCalls,
@@ -261,12 +267,31 @@ assert.equal(
 );
 
 regularContext.currentSessionId = 'session_other';
-await regularContext.fetchSessionEvents(regularContext.currentSessionId, { runState: 'idle' });
+await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
+  runState: 'idle',
+  viewportIntent: 'session_entry',
+});
 
 assert.equal(
   regularContext.__metrics.scrollNodeToTopCalls,
   2,
   'switching to another session should allow the one-time latest-turn focus again',
+);
+
+const reconnectContext = createContext({ shareSnapshotMode: false });
+vm.runInNewContext(sessionHttpSource, reconnectContext, { filename: 'static/chat/session-http.js' });
+
+await reconnectContext.fetchSessionEvents(reconnectContext.currentSessionId, { runState: 'idle' });
+
+assert.equal(
+  reconnectContext.__metrics.scrollNodeToTopCalls,
+  0,
+  'background refreshes should preserve the viewport instead of refocusing the latest user turn',
+);
+assert.equal(
+  reconnectContext.messagesEl.scrollTop,
+  680,
+  'background refreshes should keep the current reading position',
 );
 
 console.log('test-session-http-share-snapshot-scroll: ok');

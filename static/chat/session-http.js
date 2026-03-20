@@ -512,7 +512,8 @@ async function fetchSessionState(sessionId) {
   return normalized;
 }
 
-async function fetchSessionEvents(sessionId, { runState = "idle" } = {}) {
+async function fetchSessionEvents(sessionId, { runState = "idle", viewportIntent = "preserve" } = {}) {
+  const normalizedViewportIntent = normalizeSessionViewportIntent(viewportIntent);
   const hadRenderedMessages =
     messagesInner.children.length > 0 && emptyState.parentNode !== messagesInner;
   const shouldStickToBottom =
@@ -558,7 +559,10 @@ async function fetchSessionEvents(sessionId, { runState = "idle" } = {}) {
     const latestTurnStart = applyFinishedTurnCollapseState();
     if (shouldOpenCurrentSessionFromTop()) {
       scrollCurrentSessionViewportToTop();
-    } else if (shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)) {
+    } else if (
+      normalizedViewportIntent === "session_entry"
+      && shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)
+    ) {
       scrollNodeToTop(latestTurnStart);
     } else if (events.length > 0 && shouldStickToBottom) {
       scrollToBottom();
@@ -575,7 +579,10 @@ async function fetchSessionEvents(sessionId, { runState = "idle" } = {}) {
     const latestTurnStart = applyFinishedTurnCollapseState();
     if (shouldOpenCurrentSessionFromTop()) {
       scrollCurrentSessionViewportToTop();
-    } else if (shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)) {
+    } else if (
+      normalizedViewportIntent === "session_entry"
+      && shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)
+    ) {
       scrollNodeToTop(latestTurnStart);
     } else if (renderPlan.events.length > 0 && shouldStickToBottom) {
       scrollToBottom();
@@ -587,18 +594,24 @@ async function fetchSessionEvents(sessionId, { runState = "idle" } = {}) {
   const latestTurnStart = applyFinishedTurnCollapseState();
   if (shouldOpenCurrentSessionFromTop()) {
     scrollCurrentSessionViewportToTop();
-  } else if (shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)) {
+  } else if (
+    normalizedViewportIntent === "session_entry"
+    && shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)
+  ) {
     scrollNodeToTop(latestTurnStart);
   }
   return events;
 }
 
-async function runCurrentSessionRefresh(sessionId) {
+async function runCurrentSessionRefresh(
+  sessionId,
+  { viewportIntent = hasAttachedSession ? "preserve" : "session_entry" } = {},
+) {
   const session = await fetchSessionState(sessionId);
   if (currentSessionId !== sessionId) return session;
   const runState = getSessionRunState(session);
   if (shouldFetchSessionEventsForRefresh(sessionId, session)) {
-    await fetchSessionEvents(sessionId, { runState });
+    await fetchSessionEvents(sessionId, { runState, viewportIntent });
     return session;
   }
   renderedEventState.sessionId = sessionId;
@@ -606,7 +619,9 @@ async function runCurrentSessionRefresh(sessionId) {
   return session;
 }
 
-async function refreshCurrentSession() {
+async function refreshCurrentSession(
+  { viewportIntent = hasAttachedSession ? "preserve" : "session_entry" } = {},
+) {
   const sessionId = currentSessionId;
   if (!sessionId) return null;
   if (currentSessionRefreshPromise) {
@@ -615,7 +630,7 @@ async function refreshCurrentSession() {
   }
   currentSessionRefreshPromise = (async () => {
     try {
-      return await runCurrentSessionRefresh(sessionId);
+      return await runCurrentSessionRefresh(sessionId, { viewportIntent });
     } finally {
       currentSessionRefreshPromise = null;
       if (pendingCurrentSessionRefresh) {
@@ -665,10 +680,10 @@ async function refreshSidebarSession(sessionId) {
   return request;
 }
 
-async function refreshRealtimeViews() {
+async function refreshRealtimeViews({ viewportIntent = "preserve" } = {}) {
   if (visitorMode) {
     if (currentSessionId) {
-      await refreshCurrentSession().catch(() => {});
+      await refreshCurrentSession({ viewportIntent }).catch(() => {});
     }
     return;
   }
@@ -678,13 +693,13 @@ async function refreshRealtimeViews() {
     await fetchArchivedSessions().catch(() => {});
   }
   if (currentSessionId) {
-    await refreshCurrentSession().catch(() => {});
+    await refreshCurrentSession({ viewportIntent }).catch(() => {});
   }
 }
 
 function startParallelCurrentSessionBootstrap() {
   if (visitorMode || !currentSessionId) return;
-  refreshCurrentSession().catch((error) => {
+  refreshCurrentSession({ viewportIntent: "session_entry" }).catch((error) => {
     if (error?.message === "Session not found") return;
     console.warn(
       "[sessions] Failed to bootstrap the current session in parallel:",

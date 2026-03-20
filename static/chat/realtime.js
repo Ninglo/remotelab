@@ -17,7 +17,7 @@ function connect() {
   ws.onopen = () => {
     updateStatus("connected", getCurrentSession());
     if (hasSeenWsOpen) {
-      refreshRealtimeViews().catch(() => {});
+      refreshRealtimeViews({ viewportIntent: "preserve" }).catch(() => {});
     } else {
       hasSeenWsOpen = true;
     }
@@ -66,7 +66,10 @@ async function dispatchAction(msg) {
         const runState = typeof getSessionRunState === "function"
           ? getSessionRunState(attachedSession)
           : "idle";
-        const eventsPromise = fetchSessionEvents(msg.sessionId, { runState });
+        const eventsPromise = fetchSessionEvents(msg.sessionId, {
+          runState,
+          viewportIntent: "session_entry",
+        });
         const queueCount = Number.isInteger(attachedSession?.activity?.queue?.count)
           ? attachedSession.activity.queue.count
           : 0;
