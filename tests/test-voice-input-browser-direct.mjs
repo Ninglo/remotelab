@@ -116,6 +116,19 @@ const document = {
 };
 
 const fetchCalls = [];
+const localStorage = createStorage();
+localStorage.setItem('voiceInputPrefs', JSON.stringify({
+  captureMode: 'browser-direct',
+  attachOriginalAudio: false,
+  autoSend: true,
+  rewriteWithContext: true,
+  version: 4,
+}));
+let voiceInputConfig = {
+  enabled: true,
+  configured: false,
+  language: 'zh-CN',
+};
 const context = {
   console,
   setTimeout,
@@ -148,7 +161,7 @@ const context = {
     __REMOTELAB_BUILD__: { assetVersion: 'test-build' },
     __REMOTELAB_BOOTSTRAP__: { auth: { role: 'owner' } },
   },
-  localStorage: createStorage(),
+  localStorage,
   pageBootstrap: { auth: { role: 'owner' } },
   currentSessionId: 'session-voice-browser-direct',
   shareSnapshotMode: false,
@@ -167,13 +180,7 @@ const context = {
   fetchJsonOrRedirect: async (path, options = {}) => {
     fetchCalls.push({ path, options });
     if (path === '/api/voice-input/config') {
-      return {
-        config: {
-          enabled: true,
-          configured: false,
-          language: 'zh-CN',
-        },
-      };
+      return { config: voiceInputConfig };
     }
     return {
       transcript: '洗过的一句话',
@@ -222,5 +229,30 @@ assert.equal(submitCall.options.method, 'POST');
 assert.equal(submitCall.options.headers['Content-Type'], 'application/json');
 assert.equal(JSON.parse(submitCall.options.body).providedTranscript, '实时字幕测试');
 assert.equal(context.sendMessageCalls, 1, 'empty composer + auto-send should trigger sendMessage');
+
+voiceInputConfig = {
+  enabled: true,
+  configured: true,
+  providerLabel: 'Volcengine',
+  modelLabel: 'Mock Voice Model',
+  language: 'zh-CN',
+};
+localStorage.setItem('voiceInputPrefs', JSON.stringify({
+  captureMode: 'browser-direct',
+  attachOriginalAudio: false,
+  autoSend: true,
+  rewriteWithContext: false,
+  version: 3,
+}));
+await context.loadVoiceInputConfig();
+
+const migratedPrefs = context.readVoiceInputPrefs();
+assert.equal(migratedPrefs.captureMode, 'server-relay', 'legacy browser-direct default should migrate back to server relay');
+assert.equal(migratedPrefs.rewriteWithContext, false, 'legacy prefs should preserve the other toggles');
+assert.equal(context.resolveVoiceCaptureMode(migratedPrefs), 'server-relay', 'configured relay should become the active capture mode after migration');
+
+const storedPrefs = JSON.parse(localStorage.getItem('voiceInputPrefs'));
+assert.equal(storedPrefs.version, 4, 'migrated prefs should be rewritten at the latest version');
+assert.equal(storedPrefs.captureMode, 'server-relay', 'migrated prefs should persist the repaired default');
 
 console.log('test-voice-input-browser-direct: ok');

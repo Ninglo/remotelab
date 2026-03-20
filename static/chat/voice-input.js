@@ -6,11 +6,11 @@ const voiceInputStatus = document.getElementById("voiceInputStatus");
 const voiceSettingsMount = document.getElementById("voiceSettingsMount");
 
 const VOICE_INPUT_PREFS_KEY = "voiceInputPrefs";
-const VOICE_INPUT_PREFS_VERSION = 3;
+const VOICE_INPUT_PREFS_VERSION = 4;
 const VOICE_CAPTURE_MODE_BROWSER_DIRECT = "browser-direct";
 const VOICE_CAPTURE_MODE_SERVER_RELAY = "server-relay";
 const DEFAULT_VOICE_INPUT_PREFS = Object.freeze({
-  captureMode: VOICE_CAPTURE_MODE_BROWSER_DIRECT,
+  captureMode: VOICE_CAPTURE_MODE_SERVER_RELAY,
   attachOriginalAudio: false,
   autoSend: true,
   rewriteWithContext: true,
@@ -65,16 +65,30 @@ function normalizeVoiceInputPrefs(raw = {}) {
   };
 }
 
+function migrateVoiceInputPrefs(raw = {}) {
+  return normalizeVoiceInputPrefs({
+    ...DEFAULT_VOICE_INPUT_PREFS,
+    captureMode: raw?.version === 3
+      ? VOICE_CAPTURE_MODE_SERVER_RELAY
+      : raw?.captureMode,
+    attachOriginalAudio: raw?.attachOriginalAudio === true,
+    autoSend: raw?.autoSend !== false,
+    rewriteWithContext: raw?.rewriteWithContext !== false,
+  });
+}
+
 function readVoiceInputPrefs() {
   try {
     const raw = JSON.parse(localStorage.getItem(VOICE_INPUT_PREFS_KEY) || "null");
-    if (!raw || raw.version !== VOICE_INPUT_PREFS_VERSION) {
-      return normalizeVoiceInputPrefs({
-        ...DEFAULT_VOICE_INPUT_PREFS,
-        rewriteWithContext: raw?.rewriteWithContext !== false,
-      });
+    if (!raw || typeof raw !== "object") {
+      return { ...DEFAULT_VOICE_INPUT_PREFS };
     }
-    return normalizeVoiceInputPrefs(raw);
+    if (raw.version === VOICE_INPUT_PREFS_VERSION) {
+      return normalizeVoiceInputPrefs(raw);
+    }
+    const migratedPrefs = migrateVoiceInputPrefs(raw);
+    localStorage.setItem(VOICE_INPUT_PREFS_KEY, JSON.stringify(migratedPrefs));
+    return migratedPrefs;
   } catch {
     return { ...DEFAULT_VOICE_INPUT_PREFS };
   }
@@ -1060,7 +1074,7 @@ function renderVoiceInputSettings() {
 
   const note = document.createElement("div");
   note.className = "settings-section-note";
-  note.textContent = "Browser direct mode streams live text straight into the composer and only sends the final transcript back for cleanup after you stop. Server relay remains available as a fallback path.";
+  note.textContent = "Server relay keeps speech recognition on RemoteLab's configured ASR path and supports optional raw-audio attachments. Browser direct stays available as a faster opt-in mode when you specifically want the browser recognizer.";
 
   const form = document.createElement("div");
   form.className = "settings-inline-form";
@@ -1085,11 +1099,11 @@ function renderVoiceInputSettings() {
   const browserModeOption = document.createElement("option");
   browserModeOption.value = VOICE_CAPTURE_MODE_BROWSER_DIRECT;
   browserModeOption.textContent = browserDirectSupported
-    ? "Browser direct (fastest)"
+    ? "Browser direct (opt-in, fastest)"
     : "Browser direct (not supported in this browser)";
   const relayModeOption = document.createElement("option");
   relayModeOption.value = VOICE_CAPTURE_MODE_SERVER_RELAY;
-  relayModeOption.textContent = "Server relay (fallback)";
+  relayModeOption.textContent = "Server relay (recommended)";
   modeInput.appendChild(browserModeOption);
   modeInput.appendChild(relayModeOption);
   modeInput.value = normalizeVoiceCaptureMode(prefs.captureMode);
@@ -1150,8 +1164,8 @@ function renderVoiceInputSettings() {
       ? "Browser direct mode is active. Live words stay in this browser while you speak, and only the final transcript goes back to RemoteLab after stop."
       : "This browser does not expose a direct speech-recognition API, so the mic falls back to the server relay when available.")
     : (config.configured
-      ? `${config.providerLabel || "Provider"} relay is ready. Current model: ${config.modelLabel || "voice"}.`
-      : "Server relay is not configured yet. Save provider details below if you want the fallback path or audio uploads.");
+      ? `${config.providerLabel || "Provider"} relay is active. Recognition goes through RemoteLab's configured voice path. Current model: ${config.modelLabel || "voice"}.`
+      : "Server relay is not configured yet. Save provider details below if you want RemoteLab-handled speech recognition and audio uploads.");
 
   saveBtn.addEventListener("click", async () => {
     const nextPrefs = writeVoiceInputPrefs({
