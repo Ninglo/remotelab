@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto';
 import { dirname } from 'path';
-import { APPS_FILE, CHAT_SESSIONS_FILE, USERS_FILE, VISITORS_FILE } from '../lib/config.mjs';
+import { APPS_FILE, AUTH_FILE, CHAT_PORT, CHAT_SESSIONS_FILE, USERS_FILE, VISITORS_FILE } from '../lib/config.mjs';
 import { createSerialTaskQueue, ensureDir, readJson, writeJsonAtomic } from './fs-utils.mjs';
 
 const runAppsMutation = createSerialTaskQueue();
@@ -84,8 +84,8 @@ export const BUILTIN_APPS = Object.freeze([
       'Do not stop at writing the spec once the request is clear enough. Actually create or update the RemoteLab app in product state unless you are blocked by a real authorization or environment problem.',
       `Use the owner-authenticated RemoteLab app APIs for product-state changes: create with POST /api/apps, update with PATCH /api/apps/:id, inspect with GET /api/apps. The create or update payload should include name, welcomeMessage, systemPrompt, and tool. Default to ${DEFAULT_APP_TOOL} unless the workflow clearly needs a different tool.`,
       'If the user is clearly iterating on an existing app, prefer updating that app instead of creating a duplicate.',
-      'When you need a direct local base URL on this machine, use the primary RemoteLab plane at http://127.0.0.1:7690 unless the current deployment context clearly provides another origin.',
-      'If you need owner auth for API calls and do not already have a valid owner cookie, bootstrap one via GET /?token=... using the local owner token from ~/.config/remotelab/auth.json, store the returned session_token in a cookie jar, and reuse it for later API calls.',
+      `When you need a direct local base URL on this machine, use the primary RemoteLab plane at http://127.0.0.1:${CHAT_PORT} unless the current deployment context clearly provides another origin.`,
+      `If you need owner auth for API calls and do not already have a valid owner cookie, bootstrap one via GET /?token=... using the local owner token from ${AUTH_FILE}, store the returned session_token in a cookie jar, and reuse it for later API calls.`,
       'After the app is created successfully, read the returned shareToken and construct the app share link on the same origin as the API call: /app/{shareToken}. Return that full link directly to the user and explain in simple product language that they can send this link to other people to use the app.',
       'Encourage a quick self-test in a private or incognito window before broad sharing, but do not hold the flow open waiting for that test unless the user asks.',
       'If the user explicitly wants person-specific distribution instead of a general app link, you may create a dedicated visitor link with POST /api/visitors using the shareable app id and return the resulting /visitor/{shareToken} URL.',

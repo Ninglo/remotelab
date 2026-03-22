@@ -110,7 +110,8 @@ remotelab/
 
 ### Data Storage
 
-All runtime data lives in `~/.config/remotelab/`:
+By default, runtime data lives in `~/.config/remotelab/`.
+Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELAB_CONFIG_DIR`, and `REMOTELAB_MEMORY_DIR`.
 
 | File | Content |
 |------|---------|

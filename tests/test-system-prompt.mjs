@@ -5,6 +5,7 @@ import path from 'path';
 
 const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'remotelab-system-prompt-'));
 process.env.HOME = tempHome;
+process.env.REMOTELAB_MEMORY_DIR = path.join(tempHome, 'instance-data', 'memory');
 
 const { buildSystemContext } = await import('../chat/system-prompt.mjs');
 
@@ -51,5 +52,7 @@ assert.match(context, /Default to continuing after partial progress instead of s
 assert.match(context, /Prefer doing the next reasonable, reversible step over describing what you could do next/);
 assert.match(context, /Pause only for a real blocker: an explicitly requested stop\/wait, missing credentials or external information you cannot obtain yourself, a destructive or irreversible action without clear authorization, or a decision that only the user can make/);
 assert.match(context, /Do not treat the absence of micro-instructions as a blocker; execution-layer decisions are part of your job/);
+assert.match(context, /~\/instance-data\/memory\//);
+assert.doesNotMatch(context, /~\/\.remotelab\/memory\//);
 
 console.log('test-system-prompt: ok');

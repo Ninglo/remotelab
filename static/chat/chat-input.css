@@ -287,7 +287,7 @@
   color: var(--text-muted);
 }
 
-/* Image preview strip */
+/* Attachment preview strip */
 .img-preview-strip {
   display: none; gap: 8px; padding: 6px 14px; background: transparent;
   border-bottom: 1px solid var(--border); overflow-x: auto; flex-shrink: 0;
@@ -298,24 +298,44 @@
   overflow: hidden; flex-shrink: 0; border: 1px solid var(--border);
 }
 .img-preview-item img,
-.img-preview-item video,
-.img-preview-item audio,
-.img-preview-item .attachment-file {
+.img-preview-item video {
   width: 100%; height: 100%; object-fit: cover;
 }
 .img-preview-item .attachment-file {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
   padding: 6px;
   font-size: 10px;
-  line-height: 1.3;
+  line-height: 1.2;
   text-align: center;
   color: var(--text-secondary);
   background: var(--bg-secondary);
 }
-.img-preview-item .attachment-file.attachment-audio {
-  font-size: 9px;
+.img-preview-item .attachment-file-icon {
+  width: 18px;
+  height: 18px;
+}
+.img-preview-item .attachment-file-icon .rl-icon {
+  width: 16px;
+  height: 16px;
+}
+.img-preview-item .attachment-file-meta {
+  width: 100%;
+}
+.img-preview-item .attachment-file-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.img-preview-item .attachment-file-type {
+  display: none;
 }
 .img-preview-item .remove-img {
   position: absolute; top: 2px; right: 2px; width: 16px; height: 16px;

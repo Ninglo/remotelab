@@ -19,6 +19,7 @@ function runScript(args) {
 const sandboxRoot = mkdtempSync(join(tmpdir(), 'remotelab-chat-instance-sync-'));
 const sourceHome = join(sandboxRoot, 'source-home');
 const targetHome = join(sandboxRoot, 'target-home');
+const instanceRoot = join(sandboxRoot, 'instance-root');
 
 try {
   mkdirSync(join(sourceHome, '.config', 'remotelab'), { recursive: true });
@@ -45,6 +46,29 @@ try {
     existsSync(join(targetHome, '.remotelab', 'memory')),
     false,
     'sync should remove mirrored memory when the source home has none',
+  );
+
+  mkdirSync(join(instanceRoot, 'config'), { recursive: true });
+  mkdirSync(join(instanceRoot, 'memory'), { recursive: true });
+  writeFileSync(join(instanceRoot, 'config', 'stale.txt'), 'stale');
+  writeFileSync(join(instanceRoot, 'memory', 'stale.md'), 'stale');
+
+  const rootedSyncResult = runScript(['sync', '--instance-root', instanceRoot, '--sync-from-home', sourceHome]);
+  assert.equal(rootedSyncResult.status, 0, `rooted sync should succeed without --port: ${rootedSyncResult.stderr}`);
+  assert.equal(
+    JSON.parse(readFileSync(join(instanceRoot, 'config', 'auth.json'), 'utf8')).token,
+    'fresh-token',
+    'sync should mirror remotelab config into the instance root config dir',
+  );
+  assert.equal(
+    existsSync(join(instanceRoot, 'config', 'stale.txt')),
+    false,
+    'sync should delete stale config files from the instance root config dir',
+  );
+  assert.equal(
+    existsSync(join(instanceRoot, 'memory')),
+    false,
+    'sync should remove mirrored memory from the instance root when the source home has none',
   );
 
   const selfSyncResult = runScript(['sync', '--home', sourceHome, '--sync-from-home', sourceHome]);

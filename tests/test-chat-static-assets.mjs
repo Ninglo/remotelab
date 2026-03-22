@@ -291,8 +291,8 @@ async function main() {
     assert.ok(!page.text.includes('/chat.js?v='), 'chat page should not pin the chat frontend to a versioned URL');
     assert.match(page.text, /\/marked\.min\.js\?v=/, 'chat page should fingerprint marked.min.js alongside the split chat assets');
     assert.match(page.text, /\/manifest\.json\?v=/, 'chat page should fingerprint the manifest URL so installed PWAs refresh policy changes');
-    assert.match(page.text, /title="Attach media"/, 'chat page should advertise media uploads in the composer');
-    assert.match(page.text, /accept="image\/\*,video\/\*"/, 'chat page should allow both image and video selection');
+    assert.match(page.text, /title="Attach files"/, 'chat page should advertise file uploads in the composer');
+    assert.match(page.text, /accept="\*\/\*"/, 'chat page should allow arbitrary file selection');
 
     const manifest = await request(port, 'GET', '/manifest.json');
     assert.equal(manifest.status, 200, 'manifest should load');

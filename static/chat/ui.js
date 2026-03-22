@@ -64,6 +64,47 @@ function getAttachmentSource(attachment) {
   return "";
 }
 
+function getAttachmentTypeLabel(attachment) {
+  const displayName = getAttachmentDisplayName(attachment);
+  const lastDot = displayName.lastIndexOf(".");
+  const extension = lastDot >= 0 ? displayName.slice(lastDot + 1).trim() : "";
+  const normalizedExtension = extension.replace(/[^a-z0-9]+/gi, "").toUpperCase();
+  if (normalizedExtension) return normalizedExtension.slice(0, 8);
+  const kind = getAttachmentKind(attachment);
+  if (kind === "audio") return "AUDIO";
+  if (kind === "video") return "VIDEO";
+  if (kind === "image") return "IMAGE";
+  return "FILE";
+}
+
+function createAttachmentFileNode(attachment, { compact = false } = {}) {
+  const label = getAttachmentDisplayName(attachment);
+  const fileEl = document.createElement("div");
+  fileEl.className = compact ? "attachment-file attachment-file-compact" : "attachment-file";
+  fileEl.title = label;
+
+  const iconEl = document.createElement("div");
+  iconEl.className = "attachment-file-icon";
+  iconEl.innerHTML = renderUiIcon("file");
+
+  const metaEl = document.createElement("div");
+  metaEl.className = "attachment-file-meta";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "attachment-file-name";
+  nameEl.textContent = label;
+
+  const typeEl = document.createElement("div");
+  typeEl.className = "attachment-file-type";
+  typeEl.textContent = getAttachmentTypeLabel(attachment);
+
+  metaEl.appendChild(nameEl);
+  metaEl.appendChild(typeEl);
+  fileEl.appendChild(iconEl);
+  fileEl.appendChild(metaEl);
+  return fileEl;
+}
+
 function createMessageAttachmentNode(attachment) {
   const source = getAttachmentSource(attachment);
   if (!source) return null;
@@ -100,8 +141,9 @@ function createMessageAttachmentNode(attachment) {
   link.href = source;
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  link.className = "attachment-link";
-  link.textContent = label;
+  link.className = "attachment-link attachment-card";
+  link.title = label;
+  link.appendChild(createAttachmentFileNode(attachment));
   return link;
 }
 
@@ -123,18 +165,7 @@ function createComposerAttachmentPreviewNode(attachment) {
     videoEl.playsInline = true;
     return videoEl;
   }
-
-  if (kind === "audio") {
-    const fileEl = document.createElement("div");
-    fileEl.className = "attachment-file attachment-audio";
-    fileEl.textContent = getAttachmentDisplayName(attachment);
-    return fileEl;
-  }
-
-  const fileEl = document.createElement("div");
-  fileEl.className = "attachment-file";
-  fileEl.textContent = getAttachmentDisplayName(attachment);
-  return fileEl;
+  return createAttachmentFileNode(attachment, { compact: true });
 }
 
 // ---- Render functions ----

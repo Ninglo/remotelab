@@ -8,6 +8,19 @@ const BOOTSTRAP_MD = join(MEMORY_DIR, 'bootstrap.md');
 const GLOBAL_MD = join(MEMORY_DIR, 'global.md');
 const PROJECTS_MD = join(MEMORY_DIR, 'projects.md');
 const SKILLS_MD = join(MEMORY_DIR, 'skills.md');
+const TASKS_DIR = join(MEMORY_DIR, 'tasks');
+const SYSTEM_MEMORY_FILE = join(SYSTEM_MEMORY_DIR, 'system.md');
+
+function displayPath(targetPath, home) {
+  const normalizedTarget = typeof targetPath === 'string' ? targetPath.trim() : '';
+  const normalizedHome = typeof home === 'string' ? home.trim() : '';
+  if (!normalizedTarget) return '';
+  if (normalizedHome && normalizedTarget === normalizedHome) return '~';
+  if (normalizedHome && normalizedTarget.startsWith(`${normalizedHome}/`)) {
+    return `~${normalizedTarget.slice(normalizedHome.length)}`;
+  }
+  return normalizedTarget;
+}
 
 /**
  * Build the system context to prepend to the first message of a session.
@@ -16,6 +29,14 @@ const SKILLS_MD = join(MEMORY_DIR, 'skills.md');
  */
 export async function buildSystemContext(options = {}) {
   const home = homedir();
+  const bootstrapPath = displayPath(BOOTSTRAP_MD, home);
+  const globalPath = displayPath(GLOBAL_MD, home);
+  const projectsPath = displayPath(PROJECTS_MD, home);
+  const skillsPath = displayPath(SKILLS_MD, home);
+  const tasksPath = displayPath(TASKS_DIR, home);
+  const memoryDirPath = displayPath(MEMORY_DIR, home);
+  const systemMemoryDirPath = displayPath(SYSTEM_MEMORY_DIR, home);
+  const systemMemoryFilePath = displayPath(SYSTEM_MEMORY_FILE, home);
   const currentSessionId = typeof options?.sessionId === 'string' ? options.sessionId.trim() : '';
   const [hasBootstrap, hasGlobal, hasProjects, hasSkills] = await Promise.all([
     pathExists(BOOTSTRAP_MD),
@@ -37,12 +58,12 @@ RemoteLab memory can be large, but only a small subset should be active in any o
 
 ### Startup Assembly Principles
 Startup context should stay pointer-sized. Its job is orientation and default boundaries, not loading the whole tree up front:
-- Read ~/.remotelab/memory/bootstrap.md first when it exists. It is the small startup index.
-- If bootstrap.md does not exist yet, use ~/.remotelab/memory/global.md as a temporary fallback and keep the read lightweight.
-- Consult ~/.remotelab/memory/skills.md only when capability selection or reusable workflows are relevant.
-- Use ~/.remotelab/memory/projects.md only to identify repo pointers or project scope.
-- Do NOT open ~/.remotelab/memory/tasks/ or deep project docs until the current task is clear.
-- Do NOT load ${SYSTEM_MEMORY_DIR}/system.md wholesale at startup. Open it only when shared platform learnings or memory maintenance are relevant.
+- Read ${bootstrapPath} first when it exists. It is the small startup index.
+- If bootstrap.md does not exist yet, use ${globalPath} as a temporary fallback and keep the read lightweight.
+- Consult ${skillsPath} only when capability selection or reusable workflows are relevant.
+- Use ${projectsPath} only to identify repo pointers or project scope.
+- Do NOT open ${tasksPath}/ or deep project docs until the current task is clear.
+- Do NOT load ${systemMemoryFilePath} wholesale at startup. Open it only when shared platform learnings or memory maintenance are relevant.
 
 ### Runtime Assembly
 The runtime assembler should keep the active stack small:
@@ -125,24 +146,24 @@ Keep session continuity distinct from scope and task memory.
 - Use this capability judiciously: split work when it reduces context pressure or enables real parallelism, not for every trivial substep.
 
 ### User-Level Memory (private, machine-specific)
-Location: ~/.remotelab/memory/
+Location: ${memoryDirPath}/
 
 This is your personal knowledge about this specific machine, this specific user, and your working relationship. It never leaves this computer.
 
-- ~/.remotelab/memory/bootstrap.md — Tiny startup index: machine basics, collaboration defaults, key directories, and high-level project pointers. Read this first when present.
-- ~/.remotelab/memory/projects.md — Project pointer catalog: repo paths, short summaries, and trigger phrases. Use only to identify task scope.
-- ~/.remotelab/memory/skills.md — Index of available skills/capabilities you've built. Load entries on demand.
-- ~/.remotelab/memory/tasks/ — Detailed task notes. Open only after the task scope is confirmed or strongly implied.
-- ~/.remotelab/memory/global.md — Deeper local reference / legacy catch-all. Avoid reading it by default in generic conversations.
+- ${bootstrapPath} — Tiny startup index: machine basics, collaboration defaults, key directories, and high-level project pointers. Read this first when present.
+- ${projectsPath} — Project pointer catalog: repo paths, short summaries, and trigger phrases. Use only to identify task scope.
+- ${skillsPath} — Index of available skills/capabilities you've built. Load entries on demand.
+- ${tasksPath}/ — Detailed task notes. Open only after the task scope is confirmed or strongly implied.
+- ${globalPath} — Deeper local reference / legacy catch-all. Avoid reading it by default in generic conversations.
 
 What goes here: local paths, stable collaboration defaults, machine-specific gotchas, project pointers, and private task memory.
 
 ### System-Level Memory (shared, in code repo)
-Location: ${SYSTEM_MEMORY_DIR}/
+Location: ${systemMemoryDirPath}/
 
 This is collective wisdom — universal truths and patterns that benefit ALL RemoteLab deployments. This directory lives in the code repository and gets shared when pushed to remote.
 
-- ${SYSTEM_MEMORY_DIR}/system.md — Cross-deployment learnings, failure patterns, and effective practices. Read selectively, not by default.
+- ${systemMemoryFilePath} — Cross-deployment learnings, failure patterns, and effective practices. Read selectively, not by default.
 
 What goes here: platform-agnostic insights, cross-platform gotchas, prompt patterns, architecture learnings, and debugging techniques that help generic deployments.
 
@@ -157,7 +178,7 @@ Reflection is required, but memory writeback must stay selective.
 5. Periodically prune stale or overlapping memory. Use a light cadence: daily during intense iteration or weekly otherwise.
 
 ## Skills
-Skills are reusable capabilities (scripts, knowledge docs, SOPs). Treat ~/.remotelab/memory/skills.md as an index, not startup payload. Load only what you need.
+Skills are reusable capabilities (scripts, knowledge docs, SOPs). Treat ${skillsPath} as an index, not startup payload. Load only what you need.
 
 ## Principles
 - You own this computer. Act as its primary operator, not a restricted tool.
@@ -189,7 +210,7 @@ Skills are reusable capabilities (scripts, knowledge docs, SOPs). Treat ~/.remot
     context += `
 
 ## Legacy Memory Layout Detected
-This machine has ~/.remotelab/memory/global.md but no ~/.remotelab/memory/bootstrap.md yet.
+This machine has ${globalPath} but no ${bootstrapPath} yet.
 - Do NOT treat global.md as mandatory startup context for every conversation.
 - At a natural breakpoint, backfill bootstrap.md with only the small startup index.
 - Create projects.md when recurring repos or task families need a lightweight pointer catalog.`;
@@ -199,14 +220,14 @@ This machine has ~/.remotelab/memory/global.md but no ~/.remotelab/memory/bootst
     context += `
 
 ## Project Pointer Catalog Missing
-If this machine has recurring repos or task families, create ~/.remotelab/memory/projects.md as a small routing layer instead of stuffing those pointers into startup context.`;
+If this machine has recurring repos or task families, create ${projectsPath} as a small routing layer instead of stuffing those pointers into startup context.`;
   }
 
   if (!hasSkills) {
     context += `
 
 ## Skills Index Missing
-If local reusable workflows exist, create ~/.remotelab/memory/skills.md as a minimal placeholder index instead of treating the absence as a hard failure.`;
+If local reusable workflows exist, create ${skillsPath} as a minimal placeholder index instead of treating the absence as a hard failure.`;
   }
 
   if (isFirstTime) {
@@ -215,10 +236,10 @@ If local reusable workflows exist, create ~/.remotelab/memory/skills.md as a min
 ## FIRST-TIME SETUP REQUIRED
 This machine is missing both bootstrap.md and global.md. Before diving into detailed work:
 1. Explore the home directory (${home}) briefly to map key repos and working areas.
-2. Create ~/.remotelab/memory/bootstrap.md with machine basics, collaboration defaults, key directories, and short project pointers.
-3. Create ~/.remotelab/memory/projects.md if there are recurring repos or task families worth indexing.
-4. Create ~/.remotelab/memory/global.md only for deeper local notes that should NOT be startup context.
-5. Create ~/.remotelab/memory/skills.md if local reusable workflows exist.
+2. Create ${bootstrapPath} with machine basics, collaboration defaults, key directories, and short project pointers.
+3. Create ${projectsPath} if there are recurring repos or task families worth indexing.
+4. Create ${globalPath} only for deeper local notes that should NOT be startup context.
+5. Create ${skillsPath} if local reusable workflows exist.
 6. Show the user a brief bootstrap summary and confirm it is correct.
 
 Bootstrap only needs to be tiny. Detailed memory belongs in projects.md, tasks/, or global.md.`;

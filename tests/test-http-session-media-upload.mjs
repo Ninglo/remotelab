@@ -164,23 +164,39 @@ async function createSession(port) {
 }
 
 async function submitVideoMessage(port, sessionId) {
+  return submitMultipartMessage(port, sessionId, {
+    requestId: 'req-video-upload',
+    text: 'Please inspect the attached video.',
+    mimeType: 'video/mp4',
+    filename: 'clip.mp4',
+    body: Buffer.from('fake-video-binary'),
+  });
+}
+
+async function submitMultipartMessage(port, sessionId, {
+  requestId,
+  text,
+  mimeType,
+  filename,
+  body,
+}) {
   const formData = new FormData();
-  formData.set('requestId', 'req-video-upload');
-  formData.set('text', 'Please inspect the attached video.');
+  formData.set('requestId', requestId);
+  formData.set('text', text);
   formData.set('tool', 'fake-codex');
   formData.set('model', 'fake-model');
   formData.set('effort', 'low');
-  formData.append('images', new Blob([Buffer.from('fake-video-binary')], { type: 'video/mp4' }), 'clip.mp4');
+  formData.append('images', new Blob([body], { type: mimeType }), filename);
 
   const res = await fetch(`http://127.0.0.1:${port}/api/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: { Cookie: cookie },
     body: formData,
   });
-  const text = await res.text();
+  const responseText = await res.text();
   let json = null;
-  try { json = text ? JSON.parse(text) : null; } catch {}
-  return { status: res.status, json, text, headers: Object.fromEntries(res.headers.entries()) };
+  try { json = responseText ? JSON.parse(responseText) : null; } catch {}
+  return { status: res.status, json, text: responseText, headers: Object.fromEntries(res.headers.entries()) };
 }
 
 async function waitForRunTerminal(port, runId) {
@@ -224,6 +240,40 @@ try {
     const prompt = readFileSync(promptFile, 'utf8');
     assert.match(prompt, /\[User attached video:/, 'runner prompt should advertise attached videos explicitly');
     assert.match(prompt, /\.mp4\]/, 'runner prompt should include the stored video path');
+
+    const fileSession = await createSession(port);
+    const fileSubmitRes = await submitMultipartMessage(port, fileSession.id, {
+      requestId: 'req-generic-file-upload',
+      text: 'Please inspect the attached file.',
+      mimeType: 'text/csv',
+      filename: 'report.csv',
+      body: Buffer.from('col1,col2\n1,2\n', 'utf8'),
+    });
+    assert.ok(fileSubmitRes.status === 202 || fileSubmitRes.status === 200, 'multipart generic file submission should be accepted');
+    assert.ok(fileSubmitRes.json?.run?.id, 'accepted generic file submission should create a run');
+
+    const fileRun = await waitForRunTerminal(port, fileSubmitRes.json.run.id);
+    assert.equal(fileRun.state, 'completed', 'generic file upload run should complete successfully');
+
+    const fileEventsRes = await waitFor(async () => {
+      const res = await request(port, 'GET', `/api/sessions/${fileSession.id}/events`);
+      if (res.status !== 200) return false;
+      const userMessage = (res.json.events || []).find((event) => event.type === 'message' && event.role === 'user');
+      return userMessage ? { res, userMessage } : false;
+    }, 'user message with generic file attachment');
+
+    assert.equal(fileEventsRes.userMessage.images?.length, 1, 'user event should preserve the generic file attachment reference');
+    assert.equal(fileEventsRes.userMessage.images[0].mimeType, 'text/csv', 'user event should preserve generic file mime type');
+    assert.equal(fileEventsRes.userMessage.images[0].originalName, 'report.csv', 'user event should preserve the generic file name');
+    assert.match(fileEventsRes.userMessage.images[0].filename || '', /\.csv$/, 'stored filename should keep the generic file extension');
+
+    const fileMediaRes = await request(port, 'GET', `/api/media/${fileEventsRes.userMessage.images[0].filename}`);
+    assert.equal(fileMediaRes.status, 200, 'generic file should be downloadable from the media route');
+    assert.equal(fileMediaRes.buffer.toString('utf8'), 'col1,col2\n1,2\n', 'downloaded generic file should keep its contents');
+
+    const updatedPrompt = readFileSync(promptFile, 'utf8');
+    assert.match(updatedPrompt, /\[User attached file:/, 'runner prompt should advertise generic files as files');
+    assert.match(updatedPrompt, /\.csv\]/, 'runner prompt should include the stored generic file path');
 
     console.log('test-http-session-media-upload: ok');
   } finally {

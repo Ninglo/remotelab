@@ -12,7 +12,7 @@ const repoRoot = dirname(__dirname);
 const home = mkdtempSync(join(tmpdir(), 'remotelab-generate-token-'));
 
 try {
-  const configDir = join(home, '.config', 'remotelab');
+  const configDir = join(home, 'instance-config');
   mkdirSync(configDir, { recursive: true });
   const authPath = join(configDir, 'auth.json');
   writeFileSync(authPath, JSON.stringify({
@@ -26,6 +26,8 @@ try {
     env: {
       ...process.env,
       HOME: home,
+      CHAT_PORT: '7692',
+      REMOTELAB_CONFIG_DIR: configDir,
     },
     encoding: 'utf8',
   });
@@ -44,6 +46,11 @@ try {
     updated.token,
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     'generate-token should replace the previous token',
+  );
+  assert.match(
+    result.stdout,
+    /http:\/\/127\.0\.0\.1:7692\/\?token=/,
+    'generate-token should print the local access URL for the configured chat port',
   );
 
   console.log('test-generate-token-preserves-password: ok');

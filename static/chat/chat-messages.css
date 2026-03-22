@@ -106,13 +106,12 @@
 }
 .msg-images { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .msg-images img,
-.msg-images video,
-.msg-images audio,
-.msg-images .attachment-link {
+.msg-images video {
   max-width: 200px; max-height: 150px; border-radius: 8px; cursor: pointer;
   object-fit: cover;
 }
 .msg-images audio {
+  border-radius: 8px;
   max-height: none;
   min-width: 220px;
   background: var(--bg-secondary);
@@ -121,13 +120,61 @@
 }
 .msg-images .attachment-link {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   padding: 10px 12px;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
-  color: var(--text-secondary);
+  color: var(--text);
   text-decoration: none;
+}
+.msg-images .attachment-card {
+  width: min(220px, 100%);
+  max-width: 220px;
   cursor: pointer;
+}
+.msg-images .attachment-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+.attachment-file-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+}
+.attachment-file-icon .rl-icon {
+  width: 18px;
+  height: 18px;
+}
+.attachment-file-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.msg-images .attachment-card .attachment-file-name {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-images .attachment-card .attachment-file-type {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 /* Pending (optimistic) message — subtle sending indicator */

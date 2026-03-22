@@ -110,7 +110,7 @@
         <div class="input-resize-pill"></div>
       </div>
       <div class="input-wrapper">
-        <!-- Image preview inside wrapper -->
+        <!-- Attachment preview inside wrapper -->
         <div class="img-preview-strip" id="imgPreviewStrip"></div>
         <div class="input-config-row">
           <div class="input-config-group left">
@@ -118,8 +118,8 @@
             <select class="model-select" id="inlineModelSelect" disabled></select>
             <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
             <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
-            <button class="img-btn" id="imgBtn" disabled title="Attach media" aria-label="Attach media" data-icon="attach">&#128247;</button>
-            <button class="thinking-toggle" id="voiceCleanupToggle" type="button" aria-pressed="false" title="Clean voice transcripts with current session context before sending" disabled>Voice cleanup</button>
+            <button class="img-btn" id="imgBtn" disabled title="Attach files" aria-label="Attach files" data-icon="attach">&#128247;</button>
+            <button class="thinking-toggle" id="voiceCleanupToggle" type="button" aria-pressed="true" title="On: clean voice transcripts with the current session before sending" disabled>Voice cleanup</button>
           </div>
           <div class="input-config-group right">
             <span id="contextTokens" style="display:none"></span>
@@ -128,7 +128,7 @@
           </div>
         </div>
         <div class="input-row">
-          <input type="file" id="imgFileInput" accept="image/*,video/*" multiple hidden>
+          <input type="file" id="imgFileInput" accept="*/*" multiple hidden>
           <input type="file" id="voiceFileInput" accept="audio/*,video/*" capture hidden>
           <textarea id="msgInput" placeholder="Message..." disabled></textarea>
           <button class="img-btn voice-btn composer-voice-btn" id="voiceInputBtn" disabled title="Voice input" aria-label="Voice input" data-icon="mic"></button>

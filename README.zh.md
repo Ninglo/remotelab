@@ -264,8 +264,13 @@ remotelab --help               显示帮助
 | `CHAT_BIND_HOST` | `127.0.0.1` | Chat server 监听地址（`127.0.0.1` 用于 Cloudflare / 仅本机访问，`0.0.0.0` 用于 Tailscale 或局域网访问） |
 | `SESSION_EXPIRY` | `86400000` | Cookie 有效期（毫秒，24h） |
 | `SECURE_COOKIES` | `1` | Tailscale 或本地 HTTP 访问时设为 `0`（无 HTTPS） |
+| `REMOTELAB_INSTANCE_ROOT` | 未设置 | 可选的额外实例数据根目录；设置后默认使用 `<root>/config` + `<root>/memory` |
+| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、apps、push、provider runtime home |
+| `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | 可选的用户 memory 目录覆盖，供 pointer-first 启动使用 |
 
 ## 常用文件位置
+
+下面这些是未设置实例覆盖变量时的默认路径。
 
 | 路径 | 内容 |
 |------|------|
@@ -293,6 +298,12 @@ remotelab --help               显示帮助
 - 默认服务只绑定 `127.0.0.1`，不直接暴露到公网；如需局域网访问，设置 `CHAT_BIND_HOST=0.0.0.0`
 - 分享快照是只读的，并与 owner 聊天面隔离
 - CSP 头使用基于 nonce 的脚本白名单
+
+## 手动起第二实例
+
+- `scripts/chat-instance.sh` 现在除了旧的 `--home` 模式，也支持 `--instance-root`、`--config-dir`、`--memory-dir`。
+- 如果你想让第二实例继续复用当前机器的 provider 登录状态、但把 RemoteLab 自己的数据和 memory 完全隔离，优先用 `--instance-root`。
+- 示例：`scripts/chat-instance.sh start --port 7692 --name companion --instance-root ~/.remotelab/instances/companion --secure-cookies 1`
 
 ## 故障排查
 

@@ -268,9 +268,14 @@ Production updates should go through `remotelab release` rather than live-editin
 | `CHAT_BIND_HOST` | `127.0.0.1` | Host to bind the chat server (`127.0.0.1` for Cloudflare/local only, `0.0.0.0` for Tailscale or LAN access) |
 | `SESSION_EXPIRY` | `86400000` | Cookie lifetime in ms (24h) |
 | `SECURE_COOKIES` | `1` | Set `0` for Tailscale or local HTTP access (no HTTPS) |
+| `REMOTELAB_INSTANCE_ROOT` | unset | Optional isolated data root for an additional instance; defaults to `<root>/config` + `<root>/memory` when set |
+| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, apps, push, and provider-managed homes |
+| `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | Optional user-memory override for pointer-first startup files |
 | `REMOTELAB_LIVE_CONTEXT_COMPACT_TOKENS` | `window overflow` | Optional auto-compact override in live-context tokens; unset = compact only after live context exceeds 100% of a known context window, `Inf` = disable |
 
 ## Common file locations
+
+These are the default paths when no instance overrides are set.
 
 | Path | Contents |
 |------|----------|
@@ -295,6 +300,12 @@ Production updates should go through `remotelab release` rather than live-editin
 - RemoteLab does **not** automatically delete old data and does **not** currently ship a one-click cleanup feature. This is intentional: keeping user data is safer than guessing what is safe to remove.
 - If you want to reclaim disk space, periodically review old archived sessions and prune them manually from the terminal, or ask an AI operator to help you clean them up carefully.
 - In practice, most storage growth lives under `~/.config/remotelab/chat-history/` and `~/.config/remotelab/chat-runs/`.
+
+## Ad-hoc extra instances
+
+- `scripts/chat-instance.sh` now supports `--instance-root`, `--config-dir`, and `--memory-dir` in addition to the older `--home` mode.
+- Use `--instance-root` when you want a second instance to keep the same machine `HOME` (so provider auth keeps working) while isolating RemoteLab's own runtime data and memory.
+- Example: `scripts/chat-instance.sh start --port 7692 --name companion --instance-root ~/.remotelab/instances/companion --secure-cookies 1`
 
 ## Security
 

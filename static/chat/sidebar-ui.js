@@ -55,7 +55,7 @@ createAppConfigBtn?.addEventListener("click", () => {
   void handleCreateApp();
 });
 
-// ---- Image handling ----
+// ---- Attachment handling ----
 function buildPendingAttachment(file) {
   return {
     file,
@@ -65,7 +65,7 @@ function buildPendingAttachment(file) {
   };
 }
 
-async function addImageFiles(files) {
+async function addAttachmentFiles(files) {
   if (typeof hasPendingComposerSend === "function" && hasPendingComposerSend()) {
     return;
   }
@@ -126,22 +126,20 @@ imgBtn.addEventListener("click", () => {
   imgFileInput.click();
 });
 imgFileInput.addEventListener("change", () => {
-  if (imgFileInput.files.length > 0) addImageFiles(imgFileInput.files);
+  if (imgFileInput.files.length > 0) addAttachmentFiles(imgFileInput.files);
   imgFileInput.value = "";
 });
 
 msgInput.addEventListener("paste", (e) => {
   const items = e.clipboardData?.items;
   if (!items) return;
-  const imageFiles = [];
+  const attachmentFiles = [];
   for (const item of items) {
-    if (item.type.startsWith("image/")) {
-      const file = item.getAsFile();
-      if (file) imageFiles.push(file);
-    }
+    const file = typeof item.getAsFile === "function" ? item.getAsFile() : null;
+    if (file) attachmentFiles.push(file);
   }
-  if (imageFiles.length > 0) {
+  if (attachmentFiles.length > 0) {
     e.preventDefault();
-    addImageFiles(imageFiles);
+    addAttachmentFiles(attachmentFiles);
   }
 });

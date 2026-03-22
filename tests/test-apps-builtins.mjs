@@ -8,6 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-apps-builtins-'));
 process.env.HOME = tempHome;
+process.env.CHAT_PORT = '7692';
+process.env.REMOTELAB_CONFIG_DIR = join(tempHome, 'instance-config');
 
 const appsModule = await import(pathToFileURL(join(repoRoot, 'chat', 'apps.mjs')).href);
 
@@ -73,6 +75,11 @@ try {
   assert.equal(createAppStarter?.shareToken, undefined);
   assert.match(createAppStarter?.systemPrompt || '', /POST \/api\/apps|PATCH \/api\/apps/i);
   assert.match(createAppStarter?.systemPrompt || '', /share link|\/app\/\{shareToken\}|other people/i);
+  assert.match(createAppStarter?.systemPrompt || '', /http:\/\/127\.0\.0\.1:7692/);
+  assert.match(
+    createAppStarter?.systemPrompt || '',
+    new RegExp(`${join(tempHome, 'instance-config', 'auth.json').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+  );
   assert.match(createAppStarter?.welcomeMessage || '', /SOP|工作流|RemoteLab App/i);
   assert.match(createAppStarter?.welcomeMessage || '', /SOP|工作流/i);
   assert.match(createAppStarter?.welcomeMessage || '', /分享给别人的链接|分享方式|share/i);

@@ -256,6 +256,9 @@ assert.equal(context.msgInput.style.height, '72px', 'composer should default to 
 assert.equal(context.layoutSubscribers.length, 1, 'composer should subscribe to the shared layout controller');
 assert.equal(context.windowResizeListeners.length, 0, 'composer should not attach its own window resize listener when the shared layout controller exists');
 assert.equal(context.visualViewportResizeListeners.length, 0, 'composer should not attach its own visual viewport resize listener when the shared layout controller exists');
+assert.equal(context.isComposerVoiceCleanupEnabled(), true, 'voice cleanup should default to enabled when no explicit preference has been stored');
+assert.equal(context.voiceCleanupToggle['aria-pressed'], 'true', 'the voice cleanup toggle should render as enabled by default');
+assert.equal(context.voiceCleanupToggle.classList.contains('active'), true, 'the voice cleanup toggle should surface its enabled styling by default');
 
 context.msgInput.value = 'draft for A';
 context.saveDraft();

@@ -3,7 +3,7 @@ import { randomBytes } from 'crypto';
 import { access, mkdir, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join, dirname } from 'path';
-import { AUTH_FILE } from './lib/config.mjs';
+import { AUTH_FILE, CHAT_PORT } from './lib/config.mjs';
 import { selectCloudflaredAccessDomain } from './lib/cloudflared-config.mjs';
 
 const authFile = AUTH_FILE;
@@ -36,7 +36,7 @@ const cfConfig = join(homedir(), '.cloudflared', 'config.yml');
 if (await pathExists(cfConfig)) {
   try {
     const content = await readFile(cfConfig, 'utf8');
-    domain = await selectCloudflaredAccessDomain(content, { port: 7690 });
+    domain = await selectCloudflaredAccessDomain(content, { port: CHAT_PORT });
   } catch {}
 }
 
@@ -48,5 +48,5 @@ if (domain) {
   console.log(`  https://${domain}/?token=${token}`);
 } else {
   console.log(`\nAccess URL (local):`);
-  console.log(`  http://127.0.0.1:7690/?token=${token}`);
+  console.log(`  http://127.0.0.1:${CHAT_PORT}/?token=${token}`);
 }
