@@ -10,6 +10,41 @@ import { spawn } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
+const SESSION_LIST_ORGANIZER_INTERNAL_ROLE = 'session_list_organizer';
+const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
+  'You are RemoteLab\'s hidden session-list organizer.',
+  'Your job is to improve the owner\'s non-archived session sidebar structure using the provided metadata snapshot.',
+  'Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.',
+  'Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.',
+  'Use `remotelab api GET /api/sessions` if you need to double-check current state.',
+  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `group` and `sidebarOrder`.',
+  'Only writable API fields for this task are `group` and `sidebarOrder`.',
+  'Never send read-only snapshot keys such as `title`, `brief`, `existingGroup`, `existingSidebarOrder`, `currentGroup`, or `currentSidebarOrder` in PATCH bodies.',
+  'Example PATCH body: {"group":"RemoteLab","sidebarOrder":3}',
+  'If `remotelab` is unavailable in PATH, use `node "$REMOTELAB_PROJECT_ROOT/cli.js" api ...` instead.',
+  '`sidebarOrder` must be a positive integer; smaller numbers sort first.',
+  'Assign unique contiguous `sidebarOrder` values across the current non-archived sessions you organize.',
+  'Prefer a small number of clear, stable groups; avoid one giant catch-all group when the list is dense.',
+  'Return only a brief plain-text summary of the grouping strategy you applied.',
+].join('\n');
+
+function buildSessionListOrganizerTask(sessions = []) {
+  return [
+    'Organize the current non-archived RemoteLab session list using the provided metadata snapshot.',
+    'Choose clearer groups and a better sidebar ordering based on the current session density.',
+    'Apply changes by calling the RemoteLab API from this machine; do not merely suggest them.',
+    'Snapshot fields like `title`, `brief`, `existingGroup`, and `existingSidebarOrder` are read-only context.',
+    'When patching a session, send only `group` and `sidebarOrder` in the API body.',
+    '',
+    '<session_list_organizer_input>',
+    JSON.stringify({
+      generatedAt: new Date().toISOString(),
+      totalSessions: Array.isArray(sessions) ? sessions.length : 0,
+      sessions: Array.isArray(sessions) ? sessions : [],
+    }, null, 2),
+    '</session_list_organizer_input>',
+  ].join('\n');
+}
 
 function randomPort() {
   return 36000 + Math.floor(Math.random() * 4000);
@@ -229,22 +264,39 @@ try {
   });
   assert.equal(quartzSession.status, 201, 'second session should be created');
 
-  const organize = await request(port, 'POST', '/api/session-list/organize', {
+  const legacyOrganize = await request(port, 'POST', '/api/session-list/organize', {
+    sessions: [],
+  });
+  assert.equal(legacyOrganize.status, 404, 'legacy organizer endpoint should be removed');
+
+  const organizerSession = await request(port, 'POST', '/api/sessions', {
+    folder: '~',
     tool: 'fake-codex',
-    model: 'fake-model',
-    effort: 'low',
-    sessions: [
+    name: 'sort session list',
+    systemPrompt: SESSION_LIST_ORGANIZER_SYSTEM_PROMPT,
+    internalRole: SESSION_LIST_ORGANIZER_INTERNAL_ROLE,
+  });
+  assert.equal(organizerSession.status, 201, 'hidden organizer session should be created through the generic session API');
+
+  const organize = await request(port, 'POST', `/api/sessions/${organizerSession.json.session.id}/messages`, {
+    text: buildSessionListOrganizerTask([
       {
         id: remoteLabSession.json.session.id,
         title: 'RemoteLab board cleanup',
         brief: 'Clean up the session grouping and structure.',
+        existingGroup: '',
+        existingSidebarOrder: null,
       },
       {
         id: quartzSession.json.session.id,
         title: 'Quartz publish flow',
         brief: 'Polish the publishing workflow and docs.',
+        existingGroup: '',
+        existingSidebarOrder: null,
       },
-    ],
+    ]),
+    model: 'fake-model',
+    effort: 'low',
   });
   assert.equal(organize.status, 202, 'organizer trigger should start a hidden run');
   assert.ok(organize.json?.run?.id, 'organizer trigger should return a run id');
@@ -288,7 +340,7 @@ try {
   assert.equal(quartzEntry?.sidebarOrder, 1, 'organizer should patch the Quartz sidebar order');
 
   const storedMeta = JSON.parse(readFileSync(join(configDir, 'chat-sessions.json'), 'utf8'));
-  const hiddenOrganizer = storedMeta.find((entry) => entry && entry.internalRole === 'session_list_organizer');
+  const hiddenOrganizer = storedMeta.find((entry) => entry && entry.internalRole === SESSION_LIST_ORGANIZER_INTERNAL_ROLE);
   assert.ok(hiddenOrganizer, 'organizer trigger should create a hidden internal session');
   assert.match(
     hiddenOrganizer.systemPrompt || '',

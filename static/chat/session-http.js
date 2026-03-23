@@ -54,9 +54,27 @@ function notifyCompletion(session) {
 
 const SESSION_LIST_ORGANIZER_POLL_INTERVAL_MS = 1200;
 const SESSION_LIST_ORGANIZER_POLL_TIMEOUT_MS = 90 * 1000;
+const SESSION_LIST_ORGANIZER_INTERNAL_ROLE = "session_list_organizer";
 const DEFAULT_SORT_SESSION_LIST_BUTTON_LABEL = "Sort List";
 let sessionListOrganizerInFlight = null;
 let sessionListOrganizerLabelResetTimer = null;
+
+const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
+  "You are RemoteLab's hidden session-list organizer.",
+  "Your job is to improve the owner's non-archived session sidebar structure using the provided metadata snapshot.",
+  "Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.",
+  "Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.",
+  "Use `remotelab api GET /api/sessions` if you need to double-check current state.",
+  "Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `group` and `sidebarOrder`.",
+  "Only writable API fields for this task are `group` and `sidebarOrder`.",
+  "Never send read-only snapshot keys such as `title`, `brief`, `existingGroup`, `existingSidebarOrder`, `currentGroup`, or `currentSidebarOrder` in PATCH bodies.",
+  "Example PATCH body: {\"group\":\"RemoteLab\",\"sidebarOrder\":3}",
+  "If `remotelab` is unavailable in PATH, use `node \"$REMOTELAB_PROJECT_ROOT/cli.js\" api ...` instead.",
+  "`sidebarOrder` must be a positive integer; smaller numbers sort first.",
+  "Assign unique contiguous `sidebarOrder` values across the current non-archived sessions you organize.",
+  "Prefer a small number of clear, stable groups; avoid one giant catch-all group when the list is dense.",
+  "Return only a brief plain-text summary of the grouping strategy you applied.",
+].join("\n");
 
 function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -123,6 +141,61 @@ function buildSessionListOrganizerPayload() {
     ...(selectedEffort ? { effort: selectedEffort } : {}),
     thinking: thinkingEnabled === true,
     sessions: activeSessions.map(buildSessionListOrganizerSessionMetadata).filter((session) => session.id),
+  };
+}
+
+function buildSessionListOrganizerTask(sessions) {
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    totalSessions: Array.isArray(sessions) ? sessions.length : 0,
+    sessions: Array.isArray(sessions) ? sessions : [],
+  };
+  return [
+    "Organize the current non-archived RemoteLab session list using the provided metadata snapshot.",
+    "Choose clearer groups and a better sidebar ordering based on the current session density.",
+    "Apply changes by calling the RemoteLab API from this machine; do not merely suggest them.",
+    "Snapshot fields like `title`, `brief`, `existingGroup`, and `existingSidebarOrder` are read-only context.",
+    "When patching a session, send only `group` and `sidebarOrder` in the API body.",
+    "",
+    "<session_list_organizer_input>",
+    JSON.stringify(payload, null, 2),
+    "</session_list_organizer_input>",
+  ].join("\n");
+}
+
+async function createSessionListOrganizerRun(payload) {
+  const sessionResponse = await fetchJsonOrRedirect("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      folder: "~",
+      tool: payload?.tool || "codex",
+      name: "sort session list",
+      systemPrompt: SESSION_LIST_ORGANIZER_SYSTEM_PROMPT,
+      internalRole: SESSION_LIST_ORGANIZER_INTERNAL_ROLE,
+    }),
+  });
+  const organizerSessionId = typeof sessionResponse?.session?.id === "string"
+    ? sessionResponse.session.id.trim()
+    : "";
+  if (!organizerSessionId) {
+    throw new Error("Failed to create the hidden session organizer");
+  }
+
+  const messageResponse = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(organizerSessionId)}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: buildSessionListOrganizerTask(payload?.sessions || []),
+      ...(payload?.model ? { model: payload.model } : {}),
+      ...(payload?.effort ? { effort: payload.effort } : {}),
+      ...(payload?.thinking ? { thinking: true } : {}),
+    }),
+  });
+
+  return {
+    session: sessionResponse?.session || null,
+    run: messageResponse?.run || null,
   };
 }
 
@@ -553,21 +626,15 @@ async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
 
   const request = (async () => {
     try {
-      const data = await fetchJsonOrRedirect("/api/session-list/organize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (data?.skipped) {
-        setSortSessionListButtonState("Nothing to sort", { busy: false });
-        return true;
-      }
+      const data = await createSessionListOrganizerRun(payload);
       const runId = typeof data?.run?.id === "string" ? data.run.id.trim() : "";
       if (runId) {
         const run = await waitForSessionListOrganizerRun(runId);
         if (run?.state !== "completed") {
           throw new Error(run?.failureReason || `Sort list ${run?.state || "failed"}`);
         }
+      } else {
+        throw new Error("Sort list did not start a run");
       }
       await fetchSessionsList();
       if (closeSidebar && !isDesktop) {

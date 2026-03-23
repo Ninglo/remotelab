@@ -2,7 +2,6 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { readFile, writeFile } from 'fs/promises';
-import { homedir } from 'os';
 import { extname, join } from 'path';
 import { createInterface } from 'readline';
 import { CHAT_IMAGES_DIR, MEMORY_DIR } from '../lib/config.mjs';
@@ -130,10 +129,8 @@ const VISITOR_TURN_GUARDRAIL = [
 ].join('\n');
 
 const INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR = 'context_compactor';
-const INTERNAL_SESSION_ROLE_SESSION_LIST_ORGANIZER = 'session_list_organizer';
 const AUTO_COMPACT_MARKER_TEXT = 'Older messages above this marker are no longer in the model\'s live context. They remain visible in the transcript, but only the compressed handoff and newer messages below are loaded for continued work.';
 const REPLY_SELF_REPAIR_INTERNAL_OPERATION = 'reply_self_repair';
-const SESSION_LIST_ORGANIZER_INTERNAL_OPERATION = 'session_list_organize';
 const REPLY_SELF_CHECK_REVIEWING_STATUS = 'Assistant self-check: reviewing the latest reply for early stop…';
 const REPLY_SELF_CHECK_ACCEPT_STATUS = 'Assistant self-check: kept the latest reply as-is.';
 const REPLY_SELF_CHECK_DEFAULT_REASON = 'the latest reply left avoidable unfinished work';
@@ -156,23 +153,6 @@ const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
   'Preserve the task objective, accepted decisions, constraints, completed work, current state, open questions, and next steps.',
   'Do not include raw tool dumps unless a tiny excerpt is essential.',
   'Be explicit about what is no longer in live context and what the next worker should rely on.',
-].join('\n');
-
-const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
-  'You are RemoteLab\'s hidden session-list organizer.',
-  'Your job is to improve the owner\'s non-archived session sidebar structure using the provided metadata snapshot.',
-  'Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.',
-  'Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.',
-  'Use `remotelab api GET /api/sessions` if you need to double-check current state.',
-  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `group` and `sidebarOrder`.',
-  'Only writable API fields for this task are `group` and `sidebarOrder`.',
-  'Never send read-only snapshot keys such as `title`, `brief`, `existingGroup`, `existingSidebarOrder`, `currentGroup`, or `currentSidebarOrder` in PATCH bodies.',
-  'Example PATCH body: {"group":"RemoteLab","sidebarOrder":3}',
-  'If `remotelab` is unavailable in PATH, use `node "$REMOTELAB_PROJECT_ROOT/cli.js" api ...` instead.',
-  '`sidebarOrder` must be a positive integer; smaller numbers sort first.',
-  'Assign unique contiguous `sidebarOrder` values across the current non-archived sessions you organize.',
-  'Prefer a small number of clear, stable groups; avoid one giant catch-all group when the list is dense.',
-  'Return only a brief plain-text summary of the grouping strategy you applied.',
 ].join('\n');
 
 const TURN_ACTIVATION_CARD = wrapPrivatePromptBlock([
@@ -201,72 +181,6 @@ function normalizeSessionSidebarOrder(value) {
     ? value
     : parseInt(String(value || '').trim(), 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function clipSessionListOrganizerText(value, maxChars = 240) {
-  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-  return normalized.length > maxChars
-    ? `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`
-    : normalized;
-}
-
-function normalizeSessionListOrganizerEntry(entry) {
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
-  const id = typeof entry.id === 'string' ? entry.id.trim() : '';
-  if (!id) return null;
-  const sidebarOrder = normalizeSessionSidebarOrder(
-    entry.existingSidebarOrder
-    ?? entry.currentSidebarOrder
-    ?? entry.sidebarOrder,
-  );
-  const messageCount = Number.isInteger(entry.messageCount) && entry.messageCount >= 0
-    ? entry.messageCount
-    : 0;
-  return {
-    id,
-    title: clipSessionListOrganizerText(entry.title || entry.name || '', 160),
-    brief: clipSessionListOrganizerText(entry.brief || entry.description || '', 280),
-    existingGroup: clipSessionListOrganizerText(
-      entry.existingGroup
-      || entry.currentGroup
-      || entry.group
-      || '',
-      80,
-    ),
-    existingSidebarOrder: sidebarOrder || null,
-    pinned: entry.pinned === true,
-    tool: clipSessionListOrganizerText(entry.tool || '', 40),
-    appName: clipSessionListOrganizerText(entry.appName || '', 80),
-    sourceName: clipSessionListOrganizerText(entry.sourceName || '', 80),
-    userName: clipSessionListOrganizerText(entry.userName || '', 80),
-    folder: clipSessionListOrganizerText(entry.folder || '', 180),
-    workflowState: normalizeSessionWorkflowState(entry.workflowState || ''),
-    workflowPriority: normalizeSessionWorkflowPriority(entry.workflowPriority || ''),
-    messageCount,
-    created: clipSessionListOrganizerText(entry.created || '', 40),
-    updatedAt: clipSessionListOrganizerText(entry.updatedAt || '', 40),
-    lastEventAt: clipSessionListOrganizerText(entry.lastEventAt || '', 40),
-  };
-}
-
-function buildSessionListOrganizerTask(entries = []) {
-  const payload = {
-    generatedAt: nowIso(),
-    totalSessions: entries.length,
-    sessions: entries,
-  };
-  return [
-    'Organize the current non-archived RemoteLab session list using the provided metadata snapshot.',
-    'Choose clearer groups and a better sidebar ordering based on the current session density.',
-    'Apply changes by calling the RemoteLab API from this machine; do not merely suggest them.',
-    'Snapshot fields like `title`, `brief`, `existingGroup`, and `existingSidebarOrder` are read-only context.',
-    'When patching a session, send only `group` and `sidebarOrder` in the API body.',
-    '',
-    '<session_list_organizer_input>',
-    JSON.stringify(payload, null, 2),
-    '</session_list_organizer_input>',
-  ].join('\n');
 }
 
 function getConfiguredAutoCompactContextTokens() {
@@ -4067,7 +3981,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     || !session.group
     || !session.description;
 
-  if (!options.internalOperation && options.recordUserMessage !== false && needsEarlySessionLabeling) {
+  if (!options.internalOperation && options.recordUserMessage !== false && !isInternalSession(session) && needsEarlySessionLabeling) {
     launchEarlySessionLabelSuggestion(sessionId, {
       id: sessionId,
       folder: session.folder,
@@ -4230,55 +4144,6 @@ export async function delegateSession(sessionId, payload = {}) {
 
   return {
     session: outcome.session || await getSession(child.id) || child,
-    run: outcome.run || null,
-  };
-}
-
-export async function organizeSessionListWithAgent(payload = {}) {
-  const entries = Array.isArray(payload?.sessions)
-    ? payload.sessions.map((entry) => normalizeSessionListOrganizerEntry(entry)).filter(Boolean)
-    : [];
-  if (entries.length === 0) {
-    return {
-      skipped: true,
-      reason: 'No non-archived sessions to organize',
-      run: null,
-      session: null,
-    };
-  }
-
-  const requestedTool = typeof payload?.tool === 'string' ? payload.tool.trim() : '';
-  const requestedModel = typeof payload?.model === 'string' ? payload.model.trim() : '';
-  const requestedEffort = typeof payload?.effort === 'string' ? payload.effort.trim() : '';
-  const requestedThinking = payload?.thinking === true;
-  const organizerSession = await createSession(homedir(), requestedTool || 'codex', 'auto-organize session list', {
-    systemPrompt: SESSION_LIST_ORGANIZER_SYSTEM_PROMPT,
-    internalRole: INTERNAL_SESSION_ROLE_SESSION_LIST_ORGANIZER,
-    ...(requestedModel ? { model: requestedModel } : {}),
-    ...(requestedEffort ? { effort: requestedEffort } : {}),
-    ...(requestedThinking ? { thinking: true } : {}),
-  });
-  if (!organizerSession) {
-    throw new Error('Unable to create session-list organizer session');
-  }
-
-  const outcome = await submitHttpMessage(
-    organizerSession.id,
-    buildSessionListOrganizerTask(entries),
-    [],
-    {
-      requestId: createInternalRequestId('organize_session_list'),
-      internalOperation: SESSION_LIST_ORGANIZER_INTERNAL_OPERATION,
-      recordUserMessage: false,
-      ...(requestedModel ? { model: requestedModel } : {}),
-      ...(requestedEffort ? { effort: requestedEffort } : {}),
-      ...(requestedThinking ? { thinking: true } : {}),
-    },
-  );
-
-  return {
-    skipped: false,
-    session: outcome.session || await getSession(organizerSession.id) || organizerSession,
     run: outcome.run || null,
   };
 }

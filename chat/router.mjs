@@ -39,7 +39,6 @@ import {
   setSessionArchived,
   setSessionPinned,
   submitHttpMessage,
-  organizeSessionListWithAgent,
   updateSessionLastReviewedAt,
   updateSessionGrouping,
   updateSessionAgreements,
@@ -1085,7 +1084,6 @@ function serializeJsonForScript(value) {
 
 function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/sessions' && (method === 'GET' || method === 'POST')) return true;
-  if (pathname === '/api/session-list/organize' && method === 'POST') return true;
   if (pathname === '/api/triggers' && (method === 'GET' || method === 'POST')) return true;
   if (pathname.startsWith('/api/triggers/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
@@ -1983,6 +1981,7 @@ export async function handleRequest(req, res) {
         group,
         description,
         systemPrompt,
+        internalRole,
         completionTargets,
         externalTriggerId,
         sourceContext,
@@ -2039,6 +2038,14 @@ export async function handleRequest(req, res) {
       if (Object.prototype.hasOwnProperty.call(payload, 'systemPrompt')) {
         createOptions.systemPrompt = typeof systemPrompt === 'string' ? systemPrompt : '';
       }
+      if (Object.prototype.hasOwnProperty.call(payload, 'internalRole')) {
+        if (internalRole !== null && typeof internalRole !== 'string') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'internalRole must be a string when provided' }));
+          return;
+        }
+        createOptions.internalRole = typeof internalRole === 'string' ? internalRole.trim() : '';
+      }
       if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
         createOptions.sourceContext = sourceContext;
       }
@@ -2062,74 +2069,6 @@ export async function handleRequest(req, res) {
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid request body' }));
-    }
-    return;
-  }
-
-  if (pathname === '/api/session-list/organize' && req.method === 'POST') {
-    let body;
-    try { body = await readBody(req, 131072); } catch {
-      writeJson(res, 400, { error: 'Bad request' });
-      return;
-    }
-    let payload;
-    try {
-      payload = body ? JSON.parse(body) : {};
-    } catch {
-      writeJson(res, 400, { error: 'Invalid request body' });
-      return;
-    }
-
-    if (!Array.isArray(payload?.sessions)) {
-      writeJson(res, 400, { error: 'sessions must be an array' });
-      return;
-    }
-    if (payload.sessions.some((entry) => !entry || typeof entry !== 'object' || Array.isArray(entry))) {
-      writeJson(res, 400, { error: 'sessions must contain only objects' });
-      return;
-    }
-    if (payload.sessions.some((entry) => typeof entry.id !== 'string' || !entry.id.trim())) {
-      writeJson(res, 400, { error: 'each session must include an id' });
-      return;
-    }
-    if (Object.prototype.hasOwnProperty.call(payload, 'tool') && payload.tool !== null && typeof payload.tool !== 'string') {
-      writeJson(res, 400, { error: 'tool must be a string when provided' });
-      return;
-    }
-    if (Object.prototype.hasOwnProperty.call(payload, 'model') && payload.model !== null && typeof payload.model !== 'string') {
-      writeJson(res, 400, { error: 'model must be a string when provided' });
-      return;
-    }
-    if (Object.prototype.hasOwnProperty.call(payload, 'effort') && payload.effort !== null && typeof payload.effort !== 'string') {
-      writeJson(res, 400, { error: 'effort must be a string when provided' });
-      return;
-    }
-    if (Object.prototype.hasOwnProperty.call(payload, 'thinking') && payload.thinking !== null && typeof payload.thinking !== 'boolean') {
-      writeJson(res, 400, { error: 'thinking must be a boolean when provided' });
-      return;
-    }
-
-    try {
-      const outcome = await organizeSessionListWithAgent({
-        sessions: payload.sessions,
-        tool: payload.tool || '',
-        model: payload.model || '',
-        effort: payload.effort || '',
-        thinking: payload.thinking === true,
-      });
-      if (outcome?.skipped) {
-        writeJson(res, 200, {
-          skipped: true,
-          reason: outcome.reason || 'No sessions to organize',
-          run: null,
-        });
-        return;
-      }
-      writeJson(res, 202, {
-        run: outcome?.run || null,
-      });
-    } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to organize session list' });
     }
     return;
   }

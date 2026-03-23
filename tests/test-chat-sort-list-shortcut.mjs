@@ -8,6 +8,7 @@ import vm from 'vm';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const sidebarUiSource = readFileSync(join(repoRoot, 'static', 'chat', 'sidebar-ui.js'), 'utf8');
+const sessionHttpSource = readFileSync(join(repoRoot, 'static', 'chat', 'session-http.js'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
@@ -80,6 +81,12 @@ assert.equal(
   JSON.stringify(missingHarness.state.organizeCalls),
   JSON.stringify([{ closeSidebar: false }]),
   'sort list shortcut should still delegate to the organizer helper on failure',
+);
+
+assert.doesNotMatch(
+  sessionHttpSource,
+  /\/api\/session-list\/organize/,
+  'sort list helper should no longer call the dedicated organizer endpoint',
 );
 
 console.log('test-chat-sort-list-shortcut: ok');
