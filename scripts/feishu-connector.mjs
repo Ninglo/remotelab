@@ -40,7 +40,7 @@ const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_FEISHU_TEXT_LENGTH = 5000;
 const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
-const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'WRONGED';
+const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
 const REMOTELAB_SESSION_APP_ID = 'feishu';
 const APPROVE_CURRENT_CHAT_COMMANDS = new Set([
   '授权本群',
@@ -130,7 +130,7 @@ Config shape:
     "processingReaction": {
       "enabled": false,
       "emojiType": "${DEFAULT_PROCESSING_REACTION_EMOJI_TYPE}",
-      "removeOnCompletion": false
+      "removeOnCompletion": true
     },
     "silentConfirmationText": "",
     "intakePolicy": {
@@ -348,27 +348,27 @@ function normalizeProcessingReactionConfig(value) {
     return {
       enabled: true,
       emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
-      removeOnCompletion: false,
+      removeOnCompletion: true,
     };
   }
   if (value === false) {
     return {
       enabled: false,
       emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
-      removeOnCompletion: false,
+      removeOnCompletion: true,
     };
   }
   if (typeof value === 'string') {
     return {
       enabled: true,
       emojiType: normalizeReactionEmojiType(value),
-      removeOnCompletion: false,
+      removeOnCompletion: true,
     };
   }
   return {
     enabled: normalizeBoolean(value?.enabled, false),
     emojiType: normalizeReactionEmojiType(value?.emojiType),
-    removeOnCompletion: normalizeBoolean(value?.removeOnCompletion, false),
+    removeOnCompletion: normalizeBoolean(value?.removeOnCompletion, true),
   };
 }
 
@@ -1393,15 +1393,16 @@ async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelect
     body: payload,
   });
   const queued = result.json?.queued === true;
+  const duplicate = result.json?.duplicate === true;
   const runId = trimString(result.json?.run?.id);
-  if (![200, 202].includes(result.response.status) || (!runId && !queued)) {
+  if (![200, 202].includes(result.response.status) || (!runId && !queued && !duplicate)) {
     throw new Error(result.json?.error || result.text || `Failed to submit session message (${result.response.status})`);
   }
 
   return {
     requestId: payload.requestId,
     runId: runId || null,
-    duplicate: result.json?.duplicate === true,
+    duplicate,
     queued,
   };
 }
@@ -1453,6 +1454,17 @@ async function generateRemoteLabReply(runtime, summary) {
       messageId: summary.messageId,
       sinceSeq: baselineSeq,
     });
+  }
+  if (!runId && submission.duplicate) {
+    return {
+      sessionId: session.id,
+      runId: '',
+      requestId: submission.requestId,
+      duplicate: true,
+      queued: submission.queued,
+      replyText: '',
+      silent: true,
+    };
   }
   await waitForRunCompletion(runtime, runId);
   const replyEvent = await loadAssistantReply(
@@ -1813,7 +1825,9 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
     const generated = await generateReply(runtime, summary);
     const replyText = normalizeReplyText(generated.replyText);
     if (!replyText) {
-      const confirmationText = normalizeReplyText(runtime?.config?.silentConfirmationText);
+      const confirmationText = generated.duplicate === true
+        ? ''
+        : normalizeReplyText(runtime?.config?.silentConfirmationText);
       if (confirmationText) {
         const reply = await sendText(runtime, summary, confirmationText);
         await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
@@ -1840,9 +1854,9 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
         runId: generated.runId,
         requestId: generated.requestId,
         duplicate: generated.duplicate,
-        reason: 'empty_assistant_reply',
+        reason: generated.duplicate === true ? 'duplicate_request' : 'empty_assistant_reply',
       });
-      console.log(`[feishu-connector] no reply sent for ${summary.messageId} (empty assistant reply)`);
+      console.log(`[feishu-connector] no reply sent for ${summary.messageId} (${generated.duplicate === true ? 'duplicate request' : 'empty assistant reply'})`);
       return;
     }
     const reply = await sendText(runtime, summary, replyText);

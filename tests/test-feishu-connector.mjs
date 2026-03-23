@@ -111,6 +111,32 @@ assert.equal(handled[0].metadata.status, 'confirmation_sent');
 assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
 assert.equal(handled[0].metadata.responseMessageId, 'out_confirmation_test_1');
 
+sendCalls = 0;
+handled.length = 0;
+
+await handleMessage(runtime, { ...summary, messageId: 'msg_test_duplicate_1' }, 'test', {
+  wasMessageHandled: async () => false,
+  generateRemoteLabReply: async () => ({
+    sessionId: 'session_duplicate_test_1',
+    runId: '',
+    requestId: 'request_duplicate_test_1',
+    duplicate: true,
+    queued: false,
+    replyText: '',
+  }),
+  sendFeishuText: async () => {
+    sendCalls += 1;
+    return { message_id: 'out_duplicate_test_1' };
+  },
+  markMessageHandled: async (_pathname, messageId, metadata) => {
+    handled.push({ messageId, metadata });
+  },
+});
+
+assert.equal(sendCalls, 0, 'duplicate no-reply paths should not send silent confirmations');
+assert.equal(handled.length, 1, 'duplicate no-reply paths should still be marked handled');
+assert.equal(handled[0].metadata.reason, 'duplicate_request');
+
 let reactionCalls = [];
 sendCalls = 0;
 handled.length = 0;
@@ -423,30 +449,30 @@ assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backe
 assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
 assert.deepEqual(loadedConfig.processingReaction, {
   enabled: false,
-  emojiType: 'WRONGED',
-  removeOnCompletion: false,
+  emojiType: 'THINKING',
+  removeOnCompletion: true,
 }, 'processing reactions should default to disabled');
 assert.equal(loadedConfig.silentConfirmationText, '', 'silent confirmations should default to disabled');
 
 assert.deepEqual(normalizeProcessingReactionConfig(true), {
   enabled: true,
-  emojiType: 'WRONGED',
-  removeOnCompletion: false,
+  emojiType: 'THINKING',
+  removeOnCompletion: true,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('wronged'), {
   enabled: true,
   emojiType: 'WRONGED',
-  removeOnCompletion: false,
+  removeOnCompletion: true,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('fingerheart'), {
   enabled: true,
   emojiType: 'FINGERHEART',
-  removeOnCompletion: false,
+  removeOnCompletion: true,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('thinking'), {
   enabled: true,
   emojiType: 'THINKING',
-  removeOnCompletion: false,
+  removeOnCompletion: true,
 });
 assert.deepEqual(normalizeProcessingReactionConfig({
   enabled: true,
