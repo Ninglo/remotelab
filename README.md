@@ -259,7 +259,7 @@ remotelab setup                Run interactive setup wizard
 remotelab start                Start all services
 remotelab stop                 Stop all services
 remotelab restart [service]    Restart: chat | tunnel | all
-remotelab release              Run tests, snapshot the runtime, restart, and health-check the active release
+remotelab release              Run tests, snapshot the runtime, roll the active release, and health-check owner + guest instances
 remotelab guest-instance       Create isolated guest instances with separate config + memory
 remotelab chat                 Run chat server in foreground (debug)
 remotelab generate-token       Generate a new access token
@@ -273,7 +273,7 @@ If you still have older instance-specific runtime copies such as `remotelab-tria
 
 If you want public inbound email per guest instance, prefer a catch-all Cloudflare Email Routing rule into the Email Worker rather than creating separate mailbox accounts. `node scripts/agent-mail-cloudflare-routing.mjs status` prints the desired routing shape and `probe --address <email>` verifies whether SMTP will currently accept a guest mailbox such as `trial6@example.com`.
 
-Production updates should go through `remotelab release` rather than live-editing the running `7690` surface. The release command snapshots the shipped runtime, restarts only after the test gate passes, and automatically restores the previous active release if the health check fails.
+Production updates should go through `remotelab release` rather than live-editing the running `7690` surface. The release command snapshots the shipped runtime, restarts the owner service only after the test gate passes, then rolls any release-managed guest instances on the same shared code tree while keeping their existing ports, hostnames, auth, config, and memory isolated. If a health check fails, it automatically restores the previous active release.
 
 ## Configuration
 
