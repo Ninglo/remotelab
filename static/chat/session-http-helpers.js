@@ -382,12 +382,37 @@ function isRunningThinkingBlockEvent(event) {
     && event?.state === "running";
 }
 
+function getAttachmentDeliveryRenderKey(event) {
+  const explicitKey = typeof event?.deliveryKey === "string" ? event.deliveryKey : "";
+  if (explicitKey) return explicitKey;
+  const attachments = Array.isArray(event?.attachments)
+    ? event.attachments
+    : (Array.isArray(event?.images) ? event.images : []);
+  return attachments
+    .map((attachment, index) => {
+      const assetId = typeof attachment?.assetId === "string" ? attachment.assetId.trim() : "";
+      if (assetId) return `asset:${assetId}`;
+      const filename = typeof attachment?.filename === "string" ? attachment.filename.trim() : "";
+      if (filename) return `filename:${filename}`;
+      const downloadUrl = typeof attachment?.downloadUrl === "string" ? attachment.downloadUrl.trim() : "";
+      if (downloadUrl) return `download:${downloadUrl}`;
+      const originalName = typeof attachment?.originalName === "string" ? attachment.originalName.trim() : "";
+      const mimeType = typeof attachment?.mimeType === "string" ? attachment.mimeType.trim() : "";
+      return `meta:${originalName}:${mimeType}:${index}`;
+    })
+    .join("|");
+}
+
 function getEventRenderBaseKey(event) {
   const seq = Number.isInteger(event?.seq) ? event.seq : 0;
   const type = getNormalizedEventRenderType(event);
   if (type === "thinking_block") {
     const state = typeof event?.state === "string" ? event.state : "";
     return `${seq}:${type}:${state}`;
+  }
+  if (type === "attachment_delivery") {
+    const deliveryKey = getAttachmentDeliveryRenderKey(event);
+    return deliveryKey ? `${seq}:${type}:${deliveryKey}` : `${seq}:${type}`;
   }
   return `${seq}:${type}`;
 }

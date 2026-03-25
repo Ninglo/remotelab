@@ -1,10 +1,101 @@
-import { stripEventAttachmentSavedPaths } from './attachment-utils.mjs';
+import {
+  getMessageAttachments,
+  stripAttachmentSavedPath,
+  stripEventAttachmentSavedPaths,
+} from './attachment-utils.mjs';
 
 const HIDDEN_EVENT_TYPES = new Set(['reasoning', 'manager_context', 'tool_use', 'tool_result', 'file_change']);
 
 function cloneJson(value) {
   if (value === null || value === undefined) return value;
   return JSON.parse(JSON.stringify(value));
+}
+
+function isAssistantMessageEvent(event) {
+  return event?.type === 'message' && event?.role === 'assistant';
+}
+
+function getAttachmentIdentity(attachment, index = 0) {
+  if (!(attachment && typeof attachment === 'object')) {
+    return `unknown:${index}`;
+  }
+  const assetId = typeof attachment.assetId === 'string' ? attachment.assetId.trim() : '';
+  if (assetId) return `asset:${assetId}`;
+  const downloadUrl = typeof attachment.downloadUrl === 'string' ? attachment.downloadUrl.trim() : '';
+  if (downloadUrl) return `download:${downloadUrl}`;
+  const filename = typeof attachment.filename === 'string' ? attachment.filename.trim() : '';
+  if (filename) return `filename:${filename}`;
+  const originalName = typeof attachment.originalName === 'string' ? attachment.originalName.trim() : '';
+  const mimeType = typeof attachment.mimeType === 'string' ? attachment.mimeType.trim() : '';
+  const parsedSize = Number.parseInt(String(attachment.sizeBytes || ''), 10);
+  const sizeKey = Number.isInteger(parsedSize) && parsedSize > 0 ? String(parsedSize) : '';
+  return `meta:${originalName}:${mimeType}:${sizeKey}:${index}`;
+}
+
+function collectAttachmentDeliveryAttachments(events = []) {
+  const attachments = [];
+  const seen = new Set();
+  for (const event of Array.isArray(events) ? events : []) {
+    for (const attachment of getMessageAttachments(event)) {
+      const identity = getAttachmentIdentity(attachment, attachments.length);
+      if (identity && seen.has(identity)) continue;
+      if (identity) seen.add(identity);
+      const normalized = stripAttachmentSavedPath(cloneJson(attachment));
+      if (!(normalized && typeof normalized === 'object')) continue;
+      attachments.push({
+        ...normalized,
+        renderAs: 'file',
+      });
+    }
+  }
+  return attachments;
+}
+
+function buildAttachmentDeliveryKey(attachments = []) {
+  return (Array.isArray(attachments) ? attachments : [])
+    .map((attachment, index) => getAttachmentIdentity(attachment, index))
+    .join('|');
+}
+
+function buildAttachmentDeliveryEvent(events = [], { referenceEvent = null } = {}) {
+  const attachments = collectAttachmentDeliveryAttachments(events);
+  if (attachments.length === 0) return null;
+  const reference = referenceEvent || events[events.length - 1] || null;
+  return {
+    type: 'attachment_delivery',
+    seq: Number.isInteger(reference?.seq) ? reference.seq : 0,
+    role: 'assistant',
+    timestamp: reference?.timestamp || null,
+    deliveryKey: buildAttachmentDeliveryKey(attachments),
+    attachments: cloneJson(attachments),
+    images: cloneJson(attachments),
+  };
+}
+
+function collectMirroredAttachmentSourceEvents(events = [], { sessionRunning = false } = {}) {
+  const sourceEvents = [];
+  const normalizedEvents = Array.isArray(events) ? events : [];
+  const lastIndex = normalizedEvents.length - 1;
+  for (let index = 0; index < normalizedEvents.length; index += 1) {
+    const event = normalizedEvents[index];
+    if (!isAssistantMessageEvent(event)) continue;
+    if (getMessageAttachments(event).length === 0) continue;
+    if (!sessionRunning && index >= lastIndex) continue;
+    sourceEvents.push(event);
+  }
+  return sourceEvents;
+}
+
+function hasVisibleMessagePayload(event, { includeAttachments = true } = {}) {
+  if (event?.type !== 'message') return true;
+  const content = typeof event.content === 'string' ? event.content.trim() : '';
+  if (content) return true;
+  return includeAttachments && getMessageAttachments(event).length > 0;
+}
+
+function shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs) {
+  if (!(mirroredAttachmentSeqs instanceof Set) || mirroredAttachmentSeqs.size === 0) return false;
+  return Number.isInteger(event?.seq) && mirroredAttachmentSeqs.has(event.seq);
 }
 
 function isIgnoredStatusEvent(event) {
@@ -79,12 +170,18 @@ function buildThinkingBlockEvent(hiddenEvents, state = 'completed') {
   };
 }
 
-function pushVisibleEvent(target, event) {
+function pushVisibleEvent(target, event, { stripAttachments = false } = {}) {
   if (!isVisibleEvent(event)) return;
-  target.push(stripDeferredBodyFields(event));
+  if (!hasVisibleMessagePayload(event, { includeAttachments: !stripAttachments })) return;
+  const next = stripDeferredBodyFields(event);
+  if (stripAttachments && next?.type === 'message') {
+    delete next.attachments;
+    delete next.images;
+  }
+  target.push(next);
 }
 
-function emitSegmentedTurnBody(target, bodyEvents, { sessionRunning = false } = {}) {
+function emitSegmentedTurnBody(target, bodyEvents, { sessionRunning = false, mirroredAttachmentSeqs = null } = {}) {
   const hiddenSegment = [];
 
   for (const event of bodyEvents) {
@@ -97,7 +194,9 @@ function emitSegmentedTurnBody(target, bodyEvents, { sessionRunning = false } = 
       target.push(buildThinkingBlockEvent(hiddenSegment.splice(0), 'completed'));
     }
 
-    pushVisibleEvent(target, event);
+    pushVisibleEvent(target, event, {
+      stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+    });
   }
 
   if (hiddenSegment.length > 0) {
@@ -125,20 +224,45 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   const bodyEvents = getTurnEventsWithoutIgnoredStatuses(turn.body);
   if (bodyEvents.length === 0) return;
 
+  const mirroredAttachmentSourceEvents = collectMirroredAttachmentSourceEvents(bodyEvents, { sessionRunning });
+  const mirroredAttachmentSeqs = new Set(
+    mirroredAttachmentSourceEvents
+      .map((event) => (Number.isInteger(event?.seq) ? event.seq : 0))
+      .filter((seq) => seq > 0),
+  );
+  const deliveryEvent = buildAttachmentDeliveryEvent(mirroredAttachmentSourceEvents, {
+    referenceEvent: bodyEvents[bodyEvents.length - 1] || turn.user,
+  });
+
   if (sessionRunning) {
     target.push(buildThinkingBlockEvent(bodyEvents, 'running'));
+    if (deliveryEvent) {
+      target.push(deliveryEvent);
+    }
     return;
   }
 
   const lastHiddenIndex = findLastHiddenEventIndex(bodyEvents);
   if (lastHiddenIndex < 0) {
-    emitSegmentedTurnBody(target, bodyEvents, { sessionRunning });
+    emitSegmentedTurnBody(target, bodyEvents, {
+      sessionRunning,
+      mirroredAttachmentSeqs,
+    });
+    if (deliveryEvent) {
+      target.push(deliveryEvent);
+    }
     return;
   }
 
   const visibleTail = bodyEvents.slice(lastHiddenIndex + 1).filter(isVisibleEvent);
   if (visibleTail.length === 0) {
-    emitSegmentedTurnBody(target, bodyEvents, { sessionRunning });
+    emitSegmentedTurnBody(target, bodyEvents, {
+      sessionRunning,
+      mirroredAttachmentSeqs,
+    });
+    if (deliveryEvent) {
+      target.push(deliveryEvent);
+    }
     return;
   }
 
@@ -147,7 +271,12 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
     target.push(buildThinkingBlockEvent(collapsedPrefix, 'completed'));
   }
   for (const event of visibleTail) {
-    pushVisibleEvent(target, event);
+    pushVisibleEvent(target, event, {
+      stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+    });
+  }
+  if (deliveryEvent) {
+    target.push(deliveryEvent);
   }
 }
 

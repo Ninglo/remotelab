@@ -84,6 +84,85 @@ assert.deepEqual(
   'running folded blocks should preserve intermediate assistant text so the page can still reveal everything on demand',
 );
 
+const hiddenAttachmentHistory = [
+  { seq: 1, type: 'message', role: 'user', content: '把生成文件发给我' },
+  { seq: 2, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'generate-files' },
+  { seq: 3, type: 'tool_result', role: 'system', output: 'ok', exitCode: 0 },
+  {
+    seq: 4,
+    type: 'message',
+    role: 'assistant',
+    content: '文件已经生成。',
+    attachments: [
+      {
+        assetId: 'fasset_preview_png',
+        originalName: 'preview.png',
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        savedPath: '/tmp/preview.png',
+      },
+      {
+        assetId: 'fasset_notes_txt',
+        originalName: 'notes.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 512,
+        savedPath: '/tmp/notes.txt',
+      },
+    ],
+  },
+  { seq: 5, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'finalize-response' },
+  { seq: 6, type: 'tool_result', role: 'system', output: 'done', exitCode: 0 },
+  { seq: 7, type: 'message', role: 'assistant', content: '都准备好了。' },
+];
+
+const hiddenAttachmentDisplay = buildSessionDisplayEvents(hiddenAttachmentHistory, { sessionRunning: false });
+assert.deepEqual(
+  hiddenAttachmentDisplay.map((event) => event.type),
+  ['message', 'thinking_block', 'message', 'attachment_delivery'],
+  'turns with hidden assistant attachments should append a visible attachment delivery event at the bottom of the turn',
+);
+assert.equal(
+  hiddenAttachmentDisplay[3].attachments.length,
+  2,
+  'the attachment delivery event should surface every hidden assistant attachment once',
+);
+assert.equal(
+  hiddenAttachmentDisplay[3].attachments[0].renderAs,
+  'file',
+  'bottom attachment deliveries should force file-card rendering for visibility',
+);
+assert.equal(
+  'savedPath' in hiddenAttachmentDisplay[3].attachments[0],
+  false,
+  'bottom attachment deliveries should not leak host-side saved paths',
+);
+
+const runningAttachmentHistory = [
+  { seq: 1, type: 'message', role: 'user', content: '发我一个结果文件' },
+  { seq: 2, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'build-report' },
+  { seq: 3, type: 'tool_result', role: 'system', output: 'ok', exitCode: 0 },
+  {
+    seq: 4,
+    type: 'message',
+    role: 'assistant',
+    attachments: [
+      {
+        assetId: 'fasset_report_pdf',
+        originalName: 'report.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 4096,
+      },
+    ],
+  },
+];
+
+const runningAttachmentDisplay = buildSessionDisplayEvents(runningAttachmentHistory, { sessionRunning: true });
+assert.deepEqual(
+  runningAttachmentDisplay.map((event) => event.type),
+  ['message', 'thinking_block', 'attachment_delivery'],
+  'running turns should still surface a bottom attachment delivery event while the hidden block stays collapsed',
+);
+
 const ignoredStatusBlockEvents = buildEventBlockEvents(interleavedTurnHistory, 2, 6);
 assert.equal(
   ignoredStatusBlockEvents.some((event) => event.type === 'status' && event.content === 'thinking'),

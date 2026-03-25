@@ -79,6 +79,7 @@ function renderEvent(evt, autoScroll) {
 
   switch (evt.type) {
     case "message":
+    case "attachment_delivery":
       rendered = true;
       renderMessage(evt);
       break;

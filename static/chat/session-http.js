@@ -232,7 +232,9 @@ function shouldFetchSessionEventsForRefresh(sessionId, session) {
   if (runState !== "running") return true;
   if (!hasRenderedEventSnapshot(sessionId)) return true;
   if (renderedEventState.runState !== "running") return true;
-  return renderedEventState.runningBlockExpanded === true;
+  if (renderedEventState.runningBlockExpanded === true) return true;
+  const latestSeq = Number.isInteger(session?.latestSeq) ? session.latestSeq : 0;
+  return latestSeq > renderedEventState.latestSeq;
 }
 
 function getEventRenderPlan(sessionId, events) {
@@ -257,7 +259,7 @@ function getEventRenderPlan(sessionId, events) {
     return { mode: "reset", events: normalizedEvents };
   }
 
-  if (latestSeq === renderedEventState.latestSeq && eventKeyArraysEqual(nextKeys, renderedEventState.eventKeys || [])) {
+  if (eventKeyArraysEqual(nextKeys, renderedEventState.eventKeys || [])) {
     return { mode: "noop", events: [] };
   }
 

@@ -183,6 +183,7 @@ const context = createContext();
 vm.runInNewContext(sessionHttpSource, context, { filename: 'static/chat/session-http.js' });
 
 const runningSession = {
+  latestSeq: 42,
   activity: {
     run: { state: 'running' },
   },
@@ -191,7 +192,7 @@ const runningSession = {
 assert.equal(
   context.shouldFetchSessionEventsForRefresh('current-session', runningSession),
   false,
-  'collapsed running sessions should skip event refreshes when a rendered snapshot already exists',
+  'collapsed running sessions should skip refreshes when the visible running snapshot is already current',
 );
 
 context.renderedEventState.runningBlockExpanded = true;
@@ -199,6 +200,19 @@ assert.equal(
   context.shouldFetchSessionEventsForRefresh('current-session', runningSession),
   true,
   'expanding the running hidden block should re-enable event refreshes',
+);
+
+context.renderedEventState.runState = 'running';
+context.renderedEventState.runningBlockExpanded = false;
+assert.equal(
+  context.shouldFetchSessionEventsForRefresh('current-session', {
+    latestSeq: 43,
+    activity: {
+      run: { state: 'running' },
+    },
+  }),
+  true,
+  'collapsed running sessions should refetch when newer raw events may change the bottom delivery row',
 );
 
 context.renderedEventState.runState = 'idle';
@@ -255,6 +269,34 @@ assert.equal(
   inPlaceRefreshPlan.events[0]?.blockEndSeq,
   7,
   'the in-place refresh plan should target the newest running block boundary',
+);
+
+context.renderedEventState = {
+  sessionId: 'current-session',
+  latestSeq: 6,
+  eventCount: 2,
+  eventBaseKeys: ['1:message', '2:thinking_block:running'],
+  eventKeys: ['1:message', '2:thinking_block:running'],
+  runState: 'running',
+  runningBlockExpanded: false,
+};
+
+const collapsedNoopPlan = context.getEventRenderPlan('current-session', [
+  { seq: 1, type: 'message', role: 'user', content: 'Please inspect this run.' },
+  {
+    seq: 2,
+    type: 'thinking_block',
+    state: 'running',
+    blockStartSeq: 2,
+    blockEndSeq: 7,
+    label: 'Thinking · using bash',
+  },
+]);
+
+assert.equal(
+  collapsedNoopPlan.mode,
+  'noop',
+  'collapsed running blocks should keep their rendered snapshot when only hidden boundaries grow and no visible delivery event changed',
 );
 
 console.log('test-session-http-running-refresh: ok');

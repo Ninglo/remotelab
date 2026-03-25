@@ -1997,6 +1997,16 @@ function formatReplySelfCheckDisplayEvent(event) {
   if (event.type === 'message' && event.role === 'assistant') {
     return normalizeReplySelfCheckText(event.content || '');
   }
+  if (event.type === 'attachment_delivery') {
+    const attachments = Array.isArray(event.attachments) ? event.attachments : [];
+    const names = attachments
+      .map((attachment) => typeof attachment?.originalName === 'string' ? attachment.originalName.trim() : '')
+      .filter(Boolean);
+    if (names.length > 0) {
+      return `[Displayed attachment delivery: ${names.join(', ')}]`;
+    }
+    return '[Displayed attachment delivery]';
+  }
   if (event.type === 'thinking_block') {
     const label = normalizeReplySelfCheckText(event.label || 'Thought');
     return label ? `[Displayed thought block: ${label}]` : '[Displayed thought block]';
