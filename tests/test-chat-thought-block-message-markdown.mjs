@@ -109,7 +109,7 @@ const container = makeElement('div');
 const assistantMessage = {
   role: 'assistant',
   content: 'Before final answer:\n\n- item **one**\n- item `two`',
-  images: [{
+  attachments: [{
     assetId: 'fasset_1234567890abcdef12345678',
     originalName: 'rough cut.mp4',
     mimeType: 'video/mp4',

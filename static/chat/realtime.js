@@ -205,45 +205,48 @@ async function dispatchAction(msg) {
         const targetSessionId = msg.sessionId || currentSessionId;
         if (!targetSessionId) return false;
         const requestId = msg.requestId || createRequestId();
-        const canUseMultipart = Array.isArray(msg.images)
-          && msg.images.some((image) => image?.file && typeof image.file.arrayBuffer === "function");
+        const attachments = Array.isArray(msg.attachments)
+          ? msg.attachments
+          : (Array.isArray(msg.images) ? msg.images : []);
+        const canUseMultipart = attachments.some((image) => image?.file && typeof image.file.arrayBuffer === "function");
         const requestUrl = `/api/sessions/${encodeURIComponent(targetSessionId)}/messages`;
         const data = canUseMultipart
           ? await (async () => {
               const formData = new FormData();
-              const existingImages = [];
-              const externalAssets = [];
+              const existingAttachments = [];
+              const externalAttachments = [];
               formData.set("requestId", requestId);
               formData.set("text", msg.text || "");
               if (msg.tool) formData.set("tool", msg.tool);
               if (msg.model) formData.set("model", msg.model);
               if (msg.effort) formData.set("effort", msg.effort);
               if (msg.thinking) formData.set("thinking", "true");
-              for (const image of msg.images || []) {
+              for (const image of attachments) {
                 if (image?.file) {
-                  formData.append("images", image.file, image.originalName || image.file.name || "attachment");
+                  formData.append("attachments", image.file, image.originalName || image.file.name || "attachment");
                   continue;
                 }
                 if (image?.assetId) {
-                  externalAssets.push({
+                  externalAttachments.push({
                     assetId: image.assetId,
                     originalName: image.originalName || "",
                     mimeType: image.mimeType || "",
+                    ...(image?.renderAs === "file" ? { renderAs: "file" } : {}),
                   });
                   continue;
                 }
                 if (!image?.filename) continue;
-                existingImages.push({
+                existingAttachments.push({
                   filename: image.filename,
                   originalName: image.originalName || "",
                   mimeType: image.mimeType || "",
                 });
               }
-              if (existingImages.length > 0) {
-                formData.set("existingImages", JSON.stringify(existingImages));
+              if (existingAttachments.length > 0) {
+                formData.set("existingAttachments", JSON.stringify(existingAttachments));
               }
-              if (externalAssets.length > 0) {
-                formData.set("externalAssets", JSON.stringify(externalAssets));
+              if (externalAttachments.length > 0) {
+                formData.set("externalAttachments", JSON.stringify(externalAttachments));
               }
               return fetchJsonOrRedirect(requestUrl, {
                 method: "POST",
@@ -256,7 +259,7 @@ async function dispatchAction(msg) {
               body: JSON.stringify({
                 requestId,
                 text: msg.text,
-                ...(msg.images ? { images: msg.images } : {}),
+                ...(attachments.length > 0 ? { attachments } : {}),
                 ...(msg.tool ? { tool: msg.tool } : {}),
                 ...(msg.model ? { model: msg.model } : {}),
                 ...(msg.effort ? { effort: msg.effort } : {}),

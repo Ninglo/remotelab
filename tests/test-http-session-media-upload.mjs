@@ -207,6 +207,31 @@ async function submitMultipartMessage(port, sessionId, {
   return { status: res.status, json, text: responseText, headers: Object.fromEntries(res.headers.entries()) };
 }
 
+async function submitAssistantMultipartMessage(port, sessionId, {
+  requestId,
+  text = '',
+  source = 'connector_attachment_test',
+  mimeType,
+  filename,
+  body,
+}) {
+  const formData = new FormData();
+  if (requestId) formData.set('requestId', requestId);
+  formData.set('text', text);
+  formData.set('source', source);
+  formData.append('attachments', new Blob([body], { type: mimeType }), filename);
+
+  const res = await fetch(`http://127.0.0.1:${port}/api/sessions/${sessionId}/assistant-messages`, {
+    method: 'POST',
+    headers: { Cookie: cookie },
+    body: formData,
+  });
+  const responseText = await res.text();
+  let json = null;
+  try { json = responseText ? JSON.parse(responseText) : null; } catch {}
+  return { status: res.status, json, text: responseText, headers: Object.fromEntries(res.headers.entries()) };
+}
+
 async function submitJsonMessage(port, sessionId, requestId, text) {
   return request(port, 'POST', `/api/sessions/${sessionId}/messages`, {
     requestId,
@@ -246,10 +271,12 @@ try {
     }, 'user message with video attachment');
 
     assert.equal(eventsRes.userMessage.images?.length, 1, 'user event should preserve the attachment reference');
+    assert.equal(eventsRes.userMessage.attachments?.length, 1, 'user event should expose the canonical attachment alias');
     assert.equal(eventsRes.userMessage.images[0].mimeType, 'video/mp4', 'user event should preserve video mime type');
     assert.equal(eventsRes.userMessage.images[0].originalName, 'clip.mp4', 'user event should preserve the original filename');
     assert.match(eventsRes.userMessage.images[0].filename || '', /\.mp4$/, 'stored filename should keep the video extension');
     assert.equal(eventsRes.userMessage.images[0].savedPath, undefined, 'user event should not expose the internal attachment path');
+    assert.equal(eventsRes.userMessage.attachments[0].originalName, 'clip.mp4', 'attachment alias should preserve the original filename');
 
     const mediaRes = await request(port, 'GET', `/api/media/${eventsRes.userMessage.images[0].filename}`);
     assert.equal(mediaRes.status, 200, 'uploaded video should be downloadable from the media route');
@@ -283,6 +310,7 @@ try {
     }, 'user message with generic file attachment');
 
     assert.equal(fileEventsRes.userMessage.images?.length, 1, 'user event should preserve the generic file attachment reference');
+    assert.equal(fileEventsRes.userMessage.attachments?.length, 1, 'generic file event should expose the canonical attachment alias');
     assert.equal(fileEventsRes.userMessage.images[0].mimeType, 'text/csv', 'user event should preserve generic file mime type');
     assert.equal(fileEventsRes.userMessage.images[0].originalName, 'report.csv', 'user event should preserve the generic file name');
     assert.match(fileEventsRes.userMessage.images[0].filename || '', /\.csv$/, 'stored filename should keep the generic file extension');
@@ -314,6 +342,40 @@ try {
     }, 'follow-up prompt with continued attachment path');
     assert.match(followUpPrompt, /RemoteLab session continuity handoff for this existing conversation\./, 'follow-up prompt should include session continuation');
     assert.match(followUpPrompt, /\[Attached files: report\.csv -> .*\.csv\]/, 'follow-up prompt should carry the stored attachment path into continuation context');
+
+    const assistantSubmitRes = await submitAssistantMultipartMessage(port, fileSession.id, {
+      requestId: 'req-assistant-attachment',
+      text: '',
+      source: 'connector_attachment_test',
+      mimeType: 'text/plain',
+      filename: 'export.txt',
+      body: Buffer.from('assistant-generated-export', 'utf8'),
+    });
+    assert.equal(assistantSubmitRes.status, 201, 'assistant attachment API should accept attachment-only assistant messages');
+    assert.equal(assistantSubmitRes.json?.event?.role, 'assistant', 'assistant attachment API should append an assistant event');
+    assert.equal(assistantSubmitRes.json?.event?.source, 'connector_attachment_test', 'assistant attachment API should preserve the event source');
+    assert.equal(assistantSubmitRes.json?.event?.content, '', 'assistant attachment API should allow attachment-only messages');
+    assert.equal(assistantSubmitRes.json?.event?.attachments?.length, 1, 'assistant attachment API should return the canonical attachment list');
+    assert.equal(assistantSubmitRes.json?.event?.images?.length, 1, 'assistant attachment API should keep the legacy images alias during migration');
+
+    const assistantEventsRes = await waitFor(async () => {
+      const res = await request(port, 'GET', `/api/sessions/${fileSession.id}/events?filter=all`);
+      if (res.status !== 200) return false;
+      const assistantMessage = (res.json.events || []).find((event) => (
+        event.type === 'message'
+        && event.role === 'assistant'
+        && event.source === 'connector_attachment_test'
+      ));
+      return assistantMessage ? { res, assistantMessage } : false;
+    }, 'assistant attachment-only message');
+
+    assert.equal(assistantEventsRes.assistantMessage.attachments?.length, 1, 'assistant message should expose canonical attachments to the client');
+    assert.equal(assistantEventsRes.assistantMessage.images?.length, 1, 'assistant message should still expose the legacy images alias');
+    assert.equal(assistantEventsRes.assistantMessage.attachments[0].originalName, 'export.txt', 'assistant attachment message should preserve the exported filename');
+
+    const assistantMediaRes = await request(port, 'GET', `/api/media/${assistantEventsRes.assistantMessage.attachments[0].filename}`);
+    assert.equal(assistantMediaRes.status, 200, 'assistant attachment should be downloadable from the media route');
+    assert.equal(assistantMediaRes.buffer.toString('utf8'), 'assistant-generated-export', 'assistant attachment download should preserve the file contents');
 
     console.log('test-http-session-media-upload: ok');
   } finally {

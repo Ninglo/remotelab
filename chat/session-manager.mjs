@@ -57,6 +57,7 @@ import {
 } from './session-workflow-state.mjs';
 import {
   formatAttachmentContextLine,
+  getMessageAttachments,
   stripEventAttachmentSavedPaths,
 } from './attachment-utils.mjs';
 import {
@@ -842,18 +843,19 @@ function buildQueuedFollowUpSourceContext(queue = []) {
 }
 
 function serializeQueuedFollowUp(entry) {
+  const attachments = getMessageAttachments(entry).map((image) => ({
+    ...(image?.filename ? { filename: image.filename } : {}),
+    ...(image?.assetId ? { assetId: image.assetId } : {}),
+    ...(image?.originalName ? { originalName: image.originalName } : {}),
+    ...(image?.mimeType ? { mimeType: image.mimeType } : {}),
+    ...(normalizeAttachmentSizeBytes(image?.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(image.sizeBytes) } : {}),
+    ...(trimString(image?.renderAs) === 'file' ? { renderAs: 'file' } : {}),
+  }));
   return {
     requestId: typeof entry?.requestId === 'string' ? entry.requestId : '',
     text: typeof entry?.text === 'string' ? entry.text : '',
     queuedAt: typeof entry?.queuedAt === 'string' ? entry.queuedAt : '',
-    images: (entry?.images || []).map((image) => ({
-      ...(image?.filename ? { filename: image.filename } : {}),
-      ...(image?.assetId ? { assetId: image.assetId } : {}),
-      ...(image?.originalName ? { originalName: image.originalName } : {}),
-      ...(image?.mimeType ? { mimeType: image.mimeType } : {}),
-      ...(normalizeAttachmentSizeBytes(image?.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(image.sizeBytes) } : {}),
-      ...(trimString(image?.renderAs) === 'file' ? { renderAs: 'file' } : {}),
-    })),
+    ...(attachments.length > 0 ? { attachments, images: attachments } : {}),
   };
 }
 
@@ -895,7 +897,7 @@ function formatQueuedFollowUpTextEntry(entry, index) {
       lines.push(text);
     }
   }
-  const attachmentLine = formatAttachmentContextLine(entry?.images);
+  const attachmentLine = formatAttachmentContextLine(getMessageAttachments(entry));
   if (attachmentLine) lines.push(attachmentLine);
   return lines.join('\n');
 }
@@ -996,7 +998,7 @@ async function flushQueuedFollowUps(sessionId) {
       effort: dispatchOptions.effort,
       thinking: dispatchOptions.thinking,
       ...(queuedSourceContext ? { sourceContext: queuedSourceContext } : {}),
-      preSavedAttachments: queue.flatMap((entry) => sanitizeQueuedFollowUpAttachments(entry.images)),
+      preSavedAttachments: queue.flatMap((entry) => sanitizeQueuedFollowUpAttachments(getMessageAttachments(entry))),
       recordedUserText: transcriptText,
       queueIfBusy: false,
     });
@@ -1460,6 +1462,55 @@ export async function saveAttachments(images) {
       ...(typeof img?.data === 'string' ? { data: img.data } : {}),
     };
   }));
+}
+
+function buildMessageAttachmentRefs(images = []) {
+  return (images || []).map((img) => ({
+    ...(img.filename ? { filename: img.filename } : {}),
+    ...(img.savedPath ? { savedPath: img.savedPath } : {}),
+    ...(img.assetId ? { assetId: img.assetId } : {}),
+    ...(img.originalName ? { originalName: img.originalName } : {}),
+    mimeType: img.mimeType,
+    ...(normalizeAttachmentSizeBytes(img?.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(img.sizeBytes) } : {}),
+    ...(trimString(img?.renderAs) === 'file' ? { renderAs: 'file' } : {}),
+  }));
+}
+
+export async function appendAssistantMessage(sessionId, text = '', images = [], options = {}) {
+  let session = await getSession(sessionId);
+  if (!session) throw new Error('Session not found');
+  if (session.archived) {
+    const error = new Error('Session is archived');
+    error.code = 'SESSION_ARCHIVED';
+    throw error;
+  }
+
+  const normalizedText = typeof text === 'string' ? text.trim() : '';
+  const savedImages = options.preSavedAttachments?.length > 0
+    ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
+    : await saveAttachments(images);
+  if (!normalizedText && savedImages.length === 0) {
+    const error = new Error('text or attachments are required');
+    error.code = 'MESSAGE_EMPTY';
+    throw error;
+  }
+
+  const event = await appendEvent(sessionId, messageEvent('assistant', normalizedText, buildMessageAttachmentRefs(savedImages), {
+    ...(typeof options.source === 'string' && options.source.trim() ? { source: options.source.trim() } : {}),
+    ...(typeof options.requestId === 'string' && options.requestId.trim() ? { requestId: options.requestId.trim() } : {}),
+    ...(typeof options.runId === 'string' && options.runId.trim() ? { runId: options.runId.trim() } : {}),
+    ...(typeof options.resultRunId === 'string' && options.resultRunId.trim() ? { resultRunId: options.resultRunId.trim() } : {}),
+  }));
+
+  const touchedSession = await touchSessionMeta(sessionId);
+  if (touchedSession) {
+    session = await enrichSessionMeta(touchedSession);
+  }
+  broadcastSessionInvalidation(sessionId);
+  return {
+    event: stripEventAttachmentSavedPaths(event),
+    session: await getSession(sessionId) || session,
+  };
 }
 
 async function touchSessionMeta(sessionId, extra = {}) {
@@ -2090,7 +2141,7 @@ function formatVoiceTranscriptRewriteDiscussionEvent(event) {
   const label = event.role === 'assistant' ? 'Assistant' : 'User';
   const parts = [];
   const content = clipVoiceTranscriptRewriteText(event.content, 700);
-  const imageLine = formatVoiceTranscriptRewriteImages(event.images);
+  const imageLine = formatVoiceTranscriptRewriteImages(getMessageAttachments(event));
   if (content) parts.push(content);
   if (imageLine) parts.push(imageLine);
   if (parts.length === 0) return '';
@@ -2498,7 +2549,7 @@ function formatCompactionAttachments(images) {
 function formatCompactionMessage(evt) {
   const label = evt.role === 'user' ? 'User' : 'Assistant';
   const parts = [];
-  const imageLine = formatCompactionAttachments(evt.images);
+  const imageLine = formatCompactionAttachments(getMessageAttachments(evt));
   if (imageLine) parts.push(imageLine);
   const content = clipCompactionEventText(evt.content);
   if (content) parts.push(content);
@@ -2813,11 +2864,12 @@ async function maybePublishRunResultAssets(sessionId, run, manifest, normalizedE
     return false;
   }
 
-  await appendEvent(sessionId, messageEvent('assistant', buildResultAssetReadyMessage(attachments), attachments, {
+  await appendAssistantMessage(sessionId, buildResultAssetReadyMessage(attachments), [], {
+    preSavedAttachments: attachments,
     source: 'result_file_assets',
     resultRunId: run.id,
     ...(run.requestId ? { requestId: run.requestId } : {}),
-  }));
+  });
   return true;
 }
 
@@ -4385,15 +4437,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
     : await saveAttachments(images);
   const sourceContext = normalizeSourceContext(options.sourceContext);
-  const imageRefs = savedImages.map((img) => ({
-    ...(img.filename ? { filename: img.filename } : {}),
-    ...(img.savedPath ? { savedPath: img.savedPath } : {}),
-    ...(img.assetId ? { assetId: img.assetId } : {}),
-    ...(img.originalName ? { originalName: img.originalName } : {}),
-    mimeType: img.mimeType,
-    ...(normalizeAttachmentSizeBytes(img?.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(img.sizeBytes) } : {}),
-    ...(trimString(img?.renderAs) === 'file' ? { renderAs: 'file' } : {}),
-  }));
+  const imageRefs = buildMessageAttachmentRefs(savedImages);
   const isFirstRecordedUserMessage =
     options.recordUserMessage !== false
     && (snapshot.userMessageCount || 0) === 0;

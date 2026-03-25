@@ -1,3 +1,5 @@
+import { normalizeMessageEventAttachments } from './attachment-utils.mjs';
+
 let counter = 0;
 
 function createEvent(type, fields = {}) {
@@ -12,8 +14,8 @@ function createEvent(type, fields = {}) {
 
 export function messageEvent(role, content, images, extra = {}) {
   const fields = { role, content, ...extra };
-  if (images && images.length > 0) fields.images = images;
-  return createEvent('message', fields);
+  if (images && images.length > 0) fields.attachments = images;
+  return normalizeMessageEventAttachments(createEvent('message', fields));
 }
 
 export function toolUseEvent(toolName, toolInput) {

@@ -78,7 +78,10 @@ function renderQueuedMessagePanel(session) {
     row.appendChild(meta);
     row.appendChild(text);
 
-    const imageNames = (item.images || []).map((image) => getAttachmentDisplayName(image)).filter(Boolean);
+    const itemAttachments = Array.isArray(item?.attachments) && item.attachments.length > 0
+      ? item.attachments
+      : (Array.isArray(item?.images) ? item.images : []);
+    const imageNames = itemAttachments.map((image) => getAttachmentDisplayName(image)).filter(Boolean);
     if (imageNames.length > 0) {
       const imageLine = document.createElement("div");
       imageLine.className = "queued-item-images";

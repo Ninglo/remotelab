@@ -222,7 +222,9 @@ try {
     const generated = resultMessage.generated;
     assert.equal(generated.content, 'Generated files ready to download.', 'generated result message should use the plural download-ready copy');
     assert.equal(generated.images?.length, expectedOutputs.length, 'generated result message should attach every published file');
+    assert.equal(generated.attachments?.length, expectedOutputs.length, 'generated result message should expose the canonical attachment alias');
     assert.deepEqual(generated.images.map((image) => image.originalName), expectedOutputs.map((output) => output.name), 'generated result attachments should preserve every exported file name');
+    assert.deepEqual(generated.attachments.map((image) => image.originalName), expectedOutputs.map((output) => output.name), 'attachment alias should preserve every exported file name');
     assert.deepEqual(generated.images.map((image) => image.mimeType), expectedOutputs.map(() => 'video/mp4'), 'generated result attachments should preserve the video mime type');
     assert.deepEqual(generated.images.map((image) => image.sizeBytes), expectedOutputs.map((output) => Buffer.byteLength(output.content, 'utf8')), 'generated result attachments should preserve every exported file size');
     assert.ok(generated.images.every((image) => image.renderAs === 'file'), 'generated result attachments should render as download rows');

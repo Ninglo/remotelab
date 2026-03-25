@@ -245,10 +245,13 @@ function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false
     wrap.className = "msg-user";
     const bubble = document.createElement("div");
     bubble.className = "msg-user-bubble";
-    if (evt.images && evt.images.length > 0) {
+    const userAttachments = Array.isArray(evt.attachments) && evt.attachments.length > 0
+      ? evt.attachments
+      : (Array.isArray(evt.images) ? evt.images : []);
+    if (userAttachments.length > 0) {
       const imgWrap = document.createElement("div");
       imgWrap.className = "msg-images";
-      for (const img of evt.images) {
+      for (const img of userAttachments) {
         const attachmentNode = createMessageAttachmentNode(img);
         if (!attachmentNode) continue;
         imgWrap.appendChild(attachmentNode);
@@ -276,7 +279,10 @@ function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false
   } else {
     const div = document.createElement("div");
     div.className = "msg-assistant md-content";
-    const hasAttachments = Array.isArray(evt.images) && evt.images.length > 0;
+    const assistantAttachments = Array.isArray(evt.attachments) && evt.attachments.length > 0
+      ? evt.attachments
+      : (Array.isArray(evt.images) ? evt.images : []);
+    const hasAttachments = assistantAttachments.length > 0;
     if (!evt.content && !evt.bodyAvailable && !hasAttachments) {
       return null;
     }
@@ -314,7 +320,7 @@ function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false
     if (hasAttachments) {
       const imgWrap = document.createElement("div");
       imgWrap.className = "msg-images";
-      for (const img of evt.images) {
+      for (const img of assistantAttachments) {
         const attachmentNode = createMessageAttachmentNode(img);
         if (!attachmentNode) continue;
         imgWrap.appendChild(attachmentNode);

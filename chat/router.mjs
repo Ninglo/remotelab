@@ -17,6 +17,7 @@ import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import {
   applyAppTemplateToSession,
+  appendAssistantMessage,
   cancelActiveRun,
   compactSession,
   createSession,
@@ -233,7 +234,21 @@ async function readSessionMessagePayload(req, pathname) {
   const contentType = String(req.headers['content-type'] || '').toLowerCase();
   if (!contentType.startsWith('multipart/form-data')) {
     const body = await readBody(req, MESSAGE_SUBMISSION_MAX_BYTES);
-    return JSON.parse(body);
+    const payload = JSON.parse(body);
+    const attachments = Array.isArray(payload?.attachments)
+      ? payload.attachments.filter(Boolean)
+      : (Array.isArray(payload?.images) ? payload.images.filter(Boolean) : []);
+    return {
+      requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
+      text: typeof payload?.text === 'string' ? payload.text : '',
+      tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
+      model: typeof payload?.model === 'string' ? payload.model.trim() : '',
+      effort: typeof payload?.effort === 'string' ? payload.effort.trim() : '',
+      thinking: payload?.thinking === true,
+      source: typeof payload?.source === 'string' ? payload.source.trim() : '',
+      sourceContext: payload?.sourceContext && typeof payload.sourceContext === 'object' ? payload.sourceContext : null,
+      attachments,
+    };
   }
 
   const contentLength = getMultipartBodyLength(req);
@@ -248,36 +263,43 @@ async function readSessionMessagePayload(req, pathname) {
     duplex: 'half',
   });
   const formData = await formRequest.formData();
-  const images = [];
-  for (const entry of formData.getAll('images')) {
-    if (!entry || typeof entry.arrayBuffer !== 'function') continue;
-    images.push({
-      buffer: Buffer.from(await entry.arrayBuffer()),
-      mimeType: typeof entry.type === 'string' ? entry.type : '',
-      originalName: typeof entry.name === 'string' ? entry.name : '',
-    });
+  const attachments = [];
+  for (const fieldName of ['attachments', 'images']) {
+    for (const entry of formData.getAll(fieldName)) {
+      if (!entry || typeof entry.arrayBuffer !== 'function') continue;
+      attachments.push({
+        buffer: Buffer.from(await entry.arrayBuffer()),
+        mimeType: typeof entry.type === 'string' ? entry.type : '',
+        originalName: typeof entry.name === 'string' ? entry.name : '',
+      });
+    }
   }
-  const existingImages = parseFormJson(parseFormString(formData.get('existingImages')), []);
-  if (Array.isArray(existingImages)) {
-    for (const image of existingImages) {
+
+  for (const fieldName of ['existingAttachments', 'existingImages']) {
+    const existingAttachments = parseFormJson(parseFormString(formData.get(fieldName)), []);
+    if (!Array.isArray(existingAttachments)) continue;
+    for (const image of existingAttachments) {
       if (!image || typeof image !== 'object') continue;
       if (typeof image.filename !== 'string' || !image.filename.trim()) continue;
-      images.push({
+      attachments.push({
         filename: image.filename.trim(),
         originalName: parseFormString(image.originalName),
         mimeType: parseFormString(image.mimeType),
       });
     }
   }
-  const externalAssets = parseFormJson(parseFormString(formData.get('externalAssets')), []);
-  if (Array.isArray(externalAssets)) {
+
+  for (const fieldName of ['externalAttachments', 'externalAssets']) {
+    const externalAssets = parseFormJson(parseFormString(formData.get(fieldName)), []);
+    if (!Array.isArray(externalAssets)) continue;
     for (const asset of externalAssets) {
       if (!asset || typeof asset !== 'object') continue;
       if (typeof asset.assetId !== 'string' || !asset.assetId.trim()) continue;
-      images.push({
+      attachments.push({
         assetId: asset.assetId.trim(),
         originalName: parseFormString(asset.originalName),
         mimeType: parseFormString(asset.mimeType),
+        ...(parseFormString(asset.renderAs) === 'file' ? { renderAs: 'file' } : {}),
       });
     }
   }
@@ -289,9 +311,66 @@ async function readSessionMessagePayload(req, pathname) {
     model: parseFormString(formData.get('model')),
     effort: parseFormString(formData.get('effort')),
     thinking: parseFormString(formData.get('thinking')) === 'true',
+    source: parseFormString(formData.get('source')),
     sourceContext: parseFormJson(parseFormString(formData.get('sourceContext')), null),
-    images,
+    attachments,
   };
+}
+
+async function resolveRequestedSessionAttachments(authSession, requestedAttachments = []) {
+  const uploadedAttachments = requestedAttachments.filter((attachment) => Buffer.isBuffer(attachment?.buffer) || typeof attachment?.data === 'string');
+  const existingAttachments = requestedAttachments.filter((attachment) => typeof attachment?.filename === 'string' && attachment.filename.trim() && !attachment?.assetId);
+  const externalAssetAttachments = [];
+
+  for (const attachment of requestedAttachments) {
+    const assetId = typeof attachment?.assetId === 'string' ? attachment.assetId.trim() : '';
+    if (!assetId) continue;
+    const asset = await getFileAsset(assetId);
+    if (!asset) {
+      const error = new Error(`Unknown asset: ${assetId}`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!(authSession && (
+      authSession.role === 'owner'
+      || (authSession.role === 'visitor' && authSession.sessionId === asset.sessionId)
+    ))) {
+      const error = new Error('Forbidden');
+      error.statusCode = 403;
+      throw error;
+    }
+    if (asset.status !== 'ready') {
+      const error = new Error(`Asset is not ready: ${assetId}`);
+      error.statusCode = 409;
+      throw error;
+    }
+    const localizedPath = typeof asset.localizedPath === 'string' && asset.localizedPath && await pathExists(asset.localizedPath)
+      ? asset.localizedPath
+      : '';
+    externalAssetAttachments.push({
+      assetId: asset.id,
+      ...(localizedPath ? {
+        savedPath: localizedPath,
+        filename: typeof attachment?.filename === 'string' && attachment.filename.trim()
+          ? attachment.filename.trim()
+          : basename(localizedPath),
+      } : {}),
+      originalName: typeof attachment?.originalName === 'string' && attachment.originalName.trim()
+        ? attachment.originalName.trim()
+        : asset.originalName,
+      mimeType: typeof attachment?.mimeType === 'string' && attachment.mimeType.trim()
+        ? attachment.mimeType.trim()
+        : asset.mimeType,
+      ...(Number.isInteger(asset?.sizeBytes) && asset.sizeBytes > 0 ? { sizeBytes: asset.sizeBytes } : {}),
+      ...(typeof attachment?.renderAs === 'string' && attachment.renderAs.trim() === 'file' ? { renderAs: 'file' } : {}),
+    });
+  }
+
+  return [
+    ...(await resolveSavedAttachments(existingAttachments)),
+    ...(uploadedAttachments.length > 0 ? await saveAttachments(uploadedAttachments) : []),
+    ...externalAssetAttachments,
+  ];
 }
 
 async function readVoiceCleanupPayload(req) {
@@ -1709,49 +1788,8 @@ export async function handleRequest(req, res) {
       }
       try {
         const requestId = typeof payload?.requestId === 'string' ? payload.requestId.trim() : '';
-        const requestedImages = Array.isArray(payload?.images) ? payload.images.filter(Boolean) : [];
-        const uploadedImages = requestedImages.filter((image) => Buffer.isBuffer(image?.buffer) || typeof image?.data === 'string');
-        const existingImages = requestedImages.filter((image) => typeof image?.filename === 'string' && image.filename.trim() && !image?.assetId);
-        const externalAssetImages = [];
-        for (const image of requestedImages) {
-          const assetId = typeof image?.assetId === 'string' ? image.assetId.trim() : '';
-          if (!assetId) continue;
-          const asset = await getFileAsset(assetId);
-          if (!asset) {
-            writeJson(res, 400, { error: `Unknown asset: ${assetId}` });
-            return;
-          }
-          if (!requireSessionAccess(res, authSession, asset.sessionId)) return;
-          if (asset.status !== 'ready') {
-            writeJson(res, 409, { error: `Asset is not ready: ${assetId}` });
-            return;
-          }
-          const localizedPath = typeof asset.localizedPath === 'string' && asset.localizedPath && await pathExists(asset.localizedPath)
-            ? asset.localizedPath
-            : '';
-          externalAssetImages.push({
-            assetId: asset.id,
-            ...(localizedPath ? {
-              savedPath: localizedPath,
-              filename: typeof image?.filename === 'string' && image.filename.trim()
-                ? image.filename.trim()
-                : basename(localizedPath),
-            } : {}),
-            originalName: typeof image?.originalName === 'string' && image.originalName.trim()
-              ? image.originalName.trim()
-              : asset.originalName,
-            mimeType: typeof image?.mimeType === 'string' && image.mimeType.trim()
-              ? image.mimeType.trim()
-              : asset.mimeType,
-            ...(Number.isInteger(asset?.sizeBytes) && asset.sizeBytes > 0 ? { sizeBytes: asset.sizeBytes } : {}),
-            ...(typeof image?.renderAs === 'string' && image.renderAs.trim() === 'file' ? { renderAs: 'file' } : {}),
-          });
-        }
-        const preSavedAttachments = [
-          ...(await resolveSavedAttachments(existingImages)),
-          ...(uploadedImages.length > 0 ? await saveAttachments(uploadedImages) : []),
-          ...externalAssetImages,
-        ];
+        const requestedAttachments = Array.isArray(payload?.attachments) ? payload.attachments.filter(Boolean) : [];
+        const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments);
         const messageOptions = {
           tool: authSession?.role === 'visitor' ? undefined : payload.tool || undefined,
           thinking: authSession?.role === 'visitor' ? false : !!payload.thinking,
@@ -1776,6 +1814,45 @@ export async function handleRequest(req, res) {
       } catch (error) {
         const statusCode = error?.code === 'SESSION_ARCHIVED' ? 409 : 400;
         writeJson(res, statusCode, { error: error.message || 'Failed to submit message' });
+      }
+      return;
+    }
+
+    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'assistant-messages') {
+      if (!requireSessionAccess(res, authSession, sessionId)) return;
+      if (authSession?.role !== 'owner') {
+        writeJson(res, 403, { error: 'Owner access required' });
+        return;
+      }
+      let body;
+      try {
+        body = await readSessionMessagePayload(req, pathname);
+      } catch (err) {
+        writeJson(res, err.code === 'BODY_TOO_LARGE' ? 413 : 400, { error: err.code === 'BODY_TOO_LARGE' ? 'Request body too large' : 'Bad request' });
+        return;
+      }
+      const payload = body;
+      if (!payload || typeof payload !== 'object') {
+        writeJson(res, 400, { error: 'Invalid request body' });
+        return;
+      }
+      try {
+        const requestedAttachments = Array.isArray(payload?.attachments) ? payload.attachments.filter(Boolean) : [];
+        const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments);
+        const outcome = await appendAssistantMessage(sessionId, payload.text || '', [], {
+          requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
+          source: payload.source || 'assistant_message_api',
+          ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
+        });
+        writeJson(res, 201, {
+          event: outcome.event,
+          session: createClientSessionDetail(outcome.session),
+        });
+      } catch (error) {
+        const statusCode = error?.code === 'SESSION_ARCHIVED'
+          ? 409
+          : (Number.isInteger(error?.statusCode) ? error.statusCode : (error?.code === 'MESSAGE_EMPTY' ? 400 : 400));
+        writeJson(res, statusCode, { error: error.message || 'Failed to append assistant message' });
       }
       return;
     }
