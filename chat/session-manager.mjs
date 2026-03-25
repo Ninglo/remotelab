@@ -174,7 +174,7 @@ const TURN_ACTIVATION_CARD = wrapPrivatePromptBlock([
   '- Judge pauses branch-first: before asking anything, decide whether this turn has a real logical fork or forced human checkpoint; do not ask merely whether to continue.',
   '- If the work is still on a single obvious track, treat the current request as standing authorization and keep going.',
   '- Pause only for real ambiguity, missing required user input, or a meaningfully destructive / irreversible action.',
-  '- Default to concise, state-first updates: current execution state, then whether the user is needed now or the work can stay parked; avoid implementation noise unless the user asks for it.',
+  '- Default to concise, state-first updates: current execution state, then whether the user is needed now or the work can stay parked; avoid implementation noise like memory-file, repo, remote, branch, or checkpoint detail unless the user asks for it.',
   '- Treat multi-goal routing as a first-order judgment: bounded work deserves bounded context, so split independently completable work instead of flattening it into one thread.',
 ].join('\n'));
 

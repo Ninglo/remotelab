@@ -105,6 +105,16 @@ try {
     'default Codex developer instructions should separate machine-side completion from user-visible delivery',
   );
   assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /Do not assume every user or task lives inside Git, GitHub, or code-repository workflows/,
+    'default Codex developer instructions should avoid treating Git or repos as universal user context',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /repo state, remotes, branches, checkpoints, and similar operator workflows as internal mechanics/,
+    'default Codex developer instructions should keep internal Git and memory mechanics out of default user-facing status updates',
+  );
+  assert.match(
     MANAGER_RUNTIME_BOUNDARY_SECTION,
     /host machine is your private execution surface, not the default user interface/,
     'manager runtime boundary should define the host as the agent execution surface rather than the user interface',
@@ -118,6 +128,16 @@ try {
     MANAGER_RUNTIME_BOUNDARY_SECTION,
     /Machine-side completion and user-visible delivery are separate states|open, read, or download the result from a reachable surface/,
     'manager runtime boundary should treat user delivery as distinct from machine-side completion',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /Do not assume every user or task centers on Git, GitHub, or a code repository/,
+    'manager runtime boundary should avoid repo-centric assumptions as the default product model',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /do not volunteer implementation details about memory files, prompts, repos, remotes, branches, checkpoints, or local tooling/,
+    'manager runtime boundary should keep host-side implementation details out of normal user-facing replies',
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,
@@ -148,6 +168,11 @@ try {
     MANAGER_TURN_POLICY_REMINDER,
     /Do not hand work back by telling the user to inspect a local path on the host machine/,
     'turn-level policy reminder should block host-path handoff language',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /Keep operator mechanics hidden by default: summarize in user-facing outcome language, and avoid volunteering memory-file, repo, remote, branch, checkpoint, or other host-side workflow details/,
+    'turn-level policy reminder should keep operator-side mechanics out of default user-facing summaries',
   );
 
   console.log('test-runtime-policy: ok');

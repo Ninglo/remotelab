@@ -278,6 +278,12 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Keep the router broad enough to cover both repos and non-repo task families, with trigger phrases and the next file, skill, or path to open.
 - The filename can stay `projects.md` for compatibility, but its job is scope routing rather than a strict repo catalog.
 
+### Git Workflow Defaults Belong In User-Level Memory, Not Shared Product Defaults (2026-03-25)
+- RemoteLab should not assume every deployment or every end user centers work around Git, GitHub, or code repositories.
+- Git-specific habits such as checkpoint-and-push defaults, branch conventions, or remote hygiene are operator-specific workflows; keep them in user-level memory, repo-local instructions, or on-demand skills rather than shared startup/product defaults.
+- User-facing replies should usually translate internal repo/checkpoint mechanics into task-level outcomes; mention repos, remotes, branches, or checkpoints only when the task is explicitly technical or the user asks.
+- Startup memory and scope routing should treat non-repo domains like email, scheduling, documents, forms, and media work as first-class scopes so ordinary users are not forced through developer abstractions.
+
 ### Existing RemoteLab Push State Can Power One-Off Reminders (2026-03-06)
 - If a deployment already has active web-push subscriptions, you can send ad hoc reminders without touching app code by reading `~/.config/remotelab/vapid-keys.json` and `~/.config/remotelab/push-subscriptions.json` from a local script and using the repo's `web-push` dependency directly.
 - This is useful for operator-scheduled reminders or out-of-band alerts, but it still depends on the host machine being awake and online at send time; pair it with a local fallback notification and, when appropriate, temporary `caffeinate`.

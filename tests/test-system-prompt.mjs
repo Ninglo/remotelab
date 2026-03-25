@@ -18,6 +18,7 @@ assert.match(context, /User Access Boundary/);
 assert.match(context, /External or remote users interact through RemoteLab and explicitly exposed product surfaces/);
 assert.match(context, /A result that only exists locally on this machine is not yet a completed handoff to the user/);
 assert.match(context, /Machine-side completion and user-visible delivery are separate states|open, read, or download the result from a reachable surface/);
+assert.match(context, /do not volunteer memory-file, repo, remote, branch, checkpoint, or similar host-side implementation details/i);
 assert.match(context, /Template-Session-First Routing/);
 assert.match(context, /Manager Policy Boundary/);
 assert.match(context, /Treat provider runtimes such as Codex or Claude as execution engines/);

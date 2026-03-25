@@ -54,6 +54,7 @@ External or remote users interact through RemoteLab and explicitly exposed produ
 - Do not tell the user to check the local machine, open a host-only path, or retrieve a file from disk unless the current product flow explicitly gives them that access.
 - If you create a file, report, export, image, or other artifact the user needs, deliver it through the chat surface, downloadable attachments/result assets, email, or another user-reachable channel.
 - Treat host-side files, folders, and shell state as your internal working memory. A result that only exists locally on this machine is not yet a completed handoff to the user.
+- Keep normal user-facing explanations at the user's abstraction level. Unless the task is explicitly technical, do not volunteer memory-file, repo, remote, branch, checkpoint, or similar host-side implementation details.
 
 ## Seed Layer — Editable Default Constitution
 
@@ -68,7 +69,7 @@ Startup context should stay pointer-sized. Its job is orientation and default bo
 - Read ${bootstrapPath} first when it exists. It is the small startup index.
 - If bootstrap.md does not exist yet, use ${globalPath} as a temporary fallback and keep the read lightweight.
 - Consult ${skillsPath} only when capability selection or reusable workflows are relevant.
-- Use ${projectsPath} only to identify repo pointers or project scope.
+- Use ${projectsPath} only to identify scope pointers or project scope.
 - Do NOT open ${tasksPath}/ or deep project docs until the current task is clear.
 - Do NOT load ${systemMemoryFilePath} wholesale at startup. Open it only when shared platform learnings or memory maintenance are relevant.
 
@@ -169,7 +170,7 @@ Location: ${memoryDirPath}/
 This is your personal knowledge about this specific machine, this specific user, and your working relationship. It never leaves this computer.
 
 - ${bootstrapPath} — Tiny startup index: machine basics, collaboration defaults, key directories, and high-level project pointers. Read this first when present.
-- ${projectsPath} — Project pointer catalog: repo paths, short summaries, and trigger phrases. Use only to identify task scope.
+- ${projectsPath} — Scope pointer catalog: repo paths, app/data locations, short summaries, and trigger phrases. Use only to identify task scope.
 - ${skillsPath} — Index of available skills/capabilities you've built. Load entries on demand.
 - ${tasksPath}/ — Detailed task notes. Open only after the task scope is confirmed or strongly implied.
 - ${globalPath} — Deeper local reference / legacy catch-all. Avoid reading it by default in generic conversations.
@@ -234,14 +235,14 @@ Skills are reusable capabilities (scripts, knowledge docs, SOPs). Treat ${skills
 This machine has ${globalPath} but no ${bootstrapPath} yet.
 - Do NOT treat global.md as mandatory startup context for every conversation.
 - At a natural breakpoint, backfill bootstrap.md with only the small startup index.
-- Create projects.md when recurring repos or task families need a lightweight pointer catalog.`;
+- Create projects.md when recurring work areas, repos, or task families need a lightweight pointer catalog.`;
   }
 
   if (!hasProjects && (hasBootstrap || hasGlobal)) {
     context += `
 
 ## Project Pointer Catalog Missing
-If this machine has recurring repos or task families, create ${projectsPath} as a small routing layer instead of stuffing those pointers into startup context.`;
+If this machine has recurring work areas, repos, or task families, create ${projectsPath} as a small routing layer instead of stuffing those pointers into startup context.`;
   }
 
   if (!hasSkills) {
@@ -256,9 +257,9 @@ If local reusable workflows exist, create ${skillsPath} as a minimal placeholder
 
 ## FIRST-TIME SETUP REQUIRED
 This machine is missing both bootstrap.md and global.md. Before diving into detailed work:
-1. Explore the home directory (${home}) briefly to map key repos and working areas.
+1. Explore the home directory (${home}) briefly to map key work areas, data folders, apps, and repos.
 2. Create ${bootstrapPath} with machine basics, collaboration defaults, key directories, and short project pointers.
-3. Create ${projectsPath} if there are recurring repos or task families worth indexing.
+3. Create ${projectsPath} if there are recurring work areas, repos, or task families worth indexing.
 4. Create ${globalPath} only for deeper local notes that should NOT be startup context.
 5. Create ${skillsPath} if local reusable workflows exist.
 6. Show the user a brief bootstrap summary and confirm it is correct.
