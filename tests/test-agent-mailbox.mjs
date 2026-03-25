@@ -450,6 +450,48 @@ function testEnvelopeRecipientRoutesToGuestInstanceAlias() {
   }
 }
 
+function testSubjectInstanceTagRoutesBaseMailboxToGuestInstance() {
+  const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-subject-routing-'));
+  try {
+    initializeMailbox({
+      rootDir,
+      name: 'Rowan',
+      localPart: 'rowan',
+      domain: 'jiujianian.dev',
+      allowEmails: ['jiujianian@gmail.com'],
+    });
+    saveMailboxAutomation(rootDir, {
+      allowlistAutoApprove: true,
+    });
+
+    const ingested = ingestRawMessage(
+      [
+        'From: jiujianian@gmail.com',
+        'To: rowan@jiujianian.dev',
+        'Subject: [instance:trial6] route to trial6',
+        'Message-ID: <trial6-subject-route@example.com>',
+        'Content-Type: text/plain; charset=UTF-8',
+        '',
+        'route me to the guest instance via subject tag please.',
+      ].join('\n'),
+      'trial6-subject-route.eml',
+      rootDir,
+      {
+        text: 'route me to the guest instance via subject tag please.',
+      },
+    );
+
+    assert.equal(ingested.message.toAddress, 'rowan@jiujianian.dev');
+    assert.equal(ingested.message.envelopeToAddress, '');
+    assert.equal(ingested.message.effectiveToAddress, 'rowan@jiujianian.dev');
+    assert.equal(ingested.routing.instanceName, 'trial6');
+    assert.equal(ingested.routing.mailboxSubaddress, 'trial6');
+    assert.equal(ingested.routing.matchedBy, 'subject_instance_tag');
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+}
+
 testCloudflareWebhookHealthy();
 testCloudflareQueueReady();
 testCloudflareValidatedDelivery();
@@ -460,4 +502,5 @@ testDecodesBase64BodyText();
 testDecodesNestedMultipartBodyText();
 testExtractsInlineImageAttachments();
 testEnvelopeRecipientRoutesToGuestInstanceAlias();
+testSubjectInstanceTagRoutesBaseMailboxToGuestInstance();
 console.log('agent mailbox tests passed');
