@@ -57,7 +57,9 @@ assert.match(freshPrompt, /current execution state, then whether the user is nee
 assert.match(freshPrompt, /multi-goal routing as a first-order judgment/);
 assert.match(freshPrompt, /bounded work deserves bounded context/);
 assert.match(freshPrompt, /remotelab session-spawn --task "<focused task>" --wait --internal --output-mode final-only --json/);
+assert.match(freshPrompt, /remotelab assistant-message --text "Generated file attached\." --file "\.\/report\.pdf" --json/);
 assert.match(freshPrompt, /suppresses the visible parent handoff note and returns only the child session's final reply to stdout/);
+assert.match(freshPrompt, /REMOTELAB_RUN_ID/);
 
 const resumedPrompt = await buildPrompt(
   'session-test-1',

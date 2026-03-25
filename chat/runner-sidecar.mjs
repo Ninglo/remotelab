@@ -32,7 +32,7 @@ async function cleanEnv(toolId, manifest = {}, options = {}) {
   const env = buildToolProcessEnv();
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
-  env.REMOTELAB_CHAT_BASE_URL = process.env.REMOTELAB_CHAT_BASE_URL || `http://127.0.0.1:${CHAT_PORT}`;
+  env.REMOTELAB_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
   env.REMOTELAB_PROJECT_ROOT = process.env.REMOTELAB_PROJECT_ROOT || PROJECT_ROOT;
   if (typeof manifest?.sessionId === 'string' && manifest.sessionId.trim()) {
     env.REMOTELAB_SESSION_ID = manifest.sessionId.trim();

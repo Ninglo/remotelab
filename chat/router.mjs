@@ -34,6 +34,7 @@ import {
   getSessionTimelineEvents,
   listSessions,
   renameSession,
+  resolveAttachmentMimeType,
   rewriteVoiceTranscriptForSession,
   saveSessionAsTemplate,
   sendMessage,
@@ -105,6 +106,7 @@ import {
   getFileAssetBootstrapConfig,
   getFileAssetForClient,
   localizeFileAsset,
+  publishLocalFileAssetFromPath,
 } from './file-assets.mjs';
 
 // Paths are resolved from the active runtime root on each request.
@@ -240,6 +242,7 @@ async function readSessionMessagePayload(req, pathname) {
       : (Array.isArray(payload?.images) ? payload.images.filter(Boolean) : []);
     return {
       requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
+      runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
       text: typeof payload?.text === 'string' ? payload.text : '',
       tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
       model: typeof payload?.model === 'string' ? payload.model.trim() : '',
@@ -306,6 +309,7 @@ async function readSessionMessagePayload(req, pathname) {
 
   return {
     requestId: parseFormString(formData.get('requestId')),
+    runId: parseFormString(formData.get('runId')),
     text: parseFormString(formData.get('text')),
     tool: parseFormString(formData.get('tool')),
     model: parseFormString(formData.get('model')),
@@ -317,10 +321,51 @@ async function readSessionMessagePayload(req, pathname) {
   };
 }
 
-async function resolveRequestedSessionAttachments(authSession, requestedAttachments = []) {
+async function resolveRequestedSessionAttachments(authSession, requestedAttachments = [], options = {}) {
+  const sessionId = typeof options?.sessionId === 'string' ? options.sessionId.trim() : '';
+  const allowLocalPaths = options?.allowLocalPaths === true;
+  const createdBy = typeof options?.createdBy === 'string' && options.createdBy.trim()
+    ? options.createdBy.trim()
+    : (authSession?.role === 'visitor' ? 'visitor' : 'owner');
   const uploadedAttachments = requestedAttachments.filter((attachment) => Buffer.isBuffer(attachment?.buffer) || typeof attachment?.data === 'string');
   const existingAttachments = requestedAttachments.filter((attachment) => typeof attachment?.filename === 'string' && attachment.filename.trim() && !attachment?.assetId);
+  const localPathAttachments = requestedAttachments.filter((attachment) => typeof attachment?.localPath === 'string' && attachment.localPath.trim());
   const externalAssetAttachments = [];
+
+  if (localPathAttachments.length > 0 && !allowLocalPaths) {
+    const error = new Error('localPath attachments are not supported on this route');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  for (const attachment of localPathAttachments) {
+    if (!sessionId) {
+      const error = new Error('sessionId is required for localPath attachments');
+      error.statusCode = 400;
+      throw error;
+    }
+    const originalName = typeof attachment?.originalName === 'string' && attachment.originalName.trim()
+      ? attachment.originalName.trim()
+      : basename(attachment.localPath);
+    const mimeType = resolveAttachmentMimeType(
+      typeof attachment?.mimeType === 'string' ? attachment.mimeType.trim() : '',
+      originalName,
+    );
+    const published = await publishLocalFileAssetFromPath({
+      sessionId,
+      localPath: attachment.localPath,
+      originalName,
+      mimeType,
+      createdBy,
+    });
+    externalAssetAttachments.push({
+      assetId: published.id,
+      originalName,
+      mimeType,
+      ...(Number.isInteger(published?.sizeBytes) && published.sizeBytes > 0 ? { sizeBytes: published.sizeBytes } : {}),
+      ...(typeof attachment?.renderAs === 'string' && attachment.renderAs.trim() === 'file' ? { renderAs: 'file' } : {}),
+    });
+  }
 
   for (const attachment of requestedAttachments) {
     const assetId = typeof attachment?.assetId === 'string' ? attachment.assetId.trim() : '';
@@ -1789,7 +1834,9 @@ export async function handleRequest(req, res) {
       try {
         const requestId = typeof payload?.requestId === 'string' ? payload.requestId.trim() : '';
         const requestedAttachments = Array.isArray(payload?.attachments) ? payload.attachments.filter(Boolean) : [];
-        const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments);
+        const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments, {
+          sessionId,
+        });
         const messageOptions = {
           tool: authSession?.role === 'visitor' ? undefined : payload.tool || undefined,
           thinking: authSession?.role === 'visitor' ? false : !!payload.thinking,
@@ -1838,9 +1885,14 @@ export async function handleRequest(req, res) {
       }
       try {
         const requestedAttachments = Array.isArray(payload?.attachments) ? payload.attachments.filter(Boolean) : [];
-        const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments);
+        const preSavedAttachments = await resolveRequestedSessionAttachments(authSession, requestedAttachments, {
+          sessionId,
+          allowLocalPaths: true,
+          createdBy: 'assistant',
+        });
         const outcome = await appendAssistantMessage(sessionId, payload.text || '', [], {
           requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
+          runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
           source: payload.source || 'assistant_message_api',
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         });

@@ -148,8 +148,15 @@ Keep session continuity distinct from scope and task memory.
 - The trigger command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --session explicitly.
 - If the remotelab command is unavailable in PATH, use:
   - node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
+- If you need to return a locally generated file, image, or export into this chat as an assistant attachment, prefer the assistant-message helper instead of only mentioning a machine path.
+- Preferred command:
+  - remotelab assistant-message --text "Generated file attached." --file "./report.pdf" --json
+- The assistant-message command defaults to REMOTELAB_SESSION_ID and REMOTELAB_RUN_ID, so you usually do not need to pass --session or --run-id.
+- If the remotelab command is unavailable in PATH, use:
+  - node "$REMOTELAB_PROJECT_ROOT/cli.js" assistant-message --file "./report.pdf" --json
 - The shell environment exposes:
   - REMOTELAB_SESSION_ID — current source session id${currentSessionId ? ` (current: ${currentSessionId})` : ''}
+  - REMOTELAB_RUN_ID — current active run id when this turn is executing inside a tool runtime
   - REMOTELAB_CHAT_BASE_URL — local RemoteLab API base URL (usually http://127.0.0.1:${CHAT_PORT})
   - REMOTELAB_PROJECT_ROOT — local RemoteLab project root for fallback commands
 - The spawn command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --source-session explicitly.

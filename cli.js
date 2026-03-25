@@ -35,6 +35,7 @@ Usage:
   remotelab guest-instance           Create isolated guest instances on this machine
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
+  remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab trigger                  Manage durable session triggers
   remotelab usage-summary            Summarize local Codex token usage
   remotelab session-spawn            Spawn a focused parallel session from a source session
@@ -98,6 +99,18 @@ switch (command) {
     const { runRemoteLabApiCommand } = await import(scriptPath('lib/remotelab-api-command.mjs'));
     try {
       process.exitCode = await runRemoteLabApiCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'assistant-message':
+  case 'assistant-messages': {
+    const { runAssistantMessageCommand } = await import(scriptPath('lib/assistant-message-command.mjs'));
+    try {
+      process.exitCode = await runAssistantMessageCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

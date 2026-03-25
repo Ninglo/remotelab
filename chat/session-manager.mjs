@@ -120,6 +120,7 @@ const MIME_EXTENSIONS = {
   'image/gif': '.gif',
   'image/jpeg': '.jpg',
   'image/png': '.png',
+  'image/svg+xml': '.svg',
   'image/webp': '.webp',
   'text/markdown': '.md',
   'text/plain': '.txt',
@@ -767,7 +768,7 @@ function buildResultAssetReadyMessage(attachments = []) {
     : 'Generated files ready to download.';
 }
 
-function resolveAttachmentMimeType(mimeType, originalName = '') {
+export function resolveAttachmentMimeType(mimeType, originalName = '') {
   const normalizedMimeType = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
   if (normalizedMimeType) {
     return normalizedMimeType;
@@ -2810,8 +2811,23 @@ async function findResultAssetMessageForRun(sessionId, runId) {
   return null;
 }
 
+async function findAssistantAttachmentMessageForRun(sessionId, runId) {
+  const events = await loadHistory(sessionId, { includeBodies: false });
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== 'message' || event.role !== 'assistant') continue;
+    if (event?.runId !== runId) continue;
+    if (getMessageAttachments(event).length === 0) continue;
+    return event;
+  }
+  return null;
+}
+
 async function maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents) {
   if (manifest?.internalOperation) {
+    return false;
+  }
+  if (await findAssistantAttachmentMessageForRun(sessionId, run.id)) {
     return false;
   }
 
