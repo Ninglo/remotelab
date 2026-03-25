@@ -137,6 +137,58 @@ assert.equal(
   'bottom attachment deliveries should not leak host-side saved paths',
 );
 
+const hiddenAttachmentBlockEvents = buildEventBlockEvents(hiddenAttachmentHistory, 2, 6);
+const hiddenAttachmentBlockMessage = hiddenAttachmentBlockEvents.find(
+  (event) => event?.type === 'message' && event.role === 'assistant',
+);
+assert.ok(
+  hiddenAttachmentBlockMessage,
+  'expanded hidden blocks should still retain the assistant text that introduced the delivery',
+);
+assert.equal(
+  'attachments' in hiddenAttachmentBlockMessage,
+  false,
+  'expanded hidden blocks should not duplicate detached assistant attachments inside the thought body',
+);
+
+const visibleAttachmentHistory = [
+  { seq: 1, type: 'message', role: 'user', content: '把最终文件直接发我' },
+  { seq: 2, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'render-assets' },
+  { seq: 3, type: 'tool_result', role: 'system', output: 'ok', exitCode: 0 },
+  {
+    seq: 4,
+    type: 'message',
+    role: 'assistant',
+    content: '好的，附件在下面。',
+    attachments: [
+      {
+        assetId: 'fasset_final_png',
+        originalName: 'final.png',
+        mimeType: 'image/png',
+        sizeBytes: 1024,
+      },
+      {
+        assetId: 'fasset_final_txt',
+        originalName: 'final.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 128,
+      },
+    ],
+  },
+];
+
+const visibleAttachmentDisplay = buildSessionDisplayEvents(visibleAttachmentHistory, { sessionRunning: false });
+assert.deepEqual(
+  visibleAttachmentDisplay.map((event) => event.type),
+  ['message', 'thinking_block', 'message', 'attachment_delivery'],
+  'completed turns should also detach assistant attachments into the bottom delivery row',
+);
+assert.equal(
+  'attachments' in visibleAttachmentDisplay[2],
+  false,
+  'the visible assistant summary should keep its text while moving attachment rendering to the bottom delivery row',
+);
+
 const runningAttachmentHistory = [
   { seq: 1, type: 'message', role: 'user', content: '发我一个结果文件' },
   { seq: 2, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'build-report' },
@@ -161,6 +213,13 @@ assert.deepEqual(
   runningAttachmentDisplay.map((event) => event.type),
   ['message', 'thinking_block', 'attachment_delivery'],
   'running turns should still surface a bottom attachment delivery event while the hidden block stays collapsed',
+);
+
+const runningAttachmentBlockEvents = buildEventBlockEvents(runningAttachmentHistory, 2, 4);
+assert.deepEqual(
+  runningAttachmentBlockEvents.map((event) => event.type),
+  ['tool_use', 'tool_result'],
+  'expanded running thought blocks should omit attachment-only delivery messages once those attachments are detached to the bottom row',
 );
 
 const ignoredStatusBlockEvents = buildEventBlockEvents(interleavedTurnHistory, 2, 6);

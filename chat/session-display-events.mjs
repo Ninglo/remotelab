@@ -72,18 +72,22 @@ function buildAttachmentDeliveryEvent(events = [], { referenceEvent = null } = {
   };
 }
 
-function collectMirroredAttachmentSourceEvents(events = [], { sessionRunning = false } = {}) {
+function collectMirroredAttachmentSourceEvents(events = []) {
   const sourceEvents = [];
-  const normalizedEvents = Array.isArray(events) ? events : [];
-  const lastIndex = normalizedEvents.length - 1;
-  for (let index = 0; index < normalizedEvents.length; index += 1) {
-    const event = normalizedEvents[index];
+  for (const event of Array.isArray(events) ? events : []) {
     if (!isAssistantMessageEvent(event)) continue;
     if (getMessageAttachments(event).length === 0) continue;
-    if (!sessionRunning && index >= lastIndex) continue;
     sourceEvents.push(event);
   }
   return sourceEvents;
+}
+
+function collectMirroredAttachmentSeqs(events = []) {
+  return new Set(
+    collectMirroredAttachmentSourceEvents(events)
+      .map((event) => (Number.isInteger(event?.seq) ? event.seq : 0))
+      .filter((seq) => seq > 0),
+  );
 }
 
 function hasVisibleMessagePayload(event, { includeAttachments = true } = {}) {
@@ -217,6 +221,49 @@ function findLastHiddenEventIndex(events = []) {
   return -1;
 }
 
+function findTurnForBlockRange(history = [], startSeq = 0, endSeq = 0) {
+  const normalizedHistory = Array.isArray(history) ? history : [];
+  let startIndex = -1;
+  let endIndex = -1;
+
+  for (let index = 0; index < normalizedHistory.length; index += 1) {
+    const seq = Number.isInteger(normalizedHistory[index]?.seq) ? normalizedHistory[index].seq : 0;
+    if (seq < 1) continue;
+    if (startIndex < 0 && seq >= startSeq) {
+      startIndex = index;
+    }
+    if (seq <= endSeq) {
+      endIndex = index;
+    }
+  }
+
+  if (startIndex < 0 || endIndex < startIndex) return null;
+
+  let userIndex = -1;
+  for (let index = startIndex; index >= 0; index -= 1) {
+    const event = normalizedHistory[index];
+    if (event?.type === 'message' && event.role === 'user') {
+      userIndex = index;
+      break;
+    }
+  }
+  if (userIndex < 0) return null;
+
+  let nextUserIndex = normalizedHistory.length;
+  for (let index = userIndex + 1; index < normalizedHistory.length; index += 1) {
+    const event = normalizedHistory[index];
+    if (event?.type === 'message' && event.role === 'user') {
+      nextUserIndex = index;
+      break;
+    }
+  }
+  if (endIndex >= nextUserIndex) return null;
+
+  return {
+    body: normalizedHistory.slice(userIndex + 1, nextUserIndex),
+  };
+}
+
 function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   if (!turn?.user) return;
   target.push(stripDeferredBodyFields(turn.user));
@@ -224,12 +271,8 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   const bodyEvents = getTurnEventsWithoutIgnoredStatuses(turn.body);
   if (bodyEvents.length === 0) return;
 
-  const mirroredAttachmentSourceEvents = collectMirroredAttachmentSourceEvents(bodyEvents, { sessionRunning });
-  const mirroredAttachmentSeqs = new Set(
-    mirroredAttachmentSourceEvents
-      .map((event) => (Number.isInteger(event?.seq) ? event.seq : 0))
-      .filter((seq) => seq > 0),
-  );
+  const mirroredAttachmentSourceEvents = collectMirroredAttachmentSourceEvents(bodyEvents);
+  const mirroredAttachmentSeqs = collectMirroredAttachmentSeqs(bodyEvents);
   const deliveryEvent = buildAttachmentDeliveryEvent(mirroredAttachmentSourceEvents, {
     referenceEvent: bodyEvents[bodyEvents.length - 1] || turn.user,
   });
@@ -310,8 +353,28 @@ export function buildEventBlockEvents(history = [], startSeq = 0, endSeq = 0) {
   if (!Number.isInteger(startSeq) || !Number.isInteger(endSeq) || startSeq < 1 || endSeq < startSeq) {
     return [];
   }
+  const turn = findTurnForBlockRange(history, startSeq, endSeq);
+  const mirroredAttachmentSeqs = turn
+    ? collectMirroredAttachmentSeqs(getTurnEventsWithoutIgnoredStatuses(turn.body))
+    : new Set();
+
   return (Array.isArray(history) ? history : [])
     .filter((event) => Number.isInteger(event?.seq) && event.seq >= startSeq && event.seq <= endSeq)
     .filter((event) => !isIgnoredStatusEvent(event))
-    .map(stripDeferredBodyFields);
+    .map((event) => {
+      const stripAttachments = shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs);
+      if (!stripAttachments) {
+        return stripDeferredBodyFields(event);
+      }
+      if (!hasVisibleMessagePayload(event, { includeAttachments: false })) {
+        return null;
+      }
+      const next = stripDeferredBodyFields(event);
+      if (next?.type === 'message') {
+        delete next.attachments;
+        delete next.images;
+      }
+      return next;
+    })
+    .filter(Boolean);
 }
