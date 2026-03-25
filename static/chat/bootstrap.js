@@ -164,6 +164,20 @@ function updateFrontendRefreshUi() {
   }
 }
 
+function hasUnsavedComposerState() {
+  if (typeof hasPendingComposerSend === "function" && hasPendingComposerSend()) {
+    return true;
+  }
+  const draftText = typeof msgInput?.value === "string" ? msgInput.value.trim() : "";
+  if (draftText) {
+    return true;
+  }
+  const pendingAttachmentCount = Number.isInteger(imgPreviewStrip?.childElementCount)
+    ? imgPreviewStrip.childElementCount
+    : 0;
+  return pendingAttachmentCount > 0;
+}
+
 async function reloadForFreshBuild(nextBuildInfo) {
   if (buildRefreshScheduled) return;
   buildRefreshScheduled = true;
@@ -197,7 +211,10 @@ async function applyBuildInfo(nextBuildInfo) {
   }
   newerBuildInfo = nextBuildInfo;
   updateFrontendRefreshUi();
-  return false;
+  if (hasUnsavedComposerState()) {
+    return false;
+  }
+  return reloadForFreshBuild(nextBuildInfo);
 }
 
 window.RemoteLabBuild = {
