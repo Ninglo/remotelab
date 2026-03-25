@@ -17,6 +17,7 @@ import {
 
 const DEFAULT_OWNER_CONFIG_DIR = join(homedir(), '.config', 'remotelab');
 const DEFAULT_GUEST_REGISTRY_FILE = join(DEFAULT_OWNER_CONFIG_DIR, 'guest-instances.json');
+const DEFAULT_CLOUDFLARE_AUTH_FILE = join(DEFAULT_OWNER_CONFIG_DIR, 'cloudflare-auth.json');
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DEFAULT_WORKER_CONFIG_FILE = join(REPO_ROOT, 'cloudflare', 'email-worker', 'wrangler.jsonc');
 const DEFAULT_CONNECT_TIMEOUT_MS = 15000;
@@ -53,21 +54,33 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function dedupeStrings(values = []) {
+  return [...new Set(values.map((value) => trimString(value).toLowerCase()).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+}
+
+function safeRuleNameFragment(value) {
+  return trimString(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'mailbox';
+}
+
 function printUsage(exitCode = 0) {
   const output = exitCode === 0 ? console.log : console.error;
   output(`Usage:
-  node scripts/agent-mail-cloudflare-routing.mjs status [--root <dir>] [--zone <domain>] [--json]
+  node scripts/agent-mail-cloudflare-routing.mjs status [--root <dir>] [--zone <domain>] [--live] [--json]
+  node scripts/agent-mail-cloudflare-routing.mjs sync [--root <dir>] [--zone <domain>] [--enable-catch-all] [--json]
   node scripts/agent-mail-cloudflare-routing.mjs probe --address <email> [--mx-host <host>] [--json]
 
 Examples:
   node scripts/agent-mail-cloudflare-routing.mjs status --json
+  node scripts/agent-mail-cloudflare-routing.mjs status --live --json
+  node scripts/agent-mail-cloudflare-routing.mjs sync --json
   node scripts/agent-mail-cloudflare-routing.mjs probe --address rowan@jiujianian.dev
   node scripts/agent-mail-cloudflare-routing.mjs probe --address trial6@jiujianian.dev --json
 
 Notes:
-  - This helper summarizes the desired Cloudflare Email Routing shape for RemoteLab guest-instance mailboxes.
-  - It can do live SMTP RCPT probes, but it does not mutate Cloudflare dashboard state.
-  - Cloudflare Email Routing API calls typically need a dedicated CLOUDFLARE_API_TOKEN; the OAuth token from \`wrangler login\` is not enough for \`/email/routing/*\` endpoints.`);
+  - This helper summarizes and can sync the desired Cloudflare Email Routing shape for RemoteLab guest-instance mailboxes.
+  - It supports either \`CLOUDFLARE_API_TOKEN\` or \`CLOUDFLARE_GLOBAL_API_KEY\`/\`CLOUDFLARE_API_KEY\` plus \`CLOUDFLARE_EMAIL\`.
+  - Local Cloudflare auth can also live in \`${DEFAULT_CLOUDFLARE_AUTH_FILE}\`.
+  - The OAuth token from \`wrangler login\` is not enough for \`/email/routing/*\` endpoints.`);
   process.exit(exitCode);
 }
 
@@ -99,6 +112,43 @@ function loadWorkerConfig(workerConfigFile = DEFAULT_WORKER_CONFIG_FILE) {
   return readJson(workerConfigFile, null);
 }
 
+function loadCloudflareAuth(authFile = DEFAULT_CLOUDFLARE_AUTH_FILE) {
+  const fileConfig = readJson(authFile, null) || {};
+  const apiToken = trimString(process.env.CLOUDFLARE_API_TOKEN || fileConfig.apiToken || fileConfig.token);
+  const email = trimString(process.env.CLOUDFLARE_EMAIL || fileConfig.email);
+  const globalApiKey = trimString(
+    process.env.CLOUDFLARE_GLOBAL_API_KEY
+      || process.env.CLOUDFLARE_API_KEY
+      || fileConfig.globalApiKey
+      || fileConfig.apiKey,
+  );
+  const authSource = apiToken
+    ? 'env_or_file_token'
+    : (email && globalApiKey ? 'env_or_file_global_key' : 'missing');
+  const hasFileAuth = Boolean(
+    trimString(fileConfig.apiToken || fileConfig.token)
+      || trimString(fileConfig.globalApiKey || fileConfig.apiKey),
+  );
+
+  return {
+    apiToken,
+    email,
+    globalApiKey,
+    authFile,
+    authSource,
+    configured: Boolean(apiToken || (email && globalApiKey)),
+    mode: apiToken ? 'api_token' : (email && globalApiKey ? 'global_api_key' : 'missing'),
+    usingAuthFile: hasFileAuth,
+  };
+}
+
+function summarizeCloudflareAuthMode(auth) {
+  if (!auth || auth.mode === 'missing') {
+    return 'missing';
+  }
+  return auth.mode === 'api_token' ? 'api_token' : 'global_api_key';
+}
+
 function buildGuestMailboxAddress(name, identity) {
   const normalizedName = trimString(name).toLowerCase();
   const localPart = trimString(identity?.localPart).toLowerCase();
@@ -114,11 +164,63 @@ function buildGuestMailboxAddress(name, identity) {
   return `${localPart}+${normalizedName}@${domain}`;
 }
 
-function buildStatusSummary({ rootDir = DEFAULT_ROOT_DIR, zone = '' } = {}) {
+function buildDesiredCloudflarePlan({
+  zone = '',
+  workerName = '',
+  ownerAddress = '',
+  localPart = '',
+  desiredAddresses = [],
+  instanceAddressMode = 'plus',
+} = {}) {
+  const normalizedMode = normalizeInstanceAddressMode(instanceAddressMode);
+  const normalizedOwnerAddress = trimString(ownerAddress).toLowerCase();
+  const normalizedZone = trimString(zone).toLowerCase();
+  const normalizedLocalPart = trimString(localPart).toLowerCase();
+  const dedupedAddresses = dedupeStrings(desiredAddresses);
+  const requiredLiteralWorkerAddresses = normalizedMode === 'local_part'
+    ? dedupedAddresses
+    : dedupeStrings([normalizedOwnerAddress]);
+  const requireSubaddressing = normalizedMode === 'plus' && Boolean(normalizedOwnerAddress);
+  const desiredRouteModel = normalizedMode === 'local_part'
+    ? 'literal_worker_rules_per_address'
+    : 'owner_literal_rule_plus_subaddressing';
+  const optionalCatchAllWorkerRoute = Boolean(workerName);
+  const manualSteps = [];
+
+  if (normalizedZone && workerName) {
+    manualSteps.push(`Cloudflare Dashboard -> ${normalizedZone} -> Email -> Email Routing -> Settings -> Email Workers -> select ${workerName}.`);
+  }
+  if (desiredRouteModel === 'literal_worker_rules_per_address') {
+    manualSteps.push(`Ensure a literal Email Routing rule sends each owner/guest address to ${workerName || 'the mailbox worker'}.`);
+    manualSteps.push('Catch-all worker routes are optional for typo/privacy handling, but they do not replace literal direct-address routes for guest instances.');
+  } else {
+    manualSteps.push(`Ensure a literal Email Routing rule exists for ${normalizedOwnerAddress || 'the owner mailbox'} and points to ${workerName || 'the mailbox worker'}.`);
+    manualSteps.push('Enable Email Routing subaddressing so owner+instance aliases are accepted at SMTP time.');
+    manualSteps.push('Catch-all worker routes are optional for typo/privacy handling, but they do not replace subaddressing.');
+  }
+  manualSteps.push('After any route or settings change, run live probes for the owner mailbox and one guest mailbox before telling users the address is ready.');
+
+  return {
+    desiredRouteModel,
+    requiredLiteralWorkerAddresses,
+    requireSubaddressing,
+    optionalCatchAllWorkerRoute,
+    exampleOwnerPlusAddress: normalizedLocalPart && normalizedZone ? `${normalizedLocalPart}+trial6@${normalizedZone}` : '',
+    exampleGuestDirectAddress: normalizedZone ? `trial6@${normalizedZone}` : '',
+    manualSteps,
+  };
+}
+
+function buildStatusSummary({
+  rootDir = DEFAULT_ROOT_DIR,
+  zone = '',
+  authFile = DEFAULT_CLOUDFLARE_AUTH_FILE,
+} = {}) {
   const identity = loadIdentity(rootDir);
   const bridge = loadBridge(rootDir);
   const outbound = loadOutboundConfig(rootDir);
   const workerConfig = loadWorkerConfig();
+  const auth = loadCloudflareAuth(authFile);
   const guestInstances = loadGuestRegistry().map((record) => ({
     ...record,
     mailboxAddress: record.mailboxAddress || buildGuestMailboxAddress(record.name, identity),
@@ -133,14 +235,14 @@ function buildStatusSummary({ rootDir = DEFAULT_ROOT_DIR, zone = '' } = {}) {
     trimString(identity?.address),
     ...guestInstances.map((record) => record.mailboxAddress),
   ].filter(Boolean);
-
-  const manualSteps = [];
-  if (domain && workerName) {
-    manualSteps.push(`Cloudflare Dashboard -> ${domain} -> Email -> Email Routing -> Settings -> Email Workers -> select ${workerName}.`);
-    manualSteps.push(`Cloudflare Dashboard -> ${domain} -> Email -> Email Routing -> Routes -> create a catch-all route that sends all inbound mail to ${workerName}.`);
-    manualSteps.push(`Remove or deprioritize any literal-only route such as ${trimString(identity?.address) || 'rowan@example.com'} if it blocks catch-all delivery.`);
-  }
-  manualSteps.push('After the route change, run live probes for the owner mailbox and one guest mailbox before telling users the address is ready.');
+  const desiredPlan = buildDesiredCloudflarePlan({
+    zone: domain,
+    workerName,
+    ownerAddress: trimString(identity?.address),
+    localPart: trimString(identity?.localPart),
+    desiredAddresses,
+    instanceAddressMode,
+  });
 
   return {
     zone: domain,
@@ -150,20 +252,25 @@ function buildStatusSummary({ rootDir = DEFAULT_ROOT_DIR, zone = '' } = {}) {
       localPart: trimString(identity?.localPart),
       domain: trimString(identity?.domain),
       instanceAddressMode,
-      exampleOwnerPlusAddress: trimString(identity?.localPart) && domain ? `${trimString(identity.localPart).toLowerCase()}+trial6@${domain}` : '',
-      exampleGuestDirectAddress: domain ? `trial6@${domain}` : '',
+      exampleOwnerPlusAddress: desiredPlan.exampleOwnerPlusAddress,
+      exampleGuestDirectAddress: desiredPlan.exampleGuestDirectAddress,
     },
     cloudflare: {
       workerName,
       workerUrl,
       publicWebhook,
-      desiredRouteModel: 'catch_all_to_email_worker',
-      apiTokenConfigured: Boolean(trimString(process.env.CLOUDFLARE_API_TOKEN)),
-      apiAuthNote: 'Use a dedicated CLOUDFLARE_API_TOKEN for /email/routing/* endpoints. The OAuth token from wrangler login is not sufficient.',
+      authMode: summarizeCloudflareAuthMode(auth),
+      authConfigured: auth.configured,
+      authFile: auth.usingAuthFile ? authFile : '',
+      desiredRouteModel: desiredPlan.desiredRouteModel,
+      requiredLiteralWorkerAddresses: desiredPlan.requiredLiteralWorkerAddresses,
+      requireSubaddressing: desiredPlan.requireSubaddressing,
+      optionalCatchAllWorkerRoute: desiredPlan.optionalCatchAllWorkerRoute,
+      apiAuthNote: 'Use CLOUDFLARE_API_TOKEN or CLOUDFLARE_GLOBAL_API_KEY/CLOUDFLARE_API_KEY plus CLOUDFLARE_EMAIL. The OAuth token from wrangler login is not sufficient.',
     },
     guestInstances,
     desiredAcceptedAddresses: desiredAddresses,
-    manualSteps,
+    manualSteps: desiredPlan.manualSteps,
     validationCommands: desiredAddresses.slice(0, 3).map((address) => `node scripts/agent-mail-cloudflare-routing.mjs probe --address ${address}`),
   };
 }
@@ -186,7 +293,32 @@ function printStatusSummary(summary, asJson = false) {
     console.log(`Bridge webhook: ${summary.cloudflare.publicWebhook}`);
   }
   console.log(`Desired route model: ${summary.cloudflare.desiredRouteModel}`);
+  console.log(`Cloudflare auth: ${summary.cloudflare.authMode}`);
+  if (summary.cloudflare.authFile) {
+    console.log(`Cloudflare auth file: ${summary.cloudflare.authFile}`);
+  }
   console.log(`Cloudflare API note: ${summary.cloudflare.apiAuthNote}`);
+
+  if (summary.cloudflare.requiredLiteralWorkerAddresses.length) {
+    console.log(`Literal worker addresses: ${summary.cloudflare.requiredLiteralWorkerAddresses.length}`);
+  }
+  if (summary.cloudflare.requireSubaddressing) {
+    console.log('Subaddressing required: yes');
+  }
+
+  if (summary.cloudflare.live) {
+    if (summary.cloudflare.live.error) {
+      console.log(`Live Cloudflare: ${summary.cloudflare.live.error}`);
+    } else {
+      console.log(`Live Cloudflare: status=${summary.cloudflare.live.settings.status || 'unknown'}, synced=${summary.cloudflare.live.settings.synced ? 'yes' : 'no'}, subaddressing=${summary.cloudflare.live.settings.supportSubaddress ? 'on' : 'off'}`);
+      if (summary.cloudflare.live.missingLiteralWorkerAddresses.length) {
+        console.log('\nMissing literal worker routes:');
+        for (const address of summary.cloudflare.live.missingLiteralWorkerAddresses) {
+          console.log(`- ${address}`);
+        }
+      }
+    }
+  }
 
   if (summary.guestInstances.length) {
     console.log('\nGuest instances:');
@@ -204,6 +336,376 @@ function printStatusSummary(summary, asJson = false) {
   for (const command of summary.validationCommands) {
     console.log(`- ${command}`);
   }
+}
+
+function cloudflareAuthErrorMessage() {
+  return `Cloudflare Email Routing auth missing. Set CLOUDFLARE_API_TOKEN, or set CLOUDFLARE_GLOBAL_API_KEY/CLOUDFLARE_API_KEY plus CLOUDFLARE_EMAIL, or write ${DEFAULT_CLOUDFLARE_AUTH_FILE}.`;
+}
+
+function buildCloudflareHeaders(auth) {
+  if (auth.mode === 'api_token') {
+    return {
+      Authorization: `Bearer ${auth.apiToken}`,
+      'Content-Type': 'application/json',
+    };
+  }
+  if (auth.mode === 'global_api_key') {
+    return {
+      'X-Auth-Email': auth.email,
+      'X-Auth-Key': auth.globalApiKey,
+      'Content-Type': 'application/json',
+    };
+  }
+  throw new Error(cloudflareAuthErrorMessage());
+}
+
+async function cloudflareRequest(auth, { method = 'GET', path, body = undefined } = {}) {
+  if (!auth?.configured) {
+    throw new Error(cloudflareAuthErrorMessage());
+  }
+
+  const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    method,
+    headers: buildCloudflareHeaders(auth),
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : null;
+
+  if (!response.ok || payload?.success === false) {
+    const details = Array.isArray(payload?.errors) && payload.errors.length
+      ? payload.errors.map((entry) => `${entry.code || 'error'}:${entry.message || 'unknown'}`).join(', ')
+      : (text || response.statusText || 'Unknown Cloudflare API error');
+    throw new Error(`Cloudflare API ${method} ${path} failed: ${details}`);
+  }
+
+  return payload?.result;
+}
+
+async function lookupZone(auth, zone) {
+  const zoneName = trimString(zone).toLowerCase();
+  if (!zoneName) {
+    throw new Error('A mailbox domain is required');
+  }
+  const result = await cloudflareRequest(auth, {
+    path: `/zones?name=${encodeURIComponent(zoneName)}`,
+  });
+  const zoneRecord = Array.isArray(result) ? result[0] : null;
+  if (!zoneRecord?.id) {
+    throw new Error(`Cloudflare zone not found: ${zoneName}`);
+  }
+  return {
+    id: trimString(zoneRecord.id),
+    name: trimString(zoneRecord.name) || zoneName,
+  };
+}
+
+function literalRuleAddress(rule) {
+  if (!rule || typeof rule !== 'object' || !Array.isArray(rule.matchers)) {
+    return '';
+  }
+  for (const matcher of rule.matchers) {
+    if (trimString(matcher?.type) === 'literal' && trimString(matcher?.field || 'to') === 'to') {
+      return trimString(matcher?.value).toLowerCase();
+    }
+  }
+  return '';
+}
+
+function ruleTargetsWorker(rule, workerName) {
+  const normalizedWorkerName = trimString(workerName);
+  if (!normalizedWorkerName || !Array.isArray(rule?.actions)) {
+    return false;
+  }
+  return rule.actions.some((action) => trimString(action?.type) === 'worker'
+    && Array.isArray(action?.value)
+    && action.value.map((entry) => trimString(entry)).includes(normalizedWorkerName));
+}
+
+function findLiteralRule(rules = [], address = '') {
+  const normalizedAddress = trimString(address).toLowerCase();
+  return rules.find((rule) => literalRuleAddress(rule) === normalizedAddress) || null;
+}
+
+function summarizeRule(rule) {
+  if (!rule || typeof rule !== 'object') {
+    return null;
+  }
+  return {
+    id: trimString(rule.id),
+    name: trimString(rule.name),
+    enabled: rule.enabled !== false,
+    priority: Number.isFinite(rule.priority) ? rule.priority : null,
+    actions: Array.isArray(rule.actions) ? rule.actions : [],
+    matchers: Array.isArray(rule.matchers) ? rule.matchers : [],
+  };
+}
+
+function stripRawLiveState(value) {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const { rawRules, rawCatchAllRule, ...rest } = value;
+  return rest;
+}
+
+async function fetchLiveCloudflareState({ zone = '', auth, desiredPlan }) {
+  const normalizedZone = trimString(zone).toLowerCase();
+  if (!normalizedZone) {
+    return { error: 'Mailbox domain not initialized.' };
+  }
+  if (!auth?.configured) {
+    return { error: cloudflareAuthErrorMessage() };
+  }
+
+  const zoneRecord = await lookupZone(auth, normalizedZone);
+  const settings = await cloudflareRequest(auth, {
+    path: `/zones/${zoneRecord.id}/email/routing`,
+  });
+  const rules = await cloudflareRequest(auth, {
+    path: `/zones/${zoneRecord.id}/email/routing/rules?per_page=100`,
+  });
+  let catchAllRule = null;
+  try {
+    catchAllRule = await cloudflareRequest(auth, {
+      path: `/zones/${zoneRecord.id}/email/routing/rules/catch_all`,
+    });
+  } catch {
+    catchAllRule = null;
+  }
+
+  const ruleList = Array.isArray(rules) ? rules : [];
+  const literalWorkerAddresses = dedupeStrings(
+    ruleList
+      .filter((rule) => ruleTargetsWorker(rule, desiredPlan?.requiredLiteralWorkerAddresses?.length ? desiredPlan.workerName : ''))
+      .map((rule) => literalRuleAddress(rule)),
+  );
+
+  const desiredLiteralWorkerAddresses = Array.isArray(desiredPlan?.requiredLiteralWorkerAddresses)
+    ? desiredPlan.requiredLiteralWorkerAddresses
+    : [];
+
+  return {
+    zoneId: zoneRecord.id,
+    zoneName: zoneRecord.name,
+    settings: {
+      enabled: settings?.enabled === true,
+      status: trimString(settings?.status),
+      skipWizard: settings?.skip_wizard === true,
+      supportSubaddress: settings?.support_subaddress === true,
+      synced: settings?.synced === true,
+      adminLocked: settings?.admin_locked === true,
+    },
+    literalWorkerAddresses,
+    missingLiteralWorkerAddresses: desiredLiteralWorkerAddresses.filter((address) => !literalWorkerAddresses.includes(trimString(address).toLowerCase())),
+    catchAllRule: summarizeRule(catchAllRule),
+    rules: ruleList.map((rule) => summarizeRule(rule)).filter(Boolean),
+    rawRules: ruleList,
+    rawCatchAllRule: catchAllRule,
+  };
+}
+
+async function enrichStatusWithLiveCloudflareState(summary, { authFile = DEFAULT_CLOUDFLARE_AUTH_FILE } = {}) {
+  const auth = loadCloudflareAuth(authFile);
+  const desiredPlan = {
+    workerName: summary.cloudflare.workerName,
+    requiredLiteralWorkerAddresses: summary.cloudflare.requiredLiteralWorkerAddresses,
+  };
+  try {
+    const live = await fetchLiveCloudflareState({
+      zone: summary.zone,
+      auth,
+      desiredPlan,
+    });
+    return {
+      ...summary,
+      cloudflare: {
+        ...summary.cloudflare,
+        live,
+      },
+    };
+  } catch (error) {
+    return {
+      ...summary,
+      cloudflare: {
+        ...summary.cloudflare,
+        live: {
+          error: error instanceof Error ? error.message : String(error),
+        },
+      },
+    };
+  }
+}
+
+async function updateZoneSettings(auth, zoneId, body) {
+  return cloudflareRequest(auth, {
+    method: 'PATCH',
+    path: `/zones/${zoneId}/email/routing`,
+    body,
+  });
+}
+
+function buildLiteralWorkerRulePayload(address, workerName, existingRule = null) {
+  return {
+    enabled: true,
+    name: trimString(existingRule?.name) || `remotelab-mailbox-${safeRuleNameFragment(address)}`,
+    priority: Number.isFinite(existingRule?.priority) ? existingRule.priority : 0,
+    matchers: [{ type: 'literal', field: 'to', value: address }],
+    actions: [{ type: 'worker', value: [workerName] }],
+  };
+}
+
+async function ensureLiteralWorkerRule({ auth, zoneId, address, workerName, rules = [] }) {
+  const normalizedAddress = trimString(address).toLowerCase();
+  const existingRule = findLiteralRule(rules, normalizedAddress);
+
+  if (existingRule && existingRule.enabled !== false && ruleTargetsWorker(existingRule, workerName)) {
+    return {
+      action: 'unchanged',
+      address: normalizedAddress,
+      ruleId: trimString(existingRule.id),
+    };
+  }
+
+  const payload = buildLiteralWorkerRulePayload(normalizedAddress, workerName, existingRule);
+  const path = trimString(existingRule?.id)
+    ? `/zones/${zoneId}/email/routing/rules/${existingRule.id}`
+    : `/zones/${zoneId}/email/routing/rules`;
+  const method = trimString(existingRule?.id) ? 'PUT' : 'POST';
+
+  await cloudflareRequest(auth, {
+    method,
+    path,
+    body: payload,
+  });
+
+  const refreshedRules = await cloudflareRequest(auth, {
+    path: `/zones/${zoneId}/email/routing/rules?per_page=100`,
+  });
+  const confirmedRule = findLiteralRule(Array.isArray(refreshedRules) ? refreshedRules : [], normalizedAddress);
+
+  return {
+    action: existingRule ? 'updated' : 'created',
+    address: normalizedAddress,
+    ruleId: trimString(confirmedRule?.id || existingRule?.id),
+  };
+}
+
+async function ensureCatchAllWorkerRule({ auth, zoneId, workerName, currentRule = null }) {
+  const rule = currentRule || await cloudflareRequest(auth, {
+    path: `/zones/${zoneId}/email/routing/rules/catch_all`,
+  });
+
+  if (rule?.enabled !== false && ruleTargetsWorker(rule, workerName) && Array.isArray(rule?.matchers) && rule.matchers.some((matcher) => trimString(matcher?.type) === 'all')) {
+    return { action: 'unchanged' };
+  }
+
+  await cloudflareRequest(auth, {
+    method: 'PUT',
+    path: `/zones/${zoneId}/email/routing/rules/catch_all`,
+    body: {
+      enabled: true,
+      name: trimString(rule?.name) || 'remotelab-catch-all-worker',
+      matchers: [{ type: 'all' }],
+      actions: [{ type: 'worker', value: [workerName] }],
+    },
+  });
+
+  return { action: 'updated' };
+}
+
+async function syncCloudflareRouting({
+  rootDir = DEFAULT_ROOT_DIR,
+  zone = '',
+  authFile = DEFAULT_CLOUDFLARE_AUTH_FILE,
+  enableCatchAll = false,
+} = {}) {
+  const summary = buildStatusSummary({ rootDir, zone, authFile });
+  const auth = loadCloudflareAuth(authFile);
+  if (!auth.configured) {
+    throw new Error(cloudflareAuthErrorMessage());
+  }
+  if (!summary.zone) {
+    throw new Error('Mailbox domain is not initialized');
+  }
+  if (!summary.cloudflare.workerName) {
+    throw new Error(`Worker config not found at ${DEFAULT_WORKER_CONFIG_FILE}`);
+  }
+
+  const desiredPlan = {
+    workerName: summary.cloudflare.workerName,
+    requiredLiteralWorkerAddresses: summary.cloudflare.requiredLiteralWorkerAddresses,
+    requireSubaddressing: summary.cloudflare.requireSubaddressing,
+  };
+  const liveBefore = await fetchLiveCloudflareState({
+    zone: summary.zone,
+    auth,
+    desiredPlan,
+  });
+  if (liveBefore.error) {
+    throw new Error(liveBefore.error);
+  }
+
+  const operations = [];
+
+  if (summary.cloudflare.requireSubaddressing && !liveBefore.settings.supportSubaddress) {
+    await updateZoneSettings(auth, liveBefore.zoneId, {
+      enabled: true,
+      skip_wizard: true,
+      support_subaddress: true,
+    });
+    operations.push({
+      type: 'settings',
+      action: 'updated',
+      setting: 'support_subaddress',
+      value: true,
+    });
+  }
+
+  let refreshedRules = Array.isArray(liveBefore.rawRules) ? liveBefore.rawRules : [];
+  for (const address of summary.cloudflare.requiredLiteralWorkerAddresses) {
+    const result = await ensureLiteralWorkerRule({
+      auth,
+      zoneId: liveBefore.zoneId,
+      address,
+      workerName: summary.cloudflare.workerName,
+      rules: refreshedRules,
+    });
+    if (result.action !== 'unchanged') {
+      operations.push({ type: 'literal_worker_rule', ...result });
+      refreshedRules = await cloudflareRequest(auth, {
+        path: `/zones/${liveBefore.zoneId}/email/routing/rules?per_page=100`,
+      });
+    }
+  }
+
+  if (enableCatchAll) {
+    const result = await ensureCatchAllWorkerRule({
+      auth,
+      zoneId: liveBefore.zoneId,
+      workerName: summary.cloudflare.workerName,
+      currentRule: liveBefore.rawCatchAllRule,
+    });
+    if (result.action !== 'unchanged') {
+      operations.push({ type: 'catch_all_rule', ...result });
+    }
+  }
+
+  const liveAfter = await fetchLiveCloudflareState({
+    zone: summary.zone,
+    auth,
+    desiredPlan,
+  });
+
+  return {
+    zone: summary.zone,
+    zoneId: liveBefore.zoneId,
+    authMode: summarizeCloudflareAuthMode(auth),
+    desiredRouteModel: summary.cloudflare.desiredRouteModel,
+    operations,
+    before: stripRawLiveState(liveBefore),
+    after: stripRawLiveState(liveAfter),
+  };
 }
 
 function parseSmtpCode(line) {
@@ -372,19 +874,70 @@ function printProbeResult(result, asJson = false) {
   console.log(`Response: ${result.response}`);
 }
 
-async function main() {
-  const { positional, options } = parseArgs(process.argv.slice(2));
+function printSyncResult(result, asJson = false) {
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(`Zone: ${result.zone}`);
+  console.log(`Auth: ${result.authMode}`);
+  console.log(`Desired route model: ${result.desiredRouteModel}`);
+  if (!result.operations.length) {
+    console.log('Changes: none');
+  } else {
+    console.log('Changes:');
+    for (const operation of result.operations) {
+      if (operation.type === 'settings') {
+        console.log(`- updated ${operation.setting}=${operation.value}`);
+      } else if (operation.type === 'literal_worker_rule') {
+        console.log(`- ${operation.action} literal worker rule for ${operation.address}`);
+      } else if (operation.type === 'catch_all_rule') {
+        console.log(`- ${operation.action} catch-all worker rule`);
+      }
+    }
+  }
+  if (result.after?.missingLiteralWorkerAddresses?.length) {
+    console.log('Still missing literal worker routes:');
+    for (const address of result.after.missingLiteralWorkerAddresses) {
+      console.log(`- ${address}`);
+    }
+  }
+  if (result.after?.settings) {
+    console.log(`Live after: status=${result.after.settings.status || 'unknown'}, synced=${result.after.settings.synced ? 'yes' : 'no'}, subaddressing=${result.after.settings.supportSubaddress ? 'on' : 'off'}`);
+  }
+}
+
+async function main(argv = process.argv.slice(2)) {
+  const { positional, options } = parseArgs(argv);
   const command = positional[0];
   if (!command || command === '--help' || command === 'help') {
     printUsage(0);
   }
 
   if (command === 'status') {
-    const summary = buildStatusSummary({
+    let summary = buildStatusSummary({
       rootDir: optionValue(options, 'root', DEFAULT_ROOT_DIR),
       zone: optionValue(options, 'zone', ''),
+      authFile: optionValue(options, 'auth-file', DEFAULT_CLOUDFLARE_AUTH_FILE),
     });
+    if (optionValue(options, 'live', false) === true) {
+      summary = await enrichStatusWithLiveCloudflareState(summary, {
+        authFile: optionValue(options, 'auth-file', DEFAULT_CLOUDFLARE_AUTH_FILE),
+      });
+    }
     printStatusSummary(summary, optionValue(options, 'json', false) === true);
+    return;
+  }
+
+  if (command === 'sync') {
+    const result = await syncCloudflareRouting({
+      rootDir: optionValue(options, 'root', DEFAULT_ROOT_DIR),
+      zone: optionValue(options, 'zone', ''),
+      authFile: optionValue(options, 'auth-file', DEFAULT_CLOUDFLARE_AUTH_FILE),
+      enableCatchAll: optionValue(options, 'enable-catch-all', false) === true,
+    });
+    printSyncResult(result, optionValue(options, 'json', false) === true);
     return;
   }
 
@@ -402,7 +955,22 @@ async function main() {
   throw new Error(`Unknown command: ${command}`);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isMain) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}
+
+export {
+  buildDesiredCloudflarePlan,
+  buildGuestMailboxAddress,
+  buildStatusSummary,
+  findLiteralRule,
+  literalRuleAddress,
+  loadCloudflareAuth,
+  ruleTargetsWorker,
+  syncCloudflareRouting,
+};

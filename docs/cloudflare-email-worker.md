@@ -44,14 +44,14 @@ If any Cloudflare dashboard action is still needed, the AI should batch those as
 ## [HUMAN] steps
 
 1. Authenticate Wrangler or Cloudflare if the machine is not already logged in.
-2. Create or confirm the Cloudflare Email Routing rule that sends the mailbox alias to the Worker. If you want one low-cost public address per guest instance, prefer a catch-all route into the Worker; a single literal route like `rowan@domain` will not accept `rowan+trial6@domain` or `trial6@domain` at SMTP time.
+2. Create or confirm the Cloudflare Email Routing shape that matches the mailbox addressing mode. For `instanceAddressMode: plus`, keep a literal owner route such as `rowan@domain -> Worker` and enable Email Routing subaddressing so `rowan+trial6@domain` is accepted at SMTP time. For `instanceAddressMode: local_part`, create one literal Worker route per direct guest address such as `trial6@domain -> Worker`. A catch-all Worker route can still be useful for typo/privacy handling, but it does not reliably replace literal per-instance routes for direct guest addresses.
 3. Provide any mailbox identity values the AI cannot infer, such as sender address, worker URL, or mailbox bridge URL.
 
 ## Cloudflare API auth note
 
 - The OAuth session from `wrangler login` is sufficient for Worker deploys, but it is not sufficient for Cloudflare Email Routing API endpoints such as `/zones/:zone_id/email/routing/settings` or `/rules`.
-- For fully scriptable Email Routing changes, use a dedicated `CLOUDFLARE_API_TOKEN` with zone-level Email Routing access, or do the route step once in the Cloudflare dashboard.
-- To prepare the exact desired state and validate SMTP acceptance from the host machine, run `node scripts/agent-mail-cloudflare-routing.mjs status` and `node scripts/agent-mail-cloudflare-routing.mjs probe --address trial6@example.com`.
+- For fully scriptable Email Routing changes, use either a dedicated `CLOUDFLARE_API_TOKEN` with zone-level Email Routing access, or a `CLOUDFLARE_GLOBAL_API_KEY`/`CLOUDFLARE_API_KEY` paired with `CLOUDFLARE_EMAIL`.
+- To prepare or sync the desired state from the host machine, run `node scripts/agent-mail-cloudflare-routing.mjs status --live`, `node scripts/agent-mail-cloudflare-routing.mjs sync`, and `node scripts/agent-mail-cloudflare-routing.mjs probe --address trial6@example.com`.
 
 ## AI execution contract
 
@@ -89,7 +89,7 @@ The Worker should not carry RemoteLab login or session-orchestration config. Tha
 
 ## Success state
 
-- inbound routing sends the mailbox alias to the Worker
+- inbound routing sends the owner mailbox and intended guest mailbox aliases to the Worker according to the chosen address mode
 - RemoteLab completion targets can call `POST /api/send-email`
 - `curl https://.../healthz` succeeds
 - mailbox bridge and reply tests pass when the AI runs them
