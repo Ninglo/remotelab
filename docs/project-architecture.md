@@ -138,9 +138,10 @@ chat-server.mjs  (:7690)
 When developing RemoteLab itself, the intended workflow is:
 
 - use `7690` as the default coding/operator plane
+- restart the running service to pick up backend changes from the current source tree
 - rely on clean restart recovery instead of a permanent second validation plane
 
-Operationally this matters because RemoteLab optimizes for **logical continuity after restart**, not for pretending transport continuity exists while the active process restarts.
+Operationally this matters because RemoteLab now boots directly from the current source tree after restart and optimizes for **logical continuity after restart**, not for pretending transport continuity exists while the active process restarts.
 
 ---
 

@@ -261,7 +261,6 @@ remotelab setup                运行交互式配置向导
 remotelab start                启动所有服务
 remotelab stop                 停止所有服务
 remotelab restart [service]    重启：chat | tunnel | all
-remotelab release              跑测试、生成 release 快照、滚动切换并做健康检查（owner + guest）
 remotelab guest-instance       创建带独立 config + memory 的访客实例
 remotelab chat                 前台运行 chat server（调试用）
 remotelab generate-token       生成新的访问 token
@@ -273,7 +272,7 @@ remotelab --help               显示帮助
 
 如果机器上还留着早期那种按实例复制出来的 runtime（例如 `remotelab-trial-runtime`），可以运行 `remotelab guest-instance converge <name>` 或 `remotelab guest-instance converge --all`。它会保持原来的端口、域名、登录信息、config 和 memory 目录不变，只把 launch agent 的代码入口切回当前的 `~/code/remotelab`，这样以后代码更新就能统一落到所有实例上，而不用改用户手里的链接。
 
-完成收敛后，后续走 `remotelab release` 就会自动按实例滚动重启这些共享代码树的 guest runtime：外部链接保持不变，但底层 release 会一起切到新版本，实例自己的状态、资源、config 和 memory 仍然继续隔离。
+完成收敛后，这些共享代码树的 guest runtime 会在各自重启后直接吃到当前源码版本：外部链接保持不变，实例自己的状态、资源、config 和 memory 仍然继续隔离，但不再额外经过一层 release snapshot。
 
 如果你希望每个 guest instance 都有一个对外可用的收件地址，优先做法应该是把 Cloudflare Email Routing 配成 catch-all -> Email Worker，而不是给每个实例单独建邮箱账号。`node scripts/agent-mail-cloudflare-routing.mjs status` 会打印期望的路由形态，`probe --address <email>` 可以直接验证像 `trial6@example.com` 这样的地址当前在 SMTP 层是否会被接受。
 

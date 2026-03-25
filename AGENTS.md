@@ -57,7 +57,7 @@ Browser / app surface ──HTTPS──→ Cloudflare Tunnel ──→ chat-serv
 |---------|------|--------|------|
 | `chat-server.mjs` | **7690** | production chat domain | **Primary** — the shipped owner chat/control plane |
 
-**Dev workflow**: use the normal `7690` service as the single chat/control plane. RemoteLab now relies on clean restart recovery rather than a separate permanent validation plane.
+**Dev workflow**: use the normal `7690` service as the single chat/control plane. Restarting it should boot the current source tree directly; RemoteLab relies on clean restart recovery rather than a separate release snapshot or permanent validation plane.
 
 **Self-hosting rule**: restarting the active chat server is acceptable when needed because runs reconcile back from durable state. Treat restart as a transport interruption with logical recovery, not as a reason to maintain a second permanent chat plane. Manual extra instances remain optional ad-hoc debugging tools only. See `notes/current/self-hosting-dev-restarts.md`.
 

@@ -150,6 +150,7 @@ try {
     environmentVariables: {
       CHAT_PORT: '7696',
       HOME: sandboxHome,
+      REMOTELAB_ENABLE_ACTIVE_RELEASE: '1',
       REMOTELAB_INSTANCE_ROOT: instanceRoot,
       SECURE_COOKIES: '1',
     },
@@ -173,6 +174,7 @@ try {
   assert.equal(convergeOutput[0].publicBaseUrl, 'https://trial.example.com');
   assert.equal(convergeOutput[0].nextChatServerPath, join(repoRoot, 'chat-server.mjs'));
   assert.equal(convergeOutput[0].nextWorkingDirectory, repoRoot);
+  assert.equal(convergeOutput[0].drift.hasLegacyReleaseFlags, true);
 } finally {
   rmSync(sandboxHome, { recursive: true, force: true });
 }

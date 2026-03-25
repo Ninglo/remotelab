@@ -26,7 +26,6 @@ credentials.txt
 *.tmp
 *.swp
 *~
-.remotelab-runtime/
 
 # Claude Code session plan dumps
 [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.txt

@@ -109,13 +109,12 @@ import {
   publishLocalFileAssetFromPath,
 } from './file-assets.mjs';
 
-// Paths are resolved from the active runtime root on each request.
+// Paths are resolved from the running project root on each request.
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const chatTemplatePath = join(__dirname, '..', 'templates', 'chat.html');
 const loginTemplatePath = join(__dirname, '..', 'templates', 'login.html');
 const staticDir = join(__dirname, '..', 'static');
 const packageJsonPath = join(__dirname, '..', 'package.json');
-const releaseMetadataPath = join(__dirname, '..', '.remotelab-release.json');
 const serviceBuildRoots = [
   join(__dirname, '..', 'chat'),
   join(__dirname, '..', 'lib'),
@@ -481,55 +480,29 @@ function hasDirtyRepoPaths(paths) {
   }
 }
 
-function normalizeReleaseText(value) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function readReleaseMetadata() {
-  try {
-    const payload = JSON.parse(readFileSync(releaseMetadataPath, 'utf8'));
-    return payload && typeof payload === 'object' ? payload : null;
-  } catch {
-    return null;
-  }
-}
-
 function loadBuildInfo() {
-  const releaseMetadata = readReleaseMetadata();
   let version = 'dev';
-  const releasedVersion = normalizeReleaseText(releaseMetadata?.sourceVersion);
-  if (releasedVersion) {
-    version = releasedVersion;
-  } else {
-    try {
-      const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-      if (pkg?.version) version = String(pkg.version);
-    } catch {}
-  }
+  try {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    if (pkg?.version) version = String(pkg.version);
+  } catch {}
 
-  let commit = normalizeReleaseText(releaseMetadata?.sourceCommit);
-  if (!commit) {
-    try {
-      commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
-        cwd: join(__dirname, '..'),
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
-    } catch {}
-  }
+  let commit = '';
+  try {
+    commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: join(__dirname, '..'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {}
 
-  const releaseId = normalizeReleaseText(releaseMetadata?.releaseId);
-  const runtimeMode = releaseId ? 'release' : 'source';
-  const releasedDirty = typeof releaseMetadata?.sourceDirty === 'boolean'
-    ? releaseMetadata.sourceDirty
-    : null;
-  const serviceDirty = releasedDirty === null ? hasDirtyRepoPaths(serviceBuildStatusPaths) : releasedDirty;
-  const releasedFingerprint = normalizeReleaseText(releaseMetadata?.sourceFingerprint);
+  const runtimeMode = 'source';
+  const serviceDirty = hasDirtyRepoPaths(serviceBuildStatusPaths);
   const computedFingerprint = formatMtimeFingerprint(serviceBuildRoots.reduce(
     (latestMtime, root) => Math.max(latestMtime, getLatestMtimeMsSync(root)),
     0,
   ));
-  const serviceFingerprint = releasedFingerprint || (serviceDirty ? computedFingerprint : '');
+  const serviceFingerprint = serviceDirty ? computedFingerprint : '';
   const serviceRevisionBase = commit || '';
   const serviceRevisionLabel = serviceRevisionBase
     ? (serviceDirty ? `${serviceRevisionBase}*` : serviceRevisionBase)
@@ -539,9 +512,8 @@ function loadBuildInfo() {
   const serviceLabel = serviceLabelParts.join(' · ');
   const serviceAssetVersion = sanitizeAssetVersion([
     version,
-    commit || releaseId || 'working',
+    commit || 'working',
     serviceDirty && serviceFingerprint ? `dirty-${serviceFingerprint}` : 'clean',
-    releaseId ? `rel-${releaseId}` : '',
   ].filter(Boolean).join('-'));
   const serviceTitleParts = [`Service v${version}`];
   if (serviceRevisionLabel) serviceTitleParts.push(serviceRevisionLabel);
@@ -561,8 +533,8 @@ function loadBuildInfo() {
     serviceLabel,
     serviceTitle,
     runtimeMode,
-    releaseId: releaseId || null,
-    releaseCreatedAt: normalizeReleaseText(releaseMetadata?.createdAt) || null,
+    releaseId: null,
+    releaseCreatedAt: null,
   };
 }
 

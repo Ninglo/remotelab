@@ -161,6 +161,8 @@ async function main() {
 
     const initialBuild = await fetchBuildInfo(port);
     const initial = initialBuild.payload;
+    assert.equal(initial.runtimeMode, 'source', 'source runtime should advertise source mode');
+    assert.equal(initial.releaseId, null, 'source runtime should not expose a release id');
     assert.ok(initial.serviceLabel, 'build info should expose a service label');
     assert.ok(initial.serviceTitle, 'build info should expose a service title');
     assert.match(
@@ -243,6 +245,8 @@ async function main() {
     server = await startServer({ home, port });
     const restartedBuild = await fetchBuildInfo(port);
     const restarted = restartedBuild.payload;
+    assert.equal(restarted.runtimeMode, 'source', 'restarted server should remain in source mode');
+    assert.equal(restarted.releaseId, null, 'restarted server should not expose a release id');
     assert.notEqual(
       restarted.serviceAssetVersion,
       initial.serviceAssetVersion,
