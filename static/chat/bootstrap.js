@@ -211,10 +211,7 @@ async function applyBuildInfo(nextBuildInfo) {
   }
   newerBuildInfo = nextBuildInfo;
   updateFrontendRefreshUi();
-  if (hasUnsavedComposerState()) {
-    return false;
-  }
-  return reloadForFreshBuild(nextBuildInfo);
+  return false;
 }
 
 window.RemoteLabBuild = {

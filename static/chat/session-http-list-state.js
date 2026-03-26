@@ -12,6 +12,13 @@ function mergeUniqueSessions(entries = []) {
 function applySessionListState(nextSessions, {
   archivedCount: nextArchivedCount = archivedSessionCount,
 } = {}) {
+  const previousArchivedCount = Number.isInteger(archivedSessionCount) && archivedSessionCount >= 0
+    ? archivedSessionCount
+    : 0;
+  const hadLoadedSessions = hasLoadedSessions === true;
+  const previousSignature = typeof getComparableSessionStateSignature === "function"
+    ? getComparableSessionStateSignature({ archivedCount: previousArchivedCount, sessions })
+    : "";
   const previousMap = new Map(sessions.map((session) => [session.id, session]));
   const activeSessions = (Array.isArray(nextSessions) ? nextSessions : [])
     .map((session) => normalizeSessionRecord(session, previousMap.get(session?.id) || null))
@@ -33,11 +40,19 @@ function applySessionListState(nextSessions, {
   if (Number.isInteger(nextArchivedCount) && nextArchivedCount >= 0) {
     archivedSessionCount = nextArchivedCount;
   }
+  const nextSignature = typeof getComparableSessionStateSignature === "function"
+    ? getComparableSessionStateSignature({ archivedCount: archivedSessionCount, sessions })
+    : "";
   refreshAppCatalog();
-  renderSessionList();
+  if (!hadLoadedSessions || previousSignature !== nextSignature) {
+    renderSessionList();
+  }
   if (currentSessionId && !sessions.some((session) => session.id === currentSessionId)) {
     currentSessionId = null;
     hasAttachedSession = false;
+    if (typeof resetAttachedSessionRenderState === "function") {
+      resetAttachedSessionRenderState();
+    }
     clearMessages();
     showEmpty();
     restoreDraft();
@@ -48,6 +63,13 @@ function applySessionListState(nextSessions, {
 function applyArchivedSessionListState(nextSessions, {
   archivedCount: nextArchivedCount = null,
 } = {}) {
+  const previousArchivedCount = Number.isInteger(archivedSessionCount) && archivedSessionCount >= 0
+    ? archivedSessionCount
+    : 0;
+  const hadArchivedSessionsLoaded = archivedSessionsLoaded === true;
+  const previousSignature = typeof getComparableSessionStateSignature === "function"
+    ? getComparableSessionStateSignature({ archivedCount: previousArchivedCount, sessions })
+    : "";
   const previousMap = new Map(sessions.map((session) => [session.id, session]));
   const preservedActive = sessions
     .filter((session) => session?.archived !== true)
@@ -63,8 +85,13 @@ function applyArchivedSessionListState(nextSessions, {
   archivedSessionCount = Number.isInteger(nextArchivedCount) && nextArchivedCount >= 0
     ? nextArchivedCount
     : archivedSessions.length;
+  const nextSignature = typeof getComparableSessionStateSignature === "function"
+    ? getComparableSessionStateSignature({ archivedCount: archivedSessionCount, sessions })
+    : "";
   refreshAppCatalog();
-  renderSessionList();
+  if (!hadArchivedSessionsLoaded || previousSignature !== nextSignature) {
+    renderSessionList();
+  }
   return archivedSessions;
 
 }

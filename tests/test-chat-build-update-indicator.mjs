@@ -83,22 +83,22 @@ async function main() {
 
   const { context: cleanContext, state: cleanState } = buildContext();
   const firstResult = await cleanContext.applyBuildInfo(nextBuildInfo);
-  assert.equal(firstResult, true, 'new frontend builds should auto reload when there is no unsaved composer work');
-  assert.equal(cleanState.reloadCalls, 1, 'clean sessions should immediately reload into the new frontend build');
-  assert.equal(cleanState.refreshUiCalls, 1, 'new frontend builds should still refresh the indicator state before reload');
-  assert.deepEqual(cleanContext.newerBuildInfo, nextBuildInfo, 'new frontend builds should remain tracked while the reload starts');
+  assert.equal(firstResult, false, 'new frontend builds should stay passive until the user explicitly reloads');
+  assert.equal(cleanState.reloadCalls, 0, 'new frontend builds should not trigger a hidden automatic reload');
+  assert.equal(cleanState.refreshUiCalls, 1, 'new frontend builds should still surface the update indicator immediately');
+  assert.deepEqual(cleanContext.newerBuildInfo, nextBuildInfo, 'new frontend builds should remain tracked for the manual reload button');
 
   const { context: draftContext, state: draftState } = buildContext({ draftText: 'unfinished draft' });
   const draftResult = await draftContext.applyBuildInfo(nextBuildInfo);
-  assert.equal(draftResult, false, 'new frontend builds should stay passive when the composer has a draft');
-  assert.equal(draftState.reloadCalls, 0, 'draft text should block automatic reloads');
+  assert.equal(draftResult, false, 'new frontend builds should also stay passive when the composer has a draft');
+  assert.equal(draftState.reloadCalls, 0, 'draft text should remain safe because reloads are always manual now');
   assert.equal(draftState.refreshUiCalls, 1, 'draft-protected pages should still surface the update indicator');
   assert.deepEqual(draftContext.newerBuildInfo, nextBuildInfo, 'draft-protected pages should remember the pending build for manual reload');
 
   const { context: attachmentContext, state: attachmentState } = buildContext({ pendingAttachments: 2 });
   const attachmentResult = await attachmentContext.applyBuildInfo(nextBuildInfo);
   assert.equal(attachmentResult, false, 'new frontend builds should stay passive when attachment drafts are queued');
-  assert.equal(attachmentState.reloadCalls, 0, 'queued attachments should also block automatic reloads');
+  assert.equal(attachmentState.reloadCalls, 0, 'queued attachments should remain untouched until the user taps reload');
 
   draftState.refreshUiCalls = 0;
   const secondResult = await draftContext.applyBuildInfo({ assetVersion: 'build-a' });

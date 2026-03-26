@@ -10,6 +10,7 @@ function restoreOwnerSessionSelection() {
   if (!targetSession) {
     currentSessionId = null;
     hasAttachedSession = false;
+    resetAttachedSessionRenderState();
     persistActiveSessionId(null);
     syncBrowserState({ sessionId: null, tab: activeTab });
     showEmpty();
@@ -64,9 +65,15 @@ function notifyCompletion(session) {
 }
 
 const FOREGROUND_REFRESH_THROTTLE_MS = 1500;
+const FOREGROUND_SESSION_LIST_STALE_MS = 15000;
+const FOREGROUND_IDLE_SESSION_STALE_MS = 15000;
 let foregroundRefreshPromise = null;
 let foregroundRefreshHandlersReady = false;
 let lastForegroundRefreshAt = 0;
+let lastSessionsListRefreshAt = 0;
+let lastArchivedSessionsRefreshAt = 0;
+let lastCurrentSessionRefreshAt = 0;
+let lastCurrentSessionRefreshSessionId = null;
 let pendingCurrentSessionRefreshOptions = null;
 
 function buildSessionRefreshRequestOptions(forceFresh = false) {
@@ -105,9 +112,56 @@ function canQueueForegroundRefresh() {
   return true;
 }
 
+function isRefreshStale(lastRefreshAt, staleMs) {
+  return !Number.isFinite(lastRefreshAt)
+    || lastRefreshAt <= 0
+    || Date.now() - lastRefreshAt >= staleMs;
+}
+
+function isArchiveSectionExpanded() {
+  return typeof localStorage !== "undefined"
+    && typeof localStorage.getItem === "function"
+    && localStorage.getItem("archivedCollapsed") === "false";
+}
+
+function shouldRefreshForegroundSessionList({ forceFresh = false } = {}) {
+  if (forceFresh) return true;
+  if (!hasLoadedSessions) return true;
+  if (pendingNavigationState) return true;
+  if (currentSessionId && typeof findClientSessionRecord === "function" && !findClientSessionRecord(currentSessionId)) {
+    return true;
+  }
+  return isRefreshStale(lastSessionsListRefreshAt, FOREGROUND_SESSION_LIST_STALE_MS);
+}
+
+function shouldRefreshForegroundArchivedSessions({
+  forceFresh = false,
+  refreshedSessionsList = false,
+} = {}) {
+  if (!archivedSessionsLoaded || !isArchiveSectionExpanded()) return false;
+  if (forceFresh) return true;
+  if (refreshedSessionsList) return true;
+  return isRefreshStale(lastArchivedSessionsRefreshAt, FOREGROUND_SESSION_LIST_STALE_MS);
+}
+
+function shouldRefreshForegroundCurrentSession({ forceFresh = false } = {}) {
+  if (!currentSessionId) return false;
+  if (forceFresh) return true;
+  if (!hasAttachedSession) return true;
+  if (pendingNavigationState) return true;
+  const session = typeof findClientSessionRecord === "function"
+    ? findClientSessionRecord(currentSessionId)
+    : null;
+  if (!session) return true;
+  if (getSessionRunState(session) === "running") return true;
+  if (!hasRenderedEventSnapshot(currentSessionId)) return true;
+  if (lastCurrentSessionRefreshSessionId !== currentSessionId) return true;
+  return isRefreshStale(lastCurrentSessionRefreshAt, FOREGROUND_IDLE_SESSION_STALE_MS);
+}
+
 async function runForegroundRefresh({ forceFresh = false, viewportIntent = "preserve" } = {}) {
   if (!canQueueForegroundRefresh()) return null;
-  await refreshRealtimeViews({ forceFresh, viewportIntent });
+  await refreshRealtimeViews({ forceFresh, viewportIntent, refreshMode: "foreground" });
   return currentSessionId || null;
 }
 
@@ -143,12 +197,12 @@ function setupForegroundRefreshHandlers() {
   if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") return null;
-      return queueForegroundRefresh({ forceFresh: true }).catch(() => {});
+      return queueForegroundRefresh().catch(() => {});
     });
   }
   if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-    window.addEventListener("focus", () => queueForegroundRefresh({ forceFresh: true }).catch(() => {}));
-    window.addEventListener("pageshow", () => queueForegroundRefresh({ forceFresh: true }).catch(() => {}));
+    window.addEventListener("focus", () => queueForegroundRefresh().catch(() => {}));
+    window.addEventListener("pageshow", () => queueForegroundRefresh().catch(() => {}));
   }
 }
 
@@ -581,6 +635,7 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
   if (!archivedSessionsLoaded && archivedSessionCount === 0) {
     archivedSessionsLoaded = true;
     archivedSessionsLoading = false;
+    lastArchivedSessionsRefreshAt = Date.now();
     renderSessionList();
     return [];
   }
@@ -593,11 +648,13 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
         ARCHIVED_SESSION_LIST_URL,
         buildSessionRefreshRequestOptions(forceFresh),
       );
-      return applyArchivedSessionListState(data.sessions || [], {
+      const nextArchivedSessions = applyArchivedSessionListState(data.sessions || [], {
         archivedCount: Number.isInteger(data.archivedCount)
           ? data.archivedCount
           : (Array.isArray(data.sessions) ? data.sessions.length : 0),
       });
+      lastArchivedSessionsRefreshAt = Date.now();
+      return nextArchivedSessions;
     } catch (error) {
       archivedSessionsLoading = false;
       renderSessionList();
@@ -744,6 +801,7 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
   applySessionListState(data.sessions || [], {
     archivedCount: Number.isInteger(data.archivedCount) ? data.archivedCount : 0,
   });
+  lastSessionsListRefreshAt = Date.now();
   if (typeof renderSettingsSessionPresentationPanel === "function") {
     renderSettingsSessionPresentationPanel();
   }
@@ -800,8 +858,18 @@ async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
 }
 
 function applyAttachedSessionState(id, session) {
+  const attachedSessionRenderState = getAttachedSessionRenderState();
+  const nextSignature = getComparableAttachedSessionStateSignature(session || null);
+  const shouldRefreshUi = attachedSessionRenderState.sessionId !== id
+    || attachedSessionRenderState.signature !== nextSignature;
   currentSessionId = id;
   hasAttachedSession = true;
+  if (!shouldRefreshUi) {
+    syncBrowserState();
+    syncForkButton();
+    syncShareButton();
+    return false;
+  }
   currentTokens = 0;
   contextTokens.style.display = "none";
   compactBtn.style.display = "none";
@@ -846,6 +914,65 @@ function applyAttachedSessionState(id, session) {
   syncBrowserState();
   syncForkButton();
   syncShareButton();
+  attachedSessionRenderState.sessionId = id;
+  attachedSessionRenderState.signature = nextSignature;
+  return true;
+}
+
+function getAttachedSessionRenderState() {
+  if (!(globalThis.__attachedSessionRenderState && typeof globalThis.__attachedSessionRenderState === "object")) {
+    globalThis.__attachedSessionRenderState = {
+      sessionId: null,
+      signature: "",
+    };
+  }
+  return globalThis.__attachedSessionRenderState;
+}
+
+function resetAttachedSessionRenderState() {
+  const attachedSessionRenderState = getAttachedSessionRenderState();
+  attachedSessionRenderState.sessionId = null;
+  attachedSessionRenderState.signature = "";
+}
+
+function buildComparableSessionState(value) {
+  if (Array.isArray(value)) {
+    return value.map((entry) => buildComparableSessionState(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const normalized = {};
+  for (const key of Object.keys(value).sort()) {
+    const nextValue = buildComparableSessionState(value[key]);
+    if (typeof nextValue !== "undefined") {
+      normalized[key] = nextValue;
+    }
+  }
+  return normalized;
+}
+
+function getComparableSessionStateSignature(value) {
+  return JSON.stringify(buildComparableSessionState(value));
+}
+
+function getComparableAttachedSessionStateSignature(session) {
+  if (!session || typeof session !== "object") {
+    return getComparableSessionStateSignature(session);
+  }
+  return getComparableSessionStateSignature({
+    id: session.id || null,
+    name: session.name || "",
+    tool: session.tool || "",
+    status: session.status || "",
+    archived: session.archived === true,
+    appId: session.appId || "",
+    activity: session.activity || null,
+    queuedMessages: Array.isArray(session.queuedMessages) ? session.queuedMessages : null,
+    model: typeof session.model === "string" ? session.model : null,
+    effort: typeof session.effort === "string" ? session.effort : null,
+    thinking: session.thinking === true ? true : null,
+  });
 }
 
 async function fetchSessionState(sessionId, { forceFresh = false } = {}) {
@@ -858,17 +985,27 @@ async function fetchSessionState(sessionId, { forceFresh = false } = {}) {
     if (normalized && currentSessionId === sessionId) {
       applyAttachedSessionState(sessionId, normalized);
     }
+    lastCurrentSessionRefreshAt = Date.now();
+    lastCurrentSessionRefreshSessionId = sessionId;
     return normalized;
   }
   const data = await fetchJsonOrRedirect(
     `/api/sessions/${encodeURIComponent(sessionId)}`,
     buildSessionRefreshRequestOptions(forceFresh),
   );
-  const normalized = upsertSession(data.session);
+  const previous = sessions.find((entry) => entry.id === sessionId) || null;
+  const nextSession = normalizeSessionRecord(data.session, previous);
+  const sessionChanged = !previous
+    || getComparableSessionStateSignature(previous) !== getComparableSessionStateSignature(nextSession);
+  const normalized = sessionChanged
+    ? (upsertSession(nextSession) || nextSession)
+    : previous;
   if (normalized && currentSessionId === sessionId) {
     rememberSessionReviewedLocally(normalized);
     applyAttachedSessionState(sessionId, normalized);
   }
+  lastCurrentSessionRefreshAt = Date.now();
+  lastCurrentSessionRefreshSessionId = sessionId;
   return normalized;
 }
 
@@ -1060,7 +1197,11 @@ async function refreshSidebarSession(sessionId) {
   return request;
 }
 
-async function refreshRealtimeViews({ viewportIntent = "preserve", forceFresh = false } = {}) {
+async function refreshRealtimeViews({
+  viewportIntent = "preserve",
+  forceFresh = false,
+  refreshMode = "full",
+} = {}) {
   if (visitorMode) {
     if (currentSessionId) {
       await refreshCurrentSession({ viewportIntent, forceFresh }).catch(() => {});
@@ -1068,15 +1209,30 @@ async function refreshRealtimeViews({ viewportIntent = "preserve", forceFresh = 
     return;
   }
 
-  await fetchSessionsList({ forceFresh }).catch(() => {});
-  if (typeof archivedSessionsLoaded !== "undefined" && archivedSessionsLoaded) {
-    await fetchArchivedSessions({ forceFresh }).catch(() => {});
+  const useForegroundPlan = refreshMode === "foreground";
+  const shouldRefreshSessionsList = useForegroundPlan
+    ? shouldRefreshForegroundSessionList({ forceFresh })
+    : true;
+  if (shouldRefreshSessionsList) {
+    await fetchSessionsList({ forceFresh }).catch(() => {});
   }
   if (pendingNavigationState) {
     restoreOwnerSessionSelection();
   }
-  if (currentSessionId) {
+  const shouldRefreshCurrent = useForegroundPlan
+    ? shouldRefreshForegroundCurrentSession({ forceFresh })
+    : Boolean(currentSessionId);
+  if (currentSessionId && shouldRefreshCurrent) {
     await refreshCurrentSession({ viewportIntent, forceFresh }).catch(() => {});
+  }
+  const shouldRefreshArchived = useForegroundPlan
+    ? shouldRefreshForegroundArchivedSessions({
+      forceFresh,
+      refreshedSessionsList: shouldRefreshSessionsList,
+    })
+    : (typeof archivedSessionsLoaded !== "undefined" && archivedSessionsLoaded);
+  if (shouldRefreshArchived) {
+    await fetchArchivedSessions({ forceFresh }).catch(() => {});
   }
 }
 

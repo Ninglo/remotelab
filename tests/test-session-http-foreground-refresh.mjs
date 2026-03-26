@@ -368,9 +368,9 @@ assert.deepEqual(
   'returning to the foreground should refresh the session list, current session, and visible transcript once',
 );
 assert.equal(
-  firstContext.fetchCalls.every((entry) => entry.options.cache === 'no-store'),
+  firstContext.fetchCalls.every((entry) => entry.options.cache !== 'no-store'),
   true,
-  'foreground recovery should bypass browser caches so the UI sees the latest state immediately',
+  'foreground recovery should rely on normal revalidation instead of forcing a full no-store refetch every time',
 );
 
 await firstContext.windowListeners.get('focus')();
@@ -379,6 +379,67 @@ assert.equal(
   firstContext.fetchCalls.length,
   3,
   'foreground recovery should throttle duplicate focus-based refreshes fired right after visibilitychange',
+);
+
+const targetedContext = createContext({
+  fetchImpl(url) {
+    if (url === '/api/sessions?includeVisitor=1') {
+      return createFetchResponse({
+        sessions: [
+          buildSession({
+            id: 'current-session',
+            name: 'Current session',
+            state: 'running',
+            status: 'running',
+            updatedAt: '2026-03-12T10:10:00.000Z',
+            latestSeq: 5,
+          }),
+        ],
+        archivedCount: 0,
+      }, { url: 'http://127.0.0.1/api/sessions?includeVisitor=1' });
+    }
+    if (url === '/api/sessions/current-session') {
+      return createFetchResponse({
+        session: buildSession({
+          id: 'current-session',
+          name: 'Current session',
+          state: 'running',
+          status: 'running',
+          updatedAt: '2026-03-12T10:10:00.000Z',
+          latestSeq: 5,
+        }),
+      }, { url: 'http://127.0.0.1/api/sessions/current-session' });
+    }
+    if (url === '/api/sessions/current-session/events?filter=visible') {
+      return createFetchResponse({
+        events: [
+          {
+            seq: 5,
+            type: 'message',
+            role: 'assistant',
+            content: 'Still running.',
+          },
+        ],
+      }, { url: 'http://127.0.0.1/api/sessions/current-session/events?filter=visible' });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  },
+});
+
+vm.runInNewContext(sessionHttpSource, targetedContext, { filename: 'static/chat/session-http.js' });
+
+await targetedContext.fetchSessionsList();
+targetedContext.fetchCalls.length = 0;
+targetedContext.setupForegroundRefreshHandlers();
+await targetedContext.documentListeners.get('visibilitychange')();
+
+assert.deepEqual(
+  targetedContext.fetchCalls.map((entry) => entry.url),
+  [
+    '/api/sessions/current-session',
+    '/api/sessions/current-session/events?filter=visible',
+  ],
+  'foreground recovery should skip a freshly hydrated session list and only refresh the visible running session',
 );
 
 firstContext.advanceTime(3000);
