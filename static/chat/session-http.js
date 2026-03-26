@@ -274,9 +274,7 @@ function buildSessionListOrganizerSessionMetadata(session) {
       : null,
     pinned: session?.pinned === true,
     tool: clipSessionListOrganizerText(session?.tool || "", 40),
-    appName: clipSessionListOrganizerText(session?.appName || "", 80),
     sourceName: clipSessionListOrganizerText(session?.sourceName || "", 80),
-    userName: clipSessionListOrganizerText(session?.userName || "", 80),
     folder: clipSessionListOrganizerText(session?.folder || "", 180),
     workflowState: clipSessionListOrganizerText(session?.workflowState || "", 40),
     workflowPriority: clipSessionListOrganizerText(session?.workflowPriority || "", 40),
@@ -550,10 +548,7 @@ function normalizeSessionRecord(session, previous = null) {
   const queueCount = Number.isInteger(session?.activity?.queue?.count)
     ? session.activity.queue.count
     : 0;
-  const normalized = {
-    ...session,
-    appId: getEffectiveSessionAppId(session),
-  };
+  const normalized = { ...session };
   if (!Object.prototype.hasOwnProperty.call(session || {}, "queuedMessages")) {
     if (queueCount > 0 && Array.isArray(previous?.queuedMessages)) {
       normalized.queuedMessages = previous.queuedMessages;
@@ -667,75 +662,6 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
   return request;
 }
 
-async function fetchAppsList() {
-  availableApps = [];
-  refreshAppCatalog();
-  if (typeof renderSettingsAppsPanel === "function") {
-    renderSettingsAppsPanel();
-  }
-  if (typeof renderUserAppOptions === "function") {
-    renderUserAppOptions();
-  }
-  if (typeof renderSettingsUsersPanel === "function") {
-    renderSettingsUsersPanel();
-  }
-  return availableApps;
-}
-
-async function createAppRecord(payload = {}) {
-  void payload;
-  throw new Error("Apps have been removed from the current product surface");
-}
-
-async function updateAppRecord(appId, payload = {}) {
-  void appId;
-  void payload;
-  throw new Error("Apps have been removed from the current product surface");
-}
-
-async function deleteAppRecord(appId) {
-  void appId;
-  throw new Error("Apps have been removed from the current product surface");
-}
-
-async function createVisitorRecord(payload = {}) {
-  const data = await fetchJsonOrRedirect("/api/visitors", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return data.visitor || null;
-}
-
-async function updateVisitorRecord(visitorId, payload = {}) {
-  const data = await fetchJsonOrRedirect(`/api/visitors/${encodeURIComponent(visitorId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return data.visitor || null;
-}
-
-async function fetchUsersList() {
-  availableUsers = [];
-  refreshAppCatalog();
-  if (typeof renderSettingsUsersPanel === "function") {
-    renderSettingsUsersPanel();
-  }
-  return availableUsers;
-}
-
-async function createUserRecord(payload = {}) {
-  void payload;
-  throw new Error("Users have been removed from the current product surface");
-}
-
-async function updateUserRecord(userId, payload = {}) {
-  void userId;
-  void payload;
-  throw new Error("Users have been removed from the current product surface");
-}
-
 async function updateSessionRecord(sessionId, payload = {}) {
   const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(sessionId)}`, {
     method: "PATCH",
@@ -756,11 +682,6 @@ async function updateSessionRecord(sessionId, payload = {}) {
     return refreshCurrentSession();
   }
   return refreshSidebarSession(sessionId);
-}
-
-async function deleteUserRecord(userId) {
-  void userId;
-  throw new Error("Users have been removed from the current product surface");
 }
 
 async function fetchSessionsList({ forceFresh = false } = {}) {
@@ -937,7 +858,6 @@ function getComparableAttachedSessionStateSignature(session) {
     tool: session.tool || "",
     status: session.status || "",
     archived: session.archived === true,
-    appId: session.appId || "",
     activity: session.activity || null,
     queuedMessages: Array.isArray(session.queuedMessages) ? session.queuedMessages : null,
     model: typeof session.model === "string" ? session.model : null,

@@ -105,7 +105,7 @@ For those fields, the preferred migration order is:
 ### Current implementation status
 
 - The owner UI no longer exposes app/user sidebar filters or app/user settings panels.
-- `/api/apps*`, `/api/users*`, `/app/:shareToken`, and `/visitor/:shareToken` are explicitly retired.
+- `/api/apps*`, `/api/users*`, `/api/visitors*`, `/app/:shareToken`, and `/visitor/:shareToken` are now removed from the active product surface rather than kept as explicit retirement stubs.
 - Share snapshots remain the only public share surface.
 - Owner bootstrap Welcome now lands as a normal starter session with a seeded assistant opening message instead of a product-visible Welcome app flow.
 

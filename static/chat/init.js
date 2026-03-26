@@ -67,10 +67,6 @@ async function initApp() {
   }
 
   const authInfo = await resolveInitialAuthInfo();
-  if (authInfo?.role === "visitor" && authInfo.sessionId) {
-    visitorSessionId = authInfo.sessionId;
-    applyVisitorMode();
-  }
 
   const url = new URL(window.location.href);
   if (url.searchParams.has("visitor")) {

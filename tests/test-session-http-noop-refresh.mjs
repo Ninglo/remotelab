@@ -230,7 +230,7 @@ function createContext() {
     switchTab() {},
     applyNavigationState() {},
     fetch: async (url) => {
-      if (String(url) === '/api/sessions?includeVisitor=1') {
+      if (String(url) === '/api/sessions') {
         return createFetchResponse({
           sessions: [buildSession({
             id: 'current-session',
@@ -241,7 +241,7 @@ function createContext() {
             latestSeq: 1,
           })],
           archivedCount: 0,
-        }, { url: 'http://127.0.0.1/api/sessions?includeVisitor=1' });
+        }, { url: 'http://127.0.0.1/api/sessions' });
       }
       if (String(url) === '/api/sessions/current-session') {
         return createFetchResponse({

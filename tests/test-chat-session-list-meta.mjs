@@ -49,6 +49,14 @@ const buildSessionMetaPartsSource = extractFunctionSource(sessionSurfaceUiSource
 const state = { scopeCalls: 0, statusCalls: 0 };
 const context = {
   console,
+  t(key, vars = {}) {
+    if (key === 'session.messagesTitle') return 'Messages in this session';
+    if (key === 'session.messages') return `${vars.count} msg${vars.suffix || ''}`;
+    return key;
+  },
+  esc(value) {
+    return String(value || '');
+  },
   renderSessionScopeContext() {
     state.scopeCalls += 1;
     return ['<span>scope</span>'];

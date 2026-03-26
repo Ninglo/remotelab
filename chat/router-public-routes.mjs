@@ -9,7 +9,6 @@ import {
   parseCookies,
   setCookie,
   clearCookie,
-  setVisitorCookie,
   clearVisitorCookie,
 } from '../lib/auth.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -32,11 +31,6 @@ export async function handlePublicRoutes({
   buildHeaders,
   renderPageTemplate,
   buildTemplateReplacements,
-  getVisitorBrowserId,
-  createVisitorBrowserId,
-  setVisitorBrowserCookie,
-  buildAppShareVisitorId,
-  bootstrapPublicVisitorSession,
   parseSharePayloadRoute,
   buildShareSnapshotClientPayload,
   serializeJsonForScript,
@@ -47,14 +41,6 @@ export async function handlePublicRoutes({
   writeSnapshotPage,
   writeJsonCached,
 }) {
-function writeRetiredShareSurface(message = 'This share surface has been retired. Use a read-only snapshot instead.') {
-  res.writeHead(410, buildHeaders({
-    'Content-Type': 'text/plain; charset=utf-8',
-    'Cache-Control': 'no-store, max-age=0, must-revalidate',
-  }));
-  res.end(message);
-}
-
 // Token auth via query
 const queryToken = parsedUrl.query.token;
 if (queryToken) {
@@ -146,16 +132,6 @@ if (pathname === '/logout') {
     'Set-Cookie': [clearCookie(), clearVisitorCookie()],
   });
   res.end();
-  return true;
-}
-
-if (pathname.startsWith('/app/') && req.method === 'GET') {
-  writeRetiredShareSurface();
-  return true;
-}
-
-if (pathname.startsWith('/visitor/') && req.method === 'GET') {
-  writeRetiredShareSurface();
   return true;
 }
 

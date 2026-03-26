@@ -53,20 +53,6 @@ newSessionBtn.addEventListener("click", () => {
   createNewSessionShortcut();
 });
 
-createUserBtn?.addEventListener("click", () => {
-  void handleCreateUser();
-});
-
-newUserNameInput?.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter") return;
-  event.preventDefault();
-  void handleCreateUser();
-});
-
-createAppConfigBtn?.addEventListener("click", () => {
-  void handleCreateApp();
-});
-
 // ---- Attachment handling ----
 function buildPendingAttachment(file) {
   return {

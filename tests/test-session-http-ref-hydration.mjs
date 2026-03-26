@@ -238,7 +238,7 @@ function createContext() {
     applyNavigationState() {},
     fetch: async (url) => {
       fetchCalls.push(String(url));
-      if (String(url) === '/api/sessions?includeVisitor=1') {
+      if (String(url) === '/api/sessions') {
         return createFetchResponse({
           sessions: [
             {
@@ -267,7 +267,7 @@ function createContext() {
           archivedCount: 0,
         }, {
           etag: '"etag-session-list"',
-          url: 'http://127.0.0.1/api/sessions?includeVisitor=1',
+          url: 'http://127.0.0.1/api/sessions',
         });
       }
       throw new Error(`Unexpected fetch: ${url}`);
@@ -286,7 +286,7 @@ await context.fetchSessionsList();
 
 assert.deepEqual(
   context.fetchCalls,
-  ['/api/sessions?includeVisitor=1'],
+  ['/api/sessions'],
   'session list refresh should hydrate from the default list endpoint',
 );
 assert.equal(context.renderCalls.length, 1, 'session list refresh should rerender the sidebar once');

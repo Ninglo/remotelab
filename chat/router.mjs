@@ -5,13 +5,9 @@ import { join, resolve, dirname, basename, extname, relative, isAbsolute, sep } 
 import { parse as parseUrl, fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
-import { SESSION_EXPIRY, CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_ENABLED, SECURE_COOKIES } from '../lib/config.mjs';
+import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_ENABLED } from '../lib/config.mjs';
 import {
-  sessions, saveAuthSessionsAsync,
-  verifyTokenAsync, verifyPasswordAsync, generateToken,
-  parseCookies, setCookie, clearCookie,
-  setVisitorCookie, clearVisitorCookie,
-  getAuthSession, getVisitorAuthSession, refreshAuthSession,
+  getAuthSession, refreshAuthSession,
 } from '../lib/auth.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
@@ -59,35 +55,10 @@ import {
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
-import { appendEvent, readEventBody } from './history.mjs';
-import { messageEvent } from './normalizer.mjs';
+import { readEventBody } from './history.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
 import { getModelsForTool } from './models.mjs';
-import {
-  listApps,
-  getApp,
-  getAppByShareToken,
-  createApp,
-  updateApp,
-  deleteApp,
-  isBuiltinAppId,
-  WELCOME_APP_ID,
-} from './apps.mjs';
 import { ensureOwnerBootstrapSessions } from './bootstrap-sessions.mjs';
-import {
-  createUser,
-  deleteUser,
-  getUser,
-  listUsers,
-  updateUser,
-} from './users.mjs';
-import {
-  createVisitor,
-  deleteVisitor,
-  getVisitorByShareToken,
-  listVisitors,
-  updateVisitor,
-} from './visitors.mjs';
 import { createShareSnapshot, getShareAsset, getShareSnapshot } from './shares.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
 import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-display-events.mjs';
@@ -100,7 +71,6 @@ import {
 import { pathExists, statOrNull } from './fs-utils.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { handlePublicRoutes } from './router-public-routes.mjs';
-import { handleAdminRoutes } from './router-admin-routes.mjs';
 import {
   buildFileAssetDirectUrl,
   createFileAssetUploadIntent,
@@ -125,9 +95,6 @@ const serviceBuildRoots = [
   packageJsonPath,
 ];
 
-function isTemplateAppScopeId(appId) {
-  return /^app[_-]/i.test(typeof appId === 'string' ? appId.trim() : '');
-}
 const serviceBuildStatusPaths = ['chat', 'lib', 'chat-server.mjs', 'package.json'];
 
 const BUILD_INFO = loadBuildInfo();
@@ -135,10 +102,6 @@ const pageBuildRoots = [
   join(__dirname, '..', 'templates'),
   staticDir,
 ];
-const VISITOR_BROWSER_COOKIE_NAME = 'visitor_browser_id';
-const VISITOR_BROWSER_COOKIE_MAX_AGE_MS = 5 * 365 * 24 * 60 * 60 * 1000;
-const VISITOR_BROWSER_COOKIE_MAX_AGE_SECONDS = Math.max(1, Math.floor(VISITOR_BROWSER_COOKIE_MAX_AGE_MS / 1000));
-const VISITOR_BROWSER_COOKIE_SAME_SITE = 'Lax';
 let cachedPageBuildInfo = null;
 const frontendBuildWatchers = [];
 let frontendBuildInvalidationTimer = null;
@@ -611,64 +574,6 @@ function buildChatPageBootstrap(authSession) {
   };
 }
 
-function normalizeTemplateAppIds(appIds) {
-  if (!Array.isArray(appIds)) return [];
-  return [...new Set(appIds
-    .map((appId) => (typeof appId === 'string' ? appId.trim() : ''))
-    .filter(Boolean))];
-}
-
-async function resolveTemplateApps(appIds) {
-  const resolved = [];
-  for (const appId of normalizeTemplateAppIds(appIds)) {
-    const app = await getApp(appId);
-    if (!app || !isTemplateAppScopeId(app.id)) continue;
-    resolved.push(app);
-  }
-  return resolved;
-}
-
-async function normalizeSessionFolderInput(folder) {
-  const trimmed = typeof folder === 'string' && folder.trim() ? folder.trim() : '~';
-  const resolvedFolder = trimmed.startsWith('~')
-    ? join(homedir(), trimmed.slice(1))
-    : resolve(trimmed);
-  if (!await isDirectoryPath(resolvedFolder)) return null;
-  return trimmed.startsWith('~') ? trimmed : resolvedFolder;
-}
-
-async function createOwnerTemplatedSession({
-  folder = '~',
-  tool = '',
-  name = '',
-  app,
-  userId = '',
-  userName = '',
-  externalTriggerId = '',
-} = {}) {
-  if (!app?.id || !isTemplateAppScopeId(app.id)) return null;
-  let session = await createSession(
-    folder,
-    tool || app.tool || 'codex',
-    name || app.name || 'Session',
-    {
-      appId: app.id,
-      appName: app.name || '',
-      sourceId: 'chat',
-      sourceName: 'Chat',
-      userId,
-      userName,
-      externalTriggerId,
-    },
-  );
-  session = await applyAppTemplateToSession(session.id, app.id) || session;
-  if (app.welcomeMessage && Number(session?.messageCount || 0) === 0) {
-    await appendEvent(session.id, messageEvent('assistant', app.welcomeMessage));
-    session = await getSessionForClient(session.id) || session;
-  }
-  return session;
-}
-
 async function ensureOwnerStarterSessions() {
   if (ownerBootstrapSessionsPromise) {
     return ownerBootstrapSessionsPromise;
@@ -681,97 +586,6 @@ async function ensureOwnerStarterSessions() {
   } finally {
     ownerBootstrapSessionsPromise = null;
   }
-}
-
-async function ensureUserSeedSession(user, { folder = '~', tool = '' } = {}) {
-  if (!user?.id) return null;
-  const existing = (await listSessionsForClient({ includeVisitor: true })).find((session) => session.userId === user.id);
-  if (existing) return existing;
-  const app = await getApp(user.defaultAppId || user.appIds?.[0] || '');
-  if (!app || !isTemplateAppScopeId(app.id)) return null;
-  return createOwnerTemplatedSession({
-    folder,
-    tool: tool || app.tool || 'codex',
-    name: `${user.name || 'User'} · ${app.name || 'Session'}`,
-    app,
-    userId: user.id,
-    userName: user.name || '',
-  });
-}
-
-function getVisitorBrowserId(req) {
-  const cookies = parseCookies(req.headers.cookie || '');
-  return typeof cookies[VISITOR_BROWSER_COOKIE_NAME] === 'string'
-    ? cookies[VISITOR_BROWSER_COOKIE_NAME].trim()
-    : '';
-}
-
-function createVisitorBrowserId() {
-  return `browser_${generateToken().slice(0, 24)}`;
-}
-
-function setVisitorBrowserCookie(browserId) {
-  const secure = SECURE_COOKIES ? '; Secure' : '';
-  const expiry = new Date(Date.now() + VISITOR_BROWSER_COOKIE_MAX_AGE_MS);
-  return `${VISITOR_BROWSER_COOKIE_NAME}=${browserId}; HttpOnly${secure}; SameSite=${VISITOR_BROWSER_COOKIE_SAME_SITE}; Path=/; Max-Age=${VISITOR_BROWSER_COOKIE_MAX_AGE_SECONDS}; Expires=${expiry.toUTCString()}`;
-}
-
-function buildAppShareVisitorId(appId, browserId) {
-  const digest = createHash('sha256')
-    .update(`${appId || ''}:${browserId || ''}`)
-    .digest('hex');
-  return `visitor_${digest.slice(0, 24)}`;
-}
-
-function buildVisitorSessionExternalTriggerId(appId, visitorId) {
-  return `visitor_session:${appId || 'app'}:${visitorId || 'visitor'}`;
-}
-
-async function findReusableVisitorSession(appId, visitorId) {
-  if (!appId || !visitorId) return null;
-  const sessionsForApp = await listSessionsForClient({ includeVisitor: true, appId });
-  return sessionsForApp.find((session) => session.visitorId === visitorId && !session.archived)
-    || sessionsForApp.find((session) => session.visitorId === visitorId)
-    || null;
-}
-
-async function bootstrapPublicVisitorSession(app, {
-  visitorId,
-  visitorName = '',
-  sessionName = '',
-  preferredLanguage = '',
-} = {}) {
-  const existingSession = await findReusableVisitorSession(app?.id, visitorId);
-  const chatSession = await createSession(
-    '~',
-    app.tool || 'codex',
-    sessionName || app.name,
-    {
-      appId: app.id,
-      appName: app.name,
-      sourceId: 'chat',
-      sourceName: 'Chat',
-      visitorId,
-      visitorName,
-      systemPrompt: app.systemPrompt,
-      externalTriggerId: buildVisitorSessionExternalTriggerId(app.id, visitorId),
-    }
-  );
-  if (!existingSession && app.welcomeMessage) {
-    await appendEvent(chatSession.id, messageEvent('assistant', app.welcomeMessage));
-  }
-  const sessionToken = generateToken();
-  sessions.set(sessionToken, {
-    expiry: Date.now() + SESSION_EXPIRY,
-    role: 'visitor',
-    appId: app.id,
-    visitorId,
-    visitorName,
-    preferredLanguage,
-    sessionId: chatSession.id,
-  });
-  await saveAuthSessionsAsync();
-  return { chatSession, sessionToken };
 }
 
 async function getLatestMtimeMs(path) {
@@ -1237,10 +1051,6 @@ function isOwnerOnlyRoute(pathname, method) {
   if (pathname === '/api/browse' && method === 'GET') return true;
   if (pathname === '/api/push/vapid-public-key' && method === 'GET') return true;
   if (pathname === '/api/push/subscribe' && method === 'POST') return true;
-  if (pathname === '/api/apps') return true;
-  if (pathname.startsWith('/api/apps/')) return true;
-  if (pathname === '/api/users') return true;
-  if (pathname.startsWith('/api/users/')) return true;
   return false;
 }
 
@@ -1302,11 +1112,6 @@ export async function handleRequest(req, res) {
     buildHeaders,
     renderPageTemplate,
     buildTemplateReplacements,
-    getVisitorBrowserId,
-    createVisitorBrowserId,
-    setVisitorBrowserCookie,
-    buildAppShareVisitorId,
-    bootstrapPublicVisitorSession,
     parseSharePayloadRoute,
     buildShareSnapshotClientPayload,
     serializeJsonForScript,
@@ -2195,10 +2000,6 @@ export async function handleRequest(req, res) {
         folder,
         tool,
         name,
-        appId,
-        appName,
-        userId,
-        userName,
         sourceId,
         sourceName,
         group,
@@ -2222,35 +2023,7 @@ export async function handleRequest(req, res) {
         res.end(JSON.stringify({ error: 'Folder does not exist' }));
         return;
       }
-      const requestedUserId = typeof userId === 'string' ? userId.trim() : '';
-      const resolvedUser = requestedUserId ? await getUser(requestedUserId) : null;
-      if (requestedUserId && !resolvedUser) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'User not found' }));
-        return;
-      }
-      let resolvedApp = typeof appId === 'string' && appId.trim()
-        ? await getApp(appId.trim())
-        : null;
-      if (resolvedUser) {
-        const userAppId = resolvedApp?.id || resolvedUser.defaultAppId || resolvedUser.appIds?.[0] || '';
-        if (!resolvedUser.appIds.includes(userAppId)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Selected app is not allowed for this user' }));
-          return;
-        }
-        resolvedApp = await getApp(userAppId);
-        if (!resolvedApp || !isTemplateAppScopeId(resolvedApp.id)) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'User sessions require a valid template app' }));
-          return;
-        }
-      }
       const createOptions = {
-        appId: resolvedApp?.id || (typeof appId === 'string' ? appId : ''),
-        appName: resolvedApp?.name || (typeof appName === 'string' ? appName : ''),
-        userId: resolvedUser?.id || '',
-        userName: resolvedUser?.name || (typeof userName === 'string' ? userName : ''),
         sourceId: typeof sourceId === 'string' ? sourceId : '',
         sourceName: typeof sourceName === 'string' ? sourceName : '',
         group: group || '',
@@ -2272,20 +2045,7 @@ export async function handleRequest(req, res) {
       if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
         createOptions.sourceContext = sourceContext;
       }
-      let session = await createSession(resolvedFolder, tool, name || '', createOptions);
-
-      const requestedApp = resolvedApp || (
-        typeof appId === 'string' && appId.trim()
-          ? await getApp(appId.trim())
-          : null
-      );
-      if (requestedApp && isTemplateAppScopeId(requestedApp.id) && Number(session?.messageCount || 0) === 0) {
-        session = await applyAppTemplateToSession(session.id, requestedApp.id) || session;
-        if (requestedApp.welcomeMessage) {
-          await appendEvent(session.id, messageEvent('assistant', requestedApp.welcomeMessage));
-          session = await getSessionForClient(session.id) || session;
-        }
-      }
+      const session = await createSession(resolvedFolder, tool, name || '', createOptions);
 
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ session: createClientSessionDetail(session) }));
@@ -2507,19 +2267,6 @@ export async function handleRequest(req, res) {
     return;
   }
 
-  if (await handleAdminRoutes({
-    req,
-    res,
-    pathname,
-    writeJsonCached,
-    createClientSessionDetail,
-    normalizeSessionFolderInput,
-    resolveTemplateApps,
-    ensureUserSeedSession,
-  })) {
-    return;
-  }
-
   // ---- Auth info endpoint ----
   if (pathname === '/api/auth/me' && req.method === 'GET') {
     const authSession = getAuthSession(req);
@@ -2539,12 +2286,7 @@ export async function handleRequest(req, res) {
   // Main page (chat UI) — read from disk each time for hot-reload
   if (pathname === '/') {
     try {
-      // Use visitor cookie when explicitly in visitor mode, otherwise use owner cookie.
-      // This prevents visitor share links from hijacking the owner's session cookie.
-      const isVisitorMode = parsedUrl.query.visitor === '1';
-      const authSession = isVisitorMode
-        ? getVisitorAuthSession(req)
-        : getAuthSession(req);
+      const authSession = getAuthSession(req);
       const pageBootstrap = buildChatPageBootstrap(authSession);
       const [pageBuildInfo, chatPage, refreshedCookie] = await Promise.all([
         getPageBuildInfo(),

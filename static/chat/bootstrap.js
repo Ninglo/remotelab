@@ -29,10 +29,6 @@ function normalizeBootstrapAuthInfo(raw) {
     role,
     sessionId,
   };
-  const appId = normalizeBootstrapText(raw.appId);
-  const visitorId = normalizeBootstrapText(raw.visitorId);
-  if (appId) info.appId = appId;
-  if (visitorId) info.visitorId = visitorId;
   if (preferredLanguage) info.preferredLanguage = preferredLanguage;
   return info;
 }
@@ -228,23 +224,9 @@ const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
-const newUserNameInput = document.getElementById("newUserNameInput");
-const newUserAppsPicker = document.getElementById("newUserAppsPicker");
-const newUserDefaultAppSelect = document.getElementById("newUserDefaultAppSelect");
-const newUserLanguageSelect = document.getElementById("newUserLanguageSelect");
-const createUserBtn = document.getElementById("createUserBtn");
-const userFormStatus = document.getElementById("userFormStatus");
-const settingsUsersList = document.getElementById("settingsUsersList");
-const settingsAppsList = document.getElementById("settingsAppsList");
 const settingsSessionPresentationList = document.getElementById("settingsSessionPresentationList");
 const uiLanguageSelect = document.getElementById("uiLanguageSelect");
 const uiLanguageStatus = document.getElementById("uiLanguageStatus");
-const newAppNameInput = document.getElementById("newAppNameInput");
-const newAppToolSelect = document.getElementById("newAppToolSelect");
-const newAppWelcomeInput = document.getElementById("newAppWelcomeInput");
-const newAppSystemPromptInput = document.getElementById("newAppSystemPromptInput");
-const createAppConfigBtn = document.getElementById("createAppConfigBtn");
-const appFormStatus = document.getElementById("appFormStatus");
 const sortSessionListBtn = document.getElementById("sortSessionListBtn");
 const newSessionBtn = document.getElementById("newSessionBtn");
 const messagesEl = document.getElementById("messages");
@@ -275,8 +257,6 @@ const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
-const sessionAppFilterSelect = document.getElementById("sessionAppFilterSelect");
-const userFilterSelect = document.getElementById("userFilterSelect");
 const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
@@ -313,8 +293,6 @@ const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
 const LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeAppFilter";
 const ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeSourceFilter";
-const ACTIVE_SESSION_APP_FILTER_STORAGE_KEY = "activeSessionAppFilter";
-const ACTIVE_USER_FILTER_STORAGE_KEY = "activeUserFilter";
 const LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY = "sessionSendFailures";
 const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
@@ -322,14 +300,7 @@ const FILTER_ALL_VALUE = "__all__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
 const SOURCE_FILTER_BOT_VALUE = "bot";
 const SOURCE_FILTER_AUTOMATION_VALUE = "automation";
-const ADMIN_USER_FILTER_VALUE = "user_admin";
-const USER_FILTER_ALL_VALUE = "__all_users__";
 const DEFAULT_APP_ID = "chat";
-const WELCOME_APP_ID = "app_welcome";
-const BASIC_CHAT_APP_ID = "app_basic_chat";
-const WELCOME_TEMPLATE_APP_ID = WELCOME_APP_ID;
-const BASIC_CHAT_TEMPLATE_APP_ID = BASIC_CHAT_APP_ID;
-const CREATE_APP_TEMPLATE_APP_ID = "app_create_app";
 const DEFAULT_APP_NAME = "Chat";
 const sessionStateModel = window.RemoteLabSessionStateModel;
 if (!sessionStateModel) {
@@ -382,9 +353,6 @@ let hasAttachedSession = false;
 let sessionStatus = "idle";
 let reconnectTimer = null;
 let sessions = [];
-let sessionAppCatalog = [];
-let availableApps = [];
-let availableUsers = [];
 let hasLoadedSessions = false;
 let archivedSessionCount = 0;
 let archivedSessionsLoaded = false;
@@ -426,12 +394,7 @@ function setRunningEventBlockExpanded(sessionId, expanded) {
 }
 
 function shouldUseVisitorRequests() {
-  if (visitorMode) return true;
-  try {
-    return new URL(window.location.href).searchParams.get("visitor") === "1";
-  } catch {
-    return false;
-  }
+  return visitorMode === true;
 }
 
 function withVisitorModeUrl(url) {

@@ -95,7 +95,6 @@ async function dispatchAction(msg) {
             folder: msg.folder || "~",
             tool: msg.tool,
             name: msg.name || "",
-            appId: msg.appId || "",
             sourceId: msg.sourceId || "",
             sourceName: msg.sourceName || "",
           }),
@@ -315,7 +314,6 @@ async function dispatchAction(msg) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: msg.name || "" }),
         });
-        await fetchAppsList();
         return true;
       }
       case "cancel":

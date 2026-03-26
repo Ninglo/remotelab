@@ -165,34 +165,12 @@ function renderSessionScopeContext(session) {
     parts.push(`<span title="${esc(t("session.scope.source"))}">${esc(sourceName)}</span>`);
   }
 
-  const templateAppId = typeof getEffectiveSessionTemplateAppId === "function"
-    ? getEffectiveSessionTemplateAppId(session)
-    : "";
-  if (templateAppId) {
-    const appEntry = typeof getSessionAppCatalogEntry === "function"
-      ? getSessionAppCatalogEntry(templateAppId)
-      : null;
-    const appName = appEntry?.name || session?.appName || "App";
-    parts.push(`<span title="${esc(t("session.scope.app"))}">${esc(t("session.scope.appLabel", { name: appName }))}</span>`);
-  }
-
-  if (session?.visitorId) {
-    const visitorLabel = typeof session?.visitorName === "string" && session.visitorName.trim()
-      ? t("session.scope.visitorNamed", { name: session.visitorName.trim() })
-      : (session?.visitorId ? t("session.scope.visitor") : t("session.scope.owner"));
-    parts.push(`<span title="${esc(t("session.scope.ownerTitle"))}">${esc(visitorLabel)}</span>`);
-  }
-
   return parts;
 }
 
 function getFilteredSessionEmptyText({ archived = false } = {}) {
   if (archived) return t("sidebar.noArchived");
-  if (
-    activeSourceFilter !== FILTER_ALL_VALUE
-    || activeSessionAppFilter !== FILTER_ALL_VALUE
-    || activeUserFilter !== ADMIN_USER_FILTER_VALUE
-  ) {
+  if (activeSourceFilter !== FILTER_ALL_VALUE) {
     return t("sidebar.noSessionsFiltered");
   }
   return t("sidebar.noSessions");

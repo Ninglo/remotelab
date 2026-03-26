@@ -320,14 +320,19 @@ async function main() {
     assert.match(loginPage.text, /@media \(prefers-color-scheme: dark\)/);
 
     const apps = await request(port, 'GET', '/api/apps');
-    assert.equal(apps.status, 410, 'owner apps endpoint should be retired from the product surface');
-    assert.match(apps.text, /removed from the current product surface/i);
+    assert.equal(apps.status, 404, 'owner apps endpoint should be absent from the product surface');
 
     const users = await request(port, 'GET', '/api/users');
-    assert.equal(users.status, 410, 'owner users endpoint should be retired from the product surface');
-    assert.match(users.text, /removed from the current product surface/i);
-    assert.doesNotMatch(apps.text, /"id":"github"/);
-    assert.doesNotMatch(apps.text, /"id":"automation"/);
+    assert.equal(users.status, 404, 'owner users endpoint should be absent from the product surface');
+
+    const visitors = await request(port, 'GET', '/api/visitors');
+    assert.equal(visitors.status, 404, 'owner visitors endpoint should be absent from the product surface');
+
+    const appShare = await request(port, 'GET', '/app/example-token');
+    assert.equal(appShare.status, 404, 'interactive app share route should be absent');
+
+    const visitorShare = await request(port, 'GET', '/visitor/example-token');
+    assert.equal(visitorShare.status, 404, 'interactive visitor share route should be absent');
 
     const createdChat = await request(port, 'POST', '/api/sessions', {
       folder: home,
@@ -341,10 +346,10 @@ async function main() {
       folder: home,
       tool: 'codex',
       name: 'GitHub session',
-      appId: 'github',
-      appName: 'GitHub',
+      sourceId: 'github',
+      sourceName: 'GitHub',
     });
-    assert.equal(createdGithub.status, 201, 'GitHub-scoped session should be creatable over HTTP');
+    assert.equal(createdGithub.status, 201, 'GitHub-source session should be creatable over HTTP');
     const createdGithubJson = JSON.parse(createdGithub.text);
 
     const pinned = await request(port, 'PATCH', `/api/sessions/${createdChatJson.session.id}`, {
@@ -367,10 +372,10 @@ async function main() {
       'other sessions should remain visible after pinning',
     );
 
-    const githubOnly = await request(port, 'GET', '/api/sessions?appId=github');
-    assert.equal(githubOnly.status, 200, 'app-filtered session list should load');
-    assert.match(githubOnly.text, /"appId":"github"/);
-    assert.match(githubOnly.text, /"appName":"GitHub"/);
+    const githubOnly = await request(port, 'GET', '/api/sessions?sourceId=github');
+    assert.equal(githubOnly.status, 200, 'source-filtered session list should load');
+    assert.match(githubOnly.text, /"sourceId":"github"/);
+    assert.match(githubOnly.text, /"sourceName":"GitHub"/);
     assert.doesNotMatch(githubOnly.text, /"name":"Owner chat session"/);
 
     const splitAsset = await request(port, 'GET', '/chat/bootstrap.js');
@@ -386,7 +391,7 @@ async function main() {
     const sessionHttpHelpersAsset = await request(port, 'GET', '/chat/session-http-helpers.js');
     assert.equal(sessionHttpHelpersAsset.status, 200, 'session http helpers asset should load');
     assert.match(sessionHttpHelpersAsset.text, /function enhanceRenderedContentLinks\(/);
-    assert.match(sessionHttpHelpersAsset.text, /const SESSION_LIST_URL = "\/api\/sessions\?includeVisitor=1";/);
+    assert.match(sessionHttpHelpersAsset.text, /const SESSION_LIST_URL = "\/api\/sessions";/);
 
     const sessionHttpListStateAsset = await request(port, 'GET', '/chat/session-http-list-state.js');
     assert.equal(sessionHttpListStateAsset.status, 200, 'session http list state asset should load');
@@ -525,8 +530,8 @@ async function main() {
 
     const settingsUiAsset = await request(port, 'GET', '/chat/settings-ui.js');
     assert.equal(settingsUiAsset.status, 200, 'settings ui asset should load');
-    assert.match(settingsUiAsset.text, /function renderSettingsAppsPanel\(/);
-    assert.match(settingsUiAsset.text, /function renderSettingsUsersPanel\(/);
+    assert.match(settingsUiAsset.text, /function initUiLanguageSettings\(/);
+    assert.match(settingsUiAsset.text, /function renderSettingsSessionPresentationPanel\(/);
 
     const composeAsset = await request(port, 'GET', '/chat/compose.js');
     assert.equal(composeAsset.status, 200, 'compose asset should load');

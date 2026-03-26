@@ -304,7 +304,7 @@ function createContext({ fetchImpl, pendingNavigationState = null } = {}) {
 
 const firstContext = createContext({
   fetchImpl(url) {
-    if (url === '/api/sessions?includeVisitor=1') {
+    if (url === '/api/sessions') {
       return createFetchResponse({
         sessions: [
           buildSession({
@@ -317,7 +317,7 @@ const firstContext = createContext({
           }),
         ],
         archivedCount: 0,
-      }, { url: 'http://127.0.0.1/api/sessions?includeVisitor=1' });
+      }, { url: 'http://127.0.0.1/api/sessions' });
     }
     if (url === '/api/sessions/current-session') {
       return createFetchResponse({
@@ -361,7 +361,7 @@ await firstContext.documentListeners.get('visibilitychange')();
 assert.deepEqual(
   firstContext.fetchCalls.map((entry) => entry.url),
   [
-    '/api/sessions?includeVisitor=1',
+    '/api/sessions',
     '/api/sessions/current-session',
     '/api/sessions/current-session/events?filter=visible',
   ],
@@ -383,7 +383,7 @@ assert.equal(
 
 const targetedContext = createContext({
   fetchImpl(url) {
-    if (url === '/api/sessions?includeVisitor=1') {
+    if (url === '/api/sessions') {
       return createFetchResponse({
         sessions: [
           buildSession({
@@ -396,7 +396,7 @@ const targetedContext = createContext({
           }),
         ],
         archivedCount: 0,
-      }, { url: 'http://127.0.0.1/api/sessions?includeVisitor=1' });
+      }, { url: 'http://127.0.0.1/api/sessions' });
     }
     if (url === '/api/sessions/current-session') {
       return createFetchResponse({
@@ -465,7 +465,7 @@ const secondContext = createContext({
     tab: 'sessions',
   },
   fetchImpl(url) {
-    if (url === '/api/sessions?includeVisitor=1') {
+    if (url === '/api/sessions') {
       return createFetchResponse({
         sessions: [
           buildSession({
@@ -486,7 +486,7 @@ const secondContext = createContext({
           }),
         ],
         archivedCount: 0,
-      }, { url: 'http://127.0.0.1/api/sessions?includeVisitor=1' });
+      }, { url: 'http://127.0.0.1/api/sessions' });
     }
     if (url === '/api/sessions/fresh-session') {
       return createFetchResponse({

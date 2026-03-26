@@ -152,8 +152,8 @@ function buildJsonCacheKey(url) {
   }
 }
 
-const SESSION_LIST_URL = "/api/sessions?includeVisitor=1";
-const ARCHIVED_SESSION_LIST_URL = "/api/sessions/archived?includeVisitor=1";
+const SESSION_LIST_URL = "/api/sessions";
+const ARCHIVED_SESSION_LIST_URL = "/api/sessions/archived";
 
 function getSessionSidebarUrl(sessionId) {
   return `/api/sessions/${encodeURIComponent(sessionId)}?view=sidebar`;

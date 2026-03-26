@@ -66,8 +66,6 @@ function createHarness({ activeTab = 'sessions', visitorMode = false } = {}) {
     activeTab,
     visitorMode,
     sourceFilterSelect: createFilterControl(''),
-    sessionAppFilterSelect: createFilterControl(''),
-    userFilterSelect: createFilterControl(''),
     sidebarFilters: {
       classList: {
         toggle(className, force) {
@@ -109,15 +107,13 @@ assert.deepEqual(
   'visitor mode should always hide owner-only sidebar filters',
 );
 
-const emptyControlsHarness = createHarness({ activeTab: 'sessions' });
-emptyControlsHarness.context.sourceFilterSelect.style.display = 'none';
-emptyControlsHarness.context.sessionAppFilterSelect.style.display = 'none';
-emptyControlsHarness.context.userFilterSelect.style.display = 'none';
-emptyControlsHarness.context.syncSidebarFiltersVisibility();
+const hiddenSourceHarness = createHarness({ activeTab: 'sessions' });
+hiddenSourceHarness.context.sourceFilterSelect.style.display = 'none';
+hiddenSourceHarness.context.syncSidebarFiltersVisibility();
 assert.deepEqual(
-  emptyControlsHarness.state.toggles,
+  hiddenSourceHarness.state.toggles,
   [{ className: 'hidden', force: true }],
-  'sessions tab should hide the sidebar filters container when every individual filter control is hidden',
+  'sessions tab should hide the sidebar filters container when the only filter control is hidden',
 );
 
 console.log('test-chat-sidebar-filters-visibility: ok');

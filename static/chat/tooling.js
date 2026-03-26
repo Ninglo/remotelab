@@ -547,20 +547,11 @@ async function loadInlineTools({ skipModelLoad = false } = {}) {
     if (!skipModelLoad) {
       await loadModelsForCurrentTool();
     }
-    if (typeof renderAppToolSelectOptions === "function") {
-      renderAppToolSelectOptions(newAppToolSelect, newAppToolSelect?.value || selectedTool || initialTool || "");
-    }
-    if (typeof renderSettingsAppsPanel === "function") {
-      renderSettingsAppsPanel();
-    }
   } catch (err) {
     allToolsList = [];
     toolsList = [];
     console.warn("[tools] Failed to load tools:", err.message);
     renderInlineToolOptions("", "Failed to load agents");
-    if (typeof renderAppToolSelectOptions === "function") {
-      renderAppToolSelectOptions(newAppToolSelect, newAppToolSelect?.value || "");
-    }
   }
 }
 
