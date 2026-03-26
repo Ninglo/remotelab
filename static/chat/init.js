@@ -92,22 +92,11 @@ async function initApp() {
 
   const toolsPromise = loadInlineTools({ skipModelLoad: true });
   const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });
-  const appsPromise = fetchAppsList().catch((error) => {
-    console.warn("[apps] Failed to load apps:", error.message);
-    return [];
-  });
-  const usersPromise = fetchUsersList().catch((error) => {
-    console.warn("[users] Failed to load users:", error.message);
-    return [];
-  });
-
   await Promise.all([toolsPromise, sessionsPromise]);
   restoreOwnerSessionSelection();
   connect();
   setupForegroundRefreshHandlers();
   void loadModelsForCurrentTool();
-  void appsPromise;
-  void usersPromise;
 }
 
 initApp();

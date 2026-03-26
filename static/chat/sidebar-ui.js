@@ -19,11 +19,19 @@ function openSessionsSidebar() {
 }
 
 function createNewSessionShortcut({ closeSidebar = true } = {}) {
-  const principal = resolveSelectedSessionPrincipal();
-  const appId = resolveAppIdForPrincipal(principal, activeSessionAppFilter);
-  const app = getAppRecordById(appId);
-  if (!app) return false;
-  return createSessionForApp(app, { closeSidebar, principal });
+  if (closeSidebar && !isDesktop) closeSidebarFn();
+  const tool = preferredTool || selectedTool || toolsList[0]?.id;
+  if (!tool) return false;
+  if (typeof switchTab === "function") {
+    switchTab("sessions");
+  }
+  return dispatchAction({
+    action: "create",
+    folder: "~",
+    tool,
+    sourceId: DEFAULT_APP_ID,
+    sourceName: DEFAULT_APP_NAME,
+  });
 }
 
 function createSortSessionListShortcut() {

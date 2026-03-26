@@ -32,7 +32,22 @@ export async function handleAdminRoutes({
   resolveTemplateApps,
   ensureUserSeedSession,
 }) {
-// ---- App CRUD APIs (owner only) ----
+function writeRetiredManagementSurface(message) {
+  res.writeHead(410, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: message, retired: true }));
+}
+
+if ((pathname === '/api/apps' || pathname.startsWith('/api/apps/')) && req.method !== 'OPTIONS') {
+  writeRetiredManagementSurface('Apps have been removed from the current product surface');
+  return true;
+}
+
+if ((pathname === '/api/users' || pathname.startsWith('/api/users/')) && req.method !== 'OPTIONS') {
+  writeRetiredManagementSurface('Users have been removed from the current product surface');
+  return true;
+}
+
+// ---- App CRUD APIs (retired) ----
 
 if (pathname === '/api/apps' && req.method === 'GET') {
   const authSession = getAuthSession(req);

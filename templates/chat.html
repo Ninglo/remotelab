@@ -46,16 +46,14 @@
       <div class="sidebar-list" id="sessionList"></div>
       <div class="sidebar-filters" id="sidebarFilters">
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
-        <select class="sidebar-filter-select" id="sessionAppFilterSelect" aria-label="Filter sessions by app" data-i18n-aria-label="sidebar.filter.app"></select>
-        <select class="sidebar-filter-select" id="userFilterSelect" aria-label="Filter sessions by user" data-i18n-aria-label="sidebar.filter.user"></select>
       </div>
       <div class="settings-panel" id="settingsPanel">
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
-          <div class="settings-section-note" data-i18n="settings.language.note">Auto follows the current browser language. You can override it here for debugging, and dedicated visitor links can keep their own language preference.</div>
+          <div class="settings-section-note" data-i18n="settings.language.note">Auto follows the current browser language. You can override it here for debugging or to keep this browser on a fixed UI language.</div>
           <div class="settings-inline-form">
             <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ownerAriaLabel"></select>
-            <div class="settings-app-empty inline-status" id="uiLanguageStatus" data-i18n="settings.language.ownerStatusAuto">Auto is active. This browser follows its current language unless a dedicated visitor link sets its own preference.</div>
+            <div class="settings-app-empty inline-status" id="uiLanguageStatus" data-i18n="settings.language.ownerStatusAuto">Auto is active. This browser follows its current language until you save an override here.</div>
           </div>
         </div>
         <div class="settings-section">
@@ -63,38 +61,6 @@
           <div class="settings-section-note" data-i18n="settings.sessionPresentation.note">Internal-only display control for the selected session. Use top-down reading for welcome or example sessions, and keep normal work on the latest turn.</div>
           <div class="settings-apps-list" id="settingsSessionPresentationList">
             <div class="settings-app-empty" data-i18n="settings.sessionPresentation.noSession">Select a session first, then choose how it should open.</div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.users.title">Users</div>
-          <div class="settings-section-note" data-i18n="settings.users.note">Create extra identities, choose which apps they can use, pick their language, and seed a first session when they are empty.</div>
-          <div class="settings-inline-form" id="newUserForm">
-            <input class="settings-inline-input" id="newUserNameInput" type="text" placeholder="User name, e.g. Video Editor" data-i18n-placeholder="settings.users.namePlaceholder">
-            <div class="settings-app-picker" id="newUserAppsPicker"></div>
-            <div class="settings-inline-row">
-              <select class="settings-inline-select" id="newUserDefaultAppSelect" aria-label="Choose default app for user" data-i18n-aria-label="settings.users.defaultAppAriaLabel"></select>
-              <select class="settings-inline-select" id="newUserLanguageSelect" aria-label="Choose preferred language for user" data-i18n-aria-label="settings.users.languageAriaLabel"></select>
-              <button class="settings-app-btn settings-inline-primary" id="createUserBtn" type="button" data-i18n="settings.users.create">Create User</button>
-            </div>
-            <div class="settings-app-empty inline-status" id="userFormStatus" data-i18n="settings.users.defaultStatus">Admin stays the default view. New users get a starter session automatically.</div>
-          </div>
-          <div class="settings-apps-list" id="settingsUsersList">
-            <div class="settings-app-empty" data-i18n="settings.users.loading">Loading users…</div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.apps.title">Apps</div>
-          <div class="settings-section-note" data-i18n="settings.apps.note">Create reusable apps or workflows here. Chat stays lightweight; other apps can attach a first assistant message and extra behavior instructions.</div>
-          <div class="settings-inline-form" id="newAppForm">
-            <input class="settings-inline-input" id="newAppNameInput" type="text" placeholder="App name, e.g. VideoCut" data-i18n-placeholder="settings.apps.namePlaceholder">
-            <select class="settings-inline-select" id="newAppToolSelect" aria-label="Choose tool for app" data-i18n-aria-label="settings.apps.toolAriaLabel"></select>
-            <textarea class="settings-inline-textarea" id="newAppWelcomeInput" placeholder="Optional first assistant message shown when a new session starts" data-i18n-placeholder="settings.apps.welcomePlaceholder"></textarea>
-            <textarea class="settings-inline-textarea" id="newAppSystemPromptInput" placeholder="Optional behavior instructions for this app" data-i18n-placeholder="settings.apps.systemPromptPlaceholder"></textarea>
-            <button class="settings-app-btn settings-inline-primary" id="createAppConfigBtn" type="button" data-i18n="settings.apps.create">Create App</button>
-            <div class="settings-app-empty inline-status" id="appFormStatus" data-i18n="settings.apps.defaultStatus">Create a reusable app here, then start sessions under it from the sidebar filter.</div>
-          </div>
-          <div class="settings-apps-list" id="settingsAppsList">
-            <div class="settings-app-empty" data-i18n="settings.apps.loading">Loading apps…</div>
           </div>
         </div>
       </div>

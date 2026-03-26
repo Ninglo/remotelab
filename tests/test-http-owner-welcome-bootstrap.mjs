@@ -192,7 +192,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
 
   const welcomeSession = list.json?.sessions?.[0];
   assert.ok(welcomeSession?.id, 'welcome session should have an id');
-  assert.equal(welcomeSession.appId, 'app_welcome', 'welcome session should use the built-in Welcome app');
+  assert.equal(welcomeSession.appId, 'chat', 'welcome session should now be a normal chat-scoped starter session');
   assert.equal(welcomeSession.tool, 'micro-agent', 'welcome bootstrap should prefer Micro Agent when it is available');
   assert.equal(welcomeSession.sourceId, 'chat', 'welcome session should be categorized as chat UI');
   assert.equal(welcomeSession.sourceName, 'Chat', 'welcome session should preserve the chat source label');

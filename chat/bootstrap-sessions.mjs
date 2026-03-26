@@ -374,14 +374,22 @@ async function createOwnerBootstrapSession(definition, { appendLegacyWelcomeHint
   const app = await getApp(definition.appId);
   if (!app?.id) return null;
 
+  const usePlainStarterSession = definition.externalTriggerId === OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID;
+
   let session = await createSession('~', app.tool || 'codex', definition.name || app.name || 'Session', {
-    appId: app.id,
-    appName: app.name || '',
     sourceId: 'chat',
     sourceName: 'Chat',
     externalTriggerId: definition.externalTriggerId,
+    ...(usePlainStarterSession
+      ? { systemPrompt: typeof app.systemPrompt === 'string' ? app.systemPrompt : '' }
+      : {
+          appId: app.id,
+          appName: app.name || '',
+        }),
   });
-  session = await applyAppTemplateToSession(session.id, app.id) || session;
+  if (!usePlainStarterSession) {
+    session = await applyAppTemplateToSession(session.id, app.id) || session;
+  }
   session = await getSession(session.id) || session;
 
   if (Number(session?.messageCount || 0) === 0) {

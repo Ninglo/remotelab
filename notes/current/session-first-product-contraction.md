@@ -102,6 +102,13 @@ For those fields, the preferred migration order is:
 5. Keep old data readable while stopping new writes to app/user/visitor-specific fields.
 6. After subtraction, refactor router and session-manager boundaries around the smaller product model.
 
+### Current implementation status
+
+- The owner UI no longer exposes app/user sidebar filters or app/user settings panels.
+- `/api/apps*`, `/api/users*`, `/app/:shareToken`, and `/visitor/:shareToken` are explicitly retired.
+- Share snapshots remain the only public share surface.
+- Owner bootstrap Welcome now lands as a normal starter session with a seeded assistant opening message instead of a product-visible Welcome app flow.
+
 ---
 
 ## What This Means For Refactor Order

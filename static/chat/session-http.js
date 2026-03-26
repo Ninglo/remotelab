@@ -668,9 +668,7 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
 }
 
 async function fetchAppsList() {
-  if (visitorMode) return [];
-  const data = await fetchJsonOrRedirect("/api/apps");
-  availableApps = Array.isArray(data.apps) ? data.apps : [];
+  availableApps = [];
   refreshAppCatalog();
   if (typeof renderSettingsAppsPanel === "function") {
     renderSettingsAppsPanel();
@@ -685,30 +683,19 @@ async function fetchAppsList() {
 }
 
 async function createAppRecord(payload = {}) {
-  const data = await fetchJsonOrRedirect("/api/apps", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  await fetchAppsList();
-  return data.app || null;
+  void payload;
+  throw new Error("Apps have been removed from the current product surface");
 }
 
 async function updateAppRecord(appId, payload = {}) {
-  const data = await fetchJsonOrRedirect(`/api/apps/${encodeURIComponent(appId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  await fetchAppsList();
-  return data.app || null;
+  void appId;
+  void payload;
+  throw new Error("Apps have been removed from the current product surface");
 }
 
 async function deleteAppRecord(appId) {
-  await fetchJsonOrRedirect(`/api/apps/${encodeURIComponent(appId)}`, {
-    method: "DELETE",
-  });
-  await fetchAppsList();
+  void appId;
+  throw new Error("Apps have been removed from the current product surface");
 }
 
 async function createVisitorRecord(payload = {}) {
@@ -730,9 +717,7 @@ async function updateVisitorRecord(visitorId, payload = {}) {
 }
 
 async function fetchUsersList() {
-  if (visitorMode) return [];
-  const data = await fetchJsonOrRedirect("/api/users");
-  availableUsers = Array.isArray(data.users) ? data.users : [];
+  availableUsers = [];
   refreshAppCatalog();
   if (typeof renderSettingsUsersPanel === "function") {
     renderSettingsUsersPanel();
@@ -741,26 +726,14 @@ async function fetchUsersList() {
 }
 
 async function createUserRecord(payload = {}) {
-  const data = await fetchJsonOrRedirect("/api/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  await fetchUsersList();
-  if (data.session) {
-    upsertSession(data.session);
-  }
-  return { user: data.user || null, session: data.session || null };
+  void payload;
+  throw new Error("Users have been removed from the current product surface");
 }
 
 async function updateUserRecord(userId, payload = {}) {
-  const data = await fetchJsonOrRedirect(`/api/users/${encodeURIComponent(userId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  await fetchUsersList();
-  return data.user || null;
+  void userId;
+  void payload;
+  throw new Error("Users have been removed from the current product surface");
 }
 
 async function updateSessionRecord(sessionId, payload = {}) {
@@ -786,10 +759,8 @@ async function updateSessionRecord(sessionId, payload = {}) {
 }
 
 async function deleteUserRecord(userId) {
-  await fetchJsonOrRedirect(`/api/users/${encodeURIComponent(userId)}`, {
-    method: "DELETE",
-  });
-  await fetchUsersList();
+  void userId;
+  throw new Error("Users have been removed from the current product surface");
 }
 
 async function fetchSessionsList({ forceFresh = false } = {}) {

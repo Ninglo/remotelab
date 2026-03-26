@@ -13,8 +13,6 @@ import {
   clearVisitorCookie,
 } from '../lib/auth.mjs';
 import { readBody } from '../lib/utils.mjs';
-import { getApp, getAppByShareToken } from './apps.mjs';
-import { getVisitorByShareToken } from './visitors.mjs';
 import { getShareAsset, getShareSnapshot } from './shares.mjs';
 import {
   getClientIp,
@@ -49,6 +47,14 @@ export async function handlePublicRoutes({
   writeSnapshotPage,
   writeJsonCached,
 }) {
+function writeRetiredShareSurface(message = 'This share surface has been retired. Use a read-only snapshot instead.') {
+  res.writeHead(410, buildHeaders({
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store, max-age=0, must-revalidate',
+  }));
+  res.end(message);
+}
+
 // Token auth via query
 const queryToken = parsedUrl.query.token;
 if (queryToken) {
@@ -143,64 +149,13 @@ if (pathname === '/logout') {
   return true;
 }
 
-// ---- App visitor entry point (before auth check — visitors aren't authenticated yet) ----
 if (pathname.startsWith('/app/') && req.method === 'GET') {
-  const shareToken = pathname.slice('/app/'.length);
-  if (!shareToken) {
-    res.writeHead(404, buildHeaders({ 'Content-Type': 'text/plain' }));
-    res.end('Not Found');
-    return true;
-  }
-  const app = await getAppByShareToken(shareToken);
-  if (!app) {
-    res.writeHead(404, buildHeaders({ 'Content-Type': 'text/plain' }));
-    res.end('App not found');
-    return true;
-  }
-  const visitorBrowserId = getVisitorBrowserId(req) || createVisitorBrowserId();
-  const visitorId = buildAppShareVisitorId(app.id, visitorBrowserId);
-  const { sessionToken } = await bootstrapPublicVisitorSession(app, { visitorId, sessionName: app.name });
-  res.writeHead(302, {
-    'Location': '/?visitor=1',
-    'Set-Cookie': [
-      setVisitorCookie(sessionToken),
-      setVisitorBrowserCookie(visitorBrowserId),
-    ],
-  });
-  res.end();
+  writeRetiredShareSurface();
   return true;
 }
 
 if (pathname.startsWith('/visitor/') && req.method === 'GET') {
-  const shareToken = pathname.slice('/visitor/'.length);
-  if (!shareToken) {
-    res.writeHead(404, buildHeaders({ 'Content-Type': 'text/plain' }));
-    res.end('Not Found');
-    return true;
-  }
-  const visitor = await getVisitorByShareToken(shareToken);
-  if (!visitor) {
-    res.writeHead(404, buildHeaders({ 'Content-Type': 'text/plain' }));
-    res.end('Visitor link not found');
-    return true;
-  }
-  const app = await getApp(visitor.appId);
-  if (!app || app.shareEnabled === false) {
-    res.writeHead(404, buildHeaders({ 'Content-Type': 'text/plain' }));
-    res.end('Assigned app not found');
-    return true;
-  }
-  const { sessionToken } = await bootstrapPublicVisitorSession(app, {
-    visitorId: visitor.id,
-    visitorName: visitor.name || '',
-    sessionName: `${visitor.name || 'Visitor'} · ${app.name || 'App'}`,
-    preferredLanguage: typeof visitor.language === 'string' ? visitor.language : '',
-  });
-  res.writeHead(302, {
-    'Location': '/?visitor=1',
-    'Set-Cookie': setVisitorCookie(sessionToken),
-  });
-  res.end();
+  writeRetiredShareSurface();
   return true;
 }
 

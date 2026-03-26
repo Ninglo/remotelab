@@ -613,16 +613,6 @@ function switchTab(tab, { syncState = true } = {}) {
   sessionListFooter.classList.toggle("hidden", activeTab === "settings");
   sortSessionListBtn.classList.toggle("hidden", activeTab === "settings");
   newSessionBtn.classList.toggle("hidden", activeTab === "settings");
-  if (activeTab === "settings" && !visitorMode && typeof fetchAppsList === "function") {
-    void fetchAppsList().catch((error) => {
-      console.warn("[apps] Failed to refresh apps for settings:", error.message);
-    });
-    if (typeof fetchUsersList === "function") {
-      void fetchUsersList().catch((error) => {
-        console.warn("[users] Failed to refresh users for settings:", error.message);
-      });
-    }
-  }
   if (syncState) {
     syncBrowserState();
   }

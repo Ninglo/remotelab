@@ -221,21 +221,21 @@ async function main() {
     assert.match(page.text, /<script src="\/chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
-    assert.match(page.text, /id="sessionAppFilterSelect"/);
-    assert.match(page.text, /id="userFilterSelect"/);
+    assert.doesNotMatch(page.text, /id="sessionAppFilterSelect"/);
+    assert.doesNotMatch(page.text, /id="userFilterSelect"/);
     assert.match(page.text, /id="sortSessionListBtn"/);
-    assert.match(page.text, /id="settingsAppsList"/);
     assert.match(page.text, /id="settingsSessionPresentationList"/);
     assert.doesNotMatch(page.text, /id="tabBoard"/);
     assert.doesNotMatch(page.text, /id="boardPanel"/);
-    assert.match(page.text, /id="settingsUsersList"/);
-    assert.match(page.text, /id="newUserNameInput"/);
-    assert.match(page.text, /id="createUserBtn"/);
-    assert.match(page.text, /id="newAppNameInput"/);
-    assert.match(page.text, /id="newAppToolSelect"/);
-    assert.match(page.text, /id="newAppWelcomeInput"/);
-    assert.match(page.text, /id="newAppSystemPromptInput"/);
-    assert.match(page.text, /id="createAppConfigBtn"/);
+    assert.doesNotMatch(page.text, /id="settingsUsersList"/);
+    assert.doesNotMatch(page.text, /id="settingsAppsList"/);
+    assert.doesNotMatch(page.text, /id="newUserNameInput"/);
+    assert.doesNotMatch(page.text, /id="createUserBtn"/);
+    assert.doesNotMatch(page.text, /id="newAppNameInput"/);
+    assert.doesNotMatch(page.text, /id="newAppToolSelect"/);
+    assert.doesNotMatch(page.text, /id="newAppWelcomeInput"/);
+    assert.doesNotMatch(page.text, /id="newAppSystemPromptInput"/);
+    assert.doesNotMatch(page.text, /id="createAppConfigBtn"/);
     assert.doesNotMatch(page.text, /id="voiceSettingsMount"/);
     assert.doesNotMatch(page.text, /id="voiceInputBtn"/);
     assert.doesNotMatch(page.text, /id="voiceFileInput"/);
@@ -320,14 +320,12 @@ async function main() {
     assert.match(loginPage.text, /@media \(prefers-color-scheme: dark\)/);
 
     const apps = await request(port, 'GET', '/api/apps');
-    assert.equal(apps.status, 200, 'owner apps endpoint should be available');
-    assert.match(apps.text, /"id":"chat"/);
-    assert.match(apps.text, /"id":"email"/);
-    assert.match(apps.text, /"id":"app_welcome"/);
-    assert.match(apps.text, /"id":"app_basic_chat"/);
-    assert.match(apps.text, /"id":"app_create_app"/);
-    assert.doesNotMatch(apps.text, /"id":"app_video_cut"/);
-    assert.doesNotMatch(apps.text, /"id":"feishu"/);
+    assert.equal(apps.status, 410, 'owner apps endpoint should be retired from the product surface');
+    assert.match(apps.text, /removed from the current product surface/i);
+
+    const users = await request(port, 'GET', '/api/users');
+    assert.equal(users.status, 410, 'owner users endpoint should be retired from the product surface');
+    assert.match(users.text, /removed from the current product surface/i);
     assert.doesNotMatch(apps.text, /"id":"github"/);
     assert.doesNotMatch(apps.text, /"id":"automation"/);
 
