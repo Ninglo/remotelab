@@ -101,6 +101,7 @@ import {
   buildTaskCardPromptBlock,
   normalizeSessionTaskCard,
 } from './session-task-card.mjs';
+import { loadExecutionScopeRouterPromptContext } from './session-label-context.mjs';
 import {
   buildDelegationHandoff,
   clipCompactionSection,
@@ -2097,12 +2098,25 @@ async function maybePublishRunResultAssets(sessionId, run, manifest, normalizedE
 
 const MANAGER_TURN_POLICY_BLOCK = `Manager note: ${MANAGER_TURN_POLICY_REMINDER}`;
 
-function buildManagerTurnContextText(session, text = '') {
+async function buildManagerTurnContextText(session, text = '') {
+  const scopeRouter = session && !isInternalSession(session)
+    ? await loadExecutionScopeRouterPromptContext(session, text)
+    : '';
+  const memorySearchPolicy = scopeRouter
+    ? [
+      'Memory/search policy for this turn:',
+      '- Prefer carried context and matched scope-router hints before filesystem discovery.',
+      '- Open the referenced memory files or project docs for the best-matching hint before broad search.',
+      '- Use machine-wide search only after targeted context misses.',
+    ].join('\n')
+    : 'Memory/search policy for this turn: prefer targeted memory, referenced docs, or known project pointers before broad filesystem search. Use machine-wide search only as a last resort.';
   return [
     MANAGER_TURN_POLICY_BLOCK,
     buildTurnRoutingHint(text),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildTaskCardPromptBlock(session?.taskCard),
+    scopeRouter,
+    memorySearchPolicy,
   ].filter(Boolean).join('\n\n');
 }
 
@@ -2176,7 +2190,8 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
 
   let actualText = text;
   if (promptMode === 'default') {
-    const turnPrefix = wrapPrivatePromptBlock(buildManagerTurnContextText(session, text));
+    const managerTurnContext = await buildManagerTurnContextText(session, text);
+    const turnPrefix = wrapPrivatePromptBlock(managerTurnContext);
     const turnSections = [];
 
     if (continuationContext) {
@@ -3664,7 +3679,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ? 'bare-user'
       : 'default';
     if (promptMode === 'default') {
-      const managerTurnContext = buildManagerTurnContextText(session, normalizedText);
+      const managerTurnContext = await buildManagerTurnContextText(session, normalizedText);
       if (managerTurnContext) {
         await appendEvent(sessionId, managerContextEvent(managerTurnContext, {
           requestId,

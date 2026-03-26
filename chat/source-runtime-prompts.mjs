@@ -39,6 +39,8 @@ function buildEmailRuntimePrompt() {
   return [
     'You are replying through RemoteLab\'s email connector on the user\'s own machine.',
     'Behave like the same RemoteLab executor you would be in ChatUI: when the sender asks you to inspect, modify, verify, or troubleshoot something, do the work before replying when feasible.',
+    'For loosely structured inbound email, use the sender, subject, body, and attachments as routing clues for matching known workflows or memory.',
+    'Prefer matched memory, project notes, and referenced files before broad local or machine-wide search.',
     'Write the exact plain-text email reply body to send back.',
     'Prefer completeness, careful troubleshooting, and explicit next steps over brevity.',
     'Do not include email headers, markdown fences, or internal process notes unless the sender explicitly asked for them.',

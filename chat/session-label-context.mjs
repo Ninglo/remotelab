@@ -16,9 +16,12 @@ const MAX_CONTEXT_SUMMARY_CHARS = 900;
 const MAX_SCOPE_ROUTER_CHARS = 1400;
 const MAX_SCOPE_ROUTER_ENTRIES = 6;
 const MAX_SCOPE_ROUTER_TRIGGERS = 5;
+const MAX_EXECUTION_SCOPE_ROUTER_CHARS = 1600;
+const MAX_EXECUTION_SCOPE_ROUTER_ENTRIES = 3;
 const MAX_SESSION_CATALOG_CHARS = 1600;
 const MAX_SESSION_CATALOG_ENTRIES = 12;
 const MAX_LINE_CHARS = 220;
+const MAX_EXECUTION_LINE_CHARS = 280;
 
 function normalizeInlineText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -49,7 +52,7 @@ function stripMarkdownNoise(value) {
 
 function splitTriggerTerms(value) {
   return stripMarkdownNoise(value)
-    .split(/[,，]/)
+    .split(/[,，、;；]/)
     .map((term) => normalizeInlineText(term))
     .filter(Boolean);
 }
@@ -102,6 +105,9 @@ function parseScopeRouterEntries(markdown) {
       const type = findField(/^Type:\s*/i);
       const path = findField(/^Paths?:\s*/i);
       const triggers = splitTriggerTerms(findField(/^Triggers:\s*/i));
+      const firstRead = findField(/^First read:\s*/i);
+      const thenInspect = findField(/^Then inspect:\s*/i);
+      const defaultAction = findField(/^Default action:\s*/i);
       const paths = extractInlineCodeTokens(path);
 
       return {
@@ -110,9 +116,38 @@ function parseScopeRouterEntries(markdown) {
         path,
         paths,
         triggers,
+        firstRead,
+        thenInspect,
+        defaultAction,
       };
     })
     .filter((entry) => entry.title && (entry.type || entry.path || entry.triggers.length > 0));
+}
+
+function selectScopeRouterEntries(entries, context = {}, options = {}) {
+  const limit = Number.isInteger(options.limit) && options.limit > 0
+    ? options.limit
+    : MAX_SCOPE_ROUTER_ENTRIES;
+  const allowFallback = options.allowFallback !== false;
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+
+  const scored = entries
+    .map((entry, index) => ({
+      entry,
+      index,
+      score: scoreScopeRouterEntry(entry, context),
+    }))
+    .sort((a, b) => (
+      (b.score - a.score)
+      || (a.index - b.index)
+    ));
+
+  const positive = scored.filter((entry) => entry.score > 0);
+  const selected = positive.length > 0
+    ? positive.slice(0, limit)
+    : (allowFallback ? scored.slice(0, limit) : []);
+
+  return selected.map(({ entry }) => entry);
 }
 
 function scoreScopeRouterEntry(entry, context = {}) {
@@ -164,22 +199,13 @@ function buildScopeRouterPromptContext(markdown, context = {}) {
   const entries = parseScopeRouterEntries(markdown);
   if (entries.length === 0) return '';
 
-  const scored = entries
-    .map((entry, index) => ({
-      entry,
-      index,
-      score: scoreScopeRouterEntry(entry, context),
-    }))
-    .sort((a, b) => (
-      (b.score - a.score)
-      || (a.index - b.index)
-    ));
-
-  const positive = scored.filter((entry) => entry.score > 0);
-  const selected = (positive.length > 0 ? positive : scored).slice(0, MAX_SCOPE_ROUTER_ENTRIES);
+  const selected = selectScopeRouterEntries(entries, context, {
+    limit: MAX_SCOPE_ROUTER_ENTRIES,
+    allowFallback: true,
+  });
   const lines = [];
 
-  for (const { entry } of selected) {
+  for (const entry of selected) {
     const parts = [entry.title];
     if (entry.type) parts.push(entry.type);
     if (entry.path) parts.push(clipText(entry.path, 72));
@@ -194,6 +220,52 @@ function buildScopeRouterPromptContext(markdown, context = {}) {
   }
 
   return lines.join('\n');
+}
+
+function buildExecutionScopeRouterPromptContext(markdown, context = {}) {
+  const entries = parseScopeRouterEntries(markdown);
+  if (entries.length === 0) return '';
+
+  const selected = selectScopeRouterEntries(entries, context, {
+    limit: MAX_EXECUTION_SCOPE_ROUTER_ENTRIES,
+    allowFallback: false,
+  });
+  if (selected.length === 0) return '';
+
+  const lines = [
+    'Likely scope-router matches for this turn (backend-selected from projects.md):',
+    'Treat these as high-priority cached context candidates. If one matches, inspect its referenced memory/files before broad filesystem search or machine-wide discovery.',
+  ];
+
+  for (const entry of selected) {
+    const normalizedPath = stripMarkdownNoise(entry.path);
+    const normalizedFirstRead = stripMarkdownNoise(entry.firstRead);
+    const normalizedThenInspect = stripMarkdownNoise(entry.thenInspect);
+    const parts = [entry.title];
+    if (entry.type) parts.push(entry.type);
+    if (entry.triggers.length > 0) {
+      parts.push(`triggers: ${clipText(entry.triggers.slice(0, MAX_SCOPE_ROUTER_TRIGGERS).join(', '), 96)}`);
+    }
+    if (normalizedPath && normalizedPath !== normalizedFirstRead && normalizedPath !== normalizedThenInspect) {
+      parts.push(`paths: ${clipText(normalizedPath, 112)}`);
+    }
+    if (normalizedFirstRead) {
+      parts.push(`first read: ${clipText(normalizedFirstRead, 112)}`);
+    }
+    if (normalizedThenInspect) {
+      parts.push(`then inspect: ${clipText(normalizedThenInspect, 112)}`);
+    }
+    if (entry.defaultAction) {
+      parts.push(`default action: ${clipText(stripMarkdownNoise(entry.defaultAction), 144)}`);
+    }
+    const line = clipText(`- ${parts.join(' — ')}`, MAX_EXECUTION_LINE_CHARS);
+    if (!line) continue;
+    const nextText = `${lines.join('\n')}\n${line}`;
+    if (nextText.length > MAX_EXECUTION_SCOPE_ROUTER_CHARS) break;
+    lines.push(line);
+  }
+
+  return lines.length > 2 ? lines.join('\n') : '';
 }
 
 function sortSessionsByRecency(a, b) {
@@ -291,4 +363,15 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
     scopeRouter,
     existingSessions,
   };
+}
+
+export async function loadExecutionScopeRouterPromptContext(sessionMeta, turnText) {
+  const projectsMarkdown = await readOptionalText(PROJECTS_MD);
+  return buildExecutionScopeRouterPromptContext(projectsMarkdown, {
+    folder: sessionMeta?.folder || '',
+    name: sessionMeta?.name || '',
+    group: sessionMeta?.group || '',
+    description: sessionMeta?.description || '',
+    turnText,
+  });
 }
