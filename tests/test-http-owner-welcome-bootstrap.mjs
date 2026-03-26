@@ -87,6 +87,16 @@ function setupTempHome({ preseedArchivedBasicChat = false } = {}) {
     join(configDir, 'tools.json'),
     JSON.stringify([
       {
+        id: 'micro-agent',
+        name: 'Micro Agent',
+        visibility: 'private',
+        toolProfile: 'micro-agent',
+        command: 'fake-codex',
+        runtimeFamily: 'codex-json',
+        models: [{ id: 'fake-model', label: 'Fake model' }],
+        reasoning: { kind: 'none', label: 'Thinking' },
+      },
+      {
         id: 'fake-codex',
         name: 'Fake Codex',
         command: 'fake-codex',
@@ -169,6 +179,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const welcomeSession = list.json?.sessions?.[0];
   assert.ok(welcomeSession?.id, 'welcome session should have an id');
   assert.equal(welcomeSession.appId, 'app_welcome', 'welcome session should use the built-in Welcome app');
+  assert.equal(welcomeSession.tool, 'micro-agent', 'welcome bootstrap should prefer Micro Agent when it is available');
   assert.equal(welcomeSession.sourceId, 'chat', 'welcome session should be categorized as chat UI');
   assert.equal(welcomeSession.sourceName, 'Chat', 'welcome session should preserve the chat source label');
   assert.ok(Number(welcomeSession.messageCount || 0) >= 1, 'welcome session should include the starter assistant message');

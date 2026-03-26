@@ -101,7 +101,10 @@ function normalizeToolVisibility(value) {
 
 function filterPrimaryToolOptions(toolOptions = [], { keepIds = [] } = {}) {
   const explicitIds = new Set(
-    (Array.isArray(keepIds) ? keepIds : [keepIds])
+    [
+      ...(Array.isArray(keepIds) ? keepIds : [keepIds]),
+      DEFAULT_TOOL_ID,
+    ]
       .map((toolId) => normalizeToolId(toolId))
       .filter(Boolean),
   );

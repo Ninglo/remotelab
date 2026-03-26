@@ -449,7 +449,7 @@ function withVisitorModeUrl(url) {
 
 let currentTokens = 0;
 
-const DEFAULT_TOOL_ID = "codex";
+const DEFAULT_TOOL_ID = "micro-agent";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 
 function normalizeStoredToolId(value) {

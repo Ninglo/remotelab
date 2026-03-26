@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import { dirname } from 'path';
 import { APPS_FILE, AUTH_FILE, CHAT_PORT, CHAT_SESSIONS_FILE, USERS_FILE, VISITORS_FILE } from '../lib/config.mjs';
+import { getAvailableToolsAsync } from '../lib/tools.mjs';
 import { createSerialTaskQueue, ensureDir, readJson, writeJsonAtomic } from './fs-utils.mjs';
 
 const runAppsMutation = createSerialTaskQueue();
@@ -40,7 +41,10 @@ export const EMAIL_APP_ID = 'email';
 export const WELCOME_APP_ID = 'app_welcome';
 export const BASIC_CHAT_APP_ID = 'app_basic_chat';
 export const CREATE_APP_APP_ID = 'app_create_app';
-export const DEFAULT_APP_TOOL = 'codex';
+export const DEFAULT_APP_TOOL = '';
+const PRODUCT_DEFAULT_APP_TOOL = 'micro-agent';
+const FALLBACK_DEFAULT_APP_TOOL = 'codex';
+const DEFAULT_APP_TOOL_DESCRIPTION = 'Micro Agent when available, otherwise CodeX';
 export const BUILTIN_APPS = Object.freeze([
   Object.freeze({
     id: DEFAULT_APP_ID,
@@ -140,7 +144,7 @@ export const BUILTIN_APPS = Object.freeze([
       'Ask at most one focused batch of follow-up questions when essential information is missing. Infer reasonable defaults whenever possible.',
       'Before creating anything, synthesize the request into a concrete app definition with these sections: Name, Purpose, Target User, Inputs, Workflow, Output, Review Gates, Opening Message, Behavior Instructions, Default Assistant, and Share Plan. Use those as working sections, not as raw user-facing field labels.',
       'Do not stop at writing the spec once the request is clear enough. Actually create or update the RemoteLab app in product state unless you are blocked by a real authorization or environment problem.',
-      `Use the owner-authenticated RemoteLab app APIs for product-state changes: create with POST /api/apps, update with PATCH /api/apps/:id, inspect with GET /api/apps. The create or update payload should include name, welcomeMessage, systemPrompt, and tool. Default to ${DEFAULT_APP_TOOL} unless the workflow clearly needs a different tool.`,
+      `Use the owner-authenticated RemoteLab app APIs for product-state changes: create with POST /api/apps, update with PATCH /api/apps/:id, inspect with GET /api/apps. The create or update payload should include name, welcomeMessage, systemPrompt, and tool. Default to ${DEFAULT_APP_TOOL_DESCRIPTION} unless the workflow clearly needs a different tool.`,
       'If the user is clearly iterating on an existing app, prefer updating that app instead of creating a duplicate.',
       `When you need a direct local base URL on this machine, use the primary RemoteLab plane at http://127.0.0.1:${CHAT_PORT} unless the current deployment context clearly provides another origin.`,
       `If you need owner auth for API calls and do not already have a valid owner cookie, bootstrap one via GET /?token=... using the local owner token from ${AUTH_FILE}, store the returned session_token in a cookie jar, and reuse it for later API calls.`,
@@ -166,6 +170,26 @@ const BUILTIN_APP_MAP = new Map(BUILTIN_APPS.map((app) => [app.id, app]));
 
 function cloneApp(app) {
   return app ? JSON.parse(JSON.stringify(app)) : null;
+}
+
+async function resolveDefaultAppToolId() {
+  const tools = await getAvailableToolsAsync();
+  const availableTools = Array.isArray(tools)
+    ? tools.filter((tool) => tool?.available)
+    : [];
+  if (availableTools.some((tool) => tool.id === PRODUCT_DEFAULT_APP_TOOL)) {
+    return PRODUCT_DEFAULT_APP_TOOL;
+  }
+  return FALLBACK_DEFAULT_APP_TOOL;
+}
+
+async function materializeApp(app, { defaultToolId = '' } = {}) {
+  const cloned = cloneApp(app);
+  if (!cloned) return null;
+  if (!cloned.tool) {
+    cloned.tool = defaultToolId || await resolveDefaultAppToolId();
+  }
+  return cloned;
 }
 
 function findLegacyVideoCutAppRecord(apps = []) {
@@ -285,12 +309,13 @@ async function saveApps(list) {
 
 export async function listApps() {
   await materializeLegacyVideoCutApp();
-  return mergeApps(await loadApps());
+  const defaultToolId = await resolveDefaultAppToolId();
+  return Promise.all(mergeApps(await loadApps()).map((app) => materializeApp(app, { defaultToolId })));
 }
 
 export async function getApp(id) {
   const builtin = getBuiltinApp(id);
-  if (builtin) return builtin;
+  if (builtin) return materializeApp(builtin);
   const apps = await loadApps();
   const existing = apps.find((app) => app.id === id);
   if (existing) return existing.deleted ? null : existing;
@@ -303,7 +328,7 @@ export async function getApp(id) {
 export async function getAppByShareToken(shareToken) {
   if (!shareToken) return null;
   const builtin = BUILTIN_APPS.find((app) => app.shareToken === shareToken);
-  if (builtin) return cloneApp(builtin);
+  if (builtin) return materializeApp(builtin);
   const apps = await loadApps();
   const existing = apps.find((app) => app.shareToken === shareToken);
   if (existing) return existing.deleted ? null : existing;
@@ -325,13 +350,16 @@ export async function createApp(input = {}) {
   return runAppsMutation(async () => {
     const id = `app_${randomBytes(16).toString('hex')}`;
     const shareToken = `share_${randomBytes(32).toString('hex')}`;
+    const resolvedTool = typeof tool === 'string' && tool.trim()
+      ? tool.trim()
+      : await resolveDefaultAppToolId();
     const app = {
       id,
       name: name || 'Untitled App',
       systemPrompt: systemPrompt || '',
       welcomeMessage: welcomeMessage || '',
       skills: skills || [],
-      tool: tool || DEFAULT_APP_TOOL,
+      tool: resolvedTool,
       shareToken,
       createdAt: new Date().toISOString(),
     };

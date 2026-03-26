@@ -1,15 +1,38 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, rmSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-apps-builtins-'));
+const configDir = join(tempHome, 'instance-config');
+const localBin = join(tempHome, 'bin');
+mkdirSync(configDir, { recursive: true });
+mkdirSync(localBin, { recursive: true });
+writeFileSync(join(localBin, 'fake-codex'), '#!/usr/bin/env bash\nexit 0\n', 'utf8');
+chmodSync(join(localBin, 'fake-codex'), 0o755);
+writeFileSync(
+  join(configDir, 'tools.json'),
+  JSON.stringify([
+    {
+      id: 'micro-agent',
+      name: 'Micro Agent',
+      visibility: 'private',
+      toolProfile: 'micro-agent',
+      command: 'fake-codex',
+      runtimeFamily: 'codex-json',
+      models: [{ id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' }],
+      reasoning: { kind: 'none', label: 'Thinking' },
+    },
+  ], null, 2),
+  'utf8',
+);
 process.env.HOME = tempHome;
 process.env.CHAT_PORT = '7692';
-process.env.REMOTELAB_CONFIG_DIR = join(tempHome, 'instance-config');
+process.env.REMOTELAB_CONFIG_DIR = configDir;
+process.env.PATH = `${localBin}:${process.env.PATH || ''}`;
 
 const appsModule = await import(pathToFileURL(join(repoRoot, 'chat', 'apps.mjs')).href);
 
@@ -68,6 +91,7 @@ try {
   assert.equal(welcomeApp?.templateSelectable, true);
   assert.equal(welcomeApp?.shareEnabled, false);
   assert.equal(welcomeApp?.shareToken, undefined);
+  assert.equal(welcomeApp?.tool, 'micro-agent', 'Welcome should prefer Micro Agent when available');
   assert.match(welcomeApp?.systemPrompt || '', /raw materials|files, screenshots|PowerPoints/i);
   assert.match(welcomeApp?.systemPrompt || '', /fixed intake form|rigid template|prompt-writing lesson/i);
   assert.match(welcomeApp?.systemPrompt || '', /new assistant receiving a handoff|report or spreadsheet cleanup|exports and imports/i);
@@ -92,12 +116,13 @@ try {
   assert.equal(basicChatApp?.templateSelectable, true);
   assert.equal(basicChatApp?.shareEnabled, false);
   assert.equal(basicChatApp?.shareToken, undefined);
+  assert.equal(basicChatApp?.tool, 'micro-agent', 'Basic Chat should share the product default assistant');
 
   const createAppStarter = await getApp(CREATE_APP_APP_ID);
   assert.equal(createAppStarter?.id, CREATE_APP_APP_ID);
   assert.equal(createAppStarter?.builtin, true);
   assert.equal(createAppStarter?.templateSelectable, true);
-  assert.equal(createAppStarter?.tool, 'codex');
+  assert.equal(createAppStarter?.tool, 'micro-agent');
   assert.equal(createAppStarter?.shareEnabled, false);
   assert.equal(createAppStarter?.shareToken, undefined);
   assert.match(createAppStarter?.systemPrompt || '', /POST \/api\/apps|PATCH \/api\/apps/i);
@@ -138,7 +163,7 @@ try {
     welcomeMessage: '',
     skills: [],
   });
-  assert.equal(defaultToolApp.tool, 'codex', 'new apps should default to CodeX');
+  assert.equal(defaultToolApp.tool, 'micro-agent', 'new apps should default to Micro Agent when available');
 
   const afterCreate = await listApps();
   assert.equal(afterCreate.some((app) => app.id === custom.id), true);

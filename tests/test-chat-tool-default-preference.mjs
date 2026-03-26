@@ -53,7 +53,7 @@ const derivePreferredToolIdSource = extractFunctionSource(bootstrapSource, 'deri
 
 const context = {
   console,
-  DEFAULT_TOOL_ID: 'codex',
+  DEFAULT_TOOL_ID: 'micro-agent',
   LEGACY_AUTO_PREFERRED_TOOL_IDS: new Set(['codex', 'micro-agent']),
 };
 context.globalThis = context;
@@ -83,14 +83,14 @@ const ordered = context.prioritizeToolOptions([
 ]);
 assert.deepEqual(
   Array.from(ordered, (tool) => tool.id),
-  ['codex', 'claude', 'micro-agent'],
-  'codex should be promoted to the front of the picker when available',
+  ['micro-agent', 'claude', 'codex'],
+  'Micro Agent should be promoted to the front of the picker when available',
 );
 
 assert.equal(
   context.resolvePreferredToolId(ordered, []),
-  'codex',
-  'new picker defaults should fall back to codex when no explicit choice exists',
+  'micro-agent',
+  'new picker defaults should fall back to Micro Agent when no explicit choice exists',
 );
 
 assert.equal(
@@ -137,8 +137,8 @@ const publicOnly = context.filterPrimaryToolOptions([
 ]);
 assert.deepEqual(
   Array.from(publicOnly, (tool) => tool.id),
-  ['codex', 'claude'],
-  'private experimental agents should stay out of the primary picker by default',
+  ['codex', 'micro-agent', 'claude'],
+  'the product-default private agent should stay visible while other private agents stay hidden',
 );
 
 const keptPrivate = context.filterPrimaryToolOptions([

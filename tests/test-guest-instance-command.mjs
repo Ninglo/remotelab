@@ -241,6 +241,21 @@ assert.equal(
   'micro-agent',
   'fresh guests should still inherit the owner-selected micro-agent preset',
 );
+assert.equal(
+  plannedFreshGuestDefaults.selection.selectedModel,
+  'gpt-5.4',
+  'fresh guests should keep the micro-agent model default',
+);
+assert.equal(
+  plannedFreshGuestDefaults.selection.selectedEffort,
+  '',
+  'micro-agent defaults should clear stale enum effort values',
+);
+assert.equal(
+  plannedFreshGuestDefaults.selection.reasoningKind,
+  'none',
+  'micro-agent defaults should follow the tool reasoning mode',
+);
 
 const plannedUpdatedGuestDefaults = planGuestRuntimeDefaults({
   ownerSelection: ownerMicroSelection,
@@ -262,6 +277,62 @@ assert.equal(
   plannedUpdatedGuestDefaults.tools[0].models[0].id,
   'gpt-5.4',
   'safe owner presets should refresh stale guest copies by tool id',
+);
+assert.equal(
+  plannedUpdatedGuestDefaults.selection.selectedModel,
+  'gpt-5.4',
+  'stale guest model selections should be normalized to the current tool default',
+);
+assert.equal(
+  plannedUpdatedGuestDefaults.selection.selectedEffort,
+  '',
+  'non-reasoning tools should not keep stale effort values',
+);
+
+const plannedProductDefaultGuestDefaults = planGuestRuntimeDefaults({
+  ownerSelection: null,
+  ownerTools,
+  guestSelection: null,
+  guestTools: [],
+  detectedModel: 'gpt-5.4',
+});
+assert.equal(
+  plannedProductDefaultGuestDefaults.selection.selectedTool,
+  'micro-agent',
+  'new guest instances should prefer Micro Agent when it is available',
+);
+assert.equal(
+  plannedProductDefaultGuestDefaults.selection.selectedEffort,
+  '',
+  'the product default should not hardcode a Codex reasoning level',
+);
+assert.equal(
+  plannedProductDefaultGuestDefaults.selection.reasoningKind,
+  'none',
+  'the product default should inherit the tool reasoning mode',
+);
+
+const plannedCodexFallbackDefaults = planGuestRuntimeDefaults({
+  ownerSelection: null,
+  ownerTools: [],
+  guestSelection: null,
+  guestTools: [],
+  detectedModel: 'gpt-5.4',
+});
+assert.equal(
+  plannedCodexFallbackDefaults.selection.selectedTool,
+  'codex',
+  'guests should still fall back to Codex when Micro Agent is unavailable',
+);
+assert.equal(
+  plannedCodexFallbackDefaults.selection.selectedModel,
+  'gpt-5.4',
+  'Codex fallback should still adopt the detected owner model',
+);
+assert.equal(
+  plannedCodexFallbackDefaults.selection.selectedEffort,
+  '',
+  'Codex fallback should rely on the tool default instead of a hardcoded effort level',
 );
 
 const sandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-'));
