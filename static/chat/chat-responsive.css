@@ -41,6 +41,27 @@
     --chat-gutter: 10px;
   }
 
+  .header {
+    gap: 6px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .header-btn--sessions {
+    padding: 0 11px;
+  }
+
+  .header-share-btn {
+    padding: 0 9px;
+  }
+
+  #statusText {
+    max-width: 72px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   body.keyboard-open .messages {
     padding-top: 12px;
     padding-bottom: 12px;

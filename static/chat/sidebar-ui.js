@@ -38,7 +38,7 @@ function createSortSessionListShortcut() {
   return organizeSessionListWithAgent({ closeSidebar: false });
 }
 
-menuBtn.addEventListener("click", openSidebar);
+menuBtn.addEventListener("click", openSessionsSidebar);
 closeSidebar.addEventListener("click", closeSidebarFn);
 sidebarOverlay.addEventListener("click", (e) => {
   if (e.target === sidebarOverlay && !isDesktop) closeSidebarFn();

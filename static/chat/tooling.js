@@ -213,13 +213,94 @@ function buildProviderBasePrompt() {
 
 function updateCopyButtonLabel(button, label) {
   if (!button) return;
-  const original = button.dataset.originalLabel || button.textContent;
+  const original = button.dataset.originalLabel || getHeaderActionButtonLabel(button);
   button.dataset.originalLabel = original;
-  button.textContent = label;
+  if (button.dataset.originalTitle === undefined) {
+    button.dataset.originalTitle = getHeaderActionButtonAttribute(button, "title");
+  }
+  if (button.dataset.originalAriaLabel === undefined) {
+    button.dataset.originalAriaLabel = getHeaderActionButtonAttribute(button, "aria-label");
+  }
+  setHeaderActionButtonLabel(button, label);
   window.clearTimeout(button._copyResetTimer);
   button._copyResetTimer = window.setTimeout(() => {
-    button.textContent = button.dataset.originalLabel || original;
+    setHeaderActionButtonLabel(button, button.dataset.originalLabel || original);
+    restoreHeaderActionButtonAccessibility(button);
   }, 1400);
+}
+
+function getHeaderActionButtonLabelNode(button) {
+  if (!button || typeof button.querySelector !== "function") return null;
+  const labelNode = button.querySelector(".header-action-label");
+  if (!labelNode) return null;
+  if (labelNode.classList && typeof labelNode.classList.contains === "function") {
+    return labelNode.classList.contains("header-action-label") ? labelNode : null;
+  }
+  if (typeof labelNode.matches === "function") {
+    return labelNode.matches(".header-action-label") ? labelNode : null;
+  }
+  return labelNode;
+}
+
+function getHeaderActionButtonLabel(button) {
+  const labelNode = getHeaderActionButtonLabelNode(button);
+  return labelNode ? labelNode.textContent : button?.textContent || "";
+}
+
+function getHeaderActionButtonAttribute(button, name) {
+  if (!button) return "";
+  if (typeof button.getAttribute === "function") {
+    return button.getAttribute(name) || "";
+  }
+  return typeof button[name] === "string" ? button[name] : "";
+}
+
+function setHeaderActionButtonAttribute(button, name, value) {
+  if (!button) return;
+  if (typeof button.setAttribute === "function") {
+    button.setAttribute(name, value);
+    return;
+  }
+  button[name] = value;
+}
+
+function removeHeaderActionButtonAttribute(button, name) {
+  if (!button) return;
+  if (typeof button.removeAttribute === "function") {
+    button.removeAttribute(name);
+    return;
+  }
+  delete button[name];
+}
+
+function setHeaderActionButtonLabel(button, label) {
+  if (!button) return;
+  const labelNode = getHeaderActionButtonLabelNode(button);
+  if (labelNode) {
+    labelNode.textContent = label;
+  } else {
+    button.textContent = label;
+  }
+  setHeaderActionButtonAttribute(button, "title", label);
+  setHeaderActionButtonAttribute(button, "aria-label", label);
+}
+
+function restoreHeaderActionButtonAccessibility(button) {
+  if (!button) return;
+  if (button.dataset.originalTitle !== undefined) {
+    if (button.dataset.originalTitle) {
+      setHeaderActionButtonAttribute(button, "title", button.dataset.originalTitle);
+    } else {
+      removeHeaderActionButtonAttribute(button, "title");
+    }
+  }
+  if (button.dataset.originalAriaLabel !== undefined) {
+    if (button.dataset.originalAriaLabel) {
+      setHeaderActionButtonAttribute(button, "aria-label", button.dataset.originalAriaLabel);
+    } else {
+      removeHeaderActionButtonAttribute(button, "aria-label");
+    }
+  }
 }
 
 function getToolingLabel(key, vars) {
@@ -232,8 +313,9 @@ function resetHeaderActionButton(button) {
   button.disabled = false;
   window.clearTimeout(button._copyResetTimer);
   if (button.dataset.originalLabel) {
-    button.textContent = button.dataset.originalLabel;
+    setHeaderActionButtonLabel(button, button.dataset.originalLabel);
   }
+  restoreHeaderActionButtonAccessibility(button);
 }
 
 function syncShareButton() {

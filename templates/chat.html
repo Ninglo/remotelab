@@ -22,10 +22,15 @@
 
 <!-- Header -->
 <div class="header">
-  <button class="header-btn" id="menuBtn" title="Sessions" aria-label="Sessions" data-i18n-title="nav.sessions" data-i18n-aria-label="nav.sessions" data-icon="menu">&#9776;</button>
+  <button class="header-btn header-btn--sessions" id="menuBtn" title="Sessions" aria-label="Sessions" data-i18n-title="nav.sessions" data-i18n-aria-label="nav.sessions">
+    <span class="header-btn-icon" data-icon="menu" aria-hidden="true"></span>
+    <span class="header-btn-label" data-i18n="nav.sessions">Sessions</span>
+  </button>
   <h1 id="headerTitle" data-i18n="app.chatTitle">RemoteLab Chat</h1>
-  <button class="header-share-btn" id="forkSessionBtn" title="Create an isolated copy of this session" style="display:none" data-i18n="action.fork">Fork</button>
-  <button class="header-share-btn" id="shareSnapshotBtn" title="Create a read-only snapshot link" style="display:none" data-i18n="action.share">Share</button>
+  <button class="header-share-btn" id="shareSnapshotBtn" title="Share" aria-label="Share" data-i18n-title="action.share" data-i18n-aria-label="action.share" style="display:none">
+    <span class="header-action-icon" data-icon="share" aria-hidden="true"></span>
+    <span class="header-action-label" data-i18n="action.share">Share</span>
+  </button>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText" data-i18n="status.disconnected">disconnected</span>

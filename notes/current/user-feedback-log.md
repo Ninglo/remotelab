@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-27 — mobile session entry must be visually primary, not hint-dependent
+
+- Source: direct product feedback during phone-first chat-shell review
+- User slice: mobile-first owner using RemoteLab without product-specific habits yet
+- Observed friction or ask: the left header entry for sessions/sidebar is too easy to miss; if users skip or forget a hint, they may not understand how to switch sessions. `Fork` adds clutter while `Share` can stay only as a lighter secondary action.
+- Signal: important mobile navigation cannot depend on onboarding hints or hidden gestures; the persistent UI itself must make the session entry feel obviously tappable and primary.
+- Product implication: make the left header sessions control visually heavy, remove `Fork` from the top bar, and keep `Share` as a lighter secondary button that still reinforces icon clickability.
+- Promote to: mobile header defaults, session navigation UX review
+- Follow-up: watch whether stronger primary navigation reduces missed-sidebar confusion without requiring extra coaching copy
+
 ### 2026-03-26 — shrink product concepts before refactoring deeper
 
 - Source: direct product strategy discussion after parallel architecture review

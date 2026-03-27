@@ -129,7 +129,16 @@ body {
   height: calc(48px + var(--safe-top));
   flex-shrink: 0;
 }
-.header h1 { font-size: 15px; font-weight: 600; flex: 1; color: var(--text); }
+.header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .header-btn {
   background: none; border: none; color: var(--text-secondary);
   font-size: 16px; cursor: pointer; padding: 6px; border-radius: 6px;
@@ -137,12 +146,59 @@ body {
   width: 32px; height: 32px;
 }
 .header-btn:hover { background: var(--bg-tertiary); color: var(--text); }
+.header-btn-icon,
+.header-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.header-btn-icon .rl-icon,
+.header-action-icon .rl-icon {
+  width: 14px;
+  height: 14px;
+}
+.header-btn-label,
+.header-action-label {
+  white-space: nowrap;
+}
+.header-btn--sessions {
+  width: auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 78%, var(--border));
+  background: var(--accent);
+  color: var(--bg);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+.header-btn--sessions:hover {
+  background: color-mix(in srgb, var(--accent) 90%, var(--bg));
+  color: var(--bg);
+}
+.header-btn--sessions .header-btn-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
 .header-share-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  height: 32px; padding: 0 12px; border-radius: 999px;
-  border: 1px solid var(--border); background: var(--bg-tertiary);
-  color: var(--text-secondary); font-size: 12px; font-weight: 600;
-  cursor: pointer; flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
 }
 .header-share-btn:hover { background: var(--bg-secondary); color: var(--text); border-color: var(--border-strong); }
 .header-share-btn:disabled { opacity: 0.7; cursor: wait; }
@@ -197,4 +253,3 @@ body {
   min-width: 0;
   overflow: hidden;
 }
-

@@ -240,6 +240,10 @@ async function main() {
     assert.doesNotMatch(page.text, /id="voiceInputBtn"/);
     assert.doesNotMatch(page.text, /id="voiceFileInput"/);
     assert.doesNotMatch(page.text, /id="voiceCleanupToggle"/);
+    assert.match(page.text, /class="header-btn header-btn--sessions" id="menuBtn"/, 'mobile header should promote the session entry as a primary button');
+    assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label" data-i18n="nav\.sessions">Sessions</, 'session button should include an explicit text label');
+    assert.doesNotMatch(page.text, /id="forkSessionBtn"/, 'fork should no longer occupy the top header');
+    assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"/, 'share should render as a lighter icon-led secondary action');
     assert.match(page.text, /id="msgInput"[\s\S]*id="sendBtn"/, 'send button should render immediately after the composer textarea');
     assert.doesNotMatch(page.text, /id="voiceInputStatus"/);
     assert.match(page.text, /id="tabSettings"/);
@@ -567,6 +571,7 @@ async function main() {
     const sidebarUiAsset = await request(port, 'GET', '/chat/sidebar-ui.js');
     assert.equal(sidebarUiAsset.status, 200, 'sidebar ui asset should load');
     assert.match(sidebarUiAsset.text, /function openSidebar\(/);
+    assert.match(sidebarUiAsset.text, /menuBtn\.addEventListener\("click", openSessionsSidebar\);/, 'header session button should always open the sessions tab');
     assert.match(sidebarUiAsset.text, /function createNewSessionShortcut\(/);
     assert.match(sidebarUiAsset.text, /requestLayoutPass\("composer-images"\)/);
 
