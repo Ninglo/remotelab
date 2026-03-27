@@ -86,7 +86,7 @@ Then branch by the change you need:
 - UI / cross-endpoint behavior → `templates/chat.html`, `static/chat/`, `static/sw.js`
 - Apps / visitor flow → `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`
 - session labeling / rename / grouping → `chat/summarizer.mjs`, `chat/session-naming.mjs`
-- memory activation / startup prompt → `chat/system-prompt.mjs`, `notes/current/memory-activation-architecture.md`
+- memory activation / startup prompt → `chat/system-prompt.mjs`, `chat/shared-startup-defaults.mjs`, `notes/current/memory-activation-architecture.md`
 - provider/tool extensibility → `lib/tools.mjs`, `chat/models.mjs`, `notes/directional/provider-architecture.md`
 - external mail / webhook automation → `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-completion-targets.mjs`, `scripts/agent-mail-*.mjs`
 
@@ -232,6 +232,7 @@ remotelab/
 │   ├── push.mjs                    # web push
 │   ├── ws.mjs / ws-clients.mjs     # invalidation-only realtime
 │   ├── system-prompt.mjs           # pointer-first memory instructions
+│   ├── shared-startup-defaults.mjs # removable shared startup defaults slice
 │   ├── session-continuation.mjs    # cross-turn / cross-tool handoff context
 │   ├── session-naming.mjs          # session title/group normalization helpers
 │   └── adapters/                   # CLI-output → normalized-events adapters
@@ -493,7 +494,7 @@ This is the most important flow in the current architecture.
 
 Prompt construction combines multiple layers:
 
-- pointer-first startup context from `chat/system-prompt.mjs`
+- pointer-first startup context from `chat/system-prompt.mjs` and `chat/shared-startup-defaults.mjs`
 - app-level `systemPrompt` when the session came from an App
 - continuation context when resuming or switching tools
 - summary-head context from `context.json` after compaction
@@ -827,6 +828,7 @@ RemoteLab’s model behavior is shaped not only by chat history but also by the 
 Current implementation pieces:
 
 - `chat/system-prompt.mjs` prepends startup instructions for memory activation
+- `chat/shared-startup-defaults.mjs` carries a small removable cross-user startup slice that can be toggled without changing personal memory layout
 - user-level memory lives under `~/.remotelab/memory/`
 - shared system memory lives in `memory/system.md`
 
@@ -870,7 +872,7 @@ Use this as the practical code-finding guide.
 | share snapshots | `chat/shares.mjs`, `chat/router.mjs`, `templates/chat.html`, `static/chat/` |
 | push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
 | model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat/` |
-| pointer-first memory startup | `chat/system-prompt.mjs`, `notes/current/memory-activation-architecture.md` |
+| pointer-first memory startup | `chat/system-prompt.mjs`, `chat/shared-startup-defaults.mjs`, `notes/current/memory-activation-architecture.md` |
 | inbound/outbound mail automation | `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-outbound.mjs`, `lib/agent-mail-completion-targets.mjs`, `scripts/agent-mail-*.mjs` |
 
 ---

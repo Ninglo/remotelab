@@ -85,9 +85,18 @@ It should not be loaded wholesale for every new session.
 ## Implementation Surface
 
 - `chat/system-prompt.mjs`: define pointer-first startup behavior
+- `chat/shared-startup-defaults.mjs`: removable repo-shared startup defaults slice for a few universal cross-user behaviors
 - `~/.remotelab/memory/bootstrap.md`: tiny startup layer
 - `~/.remotelab/memory/projects.md`: scope-routing layer
 - `memory/system.md`: shared principles about activation, writeback, and pruning
+
+## Shared Startup Slice
+
+When a small set of cross-user defaults needs to ship quickly to every instance, keep that slice separate from personal memory and make it easy to remove.
+
+- Keep it tiny, universal, and clearly optional.
+- Do not let it turn into a catch-all for personal preferences, repo-local workflows, or domain-specific rules.
+- In code, RemoteLab keeps this slice in `chat/shared-startup-defaults.mjs` and gates it with `REMOTELAB_ENABLE_SHARED_STARTUP_DEFAULTS` so it can be disabled or revised with low coupling.
 
 ## Important Non-Goal
 

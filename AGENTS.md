@@ -258,6 +258,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [ ] Provider management UX — setup/settings should support preset enablement, simple GUI JSON providers, and advanced code mode
 - [ ] Session metadata enrichment beyond presentation (`project`, `status`, `priority`, `tags`)
 - [ ] Produce a precise file-level concept→implementation guide so future sessions can route directly to the right files with less repo spelunking
+- [ ] Review the removable shared startup-defaults slice after live use; prune, disable, or replace it quickly if it starts overfitting or duplicating personal memory
 
 ### P2 — Future
 - [ ] Multi-session fan-out from one owner turn — valuable when it materially improves the mainstream automation path, but not the headline by itself

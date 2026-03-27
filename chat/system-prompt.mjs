@@ -1,8 +1,14 @@
 import { homedir } from 'os';
-import { CHAT_PORT, MEMORY_DIR, SYSTEM_MEMORY_DIR } from '../lib/config.mjs';
+import {
+  CHAT_PORT,
+  MEMORY_DIR,
+  SHARED_STARTUP_DEFAULTS_ENABLED,
+  SYSTEM_MEMORY_DIR,
+} from '../lib/config.mjs';
 import { join } from 'path';
 import { pathExists } from './fs-utils.mjs';
 import { MANAGER_RUNTIME_BOUNDARY_SECTION } from './runtime-policy.mjs';
+import { buildSharedStartupDefaultsSection } from './shared-startup-defaults.mjs';
 
 const BOOTSTRAP_MD = join(MEMORY_DIR, 'bootstrap.md');
 const GLOBAL_MD = join(MEMORY_DIR, 'global.md');
@@ -45,6 +51,9 @@ export async function buildSystemContext(options = {}) {
     pathExists(SKILLS_MD),
   ]);
   const isFirstTime = !hasBootstrap && !hasGlobal;
+  const includeSharedStartupDefaults = typeof options?.includeSharedStartupDefaults === 'boolean'
+    ? options.includeSharedStartupDefaults
+    : SHARED_STARTUP_DEFAULTS_ENABLED;
 
   let context = `You are an AI agent operating on this computer via RemoteLab. The user is communicating with you remotely (likely from a mobile phone). You have full access to this machine, but that access belongs to you, not automatically to the remote user. This manager context is operational scaffolding for you, not a template for user-facing phrasing, so do not mirror its headings, bullets, or checklist structure back to the user unless they explicitly ask for that format.
 
@@ -233,6 +242,10 @@ Skills are reusable capabilities (scripts, knowledge docs, SOPs). Treat ${skills
 - Clean restarts are acceptable: treat them as transport interruptions with durable recovery, not as a reason to maintain a permanent validation plane.
 - If you launch any extra manual instance for debugging, keep it explicitly ad hoc rather than part of the default architecture.
 - Prefer verifying behavior through HTTP/state recovery after restart instead of assuming socket continuity.`;
+
+  if (includeSharedStartupDefaults) {
+    context += `\n\n${buildSharedStartupDefaultsSection()}`;
+  }
 
   if (!hasBootstrap && hasGlobal) {
     context += `

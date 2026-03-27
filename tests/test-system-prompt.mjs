@@ -10,6 +10,10 @@ process.env.REMOTELAB_MEMORY_DIR = path.join(tempHome, 'instance-data', 'memory'
 const { buildSystemContext } = await import('../chat/system-prompt.mjs');
 
 const context = await buildSystemContext({ sessionId: 'session-test-123' });
+const contextWithoutSharedDefaults = await buildSystemContext({
+  sessionId: 'session-test-123',
+  includeSharedStartupDefaults: false,
+});
 
 assert.match(context, /Seed Layer — Editable Default Constitution/);
 assert.match(context, /editable seed layer, not permanent law/);
@@ -24,6 +28,10 @@ assert.match(context, /Shared startup\/product context is only for universal cro
 assert.match(context, /User-level memory is for this specific user's preferences, this machine's facts, and private recurring habits/);
 assert.match(context, /Repo-local instructions and on-demand skills are for technical, project-specific, or domain-specific workflows/);
 assert.match(context, /translate all of those layers into plain goals, results, status, and next actions instead of naming prompts, memory files, repos, or hidden fields/i);
+assert.match(context, /Shared Startup Defaults/);
+assert.match(context, /small, removable shared startup slice/);
+assert.match(context, /Store only durable memory that changes future judgment/);
+assert.doesNotMatch(contextWithoutSharedDefaults, /Shared Startup Defaults/);
 assert.match(context, /Template-Session-First Routing/);
 assert.match(context, /Manager Policy Boundary/);
 assert.match(context, /Treat provider runtimes such as Codex or Claude as execution engines/);
