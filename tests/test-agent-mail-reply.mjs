@@ -432,6 +432,28 @@ try {
   assert.equal(updatedRetryItem?.automation?.lastError, null);
   assert.equal(updatedRetryItem?.automation?.delivery?.provider, 'cloudflare_worker');
 
+  const requestedRecipientIndex = requests.length;
+  const requestedRecipientResult = await sendOutboundEmail({
+    to: 'recipient@outside.test',
+    from: 'rowan@example.com',
+    subject: 'Direct external recipient test',
+    text: 'Cloudflare outbound client should preserve the requested recipient.',
+  }, {
+    provider: 'cloudflare_worker',
+    workerBaseUrl: `http://127.0.0.1:${port}`,
+    workerToken: 'cloudflare-worker-secret',
+  });
+  assert.equal(requestedRecipientResult.statusCode, 200);
+  assert.equal(requests.length, requestedRecipientIndex + 1);
+  assert.deepEqual(JSON.parse(requests[requestedRecipientIndex].body), {
+    to: ['recipient@outside.test'],
+    from: 'rowan@example.com',
+    subject: 'Direct external recipient test',
+    text: 'Cloudflare outbound client should preserve the requested recipient.',
+    inReplyTo: '',
+    references: '',
+  });
+
   const curlRequests = [];
   const curlTransportResult = await sendOutboundEmail({
     to: 'owner@example.com',

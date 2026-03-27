@@ -2,16 +2,9 @@
   "name": "remotelab-email-worker",
   "main": "src/index.ts",
   "compatibility_date": "2025-03-10",
-  "send_email": [{ "name": "EMAIL", "destination_address": "owner@example.com" }],
+  "send_email": [{ "name": "EMAIL" }],
   "vars": {
-    "REMOTELAB_BASE_URL": "https://chat.example.com",
     "MAILBOX_FROM": "agent@example.com",
-    "MAILBOX_BRIDGE_URL": "https://mailhook.example.com/cloudflare-email/webhook",
-    "SESSION_FOLDER": "~",
-    "SESSION_TOOL": "codex",
-    "SESSION_GROUP": "Mail",
-    "SESSION_DESCRIPTION": "Inbound agent mailbox conversations.",
-    "ALLOWLIST_SENDERS": "owner@example.com",
-    "REJECT_UNKNOWN_SENDERS": "true"
+    "MAILBOX_BRIDGE_URL": "https://mailhook.example.com/cloudflare-email/webhook"
   }
 }

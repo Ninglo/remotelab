@@ -59,6 +59,7 @@ If any Cloudflare dashboard action is still needed, the AI should batch those as
 
 - copy `cloudflare/email-worker/wrangler.example.jsonc` to the gitignored local `cloudflare/email-worker/wrangler.jsonc`
 - gather the full mailbox and Cloudflare context packet before deployment so the human is not repeatedly interrupted for small missing values
+- keep the `send_email` binding unrestricted by default (`{ "name": "EMAIL" }`) so RemoteLab can send to any Email Routing destination address verified on this Cloudflare account instead of one pinned inbox
 - keep only `MAILBOX_FROM` and `MAILBOX_BRIDGE_URL` in Worker config
 - read or confirm the local mailbox tokens from `~/.config/remotelab/agent-mailbox/outbound.json` and `~/.config/remotelab/agent-mailbox/bridge.json`
 - deploy with `cloudflare/email-worker/deploy.sh`
@@ -68,8 +69,11 @@ If any Cloudflare dashboard action is still needed, the AI should batch those as
 
 Local `wrangler.jsonc` should only carry:
 
+- unrestricted `send_email` binding such as `{ "name": "EMAIL" }`
 - `MAILBOX_FROM`
 - `MAILBOX_BRIDGE_URL`
+
+Avoid `destination_address` and `allowed_destination_addresses` unless the goal is to intentionally sandbox outbound recipients. Those fields further narrow Cloudflare's platform-level rule that `send_email` only delivers to Email Routing destination addresses verified on this account.
 
 Secrets uploaded during deploy:
 
@@ -93,7 +97,7 @@ The Worker should not carry RemoteLab login or session-orchestration config. Tha
 
 - inbound routing sends the owner mailbox and intended guest mailbox aliases to the Worker according to the chosen address mode
 - once the owner mailbox stack is configured, `remotelab guest-instance create <name>` attempts to sync Email Routing automatically so new instances get their own accepted inbound address by default
-- RemoteLab completion targets can call `POST /api/send-email`
+- RemoteLab completion targets can call `POST /api/send-email` for any verified Email Routing destination address on the account
 - `curl https://.../healthz` succeeds
 - mailbox bridge and reply tests pass when the AI runs them
 - SMTP probes accept both the owner mailbox and one guest mailbox such as `trial6@domain`
@@ -106,6 +110,8 @@ curl https://mailhook.example.com/healthz
 node tests/test-agent-mail-http-bridge.mjs
 node tests/test-agent-mail-reply.mjs
 node tests/test-agent-mail-worker.mjs
+node tests/test-agent-mail-cloudflare-routing.mjs
+node tests/test-agent-mail-cloudflare-outbound-live.mjs --to verified@example.com
 ```
 
 ## Notes

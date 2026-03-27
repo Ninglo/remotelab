@@ -26,8 +26,11 @@ Flow:
 
 Configured in `wrangler.example.jsonc` and then copied locally to `wrangler.jsonc`:
 
+- unrestricted `send_email` binding such as `{ "name": "EMAIL" }`
 - `MAILBOX_FROM`
 - `MAILBOX_BRIDGE_URL`
+
+Do not set `destination_address` or `allowed_destination_addresses` unless you intentionally want to restrict outbound recipients further. An unrestricted binding allows sending to any Email Routing destination address verified on this Cloudflare account; it does not bypass Cloudflare's verified-destination requirement.
 
 Configured as secrets during deploy:
 

@@ -111,6 +111,43 @@ function loadWorkerConfig(workerConfigFile = DEFAULT_WORKER_CONFIG_FILE) {
   return readJson(workerConfigFile, null);
 }
 
+function summarizeSendEmailBinding(workerConfig = {}) {
+  const bindings = Array.isArray(workerConfig?.send_email)
+    ? workerConfig.send_email.filter((entry) => entry && typeof entry === 'object')
+    : [];
+  const binding = bindings.find((entry) => trimString(entry?.name) === 'EMAIL') || bindings[0] || null;
+  const bindingName = trimString(binding?.name);
+  const destinationAddress = trimString(binding?.destination_address).toLowerCase();
+  const allowedDestinationAddresses = dedupeStrings(Array.isArray(binding?.allowed_destination_addresses) ? binding.allowed_destination_addresses : []);
+  const allowedSenderAddresses = dedupeStrings(Array.isArray(binding?.allowed_sender_addresses) ? binding.allowed_sender_addresses : []);
+
+  let recipientMode = 'unconfigured';
+  let recipientRestrictions = [];
+  if (binding) {
+    if (destinationAddress) {
+      recipientMode = 'single_address';
+      recipientRestrictions = [destinationAddress];
+    } else if (allowedDestinationAddresses.length) {
+      recipientMode = 'allowlist';
+      recipientRestrictions = allowedDestinationAddresses;
+    } else {
+      recipientMode = 'unrestricted';
+    }
+  }
+
+  return {
+    configured: Boolean(binding),
+    bindingName,
+    availableBindingNames: bindings.map((entry) => trimString(entry?.name)).filter(Boolean),
+    recipientMode,
+    recipientRestrictions,
+    recipientRestricted: Boolean(recipientRestrictions.length),
+    senderMode: binding ? (allowedSenderAddresses.length ? 'allowlist' : 'unrestricted') : 'unconfigured',
+    senderRestrictions: allowedSenderAddresses,
+    senderRestricted: Boolean(allowedSenderAddresses.length),
+  };
+}
+
 function loadCloudflareAuth(authFile = DEFAULT_CLOUDFLARE_AUTH_FILE) {
   const fileConfig = readJson(authFile, null) || {};
   const apiToken = trimString(process.env.CLOUDFLARE_API_TOKEN || fileConfig.apiToken || fileConfig.token);
@@ -219,6 +256,7 @@ function buildStatusSummary({
   const bridge = loadBridge(rootDir);
   const outbound = loadOutboundConfig(rootDir);
   const workerConfig = loadWorkerConfig();
+  const outboundBinding = summarizeSendEmailBinding(workerConfig);
   const auth = loadCloudflareAuth(authFile);
   const guestInstances = loadGuestRegistry().map((record) => {
     const mailboxAddresses = dedupeStrings([
@@ -265,6 +303,11 @@ function buildStatusSummary({
       workerName,
       workerUrl,
       publicWebhook,
+      outboundBinding,
+      outboundPlatformRecipientMode: outboundBinding.configured ? 'verified_destination_addresses_only' : 'unconfigured',
+      outboundPlatformRecipientNote: outboundBinding.configured
+        ? 'Cloudflare send_email can only deliver to Email Routing destination addresses verified on this account.'
+        : '',
       authMode: summarizeCloudflareAuthMode(auth),
       authConfigured: auth.configured,
       authFile: auth.usingAuthFile ? authFile : '',
@@ -298,6 +341,17 @@ function printStatusSummary(summary, asJson = false) {
   if (summary.cloudflare.publicWebhook) {
     console.log(`Bridge webhook: ${summary.cloudflare.publicWebhook}`);
   }
+  if (summary.cloudflare.outboundBinding?.configured) {
+    const binding = summary.cloudflare.outboundBinding;
+    const recipientsLabel = binding.recipientMode === 'unrestricted'
+      ? 'unrestricted'
+      : binding.recipientRestrictions.join(', ');
+    console.log(`Outbound binding recipients: ${recipientsLabel}`);
+    if (binding.senderRestricted) {
+      console.log(`Outbound binding senders: ${binding.senderRestrictions.join(', ')}`);
+    }
+    console.log(`Outbound platform rule: ${summary.cloudflare.outboundPlatformRecipientNote}`);
+  }
   console.log(`Desired route model: ${summary.cloudflare.desiredRouteModel}`);
   console.log(`Cloudflare auth: ${summary.cloudflare.authMode}`);
   if (summary.cloudflare.authFile) {
@@ -317,6 +371,13 @@ function printStatusSummary(summary, asJson = false) {
       console.log(`Live Cloudflare: ${summary.cloudflare.live.error}`);
     } else {
       console.log(`Live Cloudflare: status=${summary.cloudflare.live.settings.status || 'unknown'}, synced=${summary.cloudflare.live.settings.synced ? 'yes' : 'no'}, subaddressing=${summary.cloudflare.live.settings.supportSubaddress ? 'on' : 'off'}`);
+      if (summary.cloudflare.live.destinationAddresses?.length) {
+        console.log('\nDestination addresses:');
+        for (const address of summary.cloudflare.live.destinationAddresses) {
+          const status = trimString(address?.status) || (trimString(address?.verifiedAt) ? 'verified' : 'unverified');
+          console.log(`- ${address.email}: ${status}`);
+        }
+      }
       if (summary.cloudflare.live.missingLiteralWorkerAddresses.length) {
         console.log('\nMissing literal worker routes:');
         for (const address of summary.cloudflare.live.missingLiteralWorkerAddresses) {
@@ -403,7 +464,30 @@ async function lookupZone(auth, zone) {
   return {
     id: trimString(zoneRecord.id),
     name: trimString(zoneRecord.name) || zoneName,
+    accountId: trimString(zoneRecord?.account?.id),
   };
+}
+
+async function fetchDestinationAddresses(auth, accountId) {
+  const normalizedAccountId = trimString(accountId);
+  if (!normalizedAccountId) {
+    return [];
+  }
+  const result = await cloudflareRequest(auth, {
+    path: `/accounts/${normalizedAccountId}/email/routing/addresses`,
+  });
+  const addresses = Array.isArray(result) ? result : [];
+  return addresses
+    .map((record) => ({
+      id: trimString(record?.id),
+      email: trimString(record?.email).toLowerCase(),
+      status: trimString(record?.status) || (trimString(record?.verified) ? 'verified' : 'unverified'),
+      verifiedAt: trimString(record?.verified),
+      createdAt: trimString(record?.created),
+      modifiedAt: trimString(record?.modified),
+    }))
+    .filter((record) => record.email)
+    .sort((left, right) => left.email.localeCompare(right.email));
 }
 
 function literalRuleAddress(rule) {
@@ -465,6 +549,7 @@ async function fetchLiveCloudflareState({ zone = '', auth, desiredPlan }) {
   }
 
   const zoneRecord = await lookupZone(auth, normalizedZone);
+  const destinationAddresses = await fetchDestinationAddresses(auth, zoneRecord.accountId);
   const settings = await cloudflareRequest(auth, {
     path: `/zones/${zoneRecord.id}/email/routing`,
   });
@@ -492,8 +577,10 @@ async function fetchLiveCloudflareState({ zone = '', auth, desiredPlan }) {
     : [];
 
   return {
+    accountId: zoneRecord.accountId,
     zoneId: zoneRecord.id,
     zoneName: zoneRecord.name,
+    destinationAddresses,
     settings: {
       enabled: settings?.enabled === true,
       status: trimString(settings?.status),
@@ -974,9 +1061,11 @@ export {
   buildDesiredCloudflarePlan,
   buildGuestMailboxAddress,
   buildStatusSummary,
+  enrichStatusWithLiveCloudflareState,
   findLiteralRule,
   literalRuleAddress,
   loadCloudflareAuth,
   ruleTargetsWorker,
+  summarizeSendEmailBinding,
   syncCloudflareRouting,
 };
