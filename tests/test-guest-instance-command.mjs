@@ -87,6 +87,10 @@ assert.equal(parseArgs(['create-trial', '--json']).command, 'create');
 assert.equal(parseArgs(['links']).command, 'links');
 assert.equal(parseArgs(['links', 'trial24', '--check']).name, 'trial24');
 assert.equal(parseArgs(['links', 'trial24', '--check']).check, true);
+assert.equal(parseArgs(['report']).command, 'report');
+assert.equal(parseArgs(['report', 'trial24', '--output-dir', '/tmp/report']).name, 'trial24');
+assert.equal(parseArgs(['report', '--send', '--send-json']).send, true);
+assert.equal(parseArgs(['report', '--send', '--send-json']).sendJson, true);
 
 const formattedLinks = formatGuestInstanceLinks([
   {
@@ -566,7 +570,7 @@ try {
   assert.equal(linksOutput[0].mainlandAccessUrl, 'https://jojotry.nat100.top/trial24/?token=abc123');
   assert.equal(linksOutput[0].localAccessUrl, 'http://127.0.0.1:7711/?token=abc123');
 
-  const singleLinksResult = spawnSync('node', ['cli.js', 'guest-instance', 'links', 'trial24', '--json'], {
+const singleLinksResult = spawnSync('node', ['cli.js', 'guest-instance', 'links', 'trial24', '--json'], {
     cwd: repoRoot,
     encoding: 'utf8',
     env: {
@@ -580,6 +584,143 @@ try {
   assert.equal(singleLinksOutput.accessUrl, 'https://trial24.example.com/?token=abc123');
 } finally {
   rmSync(linksSandboxHome, { recursive: true, force: true });
+}
+
+const reportSandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-report-'));
+try {
+  const configDir = join(reportSandboxHome, '.config', 'remotelab');
+  const outputDir = join(reportSandboxHome, '.remotelab', 'reports');
+  const trialRoot = join(reportSandboxHome, '.remotelab', 'instances', 'trial24');
+  const intakeRoot = join(reportSandboxHome, '.remotelab', 'instances', 'intake1');
+  const emptyRoot = join(reportSandboxHome, '.remotelab', 'instances', 'trial25');
+  const trialConfigDir = join(trialRoot, 'config');
+  const intakeConfigDir = join(intakeRoot, 'config');
+  const emptyConfigDir = join(emptyRoot, 'config');
+  mkdirSync(configDir, { recursive: true });
+  mkdirSync(trialConfigDir, { recursive: true });
+  mkdirSync(intakeConfigDir, { recursive: true });
+  mkdirSync(emptyConfigDir, { recursive: true });
+
+  writeFileSync(join(configDir, 'guest-instance-defaults.json'), JSON.stringify({
+    mainlandBaseUrl: 'https://jojotry.nat100.top',
+  }, null, 2));
+  writeFileSync(join(configDir, 'guest-instances.json'), JSON.stringify([
+    {
+      name: 'trial24',
+      label: 'com.chatserver.trial24',
+      port: 7711,
+      hostname: 'trial24.example.com',
+      instanceRoot: trialRoot,
+      configDir: trialConfigDir,
+      memoryDir: join(trialRoot, 'memory'),
+      authFile: join(trialConfigDir, 'auth.json'),
+      publicBaseUrl: 'https://trial24.example.com',
+      localBaseUrl: 'http://127.0.0.1:7711',
+      createdAt: '2026-03-26T14:56:25.700Z',
+    },
+    {
+      name: 'intake1',
+      label: 'com.chatserver.intake1',
+      port: 7703,
+      hostname: 'intake1.example.com',
+      instanceRoot: intakeRoot,
+      configDir: intakeConfigDir,
+      memoryDir: join(intakeRoot, 'memory'),
+      authFile: join(intakeConfigDir, 'auth.json'),
+      publicBaseUrl: 'https://intake1.example.com',
+      localBaseUrl: 'http://127.0.0.1:7703',
+      createdAt: '2026-03-25T10:00:00.000Z',
+    },
+    {
+      name: 'trial25',
+      label: 'com.chatserver.trial25',
+      port: 7712,
+      hostname: 'trial25.example.com',
+      instanceRoot: emptyRoot,
+      configDir: emptyConfigDir,
+      memoryDir: join(emptyRoot, 'memory'),
+      authFile: join(emptyConfigDir, 'auth.json'),
+      publicBaseUrl: 'https://trial25.example.com',
+      localBaseUrl: 'http://127.0.0.1:7712',
+      createdAt: '2026-03-20T10:00:00.000Z',
+    },
+  ], null, 2));
+
+  writeFileSync(join(trialConfigDir, 'auth.json'), JSON.stringify({ token: 'trial-token' }, null, 2));
+  writeFileSync(join(intakeConfigDir, 'auth.json'), JSON.stringify({ token: 'intake-token' }, null, 2));
+  writeFileSync(join(emptyConfigDir, 'auth.json'), JSON.stringify({ token: 'empty-token' }, null, 2));
+
+  writeFileSync(join(trialConfigDir, 'auth-sessions.json'), JSON.stringify({ a: {}, b: {} }, null, 2));
+  writeFileSync(join(intakeConfigDir, 'auth-sessions.json'), JSON.stringify([{ id: 'auth1' }], null, 2));
+  writeFileSync(join(emptyConfigDir, 'auth-sessions.json'), JSON.stringify([], null, 2));
+
+  writeFileSync(join(trialConfigDir, 'chat-sessions.json'), JSON.stringify([
+    {
+      id: 'sess-trial-1',
+      createdAt: '2026-03-26T15:00:00.000Z',
+      updatedAt: '2026-03-27T15:23:07.503Z',
+      name: 'Trial 24 session 1',
+    },
+    {
+      id: 'sess-trial-2',
+      createdAt: '2026-03-27T16:00:00.000Z',
+      updatedAt: '2026-03-27T18:10:00.000Z',
+      name: 'Trial 24 session 2',
+    },
+  ], null, 2));
+  writeFileSync(join(intakeConfigDir, 'chat-sessions.json'), JSON.stringify([], null, 2));
+  writeFileSync(join(emptyConfigDir, 'chat-sessions.json'), JSON.stringify([], null, 2));
+
+  const reportResult = spawnSync('node', ['cli.js', 'guest-instance', 'report', '--json', '--output-dir', outputDir], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: reportSandboxHome,
+    },
+  });
+  assert.equal(reportResult.status, 0, reportResult.stderr || reportResult.stdout);
+  const reportOutput = JSON.parse(reportResult.stdout);
+  assert.equal(reportOutput.summary.totalCount, 3);
+  assert.equal(reportOutput.summary.occupiedCount, 1);
+  assert.equal(reportOutput.summary.openedCount, 1);
+  assert.equal(reportOutput.summary.emptyCount, 1);
+  assert.equal(reportOutput.summary.topActiveNames[0], 'trial24');
+  assert.deepEqual(reportOutput.summary.emptyNames, ['trial25']);
+
+  const trial24 = reportOutput.instances.find((entry) => entry.name === 'trial24');
+  const intake1 = reportOutput.instances.find((entry) => entry.name === 'intake1');
+  const trial25 = reportOutput.instances.find((entry) => entry.name === 'trial25');
+  assert.equal(trial24.status, 'active');
+  assert.equal(trial24.sessionCount, 2);
+  assert.equal(trial24.authSessionCount, 2);
+  assert.equal(trial24.bestAccessUrl, 'https://trial24.example.com/?token=trial-token');
+  assert.equal(intake1.status, 'opened');
+  assert.equal(intake1.sessionCount, 0);
+  assert.equal(intake1.authSessionCount, 1);
+  assert.equal(trial25.status, 'empty');
+
+  assert.match(readFileSync(reportOutput.markdownPath, 'utf8'), /# Guest Instance Usage Report/);
+  assert.match(readFileSync(reportOutput.markdownPath, 'utf8'), /\| trial24 \| active \|/);
+  assert.match(readFileSync(reportOutput.markdownPath, 'utf8'), /\[open\]\(https:\/\/trial24\.example\.com\/\?token=trial-token\)/);
+  assert.match(readFileSync(reportOutput.csvPath, 'utf8'), /trial24,active,recent activity,7711,2,2/);
+  assert.match(readFileSync(reportOutput.jsonPath, 'utf8'), /"scope": "all"/);
+
+  const singleReportResult = spawnSync('node', ['cli.js', 'guest-instance', 'report', 'intake1', '--json', '--output-dir', outputDir], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: reportSandboxHome,
+    },
+  });
+  assert.equal(singleReportResult.status, 0, singleReportResult.stderr || singleReportResult.stdout);
+  const singleReportOutput = JSON.parse(singleReportResult.stdout);
+  assert.equal(singleReportOutput.scope, 'intake1');
+  assert.equal(singleReportOutput.instances.length, 1);
+  assert.equal(singleReportOutput.instances[0].name, 'intake1');
+} finally {
+  rmSync(reportSandboxHome, { recursive: true, force: true });
 }
 
 console.log('test-guest-instance-command: ok');
