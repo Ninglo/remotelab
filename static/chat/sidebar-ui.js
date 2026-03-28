@@ -54,13 +54,27 @@ newSessionBtn.addEventListener("click", () => {
 });
 
 // ---- Attachment handling ----
+function createComposerAttachmentLocalId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `cattach_${crypto.randomUUID()}`;
+  }
+  if (typeof createRequestId === "function") {
+    return `cattach_${createRequestId()}`;
+  }
+  return `cattach_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function buildPendingAttachment(file) {
+  const shouldTrackUpload = typeof shouldUseDirectComposerAssetUploads === "function"
+    && shouldUseDirectComposerAssetUploads();
   return {
+    localId: createComposerAttachmentLocalId(),
     file,
     originalName: typeof file?.name === "string" ? file.name : "",
     mimeType: file.type || "application/octet-stream",
     ...(Number.isFinite(file?.size) ? { sizeBytes: file.size } : {}),
     objectUrl: URL.createObjectURL(file),
+    ...(shouldTrackUpload ? { uploadState: "queued" } : {}),
   };
 }
 
@@ -71,13 +85,51 @@ async function addAttachmentFiles(files) {
   if (!currentSessionId) {
     return;
   }
+  const pendingAttachments = Array.from(files || [], (file) => buildPendingAttachment(file));
   if (typeof addComposerAttachmentsState === "function") {
     addComposerAttachmentsState(
-      Array.from(files || [], (file) => buildPendingAttachment(file)),
+      pendingAttachments,
       { sessionId: currentSessionId },
     );
   }
   renderImagePreviews();
+  const eagerUploadLocalIds = pendingAttachments
+    .filter((attachment) => attachment?.uploadState === "queued")
+    .map((attachment) => attachment?.localId)
+    .filter((localId) => typeof localId === "string" && localId);
+  if (typeof ensureComposerAttachmentUploads === "function" && eagerUploadLocalIds.length > 0) {
+    void ensureComposerAttachmentUploads(currentSessionId, {
+      localIds: eagerUploadLocalIds,
+    }).catch(() => {});
+  }
+}
+
+function getComposerAttachmentUploadMeta(attachment) {
+  switch (attachment?.uploadState) {
+    case "queued":
+      return {
+        badgeClassName: "is-queued",
+        label: t("compose.attachment.queued"),
+      };
+    case "uploading":
+      return {
+        badgeClassName: "is-uploading",
+        label: t("compose.attachment.uploading"),
+      };
+    case "uploaded":
+      return {
+        badgeClassName: "is-uploaded",
+        label: t("compose.attachment.uploaded"),
+      };
+    case "failed":
+      return {
+        badgeClassName: "is-failed",
+        label: t("compose.attachment.failed"),
+        title: attachment?.uploadError || t("compose.attachment.failed"),
+      };
+    default:
+      return null;
+  }
 }
 
 function renderImagePreviews() {
@@ -100,6 +152,10 @@ function renderImagePreviews() {
     const item = document.createElement("div");
     item.className = "img-preview-item";
     const previewNode = createComposerAttachmentPreviewNode(img);
+    const uploadMeta = getComposerAttachmentUploadMeta(img);
+    if (uploadMeta?.badgeClassName) {
+      item.classList.add(uploadMeta.badgeClassName);
+    }
     const removeBtn = document.createElement("button");
     removeBtn.className = "remove-img";
     removeBtn.type = "button";
@@ -109,7 +165,12 @@ function renderImagePreviews() {
     removeBtn.disabled = attachmentsLocked;
     removeBtn.onclick = () => {
       if (attachmentsLocked) return;
-      URL.revokeObjectURL(img.objectUrl);
+      if (typeof cancelComposerAttachmentUpload === "function" && img?.localId) {
+        cancelComposerAttachmentUpload(currentSessionId, img.localId);
+      }
+      if (img?.objectUrl) {
+        URL.revokeObjectURL(img.objectUrl);
+      }
       if (typeof removeComposerAttachmentState === "function") {
         removeComposerAttachmentState(i, { sessionId: currentSessionId });
       }
@@ -117,6 +178,27 @@ function renderImagePreviews() {
     };
     if (previewNode) {
       item.appendChild(previewNode);
+    }
+    if (uploadMeta) {
+      const statusBadge = document.createElement("div");
+      statusBadge.className = `attachment-upload-badge ${uploadMeta.badgeClassName}`;
+      statusBadge.textContent = uploadMeta.label;
+      if (uploadMeta.title) {
+        statusBadge.title = uploadMeta.title;
+      }
+      item.appendChild(statusBadge);
+    }
+    if (!attachmentsLocked && img?.uploadState === "failed" && img?.localId && typeof retryComposerAttachmentUpload === "function") {
+      const retryBtn = document.createElement("button");
+      retryBtn.className = "retry-img-upload";
+      retryBtn.type = "button";
+      retryBtn.textContent = "↻";
+      retryBtn.title = t("action.retryUpload");
+      retryBtn.setAttribute("aria-label", t("action.retryUpload"));
+      retryBtn.onclick = () => {
+        void retryComposerAttachmentUpload(currentSessionId, img.localId).catch(() => {});
+      };
+      item.appendChild(retryBtn);
     }
     item.appendChild(removeBtn);
     imgPreviewStrip.appendChild(item);

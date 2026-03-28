@@ -59,7 +59,100 @@ function shouldUseDirectComposerAssetUploads() {
     && typeof fetchJsonOrRedirect === "function";
 }
 
-async function uploadComposerAttachmentToAsset(sessionId, attachment) {
+const COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY = 3;
+const composerAttachmentUploadQueue = [];
+const composerAttachmentUploadPromises = new Map();
+const composerAttachmentUploadControllers = new Map();
+let activeComposerAttachmentUploads = 0;
+
+function createComposerAttachmentAbortError() {
+  const error = new Error("Attachment upload cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function buildComposerAttachmentUploadKey(sessionId, localId) {
+  return `${sessionId || ""}:${localId || ""}`;
+}
+
+function normalizeComposerAttachmentUploadState(value) {
+  switch (value) {
+    case "uploading":
+    case "uploaded":
+    case "failed":
+      return value;
+    default:
+      return "queued";
+  }
+}
+
+function refreshComposerAttachmentUi(sessionId = currentSessionId) {
+  if (!sessionId || sessionId !== currentSessionId) {
+    return;
+  }
+  if (typeof renderImagePreviews === "function") {
+    renderImagePreviews();
+  }
+  syncComposerPendingUi();
+}
+
+function getComposerAttachmentByLocalId(sessionId, localId) {
+  if (!sessionId || typeof localId !== "string" || !localId) {
+    return null;
+  }
+  return getComposerAttachmentsSnapshot(sessionId).find((attachment) => attachment?.localId === localId) || null;
+}
+
+function updateComposerAttachmentByLocalId(sessionId, localId, updater) {
+  if (!sessionId || typeof localId !== "string" || !localId || typeof updater !== "function") {
+    return null;
+  }
+  const attachments = getComposerAttachmentsSnapshot(sessionId);
+  let nextAttachment = null;
+  let changed = false;
+  let found = false;
+  const nextAttachments = attachments
+    .map((attachment) => {
+      if (attachment?.localId !== localId) {
+        return attachment;
+      }
+      found = true;
+      const updated = updater(attachment);
+      nextAttachment = updated && typeof updated === "object" ? updated : null;
+      if (updated !== attachment) {
+        changed = true;
+      }
+      return updated;
+    })
+    .filter(Boolean);
+  if (!found) {
+    return null;
+  }
+  if (changed) {
+    replaceComposerAttachmentsSnapshot(sessionId, nextAttachments);
+    refreshComposerAttachmentUi(sessionId);
+  }
+  return nextAttachment;
+}
+
+function cancelComposerAttachmentUpload(sessionId, localId) {
+  const key = buildComposerAttachmentUploadKey(sessionId, localId);
+  const queuedIndex = composerAttachmentUploadQueue.findIndex((job) => job.key === key);
+  if (queuedIndex >= 0) {
+    const [job] = composerAttachmentUploadQueue.splice(queuedIndex, 1);
+    composerAttachmentUploadPromises.delete(key);
+    job.reject(createComposerAttachmentAbortError());
+    return true;
+  }
+  const controller = composerAttachmentUploadControllers.get(key);
+  if (controller) {
+    controller.abort();
+    return true;
+  }
+  return false;
+}
+
+async function uploadComposerAttachmentToAsset(sessionId, attachment, { signal } = {}) {
   const file = attachment?.file;
   if (!file || typeof file.arrayBuffer !== "function") {
     return attachment;
@@ -90,6 +183,7 @@ async function uploadComposerAttachmentToAsset(sessionId, attachment) {
     method: upload.method || "PUT",
     headers: upload.headers || {},
     body: file,
+    ...(signal ? { signal } : {}),
   });
   if (!uploadResponse.ok) {
     throw new Error(`Attachment upload failed (${uploadResponse.status})`);
@@ -109,11 +203,174 @@ async function uploadComposerAttachmentToAsset(sessionId, attachment) {
     : asset;
   return {
     assetId: finalizedAsset.id,
+    ...(attachment?.localId ? { localId: attachment.localId } : {}),
     originalName: finalizedAsset.originalName || attachment?.originalName || file.name || "attachment",
     mimeType: finalizedAsset.mimeType || attachment?.mimeType || file.type || "application/octet-stream",
     ...(Number.isFinite(finalizedAsset?.sizeBytes) ? { sizeBytes: finalizedAsset.sizeBytes } : Number.isFinite(file.size) ? { sizeBytes: file.size } : {}),
+    ...(finalizedAsset?.downloadUrl ? { downloadUrl: finalizedAsset.downloadUrl } : {}),
+    ...(attachment?.renderAs === "file" ? { renderAs: "file" } : {}),
     ...(attachment?.objectUrl ? { objectUrl: attachment.objectUrl } : {}),
   };
+}
+
+async function runComposerAttachmentUpload(sessionId, localId) {
+  const attachment = getComposerAttachmentByLocalId(sessionId, localId);
+  if (!attachment) {
+    return null;
+  }
+  if (attachment.assetId) {
+    return attachment;
+  }
+  if (!attachment.file || typeof attachment.file.arrayBuffer !== "function") {
+    throw new Error("Attachment file is unavailable");
+  }
+
+  updateComposerAttachmentByLocalId(sessionId, localId, (currentAttachment) => currentAttachment
+    ? {
+      ...currentAttachment,
+      uploadState: "uploading",
+      uploadError: "",
+    }
+    : currentAttachment);
+
+  const key = buildComposerAttachmentUploadKey(sessionId, localId);
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  if (controller) {
+    composerAttachmentUploadControllers.set(key, controller);
+  }
+
+  try {
+    const currentAttachment = getComposerAttachmentByLocalId(sessionId, localId);
+    if (!currentAttachment) {
+      throw createComposerAttachmentAbortError();
+    }
+    const uploadedAttachment = await uploadComposerAttachmentToAsset(sessionId, currentAttachment, {
+      signal: controller?.signal,
+    });
+    return updateComposerAttachmentByLocalId(sessionId, localId, (nextAttachment) => nextAttachment
+      ? {
+        ...nextAttachment,
+        ...uploadedAttachment,
+        file: undefined,
+        uploadState: "uploaded",
+        uploadError: "",
+      }
+      : nextAttachment);
+  } catch (error) {
+    const latestAttachment = getComposerAttachmentByLocalId(sessionId, localId);
+    if (latestAttachment) {
+      updateComposerAttachmentByLocalId(sessionId, localId, (nextAttachment) => nextAttachment
+        ? {
+          ...nextAttachment,
+          uploadState: error?.name === "AbortError"
+            ? "queued"
+            : "failed",
+          uploadError: error?.name === "AbortError"
+            ? nextAttachment?.uploadError || ""
+            : (error?.message || "Attachment upload failed"),
+        }
+        : nextAttachment);
+    }
+    throw error;
+  } finally {
+    composerAttachmentUploadControllers.delete(key);
+  }
+}
+
+function pumpComposerAttachmentUploads() {
+  while (activeComposerAttachmentUploads < COMPOSER_ATTACHMENT_UPLOAD_CONCURRENCY && composerAttachmentUploadQueue.length > 0) {
+    const job = composerAttachmentUploadQueue.shift();
+    if (!job) {
+      continue;
+    }
+    const attachment = getComposerAttachmentByLocalId(job.sessionId, job.localId);
+    if (!attachment || attachment.assetId || !attachment.file) {
+      composerAttachmentUploadPromises.delete(job.key);
+      job.resolve(attachment || null);
+      continue;
+    }
+    activeComposerAttachmentUploads += 1;
+    void (async () => {
+      try {
+        job.resolve(await runComposerAttachmentUpload(job.sessionId, job.localId));
+      } catch (error) {
+        job.reject(error);
+      } finally {
+        composerAttachmentUploadPromises.delete(job.key);
+        activeComposerAttachmentUploads = Math.max(0, activeComposerAttachmentUploads - 1);
+        pumpComposerAttachmentUploads();
+      }
+    })();
+  }
+}
+
+function scheduleComposerAttachmentUpload(sessionId, localId) {
+  const key = buildComposerAttachmentUploadKey(sessionId, localId);
+  const existingPromise = composerAttachmentUploadPromises.get(key);
+  if (existingPromise) {
+    return existingPromise;
+  }
+  const promise = new Promise((resolve, reject) => {
+    composerAttachmentUploadQueue.push({
+      sessionId,
+      localId,
+      key,
+      resolve,
+      reject,
+    });
+    pumpComposerAttachmentUploads();
+  });
+  composerAttachmentUploadPromises.set(key, promise);
+  return promise;
+}
+
+function collectComposerAttachmentUploadPromises(sessionId, { localIds = [], includeFailed = false } = {}) {
+  if (!sessionId || !shouldUseDirectComposerAssetUploads()) {
+    return [];
+  }
+  const trackedIds = new Set(
+    (Array.isArray(localIds) ? localIds : [])
+      .filter((value) => typeof value === "string" && value),
+  );
+  const attachments = getComposerAttachmentsSnapshot(sessionId);
+  const promises = [];
+  for (const attachment of attachments) {
+    if (!(attachment && typeof attachment === "object")) continue;
+    if (!attachment.file || attachment.assetId) continue;
+    const localId = typeof attachment.localId === "string" ? attachment.localId : "";
+    if (!localId) continue;
+    if (trackedIds.size > 0 && !trackedIds.has(localId)) continue;
+    const uploadState = normalizeComposerAttachmentUploadState(attachment.uploadState);
+    if (uploadState === "failed" && !includeFailed) continue;
+    if (uploadState === "uploaded") continue;
+    promises.push(scheduleComposerAttachmentUpload(sessionId, localId));
+  }
+  return promises;
+}
+
+async function ensureComposerAttachmentUploads(sessionId, options = {}) {
+  const uploads = collectComposerAttachmentUploadPromises(sessionId, options);
+  if (uploads.length === 0) {
+    return [];
+  }
+  return Promise.all(uploads);
+}
+
+async function retryComposerAttachmentUpload(sessionId, localId) {
+  const attachment = updateComposerAttachmentByLocalId(sessionId, localId, (currentAttachment) => currentAttachment
+    ? {
+      ...currentAttachment,
+      uploadState: "queued",
+      uploadError: "",
+    }
+    : currentAttachment);
+  if (!attachment || !attachment.file) {
+    throw new Error("Attachment file is unavailable");
+  }
+  return ensureComposerAttachmentUploads(sessionId, {
+    localIds: [localId],
+    includeFailed: true,
+  });
 }
 
 async function prepareComposerAttachmentsForSend(sessionId, attachments) {
@@ -121,6 +378,8 @@ async function prepareComposerAttachmentsForSend(sessionId, attachments) {
     return attachments;
   }
 
+  const trackedLocalIds = [];
+  const trackedAttachmentPositions = [];
   const prepared = [];
   for (const attachment of attachments || []) {
     if (!(attachment && typeof attachment === "object")) continue;
@@ -128,9 +387,49 @@ async function prepareComposerAttachmentsForSend(sessionId, attachments) {
       prepared.push(attachment);
       continue;
     }
+    if (typeof attachment.localId === "string" && attachment.localId) {
+      trackedLocalIds.push(attachment.localId);
+      trackedAttachmentPositions.push({
+        index: prepared.length,
+        localId: attachment.localId,
+      });
+      prepared.push(null);
+      continue;
+    }
     prepared.push(await uploadComposerAttachmentToAsset(sessionId, attachment));
   }
-  return prepared;
+
+  if (trackedLocalIds.length > 0) {
+    await ensureComposerAttachmentUploads(sessionId, { localIds: trackedLocalIds });
+    const attachmentsByLocalId = new Map(
+      getComposerAttachmentsSnapshot(sessionId)
+        .filter((attachment) => attachment?.localId)
+        .map((attachment) => [attachment.localId, attachment]),
+    );
+    for (const attachment of attachments || []) {
+      if (!(attachment && typeof attachment === "object")) continue;
+      if (!attachment.file || typeof attachment.assetId === "string") {
+        continue;
+      }
+      const localId = typeof attachment.localId === "string" ? attachment.localId : "";
+      if (!localId) continue;
+      const nextAttachment = attachmentsByLocalId.get(localId);
+      if (!nextAttachment) {
+        throw createComposerAttachmentAbortError();
+      }
+      if (!nextAttachment.assetId) {
+        throw new Error(nextAttachment.uploadError || "Attachment upload did not finish");
+      }
+    }
+    for (const trackedAttachment of trackedAttachmentPositions) {
+      const nextAttachment = attachmentsByLocalId.get(trackedAttachment.localId);
+      if (!nextAttachment?.assetId) {
+        throw new Error(nextAttachment?.uploadError || "Attachment upload did not finish");
+      }
+      prepared[trackedAttachment.index] = nextAttachment;
+    }
+  }
+  return prepared.filter(Boolean);
 }
 
 function hasPendingComposerSend() {
@@ -403,6 +702,7 @@ function sendMessage(existingRequestId) {
       if (ok) return;
     } catch (error) {
       console.error("Composer send failed:", error?.message || error);
+      outboundImages = getComposerAttachmentsSnapshot(sessionId);
     }
 
     const pendingSend = getComposerPendingSendSnapshot();

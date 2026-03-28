@@ -487,4 +487,94 @@ assert.equal(failedSendContext.msgInput.readOnly, false, 'failed sends should re
 assert.equal(failedSendContext.localStorage.getItem('draft_session-a'), 'retry this request', 'failed sends should put the draft back into durable storage for retry');
 assert.equal(failedSendContext.getComposerDraftTextState('session-a'), 'retry this request', 'failed sends should also restore the composer store draft for retry');
 
+const directUploadSendContext = createContext();
+const directUploadSendCalls = [];
+const directUploadFetchJsonCalls = [];
+directUploadSendContext.getBootstrapAssetUploads = () => ({
+  enabled: true,
+  directUpload: true,
+  provider: 'tos',
+});
+directUploadSendContext.fetch = async (url, options = {}) => {
+  if (url !== 'https://tos.example/upload') {
+    throw new Error(`Unexpected upload url: ${url}`);
+  }
+  assert.equal(options.method, 'PUT', 'direct upload should use PUT');
+  return {
+    ok: true,
+    status: 200,
+    headers: {
+      get(name) {
+        return String(name).toLowerCase() === 'etag' ? 'etag-direct-upload' : '';
+      },
+    },
+  };
+};
+directUploadSendContext.fetchJsonOrRedirect = async (url, options = {}) => {
+  directUploadFetchJsonCalls.push({ url, options });
+  if (url === '/api/assets/upload-intents') {
+    return {
+      asset: {
+        id: 'fasset_uploaded',
+        originalName: 'large-video.mov',
+        mimeType: 'video/quicktime',
+        sizeBytes: 18,
+        downloadUrl: '/api/assets/fasset_uploaded/download',
+      },
+      upload: {
+        method: 'PUT',
+        url: 'https://tos.example/upload',
+        headers: {
+          'Content-Type': 'video/quicktime',
+        },
+      },
+    };
+  }
+  if (url === '/api/assets/fasset_uploaded/finalize') {
+    return {
+      asset: {
+        id: 'fasset_uploaded',
+        originalName: 'large-video.mov',
+        mimeType: 'video/quicktime',
+        sizeBytes: 18,
+        downloadUrl: '/api/assets/fasset_uploaded/download',
+      },
+    };
+  }
+  throw new Error(`Unexpected fetchJsonOrRedirect call: ${url}`);
+};
+directUploadSendContext.dispatchAction = async (payload) => {
+  directUploadSendCalls.push(payload);
+  return true;
+};
+loadComposeContext(directUploadSendContext);
+directUploadSendContext.replaceComposerAttachmentsState(
+  [{
+    localId: 'cattach_test',
+    file: {
+      name: 'large-video.mov',
+      type: 'video/quicktime',
+      size: 18,
+      async arrayBuffer() {
+        return Buffer.from('direct-upload-body');
+      },
+    },
+    objectUrl: 'blob:large-video',
+    originalName: 'large-video.mov',
+    mimeType: 'video/quicktime',
+    sizeBytes: 18,
+    uploadState: 'queued',
+  }],
+  { sessionId: 'session-a' },
+);
+directUploadSendContext.sendMessage();
+await new Promise((resolve) => setTimeout(resolve, 0));
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(directUploadFetchJsonCalls.length, 2, 'direct-upload send should create an upload intent and finalize the uploaded asset');
+assert.equal(directUploadSendCalls.length, 1, 'direct-upload send should still dispatch exactly one message');
+assert.equal(directUploadSendCalls[0]?.images?.length, 1, 'direct-upload send should forward the uploaded attachment');
+assert.equal(directUploadSendCalls[0]?.images?.[0]?.assetId, 'fasset_uploaded', 'direct-upload send should submit the finalized asset id');
+assert.equal(Boolean(directUploadSendCalls[0]?.images?.[0]?.file), false, 'direct-upload send should not fall back to multipart file bytes');
+assert.equal(directUploadSendContext.getComposerAttachmentsState('session-a')[0]?.uploadState, 'uploaded', 'direct-upload send should persist the uploaded attachment state in the composer');
+
 console.log('test-chat-compose-draft: ok');

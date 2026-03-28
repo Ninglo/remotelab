@@ -271,6 +271,18 @@
   position: relative; width: 56px; height: 56px; border-radius: 7px;
   overflow: hidden; flex-shrink: 0; border: 1px solid var(--border);
 }
+.img-preview-item.is-queued {
+  border-color: var(--warning);
+}
+.img-preview-item.is-uploading {
+  border-color: var(--warning);
+}
+.img-preview-item.is-uploaded {
+  border-color: var(--success);
+}
+.img-preview-item.is-failed {
+  border-color: var(--issue);
+}
 .img-preview-item img,
 .img-preview-item video {
   width: 100%; height: 100%; object-fit: cover;
@@ -322,6 +334,51 @@
 }
 .img-preview-item .remove-img:hover {
   background: var(--image-remove-bg-hover);
+}
+.img-preview-item .attachment-upload-badge {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  max-width: calc(100% - 6px);
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(17, 17, 17, 0.78);
+  color: white;
+  font-size: 9px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.img-preview-item .attachment-upload-badge.is-uploaded {
+  background: color-mix(in srgb, var(--success) 82%, black);
+}
+.img-preview-item .attachment-upload-badge.is-failed {
+  background: color-mix(in srgb, var(--issue) 82%, black);
+}
+.img-preview-item .attachment-upload-badge.is-queued,
+.img-preview-item .attachment-upload-badge.is-uploading {
+  background: color-mix(in srgb, var(--warning) 82%, black);
+}
+.img-preview-item .retry-img-upload {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--issue) 82%, black);
+  color: white;
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.img-preview-item .retry-img-upload:hover {
+  background: var(--issue);
 }
 
 /* Add-more modal */

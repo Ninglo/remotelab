@@ -6,6 +6,7 @@ Current MVP scope:
 
 - browser / client asks RemoteLab for an upload intent
 - client uploads the file directly to object storage via presigned `PUT`
+- chat composer starts that direct upload as soon as the user picks the file, then sends only `assetId` references when the message is submitted
 - RemoteLab stores a session-bound file-asset record
 - session messages can attach that asset by `assetId`
 - the detached runner localizes the asset to local disk right before tool execution

@@ -44,17 +44,24 @@ function extractFunctionSource(source, functionName) {
   throw new Error(`Unable to extract ${functionName}`);
 }
 
+const createComposerAttachmentLocalIdSource = extractFunctionSource(sidebarUiSource, 'createComposerAttachmentLocalId');
 const buildPendingAttachmentSource = extractFunctionSource(sidebarUiSource, 'buildPendingAttachment');
 const addAttachmentFilesSource = extractFunctionSource(sidebarUiSource, 'addAttachmentFiles');
 
-function createHarness({ locked = false } = {}) {
+function createHarness({ locked = false, directUpload = false } = {}) {
   const state = {
     objectUrls: [],
     renderCalls: 0,
+    eagerUploadCalls: [],
   };
   const context = {
     console,
     currentSessionId: 'session-a',
+    crypto: {
+      randomUUID() {
+        return `uuid-${state.objectUrls.length + 1}`;
+      },
+    },
     URL: {
       createObjectURL(file) {
         const objectUrl = `blob:${file.name}`;
@@ -68,11 +75,19 @@ function createHarness({ locked = false } = {}) {
     hasPendingComposerSend() {
       return locked;
     },
+    shouldUseDirectComposerAssetUploads() {
+      return directUpload;
+    },
+    async ensureComposerAttachmentUploads(sessionId, options = {}) {
+      state.eagerUploadCalls.push({ sessionId, ...options });
+      return [];
+    },
   };
   context.globalThis = context;
   vm.runInNewContext(
     [
       composerStoreSource,
+      createComposerAttachmentLocalIdSource,
       buildPendingAttachmentSource,
       addAttachmentFilesSource,
       'globalThis.addAttachmentFiles = addAttachmentFiles;',
@@ -105,11 +120,18 @@ assert.deepEqual(
 );
 assert.equal(openHarness.state.objectUrls.length, 6, 'attachment picker should create a preview URL for every selected file');
 assert.equal(openHarness.state.renderCalls, 2, 'attachment picker should rerender after each batch');
+assert.equal(openHarness.state.eagerUploadCalls.length, 0, 'non-direct uploads should not start the eager upload queue');
 
 const lockedHarness = createHarness({ locked: true });
 await lockedHarness.context.addAttachmentFiles([...firstBatch, ...secondBatch]);
 assert.equal(lockedHarness.context.getComposerAttachmentsState('session-a').length, 0, 'attachment picker should ignore new files while a send is already pending');
 assert.equal(lockedHarness.state.objectUrls.length, 0, 'locked composer should not allocate preview URLs');
 assert.equal(lockedHarness.state.renderCalls, 0, 'locked composer should not rerender the preview strip');
+
+const directUploadHarness = createHarness({ directUpload: true });
+await directUploadHarness.context.addAttachmentFiles([{ name: 'video.mov', type: 'video/quicktime', size: 42 }]);
+assert.equal(directUploadHarness.context.getComposerAttachmentsState('session-a')[0]?.uploadState, 'queued', 'direct-upload attachments should enter the queued state immediately');
+assert.equal(directUploadHarness.state.eagerUploadCalls.length, 1, 'direct-upload mode should start the background upload immediately');
+assert.equal(directUploadHarness.state.eagerUploadCalls[0]?.localIds?.length, 1, 'background upload kickoff should target the queued attachment local id');
 
 console.log('test-chat-sidebar-attachments: ok');
