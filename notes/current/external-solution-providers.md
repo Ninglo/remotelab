@@ -5,6 +5,7 @@ Status: current working note as of 2026-03-28
 Companions:
 
 - `notes/current/knowledge-layers-and-connectors.md`
+- `notes/current/external-solution-providers-implementation-draft.md`
 - `notes/current/product-mainline.md`
 - `notes/current/user-feedback-log.md`
 

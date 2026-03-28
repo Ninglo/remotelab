@@ -11,6 +11,7 @@ Execution companions:
 - `notes/current/session-first-product-contraction.md`
 - `notes/current/knowledge-layers-and-connectors.md`
 - `notes/current/external-solution-providers.md`
+- `notes/current/external-solution-providers-implementation-draft.md`
 
 Evidence log: `notes/current/user-feedback-log.md`
 
@@ -53,6 +54,7 @@ Evidence log: `notes/current/user-feedback-log.md`
 - `notes/current/user-feedback-log.md` — running evidence log
 - `notes/current/knowledge-layers-and-connectors.md` — current working shape for base/domain/user knowledge plus shared connectors
 - `notes/current/external-solution-providers.md` — isolated fallback-provider shape for third-party domain search or solution sources
+- `notes/current/external-solution-providers-implementation-draft.md` — schema, router, and adapter boundary for the first swappable external solution provider
 - `notes/directional/product-vision.md` — durable product judgments and target-user framing
 - `README.md` / `README.zh.md` — user-facing product promise
 - `notes/current/session-main-flow-next-push.md` — near-term capability push
