@@ -2,7 +2,7 @@ import { readFile, readdir } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 
-import { CHAT_IMAGES_DIR } from '../lib/config.mjs';
+import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -271,7 +271,7 @@ export async function handleControlRoutes({
     const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
 
     try {
-      if (asset.storage?.provider === 'local') {
+      if (asset.storage?.provider === 'local' || (downloadRequested && FILE_ASSET_STORAGE_PROVIDER === 'tos')) {
         const localPath = await localizeFileAsset(asset);
         streamResponse(res, localPath, {
           'Content-Type': asset.mimeType || 'application/octet-stream',

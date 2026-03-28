@@ -31,6 +31,7 @@ import {
 const FILE_ASSET_ID_PATTERN = /^fasset_[a-f0-9]{24}$/;
 const runFileAssetMutation = createSerialTaskQueue();
 const CHAT_FILE_ASSET_OBJECTS_DIR = join(CHAT_FILE_ASSETS_DIR, 'objects');
+const FILE_ASSET_LOCALIZE_RETRY_DELAYS_MS = Object.freeze([250, 750, 1500]);
 const STORAGE_SIGNING_PROFILES = Object.freeze({
   s3: Object.freeze({
     algorithm: 'AWS4-HMAC-SHA256',
@@ -60,6 +61,10 @@ const STORAGE_SIGNING_PROFILES = Object.freeze({
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeString(value) {
@@ -356,10 +361,12 @@ function buildDownloadRoute(assetId, { attachment = false } = {}) {
 
 function buildStorageDownloadUrl(baseUrl, record, { attachment = false } = {}) {
   const url = new URL(buildStorageObjectUrl(baseUrl, record.storage.objectKey));
-  url.searchParams.set(
-    'response-content-disposition',
-    buildAttachmentContentDisposition(record.originalName, { attachment }),
-  );
+  if (FILE_ASSET_STORAGE_PROVIDER !== 'tos') {
+    url.searchParams.set(
+      'response-content-disposition',
+      buildAttachmentContentDisposition(record.originalName, { attachment }),
+    );
+  }
   return url.toString();
 }
 
@@ -508,12 +515,48 @@ export async function localizeFileAsset(recordOrId) {
     return normalizeString(updated?.localizedPath) || localPath;
   }
 
-  const direct = await buildFileAssetDirectUrl(record, {
-    expiresInSeconds: Math.max(FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS, 60 * 60),
-  });
-  const response = await fetch(direct.url, { method: 'GET', redirect: 'follow' });
-  if (!response.ok || !response.body) {
-    throw createError(`Failed to download file asset: ${record.id}`, 'FILE_ASSET_DOWNLOAD_FAILED', 502);
+  let response = null;
+  let downloadFailure = null;
+  for (let attempt = 0; attempt <= FILE_ASSET_LOCALIZE_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const direct = await buildFileAssetDirectUrl(record, {
+        expiresInSeconds: Math.max(FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS, 60 * 60),
+      });
+      response = await fetch(direct.url, { method: 'GET', redirect: 'follow' });
+      if (response.ok && response.body) {
+        downloadFailure = null;
+        break;
+      }
+      const detail = response.ok
+        ? 'empty response body'
+        : `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+      await response.body?.cancel?.().catch(() => {});
+      response = null;
+      downloadFailure = createError(
+        `Failed to download file asset: ${record.id} (${detail})`,
+        'FILE_ASSET_DOWNLOAD_FAILED',
+        502,
+      );
+    } catch (error) {
+      response = null;
+      const message = normalizeString(error?.message) || 'request failed';
+      downloadFailure = createError(
+        `Failed to download file asset: ${record.id} (${message})`,
+        'FILE_ASSET_DOWNLOAD_FAILED',
+        502,
+      );
+    }
+
+    const retryDelayMs = FILE_ASSET_LOCALIZE_RETRY_DELAYS_MS[attempt];
+    if (!retryDelayMs) break;
+    console.warn(
+      `[file-assets] Retrying localization download for ${record.id} after ${retryDelayMs}ms: ${downloadFailure?.message || 'unknown failure'}`,
+    );
+    await sleep(retryDelayMs);
+  }
+
+  if (!response?.ok || !response.body) {
+    throw downloadFailure || createError(`Failed to download file asset: ${record.id}`, 'FILE_ASSET_DOWNLOAD_FAILED', 502);
   }
 
   await ensureDir(CHAT_FILE_ASSET_CACHE_DIR);

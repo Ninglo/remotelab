@@ -357,6 +357,8 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 
 ### TOS Presign Validation Should Match The Consumer Method (2026-03-08)
 - A `tosutil presign` URL can be valid for normal `GET` downloads while returning `403` to a local `HEAD` request; validate with `GET` if the downstream service also performs a normal fetch.
+- On Volcengine TOS, presigned `GET` URLs can also break with `SignatureDoesNotMatch` when `response-content-disposition` is added as a signed query override, even though the same object downloads fine without that parameter.
+- For TOS-backed RemoteLab file assets, keep direct URLs as plain object downloads and, if the user explicitly requests an attachment filename, stream that download through the chat server so `Content-Disposition` can be set without relying on TOS query overrides.
 
 ### Review Drafts Should Not Mark Every Micro-Cut (2026-03-08)
 - In transcript-driven video rough-cut workflows, a "kept content" review draft becomes unreadable if every same-utterance stutter trim is rendered as an explicit join marker.

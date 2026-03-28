@@ -127,8 +127,13 @@ function readCapturedPrompts(promptFile) {
     .filter(Boolean);
 }
 
-function startMockStorageServer(port) {
+function startMockStorageServer(port, { transientGetFailures = 0 } = {}) {
   const objects = new Map();
+  const stats = {
+    getCount: 0,
+    transientGetFailuresServed: 0,
+  };
+  let remainingTransientGetFailures = Math.max(0, Number.parseInt(String(transientGetFailures || 0), 10) || 0);
   const server = http.createServer((req, res) => {
     const parsed = new URL(req.url || '/', `http://127.0.0.1:${port}`);
     const key = parsed.pathname;
@@ -147,10 +152,18 @@ function startMockStorageServer(port) {
     }
 
     if (req.method === 'GET') {
+      stats.getCount += 1;
       const object = objects.get(key);
       if (!object) {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not found');
+        return;
+      }
+      if (remainingTransientGetFailures > 0) {
+        remainingTransientGetFailures -= 1;
+        stats.transientGetFailuresServed += 1;
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Transient not found');
         return;
       }
       res.writeHead(200, {
@@ -167,7 +180,7 @@ function startMockStorageServer(port) {
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', () => resolve({ server, objects }));
+    server.listen(port, '127.0.0.1', () => resolve({ server, objects, stats }));
   });
 }
 
@@ -181,6 +194,7 @@ async function startServer({ home, port, promptFile, storagePort }) {
       SECURE_COOKIES: '0',
       REMOTELAB_FAKE_PROMPT_FILE: promptFile,
       REMOTELAB_ASSET_STORAGE_BASE_URL: `http://127.0.0.1:${storagePort}/bucket`,
+      REMOTELAB_ASSET_STORAGE_PROVIDER: 'tos',
       REMOTELAB_ASSET_STORAGE_REGION: 'auto',
       REMOTELAB_ASSET_STORAGE_ACCESS_KEY_ID: 'test-access-key',
       REMOTELAB_ASSET_STORAGE_SECRET_ACCESS_KEY: 'test-secret-key',
@@ -232,7 +246,7 @@ try {
   const { home, promptFile } = setupTempHome();
   const port = randomPort();
   const storagePort = randomPort();
-  const { server: storageServer, objects } = await startMockStorageServer(storagePort);
+  const { server: storageServer, objects, stats } = await startMockStorageServer(storagePort, { transientGetFailures: 2 });
   const chatServer = await startServer({ home, port, promptFile, storagePort });
 
   try {
@@ -288,6 +302,8 @@ try {
       const prompts = readCapturedPrompts(promptFile);
       return prompts.find((prompt) => prompt.includes('notes.txt') && prompt.includes('file-assets-cache')) || false;
     }, 'runner prompt with localized offloaded upload');
+    assert.equal(stats.transientGetFailuresServed, 2, 'runner localization should absorb transient storage 404s');
+    assert.ok(stats.getCount >= 3, 'runner localization should retry storage downloads before succeeding');
     assert.match(
       capturedPrompt,
       /notes\.txt -> .*file-assets-cache\/fasset_[a-f0-9]{24}\.txt/,
@@ -306,6 +322,19 @@ try {
     const redirected = await fetch(redirectUrl, { method: 'GET' });
     assert.equal(redirected.status, 200, 'redirected object-storage download should succeed');
     assert.equal(await redirected.text(), 'upload-through-host', 'redirected object-storage download should return the uploaded attachment bytes');
+
+    const attachmentDownloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${userMessage.images[0].assetId}/download?download=1`, {
+      method: 'GET',
+      headers: { Cookie: cookie },
+      redirect: 'manual',
+    });
+    assert.equal(attachmentDownloadRes.status, 200, 'TOS attachment downloads should stream through the chat server');
+    assert.match(
+      String(attachmentDownloadRes.headers.get('content-disposition') || ''),
+      /^attachment; filename="notes\.txt"/,
+      'attachment download should preserve the original filename',
+    );
+    assert.equal(await attachmentDownloadRes.text(), 'upload-through-host', 'attachment download should stream the stored object bytes');
   } finally {
     await stopServer(chatServer);
     await new Promise((resolve) => storageServer.close(resolve));
