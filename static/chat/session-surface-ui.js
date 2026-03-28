@@ -145,7 +145,7 @@ function isSessionCompleteAndReviewed(session) {
 function renderSessionLabelHtml(session) {
   if (!session?.label) return "";
   const labelId = session.label;
-  const labelDefs = window._sessionLabelDefs || [];
+  const labelDefs = Array.isArray(window._sessionLabelDefs) ? window._sessionLabelDefs : [];
   const def = labelDefs.find((l) => l.id === labelId);
   const name = def ? def.name : labelId;
   const color = def ? def.color : "var(--text-muted)";
