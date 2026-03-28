@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
 const expectedOutputs = Array.from({ length: 5 }, (_, index) => ({
-  name: `rough cut ${index + 1}.mp4`,
+  name: index === 0 ? '演示结果 1.mp4' : `rough cut ${index + 1}.mp4`,
   content: `rendered-video-asset-${index + 1}`,
 }));
 
@@ -243,12 +243,17 @@ try {
     assert.equal(assetRes.status, 200, 'published result asset metadata should load');
     assert.equal(assetRes.json.asset.originalName, expectedOutputs[0].name, 'published asset should keep the export filename');
 
-    const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download`, {
+    const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download?download=1`, {
       method: 'GET',
       headers: { Cookie: cookie },
       redirect: 'manual',
     });
     assert.equal(downloadRes.status, 200, 'download route should stream the local file asset');
+    assert.match(
+      downloadRes.headers.get('content-disposition') || '',
+      /^attachment; filename="1\.mp4"; filename\*=UTF-8''%E6%BC%94%E7%A4%BA%E7%BB%93%E6%9E%9C%201\.mp4$/u,
+      'local download should preserve the original Unicode filename',
+    );
     assert.match(downloadRes.headers.get('content-type') || '', /^video\/mp4/, 'local result download should preserve mime type');
     assert.equal(await downloadRes.text(), expectedOutputs[0].content, 'local download should return the exported file');
   } finally {

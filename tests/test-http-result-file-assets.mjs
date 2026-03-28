@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
 const expectedOutputs = Array.from({ length: 5 }, (_, index) => ({
-  name: `rough cut ${index + 1}.mp4`,
+  name: index === 0 ? '演示结果 1.mp4' : `rough cut ${index + 1}.mp4`,
   content: `rendered-video-asset-${index + 1}`,
 }));
 
@@ -285,14 +285,19 @@ try {
     assert.equal(assetRes.status, 200, 'published result asset metadata should load');
     assert.equal(assetRes.json.asset.originalName, expectedOutputs[0].name, 'published asset should keep the export filename');
 
-    const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download`, {
+    const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download?download=1`, {
       method: 'GET',
       headers: { Cookie: cookie },
       redirect: 'manual',
     });
     assert.equal(downloadRes.status, 302, 'download route should redirect to object storage');
+    const redirectUrl = String(downloadRes.headers.get('location') || '');
+    const redirectedUrl = new URL(redirectUrl);
+    const contentDisposition = redirectedUrl.searchParams.get('response-content-disposition') || '';
+    assert.match(contentDisposition, /^attachment; filename="1\.mp4"; filename\*=UTF-8''/u, 'download redirect should request an attachment filename');
+    assert.match(contentDisposition, /%E6%BC%94%E7%A4%BA%E7%BB%93%E6%9E%9C%201\.mp4/u, 'download redirect should preserve the original Unicode filename');
 
-    const redirected = await fetch(String(downloadRes.headers.get('location') || ''), { method: 'GET' });
+    const redirected = await fetch(redirectUrl, { method: 'GET' });
     assert.equal(redirected.status, 200, 'redirected object-storage download should succeed');
     assert.equal(await redirected.text(), expectedOutputs[0].content, 'redirected object-storage download should return the exported file');
   } finally {

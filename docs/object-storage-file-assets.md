@@ -11,7 +11,7 @@ Current MVP scope:
 - session messages can attach that asset by `assetId`
 - the detached runner localizes the asset to local disk right before tool execution
 - successful CLI workflows can publish generated local result files back into the session as downloadable asset attachments
-- downloads go through a stable RemoteLab route that redirects to object storage
+- downloads go through a stable RemoteLab route that redirects to object storage while preserving the original filename in the final response
 
 This keeps large byte transfer off the main chat service while preserving the existing session/run model.
 

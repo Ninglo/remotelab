@@ -95,6 +95,32 @@ function sanitizeDisplayName(value, fallback = 'attachment') {
   return candidate.replace(/\s+/g, ' ').slice(0, 255) || fallback;
 }
 
+function buildAsciiFilenameFallback(value, fallback = 'attachment') {
+  const displayName = sanitizeDisplayName(value, fallback);
+  const extension = extname(displayName).toLowerCase();
+  const safeExtension = /^\.[a-z0-9]+$/.test(extension) ? extension : '';
+  const stemSource = safeExtension ? displayName.slice(0, -safeExtension.length) : displayName;
+  const safeStem = stemSource
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/^\.+/, '')
+    .slice(0, 120);
+  const stem = safeStem || fallback;
+  return `${stem}${safeExtension}`.slice(0, 120) || fallback;
+}
+
+function escapeContentDispositionFilename(value) {
+  return String(value || '').replace(/["\\]/g, '\\$&');
+}
+
+export function buildAttachmentContentDisposition(value, { attachment = false, fallback = 'attachment' } = {}) {
+  const displayName = sanitizeDisplayName(value, fallback);
+  const asciiFallback = buildAsciiFilenameFallback(displayName, fallback);
+  const dispositionType = attachment ? 'attachment' : 'inline';
+  return `${dispositionType}; filename="${escapeContentDispositionFilename(asciiFallback)}"; filename*=UTF-8''${encodeRfc3986(displayName)}`;
+}
+
 function sanitizeScopeSegment(value, fallback = 'session') {
   const candidate = normalizeString(value)
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
@@ -322,8 +348,19 @@ async function ensureReadyFileAssetRecord(recordOrId) {
   return record;
 }
 
-function buildDownloadRoute(assetId) {
-  return `/api/assets/${assetId}/download`;
+function buildDownloadRoute(assetId, { attachment = false } = {}) {
+  return attachment
+    ? `/api/assets/${assetId}/download?download=1`
+    : `/api/assets/${assetId}/download`;
+}
+
+function buildStorageDownloadUrl(baseUrl, record, { attachment = false } = {}) {
+  const url = new URL(buildStorageObjectUrl(baseUrl, record.storage.objectKey));
+  url.searchParams.set(
+    'response-content-disposition',
+    buildAttachmentContentDisposition(record.originalName, { attachment }),
+  );
+  return url.toString();
 }
 
 async function buildClientFileAsset(record, { includeDirectUrl = false } = {}) {
@@ -429,21 +466,28 @@ export async function finalizeFileAssetUpload(assetId, { sizeBytes, etag } = {})
   return buildClientFileAsset(record, { includeDirectUrl: true });
 }
 
-export async function buildFileAssetDirectUrl(recordOrId, { expiresInSeconds = FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS } = {}) {
+export async function buildFileAssetDirectUrl(recordOrId, {
+  expiresInSeconds = FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS,
+  attachment = false,
+} = {}) {
   const record = await ensureReadyFileAssetRecord(recordOrId);
   if (record.storage.provider === 'local') {
     return {
-      url: buildDownloadRoute(record.id),
+      url: buildDownloadRoute(record.id, { attachment }),
       expiresAt: null,
     };
   }
   if (FILE_ASSET_PUBLIC_BASE_URL) {
     return {
-      url: buildStorageObjectUrl(FILE_ASSET_PUBLIC_BASE_URL, record.storage.objectKey),
+      url: buildStorageDownloadUrl(FILE_ASSET_PUBLIC_BASE_URL, record, { attachment }),
       expiresAt: null,
     };
   }
-  return presignStorageRequest('GET', buildStorageObjectUrl(FILE_ASSET_STORAGE_BASE_URL, record.storage.objectKey), expiresInSeconds);
+  return presignStorageRequest(
+    'GET',
+    buildStorageDownloadUrl(FILE_ASSET_STORAGE_BASE_URL, record, { attachment }),
+    expiresInSeconds,
+  );
 }
 
 export async function localizeFileAsset(recordOrId) {

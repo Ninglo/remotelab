@@ -22,6 +22,7 @@ import {
   updateTrigger,
 } from './triggers.mjs';
 import {
+  buildAttachmentContentDisposition,
   buildFileAssetDirectUrl,
   createFileAssetUploadIntent,
   finalizeFileAssetUpload,
@@ -267,17 +268,19 @@ export async function handleControlRoutes({
       return true;
     }
     if (!requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
 
     try {
       if (asset.storage?.provider === 'local') {
         const localPath = await localizeFileAsset(asset);
         streamResponse(res, localPath, {
           'Content-Type': asset.mimeType || 'application/octet-stream',
+          'Content-Disposition': buildAttachmentContentDisposition(asset.originalName, { attachment: downloadRequested }),
           'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
         });
         return true;
       }
-      const direct = await buildFileAssetDirectUrl(asset);
+      const direct = await buildFileAssetDirectUrl(asset, { attachment: downloadRequested });
       res.writeHead(302, buildHeaders({
         Location: direct.url,
         'Cache-Control': 'private, no-store, max-age=0, must-revalidate',

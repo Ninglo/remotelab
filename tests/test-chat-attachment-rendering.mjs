@@ -94,6 +94,7 @@ const functionsToLoad = [
   'getAttachmentDisplayName',
   'getAttachmentKind',
   'getAttachmentSource',
+  'getAttachmentDownloadSource',
   'getAttachmentTypeLabel',
   'normalizeAttachmentSizeBytes',
   'formatAttachmentSize',
@@ -151,7 +152,15 @@ const resultAssetNode = context.createMessageAttachmentNode({
 assert.equal(resultAssetNode.tagName, 'DIV', 'result file assets should render as attachment rows');
 assert.equal(resultAssetNode.children[0].children[1].children[0].textContent, 'rough cut.mp4', 'result attachment row should show the exported file name');
 assert.equal(resultAssetNode.children[0].children[1].children[1].textContent, 'MP4 · 4 KB', 'result attachment row should show file size metadata');
-assert.equal(resultAssetNode.children[1].href, '/api/assets/fasset_result_video/download', 'result attachment row should use the asset download route');
+assert.equal(resultAssetNode.children[1].href, '/api/assets/fasset_result_video/download?download=1', 'result attachment row should request an explicit download for file assets');
+
+const imageAssetNode = context.createMessageAttachmentNode({
+  assetId: 'fasset_preview_png',
+  originalName: 'shot.png',
+  mimeType: 'image/png',
+});
+assert.equal(imageAssetNode.tagName, 'IMG', 'image file assets should still render inline previews');
+assert.equal(imageAssetNode.src, '/api/assets/fasset_preview_png/download', 'image previews should keep the plain asset route');
 
 const genericComposerPreview = context.createComposerAttachmentPreviewNode({
   objectUrl: 'blob:report',

@@ -93,6 +93,28 @@ function getAttachmentSource(attachment) {
   return "";
 }
 
+function getAttachmentDownloadSource(attachment) {
+  const downloadUrl = typeof attachment?.downloadUrl === "string"
+    ? attachment.downloadUrl.trim()
+    : "";
+  if (downloadUrl) {
+    if (!/^\/api\/assets\/[^/]+\/download(?:[?#]|$)/.test(downloadUrl)) {
+      return downloadUrl;
+    }
+    if (/[?&]download=1(?:&|$)/.test(downloadUrl)) {
+      return downloadUrl;
+    }
+    return downloadUrl.includes("?") ? `${downloadUrl}&download=1` : `${downloadUrl}?download=1`;
+  }
+  const assetId = typeof attachment?.assetId === "string"
+    ? attachment.assetId.trim()
+    : "";
+  if (assetId) {
+    return `/api/assets/${encodeURIComponent(assetId)}/download?download=1`;
+  }
+  return getAttachmentSource(attachment);
+}
+
 function getAttachmentTypeLabel(attachment) {
   const displayName = getAttachmentDisplayName(attachment);
   const lastDot = displayName.lastIndexOf(".");
@@ -165,6 +187,7 @@ function createMessageAttachmentNode(attachment) {
   if (!source) return null;
   const kind = getAttachmentKind(attachment);
   const label = getAttachmentDisplayName(attachment);
+  const downloadSource = getAttachmentDownloadSource(attachment) || source;
   const renderAsFileCard = shouldRenderAttachmentAsFileCard(attachment);
 
   if (!renderAsFileCard && kind === "image") {
@@ -200,7 +223,7 @@ function createMessageAttachmentNode(attachment) {
 
   const downloadLink = document.createElement("a");
   const downloadLabel = typeof t === "function" ? t("action.download") : "Download";
-  downloadLink.href = source;
+  downloadLink.href = downloadSource;
   downloadLink.target = "_blank";
   downloadLink.rel = "noopener noreferrer";
   downloadLink.className = "attachment-download-btn";
