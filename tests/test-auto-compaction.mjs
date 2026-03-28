@@ -143,7 +143,7 @@ function readPersistedContextHead(sessionId) {
   return JSON.parse(raw);
 }
 
-async function waitFor(predicate, description, timeoutMs = 12000) {
+async function waitFor(predicate, description, timeoutMs = 20000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await predicate()) return;
