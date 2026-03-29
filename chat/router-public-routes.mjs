@@ -49,6 +49,70 @@ export async function handlePublicRoutes({
   writeSnapshotPage,
   writeJsonCached,
 }) {
+async function mintOwnerSessionFromInstallHandoff(handoffToken) {
+  const handoffSession = await redeemInstallHandoff(handoffToken);
+  if (!handoffSession) return null;
+
+  const sessionToken = generateToken();
+  sessions.set(sessionToken, {
+    expiry: Date.now() + SESSION_EXPIRY,
+    role: 'owner',
+    ...(handoffSession.preferredLanguage ? { preferredLanguage: handoffSession.preferredLanguage } : {}),
+  });
+  await saveAuthSessionsAsync();
+
+  return {
+    redirect: '/?skipInstall=1',
+    setCookie: setCookie(sessionToken),
+  };
+}
+
+if (pathname === '/m/continue' && req.method === 'GET') {
+  const authSession = getAuthSession(req);
+  if (authSession?.role === 'owner') {
+    res.writeHead(302, buildHeaders({
+      'Location': '/?skipInstall=1',
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      'Referrer-Policy': 'no-referrer',
+    }));
+    res.end();
+    return true;
+  }
+
+  const handoffToken = normalizeInstallHandoffToken(
+    typeof parsedUrl.query?.h === 'string' ? parsedUrl.query.h : '',
+  );
+  if (!handoffToken) {
+    res.writeHead(302, buildHeaders({
+      'Location': '/login',
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      'Referrer-Policy': 'no-referrer',
+    }));
+    res.end();
+    return true;
+  }
+
+  const nextSession = await mintOwnerSessionFromInstallHandoff(handoffToken);
+  if (!nextSession) {
+    res.writeHead(302, buildHeaders({
+      'Location': '/login',
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      'Referrer-Policy': 'no-referrer',
+    }));
+    res.end();
+    return true;
+  }
+
+  res.writeHead(302, buildHeaders({
+    'Location': nextSession.redirect,
+    'Cache-Control': 'no-store, max-age=0, must-revalidate',
+    'Referrer-Policy': 'no-referrer',
+    'Set-Cookie': nextSession.setCookie,
+  }));
+  res.end();
+  return true;
+}
+
 if (pathname === '/api/install/handoff/redeem' && req.method === 'POST') {
   let payload = {};
   try {
@@ -65,8 +129,8 @@ if (pathname === '/api/install/handoff/redeem' && req.method === 'POST') {
     res.end(JSON.stringify({ error: 'Install handoff token is required' }));
     return true;
   }
-  const handoffSession = await redeemInstallHandoff(handoffToken);
-  if (!handoffSession) {
+  const nextSession = await mintOwnerSessionFromInstallHandoff(handoffToken);
+  if (!nextSession) {
     res.writeHead(401, buildHeaders({
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store, max-age=0, must-revalidate',
@@ -74,18 +138,10 @@ if (pathname === '/api/install/handoff/redeem' && req.method === 'POST') {
     res.end(JSON.stringify({ error: 'Install handoff expired or is no longer valid' }));
     return true;
   }
-
-  const sessionToken = generateToken();
-  sessions.set(sessionToken, {
-    expiry: Date.now() + SESSION_EXPIRY,
-    role: 'owner',
-    ...(handoffSession.preferredLanguage ? { preferredLanguage: handoffSession.preferredLanguage } : {}),
-  });
-  await saveAuthSessionsAsync();
   res.writeHead(200, buildHeaders({
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store, max-age=0, must-revalidate',
-    'Set-Cookie': setCookie(sessionToken),
+    'Set-Cookie': nextSession.setCookie,
   }));
   res.end(JSON.stringify({ ok: true, redirect: '/' }));
   return true;

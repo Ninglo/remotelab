@@ -176,6 +176,11 @@ async function main() {
     );
     assert.match(
       installPage.text,
+      /resolveProductPath\(`\/m\/continue\?h=\$\{encodeURIComponent\(handoffToken\)\}`\)/,
+      'install page should continue in browser through the handoff-aware bridge',
+    );
+    assert.match(
+      installPage.text,
       /resolveProductPath\(`\/sw\.js\?v=\$\{encodeURIComponent\(buildInfo\.assetVersion \|\| 'dev'\)\}`\)/,
       'install page should register the service worker through the shared product-path resolver',
     );
@@ -209,6 +214,26 @@ async function main() {
       body: { token: handoffToken },
     });
     assert.equal(redeemAgain.status, 401, 'install handoff should be one-time use');
+
+    const continueInstall = await request(port, 'GET', '/m/install?source=auto', {
+      headers: { Cookie: ownerCookie },
+    });
+    assert.equal(continueInstall.status, 302, 'browser continue should start from a fresh install handoff');
+    const continueUrl = new URL(continueInstall.headers.location || '', `http://127.0.0.1:${port}`);
+    const continueHandoffToken = continueUrl.searchParams.get('h') || '';
+
+    const continueBridge = await request(port, 'GET', `/m/continue?h=${encodeURIComponent(continueHandoffToken)}`);
+    assert.equal(continueBridge.status, 302, 'browser continue bridge should redirect into the main app');
+    assert.equal(continueBridge.headers.location, '/?skipInstall=1');
+    assert.match(
+      String(continueBridge.headers['set-cookie'] || ''),
+      /session_token=/,
+      'browser continue bridge should set a fresh owner session cookie',
+    );
+
+    const continueBridgeAgain = await request(port, 'GET', `/m/continue?h=${encodeURIComponent(continueHandoffToken)}`);
+    assert.equal(continueBridgeAgain.status, 302, 'redeemed browser continue handoffs should fall back to login');
+    assert.equal(continueBridgeAgain.headers.location, '/login');
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });

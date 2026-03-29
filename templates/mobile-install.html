@@ -461,6 +461,10 @@
         try {
           localStorage.setItem(browserSkipKey, String(Date.now() + browserSkipMs));
         } catch {}
+        if (handoffToken) {
+          window.location.assign(resolveProductPath(`/m/continue?h=${encodeURIComponent(handoffToken)}`));
+          return;
+        }
         window.location.assign(resolveProductPath('/?skipInstall=1'));
       }
 

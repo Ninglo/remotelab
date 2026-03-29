@@ -83,6 +83,7 @@ const prefixedInstallContext = createContext({
 const prefixedInstallHelpers = loadHelpers(prefixedInstallContext);
 assert.equal(prefixedInstallHelpers.getBasePath(), '/trial16', 'prefixed install route should resolve back to the product prefix');
 assert.equal(prefixedInstallHelpers.resolvePath('/login'), '/trial16/login', 'prefixed install login redirect should stay inside the product prefix');
+assert.equal(prefixedInstallHelpers.resolvePath('/m/continue?h=demo'), '/trial16/m/continue?h=demo', 'prefixed install continue bridge should stay inside the product prefix');
 assert.equal(prefixedInstallHelpers.resolvePath('/sw.js?v=build123'), '/trial16/sw.js?v=build123', 'prefixed service worker path should stay inside the product prefix');
 assert.equal(prefixedInstallHelpers.resolveUrl('/trial16/api/install/handoff/redeem'), 'https://chat.example.com/trial16/api/install/handoff/redeem', 'already-prefixed absolute product URLs should remain stable');
 
