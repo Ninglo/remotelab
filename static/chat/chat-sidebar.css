@@ -318,6 +318,34 @@
   color: var(--text-muted);
 }
 .session-item-count { font-variant-numeric: tabular-nums; }
+.session-label-badge { font-weight: 600; font-size: 10px; cursor: pointer; border-radius: 3px; padding: 0 2px; }
+.session-label-badge:hover { background: var(--bg-tertiary); }
+.session-label-empty { color: var(--text-muted); opacity: 0.4; font-weight: 400; }
+.session-item:hover .session-label-empty { opacity: 0.7; }
+.label-picker-dropdown {
+  background: var(--bg-elevated, var(--bg-secondary, #ffffff));
+  color: var(--text, #111827);
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.12));
+  border-radius: 10px;
+  padding: 6px 0;
+  min-width: 160px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+.label-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.label-picker-item:hover { background: var(--bg-tertiary, rgba(15, 23, 42, 0.06)); }
+.label-picker-item.active { font-weight: 700; }
+.label-picker-clear { color: var(--text-muted); }
 .session-item-meta .status-running { color: var(--success); }
 .session-item-meta .status-queued { color: var(--queue); }
 .session-item-meta .status-compacting { color: var(--notice); }

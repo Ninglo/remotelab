@@ -3436,6 +3436,8 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const activeSession = (await mutateSessionMeta(sessionId, (draft) => {
     draft.activeRunId = run.id;
     draft.updatedAt = nowIso();
+    // Auto-set "started" label when session receives a message
+    draft.label = 'started';
     return true;
   })).meta;
   if (activeSession) {

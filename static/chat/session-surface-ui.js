@@ -142,8 +142,22 @@ function isSessionCompleteAndReviewed(session) {
     : false;
 }
 
+function renderSessionLabelHtml(session) {
+  const labelId = session?.label || null;
+  const labelDefs = Array.isArray(window._sessionLabelDefs) ? window._sessionLabelDefs : [];
+  if (!labelId) {
+    return `<span class="session-label-badge session-label-empty" data-session-id="${session?.id || ""}" title="Set label">◇ label</span>`;
+  }
+  const def = labelDefs.find((l) => l.id === labelId);
+  const name = def ? def.name : labelId;
+  const color = def ? def.color : "var(--text-muted)";
+  return `<span class="session-label-badge" data-session-id="${session?.id || ""}" style="color:${esc(color)}" title="${esc(name)}">◆ ${esc(name)}</span>`;
+}
+
 function buildSessionMetaParts(session) {
   const parts = [];
+  const labelHtml = renderSessionLabelHtml(session);
+  if (labelHtml) parts.push(labelHtml);
   const reviewHtml = renderSessionStatusHtml(getSessionReviewStatusInfo(session));
   if (reviewHtml) parts.push(reviewHtml);
   const liveStatus = getSessionStatusSummary(session).primary;
@@ -254,5 +268,70 @@ function createActiveSessionItem(session) {
     dispatchAction({ action: "archive", sessionId: session.id });
   });
 
+  // Label badge click → open label picker
+  const labelBadge = div.querySelector(".session-label-badge");
+  if (labelBadge) {
+    labelBadge.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showLabelPicker(e.target, session);
+    });
+  }
+
   return div;
+}
+
+// ---- Label picker dropdown ----
+function showLabelPicker(anchor, session) {
+  document.querySelectorAll(".label-picker-dropdown").forEach((node) => node.remove());
+
+  const labels = window._sessionLabelDefs || [];
+  const dropdown = document.createElement("div");
+  dropdown.className = "label-picker-dropdown";
+
+  const currentLabel = session.label || null;
+  let html = labels.map((l) => {
+    const active = l.id === currentLabel ? " active" : "";
+    return `<div class="label-picker-item${active}" data-label="${esc(l.id)}" style="color:${esc(l.color)}">◆ ${esc(l.name)}</div>`;
+  }).join("");
+  html += `<div class="label-picker-item label-picker-clear" data-label="">${currentLabel ? "✕ Clear" : "—"}</div>`;
+  dropdown.innerHTML = html;
+
+  const rect = anchor.getBoundingClientRect();
+  dropdown.style.position = "fixed";
+  dropdown.style.top = (rect.bottom + 2) + "px";
+  dropdown.style.left = rect.left + "px";
+  dropdown.style.zIndex = "9999";
+  dropdown.style.background = "var(--bg-elevated, var(--bg-secondary, #ffffff))";
+  dropdown.style.color = "var(--text, #111827)";
+  dropdown.style.border = "1px solid var(--border, rgba(15, 23, 42, 0.12))";
+  dropdown.style.borderRadius = "10px";
+  dropdown.style.boxShadow = "0 16px 40px rgba(15, 23, 42, 0.18)";
+  dropdown.style.overflow = "hidden";
+  document.body.appendChild(dropdown);
+
+  dropdown.addEventListener("click", async (e) => {
+    const item = e.target.closest(".label-picker-item");
+    if (!item) return;
+    const labelId = item.dataset.label || null;
+    dropdown.remove();
+    try {
+      await fetch(`/api/sessions/${session.id}/label`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: labelId }),
+      });
+      session.label = labelId;
+      if (typeof renderSessionList === "function") renderSessionList();
+    } catch (err) {
+      console.error("[label] Failed to set label:", err);
+    }
+  });
+
+  const dismiss = (e) => {
+    if (!dropdown.contains(e.target)) {
+      dropdown.remove();
+      document.removeEventListener("click", dismiss, true);
+    }
+  };
+  setTimeout(() => document.addEventListener("click", dismiss, true), 0);
 }

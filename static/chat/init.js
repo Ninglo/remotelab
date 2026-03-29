@@ -169,7 +169,8 @@ async function initApp() {
 
   const toolsPromise = loadInlineTools({ skipModelLoad: true });
   const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });
-  await Promise.all([toolsPromise, sessionsPromise]);
+  const labelsPromise = fetch("/api/session-labels").then(r => r.ok ? r.json() : {}).then(data => { window._sessionLabelDefs = Array.isArray(data) ? data : (data.labels || []); }).catch(() => {});
+  await Promise.all([toolsPromise, sessionsPromise, labelsPromise]);
   restoreOwnerSessionSelection();
   connect();
   setupForegroundRefreshHandlers();
