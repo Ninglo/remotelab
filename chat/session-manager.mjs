@@ -1050,14 +1050,24 @@ function isContextCompactorSession(meta) {
   return getInternalSessionRole(meta) === INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR;
 }
 
+function hasExplicitSessionSource(meta) {
+  const sourceId = normalizeAppId(meta?.sourceId);
+  if (!sourceId || sourceId === DEFAULT_APP_ID) {
+    return false;
+  }
+  return true;
+}
+
 function shouldExposeSession(meta) {
   return !isInternalSession(meta);
 }
 
 function isTaskCardEnabledForSession(meta) {
   if (!meta || isInternalSession(meta)) return false;
+  if (meta.visitorId) return false;
   if (normalizeSessionTaskCard(meta.taskCard)) return true;
-  return resolveSessionTemplateId(meta) === WELCOME_APP_ID;
+  if (resolveSessionTemplateId(meta) === WELCOME_APP_ID) return true;
+  return !hasExplicitSessionSource(meta);
 }
 
 function isWelcomeOnboardingActive(meta) {

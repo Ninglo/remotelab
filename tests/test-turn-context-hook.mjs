@@ -18,6 +18,7 @@ const hook = await buildTurnContextHook({
     mode: 'project',
     summary: '先消化用户给的材料，再推进下一步。',
     rawMaterials: ['sales.xlsx'],
+    reusablePatterns: ['先接住具体材料，再决定是否把经验抽象成通用规则。'],
     nextSteps: ['检查结构'],
   },
 });
@@ -34,6 +35,7 @@ assert.match(hook, /did you use the best available path, is the result complete 
 assert.match(hook, /active working agreements/);
 assert.match(hook, /默认自然段表达。/);
 assert.match(hook, /Current carried task card/);
+assert.match(hook, /Reusable patterns/);
 assert.match(hook, /sales\.xlsx/);
 
 console.log('test-turn-context-hook: ok');

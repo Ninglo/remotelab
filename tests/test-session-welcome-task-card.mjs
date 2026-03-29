@@ -31,6 +31,7 @@ const text = isWorkflowPrompt
       '  "rawMaterials": ["sales.xlsx", "brief.pptx"],',
       '  "background": ["用户目前靠手工处理。"],',
       '  "knownConclusions": ["原始材料比口头描述更关键。"],',
+      '  "reusablePatterns": ["先接住原始材料，再考虑是否升级成长期流程。"],',
       '  "nextSteps": ["检查 Excel 结构", "整理第一版摘要"],',
       '  "memory": ["用户不想先写长说明。"],',
       '  "needsFromUser": ["若字段含义不清，再补一个目标样例。"]',
@@ -126,6 +127,7 @@ await waitFor(
 const updated = await getSession(session.id);
 assert.equal(updated?.taskCard?.mode, 'project');
 assert.deepEqual(updated?.taskCard?.rawMaterials, ['sales.xlsx', 'brief.pptx']);
+assert.deepEqual(updated?.taskCard?.reusablePatterns, ['先接住原始材料，再考虑是否升级成长期流程。']);
 assert.deepEqual(updated?.taskCard?.nextSteps, ['检查 Excel 结构', '整理第一版摘要']);
 assert.deepEqual(updated?.taskCard?.memory, ['用户不想先写长说明。']);
 

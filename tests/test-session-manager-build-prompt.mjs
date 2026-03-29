@@ -170,6 +170,7 @@ const promptWithTaskCard = await buildPrompt(
       mode: 'project',
       summary: '先吃透用户丢来的 Excel 和 PPT，再决定如何组织项目态。',
       rawMaterials: ['sales.xlsx', 'deck.pptx'],
+      reusablePatterns: ['先接住原始材料，再决定是否把经验抽象成流程。'],
       nextSteps: ['检查材料结构', '整理第一版任务摘要'],
       memory: ['用户偏好直接给原始材料，不想先写长说明。'],
     },
@@ -184,6 +185,7 @@ const promptWithTaskCard = await buildPrompt(
 assert.match(promptWithTaskCard, /Current carried task card/);
 assert.match(promptWithTaskCard, /Execution mode: project/);
 assert.match(promptWithTaskCard, /sales\.xlsx/);
+assert.match(promptWithTaskCard, /Reusable patterns/);
 assert.match(promptWithTaskCard, /Durable user memory/);
 
 const welcomePrompt = await buildPrompt(

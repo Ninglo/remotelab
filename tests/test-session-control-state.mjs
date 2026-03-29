@@ -22,6 +22,7 @@ const controlState = buildSessionControlState({
   taskCard: {
     mode: 'project',
     summary: '先把 carrier 收到一层后端对象投影。',
+    reusablePatterns: ['先收敛状态对象，再讨论自动提升与记忆。'],
     nextSteps: ['整理载体映射', '接 prompt 投影'],
   },
   workflowState: 'waiting-user',
@@ -57,6 +58,7 @@ assert.equal(controlState.workState.workflow.entryMode, 'read');
 assert.equal(controlState.workState.workflow.state, 'waiting_user');
 assert.equal(controlState.workState.workflow.priority, 'high');
 assert.equal(controlState.workState.taskCard.summary, '先把 carrier 收到一层后端对象投影。');
+assert.deepEqual(controlState.workState.taskCard.reusablePatterns, ['先收敛状态对象，再讨论自动提升与记忆。']);
 
 const workState = buildSessionWorkState({}, {
   contextHead: {

@@ -385,6 +385,7 @@ function buildTaskCardSearchParts(taskCard) {
     ...normalized.rawMaterials,
     ...normalized.assumptions,
     ...normalized.knownConclusions,
+    ...normalized.reusablePatterns,
     ...normalized.nextSteps,
     ...normalized.memory,
     ...normalized.needsFromUser,
@@ -539,6 +540,10 @@ function buildRelatedSessionPromptContext(matches) {
       (taskCard?.memory || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
       120,
     );
+    const reusablePatterns = clipText(
+      (taskCard?.reusablePatterns || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      120,
+    );
     const knownConclusions = clipText(
       (taskCard?.knownConclusions || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
       120,
@@ -558,6 +563,9 @@ function buildRelatedSessionPromptContext(matches) {
     }
     if (taskCardSummary && taskCardSummary !== contextSummary) {
       parts.push(`task card: ${taskCardSummary}`);
+    }
+    if (reusablePatterns) {
+      parts.push(`reusable patterns: ${reusablePatterns}`);
     }
     if (durableMemory) {
       parts.push(`durable memory: ${durableMemory}`);

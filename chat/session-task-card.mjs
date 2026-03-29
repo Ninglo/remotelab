@@ -86,6 +86,7 @@ function hasMeaningfulTaskCard(card) {
     || (card.rawMaterials || []).length > 0
     || (card.assumptions || []).length > 0
     || (card.knownConclusions || []).length > 0
+    || (card.reusablePatterns || []).length > 0
     || (card.nextSteps || []).length > 0
     || (card.memory || []).length > 0
     || (card.needsFromUser || []).length > 0
@@ -102,6 +103,9 @@ export function normalizeSessionTaskCard(value) {
   const assumptions = normalizeTaskCardList(value.assumptions);
   const knownConclusions = normalizeTaskCardList(
     value.knownConclusions || value.conclusions || value.knownFindings || value.findings,
+  );
+  const reusablePatterns = normalizeTaskCardList(
+    value.reusablePatterns || value.learnedPatterns || value.workingPatterns || value.heuristics || value.learnedStrategies,
   );
   const nextSteps = normalizeTaskCardList(value.nextSteps || value.nextActions || value.plan);
   const memory = normalizeTaskCardList(value.memory || value.userMemory || value.reusableContext || value.durableMemory);
@@ -130,6 +134,7 @@ export function normalizeSessionTaskCard(value) {
     rawMaterials,
     assumptions,
     knownConclusions,
+    reusablePatterns,
     nextSteps,
     memory,
     needsFromUser,
@@ -156,6 +161,7 @@ export function buildTaskCardPromptBlock(taskCard) {
     formatTaskCardList('Raw materials', normalized.rawMaterials),
     formatTaskCardList('Assumptions', normalized.assumptions),
     formatTaskCardList('Known conclusions', normalized.knownConclusions),
+    formatTaskCardList('Reusable patterns', normalized.reusablePatterns),
     formatTaskCardList('Next steps', normalized.nextSteps),
     formatTaskCardList('Durable user memory', normalized.memory),
     formatTaskCardList('Needs from user', normalized.needsFromUser),
