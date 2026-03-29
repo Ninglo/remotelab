@@ -44,6 +44,61 @@ function applyShareSnapshotMode(snapshot) {
 // ---- Init ----
 initResponsiveLayout();
 
+const MOBILE_INSTALL_SKIP_STORAGE_KEY = "remotelab.mobileInstall.skipUntil";
+const MOBILE_INSTALL_SKIP_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isMobileInstallEligibleDevice() {
+  const ua = navigator.userAgent || "";
+  return /iPhone|iPad|iPod|Android/i.test(ua);
+}
+
+function isStandaloneDisplayMode() {
+  return !!(
+    (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches)
+    || navigator.standalone === true
+  );
+}
+
+function captureInstallSkipIntent() {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("skipInstall") !== "1") return;
+  try {
+    localStorage.setItem(
+      MOBILE_INSTALL_SKIP_STORAGE_KEY,
+      String(Date.now() + MOBILE_INSTALL_SKIP_DURATION_MS),
+    );
+  } catch {}
+  url.searchParams.delete("skipInstall");
+  history.replaceState(null, "", `${url.pathname}${url.search}`);
+}
+
+function hasRecentInstallSkip() {
+  try {
+    const until = Number(localStorage.getItem(MOBILE_INSTALL_SKIP_STORAGE_KEY) || 0);
+    if (!Number.isFinite(until) || until <= 0) return false;
+    if (until <= Date.now()) {
+      localStorage.removeItem(MOBILE_INSTALL_SKIP_STORAGE_KEY);
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function shouldOpenMobileInstallFlow(authInfo) {
+  return !!(
+    authInfo
+    && authInfo.role === "owner"
+    && !visitorMode
+    && !shareSnapshotMode
+    && isMobileInstallEligibleDevice()
+    && !isStandaloneDisplayMode()
+    && window.location.pathname !== "/m/install"
+    && !hasRecentInstallSkip()
+  );
+}
+
 async function resolveInitialAuthInfo() {
   const bootstrapAuthInfo =
     typeof getBootstrapAuthInfo === "function"
@@ -60,6 +115,8 @@ async function resolveInitialAuthInfo() {
 }
 
 async function initApp() {
+  captureInstallSkipIntent();
+
   const shareSnapshot =
     typeof getBootstrapShareSnapshot === "function"
       ? getBootstrapShareSnapshot()
@@ -91,7 +148,20 @@ async function initApp() {
     return;
   }
 
-  initializePushNotifications();
+  if (shouldOpenMobileInstallFlow(authInfo)) {
+    window.location.replace("/m/install?source=auto");
+    return;
+  }
+
+  if (typeof ensureServiceWorkerRegistration === "function") {
+    void ensureServiceWorkerRegistration();
+  }
+
+  initializePushNotifications({
+    prompt: typeof shouldPromptForInstalledNotifications === "function"
+      ? shouldPromptForInstalledNotifications()
+      : false,
+  });
 
   const toolsPromise = loadInlineTools({ skipModelLoad: true });
   const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });

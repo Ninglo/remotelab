@@ -9,6 +9,7 @@ import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_ENABLED } from '../lib/config.mjs';
 import {
   getAuthSession, refreshAuthSession,
 } from '../lib/auth.mjs';
+import { normalizeInstallHandoffToken } from '../lib/install-handoffs.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import {
@@ -87,6 +88,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const chatTemplatePath = join(__dirname, '..', 'templates', 'chat.html');
 const loginTemplatePath = join(__dirname, '..', 'templates', 'login.html');
+const mobileInstallTemplatePath = join(__dirname, '..', 'templates', 'mobile-install.html');
 const staticDir = join(__dirname, '..', 'static');
 const packageJsonPath = join(__dirname, '..', 'package.json');
 const serviceBuildRoots = [
@@ -1192,6 +1194,33 @@ export async function handleRequest(req, res) {
   const nonce = generateNonce();
   setSecurityHeaders(res, nonce);
 
+  if (pathname === '/manifest.install.json' && req.method === 'GET') {
+    try {
+      const manifestTemplate = JSON.parse(await readFile(join(staticDir, 'manifest.json'), 'utf8'));
+      const handoffToken = normalizeInstallHandoffToken(getSingleQueryValue(parsedUrl.query?.h));
+      const manifest = {
+        ...manifestTemplate,
+        start_url: handoffToken
+          ? `/m/install?h=${encodeURIComponent(handoffToken)}`
+          : '/m/install',
+      };
+      writeCachedResponse(req, res, {
+        statusCode: 200,
+        contentType: 'application/manifest+json',
+        body: JSON.stringify(manifest, null, 2),
+        cacheControl: 'private, no-store, max-age=0, must-revalidate',
+        headers: {
+          'Referrer-Policy': 'no-referrer',
+          'X-Robots-Tag': 'noindex, nofollow, noarchive',
+        },
+      });
+    } catch {
+      res.writeHead(500, buildHeaders({ 'Content-Type': 'text/plain' }));
+      res.end('Failed to load install manifest');
+    }
+    return;
+  }
+
   if (await handlePublicRoutes({
     req,
     res,
@@ -1199,6 +1228,7 @@ export async function handleRequest(req, res) {
     pathname,
     nonce,
     loginTemplatePath,
+    mobileInstallTemplatePath,
     getPageBuildInfo,
     buildHeaders,
     renderPageTemplate,

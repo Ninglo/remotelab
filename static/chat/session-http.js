@@ -1240,7 +1240,7 @@ async function bootstrapShareSnapshotView() {
 
 async function setupPushNotifications() {
   if (visitorMode) return;
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  if (!("PushManager" in window)) return;
   try {
     const persistSubscription = async (subscription) => {
       const payload = subscription?.toJSON ? subscription.toJSON() : subscription;
@@ -1251,15 +1251,8 @@ async function setupPushNotifications() {
         body: JSON.stringify(payload),
       });
     };
-    const reg = await navigator.serviceWorker.register(
-      `/sw.js?v=${encodeURIComponent(buildAssetVersion)}`,
-      { updateViaCache: "none" },
-    );
-    await reg.update().catch(() => {});
-    reg.installing?.postMessage({ type: "remotelab:clear-caches" });
-    reg.waiting?.postMessage({ type: "remotelab:clear-caches" });
-    reg.active?.postMessage({ type: "remotelab:clear-caches" });
-    await navigator.serviceWorker.ready;
+    const reg = await ensureServiceWorkerRegistration();
+    if (!reg) return;
     const existing = await reg.pushManager.getSubscription();
     if (existing) {
       await persistSubscription(existing);
@@ -1276,5 +1269,24 @@ async function setupPushNotifications() {
     console.log("[push] Subscribed to web push");
   } catch (err) {
     console.warn("[push] Setup failed:", err.message);
+  }
+}
+
+async function ensureServiceWorkerRegistration() {
+  if (!("serviceWorker" in navigator)) return null;
+  try {
+    const reg = await navigator.serviceWorker.register(
+      `/sw.js?v=${encodeURIComponent(buildAssetVersion)}`,
+      { updateViaCache: "none" },
+    );
+    await reg.update().catch(() => {});
+    reg.installing?.postMessage({ type: "remotelab:clear-caches" });
+    reg.waiting?.postMessage({ type: "remotelab:clear-caches" });
+    reg.active?.postMessage({ type: "remotelab:clear-caches" });
+    await navigator.serviceWorker.ready.catch(() => {});
+    return reg;
+  } catch (err) {
+    console.warn("[sw] Setup failed:", err.message);
+    return null;
   }
 }

@@ -7,10 +7,16 @@ import {
   verifyPasswordAsync,
   generateToken,
   parseCookies,
+  getAuthSession,
   setCookie,
   clearCookie,
   clearVisitorCookie,
 } from '../lib/auth.mjs';
+import {
+  createInstallHandoff,
+  normalizeInstallHandoffToken,
+  redeemInstallHandoff,
+} from '../lib/install-handoffs.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { buildAttachmentContentDisposition } from './file-assets.mjs';
 import { getShareAsset, getShareSnapshot } from './shares.mjs';
@@ -28,6 +34,7 @@ export async function handlePublicRoutes({
   pathname,
   nonce,
   loginTemplatePath,
+  mobileInstallTemplatePath,
   getPageBuildInfo,
   buildHeaders,
   renderPageTemplate,
@@ -42,6 +49,97 @@ export async function handlePublicRoutes({
   writeSnapshotPage,
   writeJsonCached,
 }) {
+if (pathname === '/api/install/handoff/redeem' && req.method === 'POST') {
+  let payload = {};
+  try {
+    payload = JSON.parse(await readBody(req, 4096) || '{}');
+  } catch {
+    payload = {};
+  }
+  const handoffToken = normalizeInstallHandoffToken(payload?.token);
+  if (!handoffToken) {
+    res.writeHead(400, buildHeaders({
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+    }));
+    res.end(JSON.stringify({ error: 'Install handoff token is required' }));
+    return true;
+  }
+  const handoffSession = await redeemInstallHandoff(handoffToken);
+  if (!handoffSession) {
+    res.writeHead(401, buildHeaders({
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+    }));
+    res.end(JSON.stringify({ error: 'Install handoff expired or is no longer valid' }));
+    return true;
+  }
+
+  const sessionToken = generateToken();
+  sessions.set(sessionToken, {
+    expiry: Date.now() + SESSION_EXPIRY,
+    role: 'owner',
+    ...(handoffSession.preferredLanguage ? { preferredLanguage: handoffSession.preferredLanguage } : {}),
+  });
+  await saveAuthSessionsAsync();
+  res.writeHead(200, buildHeaders({
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, max-age=0, must-revalidate',
+    'Set-Cookie': setCookie(sessionToken),
+  }));
+  res.end(JSON.stringify({ ok: true, redirect: '/' }));
+  return true;
+}
+
+if (pathname === '/m/install' && req.method === 'GET') {
+  const authSession = getAuthSession(req);
+  const currentHandoffToken = normalizeInstallHandoffToken(
+    typeof parsedUrl.query?.h === 'string' ? parsedUrl.query.h : '',
+  );
+
+  if (!currentHandoffToken && authSession?.role === 'owner') {
+    const handoff = await createInstallHandoff(authSession);
+    const params = new URLSearchParams();
+    params.set('h', handoff.token);
+    const source = typeof parsedUrl.query?.source === 'string' ? parsedUrl.query.source.trim() : '';
+    if (source) params.set('source', source);
+    res.writeHead(302, { 'Location': `/m/install?${params.toString()}` });
+    res.end();
+    return true;
+  }
+
+  if (!currentHandoffToken) {
+    res.writeHead(302, { 'Location': '/login' });
+    res.end();
+    return true;
+  }
+
+  let installHtml;
+  const pageBuildInfo = await getPageBuildInfo();
+  try { installHtml = await readFile(mobileInstallTemplatePath, 'utf8'); } catch { installHtml = '<h1>Mobile install template missing</h1>'; }
+  const manifestHref = `/manifest.install.json?h=${encodeURIComponent(currentHandoffToken)}&v=${encodeURIComponent(pageBuildInfo.assetVersion)}`;
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.writeHead(200, buildHeaders({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Robots-Tag': 'noindex, nofollow, noarchive',
+  }));
+  res.end(renderPageTemplate(installHtml, nonce, {
+    ...buildTemplateReplacements(pageBuildInfo),
+    PAGE_TITLE: 'Install RemoteLab',
+    BODY_CLASS: 'mobile-install-page',
+    MANIFEST_HREF: manifestHref,
+    BOOTSTRAP_JSON: serializeJsonForScript({
+      mobileInstall: {
+        handoffToken: currentHandoffToken,
+      },
+    }),
+  }));
+  return true;
+}
+
 // Token auth via query
 const queryToken = parsedUrl.query.token;
 if (queryToken) {

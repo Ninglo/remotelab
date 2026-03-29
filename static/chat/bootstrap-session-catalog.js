@@ -101,14 +101,44 @@ function registerHiddenMarkdownExtensions() {
   });
 }
 
-function initializePushNotifications() {
+const POST_INSTALL_NOTIFICATION_STORAGE_KEY = "remotelab.mobileInstall.requestNotifications";
+
+function isStandaloneContext() {
+  return !!(
+    (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches)
+    || navigator.standalone === true
+  );
+}
+
+function shouldPromptForInstalledNotifications() {
+  if (!isStandaloneContext()) return false;
+  try {
+    return localStorage.getItem(POST_INSTALL_NOTIFICATION_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function clearInstalledNotificationPromptFlag() {
+  try {
+    localStorage.removeItem(POST_INSTALL_NOTIFICATION_STORAGE_KEY);
+  } catch {}
+}
+
+function initializePushNotifications(options = {}) {
   if (visitorMode || !("Notification" in window)) return;
+  const shouldPrompt = options.prompt === true;
   if (Notification.permission === "default") {
+    if (!shouldPrompt) return;
     Notification.requestPermission().then((perm) => {
+      clearInstalledNotificationPromptFlag();
       if (perm === "granted" && !visitorMode) setupPushNotifications();
     });
   } else if (Notification.permission === "granted") {
+    if (shouldPrompt) clearInstalledNotificationPromptFlag();
     setupPushNotifications();
+  } else if (shouldPrompt) {
+    clearInstalledNotificationPromptFlag();
   }
 }
 

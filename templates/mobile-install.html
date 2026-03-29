@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)">
+  <meta name="remotelab-build" content="{{BUILD_TITLE}}">
+  <link rel="manifest" href="{{MANIFEST_HREF}}">
+  <link rel="icon" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+  <link rel="icon" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <title>{{PAGE_TITLE}}</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f5f5;
+      --card: rgba(255,255,255,0.94);
+      --text: #111111;
+      --muted: #666666;
+      --border: rgba(0,0,0,0.08);
+      --shadow: 0 16px 48px rgba(0,0,0,0.12);
+      --primary: #111111;
+      --primary-text: #ffffff;
+      --secondary: rgba(0,0,0,0.06);
+      --secondary-text: #111111;
+      --status-bg: rgba(0,0,0,0.06);
+      --status-text: #333333;
+      --link: #0a66ff;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111111;
+        --card: rgba(24,24,24,0.96);
+        --text: #f5f5f5;
+        --muted: #a5a5a5;
+        --border: rgba(255,255,255,0.08);
+        --shadow: 0 24px 64px rgba(0,0,0,0.45);
+        --primary: #f5f5f5;
+        --primary-text: #111111;
+        --secondary: rgba(255,255,255,0.08);
+        --secondary-text: #f5f5f5;
+        --status-bg: rgba(255,255,255,0.08);
+        --status-text: #ededed;
+        --link: #7ab4ff;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(10,102,255,0.08), transparent 36%), var(--bg);
+      color: var(--text);
+    }
+
+    .shell {
+      min-height: calc(100vh - 48px - env(safe-area-inset-bottom));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 28px 22px 20px;
+      backdrop-filter: blur(18px);
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 28px;
+      line-height: 1.15;
+      margin: 0 0 10px;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    .status {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--status-bg);
+      color: var(--status-text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .hidden { display: none !important; }
+
+    .benefits {
+      margin-top: 22px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .benefit {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .benefit-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .benefit-copy {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .steps-wrap {
+      margin-top: 22px;
+    }
+
+    .steps-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .steps {
+      margin: 0;
+      padding-left: 22px;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .steps li + li {
+      margin-top: 8px;
+    }
+
+    .helper {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .btn {
+      width: 100%;
+      border: none;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      -webkit-appearance: none;
+    }
+
+    .btn.primary {
+      background: var(--primary);
+      color: var(--primary-text);
+    }
+
+    .btn.secondary {
+      background: var(--secondary);
+      color: var(--secondary-text);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+      opacity: 0.92;
+    }
+
+    .link-btn {
+      margin-top: 12px;
+      background: none;
+      border: none;
+      color: var(--link);
+      font: inherit;
+      padding: 0;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .build-stamp {
+      margin-top: 18px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      user-select: text;
+    }
+  </style>
+</head>
+<body class="{{BODY_CLASS}}">
+  <main class="shell">
+    <section class="card" aria-live="polite">
+      <div class="eyebrow">RemoteLab</div>
+      <h1 id="title">Install RemoteLab</h1>
+      <p class="subtitle" id="subtitle">Open RemoteLab from your home screen, keep the first launch smooth, and set up notifications later.</p>
+
+      <div class="status hidden" id="status"></div>
+
+      <div class="benefits" id="benefits">
+        <div class="benefit">
+          <div class="benefit-title" id="benefit1Title"></div>
+          <div class="benefit-copy" id="benefit1Copy"></div>
+        </div>
+        <div class="benefit">
+          <div class="benefit-title" id="benefit2Title"></div>
+          <div class="benefit-copy" id="benefit2Copy"></div>
+        </div>
+        <div class="benefit">
+          <div class="benefit-title" id="benefit3Title"></div>
+          <div class="benefit-copy" id="benefit3Copy"></div>
+        </div>
+      </div>
+
+      <div class="steps-wrap" id="stepsWrap">
+        <div class="steps-title" id="stepsTitle"></div>
+        <ol class="steps" id="steps"></ol>
+      </div>
+
+      <div class="helper" id="helper"></div>
+
+      <div class="actions">
+        <button class="btn primary" id="primaryBtn" type="button"></button>
+        <button class="btn secondary" id="secondaryBtn" type="button"></button>
+      </div>
+
+      <button class="link-btn hidden" id="copyBtn" type="button"></button>
+
+      <div class="build-stamp" title="{{BUILD_TITLE}}">{{BUILD_LABEL}}</div>
+    </section>
+  </main>
+
+  {{BOOTSTRAP_SCRIPT_TAGS}}
+  <script nonce="{{NONCE}}">
+    (function initializeMobileInstallGuide() {
+      const buildInfo = window.__REMOTELAB_BUILD__ || {};
+      const bootstrap = window.__REMOTELAB_BOOTSTRAP__ || {};
+      const installData = bootstrap.mobileInstall || {};
+      const handoffToken = typeof installData.handoffToken === 'string' ? installData.handoffToken.trim() : '';
+      const installNotificationKey = 'remotelab.mobileInstall.requestNotifications';
+      const browserSkipKey = 'remotelab.mobileInstall.skipUntil';
+      const browserSkipMs = 7 * 24 * 60 * 60 * 1000;
+      const titleEl = document.getElementById('title');
+      const subtitleEl = document.getElementById('subtitle');
+      const statusEl = document.getElementById('status');
+      const helperEl = document.getElementById('helper');
+      const stepsTitleEl = document.getElementById('stepsTitle');
+      const stepsEl = document.getElementById('steps');
+      const benefitsEl = document.getElementById('benefits');
+      const stepsWrapEl = document.getElementById('stepsWrap');
+      const primaryBtn = document.getElementById('primaryBtn');
+      const secondaryBtn = document.getElementById('secondaryBtn');
+      const copyBtn = document.getElementById('copyBtn');
+      const benefit1TitleEl = document.getElementById('benefit1Title');
+      const benefit1CopyEl = document.getElementById('benefit1Copy');
+      const benefit2TitleEl = document.getElementById('benefit2Title');
+      const benefit2CopyEl = document.getElementById('benefit2Copy');
+      const benefit3TitleEl = document.getElementById('benefit3Title');
+      const benefit3CopyEl = document.getElementById('benefit3Copy');
+
+      let deferredInstallPrompt = null;
+
+      const ua = navigator.userAgent || '';
+      const isZh = /^zh\b/i.test(navigator.language || '');
+      const isIOS = /iPhone|iPad|iPod/i.test(ua);
+      const isAndroid = /Android/i.test(ua);
+      const isMobile = isIOS || isAndroid;
+      const isStandalone = !!(
+        (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches)
+        || navigator.standalone === true
+      );
+      const isInAppBrowser = /MicroMessenger|QQ\/?|Weibo|FBAN|FBAV|Instagram|Line\/?|Messenger/i.test(ua);
+      const isSafari = isIOS && /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua);
+      const isChrome = /Chrome|CriOS/i.test(ua) && !/Edg|OPR|SamsungBrowser/i.test(ua);
+
+      const text = isZh ? {
+        benefit1Title: '桌面一键打开',
+        benefit1Copy: '把 RemoteLab 放到主屏幕，下次不用再翻聊天记录找链接。',
+        benefit2Title: '首次启动自动接上',
+        benefit2Copy: '第一次从桌面打开时，会自动把登录接过去，不用重新输长期 token。',
+        benefit3Title: '通知放到后面再要',
+        benefit3Copy: '先把安装和首次进入跑通，再在独立模式里申请提醒权限，干扰更小。',
+        blockedTitle: '请先在系统浏览器打开',
+        blockedSubtitle: '微信等内置浏览器里，安装到主屏幕和首次登录接力都不稳定。',
+        blockedStatus: '先把这个链接复制出来，再用 Safari、Chrome 或系统浏览器重新打开。',
+        blockedPrimary: '复制当前链接',
+        blockedCopyDone: '已复制，回到系统浏览器继续。',
+        blockedHelper: '只要是独立打开的浏览器就可以继续；iPhone 上 Safari 最稳。',
+        guideTitle: '把 RemoteLab 放到主屏幕',
+        guideSubtitle: '这一步稍微长一点，但装好以后首次启动会自动接上登录。',
+        guideStepsTitle: '安装步骤',
+        guideHelperIos: '装好以后，请从桌面图标重新打开 RemoteLab。',
+        guideHelperAndroid: 'Chrome 的安装体验最好；如果当前浏览器不支持安装，也可以先继续网页版。',
+        iosStep1Safari: '点底部分享按钮。',
+        iosStep1Other: '点浏览器菜单或分享按钮。',
+        iosStep2: '选择“添加到主屏幕”。',
+        iosStep3: '回到桌面，再点开 RemoteLab。',
+        androidStep1Chrome: '点“安装应用”，或打开浏览器菜单。',
+        androidStep1Other: '如果能看到“安装应用”，直接安装；否则建议切到 Chrome。',
+        androidStep2: '确认安装，把 RemoteLab 放到桌面。',
+        androidStep3: '从桌面打开 RemoteLab，系统会自动继续设置。',
+        guidePrimaryPrompt: '立即安装',
+        guidePrimaryFallback: '看安装步骤',
+        guideSecondary: '先继续网页版',
+        guideScrolled: '装好以后，从桌面重新打开即可自动继续。',
+        redeemLoadingTitle: '正在完成设置…',
+        redeemLoadingSubtitle: '首次启动会自动把登录接过去，请稍等一秒。',
+        redeemLoadingStatus: '如果这是你第一次从主屏幕打开，接下来会直接进入 RemoteLab。',
+        redeemErrorTitle: '这次连接失效了',
+        redeemErrorSubtitle: '回到刚才的浏览器页面，再试一次安装就好。',
+        redeemErrorStatus: '这个一次性连接已经失效，重新打开原来的浏览器页面会自动生成新的接力。',
+        redeemErrorPrimary: '回到登录页',
+        redeemErrorSecondary: '复制当前链接',
+      } : {
+        benefit1Title: 'Open from the home screen',
+        benefit1Copy: 'Pin RemoteLab to the home screen so people do not have to hunt for the original link again.',
+        benefit2Title: 'Reconnect the first launch automatically',
+        benefit2Copy: 'The first standalone launch picks up the login automatically instead of asking for the long-lived token again.',
+        benefit3Title: 'Ask for notifications later',
+        benefit3Copy: 'Finish install and the first launch first, then request reminders from the standalone app with less friction.',
+        blockedTitle: 'Open this in a real browser first',
+        blockedSubtitle: 'In-app browsers do not handle home-screen install and first-launch sign-in reliably.',
+        blockedStatus: 'Copy this link, then reopen it in Safari, Chrome, or the system browser.',
+        blockedPrimary: 'Copy this link',
+        blockedCopyDone: 'Copied. Continue in the system browser.',
+        blockedHelper: 'Any independently opened browser can continue. Safari is still the steadiest path on iPhone.',
+        guideTitle: 'Add RemoteLab to the home screen',
+        guideSubtitle: 'The first install takes one extra step, but the first launch reconnects the session for you.',
+        guideStepsTitle: 'Install steps',
+        guideHelperIos: 'After adding it, reopen RemoteLab from the home screen.',
+        guideHelperAndroid: 'Chrome gives the best install path. If this browser does not support install, you can keep using the web for now.',
+        iosStep1Safari: 'Tap the Share button at the bottom.',
+        iosStep1Other: 'Open the browser menu or share sheet.',
+        iosStep2: 'Choose “Add to Home Screen”.',
+        iosStep3: 'Go back to the home screen and open RemoteLab there.',
+        androidStep1Chrome: 'Tap “Install app” or open the browser menu.',
+        androidStep1Other: 'If you see “Install app”, use it. Otherwise Chrome is the best fallback.',
+        androidStep2: 'Confirm the install and place RemoteLab on the home screen.',
+        androidStep3: 'Open RemoteLab from the home screen to finish setup automatically.',
+        guidePrimaryPrompt: 'Install now',
+        guidePrimaryFallback: 'Show install steps',
+        guideSecondary: 'Continue in the browser',
+        guideScrolled: 'Once it is added, reopen RemoteLab from the home screen to continue automatically.',
+        redeemLoadingTitle: 'Finishing setup…',
+        redeemLoadingSubtitle: 'The first standalone launch is reconnecting your login now.',
+        redeemLoadingStatus: 'If this is the first time you opened RemoteLab from the home screen, you should land in the app in a second.',
+        redeemErrorTitle: 'This connection expired',
+        redeemErrorSubtitle: 'Go back to the browser page and start the install flow again.',
+        redeemErrorStatus: 'This one-time handoff is no longer valid. Opening the browser page again will generate a fresh one.',
+        redeemErrorPrimary: 'Go to login',
+        redeemErrorSecondary: 'Copy this link',
+      };
+
+      function setStatus(textContent) {
+        if (!textContent) {
+          statusEl.classList.add('hidden');
+          statusEl.textContent = '';
+          return;
+        }
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = textContent;
+      }
+
+      function setBenefitCopy() {
+        benefit1TitleEl.textContent = text.benefit1Title;
+        benefit1CopyEl.textContent = text.benefit1Copy;
+        benefit2TitleEl.textContent = text.benefit2Title;
+        benefit2CopyEl.textContent = text.benefit2Copy;
+        benefit3TitleEl.textContent = text.benefit3Title;
+        benefit3CopyEl.textContent = text.benefit3Copy;
+      }
+
+      function setSteps(items) {
+        stepsEl.innerHTML = '';
+        items.forEach(function appendStep(item) {
+          const li = document.createElement('li');
+          li.textContent = item;
+          stepsEl.appendChild(li);
+        });
+      }
+
+      async function copyCurrentUrl() {
+        const value = window.location.href;
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+            await navigator.clipboard.writeText(value);
+            return true;
+          }
+        } catch {}
+        try {
+          const textarea = document.createElement('textarea');
+          textarea.value = value;
+          textarea.setAttribute('readonly', 'readonly');
+          textarea.style.position = 'absolute';
+          textarea.style.left = '-9999px';
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      async function registerServiceWorker() {
+        if (!('serviceWorker' in navigator)) return null;
+        try {
+          const registration = await navigator.serviceWorker.register(
+            `/sw.js?v=${encodeURIComponent(buildInfo.assetVersion || 'dev')}`,
+            { updateViaCache: 'none' },
+          );
+          await registration.update().catch(function ignoreUpdateError() {});
+          return registration;
+        } catch {
+          return null;
+        }
+      }
+
+      function continueInBrowser() {
+        try {
+          localStorage.setItem(browserSkipKey, String(Date.now() + browserSkipMs));
+        } catch {}
+        window.location.assign('/?skipInstall=1');
+      }
+
+      function showGuide() {
+        setBenefitCopy();
+        titleEl.textContent = text.guideTitle;
+        subtitleEl.textContent = text.guideSubtitle;
+        stepsTitleEl.textContent = text.guideStepsTitle;
+        setStatus('');
+        copyBtn.classList.add('hidden');
+        stepsWrapEl.classList.remove('hidden');
+        benefitsEl.classList.remove('hidden');
+        secondaryBtn.classList.remove('hidden');
+        secondaryBtn.textContent = text.guideSecondary;
+        secondaryBtn.onclick = continueInBrowser;
+
+        if (isIOS) {
+          setSteps([
+            isSafari ? text.iosStep1Safari : text.iosStep1Other,
+            text.iosStep2,
+            text.iosStep3,
+          ]);
+          helperEl.textContent = text.guideHelperIos;
+        } else if (isAndroid) {
+          setSteps([
+            isChrome ? text.androidStep1Chrome : text.androidStep1Other,
+            text.androidStep2,
+            text.androidStep3,
+          ]);
+          helperEl.textContent = text.guideHelperAndroid;
+        } else {
+          setSteps([
+            text.iosStep1Other,
+            text.iosStep2,
+            text.iosStep3,
+          ]);
+          helperEl.textContent = text.guideHelperIos;
+        }
+
+        primaryBtn.classList.remove('hidden');
+        primaryBtn.textContent = deferredInstallPrompt ? text.guidePrimaryPrompt : text.guidePrimaryFallback;
+        primaryBtn.onclick = async function handlePrimary() {
+          if (deferredInstallPrompt) {
+            const prompt = deferredInstallPrompt;
+            deferredInstallPrompt = null;
+            await prompt.prompt().catch(function ignorePromptError() {});
+            helperEl.textContent = text.guideScrolled;
+            return;
+          }
+          stepsWrapEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          helperEl.textContent = text.guideScrolled;
+        };
+      }
+
+      function showBlocked() {
+        setBenefitCopy();
+        titleEl.textContent = text.blockedTitle;
+        subtitleEl.textContent = text.blockedSubtitle;
+        stepsWrapEl.classList.add('hidden');
+        setStatus(text.blockedStatus);
+        helperEl.textContent = text.blockedHelper;
+        primaryBtn.classList.remove('hidden');
+        primaryBtn.textContent = text.blockedPrimary;
+        primaryBtn.onclick = async function handleCopy() {
+          const copied = await copyCurrentUrl();
+          if (copied) {
+            setStatus(text.blockedCopyDone);
+          }
+        };
+        secondaryBtn.classList.add('hidden');
+        copyBtn.classList.remove('hidden');
+        copyBtn.textContent = text.blockedPrimary;
+        copyBtn.onclick = primaryBtn.onclick;
+      }
+
+      function showRedeemError() {
+        benefitsEl.classList.add('hidden');
+        stepsWrapEl.classList.add('hidden');
+        titleEl.textContent = text.redeemErrorTitle;
+        subtitleEl.textContent = text.redeemErrorSubtitle;
+        helperEl.textContent = text.redeemErrorStatus;
+        setStatus(text.redeemErrorStatus);
+        primaryBtn.classList.remove('hidden');
+        primaryBtn.textContent = text.redeemErrorPrimary;
+        primaryBtn.onclick = function goToLogin() {
+          window.location.assign('/login');
+        };
+        secondaryBtn.classList.remove('hidden');
+        secondaryBtn.textContent = text.redeemErrorSecondary;
+        secondaryBtn.onclick = copyCurrentUrl;
+      }
+
+      async function redeemHandoff() {
+        benefitsEl.classList.add('hidden');
+        stepsWrapEl.classList.add('hidden');
+        copyBtn.classList.add('hidden');
+        titleEl.textContent = text.redeemLoadingTitle;
+        subtitleEl.textContent = text.redeemLoadingSubtitle;
+        helperEl.textContent = '';
+        setStatus(text.redeemLoadingStatus);
+        primaryBtn.classList.add('hidden');
+        secondaryBtn.classList.add('hidden');
+
+        try {
+          const response = await fetch('/api/install/handoff/redeem', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: handoffToken }),
+          });
+          if (!response.ok) {
+            throw new Error('redeem_failed');
+          }
+          try {
+            localStorage.setItem(installNotificationKey, '1');
+          } catch {}
+          window.location.replace('/');
+        } catch {
+          showRedeemError();
+        }
+      }
+
+      window.addEventListener('beforeinstallprompt', function onBeforeInstallPrompt(event) {
+        event.preventDefault();
+        deferredInstallPrompt = event;
+        if (!isInAppBrowser && !isStandalone) {
+          primaryBtn.textContent = text.guidePrimaryPrompt;
+        }
+      });
+
+      void registerServiceWorker();
+
+      if (isStandalone && handoffToken) {
+        void redeemHandoff();
+        return;
+      }
+
+      if (isMobile && isInAppBrowser) {
+        showBlocked();
+        return;
+      }
+
+      showGuide();
+    })();
+  </script>
+</body>
+</html>

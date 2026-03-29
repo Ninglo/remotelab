@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-29 — mobile install should steer users into a real browser and reconnect the first standalone launch
+
+- Source: direct product feedback while testing phone entry and home-screen install behavior
+- User slice: mobile-first owner opening RemoteLab from a tokenized link
+- Observed friction or ask: opening the token link inside a browser works, but adding RemoteLab to the home screen drops the login state and forces the user to paste credentials again; in-app browsers such as WeChat make the flow even worse; notification prompts also feel too early.
+- Signal: mobile entry should default to a lightweight install-oriented onboarding flow that blocks only true in-app browsers, keeps iPhone browser acceptance relatively loose, reconnects the first standalone launch with a one-time handoff, and delays notification permission until after install succeeds.
+- Product implication: add a dedicated mobile install guide, one-time install handoff / bridge mechanics, a browser skip path, and later notification timing instead of assuming browser and standalone storage share login state.
+- Promote to: mobile onboarding implementation, install-handoff regression tests, future first-value notification timing
+- Follow-up: once the install loop is stable, move notification permission from “first standalone launch” to a clearer first-value moment inside the product
+
 ### 2026-03-29 — capability accumulation should happen through selective post-task review, not prompt bloat inside the work step
 
 - Source: direct product discussion about how RemoteLab should get better through repeated use, with drawing/image-generation used as a concrete example
