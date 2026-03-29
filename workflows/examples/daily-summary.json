@@ -1,0 +1,31 @@
+{
+  "name": "daily-summary",
+  "description": "Daily summary of git changes and memory notes across workspaces",
+  "steps": [
+    {
+      "id": "collect",
+      "type": "parallel",
+      "tasks": [
+        {
+          "id": "summary-project",
+          "workspace": "~/my-project",
+          "model": "sonnet",
+          "prompt": "Summarize yesterday's git activity in this workspace.\n\n1. Run `date -d 'yesterday' +%Y-%m-%d` to get yesterday's date\n2. Run `git log --since='yesterday 05:00' --until='today 05:00' --oneline`\n3. Check if memory/YESTERDAY.md exists and read it\n\nOutput format:\n\n## Git Changes\n[commits or 'none']\n\n## Memory Notes\n[summary or 'none']\n\n## Summary\n[2-3 sentences]"
+        }
+      ]
+    },
+    {
+      "id": "synthesize",
+      "type": "sequential",
+      "depends_on": ["collect"],
+      "tasks": [
+        {
+          "id": "synthesis",
+          "workspace": "~/my-project",
+          "model": "opus",
+          "prompt": "Synthesize the following workspace summaries into a daily report.\n\n{{collect.results}}\n\nWrite a concise cross-workspace summary highlighting key changes and what to focus on today."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "code-review",
+  "description": "On-demand code review: scan recent commits, review each file, prioritize fixes",
+  "params": {
+    "workspace": "{{workspace}}"
+  },
+  "steps": [
+    {
+      "id": "scan",
+      "type": "sequential",
+      "tasks": [
+        {
+          "id": "scan-changes",
+          "workspace": "{{workspace}}",
+          "model": "sonnet",
+          "prompt": "Scan the last 5 commits:\n\n1. Run `git diff HEAD~5..HEAD --stat`\n2. Run `git diff HEAD~5..HEAD --name-only`\n3. Run `git log --oneline -5`\n\nOutput:\n## Recent Commits\n[commits]\n## Changed Files\n[files sorted by change volume]\n## Summary\n[2-3 sentences on overall direction]"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "type": "sequential",
+      "depends_on": ["scan"],
+      "tasks": [
+        {
+          "id": "review-files",
+          "workspace": "{{workspace}}",
+          "model": "sonnet",
+          "prompt": "Review each changed file from the scan:\n\n{{scan.results}}\n\nFor each file, check:\n- Security: injection, XSS, hardcoded secrets, path traversal\n- Quality: unhandled errors, resource leaks, race conditions\n- Robustness: boundary conditions, input validation, null handling\n\nOutput a per-file review report."
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "type": "sequential",
+      "depends_on": ["review"],
+      "tasks": [
+        {
+          "id": "priority-summary",
+          "workspace": "{{workspace}}",
+          "model": "opus",
+          "prompt": "From this review:\n\n{{review.results}}\n\nList the top 3 issues to fix, ranked by severity (security > data loss > bugs > quality).\n\nFor each: file, problem, risk, fix direction.\n\nEnd with an overall assessment."
+        }
+      ]
+    }
+  ]
+}

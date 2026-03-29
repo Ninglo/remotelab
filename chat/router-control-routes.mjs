@@ -1,8 +1,15 @@
 import { readFile, readdir } from 'fs/promises';
+import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs';
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
+import { createTask, getTask, listTasks, updateTask, deleteTask } from './task-manager.mjs';
+import { createReport, listReports, getReport, getReportHtml, markAsRead, deleteReport } from './reports.mjs';
+import { updateLastRun, reloadSchedule } from './scheduler.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -31,7 +38,9 @@ import {
   localizeFileAsset,
 } from './file-assets.mjs';
 import { createShareSnapshot } from './shares.mjs';
-import { pathExists } from './fs-utils.mjs';
+import {
+  pathExists,
+} from './fs-utils.mjs';
 import {
   applyTemplateToSession,
   appendAssistantMessage,
@@ -903,6 +912,262 @@ export async function handleControlRoutes({
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid subscription' }));
     }
+    return true;
+  }
+
+  // ---- Internal Report Submission (MCP submit_report) ----
+
+  if (pathname === '/api/internal/report' && req.method === 'POST') {
+    let body;
+    try { body = await readBody(req, 65536); } catch { body = '{}'; }
+    let data;
+    try { data = JSON.parse(body); } catch {
+      writeJson(res, 400, { error: 'Invalid JSON' });
+      return true;
+    }
+    const { title, file_path: filePath, session_id: sessionId, source } = data;
+    try {
+      const session = sessionId ? await getSession(sessionId) : null;
+      const report = createReport({
+        title,
+        filePath,
+        sessionId,
+        sessionFolder: session?.folder || null,
+        source: source || 'unknown',
+      });
+      writeJson(res, 201, { success: true, reportId: report.id, report });
+    } catch (err) {
+      writeJson(res, 400, { error: err.message });
+    }
+    return true;
+  }
+
+  // ---- Reports API ----
+
+  if (pathname === '/api/reports' && req.method === 'GET') {
+    writeJson(res, 200, listReports());
+    return true;
+  }
+
+  const reportMatch = pathname.match(/^\/api\/reports\/([a-f0-9]+)(\/(\w+))?$/);
+  if (reportMatch) {
+    const id = reportMatch[1];
+    const sub = reportMatch[3];
+
+    if (!sub && req.method === 'GET') {
+      const report = getReport(id);
+      if (!report) {
+        writeJson(res, 404, { error: 'Report not found' });
+        return true;
+      }
+      writeJson(res, 200, report);
+      return true;
+    }
+
+    if (sub === 'html' && req.method === 'GET') {
+      const html = getReportHtml(id);
+      if (html === null) {
+        writeJson(res, 404, { error: 'Report not found' });
+        return true;
+      }
+      const injected = html.replace(/(<head\b[^>]*>)/i, '$1<base target="_blank">');
+      res.writeHead(200, {
+        'Content-Type': 'text/html',
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data: blob:",
+      });
+      res.end(injected);
+      return true;
+    }
+
+    if (sub === 'read' && req.method === 'PATCH') {
+      const updated = markAsRead(id);
+      if (!updated) {
+        writeJson(res, 404, { error: 'Report not found' });
+        return true;
+      }
+      writeJson(res, 200, updated);
+      return true;
+    }
+
+    if (!sub && req.method === 'DELETE') {
+      const ok = deleteReport(id);
+      if (!ok) {
+        writeJson(res, 404, { error: 'Report not found' });
+        return true;
+      }
+      writeJson(res, 200, { ok: true });
+      return true;
+    }
+  }
+
+  // ---- Schedules API ----
+
+  if (pathname === '/api/schedules' && req.method === 'GET') {
+    try {
+      const schedulesFile = join(__dirname, '..', 'workflows', 'schedules.json');
+      const data = existsSync(schedulesFile)
+        ? JSON.parse(readFileSync(schedulesFile, 'utf8'))
+        : { schedules: [] };
+      writeJson(res, 200, data);
+    } catch (err) {
+      writeJson(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  const scheduleTriggerMatch = pathname.match(/^\/api\/schedules\/([^/]+)\/trigger$/);
+  if (scheduleTriggerMatch && req.method === 'POST') {
+    const scheduleId = scheduleTriggerMatch[1];
+    try {
+      const schedulesFile = join(__dirname, '..', 'workflows', 'schedules.json');
+      const data = existsSync(schedulesFile)
+        ? JSON.parse(readFileSync(schedulesFile, 'utf8'))
+        : { schedules: [] };
+      const schedule = data.schedules.find(s => s.id === scheduleId);
+      if (!schedule) {
+        writeJson(res, 404, { error: 'Schedule not found' });
+        return true;
+      }
+      updateLastRun(scheduleId);
+      writeJson(res, 202, { ok: true, workflow: schedule.workflow, status: 'triggered' });
+    } catch (err) {
+      writeJson(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  const scheduleReloadMatch = pathname.match(/^\/api\/schedules\/([^/]+)\/reload$/);
+  if (scheduleReloadMatch && req.method === 'POST') {
+    reloadSchedule(scheduleReloadMatch[1]);
+    writeJson(res, 200, { ok: true });
+    return true;
+  }
+
+  const schedulePatchMatch = pathname.match(/^\/api\/schedules\/([^/]+)$/);
+  if (schedulePatchMatch && req.method === 'PATCH') {
+    const scheduleId = schedulePatchMatch[1];
+    let body;
+    try { body = await readBody(req, 4096); } catch { body = '{}'; }
+    try {
+      const updates = JSON.parse(body);
+      const schedulesFile = join(__dirname, '..', 'workflows', 'schedules.json');
+      const data = existsSync(schedulesFile)
+        ? JSON.parse(readFileSync(schedulesFile, 'utf8'))
+        : { schedules: [] };
+      const schedule = data.schedules.find(s => s.id === scheduleId);
+      if (!schedule) {
+        writeJson(res, 404, { error: 'Schedule not found' });
+        return true;
+      }
+      const ALLOWED = ['enabled', 'maxRuns', 'disposable', 'intervalMs'];
+      for (const key of ALLOWED) {
+        if (updates[key] !== undefined) schedule[key] = updates[key];
+      }
+      const tmp = schedulesFile + '.tmp.' + process.pid;
+      writeFileSync(tmp, JSON.stringify(data, null, 2));
+      renameSync(tmp, schedulesFile);
+      if (updates.enabled !== undefined) {
+        reloadSchedule(scheduleId);
+      }
+      writeJson(res, 200, { schedule });
+    } catch (err) {
+      writeJson(res, 400, { error: err.message || 'Invalid request body' });
+    }
+    return true;
+  }
+
+  if (schedulePatchMatch && req.method === 'DELETE') {
+    const scheduleId = schedulePatchMatch[1];
+    try {
+      const schedulesFile = join(__dirname, '..', 'workflows', 'schedules.json');
+      const data = existsSync(schedulesFile)
+        ? JSON.parse(readFileSync(schedulesFile, 'utf8'))
+        : { schedules: [] };
+      const idx = data.schedules.findIndex(s => s.id === scheduleId);
+      if (idx === -1) {
+        writeJson(res, 404, { error: 'Schedule not found' });
+        return true;
+      }
+      data.schedules.splice(idx, 1);
+      const tmp = schedulesFile + '.tmp.' + process.pid;
+      writeFileSync(tmp, JSON.stringify(data, null, 2));
+      renameSync(tmp, schedulesFile);
+      reloadSchedule(scheduleId);
+      writeJson(res, 200, { ok: true });
+    } catch (err) {
+      writeJson(res, 500, { error: err.message });
+    }
+    return true;
+  }
+
+  // ---- Task API ----
+
+  if (pathname === '/api/tasks' && req.method === 'GET') {
+    const filters = {};
+    if (parsedUrl.query?.status) filters.status = parsedUrl.query.status;
+    if (parsedUrl.query?.assigned_session_id) filters.assigned_session_id = parsedUrl.query.assigned_session_id;
+    writeJson(res, 200, { tasks: listTasks(filters) });
+    return true;
+  }
+
+  if (pathname === '/api/tasks' && req.method === 'POST') {
+    let body;
+    try { body = JSON.parse(await readBody(req, 16384)); } catch {
+      writeJson(res, 400, { error: 'Invalid JSON' });
+      return true;
+    }
+    try {
+      const task = createTask({
+        subject: body.subject,
+        description: body.description,
+        assigned_session_id: body.assigned_session_id,
+        blocked_by: body.blocked_by,
+        report_to: body.report_to,
+        repo_path: body.repo_path,
+        worktree_path: body.worktree_path,
+        branch: body.branch,
+      });
+      writeJson(res, 201, { task });
+    } catch (err) {
+      writeJson(res, 400, { error: err.message });
+    }
+    return true;
+  }
+
+  const taskIdMatch = pathname.match(/^\/api\/tasks\/([^/]+)$/);
+  if (taskIdMatch && req.method === 'GET') {
+    const task = getTask(taskIdMatch[1]);
+    if (!task) {
+      writeJson(res, 404, { error: 'Task not found' });
+      return true;
+    }
+    writeJson(res, 200, { task });
+    return true;
+  }
+
+  if (taskIdMatch && req.method === 'PATCH') {
+    let body;
+    try { body = JSON.parse(await readBody(req, 16384)); } catch {
+      writeJson(res, 400, { error: 'Invalid JSON' });
+      return true;
+    }
+    const task = updateTask(taskIdMatch[1], body);
+    if (!task) {
+      writeJson(res, 404, { error: 'Task not found' });
+      return true;
+    }
+    writeJson(res, 200, { task });
+    return true;
+  }
+
+  if (taskIdMatch && req.method === 'DELETE') {
+    const deleted = deleteTask(taskIdMatch[1]);
+    if (!deleted) {
+      writeJson(res, 404, { error: 'Task not found' });
+      return true;
+    }
+    writeJson(res, 200, { ok: true });
     return true;
   }
 

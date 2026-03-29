@@ -1,0 +1,30 @@
+{
+  "software-dev": {
+    "description": "Software development team with leader + backend + frontend + tester",
+    "roles": [
+      { "name": "leader", "folder": "{{goal_folder}}", "tool": "claude", "model": "opus", "prompt_template": "你是开发团队的 leader。项目目标：{{goal}}\n\n请先分析需求，设计方案，然后协调其他 agent 完成开发。" },
+      { "name": "backend", "folder": "{{goal_folder}}", "tool": "claude", "model": "opus", "prompt_template": "你是后端开发者。项目目标：{{goal}}\n\n等待 leader 的任务分配。" },
+      { "name": "frontend", "folder": "{{goal_folder}}", "tool": "claude", "model": "opus", "prompt_template": "你是前端开发者。项目目标：{{goal}}\n\n等待 leader 的任务分配。" },
+      { "name": "tester", "folder": "{{goal_folder}}", "tool": "claude", "model": "sonnet", "prompt_template": "你是测试工程师。项目目标：{{goal}}\n\n等待开发完成后进行测试。" }
+    ],
+    "tasks": [
+      { "subject": "需求分析与方案设计", "role": "leader", "blocked_by": [] },
+      { "subject": "后端实现", "role": "backend", "blocked_by": ["需求分析与方案设计"] },
+      { "subject": "前端实现", "role": "frontend", "blocked_by": ["需求分析与方案设计"] },
+      { "subject": "集成测试", "role": "tester", "blocked_by": ["后端实现", "前端实现"] }
+    ]
+  },
+  "research": {
+    "description": "Research team with researcher + analyzer + writer",
+    "roles": [
+      { "name": "researcher", "folder": "{{goal_folder}}", "tool": "claude", "model": "opus", "prompt_template": "你是研究员。研究目标：{{goal}}\n\n进行深入调研，收集关键信息。" },
+      { "name": "analyzer", "folder": "{{goal_folder}}", "tool": "claude", "model": "opus", "prompt_template": "你是分析师。研究目标：{{goal}}\n\n等待研究员提供数据后进行分析。" },
+      { "name": "writer", "folder": "{{goal_folder}}", "tool": "claude", "model": "sonnet", "prompt_template": "你是报告撰写者。研究目标：{{goal}}\n\n等待分析完成后撰写报告。" }
+    ],
+    "tasks": [
+      { "subject": "深入调研", "role": "researcher", "blocked_by": [] },
+      { "subject": "数据分析", "role": "analyzer", "blocked_by": ["深入调研"] },
+      { "subject": "报告撰写", "role": "writer", "blocked_by": ["数据分析"] }
+    ]
+  }
+}

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reports — RemoteLab</title>
+<script nonce="{{NONCE}}">(function(){
+  var m=localStorage.getItem('themeMode')||'auto';
+  var h=new Date().getHours();
+  if(m==='dark'||(m==='auto'&&(h<7||h>=19)))
+    document.documentElement.setAttribute('data-theme','dark');
+}());</script>
+<style nonce="{{NONCE}}">
+:root {
+  --bg: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --border: #dfe6e9;
+  --border-strong: #b2bec3;
+  --text: #2d3436;
+  --text-secondary: #636e72;
+  --text-muted: #b2bec3;
+  --accent: #002fa7;
+  --accent-hover: #001f8a;
+  --accent-dim: rgba(0, 47, 167, 0.08);
+  --shadow: rgba(0, 47, 167, 0.08);
+}
+[data-theme="dark"] {
+  --bg: #0f0f0f;
+  --bg-secondary: #1a1a1a;
+  --border: #2a2a2a;
+  --border-strong: #383838;
+  --text: #e8e8e8;
+  --text-secondary: #999999;
+  --text-muted: #5a5a5a;
+  --accent: #6b8aff;
+  --accent-hover: #8aa4ff;
+  --accent-dim: rgba(107, 138, 255, 0.1);
+  --shadow: rgba(107, 138, 255, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f0f0f;
+    --bg-secondary: #1a1a1a;
+    --border: #2a2a2a;
+    --border-strong: #383838;
+    --text: #e8e8e8;
+    --text-secondary: #999999;
+    --text-muted: #5a5a5a;
+    --accent: #6b8aff;
+    --accent-hover: #8aa4ff;
+    --accent-dim: rgba(107, 138, 255, 0.1);
+    --shadow: rgba(107, 138, 255, 0.06);
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100dvh;
+  transition: background 0.2s, color 0.2s;
+}
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex; align-items: center; gap: 16px;
+  font-size: 14px;
+}
+.nav a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.nav a:hover { text-decoration: underline; }
+.nav .sep { color: var(--text-muted); }
+.nav h1 { font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: 0.5px; }
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+.empty {
+  text-align: center;
+  padding: 80px 20px;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+.card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+}
+.card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.card-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.card-meta {
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex; gap: 16px; flex-wrap: wrap;
+}
+.card-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.card.unread { border-left: 3px solid var(--accent); }
+.card.unread .card-title { color: var(--accent); }
+.loading {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+</style>
+</head>
+<body>
+<div class="nav">
+  <a href="/">← 返回</a>
+  <span class="sep">|</span>
+  <h1>Reports</h1>
+</div>
+<div class="container">
+  <div class="loading" id="loading">Loading...</div>
+  <div id="list"></div>
+</div>
+<script nonce="{{NONCE}}">
+(async function() {
+  const listEl = document.getElementById('list');
+  const loadingEl = document.getElementById('loading');
+  try {
+    const res = await fetch('/api/reports');
+    if (!res.ok) throw new Error('Failed to fetch');
+    const reports = await res.json();
+    loadingEl.style.display = 'none';
+    if (!reports.length) {
+      listEl.innerHTML = '<div class="empty">暂无报告</div>';
+      return;
+    }
+    listEl.innerHTML = reports.map(r => {
+      const date = new Date(r.createdAt).toLocaleString('zh-CN', {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+      const unread = r.read ? '' : ' unread';
+      return `<a class="card${unread}" href="/reports/${r.id}">
+        <div class="card-title">${esc(r.title)}</div>
+        <div class="card-meta">
+          <span>${date}</span>
+          ${r.source ? `<span>${esc(r.source)}</span>` : ''}
+        </div>
+      </a>`;
+    }).join('');
+  } catch(e) {
+    loadingEl.textContent = '加载失败';
+  }
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+})();
+</script>
+</body>
+</html>

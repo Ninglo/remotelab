@@ -1,0 +1,18 @@
+{
+  "name": "DailyNews Report",
+  "description": "Daily RSS-based news curation: fetch, filter by interest, generate HTML report",
+  "steps": [
+    {
+      "id": "generate-report",
+      "type": "sequential",
+      "tasks": [
+        {
+          "id": "smart-report",
+          "workspace": "~/DailyNews",
+          "model": "opus",
+          "prompt": "Execute the daily news report workflow:\n\n1. Run `python3 fetch_news.py` to generate today.md and raw HTML\n2. Read the interest model from memory/interest_model.md\n3. Read today.md for raw news items\n4. Read template.html for the HTML report structure\n5. Filter news into high-interest (detailed) and low-interest (2-line summary) categories\n6. Generate an HTML report following the template structure, save to reports/[today].html\n7. Submit the report via mcp__remotelab__submit_report\n8. Set label to 'done'"
+        }
+      ]
+    }
+  ]
+}

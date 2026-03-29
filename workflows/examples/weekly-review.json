@@ -1,0 +1,31 @@
+{
+  "name": "weekly-review",
+  "description": "Weekly review of git commits and memory notes across all workspaces",
+  "steps": [
+    {
+      "id": "collect",
+      "type": "parallel",
+      "tasks": [
+        {
+          "id": "collect-project",
+          "workspace": "~/my-project",
+          "model": "sonnet",
+          "prompt": "Summarize this week's activity.\n\n1. Run `git log --since='7 days ago' --oneline`\n2. Run `git diff --name-only HEAD~$(git log --since='7 days ago' --oneline | wc -l) HEAD 2>/dev/null`\n3. Read any memory/*.md files from this week\n\nOutput format:\n\n## Git Commits (7 days)\n[commits]\n\n## Modified Files\n[files]\n\n## Weekly Summary\n[3-5 sentences]"
+        }
+      ]
+    },
+    {
+      "id": "synthesize",
+      "type": "sequential",
+      "depends_on": ["collect"],
+      "tasks": [
+        {
+          "id": "weekly-synthesis",
+          "workspace": "~/my-project",
+          "model": "opus",
+          "prompt": "Create a weekly report from these workspace summaries.\n\n{{collect.results}}\n\nFormat:\n# Weekly Report — <date>\n\n## Highlights\n[top 3-5 accomplishments]\n\n## Per-Project Status\n[summary per workspace]\n\n## Next Week\n[priorities]"
+        }
+      ]
+    }
+  ]
+}

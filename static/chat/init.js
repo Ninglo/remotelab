@@ -9,6 +9,8 @@ function applyVisitorMode() {
   if (menuBtn) menuBtn.style.display = "none";
   if (sortSessionListBtn) sortSessionListBtn.style.display = "none";
   if (newSessionBtn) newSessionBtn.style.display = "none";
+  const opsPanelBtn = document.getElementById("opsPanelBtn");
+  if (opsPanelBtn) opsPanelBtn.style.display = "none";
   // Hide tool/model selectors and context management (visitors use defaults)
   if (inlineToolSelect) inlineToolSelect.style.display = "none";
   if (inlineModelSelect) inlineModelSelect.style.display = "none";
@@ -24,6 +26,9 @@ function applyVisitorMode() {
   }
   syncForkButton();
   syncShareButton();
+  if (window.RemoteLabOpsPanel && typeof window.RemoteLabOpsPanel.syncVisibilityForMode === "function") {
+    window.RemoteLabOpsPanel.syncVisibilityForMode();
+  }
 }
 
 function applyShareSnapshotMode(snapshot) {
