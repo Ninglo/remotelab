@@ -6,7 +6,6 @@ const pageBootstrap =
     ? window.__REMOTELAB_BOOTSTRAP__
     : {};
 const buildAssetVersion = buildInfo.assetVersion || "dev";
-const bootstrapT = window.remotelabT || ((key) => key);
 
 function normalizeBootstrapText(value) {
   if (typeof value !== "string") return "";
@@ -17,9 +16,8 @@ function normalizeBootstrapText(value) {
 function normalizeBootstrapAuthInfo(raw) {
   if (!raw || typeof raw !== "object") return null;
   const role = raw.role === "visitor" ? "visitor" : "owner";
-  const preferredLanguage = normalizeBootstrapText(raw.preferredLanguage);
   if (role === "owner") {
-    return preferredLanguage ? { role, preferredLanguage } : { role };
+    return { role };
   }
 
   const sessionId = normalizeBootstrapText(raw.sessionId);
@@ -29,28 +27,14 @@ function normalizeBootstrapAuthInfo(raw) {
     role,
     sessionId,
   };
-  if (preferredLanguage) info.preferredLanguage = preferredLanguage;
+  const appId = normalizeBootstrapText(raw.appId);
+  const visitorId = normalizeBootstrapText(raw.visitorId);
+  if (appId) info.appId = appId;
+  if (visitorId) info.visitorId = visitorId;
   return info;
 }
 
 const bootstrapAuthInfo = normalizeBootstrapAuthInfo(pageBootstrap.auth);
-
-function normalizeBootstrapAssetUploads(raw) {
-  if (!raw || typeof raw !== "object") {
-    return {
-      enabled: false,
-      directUpload: false,
-      provider: "",
-    };
-  }
-  return {
-    enabled: raw.enabled === true,
-    directUpload: raw.directUpload === true,
-    provider: normalizeBootstrapText(raw.provider),
-  };
-}
-
-const bootstrapAssetUploads = normalizeBootstrapAssetUploads(pageBootstrap.assetUploads);
 
 function normalizeBootstrapShareSnapshot(rawPayload, rawMeta = null) {
   const payload = rawPayload && typeof rawPayload === "object"
@@ -113,16 +97,48 @@ const bootstrapShareSnapshot = normalizeBootstrapShareSnapshot(
   pageBootstrap.shareSnapshot,
 );
 
+const THEMES = {
+  amber: {
+    themeColor: "#f6f8ef",
+  },
+  minimal: {
+    themeColor: "#ffffff",
+  },
+  dark: {
+    themeColor: "#181818",
+  },
+  cyber: {
+    themeColor: "#1e1e2e",
+  },
+  aurora: {
+    themeColor: "#faf5ff",
+  },
+};
+const THEME_STORAGE_KEY = "theme";
+
+function resolveStoredTheme() {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY) || "amber";
+  return THEMES[stored] ? stored : "amber";
+}
+
+function applyTheme(themeId) {
+  const resolved = THEMES[themeId] ? themeId : "amber";
+  document.body.dataset.theme = resolved;
+  localStorage.setItem(THEME_STORAGE_KEY, resolved);
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) {
+    themeMeta.setAttribute("content", THEMES[resolved].themeColor);
+    themeMeta.removeAttribute("media");
+  }
+  return resolved;
+}
+
 function getBootstrapAuthInfo() {
   return bootstrapAuthInfo ? { ...bootstrapAuthInfo } : null;
 }
 
 function getBootstrapShareSnapshot() {
   return bootstrapShareSnapshot;
-}
-
-function getBootstrapAssetUploads() {
-  return { ...bootstrapAssetUploads };
 }
 
 console.info(
@@ -151,30 +167,13 @@ function updateFrontendRefreshUi() {
   refreshFrontendBtn.hidden = !hasUpdate;
   refreshFrontendBtn.classList.toggle("ready", hasUpdate);
   const updateTitle = hasUpdate
-    ? bootstrapT("status.frontendUpdateReady")
-    : bootstrapT("status.frontendReloadLatest");
+    ? "Frontend update available — tap to reload"
+    : "Reload latest frontend";
   refreshFrontendBtn.title = updateTitle;
   refreshFrontendBtn.setAttribute("aria-label", updateTitle);
   if (!hasUpdate) {
     refreshFrontendBtn.removeAttribute("aria-busy");
   }
-}
-
-function hasUnsavedComposerState() {
-  if (typeof hasAnyComposerUnsavedState === "function") {
-    return hasAnyComposerUnsavedState();
-  }
-  if (typeof hasPendingComposerSend === "function" && hasPendingComposerSend()) {
-    return true;
-  }
-  const draftText = typeof msgInput?.value === "string" ? msgInput.value.trim() : "";
-  if (draftText) {
-    return true;
-  }
-  const pendingAttachmentCount = Number.isInteger(imgPreviewStrip?.childElementCount)
-    ? imgPreviewStrip.childElementCount
-    : 0;
-  return pendingAttachmentCount > 0;
 }
 
 async function reloadForFreshBuild(nextBuildInfo) {
@@ -227,10 +226,20 @@ const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
-const settingsSessionPresentationList = document.getElementById("settingsSessionPresentationList");
-const uiLanguageSelect = document.getElementById("uiLanguageSelect");
-const uiLanguageStatus = document.getElementById("uiLanguageStatus");
-const sortSessionListBtn = document.getElementById("sortSessionListBtn");
+const newUserNameInput = document.getElementById("newUserNameInput");
+const newUserAppsPicker = document.getElementById("newUserAppsPicker");
+const newUserDefaultAppSelect = document.getElementById("newUserDefaultAppSelect");
+const createUserBtn = document.getElementById("createUserBtn");
+const userFormStatus = document.getElementById("userFormStatus");
+const settingsUsersList = document.getElementById("settingsUsersList");
+const settingsAppsList = document.getElementById("settingsAppsList");
+const newAppNameInput = document.getElementById("newAppNameInput");
+const newAppToolSelect = document.getElementById("newAppToolSelect");
+const newAppWelcomeInput = document.getElementById("newAppWelcomeInput");
+const newAppSystemPromptInput = document.getElementById("newAppSystemPromptInput");
+const createAppConfigBtn = document.getElementById("createAppConfigBtn");
+const appFormStatus = document.getElementById("appFormStatus");
+const newAppBtn = document.getElementById("newAppBtn");
 const newSessionBtn = document.getElementById("newSessionBtn");
 const messagesEl = document.getElementById("messages");
 const messagesInner = document.getElementById("messagesInner");
@@ -242,6 +251,7 @@ const headerTitle = document.getElementById("headerTitle");
 const refreshFrontendBtn = document.getElementById("refreshFrontendBtn");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
+const themeSelect = document.getElementById("themeSelect");
 const imgBtn = document.getElementById("imgBtn");
 const imgFileInput = document.getElementById("imgFileInput");
 const imgPreviewStrip = document.getElementById("imgPreviewStrip");
@@ -258,8 +268,12 @@ const sessionTemplateRow = document.getElementById("sessionTemplateRow");
 const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
+const tabBoard = document.getElementById("tabBoard");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
+const sessionAppFilterSelect = document.getElementById("sessionAppFilterSelect");
+const userFilterSelect = document.getElementById("userFilterSelect");
+const boardPanel = document.getElementById("boardPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
@@ -286,15 +300,26 @@ const providerPromptCode = document.getElementById("providerPromptCode");
 const saveToolConfigBtn = document.getElementById("saveToolConfigBtn");
 const copyProviderPromptBtn = document.getElementById("copyProviderPromptBtn");
 
+const activeTheme = applyTheme(resolveStoredTheme());
+if (themeSelect) {
+  themeSelect.value = activeTheme;
+  themeSelect.addEventListener("change", () => {
+    applyTheme(themeSelect.value);
+  });
+}
+
 refreshFrontendBtn?.addEventListener("click", () => {
   void reloadForFreshBuild(newerBuildInfo);
 });
 
 let ws = null;
+let pendingImages = [];
 const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
 const LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeAppFilter";
 const ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeSourceFilter";
+const ACTIVE_SESSION_APP_FILTER_STORAGE_KEY = "activeSessionAppFilter";
+const ACTIVE_USER_FILTER_STORAGE_KEY = "activeUserFilter";
 const LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY = "sessionSendFailures";
 const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
@@ -302,18 +327,20 @@ const FILTER_ALL_VALUE = "__all__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
 const SOURCE_FILTER_BOT_VALUE = "bot";
 const SOURCE_FILTER_AUTOMATION_VALUE = "automation";
+const ADMIN_USER_FILTER_VALUE = "user_admin";
+const USER_FILTER_ALL_VALUE = "__all_users__";
 const DEFAULT_APP_ID = "chat";
+const BASIC_CHAT_APP_ID = "app_basic_chat";
+const BASIC_CHAT_TEMPLATE_APP_ID = BASIC_CHAT_APP_ID;
+const CREATE_APP_TEMPLATE_APP_ID = "app_create_app";
 const DEFAULT_APP_NAME = "Chat";
 const sessionStateModel = window.RemoteLabSessionStateModel;
 if (!sessionStateModel) {
   throw new Error("RemoteLabSessionStateModel must load before bootstrap.js");
 }
-const chatStoreModel = window.RemoteLabChatStore;
-if (!chatStoreModel) {
-  throw new Error("RemoteLabChatStore must load before bootstrap.js");
-}
 
 function normalizeSidebarTab(tab) {
+  if (tab === "board" || tab === "progress") return "board";
   if (tab === "settings") return "settings";
   return "sessions";
 }
@@ -359,6 +386,9 @@ let hasAttachedSession = false;
 let sessionStatus = "idle";
 let reconnectTimer = null;
 let sessions = [];
+let sessionAppCatalog = [];
+let availableApps = [];
+let availableUsers = [];
 let hasLoadedSessions = false;
 let archivedSessionCount = 0;
 let archivedSessionsLoaded = false;
@@ -394,223 +424,22 @@ const renderedEventState = {
   runningBlockExpanded: false,
 };
 
-const chatStore = chatStoreModel.createStore({
-  sessions,
-  currentSessionId,
-  hasAttachedSession,
-  hasLoadedSessions,
-  archivedSessionCount,
-  archivedSessionsLoaded,
-  archivedSessionsLoading,
-  activeSourceFilter:
-    localStorage.getItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY)
-    || localStorage.getItem(LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY)
-    || FILTER_ALL_VALUE,
-  activeTab: normalizeSidebarTab(
-    pendingNavigationState.tab
-    || localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY)
-    || "sessions",
-  ),
-  sessionStatus,
-});
-
-function syncChatStoreGlobals(nextState = chatStore.getState()) {
-  currentSessionId = nextState.currentSessionId;
-  hasAttachedSession = nextState.hasAttachedSession;
-  sessionStatus = nextState.sessionStatus;
-  sessions = nextState.sessions;
-  hasLoadedSessions = nextState.hasLoadedSessions;
-  archivedSessionCount = nextState.archivedSessionCount;
-  archivedSessionsLoaded = nextState.archivedSessionsLoaded;
-  archivedSessionsLoading = nextState.archivedSessionsLoading;
-}
-
-chatStore.subscribe((nextState) => {
-  syncChatStoreGlobals(nextState);
-});
-syncChatStoreGlobals();
-
-function getChatStore() {
-  return chatStore;
-}
-
-function getChatStoreStateSnapshot() {
-  return chatStore.getState();
-}
-
-function dispatchChatStore(action) {
-  return chatStore.dispatch(action);
-}
-
-function getChatStoreFallbackState() {
-  return chatStoreModel.createState({
-    sessions,
-    currentSessionId,
-    hasAttachedSession,
-    hasLoadedSessions,
-    archivedSessionCount,
-    archivedSessionsLoaded,
-    archivedSessionsLoading,
-    activeSourceFilter: getActiveSourceFilterValue(),
-    activeTab: getActiveSidebarTabValue(),
-    sessionStatus,
-  });
-}
-
-function reduceChatStoreFallback(reducer, ...args) {
-  const nextState = reducer(getChatStoreFallbackState(), ...args);
-  syncChatStoreGlobals(nextState);
-  return nextState;
-}
-
-function replaceChatState(state = {}, options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "replace-state",
-      state,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.replaceState, state, options);
-}
-
-function replaceActiveChatSessionsState(nextSessions = [], options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "replace-active-sessions",
-      sessions: nextSessions,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.replaceActiveSessions, nextSessions, options);
-}
-
-function replaceArchivedChatSessionsState(nextSessions = [], options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "replace-archived-sessions",
-      sessions: nextSessions,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.replaceArchivedSessions, nextSessions, options);
-}
-
-function upsertChatSessionState(session, options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "upsert-session",
-      session,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.upsertSession, session, options);
-}
-
-function removeChatSessionState(sessionId, options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "remove-session",
-      sessionId,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.removeSession, sessionId, options);
-}
-
-function setChatCurrentSession(sessionId, options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "set-current-session",
-      sessionId,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.setCurrentSession, sessionId, options);
-}
-
-function setChatArchivedSessionsLoading(value) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "set-archived-sessions-loading",
-      value,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.setArchivedSessionsLoading, value);
-}
-
-function setChatActiveSourceFilter(value, options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "set-active-source-filter",
-      value,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.setActiveSourceFilter, value, options);
-}
-
-function setChatActiveTab(value, options = {}) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "set-active-tab",
-      value,
-      ...options,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.setActiveTab, value, options);
-}
-
-function setChatSessionStatus(value) {
-  if (typeof dispatchChatStore === "function") {
-    return dispatchChatStore({
-      type: "set-session-status",
-      value,
-    });
-  }
-  return reduceChatStoreFallback(chatStoreModel.setSessionStatus, value);
-}
-
-function getActiveSidebarTabValue() {
-  const storeValue = getChatStoreStateSnapshot()?.activeTab;
-  if (typeof storeValue === "string" && storeValue.trim()) {
-    return normalizeSidebarTab(storeValue);
-  }
-  return normalizeSidebarTab(
-    pendingNavigationState.tab
-    || localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY)
-    || "sessions",
-  );
-}
-
-function getActiveSourceFilterValue() {
-  const value = getChatStoreStateSnapshot()?.activeSourceFilter;
-  if (typeof value === "string" && value.trim()) {
-    return value.trim();
-  }
-  return localStorage.getItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY)
-    || localStorage.getItem(LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY)
-    || FILTER_ALL_VALUE;
-}
-
-function getChatStoreSession(sessionId = currentSessionId) {
-  return chatStoreModel.findSession(getChatStoreStateSnapshot(), sessionId);
-}
-
 function setRunningEventBlockExpanded(sessionId, expanded) {
   if (!sessionId || renderedEventState.sessionId !== sessionId) return;
   renderedEventState.runningBlockExpanded = expanded === true;
 }
 
 function shouldUseVisitorRequests() {
-  return visitorMode === true;
+  if (visitorMode) return true;
+  try {
+    return new URL(window.location.href).searchParams.get("visitor") === "1";
+  } catch {
+    return false;
+  }
 }
 
 function withVisitorModeUrl(url) {
-  const resolvedUrl = typeof window.remotelabResolveProductUrl === "function"
-    ? window.remotelabResolveProductUrl(url)
-    : new URL(String(url || ""), window.location.href).toString();
-  const parsed = new URL(resolvedUrl, window.location.href);
+  const parsed = new URL(String(url || ""), window.location.href);
   if (shouldUseVisitorRequests()) {
     parsed.searchParams.set("visitor", "1");
   }
@@ -622,7 +451,7 @@ function withVisitorModeUrl(url) {
 
 let currentTokens = 0;
 
-const DEFAULT_TOOL_ID = "micro-agent";
+const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 
 function normalizeStoredToolId(value) {
@@ -632,13 +461,11 @@ function normalizeStoredToolId(value) {
 function derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool) {
   const preferred = normalizeStoredToolId(storedPreferredTool);
   const legacySelected = normalizeStoredToolId(storedLegacySelectedTool);
-  const normalizedPreferred = preferred === "claude" ? "" : preferred;
-  const normalizedLegacySelected = legacySelected === "claude" ? "" : legacySelected;
-  if (normalizedPreferred && !(LEGACY_AUTO_PREFERRED_TOOL_IDS.has(normalizedPreferred) && !normalizedLegacySelected)) {
-    return normalizedPreferred;
+  if (preferred && !(LEGACY_AUTO_PREFERRED_TOOL_IDS.has(preferred) && !legacySelected)) {
+    return preferred;
   }
-  if (normalizedLegacySelected) {
-    return normalizedLegacySelected;
+  if (legacySelected) {
+    return legacySelected;
   }
   return null;
 }

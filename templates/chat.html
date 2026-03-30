@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="color-scheme" content="light dark">
@@ -22,18 +22,20 @@
 
 <!-- Header -->
 <div class="header">
-  <button class="header-btn header-btn--sessions" id="menuBtn" title="Sessions" aria-label="Sessions" data-i18n-title="nav.sessions" data-i18n-aria-label="nav.sessions">
-    <span class="header-btn-icon" data-icon="menu" aria-hidden="true"></span>
-    <span class="header-btn-label" data-i18n="nav.sessions">Sessions</span>
-  </button>
-  <h1 id="headerTitle" data-i18n="app.chatTitle">RemoteLab Chat</h1>
-  <button class="header-share-btn" id="shareSnapshotBtn" title="Share" aria-label="Share" data-i18n-title="action.share" data-i18n-aria-label="action.share" style="display:none">
-    <span class="header-action-icon" data-icon="share" aria-hidden="true"></span>
-    <span class="header-action-label" data-i18n="action.share">Share</span>
-  </button>
-  <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
+  <button class="header-btn" id="menuBtn" title="Sessions" aria-label="Sessions" data-icon="menu">&#9776;</button>
+  <h1 id="headerTitle">RemoteLab Chat</h1>
+  <select class="theme-select" id="themeSelect" title="Theme" aria-label="Theme">
+    <option value="amber">Amber</option>
+    <option value="minimal">Minimal</option>
+    <option value="dark">Dark</option>
+    <option value="cyber">Cyber</option>
+    <option value="aurora">Aurora</option>
+  </select>
+  <button class="header-share-btn" id="forkSessionBtn" title="Create an isolated copy of this session" style="display:none">Fork</button>
+  <button class="header-share-btn" id="shareSnapshotBtn" title="Create a read-only snapshot link" style="display:none">Share</button>
+  <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-icon="refresh" hidden></button>
   <span class="status-dot" id="statusDot"></span>
-  <span id="statusText" data-i18n="{{STATUS_I18N_KEY}}">{{STATUS_TEXT}}</span>
+  <span id="statusText">disconnected</span>
 </div>
 
 <div class="app-container">
@@ -42,36 +44,57 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h2>RemoteLab</h2>
-        <button class="header-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
+        <button class="header-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-icon="close">&#x2715;</button>
       </div>
       <div class="sidebar-tabs">
-        <button class="sidebar-tab active" id="tabSessions" data-i18n="nav.sessions">Sessions</button>
-        <button class="sidebar-tab" id="tabSettings" data-i18n="nav.settings">Settings</button>
+        <button class="sidebar-tab active" id="tabSessions">Sessions</button>
+        <button class="sidebar-tab" id="tabBoard">Board</button>
+        <button class="sidebar-tab" id="tabSettings">Settings</button>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
       <div class="sidebar-filters" id="sidebarFilters">
-        <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
+        <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin"></select>
+        <select class="sidebar-filter-select" id="sessionAppFilterSelect" aria-label="Filter sessions by app"></select>
+        <select class="sidebar-filter-select" id="userFilterSelect" aria-label="Filter sessions by user"></select>
       </div>
+      <div class="board-panel" id="boardPanel"></div>
       <div class="settings-panel" id="settingsPanel">
         <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
-          <div class="settings-section-note" data-i18n="settings.language.note">Auto follows the current browser language. You can override it here for debugging or to keep this browser on a fixed UI language.</div>
-          <div class="settings-inline-form">
-            <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ownerAriaLabel"></select>
-            <div class="settings-app-empty inline-status" id="uiLanguageStatus" data-i18n="settings.language.ownerStatusAuto">Auto is active. This browser follows its current language until you save an override here.</div>
+          <div class="settings-section-title">Users</div>
+          <div class="settings-section-note">Create extra identities, choose which apps they can use, and seed a first session when they are empty.</div>
+          <div class="settings-inline-form" id="newUserForm">
+            <input class="settings-inline-input" id="newUserNameInput" type="text" placeholder="User name, e.g. Video Editor">
+            <div class="settings-app-picker" id="newUserAppsPicker"></div>
+            <div class="settings-inline-row">
+              <select class="settings-inline-select" id="newUserDefaultAppSelect" aria-label="Choose default app for user"></select>
+              <button class="settings-app-btn settings-inline-primary" id="createUserBtn" type="button">Create User</button>
+            </div>
+            <div class="settings-app-empty inline-status" id="userFormStatus">Admin stays the default view. New users get a starter session automatically.</div>
+          </div>
+          <div class="settings-apps-list" id="settingsUsersList">
+            <div class="settings-app-empty">Loading users…</div>
           </div>
         </div>
         <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.sessionPresentation.title">Session opening</div>
-          <div class="settings-section-note" data-i18n="settings.sessionPresentation.note">Internal-only display control for the selected session. Use top-down reading for welcome or example sessions, and keep normal work on the latest turn.</div>
-          <div class="settings-apps-list" id="settingsSessionPresentationList">
-            <div class="settings-app-empty" data-i18n="settings.sessionPresentation.noSession">Select a session first, then choose how it should open.</div>
+          <div class="settings-section-title">Apps</div>
+          <div class="settings-section-note">Define the reusable app layer. Chat stays lightweight; other apps can attach a first assistant message and system prompt.</div>
+          <div class="settings-inline-form" id="newAppForm">
+            <input class="settings-inline-input" id="newAppNameInput" type="text" placeholder="App name, e.g. VideoCut">
+            <select class="settings-inline-select" id="newAppToolSelect" aria-label="Choose tool for app"></select>
+            <textarea class="settings-inline-textarea" id="newAppWelcomeInput" placeholder="Optional first assistant message shown when a new session starts"></textarea>
+            <textarea class="settings-inline-textarea" id="newAppSystemPromptInput" placeholder="Optional system prompt for this app"></textarea>
+            <button class="settings-app-btn settings-inline-primary" id="createAppConfigBtn" type="button">Create App</button>
+            <div class="settings-app-empty inline-status" id="appFormStatus">Create a reusable app here, then start sessions under it from the sidebar filter.</div>
+          </div>
+          <div class="settings-apps-list" id="settingsAppsList">
+            <div class="settings-app-empty">Loading apps…</div>
           </div>
         </div>
+        <div class="settings-section" id="voiceSettingsMount"></div>
       </div>
-      <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
-      <button class="new-session-btn secondary" id="sortSessionListBtn" data-i18n="sidebar.sortList">Sort List</button>
-      <button class="new-session-btn" id="newSessionBtn" data-i18n="sidebar.newSession">+ New Session</button>
+      <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}">Build {{BUILD_LABEL}}</div>
+      <button class="new-session-btn secondary" id="newAppBtn">+ New App</button>
+      <button class="new-session-btn" id="newSessionBtn">+ New Session</button>
     </aside>
   </div>
 
@@ -80,8 +103,8 @@
     <div class="messages" id="messages">
       <div class="messages-inner" id="messagesInner">
         <div class="empty-state" id="emptyState">
-          <h2 data-i18n="emptyState.title">RemoteLab Chat</h2>
-          <p data-i18n="emptyState.body">Select or create a session from the sidebar, then start chatting with your AI coding tool.</p>
+          <h2>RemoteLab Chat</h2>
+          <p>Select or create a session from the sidebar, then start chatting with your AI coding tool.</p>
         </div>
       </div>
     </div>
@@ -96,38 +119,35 @@
       <div class="input-wrapper">
         <!-- Attachment preview inside wrapper -->
         <div class="img-preview-strip" id="imgPreviewStrip"></div>
-        <div class="session-mode-banner" id="sessionModeBanner">
-          <div class="session-mode-banner-title" data-i18n="shareSnapshot.bannerTitle">Shared snapshot</div>
-          <div class="session-mode-banner-body" data-i18n="shareSnapshot.bannerBody">This page is read-only. You can open and download shared files here, but you can't send messages from this link.</div>
-        </div>
         <div class="input-config-row">
           <div class="input-config-group left">
-            <button class="img-btn" id="imgBtn" disabled title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
-              <span class="img-btn-icon" data-icon="attach" aria-hidden="true"></span>
-              <span class="img-btn-label" data-i18n="action.upload">Upload</span>
-            </button>
             <select class="tool-select" id="inlineToolSelect" disabled></select>
             <select class="model-select" id="inlineModelSelect" disabled></select>
-            <button class="thinking-toggle" id="thinkingToggle" disabled data-i18n="tooling.thinking">Thinking</button>
+            <button class="thinking-toggle" id="thinkingToggle" disabled>Thinking</button>
             <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
+            <button class="img-btn" id="imgBtn" disabled title="Attach files" aria-label="Attach files" data-icon="attach">&#128247;</button>
+            <button class="thinking-toggle" id="voiceCleanupToggle" type="button" aria-pressed="true" title="On: clean voice transcripts with the current session before sending" disabled>Voice cleanup</button>
           </div>
           <div class="input-config-group right">
             <span id="contextTokens" style="display:none"></span>
-            <button class="compact-btn" id="compactBtn" style="display:none" title="Ask model to summarize conversation, then reset context" data-i18n="action.compact">Compact</button>
-            <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)" data-i18n="action.dropTools">Drop tools</button>
+            <button class="compact-btn" id="compactBtn" style="display:none" title="Ask model to summarize conversation, then reset context">Compact</button>
+            <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)">Drop tools</button>
           </div>
         </div>
         <div class="input-row">
           <input type="file" id="imgFileInput" accept="*/*" multiple hidden>
-          <textarea id="msgInput" placeholder="{{INPUT_PLACEHOLDER_TEXT}}" data-i18n-placeholder="{{INPUT_PLACEHOLDER_I18N_KEY}}" disabled></textarea>
-          <button class="send-btn" id="sendBtn" disabled title="Send" aria-label="Send" data-i18n-title="action.send" data-i18n-aria-label="action.send" data-icon="send">&#9654;</button>
-          <button class="cancel-btn" id="cancelBtn" title="Stop" aria-label="Stop" data-i18n-title="action.stop" data-i18n-aria-label="action.stop" data-icon="debug-stop" style="display:none">&#9632;</button>
+          <input type="file" id="voiceFileInput" accept="audio/*,video/*" capture hidden>
+          <textarea id="msgInput" placeholder="Message..." disabled></textarea>
+          <button class="img-btn voice-btn composer-voice-btn" id="voiceInputBtn" disabled title="Voice input" aria-label="Voice input" data-icon="mic"></button>
+          <button class="send-btn" id="sendBtn" disabled title="Send" aria-label="Send" data-icon="send">&#9654;</button>
+          <button class="cancel-btn" id="cancelBtn" title="Stop" aria-label="Stop" data-icon="debug-stop" style="display:none">&#9632;</button>
         </div>
         <div class="composer-pending-state" id="composerPendingState" aria-live="polite"></div>
+        <div class="voice-input-status" id="voiceInputStatus" aria-live="polite"></div>
       </div>
       <div class="input-footer">
-        <a href="https://github.com/Ninglo/remotelab" target="_blank" rel="noreferrer noopener" data-i18n="footer.openSource">View project source ↗</a>
-        <span class="input-footer-tagline" data-i18n="footer.tagline">Built with AI &amp; ❤️</span>
+        <a href="https://github.com/Ninglo/remotelab" target="_blank" rel="noreferrer noopener">Open source on GitHub ↗</a>
+        <span class="input-footer-tagline">To infinity and beyond✨</span>
       </div>
     </div>
   </main>
@@ -139,83 +159,83 @@
 <div class="modal-backdrop" id="addToolModal" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addToolModalTitle">
     <div class="modal-header">
-      <div class="modal-title" id="addToolModalTitle" data-i18n="modal.addAgentsTitle">Add more agents</div>
-      <button class="modal-close" id="closeAddToolModal" type="button" aria-label="Close" data-i18n-aria-label="action.close" data-icon="close">&times;</button>
+      <div class="modal-title" id="addToolModalTitle">Add more agents</div>
+      <button class="modal-close" id="closeAddToolModal" type="button" aria-label="Close" data-icon="close">&times;</button>
     </div>
     <div class="modal-body">
-      <p class="modal-lead" data-i18n="modal.addAgentsLead">
+      <p class="modal-lead">
         RemoteLab is not limited to the builtin agents. For simple tools, save a lightweight config here and the picker refreshes immediately.
         If you need custom parsing or runtime behavior, use the advanced path below.
       </p>
 
         <div class="provider-helper-card">
           <div class="provider-helper-card-header">
-            <div class="provider-helper-card-title" data-i18n="modal.quickAddTitle">Quick add</div>
-            <button class="modal-btn primary" id="saveToolConfigBtn" type="button" data-i18n="modal.saveRefresh">Save &amp; refresh</button>
+            <div class="provider-helper-card-title">Quick add</div>
+            <button class="modal-btn primary" id="saveToolConfigBtn" type="button">Save &amp; refresh</button>
           </div>
-        <p data-i18n="modal.quickAddBody">
+        <p>
           Use this for wrappers or simple command-based agents that speak an existing runtime family and accept that family's core prompt/model/thinking flags. We save the config for you and refresh the picker without restarting the service.
         </p>
         <div class="provider-helper-grid">
           <div class="provider-helper-field">
-            <label for="addToolNameInput" data-i18n="modal.name">Name</label>
+            <label for="addToolNameInput">Name</label>
             <input id="addToolNameInput" type="text" value="My Agent" autocomplete="off">
           </div>
           <div class="provider-helper-field">
-            <label for="addToolCommandInput" data-i18n="modal.command">Command</label>
+            <label for="addToolCommandInput">Command</label>
             <input id="addToolCommandInput" type="text" value="my-agent" autocomplete="off">
           </div>
           <div class="provider-helper-field">
-            <label for="addToolRuntimeFamilySelect" data-i18n="modal.runtimeFamily">Runtime family</label>
+            <label for="addToolRuntimeFamilySelect">Runtime family</label>
             <select id="addToolRuntimeFamilySelect">
-              <option value="claude-stream-json" data-i18n="modal.runtimeFamily.claude">Claude-style stream JSON</option>
-              <option value="codex-json" data-i18n="modal.runtimeFamily.codex">Codex JSON</option>
+              <option value="claude-stream-json">Claude-style stream JSON</option>
+              <option value="codex-json">Codex JSON</option>
             </select>
           </div>
         </div>
         <div class="provider-helper-field">
-          <label for="addToolModelsInput" data-i18n="modal.models">Models</label>
-          <textarea id="addToolModelsInput" placeholder="One model per line. Use `model-id | Label` or just `model-id`.&#10;Example:&#10;gpt-5-codex | GPT-5 Codex&#10;gpt-5-mini" data-i18n-placeholder="modal.modelsPlaceholder"></textarea>
+          <label for="addToolModelsInput">Models</label>
+          <textarea id="addToolModelsInput" placeholder="One model per line. Use `model-id | Label` or just `model-id`.&#10;Example:&#10;gpt-5-codex | GPT-5 Codex&#10;gpt-5-mini"></textarea>
         </div>
         <div class="provider-helper-grid">
           <div class="provider-helper-field">
-            <label for="addToolReasoningKindSelect" data-i18n="modal.thinkingMode">Thinking mode</label>
+            <label for="addToolReasoningKindSelect">Thinking mode</label>
             <select id="addToolReasoningKindSelect">
-              <option value="toggle" data-i18n="modal.thinking.toggle">Toggle</option>
-              <option value="enum" data-i18n="modal.thinking.levels">Levels</option>
-              <option value="none" data-i18n="modal.thinking.none">None</option>
+              <option value="toggle">Toggle</option>
+              <option value="enum">Levels</option>
+              <option value="none">None</option>
             </select>
           </div>
           <div class="provider-helper-field">
-            <label for="addToolReasoningLevelsInput" data-i18n="modal.thinkingLevels">Thinking levels</label>
+            <label for="addToolReasoningLevelsInput">Thinking levels</label>
             <input id="addToolReasoningLevelsInput" type="text" value="low, medium, high, xhigh" autocomplete="off">
           </div>
           <div class="provider-helper-field">
-            <label data-i18n="modal.internalIdentity">Internal identity</label>
-            <div class="provider-helper-note" data-i18n="modal.internalIdentityNote">Derived automatically from the command. No separate ID field in simple mode.</div>
+            <label>Internal identity</label>
+            <div class="provider-helper-note">Derived automatically from the command. No separate ID field in simple mode.</div>
           </div>
         </div>
-        <div class="provider-helper-note" data-i18n="modal.thinkingModeNote">Use `none` if the tool has no model-side thinking control. For Claude-family tools, use `toggle`; for Codex-family tools, use `levels`. If the command needs different CLI flags, use the advanced path below.</div>
+        <div class="provider-helper-note">Use `none` if the tool has no model-side thinking control. For Claude-family tools, use `toggle`; for Codex-family tools, use `levels`. If the command needs different CLI flags, use the advanced path below.</div>
         <div class="provider-helper-status" id="addToolStatus"></div>
       </div>
 
       <div class="provider-helper-card">
         <div class="provider-helper-card-header">
-          <div class="provider-helper-card-title" data-i18n="modal.advancedTitle">Advanced integration</div>
-          <button class="modal-btn primary" id="copyProviderPromptBtn" type="button" data-i18n="modal.copyBasePrompt">Copy setup brief</button>
+          <div class="provider-helper-card-title">Advanced provider code</div>
+          <button class="modal-btn primary" id="copyProviderPromptBtn" type="button">Copy base prompt</button>
         </div>
-        <p data-i18n="modal.advancedBody">
-          If the simple setup is not enough, start a dedicated technical session and paste this setup brief.
+        <p>
+          If you need models, thinking controls, or custom runtime behavior, open a new session in the RemoteLab repo and paste this prompt.
         </p>
         <ul>
-          <li data-i18n="modal.advancedBullet1">It asks the agent to decide whether simple setup is enough or whether deeper integration is needed.</li>
-          <li data-i18n="modal.advancedBullet2">It points the agent at the relevant technical notes and keeps the changes minimal.</li>
+          <li>It asks the agent to decide whether simple config is enough or whether full provider code is needed.</li>
+          <li>It points the agent at the provider architecture notes and keeps the changes minimal.</li>
         </ul>
         <div class="provider-helper-code"><code id="providerPromptCode"></code></div>
       </div>
     </div>
     <div class="modal-footer">
-      <button class="modal-btn" id="closeAddToolModalFooter" type="button" data-i18n="modal.close">Close</button>
+      <button class="modal-btn" id="closeAddToolModalFooter" type="button">Close</button>
     </div>
   </div>
 </div>
@@ -223,12 +243,8 @@
 {{BOOTSTRAP_SCRIPT_TAGS}}
 {{EXTRA_BOOTSTRAP_SCRIPTS}}
 <script src="/marked.min.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/session-state-model.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-store.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/composer-store.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/icons.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/product-paths.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/bootstrap.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/bootstrap-session-catalog.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/session-http-helpers.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
@@ -244,6 +260,7 @@
 <script src="/chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="/chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/init.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 </body>

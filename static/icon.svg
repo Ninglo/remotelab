@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#0a0a0a"/>
-  <rect x="16" y="16" width="480" height="480" rx="80" fill="none" stroke="#00ff41" stroke-width="4" opacity="0.3"/>
-  <text x="256" y="320" text-anchor="middle" font-family="monospace" font-weight="bold" font-size="220" fill="#00ff41">&gt;_</text>
+  <rect width="512" height="512" rx="96" fill="#f6f8ef"/>
+  <rect x="18" y="18" width="476" height="476" rx="78" fill="none" stroke="#d4dbc5" stroke-width="6"/>
+  <text x="256" y="338" text-anchor="middle" font-size="300">🌲</text>
 </svg>
