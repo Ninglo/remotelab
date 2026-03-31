@@ -2,14 +2,14 @@
 
 import { createServer } from 'http';
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
 import { join } from 'path';
-import { ingestRawMessage, loadBridge, mailboxPaths, summarizeQueueItem } from '../lib/agent-mailbox.mjs';
+import { ingestRawMessage, loadBridge, loadIdentity, mailboxPaths, summarizeQueueItem, DEFAULT_ROOT_DIR } from '../lib/agent-mailbox.mjs';
 import { matchesWebhookToken, normalizeIp } from '../lib/agent-mail-http-bridge.mjs';
+import { findMailboxRuntimeByAddress, loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 
 const HOST = process.env.AGENT_MAILBOX_HOST || '127.0.0.1';
 const PORT = Number.parseInt(process.env.AGENT_MAILBOX_PORT || '7694', 10);
-const ROOT_DIR = process.env.AGENT_MAILBOX_ROOT || join(homedir(), '.config', 'remotelab', 'agent-mailbox');
+const ROOT_DIR = process.env.AGENT_MAILBOX_ROOT || DEFAULT_ROOT_DIR;
 const WEBHOOKS_DIR = join(ROOT_DIR, 'webhooks');
 const EVENTS_FILE = join(ROOT_DIR, 'bridge-events.jsonl');
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
@@ -65,6 +65,47 @@ function decodeRawEmailPayload(payload) {
     return Buffer.from(payload.rawBase64, 'base64').toString('utf8');
   }
   return '';
+}
+
+function extractEnvelopeRecipient(payload = {}) {
+  return trimString(
+    payload?.envelope?.rcptTo
+    || payload?.session?.recipient
+    || (Array.isArray(payload?.recipients) ? payload.recipients[0] : ''),
+  ).toLowerCase();
+}
+
+function resolveMailboxRootForPayload(payload = {}) {
+  const recipientAddress = extractEnvelopeRecipient(payload);
+  if (!recipientAddress) {
+    return {
+      rootDir: ROOT_DIR,
+      recipientAddress: '',
+      routedInstance: '',
+      routeSource: 'default_root',
+    };
+  }
+
+  const ownerIdentity = loadIdentity(ROOT_DIR);
+  if (trimString(ownerIdentity?.address).toLowerCase() === recipientAddress) {
+    return {
+      rootDir: ROOT_DIR,
+      recipientAddress,
+      routedInstance: '',
+      routeSource: 'owner_identity',
+    };
+  }
+
+  const runtime = findMailboxRuntimeByAddress(recipientAddress, {
+    registry: loadMailboxRuntimeRegistry(),
+    ownerIdentity,
+  });
+  return {
+    rootDir: trimString(runtime?.mailboxRoot) || ROOT_DIR,
+    recipientAddress,
+    routedInstance: trimString(runtime?.name),
+    routeSource: runtime ? 'instance_mailbox_address' : 'default_root',
+  };
 }
 
 function sendJson(response, statusCode, value) {
@@ -192,7 +233,8 @@ async function handleCloudflareWebhook(request, response) {
   const webhookSnapshotPath = join(WEBHOOKS_DIR, `${safeRequestId}.json`);
   writeFileSync(webhookSnapshotPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 
-  const mailboxItem = ingestRawMessage(rawEmail, `cloudflare-email:${safeRequestId}`, ROOT_DIR, {
+  const mailboxTarget = resolveMailboxRootForPayload(payload);
+  const mailboxItem = ingestRawMessage(rawEmail, `cloudflare-email:${safeRequestId}`, mailboxTarget.rootDir, {
     text: payload.text,
     html: payload.html,
     provider: 'cloudflare_email_worker',
@@ -210,6 +252,9 @@ async function handleCloudflareWebhook(request, response) {
     clientIp,
     requestId: safeRequestId,
     webhookSnapshotPath,
+    mailboxRoot: mailboxTarget.rootDir,
+    routedInstance: mailboxTarget.routedInstance,
+    routeSource: mailboxTarget.routeSource,
     mailboxItem: summarizeQueueItem(mailboxItem),
     payload: summarizePayload(payload),
   });
@@ -219,6 +264,7 @@ async function handleCloudflareWebhook(request, response) {
     trustedSource: true,
     provider: 'cloudflare_email_worker',
     webhookSnapshotPath,
+    mailboxRoot: mailboxTarget.rootDir,
     mailboxItem: summarizeQueueItem(mailboxItem),
   });
 }

@@ -9,17 +9,29 @@ import { fileURLToPath } from 'url';
 
 const LISTEN_HOST = process.env.NATAPP_PROXY_LISTEN_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.NATAPP_PROXY_LISTEN_PORT, 10) || 7699;
-const ROOT_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ROOT_UPSTREAM_PORT, 10) || 7804;
-const OWNER_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_OWNER_UPSTREAM_PORT, 10) || 7690;
-const OWNER_ROUTE_PREFIX = normalizeRoutePrefix(process.env.NATAPP_OWNER_ROUTE_PREFIX || '/owner');
+const LEGACY_ROOT_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ROOT_UPSTREAM_PORT, 10) || 0;
+const ROOT_MODE = normalizeRootMode(
+  process.env.NATAPP_ROOT_MODE || (LEGACY_ROOT_UPSTREAM_PORT > 0 ? 'legacy-proxy' : 'index'),
+);
+const MAINLAND_SERVICE_UPSTREAM_PORT = Number.parseInt(
+  process.env.NATAPP_MAINLAND_SERVICE_PORT || process.env.NATAPP_OWNER_UPSTREAM_PORT,
+  10,
+) || 7690;
+const MAINLAND_SERVICE_NAME = normalizeRouteName(
+  process.env.NATAPP_MAINLAND_SERVICE_NAME || process.env.NATAPP_OWNER_ROUTE_PREFIX || 'owner',
+  'owner',
+);
+const MAINLAND_SERVICE_PREFIX = `/${MAINLAND_SERVICE_NAME}`;
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
 const FALLBACK_PREFIXED_ROUTES = Object.freeze([
   Object.freeze({
+    name: 'trial6',
     prefix: '/trial6',
     upstreamPort: 7701,
     cookiePrefix: 'trial6__',
   }),
   Object.freeze({
+    name: 'intake1',
     prefix: '/intake1',
     upstreamPort: 7703,
     cookiePrefix: 'intake1__',
@@ -28,25 +40,111 @@ const FALLBACK_PREFIXED_ROUTES = Object.freeze([
 
 const SPECIAL_PREFIXED_ROUTES = Object.freeze(buildSpecialPrefixedRoutes());
 
-function normalizeRoutePrefix(value) {
+function normalizeRootMode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'legacy-proxy' ? 'legacy-proxy' : 'index';
+}
+
+function normalizeRouteName(value, fallback = 'owner') {
   const trimmed = String(value || '').trim();
-  if (!trimmed) return '/owner';
-  const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  const withoutTrailingSlash = normalized.replace(/\/+$/, '') || '/owner';
-  return withoutTrailingSlash === '/' ? '/owner' : withoutTrailingSlash;
+  const withoutSlashes = trimmed.replace(/^\/+|\/+$/g, '');
+  const firstSegment = withoutSlashes.split('/').filter(Boolean)[0] || '';
+  const sanitized = firstSegment.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/-+/g, '-');
+  return sanitized || fallback;
+}
+
+function isValidPort(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+function decodeXmlEntities(value) {
+  return String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function extractPlistDictStrings(content, key) {
+  const escapedKey = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(content || '').match(new RegExp(`<key>${escapedKey}</key>\\s*<dict>([\\s\\S]*?)</dict>`));
+  if (!match) return {};
+  const dict = {};
+  for (const entry of match[1].matchAll(/<key>([\s\S]*?)<\/key>\s*<string>([\s\S]*?)<\/string>/g)) {
+    const dictKey = decodeXmlEntities(entry[1] || '');
+    if (!dictKey) continue;
+    dict[dictKey] = decodeXmlEntities(entry[2] || '');
+  }
+  return dict;
+}
+
+function readLaunchAgentPort(launchAgentPath) {
+  const path = String(launchAgentPath || '').trim();
+  if (!path) return 0;
+  try {
+    const content = readFileSync(path, 'utf8');
+    const environmentVariables = extractPlistDictStrings(content, 'EnvironmentVariables');
+    const port = Number.parseInt(String(environmentVariables.CHAT_PORT || '').trim(), 10);
+    return isValidPort(port) ? port : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function extractPortFromBaseUrl(baseUrl) {
+  const value = String(baseUrl || '').trim();
+  if (!value) return 0;
+  try {
+    const parsed = new URL(value);
+    const port = Number.parseInt(parsed.port || (parsed.protocol === 'https:' ? '443' : '80'), 10);
+    return isValidPort(port) ? port : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function resolveRouteUpstreamPort(record = {}) {
+  const launchAgentPort = readLaunchAgentPort(record?.launchAgentPath);
+  if (isValidPort(launchAgentPort) && launchAgentPort !== LISTEN_PORT) {
+    return launchAgentPort;
+  }
+
+  const localBasePort = extractPortFromBaseUrl(record?.localBaseUrl);
+  if (isValidPort(localBasePort) && localBasePort !== LISTEN_PORT) {
+    return localBasePort;
+  }
+
+  const recordPort = Number.parseInt(record?.port, 10);
+  if (isValidPort(recordPort) && recordPort !== LISTEN_PORT) {
+    return recordPort;
+  }
+
+  return 0;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function buildSpecialPrefixedRoutes() {
-  if (!Number.isInteger(OWNER_UPSTREAM_PORT) || OWNER_UPSTREAM_PORT < 1 || OWNER_UPSTREAM_PORT > 65535) {
+  if (!isValidPort(MAINLAND_SERVICE_UPSTREAM_PORT)) {
     return [];
   }
-  if (OWNER_UPSTREAM_PORT === LISTEN_PORT || OWNER_ROUTE_PREFIX === '/') {
+  if (MAINLAND_SERVICE_UPSTREAM_PORT === LISTEN_PORT) {
     return [];
   }
   return [Object.freeze({
-    prefix: OWNER_ROUTE_PREFIX,
-    upstreamPort: OWNER_UPSTREAM_PORT,
-    cookiePrefix: 'owner__',
+    name: MAINLAND_SERVICE_NAME,
+    prefix: MAINLAND_SERVICE_PREFIX,
+    upstreamPort: MAINLAND_SERVICE_UPSTREAM_PORT,
+    cookiePrefix: `${MAINLAND_SERVICE_NAME}__`,
+    routeType: 'mainland-service',
   })];
 }
 
@@ -60,19 +158,20 @@ function loadPrefixedRoutes() {
     }
 
     for (const record of parsed) {
-      const name = String(record?.name || '').trim();
-      const upstreamPort = Number.parseInt(record?.port, 10);
+      const name = normalizeRouteName(record?.name, '');
+      const upstreamPort = resolveRouteUpstreamPort(record);
       if (!name) continue;
-      if (!Number.isInteger(upstreamPort) || upstreamPort < 1 || upstreamPort > 65535) continue;
-      if (upstreamPort === LISTEN_PORT || upstreamPort === ROOT_UPSTREAM_PORT) continue;
+      if (!isValidPort(upstreamPort) || upstreamPort === LISTEN_PORT) continue;
 
       const prefix = `/${name}`;
       if (seenPrefixes.has(prefix)) continue;
       seenPrefixes.add(prefix);
       routes.push(Object.freeze({
+        name,
         prefix,
         upstreamPort,
         cookiePrefix: `${name}__`,
+        routeType: 'instance',
       }));
     }
 
@@ -109,13 +208,16 @@ function mapRequest(reqUrl) {
   const parsed = new URL(reqUrl, 'http://127.0.0.1');
   const prefixedRoute = findPrefixedRoute(parsed.pathname);
   if (!prefixedRoute) {
-    return {
-      prefixed: false,
-      prefix: '',
-      cookiePrefix: '',
-      upstreamPort: ROOT_UPSTREAM_PORT,
-      upstreamPath: `${parsed.pathname}${parsed.search}`,
-    };
+    if (ROOT_MODE === 'legacy-proxy' && isValidPort(LEGACY_ROOT_UPSTREAM_PORT)) {
+      return {
+        prefixed: false,
+        prefix: '',
+        cookiePrefix: '',
+        upstreamPort: LEGACY_ROOT_UPSTREAM_PORT,
+        upstreamPath: `${parsed.pathname}${parsed.search}`,
+      };
+    }
+    return null;
   }
 
   const strippedPath = parsed.pathname.slice(prefixedRoute.prefix.length) || '/';
@@ -232,8 +334,84 @@ function writeProxyError(res, error) {
   res.end(`proxy error: ${error?.message || error}`);
 }
 
+function renderRootIndexHtml() {
+  const routes = loadPrefixedRoutes().map((route) => ({
+    name: route.name || route.prefix.replace(/^\/+/, ''),
+    href: `${route.prefix}/`,
+    kind: route.routeType === 'mainland-service' ? 'main service' : 'instance',
+  }));
+
+  const items = routes.length > 0
+    ? routes
+      .map((route) => `<li><a href="${escapeHtml(route.href)}">${escapeHtml(route.href)}</a><span> ${escapeHtml(route.kind)}</span></li>`)
+      .join('\n')
+    : '<li>No prefixed routes are registered.</li>';
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RemoteLab Mainland Bridge</title>
+    <style>
+      :root { color-scheme: light; }
+      body { margin: 0; font: 16px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; background: #f6f7f8; color: #172126; }
+      main { max-width: 760px; margin: 0 auto; padding: 32px 20px 48px; }
+      h1 { margin: 0 0 12px; font-size: 28px; }
+      p { margin: 0 0 12px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #e9eef2; padding: 0.1em 0.35em; border-radius: 6px; }
+      ul { margin: 18px 0 0; padding-left: 22px; }
+      li + li { margin-top: 8px; }
+      a { color: #0b63ce; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>RemoteLab Mainland Bridge</h1>
+      <p>This bridge is prefix-only. Open product surfaces under <code>/{name}/</code>.</p>
+      <p>Known routes:</p>
+      <ul>${items}</ul>
+    </main>
+  </body>
+</html>`;
+}
+
+function writeRootIndex(req, res) {
+  const body = Buffer.from(renderRootIndexHtml(), 'utf8');
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': String(body.length),
+  });
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  res.end(body);
+}
+
+function writePrefixOnlyNotFound(res) {
+  const body = 'This mainland bridge is prefix-only. Open /{name}/.\n';
+  res.writeHead(404, {
+    'content-type': 'text/plain; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': String(Buffer.byteLength(body)),
+  });
+  res.end(body);
+}
+
 const server = http.createServer((req, res) => {
+  const parsedUrl = new URL(req.url || '/', 'http://127.0.0.1');
   const route = mapRequest(req.url || '/');
+  if (!route) {
+    if (parsedUrl.pathname === '/' || parsedUrl.pathname === '/index.html') {
+      writeRootIndex(req, res);
+      return;
+    }
+    writePrefixOnlyNotFound(res);
+    return;
+  }
   const upstreamReq = http.request({
     host: LISTEN_HOST,
     port: route.upstreamPort,
@@ -280,6 +458,11 @@ const server = http.createServer((req, res) => {
 
 server.on('upgrade', (req, socket, head) => {
   const route = mapRequest(req.url || '/');
+  if (!route) {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return;
+  }
   const upstreamSocket = net.connect(route.upstreamPort, LISTEN_HOST, () => {
     const requestPath = route.upstreamPath || '/';
     const rawHeaders = [];
@@ -310,18 +493,25 @@ const IS_MAIN = Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURL
 if (IS_MAIN) {
   server.listen(LISTEN_PORT, LISTEN_HOST, () => {
     const prefixes = loadPrefixedRoutes().map((route) => route.prefix).join(', ');
-    console.log(`natapp dual proxy listening on http://${LISTEN_HOST}:${LISTEN_PORT} (root->${ROOT_UPSTREAM_PORT}; ${prefixes || 'no prefixed routes'})`);
+    const rootLabel = ROOT_MODE === 'legacy-proxy' && isValidPort(LEGACY_ROOT_UPSTREAM_PORT)
+      ? `legacy-proxy->${LEGACY_ROOT_UPSTREAM_PORT}`
+      : 'index';
+    console.log(`natapp dual proxy listening on http://${LISTEN_HOST}:${LISTEN_PORT} (root=${rootLabel}; ${prefixes || 'no prefixed routes'})`);
   });
 }
 
 export {
   LISTEN_HOST,
   LISTEN_PORT,
-  ROOT_UPSTREAM_PORT,
-  OWNER_UPSTREAM_PORT,
-  OWNER_ROUTE_PREFIX,
+  LEGACY_ROOT_UPSTREAM_PORT,
+  ROOT_MODE,
+  MAINLAND_SERVICE_NAME,
+  MAINLAND_SERVICE_UPSTREAM_PORT,
+  MAINLAND_SERVICE_PREFIX,
   loadPrefixedRoutes,
   mapRequest,
   buildUpstreamHeaders,
   rewriteSetCookieHeader,
+  resolveRouteUpstreamPort,
+  renderRootIndexHtml,
 };

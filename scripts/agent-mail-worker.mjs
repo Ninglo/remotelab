@@ -203,6 +203,7 @@ function resolveRuntimeTarget(item, automation, fallbackBaseUrl = '') {
       baseUrl: guestBaseUrl,
       authFile: guest.authFile,
       guestInstance: guest.name,
+      mailboxRoot: trimString(guest.mailboxRoot),
       source: 'recipient_subaddress',
     };
   }
@@ -216,6 +217,7 @@ function resolveRuntimeTarget(item, automation, fallbackBaseUrl = '') {
     baseUrl: configuredBaseUrl,
     authFile: normalizeAuthFile(automation?.authFile) || trimString(matchingGuest?.authFile),
     guestInstance: trimString(matchingGuest?.name),
+    mailboxRoot: trimString(matchingGuest?.mailboxRoot),
     source: matchingGuest ? 'configured_guest_instance' : 'automation_chat_base_url',
   };
 }
@@ -533,6 +535,7 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
       externalTriggerId,
       targetBaseUrl: runtimeTarget.baseUrl,
       targetInstance: runtimeTarget.guestInstance || null,
+      targetMailboxRoot: runtimeTarget.mailboxRoot || null,
       submittedAt: draft.automation?.submittedAt || nowIso(),
       duplicate: submitResult.json?.duplicate === true,
       lastError: null,
