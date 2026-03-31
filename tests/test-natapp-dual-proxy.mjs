@@ -48,4 +48,9 @@ assert.equal(upstreamHeaders.cookie, 'session_token=abc123; visitor_session_toke
 assert.equal(upstreamHeaders['x-test-header'], 'ok');
 assert.equal(upstreamHeaders['accept-encoding'], 'identity');
 
+const bridgedOwnerHeaders = proxy.buildUpstreamHeaders({
+  cookie: 'session_token=legacy-owner; visitor_session_token=legacy-visitor; trial4__session_token=trial-cookie',
+}, ownerRoute);
+assert.equal(bridgedOwnerHeaders.cookie, 'session_token=legacy-owner; visitor_session_token=legacy-visitor');
+
 console.log('test-natapp-dual-proxy: ok');

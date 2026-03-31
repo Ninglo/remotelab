@@ -131,12 +131,17 @@ function buildUpstreamHeaders(headers, route) {
   upstreamHeaders['accept-encoding'] = 'identity';
 
   if (route.prefixed) {
-    const cookies = parseCookieHeader(headers.cookie)
+    let cookies = parseCookieHeader(headers.cookie)
       .filter((cookie) => cookie.name.startsWith(route.cookiePrefix))
       .map((cookie) => ({
         name: cookie.name.slice(route.cookiePrefix.length),
         value: cookie.value,
       }));
+
+    if (cookies.length === 0 && route.cookiePrefix === 'owner__') {
+      cookies = parseCookieHeader(headers.cookie)
+        .filter((cookie) => cookie.name === 'session_token' || cookie.name === 'visitor_session_token');
+    }
 
     if (cookies.length > 0) {
       upstreamHeaders.cookie = serializeCookies(cookies);
