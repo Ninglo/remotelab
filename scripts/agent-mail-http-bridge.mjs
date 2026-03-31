@@ -108,6 +108,21 @@ function resolveMailboxRootForPayload(payload = {}) {
   };
 }
 
+function selectMailboxTargetForIngest(payload = {}) {
+  const target = resolveMailboxRootForPayload(payload);
+  if (!target.rootDir || target.rootDir === ROOT_DIR) {
+    return target;
+  }
+
+  return {
+    ...target,
+    rootDir: ROOT_DIR,
+    routeSource: 'instance_address_owner_queue',
+    fallbackRootDir: ROOT_DIR,
+    fallbackReason: loadIdentity(target.rootDir) ? 'owner_queue_preferred' : 'missing_identity',
+  };
+}
+
 function sendJson(response, statusCode, value) {
   const body = `${JSON.stringify(value, null, 2)}\n`;
   response.writeHead(statusCode, {
@@ -233,7 +248,7 @@ async function handleCloudflareWebhook(request, response) {
   const webhookSnapshotPath = join(WEBHOOKS_DIR, `${safeRequestId}.json`);
   writeFileSync(webhookSnapshotPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 
-  const mailboxTarget = resolveMailboxRootForPayload(payload);
+  const mailboxTarget = selectMailboxTargetForIngest(payload);
   const mailboxItem = ingestRawMessage(rawEmail, `cloudflare-email:${safeRequestId}`, mailboxTarget.rootDir, {
     text: payload.text,
     html: payload.html,
@@ -255,6 +270,8 @@ async function handleCloudflareWebhook(request, response) {
     mailboxRoot: mailboxTarget.rootDir,
     routedInstance: mailboxTarget.routedInstance,
     routeSource: mailboxTarget.routeSource,
+    fallbackRootDir: trimString(mailboxTarget.fallbackRootDir),
+    fallbackReason: trimString(mailboxTarget.fallbackReason),
     mailboxItem: summarizeQueueItem(mailboxItem),
     payload: summarizePayload(payload),
   });
