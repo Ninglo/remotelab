@@ -253,8 +253,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [ ] Fast repetitive-work automation loops — optimize for data cleanup, report generation, export/import, file processing, notifications, and other simple scriptable chores that can save hours per week quickly
 - [ ] State-first, decision-first output shaping — default summaries should tell non-expert users what changed, whether input is needed now, and what outcome to expect next
 - [ ] `Welcome App` / guided onboarding — on first launch, seed a built-in guide App that explains capabilities in plain language, asks about the owner's background, repetitive-work pain point, current workflow, and sample inputs, then routes them into either a high-fit starter `App` or one concrete first automation `Session` instead of an empty session list
-- [ ] Provider registry abstraction — open model selection, local JS/JSON provider config, no more Claude/Codex-only model wiring
-- [ ] Provider management UX — setup/settings should support preset enablement, simple GUI JSON providers, and advanced code mode
+- [ ] Keep runtime/tool wiring pragmatic and local-first — only generalize the current tool abstraction when a concrete local-runtime need appears; do not reintroduce third-party domain-provider or cloud skill distribution paths by default
 - [ ] Produce a precise file-level concept→implementation guide so future sessions can route directly to the right files with less repo spelunking
 - [ ] Review the removable shared startup-defaults slice after live use; prune, disable, or replace it quickly if it starts overfitting or duplicating personal memory
 

@@ -5,7 +5,6 @@ Status: current working product note as of 2026-03-28
 Companions:
 
 - `notes/current/product-mainline.md`
-- `notes/current/external-solution-providers.md`
 - `notes/current/user-feedback-log.md`
 - `notes/directional/product-vision.md`
 - `docs/shared-tools.md`
@@ -55,20 +54,19 @@ Companions:
 - These are execution surfaces, not knowledge layers.
 - Authorization, revocation, scope, and audit should stay independent from memory writes and domain promotion.
 
-## External fallback providers
+## Local reusable skills
 
-- When the local domain layer is too thin, RemoteLab may query a replaceable external solution provider for baseline context or workflow ideas.
-- That provider does not become the `domain layer`; it stays a capability-side adapter that returns temporary evidence for the current task.
-- External provider output should stay attributable to the source/provider and should not auto-promote into shared domain knowledge or private user memory.
-- Provider-specific auth, APIs, prompt shaping, and response parsing should stay inside the adapter boundary so a temporary choice such as `evomap` does not become long-term product architecture.
+- Reusable workflow knowledge should live locally first: on-disk skills, prompts, scripts, checklists, and domain notes that the agent can inspect and reuse on this machine.
+- If local coverage is thin, the next move is usually to improve those local assets or gather task-specific evidence inside the current session, not to add a cloud skill registry or third-party domain dependency.
+- Local reusable skills are execution helpers, not automatic knowledge writeback paths; private user material still should not silently promote into shared domain assets.
+- Keep the skill abstraction simple for now: local discovery, local reuse, and explicit curation by the operator or agent.
 
 ## Near-term implementation bias
 
-- Do not overbuild migration, marketplace packaging, or a full hosted account system first.
+- Do not overbuild skill pull/upload flows, marketplace packaging, or a full hosted account system first.
 - Do keep data cleanly separated now so migration remains possible later.
 - Reuse one common connector surface across users instead of cloning tool logic per instance.
-- Let the domain layer begin as a retrievable knowledge folder before designing a heavier distribution system.
-- Treat external search or solution platforms as swappable fallback providers rather than as the canonical home for shared domain knowledge.
+- Let the domain layer begin as a retrievable local knowledge folder before designing any heavier distribution system.
 - Keep secrets and tokens out of user memory and out of shared domain notes.
 
 ## Practical rules

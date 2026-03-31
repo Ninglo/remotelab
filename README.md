@@ -60,7 +60,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - The first screen cannot be a blank session list. New users need a default `Welcome App` that briefly explains what RemoteLab can do, asks about their role and repetitive-work pain point, and guides them toward one concrete first automation.
 - The best wedge is simple, fast-payback digital work: data cleanup, analysis, file processing, reports, notifications, and other repetitive scriptable tasks.
 - Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and review results or approvals from the most convenient device.
-- `Session`, `App`, concurrency, and distribution still matter, but they are enabling layers or later multipliers rather than the first headline.
+- `Session`, `App`, and reusable local workflow building blocks still matter, but they are enabling layers or later multipliers rather than the first headline.
 
 ### What RemoteLab is
 
