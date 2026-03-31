@@ -4,11 +4,14 @@ import { readFileSync } from 'fs';
 import http from 'http';
 import net from 'net';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 const LISTEN_HOST = process.env.NATAPP_PROXY_LISTEN_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.NATAPP_PROXY_LISTEN_PORT, 10) || 7699;
-const ROOT_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ROOT_UPSTREAM_PORT, 10) || 7690;
+const ROOT_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ROOT_UPSTREAM_PORT, 10) || 7804;
+const OWNER_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_OWNER_UPSTREAM_PORT, 10) || 7690;
+const OWNER_ROUTE_PREFIX = normalizeRoutePrefix(process.env.NATAPP_OWNER_ROUTE_PREFIX || '/owner');
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
 const FALLBACK_PREFIXED_ROUTES = Object.freeze([
   Object.freeze({
@@ -23,15 +26,39 @@ const FALLBACK_PREFIXED_ROUTES = Object.freeze([
   }),
 ]);
 
+const SPECIAL_PREFIXED_ROUTES = Object.freeze(buildSpecialPrefixedRoutes());
+
+function normalizeRoutePrefix(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '/owner';
+  const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  const withoutTrailingSlash = normalized.replace(/\/+$/, '') || '/owner';
+  return withoutTrailingSlash === '/' ? '/owner' : withoutTrailingSlash;
+}
+
+function buildSpecialPrefixedRoutes() {
+  if (!Number.isInteger(OWNER_UPSTREAM_PORT) || OWNER_UPSTREAM_PORT < 1 || OWNER_UPSTREAM_PORT > 65535) {
+    return [];
+  }
+  if (OWNER_UPSTREAM_PORT === LISTEN_PORT || OWNER_ROUTE_PREFIX === '/') {
+    return [];
+  }
+  return [Object.freeze({
+    prefix: OWNER_ROUTE_PREFIX,
+    upstreamPort: OWNER_UPSTREAM_PORT,
+    cookiePrefix: 'owner__',
+  })];
+}
+
 function loadPrefixedRoutes() {
+  const routes = [...SPECIAL_PREFIXED_ROUTES];
+  const seenPrefixes = new Set(routes.map((route) => route.prefix));
   try {
     const parsed = JSON.parse(readFileSync(GUEST_REGISTRY_FILE, 'utf8'));
     if (!Array.isArray(parsed)) {
-      return FALLBACK_PREFIXED_ROUTES;
+      return routes.length > 0 ? routes.concat(FALLBACK_PREFIXED_ROUTES) : FALLBACK_PREFIXED_ROUTES;
     }
 
-    const seenPrefixes = new Set();
-    const routes = [];
     for (const record of parsed) {
       const name = String(record?.name || '').trim();
       const upstreamPort = Number.parseInt(record?.port, 10);
@@ -49,9 +76,10 @@ function loadPrefixedRoutes() {
       }));
     }
 
-    return routes.length > 0 ? routes : FALLBACK_PREFIXED_ROUTES;
+    if (routes.length > SPECIAL_PREFIXED_ROUTES.length) return routes;
+    return routes.length > 0 ? routes.concat(FALLBACK_PREFIXED_ROUTES.filter((route) => !seenPrefixes.has(route.prefix))) : FALLBACK_PREFIXED_ROUTES;
   } catch {
-    return FALLBACK_PREFIXED_ROUTES;
+    return routes.length > 0 ? routes.concat(FALLBACK_PREFIXED_ROUTES.filter((route) => !seenPrefixes.has(route.prefix))) : FALLBACK_PREFIXED_ROUTES;
   }
 }
 
@@ -272,7 +300,23 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => upstreamSocket.destroy());
 });
 
-server.listen(LISTEN_PORT, LISTEN_HOST, () => {
-  const prefixes = loadPrefixedRoutes().map((route) => route.prefix).join(', ');
-  console.log(`natapp dual proxy listening on http://${LISTEN_HOST}:${LISTEN_PORT} (${prefixes || 'no prefixed routes'})`);
-});
+const IS_MAIN = Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (IS_MAIN) {
+  server.listen(LISTEN_PORT, LISTEN_HOST, () => {
+    const prefixes = loadPrefixedRoutes().map((route) => route.prefix).join(', ');
+    console.log(`natapp dual proxy listening on http://${LISTEN_HOST}:${LISTEN_PORT} (root->${ROOT_UPSTREAM_PORT}; ${prefixes || 'no prefixed routes'})`);
+  });
+}
+
+export {
+  LISTEN_HOST,
+  LISTEN_PORT,
+  ROOT_UPSTREAM_PORT,
+  OWNER_UPSTREAM_PORT,
+  OWNER_ROUTE_PREFIX,
+  loadPrefixedRoutes,
+  mapRequest,
+  buildUpstreamHeaders,
+  rewriteSetCookieHeader,
+};
