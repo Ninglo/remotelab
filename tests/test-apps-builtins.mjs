@@ -101,12 +101,15 @@ try {
   assert.match(welcomeApp?.systemPrompt || '', /lightweight side questions|usage motive|recurring bottleneck/i);
   assert.match(welcomeApp?.systemPrompt || '', /internal task frame|backend-owned hidden state|concrete materials/i);
   assert.match(welcomeApp?.systemPrompt || '', /execution surface|local paths|complete handoff/i);
+  assert.match(welcomeApp?.systemPrompt || '', /inside RemoteLab and on this machine rather than giving the user a manual recipe/i);
+  assert.match(welcomeApp?.systemPrompt || '', /login, authorization, or browser access|explicitly exposed RemoteLab surface/i);
   assert.match(welcomeApp?.systemPrompt || '', /machine-side execution and user-visible delivery as separate steps|read, download, open, or otherwise reach the result/i);
   assert.doesNotMatch(welcomeApp?.systemPrompt || '', /task_card|hidden <private>|mode, summary, goal/i);
   assert.match(welcomeApp?.welcomeMessage || '', /我是 Rowan|聊天工具|先接手、再梳理、再推进执行/u);
   assert.match(welcomeApp?.welcomeMessage || '', /执行工作的地方|翻文件|取结果的界面/u);
   assert.match(welcomeApp?.welcomeMessage || '', /报表\/表格整理|导出导入|文件批处理/u);
   assert.match(welcomeApp?.welcomeMessage || '', /prompt 想清楚|一次说齐|进入执行/u);
+  assert.match(welcomeApp?.welcomeMessage || '', /登录某个网站|授权某个服务|尽量小的人工确认/u);
   assert.match(welcomeApp?.welcomeMessage || '', /大概是做什么的|最想省掉哪类重复工作|哪些材料或系统/u);
   assert.match(welcomeApp?.welcomeMessage || '', /还不算真正完成交付|交到你手里/u);
   assert.match(welcomeApp?.welcomeMessage || '', /下载链接|导出入口/u);
@@ -132,6 +135,7 @@ try {
   assert.match(createAppStarter?.systemPrompt || '', /POST \/api\/apps|PATCH \/api\/apps/i);
   assert.match(createAppStarter?.systemPrompt || '', /share link|\/app\/\{shareToken\}|other people/i);
   assert.match(createAppStarter?.systemPrompt || '', /visitors interact only through RemoteLab|local-path-based handoff/i);
+  assert.match(createAppStarter?.systemPrompt || '', /visitor-facing workflow needs another site or service login|RemoteLab-side browser or authorization checkpoint/i);
   assert.match(createAppStarter?.systemPrompt || '', /chat attachments|share links|user-reachable channel/i);
   assert.match(createAppStarter?.systemPrompt || '', /opening welcome message teach this delivery contract|machine-side completion is not the same as user delivery|download, export, or share path/i);
   assert.match(createAppStarter?.systemPrompt || '', /welcomeMessage, systemPrompt, tool, skills, shareToken|implementation details/i);

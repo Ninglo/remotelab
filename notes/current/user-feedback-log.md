@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-31 — non-expert users need agent-side execution, not manual recipes
+
+- Source: direct product feedback while reviewing a negative trial case with a non-programmer user.
+- User slice: remote/mobile trial users who can judge outcomes but are not comfortable acting like the operator of the machine.
+- Observed friction or ask: even when the host agent could keep going, replies still sometimes drift into implicit how-to mode and offload setup, host-side chores, or external-access steps back onto the user; this makes the product feel like it is asking the user to operate the system manually.
+- Signal: RemoteLab's product advantage is that the AI has its own execution machine and should absorb the work there by default; when another service needs access, login, or authorization, the preferred pattern is a RemoteLab-side checkpoint that keeps later steps automated here rather than a long recipe on the user's own device.
+- Product implication: strengthen startup/runtime prompts and onboarding copy so the default is server-side execution, RemoteLab-side auth capture when appropriate, and the smallest possible human checkpoint only when unavoidable.
+- Promote to: startup/runtime prompt assets, welcome/onboarding copy, future auth/access UX
+- Follow-up: watch future trials for whether replies still produce multi-step manual instructions and whether auth capture can move from wording alone into clearer product surfaces
+
 ### 2026-03-31 — mainland ingress should be prefix-only and must not repoint established paths silently
 
 - Source: direct product feedback after a mainland natapp routing change caused confusion between ingress behavior and Codex/provider auth failures.

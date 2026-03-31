@@ -29,6 +29,7 @@ assert.match(hook, /Bootstrap: ~\/\.remotelab\/memory\/bootstrap\.md/);
 assert.match(hook, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
 assert.match(hook, /Model-managed writable context root:/);
 assert.match(hook, /~\/\.remotelab\/memory\/model-context/);
+assert.match(hook, /Prefer RemoteLab-side execution and the smallest necessary manual checkpoint/);
 assert.match(hook, /local skill, wrapper, note, or prior pattern already fits/);
 assert.match(hook, /split into child sessions or scratch notes when that reduces noise/);
 assert.match(hook, /did you use the best available path, is the result complete for the user/);
