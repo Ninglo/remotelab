@@ -6,9 +6,9 @@ import net from 'net';
 import { homedir } from 'os';
 import { join } from 'path';
 
-const LISTEN_HOST = '127.0.0.1';
-const LISTEN_PORT = 7699;
-const ROOT_UPSTREAM_PORT = 7804;
+const LISTEN_HOST = process.env.NATAPP_PROXY_LISTEN_HOST || '127.0.0.1';
+const LISTEN_PORT = Number.parseInt(process.env.NATAPP_PROXY_LISTEN_PORT, 10) || 7699;
+const ROOT_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ROOT_UPSTREAM_PORT, 10) || 7690;
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
 const FALLBACK_PREFIXED_ROUTES = Object.freeze([
   Object.freeze({

@@ -30,7 +30,7 @@ Usage:
   remotelab setup                    Run interactive setup
   remotelab start                    Start all services
   remotelab stop                     Stop all services
-  remotelab restart [service]        Restart services (chat|tunnel|all)
+  remotelab restart [service]        Restart services (chat|tunnel|mainland|all)
   remotelab guest-instance           Create isolated guest instances on this machine
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth

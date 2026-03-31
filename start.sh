@@ -6,7 +6,10 @@ fi
 if [ -f ~/Library/LaunchAgents/com.cloudflared.tunnel.plist ]; then
   launchctl load ~/Library/LaunchAgents/com.cloudflared.tunnel.plist 2>/dev/null || echo "cloudflared already loaded"
 fi
+if [ -f ~/Library/LaunchAgents/com.remotelab.natapp.dual-proxy.plist ]; then
+  launchctl load ~/Library/LaunchAgents/com.remotelab.natapp.dual-proxy.plist 2>/dev/null || echo "natapp mainland proxy already loaded"
+fi
 echo "Services started!"
 echo ""
 echo "Check status with:"
-echo "  launchctl list | grep -E 'chatserver|cloudflared'"
+echo "  launchctl list | grep -E 'chatserver|cloudflared|natapp'"

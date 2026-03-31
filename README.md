@@ -288,6 +288,8 @@ If you keep a path-prefixed mainland mirror such as `https://jojotry.nat100.top/
 
 After that, `remotelab guest-instance create`, `create-trial`, `show`, and `links` automatically print both the regular public link and the mainland-prefixed access link. Use `links` when you want the whole current inventory without manually checking one instance at a time. To keep the path router itself versioned instead of living only in a home-directory script, use `scripts/natapp-dual-proxy.mjs` as the launch-agent target for the mainland bridge service.
 
+The same mainland bridge can also expose the owner surface at the root path by default (local port `7690`), while guest instances continue to route under `https://<mainland-base>/<instance>/`. If you need the root path to target a different local instance temporarily, set `NATAPP_ROOT_UPSTREAM_PORT` for the proxy process.
+
 If you still have older instance-specific runtime copies such as `remotelab-trial-runtime`, run `remotelab guest-instance converge <name>` or `remotelab guest-instance converge --all`. It keeps the same port, hostname, auth, config, and memory directories, but repoints the launch agent back to the current `~/code/remotelab` source tree so future code updates land everywhere without changing the user-facing link.
 
 If you want public inbound email per guest instance, prefer Cloudflare Email Routing into the Email Worker rather than creating separate mailbox accounts. `node scripts/agent-mail-cloudflare-routing.mjs status` prints the desired routing shape, `sync` backfills older instances that predate automatic provisioning, and `probe --address <email>` verifies whether SMTP will currently accept a guest mailbox such as `trial6@example.com`.
