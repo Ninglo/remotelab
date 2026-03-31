@@ -501,14 +501,83 @@ try {
   assert.equal(fifthSummary.failures.length, 0);
   assert.equal(sessionCreates.length, 5);
   assert.equal(messageSubmissions.length, 5);
-  assert.equal(messageSubmissions[4].images?.length, 1);
-  assert.equal(messageSubmissions[4].images[0].mimeType, 'image/png');
-  assert.equal(messageSubmissions[4].images[0].originalName, 'mail-shot.png');
-  assert.equal(messageSubmissions[4].images[0].data, inlinePngBase64);
+  assert.equal(messageSubmissions[4].attachments?.length, 1);
+  assert.equal(messageSubmissions[4].attachments[0].mimeType, 'image/png');
+  assert.equal(messageSubmissions[4].attachments[0].originalName, 'mail-shot.png');
+  assert.equal(messageSubmissions[4].attachments[0].data, inlinePngBase64);
 
   const updatedImage = findQueueItem(approvedImage.id, mailboxRoot)?.item;
   assert.equal(updatedImage?.status, 'processing_for_reply');
   assert.equal(updatedImage?.automation?.status, 'processing_for_reply');
+
+  const pdfBase64 = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n', 'utf8').toString('base64');
+  const pdfIngested = ingestRawMessage(
+    [
+      'From: owner@example.com',
+      'To: rowan@example.com',
+      'Subject: PDF included',
+      'Message-ID: <pdf-thread@example.com>',
+      'Content-Type: multipart/mixed; boundary="pdf-boundary"',
+      '',
+      '--pdf-boundary',
+      'Content-Type: text/plain; charset="UTF-8"',
+      '',
+      'please inspect the attached pdf.',
+      '--pdf-boundary',
+      'Content-Type: application/pdf; name="spec.pdf"',
+      'Content-Transfer-Encoding: base64',
+      'Content-Disposition: attachment; filename="spec.pdf"',
+      '',
+      pdfBase64,
+      '--pdf-boundary--',
+    ].join('\n'),
+    'pdf-thread.eml',
+    mailboxRoot,
+  );
+  const approvedPdf = findQueueItem(pdfIngested.id, mailboxRoot)?.item;
+  assert.equal(approvedPdf?.queue, 'approved');
+  assert.equal(approvedPdf?.content?.attachments?.length, 1);
+  assert.equal(approvedPdf?.content?.attachments?.[0]?.mimeType, 'application/pdf');
+  assert.equal(approvedPdf?.content?.attachments?.[0]?.originalName, 'spec.pdf');
+
+  const sixthWorker = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [join(repoRoot, 'scripts', 'agent-mail-worker.mjs'), '--once', '--root', mailboxRoot], {
+      cwd: repoRoot,
+      env: { ...process.env, HOME: tempHome },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr || `worker exited with ${code}`));
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+
+  const sixthSummary = JSON.parse(sixthWorker.stdout);
+  assert.equal(sixthSummary.processed, 1);
+  assert.equal(sixthSummary.failures.length, 0);
+  assert.equal(sessionCreates.length, 6);
+  assert.equal(messageSubmissions.length, 6);
+  assert.equal(messageSubmissions[5].attachments?.length, 1);
+  assert.equal(messageSubmissions[5].attachments[0].mimeType, 'application/pdf');
+  assert.equal(messageSubmissions[5].attachments[0].originalName, 'spec.pdf');
+  assert.equal(messageSubmissions[5].attachments[0].data, pdfBase64);
+
+  const updatedPdf = findQueueItem(approvedPdf.id, mailboxRoot)?.item;
+  assert.equal(updatedPdf?.status, 'processing_for_reply');
+  assert.equal(updatedPdf?.automation?.status, 'processing_for_reply');
 
   requests.length = 0;
   sessionCreates.length = 0;
