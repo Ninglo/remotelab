@@ -104,25 +104,16 @@ const THEMES = {
   minimal: {
     themeColor: "#ffffff",
   },
-  dark: {
-    themeColor: "#181818",
-  },
-  cyber: {
-    themeColor: "#1e1e2e",
-  },
-  aurora: {
-    themeColor: "#faf5ff",
-  },
 };
 const THEME_STORAGE_KEY = "theme";
 
 function resolveStoredTheme() {
-  const stored = localStorage.getItem(THEME_STORAGE_KEY) || "amber";
-  return THEMES[stored] ? stored : "amber";
+  const stored = localStorage.getItem(THEME_STORAGE_KEY) || "minimal";
+  return THEMES[stored] ? stored : "minimal";
 }
 
 function applyTheme(themeId) {
-  const resolved = THEMES[themeId] ? themeId : "amber";
+  const resolved = THEMES[themeId] ? themeId : "minimal";
   document.body.dataset.theme = resolved;
   localStorage.setItem(THEME_STORAGE_KEY, resolved);
   const themeMeta = document.querySelector('meta[name="theme-color"]');

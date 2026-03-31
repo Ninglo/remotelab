@@ -1,0 +1,196 @@
+/* Custom session presentation layer kept separate from upstream list styling. */
+.session-state-group {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.session-state-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.session-state-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.session-state-group-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-secondary) 86%, white);
+  border: 1px solid color-mix(in srgb, var(--border) 78%, white);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.session-state-group-body {
+  display: grid;
+  gap: 8px;
+}
+
+.custom-session-item {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.custom-session-item.primary-waiting_user {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+  background: color-mix(in srgb, rgba(191, 90, 42, 0.08) 72%, var(--bg));
+}
+
+.custom-session-item.primary-failed {
+  border-color: color-mix(in srgb, var(--issue) 34%, var(--border));
+  background: color-mix(in srgb, rgba(198, 40, 40, 0.08) 72%, var(--bg));
+}
+
+.custom-session-item.primary-done.is-complete-read:not(.active) {
+  opacity: 0.72;
+}
+
+.custom-session-item.primary-parked:not(.active) {
+  background: color-mix(in srgb, var(--bg-secondary) 82%, white);
+}
+
+.custom-session-item-info {
+  display: grid;
+  gap: 5px;
+}
+
+.custom-session-item-topline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.session-primary-badge,
+.session-aux-badge,
+.session-aux-text {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.session-primary-badge {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+
+.session-primary-badge.state-active {
+  color: color-mix(in srgb, var(--success) 78%, black);
+  background: color-mix(in srgb, var(--success) 12%, white);
+  border-color: color-mix(in srgb, var(--success) 24%, white);
+}
+
+.session-primary-badge.state-waiting_user {
+  color: color-mix(in srgb, var(--warning) 76%, black);
+  background: color-mix(in srgb, var(--warning) 12%, white);
+  border-color: color-mix(in srgb, var(--warning) 24%, white);
+}
+
+.session-primary-badge.state-done {
+  color: color-mix(in srgb, var(--success) 76%, black);
+  background: color-mix(in srgb, var(--success) 10%, white);
+  border-color: color-mix(in srgb, var(--success) 22%, white);
+}
+
+.session-primary-badge.state-parked {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-secondary) 92%, white);
+  border-color: color-mix(in srgb, var(--border) 80%, white);
+}
+
+.session-primary-badge.state-failed {
+  color: color-mix(in srgb, var(--issue) 74%, black);
+  background: color-mix(in srgb, var(--issue) 10%, white);
+  border-color: color-mix(in srgb, var(--issue) 20%, white);
+}
+
+.custom-session-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.session-aux-badge,
+.session-aux-text {
+  font-size: 10px;
+  padding: 4px 8px;
+}
+
+.session-aux-badge {
+  font-weight: 600;
+}
+
+.session-aux-badge.flag-unread {
+  color: color-mix(in srgb, var(--warning) 80%, black);
+  background: color-mix(in srgb, var(--warning) 10%, white);
+}
+
+.session-aux-badge.flag-running {
+  color: color-mix(in srgb, var(--success) 80%, black);
+  background: color-mix(in srgb, var(--success) 10%, white);
+}
+
+.session-aux-badge.flag-queued {
+  color: color-mix(in srgb, var(--queue) 82%, black);
+  background: color-mix(in srgb, var(--queue) 10%, white);
+}
+
+.session-aux-badge.flag-pinned,
+.session-aux-text {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-secondary) 88%, white);
+}
+
+.custom-board-card {
+  gap: 8px;
+}
+
+.custom-board-card.primary-waiting_user {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--border));
+  background: color-mix(in srgb, rgba(191, 90, 42, 0.07) 74%, var(--bg));
+}
+
+.custom-board-card.primary-failed {
+  border-color: color-mix(in srgb, var(--issue) 30%, var(--border));
+  background: color-mix(in srgb, rgba(198, 40, 40, 0.07) 74%, var(--bg));
+}
+
+.custom-board-card-topline {
+  align-items: flex-start;
+}
+
+.custom-board-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.custom-board-column[data-column="needs-user"] .board-column-dot {
+  background: var(--warning);
+}
+
+.custom-board-column[data-column="active"] .board-column-dot {
+  background: var(--queue);
+}
+
+.custom-board-column[data-column="done-updated"] .board-column-dot {
+  background: var(--success);
+}
+
+.custom-board-column[data-column="closed"] .board-column-dot {
+  background: var(--text-muted);
+}
