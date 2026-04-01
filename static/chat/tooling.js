@@ -41,6 +41,125 @@ function queueRuntimeSelectionSync() {
     });
 }
 
+function cloneReasoningState(reasoning, fallbackLabel = t("tooling.thinking")) {
+  if (!reasoning || typeof reasoning !== "object") return null;
+  const kind = String(reasoning.kind || "").trim().toLowerCase();
+  const label = String(reasoning.label || fallbackLabel).trim() || fallbackLabel;
+  if (kind === "enum") {
+    const levels = [...new Set(
+      (Array.isArray(reasoning.levels) ? reasoning.levels : [])
+        .map((level) => String(level || "").trim())
+        .filter(Boolean),
+    )];
+    if (levels.length === 0) return null;
+    const defaultValue = String(
+      reasoning.default || reasoning.defaultReasoning || reasoning.defaultEffort || levels[0],
+    ).trim();
+    return {
+      kind,
+      label,
+      levels,
+      default: levels.includes(defaultValue) ? defaultValue : levels[0],
+    };
+  }
+  if (kind === "toggle" || kind === "none") {
+    return { kind, label };
+  }
+  return null;
+}
+
+function findCurrentToolModelRecord(modelId = selectedModel) {
+  if (!Array.isArray(currentToolModels) || currentToolModels.length === 0) return null;
+  if (modelId) {
+    const matched = currentToolModels.find((model) => model.id === modelId);
+    if (matched) return matched;
+  }
+  return currentToolModels[0] || null;
+}
+
+function resolveActiveReasoningState(modelId = selectedModel) {
+  const fallbackReasoning =
+    cloneReasoningState(currentToolBaseReasoning)
+    || { kind: "none", label: t("tooling.thinking") };
+  const modelData = findCurrentToolModelRecord(modelId);
+  const modelReasoning = cloneReasoningState(modelData?.reasoning, fallbackReasoning.label);
+  return {
+    modelData,
+    reasoning: modelReasoning || fallbackReasoning,
+  };
+}
+
+function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurrentSelection = false } = {}) {
+  const { modelData, reasoning } = resolveActiveReasoningState();
+  currentToolReasoningKind = reasoning.kind || "none";
+  currentToolReasoningLabel = reasoning.label || t("tooling.thinking");
+  currentToolReasoningDefault =
+    currentToolReasoningKind === "enum"
+      ? (reasoning.default || null)
+      : null;
+  currentToolEffortLevels =
+    currentToolReasoningKind === "enum"
+      ? reasoning.levels || []
+      : null;
+  thinkingToggle.textContent = currentToolReasoningLabel;
+
+  if (currentToolReasoningKind === "enum") {
+    thinkingToggle.style.display = "none";
+    effortSelect.style.display = "";
+    effortSelect.innerHTML = "";
+    for (const level of currentToolEffortLevels) {
+      const opt = document.createElement("option");
+      opt.value = level;
+      opt.textContent = level;
+      effortSelect.appendChild(opt);
+    }
+
+    const storedEffort = selectedTool
+      ? (localStorage.getItem(`selectedEffort_${selectedTool}`) || "")
+      : "";
+    const preferredEffort = sessionPreferences?.hasEffort
+      ? sessionPreferences.effort
+      : preserveCurrentSelection
+        ? (selectedEffort || storedEffort)
+        : storedEffort;
+    const modelDefaultEffort = modelData?.defaultEffort || modelData?.defaultReasoning || "";
+
+    if (preferredEffort && currentToolEffortLevels.includes(preferredEffort)) {
+      effortSelect.value = preferredEffort;
+      selectedEffort = preferredEffort;
+    } else if (modelDefaultEffort && currentToolEffortLevels.includes(modelDefaultEffort)) {
+      effortSelect.value = modelDefaultEffort;
+      selectedEffort = modelDefaultEffort;
+    } else if (
+      currentToolReasoningDefault
+      && currentToolEffortLevels.includes(currentToolReasoningDefault)
+    ) {
+      effortSelect.value = currentToolReasoningDefault;
+      selectedEffort = currentToolReasoningDefault;
+    } else if (currentToolEffortLevels[0]) {
+      effortSelect.value = currentToolEffortLevels[0];
+      selectedEffort = currentToolEffortLevels[0];
+    } else {
+      selectedEffort = "";
+    }
+    return;
+  }
+
+  selectedEffort = null;
+  effortSelect.style.display = "none";
+
+  if (currentToolReasoningKind === "toggle") {
+    thinkingToggle.style.display = "";
+    if (sessionPreferences?.hasThinking) {
+      thinkingEnabled = sessionPreferences.thinking;
+    }
+    updateThinkingUI();
+    return;
+  }
+
+  thinkingToggle.style.display = "none";
+}
+
 function updateThinkingUI() {
   thinkingToggle.classList.toggle("active", thinkingEnabled);
 }
@@ -674,6 +793,7 @@ inlineToolSelect.addEventListener("change", async () => {
 async function loadModelsForCurrentTool({ refresh = false } = {}) {
   if (visitorMode) {
     currentToolModels = [];
+    currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
     currentToolEffortLevels = null;
     currentToolReasoningKind = "none";
     currentToolReasoningLabel = t("tooling.thinking");
@@ -689,6 +809,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
   const toolId = selectedTool;
   if (!selectedTool) {
     currentToolModels = [];
+    currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
     currentToolEffortLevels = null;
     currentToolReasoningKind = "none";
     currentToolReasoningLabel = t("tooling.thinking");
@@ -706,15 +827,16 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     const data = await fetchModelResponse(toolId, { refresh });
     if (selectedTool !== toolId) return;
     currentToolModels = data.models || [];
-    currentToolReasoningKind =
-      data.reasoning?.kind || (data.effortLevels ? "enum" : "toggle");
-    currentToolReasoningLabel = data.reasoning?.label || t("tooling.thinking");
-    currentToolReasoningDefault = data.reasoning?.default || null;
-    currentToolEffortLevels =
-      currentToolReasoningKind === "enum"
-        ? data.reasoning?.levels || data.effortLevels || []
-        : null;
-    thinkingToggle.textContent = currentToolReasoningLabel;
+    currentToolBaseReasoning =
+      cloneReasoningState(data.reasoning)
+      || (data.effortLevels
+        ? {
+          kind: "enum",
+          label: t("tooling.thinking"),
+          levels: data.effortLevels || [],
+          default: data.effortLevels?.[0] || null,
+        }
+        : { kind: "none", label: t("tooling.thinking") });
 
     // Populate model dropdown
     inlineModelSelect.innerHTML = "";
@@ -742,56 +864,11 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       selectedModel = "";
     }
     inlineModelSelect.style.display = currentToolModels.length > 0 ? "" : "none";
-
-    if (currentToolReasoningKind === "enum") {
-      thinkingToggle.style.display = "none";
-      effortSelect.style.display = "";
-      effortSelect.innerHTML = "";
-      for (const level of currentToolEffortLevels) {
-        const opt = document.createElement("option");
-        opt.value = level;
-        opt.textContent = level;
-        effortSelect.appendChild(opt);
-      }
-
-      selectedEffort = sessionPreferences?.hasEffort
-        ? sessionPreferences.effort
-        : (localStorage.getItem(`selectedEffort_${toolId}`) || "");
-      const currentModelData = currentToolModels.find((m) => m.id === selectedModel);
-      if (selectedEffort && currentToolEffortLevels.includes(selectedEffort)) {
-        effortSelect.value = selectedEffort;
-      } else if (currentModelData?.defaultEffort) {
-        effortSelect.value = currentModelData.defaultEffort;
-        selectedEffort = currentModelData.defaultEffort;
-      } else if (
-        currentToolReasoningDefault
-        && currentToolEffortLevels.includes(currentToolReasoningDefault)
-      ) {
-        effortSelect.value = currentToolReasoningDefault;
-        selectedEffort = currentToolReasoningDefault;
-      } else if (currentToolModels[0]?.defaultEffort) {
-        effortSelect.value = currentToolModels[0].defaultEffort;
-        selectedEffort = currentToolModels[0].defaultEffort;
-      } else if (currentToolEffortLevels[0]) {
-        effortSelect.value = currentToolEffortLevels[0];
-        selectedEffort = currentToolEffortLevels[0];
-      }
-    } else if (currentToolReasoningKind === "toggle") {
-      thinkingToggle.style.display = "";
-      effortSelect.style.display = "none";
-      selectedEffort = null;
-      if (sessionPreferences?.hasThinking) {
-        thinkingEnabled = sessionPreferences.thinking;
-      }
-      updateThinkingUI();
-    } else {
-      thinkingToggle.style.display = "none";
-      effortSelect.style.display = "none";
-      selectedEffort = null;
-    }
+    applyCurrentModelReasoningUi({ sessionPreferences });
     queueRuntimeSelectionSync();
   } catch {
     currentToolModels = [];
+    currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
     currentToolEffortLevels = null;
     currentToolReasoningKind = "none";
     inlineModelSelect.style.display = "none";
@@ -803,14 +880,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
 inlineModelSelect.addEventListener("change", () => {
   selectedModel = inlineModelSelect.value;
   if (selectedTool) localStorage.setItem(`selectedModel_${selectedTool}`, selectedModel);
-  // Update default effort when model changes (enum reasoning tools)
-  if (currentToolReasoningKind === "enum" && selectedModel) {
-    const modelData = currentToolModels.find((m) => m.id === selectedModel);
-    if (modelData?.defaultEffort && !localStorage.getItem(`selectedEffort_${selectedTool}`)) {
-      effortSelect.value = modelData.defaultEffort;
-      selectedEffort = modelData.defaultEffort;
-    }
-  }
+  applyCurrentModelReasoningUi({ preserveCurrentSelection: true });
   queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });

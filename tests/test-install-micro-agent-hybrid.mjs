@@ -34,10 +34,34 @@ assert.equal(record.runtimeFamily, 'claude-stream-json');
 assert.equal(record.promptMode, 'bare-user');
 assert.equal(record.flattenPrompt, true);
 assert.deepEqual(record.models, [
-  { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+  {
+    id: 'gpt-5.4-mini',
+    label: 'gpt-5.4-mini',
+    reasoningKind: 'enum',
+    supportedReasoningLevels: ['low', 'medium', 'high', 'xhigh'],
+    defaultReasoning: 'medium',
+  },
+  {
+    id: 'claude-opus-4-6',
+    label: 'Claude Opus 4.6',
+    reasoningKind: 'enum',
+    supportedReasoningLevels: ['low', 'medium', 'high'],
+    defaultReasoning: 'medium',
+  },
+  {
+    id: 'claude-sonnet-4-6',
+    label: 'Claude Sonnet 4.6',
+    reasoningKind: 'enum',
+    supportedReasoningLevels: ['low', 'medium', 'high'],
+    defaultReasoning: 'medium',
+  },
+  {
+    id: 'claude-haiku-4-5',
+    label: 'Claude Haiku 4.5',
+    reasoningKind: 'enum',
+    supportedReasoningLevels: ['low', 'medium', 'high'],
+    defaultReasoning: 'medium',
+  },
 ]);
 assert.deepEqual(record.reasoning, {
   kind: 'none',

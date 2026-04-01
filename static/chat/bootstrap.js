@@ -772,8 +772,9 @@ let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
 let selectedModel = null;
 let selectedEffort = null;
 let currentToolModels = []; // model list for current tool
+let currentToolBaseReasoning = { kind: "none", label: "Thinking" };
 let currentToolEffortLevels = null; // null = binary toggle, string[] = effort dropdown
-let currentToolReasoningKind = "toggle";
+let currentToolReasoningKind = "none";
 let currentToolReasoningLabel = "Thinking";
 let currentToolReasoningDefault = null;
 let allToolsList = [];

@@ -16,6 +16,7 @@ const DEFAULT_COMMAND = 'codex';
 const DEFAULT_MODEL = 'gpt-5.4';
 const DEFAULT_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh'];
 const DEFAULT_REASONING_LEVEL = 'medium';
+const DEFAULT_CLAUDE_REASONING_LEVELS = ['low', 'medium', 'high'];
 const PERSONAL_CODEX_CONFIG_PATH = join(HOME, '.codex', 'config.toml');
 const LEGACY_CONFIG_PATH = join(HOME, '.config', 'remotelab', 'micro-agent.json');
 const DEFAULT_PROVIDER = 'hybrid';
@@ -30,6 +31,33 @@ const ANTHROPIC_MODELS = [
   { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
   { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
 ];
+
+function buildReasoningModelRecord({ id, label, levels = null, defaultReasoning = '' }) {
+  const record = { id, label };
+  if (Array.isArray(levels) && levels.length > 0) {
+    record.reasoningKind = 'enum';
+    record.supportedReasoningLevels = levels;
+    record.defaultReasoning = defaultReasoning || levels[0];
+  }
+  return record;
+}
+
+function buildHybridModelRecords(primaryModel) {
+  return [
+    buildReasoningModelRecord({
+      id: primaryModel,
+      label: primaryModel,
+      levels: DEFAULT_REASONING_LEVELS,
+      defaultReasoning: DEFAULT_REASONING_LEVEL,
+    }),
+    ...ANTHROPIC_MODELS.map((entry) => buildReasoningModelRecord({
+      id: entry.id,
+      label: entry.label,
+      levels: DEFAULT_CLAUDE_REASONING_LEVELS,
+      defaultReasoning: DEFAULT_REASONING_LEVEL,
+    })),
+  ];
+}
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -240,16 +268,7 @@ async function main() {
       runtimeFamily: 'claude-stream-json',
       promptMode: 'bare-user',
       flattenPrompt: true,
-      models: [
-        {
-          id: model,
-          label: model,
-        },
-        ...ANTHROPIC_MODELS.map((entry) => ({
-          id: entry.id,
-          label: entry.label,
-        })),
-      ],
+      models: buildHybridModelRecords(model),
       reasoning: {
         kind: 'none',
         label: 'Thinking',
