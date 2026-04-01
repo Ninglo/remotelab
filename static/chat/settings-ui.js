@@ -2,6 +2,41 @@ function t(key, vars) {
   return window.remotelabT ? window.remotelabT(key, vars) : key;
 }
 
+const uiLanguageSelectEl = typeof uiLanguageSelect !== "undefined" ? uiLanguageSelect : null;
+const uiLanguageStatusEl = typeof uiLanguageStatus !== "undefined" ? uiLanguageStatus : null;
+const settingsSessionPresentationListEl =
+  typeof settingsSessionPresentationList !== "undefined" ? settingsSessionPresentationList : null;
+
+function syncSessionThemeStatus() {
+  if (typeof sessionThemeStatus === "undefined" || !sessionThemeStatus) return;
+  const currentPreference = typeof window.remotelabGetSessionPresentationThemePreference === "function"
+    ? window.remotelabGetSessionPresentationThemePreference()
+    : "default";
+  sessionThemeStatus.textContent = currentPreference === "custom"
+    ? "Custom grouped session theme is active in this browser."
+    : "Default session list is active in this browser.";
+}
+
+function initSessionThemeSettings() {
+  if (typeof sessionThemeSelect === "undefined" || !sessionThemeSelect || sessionThemeSelect.dataset.bound === "true") {
+    syncSessionThemeStatus();
+    return;
+  }
+  const currentPreference = typeof window.remotelabGetSessionPresentationThemePreference === "function"
+    ? window.remotelabGetSessionPresentationThemePreference()
+    : "default";
+  sessionThemeSelect.value = currentPreference === "custom" ? "custom" : "default";
+  syncSessionThemeStatus();
+  sessionThemeSelect.addEventListener("change", () => {
+    const value = sessionThemeSelect.value === "custom" ? "custom" : "default";
+    if (typeof window.remotelabSetSessionPresentationThemePreference === "function") {
+      window.remotelabSetSessionPresentationThemePreference(value);
+    }
+    syncSessionThemeStatus();
+  });
+  sessionThemeSelect.dataset.bound = "true";
+}
+
 function renderUiLanguageOptions(selectEl, selectedValue = "auto") {
   if (!selectEl) return;
   const options = typeof window.remotelabGetUiLanguageOptions === "function"
@@ -22,36 +57,36 @@ function renderUiLanguageOptions(selectEl, selectedValue = "auto") {
 }
 
 function syncUiLanguageStatus() {
-  if (!uiLanguageStatus) return;
+  if (!uiLanguageStatusEl) return;
   const currentPreference = typeof window.remotelabGetUiLanguagePreference === "function"
     ? window.remotelabGetUiLanguagePreference()
     : "auto";
-  uiLanguageStatus.textContent = currentPreference === "auto"
+  uiLanguageStatusEl.textContent = currentPreference === "auto"
     ? t("settings.language.ownerStatusAuto")
     : t("settings.language.ownerStatusOverride");
 }
 
 function initUiLanguageSettings() {
-  if (!uiLanguageSelect || uiLanguageSelect.dataset.bound === "true") {
+  if (!uiLanguageSelectEl || uiLanguageSelectEl.dataset.bound === "true") {
     syncUiLanguageStatus();
     return;
   }
   renderUiLanguageOptions(
-    uiLanguageSelect,
+    uiLanguageSelectEl,
     typeof window.remotelabGetUiLanguagePreference === "function"
       ? window.remotelabGetUiLanguagePreference()
       : "auto",
   );
   syncUiLanguageStatus();
-  uiLanguageSelect.addEventListener("change", () => {
-    const value = uiLanguageSelect.value || "auto";
+  uiLanguageSelectEl.addEventListener("change", () => {
+    const value = uiLanguageSelectEl.value || "auto";
     if (typeof window.remotelabSetUiLanguagePreference === "function") {
       window.remotelabSetUiLanguagePreference(value, { reload: true });
       return;
     }
     syncUiLanguageStatus();
   });
-  uiLanguageSelect.dataset.bound = "true";
+  uiLanguageSelectEl.dataset.bound = "true";
 }
 
 function resolveManagedSessionEntryMode(session) {
@@ -91,15 +126,15 @@ function getManagedSettingsSession() {
 }
 
 function renderSettingsSessionPresentationPanel() {
-  if (!settingsSessionPresentationList) return;
+  if (!settingsSessionPresentationListEl) return;
   if (visitorMode) {
-    settingsSessionPresentationList.innerHTML = `<div class="settings-app-empty">${t("settings.sessionPresentation.ownerOnly")}</div>`;
+    settingsSessionPresentationListEl.innerHTML = `<div class="settings-app-empty">${t("settings.sessionPresentation.ownerOnly")}</div>`;
     return;
   }
   const session = getManagedSettingsSession();
-  settingsSessionPresentationList.innerHTML = "";
+  settingsSessionPresentationListEl.innerHTML = "";
   if (!session?.id) {
-    settingsSessionPresentationList.innerHTML = `<div class="settings-app-empty">${t("settings.sessionPresentation.noSession")}</div>`;
+    settingsSessionPresentationListEl.innerHTML = `<div class="settings-app-empty">${t("settings.sessionPresentation.noSession")}</div>`;
     return;
   }
 
@@ -167,8 +202,9 @@ function renderSettingsSessionPresentationPanel() {
   });
 
   card.appendChild(editor);
-  settingsSessionPresentationList.appendChild(card);
+  settingsSessionPresentationListEl.appendChild(card);
 }
 
+initSessionThemeSettings();
 initUiLanguageSettings();
 renderSettingsSessionPresentationPanel();

@@ -97,29 +97,40 @@ const bootstrapShareSnapshot = normalizeBootstrapShareSnapshot(
   pageBootstrap.shareSnapshot,
 );
 
-const THEMES = {
-  amber: {
-    themeColor: "#f6f8ef",
-  },
-  minimal: {
-    themeColor: "#ffffff",
-  },
-};
-const THEME_STORAGE_KEY = "theme";
+const DEFAULT_THEME_ID = "minimal";
+const SESSION_PRESENTATION_THEME_STORAGE_KEY = "remotelab.sessionPresentationTheme";
 
-function resolveStoredTheme() {
-  const stored = localStorage.getItem(THEME_STORAGE_KEY) || "minimal";
-  return THEMES[stored] ? stored : "minimal";
-}
-
-function applyTheme(themeId) {
-  const resolved = THEMES[themeId] ? themeId : "minimal";
-  document.body.dataset.theme = resolved;
-  localStorage.setItem(THEME_STORAGE_KEY, resolved);
+function applyDefaultTheme() {
+  document.body.dataset.theme = DEFAULT_THEME_ID;
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   if (themeMeta) {
-    themeMeta.setAttribute("content", THEMES[resolved].themeColor);
+    themeMeta.setAttribute("content", "#ffffff");
     themeMeta.removeAttribute("media");
+  }
+  return DEFAULT_THEME_ID;
+}
+
+function getSessionPresentationThemePreference() {
+  const stored = String(localStorage.getItem(SESSION_PRESENTATION_THEME_STORAGE_KEY) || "")
+    .trim()
+    .toLowerCase();
+  return stored === "custom" ? "custom" : "default";
+}
+
+function setSessionPresentationThemePreference(nextValue) {
+  const resolved = nextValue === "custom" ? "custom" : "default";
+  localStorage.setItem(SESSION_PRESENTATION_THEME_STORAGE_KEY, resolved);
+  document.body.classList.toggle(
+    "session-presentation-theme-custom",
+    resolved === "custom",
+  );
+  if (
+    window.RemoteLabSessionPresentationCustom
+    && typeof window.RemoteLabSessionPresentationCustom.setEnabled === "function"
+  ) {
+    window.RemoteLabSessionPresentationCustom.setEnabled(resolved === "custom");
+  } else if (typeof renderSessionList === "function") {
+    renderSessionList();
   }
   return resolved;
 }
@@ -217,6 +228,8 @@ const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
+const sessionThemeSelect = document.getElementById("sessionThemeSelect");
+const sessionThemeStatus = document.getElementById("sessionThemeStatus");
 const newUserNameInput = document.getElementById("newUserNameInput");
 const newUserAppsPicker = document.getElementById("newUserAppsPicker");
 const newUserDefaultAppSelect = document.getElementById("newUserDefaultAppSelect");
@@ -242,7 +255,6 @@ const headerTitle = document.getElementById("headerTitle");
 const refreshFrontendBtn = document.getElementById("refreshFrontendBtn");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
-const themeSelect = document.getElementById("themeSelect");
 const imgBtn = document.getElementById("imgBtn");
 const imgFileInput = document.getElementById("imgFileInput");
 const imgPreviewStrip = document.getElementById("imgPreviewStrip");
@@ -259,12 +271,10 @@ const sessionTemplateRow = document.getElementById("sessionTemplateRow");
 const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
-const tabBoard = document.getElementById("tabBoard");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const sessionAppFilterSelect = document.getElementById("sessionAppFilterSelect");
 const userFilterSelect = document.getElementById("userFilterSelect");
-const boardPanel = document.getElementById("boardPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
@@ -291,13 +301,10 @@ const providerPromptCode = document.getElementById("providerPromptCode");
 const saveToolConfigBtn = document.getElementById("saveToolConfigBtn");
 const copyProviderPromptBtn = document.getElementById("copyProviderPromptBtn");
 
-const activeTheme = applyTheme(resolveStoredTheme());
-if (themeSelect) {
-  themeSelect.value = activeTheme;
-  themeSelect.addEventListener("change", () => {
-    applyTheme(themeSelect.value);
-  });
-}
+applyDefaultTheme();
+window.remotelabGetSessionPresentationThemePreference = getSessionPresentationThemePreference;
+window.remotelabSetSessionPresentationThemePreference = setSessionPresentationThemePreference;
+setSessionPresentationThemePreference(getSessionPresentationThemePreference());
 
 refreshFrontendBtn?.addEventListener("click", () => {
   void reloadForFreshBuild(newerBuildInfo);

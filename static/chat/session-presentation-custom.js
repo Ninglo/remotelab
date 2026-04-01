@@ -1,7 +1,6 @@
 "use strict";
 
 (function attachRemoteLabSessionPresentationCustom(root) {
-  const UI_LANGUAGE_STORAGE_KEY = "remotelab.uiLanguage";
   const GROUP_ORDER = ["needs-user", "active", "done-updated", "closed"];
   const PRIMARY_STATE_ORDER = {
     waiting_user: 0,
@@ -11,61 +10,33 @@
     parked: 4,
   };
   const LABELS = {
-    en: {
-      groups: {
-        "needs-user": "Needs you now",
-        active: "In progress",
-        "done-updated": "Done, new updates",
-        closed: "Ended",
-      },
-      primary: {
-        active: "In progress",
-        waiting_user: "Needs you",
-        done: "Done",
-        parked: "Parked",
-        failed: "Needs repair",
-      },
-      flag: {
-        running: "Running",
-        queued: "Queued",
-        unread: "New updates",
-        pinned: "Pinned",
-      },
-      folderFallback: "General",
-      messages: "{count} msgs",
+    groups: {
+      "needs-user": "Needs you now",
+      active: "In progress",
+      "done-updated": "Done, new updates",
+      closed: "Ended",
     },
-    zh: {
-      groups: {
-        "needs-user": "待我处理",
-        active: "进行中",
-        "done-updated": "已完成但有新变化",
-        closed: "已结束",
-      },
-      primary: {
-        active: "进行中",
-        waiting_user: "等你处理",
-        done: "已完成",
-        parked: "已搁置",
-        failed: "异常",
-      },
-      flag: {
-        running: "运行中",
-        queued: "排队中",
-        unread: "有新变化",
-        pinned: "已置顶",
-      },
-      folderFallback: "默认分组",
-      messages: "{count} 条消息",
+    primary: {
+      active: "In progress",
+      waiting_user: "Needs you",
+      done: "Done",
+      parked: "Parked",
+      failed: "Needs repair",
     },
+    flag: {
+      running: "Running",
+      queued: "Queued",
+      unread: "New updates",
+      pinned: "Pinned",
+    },
+    folderFallback: "General",
+    messages: "{count} msgs",
   };
+  const FLAG_ORDER = ["unread", "running", "queued", "pinned"];
 
-  function getLanguagePack() {
-    const stored = String(root.localStorage?.getItem?.(UI_LANGUAGE_STORAGE_KEY) || "").toLowerCase();
-    const preferred = stored === "auto" || !stored
-      ? String(root.navigator?.language || "en").toLowerCase()
-      : stored;
-    return preferred.startsWith("zh") ? LABELS.zh : LABELS.en;
-  }
+  const originalRenderSessionList =
+    typeof root.renderSessionList === "function" ? root.renderSessionList : null;
+  let enabled = false;
 
   function getStateModel() {
     return root.RemoteLabSessionStateModel || null;
@@ -197,17 +168,17 @@
 
   function getFolderLabel(session) {
     if (typeof root.getSessionGroupInfo === "function") {
-      return root.getSessionGroupInfo(session)?.label || getLanguagePack().folderFallback;
+      return root.getSessionGroupInfo(session)?.label || LABELS.folderFallback;
     }
-    return getLanguagePack().folderFallback;
+    return LABELS.folderFallback;
   }
 
-  function getMessageCountText(session, labels) {
+  function getMessageCountText(session) {
     const count = Number.isInteger(session?.messageCount)
       ? session.messageCount
       : (Number.isInteger(session?.activeMessageCount) ? session.activeMessageCount : 0);
     if (count <= 0) return "";
-    return labels.messages.replace("{count}", String(count));
+    return LABELS.messages.replace("{count}", String(count));
   }
 
   function escapeHtml(value) {
@@ -216,21 +187,21 @@
     return el.innerHTML;
   }
 
-  function getFlagBadgeHtml(flag, labels) {
+  function getFlagBadgeHtml(flag) {
     if (flag === "archived") return "";
-    const label = labels.flag[flag];
+    const label = LABELS.flag[flag];
     if (!label) return "";
     return `<span class="session-aux-badge flag-${flag}">${escapeHtml(label)}</span>`;
   }
 
-  function buildAuxiliaryHtml(session, presentation, labels) {
+  function buildAuxiliaryHtml(session, presentation) {
     const visibleFlags = presentation.flags
       .filter((flag) => flag !== "archived")
-      .sort((a, b) => ["unread", "running", "queued", "pinned"].indexOf(a) - ["unread", "running", "queued", "pinned"].indexOf(b))
+      .sort((a, b) => FLAG_ORDER.indexOf(a) - FLAG_ORDER.indexOf(b))
       .slice(0, 2);
 
     const parts = visibleFlags
-      .map((flag) => getFlagBadgeHtml(flag, labels))
+      .map((flag) => getFlagBadgeHtml(flag))
       .filter(Boolean);
 
     const folderLabel = getFolderLabel(session);
@@ -238,7 +209,7 @@
       parts.push(`<span class="session-aux-text">${escapeHtml(folderLabel)}</span>`);
     }
 
-    const messageCount = getMessageCountText(session, labels);
+    const messageCount = getMessageCountText(session);
     if (messageCount) {
       parts.push(`<span class="session-aux-text">${escapeHtml(messageCount)}</span>`);
     }
@@ -247,7 +218,6 @@
   }
 
   function createSessionItem(session) {
-    const labels = getLanguagePack();
     const presentation = deriveSessionPresentation(session);
     const div = root.document.createElement("div");
     div.className =
@@ -257,8 +227,8 @@
       + ` primary-${presentation.primaryState}`;
 
     const displayName = getDisplayName(session);
-    const primaryLabel = labels.primary[presentation.primaryState] || labels.primary.active;
-    const auxHtml = buildAuxiliaryHtml(session, presentation, labels);
+    const primaryLabel = LABELS.primary[presentation.primaryState] || LABELS.primary.active;
+    const auxHtml = buildAuxiliaryHtml(session, presentation);
     const pinTitle = typeof root.t === "function" ? root.t("action.unpin") : "Unpin";
     const unpinnedTitle = typeof root.t === "function" ? root.t("action.pin") : "Pin";
     const renameTitle = typeof root.t === "function" ? root.t("action.rename") : "Rename";
@@ -302,14 +272,14 @@
     return div;
   }
 
-  function createGroupSection(groupKey, sessions, labels) {
+  function createGroupSection(groupKey, sessions) {
     const section = root.document.createElement("div");
     section.className = `session-state-group group-${groupKey}`;
 
     const header = root.document.createElement("div");
     header.className = "session-state-group-header";
     header.innerHTML = `
-      <span class="session-state-group-title">${escapeHtml(labels.groups[groupKey])}</span>
+      <span class="session-state-group-title">${escapeHtml(LABELS.groups[groupKey])}</span>
       <span class="session-state-group-count">${sessions.length}</span>`;
     section.appendChild(header);
 
@@ -322,91 +292,8 @@
     return section;
   }
 
-  function createBoardCard(session) {
-    const labels = getLanguagePack();
-    const presentation = deriveSessionPresentation(session);
-    const card = root.document.createElement("div");
-    card.className =
-      "board-card custom-board-card"
-      + (session.id === currentSessionId ? " active" : "")
-      + ` primary-${presentation.primaryState}`;
-
-    const displayName = getDisplayName(session);
-    const primaryLabel = labels.primary[presentation.primaryState] || labels.primary.active;
-    const auxHtml = buildAuxiliaryHtml(session, presentation, labels);
-    card.innerHTML = `
-      <div class="board-card-topline custom-board-card-topline">
-        <div class="board-card-title">${escapeHtml(displayName)}</div>
-        <span class="session-primary-badge state-${presentation.primaryState}">${escapeHtml(primaryLabel)}</span>
-      </div>
-      ${auxHtml ? `<div class="board-card-meta custom-board-card-meta">${auxHtml}</div>` : ""}`;
-
-    card.addEventListener("click", () => {
-      attachSession(session.id, session);
-      if (!isDesktop) closeSidebarFn();
-    });
-    return card;
-  }
-
-  function createBoardColumn(groupKey, sessions, labels) {
-    const column = root.document.createElement("section");
-    column.className = "board-column custom-board-column";
-    column.dataset.column = groupKey;
-
-    const header = root.document.createElement("div");
-    header.className = "board-column-header";
-    header.innerHTML = `
-      <span class="board-column-dot"></span>
-      <span class="board-column-title">${escapeHtml(labels.groups[groupKey])}</span>
-      <span class="board-column-count">${sessions.length}</span>`;
-    column.appendChild(header);
-
-    const body = root.document.createElement("div");
-    body.className = "board-column-body";
-    if (sessions.length === 0) {
-      const empty = root.document.createElement("div");
-      empty.className = "board-card-empty";
-      empty.textContent = "—";
-      body.appendChild(empty);
-    } else {
-      for (const session of sessions) {
-        body.appendChild(createBoardCard(session));
-      }
-    }
-    column.appendChild(body);
-    return column;
-  }
-
-  function renderCustomBoard() {
-    if (!boardPanel) return;
-    const labels = getLanguagePack();
-    const sessions = [
-      ...getVisiblePinnedSessions(),
-      ...getVisibleActiveSessions(),
-    ].sort(comparePresentationSessions);
-
-    const scroller = root.document.createElement("div");
-    scroller.className = "board-scroller custom-board-scroller";
-
-    const buckets = new Map();
-    for (const key of GROUP_ORDER) buckets.set(key, []);
-    for (const session of sessions) {
-      const groupKey = deriveSessionPresentation(session).groupKey;
-      if (!buckets.has(groupKey)) buckets.set(groupKey, []);
-      buckets.get(groupKey).push(session);
-    }
-
-    for (const key of GROUP_ORDER) {
-      scroller.appendChild(createBoardColumn(key, buckets.get(key) || [], labels));
-    }
-
-    boardPanel.innerHTML = "";
-    boardPanel.appendChild(scroller);
-  }
-
   function renderCustomSessionList() {
     if (!sessionList) return;
-    const labels = getLanguagePack();
     sessionList.innerHTML = "";
 
     const sessions = [
@@ -434,88 +321,38 @@
     for (const key of GROUP_ORDER) {
       const groupSessions = buckets.get(key) || [];
       if (groupSessions.length === 0) continue;
-      sessionList.appendChild(createGroupSection(key, groupSessions, labels));
+      sessionList.appendChild(createGroupSection(key, groupSessions));
     }
 
     renderArchivedSection();
+  }
+
+  function setEnabled(nextValue) {
+    enabled = nextValue === true;
+    if (enabled && typeof originalRenderSessionList === "function") {
+      root.renderSessionList = renderCustomSessionList;
+      renderSessionList = renderCustomSessionList;
+    } else if (typeof originalRenderSessionList === "function") {
+      root.renderSessionList = originalRenderSessionList;
+      renderSessionList = originalRenderSessionList;
+    }
+    if (typeof renderSessionList === "function") {
+      renderSessionList();
+    }
   }
 
   root.RemoteLabSessionPresentationCustom = {
     deriveSessionPresentation,
     comparePresentationSessions,
     renderCustomSessionList,
-    renderCustomBoard,
+    setEnabled,
+    isEnabled() {
+      return enabled;
+    },
   };
 
-  root.renderSessionList = renderCustomSessionList;
-  renderSessionList = renderCustomSessionList;
-
-  const originalSwitchTab = typeof switchTab === "function" ? switchTab : null;
-
-  function switchCustomTab(tab, { syncState = true } = {}) {
-    const nextTab = typeof normalizeSidebarTab === "function"
-      ? normalizeSidebarTab(tab)
-      : tab;
-
-    if (nextTab !== "board") {
-      if (typeof originalSwitchTab === "function") {
-        const result = originalSwitchTab(tab, { syncState });
-        if (tabBoard) tabBoard.classList.toggle("active", false);
-        if (boardPanel) boardPanel.classList.remove("visible");
-        root.document.body?.classList.remove("board-tab-expanded");
-        return result;
-      }
-      return false;
-    }
-
-    if (typeof setChatActiveTab === "function") {
-      setChatActiveTab(nextTab, {
-        normalizeTab: typeof normalizeSidebarTab === "function" ? normalizeSidebarTab : undefined,
-      });
-      if (typeof getActiveSidebarTabValue === "function") {
-        activeTab = getActiveSidebarTabValue();
-      } else {
-        activeTab = nextTab;
-      }
-    } else {
-      activeTab = nextTab;
-      if (typeof dispatchChatStore === "function") {
-        dispatchChatStore({
-          type: "set-active-tab",
-          value: activeTab,
-          normalizeTab: typeof normalizeSidebarTab === "function" ? normalizeSidebarTab : undefined,
-        });
-      }
-    }
-
-    if (tabSessions) tabSessions.classList.toggle("active", false);
-    if (tabBoard) tabBoard.classList.toggle("active", true);
-    if (tabSettings) tabSettings.classList.toggle("active", false);
-    if (typeof syncSidebarFiltersVisibility === "function") {
-      syncSidebarFiltersVisibility(false);
-    } else if (sidebarFilters) {
-      sidebarFilters.classList.add("hidden");
-    }
-    if (sessionList) sessionList.style.display = "none";
-    if (settingsPanel) settingsPanel.classList.remove("visible");
-    if (boardPanel) boardPanel.classList.add("visible");
-    if (sessionListFooter) sessionListFooter.classList.add("hidden");
-    if (sortSessionListBtn) sortSessionListBtn.classList.add("hidden");
-    if (newSessionBtn) newSessionBtn.classList.add("hidden");
-    root.document.body?.classList.add("board-tab-expanded");
-    renderCustomBoard();
-    if (syncState && typeof syncBrowserState === "function") {
-      syncBrowserState();
-    }
-    return true;
-  }
-
-  if (typeof originalSwitchTab === "function") {
-    root.switchTab = switchCustomTab;
-    switchTab = switchCustomTab;
-  }
-
-  if (typeof tabBoard !== "undefined" && tabBoard) {
-    tabBoard.addEventListener("click", () => switchCustomTab("board"));
-  }
+  const initialPreference = typeof root.remotelabGetSessionPresentationThemePreference === "function"
+    ? root.remotelabGetSessionPresentationThemePreference()
+    : (root.document.body?.classList.contains("session-presentation-theme-custom") ? "custom" : "default");
+  setEnabled(initialPreference === "custom");
 })(typeof globalThis !== "undefined" ? globalThis : window);

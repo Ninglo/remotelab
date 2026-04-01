@@ -24,10 +24,6 @@
 <div class="header">
   <button class="header-btn" id="menuBtn" title="Sessions" aria-label="Sessions" data-icon="menu">&#9776;</button>
   <h1 id="headerTitle">RemoteLab Chat</h1>
-  <select class="theme-select" id="themeSelect" title="Theme" aria-label="Theme">
-    <option value="amber">Amber</option>
-    <option value="minimal">Default</option>
-  </select>
   <button class="header-share-btn" id="forkSessionBtn" title="Create an isolated copy of this session" style="display:none">Fork</button>
   <button class="header-share-btn" id="shareSnapshotBtn" title="Create a read-only snapshot link" style="display:none">Share</button>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-icon="refresh" hidden></button>
@@ -45,7 +41,6 @@
       </div>
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" id="tabSessions">Sessions</button>
-        <button class="sidebar-tab" id="tabBoard">Board</button>
         <button class="sidebar-tab" id="tabSettings">Settings</button>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
@@ -54,8 +49,18 @@
         <select class="sidebar-filter-select" id="sessionAppFilterSelect" aria-label="Filter sessions by app"></select>
         <select class="sidebar-filter-select" id="userFilterSelect" aria-label="Filter sessions by user"></select>
       </div>
-      <div class="board-panel" id="boardPanel"></div>
       <div class="settings-panel" id="settingsPanel">
+        <div class="settings-section">
+          <div class="settings-section-title">Session theme</div>
+          <div class="settings-section-note">Local browser-only display mode for the session list. Enable the new grouped status theme here without changing session data.</div>
+          <div class="settings-inline-form">
+            <select class="settings-inline-select" id="sessionThemeSelect" aria-label="Choose session theme">
+              <option value="default">Default</option>
+              <option value="custom">Custom grouped theme</option>
+            </select>
+            <div class="settings-app-empty inline-status" id="sessionThemeStatus">Default session list is active in this browser.</div>
+          </div>
+        </div>
         <div class="settings-section">
           <div class="settings-section-title">Users</div>
           <div class="settings-section-note">Create extra identities, choose which apps they can use, and seed a first session when they are empty.</div>
