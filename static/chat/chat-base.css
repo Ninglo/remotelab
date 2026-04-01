@@ -78,6 +78,36 @@
   }
 }
 
+body[data-theme="amber"] {
+  color-scheme: light;
+  --bg: #f6f8ef;
+  --bg-secondary: #f1f4e8;
+  --bg-tertiary: #e5ebd7;
+  --border: #d4dbc5;
+  --border-strong: #bec8ab;
+  --text: #2f3428;
+  --text-secondary: #57604c;
+  --text-muted: #8d967f;
+  --accent: #7ba862;
+  --accent-dim: #f0f6e8;
+  --surface-hover: #eaf0dc;
+  --user-bubble: #eef5e4;
+  --tool-bg: #f7faf1;
+  --success: #5a8a42;
+  --success-bg: #eaf5df;
+  --notice: #6d8d5a;
+  --queue: #7fbe3d;
+  --naming: #7ba862;
+  --error: #c66a57;
+  --error-bg: #faece8;
+  --warning: #d9b35a;
+  --issue: #c66a57;
+  --failed-message-border: #d9b35a;
+  --copy-btn-bg: rgba(246, 248, 239, 0.88);
+  --copy-btn-success-border: rgba(90, 138, 66, 0.22);
+  --focus-border: #a7b394;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 .rl-icon {

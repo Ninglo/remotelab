@@ -57,6 +57,7 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
       allowedTools: options.allowedTools,
       thinking: options.thinking,
       model: options.model,
+      effort: options.effort,
     });
   } else if (isCodexFamily) {
     adapter = createCodexAdapter();
@@ -76,6 +77,7 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
       allowedTools: options.allowedTools,
       thinking: options.thinking,
       model: options.model,
+      effort: options.effort,
     });
   }
 
