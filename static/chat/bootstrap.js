@@ -104,19 +104,25 @@ const THEMES = {
   minimal: {
     themeColor: "#ffffff",
   },
+  dark: {
+    themeColor: "#181818",
+  },
+  cyber: {
+    themeColor: "#1e1e2e",
+  },
+  aurora: {
+    themeColor: "#faf5ff",
+  },
 };
-const DEFAULT_THEME_ID = "minimal";
 const THEME_STORAGE_KEY = "theme";
 
 function resolveStoredTheme() {
-  const stored = String(localStorage.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME_ID)
-    .trim()
-    .toLowerCase();
-  return THEMES[stored] ? stored : DEFAULT_THEME_ID;
+  const stored = localStorage.getItem(THEME_STORAGE_KEY) || "amber";
+  return THEMES[stored] ? stored : "amber";
 }
 
 function applyTheme(themeId) {
-  const resolved = THEMES[themeId] ? themeId : DEFAULT_THEME_ID;
+  const resolved = THEMES[themeId] ? themeId : "amber";
   document.body.dataset.theme = resolved;
   localStorage.setItem(THEME_STORAGE_KEY, resolved);
   const themeMeta = document.querySelector('meta[name="theme-color"]');
@@ -220,8 +226,6 @@ const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
-const sessionThemeSelect = document.getElementById("sessionThemeSelect");
-const sessionThemeStatus = document.getElementById("sessionThemeStatus");
 const newUserNameInput = document.getElementById("newUserNameInput");
 const newUserAppsPicker = document.getElementById("newUserAppsPicker");
 const newUserDefaultAppSelect = document.getElementById("newUserDefaultAppSelect");
@@ -247,6 +251,7 @@ const headerTitle = document.getElementById("headerTitle");
 const refreshFrontendBtn = document.getElementById("refreshFrontendBtn");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
+const themeSelect = document.getElementById("themeSelect");
 const imgBtn = document.getElementById("imgBtn");
 const imgFileInput = document.getElementById("imgFileInput");
 const imgPreviewStrip = document.getElementById("imgPreviewStrip");
@@ -263,10 +268,12 @@ const sessionTemplateRow = document.getElementById("sessionTemplateRow");
 const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
+const tabBoard = document.getElementById("tabBoard");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const sessionAppFilterSelect = document.getElementById("sessionAppFilterSelect");
 const userFilterSelect = document.getElementById("userFilterSelect");
+const boardPanel = document.getElementById("boardPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
@@ -293,9 +300,13 @@ const providerPromptCode = document.getElementById("providerPromptCode");
 const saveToolConfigBtn = document.getElementById("saveToolConfigBtn");
 const copyProviderPromptBtn = document.getElementById("copyProviderPromptBtn");
 
-applyTheme(resolveStoredTheme());
-window.remotelabGetThemePreference = resolveStoredTheme;
-window.remotelabSetThemePreference = applyTheme;
+const activeTheme = applyTheme(resolveStoredTheme());
+if (themeSelect) {
+  themeSelect.value = activeTheme;
+  themeSelect.addEventListener("change", () => {
+    applyTheme(themeSelect.value);
+  });
+}
 
 refreshFrontendBtn?.addEventListener("click", () => {
   void reloadForFreshBuild(newerBuildInfo);
