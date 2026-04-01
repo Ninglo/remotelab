@@ -6,13 +6,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" id="themeColorLightMeta" content="#f5f5f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" id="themeColorDarkMeta" content="#181818" media="(prefers-color-scheme: dark)">
   <meta name="remotelab-build" content="{{BUILD_TITLE}}">
   <link rel="manifest" href="/manifest.json?v={{ASSET_VERSION}}">
-  <link rel="icon" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
-  <link rel="icon" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <link rel="icon" id="appFaviconLink" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+  <link rel="icon" id="appSvgIconLink" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" id="appAppleTouchIconLink" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <script src="/theme-branding.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
   <title>RemoteLab — Sign In</title>
   <style nonce="{{NONCE}}">
     :root {
