@@ -97,40 +97,32 @@ const bootstrapShareSnapshot = normalizeBootstrapShareSnapshot(
   pageBootstrap.shareSnapshot,
 );
 
+const THEMES = {
+  amber: {
+    themeColor: "#f6f8ef",
+  },
+  minimal: {
+    themeColor: "#ffffff",
+  },
+};
 const DEFAULT_THEME_ID = "minimal";
-const SESSION_PRESENTATION_THEME_STORAGE_KEY = "remotelab.sessionPresentationTheme";
+const THEME_STORAGE_KEY = "theme";
 
-function applyDefaultTheme() {
-  document.body.dataset.theme = DEFAULT_THEME_ID;
-  const themeMeta = document.querySelector('meta[name="theme-color"]');
-  if (themeMeta) {
-    themeMeta.setAttribute("content", "#ffffff");
-    themeMeta.removeAttribute("media");
-  }
-  return DEFAULT_THEME_ID;
-}
-
-function getSessionPresentationThemePreference() {
-  const stored = String(localStorage.getItem(SESSION_PRESENTATION_THEME_STORAGE_KEY) || "")
+function resolveStoredTheme() {
+  const stored = String(localStorage.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME_ID)
     .trim()
     .toLowerCase();
-  return stored === "custom" ? "custom" : "default";
+  return THEMES[stored] ? stored : DEFAULT_THEME_ID;
 }
 
-function setSessionPresentationThemePreference(nextValue) {
-  const resolved = nextValue === "custom" ? "custom" : "default";
-  localStorage.setItem(SESSION_PRESENTATION_THEME_STORAGE_KEY, resolved);
-  document.body.classList.toggle(
-    "session-presentation-theme-custom",
-    resolved === "custom",
-  );
-  if (
-    window.RemoteLabSessionPresentationCustom
-    && typeof window.RemoteLabSessionPresentationCustom.setEnabled === "function"
-  ) {
-    window.RemoteLabSessionPresentationCustom.setEnabled(resolved === "custom");
-  } else if (typeof renderSessionList === "function") {
-    renderSessionList();
+function applyTheme(themeId) {
+  const resolved = THEMES[themeId] ? themeId : DEFAULT_THEME_ID;
+  document.body.dataset.theme = resolved;
+  localStorage.setItem(THEME_STORAGE_KEY, resolved);
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) {
+    themeMeta.setAttribute("content", THEMES[resolved].themeColor);
+    themeMeta.removeAttribute("media");
   }
   return resolved;
 }
@@ -301,10 +293,9 @@ const providerPromptCode = document.getElementById("providerPromptCode");
 const saveToolConfigBtn = document.getElementById("saveToolConfigBtn");
 const copyProviderPromptBtn = document.getElementById("copyProviderPromptBtn");
 
-applyDefaultTheme();
-window.remotelabGetSessionPresentationThemePreference = getSessionPresentationThemePreference;
-window.remotelabSetSessionPresentationThemePreference = setSessionPresentationThemePreference;
-setSessionPresentationThemePreference(getSessionPresentationThemePreference());
+applyTheme(resolveStoredTheme());
+window.remotelabGetThemePreference = resolveStoredTheme;
+window.remotelabSetThemePreference = applyTheme;
 
 refreshFrontendBtn?.addEventListener("click", () => {
   void reloadForFreshBuild(newerBuildInfo);

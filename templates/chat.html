@@ -52,13 +52,13 @@
       <div class="settings-panel" id="settingsPanel">
         <div class="settings-section">
           <div class="settings-section-title">Session theme</div>
-          <div class="settings-section-note">Local browser-only display mode for the session list. Enable the new grouped status theme here without changing session data.</div>
+          <div class="settings-section-note">Local browser-only theme color for this chat UI.</div>
           <div class="settings-inline-form">
             <select class="settings-inline-select" id="sessionThemeSelect" aria-label="Choose session theme">
+              <option value="amber">Amber</option>
               <option value="default">Default</option>
-              <option value="custom">Custom grouped theme</option>
             </select>
-            <div class="settings-app-empty inline-status" id="sessionThemeStatus">Default session list is active in this browser.</div>
+            <div class="settings-app-empty inline-status" id="sessionThemeStatus">Default theme is active in this browser.</div>
           </div>
         </div>
         <div class="settings-section">
@@ -262,7 +262,6 @@
 <script src="/chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-presentation-custom.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/init.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

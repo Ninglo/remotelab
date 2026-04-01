@@ -9,12 +9,12 @@ const settingsSessionPresentationListEl =
 
 function syncSessionThemeStatus() {
   if (typeof sessionThemeStatus === "undefined" || !sessionThemeStatus) return;
-  const currentPreference = typeof window.remotelabGetSessionPresentationThemePreference === "function"
-    ? window.remotelabGetSessionPresentationThemePreference()
-    : "default";
-  sessionThemeStatus.textContent = currentPreference === "custom"
-    ? "Custom grouped session theme is active in this browser."
-    : "Default session list is active in this browser.";
+  const currentPreference = typeof window.remotelabGetThemePreference === "function"
+    ? window.remotelabGetThemePreference()
+    : "minimal";
+  sessionThemeStatus.textContent = currentPreference === "amber"
+    ? "Amber theme is active in this browser."
+    : "Default theme is active in this browser.";
 }
 
 function initSessionThemeSettings() {
@@ -22,15 +22,15 @@ function initSessionThemeSettings() {
     syncSessionThemeStatus();
     return;
   }
-  const currentPreference = typeof window.remotelabGetSessionPresentationThemePreference === "function"
-    ? window.remotelabGetSessionPresentationThemePreference()
-    : "default";
-  sessionThemeSelect.value = currentPreference === "custom" ? "custom" : "default";
+  const currentPreference = typeof window.remotelabGetThemePreference === "function"
+    ? window.remotelabGetThemePreference()
+    : "minimal";
+  sessionThemeSelect.value = currentPreference === "amber" ? "amber" : "default";
   syncSessionThemeStatus();
   sessionThemeSelect.addEventListener("change", () => {
-    const value = sessionThemeSelect.value === "custom" ? "custom" : "default";
-    if (typeof window.remotelabSetSessionPresentationThemePreference === "function") {
-      window.remotelabSetSessionPresentationThemePreference(value);
+    const value = sessionThemeSelect.value === "amber" ? "amber" : "minimal";
+    if (typeof window.remotelabSetThemePreference === "function") {
+      window.remotelabSetThemePreference(value);
     }
     syncSessionThemeStatus();
   });
