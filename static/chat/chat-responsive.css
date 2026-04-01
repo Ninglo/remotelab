@@ -41,6 +41,14 @@
     --chat-gutter: 10px;
   }
 
+  body[data-theme="amber"]::after {
+    width: 60px;
+    height: 60px;
+    right: calc(8px + var(--safe-right));
+    top: calc(52px + var(--safe-top));
+    opacity: 0.86;
+  }
+
   .header {
     gap: 6px;
     padding-left: 10px;
@@ -84,6 +92,16 @@
   body.keyboard-open .input-row {
     padding-top: 6px;
     padding-bottom: 6px;
+  }
+}
+
+@media (max-width: 932px) and (orientation: landscape) {
+  body[data-theme="amber"]::after {
+    width: 52px;
+    height: 52px;
+    right: calc(8px + var(--safe-right));
+    top: calc(40px + var(--safe-top));
+    opacity: 0.82;
   }
 }
 

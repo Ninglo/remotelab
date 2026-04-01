@@ -5,13 +5,13 @@ import { join } from 'path';
 import { spawnSync } from 'child_process';
 
 const repoRoot = process.cwd();
-const tempRoot = mkdtempSync(join(tmpdir(), 'install-micro-agent-'));
+const tempRoot = mkdtempSync(join(tmpdir(), 'install-micro-agent-hybrid-'));
 const homeDir = join(tempRoot, 'home');
 
 mkdirSync(join(homeDir, '.codex'), { recursive: true });
 writeFileSync(join(homeDir, '.codex', 'config.toml'), 'model = "gpt-5.4-mini"\n', 'utf8');
 
-const result = spawnSync('node', ['scripts/install-micro-agent.mjs', '--provider', 'codex', '--tool-id', 'micro-agent-test', '--tool-name', 'Micro Agent Test'], {
+const result = spawnSync('node', ['scripts/install-micro-agent.mjs'], {
   cwd: repoRoot,
   env: {
     ...process.env,
@@ -23,22 +23,25 @@ const result = spawnSync('node', ['scripts/install-micro-agent.mjs', '--provider
 assert.equal(result.status, 0, result.stderr || result.stdout);
 const toolsPath = join(homeDir, '.config', 'remotelab', 'tools.json');
 const tools = JSON.parse(readFileSync(toolsPath, 'utf8'));
-const record = tools.find((tool) => tool.id === 'micro-agent-test');
+const record = tools.find((tool) => tool.id === 'micro-agent');
 
-assert(record, 'installed tool should exist');
-assert.equal(record.name, 'Micro Agent Test');
+assert(record, 'installed hybrid micro-agent tool should exist');
+assert.equal(record.name, 'Micro Agent');
 assert.equal(record.toolProfile, 'micro-agent');
 assert.equal(record.visibility, 'private');
-assert.equal(record.command, 'codex');
-assert.equal(record.runtimeFamily, 'codex-json');
-assert.equal(Object.hasOwn(record, 'promptMode'), false);
-assert.equal(Object.hasOwn(record, 'flattenPrompt'), false);
-assert.deepEqual(record.models, [{ id: 'gpt-5.4-mini', label: 'gpt-5.4-mini', defaultReasoning: 'medium' }]);
+assert.match(record.command, /scripts\/micro-agent-router\.mjs$/);
+assert.equal(record.runtimeFamily, 'claude-stream-json');
+assert.equal(record.promptMode, 'bare-user');
+assert.equal(record.flattenPrompt, true);
+assert.deepEqual(record.models, [
+  { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+  { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+]);
 assert.deepEqual(record.reasoning, {
-  kind: 'enum',
+  kind: 'none',
   label: 'Thinking',
-  levels: ['low', 'medium', 'high', 'xhigh'],
-  default: 'medium',
 });
 
-console.log('test-install-micro-agent: ok');
+console.log('test-install-micro-agent-hybrid: ok');

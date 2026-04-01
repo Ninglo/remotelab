@@ -298,12 +298,33 @@ const ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeSourceFilter";
 const LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY = "sessionSendFailures";
 const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
+const UI_THEME_STORAGE_KEY = "remotelab.theme";
 const FILTER_ALL_VALUE = "__all__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
 const SOURCE_FILTER_BOT_VALUE = "bot";
 const SOURCE_FILTER_AUTOMATION_VALUE = "automation";
 const DEFAULT_APP_ID = "chat";
 const DEFAULT_APP_NAME = "Chat";
+const UI_THEMES = {
+  system: {
+    lightThemeColor: "#ffffff",
+    darkThemeColor: "#1e1e1e",
+    faviconHref: "/favicon.ico",
+    faviconType: null,
+    faviconSizes: "any",
+    svgIconHref: "/icon.svg",
+    appleTouchIconHref: "/apple-touch-icon.png",
+  },
+  amber: {
+    lightThemeColor: "#f6f8ef",
+    darkThemeColor: "#f6f8ef",
+    faviconHref: "/favicon-amber.png",
+    faviconType: "image/png",
+    faviconSizes: "64x64",
+    svgIconHref: "/icon-amber.svg",
+    appleTouchIconHref: "/apple-touch-icon-amber.png",
+  },
+};
 const sessionStateModel = window.RemoteLabSessionStateModel;
 if (!sessionStateModel) {
   throw new Error("RemoteLabSessionStateModel must load before bootstrap.js");
@@ -312,6 +333,105 @@ const chatStoreModel = window.RemoteLabChatStore;
 if (!chatStoreModel) {
   throw new Error("RemoteLabChatStore must load before bootstrap.js");
 }
+
+function normalizeThemePreference(value) {
+  return value === "amber" ? "amber" : "system";
+}
+
+function readStoredThemePreference() {
+  try {
+    return normalizeThemePreference(localStorage.getItem(UI_THEME_STORAGE_KEY));
+  } catch {
+    return "system";
+  }
+}
+
+function buildThemeAssetHref(path) {
+  if (typeof path !== "string" || !path) return "";
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}v=${encodeURIComponent(buildAssetVersion)}`;
+}
+
+function updateThemeColorMeta(themePreference) {
+  const normalized = normalizeThemePreference(themePreference);
+  const themeConfig = UI_THEMES[normalized];
+  const lightMeta = document.getElementById("themeColorLightMeta");
+  const darkMeta = document.getElementById("themeColorDarkMeta");
+  if (lightMeta) lightMeta.setAttribute("content", themeConfig.lightThemeColor);
+  if (darkMeta) darkMeta.setAttribute("content", themeConfig.darkThemeColor);
+}
+
+function updateThemeIconLinks(themePreference) {
+  const normalized = normalizeThemePreference(themePreference);
+  const themeConfig = UI_THEMES[normalized];
+  const faviconLink = document.getElementById("appFaviconLink");
+  const svgIconLink = document.getElementById("appSvgIconLink");
+  const appleTouchIconLink = document.getElementById("appAppleTouchIconLink");
+
+  if (faviconLink && themeConfig.faviconHref) {
+    faviconLink.setAttribute("href", buildThemeAssetHref(themeConfig.faviconHref));
+    if (themeConfig.faviconType) {
+      faviconLink.setAttribute("type", themeConfig.faviconType);
+    } else {
+      faviconLink.removeAttribute("type");
+    }
+    if (themeConfig.faviconSizes) {
+      faviconLink.setAttribute("sizes", themeConfig.faviconSizes);
+    } else {
+      faviconLink.removeAttribute("sizes");
+    }
+  }
+
+  if (svgIconLink && themeConfig.svgIconHref) {
+    svgIconLink.setAttribute("href", buildThemeAssetHref(themeConfig.svgIconHref));
+  }
+
+  if (appleTouchIconLink && themeConfig.appleTouchIconHref) {
+    appleTouchIconLink.setAttribute(
+      "href",
+      buildThemeAssetHref(themeConfig.appleTouchIconHref),
+    );
+  }
+}
+
+function applyThemePreference(themePreference) {
+  const normalized = normalizeThemePreference(themePreference);
+  if (normalized === "system") {
+    document.body?.removeAttribute("data-theme");
+  } else {
+    document.body.dataset.theme = normalized;
+  }
+  updateThemeColorMeta(normalized);
+  updateThemeIconLinks(normalized);
+  return normalized;
+}
+
+let currentThemePreference = applyThemePreference(readStoredThemePreference());
+
+window.remotelabGetThemePreference = function getThemePreference() {
+  return currentThemePreference;
+};
+
+window.remotelabSetThemePreference = function setThemePreference(value) {
+  currentThemePreference = applyThemePreference(value);
+  try {
+    localStorage.setItem(UI_THEME_STORAGE_KEY, currentThemePreference);
+  } catch {}
+  try {
+    window.dispatchEvent(new CustomEvent("remotelab:themechange", {
+      detail: { preference: currentThemePreference },
+    }));
+  } catch {}
+  return currentThemePreference;
+};
+
+window.remotelabGetThemeOptions = function getThemeOptions() {
+  const t = typeof window.remotelabT === "function" ? window.remotelabT : (key) => key;
+  return [
+    { value: "system", label: t("settings.theme.optionSystem") },
+    { value: "amber", label: t("settings.theme.optionAmber") },
+  ];
+};
 
 function normalizeSidebarTab(tab) {
   if (tab === "settings") return "settings";
@@ -632,13 +752,11 @@ function normalizeStoredToolId(value) {
 function derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool) {
   const preferred = normalizeStoredToolId(storedPreferredTool);
   const legacySelected = normalizeStoredToolId(storedLegacySelectedTool);
-  const normalizedPreferred = preferred === "claude" ? "" : preferred;
-  const normalizedLegacySelected = legacySelected === "claude" ? "" : legacySelected;
-  if (normalizedPreferred && !(LEGACY_AUTO_PREFERRED_TOOL_IDS.has(normalizedPreferred) && !normalizedLegacySelected)) {
-    return normalizedPreferred;
+  if (preferred && !(LEGACY_AUTO_PREFERRED_TOOL_IDS.has(preferred) && !legacySelected)) {
+    return preferred;
   }
-  if (normalizedLegacySelected) {
-    return normalizedLegacySelected;
+  if (legacySelected) {
+    return legacySelected;
   }
   return null;
 }

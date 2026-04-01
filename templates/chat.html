@@ -6,14 +6,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="themeColorLightMeta" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" id="themeColorDarkMeta" content="#1e1e1e" media="(prefers-color-scheme: dark)">
 <meta name="remotelab-build" content="{{BUILD_TITLE}}">
 {{PAGE_HEAD_TAGS}}
 <link rel="manifest" href="/manifest.json?v={{ASSET_VERSION}}">
-<link rel="icon" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
-<link rel="icon" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+<link rel="icon" id="appFaviconLink" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+<link rel="icon" id="appSvgIconLink" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+<link rel="apple-touch-icon" id="appAppleTouchIconLink" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
 <title>{{PAGE_TITLE}}</title>
 <link rel="stylesheet" href="/chat/chat.css?v={{ASSET_VERSION}}">
 </head>
@@ -59,6 +59,14 @@
           <div class="settings-inline-form">
             <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ownerAriaLabel"></select>
             <div class="settings-app-empty inline-status" id="uiLanguageStatus" data-i18n="settings.language.ownerStatusAuto">Auto is active. This browser follows its current language until you save an override here.</div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.theme.title">Theme</div>
+          <div class="settings-section-note" data-i18n="settings.theme.note">Choose the chat color palette. Default keeps the current system light or dark appearance; Amber applies a warm light palette without changing layout.</div>
+          <div class="settings-inline-form">
+            <select class="settings-inline-select" id="uiThemeSelect" aria-label="Choose chat theme" data-i18n-aria-label="settings.theme.ariaLabel"></select>
+            <div class="settings-app-empty inline-status" id="uiThemeStatus" data-i18n="settings.theme.statusSystem">Default is active. The chat follows the current system light or dark appearance.</div>
           </div>
         </div>
         <div class="settings-section">

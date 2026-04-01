@@ -36,6 +36,8 @@
   --chat-gutter: 16px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
   --sidebar-width: 300px;
   --sidebar-width-expanded: min(80vw, calc(100vw - 240px));
   --sidebar-mobile-width: 320px;
@@ -76,6 +78,49 @@
     --modal-shadow: 0 24px 60px rgba(0,0,0,0.48);
     --focus-border: #6b7280;
   }
+}
+
+body[data-theme="amber"] {
+  color-scheme: light;
+  --bg: #f6f8ef;
+  --bg-secondary: #f1f4e8;
+  --bg-tertiary: #e5ebd7;
+  --border: #d4dbc5;
+  --border-strong: #bec8ab;
+  --text: #2f3428;
+  --text-secondary: #57604c;
+  --text-muted: #8d967f;
+  --accent: #7ba862;
+  --accent-dim: #f0f6e8;
+  --surface-hover: #eaf0dc;
+  --user-bubble: #eef5e4;
+  --tool-bg: #f7faf1;
+  --success: #5a8a42;
+  --success-bg: #eaf5df;
+  --notice: #6d8d5a;
+  --queue: #7fbe3d;
+  --naming: #7ba862;
+  --error: #c66a57;
+  --error-bg: #faece8;
+  --warning: #d9b35a;
+  --issue: #c66a57;
+  --failed-message-border: #d9b35a;
+  --copy-btn-bg: rgba(246,248,239,0.88);
+  --copy-btn-success-border: rgba(90, 138, 66, 0.22);
+  --focus-border: #a7b394;
+}
+
+body[data-theme="amber"]::after {
+  content: "";
+  position: fixed;
+  right: calc(14px + var(--safe-right));
+  top: calc(56px + var(--safe-top));
+  width: 84px;
+  height: 84px;
+  background: center / contain no-repeat url("/mascot-amber.gif");
+  opacity: 0.92;
+  pointer-events: none;
+  z-index: 20;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
