@@ -153,6 +153,22 @@ import {
   collectGeneratedResultFilesFromRun,
   normalizePublishedResultAssetAttachments,
 } from './session-result-files.mjs';
+import {
+  buildSavedTemplateContextContent,
+  formatSessionSourceNameFromId,
+  hasRequestedSessionSourceHint,
+  normalizeSessionSourceName,
+  normalizeSessionTemplateName,
+  normalizeSessionUserName,
+  normalizeSessionVisitorName,
+  parseTimestampMs,
+  resolveRequestedSessionSourceId,
+  resolveRequestedSessionSourceName,
+  resolveSessionSourceId,
+  resolveSessionSourceName,
+  resolveSessionTemplateId,
+  resolveSessionTemplateName,
+} from './session-source-resolution.mjs';
 
 const VISITOR_TURN_GUARDRAIL = [
   '<private>',
@@ -379,79 +395,6 @@ function buildDelegationContextOperation(task, childSession) {
   });
 }
 
-function normalizeSessionTemplateName(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim().replace(/\s+/g, ' ');
-}
-
-function normalizeSessionSourceName(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim().replace(/\s+/g, ' ');
-}
-
-function normalizeSessionVisitorName(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim().replace(/\s+/g, ' ');
-}
-
-function normalizeSessionUserName(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim().replace(/\s+/g, ' ');
-}
-
-function formatSessionSourceNameFromId(sourceId) {
-  const normalized = typeof sourceId === 'string' ? sourceId.trim() : '';
-  if (!normalized) return 'Chat';
-  return normalized
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function resolveSessionSourceId(meta) {
-  const explicitSourceId = normalizeAppId(meta?.sourceId);
-  if (explicitSourceId) return explicitSourceId;
-  return DEFAULT_APP_ID;
-}
-
-function resolveSessionSourceName(meta, sourceId = resolveSessionSourceId(meta)) {
-  const explicitSourceName = normalizeSessionSourceName(meta?.sourceName);
-  if (explicitSourceName) return explicitSourceName;
-
-  const builtinSource = getBuiltinApp(sourceId);
-  if (builtinSource?.name) return builtinSource.name;
-
-  return formatSessionSourceNameFromId(sourceId);
-}
-
-function hasRequestedSessionSourceHint(extra = {}) {
-  const explicitSourceId = normalizeAppId(extra?.sourceId);
-  return !!explicitSourceId;
-}
-
-function resolveRequestedSessionSourceId(extra = {}) {
-  const explicitSourceId = normalizeAppId(extra?.sourceId);
-  if (explicitSourceId) return explicitSourceId;
-
-  return DEFAULT_APP_ID;
-}
-
-function resolveRequestedSessionSourceName(extra = {}, sourceId = resolveRequestedSessionSourceId(extra)) {
-  const explicitSourceName = normalizeSessionSourceName(extra?.sourceName);
-  if (explicitSourceName) return explicitSourceName;
-
-  const builtinSource = getBuiltinApp(sourceId);
-  if (builtinSource?.name) return builtinSource.name;
-
-  return formatSessionSourceNameFromId(sourceId);
-}
-
-function resolveSessionTemplateId(meta) {
-  return normalizeAppId(meta?.templateId);
-}
-
-function resolveSessionTemplateName(meta) {
-  return normalizeSessionTemplateName(meta?.templateName);
-}
 
 function getFollowUpQueue(meta) {
   return Array.isArray(meta?.followUpQueue) ? meta.followUpQueue : [];
@@ -1488,29 +1431,6 @@ function broadcastSessionInvalidation(sessionId) {
   sendToClients(clients, { type: 'session_invalidated', sessionId });
 }
 
-function buildSavedTemplateContextContent(prepared) {
-  if (!prepared) return '';
-
-  const summary = typeof prepared.summary === 'string' ? prepared.summary.trim() : '';
-  const continuationBody = typeof prepared.continuationBody === 'string'
-    ? prepared.continuationBody.trim()
-    : '';
-  const parts = [];
-
-  if (summary) {
-    parts.push(`[Conversation summary]\n\n${summary}`);
-  }
-  if (continuationBody) {
-    parts.push(continuationBody);
-  }
-
-  return parts.join('\n\n---\n\n').trim();
-}
-
-function parseTimestampMs(value) {
-  const timestamp = Date.parse(typeof value === 'string' ? value : '');
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
 
 async function resolveAppTemplateFreshness(app) {
   const templateContext = app?.templateContext || null;
