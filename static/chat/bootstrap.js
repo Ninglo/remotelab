@@ -308,11 +308,14 @@ const DEFAULT_APP_NAME = "Chat";
 const UI_THEMES = {
   system: {
     lightThemeColor: "#ffffff",
-    darkThemeColor: "#1e1e1e",
+    darkThemeColor: "#161618",
   },
   amber: {
     lightThemeColor: "#f6f8ef",
     darkThemeColor: "#f6f8ef",
+    textOverrides: {
+      "footer.tagline": "To infinity and beyond! ✨",
+    },
   },
 };
 const sessionStateModel = window.RemoteLabSessionStateModel;
@@ -359,7 +362,28 @@ function applyThemePreference(themePreference) {
   return normalized;
 }
 
+function applyThemeTextOverrides(themePreference) {
+  const normalized = normalizeThemePreference(themePreference);
+  const overrides = (UI_THEMES[normalized] || UI_THEMES.system).textOverrides;
+  if (typeof window.remotelabApplyTranslations === "function") {
+    window.remotelabApplyTranslations();
+  }
+  if (!overrides) return;
+  const doc = document;
+  if (!doc?.querySelectorAll) return;
+  for (const key of Object.keys(overrides)) {
+    doc.querySelectorAll(`[data-i18n="${key}"]`).forEach((node) => {
+      node.textContent = overrides[key];
+    });
+  }
+}
+
 let currentThemePreference = applyThemePreference(readStoredThemePreference());
+applyThemeTextOverrides(currentThemePreference);
+
+document.addEventListener("DOMContentLoaded", () => {
+  applyThemeTextOverrides(currentThemePreference);
+}, { once: true });
 
 window.remotelabGetThemePreference = function getThemePreference() {
   return currentThemePreference;
@@ -367,6 +391,7 @@ window.remotelabGetThemePreference = function getThemePreference() {
 
 window.remotelabSetThemePreference = function setThemePreference(value) {
   currentThemePreference = applyThemePreference(value);
+  applyThemeTextOverrides(currentThemePreference);
   try {
     localStorage.setItem(UI_THEME_STORAGE_KEY, currentThemePreference);
   } catch {}
@@ -389,6 +414,11 @@ window.remotelabGetThemeOptions = function getThemeOptions() {
 window.addEventListener("storage", (event) => {
   if (event.key && event.key !== UI_THEME_STORAGE_KEY) return;
   currentThemePreference = applyThemePreference(event.newValue);
+  applyThemeTextOverrides(currentThemePreference);
+});
+
+window.addEventListener("remotelab:localechange", () => {
+  applyThemeTextOverrides(currentThemePreference);
 });
 
 function normalizeSidebarTab(tab) {

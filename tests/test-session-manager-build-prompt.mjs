@@ -21,6 +21,17 @@ await fs.writeFile(
       models: [{ id: 'gpt-5.4', label: 'gpt-5.4' }],
       reasoning: { kind: 'none', label: 'Thinking' },
     },
+    {
+      id: 'micro-agent-custom',
+      name: 'Micro Agent Custom',
+      toolProfile: 'micro-agent',
+      command: 'micro-agent-router.mjs',
+      runtimeFamily: 'claude-stream-json',
+      promptMode: 'bare-user',
+      flattenPrompt: true,
+      models: [{ id: 'gpt-5.4', label: 'gpt-5.4' }],
+      reasoning: { kind: 'none', label: 'Thinking' },
+    },
   ], null, 2)}\n`,
   'utf8',
 );
@@ -220,5 +231,31 @@ const retiredWelcomePrompt = await buildPrompt(
 );
 
 assert.doesNotMatch(retiredWelcomePrompt, /WELCOME SYSTEM PROMPT/);
+
+// --- Regression: bare-user micro-agent with claude-stream-json should include continuation context ---
+
+const { setForkContext } = await import('../chat/history.mjs');
+await setForkContext('session-test-bare-user-cont', {
+  mode: 'history',
+  summary: '',
+  continuationBody: '[User]\n记住 13 这个数\n\n[Assistant]\nGot it. 13.',
+  activeFromSeq: 0,
+  preparedThroughSeq: 0,
+  source: 'history',
+});
+
+const bareUserContinuationPrompt = await buildPrompt(
+  'session-test-bare-user-cont',
+  baseSession,
+  '刚才是啥',
+  'micro-agent-custom',
+  'micro-agent-custom',
+  null,
+  {},
+);
+
+assert.match(bareUserContinuationPrompt, /记住 13 这个数/, 'bare-user prompt must include continuation history');
+assert.match(bareUserContinuationPrompt, /Got it\. 13\./, 'bare-user prompt must include assistant reply from history');
+assert.match(bareUserContinuationPrompt, /刚才是啥/, 'bare-user prompt must include current user message');
 
 console.log('test-session-manager-build-prompt: ok');

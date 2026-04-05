@@ -367,32 +367,28 @@ async function forwardInboundEmailToMailboxBridge(message: ForwardableEmailMessa
     throw new Error('MAILBOX_BRIDGE_URL is required');
   }
 
-  const rawBuffer = await new Response(message.raw).arrayBuffer();
+  // Stream the raw email directly instead of base64-encoding it in JSON.
+  // This avoids ~3-4x memory amplification that caused exceededResources
+  // errors on large emails with image attachments.
   const response = await fetch(bridgeUrl, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
+      'Content-Type': 'message/rfc822',
+      'X-Envelope-From': trimString(message.from),
+      'X-Envelope-To': trimString(message.to),
+      'X-Email-Subject': firstHeader(message.headers, 'subject'),
+      'X-Email-Message-Id': firstHeader(message.headers, 'message-id'),
+      'X-Email-Date': firstHeader(message.headers, 'date'),
+      'X-Email-In-Reply-To': firstHeader(message.headers, 'in-reply-to'),
+      'X-Email-References': buildThreadReferencesHeader({
+        messageId: firstHeader(message.headers, 'message-id'),
+        inReplyTo: firstHeader(message.headers, 'in-reply-to'),
+        references: firstHeader(message.headers, 'references'),
+      }),
       ...(trimString(env.MAILBOX_BRIDGE_TOKEN) ? { Authorization: `Bearer ${trimString(env.MAILBOX_BRIDGE_TOKEN)}` } : {}),
     },
-    body: JSON.stringify({
-      provider: 'cloudflare_email_worker',
-      rawBase64: base64FromArrayBuffer(rawBuffer),
-      envelope: {
-        mailFrom: trimString(message.from),
-        rcptTo: trimString(message.to),
-      },
-      headers: {
-        subject: firstHeader(message.headers, 'subject'),
-        messageId: firstHeader(message.headers, 'message-id'),
-        references: buildThreadReferencesHeader({
-          messageId: firstHeader(message.headers, 'message-id'),
-          inReplyTo: firstHeader(message.headers, 'in-reply-to'),
-          references: firstHeader(message.headers, 'references'),
-        }),
-        date: firstHeader(message.headers, 'date'),
-      },
-    }),
+    body: message.raw,
   });
 
   if (!response.ok) {

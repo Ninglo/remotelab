@@ -431,6 +431,14 @@ function handleWsMessage(msg) {
       }
       break;
 
+    case "system_notification":
+      if (typeof showSystemToast === "function") {
+        showSystemToast(msg.message || "System notification", msg.level || "info");
+      } else {
+        console.warn("[system_notification]", msg.message);
+      }
+      break;
+
     case "error":
       console.error("WS error:", msg.message);
       break;

@@ -554,6 +554,7 @@ function collectHiddenBlockToolNames(events) {
   const names = [];
   const seen = new Set();
   for (const event of Array.isArray(events) ? events : []) {
+    if (event?.type !== "tool_use") continue;
     const name = typeof event?.toolName === "string" ? event.toolName.trim() : "";
     if (!name || seen.has(name)) continue;
     seen.add(name);
@@ -562,10 +563,15 @@ function collectHiddenBlockToolNames(events) {
   return names;
 }
 
+function formatToolListLabel(names, max) {
+  if (names.length <= max) return names.join(", ");
+  return names.slice(0, max).join(", ") + ` +${names.length - max}`;
+}
+
 function buildLoadedHiddenBlockLabel(events) {
   const toolNames = collectHiddenBlockToolNames(events);
   if (toolNames.length > 0) {
-    return t("thinking.usedTools", { tools: toolNames.join(", ") });
+    return t("thinking.usedTools", { tools: formatToolListLabel(toolNames, 3) });
   }
   return t("thinking.done");
 }

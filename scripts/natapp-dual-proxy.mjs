@@ -296,6 +296,8 @@ function rewritePrefixedBody(body, contentType, route) {
     [/\/manifest\.json\b/g, `${prefix}/manifest.json`],
     [/\/manifest\.install\.json\b/g, `${prefix}/manifest.install.json`],
     [/\/favicon\.ico\b/g, `${prefix}/favicon.ico`],
+    [/\/icon-512\.png\b/g, `${prefix}/icon-512.png`],
+    [/\/icon-192\.png\b/g, `${prefix}/icon-192.png`],
     [/\/icon\.svg\b/g, `${prefix}/icon.svg`],
     [/\/apple-touch-icon\.png\b/g, `${prefix}/apple-touch-icon.png`],
     [/\/sw\.js\b/g, `${prefix}/sw.js`],
@@ -303,6 +305,7 @@ function rewritePrefixedBody(body, contentType, route) {
     [/\/chat\//g, `${prefix}/chat/`],
     [/\/static\//g, `${prefix}/static/`],
     [/\/visitor\//g, `${prefix}/visitor/`],
+    [/\/share-receive\b/g, `${prefix}/share-receive`],
     [/\/share\//g, `${prefix}/share/`],
     [/\/app\//g, `${prefix}/app/`],
   ];
@@ -377,7 +380,25 @@ function renderRootIndexHtml() {
 </html>`;
 }
 
+function getLastPrefixFromCookie(req) {
+  const cookies = parseCookieHeader(req.headers.cookie);
+  const entry = cookies.find((c) => c.name === 'bridge_last_prefix');
+  const value = entry?.value?.trim();
+  if (!value || !value.startsWith('/')) return null;
+  const routes = loadPrefixedRoutes();
+  return routes.some((r) => r.prefix === value) ? value : null;
+}
+
 function writeRootIndex(req, res) {
+  const lastPrefix = getLastPrefixFromCookie(req);
+  if (lastPrefix) {
+    res.writeHead(302, {
+      location: `${lastPrefix}/`,
+      'cache-control': 'no-store',
+    });
+    res.end();
+    return;
+  }
   const body = Buffer.from(renderRootIndexHtml(), 'utf8');
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
@@ -428,6 +449,16 @@ const server = http.createServer((req, res) => {
       if (headers['set-cookie']) {
         const values = Array.isArray(headers['set-cookie']) ? headers['set-cookie'] : [headers['set-cookie']];
         headers['set-cookie'] = values.map((value) => rewriteSetCookieHeader(value, route));
+      }
+      // Remember last-used prefix so the root path can auto-redirect next time
+      const prefixCookie = `bridge_last_prefix=${route.prefix}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      const existing = headers['set-cookie'];
+      if (Array.isArray(existing)) {
+        existing.push(prefixCookie);
+      } else if (existing) {
+        headers['set-cookie'] = [existing, prefixCookie];
+      } else {
+        headers['set-cookie'] = prefixCookie;
       }
     }
 

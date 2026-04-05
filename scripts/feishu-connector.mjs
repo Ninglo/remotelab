@@ -13,6 +13,7 @@ import {
   normalizeExternalRuntimeSelectionMode,
   resolveExternalRuntimeSelection,
 } from '../lib/external-runtime-selection.mjs';
+import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 
@@ -1506,8 +1507,28 @@ async function waitForRunCompletion(runtime, runId) {
   throw new Error(`run timed out after ${RUN_POLL_TIMEOUT_MS}ms`);
 }
 
+function resolveTargetConfigDir(chatBaseUrl) {
+  try {
+    const normalized = chatBaseUrl?.replace(/\/+$/, '').toLowerCase();
+    if (!normalized) return '';
+    const registry = loadMailboxRuntimeRegistry();
+    for (const record of registry) {
+      const local = (record.localBaseUrl || '').replace(/\/+$/, '').toLowerCase();
+      const pub = (record.publicBaseUrl || '').replace(/\/+$/, '').toLowerCase();
+      if ((local && local === normalized) || (pub && pub === normalized)) {
+        return trimString(record.configDir);
+      }
+    }
+  } catch { /* guest registry not available */ }
+  return '';
+}
+
 async function resolveFeishuRuntimeSelection(runtime) {
-  const uiSelection = await loadUiRuntimeSelection();
+  const targetConfigDir = resolveTargetConfigDir(runtime?.config?.chatBaseUrl);
+  const selectionFile = targetConfigDir
+    ? join(targetConfigDir, 'ui-runtime-selection.json')
+    : undefined;
+  const uiSelection = await loadUiRuntimeSelection(selectionFile);
   return resolveExternalRuntimeSelection({
     uiSelection,
     mode: runtime?.config?.runtimeSelectionMode || DEFAULT_RUNTIME_SELECTION_MODE,

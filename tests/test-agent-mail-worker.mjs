@@ -201,6 +201,7 @@ try {
   assert.equal(sessionCreates[0].sourceId, 'email');
   assert.equal(sessionCreates[0].sourceName, 'Email');
   assert.equal(sessionCreates[0].tool, 'claude');
+  assert.equal(sessionCreates[0].name, 'hello!');
   assert.equal(sessionCreates[0].systemPrompt, 'Reply with plain text only.');
   assert.equal(sessionCreates[0].externalTriggerId, expectedThreadTriggerId);
   assert.equal(sessionCreates[0].completionTargets[0].inReplyTo, '<root-thread@example.com>');
@@ -438,6 +439,7 @@ try {
   assert.equal(fourthSummary.failures.length, 0);
   assert.equal(sessionCreates.length, 4);
   assert.equal(messageSubmissions.length, 4);
+  assert.ok(!Object.hasOwn(sessionCreates[3], 'name'), 'blank-subject threads should not force a session name');
   assert.equal(sessionCreates[3].completionTargets[0].inReplyTo, '<blank-subject-thread@example.com>');
   assert.equal(sessionCreates[3].completionTargets[0].references, '<blank-subject-thread@example.com>');
   assert.equal(sessionCreates[3].completionTargets[0].subject, '', 'blank-subject replies should preserve an empty subject');

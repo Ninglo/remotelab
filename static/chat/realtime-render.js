@@ -188,12 +188,17 @@ function openThinkingBlock() {
   inThinkingBlock = true;
 }
 
+function formatToolList(names, max) {
+  if (names.length <= max) return names.join(", ");
+  return names.slice(0, max).join(", ") + ` +${names.length - max}`;
+}
+
 function finalizeThinkingBlock() {
   if (!currentThinkingBlock) return;
   const { label, tools } = currentThinkingBlock;
   const toolList = [...tools];
   if (toolList.length > 0) {
-    label.textContent = t("thinking.usedTools", { tools: toolList.join(", ") });
+    label.textContent = t("thinking.usedTools", { tools: formatToolList(toolList, 3) });
   } else {
     label.textContent = t("thinking.done");
   }

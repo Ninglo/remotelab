@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto';
-import { watch } from 'fs';
+import { execFileSync } from 'child_process';
+import { readFileSync, statSync, watch } from 'fs';
 import { writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'path';
@@ -1472,6 +1473,30 @@ export async function resolveSavedAttachments(images) {
   return resolved.filter(Boolean);
 }
 
+const IMAGE_MAX_DIMENSION = 2000;
+const RESIZABLE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/tiff', 'image/bmp', 'image/gif']);
+
+function resizeImageIfNeeded(filepath, mimeType) {
+  if (!RESIZABLE_MIME_TYPES.has(mimeType)) return false;
+  try {
+    const info = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', filepath], { encoding: 'utf8', timeout: 10000 });
+    const widthMatch = info.match(/pixelWidth:\s*(\d+)/);
+    const heightMatch = info.match(/pixelHeight:\s*(\d+)/);
+    if (!widthMatch || !heightMatch) return false;
+    const width = Number(widthMatch[1]);
+    const height = Number(heightMatch[1]);
+    if (width <= IMAGE_MAX_DIMENSION && height <= IMAGE_MAX_DIMENSION) return false;
+    if (width >= height) {
+      execFileSync('sips', ['--resampleWidth', String(IMAGE_MAX_DIMENSION), filepath], { encoding: 'utf8', timeout: 30000 });
+    } else {
+      execFileSync('sips', ['--resampleHeight', String(IMAGE_MAX_DIMENSION), filepath], { encoding: 'utf8', timeout: 30000 });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function saveAttachments(images) {
   if (!images || images.length === 0) return [];
   await ensureDir(CHAT_IMAGES_DIR);
@@ -1485,13 +1510,18 @@ export async function saveAttachments(images) {
       ? img.buffer
       : Buffer.from(typeof img?.data === 'string' ? img.data : '', 'base64');
     await writeFile(filepath, fileBuffer);
+    const resized = resizeImageIfNeeded(filepath, mimeType);
+    const finalSize = resized ? statSync(filepath).size : fileBuffer.length;
+    const finalData = resized && typeof img?.data === 'string'
+      ? readFileSync(filepath).toString('base64')
+      : (typeof img?.data === 'string' ? img.data : undefined);
     return {
       filename,
       savedPath: filepath,
       ...(originalName ? { originalName } : {}),
       mimeType,
-      ...(fileBuffer.length > 0 ? { sizeBytes: fileBuffer.length } : {}),
-      ...(typeof img?.data === 'string' ? { data: img.data } : {}),
+      ...(finalSize > 0 ? { sizeBytes: finalSize } : {}),
+      ...(finalData ? { data: finalData } : {}),
     };
   }));
 }
@@ -2108,7 +2138,12 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
       actualText = `${actualText}\n\n---\n\n${VISITOR_TURN_GUARDRAIL}`;
     }
   } else if (flattenPrompt) {
-    actualText = actualText.replace(/\s+/g, ' ').trim();
+    const flatMessage = actualText.replace(/\s+/g, ' ').trim();
+    if (continuationContext) {
+      actualText = `${continuationContext}\n\n---\n\n${flatMessage}`;
+    } else {
+      actualText = flatMessage;
+    }
   }
 
   if (flattenPrompt && promptMode === 'default') {

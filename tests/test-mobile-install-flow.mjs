@@ -213,7 +213,7 @@ async function main() {
     const redeemAgain = await request(port, 'POST', '/api/install/handoff/redeem', {
       body: { token: handoffToken },
     });
-    assert.equal(redeemAgain.status, 401, 'install handoff should be one-time use');
+    assert.equal(redeemAgain.status, 200, 'install handoff should be reusable within TTL');
 
     const continueInstall = await request(port, 'GET', '/m/install?source=auto', {
       headers: { Cookie: ownerCookie },
@@ -232,8 +232,8 @@ async function main() {
     );
 
     const continueBridgeAgain = await request(port, 'GET', `/m/continue?h=${encodeURIComponent(continueHandoffToken)}`);
-    assert.equal(continueBridgeAgain.status, 302, 'redeemed browser continue handoffs should fall back to login');
-    assert.equal(continueBridgeAgain.headers.location, '/login');
+    assert.equal(continueBridgeAgain.status, 302, 'browser continue handoffs should be reusable within TTL');
+    assert.equal(continueBridgeAgain.headers.location, '/?skipInstall=1');
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });

@@ -32,6 +32,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - If coworkers cannot search the bot or add it to groups, first check app availability scope, current version publish/apply status, and tenant policy before touching connector code.
 - For practical internal rollout, prefer a real team tenant over a purely personal self-test tenant; for external-tenant usage, move to a marketplace / distributable app flow.
 
+### External Connectors Must Read UI Selection From the Target Instance (2026-04-05)
+- `loadUiRuntimeSelection()` reads from the host process's own `configDir`. When the mail worker or feishu connector runs under the main instance but routes sessions to a guest instance, the UI selection file it reads belongs to the main instance — not the guest instance where the user actually changed the model.
+- Fix: after resolving the routing target, look up the guest instance's `configDir` from the guest registry and pass that path to `loadUiRuntimeSelection(filePath)`.
+- General principle: any connector that can route to multiple instances must resolve config files relative to the **target** instance, not the connector's own process context.
+
 ### Long-Lived Connectors Must Re-Read Owner Tokens On Auth Refresh (2026-03-13)
 - A connector can look healthy for hours while reusing a cached owner session cookie, then suddenly start failing every upstream request after that cookie expires or the owner rotates `auth.json`.
 - If forced re-auth keeps reusing the connector's in-memory owner token, `/?token=...` can redirect to `/login` without a new `Set-Cookie`, and the connector surfaces misleading downstream errors even though RemoteLab itself is up.

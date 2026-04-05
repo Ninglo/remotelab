@@ -328,13 +328,19 @@ try {
       headers: { Cookie: cookie },
       redirect: 'manual',
     });
-    assert.equal(attachmentDownloadRes.status, 200, 'TOS attachment downloads should stream through the chat server');
+    assert.equal(attachmentDownloadRes.status, 302, 'TOS attachment downloads should redirect to object storage');
+    const attachmentRedirectUrl = String(attachmentDownloadRes.headers.get('location') || '');
+    assert.ok(attachmentRedirectUrl.includes(`127.0.0.1:${storagePort}`), 'attachment redirect should point at object storage');
+    const attachmentUrl = new URL(attachmentRedirectUrl);
     assert.match(
-      String(attachmentDownloadRes.headers.get('content-disposition') || ''),
+      attachmentUrl.searchParams.get('response-content-disposition') || '',
       /^attachment; filename="notes\.txt"/,
-      'attachment download should preserve the original filename',
+      'attachment redirect URL should include content-disposition for the original filename',
     );
-    assert.equal(await attachmentDownloadRes.text(), 'upload-through-host', 'attachment download should stream the stored object bytes');
+
+    const attachmentRedirected = await fetch(attachmentRedirectUrl, { method: 'GET' });
+    assert.equal(attachmentRedirected.status, 200, 'redirected attachment download should succeed');
+    assert.equal(await attachmentRedirected.text(), 'upload-through-host', 'redirected attachment download should return the uploaded bytes');
   } finally {
     await stopServer(chatServer);
     await new Promise((resolve) => storageServer.close(resolve));

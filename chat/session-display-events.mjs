@@ -136,6 +136,7 @@ function collectToolNames(events = []) {
   const names = [];
   const seen = new Set();
   for (const event of events) {
+    if (event?.type !== 'tool_use') continue;
     const toolName = typeof event?.toolName === 'string' ? event.toolName.trim() : '';
     if (!toolName || seen.has(toolName)) continue;
     seen.add(toolName);
@@ -144,16 +145,21 @@ function collectToolNames(events = []) {
   return names;
 }
 
+function formatToolNames(names, max = 3) {
+  if (names.length <= max) return names.join(', ');
+  return names.slice(0, max).join(', ') + ` +${names.length - max}`;
+}
+
 function buildThinkingBlockLabel(hiddenEvents, state = 'completed') {
   const toolNames = collectToolNames(hiddenEvents);
   if (state === 'running') {
     if (toolNames.length > 0) {
-      return `Thinking · using ${toolNames.join(', ')}`;
+      return `Thinking · using ${formatToolNames(toolNames)}`;
     }
     return 'Thinking…';
   }
   if (toolNames.length > 0) {
-    return `Thought · used ${toolNames.join(', ')}`;
+    return `Thought · used ${formatToolNames(toolNames)}`;
   }
   return 'Thought';
 }
