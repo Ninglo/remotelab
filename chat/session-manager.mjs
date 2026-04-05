@@ -1,10 +1,8 @@
 import { randomBytes } from 'crypto';
-import { execFileSync } from 'child_process';
-import { readFileSync, statSync, watch } from 'fs';
+import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'path';
-import { CHAT_IMAGES_DIR } from '../lib/config.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
@@ -99,10 +97,16 @@ import {
   createApp,
   getApp,
   getBuiltinApp,
+  listApps,
   normalizeAppId,
 } from './apps.mjs';
+import {
+  shouldRunDispatch,
+  classifyDispatch,
+  executeDispatchRouting,
+} from './session-dispatch.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
-import { ensureDir, pathExists, statOrNull } from './fs-utils.mjs';
+import { statOrNull } from './fs-utils.mjs';
 import {
   normalizeSessionTaskCard,
 } from './session-task-card.mjs';
@@ -129,34 +133,25 @@ import {
   parseReplySelfCheckDecision,
   summarizeReplySelfCheckReason,
 } from './session-reply-self-check.mjs';
+import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
 import { extractTaggedBlock } from './session-text-parsing.mjs';
 import { buildTurnContextHook } from './turn-context-hook.mjs';
+import {
+  EXTENSION_MIME_TYPES,
+  IMAGE_MAX_DIMENSION,
+  MIME_EXTENSIONS,
+  RESIZABLE_MIME_TYPES,
+  buildMessageAttachmentRefs,
+  normalizeAttachmentSizeBytes,
+  resolveAttachmentExtension,
+  resolveAttachmentMimeType,
+  resizeImageIfNeeded,
+  resolveSavedAttachments,
+  sanitizeOriginalAttachmentName,
+  saveAttachments,
+} from './session-attachments.mjs';
 
-const MIME_EXTENSIONS = {
-  'application/json': '.json',
-  'application/pdf': '.pdf',
-  'application/zip': '.zip',
-  'audio/mpeg': '.mp3',
-  'audio/mp4': '.m4a',
-  'audio/ogg': '.ogg',
-  'audio/wav': '.wav',
-  'image/gif': '.gif',
-  'image/jpeg': '.jpg',
-  'image/png': '.png',
-  'image/svg+xml': '.svg',
-  'image/webp': '.webp',
-  'text/markdown': '.md',
-  'text/plain': '.txt',
-  'video/mp4': '.mp4',
-  'video/ogg': '.ogv',
-  'video/quicktime': '.mov',
-  'video/webm': '.webm',
-  'video/x-m4v': '.m4v',
-};
-const EXTENSION_MIME_TYPES = Object.fromEntries(
-  Object.entries(MIME_EXTENSIONS).map(([mimeType, extension]) => [extension.slice(1), mimeType]),
-);
 const VISITOR_TURN_GUARDRAIL = [
   '<private>',
   'Share-link security notice for this turn:',
@@ -474,21 +469,11 @@ function getFollowUpQueueCount(meta) {
   return getFollowUpQueue(meta).length;
 }
 
-function sanitizeOriginalAttachmentName(value) {
-  if (typeof value !== 'string') return '';
-  const normalized = value.trim().replace(/\\/g, '/');
-  const basename = normalized.split('/').filter(Boolean).pop() || '';
-  return basename.replace(/\s+/g, ' ').slice(0, 255);
-}
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function normalizeAttachmentSizeBytes(value) {
-  const numeric = Number.parseInt(String(value || ''), 10);
-  return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
-}
 
 function expandHomePath(value) {
   const trimmed = trimString(value);
@@ -728,26 +713,7 @@ function buildResultAssetReadyMessage(attachments = []) {
     : 'Generated files ready to download.';
 }
 
-export function resolveAttachmentMimeType(mimeType, originalName = '') {
-  const normalizedMimeType = typeof mimeType === 'string' ? mimeType.trim().toLowerCase() : '';
-  if (normalizedMimeType) {
-    return normalizedMimeType;
-  }
-  const extension = extname(originalName || '').toLowerCase().replace(/^\./, '');
-  return EXTENSION_MIME_TYPES[extension] || 'application/octet-stream';
-}
-
-function resolveAttachmentExtension(mimeType, originalName = '') {
-  const resolvedMimeType = resolveAttachmentMimeType(mimeType, originalName);
-  if (MIME_EXTENSIONS[resolvedMimeType]) {
-    return MIME_EXTENSIONS[resolvedMimeType];
-  }
-  const originalExtension = extname(originalName || '').toLowerCase();
-  if (/^\.[a-z0-9]+$/.test(originalExtension)) {
-    return originalExtension;
-  }
-  return '.bin';
-}
+export { resolveAttachmentMimeType } from './session-attachments.mjs';
 
 function sanitizeQueuedFollowUpAttachments(images) {
   return (images || [])
@@ -1453,90 +1419,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   return run;
 }
 
-export async function resolveSavedAttachments(images) {
-  const resolved = await Promise.all((images || []).map(async (image) => {
-    const filename = typeof image?.filename === 'string' ? image.filename.trim() : '';
-    if (!filename || !/^[a-zA-Z0-9_-]+\.[a-z0-9]+$/.test(filename)) return null;
-    const savedPath = join(CHAT_IMAGES_DIR, filename);
-    if (!await pathExists(savedPath)) return null;
-    const originalName = sanitizeOriginalAttachmentName(image?.originalName || '');
-    const mimeType = resolveAttachmentMimeType(image?.mimeType, originalName || filename);
-    const sizeBytes = normalizeAttachmentSizeBytes((await statOrNull(savedPath))?.size || image?.sizeBytes);
-    return {
-      filename,
-      savedPath,
-      ...(originalName ? { originalName } : {}),
-      mimeType,
-      ...(sizeBytes ? { sizeBytes } : {}),
-    };
-  }));
-  return resolved.filter(Boolean);
-}
-
-const IMAGE_MAX_DIMENSION = 2000;
-const RESIZABLE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/tiff', 'image/bmp', 'image/gif']);
-
-function resizeImageIfNeeded(filepath, mimeType) {
-  if (!RESIZABLE_MIME_TYPES.has(mimeType)) return false;
-  try {
-    const info = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', filepath], { encoding: 'utf8', timeout: 10000 });
-    const widthMatch = info.match(/pixelWidth:\s*(\d+)/);
-    const heightMatch = info.match(/pixelHeight:\s*(\d+)/);
-    if (!widthMatch || !heightMatch) return false;
-    const width = Number(widthMatch[1]);
-    const height = Number(heightMatch[1]);
-    if (width <= IMAGE_MAX_DIMENSION && height <= IMAGE_MAX_DIMENSION) return false;
-    if (width >= height) {
-      execFileSync('sips', ['--resampleWidth', String(IMAGE_MAX_DIMENSION), filepath], { encoding: 'utf8', timeout: 30000 });
-    } else {
-      execFileSync('sips', ['--resampleHeight', String(IMAGE_MAX_DIMENSION), filepath], { encoding: 'utf8', timeout: 30000 });
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function saveAttachments(images) {
-  if (!images || images.length === 0) return [];
-  await ensureDir(CHAT_IMAGES_DIR);
-  return Promise.all(images.map(async (img) => {
-    const originalName = sanitizeOriginalAttachmentName(img?.originalName || img?.name || '');
-    const mimeType = resolveAttachmentMimeType(img?.mimeType, originalName);
-    const ext = resolveAttachmentExtension(mimeType, originalName);
-    const filename = randomBytes(12).toString('hex') + ext;
-    const filepath = join(CHAT_IMAGES_DIR, filename);
-    const fileBuffer = Buffer.isBuffer(img?.buffer)
-      ? img.buffer
-      : Buffer.from(typeof img?.data === 'string' ? img.data : '', 'base64');
-    await writeFile(filepath, fileBuffer);
-    const resized = resizeImageIfNeeded(filepath, mimeType);
-    const finalSize = resized ? statSync(filepath).size : fileBuffer.length;
-    const finalData = resized && typeof img?.data === 'string'
-      ? readFileSync(filepath).toString('base64')
-      : (typeof img?.data === 'string' ? img.data : undefined);
-    return {
-      filename,
-      savedPath: filepath,
-      ...(originalName ? { originalName } : {}),
-      mimeType,
-      ...(finalSize > 0 ? { sizeBytes: finalSize } : {}),
-      ...(finalData ? { data: finalData } : {}),
-    };
-  }));
-}
-
-function buildMessageAttachmentRefs(images = []) {
-  return (images || []).map((img) => ({
-    ...(img.filename ? { filename: img.filename } : {}),
-    ...(img.savedPath ? { savedPath: img.savedPath } : {}),
-    ...(img.assetId ? { assetId: img.assetId } : {}),
-    ...(img.originalName ? { originalName: img.originalName } : {}),
-    mimeType: img.mimeType,
-    ...(normalizeAttachmentSizeBytes(img?.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(img.sizeBytes) } : {}),
-    ...(trimString(img?.renderAs) === 'file' ? { renderAs: 'file' } : {}),
-  }));
-}
+export { resolveSavedAttachments, saveAttachments } from './session-attachments.mjs';
 
 export async function appendAssistantMessage(sessionId, text = '', images = [], options = {}) {
   let session = await getSession(sessionId);
@@ -2345,6 +2228,35 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
   latestSession = await getSession(sessionId) || latestSession;
   const completionEffects = await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
   sessionChanged = sessionChanged || completionEffects.sessionChanged;
+
+  // Fire-and-forget: async memory writeback (non-blocking)
+  if (!manifest?.internalOperation && !isInternalSession(latestSession)) {
+    void (async () => {
+      try {
+        const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(
+          sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
+        );
+        await maybeRunMemoryWriteback({
+          sessionId,
+          session: latestSession,
+          run: finalizedRun,
+          userMessage: userMessage?.content || '',
+          assistantTurnText,
+          runPrompt: (prompt) => runDetachedAssistantPrompt({
+            id: sessionId,
+            folder: latestSession.folder,
+            tool: finalizedRun.tool || latestSession.tool,
+            model: undefined,
+            effort: 'low',
+            thinking: false,
+          }, prompt),
+        });
+      } catch (error) {
+        console.error(`[memory-writeback] Async writeback failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
+      }
+    })();
+  }
+
   return { historyChanged, sessionChanged };
 }
 
@@ -3332,6 +3244,59 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
 
   const normalizedText = text.trim();
+
+  // --- Pre-execution dispatch: classify whether this message belongs here ---
+  if (shouldRunDispatch(session, options)) {
+    try {
+      const dispatchDecision = await classifyDispatch({
+        session,
+        message: normalizedText,
+        listSessions: () => listSessions({ includeArchived: false }),
+        listApps: () => listApps(),
+        runPrompt: (prompt) => runDetachedAssistantPrompt({
+          id: sessionId,
+          folder: session.folder,
+          tool: session.tool,
+          model: undefined,
+          effort: 'low',
+          thinking: false,
+        }, prompt),
+      });
+
+      if (dispatchDecision.action !== 'continue') {
+        const routingOutcome = await executeDispatchRouting({
+          decision: dispatchDecision,
+          sourceSessionId: sessionId,
+          message: normalizedText,
+          images,
+          options,
+          createSession: (tool, name, extra) => createSession(session.folder, tool || session.tool, name, extra),
+          submitMessage: submitHttpMessage,
+          getSession,
+          getApp,
+          appendEvent,
+          broadcastInvalidation: broadcastSessionInvalidation,
+          messageEvent,
+          statusEvent,
+          contextOperationEvent,
+          buildSessionNavigationHref,
+        });
+
+        if (routingOutcome.routed) {
+          return {
+            duplicate: false,
+            queued: false,
+            dispatched: true,
+            targetSessionId: routingOutcome.targetSessionId,
+            run: routingOutcome.run,
+            session: routingOutcome.targetSession || await getSession(routingOutcome.targetSessionId),
+          };
+        }
+      }
+    } catch (dispatchError) {
+      console.error(`[session-dispatch] Error during dispatch, continuing normally: ${dispatchError.message}`);
+    }
+  }
 
   let activeRun = null;
   let hasActiveRun = false;
