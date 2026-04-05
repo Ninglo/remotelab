@@ -42,7 +42,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #161618;
     --bg-secondary: #1c1c1f;
@@ -76,6 +76,41 @@
     --modal-shadow: 0 24px 48px -12px rgba(0,0,0,0.5);
     --focus-border: #52525b;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1e1e1e;
+  --bg-secondary: #252526;
+  --bg-tertiary: #2d2d30;
+  --border: #3c3c3c;
+  --border-strong: #4f4f4f;
+  --text: #d4d4d4;
+  --text-secondary: #a9a9a9;
+  --text-muted: #7d7d7d;
+  --accent: #d4d4d4;
+  --accent-dim: #2d2d30;
+  --surface-hover: #323233;
+  --user-bubble: #2d2d30;
+  --tool-bg: #252526;
+  --success: #4ec9b0;
+  --success-bg: #153b33;
+  --notice: #569cd6;
+  --queue: #4ec9b0;
+  --naming: #c586c0;
+  --error: #f14c4c;
+  --error-bg: #3a1f1f;
+  --warning: #d7ba7d;
+  --issue: #ce9178;
+  --failed-message-border: #d19a66;
+  --copy-btn-bg: rgba(37,37,38,0.92);
+  --copy-btn-success-border: rgba(78, 201, 176, 0.28);
+  --overlay-backdrop: rgba(0,0,0,0.48);
+  --modal-backdrop: rgba(0,0,0,0.62);
+  --image-remove-bg: rgba(15,23,42,0.72);
+  --image-remove-bg-hover: rgba(15,23,42,0.84);
+  --modal-shadow: 0 24px 60px rgba(0,0,0,0.48);
+  --focus-border: #6b7280;
 }
 
 @font-face {
@@ -278,6 +313,13 @@ body {
 }
 .header-share-btn:hover { background: var(--bg-secondary); color: var(--text); border-color: var(--border-strong); }
 .header-share-btn:disabled { opacity: 0.7; cursor: wait; }
+.theme-toggle-btn {
+  min-width: 64px;
+}
+.theme-toggle-label {
+  font-variant: all-small-caps;
+  letter-spacing: 0.04em;
+}
 .header-refresh-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; padding: 0; border-radius: 999px;

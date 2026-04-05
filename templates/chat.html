@@ -31,6 +31,9 @@
     <span class="header-action-icon" data-icon="share" aria-hidden="true"></span>
     <span class="header-action-label" data-i18n="action.share">Share</span>
   </button>
+  <button class="header-share-btn theme-toggle-btn" id="themeToggleBtn" type="button" title="Theme mode: auto" aria-label="Theme mode: auto">
+    <span class="theme-toggle-label" id="themeToggleLabel">Auto</span>
+  </button>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText" data-i18n="{{STATUS_I18N_KEY}}">{{STATUS_TEXT}}</span>
@@ -253,6 +256,7 @@
 <script src="/chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="/chat/theme-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/init.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 </body>
 </html>
