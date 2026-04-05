@@ -4,6 +4,7 @@
 #   restart.sh          — restart all services
 #   restart.sh chat     — restart only chat-server
 #   restart.sh tunnel   — restart only cloudflared
+#   restart.sh mainland — restart only natapp mainland proxy
 
 set -e
 
@@ -74,14 +75,19 @@ case "$SERVICE" in
     echo "Restarting cloudflared..."
     restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
     ;;
+  mainland)
+    echo "Restarting natapp mainland proxy..."
+    restart_service "natapp mainland proxy" "com.remotelab.natapp.dual-proxy" "remotelab-natapp-dual-proxy"
+    ;;
   all)
     echo "Restarting all services..."
     restart_service "chat-server" "com.chatserver.claude"  "remotelab-chat"
     restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
+    restart_service "natapp mainland proxy" "com.remotelab.natapp.dual-proxy" "remotelab-natapp-dual-proxy"
     ;;
   *)
     echo "Unknown service: $SERVICE"
-    echo "Usage: restart.sh [chat|tunnel|all]"
+    echo "Usage: restart.sh [chat|tunnel|mainland|all]"
     exit 1
     ;;
 esac

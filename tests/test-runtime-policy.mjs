@@ -96,6 +96,16 @@ try {
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /operational work yourself on this machine or another RemoteLab-visible surface rather than giving the user a manual how-to/,
+    'default Codex developer instructions should prefer agent-side execution over manual user recipes',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /If another service needs login, access, or approval, prefer bringing that checkpoint onto this machine or another RemoteLab-exposed surface/,
+    'default Codex developer instructions should prefer RemoteLab-side login and authorization checkpoints',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /local-only file is internal working state, not a completed handoff/,
     'default Codex developer instructions should prevent local-only delivery from counting as completion',
   );
@@ -138,6 +148,16 @@ try {
     MANAGER_RUNTIME_BOUNDARY_SECTION,
     /Do not assume remote users can browse local folders, inspect this computer, or pick up files from host-only paths/,
     'manager runtime boundary should block assumptions of direct host access for remote users',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /absorbing the operational work on the RemoteLab side instead of turning the user into the fallback operator with a recipe of manual steps/,
+    'manager runtime boundary should prefer RemoteLab-side execution over manual user recipes',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /When another service needs access, login, or authorization, prefer completing that checkpoint on this machine or another RemoteLab-exposed surface/,
+    'manager runtime boundary should prefer RemoteLab-side access and login checkpoints',
   );
   assert.match(
     MANAGER_RUNTIME_BOUNDARY_SECTION,
@@ -193,6 +213,16 @@ try {
     MANAGER_TURN_POLICY_REMINDER,
     /Do not hand work back by telling the user to inspect a local path on the host machine/,
     'turn-level policy reminder should block host-path handoff language',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /Do not turn a nontechnical user into the fallback operator with a multi-step manual recipe when RemoteLab can do the work itself/,
+    'turn-level policy reminder should block multi-step manual user recipes',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /If login, authorization, or external access is needed, prefer a RemoteLab-side checkpoint on this machine or another explicitly exposed surface/,
+    'turn-level policy reminder should prefer RemoteLab-side login and authorization checkpoints',
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,

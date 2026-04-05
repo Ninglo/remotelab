@@ -180,7 +180,7 @@ async function main() {
     assert.equal(page.status, 200, 'chat page should render for owner session');
     assert.match(page.text, /<meta name="color-scheme" content="light dark">/);
     assert.match(page.text, /<meta name="theme-color" content="#ffffff" media="\(prefers-color-scheme: light\)">/);
-    assert.match(page.text, /<meta name="theme-color" content="#1e1e1e" media="\(prefers-color-scheme: dark\)">/);
+    assert.match(page.text, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
     const bootstrapMatch = page.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
     assert.ok(bootstrapMatch, 'chat page should inline bootstrap payload');
     const bootstrap = JSON.parse(bootstrapMatch[1]);
@@ -319,8 +319,8 @@ async function main() {
     const loginPage = await request(port, 'GET', '/login', null, { Cookie: '' });
     assert.equal(loginPage.status, 200, 'login page should render without auth');
     assert.match(loginPage.text, /<meta name="color-scheme" content="light dark">/);
-    assert.match(loginPage.text, /<meta name="theme-color" content="#f5f5f5" media="\(prefers-color-scheme: light\)">/);
-    assert.match(loginPage.text, /<meta name="theme-color" content="#181818" media="\(prefers-color-scheme: dark\)">/);
+    assert.match(loginPage.text, /<meta name="theme-color" content="#f8f8fa" media="\(prefers-color-scheme: light\)">/);
+    assert.match(loginPage.text, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
     assert.match(loginPage.text, /@media \(prefers-color-scheme: dark\)/);
 
     const apps = await request(port, 'GET', '/api/apps');
@@ -558,7 +558,7 @@ async function main() {
     assert.match(layoutToolingAsset.text, /function requestLayoutPass\(/);
     assert.match(layoutToolingAsset.text, /window\.RemoteLabLayout = \{/);
     assert.match(layoutToolingAsset.text, /window\.visualViewport\?\.addEventListener\("resize", \(\) => requestLayoutPass\("visual-viewport-resize"\)\)/);
-    assert.doesNotMatch(layoutToolingAsset.text, /window\.visualViewport\?\.addEventListener\("scroll"/);
+    assert.match(layoutToolingAsset.text, /window\.visualViewport\?\.addEventListener\("scroll", \(\) => requestLayoutPass\("visual-viewport-scroll"\)\)/);
     assert.match(layoutToolingAsset.text, /function focusComposer\(/);
 
     const toolingAsset = await request(port, 'GET', '/chat/tooling.js');

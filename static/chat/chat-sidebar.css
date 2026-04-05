@@ -6,17 +6,17 @@
 .sidebar-overlay.open { display: block; }
 .sidebar {
   position: fixed; left: calc(-1 * var(--sidebar-mobile-width)); top: 0; bottom: 0; width: var(--sidebar-mobile-width);
-  background: var(--bg); border-right: 1px solid var(--border);
-  z-index: 101; transition: left 0.2s ease; display: flex; flex-direction: column;
+  background: var(--bg-secondary); border-right: 1px solid var(--border);
+  z-index: 101; transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column;
   padding-top: var(--safe-top);
 }
 .sidebar-overlay.open .sidebar { left: 0; }
 .sidebar-header {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--border);
-  min-height: 48px;
+  min-height: 52px;
 }
-.sidebar-header h2 { font-size: 14px; font-weight: 600; flex: 1; }
+.sidebar-header h2 { font-size: 14px; font-weight: 600; flex: 1; letter-spacing: -0.01em; }
 .sidebar-list { flex: 1; overflow-y: auto; padding: 8px 8px; }
 .header-btn,
 .sidebar-tab,
@@ -52,13 +52,13 @@
   display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
 .sidebar-tab {
-  flex: 1; padding: 8px 0; font-size: 12px; font-weight: 500;
+  flex: 1; padding: 10px 0; font-size: 12px; font-weight: 500;
   background: none; border: none; cursor: pointer;
   color: var(--text-muted); border-bottom: 2px solid transparent;
-  margin-bottom: -1px; transition: color 0.1s;
+  margin-bottom: -1px; transition: color 0.15s ease, border-color 0.15s ease;
   font-family: inherit; letter-spacing: 0.02em;
 }
-.sidebar-tab.active { color: var(--text); border-bottom-color: var(--text); }
+.sidebar-tab.active { color: var(--text); border-bottom-color: var(--accent); }
 .sidebar-tab:hover:not(.active) { color: var(--text-secondary); }
 
 .sidebar-filters {
@@ -288,10 +288,11 @@
 .folder-group-header.collapsed + .folder-group-items { display: none; }
 
 .session-item {
-  padding: 7px 8px 7px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 1px;
-  border: 1px solid transparent; display: flex; align-items: flex-start; gap: 6px;
+  padding: 8px 10px 8px 12px; border-radius: 10px; cursor: pointer; margin-bottom: 2px;
+  border: 1px solid transparent; display: flex; align-items: flex-start; gap: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
-.session-item:hover { background: var(--bg-secondary); }
+.session-item:hover { background: var(--surface-hover); }
 .session-item.active { background: var(--bg-tertiary); border-color: var(--border); }
 .session-item-info { flex: 1; min-width: 0; }
 .session-item-name {
@@ -331,8 +332,8 @@
 .session-item-actions { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 .session-action-btn {
   background: none; border: none; color: var(--text-muted); cursor: pointer;
-  font-size: 13px; padding: 3px 5px; border-radius: 4px; line-height: 1;
-  opacity: 0; transition: opacity 0.1s;
+  font-size: 13px; padding: 3px 5px; border-radius: 6px; line-height: 1;
+  opacity: 0; transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .session-item:hover .session-action-btn { opacity: 1; }
@@ -381,21 +382,27 @@
 .session-rename-input:focus { border-color: var(--accent); }
 
 .new-session-btn {
-  margin: 8px; padding: 9px 12px; background: var(--text); color: var(--bg);
-  border: none; border-radius: 8px; font-size: 13px; cursor: pointer;
-  font-weight: 500; text-align: center;
+  margin: 8px; padding: 10px 12px; background: var(--accent); color: var(--bg);
+  border: none; border-radius: 10px; font-size: 13px; cursor: pointer;
+  font-weight: 600; text-align: center;
+  transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+}
+.new-session-btn:hover {
+  opacity: 0.92;
 }
 .new-session-btn.secondary {
-  background: var(--bg-secondary);
+  background: var(--bg);
   color: var(--text-secondary);
   border: 1px solid var(--border);
   margin-bottom: 0;
+  font-weight: 500;
 }
 .new-session-btn.secondary:hover {
   background: var(--bg-tertiary);
   color: var(--text);
+  opacity: 1;
 }
-.new-session-btn:active { opacity: 0.85; }
+.new-session-btn:active { transform: scale(0.98); opacity: 1; }
 .new-session-btn.hidden { display: none; }
 
 /* ---- Autocomplete suggestions ---- */

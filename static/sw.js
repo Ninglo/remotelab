@@ -2,7 +2,9 @@
 
 async function clearLegacyCaches() {
   const cacheNames = await self.caches.keys();
-  await Promise.all(cacheNames.map((cacheName) => self.caches.delete(cacheName)));
+  await Promise.all(cacheNames
+    .filter((name) => name !== 'remotelab-share-target')
+    .map((cacheName) => self.caches.delete(cacheName)));
 }
 
 self.addEventListener('install', (event) => {
@@ -51,6 +53,58 @@ self.addEventListener('push', (event) => {
     })
   );
 });
+
+// ---- Share Target handling ----
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.pathname.endsWith('/share-receive') && event.request.method === 'POST') {
+    event.respondWith(handleShareTarget(event.request));
+  }
+});
+
+async function handleShareTarget(request) {
+  try {
+    const formData = await request.formData();
+    const shareData = {
+      title: formData.get('title') || '',
+      text: formData.get('text') || '',
+      url: formData.get('url') || '',
+      files: [],
+      timestamp: Date.now(),
+    };
+
+    // Cache shared files as separate entries
+    const cache = await caches.open('remotelab-share-target');
+    const mediaFiles = formData.getAll('media');
+    for (let i = 0; i < mediaFiles.length; i++) {
+      const file = mediaFiles[i];
+      if (!file || typeof file.arrayBuffer !== 'function') continue;
+      const buffer = await file.arrayBuffer();
+      const cacheKey = `/share-target-file-${i}`;
+      shareData.files.push({
+        name: file.name || `shared-${i}`,
+        type: file.type || 'application/octet-stream',
+        size: file.size || buffer.byteLength,
+        cacheKey,
+      });
+      await cache.put(cacheKey, new Response(buffer, {
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      }));
+    }
+
+    await cache.put('/share-target-data', new Response(JSON.stringify(shareData), {
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    // Use SW scope to redirect to the correct base path (handles proxy prefixes)
+    const scopePath = new URL(self.registration.scope).pathname;
+    const clientUrl = new URL(scopePath, request.url);
+    clientUrl.searchParams.set('share', '1');
+    return Response.redirect(clientUrl.href, 303);
+  } catch {
+    const scopePath = new URL(self.registration.scope).pathname;
+    return Response.redirect(new URL(scopePath, request.url).href, 303);
+  }
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

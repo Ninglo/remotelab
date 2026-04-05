@@ -2,7 +2,7 @@ import { readFile, readdir } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 
-import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
+import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -271,7 +271,7 @@ export async function handleControlRoutes({
     const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
 
     try {
-      if (asset.storage?.provider === 'local' || (downloadRequested && FILE_ASSET_STORAGE_PROVIDER === 'tos')) {
+      if (asset.storage?.provider === 'local') {
         const localPath = await localizeFileAsset(asset);
         streamResponse(res, localPath, {
           'Content-Type': asset.mimeType || 'application/octet-stream',
@@ -902,6 +902,73 @@ export async function handleControlRoutes({
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid subscription' }));
+    }
+    return true;
+  }
+
+  // POST /api/notifications — broadcast a system notification to connected clients
+  if (pathname === '/api/notifications' && req.method === 'POST') {
+    if (authSession?.role === 'visitor') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    let body;
+    try { body = await readBody(req, 10240); } catch {
+      writeJson(res, 400, { error: 'Bad request' });
+      return true;
+    }
+    let payload;
+    try { payload = JSON.parse(body); } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    const message = typeof payload.message === 'string' ? payload.message.trim() : '';
+    const level = ['info', 'warn', 'error'].includes(payload.level) ? payload.level : 'info';
+    if (!message) {
+      writeJson(res, 400, { error: 'Missing message' });
+      return true;
+    }
+    const { broadcastOwners } = await import('./ws-clients.mjs');
+    broadcastOwners({ type: 'system_notification', message, level });
+    writeJson(res, 200, { ok: true });
+    return true;
+  }
+
+  // GET /api/mailbox/status — recent mailbox failures & stats
+  if (pathname === '/api/mailbox/status' && req.method === 'GET') {
+    if (authSession?.role === 'visitor') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    try {
+      const mailboxRoot = join(CONFIG_DIR, 'agent-mailbox');
+      const approvedDir = join(mailboxRoot, 'approved');
+      let files = [];
+      try { files = await readdir(approvedDir); } catch {}
+      const failures = [];
+      for (const file of files.slice(-50)) {
+        if (!file.endsWith('.json')) continue;
+        try {
+          const raw = await readFile(join(approvedDir, file), 'utf8');
+          const item = JSON.parse(raw);
+          const status = typeof item?.status === 'string' ? item.status : '';
+          if (status.includes('failed')) {
+            failures.push({
+              id: item.id,
+              status,
+              subject: item?.message?.subject || '',
+              from: item?.message?.fromAddress || '',
+              lastError: typeof item?.automation?.lastError === 'string'
+                ? item.automation.lastError.slice(0, 500)
+                : '',
+              updatedAt: item?.automation?.updatedAt || item?.createdAt || '',
+            });
+          }
+        } catch {}
+      }
+      writeJson(res, 200, { ok: true, failures, total: files.length });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to read mailbox status' });
     }
     return true;
   }

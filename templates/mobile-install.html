@@ -211,6 +211,31 @@
       text-align: left;
     }
 
+    .recover-wrap {
+      margin-top: 18px;
+    }
+
+    .recover-input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-size: 15px;
+      font-family: inherit;
+      background: var(--secondary);
+      color: var(--text);
+      -webkit-appearance: none;
+      outline: none;
+    }
+
+    .recover-input:focus {
+      border-color: var(--link);
+    }
+
+    .recover-input::placeholder {
+      color: var(--muted);
+    }
+
     .build-stamp {
       margin-top: 18px;
       text-align: center;
@@ -251,6 +276,10 @@
 
       <div class="helper" id="helper"></div>
 
+      <div class="recover-wrap hidden" id="recoverWrap">
+        <input class="recover-input" id="recoverInput" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </div>
+
       <div class="actions">
         <button class="btn primary" id="primaryBtn" type="button"></button>
         <button class="btn secondary" id="secondaryBtn" type="button"></button>
@@ -284,6 +313,8 @@
       const primaryBtn = document.getElementById('primaryBtn');
       const secondaryBtn = document.getElementById('secondaryBtn');
       const copyBtn = document.getElementById('copyBtn');
+      const recoverWrapEl = document.getElementById('recoverWrap');
+      const recoverInputEl = document.getElementById('recoverInput');
       const benefit1TitleEl = document.getElementById('benefit1Title');
       const benefit1CopyEl = document.getElementById('benefit1Copy');
       const benefit2TitleEl = document.getElementById('benefit2Title');
@@ -321,16 +352,16 @@
         benefit3Title: '通知放到后面再要',
         benefit3Copy: '先把安装和首次进入跑通，再在独立模式里申请提醒权限，干扰更小。',
         blockedTitle: '请先在系统浏览器打开',
-        blockedSubtitle: '微信等内置浏览器里，安装到主屏幕和首次登录接力都不稳定。',
-        blockedStatus: '先把这个链接复制出来，再用 Safari、Chrome 或系统浏览器重新打开。',
+        blockedSubtitle: '复制链接到 Safari 或 Chrome 打开。',
+        blockedStatus: '',
         blockedPrimary: '复制当前链接',
         blockedCopyDone: '已复制，回到系统浏览器继续。',
-        blockedHelper: '只要是独立打开的浏览器就可以继续；iPhone 上 Safari 最稳。',
+        blockedHelper: '',
         guideTitle: '把 RemoteLab 放到主屏幕',
-        guideSubtitle: '这一步稍微长一点，但装好以后首次启动会自动接上登录。',
+        guideSubtitle: '装好后首次打开会自动登录。',
         guideStepsTitle: '安装步骤',
-        guideHelperIos: '装好以后，请从桌面图标重新打开 RemoteLab。',
-        guideHelperAndroid: 'Chrome 的安装体验最好；如果当前浏览器不支持安装，也可以先继续网页版。',
+        guideHelperIos: '',
+        guideHelperAndroid: '',
         iosStep1Safari: '点底部分享按钮。',
         iosStep1Other: '点浏览器菜单或分享按钮。',
         iosStep2: '选择“添加到主屏幕”。',
@@ -342,15 +373,15 @@
         guidePrimaryPrompt: '立即安装',
         guidePrimaryFallback: '看安装步骤',
         guideSecondary: '先继续网页版',
-        guideScrolled: '装好以后，从桌面重新打开即可自动继续。',
+        guideScrolled: '',
         redeemLoadingTitle: '正在完成设置…',
         redeemLoadingSubtitle: '首次启动会自动把登录接过去，请稍等一秒。',
         redeemLoadingStatus: '如果这是你第一次从主屏幕打开，接下来会直接进入 RemoteLab。',
-        redeemErrorTitle: '这次连接失效了',
-        redeemErrorSubtitle: '回到刚才的浏览器页面，再试一次安装就好。',
-        redeemErrorStatus: '这个一次性连接已经失效，重新打开原来的浏览器页面会自动生成新的接力。',
-        redeemErrorPrimary: '回到登录页',
-        redeemErrorSecondary: '复制当前链接',
+        redeemErrorTitle: '需要重新连接',
+        redeemErrorSubtitle: '粘贴你的访问链接即可继续。',
+        redeemErrorInputPlaceholder: '粘贴链接或令牌',
+        redeemErrorPrimary: '继续',
+        redeemErrorHelper: '在电脑上的 RemoteLab 设置中可以找到访问链接。',
       } : {
         benefit1Title: 'Open from the home screen',
         benefit1Copy: 'Pin RemoteLab to the home screen so people do not have to hunt for the original link again.',
@@ -358,17 +389,17 @@
         benefit2Copy: 'The first standalone launch picks up the login automatically instead of asking for the long-lived token again.',
         benefit3Title: 'Ask for notifications later',
         benefit3Copy: 'Finish install and the first launch first, then request reminders from the standalone app with less friction.',
-        blockedTitle: 'Open this in a real browser first',
-        blockedSubtitle: 'In-app browsers do not handle home-screen install and first-launch sign-in reliably.',
-        blockedStatus: 'Copy this link, then reopen it in Safari, Chrome, or the system browser.',
+        blockedTitle: 'Open in a real browser first',
+        blockedSubtitle: 'Copy this link and open it in Safari or Chrome.',
+        blockedStatus: '',
         blockedPrimary: 'Copy this link',
         blockedCopyDone: 'Copied. Continue in the system browser.',
-        blockedHelper: 'Any independently opened browser can continue. Safari is still the steadiest path on iPhone.',
-        guideTitle: 'Add RemoteLab to the home screen',
-        guideSubtitle: 'The first install takes one extra step, but the first launch reconnects the session for you.',
+        blockedHelper: '',
+        guideTitle: 'Add RemoteLab to home screen',
+        guideSubtitle: 'First launch signs you in automatically.',
         guideStepsTitle: 'Install steps',
-        guideHelperIos: 'After adding it, reopen RemoteLab from the home screen.',
-        guideHelperAndroid: 'Chrome gives the best install path. If this browser does not support install, you can keep using the web for now.',
+        guideHelperIos: '',
+        guideHelperAndroid: '',
         iosStep1Safari: 'Tap the Share button at the bottom.',
         iosStep1Other: 'Open the browser menu or share sheet.',
         iosStep2: 'Choose “Add to Home Screen”.',
@@ -380,15 +411,15 @@
         guidePrimaryPrompt: 'Install now',
         guidePrimaryFallback: 'Show install steps',
         guideSecondary: 'Continue in the browser',
-        guideScrolled: 'Once it is added, reopen RemoteLab from the home screen to continue automatically.',
+        guideScrolled: '',
         redeemLoadingTitle: 'Finishing setup…',
         redeemLoadingSubtitle: 'The first standalone launch is reconnecting your login now.',
         redeemLoadingStatus: 'If this is the first time you opened RemoteLab from the home screen, you should land in the app in a second.',
-        redeemErrorTitle: 'This connection expired',
-        redeemErrorSubtitle: 'Go back to the browser page and start the install flow again.',
-        redeemErrorStatus: 'This one-time handoff is no longer valid. Opening the browser page again will generate a fresh one.',
-        redeemErrorPrimary: 'Go to login',
-        redeemErrorSecondary: 'Copy this link',
+        redeemErrorTitle: 'Reconnect needed',
+        redeemErrorSubtitle: 'Paste your access link to continue.',
+        redeemErrorInputPlaceholder: 'Paste link or token',
+        redeemErrorPrimary: 'Continue',
+        redeemErrorHelper: 'Find your access link in RemoteLab settings on your computer.',
       };
 
       function setStatus(textContent) {
@@ -469,14 +500,14 @@
       }
 
       function showGuide() {
-        setBenefitCopy();
         titleEl.textContent = text.guideTitle;
         subtitleEl.textContent = text.guideSubtitle;
         stepsTitleEl.textContent = text.guideStepsTitle;
         setStatus('');
         copyBtn.classList.add('hidden');
+        recoverWrapEl.classList.add('hidden');
         stepsWrapEl.classList.remove('hidden');
-        benefitsEl.classList.remove('hidden');
+        benefitsEl.classList.add('hidden');
         secondaryBtn.classList.remove('hidden');
         secondaryBtn.textContent = text.guideSecondary;
         secondaryBtn.onclick = continueInBrowser;
@@ -520,7 +551,8 @@
       }
 
       function showBlocked() {
-        setBenefitCopy();
+        benefitsEl.classList.add('hidden');
+        recoverWrapEl.classList.add('hidden');
         titleEl.textContent = text.blockedTitle;
         subtitleEl.textContent = text.blockedSubtitle;
         stepsWrapEl.classList.add('hidden');
@@ -540,21 +572,42 @@
         copyBtn.onclick = primaryBtn.onclick;
       }
 
+      function handleRecoverSubmit() {
+        var raw = (recoverInputEl.value || '').trim();
+        if (!raw) return;
+        try {
+          var parsed = new URL(raw);
+          var tokenParam = parsed.searchParams.get('token');
+          var handoffParam = parsed.searchParams.get('h');
+          if (handoffParam && /^ih_[a-f0-9]{48}$/.test(handoffParam)) {
+            window.location.assign(resolveProductPath('/m/install?h=' + encodeURIComponent(handoffParam)));
+            return;
+          }
+          if (tokenParam) {
+            window.location.assign(resolveProductPath('/?token=' + encodeURIComponent(tokenParam)));
+            return;
+          }
+        } catch {}
+        window.location.assign(resolveProductPath('/?token=' + encodeURIComponent(raw)));
+      }
+
       function showRedeemError() {
         benefitsEl.classList.add('hidden');
         stepsWrapEl.classList.add('hidden');
+        copyBtn.classList.add('hidden');
         titleEl.textContent = text.redeemErrorTitle;
         subtitleEl.textContent = text.redeemErrorSubtitle;
-        helperEl.textContent = text.redeemErrorStatus;
-        setStatus(text.redeemErrorStatus);
+        helperEl.textContent = text.redeemErrorHelper;
+        setStatus('');
+        recoverWrapEl.classList.remove('hidden');
+        recoverInputEl.placeholder = text.redeemErrorInputPlaceholder;
         primaryBtn.classList.remove('hidden');
         primaryBtn.textContent = text.redeemErrorPrimary;
-        primaryBtn.onclick = function goToLogin() {
-          window.location.assign(resolveProductPath('/login'));
-        };
-        secondaryBtn.classList.remove('hidden');
-        secondaryBtn.textContent = text.redeemErrorSecondary;
-        secondaryBtn.onclick = copyCurrentUrl;
+        primaryBtn.onclick = handleRecoverSubmit;
+        secondaryBtn.classList.add('hidden');
+        recoverInputEl.addEventListener('keydown', function onEnter(e) {
+          if (e.key === 'Enter') handleRecoverSubmit();
+        });
       }
 
       async function redeemHandoff() {

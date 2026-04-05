@@ -1,3 +1,23 @@
+// ---- System toast notifications ----
+function showSystemToast(message, level = "info") {
+  const container = document.getElementById("system-toast-container")
+    || (() => {
+      const el = document.createElement("div");
+      el.id = "system-toast-container";
+      el.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:90vw;";
+      document.body.appendChild(el);
+      return el;
+    })();
+  const toast = document.createElement("div");
+  const bgColor = level === "error" ? "#d32f2f" : level === "warn" ? "#ed6c02" : "#1976d2";
+  toast.style.cssText = `background:${bgColor};color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;line-height:1.4;box-shadow:0 2px 12px rgba(0,0,0,.25);pointer-events:auto;cursor:pointer;max-width:100%;word-break:break-word;opacity:0;transition:opacity .2s;`;
+  toast.textContent = message;
+  toast.onclick = () => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 200); };
+  container.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = "1"; });
+  setTimeout(() => { toast.style.opacity = "0"; setTimeout(() => toast.remove(), 200); }, level === "error" ? 8000 : 5000);
+}
+
 // ---- Visitor mode setup ----
 function applyVisitorMode() {
   visitorMode = true;
@@ -174,6 +194,77 @@ async function initApp() {
   connect();
   setupForegroundRefreshHandlers();
   void loadModelsForCurrentTool();
+
+  // Handle incoming share target data (Web Share Target API)
+  void handleShareTargetData();
+}
+
+async function handleShareTargetData() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("share")) return;
+  url.searchParams.delete("share");
+  history.replaceState(null, "", `${url.pathname}${url.search}`);
+
+  let cache;
+  try {
+    cache = await caches.open("remotelab-share-target");
+    const response = await cache.match("/share-target-data");
+    if (!response) return;
+    const shareData = await response.json();
+    await cache.delete("/share-target-data");
+
+    // Build text from shared fields
+    let text = "";
+    if (shareData.title) text += shareData.title + "\n\n";
+    if (shareData.text) text += shareData.text;
+    if (shareData.url) {
+      if (text) text += "\n\n";
+      text += shareData.url;
+    }
+    text = text.trim();
+
+    // Restore shared files from cache
+    const sharedFiles = [];
+    if (Array.isArray(shareData.files)) {
+      for (const fileInfo of shareData.files) {
+        try {
+          const fileResp = await cache.match(fileInfo.cacheKey);
+          if (!fileResp) continue;
+          const blob = await fileResp.blob();
+          sharedFiles.push(new File([blob], fileInfo.name, { type: fileInfo.type }));
+          await cache.delete(fileInfo.cacheKey);
+        } catch {}
+      }
+    }
+
+    if (!text && sharedFiles.length === 0) return;
+
+    // Create a new session for the shared content
+    await createNewSessionShortcut({ closeSidebar: true });
+
+    // Persist shared text as a stored draft so restoreDraft() preserves it
+    // (attachSession calls restoreDraft asynchronously which would clear direct DOM writes)
+    if (text && currentSessionId) {
+      if (typeof writeStoredDraft === "function") {
+        writeStoredDraft(currentSessionId, text);
+      }
+      if (typeof msgInput !== "undefined" && msgInput) {
+        msgInput.value = text;
+        if (typeof autoResizeInput === "function") autoResizeInput();
+      }
+    }
+
+    // Add shared files as composer attachments
+    if (sharedFiles.length > 0 && typeof addAttachmentFiles === "function") {
+      await addAttachmentFiles(sharedFiles);
+    }
+
+    if (typeof msgInput !== "undefined" && msgInput) {
+      msgInput.focus();
+    }
+  } catch (err) {
+    console.warn("[share-target] Failed to process shared data:", err);
+  }
 }
 
 initApp();

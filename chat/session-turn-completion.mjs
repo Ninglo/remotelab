@@ -422,14 +422,24 @@ export function createSessionTurnCompletionHelpers(services) {
       if (taskCardSession) {
         session = taskCardSession;
         sessionChanged = true;
-      } else {
-        scheduleSessionTaskCardSuggestion(session, finalizedRun, getTaskCardFollowupServices());
       }
     }
 
     const hasQueuedFollowUps = getSessionQueueCount(session) > 0;
     if (hasQueuedFollowUps) {
       scheduleQueuedFollowUpDispatch(sessionId);
+    }
+
+    const autoCompactionQueued = allowCompletionEffects && !hasQueuedFollowUps
+      ? await maybeAutoCompact(sessionId, session, finalizedRun, manifest, getCompactionServices())
+      : false;
+
+    if (autoCompactionQueued) {
+      return { session, sessionChanged };
+    }
+
+    if (allowCompletionEffects) {
+      scheduleSessionTaskCardSuggestion(session, finalizedRun, getTaskCardFollowupServices());
     }
 
     if (allowCompletionEffects && !hasQueuedFollowUps) {
@@ -493,7 +503,6 @@ export function createSessionTurnCompletionHelpers(services) {
     }
 
     if (allowCompletionEffects && !hasQueuedFollowUps) {
-      void maybeAutoCompact(sessionId, session, finalizedRun, manifest, getCompactionServices());
       void maybeSendSessionCompletionPush(sessionId, session);
     }
 

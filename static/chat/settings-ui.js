@@ -54,6 +54,54 @@ function initUiLanguageSettings() {
   uiLanguageSelect.dataset.bound = "true";
 }
 
+function renderThemeOptions(selectEl, selectedValue = "system") {
+  if (!selectEl) return;
+  const options = typeof window.remotelabGetThemeOptions === "function"
+    ? window.remotelabGetThemeOptions()
+    : [
+      { value: "system", label: t("settings.theme.optionSystem") },
+      { value: "amber", label: t("settings.theme.optionAmber") },
+    ];
+  selectEl.innerHTML = "";
+  for (const optionData of options) {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    selectEl.appendChild(option);
+  }
+  selectEl.value = options.some((option) => option.value === selectedValue) ? selectedValue : "system";
+}
+
+function syncThemeStatus() {
+  const uiThemeSelect = document.getElementById("uiThemeSelect");
+  const uiThemeStatus = document.getElementById("uiThemeStatus");
+  if (!uiThemeSelect || !uiThemeStatus) return;
+  const currentPreference = typeof window.remotelabGetThemePreference === "function"
+    ? window.remotelabGetThemePreference()
+    : "system";
+  renderThemeOptions(uiThemeSelect, currentPreference);
+  uiThemeStatus.textContent = currentPreference === "amber"
+    ? t("settings.theme.statusAmber")
+    : t("settings.theme.statusSystem");
+}
+
+function initThemeSettings() {
+  const uiThemeSelect = document.getElementById("uiThemeSelect");
+  if (!uiThemeSelect || uiThemeSelect.dataset.bound === "true") {
+    syncThemeStatus();
+    return;
+  }
+  syncThemeStatus();
+  uiThemeSelect.addEventListener("change", () => {
+    const value = uiThemeSelect.value || "system";
+    if (typeof window.remotelabSetThemePreference === "function") {
+      window.remotelabSetThemePreference(value);
+    }
+    syncThemeStatus();
+  });
+  uiThemeSelect.dataset.bound = "true";
+}
+
 function resolveManagedSessionEntryMode(session) {
   return session?.entryMode === "read" ? "read" : "resume";
 }
@@ -171,4 +219,22 @@ function renderSettingsSessionPresentationPanel() {
 }
 
 initUiLanguageSettings();
+initThemeSettings();
 renderSettingsSessionPresentationPanel();
+
+window.addEventListener("remotelab:localechange", () => {
+  if (uiLanguageSelect?.dataset.bound === "true") {
+    renderUiLanguageOptions(
+      uiLanguageSelect,
+      typeof window.remotelabGetUiLanguagePreference === "function"
+        ? window.remotelabGetUiLanguagePreference()
+        : "auto",
+    );
+    syncUiLanguageStatus();
+  }
+  syncThemeStatus();
+});
+
+window.addEventListener("remotelab:themechange", () => {
+  syncThemeStatus();
+});

@@ -38,10 +38,12 @@ function buildLayoutState() {
   const keyboardInsetHeight = !isDesktop && layoutViewportHeight > 0
     ? Math.max(0, layoutViewportHeight - viewportHeight)
     : 0;
+  const viewportOffsetTop = window.visualViewport?.offsetTop || 0;
   return {
     isDesktop,
     layoutViewportHeight,
     viewportHeight,
+    viewportOffsetTop,
     keyboardInsetHeight,
     keyboardOpen: !isDesktop && keyboardInsetHeight >= MOBILE_KEYBOARD_OPEN_THRESHOLD,
   };
@@ -54,6 +56,12 @@ function applyLayoutState(state) {
   document.documentElement.style.setProperty("--keyboard-inset-height", `${state.keyboardInsetHeight}px`);
   document.documentElement.classList.toggle("keyboard-open", state.keyboardOpen);
   document.body?.classList.toggle("keyboard-open", state.keyboardOpen);
+  // iOS Safari scrolls the fixed-position viewport when the keyboard opens,
+  // causing the entire interface to push up. Counteract by resetting scroll
+  // and translating the app shell back into the visible area.
+  if (state.viewportOffsetTop > 0) {
+    window.scrollTo(0, 0);
+  }
 }
 
 function getLayoutState() {
@@ -199,6 +207,7 @@ function initResponsiveLayout() {
   }
   window.addEventListener("resize", () => requestLayoutPass("window-resize"));
   window.visualViewport?.addEventListener("resize", () => requestLayoutPass("visual-viewport-resize"));
+  window.visualViewport?.addEventListener("scroll", () => requestLayoutPass("visual-viewport-scroll"));
   mq.addEventListener("change", onBreakpointChange);
   onBreakpointChange(mq);
 }

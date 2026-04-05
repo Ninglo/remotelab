@@ -60,7 +60,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - The first screen cannot be a blank session list. New users need a default `Welcome App` that briefly explains what RemoteLab can do, asks about their role and repetitive-work pain point, and guides them toward one concrete first automation.
 - The best wedge is simple, fast-payback digital work: data cleanup, analysis, file processing, reports, notifications, and other repetitive scriptable tasks.
 - Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and review results or approvals from the most convenient device.
-- `Session`, `App`, concurrency, and distribution still matter, but they are enabling layers or later multipliers rather than the first headline.
+- `Session`, `App`, and reusable local workflow building blocks still matter, but they are enabling layers or later multipliers rather than the first headline.
 
 ### What RemoteLab is
 
@@ -287,6 +287,8 @@ If you keep a path-prefixed mainland mirror such as `https://jojotry.nat100.top/
 ```
 
 After that, `remotelab guest-instance create`, `create-trial`, `show`, and `links` automatically print both the regular public link and the mainland-prefixed access link. Use `links` when you want the whole current inventory without manually checking one instance at a time. To keep the path router itself versioned instead of living only in a home-directory script, use `scripts/natapp-dual-proxy.mjs` as the launch-agent target for the mainland bridge service.
+
+The mainland bridge should stay prefix-only: every product surface lives under `https://<mainland-base>/<name>/`, including the main owner service (default `https://<mainland-base>/owner/`, local port `7690`). The bare root is now only a neutral route index so the bridge does not silently repoint an established product path. Use `NATAPP_MAINLAND_SERVICE_NAME` / `NATAPP_MAINLAND_SERVICE_PORT` to rename or repoint the main service prefix. Legacy `NATAPP_OWNER_ROUTE_PREFIX` / `NATAPP_OWNER_UPSTREAM_PORT` are still accepted as compatibility aliases. See [docs/mainland-routing.md](docs/mainland-routing.md) for the routing rules and cleanup rationale.
 
 If you still have older instance-specific runtime copies such as `remotelab-trial-runtime`, run `remotelab guest-instance converge <name>` or `remotelab guest-instance converge --all`. It keeps the same port, hostname, auth, config, and memory directories, but repoints the launch agent back to the current `~/code/remotelab` source tree so future code updates land everywhere without changing the user-facing link.
 

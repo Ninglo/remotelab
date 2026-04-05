@@ -2,7 +2,7 @@
 import { join } from 'path';
 
 const http = await import('http');
-const [{ CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR }, { handleRequest }, apiRequestLog, ws, sessionManager, triggers, { ensureDir }] = await Promise.all([
+const [{ CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR }, { handleRequest }, apiRequestLog, ws, sessionManager, triggers, { ensureDir }, embeddedMailWorker] = await Promise.all([
   import('./lib/config.mjs'),
   import('./chat/router.mjs'),
   import('./chat/api-request-log.mjs'),
@@ -10,6 +10,7 @@ const [{ CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR }, { handleReques
   import('./chat/session-manager.mjs'),
   import('./chat/triggers.mjs'),
   import('./chat/fs-utils.mjs'),
+  import('./lib/embedded-mail-worker.mjs'),
 ]);
 
 for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
@@ -40,8 +41,15 @@ void (async () => {
   }
 })();
 
+const mailWorker = embeddedMailWorker.startEmbeddedMailWorker({
+  createSession: sessionManager.createSession,
+  submitHttpMessage: sessionManager.submitHttpMessage,
+  saveAttachments: sessionManager.saveAttachments,
+});
+
 async function shutdown() {
   console.log('Shutting down chat server...');
+  if (mailWorker) mailWorker.stop();
   await apiRequestLog.closeApiRequestLog();
   triggers.stopTriggerScheduler();
   sessionManager.killAll();

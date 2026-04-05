@@ -826,9 +826,7 @@ The currently shipped implementation uses a pragmatic tool abstraction.
 
 ### 12.3 Directional note
 
-This is explicitly evolving toward the broader provider registry described in `notes/directional/provider-architecture.md`.
-
-The current abstraction is functional, but still transitional.
+The current abstraction is intentionally pragmatic. Keep it simple until multiple local runtime families or local provider configs create a concrete pressure to generalize it further.
 
 ---
 
@@ -942,7 +940,7 @@ This repo already contains several design notes that point beyond the current co
 
 ### 17.2 Directional but not fully realized yet
 
-- provider registry with builtin / local JS / local JSON providers
+- lighter local runtime/provider config when multiple local tool families create a real need
 - app-centric architecture where default chat becomes a built-in App/policy model
 - richer autonomy / deferred triggers / background execution
 - deeper external channel unification (mail, repo bots, other message sources)

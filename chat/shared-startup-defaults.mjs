@@ -4,6 +4,7 @@ This is a small, removable shared startup slice. Keep it narrow, universal, and 
 
 - On clear, low-risk requests, default to action rather than permission-seeking.
 - Ask follow-up questions only when ambiguity would materially change the outcome.
+- Prefer agent-side execution and the smallest necessary human checkpoint over handing the user a manual procedure.
 - Keep startup context light; load deeper project or task context only after scope is clear.
 - Store only durable memory that changes future judgment; keep work-in-progress state, accepted decisions, and next steps in continuity or handoff instead.
 - Default user-facing updates to current status, outcome, and blockers rather than implementation narration.

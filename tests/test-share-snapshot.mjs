@@ -251,7 +251,7 @@ async function main() {
   assert.strictEqual(publicShareRes.headers['referrer-policy'], 'no-referrer', 'share page should suppress referrer leakage');
   assert.match(publicShareRes.body, /<meta name="color-scheme" content="light dark">/);
   assert.match(publicShareRes.body, /<meta name="theme-color" content="#ffffff" media="\(prefers-color-scheme: light\)">/);
-  assert.match(publicShareRes.body, /<meta name="theme-color" content="#1e1e1e" media="\(prefers-color-scheme: dark\)">/);
+  assert.match(publicShareRes.body, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
   assert.match(publicShareRes.body, /<title>Share preview title · Shared Snapshot<\/title>/, 'share page title should expose the shared session name');
   assert.match(publicShareRes.body, /<meta name="description" content="A read-only RemoteLab conversation snapshot\.">/, 'share page should expose a generic preview description');
   assert.match(publicShareRes.body, /<meta property="og:title" content="Share preview title">/, 'share page should expose an OG title for previews');

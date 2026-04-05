@@ -15,7 +15,7 @@ import {
   buildThreadReferencesHeader,
   decodeMaybeEncodedMailboxText,
   extractNormalizedMailboxContent,
-  extractRawMessageImages,
+  extractRawMessageAttachments,
   loadMailboxAutomation,
   listQueue,
   updateQueueItem,
@@ -203,6 +203,8 @@ function resolveRuntimeTarget(item, automation, fallbackBaseUrl = '') {
       baseUrl: guestBaseUrl,
       authFile: guest.authFile,
       guestInstance: guest.name,
+      configDir: trimString(guest.configDir),
+      mailboxRoot: trimString(guest.mailboxRoot),
       source: 'recipient_subaddress',
     };
   }
@@ -216,6 +218,8 @@ function resolveRuntimeTarget(item, automation, fallbackBaseUrl = '') {
     baseUrl: configuredBaseUrl,
     authFile: normalizeAuthFile(automation?.authFile) || trimString(matchingGuest?.authFile),
     guestInstance: trimString(matchingGuest?.name),
+    configDir: trimString(matchingGuest?.configDir),
+    mailboxRoot: trimString(matchingGuest?.mailboxRoot),
     source: matchingGuest ? 'configured_guest_instance' : 'automation_chat_base_url',
   };
 }
@@ -307,11 +311,7 @@ function buildReplySubject(subject) {
 }
 
 function buildSessionName(item) {
-  const subject = trimString(item?.message?.subject);
-  const sender = trimString(item?.message?.fromAddress);
-  if (subject) return subject;
-  if (sender) return sender;
-  return '';
+  return trimString(item?.message?.subject);
 }
 
 function buildSessionDescription(item, fallbackDescription) {
@@ -332,21 +332,23 @@ function extractReadableBodyFromRaw(item) {
       rawMessage: readFileSync(rawPath, 'utf8'),
     });
     return trimString(normalized.messageText) || trimString(normalized.previewText);
-  } catch {
+  } catch (error) {
+    console.error(`[agent-mail-worker] extractReadableBodyFromRaw failed for ${item?.id || 'unknown'}: ${error.message}`);
     return '';
   }
 }
 
-function extractImageAttachmentsFromRaw(item) {
+function extractAttachmentsFromRaw(item) {
   const rawPath = trimString(item?.storage?.rawPath);
   if (!rawPath) {
     return [];
   }
 
   try {
-    return extractRawMessageImages(readFileSync(rawPath, 'utf8'), { includeData: true })
-      .filter((image) => typeof image?.data === 'string' && image.data);
-  } catch {
+    return extractRawMessageAttachments(readFileSync(rawPath, 'utf8'), { includeData: true })
+      .filter((attachment) => typeof attachment?.data === 'string' && attachment.data);
+  } catch (error) {
+    console.error(`[agent-mail-worker] extractAttachmentsFromRaw failed for ${item?.id || 'unknown'}: ${error.message}`);
     return [];
   }
 }
@@ -462,12 +464,14 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
   const effectiveRuntime = runtimeMatchesTarget(runtime, runtimeTarget)
     ? runtime
     : createRemoteLabRuntime(runtimeTarget.baseUrl, { authFile: runtimeTarget.authFile });
-  const uiSelection = await loadUiRuntimeSelection();
+  const targetSelectionFile = runtimeTarget.configDir
+    ? join(runtimeTarget.configDir, 'ui-runtime-selection.json')
+    : undefined;
+  const uiSelection = await loadUiRuntimeSelection(targetSelectionFile);
   const runtimeSelection = resolveReplyRuntimeSelection(automation, uiSelection);
   const sessionPayload = {
     folder: automation.session.folder,
     tool: runtimeSelection.tool,
-    name: buildSessionName(item),
     sourceId: 'email',
     sourceName: 'Email',
     group: automation.session.group,
@@ -475,6 +479,10 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     systemPrompt: automation.session.systemPrompt,
     externalTriggerId,
   };
+  const sessionName = buildSessionName(item);
+  if (sessionName) {
+    sessionPayload.name = sessionName;
+  }
   if (deliveryMode === 'reply_email') {
     sessionPayload.completionTargets = [buildCompletionTarget(item, rootDir, requestId)];
   }
@@ -493,13 +501,21 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     text: buildReplyPrompt(item),
     tool: runtimeSelection.tool,
   };
-  const images = extractImageAttachmentsFromRaw(item).map((image) => ({
-    data: image.data,
-    mimeType: image.mimeType,
-    originalName: image.originalName,
+  const rawAttachmentCount = Number(item?.content?.attachmentCount) || 0;
+  const attachments = extractAttachmentsFromRaw(item).map((attachment) => ({
+    data: attachment.data,
+    mimeType: attachment.mimeType,
+    originalName: attachment.originalName,
   }));
-  if (images.length > 0) {
-    messagePayload.images = images;
+  if (attachments.length > 0) {
+    messagePayload.attachments = attachments;
+  }
+  if (rawAttachmentCount > 0 && attachments.length === 0) {
+    messagePayload.text += `\n\n⚠️ Warning: This email originally contained ${rawAttachmentCount} attachment(s) but they could not be extracted. The raw email is stored at: ${trimString(item?.storage?.rawPath)}`;
+    console.error(`[agent-mail-worker] attachment extraction yielded 0 results for item ${item?.id} (expected ${rawAttachmentCount})`);
+  } else if (rawAttachmentCount > 0 && attachments.length < rawAttachmentCount) {
+    messagePayload.text += `\n\n⚠️ Warning: This email originally contained ${rawAttachmentCount} attachment(s) but only ${attachments.length} could be extracted.`;
+    console.warn(`[agent-mail-worker] partial attachment extraction for item ${item?.id}: ${attachments.length}/${rawAttachmentCount}`);
   }
   if (runtimeSelection.thinking) {
     messagePayload.thinking = true;
@@ -515,7 +531,8 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     method: 'POST',
     body: messagePayload,
   });
-  if (![200, 202].includes(submitResult.response.status) || !submitResult.json?.run?.id) {
+  const isQueued = submitResult.json?.queued === true;
+  if (![200, 202].includes(submitResult.response.status) || (!submitResult.json?.run?.id && !isQueued)) {
     throw new Error(submitResult.json?.error || submitResult.text || `Failed to submit session message (${submitResult.response.status})`);
   }
 
@@ -528,13 +545,15 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
       status: submittedStatus,
       deliveryMode,
       sessionId: session.id,
-      runId: run.id,
+      runId: run?.id || null,
       requestId,
       externalTriggerId,
       targetBaseUrl: runtimeTarget.baseUrl,
       targetInstance: runtimeTarget.guestInstance || null,
+      targetMailboxRoot: runtimeTarget.mailboxRoot || null,
       submittedAt: draft.automation?.submittedAt || nowIso(),
       duplicate: submitResult.json?.duplicate === true,
+      queued: isQueued,
       lastError: null,
       updatedAt: nowIso(),
     };
@@ -544,7 +563,8 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
   return {
     itemId: item.id,
     sessionId: session.id,
-    runId: run.id,
+    runId: run?.id || null,
+    queued: isQueued,
     duplicate: submitResult.json?.duplicate === true,
     deliveryMode,
     targetBaseUrl: runtimeTarget.baseUrl,
@@ -585,6 +605,20 @@ async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(bas
         return draft;
       });
       failures.push({ itemId: item.id, error: error.message });
+    }
+  }
+
+  // Notify connected UI clients about failures so they are visible in the chat interface
+  if (failures.length > 0) {
+    const failureSummary = failures.map((f) => f.itemId).join(', ');
+    const notificationMessage = `邮件处理失败 (${failures.length} 封): ${failures[0].error.slice(0, 200)}`;
+    try {
+      await requestRemoteLab(runtime, '/api/notifications', {
+        method: 'POST',
+        body: { message: notificationMessage, level: 'error' },
+      });
+    } catch {
+      console.error(`[agent-mail-worker] failed to send UI notification for failures: ${failureSummary}`);
     }
   }
 

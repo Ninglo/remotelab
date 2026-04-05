@@ -172,7 +172,10 @@ export function buildClaudeArgs(prompt, options = {}) {
   if (options.model) {
     args.push('--model', options.model);
   }
-  if (options.thinking) {
+  const effort = typeof options.effort === 'string' ? options.effort.trim() : '';
+  if (effort) {
+    args.push('--effort', effort);
+  } else if (options.thinking) {
     args.push('--effort', 'high');
   }
 

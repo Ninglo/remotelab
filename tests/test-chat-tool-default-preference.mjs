@@ -125,26 +125,26 @@ assert.equal(
 
 assert.equal(
   context.derivePreferredToolId('claude', ''),
-  null,
-  'hidden Claude selections should not keep pinning the picker on reload',
+  'claude',
+  'Claude should remain a valid explicit preferred tool once it is visible again',
 );
 
 assert.equal(
   context.derivePreferredToolId('', 'claude'),
-  null,
-  'legacy Claude selections should no longer survive the migration once the tool is hidden',
+  'claude',
+  'legacy Claude selections should still hydrate once Claude is visible again',
 );
 
 const publicOnly = context.filterPrimaryToolOptions([
   { id: 'codex', name: 'CodeX' },
   { id: 'micro-agent', name: 'Micro Agent', visibility: 'private' },
   { id: 'doubao-fast', name: 'Doubao Fast Agent', visibility: 'private' },
-  { id: 'claude', name: 'Claude Code', visibility: 'private' },
+  { id: 'claude', name: 'Claude Code' },
 ]);
 assert.deepEqual(
   Array.from(publicOnly, (tool) => tool.id),
-  ['codex', 'micro-agent'],
-  'hidden private tools should stay out of the default picker while the product default remains visible',
+  ['codex', 'micro-agent', 'claude'],
+  'private tools should stay hidden while public Claude remains visible',
 );
 
 const keptPrivate = context.filterPrimaryToolOptions([
@@ -159,12 +159,12 @@ assert.deepEqual(
 
 const keptHiddenClaude = context.filterPrimaryToolOptions([
   { id: 'codex', name: 'CodeX' },
-  { id: 'claude', name: 'Claude Code', visibility: 'private' },
+  { id: 'claude', name: 'Claude Code' },
 ], { keepIds: ['claude'] });
 assert.deepEqual(
   Array.from(keptHiddenClaude, (tool) => tool.id),
   ['codex', 'claude'],
-  'existing Claude sessions should still be able to surface their hidden tool in the picker',
+  'Claude should remain visible for existing sessions as a normal public tool',
 );
 
 console.log('test-chat-tool-default-preference: ok');

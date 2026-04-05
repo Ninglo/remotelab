@@ -29,16 +29,36 @@ assert(record, 'installed tool should exist');
 assert.equal(record.name, 'Micro Agent Test');
 assert.equal(record.toolProfile, 'micro-agent');
 assert.equal(record.visibility, 'private');
-assert.equal(record.command, 'codex');
-assert.equal(record.runtimeFamily, 'codex-json');
-assert.equal(Object.hasOwn(record, 'promptMode'), false);
-assert.equal(Object.hasOwn(record, 'flattenPrompt'), false);
-assert.deepEqual(record.models, [{ id: 'gpt-5.4-mini', label: 'gpt-5.4-mini', defaultReasoning: 'medium' }]);
+assert.match(record.command, /scripts\/micro-agent-router\.mjs$/);
+assert.equal(record.runtimeFamily, 'claude-stream-json');
+assert.equal(record.promptMode, 'bare-user');
+assert.equal(record.flattenPrompt, true);
+assert.deepEqual(record.models, [
+  {
+    id: 'gpt-5.4-mini',
+    label: 'gpt-5.4-mini',
+    reasoningKind: 'enum',
+    supportedReasoningLevels: ['low', 'medium', 'high', 'xhigh'],
+    defaultReasoning: 'medium',
+  },
+  {
+    id: 'opus',
+    label: 'Claude Opus',
+    reasoningKind: 'enum',
+    supportedReasoningLevels: ['low', 'medium', 'high'],
+    defaultReasoning: 'medium',
+  },
+  {
+    id: 'sonnet',
+    label: 'Claude Sonnet',
+    reasoningKind: 'enum',
+    supportedReasoningLevels: ['low', 'medium', 'high'],
+    defaultReasoning: 'medium',
+  },
+]);
 assert.deepEqual(record.reasoning, {
-  kind: 'enum',
+  kind: 'none',
   label: 'Thinking',
-  levels: ['low', 'medium', 'high', 'xhigh'],
-  default: 'medium',
 });
 
 console.log('test-install-micro-agent: ok');

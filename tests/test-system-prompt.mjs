@@ -21,6 +21,9 @@ assert.match(context, /access belongs to you, not automatically to the remote us
 assert.match(context, /User Access Boundary/);
 assert.match(context, /External or remote users interact through RemoteLab and explicitly exposed product surfaces/);
 assert.match(context, /A result that only exists locally on this machine is not yet a completed handoff to the user/);
+assert.match(context, /Default to carrying the operational work on this machine or another RemoteLab-managed surface instead of teaching the user how to do it manually on their own device/);
+assert.match(context, /prefer completing that checkpoint inside a RemoteLab-controlled surface on this machine when appropriate and authorized/i);
+assert.match(context, /one clear checkpoint rather than a long recipe of host-side chores/);
 assert.match(context, /Machine-side completion and user-visible delivery are separate states|open, read, or download the result from a reachable surface/);
 assert.match(context, /do not volunteer memory-file, repo, remote, branch, checkpoint, or similar host-side implementation details/i);
 assert.match(context, /Layer Placement Rule/);
@@ -30,6 +33,7 @@ assert.match(context, /Repo-local instructions and on-demand skills are for tech
 assert.match(context, /translate all of those layers into plain goals, results, status, and next actions instead of naming prompts, memory files, repos, or hidden fields/i);
 assert.match(context, /Shared Startup Defaults/);
 assert.match(context, /small, removable shared startup slice/);
+assert.match(context, /Prefer agent-side execution and the smallest necessary human checkpoint over handing the user a manual procedure/);
 assert.match(context, /Store only durable memory that changes future judgment/);
 assert.doesNotMatch(contextWithoutSharedDefaults, /Shared Startup Defaults/);
 assert.match(context, /Cold-Start Context Capture/);
@@ -77,6 +81,7 @@ assert.match(context, /Treat a clear user request as standing permission to carr
 assert.match(context, /Default to continuing after partial progress instead of stopping to ask whether you should proceed/);
 assert.match(context, /Judge pauses branch-first: the question is not "should you continue\?" but "does a real logical fork or forced human checkpoint require the user right now\?"/);
 assert.match(context, /If the task is still a single-track flow with an obvious next step, treat the user's clear request as standing authorization and continue without asking permission/);
+assert.match(context, /Prefer agent-side execution and RemoteLab-side checkpoints over teaching the user a manual procedure/);
 assert.match(context, /Prefer doing the next reasonable, reversible step over describing what you could do next/);
 assert.match(context, /Only surface options when materially different branches truly exist and the choice belongs to the user; do not invent a menu for a one-way task/);
 assert.match(context, /Pause only for a real blocker: an explicitly requested stop\/wait, missing credentials or external information you cannot obtain yourself, a destructive or irreversible action without clear authorization, or a decision that only the user can make/);

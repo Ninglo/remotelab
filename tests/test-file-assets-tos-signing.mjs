@@ -88,10 +88,9 @@ try {
   assert.equal(directUrl.origin, 'https://example-bucket.tos-cn-beijing.volces.com', 'download URL should target the normalized TOS bucket host');
   assert.equal(directUrl.searchParams.get('X-Tos-Algorithm'), 'TOS4-HMAC-SHA256', 'download URL should use TOS signing parameters');
   assert.equal(directUrl.searchParams.get('X-Amz-Algorithm'), null, 'download URL should not leak AWS-style signing params');
-  assert.equal(
-    directUrl.searchParams.get('response-content-disposition'),
-    null,
-    'TOS direct URLs should avoid signed response-content-disposition overrides',
+  assert.ok(
+    directUrl.searchParams.has('response-content-disposition'),
+    'TOS direct URLs should include response-content-disposition for consistent redirect-based downloads',
   );
 
   console.log('test-file-assets-tos-signing: ok');

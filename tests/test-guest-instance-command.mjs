@@ -596,6 +596,11 @@ try {
   const trialConfigDir = join(trialRoot, 'config');
   const intakeConfigDir = join(intakeRoot, 'config');
   const emptyConfigDir = join(emptyRoot, 'config');
+  const reportNow = new Date();
+  const recentUpdate = new Date(reportNow.getTime() - 60 * 60 * 1000).toISOString();
+  const earlierUpdate = new Date(reportNow.getTime() - 2 * 60 * 60 * 1000).toISOString();
+  const createdFirst = new Date(reportNow.getTime() - 5 * 60 * 60 * 1000).toISOString();
+  const createdSecond = new Date(reportNow.getTime() - 4 * 60 * 60 * 1000).toISOString();
   mkdirSync(configDir, { recursive: true });
   mkdirSync(trialConfigDir, { recursive: true });
   mkdirSync(intakeConfigDir, { recursive: true });
@@ -657,14 +662,14 @@ try {
   writeFileSync(join(trialConfigDir, 'chat-sessions.json'), JSON.stringify([
     {
       id: 'sess-trial-1',
-      createdAt: '2026-03-26T15:00:00.000Z',
-      updatedAt: '2026-03-27T15:23:07.503Z',
+      createdAt: createdFirst,
+      updatedAt: earlierUpdate,
       name: 'Trial 24 session 1',
     },
     {
       id: 'sess-trial-2',
-      createdAt: '2026-03-27T16:00:00.000Z',
-      updatedAt: '2026-03-27T18:10:00.000Z',
+      createdAt: createdSecond,
+      updatedAt: recentUpdate,
       name: 'Trial 24 session 2',
     },
   ], null, 2));

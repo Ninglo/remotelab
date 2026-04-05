@@ -21,6 +21,26 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-03-31 — non-expert users need agent-side execution, not manual recipes
+
+- Source: direct product feedback while reviewing a negative trial case with a non-programmer user.
+- User slice: remote/mobile trial users who can judge outcomes but are not comfortable acting like the operator of the machine.
+- Observed friction or ask: even when the host agent could keep going, replies still sometimes drift into implicit how-to mode and offload setup, host-side chores, or external-access steps back onto the user; this makes the product feel like it is asking the user to operate the system manually.
+- Signal: RemoteLab's product advantage is that the AI has its own execution machine and should absorb the work there by default; when another service needs access, login, or authorization, the preferred pattern is a RemoteLab-side checkpoint that keeps later steps automated here rather than a long recipe on the user's own device.
+- Product implication: strengthen startup/runtime prompts and onboarding copy so the default is server-side execution, RemoteLab-side auth capture when appropriate, and the smallest possible human checkpoint only when unavoidable.
+- Promote to: startup/runtime prompt assets, welcome/onboarding copy, future auth/access UX
+- Follow-up: watch future trials for whether replies still produce multi-step manual instructions and whether auth capture can move from wording alone into clearer product surfaces
+
+### 2026-03-31 — mainland ingress should be prefix-only and must not repoint established paths silently
+
+- Source: direct product feedback after a mainland natapp routing change caused confusion between ingress behavior and Codex/provider auth failures.
+- User slice: owner/operator using mainland ingress for both the main service and long-lived guest/trial surfaces.
+- Observed friction or ask: mixing root aliases with prefixed paths makes the access model inconsistent, obscures which runtime the user is entering, and turns provider-auth failures into ambiguous “the tunnel broke / Codex login dropped” incidents when a familiar URL silently starts targeting a different service.
+- Signal: mainland ingress should use one explicit rule everywhere — `domain/{name}/...` for every product surface, including the main owner service — while the bare root stays only as a neutral directory or recovery surface.
+- Product implication: remove root-path product aliases, treat the main service as just another named mainland prefix, prefer live launch-agent port data over stale registry records, and clean docs/operator wording so mainland access is always described in the same prefix-first model.
+- Promote to: `docs/mainland-routing.md`, `README.md`, `README.zh.md`, mainland routing implementation and diagnostics
+- Follow-up: keep auditing mainland-related docs and commands for root-alias language; later surface the named main-service mainland URL in status or ops views instead of relying on remembered conventions
+
 ### 2026-03-29 — mobile install should steer users into a real browser and reconnect the first standalone launch
 
 - Source: direct product feedback while testing phone entry and home-screen install behavior
@@ -41,15 +61,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: `notes/current/model-autonomy-control-loop.md`, `notes/current/model-sovereign-control-architecture.md`, `notes/current/knowledge-layers-and-connectors.md`
 - Follow-up: when the control loop grows beyond reply self-check and task-card refresh, add a small promotion candidate path that can classify a lesson as session continuity, private user memory, shared domain pattern, or reusable skill draft without auto-promoting weak or transient observations.
 
-### 2026-03-28 — use isolated external solution providers as fallback, not product truth
+### 2026-03-31 — keep reusable workflow assets local-first; drop external provider and cloud skill paths for now
 
-- Source: direct product architecture discussion about how to cover unfamiliar domains without pretending one temporary provider is the long-term answer
-- User slice: owner/operator shaping the first reusable external domain-search path during a hackathon-constrained build
-- Observed friction or ask: RemoteLab needs a fallback when it has no strong local solution pattern for a domain such as hotel operations, but the team does not want a temporary platform requirement like `evomap` to harden into core architecture or let provider-native workflow structures steer execution.
-- Signal: the product should treat third-party domain search / solution platforms as replaceable fallback providers behind a normalized adapter contract, with local retrieval first and external lookup second, and with workflow control kept local even when provider APIs or uploads are used.
-- Product implication: isolate provider-specific APIs, auth, prompt shaping, uploads, and response parsing; keep external results attributable and ephemeral; prevent automatic writeback from provider output into shared domain knowledge or private user memory; treat provider `skill` docs or playbooks as reference inputs rather than runtime policy.
-- Promote to: `notes/current/external-solution-providers.md`, `notes/current/external-solution-providers-implementation-draft.md`, `notes/current/knowledge-layers-and-connectors.md`, `notes/current/product-mainline.md`
-- Follow-up: implementation draft now exists; the next execution step is to add the first experimental provider behind the normalized evidence contract with a local redaction/export policy, without letting provider-specific taxonomy or workflow assets leak into the core model.
+- Source: direct product decision after reviewing the hackathon-driven external-provider experiment against the simpler long-term product direction.
+- User slice: owner/operator simplifying RemoteLab's reusable workflow model after early experimentation.
+- Observed friction or ask: a temporary third-party domain-provider path and any future-looking skill upload/pull flow add surface area, auth shape, and architectural drift before local skill reuse is actually saturated.
+- Signal: the near-term product should keep reusable workflow assets local on the machine: skills, prompts, scripts, checklists, and domain notes that can be discovered and reused without cloud packaging or third-party dependency.
+- Product implication: remove experimental external-provider code and docs, keep skill abstraction local-first, and postpone any cloud pull/upload path until a real product need survives repeated local use.
+- Promote to: `notes/current/knowledge-layers-and-connectors.md`, `notes/current/product-mainline.md`, `README.md`, `README.zh.md`, repo-local AI context
+- Follow-up: keep validating whether local skill reuse plus explicit curation is enough before reopening any distribution or external-dependency design
 
 ### 2026-03-28 — separate knowledge layers from shared capability connectors even in the single-machine phase
 

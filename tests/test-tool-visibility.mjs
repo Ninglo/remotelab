@@ -63,7 +63,7 @@ try {
   assert.equal(privateTool?.available, true);
   assert.equal(publicTool?.visibility || '', '', 'public tools should not be forced private');
   assert.equal(privateTool?.visibility, 'private', 'private visibility should survive normalization');
-  assert.equal(builtinClaude?.visibility, 'private', 'builtin Claude should stay hidden from public pickers');
+  assert.equal(builtinClaude?.visibility || '', '', 'builtin Claude should be visible in normal pickers');
 } finally {
   rmSync(tempHome, { recursive: true, force: true });
 }

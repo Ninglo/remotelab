@@ -10,7 +10,7 @@
     display: block !important; position: static; background: none;
     width: var(--sidebar-width); flex-shrink: 0;
     border-right: 1px solid var(--border); z-index: auto;
-    transition: width 0.2s ease;
+    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   .sidebar {

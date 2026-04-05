@@ -394,6 +394,12 @@ function testExtractsInlineImageAttachments() {
     );
 
     assert.equal(ingested.content.extractedText, '请看附件里的截图。');
+    assert.equal(ingested.content.attachments?.length, 1);
+    assert.equal(ingested.content.attachments[0].mimeType, 'image/png');
+    assert.equal(ingested.content.attachments[0].originalName, 'screenshot.png');
+    assert.equal(ingested.content.attachments[0].disposition, 'inline');
+    assert.equal(ingested.content.attachments[0].contentId, 'inline-image@example.com');
+    assert.ok(ingested.content.attachments[0].byteLength > 0);
     assert.equal(ingested.content.images?.length, 1);
     assert.equal(ingested.content.images[0].mimeType, 'image/png');
     assert.equal(ingested.content.images[0].originalName, 'screenshot.png');
