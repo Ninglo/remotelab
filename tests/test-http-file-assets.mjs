@@ -314,7 +314,7 @@ try {
       const prompts = readCapturedPrompts(promptFile);
       return prompts.find((prompt) => prompt.includes('big-video.mp4') && prompt.includes('file-assets-cache')) || false;
     }, 'runner prompt with localized file asset');
-    assert.match(capturedPrompt, /big-video\.mp4 -> .*file-assets-cache\/fasset_[a-f0-9]{24}\.mp4/, 'runner prompt should include the localized cache path');
+    assert.match(capturedPrompt, /big-video\.mp4 -> .*file-assets-cache\/fasset_[a-f0-9]{24}-big-video\.mp4/, 'runner prompt should include the localized cache path');
 
     const cacheDir = join(home, '.config', 'remotelab', 'file-assets-cache');
     const cachedFiles = existsSync(cacheDir) ? readdirSync(cacheDir) : [];

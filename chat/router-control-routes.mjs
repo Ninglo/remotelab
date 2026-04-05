@@ -271,7 +271,7 @@ export async function handleControlRoutes({
     const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
 
     try {
-      if (asset.storage?.provider === 'local' || (downloadRequested && FILE_ASSET_STORAGE_PROVIDER === 'tos')) {
+      if (asset.storage?.provider === 'local' || FILE_ASSET_STORAGE_PROVIDER === 'tos') {
         const localPath = await localizeFileAsset(asset);
         streamResponse(res, localPath, {
           'Content-Type': asset.mimeType || 'application/octet-stream',

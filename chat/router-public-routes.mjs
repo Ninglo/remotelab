@@ -345,14 +345,12 @@ if (shareAssetRoute && req.method === 'GET') {
     const content = await readFile(asset.filepath);
     writeFileCached(req, res, asset.mimeType, content, {
       cacheControl: SHARE_RESOURCE_CACHE_CONTROL,
-      headers: downloadRequested
-        ? {
-          'Content-Disposition': buildAttachmentContentDisposition(
-            asset.originalName || asset.filename || 'attachment',
-            { attachment: true },
-          ),
-        }
-        : undefined,
+      headers: {
+        'Content-Disposition': buildAttachmentContentDisposition(
+          asset.originalName || asset.filename || 'attachment',
+          { attachment: downloadRequested },
+        ),
+      },
     });
   } catch {
     res.writeHead(404, buildHeaders({

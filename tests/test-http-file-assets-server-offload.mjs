@@ -306,7 +306,7 @@ try {
     assert.ok(stats.getCount >= 3, 'runner localization should retry storage downloads before succeeding');
     assert.match(
       capturedPrompt,
-      /notes\.txt -> .*file-assets-cache\/fasset_[a-f0-9]{24}\.txt/,
+      /notes\.txt -> .*file-assets-cache\/fasset_[a-f0-9]{24}-notes\.txt/,
       'runner prompt should use the localized cached file path for the offloaded upload',
     );
 
@@ -315,13 +315,13 @@ try {
       headers: { Cookie: cookie },
       redirect: 'manual',
     });
-    assert.equal(downloadRes.status, 302, 'download route should redirect to object storage for the offloaded upload');
-    const redirectUrl = String(downloadRes.headers.get('location') || '');
-    assert.ok(redirectUrl.includes(`127.0.0.1:${storagePort}`), 'download redirect should point at object storage');
-
-    const redirected = await fetch(redirectUrl, { method: 'GET' });
-    assert.equal(redirected.status, 200, 'redirected object-storage download should succeed');
-    assert.equal(await redirected.text(), 'upload-through-host', 'redirected object-storage download should return the uploaded attachment bytes');
+    assert.equal(downloadRes.status, 200, 'TOS inline asset requests should stream through the chat server');
+    assert.match(
+      String(downloadRes.headers.get('content-disposition') || ''),
+      /^inline; filename="notes\.txt"/,
+      'inline asset responses should preserve the original filename',
+    );
+    assert.equal(await downloadRes.text(), 'upload-through-host', 'inline asset responses should stream the stored object bytes');
 
     const attachmentDownloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${userMessage.images[0].assetId}/download?download=1`, {
       method: 'GET',

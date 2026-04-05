@@ -203,11 +203,8 @@ function fileAssetPath(id) {
 }
 
 function buildLocalObjectFilename(assetId, originalName) {
-  const originalExtension = extname(originalName || '').toLowerCase();
-  if (/^\.[a-z0-9]+$/.test(originalExtension)) {
-    return `${assetId}${originalExtension}`;
-  }
-  return `${assetId}.bin`;
+  const sanitizedOriginalName = sanitizeFilename(originalName, 'attachment');
+  return `${assetId}-${sanitizedOriginalName}`;
 }
 
 function resolveLocalObjectPath(record) {
@@ -333,11 +330,8 @@ async function reuseLocalizedPath(record) {
 }
 
 function buildCachedFilename(record) {
-  const originalExtension = extname(record?.originalName || '').toLowerCase();
-  if (/^\.[a-z0-9]+$/.test(originalExtension)) {
-    return `${record.id}${originalExtension}`;
-  }
-  return `${record.id}.bin`;
+  const sanitizedOriginalName = sanitizeFilename(record?.originalName, 'attachment');
+  return `${record.id}-${sanitizedOriginalName}`;
 }
 
 async function ensureReadyFileAssetRecord(recordOrId) {

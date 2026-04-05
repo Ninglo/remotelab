@@ -305,6 +305,7 @@ async function main() {
   assert.strictEqual(assetRes.headers['cache-control'], 'public, no-cache, max-age=0, must-revalidate', 'share asset should require validator rechecks');
   assert.ok(assetRes.headers.etag, 'share asset should expose an ETag');
   assert.strictEqual(assetRes.headers['content-type'], 'image/png', 'share asset should retain its attachment MIME type');
+  assert.match(assetRes.headers['content-disposition'] || '', /^inline; filename="inline\.png"; filename\*=UTF-8''/u, 'public share previews should preserve the original filename');
   assert.ok(assetRes.buffer.length > 0, 'share asset should return binary content');
   const assetDownloadRes = await request('GET', `${storedAttachment.url}?download=1`);
   assert.strictEqual(assetDownloadRes.status, 200, 'public share attachment download should work without auth');
