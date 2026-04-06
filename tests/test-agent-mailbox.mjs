@@ -13,10 +13,10 @@ import {
   saveMailboxAutomation,
 } from './lib/agent-mailbox.mjs';
 
-function testCloudflareWebhookHealthy() {
+async function testCloudflareWebhookHealthy() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-healthy-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -35,7 +35,7 @@ function testCloudflareWebhookHealthy() {
       'utf8',
     );
 
-    const status = getMailboxStatus(rootDir);
+    const status = await getMailboxStatus(rootDir);
     assert.equal(status.effectiveStatus, 'public_webhook_healthy');
     assert.equal(status.publicIngress, 'public_webhook_healthy');
     assert.equal(status.diagnostics.length, 0);
@@ -44,10 +44,10 @@ function testCloudflareWebhookHealthy() {
   }
 }
 
-function testCloudflareQueueReady() {
+async function testCloudflareQueueReady() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-ready-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -67,7 +67,7 @@ function testCloudflareQueueReady() {
       'utf8',
     );
 
-    const status = getMailboxStatus(rootDir);
+    const status = await getMailboxStatus(rootDir);
     assert.equal(status.effectiveStatus, 'ready_for_external_mail');
     assert.equal(status.publicIngress, 'ready_for_external_mail');
     assert.equal(status.diagnostics.length, 0);
@@ -76,10 +76,10 @@ function testCloudflareQueueReady() {
   }
 }
 
-function testCloudflareValidatedDelivery() {
+async function testCloudflareValidatedDelivery() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-validated-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -100,7 +100,7 @@ function testCloudflareValidatedDelivery() {
       'utf8',
     );
 
-    const status = getMailboxStatus(rootDir);
+    const status = await getMailboxStatus(rootDir);
     assert.equal(status.effectiveStatus, 'external_mail_validated');
     assert.equal(status.publicIngress, 'external_mail_validated');
     assert.equal(status.diagnostics.length, 0);
@@ -109,22 +109,22 @@ function testCloudflareValidatedDelivery() {
   }
 }
 
-function testAllowlistAutoApprove() {
+async function testAllowlistAutoApprove() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-auto-approve-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
       domain: 'example.com',
       allowEmails: ['owner@example.com'],
     });
-    saveMailboxAutomation(rootDir, {
+    await saveMailboxAutomation(rootDir, {
       allowlistAutoApprove: true,
       autoApproveReviewer: 'auto-test',
     });
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: owner@example.com',
         'To: rowan@example.com',
@@ -138,7 +138,7 @@ function testAllowlistAutoApprove() {
       { text: 'please take a response to test!' },
     );
 
-    const located = findQueueItem(ingested.id, rootDir);
+    const located = await findQueueItem(ingested.id, rootDir);
     assert.equal(located?.queueName, 'approved');
     assert.equal(located?.item?.status, 'approved_for_ai');
     assert.equal(located?.item?.review?.status, 'auto_approved');
@@ -150,10 +150,10 @@ function testAllowlistAutoApprove() {
   }
 }
 
-function testStripsQuotedReplyContent() {
+async function testStripsQuotedReplyContent() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-quoted-reply-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -161,7 +161,7 @@ function testStripsQuotedReplyContent() {
       allowEmails: ['jiujianian@gmail.com'],
     });
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: rowan@jiujianian.dev',
@@ -203,10 +203,10 @@ function testStripsQuotedReplyContent() {
   }
 }
 
-function testStripsUniformQuotedReplyContent() {
+async function testStripsUniformQuotedReplyContent() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-uniform-quoted-reply-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -214,7 +214,7 @@ function testStripsUniformQuotedReplyContent() {
       allowEmails: ['jiujianian@gmail.com'],
     });
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: rowan@jiujianian.dev',
@@ -256,10 +256,10 @@ function testStripsUniformQuotedReplyContent() {
   }
 }
 
-function testDecodesBase64BodyText() {
+async function testDecodesBase64BodyText() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-base64-body-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -270,7 +270,7 @@ function testDecodesBase64BodyText() {
     const decodedBody = '这一次请完整的回复我这一轮对话给你发送的消息，不要带其他内容。';
     const encodedBody = Buffer.from(decodedBody, 'utf8').toString('base64');
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: rowan@jiujianian.dev',
@@ -293,10 +293,10 @@ function testDecodesBase64BodyText() {
   }
 }
 
-function testDecodesNestedMultipartBodyText() {
+async function testDecodesNestedMultipartBodyText() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-nested-multipart-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -307,7 +307,7 @@ function testDecodesNestedMultipartBodyText() {
     const decodedBody = '请先把邮件入口的正文解码后，再发起会话。';
     const encodedBody = Buffer.from(decodedBody, 'utf8').toString('base64');
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: rowan@jiujianian.dev',
@@ -348,10 +348,10 @@ function testDecodesNestedMultipartBodyText() {
   }
 }
 
-function testExtractsInlineImageAttachments() {
+async function testExtractsInlineImageAttachments() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-inline-image-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -360,7 +360,7 @@ function testExtractsInlineImageAttachments() {
     });
 
     const inlinePngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2lmLcAAAAASUVORK5CYII=';
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: rowan@jiujianian.dev',
@@ -411,21 +411,21 @@ function testExtractsInlineImageAttachments() {
   }
 }
 
-function testEnvelopeRecipientRoutesToGuestInstanceAlias() {
+async function testEnvelopeRecipientRoutesToGuestInstanceAlias() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-routing-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
       domain: 'jiujianian.dev',
       allowEmails: ['jiujianian@gmail.com'],
     });
-    saveMailboxAutomation(rootDir, {
+    await saveMailboxAutomation(rootDir, {
       allowlistAutoApprove: true,
     });
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: rowan@jiujianian.dev',
@@ -456,21 +456,21 @@ function testEnvelopeRecipientRoutesToGuestInstanceAlias() {
   }
 }
 
-function testSubjectInstanceTagRoutesBaseMailboxToGuestInstance() {
+async function testSubjectInstanceTagRoutesBaseMailboxToGuestInstance() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-subject-routing-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
       domain: 'jiujianian.dev',
       allowEmails: ['jiujianian@gmail.com'],
     });
-    saveMailboxAutomation(rootDir, {
+    await saveMailboxAutomation(rootDir, {
       allowlistAutoApprove: true,
     });
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: rowan@jiujianian.dev',
@@ -498,10 +498,10 @@ function testSubjectInstanceTagRoutesBaseMailboxToGuestInstance() {
   }
 }
 
-function testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled() {
+async function testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-direct-routing-'));
   try {
-    initializeMailbox({
+    await initializeMailbox({
       rootDir,
       name: 'Rowan',
       localPart: 'rowan',
@@ -509,11 +509,11 @@ function testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled() {
       instanceAddressMode: 'local_part',
       allowEmails: ['jiujianian@gmail.com'],
     });
-    saveMailboxAutomation(rootDir, {
+    await saveMailboxAutomation(rootDir, {
       allowlistAutoApprove: true,
     });
 
-    const ingested = ingestRawMessage(
+    const ingested = await ingestRawMessage(
       [
         'From: jiujianian@gmail.com',
         'To: trial6@jiujianian.dev',
@@ -544,16 +544,16 @@ function testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled() {
   }
 }
 
-testCloudflareWebhookHealthy();
-testCloudflareQueueReady();
-testCloudflareValidatedDelivery();
-testAllowlistAutoApprove();
-testStripsQuotedReplyContent();
-testStripsUniformQuotedReplyContent();
-testDecodesBase64BodyText();
-testDecodesNestedMultipartBodyText();
-testExtractsInlineImageAttachments();
-testEnvelopeRecipientRoutesToGuestInstanceAlias();
-testSubjectInstanceTagRoutesBaseMailboxToGuestInstance();
-testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled();
+await testCloudflareWebhookHealthy();
+await testCloudflareQueueReady();
+await testCloudflareValidatedDelivery();
+await testAllowlistAutoApprove();
+await testStripsQuotedReplyContent();
+await testStripsUniformQuotedReplyContent();
+await testDecodesBase64BodyText();
+await testDecodesNestedMultipartBodyText();
+await testExtractsInlineImageAttachments();
+await testEnvelopeRecipientRoutesToGuestInstanceAlias();
+await testSubjectInstanceTagRoutesBaseMailboxToGuestInstance();
+await testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled();
 console.log('agent mailbox tests passed');

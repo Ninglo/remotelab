@@ -41,7 +41,7 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const { port } = server.address();
 
 try {
-  initializeMailbox({
+  await initializeMailbox({
     rootDir: mailboxRoot,
     name: 'Rowan',
     localPart: 'rowan',
@@ -49,7 +49,7 @@ try {
     allowEmails: ['owner@example.com'],
   });
 
-  const defaultOutbound = loadOutboundConfig(mailboxRoot);
+  const defaultOutbound = await loadOutboundConfig(mailboxRoot);
   assert.equal(defaultOutbound.provider, 'resend_api');
   assert.equal(defaultOutbound.apiKeyEnv, 'RESEND_API_KEY');
   assert.equal(defaultOutbound.apiBaseUrl, 'https://api.resend.com');
@@ -113,7 +113,7 @@ try {
 
   const previousResendApiKey = process.env.RESEND_API_KEY;
   process.env.RESEND_API_KEY = 'resend-api-secret';
-  saveOutboundConfig(mailboxRoot, {
+  await saveOutboundConfig(mailboxRoot, {
     apiBaseUrl: `http://127.0.0.1:${port}`,
   });
 
@@ -157,7 +157,7 @@ try {
   assert.equal(output.responseId, 'msg_cli_123');
   assert.equal(output.responseMessage, 'queued');
 
-  saveOutboundConfig(mailboxRoot, {
+  await saveOutboundConfig(mailboxRoot, {
     provider: 'cloudflare_worker',
     workerBaseUrl: `http://127.0.0.1:${port}`,
     workerToken: 'cloudflare-worker-secret',

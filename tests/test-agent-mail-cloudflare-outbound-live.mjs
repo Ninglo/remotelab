@@ -39,7 +39,7 @@ function parseArgs(argv) {
 const options = parseArgs(process.argv.slice(2));
 const rootDir = trimString(options.root);
 const requestedRecipient = trimString(options.to || process.env.REMOTELAB_CF_SMOKE_TO);
-const outbound = loadOutboundConfig(rootDir || undefined);
+const outbound = await loadOutboundConfig(rootDir || undefined);
 const zone = trimString(options.zone) || emailDomain(outbound.from);
 
 let summary = buildStatusSummary({ rootDir: rootDir || undefined, zone });

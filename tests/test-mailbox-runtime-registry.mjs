@@ -66,7 +66,7 @@ try {
     },
   ], null, 2));
 
-  const registry = loadMailboxRuntimeRegistry({ homeDir: tempHome });
+  const registry = await loadMailboxRuntimeRegistry({ homeDir: tempHome });
   assert.equal(registry.length, 2);
 
   const trial = findMailboxRuntimeByName('trial', registry);

@@ -996,6 +996,18 @@ if (typeof setChatActiveTab === "function") {
 }
 
 function switchTab(tab, { syncState = true } = {}) {
+  const resolvedTabSessions = typeof tabSessions !== "undefined" ? tabSessions : null;
+  const resolvedTabAgents = typeof tabAgents !== "undefined" ? tabAgents : null;
+  const resolvedTabSettings = typeof tabSettings !== "undefined" ? tabSettings : null;
+  const resolvedSidebarFilters = typeof sidebarFilters !== "undefined" ? sidebarFilters : null;
+  const resolvedSessionList = typeof sessionList !== "undefined" ? sessionList : null;
+  const resolvedSidebarSearch = typeof sidebarSearch !== "undefined" ? sidebarSearch : null;
+  const resolvedSidebarViewSwitcher = typeof sidebarViewSwitcher !== "undefined" ? sidebarViewSwitcher : null;
+  const resolvedAgentsPanel = typeof agentsPanel !== "undefined" ? agentsPanel : null;
+  const resolvedSettingsPanel = typeof settingsPanel !== "undefined" ? settingsPanel : null;
+  const resolvedSessionListFooter = typeof sessionListFooter !== "undefined" ? sessionListFooter : null;
+  const resolvedSortSessionListBtn = typeof sortSessionListBtn !== "undefined" ? sortSessionListBtn : null;
+  const resolvedNewSessionBtn = typeof newSessionBtn !== "undefined" ? newSessionBtn : null;
   const nextTab = normalizeSidebarTab(tab);
   if (typeof setChatActiveTab === "function") {
     setChatActiveTab(nextTab, {
@@ -1017,29 +1029,41 @@ function switchTab(tab, { syncState = true } = {}) {
   const showingSessions = activeTab === "sessions";
   const showingAgents = activeTab === "agents";
   const showingSettings = activeTab === "settings";
-  tabSessions.classList.toggle("active", activeTab === "sessions");
-  if (tabAgents) tabAgents.classList.toggle("active", activeTab === "agents");
-  tabSettings.classList.toggle("active", activeTab === "settings");
+  if (resolvedTabSessions) {
+    resolvedTabSessions.classList.toggle("active", activeTab === "sessions");
+  }
+  if (resolvedTabAgents) {
+    resolvedTabAgents.classList.toggle("active", activeTab === "agents");
+  }
+  if (resolvedTabSettings) {
+    resolvedTabSettings.classList.toggle("active", activeTab === "settings");
+  }
   if (typeof syncSidebarFiltersVisibility === "function") {
     syncSidebarFiltersVisibility(showingSessions);
-  } else if (sidebarFilters) {
-    sidebarFilters.classList.toggle("hidden", !showingSessions);
+  } else if (resolvedSidebarFilters) {
+    resolvedSidebarFilters.classList.toggle("hidden", !showingSessions);
   }
-  sessionList.style.display = showingSessions ? "" : "none";
-  if (sidebarSearch) sidebarSearch.style.display = showingSessions ? "" : "none";
-  if (sidebarViewSwitcher) sidebarViewSwitcher.style.display = showingSessions ? "" : "none";
-  if (agentsPanel) agentsPanel.classList.toggle("visible", showingAgents);
-  settingsPanel.classList.toggle("visible", showingSettings);
-  sessionListFooter.classList.toggle("hidden", !showingSessions);
-  sortSessionListBtn.classList.toggle("hidden", !showingSessions);
-  newSessionBtn.classList.toggle("hidden", !showingSessions);
+  if (resolvedSessionList) resolvedSessionList.style.display = showingSessions ? "" : "none";
+  if (resolvedSidebarSearch) resolvedSidebarSearch.style.display = showingSessions ? "" : "none";
+  if (resolvedSidebarViewSwitcher) resolvedSidebarViewSwitcher.style.display = showingSessions ? "" : "none";
+  if (resolvedAgentsPanel) resolvedAgentsPanel.classList.toggle("visible", showingAgents);
+  if (resolvedSettingsPanel) resolvedSettingsPanel.classList.toggle("visible", showingSettings);
+  if (resolvedSessionListFooter) resolvedSessionListFooter.classList.toggle("hidden", !showingSessions);
+  if (resolvedSortSessionListBtn) resolvedSortSessionListBtn.classList.toggle("hidden", !showingSessions);
+  if (resolvedNewSessionBtn) resolvedNewSessionBtn.classList.toggle("hidden", !showingSessions);
   if (syncState) {
     syncBrowserState();
   }
 }
 
-tabSessions.addEventListener("click", () => switchTab("sessions"));
-if (tabAgents) tabAgents.addEventListener("click", () => switchTab("agents"));
-tabSettings.addEventListener("click", () => switchTab("settings"));
+if (typeof tabSessions !== "undefined" && tabSessions) {
+  tabSessions.addEventListener("click", () => switchTab("sessions"));
+}
+if (typeof tabAgents !== "undefined" && tabAgents) {
+  tabAgents.addEventListener("click", () => switchTab("agents"));
+}
+if (typeof tabSettings !== "undefined" && tabSettings) {
+  tabSettings.addEventListener("click", () => switchTab("settings"));
+}
 
 switchTab(activeTab, { syncState: false });
