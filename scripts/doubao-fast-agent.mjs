@@ -11,7 +11,7 @@ const DEFAULT_CONFIG_PATH = join(HOME, '.config', 'remotelab', 'doubao-fast-agen
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 const DEFAULT_MODEL = 'doubao-seed-2-0-pro-260215';
 const DEFAULT_MAX_ITERATIONS = 2;
-const DEFAULT_REQUEST_TIMEOUT_MS = 20000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 const DEFAULT_BASH_TIMEOUT_MS = 12000;
 const DEFAULT_TOOL_OUTPUT_CHARS = 12000;
 const DEFAULT_DIRECTORY_ENTRIES = 200;
@@ -711,13 +711,96 @@ function isMissingModelError(payload, requestedModel, defaultModel) {
   return /(does not exist|not have access|InvalidEndpointOrModel|Not Found)/i.test(message);
 }
 
+async function consumeStream(response) {
+  let content = '';
+  const toolCallAccumulators = new Map();
+  let model = '';
+  let usage = null;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith(':')) continue;
+      if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim();
+      if (data === '[DONE]') continue;
+
+      let parsed = null;
+      try {
+        parsed = JSON.parse(data);
+      } catch {
+        continue;
+      }
+
+      if (parsed.model) model = parsed.model;
+      if (parsed.usage) usage = parsed.usage;
+
+      const delta = parsed.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      if (typeof delta.content === 'string') {
+        content += delta.content;
+      }
+
+      if (Array.isArray(delta.tool_calls)) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0;
+          if (!toolCallAccumulators.has(idx)) {
+            toolCallAccumulators.set(idx, { id: '', name: '', arguments: '' });
+          }
+          const acc = toolCallAccumulators.get(idx);
+          if (tc.id) acc.id = tc.id;
+          if (tc.function?.name) acc.name = tc.function.name;
+          if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+        }
+      }
+    }
+  }
+
+  const toolCalls = [];
+  for (const [, acc] of [...toolCallAccumulators.entries()].sort((a, b) => a[0] - b[0])) {
+    if (acc.name) {
+      toolCalls.push({
+        id: acc.id || `tool_${randomUUID().replace(/-/g, '')}`,
+        type: 'function',
+        function: { name: acc.name, arguments: acc.arguments },
+      });
+    }
+  }
+
+  return {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: content || null,
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      },
+      finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+    }],
+    model,
+    usage: usage || {},
+  };
+}
+
 async function fetchChatCompletion(config, requestedModel, messages, tools) {
   const requested = normalizeRequestedModel(requestedModel, config.model);
   const modelToUse = requested || config.model;
   const payload = {
     model: modelToUse,
     messages,
-    stream: false,
+    stream: true,
+    stream_options: { include_usage: true },
   };
   if (Array.isArray(tools) && tools.length > 0) {
     payload.tools = tools;
@@ -737,21 +820,22 @@ async function fetchChatCompletion(config, requestedModel, messages, tools) {
         body: JSON.stringify(requestBody),
         signal: timeout.signal,
       });
-      const rawText = await response.text();
-      let json = null;
-      try {
-        json = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        json = null;
-      }
       if (!response.ok) {
+        const rawText = await response.text();
+        let json = null;
+        try {
+          json = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          json = null;
+        }
         const error = new Error(clipText(json?.error?.message || rawText || `HTTP ${response.status}`, config.maxToolOutputChars));
         error.code = json?.error?.code;
         error.payload = json;
         error.httpStatus = response.status;
         throw error;
       }
-      return { response: json || {}, modelUsed: model };
+      const json = await consumeStream(response);
+      return { response: json, modelUsed: model };
     } finally {
       timeout.cancel();
     }
