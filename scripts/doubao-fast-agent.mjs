@@ -857,6 +857,53 @@ function aggregateUsage(accumulator, usage = {}) {
   return accumulator;
 }
 
+const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+
+function parseAttachmentPathsEnv() {
+  const raw = trimString(process.env.REMOTELAB_ATTACHMENT_PATHS);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((entry) => entry && typeof entry.path === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+async function buildImageContentParts(attachments) {
+  const parts = [];
+  for (const attachment of attachments) {
+    const mimeType = trimString(attachment.mimeType) || 'image/jpeg';
+    if (!IMAGE_MIME_TYPES.has(mimeType)) continue;
+    try {
+      const data = await readFile(attachment.path);
+      const base64 = data.toString('base64');
+      parts.push({
+        type: 'image_url',
+        image_url: { url: `data:${mimeType};base64,${base64}` },
+      });
+    } catch {
+      // skip unreadable files silently
+    }
+  }
+  return parts;
+}
+
+async function buildUserMessage(prompt) {
+  const attachments = parseAttachmentPathsEnv();
+  const imageParts = await buildImageContentParts(attachments);
+  if (imageParts.length === 0) {
+    return { role: 'user', content: prompt };
+  }
+  return {
+    role: 'user',
+    content: [
+      ...imageParts,
+      { type: 'text', text: prompt },
+    ],
+  };
+}
+
 async function runAgent(config, args) {
   const sessionId = trimString(args.resumeId) || randomUUID().replace(/-/g, '');
   const tools = buildTools(config);
@@ -864,7 +911,7 @@ async function runAgent(config, args) {
   const usageTotals = { prompt_tokens: 0, completion_tokens: 0 };
   const messages = [
     { role: 'system', content: buildSystemPrompt(config) },
-    { role: 'user', content: args.prompt },
+    await buildUserMessage(args.prompt),
   ];
 
   if (outputJson) {

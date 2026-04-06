@@ -133,10 +133,23 @@ async function main() {
     effort: manifest.options?.effort,
   });
 
+  const spawnEnv = await cleanEnv(manifest.tool, manifest, { runtimeFamily, envOverrides });
+
+  const attachmentPaths = materializedImages
+    .filter((img) => typeof img?.savedPath === 'string' && img.savedPath)
+    .map((img) => ({
+      path: img.savedPath,
+      mimeType: typeof img?.mimeType === 'string' ? img.mimeType : '',
+      originalName: typeof img?.originalName === 'string' ? img.originalName : '',
+    }));
+  if (attachmentPaths.length > 0) {
+    spawnEnv.REMOTELAB_ATTACHMENT_PATHS = JSON.stringify(attachmentPaths);
+  }
+
   const proc = spawn(await resolveCommand(command), args, {
     cwd: resolveCwd(manifest.folder),
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: await cleanEnv(manifest.tool, manifest, { runtimeFamily, envOverrides }),
+    env: spawnEnv,
   });
 
   await updateRun(runId, (current) => ({
