@@ -73,7 +73,7 @@ assert.deepEqual(
   ['message', 'thinking_block'],
   'running turns should collapse into a single thinking block instead of streaming multiple visible intermediate fragments',
 );
-assert.equal(runningDisplay[1].label, 'Thinking · using bash', 'running turns should use the same thought block label family as completed turns');
+assert.equal(runningDisplay[1].label, 'Thinking · using bash', 'running turns should use the same thinking block label family as completed turns');
 assert.equal(runningDisplay[1].blockStartSeq, 2, 'running collapsed block should start with the first non-user event in the turn');
 assert.equal(runningDisplay[1].blockEndSeq, 6, 'running collapsed block should extend through the latest in-flight event');
 

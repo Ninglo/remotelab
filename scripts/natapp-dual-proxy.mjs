@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import http from 'http';
 import net from 'net';
 import { homedir } from 'os';
@@ -22,6 +22,7 @@ const MAINLAND_SERVICE_NAME = normalizeRouteName(
   'owner',
 );
 const MAINLAND_SERVICE_PREFIX = `/${MAINLAND_SERVICE_NAME}`;
+const ADMIN_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ADMIN_PORT, 10) || 7689;
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
 const FALLBACK_PREFIXED_ROUTES = Object.freeze([
   Object.freeze({
@@ -79,11 +80,11 @@ function extractPlistDictStrings(content, key) {
   return dict;
 }
 
-function readLaunchAgentPort(launchAgentPath) {
+async function readLaunchAgentPort(launchAgentPath) {
   const path = String(launchAgentPath || '').trim();
   if (!path) return 0;
   try {
-    const content = readFileSync(path, 'utf8');
+    const content = await readFile(path, 'utf8');
     const environmentVariables = extractPlistDictStrings(content, 'EnvironmentVariables');
     const port = Number.parseInt(String(environmentVariables.CHAT_PORT || '').trim(), 10);
     return isValidPort(port) ? port : 0;
@@ -104,8 +105,8 @@ function extractPortFromBaseUrl(baseUrl) {
   }
 }
 
-function resolveRouteUpstreamPort(record = {}) {
-  const launchAgentPort = readLaunchAgentPort(record?.launchAgentPath);
+async function resolveRouteUpstreamPort(record = {}) {
+  const launchAgentPort = await readLaunchAgentPort(record?.launchAgentPath);
   if (isValidPort(launchAgentPort) && launchAgentPort !== LISTEN_PORT) {
     return launchAgentPort;
   }
@@ -133,33 +134,40 @@ function escapeHtml(value) {
 }
 
 function buildSpecialPrefixedRoutes() {
-  if (!isValidPort(MAINLAND_SERVICE_UPSTREAM_PORT)) {
-    return [];
+  const routes = [];
+  if (isValidPort(MAINLAND_SERVICE_UPSTREAM_PORT) && MAINLAND_SERVICE_UPSTREAM_PORT !== LISTEN_PORT) {
+    routes.push(Object.freeze({
+      name: MAINLAND_SERVICE_NAME,
+      prefix: MAINLAND_SERVICE_PREFIX,
+      upstreamPort: MAINLAND_SERVICE_UPSTREAM_PORT,
+      cookiePrefix: `${MAINLAND_SERVICE_NAME}__`,
+      routeType: 'mainland-service',
+    }));
   }
-  if (MAINLAND_SERVICE_UPSTREAM_PORT === LISTEN_PORT) {
-    return [];
+  if (isValidPort(ADMIN_UPSTREAM_PORT) && ADMIN_UPSTREAM_PORT !== LISTEN_PORT) {
+    routes.push(Object.freeze({
+      name: 'admin',
+      prefix: '/admin',
+      upstreamPort: ADMIN_UPSTREAM_PORT,
+      cookiePrefix: 'admin__',
+      routeType: 'admin',
+    }));
   }
-  return [Object.freeze({
-    name: MAINLAND_SERVICE_NAME,
-    prefix: MAINLAND_SERVICE_PREFIX,
-    upstreamPort: MAINLAND_SERVICE_UPSTREAM_PORT,
-    cookiePrefix: `${MAINLAND_SERVICE_NAME}__`,
-    routeType: 'mainland-service',
-  })];
+  return routes;
 }
 
-function loadPrefixedRoutes() {
+async function loadPrefixedRoutes() {
   const routes = [...SPECIAL_PREFIXED_ROUTES];
   const seenPrefixes = new Set(routes.map((route) => route.prefix));
   try {
-    const parsed = JSON.parse(readFileSync(GUEST_REGISTRY_FILE, 'utf8'));
+    const parsed = JSON.parse(await readFile(GUEST_REGISTRY_FILE, 'utf8'));
     if (!Array.isArray(parsed)) {
       return routes.length > 0 ? routes.concat(FALLBACK_PREFIXED_ROUTES) : FALLBACK_PREFIXED_ROUTES;
     }
 
     for (const record of parsed) {
       const name = normalizeRouteName(record?.name, '');
-      const upstreamPort = resolveRouteUpstreamPort(record);
+      const upstreamPort = await resolveRouteUpstreamPort(record);
       if (!name) continue;
       if (!isValidPort(upstreamPort) || upstreamPort === LISTEN_PORT) continue;
 
@@ -200,13 +208,13 @@ function serializeCookies(cookies) {
   return cookies.map(({ name, value }) => `${name}=${value}`).join('; ');
 }
 
-function findPrefixedRoute(pathname) {
-  return loadPrefixedRoutes().find((route) => pathname === route.prefix || pathname.startsWith(`${route.prefix}/`)) || null;
+async function findPrefixedRoute(pathname) {
+  return (await loadPrefixedRoutes()).find((route) => pathname === route.prefix || pathname.startsWith(`${route.prefix}/`)) || null;
 }
 
-function mapRequest(reqUrl) {
+async function mapRequest(reqUrl) {
   const parsed = new URL(reqUrl, 'http://127.0.0.1');
-  const prefixedRoute = findPrefixedRoute(parsed.pathname);
+  const prefixedRoute = await findPrefixedRoute(parsed.pathname);
   if (!prefixedRoute) {
     if (ROOT_MODE === 'legacy-proxy' && isValidPort(LEGACY_ROOT_UPSTREAM_PORT)) {
       return {
@@ -337,8 +345,8 @@ function writeProxyError(res, error) {
   res.end(`proxy error: ${error?.message || error}`);
 }
 
-function renderRootIndexHtml() {
-  const routes = loadPrefixedRoutes().map((route) => ({
+async function renderRootIndexHtml() {
+  const routes = (await loadPrefixedRoutes()).map((route) => ({
     name: route.name || route.prefix.replace(/^\/+/, ''),
     href: `${route.prefix}/`,
     kind: route.routeType === 'mainland-service' ? 'main service' : 'instance',
@@ -380,17 +388,17 @@ function renderRootIndexHtml() {
 </html>`;
 }
 
-function getLastPrefixFromCookie(req) {
+async function getLastPrefixFromCookie(req) {
   const cookies = parseCookieHeader(req.headers.cookie);
   const entry = cookies.find((c) => c.name === 'bridge_last_prefix');
   const value = entry?.value?.trim();
   if (!value || !value.startsWith('/')) return null;
-  const routes = loadPrefixedRoutes();
+  const routes = await loadPrefixedRoutes();
   return routes.some((r) => r.prefix === value) ? value : null;
 }
 
-function writeRootIndex(req, res) {
-  const lastPrefix = getLastPrefixFromCookie(req);
+async function writeRootIndex(req, res) {
+  const lastPrefix = await getLastPrefixFromCookie(req);
   if (lastPrefix) {
     res.writeHead(302, {
       location: `${lastPrefix}/`,
@@ -399,7 +407,7 @@ function writeRootIndex(req, res) {
     res.end();
     return;
   }
-  const body = Buffer.from(renderRootIndexHtml(), 'utf8');
+  const body = Buffer.from(await renderRootIndexHtml(), 'utf8');
   res.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
@@ -422,108 +430,117 @@ function writePrefixOnlyNotFound(res) {
   res.end(body);
 }
 
-const server = http.createServer((req, res) => {
-  const parsedUrl = new URL(req.url || '/', 'http://127.0.0.1');
-  const route = mapRequest(req.url || '/');
-  if (!route) {
-    if (parsedUrl.pathname === '/' || parsedUrl.pathname === '/index.html') {
-      writeRootIndex(req, res);
+const server = http.createServer(async (req, res) => {
+  try {
+    const parsedUrl = new URL(req.url || '/', 'http://127.0.0.1');
+    const route = await mapRequest(req.url || '/');
+    if (!route) {
+      if (parsedUrl.pathname === '/' || parsedUrl.pathname === '/index.html') {
+        await writeRootIndex(req, res);
+        return;
+      }
+      writePrefixOnlyNotFound(res);
       return;
     }
-    writePrefixOnlyNotFound(res);
-    return;
-  }
-  const upstreamReq = http.request({
-    host: LISTEN_HOST,
-    port: route.upstreamPort,
-    method: req.method,
-    path: route.upstreamPath,
-    headers: buildUpstreamHeaders(req.headers, route),
-  }, (upstreamRes) => {
-    const headers = { ...upstreamRes.headers };
+    const upstreamReq = http.request({
+      host: LISTEN_HOST,
+      port: route.upstreamPort,
+      method: req.method,
+      path: route.upstreamPath,
+      headers: buildUpstreamHeaders(req.headers, route),
+    }, (upstreamRes) => {
+      const headers = { ...upstreamRes.headers };
 
-    if (route.prefixed) {
-      if (headers.location) {
-        headers.location = rewriteLocationHeader(headers.location, route);
+      if (route.prefixed) {
+        if (headers.location) {
+          headers.location = rewriteLocationHeader(headers.location, route);
+        }
+        if (headers['set-cookie']) {
+          const values = Array.isArray(headers['set-cookie']) ? headers['set-cookie'] : [headers['set-cookie']];
+          headers['set-cookie'] = values.map((value) => rewriteSetCookieHeader(value, route));
+        }
+        // Remember last-used prefix so the root path can auto-redirect next time
+        const prefixCookie = `bridge_last_prefix=${route.prefix}; Path=/; Max-Age=31536000; SameSite=Lax`;
+        const existing = headers['set-cookie'];
+        if (Array.isArray(existing)) {
+          existing.push(prefixCookie);
+        } else if (existing) {
+          headers['set-cookie'] = [existing, prefixCookie];
+        } else {
+          headers['set-cookie'] = prefixCookie;
+        }
       }
-      if (headers['set-cookie']) {
-        const values = Array.isArray(headers['set-cookie']) ? headers['set-cookie'] : [headers['set-cookie']];
-        headers['set-cookie'] = values.map((value) => rewriteSetCookieHeader(value, route));
-      }
-      // Remember last-used prefix so the root path can auto-redirect next time
-      const prefixCookie = `bridge_last_prefix=${route.prefix}; Path=/; Max-Age=31536000; SameSite=Lax`;
-      const existing = headers['set-cookie'];
-      if (Array.isArray(existing)) {
-        existing.push(prefixCookie);
-      } else if (existing) {
-        headers['set-cookie'] = [existing, prefixCookie];
-      } else {
-        headers['set-cookie'] = prefixCookie;
-      }
-    }
 
-    const rewriteBody = route.prefixed && shouldRewriteBody(headers);
-    if (!rewriteBody) {
-      res.writeHead(upstreamRes.statusCode || 502, headers);
-      upstreamRes.pipe(res);
-      return;
-    }
+      const rewriteBody = route.prefixed && shouldRewriteBody(headers);
+      if (!rewriteBody) {
+        res.writeHead(upstreamRes.statusCode || 502, headers);
+        upstreamRes.pipe(res);
+        return;
+      }
 
-    const chunks = [];
-    upstreamRes.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-    upstreamRes.on('end', () => {
-      const rewrittenBody = rewritePrefixedBody(Buffer.concat(chunks), headers['content-type'], route);
-      delete headers['content-length'];
-      delete headers['transfer-encoding'];
-      delete headers['content-encoding'];
-      headers['content-length'] = String(rewrittenBody.length);
-      res.writeHead(upstreamRes.statusCode || 200, headers);
-      res.end(rewrittenBody);
+      const chunks = [];
+      upstreamRes.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      upstreamRes.on('end', () => {
+        const rewrittenBody = rewritePrefixedBody(Buffer.concat(chunks), headers['content-type'], route);
+        delete headers['content-length'];
+        delete headers['transfer-encoding'];
+        delete headers['content-encoding'];
+        headers['content-length'] = String(rewrittenBody.length);
+        res.writeHead(upstreamRes.statusCode || 200, headers);
+        res.end(rewrittenBody);
+      });
+      upstreamRes.on('error', (error) => writeProxyError(res, error));
     });
-    upstreamRes.on('error', (error) => writeProxyError(res, error));
-  });
 
-  upstreamReq.on('error', (error) => writeProxyError(res, error));
-  req.pipe(upstreamReq);
+    upstreamReq.on('error', (error) => writeProxyError(res, error));
+    req.pipe(upstreamReq);
+  } catch (error) {
+    writeProxyError(res, error);
+  }
 });
 
-server.on('upgrade', (req, socket, head) => {
-  const route = mapRequest(req.url || '/');
-  if (!route) {
-    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-  const upstreamSocket = net.connect(route.upstreamPort, LISTEN_HOST, () => {
-    const requestPath = route.upstreamPath || '/';
-    const rawHeaders = [];
-    const headers = buildUpstreamHeaders(req.headers, route);
-    for (const [key, value] of Object.entries(headers)) {
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          rawHeaders.push(`${key}: ${item}`);
+server.on('upgrade', async (req, socket, head) => {
+  try {
+    const route = await mapRequest(req.url || '/');
+    if (!route) {
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    const upstreamSocket = net.connect(route.upstreamPort, LISTEN_HOST, () => {
+      const requestPath = route.upstreamPath || '/';
+      const rawHeaders = [];
+      const headers = buildUpstreamHeaders(req.headers, route);
+      for (const [key, value] of Object.entries(headers)) {
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            rawHeaders.push(`${key}: ${item}`);
+          }
+          continue;
         }
-        continue;
+        if (value == null) continue;
+        rawHeaders.push(`${key}: ${value}`);
       }
-      if (value == null) continue;
-      rawHeaders.push(`${key}: ${value}`);
-    }
-    upstreamSocket.write(`${req.method} ${requestPath} HTTP/${req.httpVersion}\r\n${rawHeaders.join('\r\n')}\r\n\r\n`);
-    if (head && head.length) {
-      upstreamSocket.write(head);
-    }
-    socket.pipe(upstreamSocket).pipe(socket);
-  });
+      upstreamSocket.write(`${req.method} ${requestPath} HTTP/${req.httpVersion}\r\n${rawHeaders.join('\r\n')}\r\n\r\n`);
+      if (head && head.length) {
+        upstreamSocket.write(head);
+      }
+      socket.pipe(upstreamSocket).pipe(socket);
+    });
 
-  upstreamSocket.on('error', () => socket.destroy());
-  socket.on('error', () => upstreamSocket.destroy());
+    upstreamSocket.on('error', () => socket.destroy());
+    socket.on('error', () => upstreamSocket.destroy());
+  } catch {
+    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+    socket.destroy();
+  }
 });
 
 const IS_MAIN = Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (IS_MAIN) {
-  server.listen(LISTEN_PORT, LISTEN_HOST, () => {
-    const prefixes = loadPrefixedRoutes().map((route) => route.prefix).join(', ');
+  server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
+    const prefixes = (await loadPrefixedRoutes()).map((route) => route.prefix).join(', ');
     const rootLabel = ROOT_MODE === 'legacy-proxy' && isValidPort(LEGACY_ROOT_UPSTREAM_PORT)
       ? `legacy-proxy->${LEGACY_ROOT_UPSTREAM_PORT}`
       : 'index';

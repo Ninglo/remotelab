@@ -1,6 +1,6 @@
-# Automation Apps
+# Automation Agents
 
-RemoteLab can treat recurring automations as first-class Apps instead of leaving them as invisible background jobs.
+RemoteLab can treat recurring automations as first-class Agents instead of leaving them as invisible background jobs.
 
 That means an automation is not only:
 
@@ -10,7 +10,7 @@ That means an automation is not only:
 
 but also:
 
-- an App with a reusable prompt/persona,
+- an Agent with a reusable prompt/persona,
 - a stable owner-side session for review,
 - and a consistent connector path for inbound automated updates.
 
@@ -31,15 +31,15 @@ But they still fit the same core RemoteLab model:
 3. the AI agent replies in that session,
 4. the owner reviews and continues from the same place.
 
-So the automation should show up as a recognizable App/session surface, not as a hidden cron side effect.
+So the automation should show up as a recognizable Agent/session surface, not as a hidden cron side effect.
 
 ## Core model
 
-An automation App has three layers.
+An automation Agent has three layers.
 
-### 1. App template
+### 1. Agent template
 
-Use a normal RemoteLab App to package:
+Use a normal RemoteLab Agent to package:
 
 - name
 - system prompt
@@ -71,9 +71,9 @@ That session is where the owner:
 
 ## Recommended workflow
 
-For a new automation App:
+For a new automation Agent:
 
-1. Create the App in RemoteLab.
+1. Create the Agent in RemoteLab.
 2. Give it a system prompt that matches the automation's role.
 3. Pick a stable `externalTriggerId` for the review thread.
 4. Make the connector create/reuse that session.
@@ -85,21 +85,23 @@ For a new automation App:
 
 Automation connectors should usually set:
 
-- `appId`
-- `appName`
+- `sourceId`
+- `sourceName`
+- `templateId`
+- `templateName`
 - `group`
 - `description`
-- `systemPrompt` (copied from the App template when needed)
+- `systemPrompt` (copied from the Agent template when needed)
 - `externalTriggerId`
 
-This gives the owner sidebar a meaningful App/category surface and keeps one automation thread mapped to one durable RemoteLab session.
+This gives the owner UI a meaningful Agent/source surface and keeps one automation thread mapped to one durable RemoteLab session.
 
-## Relationship to shareable Apps
+## Relationship to shareable Agents
 
-This pattern reuses the same App model, but the purpose is different.
+This pattern reuses the same Agent model, but the purpose is different.
 
-- Shareable visitor Apps are public entry points.
-- Automation Apps are owner-side operational templates.
+- Shareable visitor Agents are public entry points.
+- Automation Agents are owner-side operational templates.
 
 They still benefit from the same primitives:
 

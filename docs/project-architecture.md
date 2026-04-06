@@ -60,11 +60,38 @@ RemoteLab is explicitly **not** trying to be:
 Important product assumptions that shape the code:
 
 - **Single owner** is the base model
-- **Visitor access** exists only through App share links
+- **Session** is the main work object in the shipped UI
+- **Source and Agent are orthogonal session dimensions**
+- **shareable-agent infrastructure still lives in the internal app/template layer**
 - **HTTP is the canonical state path**
 - **WebSocket is only an invalidation hint**
 - **filesystem-first persistence** is preferred over a database until proven necessary
 - **frontend stays endpoint-flexible and protocol-light**, with explicit client state boundaries instead of hidden UI orchestration
+
+### 1.1 Core domain nouns
+
+Use these product nouns when reading or changing current code:
+
+- **Source / Channel** — where a session was triggered from
+  - examples: RemoteLab web UI, email, Feishu, API, automation
+- **Agent** — the reusable behavior/context definition that shapes a session
+  - examples: Chat, Drawing, Video Cut, Report Cleanup
+- **Session** — one concrete work thread
+- **Run** — one execution attempt inside a session
+
+The intended relationship is:
+
+```text
+Source -> Session <- Agent
+             |
+             -> Run
+```
+
+Important compatibility note:
+
+- user-facing product language is moving toward **Agent**
+- current storage and API compatibility still use **app/template** terminology in several places
+- in session metadata today, `sourceId/sourceName` represent the trigger surface, while `templateId/templateName` represent the applied reusable agent/template
 
 ---
 
@@ -85,7 +112,8 @@ Then branch by the change you need:
 - HTTP / API / role checks → `chat/router.mjs`, `lib/auth.mjs`, `chat/middleware.mjs`
 - UI / cross-endpoint behavior → `templates/chat.html`, `static/chat/`, `static/sw.js`
 - chat frontend state/render boundary → `docs/frontend-chat-architecture.md`
-- Apps / visitor flow → `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`
+- Agent/template compatibility layer, share metadata, and builder flow → `chat/apps.mjs`, `chat/router-control-routes.mjs`, `chat/session-manager.mjs`
+- source routing / source-specific behavior → `chat/session-source-resolution.mjs`, `chat/source-runtime-prompts.mjs`, `docs/external-message-protocol.md`
 - session labeling / rename / grouping → `chat/summarizer.mjs`, `chat/session-naming.mjs`
 - memory activation / startup prompt → `chat/system-prompt.mjs`, `chat/shared-startup-defaults.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md`
 - manager / prompt / memory ownership model → `notes/current/model-sovereign-control-architecture.md`, `notes/current/prompt-layer-topology.md`, `notes/current/manager-policy-persistence.md`
@@ -231,7 +259,7 @@ remotelab/
 │   ├── runner-supervisor.mjs       # detached runner launcher
 │   ├── runner-sidecar.mjs          # raw execution sidecar
 │   ├── summarizer.mjs              # async progress/title/group generation
-│   ├── apps.mjs                    # App template CRUD
+│   ├── apps.mjs                    # Agent template CRUD
 │   ├── shares.mjs                  # immutable read-only snapshot creation
 │   ├── settings.mjs                # user settings persistence
 │   ├── push.mjs                    # web push
@@ -273,7 +301,7 @@ Key fields:
 
 - `expiry`
 - `role` = `owner` or `visitor`
-- visitor-only fields such as `appId`, `visitorId`, `sessionId`
+- visitor-only fields such as `agentId`, `visitorId`, `sessionId`
 
 Stored in:
 
@@ -295,7 +323,7 @@ Common fields include:
 - `created`, `updatedAt`
 - `activeRunId`
 - `claudeSessionId`, `codexThreadId`
-- `appId`, `appName`, `visitorId`
+- `sourceId`, `sourceName`, `templateId`, `templateName`, `visitorId`
 - `systemPrompt`
 - `completionTargets`
 - `externalTriggerId`
@@ -342,9 +370,9 @@ Key fields include:
 - `normalizedLineCount`, `normalizedByteOffset`
 - `contextInputTokens`
 
-### 6.5 App
+### 6.5 Agent
 
-Represents a shareable session template, not a live session.
+Represents a reusable, shareable session definition, not a live session.
 
 Key fields include:
 
@@ -355,7 +383,7 @@ Key fields include:
 - `skills`
 - `tool`
 - `shareToken`
-- optional `templateContext` snapshot metadata, including source-session freshness timestamps when the App was saved from a prior session
+- optional `templateContext` snapshot metadata, including source-session freshness timestamps when the Agent was saved from a prior session
 
 ### 6.6 Share snapshot
 
@@ -504,10 +532,10 @@ Prompt construction combines multiple layers:
 - pointer-first startup context from `chat/system-prompt.mjs` + `chat/prompt-assets/`
 - removable shared startup slice from `chat/shared-startup-defaults.mjs`
 - per-turn external context hook from `chat/turn-context-hook.mjs`
-- app-level `systemPrompt` when the session came from an App
+- agent-level `systemPrompt` when the session came from an Agent
 - continuation context when resuming or switching tools
 - summary-head context from `context.json` after compaction
-- visitor-specific guardrail block for shared App sessions
+- visitor-specific guardrail block for shared Agent sessions
 
 This is an important architectural decision: **session continuity is reconstructed from durable state, not from one immortal in-memory process**.
 
@@ -575,16 +603,16 @@ If `chat-server` restarts while a run is active:
 
 The promise is **restart-safe logical recovery**, not zero-disruption socket continuity.
 
-### 9.2 App / visitor flow
+### 9.2 Agent share flow
 
-Visitor entry goes through `/app/:shareToken`.
+Visitor entry goes through `/agent/:shareToken`.
 
 The current flow is:
 
-1. find the App by share token
+1. find the Agent by share token
 2. create a visitor auth session
-3. create a fresh chat session seeded from the App template
-4. inject the App welcome message as the first assistant event if present
+3. create a fresh chat session seeded from the Agent template
+4. inject the Agent welcome message as the first assistant event if present
 5. set a scoped visitor cookie
 6. redirect to the main chat UI in visitor mode
 
@@ -767,19 +795,19 @@ Tooling and settings:
 - `GET /api/browse`
 - `GET /api/media/:filename` (with legacy `/api/images/:filename` alias)
 
-Apps and shares:
+Agents and shares:
 
-- `GET /api/apps`
-- `POST /api/apps`
-- `PATCH /api/apps/:id`
-- `DELETE /api/apps/:id`
-- `GET /app/:shareToken`
+- `GET /api/agents`
+- `POST /api/agents`
+- `PATCH /api/agents/:id`
+- `DELETE /api/agents/:id`
+- `GET /agent/:shareToken`
 - `GET /share/:snapshotId`
 
 Implementation note:
 
-- `GET /api/apps` is the shareable App template CRUD surface
-- the owner sidebar app filter is derived from session metadata (`appId` / `appName`) instead of a hardcoded frontend catalog, so installations with only the default `chat` app do not surface that filter
+- `GET /api/agents` is the owner Agent CRUD surface
+- durable storage still reuses the internal app/template layer and `apps.json`
 
 Auth and push:
 
@@ -879,7 +907,7 @@ Use this as the practical code-finding guide.
 | restart recovery behavior | `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `notes/archive/http-runtime-phase1.md` |
 | event persistence / long-output handling | `chat/history.mjs`, `chat/runs.mjs`, `chat/fs-utils.mjs` |
 | session labeling / auto-rename / grouping | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
-| App templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
+| Agent templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
 | share snapshots | `chat/shares.mjs`, `chat/router.mjs`, `templates/chat.html`, `static/chat/` |
 | push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
 | model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat/` |
@@ -934,14 +962,14 @@ This repo already contains several design notes that point beyond the current co
 - thin WS invalidation model
 - restart-safe recovery from durable run + history files
 - owner / visitor identity split
-- App templates + share links
+- Agent templates + share links
 - session label suggestions
 - pointer-first memory activation
 
 ### 17.2 Directional but not fully realized yet
 
 - lighter local runtime/provider config when multiple local tool families create a real need
-- app-centric architecture where default chat becomes a built-in App/policy model
+- agent-centric architecture where default chat becomes a built-in Agent/policy model
 - richer autonomy / deferred triggers / background execution
 - deeper external channel unification (mail, repo bots, other message sources)
 - single-source active-run transcript projection with side-effect-free read paths

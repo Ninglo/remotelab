@@ -396,6 +396,12 @@ function createRequestId() {
   return `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function shouldExpandThinkingBlocksByDefaultForSessionUi() {
+  return typeof window.remotelabShouldExpandThinkingBlocksByDefault === "function"
+    ? window.remotelabShouldExpandThinkingBlocksByDefault()
+    : false;
+}
+
 function resetRenderedEventState(sessionId = null) {
   renderedEventState.sessionId = sessionId;
   renderedEventState.latestSeq = 0;
@@ -403,7 +409,7 @@ function resetRenderedEventState(sessionId = null) {
   renderedEventState.eventBaseKeys = [];
   renderedEventState.eventKeys = [];
   renderedEventState.runState = "idle";
-  renderedEventState.runningBlockExpanded = false;
+  renderedEventState.runningBlockExpanded = shouldExpandThinkingBlocksByDefaultForSessionUi();
 }
 
 function getEventBoundarySeq(event) {
@@ -505,7 +511,7 @@ function updateRenderedEventState(sessionId, events, { runState = "idle" } = {})
     : [];
   renderedEventState.runState = runState === "running" ? "running" : "idle";
   if (renderedEventState.runState !== "running") {
-    renderedEventState.runningBlockExpanded = false;
+    renderedEventState.runningBlockExpanded = shouldExpandThinkingBlocksByDefaultForSessionUi();
   }
 
 }

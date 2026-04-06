@@ -2,7 +2,7 @@
  * Attachment processing: MIME detection, image resizing, save-to-disk.
  *
  * Extracted from session-manager.mjs — keeps identical signatures except
- * resizeImageIfNeeded is now async (execFile with promise instead of execFileSync).
+ * resizeImageIfNeeded is now async and uses a promise-based child process call.
  */
 
 import { randomBytes } from 'crypto';

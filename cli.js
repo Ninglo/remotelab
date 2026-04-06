@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { promisify } from 'util';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const execFileAsync = promisify(execFile);
 
 const require = createRequire(import.meta.url);
 const pkg = require('./package.json');
@@ -15,9 +17,9 @@ function scriptPath(name) {
   return path.join(__dirname, name);
 }
 
-function runShell(script) {
+async function runShell(script) {
   try {
-    execFileSync('bash', [scriptPath(script)], { stdio: 'inherit' });
+    await execFileAsync('bash', [scriptPath(script)], { stdio: 'inherit' });
   } catch (err) {
     process.exit(err.status ?? 1);
   }
@@ -47,21 +49,21 @@ Usage:
 
 switch (command) {
   case 'setup':
-    runShell('setup.sh');
+    await runShell('setup.sh');
     break;
 
   case 'start':
-    runShell('start.sh');
+    await runShell('start.sh');
     break;
 
   case 'stop':
-    runShell('stop.sh');
+    await runShell('stop.sh');
     break;
 
   case 'restart': {
     const service = args[0] || 'all';
     try {
-      execFileSync('bash', [scriptPath('restart.sh'), service], { stdio: 'inherit' });
+      await execFileAsync('bash', [scriptPath('restart.sh'), service], { stdio: 'inherit' });
     } catch (err) {
       process.exit(err.status ?? 1);
     }
@@ -162,7 +164,7 @@ switch (command) {
 
   case 'generate-token': {
     try {
-      execFileSync('node', [scriptPath('generate-token.mjs')], { stdio: 'inherit' });
+      await execFileAsync('node', [scriptPath('generate-token.mjs')], { stdio: 'inherit' });
     } catch (err) {
       process.exit(err.status ?? 1);
     }

@@ -132,8 +132,8 @@ try {
   assert.equal(createAppStarter?.tool, 'micro-agent');
   assert.equal(createAppStarter?.shareEnabled, false);
   assert.equal(createAppStarter?.shareToken, undefined);
-  assert.match(createAppStarter?.systemPrompt || '', /POST \/api\/apps|PATCH \/api\/apps/i);
-  assert.match(createAppStarter?.systemPrompt || '', /share link|\/app\/\{shareToken\}|other people/i);
+  assert.match(createAppStarter?.systemPrompt || '', /POST \/api\/agents|PATCH \/api\/agents/i);
+  assert.match(createAppStarter?.systemPrompt || '', /share link|\/agent\/\{shareToken\}|other people/i);
   assert.match(createAppStarter?.systemPrompt || '', /visitors interact only through RemoteLab|local-path-based handoff/i);
   assert.match(createAppStarter?.systemPrompt || '', /visitor-facing workflow needs another site or service login|RemoteLab-side browser or authorization checkpoint/i);
   assert.match(createAppStarter?.systemPrompt || '', /chat attachments|share links|user-reachable channel/i);
@@ -145,7 +145,7 @@ try {
     createAppStarter?.systemPrompt || '',
     new RegExp(`${join(tempHome, 'instance-config', 'auth.json').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
   );
-  assert.match(createAppStarter?.welcomeMessage || '', /SOP|工作流|RemoteLab App/i);
+  assert.match(createAppStarter?.welcomeMessage || '', /SOP|工作流|RemoteLab Agent/i);
   assert.match(createAppStarter?.welcomeMessage || '', /SOP|工作流/i);
   assert.match(createAppStarter?.welcomeMessage || '', /visitor 首屏欢迎|宿主机只是执行面|翻路径的地方/u);
   assert.match(createAppStarter?.welcomeMessage || '', /不等于用户已经拿到结果/u);
@@ -166,12 +166,12 @@ try {
   assert.match(custom.id, /^app_[0-9a-f]+$/);
 
   const defaultToolApp = await createApp({
-    name: 'Default Tool App',
+    name: 'Default Tool Agent',
     systemPrompt: 'Use the product default.',
     welcomeMessage: '',
     skills: [],
   });
-  assert.equal(defaultToolApp.tool, 'micro-agent', 'new apps should default to Micro Agent when available');
+  assert.equal(defaultToolApp.tool, 'micro-agent', 'new agents should default to Micro Agent when available');
 
   const afterCreate = await listApps();
   assert.equal(afterCreate.some((app) => app.id === custom.id), true);

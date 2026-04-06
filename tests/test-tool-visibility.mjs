@@ -51,7 +51,7 @@ const toolsModule = await import(pathToFileURL(join(repoRoot, 'lib', 'tools.mjs'
 const { getAvailableTools } = toolsModule;
 
 try {
-  const tools = getAvailableTools();
+  const tools = await getAvailableTools();
   const publicTool = tools.find((tool) => tool.id === 'public-helper');
   const privateTool = tools.find((tool) => tool.id === 'private-helper');
   const builtinClaude = tools.find((tool) => tool.id === 'claude');

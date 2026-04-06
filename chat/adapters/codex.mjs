@@ -69,8 +69,13 @@ export function createCodexAdapter() {
             contextTokens: obj.contextTokens,
             inputTokens: obj.inputTokens,
             outputTokens: obj.outputTokens,
+            cachedInputTokens: obj.cachedInputTokens,
+            reasoningTokens: obj.reasoningTokens,
+            estimatedCostUsd: obj.estimatedCostUsd,
+            estimatedCostModel: obj.estimatedCostModel,
             contextWindowTokens: obj.contextWindowTokens,
             contextSource: obj.contextSource,
+            costSource: obj.costSource,
           }));
           break;
 

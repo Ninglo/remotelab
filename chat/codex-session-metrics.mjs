@@ -2,6 +2,7 @@ import { open, readdir } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { statOrNull } from './fs-utils.mjs';
+import { estimateGpt54CostUsd, getGpt54PricingMetadata } from '../lib/openai-pricing.mjs';
 
 const SESSION_LOG_CACHE = new Map();
 const TAIL_CHUNK_BYTES = 128 * 1024;
@@ -128,6 +129,16 @@ export async function readLatestCodexSessionMetrics(threadId) {
   const totalUsage = info.total_token_usage || {};
   const contextTokens = pickNonNegativeInt(lastUsage.input_tokens);
   if (!Number.isInteger(contextTokens)) return null;
+  const inputTokens = pickNonNegativeInt(totalUsage.input_tokens);
+  const cachedInputTokens = pickNonNegativeInt(totalUsage.cached_input_tokens);
+  const outputTokens = pickNonNegativeInt(totalUsage.output_tokens);
+  const reasoningTokens = pickNonNegativeInt(totalUsage.reasoning_output_tokens);
+  const estimatedCostUsd = estimateGpt54CostUsd({
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+  });
+  const pricingMetadata = getGpt54PricingMetadata();
 
   return {
     threadId,
@@ -135,9 +146,14 @@ export async function readLatestCodexSessionMetrics(threadId) {
     source: 'provider_last_token_count',
     timestamp: typeof tokenCountRecord.timestamp === 'string' ? tokenCountRecord.timestamp : null,
     contextTokens,
-    inputTokens: pickNonNegativeInt(totalUsage.input_tokens),
-    outputTokens: pickNonNegativeInt(totalUsage.output_tokens),
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningTokens,
     contextWindowTokens: pickNonNegativeInt(info.model_context_window),
+    ...(Number.isFinite(estimatedCostUsd) ? { estimatedCostUsd } : {}),
+    estimatedCostModel: pricingMetadata.pricingModel,
+    costSource: pricingMetadata.costSource,
   };
 }
 
@@ -148,12 +164,25 @@ export function buildCodexContextMetricsPayload(metrics) {
     type: 'remotelab.context_metrics',
     contextTokens: metrics.contextTokens,
     ...(Number.isInteger(metrics.inputTokens) ? { inputTokens: metrics.inputTokens } : {}),
+    ...(Number.isInteger(metrics.cachedInputTokens)
+      ? { cachedInputTokens: metrics.cachedInputTokens }
+      : {}),
     ...(Number.isInteger(metrics.outputTokens) ? { outputTokens: metrics.outputTokens } : {}),
+    ...(Number.isInteger(metrics.reasoningTokens) ? { reasoningTokens: metrics.reasoningTokens } : {}),
     ...(Number.isInteger(metrics.contextWindowTokens)
       ? { contextWindowTokens: metrics.contextWindowTokens }
       : {}),
+    ...(Number.isFinite(metrics.estimatedCostUsd)
+      ? { estimatedCostUsd: metrics.estimatedCostUsd }
+      : {}),
+    ...(typeof metrics.estimatedCostModel === 'string' && metrics.estimatedCostModel
+      ? { estimatedCostModel: metrics.estimatedCostModel }
+      : {}),
     ...(typeof metrics.source === 'string' && metrics.source
       ? { contextSource: metrics.source }
+      : {}),
+    ...(typeof metrics.costSource === 'string' && metrics.costSource
+      ? { costSource: metrics.costSource }
       : {}),
   };
 }

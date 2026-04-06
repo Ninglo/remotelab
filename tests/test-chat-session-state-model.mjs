@@ -111,11 +111,11 @@ assert.equal(
   JSON.stringify(model.getWorkflowStatusInfo('waiting-user')),
   JSON.stringify({
     key: 'waiting_user',
-    label: 'waiting',
+    label: 'needs user',
     className: 'status-waiting-user',
     dotClass: '',
     itemClass: '',
-    title: 'Waiting on user input',
+    title: 'Blocked on user input',
   }),
   'workflow status info should be normalized from the canonical workflow-state model',
 );

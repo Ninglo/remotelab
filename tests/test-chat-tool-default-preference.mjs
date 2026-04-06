@@ -44,7 +44,6 @@ function extractFunctionSource(source, functionName) {
 }
 
 const normalizeToolIdSource = extractFunctionSource(layoutToolingSource, 'normalizeToolId');
-const normalizeToolVisibilitySource = extractFunctionSource(layoutToolingSource, 'normalizeToolVisibility');
 const filterPrimaryToolOptionsSource = extractFunctionSource(layoutToolingSource, 'filterPrimaryToolOptions');
 const prioritizeToolOptionsSource = extractFunctionSource(layoutToolingSource, 'prioritizeToolOptions');
 const resolvePreferredToolIdSource = extractFunctionSource(layoutToolingSource, 'resolvePreferredToolId');
@@ -61,7 +60,6 @@ context.globalThis = context;
 vm.runInNewContext(
   [
     normalizeToolIdSource,
-    normalizeToolVisibilitySource,
     filterPrimaryToolOptionsSource,
     prioritizeToolOptionsSource,
     resolvePreferredToolIdSource,
@@ -135,16 +133,15 @@ assert.equal(
   'legacy Claude selections should still hydrate once Claude is visible again',
 );
 
-const publicOnly = context.filterPrimaryToolOptions([
+const allVisible = context.filterPrimaryToolOptions([
   { id: 'codex', name: 'CodeX' },
   { id: 'micro-agent', name: 'Micro Agent', visibility: 'private' },
-  { id: 'doubao-fast', name: 'Doubao Fast Agent', visibility: 'private' },
   { id: 'claude', name: 'Claude Code' },
 ]);
 assert.deepEqual(
-  Array.from(publicOnly, (tool) => tool.id),
+  Array.from(allVisible, (tool) => tool.id),
   ['codex', 'micro-agent', 'claude'],
-  'private tools should stay hidden while public Claude remains visible',
+  'all tools should be visible regardless of visibility flag',
 );
 
 const keptPrivate = context.filterPrimaryToolOptions([

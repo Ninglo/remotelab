@@ -21,6 +21,46 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-04-06 — settings should default to self-explanatory controls, not explanatory copy
+
+- Source: direct product feedback while reviewing the owner settings surface.
+- User slice: mobile-first owner/operator refining the mainstream product UX.
+- Observed friction or ask: the settings area currently spends too much space on explanatory notes and status sentences for simple toggles/selects; users can usually understand the control from the option labels themselves, and the extra copy becomes skimmable noise rather than helpful guidance.
+- Signal: for low-risk preferences, Settings should bias toward compact controls with self-explanatory option labels. Persistent explanatory paragraphs and "current status" restatements should be removed unless they prevent a real misunderstanding.
+- Product implication: shrink settings surfaces to title + control + exception-only feedback, and move nuance into the option labels or into just-in-time error/help states instead of always-visible prose.
+- Promote to: sidebar/settings UX defaults, copy standards for low-risk preference panels
+- Follow-up: keep auditing settings-like panels for intro text that merely repeats what the control already says
+
+### 2026-04-06 — low-entropy mobile tasks need a fast-response lane distinct from full-agent orchestration
+
+- Source: direct product discussion using everyday plant logging as a concrete example.
+- User slice: mobile-first users with frequent lightweight capture, identification, and journaling tasks.
+- Observed friction or ask: for simple tasks, the current full-agent path can spend too much time on context recovery, routing, memory activation, and orchestration before producing a useful reply; this makes RemoteLab feel slower than the value of the task warrants.
+- Signal: RemoteLab should support a low-latency quick-response lane for simple, low-risk tasks, while keeping the stronger full-agent path for ambiguous or execution-heavy work. The important distinction is not "weaker model vs stronger model" but "smaller orchestration/context budget vs full orchestration/context budget."
+- Product implication: represent this as an execution/profile concept that can control context depth, routing/delegation allowance, and model reasoning defaults. Avoid treating "shorter prompt only" as the solution; the product needs a real fast path. Preserve one-tap or automatic escalation from quick to full when the task outgrows the lightweight lane.
+- Promote to: app/profile design, runtime-selection defaults, memory-activation gates, and quick-to-deep escalation UX
+- Follow-up: define a concrete quick-mode latency target and test whether faster first response plus optional escalation improves simple-task satisfaction without hiding needed depth
+
+### 2026-04-06 — external actions must be instance-bound, not host-owner-local
+
+- Source: direct product discussion about schedule writing, reminders, notifications, and Feishu delivery in the new multi-instance/guest-instance shape.
+- User slice: owner/operator refining RemoteLab from a single-owner machine tool into a cleaner user-facing multi-instance execution surface.
+- Observed friction or ask: RemoteLab can already perform host-side actions such as creating reminders or sending outbound messages, but the effect may still resolve through the operator's own local calendar, mailbox, or Feishu context; that makes the system appear more capable for end users than it really is, because the action does not land in the instance user's world.
+- Signal: external writes should use shared connectors with instance-scoped account bindings, scopes, and delivery identities. The host machine is the execution substrate, not the semantic owner of the user's external apps. "Can the machine do it?" and "will it take effect for this user?" must be treated as separate states.
+- Product implication: freeze product wording and implementation direction around connector/binding semantics, require explicit per-instance authorization before user-facing side effects, and keep host-local app integrations as owner-only compatibility paths rather than the default product promise.
+- Promote to: `notes/current/instance-scoped-connectors.md`, `notes/current/knowledge-layers-and-connectors.md`, future connector/auth/binding UX
+- Follow-up: define the minimum binding registry and trigger-side binding resolution path before adding more calendar / reminder / IM write features
+
+### 2026-04-06 — missing context should prefer user-provided entry points over machine-wide search
+
+- Source: direct product feedback after repeated macOS privacy popups were traced to RemoteLab/Codex workers running broad home-directory discovery commands.
+- User slice: owner/operator on macOS using RemoteLab as a long-lived personal workbench with growing private machine state.
+- Observed friction or ask: when memory does not surface the needed context, agents still fall back to recursive filesystem discovery, sometimes across the whole home directory; this creates low-value latency, violates the intended "the machine is the agent's workspace" mental model, and on macOS can trigger repeated "access data from other apps" privacy prompts by touching container paths.
+- Signal: missing context should default to a user-facing request for a concrete entry point such as a project name, path, file, or link. Broad local search is the wrong default recovery mechanism; memory, continuity, and known project pointers should carry most routing, and targeted discovery should happen only after a real lead exists.
+- Product implication: strengthen startup/runtime prompts and search-policy injections so "ask for the pointer" is the default branch after memory misses, and treat machine-wide search as exceptional rather than normal.
+- Promote to: startup/runtime prompt assets, search-policy injection, future scope-routing UX
+- Follow-up: watch future sessions for whether agents still reach for recursive search when scope pointers are absent, and whether product surfaces can expose better explicit project pickers to reduce ambiguity further
+
 ### 2026-03-31 — non-expert users need agent-side execution, not manual recipes
 
 - Source: direct product feedback while reviewing a negative trial case with a non-programmer user.

@@ -6,6 +6,7 @@ import path from 'path';
 
 const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'remotelab-build-prompt-'));
 process.env.HOME = tempHome;
+process.env.REMOTELAB_PUBLIC_BASE_URL = '';
 
 await fs.mkdir(path.join(tempHome, '.config', 'remotelab'), { recursive: true });
 await fs.writeFile(
@@ -68,6 +69,10 @@ assert.match(freshPrompt, /Stable context entry points:/);
 assert.match(freshPrompt, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
 assert.match(freshPrompt, /Model-managed writable context root:/);
 assert.match(freshPrompt, /~\/\.remotelab\/memory\/model-context/);
+assert.match(freshPrompt, /execution substrate, not the user's personal Mac/);
+assert.match(freshPrompt, /prefer instance-scoped connectors\/APIs with explicit account bindings/);
+assert.doesNotMatch(freshPrompt, /Subscription link \(webcal\): webcal:\/\/127\.0\.0\.1:/);
+assert.doesNotMatch(freshPrompt, /Subscription link \(https\): http:\/\/127\.0\.0\.1:/);
 
 const resumedPrompt = await buildPrompt(
   'session-test-1',
@@ -169,9 +174,7 @@ const microAgentPrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(microAgentPrompt, /<private>[\s\S]*lightweight external context hook/);
-assert.match(microAgentPrompt, /User message:/);
-assert.match(microAgentPrompt, /Memory System — Pointer-First Activation/);
+assert.equal(microAgentPrompt, '看一下这个项目的背景。');
 
 const promptWithTaskCard = await buildPrompt(
   'session-test-7',

@@ -45,6 +45,7 @@ try {
 
   const claudeUsageEvents = claude.parseLine(JSON.stringify({
     type: 'result',
+    cost_usd: 0.012345,
     usage: {
       input_tokens: 1200,
       cache_creation_input_tokens: 300,
@@ -58,7 +59,9 @@ try {
   assert.equal(claudeUsage.contextTokens, 1950, 'Claude context size should include cached tokens');
   assert.equal(claudeUsage.inputTokens, 1200, 'Claude inputTokens should preserve raw provider input');
   assert.equal(claudeUsage.outputTokens, 80, 'Claude outputTokens should be preserved');
+  assert.equal(claudeUsage.costUsd, 0.012345, 'Claude usage should preserve provider cost when available');
   assert.equal(claudeUsage.contextSource, 'provider_turn_usage', 'Claude usage should identify its context source');
+  assert.equal(claudeUsage.costSource, 'provider_reported', 'Claude usage should label exact provider-reported cost');
 
   const codex = createCodexAdapter();
   const codexRawUsageEvents = codex.parseLine(JSON.stringify({
@@ -131,8 +134,13 @@ try {
   assert.ok(codexMetrics, 'Codex session metrics should be readable from the session JSONL');
   assert.equal(codexMetrics.contextTokens, 12326, 'Codex live context should use last_token_usage.input_tokens');
   assert.equal(codexMetrics.inputTokens, 48317, 'Codex raw turn input should preserve total_token_usage.input_tokens');
+  assert.equal(codexMetrics.cachedInputTokens, 37632, 'Codex cached input tokens should be preserved when available');
   assert.equal(codexMetrics.outputTokens, 531, 'Codex output tokens should preserve total_token_usage.output_tokens');
+  assert.equal(codexMetrics.reasoningTokens, 269, 'Codex reasoning output tokens should be preserved when available');
   assert.equal(codexMetrics.contextWindowTokens, 258400, 'Codex context window should be preserved when available');
+  assert.equal(codexMetrics.estimatedCostUsd, 0.044086, 'Codex metrics should estimate GPT-5.4 cost from input/cache/output tokens');
+  assert.equal(codexMetrics.estimatedCostModel, 'gpt-5.4', 'Codex metrics should annotate the pricing model assumption');
+  assert.equal(codexMetrics.costSource, 'estimated_gpt_5_4', 'Codex metrics should expose the estimate source');
 
   const codexUsageEvents = codex.parseLine(JSON.stringify(buildCodexContextMetricsPayload(codexMetrics)));
   const codexUsage = codexUsageEvents.find((event) => event.type === 'usage');
@@ -140,9 +148,14 @@ try {
   assert.ok(codexUsage, 'Codex adapter should emit a usage event from RemoteLab-injected context metrics');
   assert.equal(codexUsage.contextTokens, 12326, 'Codex usage should use the latest live context size');
   assert.equal(codexUsage.inputTokens, 48317, 'Codex usage should preserve raw turn input for diagnostics');
+  assert.equal(codexUsage.cachedInputTokens, 37632, 'Codex usage should preserve cached input tokens');
   assert.equal(codexUsage.outputTokens, 531, 'Codex usage should preserve total turn output');
+  assert.equal(codexUsage.reasoningTokens, 269, 'Codex usage should preserve reasoning output tokens');
   assert.equal(codexUsage.contextWindowTokens, 258400, 'Codex usage should carry context window when available');
   assert.equal(codexUsage.contextSource, 'provider_last_token_count', 'Codex usage should identify the provider-backed context source');
+  assert.equal(codexUsage.estimatedCostUsd, 0.044086, 'Codex usage should carry the GPT-5.4 estimated cost');
+  assert.equal(codexUsage.estimatedCostModel, 'gpt-5.4', 'Codex usage should annotate the estimated pricing model');
+  assert.equal(codexUsage.costSource, 'estimated_gpt_5_4', 'Codex usage should identify the estimated cost source');
 
   const snapshot = await createShareSnapshot(
     { name: 'Usage test', tool: 'codex', created: new Date().toISOString() },
@@ -162,9 +175,14 @@ try {
         role: 'system',
         contextTokens: 654,
         inputTokens: 111,
+        cachedInputTokens: 44,
         outputTokens: 22,
+        reasoningTokens: 7,
+        estimatedCostUsd: 0.001234,
+        estimatedCostModel: 'gpt-5.4',
         contextWindowTokens: 258400,
         contextSource: 'provider_last_token_count',
+        costSource: 'estimated_gpt_5_4',
       },
       {
         type: 'usage',
@@ -185,8 +203,13 @@ try {
 
   assert.equal(legacyUsage.contextTokens, undefined, 'usage events without explicit contextTokens should stay unlabeled');
   assert.equal(newUsage.contextTokens, 654, 'new usage events should preserve explicit contextTokens');
+  assert.equal(newUsage.cachedInputTokens, 44, 'new usage events should preserve cached input tokens');
+  assert.equal(newUsage.reasoningTokens, 7, 'new usage events should preserve reasoning token counts');
+  assert.equal(newUsage.estimatedCostUsd, 0.001234, 'new usage events should preserve estimated cost');
+  assert.equal(newUsage.estimatedCostModel, 'gpt-5.4', 'new usage events should preserve estimated pricing model');
   assert.equal(newUsage.contextWindowTokens, 258400, 'new usage events should preserve context window data');
   assert.equal(newUsage.contextSource, 'provider_last_token_count', 'new usage events should preserve context source');
+  assert.equal(newUsage.costSource, 'estimated_gpt_5_4', 'new usage events should preserve cost source');
   assert.equal(noContextUsage.contextTokens, undefined, 'new-source usage events should not fall back to raw input when live context is unavailable');
 
   console.log('test-usage-context-metric: ok');

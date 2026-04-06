@@ -11,8 +11,6 @@ import {
 } from './session-naming.mjs';
 import { loadSessionLabelPromptContext } from './session-label-context.mjs';
 import {
-  inferSessionWorkflowPriorityFromText,
-  inferSessionWorkflowStateFromText,
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
@@ -167,6 +165,29 @@ function parseJsonObject(modelText) {
     } catch {
       return null;
     }
+  }
+}
+
+function isNeutralWorkflowStateLabel(value) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return normalized === ''
+    || normalized === 'active'
+    || normalized === 'neutral'
+    || normalized === 'unset'
+    || normalized === 'none'
+    || normalized === 'keep_active';
+}
+
+function getDefaultWorkflowPriorityForState(workflowState) {
+  switch (normalizeSessionWorkflowState(workflowState || '')) {
+    case 'waiting_user':
+      return 'high';
+    case 'done':
+      return 'low';
+    case 'parked':
+      return 'medium';
+    default:
+      return '';
   }
 }
 
@@ -388,18 +409,26 @@ async function runSessionWorkflowStateSuggestion(sessionMeta, _options = {}) {
 
   const prompt = [
     'You are updating RemoteLab workflow state for a developer session.',
-    'Choose the single best durable state after the latest assistant turn.',
+    'Low-visibility workflow states must be assigned very conservatively because they push the session lower in the sidebar.',
+    'Use a two-step decision:',
+    '1. First decide whether the latest turn supports a high-confidence durable low-visibility state at all.',
+    '2. Only if confidence is high, choose the single best durable state after the latest assistant turn.',
     'Valid states:',
     '- "parked": not currently running and not blocked on immediate user input; paused, deferred, or left open for later.',
     '- "waiting_user": the assistant needs the user before meaningful progress can continue, such as approval, an answer, files, credentials, a choice, or manual validation.',
-    '- "done": the current request is complete; follow-up is optional, not required to finish the current goal.',
+    '- "done": the current request is clearly closed and delivered; no user feedback, opinion, reaction, or response is still being solicited to wrap the current goal.',
     'Important rules:',
     '- Never output a running state. Live runtime already handles running separately.',
     '- If the assistant asked a direct question or requested approval/input needed to proceed, prefer "waiting_user".',
+    '- Do NOT choose "waiting_user" for optional follow-up questions, broad invitations to continue, or open-ended conversation that can keep moving without the user.',
     '- If the assistant delivered the requested result or clearly closed the task, prefer "done".',
-    '- If the session is paused, open-ended, or only loosely pending without needing the user right now, choose "parked".',
+    '- Do NOT choose "done" when there is any unresolved open loop, required validation, pending acceptance, or obvious next step still needed to satisfy the current goal.',
+    '- Do NOT choose "done" for open-ended wrap-ups that ask for subjective feedback, reactions, opinions, or review. If that input is not a hard blocker, leave the workflow state unset.',
+    '- If the assistant delivered work but is still soliciting subjective feedback or a broad reaction, do NOT choose "waiting_user" unless progress truly cannot continue without the user. Otherwise leave the workflow state unset.',
+    '- If the session is explicitly paused, deferred, or intentionally left for later, choose "parked".',
     '- On failures that require user intervention, prefer "waiting_user". On failures that simply stop progress without a clear ask, prefer "parked".',
-    '- Also choose the user-attention priority for the next glance at the session list.',
+    '- If confidence is not high, do not force a low-visibility state. Leave the workflow state unset so the session can stay active.',
+    '- Also choose the user-attention priority for the next glance at the session list, but only when you are setting a workflow state.',
     '- Use "high" when the user should probably look soon, especially for blockers, approvals, decisions, or important next actions.',
     '- Use "medium" for meaningful open work that matters but is not urgent right now.',
     '- Use "low" for safely parked or completed work that does not deserve immediate attention.',
@@ -417,8 +446,9 @@ async function runSessionWorkflowStateSuggestion(sessionMeta, _options = {}) {
     turnText,
     '',
     'Write a JSON object with exactly these fields:',
-    '- "workflowState": one of "parked", "waiting_user", or "done".',
-    '- "workflowPriority": one of "high", "medium", or "low".',
+    '- "shouldSetWorkflowState": true or false.',
+    '- "workflowState": "", "parked", "waiting_user", or "done".',
+    '- "workflowPriority": "", "high", "medium", or "low".',
     '- "reason": one short sentence explaining the choice.',
     '',
     'Respond with ONLY valid JSON. No markdown, no explanation.',
@@ -426,18 +456,21 @@ async function runSessionWorkflowStateSuggestion(sessionMeta, _options = {}) {
 
   const modelText = await runToolJsonPrompt(sessionMeta, prompt);
   const stateResult = parseJsonObject(modelText);
-  const nextWorkflowState = inferSessionWorkflowStateFromText(
-    stateResult?.workflowState
-    || stateResult?.reason
-    || modelText,
+  const rawWorkflowState = typeof stateResult?.workflowState === 'string'
+    ? stateResult.workflowState.trim()
+    : '';
+  const rawWorkflowPriority = typeof stateResult?.workflowPriority === 'string'
+    ? stateResult.workflowPriority.trim()
+    : '';
+  const explicitSetDecision = stateResult?.shouldSetWorkflowState === true;
+  const explicitClearDecision = stateResult?.shouldSetWorkflowState === false;
+  const normalizedWorkflowState = normalizeSessionWorkflowState(rawWorkflowState);
+  const shouldSetWorkflowState = explicitSetDecision || Boolean(normalizedWorkflowState);
+  const shouldClearWorkflowState = !shouldSetWorkflowState && (
+    explicitClearDecision || isNeutralWorkflowStateLabel(rawWorkflowState)
   );
-  const nextWorkflowPriority = inferSessionWorkflowPriorityFromText(
-    stateResult?.workflowPriority
-    || stateResult?.reason
-    || modelText,
-    nextWorkflowState,
-  );
-  if (!nextWorkflowState) {
+
+  if (!shouldSetWorkflowState && !shouldClearWorkflowState) {
     console.error(`[workflow-state] Unexpected workflow output for ${sessionId.slice(0, 8)}: ${modelText.slice(0, 200)}`);
     return {
       ok: false,
@@ -445,8 +478,25 @@ async function runSessionWorkflowStateSuggestion(sessionMeta, _options = {}) {
     };
   }
 
+  const nextWorkflowState = shouldSetWorkflowState ? normalizedWorkflowState : '';
+  const nextWorkflowPriority = shouldSetWorkflowState
+    ? (
+      normalizeSessionWorkflowPriority(rawWorkflowPriority)
+      || getDefaultWorkflowPriorityForState(nextWorkflowState)
+    )
+    : '';
+
+  if (shouldSetWorkflowState && !nextWorkflowState) {
+    console.error(`[workflow-state] Invalid workflow state output for ${sessionId.slice(0, 8)}: ${modelText.slice(0, 200)}`);
+    return {
+      ok: false,
+      error: `Invalid workflow state output: ${modelText.slice(0, 200)}`,
+    };
+  }
+
   return {
     ok: true,
+    shouldClearWorkflowState,
     workflowState: nextWorkflowState,
     workflowPriority: nextWorkflowPriority,
     reason: typeof stateResult?.reason === 'string' ? stateResult.reason.trim() : '',

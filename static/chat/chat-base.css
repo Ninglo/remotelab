@@ -121,9 +121,8 @@
   font-display: swap;
 }
 
-body[data-theme="amber"] {
+:root[data-theme="amber"] {
   color-scheme: light;
-  font-family: 'SmileySans', -apple-system, system-ui, 'Segoe UI', sans-serif;
   --bg: #f6f8ef;
   --bg-secondary: #f1f4e8;
   --bg-tertiary: #e5ebd7;
@@ -157,11 +156,15 @@ body[data-theme="amber"] {
   --modal-shadow: 0 24px 48px -12px rgba(30,28,20,0.16);
 }
 
-body[data-theme="amber"] .chat-area {
+:root[data-theme="amber"] body {
+  font-family: 'SmileySans', -apple-system, system-ui, 'Segoe UI', sans-serif;
+}
+
+:root[data-theme="amber"] .chat-area {
   position: relative;
 }
 
-body[data-theme="amber"] .chat-area::after {
+:root[data-theme="amber"] .chat-area::after {
   content: "";
   position: absolute;
   top: 12px;
@@ -313,13 +316,6 @@ body {
 }
 .header-share-btn:hover { background: var(--bg-secondary); color: var(--text); border-color: var(--border-strong); }
 .header-share-btn:disabled { opacity: 0.7; cursor: wait; }
-.theme-toggle-btn {
-  min-width: 64px;
-}
-.theme-toggle-label {
-  font-variant: all-small-caps;
-  letter-spacing: 0.04em;
-}
 .header-refresh-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; padding: 0; border-radius: 999px;

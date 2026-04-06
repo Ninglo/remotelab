@@ -237,13 +237,6 @@ const ownerMicroSelection = {
 };
 const ownerTools = [
   {
-    id: 'doubao-fast',
-    name: 'Doubao Fast Agent',
-    command: '/Users/example/code/remotelab/scripts/doubao-fast-agent.mjs',
-    runtimeFamily: 'claude-stream-json',
-    visibility: 'private',
-  },
-  {
     id: 'micro-agent',
     name: 'Micro Agent',
     command: 'codex',
@@ -296,19 +289,14 @@ assert.equal(
   'fresh guests should keep the micro-agent model default',
 );
 assert.equal(
-  plannedFreshGuestDefaults.tools[0].reasoning.default,
-  'medium',
-  'safe owner presets should normalize micro-agent copies to the product default effort',
-);
-assert.equal(
-  plannedFreshGuestDefaults.selection.selectedEffort,
-  'medium',
-  'fresh guests should fall back to the micro-agent product effort instead of inheriting the owner effort',
+  plannedFreshGuestDefaults.tools[0].reasoning.kind,
+  'none',
+  'guest should mirror the owner tool reasoning config as-is',
 );
 assert.equal(
   plannedFreshGuestDefaults.selection.reasoningKind,
-  'enum',
-  'micro-agent defaults should follow the tool reasoning mode',
+  'none',
+  'guest reasoning kind should match the owner tool config',
 );
 
 const plannedUpdatedGuestDefaults = planGuestRuntimeDefaults({
@@ -322,7 +310,7 @@ const plannedUpdatedGuestDefaults = planGuestRuntimeDefaults({
     reasoningKind: 'enum',
   },
   guestTools: [{
-    ...ownerTools[1],
+    ...ownerTools[0],
     models: [{ id: 'gpt-5.2-codex', label: 'gpt-5.2-codex' }],
   }],
   detectedModel: 'gpt-5.4',
@@ -339,8 +327,8 @@ assert.equal(
 );
 assert.equal(
   plannedUpdatedGuestDefaults.selection.selectedEffort,
-  'medium',
-  'normalized micro-agent copies should keep the product default effort',
+  '',
+  'reasoning kind none means no effort selection',
 );
 
 const plannedProductDefaultGuestDefaults = planGuestRuntimeDefaults({
@@ -356,14 +344,9 @@ assert.equal(
   'new guest instances should prefer Micro Agent when it is available',
 );
 assert.equal(
-  plannedProductDefaultGuestDefaults.selection.selectedEffort,
-  'medium',
-  'the product default should seed micro-agent at medium effort',
-);
-assert.equal(
   plannedProductDefaultGuestDefaults.selection.reasoningKind,
-  'enum',
-  'the product default should inherit the tool reasoning mode',
+  'none',
+  'the product default should mirror the owner tool reasoning config',
 );
 
 const plannedCodexFallbackDefaults = planGuestRuntimeDefaults({
@@ -387,6 +370,107 @@ assert.equal(
   plannedCodexFallbackDefaults.selection.selectedEffort,
   '',
   'Codex fallback should rely on the tool default instead of a hardcoded effort level',
+);
+
+// ---- Multi-model micro-agent router (non-codex runtimeFamily) ----
+const ownerRouterTools = [
+  {
+    id: 'micro-agent',
+    name: 'Micro Agent',
+    command: '/Users/example/code/remotelab/scripts/micro-agent-router.mjs',
+    toolProfile: 'micro-agent',
+    runtimeFamily: 'claude-stream-json',
+    promptMode: 'bare-user',
+    flattenPrompt: true,
+    visibility: 'private',
+    models: [
+      { id: 'gpt-5.4', label: 'gpt-5.4', defaultReasoning: 'medium' },
+      { id: 'opus', label: 'Claude Opus', defaultReasoning: 'medium' },
+      { id: 'sonnet', label: 'Claude Sonnet', defaultReasoning: 'medium' },
+      { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro', defaultReasoning: 'medium' },
+    ],
+    reasoning: { kind: 'none', label: 'Thinking' },
+  },
+];
+
+const plannedRouterFreshGuest = planGuestRuntimeDefaults({
+  ownerSelection: ownerMicroSelection,
+  ownerTools: ownerRouterTools,
+  guestSelection: null,
+  guestTools: [],
+  detectedModel: 'gpt-5.4',
+});
+assert.deepEqual(
+  plannedRouterFreshGuest.tools.map((tool) => tool.id),
+  ['micro-agent'],
+  'router-based micro-agent should sync to fresh guest instances',
+);
+assert.equal(
+  plannedRouterFreshGuest.tools[0].command,
+  '/Users/example/code/remotelab/scripts/micro-agent-router.mjs',
+  'router command path should be preserved in guest copy',
+);
+assert.equal(
+  plannedRouterFreshGuest.tools[0].runtimeFamily,
+  'claude-stream-json',
+  'runtimeFamily should be preserved in guest copy',
+);
+assert.deepEqual(
+  plannedRouterFreshGuest.tools[0].models.map((m) => m.id),
+  ['gpt-5.4', 'opus', 'sonnet', 'doubao-seed-2-0-pro-260215'],
+  'all four models (GPT, Claude Opus, Claude Sonnet, Doubao) must be present in guest copy',
+);
+assert.equal(
+  plannedRouterFreshGuest.selection.selectedTool,
+  'micro-agent',
+  'fresh guest should default to micro-agent when available',
+);
+assert.deepEqual(
+  plannedRouterFreshGuest.tools[0].reasoning,
+  { kind: 'none', label: 'Thinking' },
+  'non-codex micro-agent should preserve original reasoning (not force enum)',
+);
+
+const plannedRouterStaleGuest = planGuestRuntimeDefaults({
+  ownerSelection: ownerMicroSelection,
+  ownerTools: ownerRouterTools,
+  guestSelection: {
+    selectedTool: 'micro-agent',
+    selectedModel: 'gpt-5.4',
+    selectedEffort: 'medium',
+    thinkingEnabled: false,
+    reasoningKind: 'enum',
+  },
+  guestTools: [{
+    id: 'micro-agent',
+    name: 'Micro Agent',
+    command: 'codex',
+    toolProfile: 'micro-agent',
+    runtimeFamily: 'codex-json',
+    models: [{ id: 'gpt-5.4', label: 'gpt-5.4' }],
+    reasoning: { kind: 'enum', label: 'Thinking', levels: ['low', 'medium', 'high', 'xhigh'], default: 'medium' },
+  }],
+  detectedModel: 'gpt-5.4',
+});
+assert.equal(
+  plannedRouterStaleGuest.tools[0].command,
+  '/Users/example/code/remotelab/scripts/micro-agent-router.mjs',
+  'stale codex-based guest tool should be upgraded to the router command',
+);
+assert.equal(
+  plannedRouterStaleGuest.tools[0].runtimeFamily,
+  'claude-stream-json',
+  'stale guest runtimeFamily should be upgraded from codex-json to claude-stream-json',
+);
+assert.equal(
+  plannedRouterStaleGuest.tools[0].models.length,
+  4,
+  'stale guest should receive all four models after sync',
+);
+assert.deepEqual(
+  plannedRouterStaleGuest.tools[0].models.map((m) => m.id),
+  ['gpt-5.4', 'opus', 'sonnet', 'doubao-seed-2-0-pro-260215'],
+  'stale guest model list should match owner exactly',
 );
 
 const sandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-'));
@@ -453,6 +537,7 @@ try {
   assert.equal(convergeOutput[0].nextChatServerPath, join(repoRoot, 'chat-server.mjs'));
   assert.equal(convergeOutput[0].nextWorkingDirectory, repoRoot);
   assert.equal(convergeOutput[0].drift.hasLegacyReleaseFlags, true);
+  assert.equal(convergeOutput[0].drift.missingPublicBaseUrl, true);
   assert.equal(convergeOutput[0].drift.fileAssetEnvironmentChanged, true);
 } finally {
   rmSync(sandboxHome, { recursive: true, force: true });
@@ -676,6 +761,72 @@ try {
   writeFileSync(join(intakeConfigDir, 'chat-sessions.json'), JSON.stringify([], null, 2));
   writeFileSync(join(emptyConfigDir, 'chat-sessions.json'), JSON.stringify([], null, 2));
 
+  mkdirSync(join(trialConfigDir, 'usage-ledger'), { recursive: true });
+  mkdirSync(join(intakeConfigDir, 'usage-ledger'), { recursive: true });
+
+  writeFileSync(join(trialConfigDir, 'usage-ledger', '2026-03-26.jsonl'), [
+    JSON.stringify({
+      ts: '2026-03-26T14:00:00.000Z',
+      runId: 'run_trial24_1',
+      sessionId: 'sess-trial-1',
+      sessionName: 'Trial 24 session 1',
+      principalType: 'owner',
+      principalId: 'owner',
+      principalName: 'Owner',
+      tool: 'claude',
+      model: 'claude-sonnet',
+      state: 'completed',
+      totalTokens: 150,
+      inputTokens: 120,
+      outputTokens: 30,
+      costUsd: 0.25,
+      operation: 'user_turn',
+    }),
+    JSON.stringify({
+      ts: '2026-03-27T14:00:00.000Z',
+      runId: 'run_trial24_2',
+      sessionId: 'sess-trial-2',
+      sessionName: 'Trial 24 session 2',
+      principalType: 'owner',
+      principalId: 'owner',
+      principalName: 'Owner',
+      tool: 'micro-agent',
+      model: 'gpt-5.4',
+      state: 'completed',
+      totalTokens: 240,
+      inputTokens: 180,
+      outputTokens: 60,
+      cachedInputTokens: 90,
+      estimatedCostUsd: 0.4,
+      estimatedCostModel: 'gpt-5.4',
+      costSource: 'estimated_gpt_5_4',
+      operation: 'user_turn',
+    }),
+  ].join('\n') + '\n');
+
+  writeFileSync(join(intakeConfigDir, 'usage-ledger', '2026-03-27.jsonl'), [
+    JSON.stringify({
+      ts: '2026-03-27T16:00:00.000Z',
+      runId: 'run_intake1_1',
+      sessionId: 'sess-intake-1',
+      sessionName: 'Intake session',
+      principalType: 'owner',
+      principalId: 'owner',
+      principalName: 'Owner',
+      tool: 'codex',
+      model: 'gpt-5.4',
+      state: 'completed',
+      totalTokens: 90,
+      inputTokens: 70,
+      outputTokens: 20,
+      cachedInputTokens: 20,
+      estimatedCostUsd: 0.12,
+      estimatedCostModel: 'gpt-5.4',
+      costSource: 'estimated_gpt_5_4',
+      operation: 'user_turn',
+    }),
+  ].join('\n') + '\n');
+
   const reportResult = spawnSync('node', ['cli.js', 'guest-instance', 'report', '--json', '--output-dir', outputDir], {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -692,6 +843,12 @@ try {
   assert.equal(reportOutput.summary.emptyCount, 1);
   assert.equal(reportOutput.summary.topActiveNames[0], 'trial24');
   assert.deepEqual(reportOutput.summary.emptyNames, ['trial25']);
+  assert.equal(reportOutput.summary.usage.windowDays, 30);
+  assert.equal(reportOutput.summary.usage.activeInstanceCount, 2);
+  assert.equal(reportOutput.summary.usage.totalTokens, 480);
+  assert.equal(reportOutput.summary.usage.costUsd, 0.25);
+  assert.equal(reportOutput.summary.usage.estimatedCostUsd, 0.52);
+  assert.equal(reportOutput.summary.usage.byTool[0].key, 'micro-agent');
 
   const trial24 = reportOutput.instances.find((entry) => entry.name === 'trial24');
   const intake1 = reportOutput.instances.find((entry) => entry.name === 'intake1');
@@ -700,13 +857,21 @@ try {
   assert.equal(trial24.sessionCount, 2);
   assert.equal(trial24.authSessionCount, 2);
   assert.equal(trial24.bestAccessUrl, 'https://trial24.example.com/?token=trial-token');
+  assert.equal(trial24.usageSummary.totals.totalTokens, 390);
+  assert.equal(trial24.usageSummary.totals.costUsd, 0.25);
+  assert.equal(trial24.usageSummary.totals.estimatedCostUsd, 0.4);
+  assert.equal(trial24.usageSummary.byTool[0].key, 'micro-agent');
   assert.equal(intake1.status, 'opened');
   assert.equal(intake1.sessionCount, 0);
   assert.equal(intake1.authSessionCount, 1);
+  assert.equal(intake1.usageSummary.totals.totalTokens, 90);
+  assert.equal(intake1.usageSummary.totals.estimatedCostUsd, 0.12);
+  assert.equal(intake1.usageSummary.byTool[0].key, 'codex');
   assert.equal(trial25.status, 'empty');
 
   assert.match(readFileSync(reportOutput.markdownPath, 'utf8'), /# Guest Instance Usage Report/);
   assert.match(readFileSync(reportOutput.markdownPath, 'utf8'), /\| trial24 \| active \|/);
+  assert.match(readFileSync(reportOutput.markdownPath, 'utf8'), /30d Tokens/);
   assert.match(readFileSync(reportOutput.markdownPath, 'utf8'), /\[open\]\(https:\/\/trial24\.example\.com\/\?token=trial-token\)/);
   assert.match(readFileSync(reportOutput.csvPath, 'utf8'), /trial24,active,recent activity,7711,2,2/);
   assert.match(readFileSync(reportOutput.jsonPath, 'utf8'), /"scope": "all"/);

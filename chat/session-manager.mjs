@@ -17,6 +17,7 @@ import {
   setContextHead,
 } from './history.mjs';
 import { contextOperationEvent, managerContextEvent, messageEvent, statusEvent } from './normalizer.mjs';
+import { appendUsageLedgerRecord, buildUsageLedgerRecord } from './usage-ledger.mjs';
 import {
   triggerSessionLabelSuggestion,
   triggerSessionTaskCardSuggestion,
@@ -89,6 +90,8 @@ import {
   withSessionsMetaMutation,
 } from './session-meta-store.mjs';
 import { dispatchSessionEmailCompletionTargets, sanitizeEmailCompletionTargets } from '../lib/agent-mail-completion-targets.mjs';
+import { dispatchSessionConnectorActions, sanitizeAllCompletionTargets } from '../lib/connector-action-dispatcher.mjs';
+import { buildRunConnectorSurface, buildSessionConnectorSurface } from './session-connectors.mjs';
 import {
   DEFAULT_APP_ID,
   WELCOME_APP_ID,
@@ -201,6 +204,7 @@ function normalizeSessionSidebarOrder(value) {
 const liveSessions = new Map();
 const observedRuns = new Map();
 const runSyncPromises = new Map();
+const runPostFinalizePromises = new Map();
 const MAX_SESSION_SOURCE_CONTEXT_BYTES = 16 * 1024;
 
 function nowIso() {
@@ -812,6 +816,14 @@ function stopObservedRun(runId) {
   observedRuns.delete(runId);
 }
 
+function isMissingRunStorageError(error) {
+  if (!error || error.code !== 'ENOENT') {
+    return false;
+  }
+  const message = typeof error.message === 'string' ? error.message : '';
+  return /chat-runs|status\.json|manifest\.json|result\.json|spool\.jsonl/.test(message);
+}
+
 function scheduleObservedRunSync(runId, delayMs = 40) {
   const observed = observedRuns.get(runId);
   if (!observed) return;
@@ -829,6 +841,10 @@ function scheduleObservedRunSync(runId, delayMs = 40) {
           stopObservedRun(runId);
         }
       } catch (error) {
+        if (isMissingRunStorageError(error)) {
+          stopObservedRun(runId);
+          return;
+        }
         console.error(`[runs] observer sync failed for ${runId}: ${error.message}`);
       }
     })();
@@ -966,12 +982,8 @@ async function collectNormalizedRunEventDelta(run, manifest) {
 async function buildSessionTimelineEvents(sessionId, options = {}) {
   const sessionMeta = options.sessionMeta || await findSessionMeta(sessionId);
   const activeRunId = typeof sessionMeta?.activeRunId === 'string' ? sessionMeta.activeRunId.trim() : '';
-  const pendingReplySelfCheckRunId = typeof liveSessions.get(sessionId)?.pendingReplySelfCheckRunId === 'string'
-    ? liveSessions.get(sessionId).pendingReplySelfCheckRunId.trim()
-    : '';
-  const syncRunId = activeRunId || pendingReplySelfCheckRunId;
-  if (syncRunId) {
-    await syncDetachedRun(sessionId, syncRunId);
+  if (activeRunId) {
+    await syncDetachedRun(sessionId, activeRunId);
   }
   return loadHistory(sessionId, { includeBodies: options.includeBodies !== false });
 }
@@ -1191,6 +1203,8 @@ const {
   collectGeneratedResultFilesFromRun,
   contextOperationEvent,
   dispatchSessionEmailCompletionTargets,
+  dispatchSessionConnectorActions,
+  sanitizeAllCompletionTargets,
   findAssistantAttachmentMessageForRun,
   findResultAssetMessageForRun,
   getCompactionServices,
@@ -1314,7 +1328,7 @@ async function enrichSessionMeta(meta, _options = {}) {
   const sourceName = resolveSessionSourceName(meta, sourceId);
   const templateId = resolveSessionTemplateId(meta);
   const templateName = resolveSessionTemplateName(meta);
-  return {
+  const session = {
     ...rest,
     entryMode: resolveSessionEntryMode(meta.entryMode),
     sourceId,
@@ -1337,6 +1351,11 @@ async function enrichSessionMeta(meta, _options = {}) {
       run: runActivity.run,
       queuedCount,
     }),
+  };
+  const connectors = await buildSessionConnectorSurface(session);
+  return {
+    ...session,
+    ...(connectors ? { connectors } : {}),
   };
 }
 
@@ -1415,18 +1434,65 @@ function broadcastSessionsInvalidation() {
   broadcastOwners({ type: 'sessions_invalidated' });
 }
 
-function broadcastSessionInvalidation(sessionId) {
-  const session = findSessionMetaCached(sessionId);
+function getAuthAgentId(authSession) {
+  return normalizeAppId(authSession?.agentId || authSession?.appId || authSession?.scope?.agentId);
+}
+
+function getAuthPrincipalId(authSession) {
+  return typeof authSession?.principalId === 'string' && authSession.principalId.trim()
+    ? authSession.principalId.trim()
+    : (typeof authSession?.visitorId === 'string' ? authSession.visitorId.trim() : '');
+}
+
+function getSessionScopedAgentId(session) {
+  return normalizeAppId(session?.agentId || session?.templateId || session?.appId);
+}
+
+function getSessionScopedPrincipalId(session) {
+  return typeof session?.createdByPrincipalId === 'string' && session.createdByPrincipalId.trim()
+    ? session.createdByPrincipalId.trim()
+    : (typeof session?.visitorId === 'string' ? session.visitorId.trim() : '');
+}
+
+function isAgentScopedAuthSession(authSession) {
+  return !!(
+    authSession
+    && authSession.role === 'visitor'
+    && String(authSession?.surfaceMode || '').trim() === 'agent_scoped'
+    && getAuthAgentId(authSession)
+    && getAuthPrincipalId(authSession)
+  );
+}
+
+function isSessionVisibleToAuthSession(authSession, sessionId, session) {
+  if (!authSession) return false;
+  if (authSession.role === 'owner') {
+    return shouldExposeSession(session);
+  }
+  if (isAgentScopedAuthSession(authSession)) {
+    return getSessionScopedAgentId(session) === getAuthAgentId(authSession)
+      && getSessionScopedPrincipalId(session) === getAuthPrincipalId(authSession);
+  }
+  return typeof authSession?.sessionId === 'string' && authSession.sessionId === sessionId;
+}
+
+function broadcastScopedSessionsInvalidation(session) {
   const clients = getClientsMatching((client) => {
     const authSession = client._authSession;
     if (!authSession) return false;
     if (authSession.role === 'owner') {
       return shouldExposeSession(session);
     }
-    if (authSession.role === 'visitor') {
-      return authSession.sessionId === sessionId;
-    }
-    return false;
+    return isSessionVisibleToAuthSession(authSession, session?.id, session);
+  });
+  sendToClients(clients, { type: 'sessions_invalidated' });
+}
+
+function broadcastSessionInvalidation(sessionId) {
+  const session = findSessionMetaCached(sessionId);
+  const clients = getClientsMatching((client) => {
+    const authSession = client._authSession;
+    return isSessionVisibleToAuthSession(authSession, sessionId, session);
   });
   sendToClients(clients, { type: 'session_invalidated', sessionId });
 }
@@ -1863,6 +1929,8 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
   });
   sessionChanged = sessionChanged || finalizedMeta.changed;
 
+  appendFinalizedRunUsageLedger(finalizedMeta.meta, run, manifest, fullNormalizedEvents, sessionId);
+
   const finalizedRun = await updateRun(run.id, (current) => ({
     ...current,
     finalizedAt: current.finalizedAt || nowIso(),
@@ -1881,13 +1949,68 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     broadcastSessionInvalidation(sessionId);
     return { historyChanged, sessionChanged };
   }
+  scheduleDetachedRunPostFinalization(sessionId, finalizedRun, manifest, fullNormalizedEvents);
+
+  return { historyChanged, sessionChanged };
+}
+
+function appendFinalizedRunUsageLedger(session, run, manifest, fullNormalizedEvents = [], sessionId = '') {
+  const latestUsageEvent = [...fullNormalizedEvents]
+    .reverse()
+    .find((event) => event?.type === 'usage');
+  if (!session || !latestUsageEvent) {
+    return false;
+  }
+  try {
+    const usageRecord = buildUsageLedgerRecord({
+      session,
+      run,
+      usageEvent: latestUsageEvent,
+      manifest,
+    });
+    if (!usageRecord) {
+      return false;
+    }
+    appendUsageLedgerRecord(usageRecord);
+    return true;
+  } catch (error) {
+    console.error(`[usage-ledger] Failed to append run usage for ${sessionId?.slice(0, 8)}: ${error.message}`);
+    return false;
+  }
+}
+
+function scheduleDetachedRunPostFinalization(sessionId, finalizedRun, manifest, fullNormalizedEvents = []) {
+  if (!finalizedRun?.id) {
+    return null;
+  }
+  const existing = runPostFinalizePromises.get(finalizedRun.id);
+  if (existing) {
+    return existing;
+  }
+  // Keep optional AI follow-up out of syncDetachedRun's shared promise so
+  // timeline/history reads only wait for fast run reconciliation.
+  const promise = runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, manifest, fullNormalizedEvents)
+    .catch((error) => {
+      console.error(`[runs] post-finalization effects failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
+    })
+    .finally(() => {
+      if (runPostFinalizePromises.get(finalizedRun.id) === promise) {
+        runPostFinalizePromises.delete(finalizedRun.id);
+      }
+      broadcastSessionInvalidation(sessionId);
+    });
+  runPostFinalizePromises.set(finalizedRun.id, promise);
+  return promise;
+}
+
+async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, manifest, fullNormalizedEvents = []) {
   let latestSession = await getSession(sessionId);
   if (!latestSession) {
-    return { historyChanged, sessionChanged };
+    return;
   }
 
   const preparedReplySelfCheck = await prepareReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
-  historyChanged = await maybePublishRunResultAssets(sessionId, finalizedRun, manifest, fullNormalizedEvents) || historyChanged;
+  await maybePublishRunResultAssets(sessionId, finalizedRun, manifest, fullNormalizedEvents);
 
   const replySelfCheck = await maybeRunReplySelfCheck(
     sessionId,
@@ -1897,45 +2020,47 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     preparedReplySelfCheck,
   );
   if (replySelfCheck.continued) {
-    return { historyChanged, sessionChanged };
+    return;
   }
 
   latestSession = await getSession(sessionId) || latestSession;
-  const completionEffects = await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
-  sessionChanged = sessionChanged || completionEffects.sessionChanged;
+  await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
+  scheduleDetachedRunMemoryWriteback(sessionId, latestSession, finalizedRun, manifest);
+}
 
-  // Fire-and-forget: async memory writeback (non-blocking)
-  if (!manifest?.internalOperation && !isInternalSession(latestSession)) {
-    void (async () => {
-      try {
-        const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(
-          sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
-        );
-        await maybeRunMemoryWriteback({
-          sessionId,
-          session: latestSession,
-          run: finalizedRun,
-          userMessage: userMessage?.content || '',
-          assistantTurnText,
-          runPrompt: (prompt) => runDetachedAssistantPrompt({
-            id: sessionId,
-            folder: latestSession.folder,
-            tool: finalizedRun.tool || latestSession.tool,
-            model: undefined,
-            effort: 'low',
-            thinking: false,
-          }, prompt),
-        });
-      } catch (error) {
-        console.error(`[memory-writeback] Async writeback failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
-      }
-    })();
+function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
+  if (manifest?.internalOperation || isInternalSession(session)) {
+    return false;
   }
-
-  return { historyChanged, sessionChanged };
+  void (async () => {
+    try {
+      const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(
+        sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
+      );
+      await maybeRunMemoryWriteback({
+        sessionId,
+        session,
+        run: finalizedRun,
+        userMessage: userMessage?.content || '',
+        assistantTurnText,
+        runPrompt: (prompt) => runDetachedAssistantPrompt({
+          id: sessionId,
+          folder: session.folder,
+          tool: finalizedRun.tool || session.tool,
+          model: undefined,
+          effort: 'low',
+          thinking: false,
+        }, prompt),
+      });
+    } catch (error) {
+      console.error(`[memory-writeback] Async writeback failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
+    }
+  })();
+  return true;
 }
 
 async function syncDetachedRun(sessionId, runId) {
+  // Same-run dedup is for fast exactly-once reconciliation only.
   if (!runId) return null;
   if (runSyncPromises.has(runId)) {
     return runSyncPromises.get(runId);
@@ -2045,11 +2170,23 @@ export async function getSessionSourceContext(sessionId, options = {}) {
 export async function getRunState(runId) {
   const run = await getRun(runId);
   if (!run) return null;
-  return await flushDetachedRunIfNeeded(run.sessionId, runId) || await getRun(runId);
+  const effectiveRun = await flushDetachedRunIfNeeded(run.sessionId, runId) || await getRun(runId);
+  if (!effectiveRun) return null;
+  const session = await findSessionMeta(effectiveRun.sessionId);
+  const connectors = await buildRunConnectorSurface(session, effectiveRun);
+  return {
+    ...effectiveRun,
+    ...(connectors ? { connectors } : {}),
+  };
 }
 
 export async function createSession(folder, tool, name, extra = {}) {
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
+  const requestedAgentId = normalizeAppId(extra.agentId);
+  const requestedCreatedByPrincipalId = typeof extra.createdByPrincipalId === 'string'
+    ? extra.createdByPrincipalId.trim()
+    : '';
+  const requestedVisitorId = typeof extra.visitorId === 'string' ? extra.visitorId.trim() : '';
   const requestedTemplateId = normalizeAppId(extra.templateId);
   const requestedTemplateName = normalizeSessionTemplateName(extra.templateName);
   const requestedSourceId = resolveRequestedSessionSourceId(extra);
@@ -2148,6 +2285,21 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
+        if (requestedAgentId && updated.agentId !== requestedAgentId) {
+          updated.agentId = requestedAgentId;
+          changed = true;
+        }
+
+        if (requestedCreatedByPrincipalId && updated.createdByPrincipalId !== requestedCreatedByPrincipalId) {
+          updated.createdByPrincipalId = requestedCreatedByPrincipalId;
+          changed = true;
+        }
+
+        if (requestedVisitorId && updated.visitorId !== requestedVisitorId) {
+          updated.visitorId = requestedVisitorId;
+          changed = true;
+        }
+
         if (requestedVisitorName && updated.visitorName !== requestedVisitorName) {
           updated.visitorName = requestedVisitorName;
           changed = true;
@@ -2187,7 +2339,7 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        const completionTargets = sanitizeEmailCompletionTargets(extra.completionTargets || []);
+        const completionTargets = sanitizeAllCompletionTargets(extra.completionTargets || []);
         if (completionTargets.length > 0 && JSON.stringify(updated.completionTargets || []) !== JSON.stringify(completionTargets)) {
           updated.completionTargets = completionTargets;
           changed = true;
@@ -2226,7 +2378,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     const now = nowIso();
     const workflowState = normalizeSessionWorkflowState(extra.workflowState || '');
     const workflowPriority = normalizeSessionWorkflowPriority(extra.workflowPriority || '');
-    const completionTargets = sanitizeEmailCompletionTargets(extra.completionTargets || []);
+    const completionTargets = sanitizeAllCompletionTargets(extra.completionTargets || []);
 
     const session = {
       id,
@@ -2246,7 +2398,9 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedSourceName) session.sourceName = requestedSourceName;
     if (requestedTemplateId) session.templateId = requestedTemplateId;
     if (requestedTemplateName) session.templateName = requestedTemplateName;
-    if (extra.visitorId) session.visitorId = extra.visitorId;
+    if (requestedAgentId) session.agentId = requestedAgentId;
+    if (requestedCreatedByPrincipalId) session.createdByPrincipalId = requestedCreatedByPrincipalId;
+    if (requestedVisitorId) session.visitorId = requestedVisitorId;
     if (requestedVisitorName) session.visitorName = requestedVisitorName;
     if (requestedUserId) session.userId = requestedUserId;
     if (requestedUserName) session.userName = requestedUserName;
@@ -2273,7 +2427,7 @@ export async function createSession(folder, tool, name, extra = {}) {
   });
 
   if ((created.created || created.changed) && shouldExposeSession(created.session)) {
-    broadcastSessionsInvalidation();
+    broadcastScopedSessionsInvalidation(created.session);
   }
 
   return enrichSessionMeta(created.session);
@@ -2642,30 +2796,8 @@ async function applySessionTemplateMetadata(id, template, extra = {}) {
     let changed = false;
     const nextTemplateId = normalizeAppId(template?.id);
     const nextTemplateName = typeof template?.name === 'string' ? template.name.trim() : '';
-    const nextSourceId = nextTemplateId;
-    const nextSourceName = nextTemplateName;
     const nextSystemPrompt = typeof template?.systemPrompt === 'string' ? template.systemPrompt : '';
     const nextTool = typeof template?.tool === 'string' ? template.tool.trim() : '';
-
-    if (nextSourceId) {
-      if (session.sourceId !== nextSourceId) {
-        session.sourceId = nextSourceId;
-        changed = true;
-      }
-    } else if (session.sourceId) {
-      delete session.sourceId;
-      changed = true;
-    }
-
-    if (nextSourceName) {
-      if (session.sourceName !== nextSourceName) {
-        session.sourceName = nextSourceName;
-        changed = true;
-      }
-    } else if (session.sourceName) {
-      delete session.sourceName;
-      changed = true;
-    }
 
     if (nextTemplateId) {
       if (session.templateId !== nextTemplateId) {
@@ -2838,10 +2970,10 @@ export async function saveSessionAsTemplate(sessionId, name = '') {
   });
 }
 
-export async function applyTemplateToSession(sessionId, templateId) {
+export async function applyTemplateToSession(sessionId, templateId, options = {}) {
   const session = await getSession(sessionId);
   if (!session) return null;
-  if (session.visitorId) return null;
+  if (session.visitorId && options?.allowVisitor !== true) return null;
   if (isSessionRunning(session)) return null;
   if ((session.messageCount || 0) > 0) return null;
 
@@ -2852,11 +2984,11 @@ export async function applyTemplateToSession(sessionId, templateId) {
     return null;
   }
 
-  if (!template.templateContext?.content && !(template.systemPrompt || '').trim()) {
-    return null;
-  }
-
   const templateFreshness = await resolveAppTemplateFreshness(template);
+  const shouldAppendWelcome = options?.appendWelcome === true;
+  const welcomeMessage = typeof template?.welcomeMessage === 'string'
+    ? template.welcomeMessage.trim()
+    : '';
 
   const appliedAt = nowIso();
   const updatedSession = await applySessionTemplateMetadata(sessionId, template, {
@@ -2874,6 +3006,10 @@ export async function applyTemplateToSession(sessionId, templateId) {
       timestamp: Date.now(),
     });
     await clearForkContext(sessionId);
+  }
+
+  if (shouldAppendWelcome && welcomeMessage) {
+    await appendEvent(sessionId, messageEvent('assistant', welcomeMessage));
   }
 
   return getSession(sessionId);
@@ -2927,7 +3063,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         session,
         message: normalizedText,
         listSessions: () => listSessions({ includeArchived: false }),
-        listApps: () => listApps(),
+        listAgents: () => listApps(),
         runPrompt: (prompt) => runDetachedAssistantPrompt({
           id: sessionId,
           folder: session.folder,
@@ -2948,7 +3084,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
           createSession: (tool, name, extra) => createSession(session.folder, tool || session.tool, name, extra),
           submitMessage: submitHttpMessage,
           getSession,
-          getApp,
+          getAgent: getApp,
           appendEvent,
           broadcastInvalidation: broadcastSessionInvalidation,
           messageEvent,

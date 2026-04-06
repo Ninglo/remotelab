@@ -27,6 +27,10 @@ const HYBRID_CLAUDE_MODELS = [
   { id: 'sonnet', label: 'Claude Sonnet' },
 ];
 
+const HYBRID_DOUBAO_MODELS = [
+  { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro' },
+];
+
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -55,6 +59,7 @@ function buildHybridModelRecords(primaryModel) {
       levels: DEFAULT_CLAUDE_REASONING_LEVELS,
       defaultReasoning: DEFAULT_REASONING_LEVEL,
     })),
+    ...HYBRID_DOUBAO_MODELS.map((entry) => ({ id: entry.id, label: entry.label })),
   ];
 }
 

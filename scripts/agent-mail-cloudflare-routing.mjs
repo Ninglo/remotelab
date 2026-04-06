@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { resolveMx } from 'dns/promises';
-import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import net from 'net';
@@ -85,16 +85,16 @@ Notes:
   process.exit(exitCode);
 }
 
-function readJson(filePath, fallbackValue) {
+async function readJson(filePath, fallbackValue) {
   try {
-    return JSON.parse(readFileSync(filePath, 'utf8'));
+    return JSON.parse(await readFile(filePath, 'utf8'));
   } catch {
     return fallbackValue;
   }
 }
 
-function loadGuestRegistry(registryFile = DEFAULT_GUEST_REGISTRY_FILE) {
-  return loadMailboxRuntimeRegistry({ registryFile })
+async function loadGuestRegistry(registryFile = DEFAULT_GUEST_REGISTRY_FILE) {
+  return (await loadMailboxRuntimeRegistry({ registryFile }))
     .map((record) => ({
       name: trimString(record?.name),
       hostname: trimString(record?.hostname),
@@ -107,7 +107,7 @@ function loadGuestRegistry(registryFile = DEFAULT_GUEST_REGISTRY_FILE) {
     .filter((record) => record.name);
 }
 
-function loadWorkerConfig(workerConfigFile = DEFAULT_WORKER_CONFIG_FILE) {
+async function loadWorkerConfig(workerConfigFile = DEFAULT_WORKER_CONFIG_FILE) {
   return readJson(workerConfigFile, null);
 }
 
@@ -148,8 +148,8 @@ function summarizeSendEmailBinding(workerConfig = {}) {
   };
 }
 
-function loadCloudflareAuth(authFile = DEFAULT_CLOUDFLARE_AUTH_FILE) {
-  const fileConfig = readJson(authFile, null) || {};
+async function loadCloudflareAuth(authFile = DEFAULT_CLOUDFLARE_AUTH_FILE) {
+  const fileConfig = await readJson(authFile, null) || {};
   const apiToken = trimString(process.env.CLOUDFLARE_API_TOKEN || fileConfig.apiToken || fileConfig.token);
   const email = trimString(process.env.CLOUDFLARE_EMAIL || fileConfig.email);
   const globalApiKey = trimString(
@@ -247,18 +247,20 @@ function buildDesiredCloudflarePlan({
   };
 }
 
-function buildStatusSummary({
+async function buildStatusSummary({
   rootDir = DEFAULT_ROOT_DIR,
   zone = '',
   authFile = DEFAULT_CLOUDFLARE_AUTH_FILE,
 } = {}) {
-  const identity = loadIdentity(rootDir);
-  const bridge = loadBridge(rootDir);
-  const outbound = loadOutboundConfig(rootDir);
-  const workerConfig = loadWorkerConfig();
+  const [identity, bridge, outbound] = await Promise.all([
+    loadIdentity(rootDir),
+    loadBridge(rootDir),
+    loadOutboundConfig(rootDir),
+  ]);
+  const workerConfig = await loadWorkerConfig();
   const outboundBinding = summarizeSendEmailBinding(workerConfig);
-  const auth = loadCloudflareAuth(authFile);
-  const guestInstances = loadGuestRegistry().map((record) => {
+  const auth = await loadCloudflareAuth(authFile);
+  const guestInstances = (await loadGuestRegistry()).map((record) => {
     const mailboxAddresses = dedupeStrings([
       trimString(record.mailboxAddress),
       ...(Array.isArray(record.mailboxNames) ? record.mailboxNames : [record.name]).map((mailboxName) => buildGuestMailboxAddress(mailboxName, identity)),
@@ -599,7 +601,7 @@ async function fetchLiveCloudflareState({ zone = '', auth, desiredPlan }) {
 }
 
 async function enrichStatusWithLiveCloudflareState(summary, { authFile = DEFAULT_CLOUDFLARE_AUTH_FILE } = {}) {
-  const auth = loadCloudflareAuth(authFile);
+  const auth = await loadCloudflareAuth(authFile);
   const desiredPlan = {
     workerName: summary.cloudflare.workerName,
     requiredLiteralWorkerAddresses: summary.cloudflare.requiredLiteralWorkerAddresses,
@@ -713,8 +715,8 @@ async function syncCloudflareRouting({
   authFile = DEFAULT_CLOUDFLARE_AUTH_FILE,
   enableCatchAll = false,
 } = {}) {
-  const summary = buildStatusSummary({ rootDir, zone, authFile });
-  const auth = loadCloudflareAuth(authFile);
+  const summary = await buildStatusSummary({ rootDir, zone, authFile });
+  const auth = await loadCloudflareAuth(authFile);
   if (!auth.configured) {
     throw new Error(cloudflareAuthErrorMessage());
   }
@@ -1009,7 +1011,7 @@ async function main(argv = process.argv.slice(2)) {
   }
 
   if (command === 'status') {
-    let summary = buildStatusSummary({
+    let summary = await buildStatusSummary({
       rootDir: optionValue(options, 'root', DEFAULT_ROOT_DIR),
       zone: optionValue(options, 'zone', ''),
       authFile: optionValue(options, 'auth-file', DEFAULT_CLOUDFLARE_AUTH_FILE),

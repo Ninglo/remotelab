@@ -4,12 +4,13 @@ function t(key, vars) {
 }
 
 function clearMessages({ preserveRunningBlockExpanded = false } = {}) {
-  const shouldPreserveRunningBlockExpanded =
-    preserveRunningBlockExpanded === true && renderedEventState.runningBlockExpanded === true;
+  const nextRunningBlockExpanded = typeof preserveRunningBlockExpanded === "boolean"
+    ? preserveRunningBlockExpanded
+    : null;
   messagesInner.innerHTML = "";
   resetRenderedEventState();
-  if (shouldPreserveRunningBlockExpanded) {
-    renderedEventState.runningBlockExpanded = true;
+  if (typeof nextRunningBlockExpanded === "boolean") {
+    renderedEventState.runningBlockExpanded = nextRunningBlockExpanded;
   }
   // Reset thinking block state
   inThinkingBlock = false;

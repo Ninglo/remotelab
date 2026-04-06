@@ -8,21 +8,27 @@ import {
   pathExists,
   writeTextAtomic,
 } from './fs-utils.mjs';
-import { readPromptAssetSync } from './prompt-asset-loader.mjs';
+import { readPromptAsset } from './prompt-asset-loader.mjs';
 
-function readInlinePromptAsset(relativePath) {
-  return readPromptAssetSync(relativePath).replace(/\s+/g, ' ').trim();
+async function readInlinePromptAsset(relativePath) {
+  return (await readPromptAsset(relativePath)).replace(/\s+/g, ' ').trim();
 }
 
-export const MANAGER_RUNTIME_BOUNDARY_SECTION = readPromptAssetSync('runtime/manager-boundary.md').trim();
-export const MANAGER_TURN_POLICY_REMINDER = readInlinePromptAsset('runtime/manager-turn-reminder.txt');
-export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = readInlinePromptAsset('runtime/codex-developer-instructions.txt');
+export const MANAGER_RUNTIME_BOUNDARY_SECTION = (await readPromptAsset('runtime/manager-boundary.md')).trim();
+export const MANAGER_TURN_POLICY_REMINDER = await readInlinePromptAsset('runtime/manager-turn-reminder.txt');
+export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = await readInlinePromptAsset('runtime/codex-developer-instructions.txt');
 
 const DEFAULT_CODEX_HOME_MODE = 'managed';
 const MANAGED_CODEX_HOME_NOTES = [
   '# RemoteLab-managed Codex runtime home.',
   '# Keep this intentionally minimal.',
   '# RemoteLab injects workflow, memory policy, and reply-style steering per run.',
+  '# Plugins stay off here because RemoteLab does not rely on the Codex plugin',
+  '# marketplace, and startup syncs can trigger extra ChatGPT-side auth/challenge',
+  '# traffic in proxied environments.',
+  '',
+  '[features]',
+  'plugins = false',
   '',
 ].join('\n');
 

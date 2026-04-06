@@ -102,26 +102,9 @@ function normalizeToolId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeToolVisibility(value) {
-  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-  return normalized === "private" ? "private" : "public";
-}
-
-function filterPrimaryToolOptions(toolOptions = [], { keepIds = [] } = {}) {
-  const explicitIds = new Set(
-    [
-      ...(Array.isArray(keepIds) ? keepIds : [keepIds]),
-      DEFAULT_TOOL_ID,
-    ]
-      .map((toolId) => normalizeToolId(toolId))
-      .filter(Boolean),
-  );
+function filterPrimaryToolOptions(toolOptions = []) {
   return (Array.isArray(toolOptions) ? toolOptions : []).filter((tool) => {
-    const toolId = normalizeToolId(tool?.id);
-    if (toolId && explicitIds.has(toolId)) {
-      return true;
-    }
-    return normalizeToolVisibility(tool?.visibility) !== "private";
+    return tool && typeof tool === "object" && normalizeToolId(tool.id);
   });
 }
 

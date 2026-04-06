@@ -18,16 +18,19 @@ function formatSessionSummary(session) {
   if (session.name) parts.push(`  name: ${session.name}`);
   if (session.group) parts.push(`  group: ${session.group}`);
   if (session.description) parts.push(`  description: ${clipText(session.description, 120)}`);
+  if (session.templateId) {
+    parts.push(`  agent: ${session.templateName || session.templateId}`);
+  }
   if (session.sourceId && session.sourceId !== 'chat') {
-    parts.push(`  app: ${session.sourceName || session.sourceId}`);
+    parts.push(`  source: ${session.sourceName || session.sourceId}`);
   }
   return parts.join('\n');
 }
 
-function formatAppSummary(app) {
-  if (!app?.id) return '';
-  const parts = [`- id: ${app.id}, name: ${app.name || app.id}`];
-  const hints = app.scopeHints;
+function formatAgentSummary(agent) {
+  if (!agent?.id) return '';
+  const parts = [`- id: ${agent.id}, name: ${agent.name || agent.id}`];
+  const hints = agent.scopeHints;
   if (hints?.description) parts.push(`  scope: ${clipText(hints.description, 120)}`);
   if (hints?.triggers?.length) parts.push(`  triggers: ${hints.triggers.join(', ')}`);
   return parts.join('\n');
@@ -37,7 +40,7 @@ export function buildDispatchClassifierPrompt({
   currentSession,
   message,
   recentSessions = [],
-  availableApps = [],
+  availableAgents = [],
 }) {
   const currentSummary = formatSessionSummary(currentSession);
   const otherSessions = recentSessions
@@ -47,9 +50,9 @@ export function buildDispatchClassifierPrompt({
     .filter(Boolean)
     .join('\n');
 
-  const appSummaries = availableApps
-    .filter((app) => app.scopeHints?.triggers?.length || app.scopeHints?.description)
-    .map(formatAppSummary)
+  const agentSummaries = availableAgents
+    .filter((agent) => agent.scopeHints?.triggers?.length || agent.scopeHints?.description)
+    .map(formatAgentSummary)
     .filter(Boolean)
     .join('\n');
 
@@ -67,14 +70,14 @@ export function buildDispatchClassifierPrompt({
     '- Short messages like greetings, acknowledgments, or follow-ups almost always belong in the current session.',
     '- When routing to an existing session, pick the one whose topic most closely matches the new message.',
     '- When no existing session matches but the topic is clearly different, use "route_new".',
-    '- If an available App\'s scope clearly matches the message, include its id as targetAppId.',
+    '- If an available Agent\'s scope clearly matches the message, include its id as targetAgentId.',
     '',
     'Current session:',
     currentSummary || '(new/empty session)',
     '',
     otherSessions ? `Other active sessions:\n${otherSessions}` : 'No other active sessions.',
     '',
-    appSummaries ? `Available Apps with scope hints:\n${appSummaries}` : '',
+    agentSummaries ? `Available Agents with scope hints:\n${agentSummaries}` : '',
     '',
     'Incoming message:',
     messageText || '(empty)',
@@ -84,7 +87,7 @@ export function buildDispatchClassifierPrompt({
     '- "confidence": number 0-1',
     '- "reason": short explanation in the user\'s language',
     '- "targetSessionId": string (only for route_existing, must be an id from the list above)',
-    '- "targetAppId": string (optional, an App id if the message matches an App scope)',
+    '- "targetAgentId": string (optional, an Agent id if the message matches an Agent scope)',
     '',
     'Do not output any text outside the <hide> block.',
   ].filter((line) => line !== undefined).join('\n');
@@ -116,7 +119,10 @@ export function parseDispatchDecision(content) {
       confidence,
       reason: String(parsed.reason || '').slice(0, 200),
       targetSessionId: typeof parsed.targetSessionId === 'string' ? parsed.targetSessionId.trim() : '',
-      targetAppId: typeof parsed.targetAppId === 'string' ? parsed.targetAppId.trim() : '',
+      targetAgentId: typeof parsed.targetAgentId === 'string'
+        ? parsed.targetAgentId.trim()
+        // Backward compatibility for older hidden dispatch outputs.
+        : (typeof parsed.targetAppId === 'string' ? parsed.targetAppId.trim() : ''),
     };
   } catch {
     return { action: 'continue', confidence: 0, reason: 'json parse failure' };

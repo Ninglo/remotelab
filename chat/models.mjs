@@ -44,16 +44,28 @@ function cloneReasoning(reasoning, fallbackLabel = 'Thinking') {
 
 function buildModelReasoning(model, fallbackReasoning = null) {
   const fallbackLabel = String(fallbackReasoning?.label || 'Thinking').trim() || 'Thinking';
+  // Prefer explicit reasoning object on the model.
   if (model?.reasoning && typeof model.reasoning === 'object') {
     return cloneReasoning(model.reasoning, fallbackLabel);
   }
-  if (Array.isArray(model?.effortLevels) && model.effortLevels.length > 0) {
+  // Fall back to flat fields: supportedReasoningLevels + reasoningKind.
+  const levels = Array.isArray(model?.supportedReasoningLevels)
+    ? model.supportedReasoningLevels
+    : Array.isArray(model?.effortLevels) ? model.effortLevels : [];
+  const kind = String(model?.reasoningKind || '').trim().toLowerCase();
+  if (levels.length > 0) {
     return cloneReasoning({
       kind: 'enum',
       label: fallbackLabel,
-      levels: model.effortLevels,
-      default: model.defaultReasoning || model.defaultEffort || model.effortLevels[0],
+      levels,
+      default: model.defaultReasoning || levels[0],
     }, fallbackLabel);
+  }
+  if (kind === 'toggle') {
+    return cloneReasoning({ kind: 'toggle', label: fallbackLabel }, fallbackLabel);
+  }
+  if (kind === 'none') {
+    return cloneReasoning({ kind: 'none', label: fallbackLabel }, fallbackLabel);
   }
   return cloneReasoning(fallbackReasoning, fallbackLabel);
 }
@@ -80,15 +92,23 @@ function buildResponseModel(model, fallbackReasoning = null) {
  */
 export async function getModelsForTool(toolId) {
   if (toolId === 'claude') {
-    const reasoning = { kind: 'toggle', label: 'Thinking' };
+    const levels = ['none', 'low', 'medium', 'high'];
+    const defaultReasoning = {
+      kind: 'enum',
+      label: 'Thinking',
+      levels,
+      default: 'medium',
+    };
     return {
       models: CLAUDE_MODELS.map((model) => ({
         ...model,
-        reasoning,
+        reasoning: defaultReasoning,
+        defaultEffort: 'medium',
+        effortLevels: levels,
       })),
-      effortLevels: null,
+      effortLevels: levels,
       defaultModel: null,
-      reasoning,
+      reasoning: defaultReasoning,
     };
   }
   if (toolId === 'codex') {

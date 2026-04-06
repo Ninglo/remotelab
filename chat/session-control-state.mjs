@@ -38,11 +38,12 @@ export function buildManagerMemorySearchPolicy(promptContext = null) {
       'Memory/search policy for this turn:',
       '- Prefer carried context, matched scope-router hints, and imported related-session memory before filesystem discovery.',
       '- Reuse the best-matching summary, task card, or referenced memory/doc packet before broad search.',
-      '- Use machine-wide search only after targeted context misses.',
+      '- If those sources do not reveal a concrete entry point, ask the user for a project, path, file, or link before widening search.',
+      '- Use machine-wide search only after targeted context misses and a concrete lead exists.',
     ].join('\n');
   }
 
-  return 'Memory/search policy for this turn: prefer targeted memory, referenced docs, or known project pointers before broad filesystem search. Use machine-wide search only as a last resort.';
+  return 'Memory/search policy for this turn: prefer targeted memory, referenced docs, continuity, or known project pointers before filesystem search. If those do not reveal the entry point, ask the user for one instead of widening into machine-wide search. Use machine-wide search only as a last resort after a concrete lead exists.';
 }
 
 export function normalizeSessionContinuationHead(context = null) {

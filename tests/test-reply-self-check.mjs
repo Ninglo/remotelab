@@ -236,6 +236,7 @@ const {
   createSession,
   getHistory,
   getSession,
+  getSessionTimelineEvents,
   killAll,
   sendMessage,
 } = sessionManager;
@@ -251,6 +252,15 @@ async function waitFor(predicate, description, timeoutMs = 6000) {
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function resolveQuickly(load, description, timeoutMs = 200) {
+  const result = await Promise.race([
+    load().then((value) => ({ status: 'resolved', value })),
+    sleep(timeoutMs).then(() => ({ status: 'timeout' })),
+  ]);
+  assert.equal(result?.status, 'resolved', description);
+  return result.value;
 }
 
 try {
@@ -467,6 +477,17 @@ try {
     'workflow classification should not update before self-check finishes',
   );
 
+  const delayedTimelineDuringReview = await resolveQuickly(
+    () => getSessionTimelineEvents(delayedReviewSession.id),
+    'timeline reads should not wait for delayed reply self-check completion',
+  );
+  assert.ok(
+    delayedTimelineDuringReview.some(
+      (event) => event.type === 'status' && event.content === 'Assistant self-check: reviewing the latest reply for early stop…',
+    ),
+    'timeline reads should still include the in-flight self-check reviewing state',
+  );
+
   await waitFor(
     async () => (await getSession(delayedReviewSession.id))?.activity?.run?.state === 'idle',
     'delayed review session should become idle after the self-check accept path',
@@ -522,6 +543,17 @@ try {
     delayedAssetMessage?.attachments?.length,
     1,
     'generated result asset message should expose the published attachment while self-check is pending',
+  );
+
+  const delayedAssetTimelineDuringReview = await resolveQuickly(
+    () => getSessionTimelineEvents(delayedAssetReviewSession.id),
+    'timeline reads should not wait for delayed asset self-check completion',
+  );
+  assert.ok(
+    delayedAssetTimelineDuringReview.some(
+      (event) => event.type === 'message' && event.role === 'assistant' && event.source === 'result_file_assets',
+    ),
+    'timeline reads should still expose generated result assets while self-check is pending',
   );
 
   await waitFor(

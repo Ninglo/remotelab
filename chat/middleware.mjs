@@ -76,8 +76,10 @@ export function generateNonce() {
  * Returns true if the request is authenticated.
  * If not, writes a 401 JSON response for API routes or a 302 redirect for pages.
  */
-export function requireAuth(req, res) {
+export async function requireAuth(req, res) {
   if (isAuthenticated(req)) return true;
+  const { authenticateBearerToken } = await import('../lib/auth.mjs');
+  if (await authenticateBearerToken(req)) return true;
   if ((req.url || '').startsWith('/api/')) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not authenticated' }));

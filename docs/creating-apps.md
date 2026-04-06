@@ -1,93 +1,138 @@
-# Creating Apps — Let Others Use Your AI Workflows
+# Creating Agents
 
-Apps let you package an AI workflow and share it via link. Anyone who clicks the link gets a guided chat experience — no setup, no technical knowledge needed.
+This doc describes the current product direction and the current code mapping.
 
-## What Is an App
+User-facing language is **Agent**.
+Internal storage still reuses the older **app/template** layer in several places, but the owner CRUD and public share surface are now expressed as **Agent**.
 
-An App = a chat session that starts with context you've pre-defined.
+## Core model
 
-When someone opens your App link:
-1. They see a **welcome message** you wrote (greeting + instructions)
-2. Behind the scenes, the AI receives **system instructions** (workflow rules, what to do, how to behave)
-3. They chat naturally — the AI follows your workflow
+RemoteLab should be read as:
 
-The visitor doesn't need to know anything about prompts, tools, or configuration. They just talk.
+- **Source / Channel** — where a session came from
+- **Agent** — the reusable behavior/context that shapes the session
+- **Session** — the concrete work thread
+- **Run** — one execution attempt inside the session
 
-They also do not get general access to the host machine. If an App needs to hand back files or artifacts, design the workflow so the result is delivered through chat attachments, a share link, email, or another explicit user-reachable channel instead of telling the visitor to inspect a local path on the computer.
-A good visitor welcome message should make that contract obvious up front: the host machine is only where the work runs, finishing work on the machine is not the same as the visitor receiving the result, and any deliverable should come back through a reachable download/export/share path.
+Relationship:
 
-## How to Create an App
-
-RemoteLab now ships three built-in App starting points out of the box:
-
-- **Welcome** — the default guided intake surface for non-expert users; it nudges them to drop in messy materials first, keeps a hidden task card plus durable context across turns, and takes responsibility for shaping the task into a workable project when needed
-- **Basic Chat** — the default owner-side app for normal RemoteLab conversations; this is the baseline app layer for everyday sessions
-- **Create App** — a built-in app-building assistant; the sidebar `+ New App` shortcut simply creates a normal owner session under this app so the AI can turn a workflow/SOP into a finished App and share link
-
-Domain workflows like video cutting should just be regular Apps, not product built-ins.
-
-If you open the sidebar **Settings** tab, RemoteLab also shows an **Apps** panel where you can:
-
-- open a fresh owner session for an app
-- copy the public share link for any shareable app you create, such as a video-cut workflow
-- open that share link directly for testing
-
-RemoteLab also has a lightweight **Users** panel where you can:
-
-- create extra owner-side identities
-- choose which apps each user can access
-- seed a first session for them when they are empty
-
-For external distribution, the main v1 sharing surface is still the App share link itself.
-
-Open the Create App starter (or any owner session you are using for App setup) and tell the AI what workflow you want in one concentrated message so it can do most of the work without repeated back-and-forth:
-
-> "I want to create an App. It should [describe what it does]."
-
-The best pattern is that you stay at the SOP / business-workflow level while the AI handles the App mechanics. It should gather the missing details early, then draft and create the App with minimal interruption. A good end-to-end flow is:
-1. **Clarify the workflow once** — who it is for, what input they give, what steps the AI should follow, and what output or approval gates matter
-2. **Draft the App behavior** — welcome message + system instructions
-3. **Create or update the App** — without making you manage prompts or product-state details manually
-4. **Hand back the share link** — plus a simple explanation of how to send it to other people
-
-### Example
-
-> "I want to create an App that helps people practice English conversation. It should be friendly, correct grammar gently, and keep responses short."
-
-The AI will draft the welcome message and system prompt, create the App, and return a link like:
-
-```
-https://your-domain.com/app/share_abc123...
+```text
+Source -> Session <- Agent
+             |
+             -> Run
 ```
 
-Share this link with anyone. They click it, land inside the App, and start chatting with the workflow already loaded.
+Examples:
 
-## How to Manage Apps
+- `Email`, `Feishu`, `RemoteLab web`, `API`, `automation` are **Sources**
+- `Chat`, `Drawing`, `Video Cut`, `Report Cleanup` are **Agents**
 
-In any regular session, you can say:
+Do not treat a source surface as an agent just because it has a dedicated page.
+For example, a drawing request started from Feishu and a drawing request started from the RemoteLab web UI are still the same kind of **Session** if they run under the same drawing **Agent**.
 
-- **"List my Apps"** — see all active Apps with their share links
-- **"Update the English Tutor App"** — modify welcome message or instructions
-- **"Delete the X App"** — removes it (existing sessions keep working)
-- **"Give me the share link for X again"** — retrieve the existing share link without recreating the App
+## What an Agent is
 
-## Tips for Good Apps
+An Agent is the reusable definition that answers:
 
-1. **Welcome message should be actionable and set the delivery contract** — tell the visitor exactly what to do first, where results will show up, and avoid implying they should inspect the host machine
-2. **System instructions should be specific** — "correct grammar gently" is better than "be helpful"
-3. **Treat saved templates as snapshots** — if you reuse a session as a template, refresh it when the underlying project context changes a lot
-4. **Test it yourself** — click the share link in a private/incognito window before sharing
-5. **Keep it focused** — one App = one workflow. Don't try to make a Swiss army knife
-6. **Design the handoff path up front** — if the App produces files, reports, or exports, make sure the user can receive them through the product surface instead of being told to hunt through the host machine
+- what this capability is for
+- what stable instructions should always apply
+- what reusable context should be available
+- which tool/runtime it should prefer
+- what kind of output it should produce
 
-## Technical Details (for developers)
+In current code, that reusable layer maps to the internal **app/template** persistence model.
 
-- Apps are stored in `~/.config/remotelab/apps.json`
-- Each App has a unique `shareToken` used in the URL
-- Saved session templates carry source-session freshness metadata so RemoteLab can warn the model when the original source session has drifted since capture
-- Visitor sessions are isolated — visitors can't see each other's conversations
-- The owner's session list defaults to owner-only, but the owner can opt into an all-users view when they need to inspect shared-app sessions
-- Share-link visitors are restricted to their assigned WebSocket session; owner APIs for sessions, tools, models, filesystem browsing, settings, sidebar state, and push registration stay unavailable to them
-- Assistant output can wrap model-visible but UI-hidden content in `<private>...</private>` or `<hide>...</hide>`; RemoteLab hides those blocks in chat while preserving the raw text in session context
-- App CRUD API: `GET/POST/PATCH/DELETE /api/apps` (owner auth required)
-- Visitor entry: `GET /app/{shareToken}` (no auth needed)
+Practically, an Agent today is carried by:
+
+- `templateId` / `templateName` on the session
+- `systemPrompt` on the session
+- optional saved `template_context` events
+- default tool/runtime from the saved app/template record
+
+The key rule is:
+
+- **Source** tells us how the session started
+- **Agent** tells us how the session should behave
+
+Applying an Agent must not silently redefine the session source.
+
+## Current v1 product flow
+
+Short-term, the product stays intentionally simple:
+
+- `Sessions` remains the main work surface
+- `Agent` is a top-level management panel
+- `Settings` stays limited to base configuration
+- source/channel routing stays mostly implicit
+
+Current expected behavior:
+
+1. The owner creates an Agent through chat, not through a heavy form.
+2. The Agent appears in the top-level **Agent** panel.
+3. A new web session can be started under a chosen Agent.
+4. Other sources can continue to default to the normal `Chat` agent until explicit routing is added later.
+
+This keeps first use lightweight while preserving a clean model for later source/channel expansion.
+
+## Current code mapping
+
+For the current codebase, use this translation table:
+
+| Product concept | Current storage / API shape |
+|---|---|
+| Agent | app/template record |
+| Session source | `sourceId` / `sourceName` |
+| Applied Agent | `templateId` / `templateName` |
+| Agent identity / stable behavior | `systemPrompt` plus optional template context |
+| Agent default runtime/tool | `tool` on the saved app/template |
+
+Compatibility note:
+
+- first-party owner sessions still use the canonical source id `chat`
+- that is a source compatibility key, not proof that the session's Agent is also `Chat`
+
+## Creating an Agent
+
+The intended user flow is:
+
+1. Open the top-level **Agent** panel.
+2. Start **Create Agent**.
+3. Describe the workflow in plain language.
+4. Let the builder session synthesize the reusable Agent definition.
+5. Reuse that Agent for later sessions.
+
+The builder should gather only the minimum missing information and then create or update the saved Agent record.
+
+The user should not need to manage raw fields such as:
+
+- `welcomeMessage`
+- `systemPrompt`
+- `templateContext`
+- `shareToken`
+
+Those remain implementation details unless the user explicitly asks.
+
+## Sharing
+
+The current sharing model is intentionally lightweight:
+
+- every shareable Agent carries a `shareToken`
+- owner-side CRUD uses `/api/agents`
+- public entry uses `/agent/{shareToken}`
+- opening that link creates a fresh visitor-scoped session under that Agent
+
+The important boundary is:
+
+- the link grants access to one Agent
+- it does not grant owner access
+- it does not expose other sessions outside the visitor-scoped session created from that Agent
+
+## Design constraints
+
+When designing or refining Agents, keep these constraints:
+
+- do not rely on generic chat history alone to preserve identity
+- keep stable agent behavior in reusable saved fields, not only in transient conversation
+- do not mix source/channel logic into the Agent definition
+- do not bury Agent management inside Settings
+- keep first-run creation conversational and low-friction

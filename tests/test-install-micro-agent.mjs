@@ -55,6 +55,10 @@ assert.deepEqual(record.models, [
     supportedReasoningLevels: ['low', 'medium', 'high'],
     defaultReasoning: 'medium',
   },
+  {
+    id: 'doubao-seed-2-0-pro-260215',
+    label: 'Doubao Pro',
+  },
 ]);
 assert.deepEqual(record.reasoning, {
   kind: 'none',

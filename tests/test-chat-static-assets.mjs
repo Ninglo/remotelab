@@ -88,7 +88,7 @@ function setupTempHome() {
       'visitor-session': {
         expiry: Date.now() + 60 * 60 * 1000,
         role: 'visitor',
-        appId: 'shared-app',
+        agentId: 'shared-agent',
         sessionId: 'visitor-session-id',
         visitorId: 'visitor-123',
         preferredLanguage: 'zh-CN',
@@ -170,6 +170,11 @@ async function main() {
     assert.equal(authMe.headers['set-cookie']?.length, 1, 'auth info should refresh a near-expiry auth cookie');
     assert.match(authMe.headers['set-cookie'][0], /SameSite=Lax/i, 'auth cookie should use SameSite=Lax for better PWA compatibility');
     assert.match(authMe.headers['set-cookie'][0], /Max-Age=86400/i, 'auth cookie should include an explicit Max-Age');
+    const authMeJson = JSON.parse(authMe.text);
+    assert.equal(authMeJson.role, 'owner', 'auth info should identify the owner principal');
+    assert.equal(authMeJson.surfaceMode, 'owner', 'owner auth should stay on the owner surface');
+    assert.equal(authMeJson.principalKind, 'owner', 'owner auth should advertise the owner principal kind');
+    assert.equal(authMeJson.capabilities?.manageAgents, true, 'owner auth should expose owner capabilities');
     const refreshedSessions = JSON.parse(readFileSync(sessionsFile, 'utf8'));
     assert.ok(
       refreshedSessions['test-session']?.expiry > Date.now() + 23 * 60 * 60 * 1000,
@@ -184,7 +189,10 @@ async function main() {
     const bootstrapMatch = page.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
     assert.ok(bootstrapMatch, 'chat page should inline bootstrap payload');
     const bootstrap = JSON.parse(bootstrapMatch[1]);
-    assert.deepEqual(bootstrap.auth, { role: 'owner' }, 'bootstrap payload should include owner auth');
+    assert.equal(bootstrap.auth?.role, 'owner', 'bootstrap payload should include owner auth');
+    assert.equal(bootstrap.auth?.surfaceMode, 'owner', 'bootstrap auth should identify the owner surface');
+    assert.equal(bootstrap.auth?.principalKind, 'owner', 'bootstrap auth should identify the owner principal kind');
+    assert.equal(bootstrap.auth?.capabilities?.createSession, true, 'bootstrap auth should expose owner capabilities');
     assert.match(page.text, /<script src="\/chat\/session-store\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/composer-store\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="\/chat\/bootstrap\.js(?:\?v=[^"]*)?"/);
@@ -209,17 +217,14 @@ async function main() {
     const visitorBootstrapMatch = visitorPage.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
     assert.ok(visitorBootstrapMatch, 'visitor page should inline bootstrap payload');
     const visitorBootstrap = JSON.parse(visitorBootstrapMatch[1]);
-    assert.deepEqual(
-      visitorBootstrap.auth,
-      {
-        role: 'visitor',
-        appId: 'shared-app',
-        preferredLanguage: 'zh-CN',
-        sessionId: 'visitor-session-id',
-        visitorId: 'visitor-123',
-      },
-      'visitor page should inline auth bootstrap data from the server render',
-    );
+    assert.equal(visitorBootstrap.auth?.role, 'visitor', 'visitor page should inline visitor auth');
+    assert.equal(visitorBootstrap.auth?.surfaceMode, 'visitor', 'legacy visitor bootstrap should stay on visitor surface mode');
+    assert.equal(visitorBootstrap.auth?.principalKind, 'visitor', 'legacy visitor bootstrap should preserve the visitor principal kind');
+    assert.equal(visitorBootstrap.auth?.agentId, 'shared-agent', 'legacy visitor bootstrap should keep the shared agent id');
+    assert.equal(visitorBootstrap.auth?.preferredLanguage, 'zh-CN', 'legacy visitor bootstrap should retain preferred language');
+    assert.equal(visitorBootstrap.auth?.sessionId, 'visitor-session-id', 'legacy visitor bootstrap should expose the pinned session id');
+    assert.equal(visitorBootstrap.auth?.visitorId, 'visitor-123', 'legacy visitor bootstrap should expose visitor identity');
+    assert.equal(visitorBootstrap.auth?.capabilities?.listSessions, false, 'legacy visitor bootstrap should not expose multi-session list access');
     assert.match(page.text, /<script src="\/chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
@@ -323,8 +328,13 @@ async function main() {
     assert.match(loginPage.text, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
     assert.match(loginPage.text, /@media \(prefers-color-scheme: dark\)/);
 
-    const apps = await request(port, 'GET', '/api/apps');
-    assert.equal(apps.status, 404, 'owner apps endpoint should be absent from the product surface');
+    const agents = await request(port, 'GET', '/api/agents');
+    assert.equal(agents.status, 200, 'owner agents endpoint should be available');
+    const agentList = JSON.parse(agents.text);
+    assert.ok(Array.isArray(agentList.agents), 'owner agents endpoint should return a collection');
+
+    const legacyApps = await request(port, 'GET', '/api/apps');
+    assert.equal(legacyApps.status, 404, 'legacy owner apps endpoint should be absent from the product surface');
 
     const users = await request(port, 'GET', '/api/users');
     assert.equal(users.status, 404, 'owner users endpoint should be absent from the product surface');
@@ -332,11 +342,78 @@ async function main() {
     const visitors = await request(port, 'GET', '/api/visitors');
     assert.equal(visitors.status, 404, 'owner visitors endpoint should be absent from the product surface');
 
-    const appShare = await request(port, 'GET', '/app/example-token');
-    assert.equal(appShare.status, 404, 'interactive app share route should be absent');
+    const legacyAgentShare = await request(port, 'GET', '/app/example-token', null, { Cookie: '' });
+    assert.equal(legacyAgentShare.status, 404, 'legacy app share route should reject unknown tokens');
+
+    const agentShare = await request(port, 'GET', '/agent/example-token', null, { Cookie: '' });
+    assert.equal(agentShare.status, 404, 'interactive agent share route should reject unknown tokens');
 
     const visitorShare = await request(port, 'GET', '/visitor/example-token');
     assert.equal(visitorShare.status, 404, 'interactive visitor share route should be absent');
+
+    const createdAgent = await request(port, 'POST', '/api/agents', {
+      name: 'Shared Drawing Agent',
+      systemPrompt: 'You are a shared drawing agent.',
+      welcomeMessage: 'Welcome to the shared drawing agent.',
+      tool: 'codex',
+    });
+    assert.equal(createdAgent.status, 201, 'owner should be able to create a shareable agent');
+    const createdAgentJson = JSON.parse(createdAgent.text);
+    assert.ok(createdAgentJson.shareToken, 'created agent should include a share token');
+
+    const sharedEntry = await request(port, 'GET', `/agent/${createdAgentJson.shareToken}`, null, { Cookie: '' });
+    assert.equal(sharedEntry.status, 302, 'shared agent route should mint a visitor session and redirect into visitor mode');
+    assert.equal(sharedEntry.headers.location, '/?visitor=1');
+    assert.ok(Array.isArray(sharedEntry.headers['set-cookie']), 'shared agent route should set a visitor cookie');
+    const sharedVisitorCookie = sharedEntry.headers['set-cookie'][0].split(';')[0];
+    assert.match(sharedVisitorCookie, /^visitor_session_token=/);
+
+    const sharedVisitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: sharedVisitorCookie });
+    assert.equal(sharedVisitorPage.status, 200, 'shared visitor session should be able to open the chat surface');
+    const sharedVisitorBootstrapMatch = sharedVisitorPage.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
+    assert.ok(sharedVisitorBootstrapMatch, 'shared visitor page should inline bootstrap payload');
+    const sharedVisitorBootstrap = JSON.parse(sharedVisitorBootstrapMatch[1]);
+    assert.equal(sharedVisitorBootstrap.auth?.role, 'visitor');
+    assert.equal(sharedVisitorBootstrap.auth?.surfaceMode, 'agent_scoped', 'shared agent bootstrap should identify the agent-scoped surface');
+    assert.equal(sharedVisitorBootstrap.auth?.principalKind, 'agent_guest', 'shared agent bootstrap should identify the shared guest principal');
+    assert.equal(sharedVisitorBootstrap.auth?.agentId, createdAgentJson.id);
+    assert.equal(sharedVisitorBootstrap.auth?.currentAgent?.id, createdAgentJson.id, 'shared agent bootstrap should expose the current agent context');
+    assert.equal(sharedVisitorBootstrap.auth?.currentAgent?.tool, 'codex', 'shared agent bootstrap should expose the current agent tool');
+    assert.ok(sharedVisitorBootstrap.auth?.principalId, 'shared visitor bootstrap should expose a principal identity');
+    assert.ok(sharedVisitorBootstrap.auth?.visitorId, 'shared visitor bootstrap should expose a visitor identity');
+    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.listSessions, true, 'shared agent bootstrap should allow listing sessions');
+    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.createSession, true, 'shared agent bootstrap should allow creating sessions');
+    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.changeRuntime, false, 'shared agent bootstrap should keep runtime selection disabled');
+    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.switchAgents, false, 'shared agent bootstrap should keep agent switching disabled');
+
+    const sharedAuthMe = await request(port, 'GET', '/api/auth/me?visitor=1', null, { Cookie: sharedVisitorCookie });
+    assert.equal(sharedAuthMe.status, 200, 'shared visitor auth endpoint should resolve on the visitor cookie');
+    const sharedAuthMeJson = JSON.parse(sharedAuthMe.text);
+    assert.equal(sharedAuthMeJson.surfaceMode, 'agent_scoped', 'shared visitor auth should report the agent-scoped surface');
+    assert.equal(sharedAuthMeJson.currentAgent?.id, createdAgentJson.id, 'shared visitor auth should expose current agent metadata');
+    assert.ok(sharedAuthMeJson.principalId, 'shared visitor auth should expose a principal id');
+
+    const sharedCreated = await request(port, 'POST', '/api/sessions?visitor=1', {
+      name: 'Shared guest workspace session',
+    }, { Cookie: sharedVisitorCookie });
+    assert.equal(sharedCreated.status, 201, 'shared visitors should be able to create sessions inside the shared agent workspace');
+    const sharedCreatedJson = JSON.parse(sharedCreated.text);
+    assert.equal(sharedCreatedJson.session?.templateId, createdAgentJson.id, 'shared visitor sessions should be pinned to the shared agent template');
+    assert.equal(sharedCreatedJson.session?.agentId, createdAgentJson.id, 'shared visitor sessions should persist the shared agent id');
+    assert.equal(sharedCreatedJson.session?.visitorId, sharedVisitorBootstrap.auth?.principalId, 'shared visitor sessions should be isolated to the minted principal');
+    assert.equal(sharedCreatedJson.session?.tool, 'codex', 'shared visitor sessions should inherit the shared agent tool');
+
+    const sharedList = await request(port, 'GET', '/api/sessions?visitor=1', null, { Cookie: sharedVisitorCookie });
+    assert.equal(sharedList.status, 200, 'shared visitors should be able to list their workspace sessions');
+    const sharedListJson = JSON.parse(sharedList.text);
+    assert.equal(sharedListJson.sessions?.length, 1, 'shared visitor list should expose only the visitor-owned workspace session');
+    assert.equal(sharedListJson.sessions?.[0]?.id, sharedCreatedJson.session.id, 'shared visitor list should contain the created workspace session');
+
+    const sharedRenamed = await request(port, 'PATCH', `/api/sessions/${sharedCreatedJson.session.id}?visitor=1`, {
+      name: 'Shared guest workspace session renamed',
+    }, { Cookie: sharedVisitorCookie });
+    assert.equal(sharedRenamed.status, 200, 'shared visitors should be able to rename their workspace session');
+    assert.match(sharedRenamed.text, /Shared guest workspace session renamed/);
 
     const createdChat = await request(port, 'POST', '/api/sessions', {
       folder: home,
@@ -374,6 +451,15 @@ async function main() {
       allSessionsJson.sessions?.some((session) => session.id === createdGithubJson.session.id),
       true,
       'other sessions should remain visible after pinning',
+    );
+
+    const sharedListAfterOwnerCreates = await request(port, 'GET', '/api/sessions?visitor=1', null, { Cookie: sharedVisitorCookie });
+    assert.equal(sharedListAfterOwnerCreates.status, 200, 'shared visitors should still list sessions after owner creates more sessions');
+    const sharedListAfterOwnerCreatesJson = JSON.parse(sharedListAfterOwnerCreates.text);
+    assert.equal(
+      sharedListAfterOwnerCreatesJson.sessions?.some((session) => session.id === createdChatJson.session.id),
+      false,
+      'shared visitors should not see owner sessions outside their scoped workspace',
     );
 
     const githubOnly = await request(port, 'GET', '/api/sessions?sourceId=github');

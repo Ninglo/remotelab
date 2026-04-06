@@ -96,6 +96,11 @@ try {
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /execution substrate, not as the end user's personal Mac or default app container/,
+    'default Codex developer instructions should frame the host as execution substrate rather than the user\'s personal app container',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /operational work yourself on this machine or another RemoteLab-visible surface rather than giving the user a manual how-to/,
     'default Codex developer instructions should prefer agent-side execution over manual user recipes',
   );
@@ -103,6 +108,16 @@ try {
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /If another service needs login, access, or approval, prefer bringing that checkpoint onto this machine or another RemoteLab-exposed surface/,
     'default Codex developer instructions should prefer RemoteLab-side login and authorization checkpoints',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /prefer instance-scoped connectors\/API integrations and explicit account bindings or delivery targets/,
+    'default Codex developer instructions should prefer bound connectors over ambient host app state for external side effects',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /binding-needed state or ask for the smallest authorization checkpoint rather than silently falling back to the host owner's local accounts or app sessions/,
+    'default Codex developer instructions should block silent fallback to owner-local accounts when connector bindings are missing',
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
@@ -146,6 +161,11 @@ try {
   );
   assert.match(
     MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /execution substrate, not as the end user's personal Mac or default app container/,
+    'manager runtime boundary should block treating the host as the end user\'s personal app container',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
     /Do not assume remote users can browse local folders, inspect this computer, or pick up files from host-only paths/,
     'manager runtime boundary should block assumptions of direct host access for remote users',
   );
@@ -158,6 +178,16 @@ try {
     MANAGER_RUNTIME_BOUNDARY_SECTION,
     /When another service needs access, login, or authorization, prefer completing that checkpoint on this machine or another RemoteLab-exposed surface/,
     'manager runtime boundary should prefer RemoteLab-side access and login checkpoints',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /prefer instance-scoped connectors\/API integrations and explicit account bindings or delivery targets/,
+    'manager runtime boundary should prefer bound connectors over host app state for external side effects',
+  );
+  assert.match(
+    MANAGER_RUNTIME_BOUNDARY_SECTION,
+    /binding-needed state instead of silently falling back to the host owner's local accounts or app sessions/,
+    'manager runtime boundary should block silent fallback to owner-local accounts when connector bindings are missing',
   );
   assert.match(
     MANAGER_RUNTIME_BOUNDARY_SECTION,
@@ -218,6 +248,16 @@ try {
     MANAGER_TURN_POLICY_REMINDER,
     /Do not turn a nontechnical user into the fallback operator with a multi-step manual recipe when RemoteLab can do the work itself/,
     'turn-level policy reminder should block multi-step manual user recipes',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /prefer bound connectors\/APIs over ambient host app state/,
+    'turn-level policy reminder should prefer bound connectors over ambient host app state for external side effects',
+  );
+  assert.match(
+    MANAGER_TURN_POLICY_REMINDER,
+    /instead of silently using the host owner's local accounts or app sessions/,
+    'turn-level policy reminder should block silent fallback to owner-local accounts for external side effects',
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,

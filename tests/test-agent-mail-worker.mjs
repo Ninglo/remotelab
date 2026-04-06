@@ -119,7 +119,7 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const { port } = server.address();
 
 try {
-  initializeMailbox({
+  await initializeMailbox({
     rootDir: mailboxRoot,
     name: 'Rowan',
     localPart: 'rowan',
@@ -127,7 +127,7 @@ try {
     allowEmails: ['owner@example.com'],
   });
 
-  saveMailboxAutomation(mailboxRoot, {
+  await saveMailboxAutomation(mailboxRoot, {
     allowlistAutoApprove: true,
     chatBaseUrl: `http://127.0.0.1:${port}`,
     session: {
@@ -146,7 +146,7 @@ try {
     reasoningKind: 'toggle',
   });
 
-  const ingested = ingestRawMessage(
+  const ingested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -160,7 +160,7 @@ try {
     mailboxRoot,
     { text: 'please take a response to test!' },
   );
-  const approved = findQueueItem(ingested.id, mailboxRoot)?.item;
+  const approved = (await findQueueItem(ingested.id, mailboxRoot))?.item;
   assert.equal(approved?.queue, 'approved');
   assert.equal(approved?.review?.status, 'auto_approved');
 
@@ -216,13 +216,13 @@ try {
   assert.equal(messageSubmissions[0].thinking, true);
   assert.equal(messageSubmissions[0].effort, undefined);
 
-  const updated = findQueueItem(approved.id, mailboxRoot)?.item;
+  const updated = (await findQueueItem(approved.id, mailboxRoot))?.item;
   assert.equal(updated?.status, 'processing_for_reply');
   assert.equal(updated?.automation?.status, 'processing_for_reply');
   assert.equal(updated?.automation?.sessionId, 'sess_1');
   assert.equal(updated?.automation?.runId, 'run_1');
 
-  const followUpIngested = ingestRawMessage(
+  const followUpIngested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -252,7 +252,7 @@ try {
       ].join('\n'),
     },
   );
-  const approvedFollowUp = findQueueItem(followUpIngested.id, mailboxRoot)?.item;
+  const approvedFollowUp = (await findQueueItem(followUpIngested.id, mailboxRoot))?.item;
   assert.equal(approvedFollowUp?.queue, 'approved');
   assert.equal(approvedFollowUp?.review?.status, 'auto_approved');
 
@@ -306,7 +306,7 @@ try {
   assert.equal(messageSubmissions[1].effort, 'high');
   assert.equal(messageSubmissions[1].thinking, undefined);
 
-  const updatedFollowUp = findQueueItem(approvedFollowUp.id, mailboxRoot)?.item;
+  const updatedFollowUp = (await findQueueItem(approvedFollowUp.id, mailboxRoot))?.item;
   assert.equal(updatedFollowUp?.status, 'processing_for_reply');
   assert.equal(updatedFollowUp?.automation?.status, 'processing_for_reply');
   assert.equal(updatedFollowUp?.automation?.sessionId, 'sess_1');
@@ -314,7 +314,7 @@ try {
 
   const decodedChineseBody = '这一次请完整的回复我这一轮对话给你发送的消息，不要带其他内容。';
   const encodedChineseBody = Buffer.from(decodedChineseBody, 'utf8').toString('base64');
-  const base64Ingested = ingestRawMessage(
+  const base64Ingested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -339,7 +339,7 @@ try {
     'base64-follow-up.eml',
     mailboxRoot,
   );
-  const approvedBase64 = findQueueItem(base64Ingested.id, mailboxRoot)?.item;
+  const approvedBase64 = (await findQueueItem(base64Ingested.id, mailboxRoot))?.item;
   assert.equal(approvedBase64?.queue, 'approved');
   assert.equal(approvedBase64?.review?.status, 'auto_approved');
 
@@ -387,13 +387,13 @@ try {
   assert.match(messageSubmissions[2].text, /这一次请完整的回复我这一轮对话给你发送的消息/);
   assert.ok(!messageSubmissions[2].text.includes(encodedChineseBody), 'worker prompt should decode legacy base64 mailbox content');
 
-  const updatedBase64 = findQueueItem(approvedBase64.id, mailboxRoot)?.item;
+  const updatedBase64 = (await findQueueItem(approvedBase64.id, mailboxRoot))?.item;
   assert.equal(updatedBase64?.status, 'processing_for_reply');
   assert.equal(updatedBase64?.automation?.status, 'processing_for_reply');
   assert.equal(updatedBase64?.automation?.sessionId, 'sess_1');
   assert.equal(updatedBase64?.automation?.runId, 'run_3');
 
-  const blankSubjectIngested = ingestRawMessage(
+  const blankSubjectIngested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -406,7 +406,7 @@ try {
     mailboxRoot,
     { text: 'empty subject should still stay in the same thread.' },
   );
-  const approvedBlankSubject = findQueueItem(blankSubjectIngested.id, mailboxRoot)?.item;
+  const approvedBlankSubject = (await findQueueItem(blankSubjectIngested.id, mailboxRoot))?.item;
   assert.equal(approvedBlankSubject?.queue, 'approved');
 
   const fourthWorker = await new Promise((resolve, reject) => {
@@ -445,7 +445,7 @@ try {
   assert.equal(sessionCreates[3].completionTargets[0].subject, '', 'blank-subject replies should preserve an empty subject');
 
   const inlinePngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2lmLcAAAAASUVORK5CYII=';
-  const imageIngested = ingestRawMessage(
+  const imageIngested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -468,7 +468,7 @@ try {
     'image-thread.eml',
     mailboxRoot,
   );
-  const approvedImage = findQueueItem(imageIngested.id, mailboxRoot)?.item;
+  const approvedImage = (await findQueueItem(imageIngested.id, mailboxRoot))?.item;
   assert.equal(approvedImage?.queue, 'approved');
   assert.equal(approvedImage?.content?.images?.length, 1);
   assert.equal(approvedImage?.content?.images?.[0]?.originalName, 'mail-shot.png');
@@ -508,12 +508,12 @@ try {
   assert.equal(messageSubmissions[4].attachments[0].originalName, 'mail-shot.png');
   assert.equal(messageSubmissions[4].attachments[0].data, inlinePngBase64);
 
-  const updatedImage = findQueueItem(approvedImage.id, mailboxRoot)?.item;
+  const updatedImage = (await findQueueItem(approvedImage.id, mailboxRoot))?.item;
   assert.equal(updatedImage?.status, 'processing_for_reply');
   assert.equal(updatedImage?.automation?.status, 'processing_for_reply');
 
   const pdfBase64 = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n', 'utf8').toString('base64');
-  const pdfIngested = ingestRawMessage(
+  const pdfIngested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -536,7 +536,7 @@ try {
     'pdf-thread.eml',
     mailboxRoot,
   );
-  const approvedPdf = findQueueItem(pdfIngested.id, mailboxRoot)?.item;
+  const approvedPdf = (await findQueueItem(pdfIngested.id, mailboxRoot))?.item;
   assert.equal(approvedPdf?.queue, 'approved');
   assert.equal(approvedPdf?.content?.attachments?.length, 1);
   assert.equal(approvedPdf?.content?.attachments?.[0]?.mimeType, 'application/pdf');
@@ -577,7 +577,7 @@ try {
   assert.equal(messageSubmissions[5].attachments[0].originalName, 'spec.pdf');
   assert.equal(messageSubmissions[5].attachments[0].data, pdfBase64);
 
-  const updatedPdf = findQueueItem(approvedPdf.id, mailboxRoot)?.item;
+  const updatedPdf = (await findQueueItem(approvedPdf.id, mailboxRoot))?.item;
   assert.equal(updatedPdf?.status, 'processing_for_reply');
   assert.equal(updatedPdf?.automation?.status, 'processing_for_reply');
 
@@ -599,7 +599,7 @@ try {
     },
   ], null, 2));
 
-  saveMailboxAutomation(mailboxRoot, {
+  await saveMailboxAutomation(mailboxRoot, {
     allowlistAutoApprove: true,
     chatBaseUrl: 'http://127.0.0.1:7690',
     deliveryMode: 'session_only',
@@ -612,7 +612,7 @@ try {
     },
   });
 
-  const routedIngested = ingestRawMessage(
+  const routedIngested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -631,7 +631,7 @@ try {
       },
     },
   );
-  const approvedRouted = findQueueItem(routedIngested.id, mailboxRoot)?.item;
+  const approvedRouted = (await findQueueItem(routedIngested.id, mailboxRoot))?.item;
   assert.equal(approvedRouted?.routing?.instanceName, 'trial6');
 
   const sessionOnlyWorker = await new Promise((resolve, reject) => {
@@ -670,7 +670,7 @@ try {
   const loginRequest = requests.find((entry) => entry.method === 'GET' && entry.url.startsWith('/?token='));
   assert.equal(new URL(loginRequest.url, 'http://127.0.0.1').searchParams.get('token'), 'trial6-auth-token');
 
-  const updatedRouted = findQueueItem(approvedRouted.id, mailboxRoot)?.item;
+  const updatedRouted = (await findQueueItem(approvedRouted.id, mailboxRoot))?.item;
   assert.equal(updatedRouted?.status, 'submitted_to_session');
   assert.equal(updatedRouted?.automation?.status, 'submitted_to_session');
   assert.equal(updatedRouted?.automation?.targetInstance, 'trial6');
@@ -681,7 +681,7 @@ try {
   messageSubmissions.length = 0;
 
   const localPartMailboxRoot = join(tempHome, '.config', 'remotelab', 'agent-mailbox-local-part');
-  initializeMailbox({
+  await initializeMailbox({
     rootDir: localPartMailboxRoot,
     name: 'Rowan',
     localPart: 'rowan',
@@ -689,7 +689,7 @@ try {
     allowEmails: ['owner@example.com'],
     instanceAddressMode: 'local_part',
   });
-  saveMailboxAutomation(localPartMailboxRoot, {
+  await saveMailboxAutomation(localPartMailboxRoot, {
     allowlistAutoApprove: true,
     chatBaseUrl: 'http://127.0.0.1:7690',
     deliveryMode: 'reply_email',
@@ -716,7 +716,7 @@ try {
     },
   ], null, 2));
 
-  const localPartIngested = ingestRawMessage(
+  const localPartIngested = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -735,7 +735,7 @@ try {
       },
     },
   );
-  const approvedLocalPart = findQueueItem(localPartIngested.id, localPartMailboxRoot)?.item;
+  const approvedLocalPart = (await findQueueItem(localPartIngested.id, localPartMailboxRoot))?.item;
   assert.equal(approvedLocalPart?.routing?.instanceName, 'trial1');
   assert.equal(approvedLocalPart?.message?.effectiveToAddress, 'trial1@example.com');
 
@@ -774,7 +774,7 @@ try {
   const localPartLoginRequest = requests.find((entry) => entry.method === 'GET' && entry.url.startsWith('/?token='));
   assert.equal(new URL(localPartLoginRequest.url, 'http://127.0.0.1').searchParams.get('token'), 'trial1-auth-token');
 
-  const updatedLocalPart = findQueueItem(approvedLocalPart.id, localPartMailboxRoot)?.item;
+  const updatedLocalPart = (await findQueueItem(approvedLocalPart.id, localPartMailboxRoot))?.item;
   assert.equal(updatedLocalPart?.status, 'processing_for_reply');
   assert.equal(updatedLocalPart?.automation?.status, 'processing_for_reply');
   assert.equal(updatedLocalPart?.automation?.targetInstance, 'trial1');

@@ -57,7 +57,7 @@ writeFileSync(join(historyDir, 'old.json'), JSON.stringify([
 ], null, 2));
 
 try {
-  const sidecar = generateSessionToolReuseSidecar({
+  const sidecar = await generateSessionToolReuseSidecar({
     configDir,
     outputDir,
     date: '2026-03-09',

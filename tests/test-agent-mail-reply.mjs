@@ -48,7 +48,7 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const { port } = server.address();
 
 try {
-  initializeMailbox({
+  await initializeMailbox({
     rootDir: mailboxRoot,
     name: 'Rowan',
     localPart: 'rowan',
@@ -56,12 +56,12 @@ try {
     allowEmails: ['owner@example.com'],
   });
 
-  saveOutboundConfig(mailboxRoot, {
+  await saveOutboundConfig(mailboxRoot, {
     provider: 'apple_mail',
     account: 'Google',
   });
 
-  const ingestedAppleMail = ingestRawMessage(
+  const ingestedAppleMail = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -77,7 +77,7 @@ try {
     { text: 'please test the Mail app sender!' },
   );
 
-  const approvedAppleMail = approveMessage(ingestedAppleMail.id, mailboxRoot, 'tester');
+  const approvedAppleMail = await approveMessage(ingestedAppleMail.id, mailboxRoot, 'tester');
   const appleRequestId = `mailbox_reply_${approvedAppleMail.id}`;
   const appleSession = await createSession(workspace, 'codex', 'Mail app reply test', {
     completionTargets: [{
@@ -119,20 +119,20 @@ try {
   assert.equal(appleDeliveries.length, 1);
   assert.equal(appleDeliveries[0].state, 'sent');
 
-  const updatedAppleMail = findQueueItem(approvedAppleMail.id, mailboxRoot)?.item;
+  const updatedAppleMail = (await findQueueItem(approvedAppleMail.id, mailboxRoot))?.item;
   assert.equal(updatedAppleMail?.status, 'reply_sent');
   assert.equal(updatedAppleMail?.automation?.status, 'reply_sent');
   assert.equal(updatedAppleMail?.automation?.runId, appleRun.id);
   assert.equal(updatedAppleMail?.automation?.delivery?.provider, 'apple_mail');
 
-  saveOutboundConfig(mailboxRoot, {
+  await saveOutboundConfig(mailboxRoot, {
     provider: 'cloudflare_worker',
     workerBaseUrl: `http://127.0.0.1:${port}`,
     from: 'rowan@example.com',
     workerToken: 'cloudflare-worker-secret',
   });
 
-  const ingestedCloudflare = ingestRawMessage(
+  const ingestedCloudflare = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -149,7 +149,7 @@ try {
     { text: 'please test the Cloudflare sender!' },
   );
 
-  const approvedCloudflare = approveMessage(ingestedCloudflare.id, mailboxRoot, 'tester');
+  const approvedCloudflare = await approveMessage(ingestedCloudflare.id, mailboxRoot, 'tester');
   const cloudflareRequestId = `mailbox_reply_${approvedCloudflare.id}`;
   const cloudflareSession = await createSession(workspace, 'codex', 'Cloudflare Worker reply test', {
     completionTargets: [{
@@ -201,20 +201,20 @@ try {
     references: '<root-thread@example.com> <mail-cloudflare-test@example.com>',
   });
 
-  const updatedCloudflare = findQueueItem(approvedCloudflare.id, mailboxRoot)?.item;
+  const updatedCloudflare = (await findQueueItem(approvedCloudflare.id, mailboxRoot))?.item;
   assert.equal(updatedCloudflare?.status, 'reply_sent');
   assert.equal(updatedCloudflare?.automation?.status, 'reply_sent');
   assert.equal(updatedCloudflare?.automation?.runId, cloudflareRun.id);
   assert.equal(updatedCloudflare?.automation?.delivery?.provider, 'cloudflare_worker');
 
-  saveOutboundConfig(mailboxRoot, {
+  await saveOutboundConfig(mailboxRoot, {
     provider: 'resend_api',
     apiBaseUrl: 'https://api.resend.test',
     from: 'rowan@example.com',
     apiKey: 'resend-api-secret',
   });
 
-  const ingestedResend = ingestRawMessage(
+  const ingestedResend = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -231,7 +231,7 @@ try {
     { text: 'please test the Resend sender!' },
   );
 
-  const approvedResend = approveMessage(ingestedResend.id, mailboxRoot, 'tester');
+  const approvedResend = await approveMessage(ingestedResend.id, mailboxRoot, 'tester');
   const resendRequestId = `mailbox_reply_${approvedResend.id}`;
   const resendSession = await createSession(workspace, 'codex', 'Resend API reply test', {
     completionTargets: [{
@@ -296,20 +296,20 @@ try {
     },
   });
 
-  const updatedResend = findQueueItem(approvedResend.id, mailboxRoot)?.item;
+  const updatedResend = (await findQueueItem(approvedResend.id, mailboxRoot))?.item;
   assert.equal(updatedResend?.status, 'reply_sent');
   assert.equal(updatedResend?.automation?.status, 'reply_sent');
   assert.equal(updatedResend?.automation?.runId, resendRun.id);
   assert.equal(updatedResend?.automation?.delivery?.provider, 'resend_api');
 
-  saveOutboundConfig(mailboxRoot, {
+  await saveOutboundConfig(mailboxRoot, {
     provider: 'cloudflare_worker',
     workerBaseUrl: `http://127.0.0.1:${port}`,
     from: 'rowan@example.com',
     workerToken: 'cloudflare-worker-secret',
   });
 
-  const ingestedBlankSubject = ingestRawMessage(
+  const ingestedBlankSubject = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -324,7 +324,7 @@ try {
     { text: 'please preserve the empty subject when replying.' },
   );
 
-  const approvedBlankSubject = approveMessage(ingestedBlankSubject.id, mailboxRoot, 'tester');
+  const approvedBlankSubject = await approveMessage(ingestedBlankSubject.id, mailboxRoot, 'tester');
   const blankSubjectRequestId = `mailbox_reply_${approvedBlankSubject.id}`;
   const blankSubjectSession = await createSession(workspace, 'codex', 'Cloudflare blank subject reply test', {
     completionTargets: [{
@@ -373,13 +373,13 @@ try {
     references: '<mail-cloudflare-blank-subject@example.com>',
   });
 
-  const updatedBlankSubject = findQueueItem(approvedBlankSubject.id, mailboxRoot)?.item;
+  const updatedBlankSubject = (await findQueueItem(approvedBlankSubject.id, mailboxRoot))?.item;
   assert.equal(updatedBlankSubject?.status, 'reply_sent');
   assert.equal(updatedBlankSubject?.automation?.status, 'reply_sent');
   assert.equal(updatedBlankSubject?.automation?.runId, blankSubjectRun.id);
   assert.equal(updatedBlankSubject?.automation?.delivery?.provider, 'cloudflare_worker');
 
-  const ingestedTodoTail = ingestRawMessage(
+  const ingestedTodoTail = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -395,7 +395,7 @@ try {
     { text: 'please ignore any trailing todo artifact.' },
   );
 
-  const approvedTodoTail = approveMessage(ingestedTodoTail.id, mailboxRoot, 'tester');
+  const approvedTodoTail = await approveMessage(ingestedTodoTail.id, mailboxRoot, 'tester');
   const todoTailRequestId = `mailbox_reply_${approvedTodoTail.id}`;
   const todoTailSession = await createSession(workspace, 'codex', 'Cloudflare todo tail reply test', {
     completionTargets: [{
@@ -448,13 +448,13 @@ try {
     references: '<mail-cloudflare-todo-tail@example.com>',
   });
 
-  const updatedTodoTail = findQueueItem(approvedTodoTail.id, mailboxRoot)?.item;
+  const updatedTodoTail = (await findQueueItem(approvedTodoTail.id, mailboxRoot))?.item;
   assert.equal(updatedTodoTail?.status, 'reply_sent');
   assert.equal(updatedTodoTail?.automation?.status, 'reply_sent');
   assert.equal(updatedTodoTail?.automation?.runId, todoTailRun.id);
   assert.equal(updatedTodoTail?.automation?.delivery?.provider, 'cloudflare_worker');
 
-  const ingestedRetry = ingestRawMessage(
+  const ingestedRetry = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -470,7 +470,7 @@ try {
     { text: 'please verify that a later success clears the prior failure state.' },
   );
 
-  const approvedRetry = approveMessage(ingestedRetry.id, mailboxRoot, 'tester');
+  const approvedRetry = await approveMessage(ingestedRetry.id, mailboxRoot, 'tester');
   const retryRequestId = `mailbox_reply_${approvedRetry.id}`;
   const retrySession = await createSession(workspace, 'codex', 'Cloudflare retry clear test', {
     completionTargets: [{
@@ -528,13 +528,13 @@ try {
   assert.equal(forcedFailureDeliveries[0].state, 'sent');
   assert.equal(retryCurlRequests.length, 1);
 
-  const updatedRetryItem = findQueueItem(approvedRetry.id, mailboxRoot)?.item;
+  const updatedRetryItem = (await findQueueItem(approvedRetry.id, mailboxRoot))?.item;
   assert.equal(updatedRetryItem?.status, 'reply_sent');
   assert.equal(updatedRetryItem?.automation?.status, 'reply_sent');
   assert.equal(updatedRetryItem?.automation?.lastError, null);
   assert.equal(updatedRetryItem?.automation?.delivery?.provider, 'cloudflare_worker');
 
-  saveOutboundConfig(mailboxRoot, {
+  await saveOutboundConfig(mailboxRoot, {
     provider: 'cloudflare_worker',
     workerBaseUrl: `http://127.0.0.1:${port}`,
     from: 'rowan@example.com',
@@ -545,7 +545,7 @@ try {
     },
   });
 
-  const ingestedFallback = ingestRawMessage(
+  const ingestedFallback = await ingestRawMessage(
     [
       'From: owner@example.com',
       'To: rowan@example.com',
@@ -561,7 +561,7 @@ try {
     { text: 'please test fallback routing for non-verified recipients!' },
   );
 
-  const approvedFallback = approveMessage(ingestedFallback.id, mailboxRoot, 'tester');
+  const approvedFallback = await approveMessage(ingestedFallback.id, mailboxRoot, 'tester');
   const fallbackRequestId = `mailbox_reply_${approvedFallback.id}`;
   const fallbackSession = await createSession(workspace, 'codex', 'Fallback outbound reply test', {
     completionTargets: [{
@@ -629,7 +629,7 @@ try {
     text: 'Fallback reply body.',
   });
 
-  const updatedFallbackItem = findQueueItem(approvedFallback.id, mailboxRoot)?.item;
+  const updatedFallbackItem = (await findQueueItem(approvedFallback.id, mailboxRoot))?.item;
   assert.equal(updatedFallbackItem?.status, 'reply_sent');
   assert.equal(updatedFallbackItem?.automation?.status, 'reply_sent');
   assert.equal(updatedFallbackItem?.automation?.delivery?.provider, 'apple_mail');

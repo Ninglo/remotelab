@@ -22,6 +22,12 @@ function createNewSessionShortcut({ closeSidebar = true } = {}) {
   if (closeSidebar && !isDesktop) closeSidebarFn();
   const tool = preferredTool || selectedTool || toolsList[0]?.id;
   if (!tool) return false;
+  const preferredAgentId = typeof getPreferredAgentTemplateId === "function"
+    ? getPreferredAgentTemplateId()
+    : "";
+  const preferredAgentName = typeof getPreferredAgentTemplateName === "function"
+    ? getPreferredAgentTemplateName()
+    : "";
   if (typeof switchTab === "function") {
     switchTab("sessions");
   }
@@ -30,7 +36,9 @@ function createNewSessionShortcut({ closeSidebar = true } = {}) {
     folder: "~",
     tool,
     sourceId: DEFAULT_APP_ID,
-    sourceName: DEFAULT_APP_NAME,
+    sourceName: DEFAULT_WEB_SOURCE_NAME,
+    templateId: preferredAgentId,
+    templateName: preferredAgentName,
   });
 }
 
@@ -43,6 +51,44 @@ closeSidebar.addEventListener("click", closeSidebarFn);
 sidebarOverlay.addEventListener("click", (e) => {
   if (e.target === sidebarOverlay && !isDesktop) closeSidebarFn();
 });
+
+// ---- Session search ----
+if (sessionSearchInput) {
+  let searchDebounceTimer = null;
+  sessionSearchInput.addEventListener("input", () => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+      sessionSearchQuery = (sessionSearchInput.value || "").trim();
+      renderSessionList();
+    }, 120);
+  });
+  sessionSearchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      sessionSearchInput.value = "";
+      sessionSearchQuery = "";
+      sessionSearchInput.blur();
+      renderSessionList();
+    }
+  });
+}
+
+// ---- View mode switcher ----
+function setSessionViewMode(mode) {
+  sessionViewMode = mode === "projects" ? "projects" : "inbox";
+  localStorage.setItem(SESSION_VIEW_MODE_STORAGE_KEY, sessionViewMode);
+  if (viewInboxBtn) viewInboxBtn.classList.toggle("active", sessionViewMode === "inbox");
+  if (viewProjectsBtn) viewProjectsBtn.classList.toggle("active", sessionViewMode === "projects");
+  renderSessionList();
+}
+
+if (viewInboxBtn) {
+  viewInboxBtn.classList.toggle("active", sessionViewMode === "inbox");
+  viewInboxBtn.addEventListener("click", () => setSessionViewMode("inbox"));
+}
+if (viewProjectsBtn) {
+  viewProjectsBtn.classList.toggle("active", sessionViewMode === "projects");
+  viewProjectsBtn.addEventListener("click", () => setSessionViewMode("projects"));
+}
 
 // ---- Session list actions ----
 sortSessionListBtn.addEventListener("click", () => {

@@ -157,6 +157,12 @@ async function createSession(port, name) {
   return res.json.session;
 }
 
+async function createApp(port, payload = {}) {
+  const res = await request(port, 'POST', '/api/agents', payload);
+  assert.equal(res.status, 201);
+  return res.json;
+}
+
 async function submitMessage(port, sessionId, requestId, text) {
   const res = await request(port, 'POST', `/api/sessions/${sessionId}/messages`, {
     requestId,
@@ -198,6 +204,20 @@ try {
     assert.equal(saved.status, 201, 'save-template route should create a template');
     assert.ok(saved.json.template?.id, 'save-template route should return the created template');
 
+    const createdWithTemplate = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'fake-codex',
+      name: 'Template from web source',
+      sourceId: 'chat',
+      sourceName: 'RemoteLab',
+      templateId: saved.json.template.id,
+      templateName: saved.json.template.name,
+    });
+    assert.equal(createdWithTemplate.status, 201, 'session create should support source + template together');
+    assert.equal(createdWithTemplate.json.session?.sourceId, 'chat', 'creating with a template should keep the requested source id');
+    assert.equal(createdWithTemplate.json.session?.sourceName, 'RemoteLab', 'creating with a template should keep the requested source name');
+    assert.equal(createdWithTemplate.json.session?.templateId, saved.json.template.id, 'creating with a template should also persist the template id');
+
     const target = await createSession(port, 'Template target');
     const applied = await request(port, 'POST', `/api/sessions/${target.id}/apply-template`, {
       templateId: saved.json.template.id,
@@ -231,6 +251,28 @@ try {
     const staleTemplateEvent = (staleEvents.json.events || []).find((event) => event.type === 'template_context');
     assert.ok(staleTemplateEvent, 'stale template apply should append a template event');
     assert.equal(staleTemplateEvent.templateFreshness, 'stale', 'stale template application should surface freshness drift');
+
+    const agent = await createApp(port, {
+      name: 'HTTP Agent',
+      systemPrompt: 'Stay inside the HTTP-created agent.',
+      welcomeMessage: 'Welcome from the HTTP agent.',
+      tool: 'fake-codex',
+    });
+    const createdFromTemplate = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'fake-codex',
+      name: 'Created from template id',
+      templateId: agent.id,
+    });
+    assert.equal(createdFromTemplate.status, 201, 'creating a session with templateId should succeed');
+    assert.equal(createdFromTemplate.json.session?.templateId, agent.id, 'session creation should keep the applied agent id');
+    assert.equal(createdFromTemplate.json.session?.sourceId, 'chat', 'session creation should keep the canonical web source when applying an agent');
+    assert.equal(createdFromTemplate.json.session?.systemPrompt, 'Stay inside the HTTP-created agent.', 'session creation should apply the agent prompt immediately');
+
+    const createdFromTemplateEvents = await request(port, 'GET', `/api/sessions/${createdFromTemplate.json.session.id}/events?filter=all`);
+    const welcomeEvent = (createdFromTemplateEvents.json.events || []).find((event) => event.type === 'message' && event.role === 'assistant');
+    assert.ok(welcomeEvent, 'creating a session from an agent should append the agent welcome message');
+    assert.match(welcomeEvent.content || '', /Welcome from the HTTP agent\./);
 
     console.log('test-http-session-templates: ok');
   } finally {

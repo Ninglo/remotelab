@@ -86,6 +86,7 @@ try {
   });
   const applied = await applyTemplateToSession(target.id, template.id);
   assert.ok(applied, 'template should apply to a fresh session');
+  assert.equal(applied.sourceId, 'chat', 'applying a template should not rewrite the session source');
   assert.equal(applied.templateId, template.id, 'session should keep the template id');
   assert.equal(applied.templateName, 'Warmed subtask', 'session should keep the template display name');
   assert.equal(applied.systemPrompt, 'Stay inside the saved subtask template.', 'template prompt should be applied');

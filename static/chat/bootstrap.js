@@ -14,21 +14,122 @@ function normalizeBootstrapText(value) {
   return normalized || "";
 }
 
+const OWNER_AUTH_CAPABILITIES = Object.freeze({
+  listSessions: true,
+  createSession: true,
+  renameSession: true,
+  archiveSession: true,
+  pinSession: true,
+  forkSession: true,
+  uploadAttachments: true,
+  downloadArtifacts: true,
+  switchAgents: true,
+  manageAgents: true,
+  changeRuntime: true,
+  organizeSessionList: true,
+  publishShareSnapshot: true,
+});
+
+const AGENT_SCOPED_AUTH_CAPABILITIES = Object.freeze({
+  listSessions: true,
+  createSession: true,
+  renameSession: true,
+  archiveSession: true,
+  pinSession: true,
+  forkSession: false,
+  uploadAttachments: true,
+  downloadArtifacts: true,
+  switchAgents: false,
+  manageAgents: false,
+  changeRuntime: false,
+  organizeSessionList: false,
+  publishShareSnapshot: false,
+});
+
+const LEGACY_VISITOR_AUTH_CAPABILITIES = Object.freeze({
+  listSessions: false,
+  createSession: false,
+  renameSession: false,
+  archiveSession: false,
+  pinSession: false,
+  forkSession: false,
+  uploadAttachments: true,
+  downloadArtifacts: true,
+  switchAgents: false,
+  manageAgents: false,
+  changeRuntime: false,
+  organizeSessionList: false,
+  publishShareSnapshot: false,
+});
+
+function cloneAuthCapabilityDefaults(mode = "owner") {
+  if (mode === "agent_scoped") {
+    return { ...AGENT_SCOPED_AUTH_CAPABILITIES };
+  }
+  if (mode === "visitor") {
+    return { ...LEGACY_VISITOR_AUTH_CAPABILITIES };
+  }
+  return { ...OWNER_AUTH_CAPABILITIES };
+}
+
+function normalizeBootstrapCapabilities(raw, mode = "owner") {
+  const defaults = cloneAuthCapabilityDefaults(mode);
+  if (!raw || typeof raw !== "object") {
+    return defaults;
+  }
+  return Object.fromEntries(
+    Object.keys(defaults).map((key) => [key, raw[key] === true ? true : defaults[key]]),
+  );
+}
+
+function normalizeBootstrapCurrentAgent(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = normalizeBootstrapText(raw.id);
+  if (!id) return null;
+  return {
+    id,
+    name: normalizeBootstrapText(raw.name),
+    tool: normalizeBootstrapText(raw.tool),
+  };
+}
+
 function normalizeBootstrapAuthInfo(raw) {
   if (!raw || typeof raw !== "object") return null;
   const role = raw.role === "visitor" ? "visitor" : "owner";
   const preferredLanguage = normalizeBootstrapText(raw.preferredLanguage);
   if (role === "owner") {
-    return preferredLanguage ? { role, preferredLanguage } : { role };
+    const info = {
+      role,
+      principalKind: normalizeBootstrapText(raw.principalKind) || "owner",
+      surfaceMode: "owner",
+      capabilities: normalizeBootstrapCapabilities(raw.capabilities, "owner"),
+    };
+    if (preferredLanguage) info.preferredLanguage = preferredLanguage;
+    return info;
   }
 
+  const surfaceMode = normalizeBootstrapText(raw.surfaceMode) === "agent_scoped"
+    ? "agent_scoped"
+    : "visitor";
   const sessionId = normalizeBootstrapText(raw.sessionId);
-  if (!sessionId) return null;
+  if (!sessionId && surfaceMode !== "agent_scoped") return null;
 
   const info = {
     role,
-    sessionId,
+    principalKind: normalizeBootstrapText(raw.principalKind)
+      || (surfaceMode === "agent_scoped" ? "agent_guest" : "visitor"),
+    surfaceMode,
+    capabilities: normalizeBootstrapCapabilities(raw.capabilities, surfaceMode),
   };
+  if (sessionId) info.sessionId = sessionId;
+  const agentId = normalizeBootstrapText(raw.agentId);
+  if (agentId) info.agentId = agentId;
+  const visitorId = normalizeBootstrapText(raw.visitorId);
+  if (visitorId) info.visitorId = visitorId;
+  const principalId = normalizeBootstrapText(raw.principalId || raw.visitorId);
+  if (principalId) info.principalId = principalId;
+  const currentAgent = normalizeBootstrapCurrentAgent(raw.currentAgent);
+  if (currentAgent) info.currentAgent = currentAgent;
   if (preferredLanguage) info.preferredLanguage = preferredLanguage;
   return info;
 }
@@ -114,7 +215,16 @@ const bootstrapShareSnapshot = normalizeBootstrapShareSnapshot(
 );
 
 function getBootstrapAuthInfo() {
-  return bootstrapAuthInfo ? { ...bootstrapAuthInfo } : null;
+  if (!bootstrapAuthInfo) return null;
+  return {
+    ...bootstrapAuthInfo,
+    capabilities: bootstrapAuthInfo.capabilities
+      ? { ...bootstrapAuthInfo.capabilities }
+      : undefined,
+    currentAgent: bootstrapAuthInfo.currentAgent
+      ? { ...bootstrapAuthInfo.currentAgent }
+      : undefined,
+  };
 }
 
 function getBootstrapShareSnapshot() {
@@ -225,11 +335,18 @@ const closeSidebar = document.getElementById("closeSidebar");
 const forkSessionBtn = document.getElementById("forkSessionBtn");
 const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
+const sidebarSearch = document.getElementById("sidebarSearch");
+const sessionSearchInput = document.getElementById("sessionSearchInput");
+const sidebarViewSwitcher = document.getElementById("sidebarViewSwitcher");
+const viewInboxBtn = document.getElementById("viewInbox");
+const viewProjectsBtn = document.getElementById("viewProjects");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
 const settingsSessionPresentationList = document.getElementById("settingsSessionPresentationList");
+const settingsAgentsList = document.getElementById("settingsAgentsList");
+const createAgentBtn = document.getElementById("createAgentBtn");
 const uiLanguageSelect = document.getElementById("uiLanguageSelect");
-const uiLanguageStatus = document.getElementById("uiLanguageStatus");
+const thinkingBlockDisplaySelect = document.getElementById("thinkingBlockDisplaySelect");
 const sortSessionListBtn = document.getElementById("sortSessionListBtn");
 const newSessionBtn = document.getElementById("newSessionBtn");
 const messagesEl = document.getElementById("messages");
@@ -245,6 +362,7 @@ const statusText = document.getElementById("statusText");
 const imgBtn = document.getElementById("imgBtn");
 const imgFileInput = document.getElementById("imgFileInput");
 const imgPreviewStrip = document.getElementById("imgPreviewStrip");
+const inlineAgentSelect = document.getElementById("inlineAgentSelect");
 const inlineToolSelect = document.getElementById("inlineToolSelect");
 const inlineModelSelect = document.getElementById("inlineModelSelect");
 const effortSelect = document.getElementById("effortSelect");
@@ -258,8 +376,10 @@ const sessionTemplateRow = document.getElementById("sessionTemplateRow");
 const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
+const tabAgents = document.getElementById("tabAgents");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
+const agentsPanel = document.getElementById("agentsPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
@@ -305,10 +425,22 @@ const SOURCE_FILTER_BOT_VALUE = "bot";
 const SOURCE_FILTER_AUTOMATION_VALUE = "automation";
 const DEFAULT_APP_ID = "chat";
 const DEFAULT_APP_NAME = "Chat";
+const DEFAULT_WEB_SOURCE_NAME = "RemoteLab";
+const PREFERRED_AGENT_TEMPLATE_STORAGE_KEY = "preferredAgentTemplateId";
+const PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY = "preferredAgentTemplateName";
+const THINKING_BLOCK_DISPLAY_STORAGE_KEY = "remotelab.thinkingBlockDisplay.v2";
 const UI_THEMES = {
   system: {
     lightThemeColor: "#ffffff",
     darkThemeColor: "#161618",
+  },
+  light: {
+    lightThemeColor: "#ffffff",
+    darkThemeColor: "#ffffff",
+  },
+  dark: {
+    lightThemeColor: "#1e1e1e",
+    darkThemeColor: "#1e1e1e",
   },
   amber: {
     lightThemeColor: "#f6f8ef",
@@ -328,7 +460,37 @@ if (!chatStoreModel) {
 }
 
 function normalizeThemePreference(value) {
-  return value === "amber" ? "amber" : "system";
+  if (value === "dark" || value === "light" || value === "amber") return value;
+  return "system";
+}
+
+function normalizeThinkingBlockDisplayMode(value) {
+  return value === "expanded" ? "expanded" : "collapsed";
+}
+
+function getThinkingBlockDisplayExpandedState() {
+  return currentThinkingBlockDisplayMode !== "collapsed";
+}
+
+function readStoredThinkingBlockDisplayMode() {
+  try {
+    return normalizeThinkingBlockDisplayMode(localStorage.getItem(THINKING_BLOCK_DISPLAY_STORAGE_KEY));
+  } catch {
+    return "collapsed";
+  }
+}
+
+function rerenderCurrentSessionForThinkingBlockDisplayChange() {
+  if (!currentSessionId || hasAttachedSession !== true) return;
+  if (typeof resetRenderedEventState === "function") {
+    resetRenderedEventState(currentSessionId);
+  } else if (renderedEventState && typeof renderedEventState === "object") {
+    renderedEventState.sessionId = currentSessionId;
+    renderedEventState.runningBlockExpanded = getThinkingBlockDisplayExpandedState();
+  }
+  if (typeof refreshCurrentSession === "function") {
+    refreshCurrentSession(currentSessionId, { forceFresh: true }).catch(() => {});
+  }
 }
 
 function readStoredThemePreference() {
@@ -353,10 +515,11 @@ function updateThemeColorMeta(themePreference) {
 
 function applyThemePreference(themePreference) {
   const normalized = normalizeThemePreference(themePreference);
+  const root = document.documentElement;
   if (normalized === "system") {
-    document.body?.removeAttribute("data-theme");
-  } else if (document.body) {
-    document.body.dataset.theme = normalized;
+    root.removeAttribute("data-theme");
+  } else {
+    root.setAttribute("data-theme", normalized);
   }
   updateThemeColorMeta(normalized);
   return normalized;
@@ -379,6 +542,7 @@ function applyThemeTextOverrides(themePreference) {
 }
 
 let currentThemePreference = applyThemePreference(readStoredThemePreference());
+let currentThinkingBlockDisplayMode = readStoredThinkingBlockDisplayMode();
 applyThemeTextOverrides(currentThemePreference);
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -387,6 +551,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
 window.remotelabGetThemePreference = function getThemePreference() {
   return currentThemePreference;
+};
+
+window.remotelabGetThinkingBlockDisplayMode = function getThinkingBlockDisplayMode() {
+  return currentThinkingBlockDisplayMode;
+};
+
+window.remotelabShouldExpandThinkingBlocksByDefault = function remotelabShouldExpandThinkingBlocksByDefault() {
+  return getThinkingBlockDisplayExpandedState();
+};
+
+window.remotelabGetThinkingBlockDisplayOptions = function getThinkingBlockDisplayOptions() {
+  const t = typeof window.remotelabT === "function" ? window.remotelabT : (key) => key;
+  return [
+    { value: "expanded", label: t("settings.thinkingBlocks.optionExpanded") },
+    { value: "collapsed", label: t("settings.thinkingBlocks.optionCollapsed") },
+  ];
 };
 
 window.remotelabSetThemePreference = function setThemePreference(value) {
@@ -403,10 +583,26 @@ window.remotelabSetThemePreference = function setThemePreference(value) {
   return currentThemePreference;
 };
 
+window.remotelabSetThinkingBlockDisplayMode = function setThinkingBlockDisplayMode(value) {
+  currentThinkingBlockDisplayMode = normalizeThinkingBlockDisplayMode(value);
+  try {
+    localStorage.setItem(THINKING_BLOCK_DISPLAY_STORAGE_KEY, currentThinkingBlockDisplayMode);
+  } catch {}
+  try {
+    window.dispatchEvent(new CustomEvent("remotelab:thinkingblockdisplaychange", {
+      detail: { mode: currentThinkingBlockDisplayMode },
+    }));
+  } catch {}
+  rerenderCurrentSessionForThinkingBlockDisplayChange();
+  return currentThinkingBlockDisplayMode;
+};
+
 window.remotelabGetThemeOptions = function getThemeOptions() {
   const t = typeof window.remotelabT === "function" ? window.remotelabT : (key) => key;
   return [
     { value: "system", label: t("settings.theme.optionSystem") },
+    { value: "light", label: t("settings.theme.optionLight") },
+    { value: "dark", label: t("settings.theme.optionDark") },
     { value: "amber", label: t("settings.theme.optionAmber") },
   ];
 };
@@ -417,11 +613,23 @@ window.addEventListener("storage", (event) => {
   applyThemeTextOverrides(currentThemePreference);
 });
 
+window.addEventListener("storage", (event) => {
+  if (event.key && event.key !== THINKING_BLOCK_DISPLAY_STORAGE_KEY) return;
+  currentThinkingBlockDisplayMode = normalizeThinkingBlockDisplayMode(event.newValue);
+  try {
+    window.dispatchEvent(new CustomEvent("remotelab:thinkingblockdisplaychange", {
+      detail: { mode: currentThinkingBlockDisplayMode },
+    }));
+  } catch {}
+  rerenderCurrentSessionForThinkingBlockDisplayChange();
+});
+
 window.addEventListener("remotelab:localechange", () => {
   applyThemeTextOverrides(currentThemePreference);
 });
 
 function normalizeSidebarTab(tab) {
+  if (tab === "agents") return "agents";
   if (tab === "settings") return "settings";
   return "sessions";
 }
@@ -473,6 +681,17 @@ let archivedSessionsLoaded = false;
 let archivedSessionsLoading = false;
 let archivedSessionsRefreshPromise = null;
 let visitorMode = false;
+let surfaceMode = bootstrapAuthInfo?.surfaceMode || "owner";
+let principalKind = bootstrapAuthInfo?.principalKind
+  || (bootstrapAuthInfo?.role === "visitor" ? "visitor" : "owner");
+let principalId = normalizeBootstrapText(bootstrapAuthInfo?.principalId || bootstrapAuthInfo?.visitorId);
+let authCapabilities = bootstrapAuthInfo?.capabilities
+  ? { ...bootstrapAuthInfo.capabilities }
+  : cloneAuthCapabilityDefaults(surfaceMode);
+let scopedAgentContext = bootstrapAuthInfo?.currentAgent
+  ? { ...bootstrapAuthInfo.currentAgent }
+  : null;
+let scopedRequestMode = false;
 let visitorSessionId = null;
 let shareSnapshotMode = false;
 let shareSnapshotPayload = bootstrapShareSnapshot;
@@ -711,7 +930,55 @@ function setRunningEventBlockExpanded(sessionId, expanded) {
 }
 
 function shouldUseVisitorRequests() {
-  return visitorMode === true;
+  return visitorMode === true || scopedRequestMode === true;
+}
+
+function isAgentScopedMode() {
+  return surfaceMode === "agent_scoped";
+}
+
+function getActiveAuthCapabilities() {
+  return authCapabilities
+    ? { ...authCapabilities }
+    : cloneAuthCapabilityDefaults(surfaceMode);
+}
+
+function hasAuthCapability(name, fallback = false) {
+  if (!name) return fallback;
+  const capabilities = getActiveAuthCapabilities();
+  return capabilities[name] === true ? true : fallback;
+}
+
+function canSwitchAgents() {
+  return !visitorMode && hasAuthCapability("switchAgents");
+}
+
+function canManageAgents() {
+  return !visitorMode && hasAuthCapability("manageAgents");
+}
+
+function canChangeRuntimeSelection() {
+  return !visitorMode && hasAuthCapability("changeRuntime");
+}
+
+function canPublishShareSnapshots() {
+  return !visitorMode && hasAuthCapability("publishShareSnapshot");
+}
+
+function canForkSessions() {
+  return !visitorMode && hasAuthCapability("forkSession");
+}
+
+function canOrganizeSessionList() {
+  return !visitorMode && hasAuthCapability("organizeSessionList");
+}
+
+function shouldPersistOwnerNavigationState() {
+  return !visitorMode && !isAgentScopedMode();
+}
+
+function shouldEnableOwnerPushFeatures() {
+  return !visitorMode && !isAgentScopedMode();
 }
 
 function withVisitorModeUrl(url) {
@@ -737,6 +1004,16 @@ function normalizeStoredToolId(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeStoredAgentTemplateId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeStoredAgentTemplateName(value) {
+  return typeof value === "string"
+    ? value.trim().replace(/\s+/g, " ")
+    : "";
+}
+
 function derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool) {
   const preferred = normalizeStoredToolId(storedPreferredTool);
   const legacySelected = normalizeStoredToolId(storedLegacySelectedTool);
@@ -754,28 +1031,76 @@ const storedLegacySelectedTool = normalizeStoredToolId(localStorage.getItem("sel
 
 let preferredTool = derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool);
 let selectedTool = preferredTool;
+let preferredAgentTemplateId = normalizeStoredAgentTemplateId(
+  localStorage.getItem(PREFERRED_AGENT_TEMPLATE_STORAGE_KEY),
+);
+let preferredAgentTemplateName = normalizeStoredAgentTemplateName(
+  localStorage.getItem(PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY),
+);
 // Default thinking to enabled; only disable if explicitly set to 'false'
 let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
 // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
 let selectedModel = null;
 let selectedEffort = null;
 let currentToolModels = []; // model list for current tool
-let currentToolBaseReasoning = { kind: "none", label: "Thinking" };
+let currentToolBaseReasoning = { kind: "none", label: "Reasoning" };
 let currentToolEffortLevels = null; // null = binary toggle, string[] = effort dropdown
 let currentToolReasoningKind = "none";
-let currentToolReasoningLabel = "Thinking";
+let currentToolReasoningLabel = "Reasoning";
 let currentToolReasoningDefault = null;
 let allToolsList = [];
 let toolsList = [];
 let isDesktop = window.matchMedia("(min-width: 768px)").matches;
 const ADD_MORE_TOOL_VALUE = "__add_more__";
 const COLLAPSED_GROUPS_STORAGE_KEY = "collapsedSessionGroups";
+const SESSION_VIEW_MODE_STORAGE_KEY = "sessionViewMode";
 let isSavingToolConfig = false;
 let collapsedFolders = JSON.parse(
   localStorage.getItem(COLLAPSED_GROUPS_STORAGE_KEY) ||
     localStorage.getItem("collapsedFolders") ||
     "{}",
 );
+let sessionSearchQuery = "";
+let sessionViewMode = localStorage.getItem(SESSION_VIEW_MODE_STORAGE_KEY) || "inbox";
+
+function setPreferredAgentTemplate(value, { name = "", persist = true } = {}) {
+  preferredAgentTemplateId = normalizeStoredAgentTemplateId(value);
+  preferredAgentTemplateName = preferredAgentTemplateId
+    ? normalizeStoredAgentTemplateName(name)
+    : "";
+  if (persist) {
+    try {
+      if (preferredAgentTemplateId) {
+        localStorage.setItem(PREFERRED_AGENT_TEMPLATE_STORAGE_KEY, preferredAgentTemplateId);
+      } else {
+        localStorage.removeItem(PREFERRED_AGENT_TEMPLATE_STORAGE_KEY);
+      }
+      if (preferredAgentTemplateName) {
+        localStorage.setItem(PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY, preferredAgentTemplateName);
+      } else {
+        localStorage.removeItem(PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY);
+      }
+    } catch {}
+  }
+  window.dispatchEvent(new CustomEvent("remotelab:preferred-agent-change", {
+    detail: {
+      templateId: preferredAgentTemplateId,
+      templateName: preferredAgentTemplateName,
+    },
+  }));
+  return {
+    templateId: preferredAgentTemplateId,
+    templateName: preferredAgentTemplateName,
+  };
+}
+
+function getPreferredAgentTemplateId() {
+  return preferredAgentTemplateId || "";
+}
+
+function getPreferredAgentTemplateName() {
+  return preferredAgentTemplateName || "";
+}
 
 try {
   localStorage.removeItem(LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY);

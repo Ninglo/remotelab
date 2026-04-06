@@ -22,7 +22,7 @@ if (!Number.isInteger(days) || days < 1) {
   process.exit(1);
 }
 
-const sidecar = generateSessionToolReuseSidecar({
+const sidecar = await generateSessionToolReuseSidecar({
   configDir,
   outputDir,
   date,

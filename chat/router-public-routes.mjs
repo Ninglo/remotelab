@@ -8,10 +8,14 @@ import {
   generateToken,
   parseCookies,
   getAuthSession,
+  getVisitorAuthSession,
+  getVisitorSessionToken,
   setCookie,
+  setVisitorCookie,
   clearCookie,
   clearVisitorCookie,
 } from '../lib/auth.mjs';
+import { getAgentByShareToken } from './apps.mjs';
 import {
   createInstallHandoff,
   normalizeInstallHandoffToken,
@@ -64,6 +68,35 @@ async function mintOwnerSessionFromInstallHandoff(handoffToken) {
   return {
     redirect: '/?skipInstall=1',
     setCookie: setCookie(sessionToken),
+  };
+}
+
+async function createSharedAgentVisitorSession(agent) {
+  const principalId = `prn_${generateToken().slice(0, 24)}`;
+  return {
+    principalId,
+    visitorId: principalId,
+    role: 'visitor',
+    principalKind: 'agent_guest',
+    surfaceMode: 'agent_scoped',
+    agentId: typeof agent?.id === 'string' ? agent.id : '',
+    agentName: typeof agent?.name === 'string' ? agent.name : '',
+    agentTool: typeof agent?.tool === 'string' ? agent.tool : '',
+    capabilities: {
+      listSessions: true,
+      createSession: true,
+      renameSession: true,
+      archiveSession: true,
+      pinSession: true,
+      forkSession: false,
+      uploadAttachments: true,
+      downloadArtifacts: true,
+      switchAgents: false,
+      manageAgents: false,
+      changeRuntime: false,
+      organizeSessionList: false,
+      publishShareSnapshot: false,
+    },
   };
 }
 
@@ -286,6 +319,90 @@ if (pathname === '/logout') {
     'Location': '/login',
     'Set-Cookie': [clearCookie(), clearVisitorCookie()],
   });
+  res.end();
+  return true;
+}
+
+// Keep `/app/:shareToken` as a silent compatibility redirect so older shared links still open,
+// but the canonical public surface is now `/agent/:shareToken`.
+const sharedAgentMatch = pathname.match(/^\/(agent|app)\/([^/]+)$/);
+if (sharedAgentMatch && req.method === 'GET') {
+  const routeKind = sharedAgentMatch[1];
+  const shareToken = sharedAgentMatch[2];
+  const agent = await getAgentByShareToken(shareToken);
+  if (!agent) {
+    res.writeHead(404, buildHeaders({
+      'Content-Type': 'text/plain',
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+    }));
+    res.end('Shared agent not found');
+    return true;
+  }
+
+  if (routeKind === 'app') {
+    res.writeHead(302, buildHeaders({
+      'Location': `/agent/${encodeURIComponent(shareToken)}`,
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+      'Referrer-Policy': 'no-referrer',
+    }));
+    res.end();
+    return true;
+  }
+
+  const existingVisitor = getVisitorAuthSession(req);
+  const existingVisitorToken = getVisitorSessionToken(req);
+  const scopedAgentId = typeof existingVisitor?.agentId === 'string'
+    ? existingVisitor.agentId.trim()
+    : (typeof existingVisitor?.appId === 'string' ? existingVisitor.appId.trim() : '');
+  const canReuseScopedPrincipal = !!(
+    existingVisitorToken
+    && existingVisitor
+    && scopedAgentId
+    && scopedAgentId === agent.id
+    && (typeof existingVisitor?.principalId === 'string' || typeof existingVisitor?.visitorId === 'string')
+  );
+
+  const sharedPrincipal = canReuseScopedPrincipal
+    ? {
+      ...existingVisitor,
+      expiry: Date.now() + SESSION_EXPIRY,
+      role: 'visitor',
+      principalKind: typeof existingVisitor?.principalKind === 'string' && existingVisitor.principalKind.trim()
+        ? existingVisitor.principalKind.trim()
+        : 'agent_guest',
+      principalId: typeof existingVisitor?.principalId === 'string' && existingVisitor.principalId.trim()
+        ? existingVisitor.principalId.trim()
+        : String(existingVisitor?.visitorId || '').trim(),
+      visitorId: String(existingVisitor?.visitorId || existingVisitor?.principalId || '').trim(),
+      agentId: agent.id,
+      agentName: typeof agent?.name === 'string' ? agent.name : '',
+      agentTool: typeof agent?.tool === 'string' ? agent.tool : '',
+    }
+    : {
+      expiry: Date.now() + SESSION_EXPIRY,
+      ...await createSharedAgentVisitorSession(agent),
+    };
+  if (!sharedPrincipal?.agentId || !sharedPrincipal?.principalId) {
+    res.writeHead(500, buildHeaders({
+      'Content-Type': 'text/plain',
+      'Cache-Control': 'no-store, max-age=0, must-revalidate',
+    }));
+    res.end('Failed to start shared agent session');
+    return true;
+  }
+
+  const visitorSessionToken = canReuseScopedPrincipal
+    ? existingVisitorToken
+    : generateToken();
+  sessions.set(visitorSessionToken, sharedPrincipal);
+  await saveAuthSessionsAsync();
+
+  res.writeHead(302, buildHeaders({
+    'Location': '/?visitor=1',
+    'Cache-Control': 'no-store, max-age=0, must-revalidate',
+    'Referrer-Policy': 'no-referrer',
+    'Set-Cookie': setVisitorCookie(visitorSessionToken),
+  }));
   res.end();
   return true;
 }

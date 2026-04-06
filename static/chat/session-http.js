@@ -11,6 +11,13 @@ function restoreOwnerSessionSelection() {
 
   const targetSession = resolveRestoreTargetSession();
   if (!targetSession) {
+    if (currentSessionId && typeof settleAttachedSessionSidebarState === "function") {
+      Promise.resolve(settleAttachedSessionSidebarState({
+        sessionId: currentSessionId,
+        sync: true,
+        render: false,
+      })).catch(() => {});
+    }
     if (typeof setChatCurrentSession === "function") {
       setChatCurrentSession(null, { hasAttachedSession: false });
     } else {
@@ -33,6 +40,18 @@ function restoreOwnerSessionSelection() {
     syncBrowserState();
   }
   pendingNavigationState = null;
+}
+
+function canOrganizeSessionListFromUi() {
+  return typeof canOrganizeSessionList === "function"
+    ? canOrganizeSessionList()
+    : !visitorMode;
+}
+
+function isOwnerPushFeatureEnabled() {
+  return typeof shouldEnableOwnerPushFeatures === "function"
+    ? shouldEnableOwnerPushFeatures()
+    : !visitorMode;
 }
 
 if (
@@ -455,6 +474,54 @@ function reconcilePendingMessageState(event) {
 }
 
 const pendingSessionReviewSyncs = new Map();
+let heldSidebarSessionState = null;
+
+function cloneSessionForSidebarHold(session) {
+  if (!session || typeof session !== "object") return null;
+  if (typeof structuredClone === "function") {
+    try {
+      return structuredClone(session);
+    } catch {}
+  }
+  try {
+    return JSON.parse(JSON.stringify(session));
+  } catch {
+    return { ...session };
+  }
+}
+
+function getHeldSidebarSessionState(sessionId = currentSessionId) {
+  const normalizedSessionId = typeof sessionId === "string" ? sessionId.trim() : "";
+  if (!normalizedSessionId) return null;
+  if (!heldSidebarSessionState || heldSidebarSessionState.sessionId !== normalizedSessionId) {
+    return null;
+  }
+  return heldSidebarSessionState;
+}
+
+function getSessionSidebarListSnapshot(session) {
+  if (!session?.id || session.id !== currentSessionId) return session;
+  const heldState = getHeldSidebarSessionState(session.id);
+  return heldState?.snapshot || session;
+}
+
+function holdAttachedSessionSidebarState(session) {
+  if (!session?.id) return null;
+  const existing = getHeldSidebarSessionState(session.id);
+  heldSidebarSessionState = {
+    sessionId: session.id,
+    snapshot: cloneSessionForSidebarHold(session) || { ...session },
+    pendingReviewAt: existing?.pendingReviewAt || "",
+  };
+  return heldSidebarSessionState;
+}
+
+function clearHeldSidebarSessionState(sessionId = currentSessionId) {
+  const heldState = getHeldSidebarSessionState(sessionId);
+  if (!heldState) return null;
+  heldSidebarSessionState = null;
+  return heldState;
+}
 
 function normalizeSessionReviewStamp(value) {
   if (typeof value === "number") {
@@ -500,26 +567,44 @@ function getEffectiveSessionReviewedAt(session) {
   return best;
 }
 
-function rememberSessionReviewedLocally(session, { render = false } = {}) {
+function applySessionReviewedStampLocally(session, stamp, { render = false } = {}) {
   if (!session?.id) return "";
-  const stamp = getSessionReviewStamp(session);
-  if (!stamp) return "";
-  if (getSessionReviewStampTime(stamp) <= getSessionReviewStampTime(getEffectiveSessionReviewedAt(session))) {
+  const normalizedStamp = normalizeSessionReviewStamp(stamp);
+  if (!normalizedStamp) return "";
+  if (getSessionReviewStampTime(normalizedStamp) <= getSessionReviewStampTime(getEffectiveSessionReviewedAt(session))) {
     return getEffectiveSessionReviewedAt(session);
   }
   const stored = typeof setLocalSessionReviewedAt === "function"
-    ? setLocalSessionReviewedAt(session.id, stamp)
-    : stamp;
-  session.localReviewedAt = stored || stamp;
+    ? setLocalSessionReviewedAt(session.id, normalizedStamp)
+    : normalizedStamp;
+  session.localReviewedAt = stored || normalizedStamp;
   if (render) {
     renderSessionList();
   }
   return session.localReviewedAt;
 }
 
-async function syncSessionReviewedToServer(session) {
-  if (!session?.id || visitorMode) return session;
+function rememberSessionReviewedLocally(session, { render = false } = {}) {
+  if (!session?.id) return "";
   const stamp = getSessionReviewStamp(session);
+  return applySessionReviewedStampLocally(session, stamp, { render });
+}
+
+function stageSessionReviewedForAttachedSession(session) {
+  if (!session?.id) return "";
+  const stamp = getSessionReviewStamp(session);
+  if (!stamp) return "";
+  const heldState = holdAttachedSessionSidebarState(session);
+  if (!heldState) return "";
+  if (getSessionReviewStampTime(stamp) > getSessionReviewStampTime(heldState.pendingReviewAt)) {
+    heldState.pendingReviewAt = stamp;
+  }
+  return heldState.pendingReviewAt;
+}
+
+async function syncSessionReviewedToServer(session, stampOverride = "") {
+  if (!session?.id || visitorMode) return session;
+  const stamp = normalizeSessionReviewStamp(stampOverride) || getSessionReviewStamp(session);
   if (!stamp) return session;
   if (getSessionReviewStampTime(stamp) <= getSessionReviewStampTime(normalizeSessionReviewStamp(session?.lastReviewedAt))) {
     return session;
@@ -543,12 +628,53 @@ async function syncSessionReviewedToServer(session) {
   }
 }
 
+function settleAttachedSessionSidebarState({
+  sessionId = currentSessionId,
+  sync = true,
+  render = true,
+} = {}) {
+  const heldState = clearHeldSidebarSessionState(sessionId);
+  const liveSession = heldState?.sessionId
+    ? (typeof getChatStoreSession === "function"
+      ? getChatStoreSession(heldState.sessionId)
+      : (sessions.find((session) => session.id === heldState.sessionId) || null))
+    : null;
+  const session = liveSession || heldState?.snapshot || null;
+  if (!heldState) {
+    if (render) renderSessionList();
+    return Promise.resolve(session);
+  }
+
+  const stamp = normalizeSessionReviewStamp(heldState.pendingReviewAt) || getSessionReviewStamp(session);
+  if (stamp) {
+    applySessionReviewedStampLocally(session, stamp, { render });
+  } else if (render) {
+    renderSessionList();
+  }
+  if (!stamp || !sync) {
+    return Promise.resolve(session);
+  }
+  return syncSessionReviewedToServer(session, stamp);
+}
+
 function markSessionReviewed(session, { sync = false, render = true } = {}) {
   const stamp = rememberSessionReviewedLocally(session, { render });
   if (!stamp || !sync) {
     return Promise.resolve(session);
   }
   return syncSessionReviewedToServer(session);
+}
+
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  const flushHeldSidebarSessionState = () => {
+    Promise.resolve(settleAttachedSessionSidebarState({
+      sessionId: currentSessionId,
+      sync: false,
+      render: false,
+    })).catch(() => {});
+  };
+  window.addEventListener("pagehide", flushHeldSidebarSessionState);
+  window.addEventListener("beforeunload", flushHeldSidebarSessionState);
 }
 
 function normalizeSessionRecord(session, previous = null) {
@@ -733,7 +859,10 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
 }
 
 async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
-  if (visitorMode) return false;
+  const allowOrganize = typeof canOrganizeSessionList === "function"
+    ? canOrganizeSessionList()
+    : !visitorMode;
+  if (visitorMode || !allowOrganize) return false;
   if (sessionListOrganizerInFlight) return sessionListOrganizerInFlight;
 
   const payload = buildSessionListOrganizerPayload();
@@ -930,7 +1059,7 @@ async function fetchSessionState(sessionId, { forceFresh = false } = {}) {
     ? (upsertSession(nextSession) || nextSession)
     : previous;
   if (normalized && currentSessionId === sessionId) {
-    rememberSessionReviewedLocally(normalized);
+    stageSessionReviewedForAttachedSession(normalized);
     applyAttachedSessionState(sessionId, normalized);
   }
   lastCurrentSessionRefreshAt = Date.now();
@@ -973,7 +1102,9 @@ async function fetchSessionEvents(
   if (renderPlan.mode === "reset") {
     const preserveRunningBlockExpanded =
       renderedEventState.sessionId === sessionId
-      && renderedEventState.runningBlockExpanded === true;
+      && renderedEventState.runState === "running"
+        ? renderedEventState.runningBlockExpanded === true
+        : null;
     clearMessages({ preserveRunningBlockExpanded });
     if (events.length === 0) {
       showEmpty();
@@ -1239,7 +1370,10 @@ async function bootstrapShareSnapshotView() {
 }
 
 async function setupPushNotifications() {
-  if (visitorMode) return;
+  const ownerPushFeaturesEnabled = typeof shouldEnableOwnerPushFeatures === "function"
+    ? shouldEnableOwnerPushFeatures()
+    : !visitorMode;
+  if (!ownerPushFeaturesEnabled) return;
   if (!("PushManager" in window)) return;
   try {
     const persistSubscription = async (subscription) => {

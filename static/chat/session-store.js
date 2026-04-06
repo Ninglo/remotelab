@@ -42,7 +42,9 @@
         typeof state.activeSourceFilter === "string" && state.activeSourceFilter.trim()
           ? state.activeSourceFilter.trim()
           : "__all__",
-      activeTab: state.activeTab === "settings" ? "settings" : "sessions",
+      activeTab: state.activeTab === "settings"
+        ? "settings"
+        : (state.activeTab === "agents" ? "agents" : "sessions"),
       sessionStatus: state.sessionStatus === "running" ? "running" : "idle",
     };
   }

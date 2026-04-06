@@ -224,7 +224,7 @@ show_logs() {
 read_config_value() {
   local expression
   expression="$1"
-  "$NODE_BIN" -e "const fs=require('fs'); const cfg=JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const value=(${expression}); if (value === undefined || value === null) process.exit(0); process.stdout.write(typeof value === 'string' ? value : JSON.stringify(value));" "$CONFIG_PATH"
+  "$NODE_BIN" -e "const fs=require('fs/promises'); (async()=>{ const cfg=JSON.parse(await fs.readFile(process.argv[1], 'utf8')); const value=(${expression}); if (value === undefined || value === null) process.exit(0); process.stdout.write(typeof value === 'string' ? value : JSON.stringify(value)); })().catch((error)=>{ console.error(error?.message || error); process.exit(1); });" "$CONFIG_PATH"
 }
 
 resolve_asr_python() {

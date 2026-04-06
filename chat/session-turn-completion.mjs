@@ -15,6 +15,7 @@ export function createSessionTurnCompletionHelpers(services) {
     clearRenameState,
     collectGeneratedResultFilesFromRun,
     contextOperationEvent,
+    dispatchSessionConnectorActions,
     dispatchSessionEmailCompletionTargets,
     findAssistantAttachmentMessageForRun,
     findResultAssetMessageForRun,
@@ -47,6 +48,7 @@ export function createSessionTurnCompletionHelpers(services) {
     publishLocalFileAssetFromPath,
     renameSession,
     runDetachedAssistantPrompt,
+    sanitizeAllCompletionTargets,
     sanitizeEmailCompletionTargets,
     scheduleQueuedFollowUpDispatch,
     scheduleSessionTaskCardSuggestion,
@@ -65,13 +67,13 @@ export function createSessionTurnCompletionHelpers(services) {
   function queueSessionCompletionTargets(session, run, manifest) {
     if (!session?.id || !run?.id) return false;
     if (manifest?.internalOperation && !isReplySelfRepairOperation(manifest)) return false;
-    const targets = sanitizeEmailCompletionTargets(session.completionTargets || []);
+    const targets = sanitizeAllCompletionTargets(session.completionTargets || []);
     if (targets.length === 0) return false;
-    dispatchSessionEmailCompletionTargets({
+    dispatchSessionConnectorActions({
       ...session,
       completionTargets: targets,
     }, run).catch((error) => {
-      console.error(`[agent-mail-completion-targets] ${session.id}/${run.id}: ${error.message}`);
+      console.error(`[connector-action-dispatcher] ${session.id}/${run.id}: ${error.message}`);
     });
     return true;
   }
@@ -400,10 +402,11 @@ export function createSessionTurnCompletionHelpers(services) {
     suggestionDone.then(async (result) => {
       const nextWorkflowState = normalizeSessionWorkflowState(result?.workflowState || '');
       const nextWorkflowPriority = normalizeSessionWorkflowPriority(result?.workflowPriority || '');
-      if (!nextWorkflowState && !nextWorkflowPriority) return;
+      const shouldClearWorkflowState = result?.shouldClearWorkflowState === true;
+      if (!nextWorkflowState && !nextWorkflowPriority && !shouldClearWorkflowState) return;
       await updateSessionWorkflowClassification(session.id, {
-        workflowState: nextWorkflowState,
-        workflowPriority: nextWorkflowPriority,
+        ...(nextWorkflowState || shouldClearWorkflowState ? { workflowState: nextWorkflowState } : {}),
+        ...(nextWorkflowPriority || shouldClearWorkflowState ? { workflowPriority: nextWorkflowPriority } : {}),
       });
     }).catch((error) => {
       console.error(`[workflow-state] Failed to update workflow state for ${session.id?.slice(0, 8)}: ${error.message}`);

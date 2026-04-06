@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 
 import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
+import { listAgents, getAgent, createAgent, updateAgent, deleteAgent } from './apps.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -32,6 +33,7 @@ import {
 } from './file-assets.mjs';
 import { createShareSnapshot } from './shares.mjs';
 import { pathExists } from './fs-utils.mjs';
+import { queryUsageLedger } from './usage-ledger.mjs';
 import {
   applyTemplateToSession,
   appendAssistantMessage,
@@ -81,6 +83,19 @@ function createClientSessionDetail(session) {
 
 async function getSessionForClient(id, options = {}) {
   return createClientSessionDetail(await getSession(id, options));
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value || '').trim(), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getGrantedCapability(authSession, capability, fallback = false) {
+  if (authSession?.role === 'owner') return true;
+  if (!capability) return fallback;
+  return authSession?.capabilities?.[capability] === true
+    ? true
+    : fallback;
 }
 
 export async function handleControlRoutes({
@@ -201,7 +216,11 @@ export async function handleControlRoutes({
       writeJson(res, 400, { error: 'sessionId is required' });
       return true;
     }
-    if (!requireSessionAccess(res, authSession, sessionId)) return true;
+    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+    if (!getGrantedCapability(authSession, 'uploadAttachments', true)) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
 
     try {
       const intent = await createFileAssetUploadIntent({
@@ -224,7 +243,11 @@ export async function handleControlRoutes({
       writeJson(res, 404, { error: 'Asset not found' });
       return true;
     }
-    if (!requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    if (!getGrantedCapability(authSession, 'downloadArtifacts', true)) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
     const clientAsset = await getFileAssetForClient(asset.id, {
       includeDirectUrl: asset.status === 'ready',
     });
@@ -238,7 +261,11 @@ export async function handleControlRoutes({
       writeJson(res, 404, { error: 'Asset not found' });
       return true;
     }
-    if (!requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    if (!getGrantedCapability(authSession, 'uploadAttachments', true)) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
 
     let payload = {};
     try {
@@ -267,7 +294,11 @@ export async function handleControlRoutes({
       writeJson(res, 404, { error: 'Asset not found' });
       return true;
     }
-    if (!requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    if (!getGrantedCapability(authSession, 'downloadArtifacts', true)) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
     const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
 
     try {
@@ -292,6 +323,40 @@ export async function handleControlRoutes({
     return true;
   }
 
+  if (pathname === '/api/usage/summary' && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+
+    const principalType = typeof parsedUrl?.query?.principalType === 'string'
+      ? parsedUrl.query.principalType.trim()
+      : '';
+    const principalId = typeof parsedUrl?.query?.principalId === 'string'
+      ? parsedUrl.query.principalId.trim()
+      : '';
+    const sessionId = typeof parsedUrl?.query?.sessionId === 'string'
+      ? parsedUrl.query.sessionId.trim()
+      : '';
+    const tool = typeof parsedUrl?.query?.tool === 'string'
+      ? parsedUrl.query.tool.trim()
+      : '';
+    const model = typeof parsedUrl?.query?.model === 'string'
+      ? parsedUrl.query.model.trim()
+      : '';
+    const summary = await queryUsageLedger({
+      days: parsePositiveInteger(parsedUrl?.query?.days, 7),
+      top: parsePositiveInteger(parsedUrl?.query?.top, 10),
+      principalType,
+      principalId,
+      sessionId,
+      tool,
+      model,
+    });
+    writeJsonCached(req, res, summary);
+    return true;
+  }
+
   if (pathname.startsWith('/api/sessions/') && req.method === 'PATCH') {
     const parts = pathname.split('/').filter(Boolean);
     const sessionId = parts[2];
@@ -299,7 +364,7 @@ export async function handleControlRoutes({
       writeJson(res, 400, { error: 'Invalid session path' });
       return true;
     }
-    if (!requireSessionAccess(res, authSession, sessionId)) return true;
+    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
     let body;
     try { body = await readBody(req, 10240); } catch {
       writeJson(res, 400, { error: 'Bad request' });
@@ -389,6 +454,22 @@ export async function handleControlRoutes({
     }
     if (hasEntryModePatch && authSession?.role !== 'owner') {
       writeJson(res, 403, { error: 'Owner access required to update entryMode' });
+      return true;
+    }
+    if (typeof patch.name === 'string' && patch.name.trim() && !getGrantedCapability(authSession, 'renameSession')) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
+    if (hasArchivedPatch && !getGrantedCapability(authSession, 'archiveSession')) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
+    if (hasPinnedPatch && !getGrantedCapability(authSession, 'pinSession')) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
+    if ((hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch) && !getGrantedCapability(authSession, 'changeRuntime')) {
+      writeJson(res, 403, { error: 'Access denied' });
       return true;
     }
     if (
@@ -486,7 +567,7 @@ export async function handleControlRoutes({
     const action = parts[3] || null;
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'assistant-messages') {
-      if (!requireSessionAccess(res, authSession, sessionId)) return true;
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       if (authSession?.role !== 'owner') {
         writeJson(res, 403, { error: 'Owner access required' });
         return true;
@@ -530,7 +611,7 @@ export async function handleControlRoutes({
     }
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'voice-transcriptions' && req.method === 'POST') {
-      if (!requireSessionAccess(res, authSession, sessionId)) return true;
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       writeJson(res, 410, { error: 'Voice transcript cleanup has been removed. Send messages directly.' });
       return true;
     }
@@ -566,7 +647,7 @@ export async function handleControlRoutes({
         writeJson(res, 403, { error: 'Owner access required' });
         return true;
       }
-      if (!requireSessionAccess(res, authSession, sessionId)) return true;
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       let body;
       try { body = await readBody(req, 10240); } catch {
         writeJson(res, 400, { error: 'Bad request' });
@@ -595,7 +676,9 @@ export async function handleControlRoutes({
         writeJson(res, 409, { error: 'Templates can only be applied before the first message' });
         return true;
       }
-      const updated = await applyTemplateToSession(sessionId, templateId);
+      const updated = await applyTemplateToSession(sessionId, templateId, {
+        appendWelcome: true,
+      });
       if (!updated) {
         writeJson(res, 409, { error: 'Unable to apply template' });
         return true;
@@ -609,7 +692,7 @@ export async function handleControlRoutes({
         writeJson(res, 403, { error: 'Owner access required' });
         return true;
       }
-      if (!requireSessionAccess(res, authSession, sessionId)) return true;
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       let body = '';
       try { body = await readBody(req, 10240); } catch {
         writeJson(res, 400, { error: 'Bad request' });
@@ -637,7 +720,11 @@ export async function handleControlRoutes({
     }
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'fork') {
-      if (!requireSessionAccess(res, authSession, sessionId)) return true;
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+      if (!getGrantedCapability(authSession, 'forkSession')) {
+        writeJson(res, 403, { error: 'Access denied' });
+        return true;
+      }
       const source = await getSessionForClient(sessionId);
       if (!source) {
         writeJson(res, 404, { error: 'Session not found' });
@@ -661,7 +748,7 @@ export async function handleControlRoutes({
     }
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'delegate') {
-      if (!requireSessionAccess(res, authSession, sessionId)) return true;
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       const source = await getSessionForClient(sessionId);
       if (!source) {
         writeJson(res, 404, { error: 'Session not found' });
@@ -969,6 +1056,87 @@ export async function handleControlRoutes({
       writeJson(res, 200, { ok: true, failures, total: files.length });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to read mailbox status' });
+    }
+    return true;
+  }
+
+  // ---- Agents CRUD ----
+
+  if (pathname === '/api/agents' && req.method === 'GET') {
+    try {
+      const agents = await listAgents();
+      writeJson(res, 200, { agents });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to list agents' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/agents' && req.method === 'POST') {
+    let payload = {};
+    try {
+      const body = await readBody(req, 65536);
+      payload = body ? JSON.parse(body) : {};
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    try {
+      const agent = await createAgent(payload);
+      writeJson(res, 201, agent);
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to create agent' });
+    }
+    return true;
+  }
+
+  const agentIdMatch = pathname.match(/^\/api\/agents\/([a-z0-9_]+)$/);
+  if (agentIdMatch && req.method === 'PATCH') {
+    let payload = {};
+    try {
+      const body = await readBody(req, 65536);
+      payload = body ? JSON.parse(body) : {};
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    try {
+      const updated = await updateAgent(agentIdMatch[1], payload);
+      if (!updated) {
+        writeJson(res, 404, { error: 'Agent not found' });
+        return true;
+      }
+      writeJson(res, 200, updated);
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to update agent' });
+    }
+    return true;
+  }
+
+  if (agentIdMatch && req.method === 'DELETE') {
+    try {
+      const deleted = await deleteAgent(agentIdMatch[1]);
+      if (!deleted) {
+        writeJson(res, 404, { error: 'Agent not found' });
+        return true;
+      }
+      writeJson(res, 200, { ok: true });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to delete agent' });
+    }
+    return true;
+  }
+
+  if (agentIdMatch && req.method === 'GET') {
+    try {
+      const agent = await getAgent(agentIdMatch[1]);
+      if (!agent) {
+        writeJson(res, 404, { error: 'Agent not found' });
+        return true;
+      }
+      writeJson(res, 200, agent);
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to get agent' });
     }
     return true;
   }

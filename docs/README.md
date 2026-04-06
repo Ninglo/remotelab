@@ -53,7 +53,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - `project-architecture.md` — top-down map of the shipped system
 - `setup.md` — model-first setup contract, one-round input handoff, human checkpoints, and target state
 - `external-message-protocol.md` — canonical integration contract for external channels
-- `creating-apps.md` — user/developer guide for Apps
+- `creating-apps.md` — user/developer guide for Agents
 
 ### Supporting Internal Contracts
 
@@ -65,11 +65,11 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Focused Integrations
 
-- `automation-apps.md` — automation-as-App pattern for owner-side recurring workflows and review sessions
+- `automation-apps.md` — automation-as-Agent pattern for owner-side recurring workflows and review sessions
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
 - `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector
 - `github-auto-triage.md` — model-first GitHub intake and auto-reply rollout contract
-- `remote-capability-monitor.md` — remote-agent capability monitoring backed by a RemoteLab App and review session
+- `remote-capability-monitor.md` — remote-agent capability monitoring backed by a RemoteLab Agent and review session
 - `tunnel-diagnostics.md` — Cloudflare Tunnel latency probe workflow for separating app cost from edge/tunnel cost
 - `voice-connector.md` — model-first wake-word speaker/microphone connector contract for RemoteLab
 

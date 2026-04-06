@@ -754,6 +754,12 @@ function isRunningThinkingBlockEvent(evt) {
   return evt?.state === "running";
 }
 
+function shouldOpenThinkingBlocksFromPreference() {
+  return typeof window.remotelabShouldExpandThinkingBlocksByDefault === "function"
+    ? window.remotelabShouldExpandThinkingBlocksByDefault()
+    : false;
+}
+
 function getThinkingBlockLabel(evt) {
   if (typeof evt?.label === "string" && evt.label.trim()) {
     return evt.label;
@@ -803,7 +809,9 @@ function renderThinkingBlockEvent(evt) {
 
   const sessionId = currentSessionId;
   const running = isRunningThinkingBlockEvent(evt);
-  const expandedByDefault = running && renderedEventState?.runningBlockExpanded === true;
+  const expandedByDefault = running
+    ? renderedEventState?.runningBlockExpanded === true
+    : shouldOpenThinkingBlocksFromPreference();
   const thinking = createDeferredThinkingBlock(getThinkingBlockLabel(evt), {
     collapsed: !expandedByDefault,
   });

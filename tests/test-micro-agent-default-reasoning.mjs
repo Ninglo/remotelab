@@ -53,18 +53,22 @@ process.env.PATH = `${fakeBin}:${process.env.PATH || ''}`;
 const { getAvailableTools } = await import(pathToFileURL(join(repoRoot, 'lib', 'tools.mjs')).href);
 
 try {
-  const tools = getAvailableTools();
-  for (const toolId of ['micro-agent', 'micro-agent-alt']) {
-    const tool = tools.find((entry) => entry.id === toolId);
-    assert.ok(tool, `${toolId} should be available`);
-    assert.deepEqual(tool.reasoning, {
-      kind: 'enum',
-      label: 'Thinking',
-      levels: ['low', 'medium', 'high', 'xhigh'],
-      default: 'medium',
-    });
-    assert.equal(tool.models?.[0]?.defaultReasoning, 'medium');
-  }
+  const tools = await getAvailableTools();
+
+  // micro-agent: config says reasoning kind 'none' — should pass through as-is
+  const ma = tools.find((entry) => entry.id === 'micro-agent');
+  assert.ok(ma, 'micro-agent should be available');
+  assert.deepEqual(ma.reasoning, { kind: 'none', label: 'Thinking' });
+
+  // micro-agent-alt: config says enum with explicit levels — should pass through as-is
+  const alt = tools.find((entry) => entry.id === 'micro-agent-alt');
+  assert.ok(alt, 'micro-agent-alt should be available');
+  assert.deepEqual(alt.reasoning, {
+    kind: 'enum',
+    label: 'Thinking',
+    levels: ['low', 'medium', 'high', 'xhigh'],
+    default: 'xhigh',
+  });
 } finally {
   rmSync(tempHome, { recursive: true, force: true });
 }

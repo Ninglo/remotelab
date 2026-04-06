@@ -19,8 +19,19 @@ function showSystemToast(message, level = "info") {
 }
 
 // ---- Visitor mode setup ----
-function applyVisitorMode() {
+function applyVisitorMode(authInfo = null) {
   visitorMode = true;
+  scopedRequestMode = false;
+  surfaceMode = "visitor";
+  principalKind = "visitor";
+  principalId = typeof authInfo?.principalId === "string" && authInfo.principalId.trim()
+    ? authInfo.principalId.trim()
+    : (typeof authInfo?.visitorId === "string" ? authInfo.visitorId.trim() : "");
+  authCapabilities = cloneAuthCapabilityDefaults("visitor");
+  scopedAgentContext = null;
+  if (typeof authInfo?.sessionId === "string" && authInfo.sessionId.trim()) {
+    visitorSessionId = authInfo.sessionId.trim();
+  }
   selectedTool = null;
   selectedModel = null;
   selectedEffort = null;
@@ -30,6 +41,7 @@ function applyVisitorMode() {
   if (sortSessionListBtn) sortSessionListBtn.style.display = "none";
   if (newSessionBtn) newSessionBtn.style.display = "none";
   // Hide tool/model selectors and context management (visitors use defaults)
+  if (inlineAgentSelect) inlineAgentSelect.style.display = "none";
   if (inlineToolSelect) inlineToolSelect.style.display = "none";
   if (inlineModelSelect) inlineModelSelect.style.display = "none";
   if (effortSelect) effortSelect.style.display = "none";
@@ -39,6 +51,74 @@ function applyVisitorMode() {
   if (contextTokens) contextTokens.style.display = "none";
   if (typeof requestLayoutPass === "function") {
     requestLayoutPass("visitor-mode");
+  } else if (typeof syncInputHeightForLayout === "function") {
+    syncInputHeightForLayout();
+  }
+  syncForkButton();
+  syncShareButton();
+}
+
+function applyAgentScopedMode(authInfo = null) {
+  visitorMode = false;
+  scopedRequestMode = true;
+  surfaceMode = "agent_scoped";
+  principalKind = typeof authInfo?.principalKind === "string" && authInfo.principalKind.trim()
+    ? authInfo.principalKind.trim()
+    : "agent_guest";
+  principalId = typeof authInfo?.principalId === "string" && authInfo.principalId.trim()
+    ? authInfo.principalId.trim()
+    : (typeof authInfo?.visitorId === "string" ? authInfo.visitorId.trim() : "");
+  authCapabilities = authInfo?.capabilities && typeof authInfo.capabilities === "object"
+    ? { ...authInfo.capabilities }
+    : cloneAuthCapabilityDefaults("agent_scoped");
+  scopedAgentContext = authInfo?.currentAgent && typeof authInfo.currentAgent === "object"
+    ? {
+      id: typeof authInfo.currentAgent.id === "string" ? authInfo.currentAgent.id.trim() : "",
+      name: typeof authInfo.currentAgent.name === "string" ? authInfo.currentAgent.name.trim() : "",
+      tool: typeof authInfo.currentAgent.tool === "string" ? authInfo.currentAgent.tool.trim() : "",
+    }
+    : {
+      id: typeof authInfo?.agentId === "string" ? authInfo.agentId.trim() : "",
+      name: "",
+      tool: "",
+    };
+  document.body.classList.remove("visitor-mode");
+  document.body.classList.add("agent-scoped-mode");
+
+  if (scopedAgentContext?.id && typeof setPreferredAgentTemplate === "function") {
+    setPreferredAgentTemplate(scopedAgentContext.id, {
+      name: scopedAgentContext.name || "",
+      persist: false,
+    });
+  }
+
+  if (scopedAgentContext?.tool) {
+    preferredTool = scopedAgentContext.tool;
+    selectedTool = scopedAgentContext.tool;
+    selectedModel = "";
+    selectedEffort = null;
+  }
+
+  if (menuBtn) menuBtn.style.display = "";
+  if (newSessionBtn) newSessionBtn.style.display = hasAuthCapability("createSession") ? "" : "none";
+  if (sortSessionListBtn) sortSessionListBtn.style.display = canOrganizeSessionList() ? "" : "none";
+  if (tabAgents) tabAgents.style.display = "none";
+  if (agentsPanel) agentsPanel.style.display = "none";
+  if (inlineAgentSelect) inlineAgentSelect.style.display = canSwitchAgents() ? "" : "none";
+  if (inlineToolSelect) inlineToolSelect.style.display = canChangeRuntimeSelection() ? "" : "none";
+  if (inlineModelSelect) inlineModelSelect.style.display = canChangeRuntimeSelection() ? inlineModelSelect.style.display : "none";
+  if (effortSelect) effortSelect.style.display = canChangeRuntimeSelection() ? effortSelect.style.display : "none";
+  if (thinkingToggle) thinkingToggle.style.display = canChangeRuntimeSelection() ? thinkingToggle.style.display : "none";
+  if (compactBtn) compactBtn.style.display = "none";
+  if (dropToolsBtn) dropToolsBtn.style.display = "none";
+  if (contextTokens) contextTokens.style.display = "none";
+  if (saveTemplateBtn) saveTemplateBtn.style.display = "none";
+  if (sessionTemplateRow) sessionTemplateRow.style.display = "none";
+  if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : null) === "agents" && typeof switchTab === "function") {
+    switchTab("sessions");
+  }
+  if (typeof requestLayoutPass === "function") {
+    requestLayoutPass("agent-scoped-mode");
   } else if (typeof syncInputHeightForLayout === "function") {
     syncInputHeightForLayout();
   }
@@ -159,6 +239,12 @@ async function initApp() {
     history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
 
+  if (authInfo?.surfaceMode === "agent_scoped") {
+    applyAgentScopedMode(authInfo);
+  } else if (authInfo?.role === "visitor") {
+    applyVisitorMode(authInfo);
+  }
+
   syncAddToolModal();
   syncForkButton();
   syncShareButton();
@@ -186,6 +272,23 @@ async function initApp() {
       ? shouldPromptForInstalledNotifications()
       : false,
   });
+
+  if (isAgentScopedMode()) {
+    const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });
+    let toolsPromise = Promise.resolve();
+    if (canChangeRuntimeSelection()) {
+      toolsPromise = loadInlineTools({ skipModelLoad: true });
+    }
+    await Promise.all([toolsPromise, sessionsPromise]);
+    restoreOwnerSessionSelection();
+    connect();
+    setupForegroundRefreshHandlers();
+    if (canChangeRuntimeSelection()) {
+      void loadModelsForCurrentTool();
+    }
+    void handleShareTargetData();
+    return;
+  }
 
   const toolsPromise = loadInlineTools({ skipModelLoad: true });
   const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });

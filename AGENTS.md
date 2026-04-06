@@ -89,7 +89,7 @@ remotelab/
 │   ├── runner-sidecar.mjs   # Thin detached executor writing raw spool/status/result
 │   ├── ws.mjs               # WebSocket invalidation channel only
 │   ├── summarizer.mjs       # AI-driven session label suggestions (title/group/description)
-│   ├── apps.mjs             # App (template) CRUD & persistence (89 lines)
+│   ├── apps.mjs             # Agent (template) CRUD & persistence (89 lines)
 │   ├── system-prompt.mjs    # Build system context injected into AI sessions (83 lines)
 │   ├── normalizer.mjs       # Convert tool output → standard event format (45 lines)
 │   ├── middleware.mjs        # Auth checks, rate limiting, IP detection (80 lines)
@@ -134,7 +134,7 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 | `auth.json` | Access token + password hash |
 | `chat-sessions.json` | All session metadata |
 | `chat-history/` | Per-session event store (`meta.json`, `context.json`, `events/*.json`, `bodies/*.txt`) |
-| `apps.json` | App definitions (templates) |
+| `apps.json` | Agent definitions (templates) |
 
 ---
 
@@ -155,14 +155,14 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 | POST | `/api/sessions` | Create new session |
 | PATCH | `/api/sessions/{id}` | Update session metadata (`name`, `archived`) |
 
-### Apps (Owner only)
+### Agents (Owner only)
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/apps` | List all apps |
-| POST | `/api/apps` | Create app |
-| PATCH | `/api/apps/{id}` | Update app |
-| DELETE | `/api/apps/{id}` | Delete app |
-| GET | `/app/{shareToken}` | Visitor entry (public, no auth) |
+| GET | `/api/agents` | List all agents |
+| POST | `/api/agents` | Create agent |
+| PATCH | `/api/agents/{id}` | Update agent |
+| DELETE | `/api/agents/{id}` | Delete agent |
+| GET | `/agent/{shareToken}` | Visitor entry (public, no auth) |
 
 ### Tools & Models
 | Method | Path | Purpose |
@@ -186,12 +186,12 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 ### Sessions
 Unit of work = one chat conversation with one AI tool. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts.
 
-### Apps (Templates)
-Reusable AI workflows shareable via link. Each App defines: name, systemPrompt, skills, tool. When a Visitor clicks the share link → auto-creates a scoped Session with the App's system prompt injected.
+### Agents
+Reusable AI workflows shareable via link. Each Agent defines: name, systemPrompt, skills, tool. When a Visitor clicks the share link → auto-creates a scoped Session with the Agent's system prompt injected.
 
 ### Owner / Visitor Model
 - **Owner**: Full access. Logs in with token or password.
-- **Visitor**: Accesses only a specific App via share link. Sees chat-only UI (no sidebar). Each Visitor gets an independent Session. This is NOT multi-user — Visitors are scoped guests.
+- **Visitor**: Accesses only a specific Agent via share link. Sees chat-only UI (no sidebar). Each Visitor gets an independent Session. This is NOT multi-user — Visitors are scoped guests.
 
 ### Session Labeling
 `summarizer.mjs` now exists to suggest canonical session presentation metadata — `title`, `group`, and hidden `description` — without owning any separate Progress state. The `Progress` tab remains only as an empty UI shell reserved for future surfaces.
@@ -231,6 +231,7 @@ Reusable AI workflows shareable via link. Each App defines: name, systemPrompt, 
 7. **Agent-driven first** — new features prefer conversation/Skill over dedicated UI
 8. **ES Modules** — `"type": "module"`, all `.mjs` files
 9. **Template style** — `{{PLACEHOLDER}}` substitution, nonce-injected scripts
+10. **Zero sync I/O** — No `readFileSync`, `statSync`, `existsSync`, `readdirSync`, `writeFileSync`, `execFileSync`, `spawnSync`, or any other synchronous fs/child_process call in shipped code. Use `fs/promises` and `child_process.execFile` (with promise wrapper) exclusively. If converting sync to async would break something, that means the sync code was hiding a real ordering/concurrency problem — fix the root cause, don't keep the sync crutch. The only tolerated exception is test files (`tests/`).
 
 ---
 
@@ -240,7 +241,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 
 ### Done (recent)
 - [x] Owner/Visitor dual-role identity
-- [x] App system (CRUD API, share tokens, visitor flow)
+- [x] Agent system (CRUD API, share tokens, visitor flow)
 - [x] Resume ID persistence (survives server restarts)
 - [x] Web push notifications
 - [x] Mobile capture + desktop execution handoff baseline
@@ -252,16 +253,16 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [ ] Guided intake / problem discovery — help users describe messy repetitive work, attach examples, and converge on a concrete automation brief without assuming expert prompting
 - [ ] Fast repetitive-work automation loops — optimize for data cleanup, report generation, export/import, file processing, notifications, and other simple scriptable chores that can save hours per week quickly
 - [ ] State-first, decision-first output shaping — default summaries should tell non-expert users what changed, whether input is needed now, and what outcome to expect next
-- [ ] `Welcome App` / guided onboarding — on first launch, seed a built-in guide App that explains capabilities in plain language, asks about the owner's background, repetitive-work pain point, current workflow, and sample inputs, then routes them into either a high-fit starter `App` or one concrete first automation `Session` instead of an empty session list
+- [ ] `Welcome Agent` / guided onboarding — on first launch, seed a built-in guide Agent that explains capabilities in plain language, asks about the owner's background, repetitive-work pain point, current workflow, and sample inputs, then routes them into either a high-fit starter `Agent` or one concrete first automation `Session` instead of an empty session list
 - [ ] Keep runtime/tool wiring pragmatic and local-first — only generalize the current tool abstraction when a concrete local-runtime need appears; do not reintroduce third-party domain-provider or cloud skill distribution paths by default
-- [ ] Produce a precise file-level concept→implementation guide so future sessions can route directly to the right files with less repo spelunking
+- [x] Produce a precise file-level concept→implementation guide so future sessions can route directly to the right files with less repo spelunking → `docs/implementation-recipes.md`
 - [ ] Review the removable shared startup-defaults slice after live use; prune, disable, or replace it quickly if it starts overfitting or duplicating personal memory
 
 ### P2 — Future
 - [ ] Context carry/cache confirmation — validate and tune compaction, prepared fork context, summary/refs reuse, and any cross-session handoff packet so continued or spawned work stays fast and bounded
 - [ ] Universal control inbox / dispatcher session — a high-trust intake surface that can later orchestrate several focused sessions when useful, without becoming one giant work thread
 - [ ] Deferred triggers (AI-initiated actions, scheduled follow-ups)
-- [ ] Evolve the `Welcome App` into the right long-term intake surface — once the first-run flow proves valuable, decide whether it should stay a dismissible starter, become a persistent control inbox, or merge with the universal dispatcher session
+- [ ] Evolve the `Welcome Agent` into the right long-term intake surface — once the first-run flow proves valuable, decide whether it should stay a dismissible starter, become a persistent control inbox, or merge with the universal dispatcher session
 - [ ] Queued follow-up composer buffer — while a session is still streaming a reply, let the user stage another message in a buffer and auto-submit it as a fresh turn immediately after the active response finishes; external connectors like Feishu should share the same staged-turn contract and later define an interrupt/replace policy
 - [ ] Session fork follow-ups — extend the shipped hard-clone head-fork with optional `Fork from here`, lightweight lineage navigation, and exact historical fork support when compaction-safe snapshots exist
 - [ ] Broaden theming beyond system light/dark — keep v1 system-driven, then add optional explicit theme selection and more color palettes, preferably reusing VS Code-style open theme configs/tokens where that fits cleanly
@@ -277,6 +278,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Documentation Map | `docs/README.md` | Repo doc taxonomy: what lives in `docs/` vs `notes/` |
 | Notes Map | `notes/README.md` | Note taxonomy: `current` vs `directional` vs `archive` vs `local` |
 | Project Architecture | `docs/project-architecture.md` | Top-down map of the shipped system, code locations, runtime flows, and current-vs-direction split |
+| Implementation Recipes | `docs/implementation-recipes.md` | Step-by-step guides for common modifications: add API endpoint, add runtime adapter, modify sidebar; includes key function signatures |
 | Product Mainline + Feedback Loop | `notes/current/product-mainline.md` | Current operating plan for prioritization, user feedback, and mainstream automation framing |
 | Session Main Flow + Context Freshness Next Push | `notes/current/session-main-flow-next-push.md` | Concrete execution pack for the current session-first main flow, context carry, and multi-session fan-out slice |
 | Session-First Workflow Surfaces | `notes/current/session-first-workflow-surfaces.md` | Current workflow-organization contract for session list, grouping, and any future derived workflow projections |
@@ -285,7 +287,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Product Surface Lifecycle | `notes/current/product-surface-lifecycle.md` | Current rule for keep/iterate/retire decisions on shipped feature surfaces |
 | External Message Protocol | `docs/external-message-protocol.md` | Canonical connector contract for email/GitHub/bot integrations using sessions, messages, runs, and events |
 | Core Philosophy | `notes/directional/core-philosophy.md` | Historical philosophy note; use it for framing, not as the current implementation checklist |
-| App-Centric Architecture | `notes/directional/app-centric-architecture.md` | Historical/consolidated direction note for treating default chat and shared Apps as one policy model |
+| Agent-Centric Architecture | `notes/directional/app-centric-architecture.md` | Historical/consolidated direction note for treating default chat and shared Agents as one policy model |
 | Provider Architecture | `notes/directional/provider-architecture.md` | Open provider/model abstraction, local JS/JSON extension path, migration plan |
 | Product Vision | `notes/directional/product-vision.md` | Product rationale and open questions; not the canonical shipped-status tracker |
 | Super-Individual Workbench | `notes/directional/super-individual-workbench.md` | Historical memo from the earlier super-individual framing; still useful background on control-plane boundaries, but not the current target-user statement |
@@ -294,6 +296,6 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Message Transport Architecture | `notes/message-transport-architecture.md` | Historical transport/runtime rationale after the HTTP-first architecture landed |
 | HTTP Runtime Phase 1 | `notes/archive/http-runtime-phase1.md` | Concrete implementation spec for the coordinated HTTP/control-plane + runner refactor |
 | Memory Activation Architecture | `notes/current/memory-activation-architecture.md` | Pointer-first memory loading, routing layers, pruning rules |
-| Creating Apps | `docs/creating-apps.md` | User-facing guide for App creation |
+| Creating Agents | `docs/creating-apps.md` | User-facing guide for Agent creation |
 | Setup Guide | `docs/setup.md` | Installation, service setup (LaunchAgent/systemd) |
 | System Memory | `memory/system.md` | Cross-deployment learnings (context continuity, testing strategy) |

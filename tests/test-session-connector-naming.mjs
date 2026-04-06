@@ -72,14 +72,14 @@ try {
   assert.equal(enrichedReuse.name, '修复支付回调', 'reused pending connector sessions should accept later explicit context');
   assert.equal(enrichedReuse.autoRenamePending, false, 'later explicit context should clear pending auto-rename');
 
-  const chatVisitor = await createSession(baseFolder, 'codex', 'Template App', {
+  const chatVisitor = await createSession(baseFolder, 'codex', 'Template Agent', {
     templateId: 'visitor-template',
-    templateName: 'Template App',
+    templateName: 'Template Agent',
     sourceId: 'chat',
     sourceName: 'Chat',
     externalTriggerId: 'visitor_session:template:visitor_1',
   });
-  assert.equal(chatVisitor.name, 'Template App', 'chat-origin sessions should keep their explicit titles');
+  assert.equal(chatVisitor.name, 'Template Agent', 'chat-origin sessions should keep their explicit titles');
   assert.equal(chatVisitor.autoRenamePending, false, 'chat-origin sessions should not be forced into connector title rules');
 
   console.log('test-session-connector-naming: ok');

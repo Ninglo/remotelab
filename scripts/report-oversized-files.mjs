@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-import { execFileSync } from 'child_process';
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { execFile as execFileCallback } from 'child_process';
+import { readFile, readdir, stat } from 'fs/promises';
 import { dirname, extname, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { promisify } from 'util';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const defaultRootDir = resolve(__dirname, '..');
+const execFileAsync = promisify(execFileCallback);
 export const DEFAULT_BASELINE_FILE = 'scripts/oversized-files-baseline.json';
 
 export const SOURCE_EXTENSIONS = new Set(['.mjs', '.js', '.html', '.css']);
@@ -61,13 +63,13 @@ function countLines(text) {
   return String(text).split(/\r\n|\r|\n/).length;
 }
 
-function listFilesFallback(rootDir, currentDir = rootDir, files = []) {
-  for (const entry of readdirSync(currentDir, { withFileTypes: true })) {
+async function listFilesFallback(rootDir, currentDir = rootDir, files = []) {
+  for (const entry of await readdir(currentDir, { withFileTypes: true })) {
     const absolutePath = join(currentDir, entry.name);
     const relativePath = normalizeRelativePath(relative(rootDir, absolutePath));
     if (entry.isDirectory()) {
       if (shouldIgnorePath(relativePath)) continue;
-      listFilesFallback(rootDir, absolutePath, files);
+      await listFilesFallback(rootDir, absolutePath, files);
       continue;
     }
     if (entry.isFile() && isCandidateSourceFile(relativePath)) {
@@ -77,14 +79,15 @@ function listFilesFallback(rootDir, currentDir = rootDir, files = []) {
   return files;
 }
 
-export function listCandidateFiles(rootDir = defaultRootDir) {
+export async function listCandidateFiles(rootDir = defaultRootDir) {
   const resolvedRoot = resolve(rootDir);
   try {
-    const stdout = execFileSync('git', ['ls-files', '-z'], {
+    const result = await execFileAsync('git', ['ls-files', '-z'], {
       cwd: resolvedRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
+    const stdout = result.stdout || '';
     return stdout
       .split('\0')
       .map((value) => normalizeRelativePath(value))
@@ -92,7 +95,7 @@ export function listCandidateFiles(rootDir = defaultRootDir) {
       .filter(isCandidateSourceFile)
       .sort();
   } catch {
-    return listFilesFallback(resolvedRoot).sort();
+    return (await listFilesFallback(resolvedRoot)).sort();
   }
 }
 
@@ -119,11 +122,11 @@ function normalizeBaselineFiles(baselineFiles = {}) {
   return normalized;
 }
 
-export function loadOversizedFilesBaseline(rootDir = defaultRootDir, baselineFile = DEFAULT_BASELINE_FILE) {
+export async function loadOversizedFilesBaseline(rootDir = defaultRootDir, baselineFile = DEFAULT_BASELINE_FILE) {
   const resolvedRoot = resolve(rootDir);
   const baselinePath = resolve(resolvedRoot, baselineFile || DEFAULT_BASELINE_FILE);
   try {
-    const parsed = JSON.parse(readFileSync(baselinePath, 'utf8'));
+    const parsed = JSON.parse(await readFile(baselinePath, 'utf8'));
     return {
       path: baselinePath,
       files: normalizeBaselineFiles(parsed),
@@ -139,13 +142,13 @@ export function loadOversizedFilesBaseline(rootDir = defaultRootDir, baselineFil
   }
 }
 
-export function scanOversizedFiles(rootDir = defaultRootDir, {
+export async function scanOversizedFiles(rootDir = defaultRootDir, {
   warnLineLimits = DEFAULT_WARN_LINE_LIMITS,
   failLineLimits = DEFAULT_FAIL_LINE_LIMITS,
   baselineFiles = null,
 } = {}) {
   const resolvedRoot = resolve(rootDir);
-  const files = listCandidateFiles(resolvedRoot);
+  const files = await listCandidateFiles(resolvedRoot);
   const allOversizedFiles = [];
   const baselineActive = baselineFiles !== null && baselineFiles !== undefined;
   const normalizedBaselineFiles = normalizeBaselineFiles(baselineActive ? baselineFiles : {});
@@ -158,8 +161,8 @@ export function scanOversizedFiles(rootDir = defaultRootDir, {
       warnLimit,
     );
     const absolutePath = join(resolvedRoot, relativePath);
-    const stat = statSync(absolutePath);
-    const text = readFileSync(absolutePath, 'utf8');
+    const fileStat = await stat(absolutePath);
+    const text = await readFile(absolutePath, 'utf8');
     const lines = countLines(text);
     if (lines < warnLimit) continue;
     const baselineLines = normalizedBaselineFiles[relativePath] || 0;
@@ -167,7 +170,7 @@ export function scanOversizedFiles(rootDir = defaultRootDir, {
       path: relativePath,
       extension,
       lines,
-      bytes: stat.size,
+      bytes: fileStat.size,
       warnLimit,
       failLimit,
       severity: lines >= failLimit ? 'fail' : 'warn',
@@ -317,8 +320,8 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const baseline = options.showAllOversizedFiles
     ? null
-    : loadOversizedFilesBaseline(options.rootDir, options.baselineFile);
-  const report = scanOversizedFiles(options.rootDir, {
+    : await loadOversizedFilesBaseline(options.rootDir, options.baselineFile);
+  const report = await scanOversizedFiles(options.rootDir, {
     baselineFiles: baseline?.files ?? null,
   });
   const formatted = formatOversizedFilesReport(report, {

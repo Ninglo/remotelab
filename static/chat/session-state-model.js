@@ -10,8 +10,8 @@
     "workflow.priority.mediumTitle": "Worth checking soon, but not urgent.",
     "workflow.priority.low": "Low",
     "workflow.priority.lowTitle": "Safe to leave for later.",
-    "workflow.status.waiting": "waiting",
-    "workflow.status.waitingTitle": "Waiting on user input",
+    "workflow.status.waiting": "needs user",
+    "workflow.status.waitingTitle": "Blocked on user input",
     "workflow.status.done": "done",
     "workflow.status.doneTitle": "Current task complete",
     "workflow.status.parked": "parked",
@@ -396,6 +396,7 @@
     getSessionReviewStatusInfo,
     isSessionCompleteAndReviewed,
     getSessionWorkflowPriorityInfo,
+    getSessionAttentionBand,
     compareSessionListSessions,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

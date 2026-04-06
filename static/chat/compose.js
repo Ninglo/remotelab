@@ -978,7 +978,7 @@ let activeTab = normalizeSidebarTab(
     pendingNavigationState.tab ||
     localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY) ||
     "sessions",
-); // "sessions" | "settings"
+); // "sessions" | "agents" | "settings"
 
 if (typeof setChatActiveTab === "function") {
   setChatActiveTab(activeTab, {
@@ -1015,7 +1015,10 @@ function switchTab(tab, { syncState = true } = {}) {
     }
   }
   const showingSessions = activeTab === "sessions";
+  const showingAgents = activeTab === "agents";
+  const showingSettings = activeTab === "settings";
   tabSessions.classList.toggle("active", activeTab === "sessions");
+  if (tabAgents) tabAgents.classList.toggle("active", activeTab === "agents");
   tabSettings.classList.toggle("active", activeTab === "settings");
   if (typeof syncSidebarFiltersVisibility === "function") {
     syncSidebarFiltersVisibility(showingSessions);
@@ -1023,16 +1026,20 @@ function switchTab(tab, { syncState = true } = {}) {
     sidebarFilters.classList.toggle("hidden", !showingSessions);
   }
   sessionList.style.display = showingSessions ? "" : "none";
-  settingsPanel.classList.toggle("visible", activeTab === "settings");
-  sessionListFooter.classList.toggle("hidden", activeTab === "settings");
-  sortSessionListBtn.classList.toggle("hidden", activeTab === "settings");
-  newSessionBtn.classList.toggle("hidden", activeTab === "settings");
+  if (sidebarSearch) sidebarSearch.style.display = showingSessions ? "" : "none";
+  if (sidebarViewSwitcher) sidebarViewSwitcher.style.display = showingSessions ? "" : "none";
+  if (agentsPanel) agentsPanel.classList.toggle("visible", showingAgents);
+  settingsPanel.classList.toggle("visible", showingSettings);
+  sessionListFooter.classList.toggle("hidden", !showingSessions);
+  sortSessionListBtn.classList.toggle("hidden", !showingSessions);
+  newSessionBtn.classList.toggle("hidden", !showingSessions);
   if (syncState) {
     syncBrowserState();
   }
 }
 
 tabSessions.addEventListener("click", () => switchTab("sessions"));
+if (tabAgents) tabAgents.addEventListener("click", () => switchTab("agents"));
 tabSettings.addEventListener("click", () => switchTab("settings"));
 
 switchTab(activeTab, { syncState: false });

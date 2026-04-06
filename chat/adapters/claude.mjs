@@ -104,20 +104,34 @@ export function createClaudeAdapter() {
         case 'result':
           // Skip obj.result text — it duplicates the last assistant message.
           // Only emit usage + completed status.
-          if (obj.cost_usd !== undefined || obj.usage) {
+          if (obj.cost_usd !== undefined || obj.estimated_cost_usd !== undefined || obj.usage) {
             const u = obj.usage || {};
             // Use per-turn input tokens tracked from the last assistant message,
             // which includes cached tokens. Fall back to summing the result event's fields.
-            const totalIn = lastTurnInputTokens || (
+            const totalIn = Number.isFinite(u.context_tokens)
+              ? u.context_tokens
+              : lastTurnInputTokens || (
               (u.input_tokens || 0) +
               (u.cache_creation_input_tokens || 0) +
               (u.cache_read_input_tokens || 0)
-            );
+              );
             events.push(usageEvent({
               contextTokens: totalIn,
               inputTokens: u.input_tokens || 0,
               outputTokens: u.output_tokens || 0,
+              ...(Number.isFinite(u.cached_input_tokens) ? { cachedInputTokens: u.cached_input_tokens } : {}),
+              ...(Number.isFinite(u.reasoning_output_tokens) ? { reasoningTokens: u.reasoning_output_tokens } : {}),
+              ...(Number.isFinite(obj.cost_usd) ? { costUsd: obj.cost_usd } : {}),
+              ...(Number.isFinite(obj.estimated_cost_usd) ? { estimatedCostUsd: obj.estimated_cost_usd } : {}),
+              ...(typeof obj.estimated_cost_model === 'string' && obj.estimated_cost_model
+                ? { estimatedCostModel: obj.estimated_cost_model }
+                : {}),
               contextSource: 'provider_turn_usage',
+              ...(obj.cost_usd !== undefined
+                ? { costSource: 'provider_reported' }
+                : (typeof obj.cost_source === 'string' && obj.cost_source
+                    ? { costSource: obj.cost_source }
+                    : {})),
             }));
           }
           events.push(statusEvent('completed'));
@@ -173,11 +187,12 @@ export function buildClaudeArgs(prompt, options = {}) {
     args.push('--model', options.model);
   }
   const effort = typeof options.effort === 'string' ? options.effort.trim() : '';
-  if (effort) {
+  if (effort && effort !== 'none') {
     args.push('--effort', effort);
-  } else if (options.thinking) {
+  } else if (!effort && options.thinking) {
     args.push('--effort', 'high');
   }
+  // effort === 'none' → no --effort flag → thinking disabled
 
   return args;
 }

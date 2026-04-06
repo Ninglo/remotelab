@@ -805,12 +805,12 @@ async function authenticateOwner(baseUrl, authFile) {
   return sessionCookie;
 }
 
-async function loadAutomationApp(baseUrl, appId, cookie) {
-  const result = await requestJson(baseUrl, '/api/apps', { cookie });
-  if (!result.response.ok || !Array.isArray(result.json?.apps)) {
-    throw new Error(result.json?.error || result.text || `Failed to load apps (${result.response.status})`);
+async function loadAutomationAgent(baseUrl, agentId, cookie) {
+  const result = await requestJson(baseUrl, '/api/agents', { cookie });
+  if (!result.response.ok || !Array.isArray(result.json?.agents)) {
+    throw new Error(result.json?.error || result.text || `Failed to load agents (${result.response.status})`);
   }
-  return result.json.apps.find((app) => app?.id === appId) || null;
+  return result.json.agents.find((agent) => agent?.id === agentId) || null;
 }
 
 function buildSessionDigestMessage({
@@ -907,12 +907,12 @@ async function waitForRunCompletion(baseUrl, runId, cookie) {
 async function submitDigestToRemoteLab(config, { runAt, firstRun, pendingInteresting, allInteresting, sourceResults, reportPaths, dryRun }) {
   const remoteConfig = config?.remotelab || {};
   const sessionConfig = remoteConfig?.session || {};
-  const appId = trimString(sessionConfig.appId);
-  if (!appId) {
+  const agentId = trimString(sessionConfig.agentId || sessionConfig.appId);
+  if (!agentId) {
     return {
       success: false,
       skipped: true,
-      reason: 'no_app_configured',
+      reason: 'no_agent_configured',
     };
   }
 
@@ -921,30 +921,30 @@ async function submitDigestToRemoteLab(config, { runAt, firstRun, pendingInteres
       success: false,
       skipped: true,
       reason: 'dry_run',
-      appId,
+      agentId,
     };
   }
 
   const baseUrl = normalizeBaseUrl(trimString(remoteConfig.baseUrl) || DEFAULT_REMOTELAB_BASE_URL);
   const authFile = trimString(remoteConfig.authFile) || DEFAULT_REMOTELAB_AUTH_FILE;
   const cookie = await authenticateOwner(baseUrl, authFile);
-  const app = await loadAutomationApp(baseUrl, appId, cookie);
-  if (!app) {
-    throw new Error(`App not found for remote capability monitor: ${appId}`);
+  const agent = await loadAutomationAgent(baseUrl, agentId, cookie);
+  if (!agent) {
+    throw new Error(`Agent not found for remote capability monitor: ${agentId}`);
   }
 
   const sessionPayload = {
     folder: expandHome(trimString(sessionConfig.folder) || trimString(remoteConfig.sessionFolder) || DEFAULT_REMOTELAB_SESSION_FOLDER),
-    tool: trimString(sessionConfig.tool) || trimString(app.tool) || trimString(remoteConfig.tool) || 'codex',
-    name: trimString(sessionConfig.name) || trimString(app.name) || 'Agent Radar',
+    tool: trimString(sessionConfig.tool) || trimString(agent.tool) || trimString(remoteConfig.tool) || 'codex',
+    name: trimString(sessionConfig.name) || trimString(agent.name) || 'Agent Radar',
     sourceId: 'automation',
     sourceName: 'Automation',
-    templateId: appId,
-    templateName: trimString(app.name),
+    templateId: agentId,
+    templateName: trimString(agent.name),
     group: trimString(sessionConfig.group) || 'Automation',
     description: trimString(sessionConfig.description) || 'Scheduled scout for remote-control coding-agent capabilities and competitor changes.',
-    systemPrompt: trimString(app.systemPrompt) || trimString(sessionConfig.systemPrompt),
-    externalTriggerId: trimString(sessionConfig.externalTriggerId) || `automation:${appId}:remote-capability-monitor`,
+    systemPrompt: trimString(agent.systemPrompt) || trimString(sessionConfig.systemPrompt),
+    externalTriggerId: trimString(sessionConfig.externalTriggerId) || `automation:${agentId}:remote-capability-monitor`,
   };
 
   const createResult = await requestJson(baseUrl, '/api/sessions', {
@@ -988,7 +988,7 @@ async function submitDigestToRemoteLab(config, { runAt, firstRun, pendingInteres
 
   return {
     success: run.state === 'completed',
-    appId,
+    agentId,
     appName: trimString(app.name),
     sessionId: session.id,
     runId: submitResult.json.run.id,

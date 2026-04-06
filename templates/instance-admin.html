@@ -1,0 +1,2551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#11141b" media="(prefers-color-scheme: dark)">
+  <title>RemoteLab Admin</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f1ea;
+      --surface: rgba(255, 255, 255, 0.84);
+      --surface-strong: rgba(255, 255, 255, 0.96);
+      --surface-muted: rgba(244, 239, 231, 0.78);
+      --border: rgba(24, 28, 38, 0.08);
+      --border-strong: rgba(24, 28, 38, 0.14);
+      --text: #151922;
+      --text-muted: #5c6270;
+      --text-soft: #8a909d;
+      --accent: #1b2433;
+      --accent-soft: rgba(27, 36, 51, 0.08);
+      --accent-fg: #f8f6f0;
+      --ok: #17724f;
+      --ok-bg: rgba(23, 114, 79, 0.1);
+      --warn: #ad6c10;
+      --warn-bg: rgba(173, 108, 16, 0.12);
+      --danger: #bf3f34;
+      --danger-bg: rgba(191, 63, 52, 0.11);
+      --info: #315da8;
+      --info-bg: rgba(49, 93, 168, 0.1);
+      --shadow: 0 24px 60px -36px rgba(28, 34, 47, 0.28);
+      --shadow-soft: 0 16px 34px -24px rgba(28, 34, 47, 0.16);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 18px;
+      --radius-sm: 12px;
+      --font-sans: "SF Pro Display", "SF Pro Text", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", "Menlo", ui-monospace, monospace;
+      --topbar-bg: rgba(244, 241, 234, 0.76);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --bg: #11141b;
+        --surface: rgba(22, 26, 37, 0.86);
+        --surface-strong: rgba(26, 31, 44, 0.96);
+        --surface-muted: rgba(18, 23, 33, 0.92);
+        --border: rgba(203, 214, 228, 0.09);
+        --border-strong: rgba(203, 214, 228, 0.16);
+        --text: #edf1f7;
+        --text-muted: #a9b0be;
+        --text-soft: #7f8796;
+        --accent: #edf1f7;
+        --accent-soft: rgba(237, 241, 247, 0.08);
+        --accent-fg: #11141b;
+        --ok: #59c49a;
+        --ok-bg: rgba(89, 196, 154, 0.12);
+        --warn: #e7b34a;
+        --warn-bg: rgba(231, 179, 74, 0.12);
+        --danger: #ef8a7e;
+        --danger-bg: rgba(239, 138, 126, 0.12);
+        --info: #7ca5f3;
+        --info-bg: rgba(124, 165, 243, 0.12);
+        --shadow: 0 28px 80px -42px rgba(0, 0, 0, 0.62);
+        --shadow-soft: 0 18px 42px -28px rgba(0, 0, 0, 0.44);
+        --topbar-bg: rgba(17, 20, 27, 0.72);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      font-family: var(--font-sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(111, 139, 177, 0.14), transparent 26%),
+        radial-gradient(circle at top right, rgba(216, 191, 145, 0.16), transparent 28%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 18%),
+        var(--bg);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 22px 22px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 82%);
+      opacity: 0.22;
+    }
+
+    a, button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    button {
+      border: 0;
+      background: none;
+      color: inherit;
+      padding: 0;
+    }
+    button:focus-visible,
+    a:focus-visible,
+    input:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid color-mix(in srgb, var(--info) 70%, white 12%);
+      outline-offset: 3px;
+    }
+    summary { list-style: none; }
+    summary::-webkit-details-marker { display: none; }
+
+    .skip-link {
+      position: absolute;
+      left: 16px;
+      top: -60px;
+      z-index: 60;
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: var(--accent-fg);
+      background: var(--accent);
+      text-decoration: none;
+      transition: top 0.2s ease;
+    }
+    .skip-link:focus { top: 16px; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      padding: max(18px, env(safe-area-inset-top)) 24px 18px;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(18px);
+      background: var(--topbar-bg);
+    }
+    .topbar-inner {
+      width: min(1440px, calc(100vw - 32px));
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .brand-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .eyebrow {
+      margin: 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .brand-row h1 {
+      margin: 0;
+      font-size: clamp(1.18rem, 2vw, 1.45rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+    .cache-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-muted);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .cache-pill::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--info);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--info) 16%, transparent);
+    }
+
+    .topbar-tools {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .view-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-muted);
+      flex-wrap: wrap;
+    }
+    .view-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 14px;
+      border-radius: 999px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 700;
+      transition:
+        transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        color 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .view-link:hover {
+      transform: translateY(-1px);
+      color: var(--text);
+    }
+    .view-link.is-active {
+      background: var(--accent);
+      color: var(--accent-fg);
+      box-shadow: 0 12px 28px -18px color-mix(in srgb, var(--accent) 70%, black 12%);
+    }
+    .nav-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent-fg) 16%, transparent);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .top-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .topbar-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-muted);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      flex-shrink: 0;
+    }
+    .topbar-toggle:hover,
+    .topbar-toggle.is-active {
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+
+    .summary-toggle {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-muted);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .summary-toggle:hover {
+      background: var(--surface-strong);
+      color: var(--text);
+    }
+    .summary-toggle .chevron {
+      transition: transform 0.2s ease;
+    }
+    .summary-toggle.is-open .chevron {
+      transform: rotate(180deg);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text);
+      cursor: pointer;
+      transition:
+        transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        box-shadow 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+      white-space: nowrap;
+    }
+    .btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-soft);
+    }
+    .btn:active { transform: translateY(1px) scale(0.985); }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+      transform: none;
+      box-shadow: none;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: color-mix(in srgb, var(--accent) 74%, transparent);
+    }
+    .btn-subtle {
+      background: transparent;
+      color: var(--text-muted);
+      border-color: transparent;
+      box-shadow: none;
+    }
+    .btn-subtle:hover {
+      background: var(--surface-muted);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .shell {
+      width: min(1440px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 24px 0 42px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .panel::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    }
+
+    .page-panel,
+    .control-panel {
+      padding: 22px 24px;
+    }
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .section-title {
+      margin: 8px 0 0;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      font-weight: 800;
+      letter-spacing: -0.05em;
+    }
+    .section-copy {
+      margin: 10px 0 0;
+      max-width: 64ch;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .inline-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .metric-card {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+    }
+    .metric-card strong {
+      display: block;
+      margin-top: 10px;
+      font-size: clamp(1.65rem, 2.8vw, 2.25rem);
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+      font-variant-numeric: tabular-nums;
+    }
+    .metric-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .metric-note {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .metric-card[data-tone="danger"] {
+      background: linear-gradient(180deg, color-mix(in srgb, var(--danger-bg) 94%, transparent), transparent), var(--surface-strong);
+    }
+    .metric-card[data-tone="ok"] {
+      background: linear-gradient(180deg, color-mix(in srgb, var(--ok-bg) 94%, transparent), transparent), var(--surface-strong);
+    }
+    .metric-card[data-tone="accent"] {
+      background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 94%, transparent), transparent), var(--surface-strong);
+    }
+
+    .control-row {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      gap: 16px;
+      align-items: end;
+    }
+    .control-side {
+      display: flex;
+      align-items: end;
+      justify-content: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .search-field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .search-field span {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .search-field input {
+      min-height: 48px;
+      width: 100%;
+      padding: 0 16px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    }
+    .chip-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .sort-field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 220px;
+      flex-shrink: 0;
+    }
+    .sort-field span {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .sort-field select {
+      min-height: 40px;
+      width: 100%;
+      padding: 0 14px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      transition:
+        transform 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        background 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+        color 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .chip:hover {
+      transform: translateY(-1px);
+      color: var(--text);
+    }
+    .chip.is-active {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+    }
+
+    .view-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .section-panel {
+      padding: 22px 24px;
+    }
+    .section-panel-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    .section-panel-head h3 {
+      margin: 8px 0 0;
+      font-size: 1.18rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+    }
+    .section-panel-copy {
+      margin: 8px 0 0;
+      font-size: 13px;
+      color: var(--text-muted);
+      max-width: 62ch;
+    }
+    .section-count {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .section-count strong {
+      font-size: 1.5rem;
+      line-height: 1;
+      letter-spacing: -0.05em;
+      font-variant-numeric: tabular-nums;
+    }
+    .section-count span {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .list-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .row-card {
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      background: var(--surface-strong);
+      overflow: hidden;
+    }
+    .row-card[open] {
+      box-shadow: var(--shadow-soft);
+    }
+    .row-summary {
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: minmax(180px, 1.3fr) minmax(160px, 0.9fr) minmax(140px, 0.9fr) minmax(140px, 0.9fr) minmax(220px, 1.3fr);
+      gap: 12px;
+      padding: 16px 18px;
+      align-items: start;
+    }
+    .row-card[open] .row-summary {
+      border-bottom: 1px solid var(--border);
+    }
+    .row-main {
+      min-width: 0;
+    }
+    .row-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .row-sub {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+    .row-cell {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .cell-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .cell-value {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .cell-note {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .tag-wrap {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 0 11px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .tag::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .tag[data-tone="danger"] {
+      color: var(--danger);
+      background: var(--danger-bg);
+      border-color: color-mix(in srgb, var(--danger) 18%, transparent);
+    }
+    .tag[data-tone="warn"] {
+      color: var(--warn);
+      background: var(--warn-bg);
+      border-color: color-mix(in srgb, var(--warn) 18%, transparent);
+    }
+    .tag[data-tone="ok"] {
+      color: var(--ok);
+      background: var(--ok-bg);
+      border-color: color-mix(in srgb, var(--ok) 18%, transparent);
+    }
+    .tag[data-tone="muted"] {
+      color: var(--text-muted);
+      background: var(--surface-muted);
+      border-color: var(--border);
+    }
+    .tag[data-tone="accent"] {
+      color: var(--text);
+      background: var(--accent-soft);
+      border-color: color-mix(in srgb, var(--accent) 16%, transparent);
+    }
+
+    .detail-body {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .detail-card {
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 14px 15px;
+      background: var(--surface-muted);
+      min-height: 100%;
+    }
+    .detail-card h4 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .detail-card p {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.55;
+    }
+    .detail-card .muted {
+      color: var(--text-muted);
+    }
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .timeline-item {
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .timeline-item:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .timeline-item strong {
+      display: block;
+      font-size: 13px;
+    }
+    .timeline-meta {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-soft);
+    }
+    .timeline-text {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .link-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .link-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .link-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+      min-width: 28px;
+    }
+    .link-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      padding: 0 11px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.18s ease, color 0.18s ease;
+    }
+    .link-chip:hover {
+      transform: translateY(-1px);
+      color: var(--text);
+    }
+    .detail-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .action-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 0 13px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      transition: transform 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    }
+    .action-btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--border-strong);
+    }
+    .action-btn[data-tone="primary"] {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+    }
+    .action-btn[data-tone="success"] {
+      background: var(--ok-bg);
+      color: var(--ok);
+      border-color: color-mix(in srgb, var(--ok) 28%, var(--border));
+    }
+    .action-btn[data-tone="danger"] {
+      background: var(--danger-bg);
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+    }
+
+    .empty-state,
+    .error-state {
+      padding: 24px;
+      border-radius: 22px;
+      border: 1px dashed var(--border-strong);
+      background: var(--surface);
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    .error-state { color: var(--danger); }
+    .empty-state .btn,
+    .error-state .btn {
+      margin-top: 14px;
+    }
+
+    .skeleton-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .skeleton-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .skeleton {
+      position: relative;
+      overflow: hidden;
+      border-radius: 22px;
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface-strong) 84%, var(--surface-muted));
+      min-height: 120px;
+    }
+    .skeleton::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
+      animation: shimmer 1.5s infinite;
+    }
+    .skeleton-row {
+      min-height: 96px;
+    }
+    @keyframes shimmer {
+      to { transform: translateX(100%); }
+    }
+
+    dialog {
+      width: min(420px, calc(100vw - 24px));
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      background: var(--surface-strong);
+      color: var(--text);
+      box-shadow: var(--shadow);
+    }
+    dialog::backdrop { background: rgba(8, 10, 15, 0.42); }
+    dialog h2 {
+      margin: 0;
+      font-size: 1.05rem;
+      letter-spacing: -0.03em;
+    }
+    dialog p {
+      margin: 12px 0 0;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+    dialog label {
+      display: block;
+      margin-top: 18px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    dialog input[type="text"] {
+      width: 100%;
+      min-height: 48px;
+      padding: 0 14px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--surface-muted);
+      color: var(--text);
+      font-family: var(--font-mono);
+    }
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 22px;
+      flex-wrap: wrap;
+    }
+
+    #toasts {
+      position: fixed;
+      right: 20px;
+      bottom: max(20px, env(safe-area-inset-bottom));
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 60;
+      pointer-events: none;
+    }
+    .toast {
+      min-width: 220px;
+      max-width: min(380px, calc(100vw - 32px));
+      padding: 12px 14px;
+      border-radius: 18px;
+      border: 1px solid transparent;
+      background: var(--surface-strong);
+      color: var(--text);
+      box-shadow: var(--shadow-soft);
+      font-size: 13px;
+      pointer-events: auto;
+      animation: toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .toast-ok {
+      color: var(--ok);
+      border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+      background: color-mix(in srgb, var(--ok-bg) 92%, var(--surface-strong));
+    }
+    .toast-err {
+      color: var(--danger);
+      border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+      background: color-mix(in srgb, var(--danger-bg) 92%, var(--surface-strong));
+    }
+    .toast-info {
+      color: var(--info);
+      border-color: color-mix(in srgb, var(--info) 30%, transparent);
+      background: color-mix(in srgb, var(--info-bg) 92%, var(--surface-strong));
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 1240px) {
+      .topbar-inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .topbar-tools {
+        width: 100%;
+        justify-content: space-between;
+      }
+      .metric-grid,
+      .skeleton-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .detail-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .row-summary {
+        grid-template-columns: minmax(160px, 1.2fr) minmax(150px, 0.8fr) minmax(140px, 0.8fr) minmax(160px, 1fr);
+      }
+      .row-summary .row-cell:last-child {
+        grid-column: span 2;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .shell,
+      .topbar-inner {
+        width: min(100vw - 20px, 860px);
+      }
+      .control-row {
+        grid-template-columns: 1fr;
+      }
+      .control-side {
+        justify-content: flex-start;
+        align-items: stretch;
+      }
+      .chip-row {
+        justify-content: flex-start;
+      }
+      .sort-field {
+        min-width: 0;
+        width: 100%;
+      }
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+      .row-summary {
+        grid-template-columns: 1fr;
+      }
+      .row-summary .row-cell:last-child {
+        grid-column: span 1;
+      }
+      .section-panel-head,
+      .page-head {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .section-count {
+        align-items: flex-start;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .topbar {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+      .view-nav {
+        width: 100%;
+        justify-content: flex-start;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+      }
+      .top-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .top-actions .btn-subtle {
+        grid-column: span 2;
+      }
+      .page-panel,
+      .control-panel,
+      .section-panel {
+        padding: 18px;
+      }
+      .metric-grid,
+      .skeleton-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .detail-actions,
+      .dialog-actions {
+        width: 100%;
+      }
+      .detail-actions .action-btn,
+      .dialog-actions .btn {
+        flex: 1 1 calc(50% - 6px);
+      }
+      #toasts {
+        left: 12px;
+        right: 12px;
+        bottom: max(12px, env(safe-area-inset-bottom));
+      }
+      .toast {
+        min-width: 0;
+        max-width: none;
+      }
+      .topbar .brand-block .eyebrow { display: none; }
+      .topbar-toggle { display: flex; }
+      .topbar:not(.is-expanded) .top-actions { display: none; }
+      .summary-toggle { display: inline-flex; }
+      .page-panel:not(.is-expanded) .metric-grid { display: none; }
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#content">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand-block">
+      <p class="eyebrow">user workbench</p>
+      <div class="brand-row">
+        <h1>RemoteLab Admin</h1>
+        <span class="cache-pill" id="cache-pill">加载中</span>
+      </div>
+    </div>
+
+    <div class="topbar-tools">
+      <nav class="view-nav" id="view-nav" aria-label="Admin views">
+        <a class="view-link" href="./" data-view="pending">待处理 <span class="nav-count" id="nav-pending-count">0</span></a>
+        <a class="view-link" href="./?view=users" data-view="users">用户 <span class="nav-count" id="nav-users-count">0</span></a>
+        <a class="view-link" href="./?view=instances" data-view="instances">实例 <span class="nav-count" id="nav-instances-count">0</span></a>
+      </nav>
+
+      <button class="topbar-toggle" id="topbar-toggle" aria-label="更多操作" aria-expanded="false">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="3.5" cy="9" r="1.5" fill="currentColor"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/><circle cx="14.5" cy="9" r="1.5" fill="currentColor"/></svg>
+      </button>
+
+      <div class="top-actions">
+        <button class="btn btn-primary" id="btn-trial">创建试用实例</button>
+        <button class="btn btn-primary" id="btn-custom">创建自定义实例</button>
+        <button class="btn" id="btn-converge">收敛库存</button>
+        <button class="btn" id="btn-refresh">刷新</button>
+        <button class="btn btn-subtle" id="btn-logout">退出</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="shell" id="content">
+  <section class="panel page-panel">
+    <div class="page-head">
+      <div>
+        <p class="eyebrow" id="view-kicker">workbench</p>
+        <h2 class="section-title" id="view-title">加载中</h2>
+        <p class="section-copy" id="view-copy">正在读取用户工作台和实例快照。</p>
+      </div>
+      <div class="inline-meta" id="page-meta"></div>
+    </div>
+    <button class="summary-toggle" id="summary-toggle" aria-expanded="false">
+      <span>展开数据</span>
+      <svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="metric-grid" id="metric-grid"></div>
+  </section>
+
+  <section class="panel control-panel">
+    <div class="control-row">
+      <label class="search-field">
+        <span id="search-label">Search</span>
+        <input type="search" id="search-input" placeholder="搜索用户、来源或实例" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="control-side">
+        <div class="chip-row" id="filter-chips"></div>
+        <label class="sort-field" id="sort-field" hidden>
+          <span id="sort-label">排序</span>
+          <select id="sort-select" aria-label="排序方式"></select>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <section class="view-stack" id="pending-view"></section>
+  <section class="view-stack" id="users-view" hidden></section>
+  <section class="view-stack" id="instances-view" hidden></section>
+</main>
+
+<div id="toasts"></div>
+
+<dialog id="dlg-create">
+  <h2>创建实例</h2>
+  <p>使用短小的实例名，只保留小写字母、数字和连字符。</p>
+  <label for="inp-name">实例名</label>
+  <input type="text" id="inp-name" placeholder="例如：demo" autocomplete="off" spellcheck="false">
+  <div class="dialog-actions">
+    <button class="btn" id="btn-dlg-cancel">取消</button>
+    <button class="btn btn-primary" id="btn-dlg-confirm">创建</button>
+  </div>
+</dialog>
+
+<dialog id="dlg-delete">
+  <h2>删除实例</h2>
+  <p>确认删除 <strong id="del-name"></strong>？这会先停止实例，再把它从 registry 里移除。</p>
+  <div class="dialog-actions">
+    <button class="btn" id="btn-del-cancel">取消</button>
+    <button class="btn" id="btn-del-confirm" style="background:var(--danger);border-color:var(--danger);color:#fff">删除</button>
+  </div>
+</dialog>
+
+<script>
+(function() {
+  'use strict';
+
+  var PENDING_QUEUE_META = {
+    needsBinding: {
+      label: '待绑定',
+      copy: '这些用户已经进入工作台，但还没有绑定到实例。要尽早决定分配还是暂不进入试用。',
+      tone: 'danger',
+    },
+    feedback: {
+      label: '反馈待处理',
+      copy: '这些用户有明确反馈、阻塞或交付断裂信号，优先处理问题本身。',
+      tone: 'warn',
+    },
+    followUp: {
+      label: '待跟进',
+      copy: '这些用户已经绑定实例，但最近趋冷、停滞，适合主动回访。',
+      tone: 'accent',
+    },
+    recent: {
+      label: '最近活跃',
+      copy: '这些用户近期仍在使用，适合顺手了解真实场景和更深入的需求。',
+      tone: 'ok',
+    }
+  };
+
+  var VIEW_CONFIGS = {
+    pending: {
+      kicker: 'pending work',
+      title: '先处理真正需要你介入的用户工作项。',
+      copy: '默认首页只看人，不先看实例。未绑定、反馈、跟进和最近活跃会自动分队列。',
+      searchLabel: '搜索工作项',
+      searchPlaceholder: '搜索用户、来源、实例或反馈线索',
+      filters: [
+        { key: 'all', label: '全部' },
+        { key: 'needsBinding', label: '待绑定' },
+        { key: 'feedback', label: '反馈待处理' },
+        { key: 'followUp', label: '待跟进' },
+        { key: 'recent', label: '最近活跃' }
+      ]
+    },
+    users: {
+      kicker: 'user ledger',
+      title: '这里是完整用户账本，不只是今天待处理的人。',
+      copy: '默认看绑定状态、最近动作和建议动作；展开再看反馈、事件和实例细节。',
+      searchLabel: '搜索用户',
+      searchPlaceholder: '搜索用户名、来源、标签或实例',
+      filters: [
+        { key: 'all', label: '全部' },
+        { key: 'bound', label: '已绑定' },
+        { key: 'unbound', label: '未绑定' },
+        { key: 'feedback', label: '有反馈' },
+        { key: 'atRisk', label: '需跟进' },
+        { key: 'active', label: '活跃中' }
+      ]
+    },
+    instances: {
+      kicker: 'resource layer',
+      title: '实例是支撑层，只有在调度或诊断时才需要看全量。',
+      copy: '默认先把最近在用、用量高的实例排到前面，避免你在大量冷实例里翻找。',
+      searchLabel: '搜索实例',
+      searchPlaceholder: '搜索实例名、绑定用户或入口地址',
+      filters: [
+        { key: 'all', label: '全部' },
+        { key: 'recentlyUsed', label: '最近在用' },
+        { key: 'available', label: '可分配' },
+        { key: 'occupied', label: '已占用' },
+        { key: 'issues', label: '有异常' }
+      ],
+      sortLabel: '实例排序',
+      sorts: [
+        { key: 'smart', label: '智能排序' },
+        { key: 'recent', label: '最近活跃' },
+        { key: 'usage', label: '按 token 用量' },
+        { key: 'cost', label: '按费用' },
+        { key: 'runs', label: '按调用数' },
+        { key: 'name', label: '按名称' }
+      ]
+    }
+  };
+
+  var state = {
+    view: readViewFromLocation(),
+    search: '',
+    filters: {
+      pending: 'all',
+      users: 'all',
+      instances: 'all'
+    },
+    sorts: {
+      pending: 'default',
+      users: 'default',
+      instances: 'smart'
+    },
+    pendingDelete: null,
+    workbench: null,
+    dashboard: null,
+  };
+
+  function basePath() {
+    var path = window.location.pathname || '/';
+    if (path === '/') return '/';
+    return path.endsWith('/') ? path : path + '/';
+  }
+
+  function withBase(path) {
+    if (/^https?:\/\//.test(path)) return path;
+    return basePath() + String(path || '').replace(/^\/+/, '');
+  }
+
+  function toast(message, type) {
+    var node = document.createElement('div');
+    node.className = 'toast toast-' + (type || 'info');
+    node.textContent = message;
+    document.getElementById('toasts').appendChild(node);
+    setTimeout(function() { node.remove(); }, 4200);
+  }
+
+  async function api(path, options) {
+    var res = await fetch(withBase(path), {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+      body: options && options.body ? JSON.stringify(options.body) : undefined,
+    });
+    var text = await res.text();
+    var data = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (err) {
+      data = { error: text || 'Request failed' };
+    }
+    if (!res.ok) throw new Error(data.error || 'Request failed (' + res.status + ')');
+    return data;
+  }
+
+  function esc(value) {
+    var node = document.createElement('div');
+    node.textContent = value == null ? '' : String(value);
+    return node.innerHTML;
+  }
+
+  function copyText(text) {
+    if (!text) {
+      toast('没有可复制的内容', 'err');
+      return;
+    }
+    navigator.clipboard.writeText(text).then(
+      function() { toast('已复制', 'ok'); },
+      function() { toast('复制失败', 'err'); }
+    );
+  }
+
+  function readViewFromLocation() {
+    var view = new URLSearchParams(window.location.search).get('view') || 'pending';
+    return VIEW_CONFIGS[view] ? view : 'pending';
+  }
+
+  function currentFilter() {
+    return state.filters[state.view] || 'all';
+  }
+
+  function currentSort() {
+    return state.sorts[state.view] || 'default';
+  }
+
+  function setView(view) {
+    if (!VIEW_CONFIGS[view]) view = 'pending';
+    state.view = view;
+    state.search = '';
+    document.getElementById('search-input').value = '';
+    var nextUrl = new URL(window.location.href);
+    if (view === 'pending') nextUrl.searchParams.delete('view');
+    else nextUrl.searchParams.set('view', view);
+    window.history.replaceState({}, '', nextUrl.toString());
+    applyView();
+  }
+
+  function timeAgo(iso) {
+    if (!iso) return '暂无';
+    var value = new Date(iso).getTime();
+    if (Number.isNaN(value)) return '暂无';
+    var delta = Date.now() - value;
+    if (delta < 60 * 1000) return '刚刚';
+    if (delta < 60 * 60 * 1000) return Math.floor(delta / (60 * 1000)) + ' 分钟前';
+    if (delta < 24 * 60 * 60 * 1000) return Math.floor(delta / (60 * 60 * 1000)) + ' 小时前';
+    return Math.floor(delta / (24 * 60 * 60 * 1000)) + ' 天前';
+  }
+
+  function statusTag(label, tone) {
+    return '<span class="tag" data-tone="' + esc(tone || 'muted') + '">' + esc(label) + '</span>';
+  }
+
+  function bindingTag(user) {
+    return user.needsBinding
+      ? statusTag('待绑定', 'danger')
+      : statusTag('已绑定', 'ok');
+  }
+
+  function feedbackTag(user) {
+    return user.openFeedback ? statusTag('反馈待处理', 'warn') : '';
+  }
+
+  function lifecycleTag(user) {
+    var tone = 'muted';
+    if (user.needsBinding) tone = 'danger';
+    else if (['power_user', 'active', 'onboarding'].indexOf(user.engagementTier) >= 0) tone = 'ok';
+    else if (['at_risk', 'cooling'].indexOf(user.engagementTier) >= 0) tone = 'warn';
+    else if (['churned', 'never_used'].indexOf(user.engagementTier) >= 0) tone = 'danger';
+    return statusTag(user.lifecycleLabel || '观察中', tone);
+  }
+
+  function queueTag(queueKey) {
+    var meta = PENDING_QUEUE_META[queueKey];
+    return meta ? statusTag(meta.label, meta.tone) : '';
+  }
+
+  function rawInstanceUsageKey(instance) {
+    var usage = instance.usage || {};
+    var key = String(usage.usageStatus || '').toLowerCase();
+    if (key === 'active') return 'occupied';
+    if (key === 'opened') return 'open';
+    if (key === 'reserved') return 'reserved';
+    return key;
+  }
+
+  function instanceUsage(instance) {
+    var key = rawInstanceUsageKey(instance);
+    if (key === 'occupied') return { key: 'occupied', label: '已占用', tone: 'accent' };
+    if (key === 'reserved') return { key: 'reserved', label: '预留', tone: 'warn' };
+    if (key === 'open' || key === 'opened') return { key: 'available', label: '可分配', tone: 'ok' };
+    if (key === 'empty') return { key: 'empty', label: '空置', tone: 'muted' };
+    return { key: 'empty', label: '未归类', tone: 'muted' };
+  }
+
+  function instanceBindingDisplay(instance, boundUser) {
+    if (instance && instance.occupancy && instance.occupancy.userName) {
+      return {
+        userName: instance.occupancy.userName,
+        note: String(instance.occupancy.handoffNote || '').trim(),
+        kind: String(instance.occupancy.kind || '').trim() || 'assigned'
+      };
+    }
+    if (boundUser && boundUser.userName) {
+      return {
+        userName: boundUser.userName,
+        note: '',
+        kind: 'bound'
+      };
+    }
+    return null;
+  }
+
+  function instanceHealth(instance) {
+    var optimisticAction = String(instance && instance.optimisticAction || '').toLowerCase();
+    if (optimisticAction === 'start') {
+      return { key: 'starting', label: '启动中', tone: 'accent', detail: '已发送启动请求，等待下一次健康检查。' };
+    }
+    if (optimisticAction === 'restart') {
+      return { key: 'restarting', label: '重启中', tone: 'accent', detail: '已发送重启请求，等待下一次健康检查。' };
+    }
+    if (optimisticAction === 'stop') {
+      return { key: 'stopping', label: '停止中', tone: 'warn', detail: '已发送停止请求，等待后台同步。' };
+    }
+    if (instance.localReachable === null && instance.publicReachable === null) {
+      return { key: 'unknown', label: '待确认', tone: 'muted', detail: '健康检查尚未完成。' };
+    }
+    if (instance.localReachable && instance.publicReachable !== false) {
+      return { key: 'healthy', label: '健康', tone: 'ok', detail: '本地和公网入口都正常。' };
+    }
+    if (instance.localReachable && instance.publicReachable === false) {
+      return { key: 'public_issue', label: '公网异常', tone: 'warn', detail: '本地可达，但公网入口失败。' };
+    }
+    if (!instance.localReachable && instance.publicReachable) {
+      return { key: 'local_issue', label: '本地异常', tone: 'warn', detail: '公网可达，但本地探测失败。' };
+    }
+    return { key: 'offline', label: '离线', tone: 'danger', detail: '本地和公网都不可达。' };
+  }
+
+  function activityText(user) {
+    if (user.metrics && user.metrics.daysSinceLastMessage != null) {
+      return user.metrics.daysSinceLastMessage === 0 ? '今天活跃' : user.metrics.daysSinceLastMessage + ' 天前';
+    }
+    return timeAgo(user.latestEventAt);
+  }
+
+  function instanceUsageSummary(instance) {
+    return (instance && instance.usage && instance.usage.usageSummary) || null;
+  }
+
+  function instanceUsageTotals(instance) {
+    var summary = instanceUsageSummary(instance);
+    return (summary && summary.totals) || {};
+  }
+
+  function instanceLastActivityAt(instance) {
+    var value = instance && instance.usage && instance.usage.lastSessionAt
+      ? new Date(instance.usage.lastSessionAt).getTime()
+      : 0;
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function instanceTotalTokens(instance) {
+    return Number(instanceUsageTotals(instance).totalTokens || 0);
+  }
+
+  function instanceUsageCost(instance) {
+    return Number(instanceUsageTotals(instance).costUsd || 0);
+  }
+
+  function instanceUsageRuns(instance) {
+    return Number(instanceUsageTotals(instance).runCount || 0);
+  }
+
+  function isRecentlyUsedInstance(instance) {
+    var lastAt = instanceLastActivityAt(instance);
+    if (!lastAt) return false;
+    return Date.now() - lastAt <= 7 * 24 * 60 * 60 * 1000;
+  }
+
+  function compareText(left, right) {
+    return String(left || '').localeCompare(String(right || ''));
+  }
+
+  function compareNumberDesc(left, right) {
+    if (left === right) return 0;
+    return right - left;
+  }
+
+  function compareFlagDesc(left, right) {
+    if (!!left === !!right) return 0;
+    return left ? -1 : 1;
+  }
+
+  function compareInstances(left, right) {
+    var sort = currentSort();
+    if (sort === 'recent') {
+      return compareNumberDesc(instanceLastActivityAt(left), instanceLastActivityAt(right))
+        || compareNumberDesc(instanceTotalTokens(left), instanceTotalTokens(right))
+        || compareText(left.name, right.name);
+    }
+    if (sort === 'usage') {
+      return compareNumberDesc(instanceTotalTokens(left), instanceTotalTokens(right))
+        || compareNumberDesc(instanceUsageRuns(left), instanceUsageRuns(right))
+        || compareNumberDesc(instanceLastActivityAt(left), instanceLastActivityAt(right))
+        || compareText(left.name, right.name);
+    }
+    if (sort === 'cost') {
+      return compareNumberDesc(instanceUsageCost(left), instanceUsageCost(right))
+        || compareNumberDesc(instanceTotalTokens(left), instanceTotalTokens(right))
+        || compareNumberDesc(instanceLastActivityAt(left), instanceLastActivityAt(right))
+        || compareText(left.name, right.name);
+    }
+    if (sort === 'runs') {
+      return compareNumberDesc(instanceUsageRuns(left), instanceUsageRuns(right))
+        || compareNumberDesc(instanceTotalTokens(left), instanceTotalTokens(right))
+        || compareNumberDesc(instanceLastActivityAt(left), instanceLastActivityAt(right))
+        || compareText(left.name, right.name);
+    }
+    if (sort === 'name') {
+      return compareText(left.name, right.name);
+    }
+    return compareFlagDesc(isRecentlyUsedInstance(left), isRecentlyUsedInstance(right))
+      || compareNumberDesc(instanceLastActivityAt(left), instanceLastActivityAt(right))
+      || compareNumberDesc(instanceTotalTokens(left), instanceTotalTokens(right))
+      || compareNumberDesc(instanceUsageRuns(left), instanceUsageRuns(right))
+      || compareFlagDesc(rawInstanceUsageKey(left) === 'occupied' || rawInstanceUsageKey(left) === 'reserved', rawInstanceUsageKey(right) === 'occupied' || rawInstanceUsageKey(right) === 'reserved')
+      || compareFlagDesc(rawInstanceUsageKey(left) === 'open', rawInstanceUsageKey(right) === 'open')
+      || compareText(left.name, right.name);
+  }
+
+  function formatTokenCount(value) {
+    var num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return '0';
+    if (num >= 1000000) return (num / 1000000).toFixed(num >= 10000000 ? 0 : 1).replace(/\.0$/, '') + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(num >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k';
+    return String(Math.round(num));
+  }
+
+  function formatUsd(value) {
+    var num = Number(value || 0);
+    if (!Number.isFinite(num) || num <= 0) return '$0';
+    if (num >= 10) return '$' + num.toFixed(0);
+    if (num >= 1) return '$' + num.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+    return '$' + num.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+  }
+
+  function formatPercent(value) {
+    var num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) return '0%';
+    return (num * 100).toFixed(num >= 0.1 ? 0 : 1).replace(/\.0$/, '') + '%';
+  }
+
+  function formatUsageCost(totals) {
+    var exact = Number(totals && totals.costUsd || 0);
+    var estimated = Number(totals && totals.estimatedCostUsd || 0);
+    if (exact > 0 && estimated > 0) return formatUsd(exact) + ' (+' + formatUsd(estimated) + ' 估算)';
+    if (exact > 0) return formatUsd(exact);
+    if (estimated > 0) return formatUsd(estimated) + ' 估算';
+    return '$0';
+  }
+
+  function usageCacheShare(totals) {
+    var input = Number(totals && totals.inputTokens || 0);
+    var cached = Number(totals && totals.cachedInputTokens || 0);
+    if (!Number.isFinite(input) || input <= 0 || !Number.isFinite(cached) || cached <= 0) return null;
+    return Math.max(0, Math.min(1, cached / input));
+  }
+
+  function usageContextLabel(totals) {
+    if (!totals) return '';
+    var context = Number(totals.maxContextTokens);
+    var windowTokens = Number(totals.maxContextWindowTokens);
+    if (Number.isFinite(context) && context > 0 && Number.isFinite(windowTokens) && windowTokens > 0) {
+      return formatTokenCount(context) + ' / ' + formatTokenCount(windowTokens);
+    }
+    if (Number.isFinite(context) && context > 0) {
+      return formatTokenCount(context);
+    }
+    return '';
+  }
+
+  function instanceUsageHeadline(instance) {
+    var summary = instanceUsageSummary(instance);
+    var totals = instanceUsageTotals(instance);
+    if (!summary) return '暂无数据';
+    if (!(totals.runCount || 0) && !(summary.filesScanned || 0) && !(summary.recordsScanned || 0)) {
+      return '暂无数据';
+    }
+    return formatTokenCount(totals.totalTokens) + ' tokens';
+  }
+
+  function instanceUsageNote(instance) {
+    var summary = instanceUsageSummary(instance);
+    var totals = instanceUsageTotals(instance);
+    if (!summary) return '当前实例还没有 usage ledger。';
+    if (!(totals.runCount || 0) && !(summary.filesScanned || 0) && !(summary.recordsScanned || 0)) {
+      return '当前实例还没有 usage ledger。';
+    }
+    var topTool = summary.byTool && summary.byTool.length ? summary.byTool[0].key : '';
+    var note = formatUsageCost(totals) + ' · ' + (totals.runCount || 0) + ' 次调用';
+    if (topTool) note += ' · ' + topTool;
+    return note;
+  }
+
+  function missingInstanceHealth(detail) {
+    return {
+      key: 'unknown',
+      label: '待确认',
+      tone: 'muted',
+      detail: detail || '实例状态等待下一次同步。'
+    };
+  }
+
+  function buildUserInstanceHealth(instance, detailOverride) {
+    if (!instance) return missingInstanceHealth(detailOverride);
+    var health = instanceHealth(instance);
+    return {
+      key: health.key,
+      label: health.label,
+      tone: health.tone,
+      detail: detailOverride || health.detail
+    };
+  }
+
+  function instancePrimaryAction(instance) {
+    var optimisticAction = String(instance && instance.optimisticAction || '').toLowerCase();
+    if (optimisticAction === 'start' || optimisticAction === 'restart') {
+      return { action: 'stop', label: '停止', tone: 'danger' };
+    }
+    if (optimisticAction === 'stop') {
+      return { action: 'start', label: '启动', tone: 'success' };
+    }
+    var health = instanceHealth(instance);
+    return health.key === 'healthy' || health.key === 'public_issue' || health.key === 'local_issue'
+      ? { action: 'stop', label: '停止', tone: 'danger' }
+      : { action: 'start', label: '启动', tone: 'success' };
+  }
+
+  function touchLocalCacheTime() {
+    var iso = new Date().toISOString();
+    if (state.workbench) state.workbench.cachedAt = iso;
+    if (state.dashboard) state.dashboard.cachedAt = iso;
+  }
+
+  function refreshLocalInstanceSummary() {
+    if (!state.dashboard || !Array.isArray(state.dashboard.instances)) return;
+    var summary = {
+      total: state.dashboard.instances.length,
+      occupied: 0,
+      open: 0,
+      empty: 0,
+      attention: 0
+    };
+    var emptyNames = [];
+    state.dashboard.instances.forEach(function(instance) {
+      var usageKey = rawInstanceUsageKey(instance);
+      if (usageKey === 'occupied' || usageKey === 'reserved') summary.occupied += 1;
+      else if (usageKey === 'open') summary.open += 1;
+      else {
+        summary.empty += 1;
+        emptyNames.push(instance.name);
+      }
+      if (instanceHealth(instance).key !== 'healthy') summary.attention += 1;
+    });
+    state.workbench.instanceSummary = Object.assign({}, state.workbench.instanceSummary || {}, summary);
+    state.dashboard.summary = Object.assign({}, state.dashboard.summary || {}, {
+      totalCount: summary.total,
+      occupiedCount: summary.occupied,
+      openedCount: summary.open,
+      emptyCount: summary.empty,
+      emptyNames: emptyNames
+    });
+  }
+
+  function patchInstanceRecord(name, mapper) {
+    if (!state.dashboard || !Array.isArray(state.dashboard.instances)) return null;
+    var nextInstances = state.dashboard.instances.slice();
+    var index = nextInstances.findIndex(function(instance) { return instance.name === name; });
+    if (index < 0) return null;
+    var current = nextInstances[index];
+    var next = mapper(Object.assign({}, current, {
+      usage: Object.assign({}, current.usage || {})
+    }));
+    if (!next) return null;
+    nextInstances[index] = next;
+    state.dashboard.instances = nextInstances;
+    return next;
+  }
+
+  function removeInstanceRecord(name) {
+    if (!state.dashboard || !Array.isArray(state.dashboard.instances)) return null;
+    var removed = null;
+    state.dashboard.instances = state.dashboard.instances.filter(function(instance) {
+      if (instance.name !== name) return true;
+      removed = instance;
+      return false;
+    });
+    return removed;
+  }
+
+  function upsertInstanceRecord(instance) {
+    if (!state.dashboard || !Array.isArray(state.dashboard.instances) || !instance || !instance.name) return null;
+    var existing = state.dashboard.instances.filter(function(entry) { return entry.name !== instance.name; });
+    state.dashboard.instances = [instance].concat(existing);
+    return instance;
+  }
+
+  function buildLocalCreatedInstance(result) {
+    var name = String(result && result.name || '').trim();
+    if (!name) return null;
+    return Object.assign({}, result, {
+      name: name,
+      publicBaseUrl: String(result && result.publicBaseUrl || '').trim(),
+      mainlandBaseUrl: String(result && result.mainlandBaseUrl || '').trim(),
+      localBaseUrl: String(result && result.localBaseUrl || '').trim(),
+      publicAccessUrl: String(result && result.publicAccessUrl || '').trim(),
+      mainlandAccessUrl: String(result && result.mainlandAccessUrl || '').trim(),
+      localAccessUrl: String(result && result.localAccessUrl || '').trim(),
+      createdAt: String(result && result.createdAt || new Date().toISOString()).trim(),
+      localReachable: typeof result?.localReachable === 'boolean' ? result.localReachable : true,
+      publicReachable: typeof result?.publicReachable === 'boolean' ? result.publicReachable : null,
+      usage: Object.assign({
+        sessionCount: 0,
+        authSessionCount: 0,
+        lastSessionAt: '',
+        usageStatus: 'opened',
+        usageBrief: '刚创建，等待使用',
+        usageSummary: null,
+      }, result && result.usage ? result.usage : {}),
+    });
+  }
+
+  function applyLocalCreatedInstance(result) {
+    if (!state.dashboard || !state.workbench) return false;
+    var created = buildLocalCreatedInstance(result);
+    if (!created) return false;
+    upsertInstanceRecord(created);
+    refreshLocalInstanceSummary();
+    touchLocalCacheTime();
+    setView('instances');
+    state.search = created.name;
+    document.getElementById('search-input').value = created.name;
+    applyView();
+    return true;
+  }
+
+  function patchUsersByInstance(name, mapper) {
+    if (!state.workbench || !state.workbench.users || !Array.isArray(state.workbench.users.rows)) return;
+    state.workbench.users.rows = state.workbench.users.rows.map(function(user) {
+      if (user.instanceName !== name) return user;
+      return mapper(Object.assign({}, user, {
+        quickLinks: Object.assign({}, user.quickLinks || {}),
+        instanceHealth: user.instanceHealth ? Object.assign({}, user.instanceHealth) : null,
+        instanceDetail: user.instanceDetail ? Object.assign({}, user.instanceDetail) : null
+      })) || user;
+    });
+  }
+
+  function applyLocalInstanceAction(name, action) {
+    if (!state.dashboard || !state.workbench) return false;
+    if (action === 'delete') {
+      var removed = removeInstanceRecord(name);
+      if (!removed) return false;
+      patchUsersByInstance(name, function(user) {
+        user.instanceHealth = missingInstanceHealth('实例已删除，等待下一次同步。');
+        user.instanceDetail = null;
+        user.quickLinks = {
+          publicAccessUrl: '',
+          mainlandAccessUrl: '',
+          localAccessUrl: ''
+        };
+        return user;
+      });
+      refreshLocalInstanceSummary();
+      touchLocalCacheTime();
+      applyView();
+      return true;
+    }
+
+    var updated = patchInstanceRecord(name, function(instance) {
+      instance.optimisticAction = action;
+      if (action === 'stop') {
+        instance.localReachable = false;
+        instance.publicReachable = false;
+        instance.usage.usageBrief = '已停止，等待同步';
+      } else if (action === 'start') {
+        instance.localReachable = null;
+        instance.publicReachable = null;
+        instance.usage.usageBrief = '启动中，等待健康检查';
+      } else if (action === 'restart') {
+        instance.localReachable = null;
+        instance.publicReachable = null;
+        instance.usage.usageBrief = '重启中，等待健康检查';
+      }
+      return instance;
+    });
+    if (!updated) return false;
+    patchUsersByInstance(name, function(user) {
+      user.instanceHealth = buildUserInstanceHealth(updated);
+      return user;
+    });
+    refreshLocalInstanceSummary();
+    touchLocalCacheTime();
+    applyView();
+    return true;
+  }
+
+  function routeLine(label, href) {
+    if (!href) return '';
+    var display = href.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    return '<div class="link-item">' +
+      '<span class="link-label">' + esc(label) + '</span>' +
+      '<span class="cell-note">' + esc(display) + '</span>' +
+      '<a class="link-chip" href="' + esc(href) + '" target="_blank" rel="noreferrer">Open</a>' +
+      '<button class="link-chip" type="button" data-copy="' + esc(href) + '">Copy</button>' +
+    '</div>';
+  }
+
+  function renderTimeline(events) {
+    if (!events || !events.length) {
+      return '<p class="muted">还没有可展示的事件流水。</p>';
+    }
+    return '<div class="timeline">' + events.map(function(event) {
+      return '<div class="timeline-item">' +
+        '<strong>' + esc(event.eventType || '事件') + '</strong>' +
+        '<div class="timeline-meta">' + esc(timeAgo(event.happenedAt)) + (event.instanceName ? ' · ' + esc(event.instanceName) : '') + '</div>' +
+        '<div class="timeline-text">' + esc(event.summary || event.operatorAction || '暂无摘要') + '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  function renderUserDetail(user) {
+    var metrics = user.metrics || {};
+    var followUpText = user.followUpAction && user.followUpAction.suggestion
+      ? user.followUpAction.suggestion
+      : (user.nextFollowUp || '暂无跟进建议');
+    var starter = user.followUpAction && user.followUpAction.conversationStarter
+      ? user.followUpAction.conversationStarter
+      : '';
+    var detailActions = [];
+    if (starter) {
+      detailActions.push('<button class="action-btn" type="button" data-copy="' + esc(starter) + '">复制开场白</button>');
+    }
+    if (!starter && followUpText) {
+      detailActions.push('<button class="action-btn" type="button" data-copy="' + esc(followUpText) + '">复制下一步建议</button>');
+    }
+    if (user.instanceName) {
+      detailActions.push('<button class="action-btn" type="button" data-go-view="instances" data-search="' + esc(user.instanceName) + '">查看实例</button>');
+    } else {
+      detailActions.push('<button class="action-btn" type="button" data-go-view="instances" data-filter="available">去找可分配实例</button>');
+    }
+
+    return '<div class="detail-body">' +
+      '<div class="detail-grid">' +
+        '<article class="detail-card">' +
+          '<h4>当前判断</h4>' +
+          '<p>' + esc(user.latestSummary || '暂无摘要') + '</p>' +
+          '<p class="muted">来源：' + esc(user.source || 'unknown') + '<br>最近活跃：' + esc(activityText(user)) + '</p>' +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>跟进建议</h4>' +
+          '<p>' + esc(followUpText) + '</p>' +
+          (starter ? '<p class="muted">开场白：' + esc(starter) + '</p>' : '<p class="muted">暂无预设开场白。</p>') +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>实例与使用</h4>' +
+          '<p>' +
+            '实例：' + esc(user.instanceName || '未绑定') + '<br>' +
+            '消息数：' + esc(metrics.totalUserMessages != null ? metrics.totalUserMessages : '0') + '<br>' +
+            '会话数：' + esc(metrics.sessionCount != null ? metrics.sessionCount : '0') +
+          '</p>' +
+          '<div class="link-list">' +
+            routeLine('CF', user.quickLinks && user.quickLinks.publicAccessUrl) +
+            routeLine('CN', user.quickLinks && user.quickLinks.mainlandAccessUrl) +
+            routeLine('LAN', user.quickLinks && user.quickLinks.localAccessUrl) +
+          '</div>' +
+        '</article>' +
+      '</div>' +
+      '<article class="detail-card">' +
+        '<h4>事件流水</h4>' +
+        renderTimeline(user.events) +
+      '</article>' +
+      (detailActions.length ? '<div class="detail-actions">' + detailActions.join('') + '</div>' : '') +
+    '</div>';
+  }
+
+  function renderUserRow(user, queueKey) {
+    var latestReason = user.followUpAction && user.followUpAction.reason
+      ? user.followUpAction.reason
+      : (user.latestSummary || '暂无补充说明');
+    return '<details class="row-card">' +
+      '<summary class="row-summary">' +
+        '<div class="row-main">' +
+          '<p class="row-title">' + esc(user.userName) + '</p>' +
+          '<p class="row-sub">' + esc(user.source || 'unknown') + (user.aliases && user.aliases.length ? ' · ' + esc(user.aliases.join(', ')) : '') + '</p>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">状态</span>' +
+          '<div class="tag-wrap">' +
+            (queueKey ? queueTag(queueKey) : '') +
+            bindingTag(user) +
+            lifecycleTag(user) +
+            feedbackTag(user) +
+          '</div>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">最新动作</span>' +
+          '<strong class="cell-value">' + esc(activityText(user)) + '</strong>' +
+          '<span class="cell-note">' + esc(user.latestEventType || '无事件标签') + '</span>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">当前实例</span>' +
+          '<strong class="cell-value">' + esc(user.instanceName || '未绑定') + '</strong>' +
+          '<span class="cell-note">' + esc(user.instanceHealth ? user.instanceHealth.label : '等待绑定') + '</span>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">建议动作</span>' +
+          '<strong class="cell-value">' + esc(latestReason) + '</strong>' +
+          '<span class="cell-note">' + esc(user.nextFollowUp || user.notes || '') + '</span>' +
+        '</div>' +
+      '</summary>' +
+      renderUserDetail(user) +
+    '</details>';
+  }
+
+  function renderPendingSection(queueKey, users) {
+    var meta = PENDING_QUEUE_META[queueKey];
+    if (!meta) return '';
+    if (!users.length) return '';
+    return '<section class="panel section-panel">' +
+      '<div class="section-panel-head">' +
+        '<div>' +
+          '<p class="eyebrow">' + esc(meta.label) + '</p>' +
+          '<h3>' + esc(meta.label) + '</h3>' +
+          '<p class="section-panel-copy">' + esc(meta.copy) + '</p>' +
+        '</div>' +
+        '<div class="section-count"><strong>' + esc(users.length) + '</strong><span>位用户</span></div>' +
+      '</div>' +
+      '<div class="list-stack">' + users.map(function(user) { return renderUserRow(user, queueKey); }).join('') + '</div>' +
+    '</section>';
+  }
+
+  function renderPendingView() {
+    var container = document.getElementById('pending-view');
+    var queues = state.workbench.pending.queues || {};
+    var queueOrder = ['needsBinding', 'feedback', 'followUp', 'recent'];
+    var filter = currentFilter();
+    var query = state.search.trim().toLowerCase();
+
+    function matches(user) {
+      if (!query) return true;
+      return [user.userName, user.source, user.instanceName, user.latestSummary, user.notes]
+        .join(' ')
+        .toLowerCase()
+        .indexOf(query) >= 0;
+    }
+
+    var sections = queueOrder.filter(function(key) {
+      return filter === 'all' ? true : key === filter;
+    }).map(function(key) {
+      return renderPendingSection(key, (queues[key] || []).filter(matches));
+    }).filter(Boolean);
+
+    container.innerHTML = sections.length
+      ? sections.join('')
+      : '<section class="panel section-panel"><div class="empty-state">当前筛选下没有待处理工作项。</div></section>';
+  }
+
+  function renderUsersView() {
+    var container = document.getElementById('users-view');
+    var rows = (state.workbench.users.rows || []).filter(function(user) {
+      var query = state.search.trim().toLowerCase();
+      if (query) {
+        var haystack = [user.userName, user.source, user.instanceName, user.latestSummary, user.notes].join(' ').toLowerCase();
+        if (haystack.indexOf(query) < 0) return false;
+      }
+      var filter = currentFilter();
+      if (filter === 'bound') return user.bindingStatus === 'bound';
+      if (filter === 'unbound') return user.bindingStatus === 'unbound';
+      if (filter === 'feedback') return user.openFeedback;
+      if (filter === 'atRisk') return !!user.followUpAction || ['at_risk', 'cooling', 'churned', 'never_used'].indexOf(user.engagementTier) >= 0;
+      if (filter === 'active') return ['power_user', 'active', 'onboarding'].indexOf(user.engagementTier) >= 0 || user.recentlyActive;
+      return true;
+    });
+
+    container.innerHTML = '<section class="panel section-panel">' +
+      '<div class="section-panel-head">' +
+        '<div>' +
+          '<p class="eyebrow">user rows</p>' +
+          '<h3>完整用户列表</h3>' +
+          '<p class="section-panel-copy">默认展示人、绑定、最近动作和下一步建议。展开以后再看事件和实例细节。</p>' +
+        '</div>' +
+        '<div class="section-count"><strong>' + esc(rows.length) + '</strong><span>位用户</span></div>' +
+      '</div>' +
+      (rows.length
+        ? '<div class="list-stack">' + rows.map(function(user) { return renderUserRow(user, ''); }).join('') + '</div>'
+        : '<div class="empty-state">当前筛选下没有用户。</div>') +
+    '</section>';
+  }
+
+  function renderInstanceDetail(instance, boundUser) {
+    var health = instanceHealth(instance);
+    var usage = instanceUsage(instance);
+    var binding = instanceBindingDisplay(instance, boundUser);
+    var usageSummary = instanceUsageSummary(instance);
+    var totals = instanceUsageTotals(instance);
+    var hasUsageData = usageSummary && ((totals.runCount || 0) || (usageSummary.filesScanned || 0) || (usageSummary.recordsScanned || 0));
+    var topTool = hasUsageData && usageSummary.byTool && usageSummary.byTool.length ? usageSummary.byTool[0] : null;
+    var cacheShare = usageCacheShare(totals);
+    var contextLabel = usageContextLabel(totals);
+    var primaryAction = instancePrimaryAction(instance);
+    var actions = [];
+    if (boundUser) {
+      actions.push('<button class="action-btn" type="button" data-go-view="users" data-search="' + esc(boundUser.userName) + '">查看用户</button>');
+    }
+    if (instance.token) {
+      actions.push('<button class="action-btn" type="button" data-copy="' + esc(instance.token) + '">复制 token</button>');
+    }
+    actions.push(
+      '<button class="action-btn" type="button" data-instance-action="restart" data-name="' + esc(instance.name) + '" data-tone="primary">重启</button>',
+      '<button class="action-btn" type="button" data-instance-action="' + esc(primaryAction.action) + '" data-name="' + esc(instance.name) + '" data-tone="' + esc(primaryAction.tone) + '">' + esc(primaryAction.label) + '</button>',
+      '<button class="action-btn" type="button" data-instance-action="delete" data-name="' + esc(instance.name) + '" data-tone="danger">删除</button>'
+    );
+
+    return '<div class="detail-body">' +
+      '<div class="detail-grid">' +
+        '<article class="detail-card">' +
+          '<h4>绑定与状态</h4>' +
+          '<p>' +
+            '绑定用户：' + esc(binding ? binding.userName : '未绑定') + '<br>' +
+            '占用状态：' + esc(usage.label) + '<br>' +
+            '健康状态：' + esc(health.label) +
+          '</p>' +
+          '<p class="muted">' + esc(binding && binding.note ? binding.note : health.detail) + '</p>' +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>实例信息</h4>' +
+          '<p>' +
+            'Port：' + esc(instance.port || '') + '<br>' +
+            '最近活跃：' + esc(instance.usage && instance.usage.lastSessionAt ? timeAgo(instance.usage.lastSessionAt) : '暂无') + '<br>' +
+            '会话数：' + esc(instance.usage && instance.usage.sessionCount != null ? instance.usage.sessionCount : '0') + '<br>' +
+            '总 tokens：' + esc(formatTokenCount(totals.totalTokens)) +
+          '</p>' +
+          '<p class="muted">' + esc(instanceUsageNote(instance)) + '</p>' +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>快速入口</h4>' +
+          '<div class="link-list">' +
+            routeLine('CF', instance.publicAccessUrl || instance.publicBaseUrl) +
+            routeLine('CN', instance.mainlandAccessUrl || instance.mainlandBaseUrl) +
+            routeLine('LAN', instance.localAccessUrl || instance.localBaseUrl) +
+          '</div>' +
+        '</article>' +
+      '</div>' +
+      '<article class="detail-card">' +
+        '<h4>API 用量</h4>' +
+        (
+          hasUsageData
+            ? '<p>' +
+                '窗口：' + esc((usageSummary.window && usageSummary.window.days) || 30) + ' 天<br>' +
+                '输入 / 输出：' + esc(formatTokenCount(totals.inputTokens)) + ' / ' + esc(formatTokenCount(totals.outputTokens)) + '<br>' +
+                (contextLabel ? '峰值上下文：' + esc(contextLabel) + '<br>' : '') +
+                (Number(totals.cachedInputTokens || 0) > 0
+                  ? '缓存输入：' + esc(formatTokenCount(totals.cachedInputTokens)) + (cacheShare !== null ? ' · ' + esc(formatPercent(cacheShare)) : '') + '<br>'
+                  : '') +
+                '费用：' + esc(formatUsageCost(totals)) + '<br>' +
+                '调用数：' + esc(totals.runCount || 0) +
+              '</p>' +
+              '<p class="muted">' + esc(topTool ? ('主要工具：' + topTool.key + ' · ' + formatTokenCount(topTool.totalTokens || 0) + ' tokens') : '还没有工具维度的聚合结果。') + '</p>'
+            : '<p>当前实例还没有 usage ledger，所以 token 和费用暂时都是空。</p>'
+        ) +
+      '</article>' +
+      '<div class="detail-actions">' + actions.join('') + '</div>' +
+    '</div>';
+  }
+
+  function renderInstanceRow(instance, boundUser) {
+    var usage = instanceUsage(instance);
+    var health = instanceHealth(instance);
+    var binding = instanceBindingDisplay(instance, boundUser);
+    var quickLinks = [
+      instance.publicAccessUrl || instance.publicBaseUrl ? statusTag('CF', 'accent') : '',
+      instance.mainlandAccessUrl || instance.mainlandBaseUrl ? statusTag('CN', 'muted') : '',
+      instance.localAccessUrl || instance.localBaseUrl ? statusTag('LAN', 'muted') : ''
+    ].join('');
+    return '<details class="row-card">' +
+      '<summary class="row-summary">' +
+        '<div class="row-main">' +
+          '<p class="row-title">' + esc(instance.name) + '</p>' +
+          '<p class="row-sub">' + esc(binding ? binding.userName : '未绑定用户') + '</p>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">状态</span>' +
+          '<div class="tag-wrap">' + statusTag(usage.label, usage.tone) + statusTag(health.label, health.tone) + '</div>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">最近活跃</span>' +
+          '<strong class="cell-value">' + esc(instance.usage && instance.usage.lastSessionAt ? timeAgo(instance.usage.lastSessionAt) : '暂无') + '</strong>' +
+          '<span class="cell-note">' + esc(instance.usage && instance.usage.usageBrief ? instance.usage.usageBrief : '') + '</span>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">入口</span>' +
+          '<div class="tag-wrap">' + quickLinks + '</div>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">API 用量</span>' +
+          '<strong class="cell-value">' + esc(instanceUsageHeadline(instance)) + '</strong>' +
+          '<span class="cell-note">' + esc(instanceUsageNote(instance)) + (binding ? ' · 已登记 ' + esc(binding.userName) : ' · 当前没有绑定用户') + '</span>' +
+        '</div>' +
+      '</summary>' +
+      renderInstanceDetail(instance, boundUser) +
+    '</details>';
+  }
+
+  function renderInstancesView() {
+    var container = document.getElementById('instances-view');
+    var userByInstance = {};
+    (state.workbench.users.rows || []).forEach(function(user) {
+      if (user.instanceName) userByInstance[user.instanceName] = user;
+    });
+
+    var rows = (state.dashboard.instances || []).filter(function(instance) {
+      var query = state.search.trim().toLowerCase();
+      if (query) {
+        var boundUser = userByInstance[instance.name];
+        var binding = instanceBindingDisplay(instance, boundUser);
+        var haystack = [instance.name, instance.publicBaseUrl, instance.mainlandBaseUrl, instance.localBaseUrl, binding ? binding.userName : '', binding ? binding.note : '']
+          .join(' ')
+          .toLowerCase();
+        if (haystack.indexOf(query) < 0) return false;
+      }
+      var filter = currentFilter();
+      var usage = instanceUsage(instance);
+      var health = instanceHealth(instance);
+      if (filter === 'recentlyUsed') return isRecentlyUsedInstance(instance);
+      if (filter === 'available') return usage.key === 'available';
+      if (filter === 'occupied') return usage.key === 'occupied' || usage.key === 'reserved';
+      if (filter === 'issues') return health.key !== 'healthy';
+      return true;
+    }).sort(compareInstances);
+
+    container.innerHTML = '<section class="panel section-panel">' +
+      '<div class="section-panel-head">' +
+        '<div>' +
+          '<p class="eyebrow">instance rows</p>' +
+          '<h3>实例资源列表</h3>' +
+          '<p class="section-panel-copy">实例页只做资源调度和技术诊断，不再抢首页注意力。</p>' +
+        '</div>' +
+        '<div class="section-count"><strong>' + esc(rows.length) + '</strong><span>个实例</span></div>' +
+      '</div>' +
+      (rows.length
+        ? '<div class="list-stack">' + rows.map(function(instance) { return renderInstanceRow(instance, userByInstance[instance.name] || null); }).join('') + '</div>'
+        : '<div class="empty-state">当前筛选下没有实例。</div>') +
+    '</section>';
+  }
+
+  function renderControls() {
+    var config = VIEW_CONFIGS[state.view];
+    document.getElementById('search-label').textContent = config.searchLabel;
+    document.getElementById('search-input').placeholder = config.searchPlaceholder;
+    document.getElementById('filter-chips').innerHTML = config.filters.map(function(filter) {
+      return '<button class="chip' + (currentFilter() === filter.key ? ' is-active' : '') + '" type="button" data-filter="' + esc(filter.key) + '">' + esc(filter.label) + '</button>';
+    }).join('');
+    var sortField = document.getElementById('sort-field');
+    var sortSelect = document.getElementById('sort-select');
+    if (config.sorts && config.sorts.length) {
+      sortField.hidden = false;
+      document.getElementById('sort-label').textContent = config.sortLabel || '排序';
+      sortSelect.innerHTML = config.sorts.map(function(sort) {
+        return '<option value="' + esc(sort.key) + '"' + (currentSort() === sort.key ? ' selected' : '') + '>' + esc(sort.label) + '</option>';
+      }).join('');
+      sortSelect.value = currentSort();
+    } else {
+      sortField.hidden = true;
+      sortSelect.innerHTML = '';
+    }
+  }
+
+  function renderOverview() {
+    var config = VIEW_CONFIGS[state.view];
+    document.getElementById('view-kicker').textContent = config.kicker;
+    document.getElementById('view-title').textContent = config.title;
+    document.getElementById('view-copy').textContent = config.copy;
+
+    var metrics = [];
+    if (state.view === 'pending') {
+      var pending = state.workbench.pending.summary;
+      metrics = [
+        { label: '待绑定', value: pending.needsBindingCount, note: '先决定要不要发实例', tone: pending.needsBindingCount ? 'danger' : 'ok' },
+        { label: '反馈待处理', value: pending.feedbackCount, note: '先处理问题，再谈留存', tone: pending.feedbackCount ? 'danger' : 'ok' },
+        { label: '待跟进', value: pending.followUpCount, note: '用户已绑定，但最近趋冷', tone: pending.followUpCount ? 'accent' : 'ok' },
+        { label: '最近活跃', value: pending.activeTodayCount, note: '适合深聊使用场景', tone: pending.activeTodayCount ? 'ok' : 'muted' }
+      ];
+    } else if (state.view === 'users') {
+      var summary = state.workbench.users.summary;
+      metrics = [
+        { label: '总用户', value: summary.totalUsers, note: '当前所有跟进中的人', tone: 'accent' },
+        { label: '已绑定', value: summary.boundUsers, note: '已经进入实例运行', tone: summary.boundUsers ? 'ok' : 'muted' },
+        { label: '未绑定', value: summary.unboundUsers, note: '要尽快分配或明确暂不试用', tone: summary.unboundUsers ? 'danger' : 'ok' },
+        { label: '需跟进', value: summary.followUpUsers, note: '冷却、停滞或流失风险', tone: summary.followUpUsers ? 'warn' : 'ok' }
+      ];
+    } else {
+      var instanceSummary = state.workbench.instanceSummary;
+      metrics = [
+        { label: '实例总数', value: instanceSummary.total, note: '当前登记的全部实例', tone: 'accent' },
+        { label: '可分配', value: instanceSummary.open, note: '适合直接发给新用户', tone: instanceSummary.open ? 'ok' : 'muted' },
+        { label: '已占用', value: instanceSummary.occupied, note: '已绑定给具体用户', tone: instanceSummary.occupied ? 'accent' : 'muted' },
+        { label: '异常', value: instanceSummary.attention, note: '技术健康需要诊断', tone: instanceSummary.attention ? 'danger' : 'ok' }
+      ];
+    }
+
+    document.getElementById('metric-grid').innerHTML = metrics.map(function(metric) {
+      return '<article class="metric-card" data-tone="' + esc(metric.tone || 'muted') + '">' +
+        '<span class="metric-label">' + esc(metric.label) + '</span>' +
+        '<strong>' + esc(metric.value) + '</strong>' +
+        '<p class="metric-note">' + esc(metric.note) + '</p>' +
+      '</article>';
+    }).join('');
+
+    document.getElementById('page-meta').innerHTML =
+      '<span>cache ' + esc(timeAgo(state.workbench.cachedAt || state.dashboard.cachedAt)) + '</span>' +
+      '<span>' + esc(state.workbench.summary.totalUsers) + ' 位用户</span>' +
+      '<span>' + esc(state.workbench.instanceSummary.total) + ' 个实例</span>';
+  }
+
+  function syncNav() {
+    var pendingTotal = (state.workbench.pending.summary.needsBindingCount || 0)
+      + (state.workbench.pending.summary.feedbackCount || 0)
+      + (state.workbench.pending.summary.followUpCount || 0);
+    document.getElementById('nav-pending-count').textContent = String(pendingTotal);
+    document.getElementById('nav-users-count').textContent = String(state.workbench.summary.totalUsers || 0);
+    document.getElementById('nav-instances-count').textContent = String(state.workbench.instanceSummary.attention || 0);
+
+    Array.from(document.querySelectorAll('[data-view]')).forEach(function(link) {
+      link.classList.toggle('is-active', link.getAttribute('data-view') === state.view);
+    });
+  }
+
+  function renderLoading() {
+    document.getElementById('metric-grid').innerHTML =
+      '<div class="skeleton-grid">' +
+        '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>' +
+      '</div>';
+    var skeletonList = '<section class="panel section-panel"><div class="skeleton-list"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></section>';
+    document.getElementById('pending-view').innerHTML = skeletonList;
+    document.getElementById('users-view').innerHTML = '';
+    document.getElementById('instances-view').innerHTML = '';
+  }
+
+  function renderError(message) {
+    var html = '<section class="panel section-panel"><div class="error-state">' + esc(message) + '<div><button class="btn btn-primary" id="btn-retry">Retry</button></div></div></section>';
+    document.getElementById('pending-view').innerHTML = html;
+    document.getElementById('users-view').innerHTML = '';
+    document.getElementById('instances-view').innerHTML = '';
+    var retry = document.getElementById('btn-retry');
+    if (retry) retry.onclick = loadAll;
+  }
+
+  function applyView() {
+    if (!state.workbench || !state.dashboard) return;
+    renderOverview();
+    renderControls();
+    syncNav();
+
+    document.getElementById('pending-view').hidden = state.view !== 'pending';
+    document.getElementById('users-view').hidden = state.view !== 'users';
+    document.getElementById('instances-view').hidden = state.view !== 'instances';
+
+    if (state.view === 'pending') renderPendingView();
+    else if (state.view === 'users') renderUsersView();
+    else renderInstancesView();
+
+    document.getElementById('cache-pill').textContent = '已更新 ' + timeAgo(state.workbench.cachedAt || state.dashboard.cachedAt);
+  }
+
+  async function loadAll() {
+    renderLoading();
+    try {
+      var results = await Promise.all([
+        api('api/workbench'),
+        api('api/dashboard')
+      ]);
+      state.workbench = results[0];
+      state.dashboard = results[1];
+      applyView();
+    } catch (err) {
+      renderError(err.message);
+      toast(err.message, 'err');
+      throw err;
+    }
+  }
+
+  async function forceRefresh() {
+    var btn = document.getElementById('btn-refresh');
+    btn.disabled = true;
+    btn.textContent = 'Refreshing';
+    try {
+      await loadAll();
+      toast('已刷新', 'ok');
+    } catch (err) {
+      toast('刷新失败：' + err.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '刷新';
+    }
+  }
+
+  async function createTrial() {
+    var btn = document.getElementById('btn-trial');
+    btn.disabled = true;
+    toast('正在创建试用实例', 'info');
+    try {
+      var result = await api('api/instances/create', { method: 'POST', body: { trial: true } });
+      toast('已创建 ' + result.name, 'ok');
+      if (!applyLocalCreatedInstance(result)) {
+        toast('列表未就绪，请手动刷新查看新实例', 'info');
+      }
+    } catch (err) {
+      toast('创建失败：' + err.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function showCreateDialog() {
+    document.getElementById('inp-name').value = '';
+    document.getElementById('dlg-create').showModal();
+    document.getElementById('inp-name').focus();
+  }
+
+  async function confirmCreate() {
+    var raw = document.getElementById('inp-name').value.trim();
+    if (!raw) {
+      toast('实例名不能为空', 'err');
+      return;
+    }
+    document.getElementById('dlg-create').close();
+    toast('正在创建 ' + raw, 'info');
+    try {
+      var result = await api('api/instances/create', { method: 'POST', body: { name: raw } });
+      toast('已创建 ' + result.name, 'ok');
+      if (!applyLocalCreatedInstance(result)) {
+        toast('列表未就绪，请手动刷新查看新实例', 'info');
+      }
+    } catch (err) {
+      toast('创建失败：' + err.message, 'err');
+    }
+  }
+
+  async function instanceAction(name, action) {
+    toast('正在' + action + ' ' + name, 'info');
+    try {
+      await api('api/instances/' + encodeURIComponent(name) + '/' + action, { method: 'POST' });
+      applyLocalInstanceAction(name, action);
+      toast(name + ' 已' + action, 'ok');
+    } catch (err) {
+      toast(action + ' 失败：' + err.message, 'err');
+    }
+  }
+
+  function showDeleteDialog(name) {
+    state.pendingDelete = name;
+    document.getElementById('del-name').textContent = name;
+    document.getElementById('dlg-delete').showModal();
+  }
+
+  async function confirmDelete() {
+    if (!state.pendingDelete) return;
+    var name = state.pendingDelete;
+    state.pendingDelete = null;
+    document.getElementById('dlg-delete').close();
+    toast('正在删除 ' + name, 'info');
+    try {
+      await api('api/instances/' + encodeURIComponent(name) + '/delete', { method: 'POST' });
+      applyLocalInstanceAction(name, 'delete');
+      toast(name + ' 已删除', 'ok');
+    } catch (err) {
+      toast('删除失败：' + err.message, 'err');
+    }
+  }
+
+  async function convergeAll() {
+    var btn = document.getElementById('btn-converge');
+    btn.disabled = true;
+    toast('正在收敛实例库存', 'info');
+    try {
+      var result = await api('api/converge', { method: 'POST' });
+      toast('已收敛 ' + (Array.isArray(result) ? result.length : 0) + ' 个实例', 'ok');
+    } catch (err) {
+      toast('收敛失败：' + err.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('view-nav').addEventListener('click', function(event) {
+    var link = event.target.closest('[data-view]');
+    if (!link) return;
+    event.preventDefault();
+    setView(link.getAttribute('data-view'));
+  });
+
+  document.getElementById('filter-chips').addEventListener('click', function(event) {
+    var chip = event.target.closest('[data-filter]');
+    if (!chip) return;
+    state.filters[state.view] = chip.getAttribute('data-filter');
+    applyView();
+  });
+
+  document.getElementById('search-input').addEventListener('input', function(event) {
+    state.search = String(event.target.value || '');
+    applyView();
+  });
+
+  document.getElementById('sort-select').addEventListener('change', function(event) {
+    state.sorts[state.view] = String(event.target.value || 'default');
+    applyView();
+  });
+
+  document.body.addEventListener('click', function(event) {
+    var copyNode = event.target.closest('[data-copy]');
+    if (copyNode) {
+      copyText(copyNode.getAttribute('data-copy'));
+      return;
+    }
+
+    var navNode = event.target.closest('[data-go-view]');
+    if (navNode) {
+      var nextView = navNode.getAttribute('data-go-view') || 'pending';
+      var nextFilter = navNode.getAttribute('data-filter');
+      var nextSearch = navNode.getAttribute('data-search') || '';
+      if (nextFilter) state.filters[nextView] = nextFilter;
+      setView(nextView);
+      state.search = nextSearch;
+      document.getElementById('search-input').value = nextSearch;
+      applyView();
+      return;
+    }
+
+    var instanceActionNode = event.target.closest('[data-instance-action]');
+    if (instanceActionNode) {
+      var name = instanceActionNode.getAttribute('data-name');
+      var action = instanceActionNode.getAttribute('data-instance-action');
+      if (action === 'delete') showDeleteDialog(name);
+      else instanceAction(name, action);
+    }
+  });
+
+  document.getElementById('btn-trial').onclick = createTrial;
+  document.getElementById('btn-custom').onclick = showCreateDialog;
+  document.getElementById('btn-converge').onclick = convergeAll;
+  document.getElementById('btn-refresh').onclick = forceRefresh;
+  document.getElementById('btn-logout').onclick = function() { window.location.href = withBase('logout'); };
+  document.getElementById('btn-dlg-cancel').onclick = function() { document.getElementById('dlg-create').close(); };
+  document.getElementById('btn-dlg-confirm').onclick = confirmCreate;
+  document.getElementById('inp-name').addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      confirmCreate();
+    }
+  });
+  document.getElementById('btn-del-cancel').onclick = function() { document.getElementById('dlg-delete').close(); };
+  document.getElementById('btn-del-confirm').onclick = confirmDelete;
+
+  // Mobile collapse toggles
+  (function() {
+    var topbar = document.querySelector('.topbar');
+    var topbarToggle = document.getElementById('topbar-toggle');
+    var pagePanel = document.querySelector('.page-panel');
+    var summaryToggle = document.getElementById('summary-toggle');
+
+    if (topbarToggle) {
+      topbarToggle.onclick = function(e) {
+        e.stopPropagation();
+        var expanded = topbar.classList.toggle('is-expanded');
+        topbarToggle.setAttribute('aria-expanded', String(expanded));
+        topbarToggle.classList.toggle('is-active', expanded);
+      };
+      document.addEventListener('click', function(e) {
+        if (topbar.classList.contains('is-expanded') && !topbar.contains(e.target)) {
+          topbar.classList.remove('is-expanded');
+          topbarToggle.setAttribute('aria-expanded', 'false');
+          topbarToggle.classList.remove('is-active');
+        }
+      });
+    }
+
+    if (summaryToggle) {
+      summaryToggle.onclick = function() {
+        var expanded = pagePanel.classList.toggle('is-expanded');
+        summaryToggle.setAttribute('aria-expanded', String(expanded));
+        summaryToggle.classList.toggle('is-open', expanded);
+        summaryToggle.querySelector('span').textContent = expanded ? '收起数据' : '展开数据';
+      };
+    }
+  })();
+
+  window.addEventListener('popstate', function() {
+    state.view = readViewFromLocation();
+    applyView();
+  });
+
+  loadAll().catch(function() {});
+})();
+</script>
+</body>
+</html>

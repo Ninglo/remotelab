@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile as execFileCallback } from 'child_process';
-import { readFile, writeFile } from 'fs/promises';
-import { existsSync } from 'fs';
+import { access, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -184,6 +183,15 @@ async function readJsonIfExists(pathname, fallback = null) {
     return JSON.parse(raw);
   } catch {
     return fallback;
+  }
+}
+
+async function pathExists(pathname) {
+  try {
+    await access(pathname);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -399,13 +407,15 @@ async function loadSnapshot(options = {}) {
   };
 }
 
-function printStatus(snapshot, options = {}) {
+async function printStatus(snapshot, options = {}) {
   const allowedCount = snapshot.records.filter((record) => record.allowed).length;
   const blockedCount = snapshot.records.length - allowedCount;
   const latestRecord = snapshot.records.at(-1) || null;
   const silentText = collectSilentTextRecords(snapshot.records);
   const unhandledText = collectUnhandledTextRecords(snapshot.records);
-  const logPath = existsSync(snapshot.paths.launchdStdoutPath) ? snapshot.paths.launchdStdoutPath : snapshot.paths.connectorLogPath;
+  const logPath = await pathExists(snapshot.paths.launchdStdoutPath)
+    ? snapshot.paths.launchdStdoutPath
+    : snapshot.paths.connectorLogPath;
 
   console.log(`Feishu connector: ${snapshot.connector.running ? `running (pid ${snapshot.connector.pid})` : 'not running'}`);
   console.log(`Config: ${snapshot.paths.configPath}`);
@@ -539,7 +549,7 @@ async function markMessagesBackfilled(pathname, messages, metadata) {
 }
 
 async function runRestart(snapshot) {
-  const usedLaunchd = process.platform === 'darwin' && existsSync(snapshot.paths.launchdPlistPath);
+  const usedLaunchd = process.platform === 'darwin' && await pathExists(snapshot.paths.launchdPlistPath);
   if (usedLaunchd) {
     const target = `gui/${process.getuid()}/${DEFAULT_LAUNCHD_LABEL}`;
     try {
@@ -554,7 +564,7 @@ async function runRestart(snapshot) {
 
   await sleep(2500);
   const nextSnapshot = await loadSnapshot({ configPath: snapshot.paths.configPath });
-  printStatus(nextSnapshot, { tail: DEFAULT_STATUS_TAIL });
+  await printStatus(nextSnapshot, { tail: DEFAULT_STATUS_TAIL });
   if (!nextSnapshot.connector.running) {
     throw new Error('Connector restart did not produce a running process');
   }
@@ -616,7 +626,7 @@ export async function main(argv = process.argv.slice(2)) {
   const snapshot = await loadSnapshot({ configPath: options.configPath });
   switch (options.command) {
     case 'status':
-      printStatus(snapshot, options);
+      await printStatus(snapshot, options);
       return 0;
     case 'restart':
       await runRestart(snapshot);

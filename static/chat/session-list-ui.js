@@ -3,11 +3,30 @@ function t(key, vars) {
   return window.remotelabT ? window.remotelabT(key, vars) : key;
 }
 
+// Inbox view: attention-band labels
+const INBOX_BANDS = [
+  { band: 0, key: "inbox:unread-waiting", label: "Needs your attention" },
+  { band: 1, key: "inbox:unread", label: "New updates" },
+  { band: 2, key: "inbox:waiting", label: "Waiting on you" },
+  { band: 3, key: "inbox:active", label: "Active" },
+  { band: 4, key: "inbox:running", label: "Running" },
+  { band: 5, key: "inbox:parked", label: "Parked" },
+  { band: 6, key: "inbox:done", label: "Done" },
+];
+
+function getInboxBandForSession(session) {
+  if (typeof window.RemoteLabSessionStateModel?.getSessionAttentionBand === "function") {
+    return window.RemoteLabSessionStateModel.getSessionAttentionBand(session);
+  }
+  return 3;
+}
+
 function renderSessionList() {
   sessionList.innerHTML = "";
   const pinnedSessions = getVisiblePinnedSessions();
   const visibleSessions = getVisibleActiveSessions();
 
+  // Pinned section — shown in both views
   if (pinnedSessions.length > 0) {
     const section = document.createElement("div");
     section.className = "pinned-section";
@@ -27,6 +46,68 @@ function renderSessionList() {
     sessionList.appendChild(section);
   }
 
+  if (sessionViewMode === "inbox") {
+    renderInboxView(visibleSessions);
+  } else {
+    renderProjectsView(visibleSessions);
+  }
+
+  if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "session-filter-empty";
+    empty.textContent = getFilteredSessionEmptyText();
+    sessionList.appendChild(empty);
+  }
+
+  renderArchivedSection();
+}
+
+function renderInboxView(visibleSessions) {
+  // Group sessions by attention band
+  const bandMap = new Map();
+  for (const s of visibleSessions) {
+    const band = getInboxBandForSession(s);
+    if (!bandMap.has(band)) bandMap.set(band, []);
+    bandMap.get(band).push(s);
+  }
+
+  for (const bandSpec of INBOX_BANDS) {
+    const sessions = bandMap.get(bandSpec.band);
+    if (!sessions || sessions.length === 0) continue;
+
+    const group = document.createElement("div");
+    group.className = "folder-group inbox-band";
+
+    const header = document.createElement("div");
+    const isCollapsed = collapsedFolders[bandSpec.key] === true;
+    header.className = "folder-group-header" + (isCollapsed ? " collapsed" : "");
+
+    const bandLabel = t(`sidebar.inbox.${bandSpec.key.split(":")[1]}`) !== `sidebar.inbox.${bandSpec.key.split(":")[1]}`
+      ? t(`sidebar.inbox.${bandSpec.key.split(":")[1]}`)
+      : bandSpec.label;
+
+    header.innerHTML = `<span class="folder-chevron">${renderUiIcon("chevron-down")}</span>
+      <span class="folder-name" title="${esc(bandLabel)}">${esc(bandLabel)}</span>
+      <span class="folder-count">${sessions.length}</span>`;
+    header.addEventListener("click", () => {
+      header.classList.toggle("collapsed");
+      collapsedFolders[bandSpec.key] = header.classList.contains("collapsed");
+      localStorage.setItem(COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(collapsedFolders));
+    });
+
+    const items = document.createElement("div");
+    items.className = "folder-group-items";
+    for (const s of sessions) {
+      items.appendChild(createActiveSessionItem(s, { showGroup: true }));
+    }
+
+    group.appendChild(header);
+    group.appendChild(items);
+    sessionList.appendChild(group);
+  }
+}
+
+function renderProjectsView(visibleSessions) {
   const groups = new Map();
   for (const s of visibleSessions) {
     const groupInfo = getSessionGroupInfo(s);
@@ -45,9 +126,19 @@ function renderSessionList() {
     header.className =
       "folder-group-header" +
       (collapsedFolders[groupKey] ? " collapsed" : "");
+
+    // Count sessions needing attention in this group
+    const attentionCount = folderSessions.filter((s) => {
+      const band = getInboxBandForSession(s);
+      return band <= 2; // unread-waiting, unread, or waiting
+    }).length;
+    const attentionBadge = attentionCount > 0
+      ? `<span class="folder-attention-count">${attentionCount}</span>`
+      : "";
+
     header.innerHTML = `<span class="folder-chevron">${renderUiIcon("chevron-down")}</span>
       <span class="folder-name" title="${esc(groupEntry.title)}">${esc(groupEntry.label)}</span>
-      <span class="folder-count">${folderSessions.length}</span>`;
+      ${attentionBadge}<span class="folder-count">${folderSessions.length}</span>`;
     header.addEventListener("click", (e) => {
       header.classList.toggle("collapsed");
       collapsedFolders[groupKey] = header.classList.contains("collapsed");
@@ -68,15 +159,6 @@ function renderSessionList() {
     group.appendChild(items);
     sessionList.appendChild(group);
   }
-
-  if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "session-filter-empty";
-    empty.textContent = getFilteredSessionEmptyText();
-    sessionList.appendChild(empty);
-  }
-
-  renderArchivedSection();
 }
 
 function renderArchivedSection() {
@@ -193,13 +275,32 @@ function startRename(itemEl, session) {
 
 function attachSession(id, session) {
   const shouldReattach = !hasAttachedSession || currentSessionId !== id;
+  const previousSessionId = currentSessionId;
+  if (
+    shouldReattach
+    && previousSessionId
+    && previousSessionId !== id
+    && typeof settleAttachedSessionSidebarState === "function"
+  ) {
+    Promise.resolve(settleAttachedSessionSidebarState({
+      sessionId: previousSessionId,
+      sync: true,
+      render: false,
+    })).catch(() => {});
+  }
+  const attachedSession = (typeof getChatStoreSession === "function" ? getChatStoreSession(id) : null)
+    || session
+    || { id };
+  if (typeof holdAttachedSessionSidebarState === "function") {
+    holdAttachedSessionSidebarState(attachedSession);
+  }
   if (shouldReattach) {
     clearMessages();
     dispatchAction({ action: "attach", sessionId: id });
   }
-  applyAttachedSessionState(id, session);
-  if (typeof markSessionReviewed === "function") {
-    Promise.resolve(markSessionReviewed(session, { sync: shouldReattach, render: true })).catch(() => {});
+  applyAttachedSessionState(id, attachedSession);
+  if (typeof stageSessionReviewedForAttachedSession === "function") {
+    Promise.resolve(stageSessionReviewedForAttachedSession(attachedSession)).catch(() => {});
   }
   if (typeof focusComposer === "function") {
     focusComposer({ preventScroll: true });

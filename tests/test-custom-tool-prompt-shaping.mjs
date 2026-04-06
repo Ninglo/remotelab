@@ -113,7 +113,7 @@ function setupTempHome() {
     `#!/usr/bin/env node
 const promptIndex = process.argv.indexOf('-p');
 const prompt = promptIndex === -1 ? '' : (process.argv[promptIndex + 1] || '');
-if (/\\n/.test(prompt) || /Memory System|User message:|Current user message:|App instructions/.test(prompt)) {
+if (/\\n/.test(prompt) || /Memory System|User message:|Current user message:|Agent instructions/.test(prompt)) {
   console.error('bad prompt shape');
   process.exit(1);
 }

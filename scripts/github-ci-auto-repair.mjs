@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { execFile as execFileCallback } from 'child_process';
+import { mkdir, readFile, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { promisify } from 'util';
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,6 +21,7 @@ const DEFAULT_MAX_LOG_LINES = 120;
 const DEFAULT_MAX_LOG_CHARS = 12000;
 const MAX_HANDLED_RUNS = 500;
 const FAILURE_CONCLUSIONS = new Set(['failure', 'timed_out', 'action_required', 'startup_failure']);
+const execFileAsync = promisify(execFileCallback);
 
 function usage(exitCode = 0) {
   const message = `Usage:
@@ -110,25 +112,25 @@ function defaultSnapshotDir(repo) {
   return join(homedir(), '.config', 'remotelab', 'github-ci-auto-repair', 'snapshots', repoKey(repo));
 }
 
-function ensureDir(path) {
-  mkdirSync(path, { recursive: true });
+async function ensureDir(path) {
+  await mkdir(path, { recursive: true });
 }
 
-function ensureParentDir(path) {
-  ensureDir(dirname(path));
+async function ensureParentDir(path) {
+  await ensureDir(dirname(path));
 }
 
-function readJson(path, fallback) {
+async function readJson(path, fallback) {
   try {
-    return JSON.parse(readFileSync(path, 'utf8'));
+    return JSON.parse(await readFile(path, 'utf8'));
   } catch {
     return fallback;
   }
 }
 
-function writeJson(path, value) {
-  ensureParentDir(path);
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+async function writeJson(path, value) {
+  await ensureParentDir(path);
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function normalizeBaseUrl(value) {
@@ -310,39 +312,38 @@ function ghEnv() {
   };
 }
 
-function runGh(args, { allowFailure = false } = {}) {
+async function runGh(args, { allowFailure = false } = {}) {
   const ghBin = trimString(process.env.GH_BIN) || 'gh';
-  const result = spawnSync(ghBin, args, {
-    encoding: 'utf8',
-    env: ghEnv(),
-    maxBuffer: 20 * 1024 * 1024,
-  });
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    const message = trimString(result.stderr || result.stdout) || `gh ${args.join(' ')} failed with exit ${result.status}`;
+  try {
+    const result = await execFileAsync(ghBin, args, {
+      encoding: 'utf8',
+      env: ghEnv(),
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    return {
+      ok: true,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      status: 0,
+    };
+  } catch (error) {
+    const status = Number.isInteger(error?.code) ? error.code : 1;
+    const message = trimString(error?.stderr || error?.stdout || error?.message) || `gh ${args.join(' ')} failed with exit ${status}`;
     if (allowFailure) {
       return {
         ok: false,
-        stdout: result.stdout || '',
-        stderr: result.stderr || '',
-        status: result.status,
+        stdout: error?.stdout || '',
+        stderr: error?.stderr || '',
+        status,
         message,
       };
     }
     throw new Error(message);
   }
-  return {
-    ok: true,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
-    status: result.status,
-  };
 }
 
-function runGhJson(args) {
-  const result = runGh(args);
+async function runGhJson(args) {
+  const result = await runGh(args);
   try {
     return JSON.parse(result.stdout || 'null');
   } catch (error) {
@@ -350,8 +351,8 @@ function runGhJson(args) {
   }
 }
 
-function listWorkflowRuns(repo, branch, limit) {
-  const payload = runGhJson([
+async function listWorkflowRuns(repo, branch, limit) {
+  const payload = await runGhJson([
     'api', '-X', 'GET', `repos/${repo}/actions/runs`,
     '-f', `branch=${branch}`,
     '-f', `per_page=${limit}`,
@@ -359,25 +360,25 @@ function listWorkflowRuns(repo, branch, limit) {
   return Array.isArray(payload?.workflow_runs) ? payload.workflow_runs : [];
 }
 
-function loadRunJobs(repo, runId) {
-  const payload = runGhJson([
+async function loadRunJobs(repo, runId) {
+  const payload = await runGhJson([
     'api', '-X', 'GET', `repos/${repo}/actions/runs/${runId}/jobs`,
     '-f', 'per_page=100',
   ]);
   return Array.isArray(payload?.jobs) ? payload.jobs : [];
 }
 
-function loadCommit(repo, sha) {
+async function loadCommit(repo, sha) {
   if (!trimString(sha)) return null;
   try {
-    return runGhJson(['api', '-X', 'GET', `repos/${repo}/commits/${sha}`]);
+    return await runGhJson(['api', '-X', 'GET', `repos/${repo}/commits/${sha}`]);
   } catch {
     return null;
   }
 }
 
-function loadFailedLog(repo, runId) {
-  const result = runGh(['run', 'view', String(runId), '--repo', repo, '--log-failed'], { allowFailure: true });
+async function loadFailedLog(repo, runId) {
+  const result = await runGh(['run', 'view', String(runId), '--repo', repo, '--log-failed'], { allowFailure: true });
   if (!result.ok) return '';
   return trimString(result.stdout);
 }
@@ -669,7 +670,7 @@ export function buildSessionMessage({ repo, sessionFolder, run, commit, failedJo
 }
 
 async function readOwnerToken() {
-  const auth = readJson(AUTH_FILE, {});
+  const auth = await readJson(AUTH_FILE, {});
   const token = trimString(auth?.token);
   if (!token) {
     throw new Error(`No owner token found in ${AUTH_FILE}`);
@@ -798,15 +799,15 @@ function pruneHandledRuns(handledRuns) {
   return Object.fromEntries(entries.slice(0, MAX_HANDLED_RUNS));
 }
 
-function collectIncidents(options, candidates, snapshotDir) {
-  ensureDir(snapshotDir);
-  return candidates.map((run) => {
-    const jobs = loadRunJobs(options.repo, run.id);
+async function collectIncidents(options, candidates, snapshotDir) {
+  await ensureDir(snapshotDir);
+  return Promise.all(candidates.map(async (run) => {
+    const jobs = await loadRunJobs(options.repo, run.id);
     const failedJobs = normalizeFailedJobs(jobs);
-    const failedLog = truncateLogText(loadFailedLog(options.repo, run.id), options.maxLogLines, options.maxLogChars);
-    const commit = loadCommit(options.repo, run.head_sha);
+    const failedLog = truncateLogText(await loadFailedLog(options.repo, run.id), options.maxLogLines, options.maxLogChars);
+    const commit = await loadCommit(options.repo, run.head_sha);
     const snapshotFile = join(snapshotDir, buildSnapshotFilename(run));
-    writeFileSync(snapshotFile, renderSnapshot({
+    await writeFile(snapshotFile, renderSnapshot({
       repo: options.repo,
       sessionFolder: options.sessionFolder,
       run,
@@ -821,7 +822,7 @@ function collectIncidents(options, candidates, snapshotDir) {
       failedLog,
       snapshotFile,
     };
-  });
+  }));
 }
 
 function defaultState() {
@@ -880,14 +881,14 @@ export async function runGithubCiAutoRepair(argv = []) {
   const snapshotDir = options.snapshotDir || defaultSnapshotDir(options.repo);
   const state = {
     ...defaultState(),
-    ...readJson(stateFile, defaultState()),
+    ...await readJson(stateFile, defaultState()),
   };
   const warnings = [];
   const allRuns = [];
 
   for (const branch of options.branches) {
     try {
-      const runs = listWorkflowRuns(options.repo, branch, options.limit);
+      const runs = await listWorkflowRuns(options.repo, branch, options.limit);
       allRuns.push(...runs);
     } catch (error) {
       warnings.push(`failed to load runs for ${branch}: ${error.message || String(error)}`);
@@ -895,7 +896,7 @@ export async function runGithubCiAutoRepair(argv = []) {
   }
 
   const { latestRuns, candidates, skipped } = selectLatestFailureCandidates(allRuns, options, state, Date.now());
-  const incidents = collectIncidents(options, candidates, snapshotDir);
+  const incidents = await collectIncidents(options, candidates, snapshotDir);
   const runtime = {
     baseUrl: options.chatBaseUrl,
     authToken: '',
@@ -948,7 +949,7 @@ export async function runGithubCiAutoRepair(argv = []) {
     if (!trimString(state.initializedAt)) state.initializedAt = nowIso();
     state.lastPollAt = nowIso();
     state.handledRuns = pruneHandledRuns(state.handledRuns);
-    writeJson(stateFile, state);
+    await writeJson(stateFile, state);
   }
 
   const summary = buildOutputSummary({

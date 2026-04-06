@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createServer } from 'http';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { access, appendFile, mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { ingestRawMessage, loadBridge, loadIdentity, mailboxPaths, summarizeQueueItem, DEFAULT_ROOT_DIR } from '../lib/agent-mailbox.mjs';
 import { matchesWebhookToken, normalizeIp } from '../lib/agent-mail-http-bridge.mjs';
@@ -18,13 +18,22 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function ensureBridgePaths() {
-  if (!existsSync(ROOT_DIR)) mkdirSync(ROOT_DIR, { recursive: true });
-  if (!existsSync(WEBHOOKS_DIR)) mkdirSync(WEBHOOKS_DIR, { recursive: true });
+async function pathExists(pathname) {
+  try {
+    await access(pathname);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function appendJsonl(filePath, value) {
-  writeFileSync(filePath, `${JSON.stringify(value)}\n`, { encoding: 'utf8', flag: 'a' });
+async function ensureBridgePaths() {
+  if (!await pathExists(ROOT_DIR)) await mkdir(ROOT_DIR, { recursive: true });
+  if (!await pathExists(WEBHOOKS_DIR)) await mkdir(WEBHOOKS_DIR, { recursive: true });
+}
+
+async function appendJsonl(filePath, value) {
+  await appendFile(filePath, `${JSON.stringify(value)}\n`, { encoding: 'utf8' });
 }
 
 function getClientIp(request) {
@@ -48,12 +57,12 @@ function singleHeaderValue(value) {
   return Array.isArray(value) ? trimString(value[0]) : trimString(value);
 }
 
-function currentBridgeConfig() {
-  return loadBridge(ROOT_DIR) || {};
+async function currentBridgeConfig() {
+  return await loadBridge(ROOT_DIR) || {};
 }
 
-function currentCloudflareWebhookToken() {
-  const bridge = currentBridgeConfig();
+async function currentCloudflareWebhookToken() {
+  const bridge = await currentBridgeConfig();
   return trimString(process.env.AGENT_MAILBOX_CLOUDFLARE_WEBHOOK_TOKEN || bridge.cloudflareWebhookToken);
 }
 
@@ -75,7 +84,7 @@ function extractEnvelopeRecipient(payload = {}) {
   ).toLowerCase();
 }
 
-function resolveMailboxRootForPayload(payload = {}) {
+async function resolveMailboxRootForPayload(payload = {}) {
   const recipientAddress = extractEnvelopeRecipient(payload);
   if (!recipientAddress) {
     return {
@@ -86,7 +95,7 @@ function resolveMailboxRootForPayload(payload = {}) {
     };
   }
 
-  const ownerIdentity = loadIdentity(ROOT_DIR);
+  const ownerIdentity = await loadIdentity(ROOT_DIR);
   if (trimString(ownerIdentity?.address).toLowerCase() === recipientAddress) {
     return {
       rootDir: ROOT_DIR,
@@ -97,7 +106,7 @@ function resolveMailboxRootForPayload(payload = {}) {
   }
 
   const runtime = findMailboxRuntimeByAddress(recipientAddress, {
-    registry: loadMailboxRuntimeRegistry(),
+    registry: await loadMailboxRuntimeRegistry(),
     ownerIdentity,
   });
   return {
@@ -108,8 +117,8 @@ function resolveMailboxRootForPayload(payload = {}) {
   };
 }
 
-function selectMailboxTargetForIngest(payload = {}) {
-  const target = resolveMailboxRootForPayload(payload);
+async function selectMailboxTargetForIngest(payload = {}) {
+  const target = await resolveMailboxRootForPayload(payload);
   if (!target.rootDir || target.rootDir === ROOT_DIR) {
     return target;
   }
@@ -117,7 +126,7 @@ function selectMailboxTargetForIngest(payload = {}) {
   // Route directly to the instance's own mailbox.
   // If the instance doesn't have an identity configured, drop the email
   // rather than polluting the owner's mailbox.
-  if (!loadIdentity(target.rootDir)) {
+  if (!await loadIdentity(target.rootDir)) {
     return {
       ...target,
       rootDir: null,
@@ -172,12 +181,12 @@ function summarizePayload(payload) {
   };
 }
 
-function recordExternalMailValidation(mailboxItem, sourceDetails = {}) {
+async function recordExternalMailValidation(mailboxItem, sourceDetails = {}) {
   if (trimString(sourceDetails.reason) === 'loopback') {
     return;
   }
 
-  const bridge = loadBridge(ROOT_DIR);
+  const bridge = await loadBridge(ROOT_DIR);
   if (!bridge) {
     return;
   }
@@ -201,11 +210,11 @@ function recordExternalMailValidation(mailboxItem, sourceDetails = {}) {
     updatedAt: validatedAt,
   };
 
-  writeFileSync(mailboxPaths(ROOT_DIR).bridgeFile, `${JSON.stringify(nextBridge, null, 2)}\n`, 'utf8');
+  await writeFile(mailboxPaths(ROOT_DIR).bridgeFile, `${JSON.stringify(nextBridge, null, 2)}\n`, 'utf8');
 }
 
 async function handleCloudflareWebhook(request, response) {
-  const expectedToken = currentCloudflareWebhookToken();
+  const expectedToken = await currentCloudflareWebhookToken();
   const clientIp = getClientIp(request);
   if (!expectedToken) {
     sendJson(response, 503, {
@@ -217,7 +226,7 @@ async function handleCloudflareWebhook(request, response) {
 
   const providedToken = singleHeaderValue(request.headers.authorization || request.headers['x-bridge-token']);
   if (!matchesWebhookToken(providedToken, expectedToken)) {
-    appendJsonl(EVENTS_FILE, {
+    await appendJsonl(EVENTS_FILE, {
       event: 'rejected_invalid_cloudflare_webhook_token',
       createdAt: nowIso(),
       clientIp,
@@ -276,19 +285,19 @@ async function handleCloudflareWebhook(request, response) {
     return;
   }
 
-  ensureBridgePaths();
+  await ensureBridgePaths();
   const requestId = request.headers['cf-ray'] || payload.requestId || `${Date.now()}`;
   const safeRequestId = String(Array.isArray(requestId) ? requestId[0] : requestId).replace(/[^a-zA-Z0-9._-]/g, '_');
   const webhookSnapshotPath = join(WEBHOOKS_DIR, `${safeRequestId}.json`);
   const snapshotPayload = isRawStream
     ? { ...payload, _format: 'streamed_rfc822', _rawBytes: Buffer.byteLength(rawEmail, 'utf8') }
     : payload;
-  writeFileSync(webhookSnapshotPath, `${JSON.stringify(snapshotPayload, null, 2)}\n`, 'utf8');
+  await writeFile(webhookSnapshotPath, `${JSON.stringify(snapshotPayload, null, 2)}\n`, 'utf8');
 
-  const mailboxTarget = selectMailboxTargetForIngest(payload);
+  const mailboxTarget = await selectMailboxTargetForIngest(payload);
 
   if (mailboxTarget.dropped) {
-    appendJsonl(EVENTS_FILE, {
+    await appendJsonl(EVENTS_FILE, {
       event: 'dropped_no_instance_identity',
       createdAt: nowIso(),
       clientIp,
@@ -309,19 +318,19 @@ async function handleCloudflareWebhook(request, response) {
     return;
   }
 
-  const mailboxItem = ingestRawMessage(rawEmail, `cloudflare-email:${safeRequestId}`, mailboxTarget.rootDir, {
+  const mailboxItem = await ingestRawMessage(rawEmail, `cloudflare-email:${safeRequestId}`, mailboxTarget.rootDir, {
     text: payload.text,
     html: payload.html,
     provider: 'cloudflare_email_worker',
     envelope: payload.envelope,
   });
-  recordExternalMailValidation(mailboxItem, {
+  await recordExternalMailValidation(mailboxItem, {
     ip: clientIp,
     matchedHostname: 'cloudflare_email_worker',
     reason: clientIp === '127.0.0.1' || clientIp === '::1' ? 'loopback' : 'cloudflare_webhook_token',
   });
 
-  appendJsonl(EVENTS_FILE, {
+  await appendJsonl(EVENTS_FILE, {
     event: 'accepted_cloudflare_email_webhook',
     createdAt: nowIso(),
     clientIp,
@@ -344,7 +353,7 @@ async function handleCloudflareWebhook(request, response) {
   });
 }
 
-ensureBridgePaths();
+await ensureBridgePaths();
 
 const server = createServer(async (request, response) => {
   try {
@@ -355,7 +364,7 @@ const server = createServer(async (request, response) => {
         host: HOST,
         port: PORT,
         rootDir: ROOT_DIR,
-        cloudflareWebhookConfigured: Boolean(currentCloudflareWebhookToken()),
+        cloudflareWebhookConfigured: Boolean(await currentCloudflareWebhookToken()),
         time: nowIso(),
       });
       return;
@@ -372,7 +381,7 @@ const server = createServer(async (request, response) => {
       path: request.url,
     });
   } catch (error) {
-    appendJsonl(EVENTS_FILE, {
+    await appendJsonl(EVENTS_FILE, {
       event: 'bridge_error',
       createdAt: nowIso(),
       message: error.message,

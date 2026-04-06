@@ -26,7 +26,7 @@ try {
   writeFileSync(join(tempRoot, 'node_modules', 'ignored-package', 'skip.mjs'), createText(20), 'utf8');
   writeFileSync(join(tempRoot, 'static', 'marked.min.js'), createText(20), 'utf8');
 
-  const report = scanOversizedFiles(tempRoot, {
+  const report = await scanOversizedFiles(tempRoot, {
     warnLineLimits: {
       '.mjs': 4,
       '.css': 4,
@@ -71,8 +71,8 @@ try {
     'utf8',
   );
 
-  const baseline = loadOversizedFilesBaseline(tempRoot, 'oversized-baseline.json');
-  const ratchetedReport = scanOversizedFiles(tempRoot, {
+  const baseline = await loadOversizedFilesBaseline(tempRoot, 'oversized-baseline.json');
+  const ratchetedReport = await scanOversizedFiles(tempRoot, {
     warnLineLimits: {
       '.mjs': 4,
       '.css': 4,

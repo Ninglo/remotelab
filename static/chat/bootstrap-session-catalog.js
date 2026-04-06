@@ -125,14 +125,32 @@ function clearInstalledNotificationPromptFlag() {
   } catch {}
 }
 
+function isOwnerPushFeatureEnabled() {
+  return typeof shouldEnableOwnerPushFeatures === "function"
+    ? shouldEnableOwnerPushFeatures()
+    : !visitorMode;
+}
+
+function shouldPersistNavigationState() {
+  return typeof shouldPersistOwnerNavigationState === "function"
+    ? shouldPersistOwnerNavigationState()
+    : !visitorMode;
+}
+
+function isAgentScopedUiMode() {
+  return typeof isAgentScopedMode === "function"
+    ? isAgentScopedMode()
+    : false;
+}
+
 function initializePushNotifications(options = {}) {
-  if (visitorMode || !("Notification" in window)) return;
+  if (!isOwnerPushFeatureEnabled() || !("Notification" in window)) return;
   const shouldPrompt = options.prompt === true;
   if (Notification.permission === "default") {
     if (!shouldPrompt) return;
     Notification.requestPermission().then((perm) => {
       clearInstalledNotificationPromptFlag();
-      if (perm === "granted" && !visitorMode) setupPushNotifications();
+      if (perm === "granted" && isOwnerPushFeatureEnabled()) setupPushNotifications();
     });
   } else if (Notification.permission === "granted") {
     if (shouldPrompt) clearInstalledNotificationPromptFlag();
@@ -145,7 +163,7 @@ function initializePushNotifications(options = {}) {
 registerHiddenMarkdownExtensions();
 
 function persistActiveSessionId(sessionId) {
-  if (visitorMode) return;
+  if (!shouldPersistNavigationState()) return;
   if (sessionId) {
     localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, sessionId);
   } else {
@@ -154,7 +172,7 @@ function persistActiveSessionId(sessionId) {
 }
 
 function persistActiveSidebarTab(tab) {
-  if (visitorMode) return;
+  if (!shouldPersistNavigationState()) return;
   localStorage.setItem(
     ACTIVE_SIDEBAR_TAB_STORAGE_KEY,
     normalizeSidebarTab(tab),
@@ -183,7 +201,6 @@ function buildNavigationUrl(state = {}) {
 }
 
 function syncBrowserState(state = {}) {
-  if (visitorMode) return;
   const nextSessionId =
     state.sessionId === undefined ? currentSessionId : state.sessionId;
   const nextTab = normalizeSidebarTab(
@@ -191,8 +208,10 @@ function syncBrowserState(state = {}) {
       ? (typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : activeTab)
       : state.tab,
   );
-  persistActiveSessionId(nextSessionId);
-  persistActiveSidebarTab(nextTab);
+  if (shouldPersistNavigationState()) {
+    persistActiveSessionId(nextSessionId);
+    persistActiveSidebarTab(nextTab);
+  }
   const nextUrl = buildNavigationUrl({
     sessionId: nextSessionId,
     tab: nextTab,
@@ -225,7 +244,7 @@ function normalizeSourceFilter(value) {
 }
 
 function persistActiveSourceFilter(value) {
-  if (visitorMode) return;
+  if (!shouldPersistNavigationState()) return;
   localStorage.setItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY, normalizeSourceFilter(value));
 }
 
@@ -275,8 +294,17 @@ function matchesSourceFilter(session, sourceFilter = activeSourceFilter) {
   return getSessionSourceCategory(session) === sourceFilter;
 }
 
+function matchesSearchQuery(session) {
+  if (!sessionSearchQuery) return true;
+  const query = sessionSearchQuery.toLowerCase();
+  const name = (session?.name || "").toLowerCase();
+  const group = (session?.group || "").toLowerCase();
+  const description = (session?.description || "").toLowerCase();
+  return name.includes(query) || group.includes(query) || description.includes(query);
+}
+
 function matchesCurrentFilters(session) {
-  return matchesSourceFilter(session, activeSourceFilter);
+  return matchesSourceFilter(session, activeSourceFilter) && matchesSearchQuery(session);
 }
 
 function getVisibleActiveSessions() {
@@ -318,16 +346,22 @@ function syncSidebarFiltersVisibility(showingSessions = null) {
     : ((typeof getActiveSidebarTabValue === "function"
       ? getActiveSidebarTabValue()
       : activeTab) === "sessions");
+  const agentScopedMode = typeof isAgentScopedMode === "function"
+    ? isAgentScopedMode()
+    : false;
   const controls = [sourceFilterSelect].filter(Boolean);
   const hasVisibleControls = controls.length === 0
     ? true
     : controls.some((control) => isSidebarFilterControlVisible(control));
-  const visible = resolvedShowingSessions && !visitorMode && hasVisibleControls;
+  const visible = resolvedShowingSessions && !visitorMode && !agentScopedMode && hasVisibleControls;
   sidebarFilters.classList.toggle("hidden", !visible);
 }
 
 function renderSourceFilterOptions() {
-  if (!sourceFilterSelect || visitorMode) {
+  const agentScopedMode = typeof isAgentScopedMode === "function"
+    ? isAgentScopedMode()
+    : false;
+  if (!sourceFilterSelect || visitorMode || agentScopedMode) {
     if (sourceFilterSelect) sourceFilterSelect.style.display = "none";
     syncSidebarFiltersVisibility();
     return;
@@ -419,15 +453,27 @@ function getSessionPinSortRank(session) {
 }
 
 function compareSessionListSessions(a, b) {
+  const displayA = typeof getSessionSidebarListSnapshot === "function"
+    ? (getSessionSidebarListSnapshot(a) || a)
+    : a;
+  const displayB = typeof getSessionSidebarListSnapshot === "function"
+    ? (getSessionSidebarListSnapshot(b) || b)
+    : b;
   if (typeof sessionStateModel.compareSessionListSessions === "function") {
-    return sessionStateModel.compareSessionListSessions(a, b);
+    return sessionStateModel.compareSessionListSessions(displayA, displayB);
   }
-  return getSessionSortTime(b) - getSessionSortTime(a);
+  return getSessionSortTime(displayB) - getSessionSortTime(displayA);
 }
 
 function compareClientSessions(a, b) {
-  return getSessionPinSortRank(b) - getSessionPinSortRank(a)
-    || compareSessionListSessions(a, b);
+  const displayA = typeof getSessionSidebarListSnapshot === "function"
+    ? (getSessionSidebarListSnapshot(a) || a)
+    : a;
+  const displayB = typeof getSessionSidebarListSnapshot === "function"
+    ? (getSessionSidebarListSnapshot(b) || b)
+    : b;
+  return getSessionPinSortRank(displayB) - getSessionPinSortRank(displayA)
+    || compareSessionListSessions(displayA, displayB);
 }
 
 function sortSessionsInPlace() {
@@ -445,12 +491,23 @@ function getArchivedSessionSortTime(session) {
 }
 
 function getActiveSessions() {
-  return sessions.filter((session) => !session.archived);
+  return sessions
+    .map((session) => (
+      typeof getSessionSidebarListSnapshot === "function"
+        ? (getSessionSidebarListSnapshot(session) || session)
+        : session
+    ))
+    .filter((session) => session && !session.archived);
 }
 
 function getArchivedSessions() {
   return sessions
-    .filter((session) => session.archived)
+    .map((session) => (
+      typeof getSessionSidebarListSnapshot === "function"
+        ? (getSessionSidebarListSnapshot(session) || session)
+        : session
+    ))
+    .filter((session) => session && session.archived)
     .slice()
     .sort((a, b) => getArchivedSessionSortTime(b) - getArchivedSessionSortTime(a));
 }

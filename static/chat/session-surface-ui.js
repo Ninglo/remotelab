@@ -204,7 +204,7 @@ function renderSessionStatusHtml(statusInfo) {
   return `<span class="${statusInfo.className}"${title}>● ${esc(statusInfo.label)}</span>`;
 }
 
-function createActiveSessionItem(session) {
+function createActiveSessionItem(session, { showGroup = false } = {}) {
   const statusInfo = getSessionMetaStatusInfo(session);
   const completeRead = isSessionCompleteAndReviewed(session);
   const div = document.createElement("div");
@@ -217,13 +217,29 @@ function createActiveSessionItem(session) {
 
   const displayName = getSessionDisplayName(session);
   const metaParts = buildSessionMetaParts(session);
+
+  // In inbox view, show the group as a tag in meta
+  if (showGroup) {
+    const groupName = typeof session?.group === "string" ? session.group.trim() : "";
+    if (groupName) {
+      metaParts.push(`<span class="session-group-tag" title="${esc(groupName)}">${esc(groupName)}</span>`);
+    }
+  }
+
   const metaHtml = metaParts.join(" · ");
   const pinTitle = session.pinned ? t("action.unpin") : t("action.pin");
+
+  // Show description as a second line when available
+  const description = typeof session?.description === "string" ? session.description.trim() : "";
+  const descriptionHtml = description
+    ? `<div class="session-item-description" title="${esc(description)}">${esc(description)}</div>`
+    : "";
 
   div.innerHTML = `
     <div class="session-item-info">
       <div class="session-item-name">${session.pinned ? `<span class="session-pin-badge" title="${esc(t("sidebar.pinned"))}">${renderUiIcon("pinned")}</span>` : ""}${esc(displayName)}</div>
       ${metaHtml ? `<div class="session-item-meta">${metaHtml}</div>` : ""}
+      ${descriptionHtml}
     </div>
     <div class="session-item-actions">
       <button class="session-action-btn pin${session.pinned ? " pinned" : ""}" type="button" title="${pinTitle}" aria-label="${pinTitle}" data-id="${session.id}">${renderUiIcon(session.pinned ? "pinned" : "pin")}</button>

@@ -2,6 +2,8 @@
 
 > Status: current product simplification decision as of 2026-03-26.
 > Purpose: reduce concept count before deeper refactor so backend and frontend cleanup can converge on a smaller product truth.
+>
+> Update 2026-04-06: this note no longer governs interactive Agent share. For that topic, use `notes/current/interactive-agent-share-architecture.md`, which explicitly reopens interactive non-owner Agent access while keeping `ShareSnapshot` separate.
 
 ---
 

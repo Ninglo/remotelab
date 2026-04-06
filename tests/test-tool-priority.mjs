@@ -23,7 +23,7 @@ const toolsModule = await import(pathToFileURL(join(repoRoot, 'lib', 'tools.mjs'
 const { getAvailableTools } = toolsModule;
 
 try {
-  const tools = getAvailableTools().filter((tool) => tool.available);
+  const tools = (await getAvailableTools()).filter((tool) => tool.available);
   assert.ok(tools.length >= 3, 'fake built-in tools should be discoverable');
   assert.equal(tools[0]?.id, 'codex', 'CodeX/codex should be listed first');
   assert.equal(tools[0]?.name, 'CodeX', 'codex should use the CodeX display label');

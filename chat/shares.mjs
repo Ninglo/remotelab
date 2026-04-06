@@ -195,11 +195,21 @@ async function sanitizeEvent(event, shareId) {
         ...(Number.isFinite(event.contextTokens) ? { contextTokens: event.contextTokens } : {}),
         inputTokens: Number.isFinite(event.inputTokens) ? event.inputTokens : 0,
         outputTokens: Number.isFinite(event.outputTokens) ? event.outputTokens : 0,
+        ...(Number.isFinite(event.cachedInputTokens) ? { cachedInputTokens: event.cachedInputTokens } : {}),
+        ...(Number.isFinite(event.reasoningTokens) ? { reasoningTokens: event.reasoningTokens } : {}),
         ...(Number.isFinite(event.contextWindowTokens)
           ? { contextWindowTokens: event.contextWindowTokens }
           : {}),
         ...(typeof event.contextSource === 'string' && event.contextSource
           ? { contextSource: event.contextSource }
+          : {}),
+        ...(Number.isFinite(event.costUsd) ? { costUsd: event.costUsd } : {}),
+        ...(Number.isFinite(event.estimatedCostUsd) ? { estimatedCostUsd: event.estimatedCostUsd } : {}),
+        ...(typeof event.estimatedCostModel === 'string' && event.estimatedCostModel
+          ? { estimatedCostModel: event.estimatedCostModel }
+          : {}),
+        ...(typeof event.costSource === 'string' && event.costSource
+          ? { costSource: event.costSource }
           : {}),
       };
       }

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 
 import { AUTH_FILE } from '../lib/config.mjs';
+import { ensureEmailConnectorBinding } from '../lib/connector-bindings.mjs';
 import { findMailboxRuntimeByName, loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 import {
   APPROVED_QUEUE,
@@ -82,11 +83,11 @@ function normalizeAuthFile(value) {
   return expandHomePath(value);
 }
 
-function readJsonFile(filePath, fallbackValue) {
+async function readJsonFile(filePath, fallbackValue) {
   const normalizedPath = normalizeAuthFile(filePath);
   if (!normalizedPath) return fallbackValue;
   try {
-    return JSON.parse(readFileSync(normalizedPath, 'utf8'));
+    return JSON.parse(await readFile(normalizedPath, 'utf8'));
   } catch {
     return fallbackValue;
   }
@@ -101,9 +102,9 @@ Examples:
   node scripts/agent-mail-worker.mjs --interval-ms 5000`);
 }
 
-function readOwnerToken(authFile = AUTH_FILE) {
+async function readOwnerToken(authFile = AUTH_FILE) {
   const resolvedAuthFile = normalizeAuthFile(authFile) || AUTH_FILE;
-  const auth = JSON.parse(readFileSync(resolvedAuthFile, 'utf8'));
+  const auth = JSON.parse(await readFile(resolvedAuthFile, 'utf8'));
   const token = trimString(auth?.token);
   if (!token) {
     throw new Error(`No owner token found in ${resolvedAuthFile}`);
@@ -166,10 +167,10 @@ function sameBaseUrl(leftValue, rightValue) {
   return !!left && left === right;
 }
 
-function loadGuestRegistry() {
-  return loadMailboxRuntimeRegistry({
+async function loadGuestRegistry() {
+  return (await loadMailboxRuntimeRegistry({
     registryFile: process.env.REMOTELAB_GUEST_REGISTRY_FILE || DEFAULT_GUEST_REGISTRY_FILE,
-  }).map((record) => ({
+  })).map((record) => ({
     ...record,
     authFile: normalizeAuthFile(record?.authFile),
     localBaseUrl: trimString(record?.localBaseUrl),
@@ -177,18 +178,18 @@ function loadGuestRegistry() {
   }));
 }
 
-function findGuestInstanceByName(name, registry = loadGuestRegistry()) {
+function findGuestInstanceByName(name, registry = []) {
   return findMailboxRuntimeByName(name, registry);
 }
 
-function findGuestInstanceByBaseUrl(baseUrl, registry = loadGuestRegistry()) {
+function findGuestInstanceByBaseUrl(baseUrl, registry = []) {
   const normalizedBaseUrl = normalizeBaseUrlMatch(baseUrl);
   if (!normalizedBaseUrl) return null;
   return registry.find((record) => sameBaseUrl(record.localBaseUrl, normalizedBaseUrl) || sameBaseUrl(record.publicBaseUrl, normalizedBaseUrl)) || null;
 }
 
-function resolveRuntimeTarget(item, automation, fallbackBaseUrl = '') {
-  const registry = loadGuestRegistry();
+async function resolveRuntimeTarget(item, automation, fallbackBaseUrl = '') {
+  const registry = await loadGuestRegistry();
   const routedInstance = trimString(item?.routing?.instanceName).toLowerCase();
   if (routedInstance) {
     const guest = findGuestInstanceByName(routedInstance, registry);
@@ -280,7 +281,7 @@ async function ensureAuthCookie(runtime, forceRefresh = false) {
   if (!runtime.authToken) {
     runtime.authToken = typeof runtime.readOwnerToken === 'function'
       ? await runtime.readOwnerToken()
-      : readOwnerToken();
+      : await readOwnerToken();
   }
   const login = typeof runtime.loginWithToken === 'function' ? runtime.loginWithToken : loginWithToken;
   runtime.authCookie = await login(runtime.baseUrl, runtime.authToken);
@@ -321,7 +322,7 @@ function buildSessionDescription(item, fallbackDescription) {
   return trimString(`Inbound email${sender ? ` from ${sender}` : ''}${subject ? ` about ${subject}` : ''}`) || fallback;
 }
 
-function extractReadableBodyFromRaw(item) {
+async function extractReadableBodyFromRaw(item) {
   const rawPath = trimString(item?.storage?.rawPath);
   if (!rawPath) {
     return '';
@@ -329,7 +330,7 @@ function extractReadableBodyFromRaw(item) {
 
   try {
     const normalized = extractNormalizedMailboxContent({
-      rawMessage: readFileSync(rawPath, 'utf8'),
+      rawMessage: await readFile(rawPath, 'utf8'),
     });
     return trimString(normalized.messageText) || trimString(normalized.previewText);
   } catch (error) {
@@ -338,14 +339,14 @@ function extractReadableBodyFromRaw(item) {
   }
 }
 
-function extractAttachmentsFromRaw(item) {
+async function extractAttachmentsFromRaw(item) {
   const rawPath = trimString(item?.storage?.rawPath);
   if (!rawPath) {
     return [];
   }
 
   try {
-    return extractRawMessageAttachments(readFileSync(rawPath, 'utf8'), { includeData: true })
+    return extractRawMessageAttachments(await readFile(rawPath, 'utf8'), { includeData: true })
       .filter((attachment) => typeof attachment?.data === 'string' && attachment.data);
   } catch (error) {
     console.error(`[agent-mail-worker] extractAttachmentsFromRaw failed for ${item?.id || 'unknown'}: ${error.message}`);
@@ -353,12 +354,12 @@ function extractAttachmentsFromRaw(item) {
   }
 }
 
-function buildReplyPrompt(item) {
+async function buildReplyPrompt(item) {
   const sender = trimString(item?.message?.fromAddress);
   const subject = trimString(item?.message?.subject);
   const date = trimString(item?.message?.date);
   const messageId = trimString(item?.message?.messageId);
-  const rawDerivedBody = extractReadableBodyFromRaw(item);
+  const rawDerivedBody = await extractReadableBodyFromRaw(item);
   const bodySource = trimString(item?.content?.extractedText) || trimString(item?.content?.preview);
   const decodedStoredBody = decodeMaybeEncodedMailboxText(bodySource, {
     contentType: trimString(item?.message?.headers?.['content-type']) || 'text/plain; charset=UTF-8',
@@ -403,7 +404,7 @@ function resolveReplyRuntimeSelection(automation, uiSelection) {
   });
 }
 
-function buildCompletionTarget(item, rootDir, requestId) {
+async function buildCompletionTarget(item, rootDir, requestId) {
   const messageId = trimString(item?.message?.messageId);
   const inReplyTo = trimString(item?.message?.inReplyTo);
   const references = trimString(item?.message?.replyReferences)
@@ -412,10 +413,12 @@ function buildCompletionTarget(item, rootDir, requestId) {
       inReplyTo,
       references: trimString(item?.message?.references),
     });
+  const binding = await ensureEmailConnectorBinding({ rootDir });
   return {
     id: `mailbox_email_${item.id}`,
     type: 'email',
     requestId,
+    bindingId: binding.id,
     to: trimString(item?.message?.fromAddress),
     from: resolveReplyFromAddress(item),
     subject: buildReplySubject(item?.message?.subject),
@@ -460,7 +463,7 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
       references: trimString(item?.message?.references),
     })
     || `mailbox:${item.id}`;
-  const runtimeTarget = resolveRuntimeTarget(item, automation, runtime?.baseUrl || automation.chatBaseUrl);
+  const runtimeTarget = await resolveRuntimeTarget(item, automation, runtime?.baseUrl || automation.chatBaseUrl);
   const effectiveRuntime = runtimeMatchesTarget(runtime, runtimeTarget)
     ? runtime
     : createRemoteLabRuntime(runtimeTarget.baseUrl, { authFile: runtimeTarget.authFile });
@@ -484,7 +487,7 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     sessionPayload.name = sessionName;
   }
   if (deliveryMode === 'reply_email') {
-    sessionPayload.completionTargets = [buildCompletionTarget(item, rootDir, requestId)];
+    sessionPayload.completionTargets = [await buildCompletionTarget(item, rootDir, requestId)];
   }
 
   const createResult = await requestRemoteLab(effectiveRuntime, '/api/sessions', {
@@ -498,11 +501,11 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
   const session = createResult.json.session;
   const messagePayload = {
     requestId,
-    text: buildReplyPrompt(item),
+    text: await buildReplyPrompt(item),
     tool: runtimeSelection.tool,
   };
   const rawAttachmentCount = Number(item?.content?.attachmentCount) || 0;
-  const attachments = extractAttachmentsFromRaw(item).map((attachment) => ({
+  const attachments = (await extractAttachmentsFromRaw(item)).map((attachment) => ({
     data: attachment.data,
     mimeType: attachment.mimeType,
     originalName: attachment.originalName,
@@ -538,7 +541,7 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
 
   const run = submitResult.json.run;
   const submittedStatus = submittedStatusForMode(deliveryMode);
-  updateQueueItem(item.id, rootDir, (draft) => {
+  await updateQueueItem(item.id, rootDir, (draft) => {
     draft.status = submittedStatus;
     draft.automation = {
       ...(draft.automation || {}),
@@ -573,7 +576,7 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
 }
 
 async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(baseUrl) }) {
-  const automation = loadMailboxAutomation(rootDir);
+  const automation = await loadMailboxAutomation(rootDir);
   const deliveryMode = normalizeDeliveryMode(automation.deliveryMode);
   if (automation.enabled === false) {
     return {
@@ -584,7 +587,8 @@ async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(bas
     };
   }
 
-  const approvedItems = listQueue(APPROVED_QUEUE, rootDir).filter(shouldProcessItem);
+  const allApprovedItems = await listQueue(APPROVED_QUEUE, rootDir);
+  const approvedItems = allApprovedItems.filter(shouldProcessItem);
   const successes = [];
   const failures = [];
 
@@ -592,7 +596,7 @@ async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(bas
     try {
       successes.push(await submitApprovedItem(item, rootDir, automation, runtime));
     } catch (error) {
-      updateQueueItem(item.id, rootDir, (draft) => {
+      await updateQueueItem(item.id, rootDir, (draft) => {
         draft.status = failureStatusForMode(deliveryMode);
         draft.automation = {
           ...(draft.automation || {}),
@@ -624,7 +628,7 @@ async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(bas
 
   return {
     processed: successes.length,
-    skipped: listQueue(APPROVED_QUEUE, rootDir).length - approvedItems.length,
+    skipped: allApprovedItems.length - approvedItems.length,
     successes,
     failures,
   };
@@ -643,7 +647,7 @@ async function main() {
   }
 
   const rootDir = optionValue(options, 'root', DEFAULT_ROOT_DIR);
-  const automation = loadMailboxAutomation(rootDir);
+  const automation = await loadMailboxAutomation(rootDir);
   const baseUrl = optionValue(options, 'chat-base-url', automation.chatBaseUrl);
   const authFile = optionValue(options, 'auth-file', automation.authFile);
   const intervalMs = Math.max(1000, parseInt(optionValue(options, 'interval-ms', '5000'), 10) || 5000);

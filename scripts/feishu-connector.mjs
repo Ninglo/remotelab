@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { readFileSync, rmSync } from 'fs';
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
@@ -459,7 +458,7 @@ async function claimConnectorPidLock(storageDir, processId = process.pid) {
   return { pidPath, processId };
 }
 
-function releaseConnectorPidLock(lock) {
+async function releaseConnectorPidLock(lock) {
   const pidPath = trimString(lock?.pidPath);
   if (!pidPath) {
     return;
@@ -468,19 +467,11 @@ function releaseConnectorPidLock(lock) {
   if (!processId) {
     return;
   }
-  const currentPid = parsePid((() => {
-    try {
-      return readFileSync(pidPath, 'utf8');
-    } catch {
-      return '';
-    }
-  })());
+  const currentPid = parsePid(await readFile(pidPath, 'utf8').catch(() => ''));
   if (currentPid !== processId) {
     return;
   }
-  try {
-    rmSync(pidPath, { force: true });
-  } catch {}
+  await rm(pidPath, { force: true }).catch(() => {});
 }
 
 function parseTextPreview(rawContent) {
@@ -1507,11 +1498,11 @@ async function waitForRunCompletion(runtime, runId) {
   throw new Error(`run timed out after ${RUN_POLL_TIMEOUT_MS}ms`);
 }
 
-function resolveTargetConfigDir(chatBaseUrl) {
+async function resolveTargetConfigDir(chatBaseUrl) {
   try {
     const normalized = chatBaseUrl?.replace(/\/+$/, '').toLowerCase();
     if (!normalized) return '';
-    const registry = loadMailboxRuntimeRegistry();
+    const registry = await loadMailboxRuntimeRegistry();
     for (const record of registry) {
       const local = (record.localBaseUrl || '').replace(/\/+$/, '').toLowerCase();
       const pub = (record.publicBaseUrl || '').replace(/\/+$/, '').toLowerCase();
@@ -1524,7 +1515,7 @@ function resolveTargetConfigDir(chatBaseUrl) {
 }
 
 async function resolveFeishuRuntimeSelection(runtime) {
-  const targetConfigDir = resolveTargetConfigDir(runtime?.config?.chatBaseUrl);
+  const targetConfigDir = await resolveTargetConfigDir(runtime?.config?.chatBaseUrl);
   const selectionFile = targetConfigDir
     ? join(targetConfigDir, 'ui-runtime-selection.json')
     : undefined;
@@ -2037,9 +2028,16 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = await loadConfig(options.configPath);
   const connectorPidLock = await claimConnectorPidLock(config.storageDir);
-  process.on('exit', () => {
-    releaseConnectorPidLock(connectorPidLock);
-  });
+  let pidLockReleased = false;
+  const releasePidLock = async () => {
+    if (pidLockReleased) return;
+    pidLockReleased = true;
+    await releaseConnectorPidLock(connectorPidLock);
+  };
+  const releasePidLockOnBeforeExit = () => {
+    void releasePidLock();
+  };
+  process.once('beforeExit', releasePidLockOnBeforeExit);
   const accessState = await loadPersistedAccessState(config.intakePolicy);
   const storagePaths = {
     eventsLogPath: join(config.storageDir, 'events.jsonl'),
@@ -2061,14 +2059,18 @@ async function main() {
     console.log(`[feishu-connector] closing connection (${reason})`);
     wsClient.close();
   };
+  const shutdownAndExit = async (reason, code = 0) => {
+    closeConnection(reason);
+    await delay(250);
+    await releasePidLock();
+    process.exit(code);
+  };
 
   process.on('SIGINT', () => {
-    closeConnection('SIGINT');
-    process.exit(0);
+    void shutdownAndExit('SIGINT');
   });
   process.on('SIGTERM', () => {
-    closeConnection('SIGTERM');
-    process.exit(0);
+    void shutdownAndExit('SIGTERM');
   });
 
   const eventDispatcher = new Lark.EventDispatcher({}).register({
@@ -2119,7 +2121,9 @@ async function main() {
     if (options.durationMs === 0) {
       closeConnection('replay complete');
       await delay(250);
-      process.exit(0);
+      await releasePidLock();
+      process.off('beforeExit', releasePidLockOnBeforeExit);
+      return;
     }
   }
 
@@ -2127,7 +2131,9 @@ async function main() {
     await delay(options.durationMs);
     closeConnection(`duration ${options.durationMs}ms elapsed`);
     await delay(250);
-    process.exit(0);
+    await releasePidLock();
+    process.off('beforeExit', releasePidLockOnBeforeExit);
+    return;
   }
 
   await new Promise(() => {});

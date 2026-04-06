@@ -1,6 +1,12 @@
 # Session Main Flow + Context Freshness Next Push
 
-Status: active execution pack as of 2026-03-18
+Status: reference / mostly-landed execution pack as of 2026-04-06
+
+2026-04-06 note:
+
+- `session-first` 主流程、`cross-session context freshness`、`one-turn multi-session fan-out` 这几条能力已被视为基本落地，不再作为当前项目主推 backlog 挂着。
+- 这份文档保留为设计和验收参考，不再代表当前最需要推进的小 todo 清单。
+- 此前拆出去的回归修复线程也已完成并清掉；这份文档现在主要只作历史 / 设计参考。
 
 Workflow baseline: `notes/current/session-first-workflow-surfaces.md`
 Higher-level product operating note: `notes/current/product-mainline.md`
@@ -160,10 +166,11 @@ Higher-level product operating note: `notes/current/product-mainline.md`
   - How does the operator inspect or trim imported context before it bloats the prompt?
   - How do we avoid turning many bounded sessions into one hidden giant transcript?
 
-## Known blocking regressions right now
+## Remaining regression cleanup
 
 - `tests/test-http-session-spawn-recursive.mjs` is red; this is the concrete canary for multi-session fan-out.
 - `tests/test-session-forking.mjs` is red; this is the concrete canary for prepared fork-context confidence.
+- These are now treated as focused cleanup items, not proof that the whole push is still unresolved.
 
 ## Tests that define “good enough” for the next push
 
@@ -183,7 +190,7 @@ Higher-level product operating note: `notes/current/product-mainline.md`
 - Prefer conservative, inspectable context imports over magical always-on sharing.
 - `Control Inbox` stays a follow-on layer built on top of the session-first + multi-session contract, not a prerequisite.
 
-## Push gate
+## Historical push gate
 
 - The owner flow is coherent on the active session-first surfaces.
 - Cross-session context freshness is demoable in a bounded, inspectable way.

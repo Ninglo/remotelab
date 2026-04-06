@@ -17,6 +17,65 @@
   min-height: 52px;
 }
 .sidebar-header h2 { font-size: 14px; font-weight: 600; flex: 1; letter-spacing: -0.01em; }
+
+/* Sidebar search */
+.sidebar-search {
+  padding: 8px 8px 0;
+  flex-shrink: 0;
+}
+.sidebar-search-input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+.sidebar-search-input::placeholder {
+  color: var(--text-muted);
+}
+.sidebar-search-input:focus {
+  border-color: var(--border-strong);
+}
+.sidebar-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* View mode switcher */
+.sidebar-view-switcher {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 2px;
+  flex-shrink: 0;
+}
+.view-switch-btn {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 11px;
+  font-weight: 500;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+}
+.view-switch-btn.active {
+  color: var(--text-secondary);
+  border-bottom-color: var(--text-secondary);
+}
+.view-switch-btn:hover:not(.active) {
+  color: var(--text-secondary);
+}
+
 .sidebar-list { flex: 1; overflow-y: auto; padding: 8px 8px; }
 .header-btn,
 .sidebar-tab,
@@ -115,7 +174,7 @@
 .settings-inline-form {
   display: grid;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 8px;
 }
 .settings-inline-input,
 .settings-inline-select,
@@ -175,7 +234,7 @@
 .settings-apps-list {
   display: grid;
   gap: 0;
-  margin-top: 14px;
+  margin-top: 10px;
 }
 .settings-app-card {
   border-top: 1px solid var(--border);
@@ -217,7 +276,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 .settings-app-btn {
   padding: 7px 10px;
@@ -329,6 +388,42 @@
 .session-item-meta .status-done { color: var(--success); }
 .session-item-meta .status-parked { color: var(--text-muted); }
 .session-item-meta .status-archived { color: var(--text-muted); }
+
+/* Session description line */
+.session-item-description {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+
+/* Group tag in inbox view */
+.session-group-tag {
+  display: inline;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 0 5px;
+  border-radius: 4px;
+  letter-spacing: 0.01em;
+}
+
+/* Attention count badge in project group headers */
+.folder-attention-count {
+  font-size: 10px;
+  color: var(--bg);
+  background: var(--warning);
+  padding: 0 5px;
+  border-radius: 10px;
+  font-weight: 600;
+  min-width: 14px;
+  text-align: center;
+  line-height: 16px;
+}
+
 .session-item-actions { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 .session-action-btn {
   background: none; border: none; color: var(--text-muted); cursor: pointer;

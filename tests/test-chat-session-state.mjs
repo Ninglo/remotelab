@@ -10,6 +10,7 @@ const repoRoot = dirname(__dirname);
 
 const realtimeSource = readFileSync(join(repoRoot, 'static/chat/realtime.js'), 'utf8');
 const sessionHttpSource = readFileSync(join(repoRoot, 'static/chat/session-http-helpers.js'), 'utf8') + '\n' + readFileSync(join(repoRoot, 'static/chat/session-http-list-state.js'), 'utf8') + '\n' + readFileSync(join(repoRoot, 'static/chat/session-http.js'), 'utf8');
+const sessionCatalogSource = readFileSync(join(repoRoot, 'static/chat/bootstrap-session-catalog.js'), 'utf8');
 
 function sliceBetween(source, startToken, endToken) {
   const start = source.indexOf(startToken);
@@ -69,6 +70,7 @@ function createBaseContext() {
     Math,
     Promise,
     encodeURIComponent,
+    structuredClone,
     currentSessionId: null,
     hasAttachedSession: false,
     archivedSessionCount: 0,
@@ -110,6 +112,12 @@ const sessionReviewSnippet = sliceBetween(
   sessionHttpSource,
   'const pendingSessionReviewSyncs = new Map();',
   'function normalizeSessionRecord',
+);
+
+const sessionCatalogVisibilitySnippet = sliceBetween(
+  sessionCatalogSource,
+  'function getArchivedSessionSortTime',
+  'function getLatestSession',
 );
 
 const dispatchActionSnippet = sliceBetween(
@@ -504,6 +512,108 @@ assert.equal(
   'markSessionReviewed should keep the normalized local review timestamp on the session record',
 );
 assert.equal(reviewRenderCalls, 1, 'markSessionReviewed should rerender the session list after storing a numeric review stamp');
+
+const deferredReviewContext = createBaseContext();
+let deferredReviewRenderCalls = 0;
+let deferredReviewStored = [];
+
+deferredReviewContext.currentSessionId = 'session-held';
+deferredReviewContext.renderSessionList = () => {
+  deferredReviewRenderCalls += 1;
+};
+deferredReviewContext.setLocalSessionReviewedAt = (sessionId, stamp) => {
+  deferredReviewStored.push({ sessionId, stamp });
+  return stamp;
+};
+deferredReviewContext.getChatStoreSession = (sessionId) => (
+  deferredReviewContext.sessions.find((session) => session.id === sessionId) || null
+);
+
+vm.runInNewContext(sessionReviewSnippet, deferredReviewContext, {
+  filename: 'chat-session-review-deferred-runtime.js',
+});
+
+const heldSession = {
+  id: 'session-held',
+  lastEventAt: '2026-03-12T12:30:00.000Z',
+  lastAssistantMessageAt: '2026-03-12T12:29:00.000Z',
+  updatedAt: '2026-03-12T12:30:00.000Z',
+  workflowState: 'done',
+  activity: createSessionActivity(),
+};
+deferredReviewContext.sessions = [heldSession];
+deferredReviewContext.holdAttachedSessionSidebarState(heldSession);
+deferredReviewContext.stageSessionReviewedForAttachedSession({
+  ...heldSession,
+  lastEventAt: '2026-03-12T12:35:00.000Z',
+});
+assert.deepEqual(
+  deferredReviewStored,
+  [],
+  'staging the attached session review should not immediately store a local reviewed marker',
+);
+assert.notEqual(
+  deferredReviewContext.getSessionSidebarListSnapshot({
+    ...heldSession,
+    archived: true,
+    updatedAt: '2026-03-12T12:40:00.000Z',
+  })?.archived,
+  true,
+  'the attached session should keep its held sidebar snapshot while the user is still viewing it',
+);
+await deferredReviewContext.settleAttachedSessionSidebarState({
+  sessionId: 'session-held',
+  sync: false,
+  render: true,
+});
+assert.deepEqual(
+  deferredReviewStored,
+  [{
+    sessionId: 'session-held',
+    stamp: '2026-03-12T12:35:00.000Z',
+  }],
+  'settling the attached session should persist the deferred review marker on exit',
+);
+assert.equal(
+  deferredReviewRenderCalls,
+  1,
+  'settling the attached session should rerender the sidebar once the hold is released',
+);
+
+const heldArchiveVisibilityContext = createBaseContext();
+heldArchiveVisibilityContext.currentSessionId = 'session-current';
+heldArchiveVisibilityContext.sessions = [
+  {
+    id: 'session-current',
+    archived: true,
+    archivedAt: '2026-03-12T10:00:00.000Z',
+    updatedAt: '2026-03-12T08:00:00.000Z',
+  },
+  {
+    id: 'session-other',
+    updatedAt: '2026-03-12T09:00:00.000Z',
+  },
+];
+heldArchiveVisibilityContext.getSessionSidebarListSnapshot = (session) => (
+  session?.id === 'session-current'
+    ? { ...session, archived: false, archivedAt: undefined }
+    : session
+);
+
+vm.runInNewContext(sessionCatalogVisibilitySnippet, heldArchiveVisibilityContext, {
+  filename: 'chat-session-catalog-visibility-runtime.js',
+});
+
+assert.deepEqual(
+  heldArchiveVisibilityContext.getActiveSessions().map((session) => session.id),
+  ['session-current', 'session-other'],
+  'the held current session should stay in the active list even after an optimistic archive update',
+);
+assert.deepEqual(
+  heldArchiveVisibilityContext.getArchivedSessions().map((session) => session.id),
+  [],
+  'the held current session should stay out of the archive bucket until the user leaves it',
+);
 
 const archiveContext = createBaseContext();
 let archiveFilterRefreshes = 0;

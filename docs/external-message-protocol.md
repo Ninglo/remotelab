@@ -104,7 +104,7 @@ After that, reuse `cookie.jar` on HTTP requests and WebSocket upgrades.
 Current note:
 
 - this is owner-scope auth
-- visitor auth is for shared Apps, not for automation connectors
+- visitor auth is for shared Agents, not for automation connectors
 
 ---
 
@@ -122,10 +122,10 @@ Required fields:
 Useful optional fields for connectors:
 
 - `name` — optional seed title; omit it unless you already have concrete thread/task context
-- `appId` — stable app/category id for owner-side session filtering; defaults to `chat`
-- `appName` — human-facing label for that `appId`, such as `GitHub` or `Email`
 - `sourceId` — stable connector/runtime source id such as `feishu`, `email`, or `voice`
 - `sourceName` — human-facing connector/runtime source name such as `Feishu`, `Email`, or `Voice`
+- `templateId` — optional Agent id when this connector should run under a reusable Agent definition
+- `templateName` — human-facing label for that Agent
 - `group` — top-level grouping such as `Mail`, `GitHub`, `Bots`
 - `description` — short human-facing description
 - `systemPrompt` — optional connector-specific override; keep it minimal and use it only for constraints not already handled by backend-owned source logic
@@ -142,13 +142,13 @@ Naming policy for connector-created sessions:
 
 - prefer letting RemoteLab auto-rename after the actual inbound message lands
 - only send `name` when it already contains clear thread-specific context
-- do not repeat provider/app/group words already stored in `group`, `appName`, or other metadata
+- do not repeat provider/source/group words already stored in `group`, `sourceName`, `templateName`, or other metadata
 - generic names such as `Feishu group`, `GitHub issue`, or `Mail reply` are treated as temporary and may be discarded
 
-For recurring owner-side automations, prefer treating the connector as an Automation App:
+For recurring owner-side automations, prefer treating the connector as an Automation Agent:
 
-- create a normal RemoteLab App for the automation's identity and prompt
-- use that App's `id`, `name`, and `systemPrompt` when creating/reusing the review session
+- create a normal RemoteLab Agent for the automation's identity and prompt
+- use that Agent's `id`, `name`, and `systemPrompt` as `templateId`, `templateName`, and `systemPrompt` when creating/reusing the review session
 - keep one stable `externalTriggerId` per automation thread so review stays in one durable session
 
 See `automation-apps.md` for the higher-level product pattern.
@@ -164,8 +164,8 @@ curl -sS \
     "folder": "~",
     "tool": "codex",
     "name": "owner/repo#123 — macOS build failure",
-    "appId": "github",
-    "appName": "GitHub",
+    "sourceId": "github",
+    "sourceName": "GitHub",
     "group": "GitHub",
     "description": "External GitHub thread bridged into RemoteLab.",
     "externalTriggerId": "github:owner/repo#123"
@@ -176,8 +176,8 @@ Important behavior:
 
 - if an unarchived session with the same `externalTriggerId` already exists, RemoteLab returns that session instead of creating a new one
 - this is the main dedupe mechanism for “one external thread → one RemoteLab session”
-- if the provided `name` is generic or only repeats connector/app/group metadata, RemoteLab keeps the session auto-renameable instead of locking that title in
-- the owner sidebar app filter derives its options from session metadata rather than a hardcoded frontend list; if every session is still in the default `chat` app, the filter stays hidden
+- if the provided `name` is generic or only repeats connector/source/group metadata, RemoteLab keeps the session auto-renameable instead of locking that title in
+- the owner sidebar source grouping derives from session metadata rather than a hardcoded frontend list
 
 ---
 

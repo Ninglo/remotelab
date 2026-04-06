@@ -47,17 +47,21 @@ config_number() {
   local key="$1"
   local fallback="$2"
   "$NODE_BIN" - <<'EOF' "$CONFIG_PATH" "$key" "$fallback"
-const fs = require('fs');
+const fs = require('fs/promises');
 const [configPath, key, fallback] = process.argv.slice(2);
-try {
-  const value = JSON.parse(fs.readFileSync(configPath, 'utf8'))?.[key];
-  const parsed = Number.parseInt(String(value ?? ''), 10);
-  if (Number.isInteger(parsed) && parsed > 0) {
-    process.stdout.write(String(parsed));
-    process.exit(0);
-  }
-} catch {}
-process.stdout.write(String(fallback));
+(async () => {
+  try {
+    const value = JSON.parse(await fs.readFile(configPath, 'utf8'))?.[key];
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      process.stdout.write(String(parsed));
+      process.exit(0);
+    }
+  } catch {}
+  process.stdout.write(String(fallback));
+})().catch(() => {
+  process.stdout.write(String(fallback));
+});
 EOF
 }
 
@@ -142,17 +146,22 @@ show_status() {
   if [[ -f "$LAST_RUN_PATH" ]]; then
     echo "last run summary:"
     "$NODE_BIN" - <<'EOF' "$LAST_RUN_PATH"
-const fs = require('fs');
+const fs = require('fs/promises');
 const path = process.argv[2];
-const data = JSON.parse(fs.readFileSync(path, 'utf8'));
-const compact = {
-  status: data.status,
-  finishedAt: data.finishedAt,
-  triggered: Array.isArray(data.monitor?.triggered) ? data.monitor.triggered.length : undefined,
-  skipped: Array.isArray(data.monitor?.skipped) ? data.monitor.skipped.length : undefined,
-  repo: data.monitor?.repo,
-};
-process.stdout.write(`${JSON.stringify(compact, null, 2)}\n`);
+(async () => {
+  const data = JSON.parse(await fs.readFile(path, 'utf8'));
+  const compact = {
+    status: data.status,
+    finishedAt: data.finishedAt,
+    triggered: Array.isArray(data.monitor?.triggered) ? data.monitor.triggered.length : undefined,
+    skipped: Array.isArray(data.monitor?.skipped) ? data.monitor.skipped.length : undefined,
+    repo: data.monitor?.repo,
+  };
+  process.stdout.write(`${JSON.stringify(compact, null, 2)}\n`);
+})().catch((error) => {
+  console.error(error?.message || error);
+  process.exit(1);
+});
 EOF
   fi
 }

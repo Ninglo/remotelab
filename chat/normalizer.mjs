@@ -50,16 +50,28 @@ export function usageEvent({
   contextTokens,
   inputTokens,
   outputTokens,
+  cachedInputTokens,
+  reasoningTokens,
+  costUsd,
+  estimatedCostUsd,
+  estimatedCostModel,
   contextWindowTokens,
   contextSource,
+  costSource,
 } = {}) {
   return createEvent('usage', {
     role: 'system',
     ...(Number.isFinite(contextTokens) ? { contextTokens } : {}),
     ...(Number.isFinite(inputTokens) ? { inputTokens } : {}),
     ...(Number.isFinite(outputTokens) ? { outputTokens } : {}),
+    ...(Number.isFinite(cachedInputTokens) ? { cachedInputTokens } : {}),
+    ...(Number.isFinite(reasoningTokens) ? { reasoningTokens } : {}),
+    ...(Number.isFinite(costUsd) ? { costUsd } : {}),
+    ...(Number.isFinite(estimatedCostUsd) ? { estimatedCostUsd } : {}),
+    ...(typeof estimatedCostModel === 'string' && estimatedCostModel ? { estimatedCostModel } : {}),
     ...(Number.isFinite(contextWindowTokens) ? { contextWindowTokens } : {}),
     ...(typeof contextSource === 'string' && contextSource ? { contextSource } : {}),
+    ...(typeof costSource === 'string' && costSource ? { costSource } : {}),
   });
 }
 

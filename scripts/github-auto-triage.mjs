@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'fs';
+import { execFile as execFileCallback } from 'child_process';
+import { access, mkdir, readdir, readFile, unlink, writeFile } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
+import { promisify } from 'util';
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
 import { selectAssistantReplyEvent } from '../lib/reply-selection.mjs';
 
@@ -14,6 +15,7 @@ const MARKER = '<!-- remotelab-github-auto-triage -->';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
 const DEFAULT_SESSION_TOOL = 'codex';
 const REQUEST_MARKER_PREFIX = '<!-- remotelab-github-request-id:';
+const execFileAsync = promisify(execFileCallback);
 
 const STOP_WORDS_EN = new Set([
   'about', 'after', 'again', 'also', 'been', 'being', 'both', 'from', 'have', 'just', 'more',
@@ -235,22 +237,31 @@ function parseNumberList(value, flagName) {
   return numbers;
 }
 
-function ensureDir(pathname) {
-  mkdirSync(pathname, { recursive: true });
+async function pathExists(pathname) {
+  try {
+    await access(pathname);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function readJson(pathname, fallback) {
-  if (!existsSync(pathname)) return fallback;
+async function ensureDir(pathname) {
+  await mkdir(pathname, { recursive: true });
+}
+
+async function readJson(pathname, fallback) {
+  if (!await pathExists(pathname)) return fallback;
   try {
-    return JSON.parse(readFileSync(pathname, 'utf8'));
+    return JSON.parse(await readFile(pathname, 'utf8'));
   } catch {
     return fallback;
   }
 }
 
-function writeJson(pathname, value) {
-  ensureDir(dirname(pathname));
-  writeFileSync(pathname, `${JSON.stringify(value, null, 2)}\n`);
+async function writeJson(pathname, value) {
+  await ensureDir(dirname(pathname));
+  await writeFile(pathname, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function configRoot() {
@@ -275,8 +286,8 @@ function normalizeBaseUrl(baseUrl) {
   return normalized.replace(/\/+$/, '');
 }
 
-function readOwnerToken() {
-  const auth = JSON.parse(readFileSync(AUTH_FILE, 'utf8'));
+async function readOwnerToken() {
+  const auth = JSON.parse(await readFile(AUTH_FILE, 'utf8'));
   const token = trimString(auth?.token);
   if (!token) {
     throw new Error(`No owner token found in ${AUTH_FILE}`);
@@ -339,23 +350,22 @@ function resolvePaths(repo, overrides) {
   };
 }
 
-function runGh(args, input = undefined) {
-  const result = spawnSync('gh', args, {
-    encoding: 'utf8',
-    input,
-    maxBuffer: 20 * 1024 * 1024,
-  });
-
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    const message = (result.stderr || result.stdout || '').trim() || `gh ${args.join(' ')}`;
+async function runGh(args, input = undefined) {
+  try {
+    const result = await execFileAsync('gh', args, {
+      encoding: 'utf8',
+      input,
+      maxBuffer: 20 * 1024 * 1024,
+    });
+    return result.stdout || '';
+  } catch (error) {
+    const message = trimString(error?.stderr || error?.stdout || error?.message || '') || `gh ${args.join(' ')}`;
     throw new Error(message);
   }
-  return result.stdout;
 }
 
-function runGhJson(args) {
-  const output = runGh(args).trim();
+async function runGhJson(args) {
+  const output = (await runGh(args)).trim();
   return output ? JSON.parse(output) : null;
 }
 
@@ -366,11 +376,11 @@ function flattenPages(payload) {
   return [];
 }
 
-function currentMaintainerLogin() {
-  return runGh(['api', 'user', '--jq', '.login']).trim();
+async function currentMaintainerLogin() {
+  return (await runGh(['api', 'user', '--jq', '.login'])).trim();
 }
 
-function normalizeMaintainers(rawMaintainers) {
+async function normalizeMaintainers(rawMaintainers) {
   const values = Array.from(new Set(
     rawMaintainers
       .split(',')
@@ -378,7 +388,7 @@ function normalizeMaintainers(rawMaintainers) {
       .filter(Boolean)
   ));
 
-  const currentLogin = currentMaintainerLogin();
+  const currentLogin = await currentMaintainerLogin();
   if (!values.some((value) => value.toLowerCase() == currentLogin.toLowerCase())) {
     values.push(currentLogin);
   }
@@ -394,34 +404,35 @@ function isMaintainer(login, maintainers) {
   return maintainers.has(login.toLowerCase());
 }
 
-function fetchUpdatedItems(repo, sinceIso, limit) {
-  const payload = runGhJson([
+async function fetchUpdatedItems(repo, sinceIso, limit) {
+  const payload = await runGhJson([
     'api', '--paginate', '--slurp', '-X', 'GET', `repos/${repo}/issues`,
     '-f', 'state=all', '-f', 'sort=updated', '-f', 'direction=desc', '-f', 'per_page=100', '-f', `since=${sinceIso}`,
   ]);
   return flattenPages(payload).slice(0, limit);
 }
 
-function fetchThreadItem(repo, number) {
+async function fetchThreadItem(repo, number) {
   return runGhJson(['api', '-X', 'GET', `repos/${repo}/issues/${number}`]);
 }
 
-function fetchItems(repo, sinceIso, limit, onlyNumbers) {
+async function fetchItems(repo, sinceIso, limit, onlyNumbers) {
   if (onlyNumbers.length > 0) {
-    return onlyNumbers.map((number) => fetchThreadItem(repo, number)).filter(Boolean);
+    const items = await Promise.all(onlyNumbers.map((number) => fetchThreadItem(repo, number)));
+    return items.filter(Boolean);
   }
   return fetchUpdatedItems(repo, sinceIso, limit);
 }
 
-function fetchIssueComments(repo, number) {
-  const payload = runGhJson([
+async function fetchIssueComments(repo, number) {
+  const payload = await runGhJson([
     'api', '--paginate', '--slurp', '-X', 'GET', `repos/${repo}/issues/${number}/comments`, '-f', 'per_page=100',
   ]);
   return flattenPages(payload);
 }
 
-function fetchPullRequestReviews(repo, number) {
-  const payload = runGhJson([
+async function fetchPullRequestReviews(repo, number) {
+  const payload = await runGhJson([
     'api', '--paginate', '--slurp', '-X', 'GET', `repos/${repo}/pulls/${number}/reviews`, '-f', 'per_page=100',
   ]);
   return flattenPages(payload);
@@ -513,9 +524,9 @@ function extractKeywords(title, body, threadText) {
     .slice(0, 12);
 }
 
-function markdownFilesIn(dirPath) {
-  if (!existsSync(dirPath)) return [];
-  return readdirSync(dirPath)
+async function markdownFilesIn(dirPath) {
+  if (!await pathExists(dirPath)) return [];
+  return (await readdir(dirPath))
     .filter((name) => name.endsWith('.md'))
     .map((name) => join(dirPath, name))
     .sort();
@@ -538,10 +549,10 @@ function pushKnowledgeBlocks(blocks, filePath, heading, rawText) {
   }
 }
 
-function loadKnowledgeSections() {
+async function loadKnowledgeSections() {
   if (cachedKnowledgeSections) return cachedKnowledgeSections;
 
-  const projectDoc = existsSync(join(PROJECT_ROOT, 'AGENTS.md'))
+  const projectDoc = await pathExists(join(PROJECT_ROOT, 'AGENTS.md'))
     ? join(PROJECT_ROOT, 'AGENTS.md')
     : join(PROJECT_ROOT, 'CLAUDE.md');
 
@@ -549,14 +560,21 @@ function loadKnowledgeSections() {
     projectDoc,
     join(PROJECT_ROOT, 'README.md'),
     join(PROJECT_ROOT, 'README.zh.md'),
-    ...markdownFilesIn(join(PROJECT_ROOT, 'docs')),
-    ...markdownFilesIn(join(PROJECT_ROOT, 'notes')),
-  ].filter((filePath, index, all) => existsSync(filePath) && all.indexOf(filePath) === index);
+    ...await markdownFilesIn(join(PROJECT_ROOT, 'docs')),
+    ...await markdownFilesIn(join(PROJECT_ROOT, 'notes')),
+  ];
+
+  const existingFiles = [];
+  for (const filePath of files) {
+    if (!await pathExists(filePath)) continue;
+    if (existingFiles.includes(filePath)) continue;
+    existingFiles.push(filePath);
+  }
 
   const blocks = [];
-  for (const filePath of files) {
+  for (const filePath of existingFiles) {
     if (filePath.endsWith('github-auto-triage.md')) continue;
-    const content = readFileSync(filePath, 'utf8');
+    const content = await readFile(filePath, 'utf8');
     const lines = content.split('\n');
     let heading = 'Overview';
     let buffer = [];
@@ -601,7 +619,7 @@ function scoreSection(section, keywords) {
   return score;
 }
 
-function findRelevantContext(item, issueComments, latestExternalActivity) {
+async function findRelevantContext(item, issueComments, latestExternalActivity) {
   const threadText = [
     item.body || '',
     latestExternalActivity?.body || '',
@@ -610,7 +628,7 @@ function findRelevantContext(item, issueComments, latestExternalActivity) {
   const keywords = extractKeywords(item.title || '', item.body || '', threadText);
   if (keywords.length === 0) return [];
 
-  const sections = loadKnowledgeSections()
+  const sections = (await loadKnowledgeSections())
     .map((section) => ({ section, score: scoreSection(section, keywords) }))
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score || left.section.relPath.localeCompare(right.section.relPath));
@@ -1075,10 +1093,10 @@ function buildSnapshot(item, issueComments, pullRequestReviews, details) {
   return `${sections.join('\n')}\n`;
 }
 
-function writeSnapshot(snapshotDir, item, content) {
-  ensureDir(snapshotDir);
+async function writeSnapshot(snapshotDir, item, content) {
+  await ensureDir(snapshotDir);
   const pathname = snapshotPath(snapshotDir, item);
-  writeFileSync(pathname, content);
+  await writeFile(pathname, content);
   return pathname;
 }
 
@@ -1087,13 +1105,13 @@ function snapshotPath(snapshotDir, item) {
   return join(snapshotDir, `${kind}-${item.number}.md`);
 }
 
-function postIssueComment(repo, number, body) {
+async function postIssueComment(repo, number, body) {
   const payloadFile = join(tmpdir(), `remotelab-github-triage-${process.pid}-${number}.json`);
-  writeFileSync(payloadFile, `${JSON.stringify({ body })}\n`);
+  await writeFile(payloadFile, `${JSON.stringify({ body })}\n`);
   try {
-    return runGhJson(['api', '-X', 'POST', `repos/${repo}/issues/${number}/comments`, '--input', payloadFile]);
+    return await runGhJson(['api', '-X', 'POST', `repos/${repo}/issues/${number}/comments`, '--input', payloadFile]);
   } finally {
-    try { unlinkSync(payloadFile); } catch {}
+    await unlink(payloadFile).catch(() => {});
   }
 }
 
@@ -1405,7 +1423,7 @@ async function reconcilePendingItem(options, itemState, cookie) {
     };
   }
 
-  const existingComment = findPublishedComment(fetchIssueComments(options.repo, itemState.number), automation.requestId);
+  const existingComment = findPublishedComment(await fetchIssueComments(options.repo, itemState.number), automation.requestId);
   if (existingComment) {
     return {
       automation: {
@@ -1421,7 +1439,7 @@ async function reconcilePendingItem(options, itemState, cookie) {
     };
   }
 
-  const comment = postIssueComment(options.repo, itemState.number, renderPostedComment(replyBody, automation.requestId));
+  const comment = await postIssueComment(options.repo, itemState.number, renderPostedComment(replyBody, automation.requestId));
   return {
     automation: {
       ...readyAutomation,
@@ -1509,13 +1527,13 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   options.chatBaseUrl = normalizeBaseUrl(options.chatBaseUrl);
   const paths = resolvePaths(options.repo, options);
-  const state = readJson(paths.stateFile, { repo: options.repo, maintainers: [], lastPollAt: null, items: {} });
+  const state = await readJson(paths.stateFile, { repo: options.repo, maintainers: [], lastPollAt: null, items: {} });
   if (!state.items || typeof state.items !== 'object') state.items = {};
-  const maintainers = normalizeMaintainers(options.maintainers || (Array.isArray(state.maintainers) ? state.maintainers.join(',') : ''));
+  const maintainers = await normalizeMaintainers(options.maintainers || (Array.isArray(state.maintainers) ? state.maintainers.join(',') : ''));
   const maintainersLookup = maintainerSet(maintainers);
   const runStartedAt = new Date().toISOString();
   const sinceIso = overlapSince(state.lastPollAt) || new Date(Date.now() - options.bootstrapHours * 60 * 60 * 1000).toISOString();
-  const items = fetchItems(options.repo, sinceIso, options.limit, options.onlyNumbers);
+  const items = await fetchItems(options.repo, sinceIso, options.limit, options.onlyNumbers);
   const scopeLabel = options.onlyNumbers.length > 0 ? ` only=${options.onlyNumbers.join(',')}` : '';
 
   console.log(`[triage] repo=${options.repo} mode=${options.post ? 'post' : 'dry-run'} since=${sinceIso} items=${items.length}${scopeLabel}`);
@@ -1524,7 +1542,7 @@ async function main() {
   let cookiePromise = null;
   const getCookie = async () => {
     if (!cookiePromise) {
-      cookiePromise = (async () => loginWithToken(options.chatBaseUrl, readOwnerToken()))();
+      cookiePromise = (async () => loginWithToken(options.chatBaseUrl, await readOwnerToken()))();
     }
     try {
       return await cookiePromise;
@@ -1539,8 +1557,8 @@ async function main() {
   for (const item of items) {
     const kind = item.pull_request ? 'pr' : 'issue';
     try {
-      const issueComments = fetchIssueComments(options.repo, item.number).slice(-options.maxComments);
-      const pullRequestReviews = item.pull_request ? fetchPullRequestReviews(options.repo, item.number) : [];
+      const issueComments = (await fetchIssueComments(options.repo, item.number)).slice(-options.maxComments);
+      const pullRequestReviews = item.pull_request ? await fetchPullRequestReviews(options.repo, item.number) : [];
       const events = collectEvents(item, issueComments, pullRequestReviews, maintainersLookup);
       const latestExternalActivity = latestEvent(events, (event) => event.external);
       const latestMaintainerActivity = latestEvent(events, (event) => !event.external && event.source !== 'opened');
@@ -1569,7 +1587,7 @@ async function main() {
       );
       const threadText = [item.body || '', issueComments.map((comment) => comment.body || '').join('\n')].join('\n');
       const classification = classifyThread(item, threadText);
-      const relevantContext = findRelevantContext(item, issueComments, latestExternalActivity);
+      const relevantContext = await findRelevantContext(item, issueComments, latestExternalActivity);
       const existingState = state.items[String(item.number)] || {};
       let automation = existingState.automation && typeof existingState.automation === 'object'
         ? { ...existingState.automation }
@@ -1595,7 +1613,7 @@ async function main() {
         replyBody: trimString(automation?.replyBody),
         automation,
       };
-      const snapshotFile = writeSnapshot(
+      const snapshotFile = await writeSnapshot(
         paths.snapshotDir,
         item,
         buildSnapshot(item, issueComments, pullRequestReviews, preSnapshotDetails),
@@ -1648,7 +1666,7 @@ async function main() {
         replyBody: trimString(automation?.replyBody),
         automation,
       });
-      writeSnapshot(paths.snapshotDir, item, snapshotContent);
+      await writeSnapshot(paths.snapshotDir, item, snapshotContent);
 
       state.items[String(item.number)] = {
         ...existingState,
@@ -1706,7 +1724,7 @@ async function main() {
     state.maintainers = maintainers;
     state.lastPollAt = runStartedAt;
   }
-  writeJson(paths.stateFile, state);
+  await writeJson(paths.stateFile, state);
 
   const results = Array.from(resultMap.values());
   const postedCount = results.filter((entry) => entry.action?.mode === 'posted').length;

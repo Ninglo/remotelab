@@ -101,6 +101,8 @@ async function dispatchAction(msg) {
             name: msg.name || "",
             sourceId: msg.sourceId || "",
             sourceName: msg.sourceName || "",
+            templateId: msg.templateId || "",
+            templateName: msg.templateName || "",
           }),
         });
         if (data.session) {

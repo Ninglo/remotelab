@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4f1ea" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#11141b" media="(prefers-color-scheme: dark)">
+  <title>RemoteLab Admin</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f1ea;
+      --surface: rgba(255, 255, 255, 0.84);
+      --surface-strong: rgba(255, 255, 255, 0.94);
+      --surface-muted: rgba(245, 239, 230, 0.82);
+      --border: rgba(24, 28, 38, 0.08);
+      --border-strong: rgba(24, 28, 38, 0.14);
+      --text: #151922;
+      --text-muted: #616875;
+      --text-soft: #8d94a0;
+      --accent: #1b2433;
+      --accent-fg: #f8f6f0;
+      --danger: #bf3f34;
+      --danger-bg: rgba(191, 63, 52, 0.1);
+      --info: #315da8;
+      --radius-xl: 30px;
+      --radius-lg: 22px;
+      --radius-md: 18px;
+      --radius-sm: 12px;
+      --shadow: 0 28px 70px -42px rgba(28, 34, 47, 0.32);
+      --font-sans: "SF Pro Display", "SF Pro Text", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", "Menlo", ui-monospace, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --bg: #11141b;
+        --surface: rgba(22, 26, 37, 0.84);
+        --surface-strong: rgba(26, 31, 44, 0.94);
+        --surface-muted: rgba(19, 24, 35, 0.9);
+        --border: rgba(203, 214, 228, 0.09);
+        --border-strong: rgba(203, 214, 228, 0.16);
+        --text: #edf1f7;
+        --text-muted: #a9b0be;
+        --text-soft: #7f8796;
+        --accent: #edf1f7;
+        --accent-fg: #11141b;
+        --danger: #ef8a7e;
+        --danger-bg: rgba(239, 138, 126, 0.12);
+        --shadow: 0 30px 86px -44px rgba(0, 0, 0, 0.62);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      font-family: var(--font-sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(111, 139, 177, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(216, 191, 145, 0.16), transparent 28%),
+        var(--bg);
+      display: grid;
+      place-items: center;
+      padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+               max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 22px 22px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 85%);
+      opacity: 0.22;
+    }
+
+    a, button, input { font: inherit; }
+    button, input { -webkit-tap-highlight-color: transparent; }
+    .hidden { display: none !important; }
+
+    .shell {
+      width: min(1040px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 460px);
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .panel {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-xl);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .panel::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    }
+
+    .cover {
+      padding: 28px;
+      background:
+        radial-gradient(circle at top right, rgba(90, 129, 196, 0.12), transparent 36%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 28%),
+        var(--surface);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 560px;
+    }
+    .eyebrow {
+      margin: 0;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    .cover h1 {
+      margin: 16px 0 0;
+      max-width: 11ch;
+      font-size: clamp(2.3rem, 6vw, 4.6rem);
+      line-height: 0.94;
+      letter-spacing: -0.065em;
+      text-wrap: balance;
+    }
+    .cover p {
+      margin: 14px 0 0;
+      max-width: 44ch;
+      font-size: 15px;
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+    .cover-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 28px;
+    }
+    .cover-metric {
+      padding: 16px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+    }
+    .cover-metric strong {
+      display: block;
+      font-size: 1.6rem;
+      line-height: 1;
+      letter-spacing: -0.05em;
+    }
+    .cover-metric span {
+      display: block;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .cover-footnote {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .auth {
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 560px;
+    }
+    .auth h2 {
+      margin: 10px 0 0;
+      font-size: 2rem;
+      line-height: 1;
+      letter-spacing: -0.06em;
+    }
+    .auth-copy {
+      margin: 12px 0 0;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .mode-toggle {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding: 8px;
+      margin-top: 26px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface-muted);
+    }
+    .mode-btn {
+      min-height: 42px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition:
+        transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        background 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+        color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .mode-btn:hover {
+      transform: translateY(-1px);
+      color: var(--text);
+    }
+    .mode-btn.is-active {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+      box-shadow: 0 12px 26px -18px color-mix(in srgb, var(--accent) 70%, black 12%);
+    }
+
+    .error {
+      margin-top: 18px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      border: 1px solid color-mix(in srgb, var(--danger) 26%, transparent);
+      background: color-mix(in srgb, var(--danger-bg) 92%, var(--surface-strong));
+      color: var(--danger);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    form {
+      margin-top: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-soft);
+    }
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      min-height: 52px;
+      padding: 0 15px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    }
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      border-color: color-mix(in srgb, var(--info) 56%, var(--border-strong));
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--info) 12%, transparent);
+    }
+    .mono { font-family: var(--font-mono); font-size: 13px; }
+    .helper {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .submit {
+      margin-top: 6px;
+      min-height: 50px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, var(--accent) 74%, transparent);
+      background: var(--accent);
+      color: var(--accent-fg);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition:
+        transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+        background 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+        box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 16px 34px -20px color-mix(in srgb, var(--accent) 72%, black 12%);
+    }
+    .submit:hover {
+      transform: translateY(-1px);
+      background: color-mix(in srgb, var(--accent) 92%, white 8%);
+    }
+    .submit:active { transform: translateY(1px) scale(0.985); }
+
+    .auth-footnote {
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    @media (max-width: 860px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+      .auth { order: 1; }
+      .cover { order: 2; }
+      .cover,
+      .auth {
+        min-height: 0;
+      }
+      .cover-metrics {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .cover,
+      .auth {
+        padding: 20px;
+      }
+      .cover h1 {
+        max-width: 100%;
+        font-size: clamp(2.1rem, 13vw, 3.2rem);
+      }
+      .cover-metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="panel cover">
+      <div>
+        <p class="eyebrow">admin access</p>
+        <h1>Control the full RemoteLab instance pool.</h1>
+        <p>
+          Sign in to create new instances, inspect route health, and clean up stale capacity without dropping into a terminal.
+        </p>
+      </div>
+
+      <div>
+        <div class="cover-metrics">
+          <div class="cover-metric">
+            <strong>One</strong>
+            <span>entry point for creation, health checks, and cleanup.</span>
+          </div>
+          <div class="cover-metric">
+            <strong>Three</strong>
+            <span>route types surfaced per instance: CF, CN, and LAN.</span>
+          </div>
+          <div class="cover-metric">
+            <strong>Fast</strong>
+            <span>cached overview for scanning large fleets on phone or desktop.</span>
+          </div>
+        </div>
+        <div class="cover-footnote">
+          Use the same owner credentials or access token already configured for this machine.
+        </div>
+      </div>
+    </section>
+
+    <section class="panel auth">
+      <div>
+        <p class="eyebrow">remote sign-in</p>
+        <h2>RemoteLab Admin</h2>
+        <p class="auth-copy">Choose the fastest sign-in path for the current device.</p>
+      </div>
+
+      <div class="mode-toggle" role="tablist" aria-label="Sign-in mode">
+        <button class="mode-btn is-active" type="button" id="btn-mode-password" aria-pressed="true">Password</button>
+        <button class="mode-btn" type="button" id="btn-mode-token" aria-pressed="false">Access token</button>
+      </div>
+
+      <div class="error {{ERROR_CLASS}}">Invalid credentials. Please try again.</div>
+
+      <form id="pw-form" method="POST" action="login">
+        <input type="hidden" name="type" value="password">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" placeholder="Enter username" autocomplete="username" autocorrect="off" autocapitalize="none">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="current-password">
+        </div>
+        <button class="submit" type="submit">Continue</button>
+      </form>
+
+      <form id="token-form" class="hidden" method="POST" action="login">
+        <input type="hidden" name="type" value="token">
+        <div class="field">
+          <label for="token">Access token</label>
+          <input type="text" id="token" name="token" class="mono" placeholder="Paste access token" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+          <p class="helper">Useful on mobile when typing a password is slower than pasting a tokenized link or saved token.</p>
+        </div>
+        <button class="submit" type="submit">Continue</button>
+      </form>
+
+      <p class="auth-footnote">Sessions stay signed in for a limited window and can be revoked by logging out.</p>
+    </section>
+  </main>
+
+  <script>
+    (function() {
+      var passwordForm = document.getElementById('pw-form');
+      var tokenForm = document.getElementById('token-form');
+      var passwordBtn = document.getElementById('btn-mode-password');
+      var tokenBtn = document.getElementById('btn-mode-token');
+      var usePassword = true;
+
+      function syncMode() {
+        passwordForm.classList.toggle('hidden', !usePassword);
+        tokenForm.classList.toggle('hidden', usePassword);
+        passwordBtn.classList.toggle('is-active', usePassword);
+        tokenBtn.classList.toggle('is-active', !usePassword);
+        passwordBtn.setAttribute('aria-pressed', usePassword ? 'true' : 'false');
+        tokenBtn.setAttribute('aria-pressed', !usePassword ? 'true' : 'false');
+      }
+
+      passwordBtn.addEventListener('click', function() {
+        usePassword = true;
+        syncMode();
+      });
+
+      tokenBtn.addEventListener('click', function() {
+        usePassword = false;
+        syncMode();
+      });
+
+      syncMode();
+    })();
+  </script>
+</body>
+</html>

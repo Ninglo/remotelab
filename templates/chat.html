@@ -31,9 +31,6 @@
     <span class="header-action-icon" data-icon="share" aria-hidden="true"></span>
     <span class="header-action-label" data-i18n="action.share">Share</span>
   </button>
-  <button class="header-share-btn theme-toggle-btn" id="themeToggleBtn" type="button" title="Theme mode: auto" aria-label="Theme mode: auto">
-    <span class="theme-toggle-label" id="themeToggleLabel">Auto</span>
-  </button>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText" data-i18n="{{STATUS_I18N_KEY}}">{{STATUS_TEXT}}</span>
@@ -49,34 +46,54 @@
       </div>
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" id="tabSessions" data-i18n="nav.sessions">Sessions</button>
+        <button class="sidebar-tab" id="tabAgents" data-i18n="nav.agents">Agent</button>
         <button class="sidebar-tab" id="tabSettings" data-i18n="nav.settings">Settings</button>
+      </div>
+      <div class="sidebar-search" id="sidebarSearch">
+        <input class="sidebar-search-input" id="sessionSearchInput" type="search" placeholder="Search sessions…" autocomplete="off" data-i18n-placeholder="sidebar.search.placeholder" />
+      </div>
+      <div class="sidebar-view-switcher" id="sidebarViewSwitcher">
+        <button class="view-switch-btn active" id="viewInbox" data-view="inbox" data-i18n="sidebar.view.inbox">Inbox</button>
+        <button class="view-switch-btn" id="viewProjects" data-view="projects" data-i18n="sidebar.view.projects">Projects</button>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
       <div class="sidebar-filters" id="sidebarFilters">
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
       </div>
+      <div class="settings-panel" id="agentsPanel">
+        <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.apps.title">Agents</div>
+          <div class="settings-app-actions">
+            <button class="settings-app-btn" id="createAgentBtn" type="button" data-i18n="settings.apps.create">Create Agent</button>
+          </div>
+          <div class="settings-apps-list" id="settingsAgentsList">
+            <div class="settings-app-empty" data-i18n="settings.apps.loading">Loading agents…</div>
+          </div>
+        </div>
+      </div>
       <div class="settings-panel" id="settingsPanel">
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
-          <div class="settings-section-note" data-i18n="settings.language.note">Auto follows the current browser language. You can override it here for debugging or to keep this browser on a fixed UI language.</div>
           <div class="settings-inline-form">
             <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ownerAriaLabel"></select>
-            <div class="settings-app-empty inline-status" id="uiLanguageStatus" data-i18n="settings.language.ownerStatusAuto">Auto is active. This browser follows its current language until you save an override here.</div>
           </div>
         </div>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.theme.title">Theme</div>
-          <div class="settings-section-note" data-i18n="settings.theme.note">Choose the chat color palette. Default keeps the current system light or dark appearance; Amber applies a warm light palette without changing layout.</div>
           <div class="settings-inline-form">
             <select class="settings-inline-select" id="uiThemeSelect" aria-label="Choose chat theme" data-i18n-aria-label="settings.theme.ariaLabel"></select>
-            <div class="settings-app-empty inline-status" id="uiThemeStatus" data-i18n="settings.theme.statusSystem">Default is active. The chat follows the current system light or dark appearance.</div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.thinkingBlocks.title">Thinking</div>
+          <div class="settings-inline-form">
+            <select class="settings-inline-select" id="thinkingBlockDisplaySelect" aria-label="Choose how thinking blocks open" data-i18n-aria-label="settings.thinkingBlocks.ariaLabel"></select>
           </div>
         </div>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.sessionPresentation.title">Session opening</div>
-          <div class="settings-section-note" data-i18n="settings.sessionPresentation.note">Internal-only display control for the selected session. Use top-down reading for welcome or example sessions, and keep normal work on the latest turn.</div>
           <div class="settings-apps-list" id="settingsSessionPresentationList">
-            <div class="settings-app-empty" data-i18n="settings.sessionPresentation.noSession">Select a session first, then choose how it should open.</div>
+            <div class="settings-app-empty" data-i18n="settings.sessionPresentation.noSession">Select a session to set how it opens.</div>
           </div>
         </div>
       </div>
@@ -117,6 +134,7 @@
               <span class="img-btn-icon" data-icon="attach" aria-hidden="true"></span>
               <span class="img-btn-label" data-i18n="action.upload">Upload</span>
             </button>
+            <select class="tool-select" id="inlineAgentSelect" disabled title="Choose agent for the next session" aria-label="Choose agent for the next session" data-i18n-title="compose.agent.title" data-i18n-aria-label="compose.agent.ariaLabel"></select>
             <select class="tool-select" id="inlineToolSelect" disabled></select>
             <select class="model-select" id="inlineModelSelect" disabled></select>
             <button class="thinking-toggle" id="thinkingToggle" disabled data-i18n="tooling.thinking">Thinking</button>
@@ -165,7 +183,7 @@
             <button class="modal-btn primary" id="saveToolConfigBtn" type="button" data-i18n="modal.saveRefresh">Save &amp; refresh</button>
           </div>
         <p data-i18n="modal.quickAddBody">
-          Use this for wrappers or simple command-based agents that speak an existing runtime family and accept that family's core prompt/model/thinking flags. We save the config for you and refresh the picker without restarting the service.
+          Use this for wrappers or simple command-based agents that speak an existing runtime family and accept that family's core prompt/model/reasoning flags. We save the config for you and refresh the picker without restarting the service.
         </p>
         <div class="provider-helper-grid">
           <div class="provider-helper-field">
@@ -206,7 +224,7 @@
             <div class="provider-helper-note" data-i18n="modal.internalIdentityNote">Derived automatically from the command. No separate ID field in simple mode.</div>
           </div>
         </div>
-        <div class="provider-helper-note" data-i18n="modal.thinkingModeNote">Use `none` if the tool has no model-side thinking control. For Claude-family tools, use `toggle`; for Codex-family tools, use `levels`. If the command needs different CLI flags, use the advanced path below.</div>
+        <div class="provider-helper-note" data-i18n="modal.thinkingModeNote">Use `none` if the tool has no model-side reasoning control. For Claude-family tools, use `toggle`; for Codex-family tools, use `levels`. If the command needs different CLI flags, use the advanced path below.</div>
         <div class="provider-helper-status" id="addToolStatus"></div>
       </div>
 
@@ -256,7 +274,6 @@
 <script src="/chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/theme-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="/chat/init.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 </body>
 </html>

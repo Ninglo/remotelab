@@ -27,18 +27,18 @@ function isDispatchEnabled() {
 }
 
 /**
- * Quick keyword pre-check: does the message text match any App's trigger keywords?
- * Returns the matched App or null. Used as a fast path before the LLM classifier.
+ * Quick keyword pre-check: does the message text match any Agent's trigger keywords?
+ * Returns the matched Agent or null. Used as a fast path before the LLM classifier.
  */
-function matchAppByTriggers(message, apps) {
-  if (!message || !apps?.length) return null;
+function matchAgentByTriggers(message, agents) {
+  if (!message || !agents?.length) return null;
   const lowerMessage = message.toLowerCase();
-  for (const app of apps) {
-    const triggers = app.scopeHints?.triggers;
+  for (const agent of agents) {
+    const triggers = agent.scopeHints?.triggers;
     if (!Array.isArray(triggers) || triggers.length === 0) continue;
     for (const trigger of triggers) {
       if (trigger && lowerMessage.includes(trigger.toLowerCase())) {
-        return app;
+        return agent;
       }
     }
   }
@@ -65,7 +65,7 @@ export function shouldRunDispatch(session, options = {}) {
  * @param {object} params.session - Current session metadata
  * @param {string} params.message - Incoming user message text
  * @param {Function} params.listSessions - Async function returning active sessions
- * @param {Function} params.listApps - Async function returning available apps
+ * @param {Function} params.listAgents - Async function returning available agents
  * @param {Function} params.runPrompt - Async function to run a one-shot LLM prompt
  * @returns {Promise<object>} Dispatch decision
  */
@@ -73,7 +73,7 @@ export async function classifyDispatch({
   session,
   message,
   listSessions,
-  listApps,
+  listAgents,
   runPrompt,
 }) {
   const defaultDecision = { action: 'continue', confidence: 1, reason: 'default' };
@@ -90,23 +90,23 @@ export async function classifyDispatch({
   }
 
   let recentSessions = [];
-  let availableApps = [];
+  let availableAgents = [];
 
   try {
-    [recentSessions, availableApps] = await Promise.all([
+    [recentSessions, availableAgents] = await Promise.all([
       listSessions(),
-      listApps(),
+      listAgents(),
     ]);
   } catch (error) {
     console.error(`[session-dispatch] Failed to load context: ${error.message}`);
     return defaultDecision;
   }
 
-  // Quick keyword match against App triggers
-  const triggerMatch = matchAppByTriggers(trimmedMessage, availableApps);
+  // Quick keyword match against Agent triggers
+  const triggerMatch = matchAgentByTriggers(trimmedMessage, availableAgents);
 
-  // If the current session already belongs to the matched App, no routing needed
-  if (triggerMatch && session.sourceId === triggerMatch.id) {
+  // If the current session already belongs to the matched Agent, no routing needed
+  if (triggerMatch && session.templateId === triggerMatch.id) {
     return defaultDecision;
   }
 
@@ -115,7 +115,7 @@ export async function classifyDispatch({
     currentSession: session,
     message: trimmedMessage,
     recentSessions,
-    availableApps,
+    availableAgents,
   });
 
   let rawResponse = '';
@@ -146,9 +146,9 @@ export async function classifyDispatch({
     }
   }
 
-  // Inject trigger-matched App if classifier didn't suggest one
-  if (triggerMatch && !decision.targetAppId) {
-    decision.targetAppId = triggerMatch.id;
+  // Inject trigger-matched Agent if classifier didn't suggest one
+  if (triggerMatch && !decision.targetAgentId) {
+    decision.targetAgentId = triggerMatch.id;
   }
 
   console.log(
@@ -170,7 +170,7 @@ export async function classifyDispatch({
  * @param {Function} params.createSession - Async fn to create a new session
  * @param {Function} params.submitMessage - Async fn to submit message to a session
  * @param {Function} params.getSession - Async fn to get session metadata
- * @param {Function} params.getApp - Async fn to get app by id
+ * @param {Function} params.getAgent - Async fn to get agent by id
  * @param {Function} params.appendEvent - Async fn to append event to session
  * @param {Function} params.broadcastInvalidation - Fn to broadcast session invalidation
  * @param {Function} params.messageEvent - Fn to create a message event
@@ -188,7 +188,7 @@ export async function executeDispatchRouting({
   createSession,
   submitMessage,
   getSession,
-  getApp,
+  getAgent,
   appendEvent,
   broadcastInvalidation,
   messageEvent,
@@ -196,7 +196,7 @@ export async function executeDispatchRouting({
   contextOperationEvent,
   buildSessionNavigationHref,
 }) {
-  const targetAppId = decision.targetAppId || '';
+  const targetAgentId = decision.targetAgentId || '';
   let targetSessionId = decision.targetSessionId || '';
   let targetSession = null;
 
@@ -210,20 +210,20 @@ export async function executeDispatchRouting({
   }
 
   if (decision.action === 'route_new') {
-    // Resolve target App for defaults
-    let app = null;
-    if (targetAppId) {
-      app = await getApp(targetAppId);
+    // Resolve target Agent for defaults
+    let agent = null;
+    if (targetAgentId) {
+      agent = await getAgent(targetAgentId);
     }
 
-    // Create new session with App defaults
+    // Create new session with Agent defaults while leaving source untouched.
     targetSession = await createSession(
-      app?.tool || '',
+      agent?.tool || '',
       '',  // name will be auto-generated
       {
-        sourceId: targetAppId || '',
-        sourceName: app?.name || '',
-        systemPrompt: app?.systemPrompt || '',
+        templateId: targetAgentId || '',
+        templateName: agent?.name || '',
+        systemPrompt: agent?.systemPrompt || '',
       },
     );
 

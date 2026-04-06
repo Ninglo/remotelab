@@ -55,7 +55,7 @@ process.env.HOME = tempHome;
 const { getAvailableTools } = await import(pathToFileURL(join(repoRoot, 'lib', 'tools.mjs')).href);
 
 try {
-  const tools = getAvailableTools();
+  const tools = await getAvailableTools();
   const reviewHelper = tools.find((tool) => tool.id === 'review-helper');
   const skippedHelper = tools.find((tool) => tool.id === 'skipped-helper');
 

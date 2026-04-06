@@ -1,6 +1,6 @@
 # Remote Capability Monitor
 
-The remote capability monitor is a recurring RemoteLab automation App that scouts the remote-control coding-agent space and feeds the result back into a reviewable RemoteLab session.
+The remote capability monitor is a recurring RemoteLab automation Agent that scouts the remote-control coding-agent space and feeds the result back into a reviewable RemoteLab session.
 
 It is meant to answer a focused question continuously:
 
@@ -33,16 +33,16 @@ The intended flow is:
 
 1. fetch and score source updates
 2. write a local report and JSON summary
-3. create or reuse a stable RemoteLab review session under an automation App
+3. create or reuse a stable RemoteLab review session under an automation Agent
 4. submit the digest into that session
 5. let the AI produce the review/proposal inside RemoteLab
 6. optionally notify the owner with a deep link into that session
 
 That makes the real review surface a normal RemoteLab session instead of an external dashboard.
 
-## App pattern
+## Agent pattern
 
-A good monitor rollout uses a dedicated App, for example `Agent Radar`, with:
+A good monitor rollout uses a dedicated Agent, for example `Agent Radar`, with:
 
 - a system prompt focused on competitive/product judgment
 - a stable session identity via `externalTriggerId`
@@ -67,7 +67,7 @@ Machine-local setup stays outside the repo:
 - notifier channels
 - scheduler setup
 - auth/token files
-- concrete App/session IDs for that machine
+- concrete Agent/session IDs for that machine
 
 ## Local config shape
 
@@ -86,7 +86,7 @@ Typical local config includes:
     "authFile": "~/.config/remotelab/auth.json",
     "sessionFolder": "~/code/remotelab",
     "session": {
-      "appId": "app_...",
+      "agentId": "app_...",
       "externalTriggerId": "automation:agent-radar:remote-capability-scout"
     }
   },

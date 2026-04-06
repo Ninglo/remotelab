@@ -19,6 +19,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function waitFor(predicate, description, timeoutMs = 10000, intervalMs = 100) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -64,7 +68,7 @@ async function resolveEventContent(port, sessionId, event, extraHeaders = {}) {
   return bodyResponse.json?.body?.value || '';
 }
 
-function setupTempHome({ preseedArchivedBasicChat = false } = {}) {
+function setupTempHome({ preseedArchivedBasicChat = false, cloudflaredPort = 0, publicHostname = '' } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'remotelab-owner-welcome-'));
   const configDir = join(home, '.config', 'remotelab');
   const localBin = join(home, '.local', 'bin');
@@ -102,7 +106,7 @@ function setupTempHome({ preseedArchivedBasicChat = false } = {}) {
         command: 'fake-codex',
         runtimeFamily: 'codex-json',
         models: [{ id: 'fake-model', label: 'Fake model', defaultEffort: 'low' }],
-        reasoning: { kind: 'enum', label: 'Reasoning', levels: ['low'], default: 'low' },
+        reasoning: { kind: 'enum', label: 'Thinking', levels: ['low'], default: 'low' },
       },
     ], null, 2),
     'utf8',
@@ -134,6 +138,16 @@ function setupTempHome({ preseedArchivedBasicChat = false } = {}) {
     );
   }
 
+  if (publicHostname && Number.isInteger(cloudflaredPort) && cloudflaredPort > 0) {
+    const cloudflaredDir = join(home, '.cloudflared');
+    mkdirSync(cloudflaredDir, { recursive: true });
+    writeFileSync(
+      join(cloudflaredDir, 'config.yml'),
+      `tunnel: owner-test\n\ningress:\n  - hostname: ${publicHostname}\n    service: http://127.0.0.1:${cloudflaredPort}\n  - service: http_status:404\n`,
+      'utf8',
+    );
+  }
+
   return { home };
 }
 
@@ -144,6 +158,7 @@ async function startServer({ home, port }) {
       ...process.env,
       HOME: home,
       CHAT_PORT: String(port),
+      REMOTELAB_PUBLIC_BASE_URL: '',
       SECURE_COOKIES: '0',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -170,19 +185,27 @@ async function stopServer(child) {
   await waitFor(() => child.exitCode !== null, 'server shutdown');
 }
 
-async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
-  const list = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
-  assert.equal(list.status, 200, 'owner session list should load');
-  assert.equal(list.json?.archivedCount, archivedCount, 'archived count should be preserved');
-  assert.equal((list.json?.sessions || []).length, 4, 'starter owner session set should include welcome plus three verified showcases');
-
-  const sessionNames = (list.json?.sessions || []).map((session) => session.name);
-  assert.deepEqual(sessionNames, [
+async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostname = '' } = {}) {
+  publicHostname = publicHostname.trim();
+  const expectCalendarGuide = !!publicHostname;
+  const expectedSessionNames = [
     'Welcome',
     '[示例] 上传一份表格，我把清洗后的文件回给你',
     '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
     '[示例] 发一封邮件到这个实例，会自动开一个新会话',
-  ], 'starter sessions should appear in the intended sidebar order');
+    ...(expectCalendarGuide ? ['[引导] 订阅日历，接收 AI 创建的日程事件'] : []),
+  ];
+  const list = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
+  assert.equal(list.status, 200, 'owner session list should load');
+  assert.equal(list.json?.archivedCount, archivedCount, 'archived count should be preserved');
+  assert.equal(
+    (list.json?.sessions || []).length,
+    expectedSessionNames.length,
+    'starter owner session set should include the expected bootstrap sessions',
+  );
+
+  const sessionNames = (list.json?.sessions || []).map((session) => session.name);
+  assert.deepEqual(sessionNames, expectedSessionNames, 'starter sessions should appear in the intended sidebar order');
 
   for (const [index, session] of (list.json?.sessions || []).entries()) {
     assert.equal(session.pinned, true, 'starter sessions should be pinned for discoverability');
@@ -272,19 +295,54 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   assert.match(emailUserContent, /Inbound email\.|真实能力验证邮件|自动进到一个新会话/u, 'email showcase should demonstrate the inbound email transcript shape');
   assert.match(emailAssistantContent, /邮件进来后的实际起点|手动新建聊天/u, 'email showcase should end with the actual session handoff explanation');
 
+  if (expectCalendarGuide) {
+    const calendarGuideSession = list.json?.sessions?.[4];
+    assert.ok(calendarGuideSession?.id, 'calendar guide session should exist when a public base URL is available');
+
+    const calendarGuideEvents = await request(port, 'GET', `/api/sessions/${calendarGuideSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
+    assert.equal(calendarGuideEvents.status, 200, 'calendar guide session events should load');
+    const calendarGuideMessage = (calendarGuideEvents.json?.events || []).find((event) => event.type === 'message' && event.role === 'assistant');
+    assert.ok(calendarGuideMessage, 'calendar guide session should include an assistant message');
+    const calendarGuideContent = await resolveEventContent(port, calendarGuideSession.id, calendarGuideMessage, { Cookie: ownerCookie });
+
+    assert.match(
+      calendarGuideContent,
+      new RegExp(`webcal://${escapeRegex(publicHostname)}/cal/[a-f0-9]+\\.ics`),
+      'calendar guide should expose a public webcal subscription URL',
+    );
+    assert.match(
+      calendarGuideContent,
+      new RegExp(`https://${escapeRegex(publicHostname)}/cal/[a-f0-9]+\\.ics`),
+      'calendar guide should expose a public https subscription URL',
+    );
+    assert.doesNotMatch(
+      calendarGuideContent,
+      /127\.0\.0\.1|localhost/,
+      'calendar guide should never expose localhost subscription links',
+    );
+  }
+
   const secondList = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
   assert.equal(secondList.status, 200, 'owner should be able to reload the session list');
-  assert.equal((secondList.json?.sessions || []).length, 4, 'reloading should not create duplicate starter sessions');
+  assert.equal(
+    (secondList.json?.sessions || []).length,
+    expectedSessionNames.length,
+    'reloading should not create duplicate starter sessions',
+  );
   assert.equal(secondList.json?.sessions?.[0]?.id, welcomeSession.id, 'starter bootstrap should be idempotent for welcome');
 }
 
 async function runScenario(options) {
-  const { home } = setupTempHome(options);
   const port = randomPort();
+  const { home } = setupTempHome({
+    ...options,
+    cloudflaredPort: port,
+  });
   const server = await startServer({ home, port });
   try {
     await assertWelcomeBootstrapped(port, {
       archivedCount: options?.preseedArchivedBasicChat ? 1 : 0,
+      publicHostname: options?.publicHostname || '',
     });
   } finally {
     await stopServer(server);
@@ -294,3 +352,4 @@ async function runScenario(options) {
 
 await runScenario();
 await runScenario({ preseedArchivedBasicChat: true });
+await runScenario({ publicHostname: 'owner.example.com' });

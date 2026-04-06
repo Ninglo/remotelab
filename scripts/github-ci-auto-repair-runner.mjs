@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { access, mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -37,21 +37,30 @@ function expandHomePath(value) {
   return normalized;
 }
 
-function ensureDir(path) {
-  mkdirSync(path, { recursive: true });
+async function pathExists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function readJson(path, fallback) {
+async function ensureDir(path) {
+  await mkdir(path, { recursive: true });
+}
+
+async function readJson(path, fallback) {
   try {
-    return JSON.parse(readFileSync(path, 'utf8'));
+    return JSON.parse(await readFile(path, 'utf8'));
   } catch {
     return fallback;
   }
 }
 
-function writeJson(path, value) {
-  ensureDir(dirname(path));
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+async function writeJson(path, value) {
+  await ensureDir(dirname(path));
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function nowIso() {
@@ -189,23 +198,23 @@ function lockInfoPath(lockDir) {
   return join(lockDir, 'owner.json');
 }
 
-function acquireLock(lockDir) {
+async function acquireLock(lockDir) {
   try {
-    mkdirSync(lockDir, { recursive: false });
+    await mkdir(lockDir, { recursive: false });
     const info = {
       pid: process.pid,
       startedAt: nowIso(),
     };
-    writeJson(lockInfoPath(lockDir), info);
+    await writeJson(lockInfoPath(lockDir), info);
     return {
       acquired: true,
-      release() {
-        rmSync(lockDir, { recursive: true, force: true });
+      async release() {
+        await rm(lockDir, { recursive: true, force: true });
       },
     };
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
-    const existing = readJson(lockInfoPath(lockDir), {});
+    const existing = await readJson(lockInfoPath(lockDir), {});
     const pid = Number.parseInt(String(existing?.pid || ''), 10);
     if (isProcessAlive(pid)) {
       return {
@@ -214,13 +223,13 @@ function acquireLock(lockDir) {
         pid,
       };
     }
-    rmSync(lockDir, { recursive: true, force: true });
+    await rm(lockDir, { recursive: true, force: true });
     return acquireLock(lockDir);
   }
 }
 
-function loadConfig(configPath) {
-  const raw = readJson(configPath, null);
+async function loadConfig(configPath) {
+  const raw = await readJson(configPath, null);
   if (!raw || typeof raw !== 'object') {
     throw new Error(`Failed to load CI auto-repair config: ${configPath}`);
   }
@@ -241,7 +250,7 @@ export async function runGithubCiAutoRepairRunner(argv = []) {
     return 0;
   }
 
-  const config = loadConfig(options.configPath);
+  const config = await loadConfig(options.configPath);
   const configDir = dirname(options.configPath);
   const lockDir = join(configDir, 'run.lock');
   const lastRunPath = join(configDir, 'last-run.json');
@@ -256,12 +265,12 @@ export async function runGithubCiAutoRepairRunner(argv = []) {
       configPath: options.configPath,
       finishedAt: nowIso(),
     });
-    writeJson(lastRunPath, summary);
+    await writeJson(lastRunPath, summary);
     if (options.json) console.log(JSON.stringify(summary, null, 2));
     return summary;
   }
 
-  const lock = acquireLock(lockDir);
+  const lock = await acquireLock(lockDir);
   if (!lock.acquired) {
     const summary = buildRunnerSummary({
       status: 'skipped',
@@ -270,7 +279,7 @@ export async function runGithubCiAutoRepairRunner(argv = []) {
       configPath: options.configPath,
       finishedAt: nowIso(),
     });
-    writeJson(lastRunPath, summary);
+    await writeJson(lastRunPath, summary);
     if (options.json) console.log(JSON.stringify(summary, null, 2));
     return summary;
   }
@@ -285,7 +294,7 @@ export async function runGithubCiAutoRepairRunner(argv = []) {
       configPath: options.configPath,
       monitor: summary,
     });
-    writeJson(lastRunPath, finalSummary);
+    await writeJson(lastRunPath, finalSummary);
     if (options.json) console.log(JSON.stringify(finalSummary, null, 2));
     return finalSummary;
   } catch (error) {
@@ -295,10 +304,10 @@ export async function runGithubCiAutoRepairRunner(argv = []) {
       finishedAt: nowIso(),
       error: error?.stack || error?.message || String(error),
     });
-    writeJson(lastRunPath, failedSummary);
+    await writeJson(lastRunPath, failedSummary);
     throw error;
   } finally {
-    lock.release();
+    await lock.release();
   }
 }
 

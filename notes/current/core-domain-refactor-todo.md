@@ -9,11 +9,12 @@
 > - `notes/current/core-domain-implementation-mapping.md`
 > - `notes/current/core-domain-session-prompts.md`
 > - `notes/current/session-first-product-contraction.md`
+> - `notes/current/interactive-agent-share-architecture.md` for interactive Agent share work
 >
 > This note is intentionally action-oriented.
 > It does not redefine the product model; it decomposes the work needed to move the codebase toward that model.
 
-> Update 2026-03-26: the current product simplification pass explicitly reopens part of the older app/principal-heavy direction. For near-term product-facing work, read this note together with `notes/current/session-first-product-contraction.md` and let the contraction note win when the two disagree.
+> Update 2026-03-26: the current product simplification pass explicitly reopens part of the older app/principal-heavy direction. For near-term product-facing work, read this note together with `notes/current/session-first-product-contraction.md` and let the contraction note win when the two disagree, except for interactive Agent share where `notes/current/interactive-agent-share-architecture.md` now governs.
 
 ---
 

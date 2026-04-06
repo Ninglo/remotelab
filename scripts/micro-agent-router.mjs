@@ -2,11 +2,18 @@
 
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
+import { estimateGpt54CostUsd, getGpt54PricingMetadata } from '../lib/openai-pricing.mjs';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CODEX_MODEL = 'gpt-5.4';
 const DEFAULT_CLAUDE_MODEL = 'sonnet';
 const CLAUDE_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku']);
 const CLAUDE_MODEL_PREFIXES = ['claude-'];
+const DOUBAO_MODEL_PREFIXES = ['doubao-', 'doubao_'];
+const DOUBAO_MODEL_ALIASES = new Set(['doubao-seed-2.0-pro', 'doubao-seed-2-0-pro', 'doubao-pro']);
+const DOUBAO_FAST_AGENT_SCRIPT = resolve(__dirname, 'doubao-fast-agent.mjs');
 const ALLOWED_CLAUDE_EFFORTS = new Set(['low', 'medium', 'high']);
 
 function trimString(value) {
@@ -99,6 +106,13 @@ function isClaudeModel(model) {
   return CLAUDE_MODEL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+function isDoubaoModel(model) {
+  const normalized = trimString(model).toLowerCase();
+  if (!normalized) return false;
+  if (DOUBAO_MODEL_ALIASES.has(normalized)) return true;
+  return DOUBAO_MODEL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
 function spawnChild(command, args, { onStdoutLine, onStderrLine } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -142,10 +156,17 @@ function emitJsonLine(value) {
 }
 
 function buildClaudeLikeUsage(usage = {}) {
-  return {
+  const result = {
     input_tokens: Number.isFinite(usage.input_tokens) ? usage.input_tokens : 0,
     output_tokens: Number.isFinite(usage.output_tokens) ? usage.output_tokens : 0,
   };
+  if (Number.isFinite(usage.cached_input_tokens)) {
+    result.cached_input_tokens = usage.cached_input_tokens;
+  }
+  if (Number.isFinite(usage.reasoning_output_tokens)) {
+    result.reasoning_output_tokens = usage.reasoning_output_tokens;
+  }
+  return result;
 }
 
 async function runClaudeRoute({ prompt, model, effort }) {
@@ -166,8 +187,28 @@ async function runClaudeRoute({ prompt, model, effort }) {
   process.exitCode = result.code;
 }
 
+async function runDoubaoRoute({ prompt, model, effort }) {
+  const args = [DOUBAO_FAST_AGENT_SCRIPT, '-p', prompt, '--output-format', 'stream-json'];
+  if (trimString(model)) {
+    args.push('--model', model);
+  }
+  if (trimString(effort)) {
+    args.push('--effort', effort);
+  }
+  const result = await spawnChild('node', args, {
+    onStdoutLine: (line) => {
+      if (line) process.stdout.write(`${line}\n`);
+    },
+    onStderrLine: (line) => {
+      if (line) process.stderr.write(`${line}\n`);
+    },
+  });
+  process.exitCode = result.code;
+}
+
 async function runCodexRoute({ prompt, model, effort }) {
   const resolvedModel = trimString(model) || DEFAULT_CODEX_MODEL;
+  const pricingMetadata = getGpt54PricingMetadata();
   const sessionId = randomUUID();
   let sawSystem = false;
   let sawResult = false;
@@ -242,6 +283,12 @@ async function runCodexRoute({ prompt, model, effort }) {
 
       if (parsed.type === 'turn.completed') {
         sawResult = true;
+        const usage = buildClaudeLikeUsage(parsed.usage);
+        const estimatedCostUsd = estimateGpt54CostUsd({
+          inputTokens: usage.input_tokens,
+          cachedInputTokens: usage.cached_input_tokens,
+          outputTokens: usage.output_tokens,
+        });
         emitJsonLine({
           type: 'result',
           subtype: 'success',
@@ -252,12 +299,21 @@ async function runCodexRoute({ prompt, model, effort }) {
           result: lastAssistantText,
           stop_reason: null,
           session_id: sessionId,
-          total_cost_usd: 0,
-          usage: buildClaudeLikeUsage(parsed.usage),
+          usage,
+          ...(Number.isFinite(estimatedCostUsd) ? { estimated_cost_usd: estimatedCostUsd } : {}),
+          estimated_cost_model: pricingMetadata.pricingModel,
+          cost_source: pricingMetadata.costSource,
           modelUsage: {
             [resolvedModel]: {
-              inputTokens: Number.isFinite(parsed.usage?.input_tokens) ? parsed.usage.input_tokens : 0,
-              outputTokens: Number.isFinite(parsed.usage?.output_tokens) ? parsed.usage.output_tokens : 0,
+              inputTokens: usage.input_tokens,
+              outputTokens: usage.output_tokens,
+              ...(Number.isFinite(usage.cached_input_tokens)
+                ? { cachedInputTokens: usage.cached_input_tokens }
+                : {}),
+              ...(Number.isFinite(estimatedCostUsd)
+                ? { estimatedCostUSD: estimatedCostUsd }
+                : {}),
+              pricingModel: pricingMetadata.pricingModel,
             },
           },
           permission_denials: [],
@@ -294,14 +350,16 @@ async function runCodexRoute({ prompt, model, effort }) {
       result: lastAssistantText,
       stop_reason: result.code === 0 ? null : 'error',
       session_id: sessionId,
-      total_cost_usd: 0,
       usage: buildClaudeLikeUsage(),
       modelUsage: {
         [resolvedModel]: {
           inputTokens: 0,
           outputTokens: 0,
+          pricingModel: pricingMetadata.pricingModel,
         },
       },
+      estimated_cost_model: pricingMetadata.pricingModel,
+      cost_source: pricingMetadata.costSource,
       permission_denials: [],
       uuid: randomUUID(),
     });
@@ -322,6 +380,16 @@ async function main() {
         claudeArgs.push('--effort', normalizedEffort.toLowerCase());
       }
       await spawnChild('claude', claudeArgs, {
+        onStdoutLine: (line) => { if (line) process.stdout.write(`${line}\n`); },
+        onStderrLine: (line) => { if (line) process.stderr.write(`${line}\n`); },
+      });
+      return;
+    }
+    if (isDoubaoModel(resolvedModel)) {
+      const doubaoArgs = [DOUBAO_FAST_AGENT_SCRIPT, '-p', args.prompt, '--output-format', 'text'];
+      if (resolvedModel) doubaoArgs.push('--model', resolvedModel);
+      if (normalizedEffort) doubaoArgs.push('--effort', normalizedEffort);
+      await spawnChild('node', doubaoArgs, {
         onStdoutLine: (line) => { if (line) process.stdout.write(`${line}\n`); },
         onStderrLine: (line) => { if (line) process.stderr.write(`${line}\n`); },
       });
@@ -349,6 +417,10 @@ async function main() {
 
   if (isClaudeModel(resolvedModel)) {
     await runClaudeRoute(args);
+    return;
+  }
+  if (isDoubaoModel(resolvedModel)) {
+    await runDoubaoRoute(args);
     return;
   }
   await runCodexRoute(args);

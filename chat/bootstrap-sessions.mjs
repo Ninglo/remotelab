@@ -1,9 +1,10 @@
-import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-import { CHAT_PORT, INSTANCE_ROOT } from '../lib/config.mjs';
+import { CHAT_PORT, INSTANCE_ROOT, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { getFeedInfo } from '../lib/connector-calendar-feed.mjs';
 import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 
 import { BASIC_CHAT_APP_ID, WELCOME_APP_ID, getApp } from './apps.mjs';
@@ -33,10 +34,11 @@ const DIGEST_SHOWCASE_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'ai-coding-agent-d
 const OWNER_BOOTSTRAP_FILE_SHOWCASE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:showcase:file_cleanup';
 const OWNER_BOOTSTRAP_DIGEST_SHOWCASE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:showcase:digest_email_delivery';
 const OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:showcase:instance_email';
+const OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:guide:calendar_subscribe';
 
-function safeReadJson(filePath, fallbackValue = null) {
+async function safeReadJson(filePath, fallbackValue = null) {
   try {
-    return JSON.parse(readFileSync(filePath, 'utf8'));
+    return JSON.parse(await readFile(filePath, 'utf8'));
   } catch {
     return fallbackValue;
   }
@@ -60,16 +62,16 @@ function buildGuestMailboxAddress(instanceName, ownerIdentity) {
   return `${localPart}+${normalizedInstanceName}@${domain}`;
 }
 
-function resolveCurrentMailboxAddress() {
+async function resolveCurrentMailboxAddress() {
   const normalizedPort = Number.parseInt(`${CHAT_PORT || 0}`, 10) || 0;
-  const registry = loadMailboxRuntimeRegistry({ homeDir: homedir() });
+  const registry = await loadMailboxRuntimeRegistry({ homeDir: homedir() });
   const matchedRuntime = registry.find((record) => Number.parseInt(`${record?.port || 0}`, 10) === normalizedPort) || null;
   const runtimeMailboxAddress = typeof matchedRuntime?.mailboxAddress === 'string'
     ? matchedRuntime.mailboxAddress.trim()
     : '';
   if (runtimeMailboxAddress) return runtimeMailboxAddress;
 
-  const ownerIdentity = safeReadJson(join(homedir(), '.config', 'remotelab', 'agent-mailbox', 'identity.json'), null);
+  const ownerIdentity = await safeReadJson(join(homedir(), '.config', 'remotelab', 'agent-mailbox', 'identity.json'), null);
   const guestMailboxAddress = buildGuestMailboxAddress(basename(INSTANCE_ROOT || ''), ownerIdentity);
   if (guestMailboxAddress) return guestMailboxAddress;
   const ownerMailboxAddress = typeof ownerIdentity?.address === 'string' ? ownerIdentity.address.trim() : '';
@@ -129,8 +131,66 @@ function buildDigestShowcaseIntro() {
   ].join('\n\n');
 }
 
-function getOwnerBootstrapSessionDefinitions() {
-  const mailboxAddress = resolveCurrentMailboxAddress();
+function resolvePublicCalendarBaseUrl() {
+  const baseUrl = typeof PUBLIC_BASE_URL === 'string'
+    ? PUBLIC_BASE_URL.trim().replace(/\/+$/, '')
+    : '';
+  if (!baseUrl) return '';
+
+  try {
+    const parsed = new URL(baseUrl);
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      return '';
+    }
+    return parsed.origin;
+  } catch {
+    return '';
+  }
+}
+
+async function resolveCalendarSubscriptionUrls() {
+  try {
+    const feedInfo = await getFeedInfo();
+    if (!feedInfo?.feedToken) return null;
+    const baseUrl = resolvePublicCalendarBaseUrl();
+    if (!baseUrl) return null;
+    const host = new URL(baseUrl).host;
+    return {
+      webcal: `webcal://${host}/cal/${feedInfo.feedToken}.ics`,
+      https: `${baseUrl}/cal/${feedInfo.feedToken}.ics`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildCalendarGuideMessages(calendarUrls) {
+  if (!calendarUrls) return null;
+  return [
+    {
+      role: 'assistant',
+      content: [
+        '这个实例支持日历订阅功能。我创建的所有日程事件都会写入一个 iCal 订阅源，你只需要订阅一次，之后所有新事件都会自动同步到你的日历 app 里。',
+        `**一键订阅（iOS / macOS）：**\n[点击订阅日历](${calendarUrls.webcal})`,
+        `点击上面的链接后，系统会弹出"订阅日历？"的确认框，确认即可。`,
+        `**手动订阅：**\n如果一键订阅没有生效，复制下面的地址，在日历 app 中手动添加：\n${calendarUrls.https}`,
+        '**各平台操作方式：**',
+        '- **iOS**：设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历 → 粘贴地址',
+        '- **macOS**：日历 → 文件 → 新建日历订阅 → 粘贴地址',
+        '- **Android**：推荐使用 [One Calendar](https://play.google.com/store/apps/details?id=com.degenhardt.android.onecalendar)，支持导入订阅链接',
+        '**建议设置：** 订阅后将刷新频率改为"每 5 分钟"，这样新事件会更快同步到你的日历中。',
+        '订阅完成后，你可以在任何会话中告诉我要加什么日程，事件会自动出现在你的日历里。',
+      ].join('\n\n'),
+    },
+  ];
+}
+
+async function getOwnerBootstrapSessionDefinitions() {
+  const [mailboxAddress, calendarUrls] = await Promise.all([
+    resolveCurrentMailboxAddress(),
+    resolveCalendarSubscriptionUrls(),
+  ]);
 
   return [
     {
@@ -252,6 +312,15 @@ function getOwnerBootstrapSessionDefinitions() {
         },
       ],
     },
+    ...(calendarUrls ? [{
+      templateId: BASIC_CHAT_APP_ID,
+      externalTriggerId: OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID,
+      name: '[引导] 订阅日历，接收 AI 创建的日程事件',
+      entryMode: SESSION_ENTRY_MODE_READ,
+      pinned: true,
+      sidebarOrder: 5,
+      messages: buildCalendarGuideMessages(calendarUrls),
+    }] : []),
   ];
 }
 
@@ -416,8 +485,10 @@ async function createOwnerBootstrapSession(definition, { appendLegacyWelcomeHint
 }
 
 export async function backfillOwnerBootstrapSessions() {
-  const ownerBootstrapSessions = getOwnerBootstrapSessionDefinitions();
-  const mailboxAddress = resolveCurrentMailboxAddress();
+  const [ownerBootstrapSessions, mailboxAddress] = await Promise.all([
+    getOwnerBootstrapSessionDefinitions(),
+    resolveCurrentMailboxAddress(),
+  ]);
   const ownerSessions = (await listSessions({
     includeArchived: true,
   }));
@@ -458,7 +529,7 @@ export async function backfillOwnerBootstrapSessions() {
 }
 
 export async function ensureOwnerBootstrapSessions() {
-  const ownerBootstrapSessions = getOwnerBootstrapSessionDefinitions();
+  const ownerBootstrapSessions = await getOwnerBootstrapSessionDefinitions();
   const ownerSessions = (await listSessions({
     includeArchived: true,
   }));

@@ -12,6 +12,29 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 
 ## Learnings
 
+### Auto-Compaction Silent Failure on Claude-Backed Sessions (2026-04-06)
+
+**Root cause**: The Claude adapter (`adapters/claude.mjs`) never emits `contextWindowTokens` in its usage events. Claude CLI's `--output-format stream-json` JSONL output includes `input_tokens`, `output_tokens`, `cache_*` fields, but NOT the model's context window size. When `contextWindowTokens` is null, `getAutoCompactContextTokens()` in `session-auto-compaction.mjs` returns `POSITIVE_INFINITY`, so the compaction threshold is never exceeded.
+
+**Effect**: Sessions using Claude (opus/sonnet) grow without bound. Real observations: 54K → 184K → 587K → 9.4M `contextInputTokens` in a single session, with zero compaction events.
+
+**Symptom**: User perceives model as "dumb" or "keeps losing memory." The actual cause is the opposite of compression — it's unbounded context flooding the model with noise, degrading attention quality.
+
+**Contrast**: The Codex adapter gets `contextWindowTokens` via a custom `remotelab.context_metrics` event injected by RemoteLab's own metrics system, so Codex sessions compact normally.
+
+**Note on Claude Code's own compression**: Claude Code (the `claude` CLI binary) has its own internal context window management and compression within a single agent run. So within one `claude -p` invocation, the CLI handles its own 200K window. RemoteLab's compaction is a separate concern — it manages the *session-level* history across multiple runs and the continuation/fork context that gets rebuilt when a run's resume ID is lost.
+
+**Key distinction**: `contextInputTokens` in run status is often *cumulative* across Claude Code's internal multi-turn agent loop (many tool calls = many internal turns), not the live per-turn context size. A run showing 9.4M input tokens doesn't mean 9.4M was in context at once — it means that much total input was processed across all internal turns.
+
+**Fix direction**: Either (a) extract context window from Claude CLI output if available (check `system` events, `--help`, or newer CLI versions), or (b) query the Anthropic Models API (`GET /v1/models`) which returns `max_tokens` / context window per model, or (c) as last resort, maintain a model→window lookup that reads from a config file (not hardcoded in source).
+
+**Diagnostic pattern**: To check whether compaction is working for a session, look at `~/.config/remotelab/chat-runs/*/status.json` — if `contextWindowTokens` is null for all runs, compaction is broken.
+
+### Broad Home-Directory Search Triggers macOS App-Data Prompts (2026-04-06)
+- On macOS, recursive search rooted at `~` can trigger repeated TCC prompts for `SystemPolicyAppData` when a worker touches `~/Library/Containers` or `~/Library/Group Containers`, even if the command later filters those paths out.
+- Prompt policies should not treat machine-wide search as a normal context-recovery path. Prefer memory, continuity, known project pointers, and explicit user-provided paths first.
+- If those sources do not reveal a concrete entry point, ask the user for a project/path/file/link pointer before widening search. Search should become a targeted follow-up step after a real lead exists, not a default fallback for uncertainty.
+
 ### Feishu Bot Outbound Permission Trap (2026-03-11)
 - A Feishu self-built app can successfully receive `im.message.receive_v1` over persistent connection while still failing every outbound IM send.
 - The tell is Feishu API error `99991672` on `im.v1.message.create`, which means the app is missing an explicit outbound IM scope even if the basic bot setup looks complete.
