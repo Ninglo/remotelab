@@ -875,6 +875,16 @@ async function buildImageContentParts(attachments) {
   for (const attachment of attachments) {
     const mimeType = trimString(attachment.mimeType) || 'image/jpeg';
     if (!IMAGE_MIME_TYPES.has(mimeType)) continue;
+
+    const directUrl = trimString(attachment.url);
+    if (directUrl && (directUrl.startsWith('https://') || directUrl.startsWith('http://'))) {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: directUrl },
+      });
+      continue;
+    }
+
     try {
       const data = await readFile(attachment.path);
       const base64 = data.toString('base64');

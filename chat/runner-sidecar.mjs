@@ -4,7 +4,7 @@ import { createInterface } from 'readline';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { createToolInvocation, prependAttachmentPaths, resolveCommand, resolveCwd } from './process-runner.mjs';
-import { materializeFileAssetAttachments } from './file-assets.mjs';
+import { buildFileAssetDirectUrl, materializeFileAssetAttachments } from './file-assets.mjs';
 import {
   buildCodexContextMetricsPayload,
   readLatestCodexSessionMetrics,
@@ -135,13 +135,26 @@ async function main() {
 
   const spawnEnv = await cleanEnv(manifest.tool, manifest, { runtimeFamily, envOverrides });
 
-  const attachmentPaths = materializedImages
-    .filter((img) => typeof img?.savedPath === 'string' && img.savedPath)
-    .map((img) => ({
+  const attachmentPaths = [];
+  for (const img of materializedImages) {
+    if (typeof img?.savedPath !== 'string' || !img.savedPath) continue;
+    const entry = {
       path: img.savedPath,
       mimeType: typeof img?.mimeType === 'string' ? img.mimeType : '',
       originalName: typeof img?.originalName === 'string' ? img.originalName : '',
-    }));
+    };
+    if (typeof img?.assetId === 'string' && img.assetId) {
+      try {
+        const direct = await buildFileAssetDirectUrl(img.assetId);
+        if (direct?.url && !direct.url.startsWith('/')) {
+          entry.url = direct.url;
+        }
+      } catch {
+        // no direct URL available — base64 fallback will be used
+      }
+    }
+    attachmentPaths.push(entry);
+  }
   if (attachmentPaths.length > 0) {
     spawnEnv.REMOTELAB_ATTACHMENT_PATHS = JSON.stringify(attachmentPaths);
   }

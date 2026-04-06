@@ -88,9 +88,9 @@ assert(textResponse.length > 0, 'Text-only response should not be empty');
 assert(textResponse.includes('2'), `Expected "2" in response, got: ${textResponse}`);
 console.log(`    ✓ Text response: "${textResponse.slice(0, 80)}"`);
 
-// --- Test 2: Multimodal image understanding ---
-console.log('  [2/2] Testing multimodal image understanding...');
-const imageResult = await runMicroAgentRouter({
+// --- Test 2: Multimodal image via base64 (local file, no URL) ---
+console.log('  [2/3] Testing multimodal image via base64 fallback...');
+const base64Result = await runMicroAgentRouter({
   prompt: '这张图片拍的是什么场景？用一两句话简要描述，不要调用任何工具。',
   model: 'doubao-seed-2-0-pro-260215',
   attachmentPaths: [
@@ -98,20 +98,43 @@ const imageResult = await runMicroAgentRouter({
   ],
 });
 
-assert.equal(imageResult.exitCode, 0, `Image run failed (exit ${imageResult.exitCode}):\n${imageResult.stderr}`);
-const imageResponse = extractAssistantText(imageResult.events);
-assert(imageResponse.length > 0, 'Image response should not be empty');
+assert.equal(base64Result.exitCode, 0, `Base64 image run failed (exit ${base64Result.exitCode}):\n${base64Result.stderr}`);
+const base64Response = extractAssistantText(base64Result.events);
+assert(base64Response.length > 0, 'Base64 image response should not be empty');
 
-// The image is an autumn mountain road — the model should mention road/path/highway or
-// autumn/fall/trees/mountain/foliage or colors like orange/yellow/red/golden.
 const visualKeywords = ['路', '公路', '道路', '盘山', '秋', '树', '山', '林', '落叶', '金', '黄', '红', '橙', 'road', 'autumn', 'tree', 'mountain', 'fall'];
-const hasVisualContent = visualKeywords.some((keyword) => imageResponse.includes(keyword));
-assert(hasVisualContent, `Response should describe the autumn road image, but got: "${imageResponse}"`);
-console.log(`    ✓ Image response: "${imageResponse.slice(0, 120)}"`);
+const hasVisualContent = visualKeywords.some((keyword) => base64Response.includes(keyword));
+assert(hasVisualContent, `Response should describe the autumn road image, but got: "${base64Response}"`);
+console.log(`    ✓ Base64 image response: "${base64Response.slice(0, 120)}"`);
 
-// --- Verify result event exists ---
-const resultEvent = imageResult.events.find((e) => e.type === 'result');
-assert(resultEvent, 'Should have a result event');
-assert.equal(resultEvent.is_error, false, 'Result should not be an error');
+// --- Test 3: Multimodal image via direct URL (preferred path) ---
+// Uses a China-accessible public image (Doubao API servers are in China).
+const publicImageUrl = 'https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png';
+console.log('  [3/3] Testing multimodal image via direct URL...');
+const urlResult = await runMicroAgentRouter({
+  prompt: '这张图片里有什么？用一句话简要描述，不要调用任何工具。',
+  model: 'doubao-seed-2-0-pro-260215',
+  attachmentPaths: [
+    { path: '/dev/null', mimeType: 'image/png', originalName: 'test.png', url: publicImageUrl },
+  ],
+});
+
+assert.equal(urlResult.exitCode, 0, `URL image run failed (exit ${urlResult.exitCode}):\n${urlResult.stderr}`);
+const urlResponse = extractAssistantText(urlResult.events);
+assert(urlResponse.length > 0, 'URL image response should not be empty');
+// The image is the Baidu logo — model should mention 百度, logo, search, or text
+const urlKeywords = ['百度', 'logo', 'Logo', 'LOGO', '搜索', '标志', '文字', 'baidu', 'Baidu', '蓝', '红'];
+const hasUrlVisualContent = urlKeywords.some((keyword) => urlResponse.includes(keyword));
+assert(hasUrlVisualContent, `Response should describe the Baidu logo image, but got: "${urlResponse}"`);
+console.log(`    ✓ URL image response: "${urlResponse.slice(0, 120)}"`);
+
+// --- Verify result events exist ---
+const base64ResultEvent = base64Result.events.find((e) => e.type === 'result');
+assert(base64ResultEvent, 'Should have a result event for base64 test');
+assert.equal(base64ResultEvent.is_error, false, 'Base64 result should not be an error');
+
+const urlResultEvent = urlResult.events.find((e) => e.type === 'result');
+assert(urlResultEvent, 'Should have a result event for URL test');
+assert.equal(urlResultEvent.is_error, false, 'URL result should not be an error');
 
 console.log('test-doubao-multimodal-image: ok');
