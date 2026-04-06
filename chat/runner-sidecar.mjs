@@ -24,6 +24,9 @@ const runId = process.argv[2];
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
 
+const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const IDLE_CHECK_INTERVAL_MS = 30 * 1000; // check every 30 seconds
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -171,6 +174,12 @@ async function main() {
   }));
 
   let cancelSent = false;
+  let lastOutputAt = Date.now();
+  const idleTimeoutMs = Number.isFinite(Number(process.env.REMOTELAB_RUN_IDLE_TIMEOUT_MS))
+    && Number(process.env.REMOTELAB_RUN_IDLE_TIMEOUT_MS) > 0
+    ? Number(process.env.REMOTELAB_RUN_IDLE_TIMEOUT_MS)
+    : DEFAULT_IDLE_TIMEOUT_MS;
+
   const cancelTimer = setInterval(() => {
     void (async () => {
       const current = await getRun(runId);
@@ -182,7 +191,30 @@ async function main() {
     })();
   }, 250);
 
+  const idleTimer = setInterval(() => {
+    if (cancelSent) return;
+    const idleMs = Date.now() - lastOutputAt;
+    if (idleMs >= idleTimeoutMs) {
+      cancelSent = true;
+      const idleMinutes = Math.round(idleMs / 60000);
+      console.error(`[sidecar] Killing tool process for run ${runId} after ${idleMinutes}m idle (no output)`);
+      void (async () => {
+        await appendRunSpoolRecord(runId, {
+          ts: nowIso(),
+          stream: 'error',
+          line: `Tool process killed after ${idleMinutes} minutes of inactivity`,
+        });
+      })();
+      try { proc.kill('SIGTERM'); } catch {}
+      setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch {}
+      }, 5000);
+    }
+  }, IDLE_CHECK_INTERVAL_MS);
+  if (typeof idleTimer.unref === 'function') idleTimer.unref();
+
   const recordStdoutLine = async (line) => {
+    lastOutputAt = Date.now();
     let parsed = null;
     try {
       parsed = JSON.parse(line);
@@ -203,6 +235,7 @@ async function main() {
   };
 
   const recordStderrText = async (text) => {
+    lastOutputAt = Date.now();
     const trimmed = text.trim();
     if (!trimmed) return;
     for (const line of trimmed.split(/\r?\n/)) {
@@ -226,6 +259,7 @@ async function main() {
   proc.on('error', (error) => {
     void (async () => {
       clearInterval(cancelTimer);
+      clearInterval(idleTimer);
       await appendRunSpoolRecord(runId, {
         ts: nowIso(),
         stream: 'error',
@@ -252,6 +286,7 @@ async function main() {
   proc.on('exit', (code, signal) => {
     void (async () => {
       clearInterval(cancelTimer);
+      clearInterval(idleTimer);
       const current = await getRun(runId) || run;
       const completedAt = nowIso();
       await appendCodexContextMetrics(runId);
