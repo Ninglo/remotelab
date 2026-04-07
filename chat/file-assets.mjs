@@ -465,7 +465,7 @@ export async function createFileAssetUploadIntent({
     return {
       asset: await buildClientFileAsset(record),
       upload: {
-        method: 'PUT',
+        method: 'POST',
         url: `/api/assets/${assetId}/upload`,
         headers: {
           'Content-Type': record.mimeType,

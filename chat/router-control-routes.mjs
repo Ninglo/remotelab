@@ -256,7 +256,7 @@ export async function handleControlRoutes({
     return true;
   }
 
-  if (fileAssetRoute?.action === 'upload' && req.method === 'PUT') {
+  if (fileAssetRoute?.action === 'upload' && (req.method === 'PUT' || req.method === 'POST')) {
     const asset = await getFileAsset(fileAssetRoute.assetId);
     if (!asset) {
       writeJson(res, 404, { error: 'Asset not found' });
