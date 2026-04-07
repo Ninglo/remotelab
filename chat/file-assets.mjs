@@ -178,8 +178,11 @@ function canonicalQuery(entries) {
   return [...entries]
     .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)])
     .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
-      if (leftKey === rightKey) return leftValue.localeCompare(rightValue);
-      return leftKey.localeCompare(rightKey);
+      if (leftKey < rightKey) return -1;
+      if (leftKey > rightKey) return 1;
+      if (leftValue < rightValue) return -1;
+      if (leftValue > rightValue) return 1;
+      return 0;
     })
     .map(([key, value]) => `${key}=${value}`)
     .join('&');
