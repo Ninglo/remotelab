@@ -1,9 +1,10 @@
 import { strict as assert } from 'assert';
-import { writeFile, unlink, mkdir } from 'fs/promises';
-import { dirname } from 'path';
+import { mkdtemp, rm } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
-// Patch CALENDAR_EVENTS_FILE before importing the module
-const testFile = '/tmp/remotelab-test-calendar-events.json';
+const testInstanceRoot = await mkdtemp(join(tmpdir(), 'remotelab-calendar-feed-'));
+process.env.REMOTELAB_INSTANCE_ROOT = testInstanceRoot;
 
 // We need to test the core logic without relying on config.mjs import order.
 // Test the iCal generation function directly.
@@ -36,6 +37,7 @@ async function testIcsGeneration() {
         location: '',
         startTime: '2026-05-01T12:00:00Z',
         endTime: '2026-05-01T13:00:00Z',
+        reminderMinutesBefore: 5,
         sequence: 1,
         createdAt: '2026-04-06T01:00:00Z',
         updatedAt: '2026-04-06T02:00:00Z',
@@ -70,6 +72,9 @@ async function testIcsGeneration() {
   // Verify SEQUENCE
   assert.ok(ics.includes('SEQUENCE:0'), 'should have sequence 0');
   assert.ok(ics.includes('SEQUENCE:1'), 'should have sequence 1');
+  assert.ok(ics.includes('BEGIN:VALARM'), 'should emit VALARM when reminder is configured');
+  assert.ok(ics.includes('TRIGGER:-PT5M'), 'should emit reminder trigger in minutes');
+  assert.ok(ics.includes('ACTION:DISPLAY'), 'should emit display alarm action');
 
   // Verify CRLF line endings
   assert.ok(ics.includes('\r\n'), 'should use CRLF line endings');
@@ -172,8 +177,36 @@ async function testIcsInvalidDate() {
   console.log('    PASS');
 }
 
+async function testIcsInvalidReminder() {
+  console.log('  [5] generateIcsContent ignores invalid reminders');
+
+  const { generateIcsContent } = await import('../lib/connector-calendar-feed.mjs');
+
+  const doc = {
+    calendarName: 'Test',
+    events: [
+      {
+        uid: 'no-reminder@remotelab',
+        summary: 'No reminder event',
+        startTime: '2026-05-01T12:00:00Z',
+        endTime: '2026-05-01T13:00:00Z',
+        reminderMinutesBefore: -1,
+        sequence: 0,
+        createdAt: '2026-04-06T00:00:00Z',
+        updatedAt: '2026-04-06T00:00:00Z',
+      },
+    ],
+  };
+
+  const ics = generateIcsContent(doc);
+  assert.ok(ics.includes('UID:no-reminder@remotelab'), 'event should still be present');
+  assert.ok(!ics.includes('BEGIN:VALARM'), 'invalid reminder should not create an alarm');
+
+  console.log('    PASS');
+}
+
 async function testBuildSubscriptionUrl() {
-  console.log('  [5] buildSubscriptionUrl produces correct URL');
+  console.log('  [6] buildSubscriptionUrl produces correct URL');
 
   const { buildSubscriptionUrl } = await import('../lib/connector-calendar-feed.mjs');
 
@@ -188,7 +221,7 @@ async function testBuildSubscriptionUrl() {
 }
 
 async function testDispatchCalendarToFeed() {
-  console.log('  [6] dispatchCalendarToFeed creates event and returns result');
+  console.log('  [7] dispatchCalendarToFeed creates event and returns result');
 
   const { dispatchCalendarToFeed, listCalendarFeedEvents } = await import('../lib/connector-calendar-feed.mjs');
 
@@ -200,6 +233,7 @@ async function testDispatchCalendarToFeed() {
     startTime: '2026-06-15T14:00:00Z',
     endTime: '2026-06-15T15:00:00Z',
     timezone: 'Asia/Shanghai',
+    reminderMinutesBefore: 10,
   };
 
   const result = await dispatchCalendarToFeed(target, {
@@ -221,12 +255,13 @@ async function testDispatchCalendarToFeed() {
   assert.ok(created, 'event should be in the store');
   assert.equal(created.sessionId, 'sess_test');
   assert.equal(created.runId, 'run_test');
+  assert.equal(created.reminderMinutesBefore, 10);
 
   console.log('    PASS');
 }
 
 async function testDispatchMissingSummary() {
-  console.log('  [7] dispatchCalendarToFeed fails gracefully without summary');
+  console.log('  [8] dispatchCalendarToFeed fails gracefully without summary');
 
   const { dispatchCalendarToFeed } = await import('../lib/connector-calendar-feed.mjs');
 
@@ -252,12 +287,15 @@ try {
   await testIcsEmptyCalendar();
   await testIcsSpecialCharacters();
   await testIcsInvalidDate();
+  await testIcsInvalidReminder();
   await testBuildSubscriptionUrl();
   await testDispatchCalendarToFeed();
   await testDispatchMissingSummary();
-  console.log('\n  All 7 tests passed.\n');
+  console.log('\n  All 8 tests passed.\n');
 } catch (err) {
   console.error('\n  FAIL:', err.message);
   console.error(err.stack);
   process.exit(1);
+} finally {
+  await rm(testInstanceRoot, { recursive: true, force: true });
 }
