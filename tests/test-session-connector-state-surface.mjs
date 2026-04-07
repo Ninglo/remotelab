@@ -8,6 +8,9 @@ import { pathToFileURL } from 'url';
 const repoRoot = process.cwd();
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-session-connector-state-'));
 process.env.HOME = tempHome;
+delete process.env.REMOTELAB_INSTANCE_ROOT;
+delete process.env.REMOTELAB_CONFIG_DIR;
+delete process.env.REMOTELAB_PUBLIC_BASE_URL;
 
 const workspace = join(tempHome, 'workspace');
 const mailboxRoot = join(tempHome, '.config', 'remotelab', 'agent-mailbox');

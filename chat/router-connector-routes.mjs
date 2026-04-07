@@ -1,7 +1,20 @@
 import { createHash, randomUUID } from 'crypto';
 import { homedir } from 'os';
-import { listConnectorBindings } from '../lib/connector-bindings.mjs';
+import { join } from 'path';
+import {
+  ensureCalendarConnectorBinding,
+  getConnectorBinding,
+  listConnectorBindings,
+} from '../lib/connector-bindings.mjs';
+import { CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import {
+  generateCalendarAuthUrl,
+  handleCalendarAuthCallback,
+} from '../lib/connector-calendar.mjs';
+import { resolveExternalRuntimeSelection } from '../lib/external-runtime-selection.mjs';
 import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs';
+import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
   generateIcsFeed,
@@ -22,6 +35,13 @@ const SHORTCUT_BODY_MAX_BYTES = 32 * 1024;
 const SHORTCUT_DEFAULT_WAIT_MS = 20_000;
 const SHORTCUT_MAX_WAIT_MS = 20_000;
 const SHORTCUT_POLL_INTERVAL_MS = 300;
+const CONNECTOR_REQUEST_BODY_MAX_BYTES = 64 * 1024;
+const CALENDAR_CONNECTOR_DIR = join(CONFIG_DIR, 'calendar-connector');
+const GOOGLE_CALENDAR_CREDENTIALS_PATH = join(CALENDAR_CONNECTOR_DIR, 'google-oauth-client.json');
+const GOOGLE_CALENDAR_TOKEN_PATH = join(CALENDAR_CONNECTOR_DIR, 'google-calendar-token.json');
+const GOOGLE_CALENDAR_AUTH_STATE_PATH = join(CALENDAR_CONNECTOR_DIR, 'google-calendar-auth-state.json');
+const DEFAULT_CALENDAR_BINDING_ID = 'binding_calendar_21d351117862';
+const DEFAULT_CALENDAR_ACCOUNT_HINT = 'Google Calendar';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -32,6 +52,48 @@ function resolveBaseUrl(req) {
   const proto = trimString(req.headers?.['x-forwarded-proto']) || 'https';
   if (!host) return '';
   return `${proto}://${host}`;
+}
+
+function buildSessionUrl(req, sessionId) {
+  const baseUrl = resolveBaseUrl(req);
+  if (!baseUrl || !sessionId) return '';
+  return `${baseUrl}/?session=${encodeURIComponent(sessionId)}`;
+}
+
+async function resolveShortcutRuntime(payload) {
+  const explicitTool = trimString(payload?.tool);
+  const explicitModel = trimString(payload?.model);
+  const explicitEffort = trimString(payload?.effort);
+  const explicitThinking = payload?.thinking === true;
+
+  if (explicitTool) {
+    return {
+      tool: explicitTool,
+      model: explicitModel,
+      effort: explicitEffort,
+      thinking: explicitThinking,
+    };
+  }
+
+  const uiSelection = await loadUiRuntimeSelection();
+  const resolved = resolveExternalRuntimeSelection({
+    uiSelection,
+    mode: 'ui',
+    fallback: {
+      tool: explicitTool,
+      model: explicitModel,
+      effort: explicitEffort,
+      thinking: explicitThinking,
+    },
+    defaultTool: 'codex',
+  });
+
+  return {
+    tool: resolved.tool,
+    model: explicitModel || resolved.model,
+    effort: explicitEffort || resolved.effort,
+    thinking: explicitThinking || resolved.thinking,
+  };
 }
 
 function sleep(ms) {
@@ -84,6 +146,55 @@ async function readShortcutPayload(req) {
     error.statusCode = 400;
     throw error;
   }
+}
+
+async function readConnectorPayload(req) {
+  let body;
+  try {
+    body = await readBody(req, CONNECTOR_REQUEST_BODY_MAX_BYTES);
+  } catch (error) {
+    const wrapped = new Error(error?.code === 'BODY_TOO_LARGE' ? 'Request body too large' : 'Bad request');
+    wrapped.statusCode = error?.code === 'BODY_TOO_LARGE' ? 413 : 400;
+    throw wrapped;
+  }
+  if (!body) return {};
+  try {
+    return JSON.parse(body);
+  } catch {
+    const error = new Error('Invalid request body');
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
+function resolveCalendarAuthRedirectUri(req) {
+  const baseUrl = PUBLIC_BASE_URL || resolveBaseUrl(req);
+  if (!baseUrl) return '';
+  return `${baseUrl}/api/connectors/calendar/google/callback`;
+}
+
+async function getCalendarAuthStatus(req) {
+  const binding = await getConnectorBinding(DEFAULT_CALENDAR_BINDING_ID, { includeCompatibilityEmail: false });
+  const credentialsPresent = await pathExists(GOOGLE_CALENDAR_CREDENTIALS_PATH);
+  const tokenPresent = await pathExists(GOOGLE_CALENDAR_TOKEN_PATH);
+  const redirectUri = resolveCalendarAuthRedirectUri(req);
+  return {
+    provider: 'google',
+    redirectUri,
+    credentialsPath: GOOGLE_CALENDAR_CREDENTIALS_PATH,
+    tokenPath: GOOGLE_CALENDAR_TOKEN_PATH,
+    credentialsPresent,
+    tokenPresent,
+    binding: binding?.connectorId === 'calendar'
+      ? {
+          id: trimString(binding.id),
+          title: trimString(binding.title),
+          provider: trimString(binding.provider),
+          accountHint: trimString(binding.accountHint),
+          capabilityState: trimString(binding.capabilityState),
+        }
+      : null,
+  };
 }
 
 async function waitForRunResult(runId, timeoutMs) {
@@ -171,6 +282,43 @@ export async function handleCalendarFeedRoute({ req, res, pathname }) {
 // ---- Authenticated API routes ----
 
 export async function handleConnectorApiRoutes({ req, res, pathname, authSession, writeJson }) {
+  if (pathname === '/api/connectors/calendar/google/callback' && req.method === 'GET') {
+    const code = trimString(new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('code'));
+    const state = trimString(new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('state'));
+    const redirectUri = resolveCalendarAuthRedirectUri(req);
+    const authState = await readJson(GOOGLE_CALENDAR_AUTH_STATE_PATH, null);
+
+    if (!code || !state || !redirectUri || !authState || trimString(authState.state) !== state) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Calendar authorization callback is invalid or expired.');
+      return true;
+    }
+
+    try {
+      await handleCalendarAuthCallback({
+        credentialsPath: trimString(authState.credentialsPath) || GOOGLE_CALENDAR_CREDENTIALS_PATH,
+        tokenPath: trimString(authState.tokenPath) || GOOGLE_CALENDAR_TOKEN_PATH,
+        code,
+        redirectUri,
+      });
+      await ensureCalendarConnectorBinding({
+        bindingId: trimString(authState.bindingId) || DEFAULT_CALENDAR_BINDING_ID,
+        provider: 'google',
+        accountHint: trimString(authState.accountHint) || DEFAULT_CALENDAR_ACCOUNT_HINT,
+        tokenPath: trimString(authState.tokenPath) || GOOGLE_CALENDAR_TOKEN_PATH,
+        title: trimString(authState.title) || 'Google Calendar',
+      });
+      await writeJsonAtomic(GOOGLE_CALENDAR_AUTH_STATE_PATH, {});
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Google Calendar authorization succeeded. You can return to RemoteLab and ask for a new reminder test.');
+      return true;
+    } catch (error) {
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(`Google Calendar authorization failed: ${error.message || 'unknown error'}`);
+      return true;
+    }
+  }
+
   if (pathname === '/api/connectors' && req.method === 'GET') {
     const bindings = await listConnectorBindings();
     writeJson(res, 200, { bindings });
@@ -196,6 +344,76 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
   if (pathname === '/api/connectors/calendar/events' && req.method === 'GET') {
     const events = await listCalendarFeedEvents();
     writeJson(res, 200, { events });
+    return true;
+  }
+
+  if (pathname === '/api/connectors/calendar/google/status' && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    writeJson(res, 200, await getCalendarAuthStatus(req));
+    return true;
+  }
+
+  if (pathname === '/api/connectors/calendar/google/authorize' && req.method === 'POST') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+
+    let payload;
+    try {
+      payload = await readConnectorPayload(req);
+    } catch (error) {
+      writeJson(res, error.statusCode || 400, { error: error.message || 'Bad request' });
+      return true;
+    }
+
+    const redirectUri = resolveCalendarAuthRedirectUri(req);
+    if (!redirectUri) {
+      writeJson(res, 500, { error: 'Cannot determine public callback URL from request headers.' });
+      return true;
+    }
+
+    if (!await pathExists(GOOGLE_CALENDAR_CREDENTIALS_PATH)) {
+      writeJson(res, 409, {
+        error: 'Missing Google OAuth client credentials.',
+        redirectUri,
+        credentialsPath: GOOGLE_CALENDAR_CREDENTIALS_PATH,
+      });
+      return true;
+    }
+
+    const binding = await ensureCalendarConnectorBinding({
+      bindingId: DEFAULT_CALENDAR_BINDING_ID,
+      provider: 'google',
+      accountHint: trimString(payload?.accountHint) || DEFAULT_CALENDAR_ACCOUNT_HINT,
+      tokenPath: '',
+      title: trimString(payload?.title) || 'Google Calendar',
+    });
+    const state = randomUUID();
+    await writeJsonAtomic(GOOGLE_CALENDAR_AUTH_STATE_PATH, {
+      state,
+      bindingId: binding.id,
+      accountHint: binding.accountHint,
+      title: binding.title,
+      credentialsPath: GOOGLE_CALENDAR_CREDENTIALS_PATH,
+      tokenPath: GOOGLE_CALENDAR_TOKEN_PATH,
+      createdAt: new Date().toISOString(),
+    });
+    const authUrl = await generateCalendarAuthUrl({
+      credentialsPath: GOOGLE_CALENDAR_CREDENTIALS_PATH,
+      redirectUri,
+      state,
+    });
+    writeJson(res, 200, {
+      authUrl,
+      redirectUri,
+      bindingId: binding.id,
+      credentialsPath: GOOGLE_CALENDAR_CREDENTIALS_PATH,
+      tokenPath: GOOGLE_CALENDAR_TOKEN_PATH,
+    });
     return true;
   }
 
@@ -228,7 +446,7 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
     const providedSessionId = trimString(payload.sessionId);
     const requestId = trimString(payload.requestId) || buildShortcutRequestId();
     const externalTriggerId = trimString(payload.externalTriggerId);
-    const tool = trimString(payload.tool) || 'codex';
+    const runtime = await resolveShortcutRuntime(payload);
     const sourceContext = buildShortcutSourceContext(payload);
 
     try {
@@ -242,7 +460,7 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
       } else {
         session = await createSession(
           trimString(payload.folder) || homedir(),
-          tool,
+          runtime.tool,
           trimString(payload.name),
           {
             sourceId: 'shortcut',
@@ -253,22 +471,23 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
             description: trimString(payload.description) || 'Request created from the Shortcut connector.',
             externalTriggerId,
             sourceContext,
-            ...(Object.prototype.hasOwnProperty.call(payload, 'thinking') ? { thinking: payload.thinking === true } : {}),
-            ...(typeof payload.model === 'string' ? { model: trimString(payload.model) } : {}),
-            ...(typeof payload.effort === 'string' ? { effort: trimString(payload.effort) } : {}),
+            ...(runtime.thinking ? { thinking: true } : {}),
+            ...(runtime.model ? { model: runtime.model } : {}),
+            ...(runtime.effort ? { effort: runtime.effort } : {}),
           },
         );
       }
 
       const outcome = await submitHttpMessage(session.id, text, [], {
         requestId,
-        tool: trimString(payload.tool) || undefined,
-        thinking: payload.thinking === true,
-        model: trimString(payload.model) || undefined,
-        effort: trimString(payload.effort) || undefined,
+        tool: runtime.tool,
+        thinking: runtime.thinking,
+        model: runtime.model || undefined,
+        effort: runtime.effort || undefined,
         sourceContext,
       });
 
+      const sessionUrl = buildSessionUrl(req, session.id);
       const activeRun = outcome.run?.id ? await waitForRunResult(outcome.run.id, waitMs) : null;
       if (activeRun && activeRun.state === 'completed') {
         const reply = await resolveRunReply(session.id, activeRun);
@@ -281,6 +500,7 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
           queued: outcome.queued,
           reply,
           speech: reply,
+          url: sessionUrl,
         });
         return true;
       }
@@ -294,6 +514,7 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
           duplicate: outcome.duplicate,
           queued: outcome.queued,
           reply: null,
+          url: sessionUrl,
         });
         return true;
       }
@@ -307,6 +528,7 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
         duplicate: outcome.duplicate,
         queued: outcome.queued,
         reply: null,
+        url: sessionUrl,
       });
       return true;
     } catch (error) {

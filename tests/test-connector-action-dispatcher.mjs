@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdirSync, mkdtempSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
@@ -8,10 +8,15 @@ import { pathToFileURL } from 'url';
 const repoRoot = process.cwd();
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-connector-dispatcher-'));
 process.env.HOME = tempHome;
+delete process.env.REMOTELAB_INSTANCE_ROOT;
+delete process.env.REMOTELAB_CONFIG_DIR;
+delete process.env.REMOTELAB_PUBLIC_BASE_URL;
 
 const workspace = join(tempHome, 'workspace');
 const mailboxRoot = join(tempHome, '.config', 'remotelab', 'agent-mailbox');
+const fakeCalendarTokenPath = join(tempHome, 'google-calendar-token.json');
 mkdirSync(workspace, { recursive: true });
+writeFileSync(fakeCalendarTokenPath, JSON.stringify({ access_token: 'test-token' }), 'utf8');
 
 const {
   sanitizeAllCompletionTargets,
@@ -72,7 +77,7 @@ try {
   const calBindingWithToken = await ensureCalendarConnectorBinding({
     provider: 'google',
     accountHint: 'user@gmail.com',
-    tokenPath: '/tmp/fake-token.json',
+    tokenPath: fakeCalendarTokenPath,
     title: 'Personal Calendar',
   });
   assert.equal(calBindingWithToken.capabilityState, 'ready',

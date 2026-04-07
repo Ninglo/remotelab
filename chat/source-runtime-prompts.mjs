@@ -35,6 +35,16 @@ function buildVoiceRuntimePrompt() {
   ].join('\n');
 }
 
+function buildShortcutRuntimePrompt() {
+  return [
+    'You are replying through RemoteLab\'s Siri/Shortcuts connector on the user\'s own machine.',
+    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, do the work before replying when feasible.',
+    'Write the exact plain-text reply body that should be shown or spoken by the Shortcut.',
+    'Prefer one concise, speech-friendly answer unless the user explicitly asked for a longer structured response.',
+    'Avoid markdown tables, long preambles, and connector/runtime internals unless the user explicitly asks.',
+  ].join('\n');
+}
+
 function buildEmailRuntimePrompt() {
   return [
     'You are replying through RemoteLab\'s email connector on the user\'s own machine.',
@@ -74,10 +84,13 @@ export function buildSourceRuntimePrompt(session) {
     return buildFeishuRuntimePrompt(session);
   }
   if (sourceId === 'voice') {
-    return buildVoiceRuntimePrompt(session);
+    return buildVoiceRuntimePrompt();
+  }
+  if (sourceId === 'shortcut' || sourceId === 'siri-shortcut') {
+    return buildShortcutRuntimePrompt();
   }
   if (sourceId === 'email' || sourceId === 'mail') {
-    return buildEmailRuntimePrompt(session);
+    return buildEmailRuntimePrompt();
   }
   if (sourceId === 'observer') {
     return buildObserverRuntimePrompt(session);
