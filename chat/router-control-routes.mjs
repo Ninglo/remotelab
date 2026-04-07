@@ -2,7 +2,7 @@ import { readFile, readdir } from 'fs/promises';
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 
-import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_PROVIDER, SESSION_SPAWN_PROMPT_ENABLED } from '../lib/config.mjs';
+import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent } from './apps.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
@@ -748,10 +748,6 @@ export async function handleControlRoutes({
     }
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'delegate') {
-      if (!SESSION_SPAWN_PROMPT_ENABLED) {
-        writeJson(res, 403, { error: 'Session delegation is disabled for this instance' });
-        return true;
-      }
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       const source = await getSessionForClient(sessionId);
       if (!source) {

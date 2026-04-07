@@ -12,7 +12,14 @@ export function buildDelegationHandoff({
 }) {
   const normalizedTask = clipCompactionSection(task, 4000);
   const sourceId = typeof source?.id === 'string' ? source.id.trim() : '';
-  const lines = [normalizedTask || '(no delegated task provided)'];
+  const lines = [
+    'Delegation handoff:',
+    '- You are already in the delegated target session for this task.',
+    '- You have exactly one focused task below. Complete it directly in this session.',
+    '- Do NOT use session-spawn or delegate further child sessions. This task is already scoped — just do the work.',
+    '',
+    normalizedTask || '(no delegated task provided)',
+  ];
   if (sourceId) {
     lines.push('', `Parent session id: ${sourceId}`);
   }

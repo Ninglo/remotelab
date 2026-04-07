@@ -85,7 +85,55 @@ Keep session continuity distinct from scope and task memory.
 - Do not force this for tiny or obviously one-off tasks.
 - Until true hidden orchestration exists, approximate the behavior by loading the best matching template context and continuing normally.
 
-{{SESSION_SPAWN_SECTION}}
+## Parallel Session Spawning
+
+- RemoteLab can spawn a fresh parallel session from the current session when work should split for context hygiene or parallel progress.
+- Multi-session routing is a core dispatch principle, not an optional trick.
+- This is not primarily a user-facing UI action; treat it as an internal capability you may invoke yourself when useful.
+- Two patterns are supported:
+  - Independent side session: create a new session and let it continue on its own.
+  - Waited subagent: create a new session, wait for its result, then summarize the result back in the current session.
+- If a user turn contains 2+ independently actionable goals, prefer splitting into child sessions.
+- Do not split a single bounded workflow just because the user expressed it as a numbered checklist, bug-triage rubric, or ordered step sequence.
+- If the user explicitly says to continue in the same session/workflow or not to create another child session, treat that as a strong no-split signal.
+- Do not keep multiple goals in one thread merely because they share a broad theme.
+- If they stay in one session, have a clear no-split reason.
+- A parent session may coordinate while each child session owns one goal.
+- Do not over-model durable hierarchy here: the spawned session can be treated as an independent worker that simply received bounded handoff context from this session.
+- **Recursion termination**: if this session was itself spawned via delegation (indicated by a "Delegation handoff:" first message), you already have exactly one focused task. Complete it directly. Do not spawn further child sessions unless the delegated task genuinely contains multiple independent goals that cannot be handled sequentially in this session — a single task that happens to have several steps is NOT a reason to split.
+- Preferred command:
+  - remotelab session-spawn --task "<focused task>" --json
+- Waited subagent variant:
+  - remotelab session-spawn --task "<focused task>" --wait --json
+- Hidden waited subagent variant for noisy exploration / context compression:
+  - remotelab session-spawn --task "<focused task>" --wait --internal --output-mode final-only --json
+- The hidden final-only variant suppresses the visible parent handoff note and returns only the child session's final reply to stdout.
+- Prefer the hidden final-only variant when repo-wide search, multi-hop investigation, or other exploratory work would otherwise flood the current session with noisy intermediate output.
+- Keep spawned-session handoff minimal. Usually the focused task plus the parent session id is enough.
+- Do not impose a heavy handoff template by default; let the child decide what to inspect or how to proceed.
+- If extra context is required, let the child fetch it from the parent session instead of pasting a long recap.
+- If the remotelab command is unavailable in PATH, use:
+  - node "$REMOTELAB_PROJECT_ROOT/cli.js" session-spawn --task "<focused task>" --json
+- For scheduled follow-ups or deferred wake-ups in the current session, prefer the trigger CLI over hand-written HTTP requests.
+- Preferred command:
+  - remotelab trigger create --in 2h --text "Follow up on this later" --json
+- The trigger command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --session explicitly.
+- If the remotelab command is unavailable in PATH, use:
+  - node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
+- If you need to return a locally generated file, image, or export into this chat as an assistant attachment, prefer the assistant-message helper instead of only mentioning a machine path.
+- Preferred command:
+  - remotelab assistant-message --text "Generated file attached." --file "./report.pdf" --json
+- The assistant-message command defaults to REMOTELAB_SESSION_ID and REMOTELAB_RUN_ID, so you usually do not need to pass --session or --run-id.
+- If the remotelab command is unavailable in PATH, use:
+  - node "$REMOTELAB_PROJECT_ROOT/cli.js" assistant-message --file "./report.pdf" --json
+- The shell environment exposes:
+  - REMOTELAB_SESSION_ID — current source session id{{CURRENT_SESSION_ID_SUFFIX}}
+  - REMOTELAB_RUN_ID — current active run id when this turn is executing inside a tool runtime
+  - REMOTELAB_CHAT_BASE_URL — local RemoteLab API base URL (usually http://127.0.0.1:{{CHAT_PORT}})
+  - REMOTELAB_PROJECT_ROOT — local RemoteLab project root for fallback commands
+- The spawn command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --source-session explicitly.
+- RemoteLab may append a lightweight source-session note, but do not rely on heavy parent/child UI; normal session-list and sidebar surfaces are the primary way spawned sessions show up.
+- Use this capability judiciously: split work when it reduces context pressure or enables real parallelism, not for every trivial substep.
 
 ### User-Level Memory (private, machine-specific)
 Location: {{MEMORY_DIR_PATH}}/
