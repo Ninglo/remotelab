@@ -34,6 +34,7 @@ export function createSessionTurnCompletionHelpers(services) {
     loadReplySelfCheckTurnContext,
     maybeApplyAssistantTaskCard,
     maybeAutoCompact,
+    shouldAutoCompactRun,
     normalizeAttachmentSizeBytes,
     normalizePublishedResultAssetAttachments,
     normalizeSessionDescription,

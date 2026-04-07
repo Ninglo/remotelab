@@ -119,6 +119,7 @@ import {
   INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR,
   maybeAutoCompact,
   queueContextCompaction,
+  shouldAutoCompactRun,
 } from './session-auto-compaction.mjs';
 import {
   findLatestAssistantMessageForRun,
@@ -1336,6 +1337,7 @@ const {
   loadReplySelfCheckTurnContext,
   maybeApplyAssistantTaskCard,
   maybeAutoCompact,
+  shouldAutoCompactRun,
   normalizeAttachmentSizeBytes,
   normalizePublishedResultAssetAttachments,
   normalizeSessionDescription,
@@ -2123,8 +2125,16 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
     return;
   }
 
-  const preparedReplySelfCheck = await prepareReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
   await maybePublishRunResultAssets(sessionId, finalizedRun, manifest, fullNormalizedEvents);
+
+  if (shouldAutoCompactRun(finalizedRun)) {
+    await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
+    latestSession = await getSession(sessionId) || latestSession;
+    scheduleDetachedRunMemoryWriteback(sessionId, latestSession, finalizedRun, manifest);
+    return;
+  }
+
+  const preparedReplySelfCheck = await prepareReplySelfCheck(sessionId, latestSession, finalizedRun, manifest);
 
   const replySelfCheck = await maybeRunReplySelfCheck(
     sessionId,

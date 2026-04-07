@@ -65,6 +65,14 @@ function getAutoCompactContextTokens(run) {
   );
 }
 
+export function shouldAutoCompactRun(run) {
+  const contextTokens = getRunLiveContextTokens(run);
+  const autoCompactTokens = getAutoCompactContextTokens(run);
+  return Number.isInteger(contextTokens)
+    && Number.isFinite(autoCompactTokens)
+    && contextTokens > autoCompactTokens;
+}
+
 async function refreshCodexContextMetrics(run) {
   if (!run?.id || !run?.codexThreadId) return null;
   const metrics = await readLatestCodexSessionMetrics(run.codexThreadId);
@@ -533,7 +541,10 @@ export async function maybeAutoCompact(sessionId, session, run, manifest, servic
     }
   }
   if (!Number.isInteger(contextTokens) || !Number.isFinite(autoCompactTokens)) return false;
-  if (contextTokens <= autoCompactTokens) return false;
+  if (!shouldAutoCompactRun({
+    ...effectiveRun,
+    contextInputTokens: contextTokens,
+  })) return false;
   return queueContextCompaction(sessionId, session, effectiveRun, { automatic: true }, services);
 }
 
