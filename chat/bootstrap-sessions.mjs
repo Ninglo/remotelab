@@ -4,7 +4,11 @@ import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { CHAT_PORT, INSTANCE_ROOT, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL } from '../lib/config.mjs';
-import { buildCalendarSubscriptionChannels, getFeedInfo } from '../lib/connector-calendar-feed.mjs';
+import {
+  buildCalendarSubscriptionChannels,
+  filterCalendarSubscriptionChannelsForExposure,
+  getFeedInfo,
+} from '../lib/connector-calendar-feed.mjs';
 import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 
 import { BASIC_CHAT_APP_ID, WELCOME_APP_ID, getApp } from './apps.mjs';
@@ -141,7 +145,8 @@ async function resolveCalendarSubscriptionUrls() {
       publicBaseUrl: PUBLIC_BASE_URL,
       preferredBaseUrl: MAINLAND_PUBLIC_BASE_URL || PUBLIC_BASE_URL,
     });
-    return channels.variants.length > 0 ? channels : null;
+    const exposedChannels = filterCalendarSubscriptionChannelsForExposure(channels);
+    return exposedChannels.variants.length > 0 ? exposedChannels : null;
   } catch {
     return null;
   }
@@ -149,17 +154,13 @@ async function resolveCalendarSubscriptionUrls() {
 
 function buildCalendarGuideMessages(calendarUrls) {
   if (!calendarUrls) return null;
-  const variantLines = calendarUrls.variants.flatMap((variant) => {
-    const title = variant.kind === 'mainland'
-      ? '**中国大陆推荐：**'
-      : variant.kind === 'public'
-        ? '**海外 / 备用：**'
-        : '**订阅入口：**';
-    return [
-      `${title}\n[点击订阅日历](${variant.webcalUrl || variant.httpsUrl})`,
-      `手动订阅地址：\n${variant.httpsUrl}`,
-    ];
-  });
+  const variant = calendarUrls.variants[0] || null;
+  const variantLines = variant
+    ? [
+        `**推荐订阅入口：**\n[点击订阅日历](${variant.webcalUrl || variant.httpsUrl})`,
+        `手动订阅地址：\n${variant.httpsUrl}`,
+      ]
+    : [];
 
   return [
     {

@@ -169,8 +169,9 @@ try {
     'preferred webcal URL should use the mainland prefixed path',
   );
   assert.equal(feedRes.json?.subscriptionUrls?.mainland?.includes('/trial24/cal/'), true);
-  assert.equal(feedRes.json?.subscriptionUrls?.public?.startsWith('https://trial24.jiujianian.dev/cal/'), true);
+  assert.equal(feedRes.json?.subscriptionUrls?.public, undefined, 'public compatibility URL should stay hidden from feed metadata');
   assert.equal(feedRes.json?.variants?.[0]?.kind, 'mainland', 'mainland link should be preferred when available');
+  assert.equal(feedRes.json?.variants?.length, 1, 'feed metadata should expose only one visible subscription variant');
   assert.equal(feedRes.json?.eventCount, 1, 'seeded event should be visible in feed metadata');
 
   const feedToken = String(feedRes.json?.subscriptionUrl || '').split('/cal/')[1]?.replace(/\.ics$/, '');

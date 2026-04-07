@@ -18,6 +18,7 @@ import { pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
   buildCalendarSubscriptionChannels,
+  filterCalendarSubscriptionChannelsForExposure,
   generateIcsFeed,
   getFeedInfo,
   getSubscriptionUrl,
@@ -362,19 +363,22 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
       publicBaseUrl,
       preferredBaseUrl,
     });
-    const subscriptionUrl = subscriptionChannels.preferredHttpsUrl || await getSubscriptionUrl(preferredBaseUrl);
+    const exposedSubscriptionChannels = filterCalendarSubscriptionChannelsForExposure(subscriptionChannels);
+    const subscriptionUrl = exposedSubscriptionChannels.preferredHttpsUrl || await getSubscriptionUrl(preferredBaseUrl);
     writeJson(res, 200, {
       subscriptionUrl,
-      webcalUrl: subscriptionChannels.preferredWebcalUrl,
+      webcalUrl: exposedSubscriptionChannels.preferredWebcalUrl,
       subscriptionUrls: {
-        preferred: subscriptionChannels.preferredHttpsUrl,
-        preferredWebcal: subscriptionChannels.preferredWebcalUrl,
-        mainland: subscriptionChannels.mainlandHttpsUrl,
-        mainlandWebcal: subscriptionChannels.mainlandWebcalUrl,
-        public: subscriptionChannels.publicHttpsUrl,
-        publicWebcal: subscriptionChannels.publicWebcalUrl,
+        preferred: exposedSubscriptionChannels.preferredHttpsUrl,
+        preferredWebcal: exposedSubscriptionChannels.preferredWebcalUrl,
+        ...(exposedSubscriptionChannels.mainlandHttpsUrl
+          ? {
+              mainland: exposedSubscriptionChannels.mainlandHttpsUrl,
+              mainlandWebcal: exposedSubscriptionChannels.mainlandWebcalUrl,
+            }
+          : {}),
       },
-      variants: subscriptionChannels.variants,
+      variants: exposedSubscriptionChannels.variants,
       calendarName: feedInfo.calendarName,
       eventCount: feedInfo.eventCount,
     });

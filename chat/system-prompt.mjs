@@ -1,6 +1,10 @@
 import { homedir } from 'os';
 import { CHAT_PORT, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL, SHARED_STARTUP_DEFAULTS_ENABLED } from '../lib/config.mjs';
-import { buildCalendarSubscriptionChannels, getFeedInfo } from '../lib/connector-calendar-feed.mjs';
+import {
+  buildCalendarSubscriptionChannels,
+  filterCalendarSubscriptionChannelsForExposure,
+  getFeedInfo,
+} from '../lib/connector-calendar-feed.mjs';
 import { pathExists } from './fs-utils.mjs';
 import { renderPromptAsset } from './prompt-asset-loader.mjs';
 import {
@@ -109,18 +113,12 @@ async function buildConnectorCapabilitiesSection() {
       publicBaseUrl: PUBLIC_BASE_URL,
       preferredBaseUrl: MAINLAND_PUBLIC_BASE_URL || PUBLIC_BASE_URL,
     });
-    if (channels.variants.length === 0) return '';
-    const subscriptionLines = channels.variants.flatMap((variant) => {
-      const label = variant.kind === 'mainland'
-        ? 'China-recommended'
-        : variant.kind === 'public'
-          ? 'Global / overseas'
-          : variant.label || 'Preferred';
-      return [
-        `Subscription link (${label}, webcal): ${variant.webcalUrl || variant.httpsUrl}`,
-        `Subscription link (${label}, https): ${variant.httpsUrl}`,
-      ];
-    });
+    const exposedChannels = filterCalendarSubscriptionChannelsForExposure(channels);
+    if (exposedChannels.variants.length === 0) return '';
+    const subscriptionLines = [
+      `Subscription link (webcal): ${exposedChannels.preferredWebcalUrl || exposedChannels.preferredHttpsUrl}`,
+      `Subscription link (https): ${exposedChannels.preferredHttpsUrl}`,
+    ];
 
     return `
 
@@ -134,7 +132,7 @@ If a calendar completion target already includes a ready bound calendar connecto
 ${subscriptionLines.join('\n')}
 Events in feed: ${feedInfo.eventCount}
 
-If the user is in mainland China and a mainland-prefixed link is available, prefer that link first. Otherwise use the global / overseas link.
+Expose the mainland-prefixed subscription link when available. Keep Cloudflare or other compatibility URLs internal unless the surfaced link is unavailable.
 
 If the user has not yet subscribed, send the webcal:// link directly in the conversation — it is clickable on iOS/macOS and triggers the native "Subscribe to Calendar?" dialog. Keep the message brief: describe what the subscription does, then provide the recommended link first. No separate setup page needed.
 

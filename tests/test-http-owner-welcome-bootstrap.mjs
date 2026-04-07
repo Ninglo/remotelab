@@ -23,6 +23,12 @@ function escapeRegex(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function buildFeedUrlPattern(baseUrl, scheme = 'https') {
+  const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const protocolBaseUrl = normalizedBaseUrl.replace(/^https?:\/\//, `${scheme}://`);
+  return new RegExp(`${escapeRegex(protocolBaseUrl)}/cal/[a-f0-9]+\\.ics`);
+}
+
 async function waitFor(predicate, description, timeoutMs = 10000, intervalMs = 100) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -151,13 +157,14 @@ function setupTempHome({ preseedArchivedBasicChat = false, cloudflaredPort = 0, 
   return { home };
 }
 
-async function startServer({ home, port }) {
+async function startServer({ home, port, mainlandBaseUrl = '' }) {
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
       ...process.env,
       HOME: home,
       CHAT_PORT: String(port),
+      REMOTELAB_MAINLAND_PUBLIC_BASE_URL: mainlandBaseUrl,
       REMOTELAB_PUBLIC_BASE_URL: '',
       SECURE_COOKIES: '0',
     },
@@ -185,9 +192,10 @@ async function stopServer(child) {
   await waitFor(() => child.exitCode !== null, 'server shutdown');
 }
 
-async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostname = '' } = {}) {
+async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostname = '', mainlandBaseUrl = '' } = {}) {
   publicHostname = publicHostname.trim();
-  const expectCalendarGuide = !!publicHostname;
+  mainlandBaseUrl = mainlandBaseUrl.trim();
+  const expectCalendarGuide = !!publicHostname || !!mainlandBaseUrl;
   const expectedSessionNames = [
     'Welcome',
     '[示例] 上传一份表格，我把清洗后的文件回给你',
@@ -304,22 +312,35 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostna
     const calendarGuideMessage = (calendarGuideEvents.json?.events || []).find((event) => event.type === 'message' && event.role === 'assistant');
     assert.ok(calendarGuideMessage, 'calendar guide session should include an assistant message');
     const calendarGuideContent = await resolveEventContent(port, calendarGuideSession.id, calendarGuideMessage, { Cookie: ownerCookie });
+    const visibleBaseUrl = mainlandBaseUrl || (publicHostname ? `https://${publicHostname}` : '');
 
     assert.match(
       calendarGuideContent,
-      new RegExp(`webcal://${escapeRegex(publicHostname)}/cal/[a-f0-9]+\\.ics`),
-      'calendar guide should expose a public webcal subscription URL',
+      buildFeedUrlPattern(visibleBaseUrl, 'webcal'),
+      'calendar guide should expose the visible webcal subscription URL',
     );
     assert.match(
       calendarGuideContent,
-      new RegExp(`https://${escapeRegex(publicHostname)}/cal/[a-f0-9]+\\.ics`),
-      'calendar guide should expose a public https subscription URL',
+      buildFeedUrlPattern(visibleBaseUrl, 'https'),
+      'calendar guide should expose the visible https subscription URL',
     );
     assert.doesNotMatch(
       calendarGuideContent,
       /127\.0\.0\.1|localhost/,
       'calendar guide should never expose localhost subscription links',
     );
+    if (mainlandBaseUrl && publicHostname) {
+      assert.doesNotMatch(
+        calendarGuideContent,
+        buildFeedUrlPattern(`https://${publicHostname}`, 'https'),
+        'calendar guide should hide the public compatibility URL when a mainland link is available',
+      );
+      assert.doesNotMatch(
+        calendarGuideContent,
+        buildFeedUrlPattern(`https://${publicHostname}`, 'webcal'),
+        'calendar guide should hide the public compatibility webcal URL when a mainland link is available',
+      );
+    }
   }
 
   const secondList = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
@@ -338,11 +359,12 @@ async function runScenario(options) {
     ...options,
     cloudflaredPort: port,
   });
-  const server = await startServer({ home, port });
+  const server = await startServer({ home, port, mainlandBaseUrl: options?.mainlandBaseUrl || '' });
   try {
     await assertWelcomeBootstrapped(port, {
       archivedCount: options?.preseedArchivedBasicChat ? 1 : 0,
       publicHostname: options?.publicHostname || '',
+      mainlandBaseUrl: options?.mainlandBaseUrl || '',
     });
   } finally {
     await stopServer(server);
@@ -353,3 +375,7 @@ async function runScenario(options) {
 await runScenario();
 await runScenario({ preseedArchivedBasicChat: true });
 await runScenario({ publicHostname: 'owner.example.com' });
+await runScenario({
+  publicHostname: 'owner.example.com',
+  mainlandBaseUrl: 'https://jojotry.nat100.top/owner',
+});

@@ -208,7 +208,11 @@ async function testIcsInvalidReminder() {
 async function testBuildSubscriptionUrl() {
   console.log('  [6] buildSubscriptionUrl produces correct URL');
 
-  const { buildSubscriptionUrl, buildCalendarSubscriptionChannels } = await import('../lib/connector-calendar-feed.mjs');
+  const {
+    buildSubscriptionUrl,
+    buildCalendarSubscriptionChannels,
+    filterCalendarSubscriptionChannelsForExposure,
+  } = await import('../lib/connector-calendar-feed.mjs');
 
   const url = buildSubscriptionUrl('https://remotelab.jiujianian.dev', 'abc123');
   assert.equal(url, 'https://remotelab.jiujianian.dev/cal/abc123.ics');
@@ -233,8 +237,13 @@ async function testBuildSubscriptionUrl() {
   });
   assert.equal(channels.preferredHttpsUrl, 'https://jojotry.nat100.top/trial24/cal/abc123.ics');
   assert.equal(channels.publicHttpsUrl, 'https://trial24.jiujianian.dev/cal/abc123.ics');
-  assert.equal(channels.variants.length, 2, 'should expose both mainland and public subscription variants');
+  assert.equal(channels.variants.length, 2, 'internal channel builder should preserve both mainland and public subscription variants');
   assert.equal(channels.variants[0].kind, 'mainland', 'mainland link should be preferred when requested');
+
+  const exposedChannels = filterCalendarSubscriptionChannelsForExposure(channels);
+  assert.equal(exposedChannels.variants.length, 1, 'exposed channel set should hide the public compatibility variant');
+  assert.equal(exposedChannels.variants[0].kind, 'mainland', 'mainland link should be the only exposed variant when available');
+  assert.equal(exposedChannels.publicHttpsUrl, '', 'public compatibility URL should not be exposed');
 
   console.log('    PASS');
 }
