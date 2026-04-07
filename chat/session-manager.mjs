@@ -194,6 +194,11 @@ const FOLLOW_UP_FLUSH_DELAY_MS = 1500;
 const MAX_RECENT_FOLLOW_UP_REQUEST_IDS = 100;
 const OBSERVED_RUN_POLL_INTERVAL_MS = 250;
 
+const MAX_DELEGATION_DEPTH = 3;
+const DELEGATION_RATE_WINDOW_MS = 60_000;
+const DELEGATION_RATE_MAX_PER_WINDOW = 8;
+const _delegationTimestamps = [];
+
 function normalizeSessionSidebarOrder(value) {
   const parsed = typeof value === 'number'
     ? value
@@ -383,6 +388,7 @@ function buildDelegationContextOperation(task, childSession) {
   const normalizedTask = clipCompactionSection(task, 240)
     .replace(/\s+/g, ' ')
     .trim();
+  const delegationTaskFingerprint = buildDelegationTaskFingerprint(task);
   const childName = typeof childSession?.name === 'string'
     ? childSession.name.trim()
     : 'new session';
@@ -395,8 +401,113 @@ function buildDelegationContextOperation(task, childSession) {
     title: 'Parallel session spawned',
     summary: `RemoteLab handed off a focused subtask to ${childName}.`,
     reason: normalizedTask || `Child session ${childId || childName} is running independently.`,
+    ...(delegationTaskFingerprint ? { delegationTaskFingerprint } : {}),
     ...(childId ? { targetSessionId: childId } : {}),
   });
+}
+
+function normalizeDelegationTask(task, maxChars = 240) {
+  return clipCompactionSection(task, maxChars)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const DELEGATION_TASK_STOPWORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'being', 'but', 'by',
+  'can', 'could', 'create', 'created', 'creating', 'current', 'do', 'does',
+  'did', 'else', 'for', 'from', 'handle', 'handled', 'handling', 'if', 'in',
+  'into', 'is', 'it', 'its', 'make', 'making', 'move', 'moving', 'must',
+  'new', 'no', 'not', 'of', 'on', 'only', 'or', 'same', 'session', 'sessions',
+  'should', 'sole', 'spawn', 'spawned', 'spawning', 'start', 'started',
+  'starting', 'that', 'the', 'their', 'them', 'then', 'there', 'these',
+  'this', 'those', 'to', 'treat', 'treated', 'use', 'using', 'was', 'were',
+  'will', 'with', 'without', 'workflow', 'workflows', 'would',
+]);
+
+function buildDelegationTaskTokens(task) {
+  const normalized = clipCompactionSection(task, 4000)
+    .toLowerCase()
+    .replace(/\b(?:parent|requesting|root|related|additional)\s+session\s+id:\s*[^\n]+/g, ' ')
+    .replace(/\b[a-f0-9]{8,}\b/g, ' ');
+  const rawTokens = normalized.match(/[\p{L}\p{N}_-]+/gu) || [];
+  const uniqueTokens = [];
+  const seen = new Set();
+  for (const rawToken of rawTokens) {
+    const token = rawToken.replace(/^[-_]+|[-_]+$/g, '');
+    if (token.length < 3) continue;
+    if (DELEGATION_TASK_STOPWORDS.has(token)) continue;
+    if (seen.has(token)) continue;
+    seen.add(token);
+    uniqueTokens.push(token);
+  }
+  return uniqueTokens;
+}
+
+function buildDelegationTaskFingerprint(task) {
+  const tokens = buildDelegationTaskTokens(task);
+  return tokens.length > 0 ? [...tokens].sort().join(' ') : '';
+}
+
+function delegationTasksLikelyMatch(leftTask, rightTask, explicitFingerprint = '') {
+  const normalizedLeft = normalizeDelegationTask(leftTask);
+  const normalizedRight = normalizeDelegationTask(rightTask);
+  if (!normalizedLeft || !normalizedRight) return false;
+  if (normalizedLeft === normalizedRight) return true;
+
+  const leftFingerprint = explicitFingerprint || buildDelegationTaskFingerprint(leftTask);
+  const rightFingerprint = buildDelegationTaskFingerprint(rightTask);
+  if (leftFingerprint && rightFingerprint && leftFingerprint === rightFingerprint) {
+    return true;
+  }
+
+  const leftTokens = leftFingerprint ? leftFingerprint.split(' ').filter(Boolean) : buildDelegationTaskTokens(leftTask);
+  const rightTokens = rightFingerprint ? rightFingerprint.split(' ').filter(Boolean) : buildDelegationTaskTokens(rightTask);
+  if (leftTokens.length === 0 || rightTokens.length === 0) return false;
+
+  const rightSet = new Set(rightTokens);
+  const overlapCount = leftTokens.filter((token) => rightSet.has(token)).length;
+  const smallerSide = Math.min(leftTokens.length, rightTokens.length);
+  return overlapCount >= 4 && (overlapCount / smallerSide) >= 0.75;
+}
+
+async function findReusableDelegatedChild(sourceSessionId, task) {
+  const normalizedTask = normalizeDelegationTask(task);
+  const delegationTaskFingerprint = buildDelegationTaskFingerprint(task);
+  if (!sourceSessionId || !normalizedTask) return null;
+
+  const history = await loadHistory(sourceSessionId, { includeBodies: false });
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const event = history[index];
+    if (event?.type !== 'context_operation') continue;
+    if (event.operation !== 'delegate_session' || event.phase !== 'applied') continue;
+    const targetSessionId = typeof event.targetSessionId === 'string' ? event.targetSessionId.trim() : '';
+    if (!targetSessionId) continue;
+    if (!delegationTasksLikelyMatch(
+      event.reason || '',
+      task,
+      typeof event.delegationTaskFingerprint === 'string' ? event.delegationTaskFingerprint : delegationTaskFingerprint,
+    )) {
+      continue;
+    }
+    const child = await getSession(targetSessionId);
+    if (child && !child.archived && child.delegatedFromSessionId === sourceSessionId) {
+      return child;
+    }
+  }
+
+  return null;
+}
+
+async function findLatestRunForSession(sessionId) {
+  if (!sessionId) return null;
+  const runIds = (await listRunIds()).reverse();
+  for (const runId of runIds) {
+    const run = await getRun(runId);
+    if (run?.sessionId === sessionId) {
+      return run;
+    }
+  }
+  return null;
 }
 
 
@@ -775,31 +886,6 @@ function allowsSessionTurnCompletionEffects(manifest) {
   return !manifest?.internalOperation || isReplySelfRepairOperation(manifest);
 }
 
-function hasPendingReplySelfCheck(sessionId) {
-  return !!liveSessions.get(sessionId)?.pendingReplySelfCheckRunId;
-}
-
-function markPendingReplySelfCheck(sessionId, runId, startedAt = nowIso()) {
-  if (!sessionId || !runId) return false;
-  const live = ensureLiveSession(sessionId);
-  const changed = live.pendingReplySelfCheckRunId !== runId
-    || live.pendingReplySelfCheckStartedAt !== startedAt;
-  live.pendingReplySelfCheckRunId = runId;
-  live.pendingReplySelfCheckStartedAt = startedAt;
-  return changed;
-}
-
-function clearPendingReplySelfCheck(sessionId, { broadcast = false } = {}) {
-  const live = liveSessions.get(sessionId);
-  if (!live) return false;
-  const hadPendingState = !!live.pendingReplySelfCheckRunId || !!live.pendingReplySelfCheckStartedAt;
-  delete live.pendingReplySelfCheckRunId;
-  delete live.pendingReplySelfCheckStartedAt;
-  if (hadPendingState && broadcast) {
-    broadcastSessionInvalidation(sessionId);
-  }
-  return hadPendingState;
-}
 
 function stopObservedRun(runId) {
   const observed = observedRuns.get(runId);
@@ -1007,6 +1093,14 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     historyChanged = true;
   }
 
+  // Detect if the adapter emitted a "completed" status in this delta — meaning
+  // the model has finished outputting content even though the process may still
+  // be alive (cleanup, background tasks, etc.).  Persisted on the run record so
+  // the signal survives across observer ticks.
+  const hasSpoolCompletion = normalizedEvents.some(
+    (e) => e.type === 'status' && typeof e.content === 'string' && e.content.trim() === 'completed',
+  );
+
   const currentNormalizedLineCount = Number.isInteger(run.normalizedLineCount) ? run.normalizedLineCount : 0;
   const currentNormalizedEventCount = Number.isInteger(run.normalizedEventCount) ? run.normalizedEventCount : 0;
   const archivedLineBase = projection.skippedLineCount > 0
@@ -1030,6 +1124,9 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     lastNormalizedAt: nowIso(),
     ...(Number.isInteger(contextInputTokens) ? { contextInputTokens } : {}),
     ...(Number.isInteger(contextWindowTokens) ? { contextWindowTokens } : {}),
+    ...(hasSpoolCompletion && !current.spoolCompletionDetectedAt
+      ? { spoolCompletionDetectedAt: nowIso() }
+      : {}),
   })) || run;
 
   if (run.claudeSessionId || run.codexThreadId) {
@@ -1044,6 +1141,22 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       run = reconciled;
       result = await getRunResult(runId);
     }
+  }
+  // If the adapter already signaled completion (the model output its final
+  // result) but the process hasn't exited yet, synthesize a successful result
+  // so the finalization pipeline fires immediately — the user shouldn't wait
+  // for process cleanup to receive push notifications and completion effects.
+  if (!result && !isTerminalRunState(run.state) && run.spoolCompletionDetectedAt) {
+    const completedAt = run.spoolCompletionDetectedAt;
+    const syntheticResult = { completedAt, exitCode: 0, signal: null, synthesized: true };
+    await writeRunResult(runId, syntheticResult);
+    run = await updateRun(runId, (current) => ({
+      ...current,
+      state: 'completed',
+      completedAt,
+      result: syntheticResult,
+    })) || run;
+    result = syntheticResult;
   }
   const inferredState = deriveRunStateFromResult(run, result);
   const completedAt = typeof result?.completedAt === 'string' && result.completedAt
@@ -1198,7 +1311,6 @@ const {
   buildReplySelfCheckPrompt,
   buildReplySelfRepairPrompt,
   buildResultAssetReadyMessage,
-  clearPendingReplySelfCheck,
   clearRenameState,
   collectGeneratedResultFilesFromRun,
   contextOperationEvent,
@@ -1214,7 +1326,6 @@ const {
   getSessionQueueCount,
   getTaskCardFollowupServices,
   getToolDefinitionAsync,
-  hasPendingReplySelfCheck,
   isInternalSession,
   isReplySelfRepairOperation,
   isSessionAutoRenamePending,
@@ -1223,7 +1334,6 @@ const {
   listRunIds,
   loadHistory,
   loadReplySelfCheckTurnContext,
-  markPendingReplySelfCheck,
   maybeApplyAssistantTaskCard,
   maybeAutoCompact,
   normalizeAttachmentSizeBytes,
@@ -1746,7 +1856,11 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
     actualText = turnSections.join('\n\n---\n\n');
 
     if (!hasResume) {
-      const systemContext = await buildSystemContext({ sessionId });
+      const isDelegatedChild = typeof session.delegationDepth === 'number' && session.delegationDepth > 0;
+      const systemContext = await buildSystemContext({
+        sessionId,
+        ...(isDelegatedChild ? { includeSessionSpawn: false } : {}),
+      });
       let preamble = systemContext;
       const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
       if (sourceRuntimePrompt) {
@@ -2416,6 +2530,8 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (Number.isInteger(extra.forkedFromSeq)) session.forkedFromSeq = extra.forkedFromSeq;
     if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;
     if (extra.forkedAt) session.forkedAt = extra.forkedAt;
+    if (extra.delegatedFromSessionId) session.delegatedFromSessionId = extra.delegatedFromSessionId;
+    if (Number.isInteger(extra.delegationDepth) && extra.delegationDepth > 0) session.delegationDepth = extra.delegationDepth;
     if (completionTargets.length > 0) session.completionTargets = completionTargets;
     if (hasRequestedActiveAgreements && requestedActiveAgreements.length > 0) {
       session.activeAgreements = requestedActiveAgreements;
@@ -3112,7 +3228,6 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   let activeRun = null;
   let hasActiveRun = false;
   const hasPendingCompact = liveSessions.get(sessionId)?.pendingCompact === true;
-  const replySelfCheckPending = hasPendingReplySelfCheck(sessionId);
   const activeRunId = typeof sessionMeta?.activeRunId === 'string' ? sessionMeta.activeRunId : null;
 
   if (activeRunId) {
@@ -3127,7 +3242,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     }
   }
 
-  if ((hasActiveRun || hasPendingCompact || replySelfCheckPending || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
+  if ((hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
     const queuedImages = options.preSavedAttachments?.length > 0
       ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
       : sanitizeQueuedFollowUpAttachments(await saveAttachments(images));
@@ -3149,7 +3264,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       return true;
     });
     const wasDuplicateQueueInsert = queuedMeta.changed === false;
-    if (!hasActiveRun && !hasPendingCompact && !replySelfCheckPending) {
+    if (!hasActiveRun && !hasPendingCompact) {
       scheduleQueuedFollowUpDispatch(sessionId);
     }
     broadcastSessionInvalidation(sessionId);
@@ -3419,11 +3534,39 @@ export async function delegateSession(sessionId, payload = {}) {
     throw new Error('task is required');
   }
 
+  // Guard: delegation depth limit to prevent recursive spawn chains
+  const sourceDepth = typeof source.delegationDepth === 'number' ? source.delegationDepth : 0;
+  if (sourceDepth >= MAX_DELEGATION_DEPTH) {
+    throw new Error(`Delegation depth limit reached (${MAX_DELEGATION_DEPTH}). Child sessions should not recursively delegate further.`);
+  }
+
+  // Guard: rate limiter to prevent burst session creation
+  const now = Date.now();
+  while (_delegationTimestamps.length > 0 && _delegationTimestamps[0] < now - DELEGATION_RATE_WINDOW_MS) {
+    _delegationTimestamps.shift();
+  }
+  if (_delegationTimestamps.length >= DELEGATION_RATE_MAX_PER_WINDOW) {
+    throw new Error(`Delegation rate limit exceeded (${DELEGATION_RATE_MAX_PER_WINDOW} per ${DELEGATION_RATE_WINDOW_MS / 1000}s). Try again later.`);
+  }
+  _delegationTimestamps.push(now);
+
   const requestedName = typeof payload?.name === 'string' ? payload.name.trim() : '';
   const requestedTool = typeof payload?.tool === 'string' ? payload.tool.trim() : '';
   const runInternally = payload?.internal === true;
   const nextTool = requestedTool || source.tool;
   const inheritRuntimePreferences = !requestedTool || requestedTool === source.tool;
+
+  const reusableChild = await findReusableDelegatedChild(source.id, task);
+  if (reusableChild) {
+    const activeRunId = typeof reusableChild.activeRunId === 'string' ? reusableChild.activeRunId.trim() : '';
+    const reusableRun = activeRunId
+      ? await flushDetachedRunIfNeeded(reusableChild.id, activeRunId) || await getRun(activeRunId)
+      : await findLatestRunForSession(reusableChild.id);
+    return {
+      session: reusableChild,
+      run: reusableRun || null,
+    };
+  }
 
   const child = await createSession(source.folder, nextTool, requestedName || '', {
     sourceId: source.sourceId || '',
@@ -3437,6 +3580,8 @@ export async function delegateSession(sessionId, payload = {}) {
     thinking: inheritRuntimePreferences && source.thinking === true,
     userId: source.userId || '',
     userName: source.userName || '',
+    delegatedFromSessionId: source.id,
+    delegationDepth: sourceDepth + 1,
     ...(runInternally ? { internalRole: INTERNAL_SESSION_ROLE_AGENT_DELEGATE } : {}),
   });
   if (!child) return null;
