@@ -289,21 +289,12 @@ try {
     assert.equal(assetRes.status, 200, 'published result asset metadata should load');
     assert.equal(assetRes.json.asset.originalName, expectedOutputs[0].name, 'published asset should keep the export filename');
 
-    const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download?download=1`, {
-      method: 'GET',
-      headers: { Cookie: cookie },
-      redirect: 'manual',
-    });
-    assert.equal(downloadRes.status, 302, 'download route should redirect to object storage');
-    const redirectUrl = String(downloadRes.headers.get('location') || '');
-    const redirectedUrl = new URL(redirectUrl);
-    const contentDisposition = redirectedUrl.searchParams.get('response-content-disposition') || '';
-    assert.match(contentDisposition, /^attachment; filename="1\.mp4"; filename\*=UTF-8''/u, 'download redirect should request an attachment filename');
-    assert.match(contentDisposition, /%E6%BC%94%E7%A4%BA%E7%BB%93%E6%9E%9C%201\.mp4/u, 'download redirect should preserve the original Unicode filename');
-
-    const redirected = await fetch(redirectUrl, { method: 'GET' });
-    assert.equal(redirected.status, 200, 'redirected object-storage download should succeed');
-    assert.equal(await redirected.text(), expectedOutputs[0].content, 'redirected object-storage download should return the exported file');
+    const downloadRes = await request(port, 'GET', `/api/assets/${assetId}/download?download=1`);
+    assert.equal(downloadRes.status, 200, 'download route should stream through the server');
+    const contentDisposition = downloadRes.headers['content-disposition'] || '';
+    assert.match(contentDisposition, /^attachment; filename="/u, 'download should set attachment Content-Disposition');
+    assert.match(contentDisposition, /UTF-8''.*%E6%BC%94%E7%A4%BA%E7%BB%93%E6%9E%9C/u, 'download should preserve the original Unicode filename');
+    assert.equal(downloadRes.text, expectedOutputs[0].content, 'download should return the exported file content');
   } finally {
     await stopServer(chatServer);
     await new Promise((resolve) => storageServer.close(resolve));

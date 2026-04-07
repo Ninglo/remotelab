@@ -323,24 +323,16 @@ try {
     assert.equal(redirected.status, 200, 'redirected object-storage download should succeed');
     assert.equal(await redirected.text(), 'upload-through-host', 'redirected object-storage download should return the uploaded attachment bytes');
 
-    const attachmentDownloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${userMessage.images[0].assetId}/download?download=1`, {
-      method: 'GET',
-      headers: { Cookie: cookie },
-      redirect: 'manual',
-    });
-    assert.equal(attachmentDownloadRes.status, 302, 'TOS attachment downloads should redirect to object storage');
-    const attachmentRedirectUrl = String(attachmentDownloadRes.headers.get('location') || '');
-    assert.ok(attachmentRedirectUrl.includes(`127.0.0.1:${storagePort}`), 'attachment redirect should point at object storage');
-    const attachmentUrl = new URL(attachmentRedirectUrl);
+    const attachmentDownloadRes = await request(port, 'GET', `/api/assets/${userMessage.images[0].assetId}/download?download=1`);
+    assert.equal(attachmentDownloadRes.status, 200, 'attachment download should stream through the server');
+    const attachmentDisposition = attachmentDownloadRes.headers['content-disposition'] || '';
     assert.match(
-      attachmentUrl.searchParams.get('response-content-disposition') || '',
+      attachmentDisposition,
       /^attachment; filename="notes\.txt"/,
-      'attachment redirect URL should include content-disposition for the original filename',
+      'attachment download should set Content-Disposition with the original filename',
     );
-
-    const attachmentRedirected = await fetch(attachmentRedirectUrl, { method: 'GET' });
-    assert.equal(attachmentRedirected.status, 200, 'redirected attachment download should succeed');
-    assert.equal(await attachmentRedirected.text(), 'upload-through-host', 'redirected attachment download should return the uploaded bytes');
+    assert.ok(!attachmentDisposition.includes('fasset_'), 'attachment Content-Disposition must not contain fasset_ ID');
+    assert.equal(attachmentDownloadRes.text, 'upload-through-host', 'attachment download should return the uploaded bytes');
   } finally {
     await stopServer(chatServer);
     await new Promise((resolve) => storageServer.close(resolve));
