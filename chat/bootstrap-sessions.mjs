@@ -3,8 +3,8 @@ import { homedir } from 'os';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-import { CHAT_PORT, INSTANCE_ROOT, PUBLIC_BASE_URL } from '../lib/config.mjs';
-import { getFeedInfo } from '../lib/connector-calendar-feed.mjs';
+import { CHAT_PORT, INSTANCE_ROOT, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { buildCalendarSubscriptionChannels, getFeedInfo } from '../lib/connector-calendar-feed.mjs';
 import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 
 import { BASIC_CHAT_APP_ID, WELCOME_APP_ID, getApp } from './apps.mjs';
@@ -131,35 +131,17 @@ function buildDigestShowcaseIntro() {
   ].join('\n\n');
 }
 
-function resolvePublicCalendarBaseUrl() {
-  const baseUrl = typeof PUBLIC_BASE_URL === 'string'
-    ? PUBLIC_BASE_URL.trim().replace(/\/+$/, '')
-    : '';
-  if (!baseUrl) return '';
-
-  try {
-    const parsed = new URL(baseUrl);
-    const hostname = parsed.hostname.toLowerCase();
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-      return '';
-    }
-    return parsed.origin;
-  } catch {
-    return '';
-  }
-}
-
 async function resolveCalendarSubscriptionUrls() {
   try {
     const feedInfo = await getFeedInfo();
     if (!feedInfo?.feedToken) return null;
-    const baseUrl = resolvePublicCalendarBaseUrl();
-    if (!baseUrl) return null;
-    const host = new URL(baseUrl).host;
-    return {
-      webcal: `webcal://${host}/cal/${feedInfo.feedToken}.ics`,
-      https: `${baseUrl}/cal/${feedInfo.feedToken}.ics`,
-    };
+    const channels = buildCalendarSubscriptionChannels({
+      feedToken: feedInfo.feedToken,
+      mainlandBaseUrl: MAINLAND_PUBLIC_BASE_URL,
+      publicBaseUrl: PUBLIC_BASE_URL,
+      preferredBaseUrl: MAINLAND_PUBLIC_BASE_URL || PUBLIC_BASE_URL,
+    });
+    return channels.variants.length > 0 ? channels : null;
   } catch {
     return null;
   }
@@ -167,14 +149,25 @@ async function resolveCalendarSubscriptionUrls() {
 
 function buildCalendarGuideMessages(calendarUrls) {
   if (!calendarUrls) return null;
+  const variantLines = calendarUrls.variants.flatMap((variant) => {
+    const title = variant.kind === 'mainland'
+      ? '**中国大陆推荐：**'
+      : variant.kind === 'public'
+        ? '**海外 / 备用：**'
+        : '**订阅入口：**';
+    return [
+      `${title}\n[点击订阅日历](${variant.webcalUrl || variant.httpsUrl})`,
+      `手动订阅地址：\n${variant.httpsUrl}`,
+    ];
+  });
+
   return [
     {
       role: 'assistant',
       content: [
         '这个实例支持日历订阅功能。我创建的所有日程事件都会写入一个 iCal 订阅源，你只需要订阅一次，之后所有新事件都会自动同步到你的日历 app 里。',
-        `**一键订阅（iOS / macOS）：**\n[点击订阅日历](${calendarUrls.webcal})`,
-        `点击上面的链接后，系统会弹出"订阅日历？"的确认框，确认即可。`,
-        `**手动订阅：**\n如果一键订阅没有生效，复制下面的地址，在日历 app 中手动添加：\n${calendarUrls.https}`,
+        ...variantLines,
+        '点击上面的链接后，系统会弹出"订阅日历？"的确认框，确认即可。',
         '**各平台操作方式：**',
         '- **iOS**：设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历 → 粘贴地址',
         '- **macOS**：日历 → 文件 → 新建日历订阅 → 粘贴地址',

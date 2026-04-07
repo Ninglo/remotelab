@@ -6,7 +6,7 @@ import {
   getConnectorBinding,
   listConnectorBindings,
 } from '../lib/connector-bindings.mjs';
-import { CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { CONFIG_DIR, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import {
   generateCalendarAuthUrl,
   handleCalendarAuthCallback,
@@ -17,6 +17,7 @@ import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
+  buildCalendarSubscriptionChannels,
   generateIcsFeed,
   getFeedInfo,
   getSubscriptionUrl,
@@ -32,7 +33,7 @@ import {
 } from './session-manager.mjs';
 
 const SHORTCUT_BODY_MAX_BYTES = 32 * 1024;
-const SHORTCUT_DEFAULT_WAIT_MS = 20_000;
+const SHORTCUT_DEFAULT_WAIT_MS = 0;
 const SHORTCUT_MAX_WAIT_MS = 20_000;
 const SHORTCUT_POLL_INTERVAL_MS = 300;
 const CONNECTOR_REQUEST_BODY_MAX_BYTES = 64 * 1024;
@@ -50,13 +51,33 @@ function trimString(value) {
 function resolveBaseUrl(req) {
   const host = trimString(req.headers?.host || req.headers?.['x-forwarded-host']);
   const proto = trimString(req.headers?.['x-forwarded-proto']) || 'https';
+  const prefix = normalizeForwardedPrefix(req.headers?.['x-forwarded-prefix']);
   if (!host) return '';
-  return `${proto}://${host}`;
+  return `${proto}://${host}${prefix}`;
+}
+
+function normalizeForwardedPrefix(value) {
+  const trimmed = trimString(value);
+  if (!trimmed) return '';
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
+  return normalized === '/' ? '' : normalized;
+}
+
+function hasPathPrefix(baseUrl) {
+  const normalizedBaseUrl = trimString(baseUrl);
+  if (!normalizedBaseUrl) return false;
+  try {
+    const pathname = new URL(normalizedBaseUrl).pathname.replace(/\/+$/, '');
+    return pathname.length > 0 && pathname !== '/';
+  } catch {
+    return false;
+  }
 }
 
 function buildSessionUrl(req, sessionId) {
   const baseUrl = resolveBaseUrl(req);
-  if (!baseUrl || !sessionId) return '';
+  if (!baseUrl) return '';
+  if (!sessionId) return `${baseUrl}/`;
   return `${baseUrl}/?session=${encodeURIComponent(sessionId)}`;
 }
 
@@ -326,15 +347,34 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
   }
 
   if (pathname === '/api/connectors/calendar/feed' && req.method === 'GET') {
-    const baseUrl = resolveBaseUrl(req);
-    if (!baseUrl) {
+    const requestBaseUrl = resolveBaseUrl(req);
+    const mainlandBaseUrl = MAINLAND_PUBLIC_BASE_URL || (hasPathPrefix(requestBaseUrl) ? requestBaseUrl : '');
+    const publicBaseUrl = PUBLIC_BASE_URL || (!hasPathPrefix(requestBaseUrl) ? requestBaseUrl : '');
+    const preferredBaseUrl = mainlandBaseUrl || publicBaseUrl || requestBaseUrl;
+    if (!preferredBaseUrl) {
       writeJson(res, 500, { error: 'Cannot determine public base URL from request headers.' });
       return true;
     }
     const feedInfo = await getFeedInfo();
-    const subscriptionUrl = await getSubscriptionUrl(baseUrl);
+    const subscriptionChannels = buildCalendarSubscriptionChannels({
+      feedToken: feedInfo.feedToken,
+      mainlandBaseUrl,
+      publicBaseUrl,
+      preferredBaseUrl,
+    });
+    const subscriptionUrl = subscriptionChannels.preferredHttpsUrl || await getSubscriptionUrl(preferredBaseUrl);
     writeJson(res, 200, {
       subscriptionUrl,
+      webcalUrl: subscriptionChannels.preferredWebcalUrl,
+      subscriptionUrls: {
+        preferred: subscriptionChannels.preferredHttpsUrl,
+        preferredWebcal: subscriptionChannels.preferredWebcalUrl,
+        mainland: subscriptionChannels.mainlandHttpsUrl,
+        mainlandWebcal: subscriptionChannels.mainlandWebcalUrl,
+        public: subscriptionChannels.publicHttpsUrl,
+        publicWebcal: subscriptionChannels.publicWebcalUrl,
+      },
+      variants: subscriptionChannels.variants,
       calendarName: feedInfo.calendarName,
       eventCount: feedInfo.eventCount,
     });
@@ -437,11 +477,6 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
     }
 
     const text = typeof payload.text === 'string' ? payload.text.trim() : '';
-    if (!text) {
-      writeJson(res, 400, { error: 'text is required' });
-      return true;
-    }
-
     const waitMs = normalizeShortcutWaitMs(payload.waitMs);
     const providedSessionId = trimString(payload.sessionId);
     const requestId = trimString(payload.requestId) || buildShortcutRequestId();
@@ -450,6 +485,16 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
     const sourceContext = buildShortcutSourceContext(payload);
 
     try {
+      // When no text is provided, just return the app URL (quick-launch mode)
+      if (!text) {
+        const sessionUrl = buildSessionUrl(req, null);
+        writeJson(res, 200, {
+          status: 'launch',
+          url: sessionUrl,
+        });
+        return true;
+      }
+
       let session = null;
       if (providedSessionId) {
         session = await getSession(providedSessionId);

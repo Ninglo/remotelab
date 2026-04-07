@@ -241,6 +241,7 @@ function buildUpstreamHeaders(headers, route) {
   upstreamHeaders['accept-encoding'] = 'identity';
 
   if (route.prefixed) {
+    upstreamHeaders['x-forwarded-prefix'] = route.prefix;
     let cookies = parseCookieHeader(headers.cookie)
       .filter((cookie) => cookie.name.startsWith(route.cookiePrefix))
       .map((cookie) => ({
@@ -260,6 +261,9 @@ function buildUpstreamHeaders(headers, route) {
     }
   }
 
+  if (!route.prefixed) {
+    delete upstreamHeaders['x-forwarded-prefix'];
+  }
   return upstreamHeaders;
 }
 

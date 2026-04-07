@@ -69,8 +69,8 @@ assert.match(freshPrompt, /Stable context entry points:/);
 assert.match(freshPrompt, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
 assert.match(freshPrompt, /Model-managed writable context root:/);
 assert.match(freshPrompt, /~\/\.remotelab\/memory\/model-context/);
-assert.match(freshPrompt, /execution substrate, not the user's personal Mac/);
-assert.match(freshPrompt, /prefer instance-scoped connectors\/APIs with explicit account bindings/);
+assert.match(freshPrompt, /execution substrate, not as the end user's personal Mac|Treat the host as execution substrate/);
+assert.match(freshPrompt, /prefer instance-scoped connectors\/API integrations and explicit account bindings|prefer instance-scoped connectors\/APIs with explicit account bindings/);
 assert.doesNotMatch(freshPrompt, /Subscription link \(webcal\): webcal:\/\/127\.0\.0\.1:/);
 assert.doesNotMatch(freshPrompt, /Subscription link \(https\): http:\/\/127\.0\.0\.1:/);
 

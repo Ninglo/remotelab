@@ -1,6 +1,6 @@
 import { homedir } from 'os';
-import { CHAT_PORT, PUBLIC_BASE_URL, SHARED_STARTUP_DEFAULTS_ENABLED } from '../lib/config.mjs';
-import { getFeedInfo } from '../lib/connector-calendar-feed.mjs';
+import { CHAT_PORT, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL, SHARED_STARTUP_DEFAULTS_ENABLED } from '../lib/config.mjs';
+import { buildCalendarSubscriptionChannels, getFeedInfo } from '../lib/connector-calendar-feed.mjs';
 import { pathExists } from './fs-utils.mjs';
 import { renderPromptAsset } from './prompt-asset-loader.mjs';
 import {
@@ -103,11 +103,24 @@ async function buildConnectorCapabilitiesSection() {
     const feedInfo = await getFeedInfo();
     if (!feedInfo?.feedToken) return '';
 
-    const baseUrl = resolvePublicCalendarBaseUrl();
-    if (!baseUrl) return '';
-    const host = new URL(baseUrl).host;
-    const webcalUrl = `webcal://${host}/cal/${feedInfo.feedToken}.ics`;
-    const httpsUrl = `${baseUrl}/cal/${feedInfo.feedToken}.ics`;
+    const channels = buildCalendarSubscriptionChannels({
+      feedToken: feedInfo.feedToken,
+      mainlandBaseUrl: MAINLAND_PUBLIC_BASE_URL,
+      publicBaseUrl: PUBLIC_BASE_URL,
+      preferredBaseUrl: MAINLAND_PUBLIC_BASE_URL || PUBLIC_BASE_URL,
+    });
+    if (channels.variants.length === 0) return '';
+    const subscriptionLines = channels.variants.flatMap((variant) => {
+      const label = variant.kind === 'mainland'
+        ? 'China-recommended'
+        : variant.kind === 'public'
+          ? 'Global / overseas'
+          : variant.label || 'Preferred';
+      return [
+        `Subscription link (${label}, webcal): ${variant.webcalUrl || variant.httpsUrl}`,
+        `Subscription link (${label}, https): ${variant.httpsUrl}`,
+      ];
+    });
 
     return `
 
@@ -118,31 +131,14 @@ Calendar events default to the instance iCal subscription feed. When the user re
 
 If a calendar completion target already includes a ready bound calendar connector (\`bindingId\` plus any required auth metadata such as \`credentialsPath\`), the dispatcher may deliver to that bound calendar instead of the feed. Use that path when the user explicitly needs first-class calendar notifications instead of subscription-only sync.
 
-Subscription link (webcal): ${webcalUrl}
-Subscription link (https): ${httpsUrl}
+${subscriptionLines.join('\n')}
 Events in feed: ${feedInfo.eventCount}
 
-If the user has not yet subscribed, send the webcal:// link directly in the conversation — it is clickable on iOS/macOS and triggers the native "Subscribe to Calendar?" dialog. Keep the message brief: describe what the subscription does, then provide the link. No separate setup page needed.
+If the user is in mainland China and a mainland-prefixed link is available, prefer that link first. Otherwise use the global / overseas link.
+
+If the user has not yet subscribed, send the webcal:// link directly in the conversation — it is clickable on iOS/macOS and triggers the native "Subscribe to Calendar?" dialog. Keep the message brief: describe what the subscription does, then provide the recommended link first. No separate setup page needed.
 
 Do not use the host machine's local Calendar.app or any GUI calendar application.`;
-  } catch {
-    return '';
-  }
-}
-
-function resolvePublicCalendarBaseUrl() {
-  const baseUrl = typeof PUBLIC_BASE_URL === 'string'
-    ? PUBLIC_BASE_URL.trim().replace(/\/+$/, '')
-    : '';
-  if (!baseUrl) return '';
-
-  try {
-    const parsed = new URL(baseUrl);
-    const hostname = parsed.hostname.toLowerCase();
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
-      return '';
-    }
-    return parsed.origin;
   } catch {
     return '';
   }

@@ -208,7 +208,7 @@ async function testIcsInvalidReminder() {
 async function testBuildSubscriptionUrl() {
   console.log('  [6] buildSubscriptionUrl produces correct URL');
 
-  const { buildSubscriptionUrl } = await import('../lib/connector-calendar-feed.mjs');
+  const { buildSubscriptionUrl, buildCalendarSubscriptionChannels } = await import('../lib/connector-calendar-feed.mjs');
 
   const url = buildSubscriptionUrl('https://remotelab.jiujianian.dev', 'abc123');
   assert.equal(url, 'https://remotelab.jiujianian.dev/cal/abc123.ics');
@@ -216,6 +216,25 @@ async function testBuildSubscriptionUrl() {
   // Trailing slash handling
   const url2 = buildSubscriptionUrl('https://remotelab.jiujianian.dev/', 'abc123');
   assert.equal(url2, 'https://remotelab.jiujianian.dev/cal/abc123.ics');
+
+  // Subpath handling for mainland bridge routes
+  const mainlandUrl = buildSubscriptionUrl('https://jojotry.nat100.top/trial24', 'abc123');
+  assert.equal(mainlandUrl, 'https://jojotry.nat100.top/trial24/cal/abc123.ics');
+
+  // Localhost should never become a delivered subscription URL
+  const localhostUrl = buildSubscriptionUrl('http://127.0.0.1:7690', 'abc123');
+  assert.equal(localhostUrl, '', 'localhost feed URLs should be suppressed');
+
+  const channels = buildCalendarSubscriptionChannels({
+    feedToken: 'abc123',
+    mainlandBaseUrl: 'https://jojotry.nat100.top/trial24',
+    publicBaseUrl: 'https://trial24.jiujianian.dev',
+    preferredBaseUrl: 'https://jojotry.nat100.top/trial24',
+  });
+  assert.equal(channels.preferredHttpsUrl, 'https://jojotry.nat100.top/trial24/cal/abc123.ics');
+  assert.equal(channels.publicHttpsUrl, 'https://trial24.jiujianian.dev/cal/abc123.ics');
+  assert.equal(channels.variants.length, 2, 'should expose both mainland and public subscription variants');
+  assert.equal(channels.variants[0].kind, 'mainland', 'mainland link should be preferred when requested');
 
   console.log('    PASS');
 }

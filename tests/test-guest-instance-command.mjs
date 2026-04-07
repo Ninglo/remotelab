@@ -547,10 +547,15 @@ const syncSandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-syn
 try {
   const launchAgentsDir = join(syncSandboxHome, 'Library', 'LaunchAgents');
   const logDir = join(syncSandboxHome, 'Library', 'Logs');
+  const ownerConfigDir = join(syncSandboxHome, '.config', 'remotelab');
   const instanceRoot = join(syncSandboxHome, '.remotelab', 'instances', 'trial');
   mkdirSync(launchAgentsDir, { recursive: true });
   mkdirSync(logDir, { recursive: true });
+  mkdirSync(ownerConfigDir, { recursive: true });
   mkdirSync(instanceRoot, { recursive: true });
+  writeFileSync(join(ownerConfigDir, 'guest-instance-defaults.json'), JSON.stringify({
+    mainlandBaseUrl: 'https://jojotry.nat100.top',
+  }, null, 2));
 
   writeFileSync(join(launchAgentsDir, 'com.chatserver.claude.plist'), buildLaunchAgentPlist({
     label: 'com.chatserver.claude',
@@ -603,6 +608,7 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_PROVIDER<\/key><string>tos<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_GUEST_MAINLAND_BASE_URL<\/key><string>https:\/\/jojotry\.nat100\.top<\/string>/);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_ENABLE_ACTIVE_RELEASE<\/key>/);
 } finally {
   rmSync(syncSandboxHome, { recursive: true, force: true });
