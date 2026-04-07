@@ -237,7 +237,7 @@ function buildStorageObjectUrl(baseUrl, objectKey) {
   return url.toString();
 }
 
-function presignStorageRequest(method, objectUrl, expiresInSeconds = FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS) {
+function presignStorageRequest(method, objectUrl, expiresInSeconds = FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS, additionalHeaders = {}) {
   requireFileAssetStorageEnabled();
 
   const signingProfile = getStorageSigningProfile();
@@ -246,19 +246,31 @@ function presignStorageRequest(method, objectUrl, expiresInSeconds = FILE_ASSET_
   const amzDate = formatAmzDate(issuedAt);
   const shortDate = amzDate.slice(0, 8);
   const credentialScope = `${shortDate}/${FILE_ASSET_STORAGE_REGION}/${signingProfile.service}/${signingProfile.requestTerminator}`;
+
+  const headersToSign = { host: url.host };
+  for (const [key, value] of Object.entries(additionalHeaders)) {
+    headersToSign[key.toLowerCase()] = String(value).trim();
+  }
+  const sortedHeaderNames = Object.keys(headersToSign).sort();
+  const signedHeadersValue = sortedHeaderNames.join(';');
+
   const query = new URLSearchParams(url.search);
   query.set(signingProfile.queryAlgorithmKey, signingProfile.algorithm);
   query.set(signingProfile.queryCredentialKey, `${FILE_ASSET_STORAGE_ACCESS_KEY_ID}/${credentialScope}`);
   query.set(signingProfile.queryDateKey, amzDate);
   query.set(signingProfile.queryExpiresKey, String(expiresInSeconds));
-  query.set(signingProfile.querySignedHeadersKey, 'host');
+  query.set(signingProfile.querySignedHeadersKey, signedHeadersValue);
+
+  const canonicalHeaders = sortedHeaderNames
+    .map((name) => `${name}:${headersToSign[name]}`)
+    .join('\n') + '\n';
 
   const canonicalRequest = [
     method.toUpperCase(),
     canonicalUri(url),
     canonicalQuery(query.entries()),
-    `host:${url.host}\n`,
-    'host',
+    canonicalHeaders,
+    signedHeadersValue,
     'UNSIGNED-PAYLOAD',
   ].join('\n');
 
@@ -361,12 +373,10 @@ function buildDownloadRoute(assetId, { attachment = false } = {}) {
 
 function buildStorageDownloadUrl(baseUrl, record, { attachment = false } = {}) {
   const url = new URL(buildStorageObjectUrl(baseUrl, record.storage.objectKey));
-  if (FILE_ASSET_STORAGE_PROVIDER !== 'tos') {
-    url.searchParams.set(
-      'response-content-disposition',
-      buildAttachmentContentDisposition(record.originalName, { attachment }),
-    );
-  }
+  url.searchParams.set(
+    'response-content-disposition',
+    buildAttachmentContentDisposition(record.originalName, { attachment }),
+  );
   return url.toString();
 }
 
@@ -442,7 +452,13 @@ export async function createFileAssetUploadIntent({
   await ensureDir(CHAT_FILE_ASSETS_DIR);
   await writeJsonAtomic(fileAssetPath(assetId), record);
 
-  const upload = presignStorageRequest('PUT', buildStorageObjectUrl(FILE_ASSET_STORAGE_BASE_URL, record.storage.objectKey));
+  const contentDisposition = buildAttachmentContentDisposition(record.originalName);
+  const upload = presignStorageRequest(
+    'PUT',
+    buildStorageObjectUrl(FILE_ASSET_STORAGE_BASE_URL, record.storage.objectKey),
+    FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS,
+    { 'content-disposition': contentDisposition, 'content-type': record.mimeType },
+  );
   return {
     asset: await buildClientFileAsset(record),
     upload: {
@@ -450,6 +466,7 @@ export async function createFileAssetUploadIntent({
       url: upload.url,
       headers: {
         'Content-Type': record.mimeType,
+        'Content-Disposition': contentDisposition,
       },
       expiresAt: upload.expiresAt,
     },

@@ -302,7 +302,7 @@ export async function handleControlRoutes({
     const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
 
     try {
-      if (downloadRequested || asset.storage?.provider === 'local') {
+      if (asset.storage?.provider === 'local') {
         const localPath = await localizeFileAsset(asset);
         streamResponse(res, localPath, {
           'Content-Type': asset.mimeType || 'application/octet-stream',
@@ -311,7 +311,7 @@ export async function handleControlRoutes({
         });
         return true;
       }
-      const direct = await buildFileAssetDirectUrl(asset);
+      const direct = await buildFileAssetDirectUrl(asset, { attachment: downloadRequested });
       res.writeHead(302, buildHeaders({
         Location: direct.url,
         'Cache-Control': 'private, no-store, max-age=0, must-revalidate',

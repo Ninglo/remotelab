@@ -68,7 +68,7 @@ try {
   const uploadUrl = new URL(intent.upload.url);
   assert.equal(uploadUrl.origin, 'https://example-bucket.tos-cn-beijing.volces.com', 'upload URL should target the normalized TOS bucket host');
   assert.equal(uploadUrl.searchParams.get('X-Tos-Algorithm'), 'TOS4-HMAC-SHA256', 'upload URL should use TOS signing parameters');
-  assert.equal(uploadUrl.searchParams.get('X-Tos-SignedHeaders'), 'host', 'upload URL should sign only the host header');
+  assert.equal(uploadUrl.searchParams.get('X-Tos-SignedHeaders'), 'content-disposition;content-type;host', 'upload URL should sign content-disposition, content-type, and host headers');
   assert.equal(uploadUrl.searchParams.get('X-Amz-Algorithm'), null, 'upload URL should not use AWS query params for TOS');
   assert.match(
     uploadUrl.pathname,

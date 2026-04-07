@@ -149,6 +149,7 @@ function startMockStorageServer(port) {
         objects.set(key, {
           body: Buffer.concat(chunks),
           contentType: req.headers['content-type'] || 'application/octet-stream',
+          contentDisposition: req.headers['content-disposition'] || '',
         });
         res.writeHead(200, { ETag: 'mock-etag' });
         res.end('ok');
@@ -163,10 +164,17 @@ function startMockStorageServer(port) {
         res.end('Not found');
         return;
       }
-      res.writeHead(200, {
+      const responseHeaders = {
         'Content-Type': object.contentType,
         'Content-Length': String(object.body.length),
-      });
+      };
+      const overrideDisposition = parsed.searchParams.get('response-content-disposition');
+      if (overrideDisposition) {
+        responseHeaders['Content-Disposition'] = overrideDisposition;
+      } else if (object.contentDisposition) {
+        responseHeaders['Content-Disposition'] = object.contentDisposition;
+      }
+      res.writeHead(200, responseHeaders);
       res.end(object.body);
       return;
     }
@@ -289,12 +297,22 @@ try {
     assert.equal(assetRes.status, 200, 'published result asset metadata should load');
     assert.equal(assetRes.json.asset.originalName, expectedOutputs[0].name, 'published asset should keep the export filename');
 
-    const downloadRes = await request(port, 'GET', `/api/assets/${assetId}/download?download=1`);
-    assert.equal(downloadRes.status, 200, 'download route should stream through the server');
-    const contentDisposition = downloadRes.headers['content-disposition'] || '';
-    assert.match(contentDisposition, /^attachment; filename="/u, 'download should set attachment Content-Disposition');
-    assert.match(contentDisposition, /UTF-8''.*%E6%BC%94%E7%A4%BA%E7%BB%93%E6%9E%9C/u, 'download should preserve the original Unicode filename');
-    assert.equal(downloadRes.text, expectedOutputs[0].content, 'download should return the exported file content');
+    const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download?download=1`, {
+      method: 'GET',
+      headers: { Cookie: cookie },
+      redirect: 'manual',
+    });
+    assert.equal(downloadRes.status, 302, 'download route should redirect to object storage');
+    const redirectUrl = String(downloadRes.headers.get('location') || '');
+    const redirectedUrl = new URL(redirectUrl);
+    const contentDisposition = redirectedUrl.searchParams.get('response-content-disposition') || '';
+    assert.match(contentDisposition, /^attachment; filename="/u, 'download redirect should request an attachment filename');
+    assert.match(contentDisposition, /UTF-8''.*%E6%BC%94%E7%A4%BA%E7%BB%93%E6%9E%9C/u, 'download redirect should preserve the original Unicode filename');
+    assert.ok(!contentDisposition.includes('fasset_'), 'download redirect Content-Disposition must not contain fasset_ ID');
+
+    const redirected = await fetch(redirectUrl, { method: 'GET' });
+    assert.equal(redirected.status, 200, 'redirected object-storage download should succeed');
+    assert.equal(await redirected.text(), expectedOutputs[0].content, 'redirected download should return the exported file');
   } finally {
     await stopServer(chatServer);
     await new Promise((resolve) => storageServer.close(resolve));

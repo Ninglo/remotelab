@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 /**
- * Verifies that file asset downloads served by the chat-server return the correct
- * Content-Disposition filename — NOT the internal fasset_xxx ID.
+ * Verifies that file asset downloads return the correct filename — NOT the
+ * internal fasset_xxx ID — via proper Content-Disposition headers from storage.
+ *
+ * The strategy is two-fold:
+ *  1. Upload sets Content-Disposition metadata on the S3/TOS object.
+ *  2. Download redirect URL includes response-content-disposition query param.
  *
  * Covers:
- *  1. download=1 → 200 streamed through server, correct Content-Disposition attachment header
- *  2. no download flag → 302 redirect to object storage (inline viewing)
- *  3. Unicode filenames are preserved in Content-Disposition
- *  4. Downloaded body matches uploaded content
+ *  - Upload intent returns Content-Disposition in upload headers
+ *  - Mock storage stores Content-Disposition metadata on PUT
+ *  - download=1 → 302 redirect with response-content-disposition=attachment
+ *  - inline (no download flag) → 302 redirect with response-content-disposition=inline
+ *  - Storage returns Content-Disposition from stored metadata + query override
+ *  - No fasset_ prefix in any Content-Disposition
+ *  - Unicode, spaces, ASCII, and shortcut filenames all work
  */
 import assert from 'assert/strict';
 import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
@@ -116,6 +123,12 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
   return { home };
 }
 
+/**
+ * Mock S3/TOS storage server that:
+ * - Stores Content-Disposition from PUT request as object metadata
+ * - Returns stored Content-Disposition on GET
+ * - Honors response-content-disposition query parameter as override
+ */
 function startMockStorageServer(port) {
   const objects = new Map();
   const server = http.createServer((req, res) => {
@@ -128,6 +141,7 @@ function startMockStorageServer(port) {
         objects.set(key, {
           body: Buffer.concat(chunks),
           contentType: req.headers['content-type'] || 'application/octet-stream',
+          contentDisposition: req.headers['content-disposition'] || '',
         });
         res.writeHead(200, { ETag: '"mock-etag"' });
         res.end('ok');
@@ -141,10 +155,18 @@ function startMockStorageServer(port) {
         res.end('Not found');
         return;
       }
-      res.writeHead(200, {
+      const responseHeaders = {
         'Content-Type': object.contentType,
         'Content-Length': String(object.body.length),
-      });
+      };
+      // Honor response-content-disposition query param (like real S3/TOS)
+      const overrideDisposition = parsed.searchParams.get('response-content-disposition');
+      if (overrideDisposition) {
+        responseHeaders['Content-Disposition'] = overrideDisposition;
+      } else if (object.contentDisposition) {
+        responseHeaders['Content-Disposition'] = object.contentDisposition;
+      }
+      res.writeHead(200, responseHeaders);
       res.end(object.body);
       return;
     }
@@ -167,8 +189,8 @@ async function startServer({ home, port, storagePort }) {
       SECURE_COOKIES: '0',
       REMOTELAB_ASSET_STORAGE_BASE_URL: `http://127.0.0.1:${storagePort}/bucket`,
       REMOTELAB_ASSET_STORAGE_PUBLIC_BASE_URL: '',
-      REMOTELAB_ASSET_STORAGE_PROVIDER: 's3',
-      REMOTELAB_ASSET_STORAGE_REGION: 'auto',
+      REMOTELAB_ASSET_STORAGE_PROVIDER: 'tos',
+      REMOTELAB_ASSET_STORAGE_REGION: 'cn-beijing',
       REMOTELAB_ASSET_STORAGE_ACCESS_KEY_ID: 'test-access-key',
       REMOTELAB_ASSET_STORAGE_SECRET_ACCESS_KEY: 'test-secret-key',
       REMOTELAB_ASSET_STORAGE_PRESIGN_TTL_SECONDS: '3600',
@@ -207,7 +229,7 @@ try {
   const { home } = setupTempHome();
   const port = randomPort();
   const storagePort = randomPort();
-  const { server: storageServer } = await startMockStorageServer(storagePort);
+  const { server: storageServer, objects } = await startMockStorageServer(storagePort);
   const chatServer = await startServer({ home, port, storagePort });
 
   try {
@@ -222,7 +244,7 @@ try {
     for (const tc of testCases) {
       console.log(`  testing: ${tc.name} (${tc.originalName})`);
 
-      // Upload
+      // 1. Create upload intent — verify Content-Disposition header is included
       const intentRes = await request(port, 'POST', '/api/assets/upload-intents', {
         sessionId: session.id,
         originalName: tc.originalName,
@@ -230,8 +252,18 @@ try {
         sizeBytes: Buffer.byteLength(tc.content),
       });
       assert.equal(intentRes.status, 200, `${tc.name}: upload intent`);
+      assert.ok(
+        intentRes.json.upload.headers['Content-Disposition'],
+        `${tc.name}: upload intent should include Content-Disposition header`,
+      );
+      assert.ok(
+        !intentRes.json.upload.headers['Content-Disposition'].includes('fasset_'),
+        `${tc.name}: upload Content-Disposition must not contain fasset_ ID`,
+      );
+
       const assetId = intentRes.json.asset.id;
 
+      // 2. Upload with all headers (including Content-Disposition)
       const uploadBody = Buffer.from(tc.content);
       const uploadRes = await fetch(intentRes.json.upload.url, {
         method: 'PUT',
@@ -240,34 +272,60 @@ try {
       });
       assert.equal(uploadRes.status, 200, `${tc.name}: upload`);
 
+      // 3. Verify storage object has Content-Disposition metadata
+      const storedObject = [...objects.values()].pop();
+      assert.ok(
+        storedObject.contentDisposition,
+        `${tc.name}: stored object should have Content-Disposition metadata`,
+      );
+      assert.ok(
+        !storedObject.contentDisposition.includes('fasset_'),
+        `${tc.name}: stored Content-Disposition must not contain fasset_ ID`,
+      );
+
       await request(port, 'POST', `/api/assets/${assetId}/finalize`, {
         sizeBytes: uploadBody.length,
         etag: uploadRes.headers.get('etag') || '',
       });
 
-      // Test 1: download=1 should stream through server with correct Content-Disposition
-      const downloadRes = await request(port, 'GET', `/api/assets/${assetId}/download?download=1`);
-      assert.equal(downloadRes.status, 200, `${tc.name}: download should return 200 (server-proxied)`);
-
-      const disposition = downloadRes.headers['content-disposition'] || '';
-      assert.match(disposition, /^attachment;/u, `${tc.name}: should be attachment disposition`);
-
-      // The filename must NOT contain fasset_
+      // 4. download=1 should redirect with response-content-disposition=attachment
+      const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download?download=1`, {
+        method: 'GET',
+        headers: { Cookie: cookie },
+        redirect: 'manual',
+      });
+      assert.equal(downloadRes.status, 302, `${tc.name}: download should redirect to storage`);
+      const redirectUrl = String(downloadRes.headers.get('location') || '');
+      const redirectParsed = new URL(redirectUrl);
+      const downloadDisposition = redirectParsed.searchParams.get('response-content-disposition') || '';
+      assert.match(downloadDisposition, /^attachment;/u, `${tc.name}: redirect should request attachment disposition`);
       assert.ok(
-        !disposition.includes('fasset_'),
-        `${tc.name}: Content-Disposition must not contain fasset_ ID, got: ${disposition}`,
+        !downloadDisposition.includes('fasset_'),
+        `${tc.name}: redirect Content-Disposition must not contain fasset_ ID, got: ${downloadDisposition}`,
       );
 
-      // Body should match
-      assert.equal(downloadRes.text, tc.content, `${tc.name}: downloaded content should match`);
+      // 5. Follow redirect and verify storage returns correct Content-Disposition header
+      const storageRes = await fetch(redirectUrl, { method: 'GET' });
+      assert.equal(storageRes.status, 200, `${tc.name}: storage download should succeed`);
+      const finalDisposition = storageRes.headers.get('content-disposition') || '';
+      assert.match(finalDisposition, /^attachment;/u, `${tc.name}: storage should return attachment disposition`);
+      assert.ok(
+        !finalDisposition.includes('fasset_'),
+        `${tc.name}: storage response Content-Disposition must not contain fasset_, got: ${finalDisposition}`,
+      );
+      assert.equal(await storageRes.text(), tc.content, `${tc.name}: downloaded content should match`);
 
-      // Test 2: no download flag should redirect (302) for inline viewing
+      // 6. Inline view should also redirect with response-content-disposition=inline
       const inlineRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download`, {
         method: 'GET',
         headers: { Cookie: cookie },
         redirect: 'manual',
       });
-      assert.equal(inlineRes.status, 302, `${tc.name}: inline view should redirect to storage`);
+      assert.equal(inlineRes.status, 302, `${tc.name}: inline view should redirect`);
+      const inlineRedirectUrl = String(inlineRes.headers.get('location') || '');
+      const inlineParsed = new URL(inlineRedirectUrl);
+      const inlineDisposition = inlineParsed.searchParams.get('response-content-disposition') || '';
+      assert.match(inlineDisposition, /^inline;/u, `${tc.name}: inline redirect should request inline disposition`);
     }
   } finally {
     await stopServer(chatServer);
