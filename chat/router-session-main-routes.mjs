@@ -146,8 +146,7 @@ export async function handleSessionMainRoutes({
     }
     const timeline = await getSessionTimelineEvents(sessionId);
     const events = buildSessionDisplayEvents(timeline, {
-      sessionRunning: session?.activity?.run?.state === 'running'
-        && session?.activity?.run?.phase !== 'reply_self_check',
+      sessionRunning: session?.activity?.run?.state === 'running',
     });
     writeJsonCached(req, res, { sessionId, filter: 'visible', events });
     return true;

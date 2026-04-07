@@ -6,6 +6,31 @@ function isStrongMultiWorkstreamCue(text) {
   return /(?:需要|值得|应该)?(?:重点)?(?:关注|处理|回答|讨论|看)(?:的)?(?:两点|三点|几点|几件事|几个问题|几个事情)|(?:two|three|multiple|several)\s+(?:things|topics|questions|tracks|workstreams|asks)/i.test(text);
 }
 
+function hasExplicitSingleWorkflowInstruction(text) {
+  return /(?:this|same|current)\s+session|(?:sole|single|one)\s+(?:workflow|session)|do not create another child|do not spawn|stop further spawn|continue advancing independently in this same session|独立工作流|同一(?:个)?会话|本会话|不要再(?:创建|生成|启动)(?:另一个)?子会话|不要再分裂|停止进一步(?:派生|委派|分流)/i.test(text);
+}
+
+function hasStructuredWorkflowChecklist(text, workstreams) {
+  const normalizedText = String(text || '').toLowerCase();
+  const triageKeywordCount = [
+    /\bboundary\b|边界/,
+    /\breproduction\b|复现/,
+    /\bblast radius\b|影响范围|波及/,
+    /\bworkaround\b|临时绕过|临时方案/,
+    /\bnext steps?\b|后续|下一步/,
+    /\btriage\b|排查|分诊/,
+  ].reduce((count, pattern) => count + (pattern.test(normalizedText) ? 1 : 0), 0);
+
+  if (triageKeywordCount >= 3) return true;
+  if (!Array.isArray(workstreams) || workstreams.length === 0) return false;
+
+  const checklistKeywordCount = workstreams.reduce((count, item) => {
+    return count + (/(?:boundary|reproduction|blast radius|workaround|next steps?|triage|边界|复现|影响范围|临时绕过|临时方案|下一步|分诊)/i.test(item) ? 1 : 0);
+  }, 0);
+
+  return checklistKeywordCount >= 3;
+}
+
 function isAgendaMarker(line) {
   return /^\s*(?:[-*+]|\d+[.)]|[①②③④⑤⑥⑦⑧⑨⑩]|[一二三四五六七八九十]+[、.．)])\s+/.test(line);
 }
@@ -60,6 +85,14 @@ export function analyzeTurnRouting(text) {
   }
 
   const workstreams = extractAgendaItems(normalizedText).slice(0, 4);
+  if (hasExplicitSingleWorkflowInstruction(normalizedText) || hasStructuredWorkflowChecklist(normalizedText, workstreams)) {
+    return {
+      shouldSplit: false,
+      workstreams,
+      reason: '',
+    };
+  }
+
   const hasStrongCue = isStrongMultiWorkstreamCue(normalizedText);
   if (workstreams.length < 2) {
     return {

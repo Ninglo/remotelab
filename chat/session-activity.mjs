@@ -42,30 +42,21 @@ export function buildSessionActivity(meta, live, { runState, run, queuedCount })
   const renameError = typeof live?.renameError === 'string' ? live.renameError : '';
   const compactState = live?.pendingCompact === true ? 'pending' : 'idle';
   const queueCount = Number.isInteger(queuedCount) ? queuedCount : 0;
-  const replySelfCheckRunId = typeof live?.pendingReplySelfCheckRunId === 'string' && live.pendingReplySelfCheckRunId
-    ? live.pendingReplySelfCheckRunId
-    : null;
-  const replySelfCheckStartedAt = typeof live?.pendingReplySelfCheckStartedAt === 'string'
-    ? live.pendingReplySelfCheckStartedAt
-    : null;
-  const effectiveRunState = runState === 'running' || replySelfCheckRunId
-    ? 'running'
-    : 'idle';
 
   return {
     run: {
-      state: effectiveRunState,
+      state: runState === 'running' ? 'running' : 'idle',
       phase: runState === 'running'
         ? (typeof run?.state === 'string' ? run.state : null)
-        : (replySelfCheckRunId ? 'reply_self_check' : null),
+        : null,
       startedAt: runState === 'running'
         ? (typeof run?.startedAt === 'string' ? run.startedAt : null)
-        : replySelfCheckStartedAt,
+        : null,
       runId: runState === 'running'
         ? (typeof run?.id === 'string'
           ? run.id
           : (typeof meta?.activeRunId === 'string' ? meta.activeRunId : null))
-        : replySelfCheckRunId,
+        : null,
       cancelRequested: runState === 'running' && run?.cancelRequested === true,
     },
     queue: {

@@ -522,7 +522,7 @@ function updateStatus(connState, session = getCurrentSession()) {
   sendBtn.style.display = "";
   sendBtn.disabled = !hasSession || archived;
   sendBtn.title = inputBusy ? t("action.queueFollowUp") : t("action.send");
-  cancelBtn.style.display = runIsActive && activity.run.phase !== "reply_self_check" && hasSession ? "flex" : "none";
+  cancelBtn.style.display = runIsActive && hasSession ? "flex" : "none";
   imgBtn.disabled = !hasSession || archived;
   inlineToolSelect.disabled = visitorMode || archived;
   inlineModelSelect.disabled = !hasSession || archived;

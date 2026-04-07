@@ -30,4 +30,32 @@ assert.equal(simple.shouldSplit, false);
 assert.deepEqual(simple.workstreams, []);
 assert.equal(buildTurnRoutingHint('帮我看一下这个仓库的问题。'), '');
 
+const boundedWorkflow = analyzeTurnRouting(`Complete the initial bug triage now inside this session:
+1. boundary: recursive/duplicate delegation bug
+2. reproduction: explicit request for a new independent bug workflow causes more than one child session
+3. blast radius: fragmented context and incomplete triage
+4. workaround: pin one session as the sole workflow and stop further spawn/delegate from it
+5. next steps: identify the routing/delegation path and missing stop conditions
+
+After that, continue advancing independently in this same session. Do not create another child session.`);
+assert.equal(boundedWorkflow.shouldSplit, false);
+assert.deepEqual(boundedWorkflow.workstreams, [
+  'boundary: recursive/duplicate delegation bug',
+  'reproduction: explicit request for a new independent bug workflow causes more than one child session',
+  'blast radius: fragmented context and incomplete triage',
+  'workaround: pin one session as the sole workflow and stop further spawn/delegate from it',
+  'next steps: identify the routing/delegation path and missing stop conditions',
+].slice(0, 4));
+assert.equal(
+  buildTurnRoutingHint(`Complete the initial bug triage now inside this session:
+1. boundary: recursive/duplicate delegation bug
+2. reproduction: explicit request for a new independent bug workflow causes more than one child session
+3. blast radius: fragmented context and incomplete triage
+4. workaround: pin one session as the sole workflow and stop further spawn/delegate from it
+5. next steps: identify the routing/delegation path and missing stop conditions
+
+After that, continue advancing independently in this same session. Do not create another child session.`),
+  '',
+);
+
 console.log('test-session-routing: ok');

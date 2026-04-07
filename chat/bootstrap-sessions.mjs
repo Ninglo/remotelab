@@ -35,10 +35,14 @@ const RAW_SPREADSHEET_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.raw.x
 const CLEANED_SPREADSHEET_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.cleaned.xlsx');
 const CLEANUP_NOTES_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'sales-march.notes.md');
 const DIGEST_SHOWCASE_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'ai-coding-agent-digest.sample.md');
+const SHORTCUT_VOICE_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'remotelab-voice.shortcut');
+const SHORTCUT_TEXT_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'remotelab-text.shortcut');
+const SHORTCUT_OPEN_ASSET_PATH = join(BOOTSTRAP_ASSETS_DIR, 'remotelab-open.shortcut');
 const OWNER_BOOTSTRAP_FILE_SHOWCASE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:showcase:file_cleanup';
 const OWNER_BOOTSTRAP_DIGEST_SHOWCASE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:showcase:digest_email_delivery';
 const OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:showcase:instance_email';
 const OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:guide:calendar_subscribe';
+const OWNER_BOOTSTRAP_SHORTCUTS_GUIDE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:guide:shortcuts';
 
 async function safeReadJson(filePath, fallbackValue = null) {
   try {
@@ -315,6 +319,58 @@ async function getOwnerBootstrapSessionDefinitions() {
       sidebarOrder: 5,
       messages: buildCalendarGuideMessages(calendarUrls),
     }] : []),
+    {
+      templateId: BASIC_CHAT_APP_ID,
+      externalTriggerId: OWNER_BOOTSTRAP_SHORTCUTS_GUIDE_EXTERNAL_TRIGGER_ID,
+      name: '[引导] 安装快捷指令，用 Siri 或一键启动 RemoteLab',
+      entryMode: SESSION_ENTRY_MODE_READ,
+      pinned: true,
+      sidebarOrder: 6,
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            '三个快捷指令帮你从 iPhone/Mac 快速启动 RemoteLab。点击下方附件下载安装。',
+            '**RemoteLab 语音**\n语音说出问题，自动提交并跳转到 RemoteLab 查看 AI 流式回复。最适合绑定 Siri。',
+            '**RemoteLab 文字**\n文字输入问题，提交后跳转。适合添加到主屏幕 Widget。',
+            '**打开 RemoteLab**\n一键直接打开，最快的启动方式。',
+          ].join('\n\n'),
+          attachments: [
+            {
+              localPath: SHORTCUT_VOICE_ASSET_PATH,
+              originalName: 'RemoteLab 语音.shortcut',
+              mimeType: 'application/octet-stream',
+              renderAs: 'file',
+            },
+            {
+              localPath: SHORTCUT_TEXT_ASSET_PATH,
+              originalName: 'RemoteLab 文字.shortcut',
+              mimeType: 'application/octet-stream',
+              renderAs: 'file',
+            },
+            {
+              localPath: SHORTCUT_OPEN_ASSET_PATH,
+              originalName: '打开 RemoteLab.shortcut',
+              mimeType: 'application/octet-stream',
+              renderAs: 'file',
+            },
+          ],
+        },
+        {
+          role: 'assistant',
+          content: [
+            '**安装方法**',
+            'iOS：点击附件下载，系统会自动弹出快捷指令导入界面，确认添加即可。',
+            'Mac：下载后双击文件，会自动导入到快捷指令 app，之后通过 iCloud 同步到 iPhone。',
+            '首次安装可能需要到「设置 → 快捷指令」中允许不受信任的快捷指令。',
+            '**安装后建议**',
+            '- 把「语音」绑定到 Siri：打开快捷指令 app → 长按该指令 → 详细信息 → 添加到 Siri',
+            '- 把「文字」或「打开」添加到主屏幕 Widget 或锁屏',
+            '- 三个都会出现在 Spotlight 搜索中，下拉搜索即可触发',
+          ].join('\n\n'),
+        },
+      ],
+    },
   ];
 }
 

@@ -453,7 +453,27 @@ export async function createFileAssetUploadIntent({
   });
 
   await ensureDir(CHAT_FILE_ASSETS_DIR);
+  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED) {
+    const localFilename = buildLocalObjectFilename(assetId, record.originalName);
+    record.storage.provider = 'local';
+    record.storage.localFilename = localFilename;
+  }
+
   await writeJsonAtomic(fileAssetPath(assetId), record);
+
+  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED) {
+    return {
+      asset: await buildClientFileAsset(record),
+      upload: {
+        method: 'PUT',
+        url: `/api/assets/${assetId}/upload`,
+        headers: {
+          'Content-Type': record.mimeType,
+        },
+        expiresAt: null,
+      },
+    };
+  }
 
   const contentDisposition = buildAttachmentContentDisposition(record.originalName);
   const upload = presignStorageRequest(
@@ -476,6 +496,41 @@ export async function createFileAssetUploadIntent({
   };
 }
 
+export async function ingestFileAssetUpload(assetId, readableStream) {
+  const record = await getFileAsset(assetId);
+  if (!record) {
+    throw createError('File asset not found', 'FILE_ASSET_NOT_FOUND', 404);
+  }
+  if (record.status !== 'pending_upload') {
+    throw createError('File asset is not pending upload', 'FILE_ASSET_NOT_PENDING', 409);
+  }
+  if (record.storage?.provider !== 'local') {
+    throw createError('File asset does not accept local uploads', 'FILE_ASSET_UPLOAD_UNSUPPORTED', 409);
+  }
+
+  const targetPath = resolveLocalObjectPath(record);
+  const tempPath = `${targetPath}.tmp-${process.pid}-${Date.now()}`;
+  await ensureDir(CHAT_FILE_ASSET_OBJECTS_DIR);
+
+  try {
+    await pipeline(readableStream, createWriteStream(tempPath));
+    await rename(tempPath, targetPath);
+  } catch (error) {
+    await removePath(tempPath).catch(() => {});
+    throw createError(error?.message || 'Failed to store file asset upload', 'FILE_ASSET_UPLOAD_FAILED', 502);
+  }
+
+  const fileStats = await statOrNull(targetPath);
+  return mutateFileAsset(assetId, (draft) => {
+    draft.localizedPath = targetPath;
+    draft.localizedAt = nowIso();
+    if (fileStats?.isFile() && Number.isInteger(fileStats.size) && fileStats.size > 0) {
+      draft.sizeBytes = fileStats.size;
+    }
+    return true;
+  });
+}
+
 export async function finalizeFileAssetUpload(assetId, { sizeBytes, etag } = {}) {
   const record = await mutateFileAsset(assetId, (draft) => {
     draft.status = 'ready';
@@ -489,6 +544,22 @@ export async function finalizeFileAssetUpload(assetId, { sizeBytes, etag } = {})
 
   if (!record) {
     throw createError('File asset not found', 'FILE_ASSET_NOT_FOUND', 404);
+  }
+  if (record.storage?.provider === 'local') {
+    const localPath = resolveLocalObjectPath(record);
+    const fileStats = await statOrNull(localPath);
+    if (!fileStats?.isFile()) {
+      throw createError(`Failed to locate local file asset: ${record.id}`, 'FILE_ASSET_LOCAL_MISSING', 404);
+    }
+    const updated = await mutateFileAsset(record.id, (draft) => {
+      draft.localizedPath = localPath;
+      draft.localizedAt = draft.localizedAt || nowIso();
+      if (Number.isInteger(fileStats.size) && fileStats.size > 0) {
+        draft.sizeBytes = fileStats.size;
+      }
+      return true;
+    });
+    return buildClientFileAsset(updated || record, { includeDirectUrl: true });
   }
   return buildClientFileAsset(record, { includeDirectUrl: true });
 }

@@ -11,7 +11,6 @@ export function createSessionTurnCompletionHelpers(services) {
     buildReplySelfCheckPrompt,
     buildReplySelfRepairPrompt,
     buildResultAssetReadyMessage,
-    clearPendingReplySelfCheck,
     clearRenameState,
     collectGeneratedResultFilesFromRun,
     contextOperationEvent,
@@ -26,7 +25,6 @@ export function createSessionTurnCompletionHelpers(services) {
     getSessionQueueCount,
     getTaskCardFollowupServices,
     getToolDefinitionAsync,
-    hasPendingReplySelfCheck,
     isInternalSession,
     isReplySelfRepairOperation,
     isSessionAutoRenamePending,
@@ -34,7 +32,6 @@ export function createSessionTurnCompletionHelpers(services) {
     isTerminalRunState,
     listRunIds,
     loadReplySelfCheckTurnContext,
-    markPendingReplySelfCheck,
     maybeApplyAssistantTaskCard,
     maybeAutoCompact,
     normalizeAttachmentSizeBytes,
@@ -83,7 +80,6 @@ export function createSessionTurnCompletionHelpers(services) {
     if (!currentSession?.id) return false;
     if (isSessionRunning(currentSession)) return false;
     if (getSessionQueueCount(currentSession) > 0) return false;
-    if (hasPendingReplySelfCheck(sessionId)) return false;
     sendCompletionPush({ ...currentSession, id: sessionId }).catch(() => {});
     return true;
   }
@@ -188,7 +184,6 @@ export function createSessionTurnCompletionHelpers(services) {
       return null;
     }
 
-    markPendingReplySelfCheck(sessionId, run.id);
     await appendEvent(sessionId, statusEvent(REPLY_SELF_CHECK_REVIEWING_STATUS));
     await appendEvent(sessionId, buildReplySelfCheckReviewingOperation());
     broadcastSessionInvalidation(sessionId);
@@ -226,7 +221,7 @@ export function createSessionTurnCompletionHelpers(services) {
         'RemoteLab could not complete the background early-stop review.',
         reason,
       ));
-      clearPendingReplySelfCheck(sessionId, { broadcast: true });
+      broadcastSessionInvalidation(sessionId);
       return { attempted: true, continued: false };
     }
 
@@ -239,7 +234,7 @@ export function createSessionTurnCompletionHelpers(services) {
         'New work arrived before RemoteLab could launch the follow-up turn.',
         'new work arrived first',
       ));
-      clearPendingReplySelfCheck(sessionId, { broadcast: true });
+      broadcastSessionInvalidation(sessionId);
       return { attempted: true, continued: false };
     }
 
@@ -251,7 +246,7 @@ export function createSessionTurnCompletionHelpers(services) {
         'RemoteLab kept the latest reply as-is after review.',
         reason,
       ));
-      clearPendingReplySelfCheck(sessionId, { broadcast: true });
+      broadcastSessionInvalidation(sessionId);
       return { attempted: true, continued: false };
     }
 
@@ -282,11 +277,10 @@ export function createSessionTurnCompletionHelpers(services) {
         'RemoteLab could not launch the follow-up turn.',
         failureReason,
       ));
-      clearPendingReplySelfCheck(sessionId, { broadcast: true });
+      broadcastSessionInvalidation(sessionId);
       return { attempted: true, continued: false };
     }
 
-    clearPendingReplySelfCheck(sessionId);
     return { attempted: true, continued: true };
   }
 

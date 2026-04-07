@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'timers/promises';
 import { pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
-import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
+import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
 import {
   normalizeExternalRuntimeSelectionMode,
   resolveExternalRuntimeSelection,
@@ -16,7 +16,9 @@ import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs'
 import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 
-const DEFAULT_CONFIG_PATH = join(homedir(), '.config', 'remotelab', 'feishu-connector', 'config.json');
+const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
+  ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
+  : join(CONFIG_DIR, 'feishu-connector', 'config.json');
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_ACCESS_STATE_FILENAME = 'access-state.json';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;

@@ -450,26 +450,23 @@ try {
     'delayed review scenario should enter the self-check review state',
   );
 
+  // After the run completes, the session is idle during the background self-check
+  // review. There is no in-memory shadow "running" state — activeRunId is the
+  // single source of truth.
   let delayedDuringReview = null;
   await waitFor(
     async () => {
       delayedDuringReview = await getSession(delayedReviewSession.id);
-      return delayedDuringReview?.activity?.run?.state === 'running'
-        && delayedDuringReview?.activity?.run?.phase === 'reply_self_check'
+      return delayedDuringReview?.activity?.run?.state === 'idle'
         && (delayedDuringReview?.workflowState || '') === '';
     },
-    'session should expose reply-self-check activity before the delayed review finishes',
+    'session should be idle during background self-check review (no shadow running state)',
   );
 
   assert.equal(
     delayedDuringReview?.activity?.run?.state,
-    'running',
-    'session should stay running while reply self-check is still pending',
-  );
-  assert.equal(
-    delayedDuringReview?.activity?.run?.phase,
-    'reply_self_check',
-    'pending reply self-check should expose a dedicated run phase',
+    'idle',
+    'session should be idle while background self-check reviews — activeRunId is the sole busy signal',
   );
   assert.equal(
     delayedDuringReview?.workflowState || '',

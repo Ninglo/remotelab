@@ -29,6 +29,7 @@ import {
   finalizeFileAssetUpload,
   getFileAsset,
   getFileAssetForClient,
+  ingestFileAssetUpload,
   localizeFileAsset,
 } from './file-assets.mjs';
 import { createShareSnapshot } from './shares.mjs';
@@ -252,6 +253,31 @@ export async function handleControlRoutes({
       includeDirectUrl: asset.status === 'ready',
     });
     writeJson(res, 200, { asset: clientAsset });
+    return true;
+  }
+
+  if (fileAssetRoute?.action === 'upload' && req.method === 'PUT') {
+    const asset = await getFileAsset(fileAssetRoute.assetId);
+    if (!asset) {
+      writeJson(res, 404, { error: 'Asset not found' });
+      return true;
+    }
+    if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
+    if (!getGrantedCapability(authSession, 'uploadAttachments', true)) {
+      writeJson(res, 403, { error: 'Access denied' });
+      return true;
+    }
+
+    try {
+      await ingestFileAssetUpload(asset.id, req);
+      res.writeHead(200, buildHeaders({
+        ETag: `"${asset.id}"`,
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      }));
+      res.end();
+    } catch (error) {
+      writeJson(res, error?.statusCode || 400, { error: error.message || 'Failed to upload asset body' });
+    }
     return true;
   }
 

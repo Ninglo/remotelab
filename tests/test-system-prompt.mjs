@@ -61,6 +61,8 @@ assert.match(context, /core dispatch principle/);
 assert.match(context, /not primarily a user-facing UI action/);
 assert.match(context, /independent worker that simply received bounded handoff context/);
 assert.match(context, /2\+ independently actionable goals/);
+assert.match(context, /Do not split a single bounded workflow just because the user expressed it as a numbered checklist, bug-triage rubric, or ordered step sequence/);
+assert.match(context, /same session\/workflow or not to create another child session, treat that as a strong no-split signal/);
 assert.match(context, /clear no-split reason/);
 assert.match(context, /parent session may coordinate while each child session owns one goal/);
 assert.match(context, /remotelab session-spawn --task/);

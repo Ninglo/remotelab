@@ -837,6 +837,41 @@ async function phase13DelegateSession() {
     assert.match(delegateNotice.content || '', new RegExp(`session=${delegate.json.session.id}`), 'handoff note should include a direct session link');
     assert.match(delegateNotice.content || '', /Figure out a lightweight child-session strategy for parallel work\./, 'handoff note should include the delegated task');
 
+    const duplicateDelegate = await request(port, 'POST', `/api/sessions/${session.id}/delegate`, {
+      task: 'Figure out a lightweight child-session strategy for parallel work.',
+    });
+    assert.equal(duplicateDelegate.status, 201, 'repeat delegate should still succeed');
+    assert.equal(
+      duplicateDelegate.json.session?.id,
+      delegate.json.session.id,
+      'repeat delegate with the same task should reuse the existing child session',
+    );
+    assert.equal(
+      duplicateDelegate.json.run?.id,
+      delegate.json.run.id,
+      'repeat delegate with the same task should reuse the existing child run instead of starting a duplicate',
+    );
+
+    const parentEventsAfterReuse = await getEvents(port, session.id);
+    const reuseOperations = parentEventsAfterReuse.events.filter(
+      (event) => event.type === 'context_operation' && event.operation === 'delegate_session',
+    );
+    assert.equal(
+      reuseOperations.length,
+      1,
+      'repeat delegate reuse should not append another visible delegation operation to the parent session',
+    );
+
+    const distinctDelegate = await request(port, 'POST', `/api/sessions/${session.id}/delegate`, {
+      task: 'Figure out a different child-session strategy for parallel work.',
+    });
+    assert.equal(distinctDelegate.status, 201, 'distinct delegate task should still succeed');
+    assert.notEqual(
+      distinctDelegate.json.session?.id,
+      delegate.json.session.id,
+      'a different delegated task should still create a new child session',
+    );
+
     const running = await createSession(port, {
       name: 'Delegate busy',
       group: 'Tests',
