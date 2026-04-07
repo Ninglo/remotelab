@@ -515,12 +515,13 @@ export async function maybeAutoCompact(sessionId, session, run, manifest, servic
   if (!session || !run) return false;
   if (manifest?.internalOperation && manifest.internalOperation !== 'reply_self_repair') return false;
   if (services.getSessionQueueCount(session) > 0) return false;
+  let effectiveRun = run;
   let contextTokens = getRunLiveContextTokens(run);
   let autoCompactTokens = getAutoCompactContextTokens(run);
   if (!Number.isInteger(contextTokens) || !Number.isFinite(autoCompactTokens)) {
     const refreshed = await refreshCodexContextMetrics(run);
     if (refreshed) {
-      const syntheticRun = {
+      effectiveRun = {
         ...run,
         contextInputTokens: refreshed.contextTokens,
         ...(Number.isInteger(refreshed.contextWindowTokens)
@@ -528,12 +529,12 @@ export async function maybeAutoCompact(sessionId, session, run, manifest, servic
           : {}),
       };
       contextTokens = refreshed.contextTokens;
-      autoCompactTokens = getAutoCompactContextTokens(syntheticRun);
+      autoCompactTokens = getAutoCompactContextTokens(effectiveRun);
     }
   }
   if (!Number.isInteger(contextTokens) || !Number.isFinite(autoCompactTokens)) return false;
   if (contextTokens <= autoCompactTokens) return false;
-  return queueContextCompaction(sessionId, session, run, { automatic: true }, services);
+  return queueContextCompaction(sessionId, session, effectiveRun, { automatic: true }, services);
 }
 
 export async function applyCompactionWorkerResult(targetSessionId, run, manifest, services = {}) {
