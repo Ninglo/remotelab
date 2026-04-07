@@ -160,6 +160,29 @@ try {
   assert.equal(calResults[0].state, 'sent');
   assert.equal(calResults[0].result.capabilityState, 'ready');
 
+  // --- bound calendar targets should attempt direct connector delivery ---
+  const directCalendarSession = {
+    id: 'test-cal-direct',
+    completionTargets: [
+      {
+        id: 'cal_direct',
+        type: 'calendar',
+        bindingId: calBinding.id,
+        credentialsPath: '/tmp/does-not-exist-google-creds.json',
+        title: 'Direct delivery',
+        startTime: '2026-04-07T11:00:00Z',
+        endTime: '2026-04-07T11:30:00Z',
+        reminderMinutesBefore: 3,
+      },
+    ],
+  };
+  const directResults = await dispatchSessionConnectorActions(directCalendarSession, { id: 'run2' });
+  assert.equal(directResults.length, 1);
+  assert.equal(directResults[0].connectorId, 'calendar');
+  assert.equal(directResults[0].state, 'failed');
+  assert.equal(directResults[0].result.deliveryState, 'delivery_failed');
+  assert.match(directResults[0].result.message, /Bound calendar delivery failed/);
+
   console.log('test-connector-action-dispatcher: ok');
 } finally {
   killAll();

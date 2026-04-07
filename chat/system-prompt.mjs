@@ -113,8 +113,10 @@ async function buildConnectorCapabilitiesSection() {
 
 ## Instance Connectors
 
-### Calendar (iCal Subscription Feed)
-Calendar events are delivered via an iCal subscription feed — not through local Calendar.app or Google Calendar API. When the user requests a calendar event, create a completion target with type "calendar". The event is stored locally and immediately available in the .ics feed.
+### Calendar
+Calendar events default to the instance iCal subscription feed. When the user requests a calendar event, create a completion target with type "calendar". The event is stored locally and immediately available in the .ics feed.
+
+If a calendar completion target already includes a ready bound calendar connector (\`bindingId\` plus any required auth metadata such as \`credentialsPath\`), the dispatcher may deliver to that bound calendar instead of the feed. Use that path when the user explicitly needs first-class calendar notifications instead of subscription-only sync.
 
 Subscription link (webcal): ${webcalUrl}
 Subscription link (https): ${httpsUrl}
@@ -122,7 +124,7 @@ Events in feed: ${feedInfo.eventCount}
 
 If the user has not yet subscribed, send the webcal:// link directly in the conversation — it is clickable on iOS/macOS and triggers the native "Subscribe to Calendar?" dialog. Keep the message brief: describe what the subscription does, then provide the link. No separate setup page needed.
 
-Do not use the host machine's local Calendar.app or any GUI calendar application. All calendar writes go through the feed.`;
+Do not use the host machine's local Calendar.app or any GUI calendar application.`;
   } catch {
     return '';
   }

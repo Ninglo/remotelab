@@ -1,7 +1,7 @@
 import { sanitizeEmailCompletionTargets } from '../lib/agent-mail-completion-targets.mjs';
 import { sanitizeCompletionTargets } from '../lib/connector-action-dispatcher.mjs';
 import { findQueueItem } from '../lib/agent-mailbox.mjs';
-import { getConnectorBinding, resolveEmailConnectorBinding } from '../lib/connector-bindings.mjs';
+import { getConnectorBinding, resolveCalendarConnectorBinding, resolveEmailConnectorBinding } from '../lib/connector-bindings.mjs';
 import {
   createConnectorActionResult,
   normalizeConnectorCapabilityState,
@@ -154,7 +154,8 @@ function compactGenericBindingSurface(binding) {
 }
 
 async function resolveCalendarAction(target, { session = null, run = null } = {}) {
-  // Calendar uses the iCal subscription feed — always ready, no binding required.
+  const bindingId = trimString(target?.bindingId);
+  const binding = bindingId ? await resolveCalendarConnectorBinding({ bindingId }) : null;
   const targetRunState = run?.completionTargets?.[target.id] || null;
   const deliveryState = pickConnectorDeliveryState([
     runTargetStateToDeliveryState(targetRunState),
@@ -166,8 +167,9 @@ async function resolveCalendarAction(target, { session = null, run = null } = {}
   return createConnectorActionResult({
     actionId: trimString(target?.id),
     connectorId: 'calendar',
+    bindingId,
     targetId: `event:${trimString(target?.title).slice(0, 50)}`,
-    capabilityState: 'ready',
+    capabilityState: trimString(binding?.capabilityState) || 'ready',
     deliveryState,
     message: targetRunState?.lastError || '',
   });
