@@ -3,16 +3,15 @@
  * Verifies that file asset downloads return the correct filename — NOT the
  * internal fasset_xxx ID — via proper Content-Disposition headers from storage.
  *
- * The strategy is two-fold:
- *  1. Upload sets Content-Disposition metadata on the S3/TOS object.
+ * The strategy is:
+ *  1. Upload stores the original filename in the asset record.
  *  2. Download redirect URL includes response-content-disposition query param.
  *
  * Covers:
- *  - Upload intent returns Content-Disposition in upload headers
- *  - Mock storage stores Content-Disposition metadata on PUT
+ *  - Upload intent keeps the browser PUT header set CORS-safe
  *  - download=1 → 302 redirect with response-content-disposition=attachment
  *  - inline (no download flag) → 302 redirect with response-content-disposition=inline
- *  - Storage returns Content-Disposition from stored metadata + query override
+ *  - Storage returns Content-Disposition from the redirect override
  *  - No fasset_ prefix in any Content-Disposition
  *  - Unicode, spaces, ASCII, and shortcut filenames all work
  */
@@ -244,7 +243,7 @@ try {
     for (const tc of testCases) {
       console.log(`  testing: ${tc.name} (${tc.originalName})`);
 
-      // 1. Create upload intent — verify Content-Disposition header is included
+      // 1. Create upload intent — browser uploads should stay CORS-safe
       const intentRes = await request(port, 'POST', '/api/assets/upload-intents', {
         sessionId: session.id,
         originalName: tc.originalName,
@@ -252,18 +251,11 @@ try {
         sizeBytes: Buffer.byteLength(tc.content),
       });
       assert.equal(intentRes.status, 200, `${tc.name}: upload intent`);
-      assert.ok(
-        intentRes.json.upload.headers['Content-Disposition'],
-        `${tc.name}: upload intent should include Content-Disposition header`,
-      );
-      assert.ok(
-        !intentRes.json.upload.headers['Content-Disposition'].includes('fasset_'),
-        `${tc.name}: upload Content-Disposition must not contain fasset_ ID`,
-      );
+      assert.equal(intentRes.json.upload.headers['Content-Disposition'], undefined, `${tc.name}: upload intent should omit Content-Disposition header`);
 
       const assetId = intentRes.json.asset.id;
 
-      // 2. Upload with all headers (including Content-Disposition)
+      // 2. Upload with the returned browser-safe headers
       const uploadBody = Buffer.from(tc.content);
       const uploadRes = await fetch(intentRes.json.upload.url, {
         method: 'PUT',
@@ -272,16 +264,9 @@ try {
       });
       assert.equal(uploadRes.status, 200, `${tc.name}: upload`);
 
-      // 3. Verify storage object has Content-Disposition metadata
+      // 3. Storage should not rely on object metadata for the final filename
       const storedObject = [...objects.values()].pop();
-      assert.ok(
-        storedObject.contentDisposition,
-        `${tc.name}: stored object should have Content-Disposition metadata`,
-      );
-      assert.ok(
-        !storedObject.contentDisposition.includes('fasset_'),
-        `${tc.name}: stored Content-Disposition must not contain fasset_ ID`,
-      );
+      assert.equal(storedObject.contentDisposition, '', `${tc.name}: stored object should not need Content-Disposition metadata`);
 
       await request(port, 'POST', `/api/assets/${assetId}/finalize`, {
         sizeBytes: uploadBody.length,

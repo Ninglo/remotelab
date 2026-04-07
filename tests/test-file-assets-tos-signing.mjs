@@ -36,7 +36,7 @@ try {
   process.env.REMOTELAB_ASSET_STORAGE_SECRET_ACCESS_KEY = 'test-secret-key';
   process.env.REMOTELAB_ASSET_STORAGE_PRESIGN_TTL_SECONDS = '900';
   delete process.env.REMOTELAB_ASSET_STORAGE_PROVIDER;
-  process.env.REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED = '0';
+  process.env.REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED = '1';
 
   const config = await importFresh('lib/config.mjs');
   assert.equal(config.FILE_ASSET_STORAGE_PROVIDER, 'tos', 'Volcengine endpoints should auto-detect as TOS');
@@ -45,7 +45,7 @@ try {
     'https://example-bucket.tos-cn-beijing.volces.com',
     'TOS path-style endpoints should normalize to virtual-host form',
   );
-  assert.equal(config.FILE_ASSET_DIRECT_UPLOAD_ENABLED, false, 'direct upload toggle should be independently disableable');
+  assert.equal(config.FILE_ASSET_DIRECT_UPLOAD_ENABLED, true, 'direct upload toggle should remain enableable for browser uploads');
   assert.deepEqual(
     config.FILE_ASSET_ALLOWED_ORIGINS,
     ['https://example-bucket.tos-cn-beijing.volces.com'],
@@ -55,9 +55,9 @@ try {
   const fileAssets = await importFresh('chat/file-assets.mjs');
   assert.deepEqual(fileAssets.getFileAssetBootstrapConfig(), {
     enabled: true,
-    directUpload: false,
+    directUpload: true,
     provider: 'tos',
-  }, 'bootstrap config should advertise TOS storage while keeping browser direct upload disabled');
+  }, 'bootstrap config should advertise direct-upload-capable TOS storage');
 
   const intent = await fileAssets.createFileAssetUploadIntent({
     sessionId: 'session-test',
@@ -68,7 +68,7 @@ try {
   const uploadUrl = new URL(intent.upload.url);
   assert.equal(uploadUrl.origin, 'https://example-bucket.tos-cn-beijing.volces.com', 'upload URL should target the normalized TOS bucket host');
   assert.equal(uploadUrl.searchParams.get('X-Tos-Algorithm'), 'TOS4-HMAC-SHA256', 'upload URL should use TOS signing parameters');
-  assert.equal(uploadUrl.searchParams.get('X-Tos-SignedHeaders'), 'content-disposition;content-type;host', 'upload URL should sign content-disposition, content-type, and host headers');
+  assert.equal(uploadUrl.searchParams.get('X-Tos-SignedHeaders'), 'content-type;host', 'upload URL should sign content-type and host headers only');
   assert.equal(uploadUrl.searchParams.get('X-Amz-Algorithm'), null, 'upload URL should not use AWS query params for TOS');
   assert.match(
     uploadUrl.pathname,

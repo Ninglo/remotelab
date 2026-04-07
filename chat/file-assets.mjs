@@ -475,12 +475,11 @@ export async function createFileAssetUploadIntent({
     };
   }
 
-  const contentDisposition = buildAttachmentContentDisposition(record.originalName);
   const upload = presignStorageRequest(
     'PUT',
     buildStorageObjectUrl(FILE_ASSET_STORAGE_BASE_URL, record.storage.objectKey),
     FILE_ASSET_STORAGE_PRESIGN_TTL_SECONDS,
-    { 'content-disposition': contentDisposition, 'content-type': record.mimeType },
+    { 'content-type': record.mimeType },
   );
   return {
     asset: await buildClientFileAsset(record),
@@ -489,7 +488,6 @@ export async function createFileAssetUploadIntent({
       url: upload.url,
       headers: {
         'Content-Type': record.mimeType,
-        'Content-Disposition': contentDisposition,
       },
       expiresAt: upload.expiresAt,
     },
