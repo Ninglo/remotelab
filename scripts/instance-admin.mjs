@@ -813,8 +813,8 @@ async function apiInstanceAction(res, name, action) {
     } else if (action === 'start') {
       await execFileAsync('launchctl', ['load', plist], { timeout: 10_000 });
     } else if (action === 'restart') {
-      await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 }).catch(() => {});
-      await execFileAsync('launchctl', ['load', plist], { timeout: 10_000 });
+      await cli(['restart', 'chat'], 180_000);
+      return json(res, { ok: true, action: 'restart-all-chat', requestedName: safe });
     }
     json(res, { ok: true, action, name: safe });
   } catch (err) {

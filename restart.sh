@@ -1,8 +1,8 @@
 #!/bin/bash
-# Restart one or all RemoteLab services.
+# Restart RemoteLab services.
 # Usage:
 #   restart.sh          — restart all services
-#   restart.sh chat     — restart only chat-server
+#   restart.sh chat     — restart owner + all guest chat surfaces
 #   restart.sh tunnel   — restart only cloudflared
 #   restart.sh mainland — restart only natapp mainland proxy
 
@@ -22,6 +22,10 @@ restart_launchd() {
   local label="$1"
   local plist="$HOME/Library/LaunchAgents/${label}.plist"
   local name="$2"
+  local uid
+  uid="$(id -u)"
+  local launchctl_line
+  local pid
 
   if [ ! -f "$plist" ]; then
     echo "  $name: plist not found, skipping"
@@ -29,13 +33,47 @@ restart_launchd() {
   fi
 
   if launchctl list | grep -q "$label"; then
-    launchctl stop "$label" 2>/dev/null || true
+    launchctl kickstart -k "gui/${uid}/${label}" 2>/dev/null || true
     sleep 1
-    echo "  $name: restarted ($(launchctl list | grep "$label" | awk '{print "pid="$1}'))"
+    launchctl_line="$(launchctl list | awk -v target="$label" '$3 == target { print; exit }')"
+    pid="$(printf '%s\n' "$launchctl_line" | awk 'NF { print $1 }')"
+    if [ -n "$pid" ]; then
+      echo "  $name: restarted (pid=$pid)"
+    else
+      echo "  $name: restarted"
+    fi
   else
     launchctl load "$plist" 2>/dev/null
     echo "  $name: loaded"
   fi
+}
+
+restart_all_chat_launchd() {
+  local launch_agents_dir="$HOME/Library/LaunchAgents"
+  local labels=()
+  local plist
+
+  if [ -f "$launch_agents_dir/com.chatserver.claude.plist" ]; then
+    labels+=("com.chatserver.claude")
+  fi
+
+  for plist in "$launch_agents_dir"/com.chatserver.*.plist; do
+    [ -e "$plist" ] || continue
+    if [ "$plist" = "$launch_agents_dir/com.chatserver.claude.plist" ]; then
+      continue
+    fi
+    labels+=("$(basename "$plist" .plist)")
+  done
+
+  if [ "${#labels[@]}" -eq 0 ]; then
+    echo "  chat surfaces: no launch agents found, skipping"
+    return
+  fi
+
+  echo "  chat surfaces: restarting ${#labels[@]} services"
+  for label in "${labels[@]}"; do
+    restart_launchd "$label" "$label"
+  done
 }
 
 # ── Linux: systemd --user ─────────────────────────────────────────────────────
@@ -68,8 +106,12 @@ restart_service() {
 
 case "$SERVICE" in
   chat)
-    echo "Restarting chat-server..."
-    restart_service "chat-server" "com.chatserver.claude" "remotelab-chat"
+    echo "Restarting all chat surfaces..."
+    if [[ "$OS_TYPE" == "macos" ]]; then
+      restart_all_chat_launchd
+    else
+      restart_service "chat-server" "com.chatserver.claude" "remotelab-chat"
+    fi
     ;;
   tunnel)
     echo "Restarting cloudflared..."
@@ -81,7 +123,11 @@ case "$SERVICE" in
     ;;
   all)
     echo "Restarting all services..."
-    restart_service "chat-server" "com.chatserver.claude"  "remotelab-chat"
+    if [[ "$OS_TYPE" == "macos" ]]; then
+      restart_all_chat_launchd
+    else
+      restart_service "chat-server" "com.chatserver.claude"  "remotelab-chat"
+    fi
     restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
     restart_service "natapp mainland proxy" "com.remotelab.natapp.dual-proxy" "remotelab-natapp-dual-proxy"
     ;;
