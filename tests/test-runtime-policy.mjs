@@ -146,6 +146,16 @@ try {
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /Do not split a single bounded workflow just because the user provided a numbered checklist, triage rubric, or step sequence/,
+    'default Codex developer instructions should keep bounded checklist-style workflows in one session',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /same session\/workflow or not to create another child session, treat that as a strong no-split signal/,
+    'default Codex developer instructions should honor explicit same-session no-spawn instructions',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
     /universal product rules belong in shared startup context, this user's standing preferences belong in personal memory, and repo-specific or specialized workflows belong in repo-local instructions or on-demand skills/,
     'default Codex developer instructions should separate shared defaults, personal memory, and repo-local workflows',
   );
@@ -181,12 +191,12 @@ try {
   );
   assert.match(
     MANAGER_RUNTIME_BOUNDARY_SECTION,
-    /prefer instance-scoped connectors\/API integrations and explicit account bindings or delivery targets/,
+    /only use connectors and delivery channels that are explicitly configured|prefer instance-scoped connectors/,
     'manager runtime boundary should prefer bound connectors over host app state for external side effects',
   );
   assert.match(
     MANAGER_RUNTIME_BOUNDARY_SECTION,
-    /binding-needed state instead of silently falling back to the host owner's local accounts or app sessions/,
+    /missing-capability state to the user instead of improvising|binding-needed state instead of silently falling back/,
     'manager runtime boundary should block silent fallback to owner-local accounts when connector bindings are missing',
   );
   assert.match(
