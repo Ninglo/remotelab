@@ -255,7 +255,7 @@ async function testDispatchCalendarToFeed() {
   assert.ok(created, 'event should be in the store');
   assert.equal(created.sessionId, 'sess_test');
   assert.equal(created.runId, 'run_test');
-  assert.equal(created.reminderMinutesBefore, 10);
+  assert.deepEqual(created.reminders, [10]);
 
   console.log('    PASS');
 }
@@ -278,6 +278,82 @@ async function testDispatchMissingSummary() {
   console.log('    PASS');
 }
 
+async function testMultipleReminders() {
+  console.log('  [9] generateIcsContent emits multiple VALARM blocks for reminders array');
+
+  const { generateIcsContent } = await import('../lib/connector-calendar-feed.mjs');
+
+  const doc = {
+    calendarName: 'Test',
+    events: [
+      {
+        uid: 'multi-alarm@remotelab',
+        summary: 'Multi-alarm event',
+        startTime: '2026-05-01T10:00:00Z',
+        endTime: '2026-05-01T11:00:00Z',
+        reminders: [1440, 30],
+        sequence: 0,
+        createdAt: '2026-04-06T00:00:00Z',
+        updatedAt: '2026-04-06T00:00:00Z',
+      },
+    ],
+  };
+
+  const ics = generateIcsContent(doc);
+  const alarmCount = (ics.match(/BEGIN:VALARM/g) || []).length;
+  assert.equal(alarmCount, 2, 'should have two VALARM blocks');
+  assert.ok(ics.includes('TRIGGER:-PT1440M'), 'should have 1-day reminder');
+  assert.ok(ics.includes('TRIGGER:-PT30M'), 'should have 30-min reminder');
+
+  console.log('    PASS');
+}
+
+async function testDefaultReminders() {
+  console.log('  [10] addCalendarFeedEvent applies default reminders when none specified');
+
+  const { addCalendarFeedEvent } = await import('../lib/connector-calendar-feed.mjs');
+
+  const event = await addCalendarFeedEvent({
+    summary: 'Default reminder test',
+    startTime: '2026-07-01T09:00:00Z',
+    endTime: '2026-07-01T10:00:00Z',
+  });
+
+  assert.ok(Array.isArray(event.reminders), 'reminders should be an array');
+  assert.deepEqual(event.reminders, [1440, 30], 'should default to [1440, 30]');
+
+  console.log('    PASS');
+}
+
+async function testLegacyReminderBackwardCompat() {
+  console.log('  [11] generateIcsContent handles legacy reminderMinutesBefore field');
+
+  const { generateIcsContent } = await import('../lib/connector-calendar-feed.mjs');
+
+  const doc = {
+    calendarName: 'Test',
+    events: [
+      {
+        uid: 'legacy@remotelab',
+        summary: 'Legacy event',
+        startTime: '2026-05-01T14:00:00Z',
+        endTime: '2026-05-01T15:00:00Z',
+        reminderMinutesBefore: 15,
+        // No reminders array — old event format
+        sequence: 0,
+        createdAt: '2026-04-06T00:00:00Z',
+        updatedAt: '2026-04-06T00:00:00Z',
+      },
+    ],
+  };
+
+  const ics = generateIcsContent(doc);
+  assert.ok(ics.includes('BEGIN:VALARM'), 'legacy event should still get VALARM');
+  assert.ok(ics.includes('TRIGGER:-PT15M'), 'should use legacy reminderMinutesBefore value');
+
+  console.log('    PASS');
+}
+
 // ---- Run all tests ----
 
 console.log('\n=== connector-calendar-feed tests ===\n');
@@ -291,7 +367,10 @@ try {
   await testBuildSubscriptionUrl();
   await testDispatchCalendarToFeed();
   await testDispatchMissingSummary();
-  console.log('\n  All 8 tests passed.\n');
+  await testMultipleReminders();
+  await testDefaultReminders();
+  await testLegacyReminderBackwardCompat();
+  console.log('\n  All 11 tests passed.\n');
 } catch (err) {
   console.error('\n  FAIL:', err.message);
   console.error(err.stack);
