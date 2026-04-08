@@ -490,9 +490,10 @@ async function main() {
     assert.equal(initAsset.status, 200, 'chat init asset should load');
     assert.match(
       initAsset.text,
-      /window\.remotelabResolveProductPath\("\/m\/install\?source=auto"\)/,
-      'mobile install redirects should resolve through the shared product-path helper',
+      /await openInstallFlow\(\{ source: "auto", replace: true \}\)/,
+      'mobile install redirects should funnel through the shared install helper',
     );
+    assert.match(initAsset.text, /window\.remotelabOpenInstallFlow = openInstallFlow;/, 'chat init should expose the install entry helper');
 
     const productPathsAsset = await request(port, 'GET', '/chat/product-paths.js');
     assert.equal(productPathsAsset.status, 200, 'product path helper asset should load');
@@ -691,6 +692,7 @@ async function main() {
     assert.equal(settingsUiAsset.status, 200, 'settings ui asset should load');
     assert.match(settingsUiAsset.text, /function initUiLanguageSettings\(/);
     assert.match(settingsUiAsset.text, /function renderSettingsSessionPresentationPanel\(/);
+    assert.match(settingsUiAsset.text, /function initInstallSettings\(/);
 
     const composeAsset = await request(port, 'GET', '/chat/compose.js');
     assert.equal(composeAsset.status, 200, 'compose asset should load');
@@ -708,6 +710,8 @@ async function main() {
     assert.match(initAssetReload.text, /bootstrapViaHttp\(\{ deferOwnerRestore: true \}\)/);
     assert.match(initAssetReload.text, /intent !== "new-session"/, 'init should recognize the quick-entry launch intent');
     assert.match(initAssetReload.text, /forceComposerFocus: true/, 'launch intent should request a one-time forced composer focus');
+    assert.match(page.text, /id="settingsInstallAppBtn"/, 'settings page should expose a direct install button');
+    assert.match(page.text, /id="settingsInstallLog"/, 'settings page should expose install diagnostics output');
 
     const tokenLogin = await request(
       port,

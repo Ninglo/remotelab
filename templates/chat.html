@@ -91,6 +91,18 @@
           </div>
         </div>
         <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.install.title">Install App</div>
+          <div class="settings-section-note" id="settingsInstallNote" data-i18n="settings.install.note">Open the install flow and keep a short diagnostics trail here.</div>
+          <div class="settings-inline-form">
+            <div class="settings-inline-row">
+              <button class="settings-app-btn settings-inline-primary" id="settingsInstallAppBtn" type="button" data-i18n="settings.install.open">Install RemoteLab</button>
+              <button class="settings-app-btn" id="settingsInstallLogClearBtn" type="button" data-i18n="settings.install.clearLog">Clear Log</button>
+            </div>
+            <div class="settings-app-empty inline-status" id="settingsInstallStatus" hidden></div>
+            <div class="settings-install-log" id="settingsInstallLog"></div>
+          </div>
+        </div>
+        <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.sessionPresentation.title">Session opening</div>
           <div class="settings-apps-list" id="settingsSessionPresentationList">
             <div class="settings-app-empty" data-i18n="settings.sessionPresentation.noSession">Select a session to set how it opens.</div>

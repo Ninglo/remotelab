@@ -81,7 +81,7 @@ function flushAsync(turns = 6) {
   return chain;
 }
 
-function createHarness({ href, search, isStandalone = true } = {}) {
+function createHarness({ href, search, isStandalone = true, userAgent = 'Android' } = {}) {
   const historyCalls = [];
   const bootstrapCalls = [];
   const createCalls = [];
@@ -90,6 +90,7 @@ function createHarness({ href, search, isStandalone = true } = {}) {
   const modelLoads = [];
   const serviceWorkerCalls = [];
   const locationReplaceCalls = [];
+  const locationAssignCalls = [];
   const location = {
     href,
     pathname: '/',
@@ -97,6 +98,9 @@ function createHarness({ href, search, isStandalone = true } = {}) {
     hash: '',
     replace(url) {
       locationReplaceCalls.push(url);
+    },
+    assign(url) {
+      locationAssignCalls.push(url);
     },
   };
   const context = {
@@ -120,12 +124,13 @@ function createHarness({ href, search, isStandalone = true } = {}) {
     },
     localStorage: createStorage(),
     navigator: {
-      userAgent: 'Android',
+      userAgent,
       standalone: false,
       serviceWorker: null,
     },
     window: {
       location,
+      addEventListener() {},
       matchMedia(query) {
         return {
           matches: query === '(display-mode: standalone)' ? isStandalone : false,
@@ -249,6 +254,7 @@ function createHarness({ href, search, isStandalone = true } = {}) {
     modelLoads,
     serviceWorkerCalls,
     locationReplaceCalls,
+    locationAssignCalls,
   };
 }
 
@@ -299,6 +305,26 @@ await runInit(defaultHarness);
 assert.equal(defaultHarness.createCalls.length, 0, 'normal launches should not auto-create a session');
 assert.equal(defaultHarness.restoreCalls.length, 1, 'normal launches should keep the existing restore path');
 assert.deepEqual(defaultHarness.historyCalls, [], 'normal launches should not rewrite the URL');
+
+const settingsInstallHarness = createHarness({
+  href: 'https://chat.example.com/',
+  search: '',
+  isStandalone: false,
+  userAgent: 'Macintosh',
+});
+await runInit(settingsInstallHarness);
+await settingsInstallHarness.context.window.remotelabOpenInstallFlow({ source: 'settings_button' });
+
+assert.equal(
+  settingsInstallHarness.serviceWorkerCalls.length,
+  2,
+  'manual install entry should register the service worker before redirecting into the install flow',
+);
+assert.deepEqual(
+  settingsInstallHarness.locationAssignCalls,
+  ['/m/install?source=settings_button'],
+  'manual install entry should route into the install flow with a settings-specific source marker',
+);
 
 const mobileInstallHarness = createHarness({
   href: 'https://chat.example.com/',
