@@ -12,12 +12,13 @@
 <meta name="theme-color" content="#161618" media="(prefers-color-scheme: dark)">
 <meta name="remotelab-build" content="{{BUILD_TITLE}}">
 {{PAGE_HEAD_TAGS}}
-<link rel="manifest" href="/manifest.json?v={{ASSET_VERSION}}">
-<link rel="icon" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
-<link rel="icon" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+<base href="{{PRODUCT_BASE_HREF}}">
+<link rel="manifest" href="manifest.json?v={{ASSET_VERSION}}">
+<link rel="icon" href="favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+<link rel="icon" href="icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v={{ASSET_VERSION}}">
 <title>{{PAGE_TITLE}}</title>
-<link rel="stylesheet" href="/chat/chat.css?v={{ASSET_VERSION}}">
+<link rel="stylesheet" href="chat/chat.css?v={{ASSET_VERSION}}">
 </head>
 <body class="{{BODY_CLASS}}">
 <div class="app-shell">
@@ -265,29 +266,29 @@
 
 {{BOOTSTRAP_SCRIPT_TAGS}}
 {{EXTRA_BOOTSTRAP_SCRIPTS}}
-<script src="/marked.min.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-state-model.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-store.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/composer-store.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/icons.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/product-paths.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/bootstrap.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/bootstrap-session-catalog.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-http-helpers.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-http-list-state.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-http.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/layout-tooling.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/tooling.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/realtime.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/realtime-render.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-surface-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/session-list-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
-<script src="/chat/init.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="marked.min.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/session-state-model.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/session-store.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/composer-store.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/icons.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/product-paths.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/bootstrap.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/bootstrap-session-catalog.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/session-http-helpers.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/session-http-list-state.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/session-http.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/layout-tooling.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/tooling.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/realtime.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/realtime-render.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/session-surface-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/session-list-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/init.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 </body>
 </html>

@@ -19,7 +19,12 @@ function createScriptElement() {
   };
 }
 
-function createContext({ inlineAssetVersion = '' } = {}) {
+function createContext({
+  inlineAssetVersion = '',
+  baseHref = '',
+  currentScriptSrc = 'http://127.0.0.1/chat.js',
+  locationHref = 'http://127.0.0.1/',
+} = {}) {
   const fetchCalls = [];
   const scriptLoads = [];
   const loggedErrors = [];
@@ -54,14 +59,14 @@ function createContext({ inlineAssetVersion = '' } = {}) {
     window: {
       __REMOTELAB_BUILD__: inlineAssetVersion ? { assetVersion: inlineAssetVersion } : undefined,
       location: {
-        href: 'http://127.0.0.1/',
+        href: locationHref,
         origin: 'http://127.0.0.1',
       },
     },
     document: {
       currentScript: {
         nonce: 'test-nonce',
-        src: 'http://127.0.0.1/chat.js',
+        src: currentScriptSrc,
       },
       head: {
         appendChild(script) {
@@ -69,6 +74,14 @@ function createContext({ inlineAssetVersion = '' } = {}) {
           queueMicrotask(() => script.onload?.());
           return script;
         },
+      },
+      querySelector(selector) {
+        if (selector !== 'base[href]' || !baseHref) return null;
+        return {
+          getAttribute(name) {
+            return name === 'href' ? baseHref : null;
+          },
+        };
       },
       createElement(tagName) {
         assert.equal(tagName, 'script', 'loader should append script elements');
@@ -167,6 +180,45 @@ assert.deepEqual(
     '/chat/init.js?v=inline-build-456',
   ],
   'compatibility loader should reuse inline build info to keep split assets on the same version',
+);
+
+const prefixedContext = createContext({
+  baseHref: '/owner/',
+  currentScriptSrc: 'http://127.0.0.1/owner/chat.js',
+  locationHref: 'http://127.0.0.1/owner/',
+});
+vm.runInNewContext(loaderSource, prefixedContext, { filename: 'static/chat.js' });
+await waitForLoaderWork();
+
+assert.equal(prefixedContext.fetchCalls[0]?.url, '/owner/api/build-info');
+assert.deepEqual(
+  prefixedContext.scriptLoads,
+  [
+    '/owner/marked.min.js?v=build-123',
+    '/owner/chat/i18n.js?v=build-123',
+    '/owner/chat/session-state-model.js?v=build-123',
+    '/owner/chat/session-store.js?v=build-123',
+    '/owner/chat/composer-store.js?v=build-123',
+    '/owner/chat/icons.js?v=build-123',
+    '/owner/chat/bootstrap.js?v=build-123',
+    '/owner/chat/bootstrap-session-catalog.js?v=build-123',
+    '/owner/chat/session-http-helpers.js?v=build-123',
+    '/owner/chat/session-http-list-state.js?v=build-123',
+    '/owner/chat/session-http.js?v=build-123',
+    '/owner/chat/layout-tooling.js?v=build-123',
+    '/owner/chat/tooling.js?v=build-123',
+    '/owner/chat/realtime.js?v=build-123',
+    '/owner/chat/realtime-render.js?v=build-123',
+    '/owner/chat/ui.js?v=build-123',
+    '/owner/chat/session-surface-ui.js?v=build-123',
+    '/owner/chat/session-list-ui.js?v=build-123',
+    '/owner/chat/settings-ui.js?v=build-123',
+    '/owner/chat/sidebar-ui.js?v=build-123',
+    '/owner/chat/compose.js?v=build-123',
+    '/owner/chat/gestures.js?v=build-123',
+    '/owner/chat/init.js?v=build-123',
+  ],
+  'compatibility loader should keep split assets inside the forwarded product scope',
 );
 
 console.log('test-chat-loader-versioned-assets: ok');

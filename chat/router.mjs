@@ -519,6 +519,7 @@ function renderPageTemplate(template, nonce, replacements = {}) {
     BUILD_JSON: serializeJsonForScript(BUILD_INFO),
     PAGE_TITLE: 'RemoteLab Chat',
     PAGE_HEAD_TAGS: '',
+    PRODUCT_BASE_HREF: '/',
     BODY_CLASS: '',
     BOOTSTRAP_JSON: serializeJsonForScript({ auth: null }),
     EXTRA_BOOTSTRAP_SCRIPTS: '',
@@ -536,12 +537,30 @@ function renderPageTemplate(template, nonce, replacements = {}) {
   );
 }
 
-function buildTemplateReplacements(buildInfo) {
+function normalizeForwardedPrefix(value) {
+  const trimmed = trimString(value);
+  if (!trimmed) return '';
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
+  return normalized === '/' ? '' : normalized;
+}
+
+function ensureDirectoryPathname(pathname) {
+  const normalized = trimString(pathname);
+  if (!normalized || normalized === '/') return '/';
+  return `${normalized.replace(/\/+$/, '')}/`;
+}
+
+function getRequestProductBasePath(req) {
+  return normalizeForwardedPrefix(req?.headers?.['x-forwarded-prefix']);
+}
+
+function buildTemplateReplacements(buildInfo, productBasePath = '') {
   return {
     ASSET_VERSION: buildInfo.assetVersion,
     BUILD_LABEL: buildInfo.label,
     BUILD_TITLE: buildInfo.title,
     BUILD_JSON: serializeJsonForScript(buildInfo),
+    PRODUCT_BASE_HREF: ensureDirectoryPathname(productBasePath),
     STATUS_I18N_KEY: 'status.disconnected',
     STATUS_TEXT: 'disconnected',
     INPUT_PLACEHOLDER_I18N_KEY: 'input.placeholder.message',
@@ -1640,7 +1659,7 @@ export async function handleRequest(req, res) {
         ...(refreshedCookie ? { 'Set-Cookie': refreshedCookie } : {}),
       }));
       res.end(renderPageTemplate(chatPage, nonce, {
-        ...buildTemplateReplacements(pageBuildInfo),
+        ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
         BOOTSTRAP_JSON: serializeJsonForScript(pageBootstrap),
       }));
     } catch {

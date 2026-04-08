@@ -11,10 +11,11 @@
   <meta name="theme-color" content="#f8f8fa" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#161618" media="(prefers-color-scheme: dark)">
   <meta name="remotelab-build" content="{{BUILD_TITLE}}">
-  <link rel="manifest" href="/manifest.json?v={{ASSET_VERSION}}">
-  <link rel="icon" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
-  <link rel="icon" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <base href="{{PRODUCT_BASE_HREF}}">
+  <link rel="manifest" href="manifest.json?v={{ASSET_VERSION}}">
+  <link rel="icon" href="favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+  <link rel="icon" href="icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v={{ASSET_VERSION}}">
   <title>RemoteLab — Sign In</title>
   <style nonce="{{NONCE}}">
     :root {
@@ -192,7 +193,7 @@
     <div class="error {{ERROR_CLASS}}" data-i18n="login.error">Invalid credentials. Please try again.</div>
 
     <!-- Password form -->
-    <form id="pw-form" method="POST" action="/login">
+    <form id="pw-form" method="POST" action="login">
       <input type="hidden" name="type" value="password">
       <label for="username-input" data-i18n="login.username">Username</label>
       <input type="text" id="username-input" name="username"
@@ -206,7 +207,7 @@
     </form>
 
     <!-- Token form -->
-    <form id="token-form" class="hidden" method="POST" action="/login">
+    <form id="token-form" class="hidden" method="POST" action="login">
       <input type="hidden" name="type" value="token">
       <label for="token-input" data-i18n="login.accessToken">Access Token</label>
       <input type="text" id="token-input" name="token" class="mono"
@@ -222,7 +223,7 @@
     <div class="build-stamp" title="{{BUILD_TITLE}}">{{BUILD_LABEL}}</div>
   </div>
 
-  <script src="/chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+  <script src="chat/i18n.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
   <script nonce="{{NONCE}}">
     var tokenForm = document.getElementById('token-form');
     var pwForm = document.getElementById('pw-form');

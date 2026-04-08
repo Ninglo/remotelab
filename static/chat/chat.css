@@ -1,5 +1,5 @@
-@import url("/chat/chat-base.css");
-@import url("/chat/chat-sidebar.css");
-@import url("/chat/chat-messages.css");
-@import url("/chat/chat-input.css");
-@import url("/chat/chat-responsive.css");
+@import url("chat-base.css");
+@import url("chat-sidebar.css");
+@import url("chat-messages.css");
+@import url("chat-input.css");
+@import url("chat-responsive.css");

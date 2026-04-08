@@ -53,6 +53,21 @@ export async function handlePublicRoutes({
   writeSnapshotPage,
   writeJsonCached,
 }) {
+function trimString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeForwardedPrefix(value) {
+  const trimmed = trimString(value);
+  if (!trimmed) return '';
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
+  return normalized === '/' ? '' : normalized;
+}
+
+function getRequestProductBasePath(req) {
+  return normalizeForwardedPrefix(req?.headers?.['x-forwarded-prefix']);
+}
+
 async function mintOwnerSessionFromInstallHandoff(handoffToken) {
   const handoffSession = await redeemInstallHandoff(handoffToken);
   if (!handoffSession) return null;
@@ -206,7 +221,7 @@ if (pathname === '/m/install' && req.method === 'GET') {
   let installHtml;
   const pageBuildInfo = await getPageBuildInfo();
   try { installHtml = await readFile(mobileInstallTemplatePath, 'utf8'); } catch { installHtml = '<h1>Mobile install template missing</h1>'; }
-  const manifestHref = `/manifest.install.json?h=${encodeURIComponent(currentHandoffToken)}&v=${encodeURIComponent(pageBuildInfo.assetVersion)}`;
+  const manifestHref = `manifest.install.json?h=${encodeURIComponent(currentHandoffToken)}&v=${encodeURIComponent(pageBuildInfo.assetVersion)}`;
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.writeHead(200, buildHeaders({
     'Content-Type': 'text/html; charset=utf-8',
@@ -216,7 +231,7 @@ if (pathname === '/m/install' && req.method === 'GET') {
     'X-Robots-Tag': 'noindex, nofollow, noarchive',
   }));
   res.end(renderPageTemplate(installHtml, nonce, {
-    ...buildTemplateReplacements(pageBuildInfo),
+    ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
     PAGE_TITLE: 'Install RemoteLab',
     BODY_CLASS: 'mobile-install-page',
     MANIFEST_HREF: manifestHref,
@@ -300,7 +315,7 @@ if (pathname === '/login') {
     'Expires': '0',
   }));
   res.end(renderPageTemplate(loginHtml, nonce, {
-    ...buildTemplateReplacements(pageBuildInfo),
+    ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
     ERROR_CLASS: hasError ? '' : 'hidden',
     MODE: mode,
   }));

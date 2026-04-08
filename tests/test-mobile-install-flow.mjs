@@ -166,7 +166,7 @@ async function main() {
     assert.match(installPage.text, /window\.__REMOTELAB_BOOTSTRAP__ = /, 'install page should inline bootstrap data');
     assert.match(
       installPage.text,
-      new RegExp(`/manifest\\.install\\.json\\?h=${handoffToken}`),
+      new RegExp(`manifest\\.install\\.json\\?h=${handoffToken}`),
       'install page should point installable browsers at the handoff-aware manifest',
     );
     assert.match(
@@ -181,9 +181,19 @@ async function main() {
     );
     assert.match(
       installPage.text,
-      /\/chat\/product-paths\.js\?v=/,
+      /chat\/product-paths\.js\?v=/,
       'install page should load the shared product-path helper before runtime redirects',
     );
+
+    const prefixedInstallPage = await request(port, 'GET', redirectedUrl.pathname + redirectedUrl.search, {
+      headers: {
+        'x-forwarded-prefix': '/owner',
+      },
+    });
+    assert.equal(prefixedInstallPage.status, 200, 'install page should still render behind a forwarded product prefix');
+    assert.match(prefixedInstallPage.text, /<base href="\/owner\/">/, 'install page should advertise the forwarded product prefix through base href');
+    assert.match(prefixedInstallPage.text, /<link rel="manifest" href="manifest\.install\.json\?h=/, 'install page should keep the install manifest link relative inside a prefixed surface');
+    assert.match(prefixedInstallPage.text, /<script src="chat\/product-paths\.js\?v=/, 'install page should keep shared product-path helpers inside the forwarded product scope');
 
     const installManifest = await request(port, 'GET', `/manifest.install.json?h=${encodeURIComponent(handoffToken)}`);
     assert.equal(installManifest.status, 200, 'handoff install manifest should render');

@@ -11,10 +11,11 @@
   <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)">
   <meta name="remotelab-build" content="{{BUILD_TITLE}}">
+  <base href="{{PRODUCT_BASE_HREF}}">
   <link rel="manifest" href="{{MANIFEST_HREF}}">
-  <link rel="icon" href="/favicon.ico?v={{ASSET_VERSION}}" sizes="any">
-  <link rel="icon" href="/icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <link rel="icon" href="favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+  <link rel="icon" href="icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v={{ASSET_VERSION}}">
   <title>{{PAGE_TITLE}}</title>
   <style>
     :root {
@@ -294,7 +295,7 @@
   </main>
 
   {{BOOTSTRAP_SCRIPT_TAGS}}
-  <script src="/chat/product-paths.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+  <script src="chat/product-paths.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
   <script nonce="{{NONCE}}">
     (function initializeMobileInstallGuide() {
       const buildInfo = window.__REMOTELAB_BUILD__ || {};

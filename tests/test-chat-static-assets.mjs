@@ -197,24 +197,24 @@ async function main() {
     assert.equal(bootstrap.auth?.surfaceMode, 'owner', 'bootstrap auth should identify the owner surface');
     assert.equal(bootstrap.auth?.principalKind, 'owner', 'bootstrap auth should identify the owner principal kind');
     assert.equal(bootstrap.auth?.capabilities?.createSession, true, 'bootstrap auth should expose owner capabilities');
-    assert.match(page.text, /<script src="\/chat\/session-store\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/composer-store\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/bootstrap\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/bootstrap-session-catalog\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/session-http-helpers\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/session-http-list-state\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/session-http\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/layout-tooling\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/tooling\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/realtime\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/realtime-render\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/ui\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/session-surface-ui\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/session-list-ui\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
-    assert.match(page.text, /<script src="\/chat\/compose\.js(?:\?v=[^"]*)?"/);
-    assert.doesNotMatch(page.text, /<script src="\/chat\/voice-input\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/session-store\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/composer-store\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/bootstrap\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/bootstrap-session-catalog\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/session-http-helpers\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/session-http-list-state\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/session-http\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/layout-tooling\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/tooling\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/realtime\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/realtime-render\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/session-surface-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/session-list-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/compose\.js(?:\?v=[^"]*)?"/);
+    assert.doesNotMatch(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
 
     const visitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: visitorCookie });
     assert.equal(visitorPage.status, 200, 'chat page should also render for visitor session');
@@ -229,7 +229,7 @@ async function main() {
     assert.equal(visitorBootstrap.auth?.sessionId, 'visitor-session-id', 'legacy visitor bootstrap should expose the pinned session id');
     assert.equal(visitorBootstrap.auth?.visitorId, 'visitor-123', 'legacy visitor bootstrap should expose visitor identity');
     assert.equal(visitorBootstrap.auth?.capabilities?.listSessions, false, 'legacy visitor bootstrap should not expose multi-session list access');
-    assert.match(page.text, /<script src="\/chat\/init\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
     assert.doesNotMatch(page.text, /id="sessionAppFilterSelect"/);
@@ -261,7 +261,7 @@ async function main() {
     assert.doesNotMatch(page.text, /id="saveTemplateBtn"/);
     assert.doesNotMatch(page.text, /id="sessionTemplateSelect"/);
     assert.match(page.text, /<div class="app-shell">/, 'chat page should render inside a dedicated app shell');
-    assert.match(page.text, /\/chat\/chat\.css\?v=/, 'chat page should fingerprint the split chat stylesheet');
+    assert.match(page.text, /chat\/chat\.css\?v=/, 'chat page should fingerprint the split chat stylesheet');
     const chatStylesheet = await request(port, 'GET', '/chat/chat.css');
     assert.equal(chatStylesheet.status, 200, 'chat stylesheet should load');
     assert.equal(
@@ -270,11 +270,11 @@ async function main() {
       'chat stylesheet should use safe revalidation caching',
     );
     assert.ok(chatStylesheet.headers.etag, 'chat stylesheet should expose an ETag');
-    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-base\.css"\);/);
-    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-sidebar\.css"\);/);
-    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-messages\.css"\);/);
-    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-input\.css"\);/);
-    assert.match(chatStylesheet.text, /@import url\("\/chat\/chat-responsive\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("chat-base\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("chat-sidebar\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("chat-messages\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("chat-input\.css"\);/);
+    assert.match(chatStylesheet.text, /@import url\("chat-responsive\.css"\);/);
 
     const chatBaseStylesheet = await request(port, 'GET', '/chat/chat-base.css');
     const chatSidebarStylesheet = await request(port, 'GET', '/chat/chat-sidebar.css');
@@ -314,8 +314,9 @@ async function main() {
     assert.match(combinedChatStyles, /body\.keyboard-open \.input-area/);
     assert.doesNotMatch(combinedChatStyles, /--app-top-offset/);
     assert.ok(!page.text.includes('/chat.js?v='), 'chat page should not pin the chat frontend to a versioned URL');
-    assert.match(page.text, /\/marked\.min\.js\?v=/, 'chat page should fingerprint marked.min.js alongside the split chat assets');
-    assert.match(page.text, /\/manifest\.json\?v=/, 'chat page should fingerprint the manifest URL so installed PWAs refresh policy changes');
+    assert.match(page.text, /<base href="\/">/, 'chat page should set an explicit product-base href');
+    assert.match(page.text, /marked\.min\.js\?v=/, 'chat page should fingerprint marked.min.js alongside the split chat assets');
+    assert.match(page.text, /manifest\.json\?v=/, 'chat page should fingerprint the manifest URL so installed PWAs refresh policy changes');
     assert.match(page.text, /title="Attach files"/, 'chat page should advertise file uploads in the composer');
     assert.match(page.text, /accept="\*\/\*"/, 'chat page should allow arbitrary file selection');
 
@@ -331,6 +332,13 @@ async function main() {
     assert.equal(manifestJson.shortcuts[0]?.url, './?intent=new-session', 'manifest shortcut should stay inside the current product scope');
     assert.equal(manifestJson.icons[0]?.src, 'icon.svg', 'manifest icons should resolve relative to the current product scope');
 
+    const prefixedPage = await request(port, 'GET', '/', null, { 'x-forwarded-prefix': '/owner' });
+    assert.equal(prefixedPage.status, 200, 'chat page should still render behind a forwarded product prefix');
+    assert.match(prefixedPage.text, /<base href="\/owner\/">/, 'chat page should advertise the forwarded product prefix through base href');
+    assert.match(prefixedPage.text, /<link rel="manifest" href="manifest\.json\?v=/, 'chat page should keep the manifest link relative inside a prefixed surface');
+    assert.match(prefixedPage.text, /<link rel="stylesheet" href="chat\/chat\.css\?v=/, 'chat page should keep the split stylesheet inside the forwarded product scope');
+    assert.match(prefixedPage.text, /<script src="chat\/product-paths\.js(?:\?v=[^"]*)?"/, 'chat page should continue to load the product-path helper under a prefix');
+
     const loginPage = await request(port, 'GET', '/login', null, { Cookie: '' });
     assert.equal(loginPage.status, 200, 'login page should render without auth');
     assert.match(loginPage.text, /<meta name="color-scheme" content="light dark">/);
@@ -338,6 +346,15 @@ async function main() {
     assert.match(loginPage.text, /<meta name="theme-color" content="#f8f8fa" media="\(prefers-color-scheme: light\)">/);
     assert.match(loginPage.text, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
     assert.match(loginPage.text, /@media \(prefers-color-scheme: dark\)/);
+
+    const prefixedLoginPage = await request(port, 'GET', '/login', null, {
+      Cookie: '',
+      'x-forwarded-prefix': '/owner',
+    });
+    assert.equal(prefixedLoginPage.status, 200, 'login page should still render behind a forwarded product prefix');
+    assert.match(prefixedLoginPage.text, /<base href="\/owner\/">/, 'login page should advertise the forwarded product prefix through base href');
+    assert.match(prefixedLoginPage.text, /<form id="pw-form" method="POST" action="login">/, 'login password form should stay inside the forwarded product scope');
+    assert.match(prefixedLoginPage.text, /<form id="token-form" class="hidden" method="POST" action="login">/, 'login token form should stay inside the forwarded product scope');
 
     const agents = await request(port, 'GET', '/api/agents');
     assert.equal(agents.status, 200, 'owner agents endpoint should be available');
@@ -605,11 +622,11 @@ async function main() {
       'public, max-age=31536000, immutable',
       'versioned chat stylesheet should be immutable cache hits',
     );
-    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-base\.css\?v=test-build"\);/);
-    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-sidebar\.css\?v=test-build"\);/);
-    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-messages\.css\?v=test-build"\);/);
-    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-input\.css\?v=test-build"\);/);
-    assert.match(versionedChatStylesheet.text, /@import url\("\/chat\/chat-responsive\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("chat-base\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("chat-sidebar\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("chat-messages\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("chat-input\.css\?v=test-build"\);/);
+    assert.match(versionedChatStylesheet.text, /@import url\("chat-responsive\.css\?v=test-build"\);/);
 
     const versionedChatBaseStylesheet = await request(port, 'GET', '/chat/chat-base.css?v=test-build');
     assert.equal(versionedChatBaseStylesheet.status, 200, 'versioned split chat stylesheet should load');

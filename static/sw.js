@@ -1,5 +1,9 @@
 'use strict';
 
+function resolveScopeUrl(pathname) {
+  return new URL(pathname, self.registration.scope).toString();
+}
+
 async function clearLegacyCaches() {
   const cacheNames = await self.caches.keys();
   await Promise.all(cacheNames
@@ -44,8 +48,8 @@ self.addEventListener('push', (event) => {
       }
       return self.registration.showNotification(data.title || 'RemoteLab', {
         body: data.body || 'Task completed',
-        icon: '/icon.svg',
-        badge: '/apple-touch-icon.png',
+        icon: resolveScopeUrl('icon.svg'),
+        badge: resolveScopeUrl('apple-touch-icon.png'),
         tag: 'remotelab-done',
         renotify: true,
         data: target,
