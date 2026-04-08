@@ -12,7 +12,8 @@ import { homedir } from 'os';
 import { promisify } from 'util';
 import { randomBytes, timingSafeEqual, scrypt } from 'crypto';
 import { fullPath } from '../lib/user-shell-env.mjs';
-import { classifyUsageOperation } from '../chat/usage-ledger.mjs';
+import { parseCloudflaredIngress } from '../lib/cloudflared-config.mjs';
+import { classifyUsageOperation, queryUsageLedger } from '../chat/usage-ledger.mjs';
 
 const scryptAsync = promisify(scrypt);
 const execFileAsync = promisify(execFile);
@@ -23,14 +24,20 @@ const TEMPLATE_PATH = join(PROJECT_ROOT, 'templates', 'instance-admin.html');
 const LOGIN_TEMPLATE_PATH = join(PROJECT_ROOT, 'templates', 'admin-login.html');
 const HOME = homedir();
 const LAUNCH_AGENTS_DIR = join(HOME, 'Library', 'LaunchAgents');
+const OWNER_LAUNCH_AGENT_PATH = join(LAUNCH_AGENTS_DIR, 'com.chatserver.claude.plist');
 const OWNER_AUTH_FILE = join(HOME, '.config', 'remotelab', 'auth.json');
+const OWNER_CONFIG_DIR = join(HOME, '.config', 'remotelab');
+const OWNER_MEMORY_DIR = join(HOME, '.remotelab', 'memory');
 const GUEST_REGISTRY_FILE = join(HOME, '.config', 'remotelab', 'guest-instances.json');
+const GUEST_DEFAULTS_FILE = join(HOME, '.config', 'remotelab', 'guest-instance-defaults.json');
 const USER_BINDINGS_FILE = join(HOME, '.config', 'remotelab', 'user-instance-bindings.json');
 const USER_LEDGER_FILE = join(HOME, '.remotelab', 'memory', 'tasks', 'remotelab-user-relationship-ledger.md');
 const USER_EVENT_LOG_FILE = join(HOME, '.remotelab', 'memory', 'tasks', 'remotelab-user-event-log.md');
 const TRIAL_OCCUPANCY_LEDGER_FILE = join(HOME, '.remotelab', 'memory', 'tasks', 'remotelab-trial-user-ledger.md');
 const SESSION_COOKIE = 'admin_session';
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DEFAULT_USAGE_WINDOW_DAYS = 30;
+const DEFAULT_USAGE_BREAKDOWN_TOP = 5;
 
 const PORT = (() => {
   const idx = process.argv.indexOf('--port');
@@ -172,6 +179,117 @@ function sanitize(name) {
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeBaseUrl(value) {
+  const trimmed = trimString(value);
+  if (!trimmed) return '';
+  return trimmed.replace(/\/+$/g, '');
+}
+
+function appendUrlPath(baseUrl, segment) {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  const normalizedSegment = trimString(segment).replace(/^\/+|\/+$/g, '');
+  if (!normalizedBaseUrl) return '';
+  if (!normalizedSegment) return normalizedBaseUrl;
+  return `${normalizedBaseUrl}/${normalizedSegment}`;
+}
+
+function buildAccessUrl(baseUrl, token = '') {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  if (!normalizedBaseUrl) return '';
+  return token ? `${normalizedBaseUrl}/?token=${token}` : normalizedBaseUrl;
+}
+
+function decodeXmlEntities(value) {
+  return String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractPlistBlock(content, key, tag) {
+  const match = String(content || '').match(new RegExp(`<key>${escapeRegex(key)}</key>\\s*<${tag}>([\\s\\S]*?)</${tag}>`));
+  return match?.[1] || '';
+}
+
+function extractPlistString(content, key) {
+  return decodeXmlEntities(extractPlistBlock(content, key, 'string'));
+}
+
+function extractPlistDictStrings(content, key) {
+  const block = extractPlistBlock(content, key, 'dict');
+  const entries = Array.from(block.matchAll(/<key>([\s\S]*?)<\/key>\s*<string>([\s\S]*?)<\/string>/g));
+  return Object.fromEntries(entries.map(([, rawKey, rawValue]) => [
+    decodeXmlEntities(rawKey || ''),
+    decodeXmlEntities(rawValue || ''),
+  ]));
+}
+
+function extractServicePort(service) {
+  const trimmed = trimString(service);
+  if (!trimmed) return 0;
+  try {
+    const parsed = new URL(trimmed);
+    const explicitPort = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+    return Number.parseInt(explicitPort, 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function countCollection(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value && typeof value === 'object') return Object.keys(value).length;
+  return 0;
+}
+
+function normalizeSessionRecords(value) {
+  if (Array.isArray(value)) {
+    return value.filter((entry) => entry && typeof entry === 'object');
+  }
+  if (value && Array.isArray(value.sessions)) {
+    return value.sessions.filter((entry) => entry && typeof entry === 'object');
+  }
+  if (value && typeof value === 'object') {
+    return Object.values(value).filter((entry) => entry && typeof entry === 'object');
+  }
+  return [];
+}
+
+function compareIsoTimestampsDesc(left, right) {
+  return String(right || '').localeCompare(String(left || ''));
+}
+
+function resolveInstanceUsageStatus(snapshot = {}, { nowMs = Date.now() } = {}) {
+  const sessionCount = Number.parseInt(`${snapshot.sessionCount || 0}`, 10) || 0;
+  const authSessionCount = Number.parseInt(`${snapshot.authSessionCount || 0}`, 10) || 0;
+  if (sessionCount <= 0) {
+    return authSessionCount > 0 ? 'opened' : 'empty';
+  }
+
+  const lastSessionMs = Date.parse(snapshot.lastSessionAt || '');
+  if (!Number.isFinite(lastSessionMs)) return 'occupied';
+
+  const ageMs = Math.max(0, nowMs - lastSessionMs);
+  if (ageMs <= 2 * 24 * 60 * 60 * 1000) return 'active';
+  if (ageMs <= 14 * 24 * 60 * 60 * 1000) return 'occupied';
+  return 'stale';
+}
+
+function resolveInstanceUsageBrief(snapshot = {}, { nowMs = Date.now() } = {}) {
+  const status = resolveInstanceUsageStatus(snapshot, { nowMs });
+  if (status === 'empty') return 'unused';
+  if (status === 'opened') return 'opened, no chat yet';
+  if (status === 'active') return 'recent activity';
+  if (status === 'occupied') return 'has chat history';
+  return 'stale but occupied';
 }
 
 async function readJsonFileSafe(filePath, fallbackValue) {
@@ -760,6 +878,44 @@ function usageTotalsPresent(totals = {}) {
     || Number(totals.estimatedCostUsd || 0) > 0;
 }
 
+function buildFleetUsageSummary(instances = []) {
+  const totals = createUsageAnalyticsBucket();
+  const byTool = new Map();
+  const byModel = new Map();
+  let activeInstanceCount = 0;
+  let windowDays = DEFAULT_USAGE_WINDOW_DAYS;
+
+  for (const instance of Array.isArray(instances) ? instances : []) {
+    const usageSummary = instance?.usage?.usageSummary || null;
+    const usageTotals = usageSummary?.totals || {};
+    const hasUsage = Number(usageSummary?.runCount || 0) > 0 || usageTotalsPresent(usageTotals);
+    if (!hasUsage) continue;
+
+    activeInstanceCount += 1;
+    windowDays = Number(usageSummary?.window?.days || windowDays) || windowDays;
+    appendUsageAnalyticsMetrics(totals, {
+      runCount: Number(usageSummary?.runCount || usageTotals.runCount || 0),
+      ...usageTotals,
+    });
+    touchUsageAnalyticsTimestamp(totals, usageTotals);
+    mergeUsageBreakdown(byTool, usageSummary?.byTool, (item, key) => ({ label: trimString(item?.label) || key }));
+    mergeUsageBreakdown(byModel, usageSummary?.byModel, (item, key) => ({ label: trimString(item?.label) || key }));
+  }
+
+  return {
+    windowDays,
+    activeInstanceCount,
+    runCount: totals.runCount,
+    inputTokens: totals.inputTokens,
+    outputTokens: totals.outputTokens,
+    totalTokens: totals.totalTokens,
+    costUsd: roundUsageUsd(totals.costUsd || 0),
+    estimatedCostUsd: roundUsageUsd(totals.estimatedCostUsd || 0),
+    byTool: sortUsageAnalyticsBuckets(byTool, DEFAULT_USAGE_BREAKDOWN_TOP),
+    byModel: sortUsageAnalyticsBuckets(byModel, DEFAULT_USAGE_BREAKDOWN_TOP),
+  };
+}
+
 function mergeUsageBreakdown(map, items = [], decorate = null) {
   for (const item of Array.isArray(items) ? items : []) {
     const key = trimString(item?.key || item?.label);
@@ -1096,11 +1252,144 @@ async function servePage(req, res) {
 let dashboardCache = { data: null, updatedAt: 0, refreshPromise: null };
 let engagementCache = { data: null, updatedAt: 0, refreshPromise: null };
 
+async function probeBuildInfo(baseUrl, timeoutMs = 4000) {
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  if (!normalizedBaseUrl) {
+    return { ok: null };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${normalizedBaseUrl}/api/build-info`, {
+      redirect: 'manual',
+      signal: controller.signal,
+    });
+    return { ok: response.ok };
+  } catch {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveCloudflaredPublicBaseUrl(port) {
+  const content = await readTextFileSafe(join(HOME, '.cloudflared', 'config.yml'));
+  for (const entry of parseCloudflaredIngress(content)) {
+    if (extractServicePort(entry.service) !== Number(port)) continue;
+    const hostname = trimString(entry.hostname);
+    if (hostname) return `https://${hostname}`;
+  }
+  return '';
+}
+
+async function buildOwnerInstanceRecord() {
+  const [ownerPlistContent, legacyOwnerAuth, guestDefaults] = await Promise.all([
+    readTextFileSafe(OWNER_LAUNCH_AGENT_PATH),
+    readJsonFileSafe(OWNER_AUTH_FILE, {}),
+    readJsonFileSafe(GUEST_DEFAULTS_FILE, {}),
+  ]);
+
+  const ownerEnv = extractPlistDictStrings(ownerPlistContent, 'EnvironmentVariables');
+  const ownerLabel = trimString(extractPlistString(ownerPlistContent, 'Label')) || 'com.chatserver.claude';
+  const ownerPort = Number.parseInt(trimString(ownerEnv.CHAT_PORT) || '7690', 10) || 7690;
+  const instanceRoot = trimString(ownerEnv.REMOTELAB_INSTANCE_ROOT);
+  const configDir = trimString(ownerEnv.REMOTELAB_CONFIG_DIR)
+    || (instanceRoot ? join(instanceRoot, 'config') : OWNER_CONFIG_DIR);
+  const memoryDir = trimString(ownerEnv.REMOTELAB_MEMORY_DIR)
+    || (instanceRoot ? join(instanceRoot, 'memory') : OWNER_MEMORY_DIR);
+  const authFile = join(configDir, 'auth.json');
+  const [ownerAuth, rawSessions, authSessions, cloudPublicBaseUrl] = await Promise.all([
+    readJsonFileSafe(authFile, legacyOwnerAuth || {}),
+    readJsonFileSafe(join(configDir, 'chat-sessions.json'), []),
+    readJsonFileSafe(join(configDir, 'auth-sessions.json'), []),
+    resolveCloudflaredPublicBaseUrl(ownerPort),
+  ]);
+
+  if (!ownerPlistContent && !trimString(ownerAuth?.token) && !countCollection(rawSessions) && !countCollection(authSessions)) {
+    return null;
+  }
+
+  const token = trimString(ownerAuth?.token);
+  const publicBaseUrl = normalizeBaseUrl(ownerEnv.REMOTELAB_PUBLIC_BASE_URL) || cloudPublicBaseUrl;
+  const mainlandRootBaseUrl = normalizeBaseUrl(
+    ownerEnv.REMOTELAB_GUEST_MAINLAND_BASE_URL
+    || guestDefaults?.mainlandBaseUrl
+    || guestDefaults?.mainlandAccessBaseUrl
+  );
+  const mainlandBaseUrl = normalizeBaseUrl(ownerEnv.REMOTELAB_MAINLAND_PUBLIC_BASE_URL)
+    || appendUrlPath(mainlandRootBaseUrl, 'owner');
+  const localBaseUrl = `http://127.0.0.1:${ownerPort}`;
+  const sessions = normalizeSessionRecords(rawSessions);
+  const lastSessionAt = sessions
+    .map((session) => trimString(
+      session?.updatedAt
+      || session?.lastMessageAt
+      || session?.createdAt
+      || session?.created
+      || ''
+    ))
+    .filter(Boolean)
+    .sort(compareIsoTimestampsDesc)[0] || '';
+  const usageSummary = await queryUsageLedger({
+    ledgerDir: join(configDir, 'usage-ledger'),
+    days: DEFAULT_USAGE_WINDOW_DAYS,
+    top: DEFAULT_USAGE_BREAKDOWN_TOP,
+  }).catch(() => null);
+  const usageSnapshot = {
+    sessionCount: sessions.length,
+    authSessionCount: countCollection(authSessions),
+    lastSessionAt,
+  };
+  const derivedUsageStatus = resolveInstanceUsageStatus(usageSnapshot);
+  const [localReachability, publicReachability] = await Promise.all([
+    probeBuildInfo(localBaseUrl, 1500),
+    publicBaseUrl ? probeBuildInfo(publicBaseUrl, 4000) : Promise.resolve({ ok: null }),
+  ]);
+
+  return {
+    name: 'owner',
+    label: ownerLabel,
+    kind: 'owner',
+    port: ownerPort,
+    instanceRoot,
+    configDir,
+    memoryDir,
+    authFile,
+    launchAgentPath: OWNER_LAUNCH_AGENT_PATH,
+    publicBaseUrl,
+    mainlandBaseUrl,
+    localBaseUrl,
+    publicAccessUrl: buildAccessUrl(publicBaseUrl, token),
+    mainlandAccessUrl: buildAccessUrl(mainlandBaseUrl, token),
+    localAccessUrl: buildAccessUrl(localBaseUrl, token),
+    accessUrl: buildAccessUrl(publicBaseUrl || localBaseUrl, token),
+    token,
+    localReachable: localReachability.ok === null ? null : localReachability.ok === true,
+    publicReachable: publicReachability.ok === null ? null : publicReachability.ok === true,
+    assignable: false,
+    occupancy: {
+      instanceName: 'owner',
+      userName: 'Owner',
+      handoffNote: '主控制台，不对外分配。',
+      kind: 'assigned',
+      usageStatus: 'active',
+    },
+    usage: {
+      ...usageSnapshot,
+      usageStatus: (derivedUsageStatus === 'opened' || derivedUsageStatus === 'empty') ? 'active' : derivedUsageStatus,
+      usageBrief: 'owner 控制台',
+      usageSummary,
+    },
+  };
+}
+
 async function fetchDashboardData() {
-  const [links, report, trialOccupancyText] = await Promise.all([
+  const [links, report, trialOccupancyText, ownerRecord] = await Promise.all([
     cli(['guest-instance', 'links', '--json', '--check']),
     cli(['guest-instance', 'report', '--json']).catch(() => ({ instances: [], summary: {} })),
     readTextFileSafe(TRIAL_OCCUPANCY_LEDGER_FILE),
+    buildOwnerInstanceRecord(),
   ]);
   const reportInstances = report.instances || report.rows || [];
   const usageMap = new Map(reportInstances.map(r => [r.name, {
@@ -1112,11 +1401,15 @@ async function fetchDashboardData() {
     usageSummary: r.usageSummary || null,
   }]));
   const occupancyEntries = parseTrialOccupancyLedger(trialOccupancyText);
-  const instances = (Array.isArray(links) ? links : []).map((inst) => applyOccupancyOverlay({
+  const guestInstances = (Array.isArray(links) ? links : []).map((inst) => applyOccupancyOverlay({
     ...inst,
     usage: usageMap.get(inst.name) || null,
   }, occupancyEntries.get(inst.name) || null));
-  return { instances, summary: computeDashboardSummary(instances, report.summary || null) };
+  const instances = ownerRecord ? [ownerRecord, ...guestInstances] : guestInstances;
+  return {
+    instances,
+    summary: computeDashboardSummary(instances, { usage: buildFleetUsageSummary(instances) }),
+  };
 }
 
 async function refreshCache() {
@@ -1167,7 +1460,9 @@ async function apiCreate(req, res) {
 async function apiInstanceAction(res, name, action) {
   const safe = sanitize(name);
   if (!safe) return json(res, { error: 'Invalid name' }, 400);
-  const plist = join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
+  const dashboardData = await getDashboardData();
+  const instance = (dashboardData?.instances || []).find((entry) => entry.name === safe) || null;
+  const plist = trimString(instance?.launchAgentPath) || join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
 
   try {
     if (action === 'stop') {
@@ -1187,7 +1482,12 @@ async function apiInstanceAction(res, name, action) {
 async function apiDelete(res, name) {
   const safe = sanitize(name);
   if (!safe) return json(res, { error: 'Invalid name' }, 400);
-  const plist = join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
+  const dashboardData = await getDashboardData();
+  const instance = (dashboardData?.instances || []).find((entry) => entry.name === safe) || null;
+  if (instance?.kind === 'owner') {
+    return json(res, { ok: false, error: 'Owner instance cannot be deleted' }, 400);
+  }
+  const plist = trimString(instance?.launchAgentPath) || join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
 
   // 1. Stop (unload LaunchAgent)
   await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 }).catch(() => {});

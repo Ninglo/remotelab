@@ -59,6 +59,7 @@ function request(port, path, options = {}) {
 function setupTempHome() {
   const home = mkdtempSync(join(tmpdir(), 'remotelab-instance-admin-'));
   const configDir = join(home, '.config', 'remotelab');
+  const launchAgentsDir = join(home, 'Library', 'LaunchAgents');
   const memoryTasksDir = join(home, '.remotelab', 'memory', 'tasks');
   const trialRoot = join(home, '.remotelab', 'instances', 'trial24');
   const trialConfigDir = join(trialRoot, 'config');
@@ -66,13 +67,31 @@ function setupTempHome() {
   const intakeConfigDir = join(intakeRoot, 'config');
 
   mkdirSync(configDir, { recursive: true });
+  mkdirSync(launchAgentsDir, { recursive: true });
   mkdirSync(memoryTasksDir, { recursive: true });
+  mkdirSync(join(configDir, 'usage-ledger'), { recursive: true });
   mkdirSync(join(trialConfigDir, 'usage-ledger'), { recursive: true });
   mkdirSync(join(intakeConfigDir, 'usage-ledger'), { recursive: true });
 
   writeFileSync(
     join(configDir, 'auth.json'),
     JSON.stringify({ token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }, null, 2),
+    'utf8',
+  );
+  writeFileSync(
+    join(launchAgentsDir, 'com.chatserver.claude.plist'),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chatserver.claude</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHAT_PORT</key><string>7690</string>
+    <key>REMOTELAB_CONFIG_DIR</key><string>${configDir}</string>
+  </dict>
+</dict>
+</plist>
+`,
     'utf8',
   );
   writeFileSync(
@@ -192,6 +211,10 @@ function setupTempHome() {
     'utf8',
   );
 
+  writeFileSync(join(configDir, 'auth-sessions.json'), JSON.stringify({ owner: {} }, null, 2), 'utf8');
+  writeFileSync(join(configDir, 'chat-sessions.json'), JSON.stringify([
+    { id: 'sess-owner-1', createdAt: '2026-03-28T09:00:00.000Z', updatedAt: '2026-03-29T12:00:00.000Z', name: 'Owner session' },
+  ], null, 2), 'utf8');
   writeFileSync(join(trialConfigDir, 'auth.json'), JSON.stringify({ token: 'trial-token' }, null, 2), 'utf8');
   writeFileSync(join(intakeConfigDir, 'auth.json'), JSON.stringify({ token: 'intake-token' }, null, 2), 'utf8');
   writeFileSync(join(trialConfigDir, 'auth-sessions.json'), JSON.stringify({ a: {}, b: {} }, null, 2), 'utf8');
@@ -258,6 +281,26 @@ function setupTempHome() {
       estimatedCostModel: 'claude-sonnet',
       costSource: 'estimated_background',
       operation: 'session_label_suggestion',
+    }),
+  ].join('\n') + '\n', 'utf8');
+
+  writeFileSync(join(configDir, 'usage-ledger', '2026-03-28.jsonl'), [
+    JSON.stringify({
+      ts: '2026-03-28T12:00:00.000Z',
+      runId: 'run_owner_1',
+      sessionId: 'sess-owner-1',
+      sessionName: 'Owner session',
+      principalType: 'owner',
+      principalId: 'owner',
+      principalName: 'Owner',
+      tool: 'codex',
+      model: 'gpt-5.4',
+      state: 'completed',
+      totalTokens: 60,
+      inputTokens: 40,
+      outputTokens: 20,
+      costUsd: 0.03,
+      operation: 'user_turn',
     }),
   ].join('\n') + '\n', 'utf8');
 
@@ -354,13 +397,18 @@ async function main() {
 
     const data = res.json || {};
     assert.ok(data.summary, res.text);
-    assert.equal(data.summary.usage.totalTokens, 560, 'dashboard summary should include fleet token totals');
-    assert.equal(data.summary.usage.costUsd, 0.25, 'dashboard summary should include exact fleet cost totals');
+    assert.equal(data.summary.usage.totalTokens, 620, 'dashboard summary should include fleet token totals');
+    assert.equal(data.summary.usage.costUsd, 0.28, 'dashboard summary should include exact fleet cost totals');
     assert.equal(data.summary.usage.estimatedCostUsd, 0.6, 'dashboard summary should include estimated fleet cost totals');
     assert.equal(data.summary.usage.byTool[0].key, 'micro-agent', 'dashboard summary should expose tool breakdowns');
+    assert.equal(data.summary.occupiedCount, 3, 'owner should be counted inside the monitored instance fleet');
 
+    const owner = data.instances.find((entry) => entry.name === 'owner');
     const trial24 = data.instances.find((entry) => entry.name === 'trial24');
     const intake1 = data.instances.find((entry) => entry.name === 'intake1');
+    assert.equal(owner.kind, 'owner', 'dashboard should surface the owner instance explicitly');
+    assert.equal(owner.usage.usageSummary.totals.totalTokens, 60, 'owner instance should carry its own usage summary');
+    assert.equal(owner.usage.usageStatus, 'occupied', 'owner instance should remain unavailable for reassignment');
     assert.equal(trial24.usage.usageSummary.totals.totalTokens, 470, 'instance payload should include per-instance usage totals');
     assert.equal(trial24.usage.usageSummary.totals.estimatedCostUsd, 0.48);
     assert.equal(trial24.usage.usageSummary.byTool[0].key, 'micro-agent');
@@ -371,7 +419,7 @@ async function main() {
     assert.equal(intake1.usage.usageBrief, '已预留，暂不外发', 'reserved instance should expose an explicit non-shareable usage brief');
     assert.equal(intake1.occupancy?.userName, '朋友分发预留', 'reserved instance should expose occupancy metadata for the UI');
     assert.equal(data.summary.openedCount, 0, 'reserved instances should not count as available');
-    assert.equal(data.summary.occupiedCount, 2, 'reserved instances should count as unavailable');
+    assert.equal(data.summary.occupiedCount, 3, 'owner and reserved instances should count as unavailable');
 
     const workbenchRes = await request(port, '/api/workbench');
     assert.equal(workbenchRes.status, 200, workbenchRes.text);
@@ -381,20 +429,26 @@ async function main() {
     assert.equal(workbench.summary.unboundUsers, 1, 'workbench should surface users without instance binding');
     assert.equal(workbench.summary.feedbackUsers, 1, 'workbench should detect feedback signals');
     assert.equal(workbench.instanceSummary.open, 0, 'workbench summary should exclude reserved instances from the available count');
-    assert.equal(workbench.instanceSummary.occupied, 2, 'workbench summary should treat reserved instances as unavailable');
+    assert.equal(workbench.instanceSummary.occupied, 3, 'workbench summary should include the owner console in unavailable capacity');
 
     const billingRes = await request(port, '/api/billing');
     assert.equal(billingRes.status, 200, billingRes.text);
     const billing = billingRes.json || {};
-    assert.equal(billing.summary.totalTokens, 560, 'billing summary should aggregate fleet tokens');
+    assert.equal(billing.summary.totalTokens, 620, 'billing summary should aggregate fleet tokens');
     assert.equal(billing.summary.backgroundTokens, 80, 'billing summary should separate background token usage');
     assert.equal(billing.summary.usersWithUsage, 1, 'billing summary should attribute usage to bound users when possible');
     assert.equal(billing.byUser[0]?.userName, 'Trial User', 'billing view should attribute bound instance usage to the user');
     assert.equal(billing.byUser[0]?.totalTokens, 470, 'billing view should roll up user usage by bound instance');
+    assert.equal(billing.summary.unattributedTokens, 150, 'owner usage should remain visible even when it is not user-bound');
+    const ownerBilling = (billing.byInstance || []).find((entry) => entry.instanceName === 'owner');
+    assert.equal(ownerBilling?.totalTokens, 60, 'billing view should surface owner usage by instance');
     const backgroundGroup = (billing.byOperationGroup || []).find((entry) => entry.key === 'background');
     assert.equal(backgroundGroup?.totalTokens, 80, 'billing view should aggregate background operation groups');
     const sessionManagementBucket = (billing.byOperationCategory || []).find((entry) => entry.key === 'session_management');
     assert.equal(sessionManagementBucket?.totalTokens, 80, 'billing view should expose session-management background costs');
+
+    const ownerDeleteRes = await request(port, '/api/instances/owner/delete', { method: 'POST' });
+    assert.equal(ownerDeleteRes.status, 400, ownerDeleteRes.text);
 
     const pendingBinding = workbench.pending?.queues?.needsBinding || [];
     const feedbackQueue = workbench.pending?.queues?.feedback || [];
@@ -425,12 +479,12 @@ async function main() {
     );
     assert.deepEqual(
       (deletedDashboard.instances || []).map((entry) => entry.name),
-      ['intake1'],
+      ['owner', 'intake1'],
       'dashboard should return the surviving instances after delete',
     );
     assert.equal(
       deletedWorkbench.instanceSummary?.total,
-      1,
+      2,
       'workbench should recompute instance totals after delete',
     );
 
