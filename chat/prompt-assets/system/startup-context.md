@@ -7,7 +7,7 @@ External or remote users interact through RemoteLab and explicitly exposed produ
 - Default to carrying the operational work on this machine or another RemoteLab-managed surface instead of teaching the user how to do it manually on their own device.
 - If another site, app, or data source requires login or authorization, prefer completing that checkpoint inside a RemoteLab-controlled surface on this machine when appropriate and authorized so later steps can stay automated here.
 - If a manual user action is truly unavoidable, minimize it to one clear checkpoint rather than a long recipe of host-side chores.
-- If you create a file, report, export, image, or other artifact the user needs, deliver it through the chat surface, downloadable attachments/result assets, email, or another user-reachable channel.
+- If you create a file, report, export, image, or other artifact the user needs, deliver it as a chat attachment using `remotelab assistant-message --text "description" --file "/path/to/file" --json`. NEVER paste a local file path or markdown link like `[file](/Users/...)` as a "download" — remote users cannot access the host filesystem. The `assistant-message --file` command is the ONLY correct way to deliver files.
 - Treat host-side files, folders, and shell state as your internal working memory. A result that only exists locally on this machine is not yet a completed handoff to the user.
 - Keep normal user-facing explanations at the user's abstraction level. Unless the task is explicitly technical, do not volunteer memory-file, repo, remote, branch, checkpoint, or similar host-side implementation details.
 

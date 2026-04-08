@@ -20,125 +20,12 @@ function redirectToLogin() {
   }
 }
 
-const LOCAL_EDITOR_ROOT_PATTERN = /^\/(Users|home|opt|private|var|tmp|etc|Volumes|mnt)\//;
-
-function safeDecodeHref(value) {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return text;
-  }
-}
-
-function normalizeLocalEditorHrefCandidate(href) {
-  const decoded = safeDecodeHref(href);
-  if (!decoded) return "";
-  let candidate = decoded;
-  const hashIndex = candidate.indexOf("#");
-  if (hashIndex >= 0) {
-    candidate = candidate.slice(0, hashIndex);
-  }
-  const colonMatch = candidate.match(/^(.*):\d+(?::\d+)?$/);
-  if (colonMatch && LOCAL_EDITOR_ROOT_PATTERN.test(colonMatch[1])) {
-    return colonMatch[1];
-  }
-  return candidate;
-}
-
-function isLikelyLocalEditorHref(href) {
-  const candidate = normalizeLocalEditorHrefCandidate(href);
-  return LOCAL_EDITOR_ROOT_PATTERN.test(candidate);
-}
-
-function parsePositiveInt(value) {
-  const parsed = Number.parseInt(String(value || ""), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
-}
-
-function parseLocalEditorTarget(href) {
-  const decoded = safeDecodeHref(href);
-  if (!decoded) return null;
-
-  const hashMatch = decoded.match(/^(.*)#L(\d+)(?:C(\d+))?$/i);
-  if (hashMatch && LOCAL_EDITOR_ROOT_PATTERN.test(hashMatch[1])) {
-    return {
-      path: hashMatch[1],
-      line: parsePositiveInt(hashMatch[2]),
-      column: parsePositiveInt(hashMatch[3]),
-    };
-  }
-
-  const colonMatch = decoded.match(/^(.*):(\d+)(?::(\d+))?$/);
-  if (colonMatch && LOCAL_EDITOR_ROOT_PATTERN.test(colonMatch[1])) {
-    return {
-      path: colonMatch[1],
-      line: parsePositiveInt(colonMatch[2]),
-      column: parsePositiveInt(colonMatch[3]),
-    };
-  }
-
-  if (!LOCAL_EDITOR_ROOT_PATTERN.test(decoded)) return null;
-  return { path: decoded, line: null, column: null };
-}
-
-function supportsDesktopEditorLinks() {
-  if (typeof window.matchMedia !== "function") return true;
-  return (
-    window.matchMedia("(pointer: fine)").matches &&
-    window.matchMedia("(hover: hover)").matches
-  );
-}
-
-function buildVscodeEditorHref(href) {
-  const target = parseLocalEditorTarget(href);
-  if (!target) return "";
-  const lineSuffix = target.line
-    ? `:${target.line}${target.column ? `:${target.column}` : ""}`
-    : "";
-  return `vscode://file${encodeURI(target.path)}${lineSuffix}`;
-}
-
 function enhanceRenderedContentLinks(root) {
   if (!root) return;
 
   root.querySelectorAll("a[href]").forEach((link) => {
-    const href = (
-      link.dataset.localEditorSource ||
-      link.getAttribute("href") ||
-      ""
-    ).trim();
+    const href = (link.getAttribute("href") || "").trim();
     if (!href) return;
-
-    if (isLikelyLocalEditorHref(href)) {
-      link.dataset.localEditorSource = href;
-      link.removeAttribute("target");
-      link.removeAttribute("rel");
-
-      if (visitorMode) {
-        link.removeAttribute("href");
-        link.title = "Local file links are unavailable in visitor mode";
-        return;
-      }
-
-      if (!supportsDesktopEditorLinks()) {
-        link.removeAttribute("href");
-        link.title = "Open this link from a desktop browser";
-        return;
-      }
-
-      const editorHref = buildVscodeEditorHref(href);
-      if (!editorHref) {
-        link.removeAttribute("href");
-        link.title = "Unsupported local file link";
-        return;
-      }
-
-      link.href = editorHref;
-      link.title = "Open in VS Code";
-      return;
-    }
 
     if (/^(https?:|mailto:|tel:)/i.test(href)) {
       link.target = "_blank";

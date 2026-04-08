@@ -480,13 +480,10 @@ function renderFileChangeInto(container, evt) {
   div.className = "file-card";
   const kind = evt.changeType || "edit";
   const filePath = evt.filePath || "";
-  const pathMarkup = filePath && isLikelyLocalEditorHref(filePath)
-    ? `<a class="file-path" href="${esc(filePath)}">${esc(filePath)}</a>`
-    : `<span class="file-path">${esc(filePath)}</span>`;
+  const pathMarkup = `<span class="file-path">${esc(filePath)}</span>`;
   const changeLabel = formatFileChangeTypeLabel(kind);
   div.innerHTML = `${pathMarkup}
     <span class="change-type ${kind}">${esc(changeLabel)}</span>`;
-  enhanceRenderedContentLinks(div);
   container.appendChild(div);
   return div;
 }

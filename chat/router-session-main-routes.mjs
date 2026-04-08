@@ -5,6 +5,7 @@ import { readBody } from '../lib/utils.mjs';
 import { readEventBody } from './history.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
 import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-display-events.mjs';
+import { rewriteLocalFileLinksInDisplayEvents } from './local-link-rewriter.mjs';
 import {
   applyTemplateToSession,
   cancelActiveRun,
@@ -148,6 +149,7 @@ export async function handleSessionMainRoutes({
     const events = buildSessionDisplayEvents(timeline, {
       sessionRunning: session?.activity?.run?.state === 'running',
     });
+    await rewriteLocalFileLinksInDisplayEvents(events, sessionId);
     writeJsonCached(req, res, { sessionId, filter: 'visible', events });
     return true;
   }

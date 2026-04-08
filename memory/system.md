@@ -530,10 +530,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - For local-first agent products, a provider's long-connection / SDK event mode can be the fastest connector path because it avoids public webhook setup, signature verification, and payload decryption.
 - A reliable pattern is: receive event -> dedupe / enqueue immediately -> acknowledge the provider -> run the canonical session/message/run flow in background -> publish the final assistant reply afterward.
 
-### Desktop-Only Local File Links Should Stay Client-Side (2026-03-12)
-- In RemoteLab-style remote UIs, local absolute file links are fundamentally a desktop operator workflow; mobile users can understand that they are unsupported.
-- Prefer rewriting these links client-side to `vscode://file/...` for desktop-capable browsers, and degrade on mobile/visitor surfaces by disabling the link with a clear tooltip.
-- Avoid adding server routes that execute `code --goto` on the host just to make phone-originated clicks work; that adds auth and execution surface area for a scenario the product does not need to support.
+### Local File Paths in Assistant Messages Are Useless to Remote Users (2026-04-08)
+- When the model generates a file for the user (report, export, spreadsheet, image, etc.), a local path or markdown link like `[file.xlsx](/Users/.../file.xlsx)` is meaningless — remote users cannot access the host filesystem.
+- The correct delivery method is `remotelab assistant-message --file <path>`, which publishes the file as a downloadable chat attachment visible to the user.
+- Do not paper over host-only paths with client-side editor rewrites. They still point at the host machine, not a user-reachable surface, and they confuse remote/mobile users.
+- As a safety net, the server rewrites local-file markdown links in assistant messages to downloadable asset URLs at display time. But models should use `assistant-message --file` proactively rather than relying on this fallback.
 
 ### Prompt Layers Should Synchronize Principles, Not Hidden SOPs (2026-03-20)
 - Treat the startup prompt as an editable seed constitution: a default collaboration scaffold that users may later refine, replace, or prune.
