@@ -1,27 +1,100 @@
+import { createReadStream } from 'fs';
 import { open, readdir } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
+import readline from 'readline';
 import { statOrNull } from './fs-utils.mjs';
+import { CODEX_MANAGED_HOME_DIR } from '../lib/config.mjs';
 import { estimateGpt54CostUsd, getGpt54PricingMetadata } from '../lib/openai-pricing.mjs';
 
 const SESSION_LOG_CACHE = new Map();
 const TAIL_CHUNK_BYTES = 128 * 1024;
 const MAX_TAIL_SCAN_BYTES = 2 * 1024 * 1024;
-let cachedSessionsDir = '';
+let cachedSessionsRootsKey = '';
 
-function getCodexSessionsDir() {
+function buildUniqueRoots(paths = []) {
+  const seen = new Set();
+  const roots = [];
+  for (const value of paths) {
+    const normalized = typeof value === 'string' ? value.trim() : '';
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    roots.push(normalized);
+  }
+  return roots;
+}
+
+function getCodexSessionsRoots() {
   const homeOverride = typeof process.env.HOME === 'string' ? process.env.HOME.trim() : '';
   const homeDir = homeOverride || homedir();
-  const sessionsDir = join(homeDir, '.codex', 'sessions');
-  if (sessionsDir !== cachedSessionsDir) {
-    cachedSessionsDir = sessionsDir;
+  const codeHomeOverride = typeof process.env.CODEX_HOME === 'string' ? process.env.CODEX_HOME.trim() : '';
+  const sessionsRoots = buildUniqueRoots([
+    codeHomeOverride ? join(codeHomeOverride, 'sessions') : '',
+    join(CODEX_MANAGED_HOME_DIR, 'sessions'),
+    join(homeDir, '.codex', 'sessions'),
+  ]);
+  const nextRootsKey = sessionsRoots.join('\n');
+  if (nextRootsKey !== cachedSessionsRootsKey) {
+    cachedSessionsRootsKey = nextRootsKey;
     SESSION_LOG_CACHE.clear();
   }
-  return sessionsDir;
+  return sessionsRoots;
 }
 
 function pickNonNegativeInt(value) {
   return Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function normalizeTimestampMs(value) {
+  const parsed = Date.parse(value || '');
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function readTokenUsageRecord(record) {
+  if (record?.type !== 'event_msg' || record?.payload?.type !== 'token_count') {
+    return null;
+  }
+
+  const timestampMs = normalizeTimestampMs(record.timestamp);
+  if (!Number.isFinite(timestampMs)) {
+    return null;
+  }
+
+  const info = record.payload?.info || {};
+  const totalUsage = info.total_token_usage || {};
+  const lastUsage = info.last_token_usage || {};
+  const inputTokens = pickNonNegativeInt(totalUsage.input_tokens) || 0;
+  const cachedInputTokens = pickNonNegativeInt(totalUsage.cached_input_tokens) || 0;
+  const outputTokens = pickNonNegativeInt(totalUsage.output_tokens) || 0;
+  const reasoningTokens = pickNonNegativeInt(totalUsage.reasoning_output_tokens) || 0;
+  const totalTokens = pickNonNegativeInt(totalUsage.total_tokens) || (inputTokens + outputTokens);
+
+  return {
+    timestamp: typeof record.timestamp === 'string' ? record.timestamp : null,
+    timestampMs,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningTokens,
+    totalTokens,
+    contextTokens: pickNonNegativeInt(lastUsage.input_tokens),
+    contextWindowTokens: pickNonNegativeInt(info.model_context_window),
+  };
+}
+
+function diffUsageTotals(current, previous) {
+  if (!previous || current.totalTokens < previous.totalTokens) {
+    return { ...current };
+  }
+
+  return {
+    ...current,
+    inputTokens: Math.max(0, current.inputTokens - previous.inputTokens),
+    cachedInputTokens: Math.max(0, current.cachedInputTokens - previous.cachedInputTokens),
+    outputTokens: Math.max(0, current.outputTokens - previous.outputTokens),
+    reasoningTokens: Math.max(0, current.reasoningTokens - previous.reasoningTokens),
+    totalTokens: Math.max(0, current.totalTokens - previous.totalTokens),
+  };
 }
 
 async function findSessionLogRecursive(rootDir, threadId) {
@@ -53,16 +126,18 @@ async function findSessionLogRecursive(rootDir, threadId) {
 export async function findCodexSessionLog(threadId) {
   if (!threadId) return null;
 
-  const sessionsDir = getCodexSessionsDir();
+  const sessionsRoots = getCodexSessionsRoots();
   const cached = SESSION_LOG_CACHE.get(threadId);
   if (cached && await statOrNull(cached)) {
     return cached;
   }
 
-  const located = await findSessionLogRecursive(sessionsDir, threadId);
-  if (located) {
-    SESSION_LOG_CACHE.set(threadId, located);
-    return located;
+  for (const sessionsDir of sessionsRoots) {
+    const located = await findSessionLogRecursive(sessionsDir, threadId);
+    if (located) {
+      SESSION_LOG_CACHE.set(threadId, located);
+      return located;
+    }
   }
 
   SESSION_LOG_CACHE.delete(threadId);
@@ -114,9 +189,99 @@ async function readLastMatchingJsonLine(filePath, predicate) {
   }
 }
 
-export async function readLatestCodexSessionMetrics(threadId) {
+async function readLatestTokenUsageWindow(filePath, options = {}) {
+  const startMs = normalizeTimestampMs(options.startedAt);
+  const endMs = normalizeTimestampMs(
+    options.completedAt
+    || options.finalizedAt
+    || options.endAt
+  );
+  const stream = createReadStream(filePath, { encoding: 'utf8' });
+  const input = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  let previousUsage = null;
+  let latestUsage = null;
+
+  try {
+    for await (const rawLine of input) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      let record;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      const usage = readTokenUsageRecord(record);
+      if (!usage) continue;
+
+      if (Number.isFinite(startMs) && usage.timestampMs < startMs) {
+        previousUsage = usage;
+        continue;
+      }
+      if (Number.isFinite(endMs) && usage.timestampMs > endMs) {
+        break;
+      }
+      latestUsage = usage;
+    }
+  } finally {
+    input.close();
+    stream.close();
+  }
+
+  if (!latestUsage) {
+    return null;
+  }
+
+  return {
+    latestUsage,
+    deltaUsage: diffUsageTotals(latestUsage, previousUsage),
+  };
+}
+
+export async function readLatestCodexSessionMetrics(threadId, options = {}) {
   const sessionLogPath = await findCodexSessionLog(threadId);
   if (!sessionLogPath) return null;
+
+  const windowUsage = (
+    options
+    && (
+      typeof options.startedAt === 'string'
+      || typeof options.completedAt === 'string'
+      || typeof options.finalizedAt === 'string'
+      || typeof options.endAt === 'string'
+    )
+  )
+    ? await readLatestTokenUsageWindow(sessionLogPath, options)
+    : null;
+
+  if (windowUsage?.latestUsage) {
+    const latestUsage = windowUsage.latestUsage;
+    const deltaUsage = windowUsage.deltaUsage;
+    const estimatedCostUsd = estimateGpt54CostUsd({
+      inputTokens: deltaUsage.inputTokens,
+      cachedInputTokens: deltaUsage.cachedInputTokens,
+      outputTokens: deltaUsage.outputTokens,
+    });
+    const pricingMetadata = getGpt54PricingMetadata();
+
+    return {
+      threadId,
+      sessionLogPath,
+      source: 'provider_last_token_count',
+      timestamp: latestUsage.timestamp,
+      contextTokens: latestUsage.contextTokens,
+      inputTokens: deltaUsage.inputTokens,
+      cachedInputTokens: deltaUsage.cachedInputTokens,
+      outputTokens: deltaUsage.outputTokens,
+      reasoningTokens: deltaUsage.reasoningTokens,
+      contextWindowTokens: latestUsage.contextWindowTokens,
+      ...(Number.isFinite(estimatedCostUsd) ? { estimatedCostUsd } : {}),
+      estimatedCostModel: pricingMetadata.pricingModel,
+      costSource: pricingMetadata.costSource,
+    };
+  }
 
   const tokenCountRecord = await readLastMatchingJsonLine(
     sessionLogPath,
@@ -124,19 +289,13 @@ export async function readLatestCodexSessionMetrics(threadId) {
   );
   if (!tokenCountRecord) return null;
 
-  const info = tokenCountRecord.payload?.info || {};
-  const lastUsage = info.last_token_usage || {};
-  const totalUsage = info.total_token_usage || {};
-  const contextTokens = pickNonNegativeInt(lastUsage.input_tokens);
+  const latestUsage = readTokenUsageRecord(tokenCountRecord);
+  const contextTokens = latestUsage?.contextTokens;
   if (!Number.isInteger(contextTokens)) return null;
-  const inputTokens = pickNonNegativeInt(totalUsage.input_tokens);
-  const cachedInputTokens = pickNonNegativeInt(totalUsage.cached_input_tokens);
-  const outputTokens = pickNonNegativeInt(totalUsage.output_tokens);
-  const reasoningTokens = pickNonNegativeInt(totalUsage.reasoning_output_tokens);
   const estimatedCostUsd = estimateGpt54CostUsd({
-    inputTokens,
-    cachedInputTokens,
-    outputTokens,
+    inputTokens: latestUsage.inputTokens,
+    cachedInputTokens: latestUsage.cachedInputTokens,
+    outputTokens: latestUsage.outputTokens,
   });
   const pricingMetadata = getGpt54PricingMetadata();
 
@@ -144,13 +303,13 @@ export async function readLatestCodexSessionMetrics(threadId) {
     threadId,
     sessionLogPath,
     source: 'provider_last_token_count',
-    timestamp: typeof tokenCountRecord.timestamp === 'string' ? tokenCountRecord.timestamp : null,
+    timestamp: latestUsage.timestamp,
     contextTokens,
-    inputTokens,
-    cachedInputTokens,
-    outputTokens,
-    reasoningTokens,
-    contextWindowTokens: pickNonNegativeInt(info.model_context_window),
+    inputTokens: latestUsage.inputTokens,
+    cachedInputTokens: latestUsage.cachedInputTokens,
+    outputTokens: latestUsage.outputTokens,
+    reasoningTokens: latestUsage.reasoningTokens,
+    contextWindowTokens: latestUsage.contextWindowTokens,
     ...(Number.isFinite(estimatedCostUsd) ? { estimatedCostUsd } : {}),
     estimatedCostModel: pricingMetadata.pricingModel,
     costSource: pricingMetadata.costSource,

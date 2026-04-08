@@ -9,6 +9,8 @@ const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-usage-context-'));
 
 process.env.HOME = tempHome;
+process.env.REMOTELAB_CONFIG_DIR = join(tempHome, '.config', 'remotelab');
+process.env.CODEX_HOME = join(tempHome, '.config', 'remotelab', 'provider-runtime-homes', 'codex');
 
 const { createClaudeAdapter } = await import(
   pathToFileURL(join(repoRoot, 'chat', 'adapters', 'claude.mjs')).href
@@ -141,6 +143,101 @@ try {
   assert.equal(codexMetrics.estimatedCostUsd, 0.044086, 'Codex metrics should estimate GPT-5.4 cost from input/cache/output tokens');
   assert.equal(codexMetrics.estimatedCostModel, 'gpt-5.4', 'Codex metrics should annotate the pricing model assumption');
   assert.equal(codexMetrics.costSource, 'estimated_gpt_5_4', 'Codex metrics should expose the estimate source');
+
+  const managedCodexThreadId = '019d6383-beec-7ae2-9b12-264f2fcf075b';
+  const managedCodexSessionDir = join(
+    tempHome,
+    '.config',
+    'remotelab',
+    'provider-runtime-homes',
+    'codex',
+    'sessions',
+    '2026',
+    '04',
+    '06',
+  );
+  mkdirSync(managedCodexSessionDir, { recursive: true });
+  writeFileSync(join(managedCodexSessionDir, `rollout-2026-04-06T23-57-51-${managedCodexThreadId}.jsonl`), [
+    JSON.stringify({
+      timestamp: '2026-04-08T13:20:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: 14900000,
+            cached_input_tokens: 12490000,
+            output_tokens: 90000,
+            reasoning_output_tokens: 47000,
+            total_tokens: 14990000,
+          },
+          last_token_usage: {
+            input_tokens: 180000,
+            cached_input_tokens: 179500,
+            output_tokens: 120,
+            reasoning_output_tokens: 40,
+            total_tokens: 180120,
+          },
+          model_context_window: 258400,
+        },
+      },
+    }),
+    JSON.stringify({
+      timestamp: '2026-04-08T13:30:25.812Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: {
+          total_token_usage: {
+            input_tokens: 14976327,
+            cached_input_tokens: 12550016,
+            output_tokens: 91640,
+            reasoning_output_tokens: 48023,
+            total_tokens: 15067967,
+          },
+          last_token_usage: {
+            input_tokens: 181995,
+            cached_input_tokens: 181248,
+            output_tokens: 139,
+            reasoning_output_tokens: 52,
+            total_tokens: 182134,
+          },
+          model_context_window: 258400,
+        },
+      },
+    }),
+  ].join('\n'), 'utf8');
+
+  const managedCodexMetrics = await readLatestCodexSessionMetrics(managedCodexThreadId, {
+    startedAt: '2026-04-08T13:26:40.349Z',
+    completedAt: '2026-04-08T13:30:26.950Z',
+  });
+  assert.ok(managedCodexMetrics, 'Codex session metrics should also be readable from the managed runtime home');
+  assert.equal(
+    managedCodexMetrics.sessionLogPath,
+    join(managedCodexSessionDir, `rollout-2026-04-06T23-57-51-${managedCodexThreadId}.jsonl`),
+    'Codex metrics should resolve the managed runtime session log path',
+  );
+  assert.equal(
+    managedCodexMetrics.contextTokens,
+    181995,
+    'Managed-home Codex metrics should use last_token_usage.input_tokens',
+  );
+  assert.equal(
+    managedCodexMetrics.inputTokens,
+    76327,
+    'Managed-home Codex metrics should diff cumulative totals into per-run input tokens',
+  );
+  assert.equal(
+    managedCodexMetrics.cachedInputTokens,
+    60016,
+    'Managed-home Codex metrics should diff cumulative totals into per-run cached input tokens',
+  );
+  assert.equal(
+    managedCodexMetrics.outputTokens,
+    1640,
+    'Managed-home Codex metrics should diff cumulative totals into per-run output tokens',
+  );
 
   const codexUsageEvents = codex.parseLine(JSON.stringify(buildCodexContextMetricsPayload(codexMetrics)));
   const codexUsage = codexUsageEvents.find((event) => event.type === 'usage');

@@ -115,6 +115,10 @@ import {
   clipCompactionSection,
 } from './session-context-compaction.mjs';
 import {
+  buildCodexContextMetricsPayload,
+  readLatestCodexSessionMetrics,
+} from './codex-session-metrics.mjs';
+import {
   applyCompactionWorkerResult,
   INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR,
   maybeAutoCompact,
@@ -1006,6 +1010,33 @@ function buildRunProjectionPreview(spoolRecords = []) {
     .join(' | ');
 }
 
+async function maybeAppendProjectedCodexUsage(run, runtimeInvocation, normalizedEvents = [], lastRecordTimestamp = null) {
+  if (!runtimeInvocation?.isCodexFamily || !run?.codexThreadId) {
+    return normalizedEvents;
+  }
+  if (normalizedEvents.some((event) => event?.type === 'usage')) {
+    return normalizedEvents;
+  }
+
+  const metrics = await readLatestCodexSessionMetrics(run.codexThreadId, {
+    startedAt: run.startedAt || run.createdAt || null,
+    completedAt: run.completedAt || run.spoolCompletionDetectedAt || run.finalizedAt || null,
+  });
+  const payload = buildCodexContextMetricsPayload(metrics);
+  if (!payload) {
+    return normalizedEvents;
+  }
+
+  const metricsTimestamp = Date.parse(metrics?.timestamp || '');
+  const stableTimestamp = Number.isFinite(metricsTimestamp) ? metricsTimestamp : lastRecordTimestamp;
+  const parsedEvents = runtimeInvocation.adapter.parseLine(JSON.stringify(payload)).map((event) => ({
+    ...event,
+    ...(Number.isInteger(stableTimestamp) ? { timestamp: stableTimestamp } : {}),
+  }));
+  normalizedEvents.push(...normalizeRunEvents(run, parsedEvents));
+  return normalizedEvents;
+}
+
 async function normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords = [], options = {}) {
   const { adapter } = runtimeInvocation;
   const normalizedEvents = [];
@@ -1033,6 +1064,9 @@ async function normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords = [
     }));
     normalizedEvents.push(...normalizeRunEvents(run, flushedEvents));
   }
+  if (options.includeCodexContextMetrics === true) {
+    await maybeAppendProjectedCodexUsage(run, runtimeInvocation, normalizedEvents, lastRecordTimestamp);
+  }
 
   return {
     normalizedEvents,
@@ -1043,7 +1077,9 @@ async function normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords = [
 async function collectNormalizedRunEvents(run, manifest) {
   const runtimeInvocation = await createRunRuntimeInvocation(manifest);
   const spoolRecords = await readRunSpoolRecords(run.id);
-  const parsed = await normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords);
+  const parsed = await normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords, {
+    includeCodexContextMetrics: true,
+  });
   return {
     runtimeInvocation,
     ...parsed,

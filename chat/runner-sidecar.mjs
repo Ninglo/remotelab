@@ -69,7 +69,10 @@ async function appendCodexContextMetrics(runId) {
   const current = await getRun(runId);
   if (!current?.codexThreadId) return null;
 
-  const metrics = await readLatestCodexSessionMetrics(current.codexThreadId);
+  const metrics = await readLatestCodexSessionMetrics(current.codexThreadId, {
+    startedAt: current.startedAt || current.createdAt || null,
+    completedAt: current.completedAt || null,
+  });
   const payload = buildCodexContextMetricsPayload(metrics);
   if (!payload) return null;
 
