@@ -327,7 +327,8 @@ async function main() {
     assert.equal(Array.isArray(manifestJson.shortcuts), true, 'manifest should advertise launcher shortcuts for installed Android PWAs');
     assert.equal(manifestJson.shortcuts.length, 1, 'manifest should keep the first quick-entry release to a single shortcut');
     assert.equal(manifestJson.shortcuts[0]?.name, '快速记录', 'manifest should expose the quick-entry shortcut label');
-    assert.equal(manifestJson.shortcuts[0]?.url, '/?intent=new-session', 'manifest shortcut should deep-link into the new-session launch intent');
+    assert.equal(manifestJson.shortcuts[0]?.url, './?intent=new-session', 'manifest shortcut should stay inside the current product scope');
+    assert.equal(manifestJson.icons[0]?.src, 'icon.svg', 'manifest icons should resolve relative to the current product scope');
 
     const loginPage = await request(port, 'GET', '/login', null, { Cookie: '' });
     assert.equal(loginPage.status, 200, 'login page should render without auth');

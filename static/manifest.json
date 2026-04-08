@@ -12,10 +12,10 @@
       "name": "快速记录",
       "short_name": "记录",
       "description": "打开后立即新建一个会话",
-      "url": "/?intent=new-session",
+      "url": "./?intent=new-session",
       "icons": [
         {
-          "src": "/icon-192.png",
+          "src": "icon-192.png",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -40,35 +40,35 @@
   },
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "icon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     },
     {
-      "src": "/apple-touch-icon.png",
+      "src": "apple-touch-icon.png",
       "sizes": "180x180",
       "type": "image/png"
     },
     {
-      "src": "/icon-192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-512.png",
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon-192.png",
+      "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
