@@ -299,7 +299,6 @@
       const bootstrap = window.__REMOTELAB_BOOTSTRAP__ || {};
       const installData = bootstrap.mobileInstall || {};
       const handoffToken = typeof installData.handoffToken === 'string' ? installData.handoffToken.trim() : '';
-      const installNotificationKey = 'remotelab.mobileInstall.requestNotifications';
       const browserSkipKey = 'remotelab.mobileInstall.skipUntil';
       const browserSkipMs = 7 * 24 * 60 * 60 * 1000;
       const titleEl = document.getElementById('title');
@@ -625,35 +624,6 @@
         primaryBtn.classList.add('hidden');
         secondaryBtn.classList.add('hidden');
         window.location.replace(resolveProductPath(`/m/continue?h=${encodeURIComponent(handoffToken)}`));
-      }
-
-      async function redeemHandoff() {
-        benefitsEl.classList.add('hidden');
-        stepsWrapEl.classList.add('hidden');
-        copyBtn.classList.add('hidden');
-        titleEl.textContent = text.redeemLoadingTitle;
-        subtitleEl.textContent = text.redeemLoadingSubtitle;
-        helperEl.textContent = '';
-        setStatus(text.redeemLoadingStatus);
-        primaryBtn.classList.add('hidden');
-        secondaryBtn.classList.add('hidden');
-
-        try {
-          const response = await fetch(resolveProductPath('/api/install/handoff/redeem'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: handoffToken }),
-          });
-          if (!response.ok) {
-            throw new Error('redeem_failed');
-          }
-          try {
-            localStorage.setItem(installNotificationKey, '1');
-          } catch {}
-          window.location.replace(resolveProductPath('/'));
-        } catch {
-          showRedeemError();
-        }
       }
 
       window.addEventListener('beforeinstallprompt', function onBeforeInstallPrompt(event) {
