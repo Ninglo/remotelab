@@ -146,53 +146,7 @@ initResponsiveLayout();
 
 const MOBILE_INSTALL_SKIP_STORAGE_KEY = "remotelab.mobileInstall.skipUntil";
 const MOBILE_INSTALL_SKIP_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
-const INSTALL_DIAGNOSTICS_STORAGE_KEY = "remotelab.installDiagnostics.v1";
-const INSTALL_DIAGNOSTICS_LIMIT = 40;
 let pendingInstallPromptEvent = null;
-
-function recordInstallDiagnostic(eventName, details = {}) {
-  const entry = {
-    ts: new Date().toISOString(),
-    event: typeof eventName === "string" ? eventName : "unknown",
-    details: details && typeof details === "object" ? { ...details } : {},
-  };
-  try {
-    const current = JSON.parse(localStorage.getItem(INSTALL_DIAGNOSTICS_STORAGE_KEY) || "[]");
-    const next = Array.isArray(current) ? current : [];
-    next.push(entry);
-    while (next.length > INSTALL_DIAGNOSTICS_LIMIT) {
-      next.shift();
-    }
-    localStorage.setItem(INSTALL_DIAGNOSTICS_STORAGE_KEY, JSON.stringify(next));
-  } catch {}
-  console.info("[install]", entry.event, entry.details);
-  try {
-    if (typeof window.dispatchEvent === "function" && typeof CustomEvent === "function") {
-      window.dispatchEvent(new CustomEvent("remotelab:installlogchange", { detail: entry }));
-    }
-  } catch {}
-  return entry;
-}
-
-function getInstallDiagnostics() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(INSTALL_DIAGNOSTICS_STORAGE_KEY) || "[]");
-    return Array.isArray(stored) ? stored : [];
-  } catch {
-    return [];
-  }
-}
-
-function clearInstallDiagnostics() {
-  try {
-    localStorage.removeItem(INSTALL_DIAGNOSTICS_STORAGE_KEY);
-  } catch {}
-  try {
-    if (typeof window.dispatchEvent === "function" && typeof CustomEvent === "function") {
-      window.dispatchEvent(new CustomEvent("remotelab:installlogchange", { detail: null }));
-    }
-  } catch {}
-}
 
 function isMobileInstallEligibleDevice() {
   const ua = navigator.userAgent || "";
@@ -258,13 +212,8 @@ function shouldOpenMobileInstallFlow(authInfo) {
 
 async function openInstallFlow({ source = "manual", replace = false } = {}) {
   const state = getInstallFlowState();
-  recordInstallDiagnostic("open_requested", {
-    source,
-    ...state,
-  });
 
   if (state.standalone) {
-    recordInstallDiagnostic("open_blocked_standalone", { source });
     showSystemToast("RemoteLab is already running as an installed app.");
     return false;
   }
@@ -272,41 +221,20 @@ async function openInstallFlow({ source = "manual", replace = false } = {}) {
   if (pendingInstallPromptEvent) {
     const promptEvent = pendingInstallPromptEvent;
     pendingInstallPromptEvent = null;
-    recordInstallDiagnostic("beforeinstallprompt_prompting", { source });
     try {
       await promptEvent.prompt();
-      const result = await promptEvent.userChoice.catch(() => null);
-      recordInstallDiagnostic("beforeinstallprompt_result", {
-        source,
-        outcome: result?.outcome || "unknown",
-        platform: result?.platform || "",
-      });
+      await promptEvent.userChoice.catch(() => null);
       return true;
-    } catch (error) {
-      recordInstallDiagnostic("beforeinstallprompt_failed", {
-        source,
-        message: error?.message || String(error),
-      });
-    }
+    } catch {}
   }
 
   if (typeof ensureServiceWorkerRegistration === "function") {
-    recordInstallDiagnostic("sw_register_start", { source });
     await ensureServiceWorkerRegistration();
-    recordInstallDiagnostic("sw_register_done", {
-      source,
-      hasController: !!navigator.serviceWorker?.controller,
-    });
   }
 
   const installUrl = typeof window.remotelabResolveProductPath === "function"
     ? window.remotelabResolveProductPath(`/m/install?source=${encodeURIComponent(source)}`)
     : `m/install?source=${encodeURIComponent(source)}`;
-  recordInstallDiagnostic("install_redirect", {
-    source,
-    installUrl,
-    replace,
-  });
   if (replace) {
     window.location.replace(installUrl);
   } else {
@@ -315,17 +243,12 @@ async function openInstallFlow({ source = "manual", replace = false } = {}) {
   return true;
 }
 
-window.remotelabGetInstallDiagnostics = getInstallDiagnostics;
-window.remotelabClearInstallDiagnostics = clearInstallDiagnostics;
 window.remotelabGetInstallFlowState = getInstallFlowState;
 window.remotelabOpenInstallFlow = openInstallFlow;
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
   pendingInstallPromptEvent = event;
-  recordInstallDiagnostic("beforeinstallprompt_captured", {
-    path: String(window.location?.pathname || ""),
-  });
 });
 
 function consumeLaunchIntent() {

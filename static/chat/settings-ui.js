@@ -453,34 +453,14 @@ function initThinkingBlockDisplaySettings() {
   thinkingBlockDisplaySelect.dataset.bound = "true";
 }
 
-function formatInstallDiagnosticEntry(entry) {
-  const timestamp = typeof entry?.ts === "string" ? entry.ts : "";
-  const eventName = typeof entry?.event === "string" ? entry.event : "unknown";
-  const details = entry?.details && typeof entry.details === "object"
-    ? Object.entries(entry.details)
-      .filter(([, value]) => value !== "" && value !== undefined && value !== null)
-      .map(([key, value]) => `${key}=${typeof value === "string" ? value : JSON.stringify(value)}`)
-      .join(" · ")
-    : "";
-  return {
-    timestamp,
-    text: details ? `${eventName} · ${details}` : eventName,
-  };
-}
-
 function renderInstallSettingsPanel() {
   const installBtn = document.getElementById("settingsInstallAppBtn");
-  const clearBtn = document.getElementById("settingsInstallLogClearBtn");
   const statusEl = document.getElementById("settingsInstallStatus");
-  const logEl = document.getElementById("settingsInstallLog");
-  if (!installBtn || !clearBtn || !statusEl || !logEl) return;
+  if (!installBtn || !statusEl) return;
 
   const state = typeof window.remotelabGetInstallFlowState === "function"
     ? window.remotelabGetInstallFlowState()
     : { promptReady: false, standalone: false, mobileEligible: false };
-  const entries = typeof window.remotelabGetInstallDiagnostics === "function"
-    ? window.remotelabGetInstallDiagnostics()
-    : [];
 
   installBtn.disabled = visitorMode;
   installBtn.textContent = state.promptReady
@@ -497,32 +477,11 @@ function renderInstallSettingsPanel() {
     statusEl.textContent = t("settings.install.statusDesktop");
   }
   statusEl.hidden = false;
-
-  logEl.innerHTML = "";
-  if (!Array.isArray(entries) || entries.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "settings-install-log-empty";
-    empty.textContent = t("settings.install.logEmpty");
-    logEl.appendChild(empty);
-    return;
-  }
-
-  for (const entry of [...entries].reverse()) {
-    const row = document.createElement("div");
-    row.className = "settings-install-log-entry";
-    const time = document.createElement("time");
-    const formatted = formatInstallDiagnosticEntry(entry);
-    time.textContent = formatted.timestamp ? formatted.timestamp.slice(11, 19) : "--:--:--";
-    row.appendChild(time);
-    row.appendChild(document.createTextNode(formatted.text));
-    logEl.appendChild(row);
-  }
 }
 
 function initInstallSettings() {
   const installBtn = document.getElementById("settingsInstallAppBtn");
-  const clearBtn = document.getElementById("settingsInstallLogClearBtn");
-  if (!installBtn || !clearBtn) return;
+  if (!installBtn) return;
 
   renderInstallSettingsPanel();
 
@@ -539,16 +498,6 @@ function initInstallSettings() {
       }
     });
     installBtn.dataset.bound = "true";
-  }
-
-  if (clearBtn.dataset.bound !== "true") {
-    clearBtn.addEventListener("click", () => {
-      if (typeof window.remotelabClearInstallDiagnostics === "function") {
-        window.remotelabClearInstallDiagnostics();
-      }
-      renderInstallSettingsPanel();
-    });
-    clearBtn.dataset.bound = "true";
   }
 }
 
@@ -703,8 +652,4 @@ window.addEventListener("remotelab:themechange", () => {
 
 window.addEventListener("remotelab:thinkingblockdisplaychange", () => {
   syncThinkingBlockDisplaySelect();
-});
-
-window.addEventListener("remotelab:installlogchange", () => {
-  renderInstallSettingsPanel();
 });

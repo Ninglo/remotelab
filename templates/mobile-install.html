@@ -305,8 +305,6 @@
       const browserSkipKey = 'remotelab.mobileInstall.skipUntil';
       const browserSkipMs = 7 * 24 * 60 * 60 * 1000;
       const installabilityReloadKey = 'remotelab.mobileInstall.installabilityReloaded';
-      const installDiagnosticsStorageKey = 'remotelab.installDiagnostics.v1';
-      const installDiagnosticsLimit = 40;
       const titleEl = document.getElementById('title');
       const subtitleEl = document.getElementById('subtitle');
       const statusEl = document.getElementById('status');
@@ -335,24 +333,6 @@
           return window.remotelabResolveProductPath(path);
         }
         return typeof path === 'string' ? path : String(path || '');
-      }
-
-      function recordInstallDiagnostic(eventName, details) {
-        const entry = {
-          ts: new Date().toISOString(),
-          event: typeof eventName === 'string' ? eventName : 'unknown',
-          details: details && typeof details === 'object' ? { ...details } : {},
-        };
-        try {
-          const current = JSON.parse(localStorage.getItem(installDiagnosticsStorageKey) || '[]');
-          const next = Array.isArray(current) ? current : [];
-          next.push(entry);
-          while (next.length > installDiagnosticsLimit) {
-            next.shift();
-          }
-          localStorage.setItem(installDiagnosticsStorageKey, JSON.stringify(next));
-        } catch {}
-        console.info('[install]', entry.event, entry.details);
       }
 
       const ua = navigator.userAgent || '';
@@ -500,22 +480,14 @@
 
       async function registerServiceWorker() {
         if (!('serviceWorker' in navigator)) return null;
-        recordInstallDiagnostic('install_page_sw_register_start', {
-          path: window.location.pathname,
-          source: installData.source || '',
-        });
         try {
           const registration = await navigator.serviceWorker.register(
             resolveProductPath(`/sw.js?v=${encodeURIComponent(buildInfo.assetVersion || 'dev')}`),
             { updateViaCache: 'none' },
           );
           await registration.update().catch(function ignoreUpdateError() {});
-          recordInstallDiagnostic('install_page_sw_register_done', {
-            hasController: !!navigator.serviceWorker.controller,
-          });
           return registration;
         } catch {
-          recordInstallDiagnostic('install_page_sw_register_failed', {});
           return null;
         }
       }
@@ -525,25 +497,13 @@
         installPromptInFlight = true;
         const prompt = deferredInstallPrompt;
         deferredInstallPrompt = null;
-        recordInstallDiagnostic('install_page_prompt_open', {
-          triggerSource: triggerSource || 'unknown',
-        });
         try {
           await prompt.prompt().catch(function ignorePromptError() {});
           const result = await prompt.userChoice.catch(function ignoreUserChoiceError() {
             return null;
           });
-          recordInstallDiagnostic('install_page_prompt_result', {
-            triggerSource: triggerSource || 'unknown',
-            outcome: result && result.outcome ? result.outcome : 'unknown',
-            platform: result && result.platform ? result.platform : '',
-          });
           return result && result.outcome === 'accepted';
-        } catch (error) {
-          recordInstallDiagnostic('install_page_prompt_failed', {
-            triggerSource: triggerSource || 'unknown',
-            message: error && error.message ? error.message : String(error || ''),
-          });
+        } catch {
           return false;
         } finally {
           installPromptInFlight = false;
@@ -573,23 +533,17 @@
         if (!registration || isStandalone) return false;
         if (navigator.serviceWorker && navigator.serviceWorker.controller) {
           writeInstallabilityReloaded(false);
-          recordInstallDiagnostic('install_page_controller_ready', {});
           return false;
         }
         if (readInstallabilityReloaded()) {
-          recordInstallDiagnostic('install_page_controller_missing_after_reload', {});
           return false;
         }
         writeInstallabilityReloaded(true);
-        recordInstallDiagnostic('install_page_reload_for_controller', {});
         window.location.reload();
         return true;
       }
 
       function continueInBrowser() {
-        recordInstallDiagnostic('install_page_continue_browser', {
-          hasHandoffToken: !!handoffToken,
-        });
         try {
           localStorage.setItem(browserSkipKey, String(Date.now() + browserSkipMs));
         } catch {}
@@ -601,12 +555,6 @@
       }
 
       function showGuide() {
-        recordInstallDiagnostic('install_page_show_guide', {
-          isIOS: isIOS,
-          isAndroid: isAndroid,
-          isChrome: isChrome,
-          isStandalone: isStandalone,
-        });
         titleEl.textContent = text.guideTitle;
         subtitleEl.textContent = text.guideSubtitle;
         stepsTitleEl.textContent = text.guideStepsTitle;
@@ -656,9 +604,6 @@
       }
 
       function showBlocked() {
-        recordInstallDiagnostic('install_page_show_blocked', {
-          userAgent: ua,
-        });
         benefitsEl.classList.add('hidden');
         recoverWrapEl.classList.add('hidden');
         titleEl.textContent = text.blockedTitle;
@@ -700,7 +645,6 @@
       }
 
       function showRedeemError() {
-        recordInstallDiagnostic('install_page_show_redeem_error', {});
         benefitsEl.classList.add('hidden');
         stepsWrapEl.classList.add('hidden');
         copyBtn.classList.add('hidden');
@@ -724,9 +668,6 @@
           showRedeemError();
           return;
         }
-        recordInstallDiagnostic('install_page_continue_standalone', {
-          hasHandoffToken: true,
-        });
         benefitsEl.classList.add('hidden');
         stepsWrapEl.classList.add('hidden');
         copyBtn.classList.add('hidden');
@@ -742,7 +683,6 @@
       window.addEventListener('beforeinstallprompt', function onBeforeInstallPrompt(event) {
         event.preventDefault();
         deferredInstallPrompt = event;
-        recordInstallDiagnostic('install_page_beforeinstallprompt_captured', {});
         if (!isInAppBrowser && !isStandalone) {
           primaryBtn.textContent = text.guidePrimaryPrompt;
           if (String(installData.source || '') === 'settings_button') {

@@ -731,7 +731,7 @@ async function main() {
     assert.match(initAssetReload.text, /intent !== "new-session"/, 'init should recognize the quick-entry launch intent');
     assert.match(initAssetReload.text, /forceComposerFocus: true/, 'launch intent should request a one-time forced composer focus');
     assert.match(page.text, /id="settingsInstallAppBtn"/, 'settings page should expose a direct install button');
-    assert.match(page.text, /id="settingsInstallLog"/, 'settings page should expose install diagnostics output');
+    assert.match(page.text, /id="settingsInstallStatus"/, 'settings page should expose install status copy');
 
     const tokenLogin = await request(
       port,
