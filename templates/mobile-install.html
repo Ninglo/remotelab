@@ -301,6 +301,7 @@
       const handoffToken = typeof installData.handoffToken === 'string' ? installData.handoffToken.trim() : '';
       const browserSkipKey = 'remotelab.mobileInstall.skipUntil';
       const browserSkipMs = 7 * 24 * 60 * 60 * 1000;
+      const installabilityReloadKey = 'remotelab.mobileInstall.installabilityReloaded';
       const titleEl = document.getElementById('title');
       const subtitleEl = document.getElementById('subtitle');
       const statusEl = document.getElementById('status');
@@ -487,6 +488,39 @@
         }
       }
 
+      function readInstallabilityReloaded() {
+        try {
+          return sessionStorage.getItem(installabilityReloadKey) === '1';
+        } catch {
+          return false;
+        }
+      }
+
+      function writeInstallabilityReloaded(value) {
+        try {
+          if (value) {
+            sessionStorage.setItem(installabilityReloadKey, '1');
+            return;
+          }
+          sessionStorage.removeItem(installabilityReloadKey);
+        } catch {}
+      }
+
+      async function ensureInstallabilityReady() {
+        const registration = await registerServiceWorker();
+        if (!registration || isStandalone) return false;
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          writeInstallabilityReloaded(false);
+          return false;
+        }
+        if (readInstallabilityReloaded()) {
+          return false;
+        }
+        writeInstallabilityReloaded(true);
+        window.location.reload();
+        return true;
+      }
+
       function continueInBrowser() {
         try {
           localStorage.setItem(browserSkipKey, String(Date.now() + browserSkipMs));
@@ -634,19 +668,23 @@
         }
       });
 
-      void registerServiceWorker();
+      void (async function bootInstallFlow() {
+        if (await ensureInstallabilityReady()) {
+          return;
+        }
 
-      if (isStandalone && handoffToken) {
-        continueStandaloneLaunch();
-        return;
-      }
+        if (isStandalone && handoffToken) {
+          continueStandaloneLaunch();
+          return;
+        }
 
-      if (isMobile && isInAppBrowser) {
-        showBlocked();
-        return;
-      }
+        if (isMobile && isInAppBrowser) {
+          showBlocked();
+          return;
+        }
 
-      showGuide();
+        showGuide();
+      })();
     })();
   </script>
 </body>
