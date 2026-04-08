@@ -325,6 +325,7 @@
       const benefit3CopyEl = document.getElementById('benefit3Copy');
 
       let deferredInstallPrompt = null;
+      let installPromptInFlight = false;
 
       function resolveProductPath(path) {
         if (typeof window.remotelabResolveProductPath === 'function') {
@@ -516,6 +517,36 @@
         }
       }
 
+      async function triggerInstallPrompt(triggerSource) {
+        if (!deferredInstallPrompt || installPromptInFlight) return false;
+        installPromptInFlight = true;
+        const prompt = deferredInstallPrompt;
+        deferredInstallPrompt = null;
+        recordInstallDiagnostic('install_page_prompt_open', {
+          triggerSource: triggerSource || 'unknown',
+        });
+        try {
+          await prompt.prompt().catch(function ignorePromptError() {});
+          const result = await prompt.userChoice.catch(function ignoreUserChoiceError() {
+            return null;
+          });
+          recordInstallDiagnostic('install_page_prompt_result', {
+            triggerSource: triggerSource || 'unknown',
+            outcome: result && result.outcome ? result.outcome : 'unknown',
+            platform: result && result.platform ? result.platform : '',
+          });
+          return result && result.outcome === 'accepted';
+        } catch (error) {
+          recordInstallDiagnostic('install_page_prompt_failed', {
+            triggerSource: triggerSource || 'unknown',
+            message: error && error.message ? error.message : String(error || ''),
+          });
+          return false;
+        } finally {
+          installPromptInFlight = false;
+        }
+      }
+
       function readInstallabilityReloaded() {
         try {
           return sessionStorage.getItem(installabilityReloadKey) === '1';
@@ -612,9 +643,7 @@
         primaryBtn.textContent = deferredInstallPrompt ? text.guidePrimaryPrompt : text.guidePrimaryFallback;
         primaryBtn.onclick = async function handlePrimary() {
           if (deferredInstallPrompt) {
-            const prompt = deferredInstallPrompt;
-            deferredInstallPrompt = null;
-            await prompt.prompt().catch(function ignorePromptError() {});
+            await triggerInstallPrompt('primary_button');
             helperEl.textContent = text.guideScrolled;
             return;
           }
@@ -713,6 +742,9 @@
         recordInstallDiagnostic('install_page_beforeinstallprompt_captured', {});
         if (!isInAppBrowser && !isStandalone) {
           primaryBtn.textContent = text.guidePrimaryPrompt;
+          if (String(installData.source || '') === 'settings_button') {
+            void triggerInstallPrompt('auto_after_capture');
+          }
         }
       });
 
