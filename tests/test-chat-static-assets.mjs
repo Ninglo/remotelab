@@ -322,6 +322,7 @@ async function main() {
     const manifest = await request(port, 'GET', '/manifest.json');
     assert.equal(manifest.status, 200, 'manifest should load');
     const manifestJson = JSON.parse(manifest.text);
+    assert.equal(manifestJson.id, './', 'manifest should declare a stable app id inside the current product scope');
     assert.equal(manifestJson.display, 'standalone', 'manifest should still advertise standalone install mode');
     assert.equal('orientation' in manifestJson, false, 'manifest should not force an orientation policy in the installed PWA shell');
     assert.equal(Array.isArray(manifestJson.shortcuts), true, 'manifest should advertise launcher shortcuts for installed Android PWAs');
@@ -333,6 +334,7 @@ async function main() {
     const loginPage = await request(port, 'GET', '/login', null, { Cookie: '' });
     assert.equal(loginPage.status, 200, 'login page should render without auth');
     assert.match(loginPage.text, /<meta name="color-scheme" content="light dark">/);
+    assert.match(loginPage.text, /<meta name="application-name" content="RemoteLab">/);
     assert.match(loginPage.text, /<meta name="theme-color" content="#f8f8fa" media="\(prefers-color-scheme: light\)">/);
     assert.match(loginPage.text, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
     assert.match(loginPage.text, /@media \(prefers-color-scheme: dark\)/);

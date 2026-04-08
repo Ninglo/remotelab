@@ -1,6 +1,7 @@
 {
   "name": "RemoteLab",
   "short_name": "RemoteLab",
+  "id": "./",
   "description": "Remote terminal access to AI coding tools",
   "start_url": "./",
   "scope": "./",
