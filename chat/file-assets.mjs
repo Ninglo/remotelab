@@ -225,9 +225,9 @@ function buildObjectKey(sessionId, assetId, originalName) {
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   const day = String(now.getUTCDate()).padStart(2, '0');
   const sessionSegment = sanitizeScopeSegment(sessionId, 'session');
-  const filename = sanitizeFilename(originalName, 'attachment');
+  const filename = sanitizeDisplayName(originalName, 'attachment');
   const prefix = FILE_ASSET_STORAGE_KEY_PREFIX ? `${FILE_ASSET_STORAGE_KEY_PREFIX}/` : '';
-  return `${prefix}${sessionSegment}/${year}/${month}/${day}/${assetId}-${filename}`;
+  return `${prefix}${sessionSegment}/${year}/${month}/${day}/${assetId}/${filename}`;
 }
 
 function buildStorageObjectUrl(baseUrl, objectKey) {

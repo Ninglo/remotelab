@@ -119,7 +119,7 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, o
     'utf8',
   );
   chmodSync(join(localBin, 'fake-codex'), 0o755);
-  return { home };
+  return { home, configDir };
 }
 
 /**
@@ -178,13 +178,16 @@ function startMockStorageServer(port) {
   });
 }
 
-async function startServer({ home, port, storagePort }) {
+async function startServer({ home, configDir, port, storagePort }) {
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
       ...process.env,
       HOME: home,
       CHAT_PORT: String(port),
+      REMOTELAB_INSTANCE_ROOT: '',
+      REMOTELAB_CONFIG_DIR: configDir,
+      REMOTELAB_MEMORY_DIR: join(home, '.remotelab', 'memory'),
       SECURE_COOKIES: '0',
       REMOTELAB_ASSET_STORAGE_BASE_URL: `http://127.0.0.1:${storagePort}/bucket`,
       REMOTELAB_ASSET_STORAGE_PUBLIC_BASE_URL: '',
@@ -225,11 +228,11 @@ const testCases = [
 ];
 
 try {
-  const { home } = setupTempHome();
+  const { home, configDir } = setupTempHome();
   const port = randomPort();
   const storagePort = randomPort();
   const { server: storageServer, objects } = await startMockStorageServer(storagePort);
-  const chatServer = await startServer({ home, port, storagePort });
+  const chatServer = await startServer({ home, configDir, port, storagePort });
 
   try {
     const sessionRes = await request(port, 'POST', '/api/sessions', {
@@ -288,6 +291,12 @@ try {
         !downloadDisposition.includes('fasset_'),
         `${tc.name}: redirect Content-Disposition must not contain fasset_ ID, got: ${downloadDisposition}`,
       );
+      const redirectFilename = decodeURIComponent((redirectParsed.pathname.split('/').pop() || '').trim());
+      assert.equal(
+        redirectFilename,
+        tc.originalName,
+        `${tc.name}: storage object path should end with the human filename rather than an internal asset-prefixed name`,
+      );
 
       // 5. Follow redirect and verify storage returns correct Content-Disposition header
       const storageRes = await fetch(redirectUrl, { method: 'GET' });
@@ -311,6 +320,12 @@ try {
       const inlineParsed = new URL(inlineRedirectUrl);
       const inlineDisposition = inlineParsed.searchParams.get('response-content-disposition') || '';
       assert.match(inlineDisposition, /^inline;/u, `${tc.name}: inline redirect should request inline disposition`);
+      const inlineFilename = decodeURIComponent((inlineParsed.pathname.split('/').pop() || '').trim());
+      assert.equal(
+        inlineFilename,
+        tc.originalName,
+        `${tc.name}: inline redirect path should also keep the human filename as the last segment`,
+      );
     }
   } finally {
     await stopServer(chatServer);

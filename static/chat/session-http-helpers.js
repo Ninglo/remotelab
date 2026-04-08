@@ -20,12 +20,26 @@ function redirectToLogin() {
   }
 }
 
+const PRODUCT_LOCAL_HREF_RE = /^\/(?:api|share|share-asset|agent|app|visitor|login|logout|m)(?:[/?#]|$)/i;
+
 function enhanceRenderedContentLinks(root) {
   if (!root) return;
 
   root.querySelectorAll("a[href]").forEach((link) => {
-    const href = (link.getAttribute("href") || "").trim();
+    let href = (link.getAttribute("href") || "").trim();
     if (!href) return;
+
+    if (PRODUCT_LOCAL_HREF_RE.test(href) && typeof window.remotelabResolveProductPath === "function") {
+      const resolvedHref = window.remotelabResolveProductPath(href);
+      if (resolvedHref) {
+        href = resolvedHref;
+        if (typeof link.setAttribute === "function") {
+          link.setAttribute("href", resolvedHref);
+        } else {
+          link.href = resolvedHref;
+        }
+      }
+    }
 
     if (/^(https?:|mailto:|tel:)/i.test(href)) {
       link.target = "_blank";

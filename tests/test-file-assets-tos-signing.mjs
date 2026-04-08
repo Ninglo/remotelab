@@ -72,7 +72,7 @@ try {
   assert.equal(uploadUrl.searchParams.get('X-Amz-Algorithm'), null, 'upload URL should not use AWS query params for TOS');
   assert.match(
     uploadUrl.pathname,
-    /^\/session-assets\/session-test\/\d{4}\/\d{2}\/\d{2}\/fasset_[a-f0-9]{24}-report\.pdf$/,
+    /^\/session-assets\/session-test\/\d{4}\/\d{2}\/\d{2}\/fasset_[a-f0-9]{24}\/report\.pdf$/,
     'upload URL should preserve the object-key layout',
   );
 

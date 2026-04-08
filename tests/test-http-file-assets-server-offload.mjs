@@ -116,7 +116,7 @@ setTimeout(() => {
     'utf8',
   );
   chmodSync(join(localBin, 'fake-codex'), 0o755);
-  return { home, promptFile };
+  return { home, configDir, promptFile };
 }
 
 function readCapturedPrompts(promptFile) {
@@ -184,13 +184,16 @@ function startMockStorageServer(port, { transientGetFailures = 0 } = {}) {
   });
 }
 
-async function startServer({ home, port, promptFile, storagePort }) {
+async function startServer({ home, configDir, port, promptFile, storagePort }) {
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
       ...process.env,
       HOME: home,
       CHAT_PORT: String(port),
+      REMOTELAB_INSTANCE_ROOT: '',
+      REMOTELAB_CONFIG_DIR: configDir,
+      REMOTELAB_MEMORY_DIR: join(home, '.remotelab', 'memory'),
       SECURE_COOKIES: '0',
       REMOTELAB_FAKE_PROMPT_FILE: promptFile,
       REMOTELAB_ASSET_STORAGE_BASE_URL: `http://127.0.0.1:${storagePort}/bucket`,
@@ -243,11 +246,11 @@ async function waitForRunTerminal(port, runId) {
 }
 
 try {
-  const { home, promptFile } = setupTempHome();
+  const { home, configDir, promptFile } = setupTempHome();
   const port = randomPort();
   const storagePort = randomPort();
   const { server: storageServer, objects, stats } = await startMockStorageServer(storagePort, { transientGetFailures: 2 });
-  const chatServer = await startServer({ home, port, promptFile, storagePort });
+  const chatServer = await startServer({ home, configDir, port, promptFile, storagePort });
 
   try {
     const session = await createSession(port);
@@ -288,7 +291,7 @@ try {
     const [[storedPath, storedObject]] = [...objects.entries()];
     assert.match(
       storedPath,
-      new RegExp(`^/bucket/session-assets/${session.id}/\\d{4}/\\d{2}/\\d{2}/fasset_[a-f0-9]{24}-notes\\.txt$`),
+      new RegExp(`^/bucket/session-assets/${session.id}/\\d{4}/\\d{2}/\\d{2}/fasset_[a-f0-9]{24}/notes\\.txt$`),
       'uploaded object should land under the session-assets prefix',
     );
     assert.equal(storedObject.body.toString('utf8'), 'upload-through-host', 'object storage should receive the uploaded attachment bytes');
