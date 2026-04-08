@@ -787,9 +787,13 @@ function createUsageAnalyticsBucket(extra = {}) {
   return {
     ...extra,
     runCount: 0,
+    exactCostRunCount: 0,
+    estimatedCostRunCount: 0,
+    costedRunCount: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
+    costedTokenCount: 0,
     costUsd: 0,
     estimatedCostUsd: 0,
     cachedInputTokens: 0,
@@ -807,9 +811,13 @@ function createUsageAnalyticsBucket(extra = {}) {
 
 function appendUsageAnalyticsMetrics(target, metrics = {}) {
   target.runCount += Number(metrics.runCount || 0);
+  target.exactCostRunCount += Number(metrics.exactCostRunCount || 0);
+  target.estimatedCostRunCount += Number(metrics.estimatedCostRunCount || 0);
+  target.costedRunCount += Number(metrics.costedRunCount || 0);
   target.inputTokens += Number(metrics.inputTokens || 0);
   target.outputTokens += Number(metrics.outputTokens || 0);
   target.totalTokens += Number(metrics.totalTokens || 0);
+  target.costedTokenCount += Number(metrics.costedTokenCount || 0);
   target.costUsd = roundUsageUsd((target.costUsd || 0) + Number(metrics.costUsd || 0));
   target.estimatedCostUsd = roundUsageUsd((target.estimatedCostUsd || 0) + Number(metrics.estimatedCostUsd || 0));
   target.cachedInputTokens += Number(metrics.cachedInputTokens || 0);
@@ -853,6 +861,11 @@ function sortUsageAnalyticsBuckets(map, limit = Infinity) {
       ...bucket,
       costUsd: roundUsageUsd(bucket.costUsd || 0),
       estimatedCostUsd: roundUsageUsd(bucket.estimatedCostUsd || 0),
+      unpricedRunCount: Math.max(0, (bucket.runCount || 0) - (bucket.costedRunCount || 0)),
+      unpricedTokenCount: Math.max(0, (bucket.totalTokens || 0) - (bucket.costedTokenCount || 0)),
+      costCoverageShare: (bucket.totalTokens || 0) > 0
+        ? roundUsageRatio((bucket.costedTokenCount || 0) / bucket.totalTokens)
+        : null,
       backgroundShare: (bucket.totalTokens || 0) > 0
         ? roundUsageRatio((bucket.backgroundTokens || 0) / bucket.totalTokens)
         : null,
@@ -906,11 +919,20 @@ function buildFleetUsageSummary(instances = []) {
     windowDays,
     activeInstanceCount,
     runCount: totals.runCount,
+    exactCostRunCount: totals.exactCostRunCount,
+    estimatedCostRunCount: totals.estimatedCostRunCount,
+    costedRunCount: totals.costedRunCount,
     inputTokens: totals.inputTokens,
     outputTokens: totals.outputTokens,
     totalTokens: totals.totalTokens,
+    costedTokenCount: totals.costedTokenCount,
     costUsd: roundUsageUsd(totals.costUsd || 0),
     estimatedCostUsd: roundUsageUsd(totals.estimatedCostUsd || 0),
+    unpricedRunCount: Math.max(0, (totals.runCount || 0) - (totals.costedRunCount || 0)),
+    unpricedTokenCount: Math.max(0, (totals.totalTokens || 0) - (totals.costedTokenCount || 0)),
+    costCoverageShare: totals.totalTokens > 0
+      ? roundUsageRatio((totals.costedTokenCount || 0) / totals.totalTokens)
+      : null,
     byTool: sortUsageAnalyticsBuckets(byTool, DEFAULT_USAGE_BREAKDOWN_TOP),
     byModel: sortUsageAnalyticsBuckets(byModel, DEFAULT_USAGE_BREAKDOWN_TOP),
   };
@@ -946,6 +968,11 @@ function finalizeUsageEntity(entry) {
     ...publicEntry,
     costUsd: roundUsageUsd(publicEntry.costUsd || 0),
     estimatedCostUsd: roundUsageUsd(publicEntry.estimatedCostUsd || 0),
+    unpricedRunCount: Math.max(0, (publicEntry.runCount || 0) - (publicEntry.costedRunCount || 0)),
+    unpricedTokenCount: Math.max(0, (publicEntry.totalTokens || 0) - (publicEntry.costedTokenCount || 0)),
+    costCoverageShare: (publicEntry.totalTokens || 0) > 0
+      ? roundUsageRatio((publicEntry.costedTokenCount || 0) / publicEntry.totalTokens)
+      : null,
     backgroundShare: (publicEntry.totalTokens || 0) > 0
       ? roundUsageRatio((publicEntry.backgroundTokens || 0) / publicEntry.totalTokens)
       : null,
@@ -1126,13 +1153,22 @@ function buildBillingAnalyticsPayload({
 
   const summary = {
     runCount: totals.runCount,
+    exactCostRunCount: totals.exactCostRunCount,
+    estimatedCostRunCount: totals.estimatedCostRunCount,
+    costedRunCount: totals.costedRunCount,
     totalTokens: totals.totalTokens,
     inputTokens: totals.inputTokens,
     outputTokens: totals.outputTokens,
+    costedTokenCount: totals.costedTokenCount,
     cachedInputTokens: totals.cachedInputTokens,
     reasoningTokens: totals.reasoningTokens,
     costUsd: roundUsageUsd(totals.costUsd || 0),
     estimatedCostUsd: roundUsageUsd(totals.estimatedCostUsd || 0),
+    unpricedRunCount: Math.max(0, (totals.runCount || 0) - (totals.costedRunCount || 0)),
+    unpricedTokenCount: Math.max(0, (totals.totalTokens || 0) - (totals.costedTokenCount || 0)),
+    costCoverageShare: totals.totalTokens > 0
+      ? roundUsageRatio((totals.costedTokenCount || 0) / totals.totalTokens)
+      : null,
     backgroundTokens: totals.backgroundTokens,
     foregroundTokens: totals.foregroundTokens,
     backgroundRuns: totals.backgroundRuns,

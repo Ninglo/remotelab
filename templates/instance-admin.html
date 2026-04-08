@@ -1606,7 +1606,8 @@
   }
 
   function instanceUsageCost(instance) {
-    return Number(instanceUsageTotals(instance).costUsd || 0);
+    var totals = instanceUsageTotals(instance);
+    return Number(totals.costUsd || 0) + Number(totals.estimatedCostUsd || 0);
   }
 
   function instanceUsageRuns(instance) {
@@ -1695,10 +1696,41 @@
   function formatUsageCost(totals) {
     var exact = Number(totals && totals.costUsd || 0);
     var estimated = Number(totals && totals.estimatedCostUsd || 0);
-    if (exact > 0 && estimated > 0) return formatUsd(exact) + ' (+' + formatUsd(estimated) + ' 估算)';
-    if (exact > 0) return formatUsd(exact);
-    if (estimated > 0) return formatUsd(estimated) + ' 估算';
-    return '$0';
+    var partial = Number(totals && totals.unpricedRunCount || 0) > 0;
+    var label = '$0';
+    if (exact > 0 && estimated > 0) {
+      label = formatUsd(exact) + ' (+' + formatUsd(estimated) + ' 估算)';
+    } else if (exact > 0) {
+      label = formatUsd(exact);
+    } else if (estimated > 0) {
+      label = formatUsd(estimated) + ' 估算';
+    } else if (partial) {
+      label = '未覆盖';
+    }
+    if (partial && (exact > 0 || estimated > 0)) {
+      label += ' · 部分覆盖';
+    }
+    return label;
+  }
+
+  function usageCostCoverageLabel(totals) {
+    var unpricedRuns = Number(totals && totals.unpricedRunCount || 0);
+    var coverageShare = Number(totals && totals.costCoverageShare);
+    var coverageText = '';
+    if (!unpricedRuns) return '费用优先用 provider 返回值，缺失时再按价格表估算。';
+    if (Number.isFinite(coverageShare) && coverageShare > 0) {
+      coverageText = coverageShare < 1 && coverageShare >= 0.95
+        ? ((coverageShare * 100).toFixed(1).replace(/\.0$/, '') + '%')
+        : formatPercent(coverageShare);
+      return '费用优先用 provider 返回值，缺失时再按价格表估算；当前覆盖约 ' + coverageText + ' tokens。';
+    }
+    return '当前调用都没有可用价格，所以费用还没法估。';
+  }
+
+  function usageFlowLabel(totals) {
+    var cached = Number(totals && totals.cachedInputTokens || 0);
+    if (cached > 0) return '新增输入 / 输出';
+    return '输入增量 / 输出';
   }
 
   function usageCacheShare(totals) {
@@ -2201,14 +2233,15 @@
           hasUsageData
             ? '<p>' +
                 '窗口：' + esc((usageSummary.window && usageSummary.window.days) || 30) + ' 天<br>' +
-                '输入 / 输出：' + esc(formatTokenCount(totals.inputTokens)) + ' / ' + esc(formatTokenCount(totals.outputTokens)) + '<br>' +
-                (contextLabel ? '峰值上下文：' + esc(contextLabel) + '<br>' : '') +
+                esc(usageFlowLabel(totals)) + '：' + esc(formatTokenCount(totals.inputTokens)) + ' / ' + esc(formatTokenCount(totals.outputTokens)) + '<br>' +
+                (contextLabel ? '单次上下文峰值：' + esc(contextLabel) + '<br>' : '') +
                 (Number(totals.cachedInputTokens || 0) > 0
                   ? '缓存输入：' + esc(formatTokenCount(totals.cachedInputTokens)) + (cacheShare !== null ? ' · ' + esc(formatPercent(cacheShare)) : '') + '<br>'
                   : '') +
                 '费用：' + esc(formatUsageCost(totals)) + '<br>' +
                 '调用数：' + esc(totals.runCount || 0) +
               '</p>' +
+              '<p class="muted">' + esc(usageCostCoverageLabel(totals)) + '</p>' +
               '<p class="muted">' + esc(topTool ? ('主要工具：' + topTool.key + ' · ' + formatTokenCount(topTool.totalTokens || 0) + ' tokens') : '还没有工具维度的聚合结果。') + '</p>'
             : '<p>当前实例还没有 usage ledger，所以 token 和费用暂时都是空。</p>'
         ) +
@@ -2607,7 +2640,7 @@
         { label: '总 token', value: formatTokenCount(billingSummary.totalTokens), note: '当前窗口内的总消耗', tone: 'accent' },
         { label: '后台占比', value: billingSummary.backgroundShare != null ? formatPercent(billingSummary.backgroundShare) : '0%', note: '区分前台对话和后台自动功能', tone: billingSummary.backgroundShare >= 0.3 ? 'warn' : 'ok' },
         { label: '已归因用户', value: billingSummary.usersWithUsage || 0, note: '按实例绑定归因到用户', tone: billingSummary.usersWithUsage ? 'ok' : 'muted' },
-        { label: '总费用', value: formatUsageCost(billingSummary), note: '实价和估算费用合并展示', tone: (Number(billingSummary.costUsd || 0) || Number(billingSummary.estimatedCostUsd || 0)) ? 'accent' : 'muted' }
+        { label: '总费用', value: formatUsageCost(billingSummary), note: usageCostCoverageLabel(billingSummary), tone: (Number(billingSummary.costUsd || 0) || Number(billingSummary.estimatedCostUsd || 0)) ? 'accent' : 'muted' }
       ];
     } else {
       var instanceSummary = state.workbench.instanceSummary;

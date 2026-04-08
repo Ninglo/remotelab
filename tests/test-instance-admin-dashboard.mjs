@@ -302,6 +302,38 @@ function setupTempHome() {
       costUsd: 0.03,
       operation: 'user_turn',
     }),
+    JSON.stringify({
+      ts: '2026-03-28T13:00:00.000Z',
+      runId: 'run_owner_fallback',
+      sessionId: 'sess-owner-1',
+      sessionName: 'Owner session',
+      principalType: 'owner',
+      principalId: 'owner',
+      principalName: 'Owner',
+      tool: 'claude',
+      model: 'opus',
+      state: 'completed',
+      totalTokens: 100,
+      inputTokens: 40,
+      outputTokens: 60,
+      operation: 'user_turn',
+    }),
+    JSON.stringify({
+      ts: '2026-03-28T14:00:00.000Z',
+      runId: 'run_owner_unpriced',
+      sessionId: 'sess-owner-1',
+      sessionName: 'Owner session',
+      principalType: 'owner',
+      principalId: 'owner',
+      principalName: 'Owner',
+      tool: 'custom-tool',
+      model: 'custom-model',
+      state: 'completed',
+      totalTokens: 20,
+      inputTokens: 10,
+      outputTokens: 10,
+      operation: 'user_turn',
+    }),
   ].join('\n') + '\n', 'utf8');
 
   writeFileSync(join(intakeConfigDir, 'usage-ledger', '2026-03-27.jsonl'), [
@@ -383,6 +415,8 @@ async function main() {
     assert.match(templateSource, /label: '预留'/, 'instance admin UI should render reserved instances distinctly');
     assert.match(templateSource, /usage\.key === 'occupied' \|\| usage\.key === 'reserved'/, 'occupied filter should include reserved instances');
     assert.match(templateSource, /data-view="billing"/, 'instance admin UI should expose the billing monitoring view');
+    assert.match(templateSource, /费用优先用 provider 返回值，缺失时再按价格表估算/, 'instance admin UI should explain provider-first fallback pricing');
+    assert.match(templateSource, /单次上下文峰值/, 'instance admin UI should label context as a per-run peak instead of raw input volume');
 
     const pageRes = await request(port, '/');
     assert.equal(pageRes.status, 200, pageRes.text);
@@ -397,17 +431,20 @@ async function main() {
 
     const data = res.json || {};
     assert.ok(data.summary, res.text);
-    assert.equal(data.summary.usage.totalTokens, 620, 'dashboard summary should include fleet token totals');
+    assert.equal(data.summary.usage.totalTokens, 740, 'dashboard summary should include fleet token totals');
     assert.equal(data.summary.usage.costUsd, 0.28, 'dashboard summary should include exact fleet cost totals');
-    assert.equal(data.summary.usage.estimatedCostUsd, 0.6, 'dashboard summary should include estimated fleet cost totals');
-    assert.equal(data.summary.usage.byTool[0].key, 'micro-agent', 'dashboard summary should expose tool breakdowns');
+    assert.equal(data.summary.usage.estimatedCostUsd, 0.6017, 'dashboard summary should include estimated fleet cost totals, including fallback model pricing');
+    assert.equal(data.summary.usage.unpricedTokenCount, 20, 'dashboard summary should expose token volume still missing a price table');
+    assert.equal(data.summary.usage.byTool[0].key, 'claude', 'dashboard summary should expose tool breakdowns after fallback-estimated Claude traffic is included');
     assert.equal(data.summary.occupiedCount, 3, 'owner should be counted inside the monitored instance fleet');
 
     const owner = data.instances.find((entry) => entry.name === 'owner');
     const trial24 = data.instances.find((entry) => entry.name === 'trial24');
     const intake1 = data.instances.find((entry) => entry.name === 'intake1');
     assert.equal(owner.kind, 'owner', 'dashboard should surface the owner instance explicitly');
-    assert.equal(owner.usage.usageSummary.totals.totalTokens, 60, 'owner instance should carry its own usage summary');
+    assert.equal(owner.usage.usageSummary.totals.totalTokens, 180, 'owner instance should carry its own usage summary');
+    assert.equal(owner.usage.usageSummary.totals.estimatedCostUsd, 0.0017, 'owner instance should estimate missing Claude pricing from the model table');
+    assert.equal(owner.usage.usageSummary.totals.unpricedRunCount, 1, 'owner instance should keep unknown-price runs visible');
     assert.equal(owner.usage.usageStatus, 'occupied', 'owner instance should remain unavailable for reassignment');
     assert.equal(trial24.usage.usageSummary.totals.totalTokens, 470, 'instance payload should include per-instance usage totals');
     assert.equal(trial24.usage.usageSummary.totals.estimatedCostUsd, 0.48);
@@ -434,14 +471,16 @@ async function main() {
     const billingRes = await request(port, '/api/billing');
     assert.equal(billingRes.status, 200, billingRes.text);
     const billing = billingRes.json || {};
-    assert.equal(billing.summary.totalTokens, 620, 'billing summary should aggregate fleet tokens');
+    assert.equal(billing.summary.totalTokens, 740, 'billing summary should aggregate fleet tokens');
     assert.equal(billing.summary.backgroundTokens, 80, 'billing summary should separate background token usage');
     assert.equal(billing.summary.usersWithUsage, 1, 'billing summary should attribute usage to bound users when possible');
     assert.equal(billing.byUser[0]?.userName, 'Trial User', 'billing view should attribute bound instance usage to the user');
     assert.equal(billing.byUser[0]?.totalTokens, 470, 'billing view should roll up user usage by bound instance');
-    assert.equal(billing.summary.unattributedTokens, 150, 'owner usage should remain visible even when it is not user-bound');
+    assert.equal(billing.summary.unattributedTokens, 270, 'owner usage should remain visible even when it is not user-bound');
+    assert.equal(billing.summary.unpricedTokenCount, 20, 'billing summary should expose tokens that still lack a model price');
     const ownerBilling = (billing.byInstance || []).find((entry) => entry.instanceName === 'owner');
-    assert.equal(ownerBilling?.totalTokens, 60, 'billing view should surface owner usage by instance');
+    assert.equal(ownerBilling?.totalTokens, 180, 'billing view should surface owner usage by instance');
+    assert.equal(ownerBilling?.estimatedCostUsd, 0.0017, 'billing view should include fallback-estimated owner cost');
     const backgroundGroup = (billing.byOperationGroup || []).find((entry) => entry.key === 'background');
     assert.equal(backgroundGroup?.totalTokens, 80, 'billing view should aggregate background operation groups');
     const sessionManagementBucket = (billing.byOperationCategory || []).find((entry) => entry.key === 'session_management');

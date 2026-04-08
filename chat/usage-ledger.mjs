@@ -4,6 +4,7 @@ import { join } from 'path';
 import readline from 'readline';
 
 import { USAGE_LEDGER_DIR } from '../lib/config.mjs';
+import { estimateUsageCost } from '../lib/model-pricing.mjs';
 import { ensureDir } from './fs-utils.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -48,12 +49,21 @@ function pickFiniteNumber(value) {
   return null;
 }
 
+function pickMeaningfulCost(value) {
+  const parsed = pickFiniteNumber(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
 function roundUsd(value) {
   return Math.round(value * 1e6) / 1e6;
 }
 
 function roundAverage(value) {
   return Math.round(value * 100) / 100;
+}
+
+function roundRatio(value) {
+  return Math.round(value * 10000) / 10000;
 }
 
 function normalizeTimestampMs(value) {
@@ -292,6 +302,48 @@ function createDetachedRunId(operation, timestampMs) {
   return `detached_${sanitizeOperationKey(operation)}_${timestampMs}_${detachedUsageSequence}`;
 }
 
+function resolveCostFields({
+  tool,
+  model,
+  inputTokens,
+  cachedInputTokens,
+  outputTokens,
+  costUsd,
+  estimatedCostUsd,
+  estimatedCostModel,
+  costSource,
+} = {}) {
+  const explicitCostUsd = pickMeaningfulCost(costUsd);
+  const explicitEstimatedCostUsd = pickMeaningfulCost(estimatedCostUsd);
+  const normalizedEstimatedCostModel = trimString(estimatedCostModel);
+  const normalizedCostSource = trimString(costSource);
+  const fallbackEstimate = explicitCostUsd === null && explicitEstimatedCostUsd === null
+    ? estimateUsageCost({
+      tool,
+      model,
+      inputTokens,
+      cachedInputTokens,
+      outputTokens,
+    })
+    : null;
+  const resolvedEstimatedCostUsd = explicitEstimatedCostUsd ?? fallbackEstimate?.estimatedCostUsd ?? null;
+  const resolvedEstimatedCostModel = normalizedEstimatedCostModel
+    || (resolvedEstimatedCostUsd !== null ? trimString(fallbackEstimate?.pricingModel) : '');
+  const resolvedCostSource = normalizedCostSource
+    || (explicitCostUsd !== null
+      ? 'provider_reported'
+      : (explicitEstimatedCostUsd !== null
+          ? 'provider_estimated'
+          : trimString(fallbackEstimate?.costSource)));
+
+  return {
+    ...(explicitCostUsd !== null ? { costUsd: roundUsd(explicitCostUsd) } : {}),
+    ...(resolvedEstimatedCostUsd !== null ? { estimatedCostUsd: roundUsd(resolvedEstimatedCostUsd) } : {}),
+    ...(resolvedEstimatedCostModel ? { estimatedCostModel: resolvedEstimatedCostModel } : {}),
+    ...(resolvedCostSource ? { costSource: resolvedCostSource } : {}),
+  };
+}
+
 export function buildUsageLedgerRecord({
   session,
   run,
@@ -308,8 +360,19 @@ export function buildUsageLedgerRecord({
   const reasoningTokens = pickNonNegativeInt(usageEvent.reasoningTokens);
   const contextTokens = pickNonNegativeInt(usageEvent.contextTokens);
   const contextWindowTokens = pickNonNegativeInt(usageEvent.contextWindowTokens);
-  const costUsd = pickFiniteNumber(usageEvent.costUsd);
-  const estimatedCostUsd = pickFiniteNumber(usageEvent.estimatedCostUsd);
+  const tool = trimString(run.tool || session.tool);
+  const model = trimString(run.model || session.model);
+  const resolvedCostFields = resolveCostFields({
+    tool,
+    model,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    costUsd: usageEvent.costUsd,
+    estimatedCostUsd: usageEvent.estimatedCostUsd,
+    estimatedCostModel: usageEvent.estimatedCostModel,
+    costSource: usageEvent.costSource,
+  });
 
   if (!Number.isFinite(timestampMs)) return null;
   if (
@@ -318,8 +381,7 @@ export function buildUsageLedgerRecord({
     && cachedInputTokens === null
     && reasoningTokens === null
     && contextTokens === null
-    && costUsd === null
-    && estimatedCostUsd === null
+    && !Object.keys(resolvedCostFields).length
   ) {
     return null;
   }
@@ -327,8 +389,6 @@ export function buildUsageLedgerRecord({
   const principal = resolvePrincipal(session);
   const operation = resolveOperationInfo(session, manifest);
   const requestId = trimString(run.requestId);
-  const tool = trimString(run.tool || session.tool);
-  const model = trimString(run.model || session.model);
   const effort = trimString(run.effort || session.effort);
   const state = trimString(run.state) || 'completed';
   const timestampIso = new Date(timestampMs).toISOString();
@@ -363,10 +423,7 @@ export function buildUsageLedgerRecord({
     ...(contextTokens !== null ? { contextTokens } : {}),
     ...(contextWindowTokens !== null ? { contextWindowTokens } : {}),
     ...(trimString(usageEvent.contextSource) ? { contextSource: trimString(usageEvent.contextSource) } : {}),
-    ...(costUsd !== null ? { costUsd: roundUsd(costUsd) } : {}),
-    ...(estimatedCostUsd !== null ? { estimatedCostUsd: roundUsd(estimatedCostUsd) } : {}),
-    ...(trimString(usageEvent.estimatedCostModel) ? { estimatedCostModel: trimString(usageEvent.estimatedCostModel) } : {}),
-    ...(trimString(usageEvent.costSource) ? { costSource: trimString(usageEvent.costSource) } : {}),
+    ...resolvedCostFields,
     internalSession: operation.internalSession,
     ...(operation.internalRole ? { internalRole: operation.internalRole } : {}),
     ...(operation.internalOperation ? { internalOperation: operation.internalOperation } : {}),
@@ -398,8 +455,19 @@ export function buildDetachedUsageLedgerRecord({
   const reasoningTokens = pickNonNegativeInt(usageEvent.reasoningTokens);
   const contextTokens = pickNonNegativeInt(usageEvent.contextTokens);
   const contextWindowTokens = pickNonNegativeInt(usageEvent.contextWindowTokens);
-  const costUsd = pickFiniteNumber(usageEvent.costUsd);
-  const estimatedCostUsd = pickFiniteNumber(usageEvent.estimatedCostUsd);
+  const tool = trimString(tracking.tool || session.tool);
+  const model = trimString(tracking.model || session.model);
+  const resolvedCostFields = resolveCostFields({
+    tool,
+    model,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    costUsd: usageEvent.costUsd,
+    estimatedCostUsd: usageEvent.estimatedCostUsd,
+    estimatedCostModel: usageEvent.estimatedCostModel,
+    costSource: usageEvent.costSource,
+  });
 
   if (!Number.isFinite(timestampMs)) return null;
   if (
@@ -408,8 +476,7 @@ export function buildDetachedUsageLedgerRecord({
     && cachedInputTokens === null
     && reasoningTokens === null
     && contextTokens === null
-    && costUsd === null
-    && estimatedCostUsd === null
+    && !Object.keys(resolvedCostFields).length
   ) {
     return null;
   }
@@ -418,8 +485,6 @@ export function buildDetachedUsageLedgerRecord({
   const internalRole = trimString(tracking.internalRole);
   const internalOperation = trimString(tracking.internalOperation);
   const operation = trimString(tracking.operation) || internalOperation || internalRole || 'background_prompt';
-  const tool = trimString(tracking.tool || session.tool);
-  const model = trimString(tracking.model || session.model);
   const effort = trimString(tracking.effort || session.effort);
   const requestId = trimString(tracking.requestId);
   const state = trimString(tracking.state) || 'completed';
@@ -455,10 +520,7 @@ export function buildDetachedUsageLedgerRecord({
     ...(contextTokens !== null ? { contextTokens } : {}),
     ...(contextWindowTokens !== null ? { contextWindowTokens } : {}),
     ...(trimString(usageEvent.contextSource) ? { contextSource: trimString(usageEvent.contextSource) } : {}),
-    ...(costUsd !== null ? { costUsd: roundUsd(costUsd) } : {}),
-    ...(estimatedCostUsd !== null ? { estimatedCostUsd: roundUsd(estimatedCostUsd) } : {}),
-    ...(trimString(usageEvent.estimatedCostModel) ? { estimatedCostModel: trimString(usageEvent.estimatedCostModel) } : {}),
-    ...(trimString(usageEvent.costSource) ? { costSource: trimString(usageEvent.costSource) } : {}),
+    ...resolvedCostFields,
     internalSession: tracking.internalSession === true || !!internalRole || !!trimString(session.internalRole),
     ...(internalRole ? { internalRole } : {}),
     ...(internalOperation ? { internalOperation } : {}),
@@ -503,8 +565,19 @@ function normalizeLedgerRecord(record) {
   const totalTokens = pickNonNegativeInt(record.totalTokens) ?? (inputTokens + outputTokens);
   const contextTokens = pickNonNegativeInt(record.contextTokens);
   const contextWindowTokens = pickNonNegativeInt(record.contextWindowTokens);
-  const costUsd = pickFiniteNumber(record.costUsd);
-  const estimatedCostUsd = pickFiniteNumber(record.estimatedCostUsd);
+  const tool = trimString(record.tool);
+  const model = trimString(record.model);
+  const resolvedCostFields = resolveCostFields({
+    tool,
+    model,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    costUsd: record.costUsd,
+    estimatedCostUsd: record.estimatedCostUsd,
+    estimatedCostModel: record.estimatedCostModel,
+    costSource: record.costSource,
+  });
   const recordedAtMs = normalizeTimestampMs(record.recordedAt);
   const principalType = ['owner', 'user', 'visitor'].includes(trimString(record.principalType))
     ? trimString(record.principalType)
@@ -532,8 +605,8 @@ function normalizeLedgerRecord(record) {
     userName: trimString(record.userName),
     visitorId: trimString(record.visitorId),
     visitorName: trimString(record.visitorName),
-    tool: trimString(record.tool),
-    model: trimString(record.model),
+    tool,
+    model,
     effort: trimString(record.effort),
     state: trimString(record.state) || 'completed',
     totalTokens,
@@ -544,10 +617,7 @@ function normalizeLedgerRecord(record) {
     ...(contextTokens !== null ? { contextTokens } : {}),
     ...(contextWindowTokens !== null ? { contextWindowTokens } : {}),
     ...(trimString(record.contextSource) ? { contextSource: trimString(record.contextSource) } : {}),
-    ...(costUsd !== null ? { costUsd: roundUsd(costUsd) } : {}),
-    ...(estimatedCostUsd !== null ? { estimatedCostUsd: roundUsd(estimatedCostUsd) } : {}),
-    ...(trimString(record.estimatedCostModel) ? { estimatedCostModel: trimString(record.estimatedCostModel) } : {}),
-    ...(trimString(record.costSource) ? { costSource: trimString(record.costSource) } : {}),
+    ...resolvedCostFields,
     internalSession: record.internalSession === true,
     internalRole: trimString(record.internalRole),
     internalOperation: trimString(record.internalOperation),
@@ -563,9 +633,13 @@ function normalizeLedgerRecord(record) {
 function createTotals() {
   return {
     runCount: 0,
+    exactCostRunCount: 0,
+    estimatedCostRunCount: 0,
+    costedRunCount: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
+    costedTokenCount: 0,
     costUsd: 0,
     estimatedCostUsd: 0,
     cachedInputTokens: 0,
@@ -580,6 +654,14 @@ function appendMetrics(target, record) {
   target.inputTokens += record.inputTokens || 0;
   target.outputTokens += record.outputTokens || 0;
   target.totalTokens += record.totalTokens || 0;
+  const hasExactCost = pickMeaningfulCost(record.costUsd) !== null;
+  const hasEstimatedCost = pickMeaningfulCost(record.estimatedCostUsd) !== null;
+  if (hasExactCost) target.exactCostRunCount += 1;
+  if (hasEstimatedCost) target.estimatedCostRunCount += 1;
+  if (hasExactCost || hasEstimatedCost) {
+    target.costedRunCount += 1;
+    target.costedTokenCount += record.totalTokens || 0;
+  }
   target.costUsd = roundUsd((target.costUsd || 0) + (record.costUsd || 0));
   target.estimatedCostUsd = roundUsd((target.estimatedCostUsd || 0) + (record.estimatedCostUsd || 0));
   target.cachedInputTokens += record.cachedInputTokens || 0;
@@ -888,6 +970,11 @@ export async function queryUsageLedger(options = {}) {
       ...totals,
       costUsd: roundUsd(totals.costUsd || 0),
       estimatedCostUsd: roundUsd(totals.estimatedCostUsd || 0),
+      unpricedRunCount: Math.max(0, (totals.runCount || 0) - (totals.costedRunCount || 0)),
+      unpricedTokenCount: Math.max(0, (totals.totalTokens || 0) - (totals.costedTokenCount || 0)),
+      costCoverageShare: totals.totalTokens > 0
+        ? roundRatio((totals.costedTokenCount || 0) / totals.totalTokens)
+        : null,
       cachedInputShare: totals.inputTokens > 0
         ? roundAverage(totals.cachedInputTokens / totals.inputTokens)
         : null,
