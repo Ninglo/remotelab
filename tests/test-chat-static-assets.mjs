@@ -101,12 +101,16 @@ function setupTempHome() {
 }
 
 async function startServer({ home, port }) {
+  const configDir = join(home, '.config', 'remotelab');
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
       ...process.env,
       HOME: home,
       CHAT_PORT: String(port),
+      REMOTELAB_INSTANCE_ROOT: '',
+      REMOTELAB_CONFIG_DIR: configDir,
+      REMOTELAB_MEMORY_DIR: join(home, '.remotelab', 'memory'),
       SECURE_COOKIES: '0',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -320,6 +324,10 @@ async function main() {
     const manifestJson = JSON.parse(manifest.text);
     assert.equal(manifestJson.display, 'standalone', 'manifest should still advertise standalone install mode');
     assert.equal('orientation' in manifestJson, false, 'manifest should not force an orientation policy in the installed PWA shell');
+    assert.equal(Array.isArray(manifestJson.shortcuts), true, 'manifest should advertise launcher shortcuts for installed Android PWAs');
+    assert.equal(manifestJson.shortcuts.length, 1, 'manifest should keep the first quick-entry release to a single shortcut');
+    assert.equal(manifestJson.shortcuts[0]?.name, '快速记录', 'manifest should expose the quick-entry shortcut label');
+    assert.equal(manifestJson.shortcuts[0]?.url, '/?intent=new-session', 'manifest shortcut should deep-link into the new-session launch intent');
 
     const loginPage = await request(port, 'GET', '/login', null, { Cookie: '' });
     assert.equal(loginPage.status, 200, 'login page should render without auth');
@@ -670,7 +678,7 @@ async function main() {
     assert.equal(sessionListUiAsset.status, 200, 'session list ui asset should load');
     assert.match(sessionListUiAsset.text, /function renderSessionList\(/);
     assert.match(sessionListUiAsset.text, /function attachSession\(/);
-    assert.match(sessionListUiAsset.text, /focusComposer\(\{ preventScroll: true \}\)/);
+    assert.match(sessionListUiAsset.text, /focusComposer\(\{ force: forceComposerFocus === true, preventScroll: true \}\)/);
 
     const sidebarUiAsset = await request(port, 'GET', '/chat/sidebar-ui.js');
     assert.equal(sidebarUiAsset.status, 200, 'sidebar ui asset should load');
@@ -698,6 +706,8 @@ async function main() {
     assert.match(initAssetReload.text, /typeof getBootstrapAuthInfo === "function"/);
     assert.match(initAssetReload.text, /loadInlineTools\(\{ skipModelLoad: true \}\)/);
     assert.match(initAssetReload.text, /bootstrapViaHttp\(\{ deferOwnerRestore: true \}\)/);
+    assert.match(initAssetReload.text, /intent !== "new-session"/, 'init should recognize the quick-entry launch intent');
+    assert.match(initAssetReload.text, /forceComposerFocus: true/, 'launch intent should request a one-time forced composer focus');
 
     const tokenLogin = await request(
       port,

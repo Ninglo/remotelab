@@ -160,6 +160,31 @@ try {
     manifest: {},
   });
 
+  const detachedRecord = usageLedger.buildDetachedUsageLedgerRecord({
+    session: {
+      id: 'sess_owner',
+      name: 'Owner Session',
+      tool: 'claude',
+    },
+    usageEvent: {
+      inputTokens: 40,
+      outputTokens: 10,
+      contextTokens: 150,
+      estimatedCostUsd: 0.01,
+      estimatedCostModel: 'claude-sonnet',
+      costSource: 'estimated_background',
+    },
+    tracking: {
+      operation: 'session_label_suggestion',
+      tool: 'claude',
+      model: 'claude-sonnet',
+      effort: 'low',
+      completedAt: '2026-04-05T11:30:00.000Z',
+    },
+  });
+  assert.ok(detachedRecord, 'detached prompt record should be built');
+  assert.equal(usageLedger.appendUsageLedgerRecord(detachedRecord), true, 'detached prompt record should append');
+
   // Duplicate run id should collapse to the latest appended record at query time.
   appendBuiltRecord({
     session: {
@@ -200,16 +225,18 @@ try {
     top: 10,
   });
 
-  assert.equal(summary.runCount, 5, 'duplicate run ids should collapse during summary');
-  assert.equal(summary.totals.inputTokens, 950, 'input tokens should aggregate across unique runs');
-  assert.equal(summary.totals.outputTokens, 215, 'output tokens should aggregate across unique runs');
-  assert.equal(summary.totals.totalTokens, 1165, 'total tokens should aggregate across unique runs');
+  assert.equal(summary.runCount, 6, 'duplicate run ids should collapse during summary');
+  assert.equal(summary.totals.inputTokens, 990, 'input tokens should aggregate across unique runs');
+  assert.equal(summary.totals.outputTokens, 225, 'output tokens should aggregate across unique runs');
+  assert.equal(summary.totals.totalTokens, 1215, 'total tokens should aggregate across unique runs');
   assert.equal(summary.totals.costUsd, 2.6, 'cost should aggregate across unique runs');
-  assert.equal(summary.totals.estimatedCostUsd, 0.002, 'estimated cost should aggregate separately from exact cost');
+  assert.equal(summary.totals.estimatedCostUsd, 0.012, 'estimated cost should aggregate separately from exact cost');
   assert.equal(summary.totals.cachedInputTokens, 6, 'cached input tokens should aggregate across unique runs');
   assert.equal(summary.totals.reasoningTokens, 2, 'reasoning tokens should aggregate across unique runs');
   assert.equal(summary.totals.maxContextTokens, 900, 'peak context should be preserved');
   assert.equal(summary.totals.maxContextWindowTokens, 200000, 'peak context window should be preserved');
+  assert.equal(summary.totals.backgroundTokens, 90, 'background tokens should aggregate across internal and detached runs');
+  assert.equal(summary.totals.foregroundTokens, 1125, 'foreground tokens should aggregate user-facing runs');
 
   assert.equal(summary.byPrincipal[0].principalType, 'user', 'user principals should sort by total usage');
   assert.equal(summary.byPrincipal[0].principalId, 'user_1');
@@ -220,11 +247,17 @@ try {
   assert.equal(visitorBucket?.costUsd, 0.8, 'visitor cost should reflect the deduped latest run');
 
   const ownerBucket = summary.byPrincipal.find((bucket) => bucket.principalId === 'owner');
-  assert.equal(ownerBucket?.totalTokens, 205, 'owner bucket should include direct, internal, and estimated owner runs');
-  assert.equal(ownerBucket?.estimatedCostUsd, 0.002, 'owner bucket should preserve estimated cost separately');
+  assert.equal(ownerBucket?.totalTokens, 255, 'owner bucket should include direct, internal, and detached owner runs');
+  assert.equal(ownerBucket?.estimatedCostUsd, 0.012, 'owner bucket should preserve detached estimated cost separately');
 
   const replySelfCheckBucket = summary.byOperation.find((bucket) => bucket.key === 'reply_self_check');
   assert.equal(replySelfCheckBucket?.totalTokens, 40, 'internal operations should remain queryable');
+  const labelSuggestionBucket = summary.byOperation.find((bucket) => bucket.key === 'session_label_suggestion');
+  assert.equal(labelSuggestionBucket?.totalTokens, 50, 'detached prompt operations should be queryable');
+  const backgroundBucket = summary.byOperationGroup.find((bucket) => bucket.key === 'background');
+  assert.equal(backgroundBucket?.totalTokens, 90, 'operation groups should separate background usage');
+  const sessionManagementBucket = summary.byOperationCategory.find((bucket) => bucket.key === 'session_management');
+  assert.equal(sessionManagementBucket?.totalTokens, 50, 'operation categories should group detached session-management usage');
 
   const visitorOnly = await usageLedger.queryUsageLedger({
     days: 3,

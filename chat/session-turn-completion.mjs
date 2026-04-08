@@ -207,13 +207,17 @@ export function createSessionTurnCompletionHelpers(services) {
     let reviewText = '';
     try {
       reviewText = await runDetachedAssistantPrompt({
+        ...effectiveSession,
         id: sessionId,
-        folder: effectiveSession.folder,
         tool: run.tool || effectiveSession.tool,
         model: run.model || undefined,
         effort: run.effort || undefined,
         thinking: false,
-      }, buildReplySelfCheckPrompt({ userMessage, assistantTurnText }));
+      }, buildReplySelfCheckPrompt({ userMessage, assistantTurnText }), {
+        usageTracking: {
+          operation: 'reply_self_check_review',
+        },
+      });
     } catch (error) {
       const reason = summarizeReplySelfCheckReason(error.message, 'background reviewer error');
       await appendEvent(sessionId, statusEvent(`Assistant self-check: review failed — ${reason}`));

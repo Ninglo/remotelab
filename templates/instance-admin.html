@@ -816,6 +816,79 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+    .analytics-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .analytics-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.3fr) minmax(120px, 0.7fr) minmax(120px, 0.7fr);
+      gap: 14px;
+      align-items: center;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
+    }
+    .analytics-main {
+      min-width: 0;
+    }
+    .analytics-title {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text);
+    }
+    .analytics-sub {
+      margin: 6px 0 0;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .analytics-metric {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .analytics-metric strong {
+      font-size: 16px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      font-variant-numeric: tabular-nums;
+    }
+    .analytics-metric span {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+    .analytics-meter {
+      margin-top: 8px;
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      overflow: hidden;
+    }
+    .analytics-meter-fill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--info), var(--accent));
+    }
+    .analytics-meter-fill[data-tone="warn"] {
+      background: linear-gradient(90deg, var(--warn), color-mix(in srgb, var(--warn) 72%, var(--danger)));
+    }
+    .analytics-meter-fill[data-tone="ok"] {
+      background: linear-gradient(90deg, var(--ok), color-mix(in srgb, var(--ok) 72%, var(--info)));
+    }
+    .analytics-pair-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
     .action-btn {
       display: inline-flex;
       align-items: center;
@@ -1007,6 +1080,9 @@
       .detail-grid {
         grid-template-columns: 1fr 1fr;
       }
+      .analytics-pair-grid {
+        grid-template-columns: 1fr;
+      }
       .row-summary {
         grid-template-columns: minmax(160px, 1.2fr) minmax(150px, 0.8fr) minmax(140px, 0.8fr) minmax(160px, 1fr);
       }
@@ -1035,6 +1111,9 @@
         width: 100%;
       }
       .detail-grid {
+        grid-template-columns: 1fr;
+      }
+      .analytics-row {
         grid-template-columns: 1fr;
       }
       .row-summary {
@@ -1124,6 +1203,7 @@
         <a class="view-link" href="./" data-view="pending">待处理 <span class="nav-count" id="nav-pending-count">0</span></a>
         <a class="view-link" href="./?view=users" data-view="users">用户 <span class="nav-count" id="nav-users-count">0</span></a>
         <a class="view-link" href="./?view=instances" data-view="instances">实例 <span class="nav-count" id="nav-instances-count">0</span></a>
+        <a class="view-link" href="./?view=billing" data-view="billing">计费 <span class="nav-count" id="nav-billing-count">0</span></a>
       </nav>
 
       <button class="topbar-toggle" id="topbar-toggle" aria-label="更多操作" aria-expanded="false">
@@ -1177,6 +1257,7 @@
   <section class="view-stack" id="pending-view"></section>
   <section class="view-stack" id="users-view" hidden></section>
   <section class="view-stack" id="instances-view" hidden></section>
+  <section class="view-stack" id="billing-view" hidden></section>
 </main>
 
 <div id="toasts"></div>
@@ -1280,6 +1361,20 @@
         { key: 'runs', label: '按调用数' },
         { key: 'name', label: '按名称' }
       ]
+    },
+    billing: {
+      kicker: 'billing lens',
+      title: '把 token 和费用拆到用户、模型、工具、操作类型和后台功能层。',
+      copy: '这里不只看实例负载，而是直接看成本结构，先尽量多监控，再决定删哪些维度。',
+      searchLabel: '搜索计费项',
+      searchPlaceholder: '搜索用户、实例、模型、工具或操作类型',
+      filters: [
+        { key: 'all', label: '全部' },
+        { key: 'background', label: '后台偏重' },
+        { key: 'foreground', label: '直聊偏重' },
+        { key: 'exactCost', label: '有实价' },
+        { key: 'estimated', label: '估算为主' }
+      ]
     }
   };
 
@@ -1289,16 +1384,19 @@
     filters: {
       pending: 'all',
       users: 'all',
-      instances: 'all'
+      instances: 'all',
+      billing: 'all'
     },
     sorts: {
       pending: 'default',
       users: 'default',
-      instances: 'smart'
+      instances: 'smart',
+      billing: 'default'
     },
     pendingDelete: null,
     workbench: null,
     dashboard: null,
+    billing: null,
   };
 
   function basePath() {
@@ -1684,6 +1782,7 @@
     var iso = new Date().toISOString();
     if (state.workbench) state.workbench.cachedAt = iso;
     if (state.dashboard) state.dashboard.cachedAt = iso;
+    if (state.billing) state.billing.cachedAt = iso;
   }
 
   function refreshLocalInstanceSummary() {
@@ -2198,6 +2297,265 @@
     '</section>';
   }
 
+  function billingMatchesQuery(parts) {
+    var query = state.search.trim().toLowerCase();
+    if (!query) return true;
+    return parts.join(' ').toLowerCase().indexOf(query) >= 0;
+  }
+
+  function billingMatchesFilter(entry) {
+    var filter = currentFilter();
+    if (filter === 'background') return Number(entry && entry.backgroundShare || 0) >= 0.3;
+    if (filter === 'foreground') return Number(entry && entry.backgroundShare || 0) < 0.3;
+    if (filter === 'exactCost') return Number(entry && entry.costUsd || 0) > 0;
+    if (filter === 'estimated') return Number(entry && entry.costUsd || 0) <= 0 && Number(entry && entry.estimatedCostUsd || 0) > 0;
+    return true;
+  }
+
+  function billingShareTone(value) {
+    var num = Number(value);
+    if (!Number.isFinite(num)) return '';
+    if (num >= 0.35) return 'warn';
+    if (num <= 0.12) return 'ok';
+    return '';
+  }
+
+  function renderAnalyticsMeter(value, tone) {
+    var num = Math.max(0, Math.min(1, Number(value || 0)));
+    return '<div class="analytics-meter"><span class="analytics-meter-fill"' +
+      (tone ? ' data-tone="' + esc(tone) + '"' : '') +
+      ' style="width:' + esc(String(Math.round(num * 100))) + '%"></span></div>';
+  }
+
+  function renderAnalyticsRow(config) {
+    return '<article class="analytics-row">' +
+      '<div class="analytics-main">' +
+        '<p class="analytics-title">' + esc(config.title || '') + '</p>' +
+        '<p class="analytics-sub">' + esc(config.subtitle || '') + (config.share != null ? renderAnalyticsMeter(config.share, billingShareTone(config.share)) : '') + '</p>' +
+      '</div>' +
+      '<div class="analytics-metric">' +
+        '<strong>' + esc(config.primary || '') + '</strong>' +
+        '<span>' + esc(config.primaryNote || '') + '</span>' +
+      '</div>' +
+      '<div class="analytics-metric">' +
+        '<strong>' + esc(config.secondary || '') + '</strong>' +
+        '<span>' + esc(config.secondaryNote || '') + '</span>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function renderAnalyticsSection(options) {
+    var rows = Array.isArray(options.rows) ? options.rows : [];
+    return '<section class="panel section-panel">' +
+      '<div class="section-panel-head">' +
+        '<div>' +
+          '<p class="eyebrow">' + esc(options.eyebrow || '') + '</p>' +
+          '<h3>' + esc(options.title || '') + '</h3>' +
+          '<p class="section-panel-copy">' + esc(options.copy || '') + '</p>' +
+        '</div>' +
+        '<div class="section-count"><strong>' + esc(rows.length) + '</strong><span>' + esc(options.countLabel || '项') + '</span></div>' +
+      '</div>' +
+      (rows.length
+        ? '<div class="analytics-list">' + rows.join('') + '</div>'
+        : '<div class="empty-state">' + esc(options.empty || '当前筛选下没有数据。') + '</div>') +
+    '</section>';
+  }
+
+  function renderBillingView() {
+    var container = document.getElementById('billing-view');
+    var data = state.billing || {};
+    var summary = data.summary || {};
+    var totalTokens = Number(summary.totalTokens || 0);
+
+    var categories = (data.byOperationCategory || []).filter(function(entry) {
+      return billingMatchesFilter(entry) && billingMatchesQuery([entry.label, entry.operationGroup]);
+    }).slice(0, 8).map(function(entry) {
+      return renderAnalyticsRow({
+        title: entry.label || entry.key,
+        subtitle: (entry.operationGroup === 'background' ? '后台功能' : '前台直聊') + ' · ' + (entry.runCount || 0) + ' 次调用',
+        share: totalTokens > 0 ? Number(entry.totalTokens || 0) / totalTokens : 0,
+        primary: formatTokenCount(entry.totalTokens),
+        primaryNote: totalTokens > 0 ? formatPercent(Number(entry.totalTokens || 0) / totalTokens) + ' 占总量' : '总 token',
+        secondary: formatUsageCost(entry),
+        secondaryNote: entry.backgroundShare != null ? '后台占比 ' + formatPercent(entry.backgroundShare) : '费用视角'
+      });
+    });
+
+    var userRows = (data.byUser || []).filter(function(entry) {
+      return billingMatchesFilter(entry) && billingMatchesQuery([entry.userName, entry.source, (entry.instanceNames || []).join(' '), entry.lifecycleLabel, entry.topCategory && entry.topCategory.label]);
+    }).slice(0, 10).map(function(entry) {
+      return renderAnalyticsRow({
+        title: entry.userName || entry.key,
+        subtitle: [entry.source, (entry.instanceNames || []).join(', '), entry.lifecycleLabel].filter(Boolean).join(' · ') || '按实例绑定归因',
+        share: entry.backgroundShare,
+        primary: formatTokenCount(entry.totalTokens),
+        primaryNote: entry.topCategory ? '主要耗用：' + (entry.topCategory.label || entry.topCategory.key) : '总 token',
+        secondary: formatUsageCost(entry),
+        secondaryNote: (entry.topTool ? '工具 ' + (entry.topTool.label || entry.topTool.key) + ' · ' : '') + (entry.runCount || 0) + ' 次调用'
+      });
+    });
+
+    var instanceRows = (data.byInstance || []).filter(function(entry) {
+      return billingMatchesFilter(entry) && billingMatchesQuery([entry.instanceName, entry.userName, entry.healthLabel, entry.topCategory && entry.topCategory.label]);
+    }).slice(0, 10).map(function(entry) {
+      return renderAnalyticsRow({
+        title: entry.instanceName || entry.key,
+        subtitle: [entry.userName || '未归因', entry.healthLabel, entry.usageStatus].filter(Boolean).join(' · '),
+        share: entry.backgroundShare,
+        primary: formatTokenCount(entry.totalTokens),
+        primaryNote: entry.topModel ? '模型 ' + (entry.topModel.label || entry.topModel.key) : '总 token',
+        secondary: formatUsageCost(entry),
+        secondaryNote: (entry.topTool ? '工具 ' + (entry.topTool.label || entry.topTool.key) + ' · ' : '') + (entry.runCount || 0) + ' 次调用'
+      });
+    });
+
+    var modelRows = (data.byModel || []).filter(function(entry) {
+      return billingMatchesFilter(entry) && billingMatchesQuery([entry.label, entry.key]);
+    }).slice(0, 6).map(function(entry) {
+      return renderAnalyticsRow({
+        title: entry.label || entry.key,
+        subtitle: (entry.runCount || 0) + ' 次调用',
+        share: totalTokens > 0 ? Number(entry.totalTokens || 0) / totalTokens : 0,
+        primary: formatTokenCount(entry.totalTokens),
+        primaryNote: totalTokens > 0 ? formatPercent(Number(entry.totalTokens || 0) / totalTokens) + ' 占总量' : '总 token',
+        secondary: formatUsageCost(entry),
+        secondaryNote: entry.backgroundShare != null ? '后台占比 ' + formatPercent(entry.backgroundShare) : '费用视角'
+      });
+    });
+
+    var toolRows = (data.byTool || []).filter(function(entry) {
+      return billingMatchesFilter(entry) && billingMatchesQuery([entry.label, entry.key]);
+    }).slice(0, 6).map(function(entry) {
+      return renderAnalyticsRow({
+        title: entry.label || entry.key,
+        subtitle: (entry.runCount || 0) + ' 次调用',
+        share: totalTokens > 0 ? Number(entry.totalTokens || 0) / totalTokens : 0,
+        primary: formatTokenCount(entry.totalTokens),
+        primaryNote: totalTokens > 0 ? formatPercent(Number(entry.totalTokens || 0) / totalTokens) + ' 占总量' : '总 token',
+        secondary: formatUsageCost(entry),
+        secondaryNote: entry.backgroundShare != null ? '后台占比 ' + formatPercent(entry.backgroundShare) : '费用视角'
+      });
+    });
+
+    var operationRows = (data.byOperation || []).filter(function(entry) {
+      return billingMatchesFilter(entry) && billingMatchesQuery([entry.label, entry.key, entry.operationCategory, entry.operationGroup]);
+    }).slice(0, 10).map(function(entry) {
+      return renderAnalyticsRow({
+        title: entry.label || entry.key,
+        subtitle: [entry.operationGroup === 'background' ? '后台' : '前台', entry.operationCategory || '', (entry.runCount || 0) + ' 次调用'].filter(Boolean).join(' · '),
+        share: totalTokens > 0 ? Number(entry.totalTokens || 0) / totalTokens : 0,
+        primary: formatTokenCount(entry.totalTokens),
+        primaryNote: totalTokens > 0 ? formatPercent(Number(entry.totalTokens || 0) / totalTokens) + ' 占总量' : '总 token',
+        secondary: formatUsageCost(entry),
+        secondaryNote: entry.backgroundShare != null ? '后台占比 ' + formatPercent(entry.backgroundShare) : '费用视角'
+      });
+    });
+
+    var runRows = (data.topRuns || []).filter(function(entry) {
+      return billingMatchesFilter(entry) && billingMatchesQuery([entry.sessionName, entry.instanceName, entry.userName, entry.model, entry.operationLabel, entry.operationCategory]);
+    }).slice(0, 8).map(function(entry) {
+      return renderAnalyticsRow({
+        title: [entry.userName || entry.instanceName, entry.sessionName].filter(Boolean).join(' / '),
+        subtitle: [entry.instanceName, entry.model, entry.operationLabel || entry.operation].filter(Boolean).join(' · '),
+        share: totalTokens > 0 ? Number(entry.totalTokens || 0) / totalTokens : 0,
+        primary: formatTokenCount(entry.totalTokens),
+        primaryNote: timeAgo(entry.ts),
+        secondary: formatUsageCost(entry),
+        secondaryNote: entry.backgroundOperation ? '后台调用' : '前台调用'
+      });
+    });
+
+    var overview = '<section class="panel section-panel">' +
+      '<div class="section-panel-head">' +
+        '<div>' +
+          '<p class="eyebrow">billing summary</p>' +
+          '<h3>费用结构总览</h3>' +
+          '<p class="section-panel-copy">先看总 token、后台占比、归因覆盖率和当前最大耗用入口。</p>' +
+        '</div>' +
+        '<div class="section-count"><strong>' + esc(formatTokenCount(summary.totalTokens)) + '</strong><span>30 天总 token</span></div>' +
+      '</div>' +
+      '<div class="detail-grid">' +
+        '<article class="detail-card">' +
+          '<h4>前台 / 后台</h4>' +
+          '<p>前台：' + esc(formatTokenCount(summary.foregroundTokens)) + '<br>后台：' + esc(formatTokenCount(summary.backgroundTokens)) + '<br>后台占比：' + esc(summary.backgroundShare != null ? formatPercent(summary.backgroundShare) : '0%') + '</p>' +
+          '<p class="muted">把用户直接对话和后台自动功能拆开，看额外功能到底吃掉多少预算。</p>' +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>费用</h4>' +
+          '<p>总费用：' + esc(formatUsageCost(summary)) + '<br>前台 / 后台 runs：' + esc(summary.foregroundRuns || 0) + ' / ' + esc(summary.backgroundRuns || 0) + '<br>未归因 token：' + esc(formatTokenCount(summary.unattributedTokens)) + '</p>' +
+          '<p class="muted">当前用户归因按实例绑定做，未绑定或预留实例会单独记为未归因。</p>' +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>当前最大入口</h4>' +
+          '<p>成本中心：' + esc(summary.topCategory ? (summary.topCategory.label || summary.topCategory.key) : '暂无') + '<br>模型：' + esc(summary.topModel ? (summary.topModel.label || summary.topModel.key) : '暂无') + '<br>工具：' + esc(summary.topTool ? (summary.topTool.label || summary.topTool.key) : '暂无') + '</p>' +
+          '<p class="muted">优先盯最大的耗用桶，最快能判断哪些自动功能值得保留。</p>' +
+        '</article>' +
+      '</div>' +
+    '</section>';
+
+    var pairGrid = '<div class="analytics-pair-grid">' +
+      renderAnalyticsSection({
+        eyebrow: 'models',
+        title: '模型热点',
+        copy: '先看哪些模型在吞 token，再决定是不是要降配或分流。',
+        rows: modelRows,
+        countLabel: '个模型',
+        empty: '当前筛选下没有模型数据。'
+      }) +
+      renderAnalyticsSection({
+        eyebrow: 'tools',
+        title: '工具热点',
+        copy: '工具维度可以快速看出 Codex、Claude 或其他执行器的成本结构差异。',
+        rows: toolRows,
+        countLabel: '个工具',
+        empty: '当前筛选下没有工具数据。'
+      }) +
+    '</div>';
+
+    container.innerHTML = overview
+      + renderAnalyticsSection({
+        eyebrow: 'cost centers',
+        title: '成本中心',
+        copy: '这里优先看操作分类，不再只盯实例本身。后台功能如果占比过高，很快就能被看出来。',
+        rows: categories,
+        countLabel: '类',
+        empty: '当前筛选下没有成本中心数据。'
+      })
+      + renderAnalyticsSection({
+        eyebrow: 'user hotspots',
+        title: '用户热点',
+        copy: '按实例绑定归因到用户，先找到谁最吃 token，再判断是不是有效使用还是后台功能在空转。',
+        rows: userRows,
+        countLabel: '位用户',
+        empty: '当前筛选下没有用户计费数据。'
+      })
+      + renderAnalyticsSection({
+        eyebrow: 'instance hotspots',
+        title: '实例热点',
+        copy: '实例维度主要用来追根溯源，看某个用户和某个环境是不是共同造成高耗用。',
+        rows: instanceRows,
+        countLabel: '个实例',
+        empty: '当前筛选下没有实例计费数据。'
+      })
+      + pairGrid
+      + renderAnalyticsSection({
+        eyebrow: 'operations',
+        title: '操作类型',
+        copy: '直接把后台功能摊开看，像命名、reply check、memory writeback、dispatch 这类开销都会落在这里。',
+        rows: operationRows,
+        countLabel: '个操作',
+        empty: '当前筛选下没有操作数据。'
+      })
+      + renderAnalyticsSection({
+        eyebrow: 'top runs',
+        title: '最重的 runs',
+        copy: '如果要追具体异常，先从最重的几次调用下手。',
+        rows: runRows,
+        countLabel: '条记录',
+        empty: '当前筛选下没有重度调用记录。'
+      });
+  }
+
   function renderControls() {
     var config = VIEW_CONFIGS[state.view];
     document.getElementById('search-label').textContent = config.searchLabel;
@@ -2243,6 +2601,14 @@
         { label: '未绑定', value: summary.unboundUsers, note: '要尽快分配或明确暂不试用', tone: summary.unboundUsers ? 'danger' : 'ok' },
         { label: '需跟进', value: summary.followUpUsers, note: '冷却、停滞或流失风险', tone: summary.followUpUsers ? 'warn' : 'ok' }
       ];
+    } else if (state.view === 'billing') {
+      var billingSummary = state.billing.summary || {};
+      metrics = [
+        { label: '总 token', value: formatTokenCount(billingSummary.totalTokens), note: '当前窗口内的总消耗', tone: 'accent' },
+        { label: '后台占比', value: billingSummary.backgroundShare != null ? formatPercent(billingSummary.backgroundShare) : '0%', note: '区分前台对话和后台自动功能', tone: billingSummary.backgroundShare >= 0.3 ? 'warn' : 'ok' },
+        { label: '已归因用户', value: billingSummary.usersWithUsage || 0, note: '按实例绑定归因到用户', tone: billingSummary.usersWithUsage ? 'ok' : 'muted' },
+        { label: '总费用', value: formatUsageCost(billingSummary), note: '实价和估算费用合并展示', tone: (Number(billingSummary.costUsd || 0) || Number(billingSummary.estimatedCostUsd || 0)) ? 'accent' : 'muted' }
+      ];
     } else {
       var instanceSummary = state.workbench.instanceSummary;
       metrics = [
@@ -2261,10 +2627,17 @@
       '</article>';
     }).join('');
 
-    document.getElementById('page-meta').innerHTML =
-      '<span>cache ' + esc(timeAgo(state.workbench.cachedAt || state.dashboard.cachedAt)) + '</span>' +
-      '<span>' + esc(state.workbench.summary.totalUsers) + ' 位用户</span>' +
-      '<span>' + esc(state.workbench.instanceSummary.total) + ' 个实例</span>';
+    if (state.view === 'billing') {
+      document.getElementById('page-meta').innerHTML =
+        '<span>cache ' + esc(timeAgo(state.billing.cachedAt || state.workbench.cachedAt || state.dashboard.cachedAt)) + '</span>' +
+        '<span>' + esc(formatTokenCount((state.billing.summary || {}).totalTokens)) + ' tokens</span>' +
+        '<span>' + esc((state.billing.byUser || []).length) + ' 位用户有计费数据</span>';
+    } else {
+      document.getElementById('page-meta').innerHTML =
+        '<span>cache ' + esc(timeAgo(state.workbench.cachedAt || state.dashboard.cachedAt)) + '</span>' +
+        '<span>' + esc(state.workbench.summary.totalUsers) + ' 位用户</span>' +
+        '<span>' + esc(state.workbench.instanceSummary.total) + ' 个实例</span>';
+    }
   }
 
   function syncNav() {
@@ -2274,6 +2647,7 @@
     document.getElementById('nav-pending-count').textContent = String(pendingTotal);
     document.getElementById('nav-users-count').textContent = String(state.workbench.summary.totalUsers || 0);
     document.getElementById('nav-instances-count').textContent = String(state.workbench.instanceSummary.attention || 0);
+    document.getElementById('nav-billing-count').textContent = String((state.billing.byUser || []).length || 0);
 
     Array.from(document.querySelectorAll('[data-view]')).forEach(function(link) {
       link.classList.toggle('is-active', link.getAttribute('data-view') === state.view);
@@ -2289,6 +2663,7 @@
     document.getElementById('pending-view').innerHTML = skeletonList;
     document.getElementById('users-view').innerHTML = '';
     document.getElementById('instances-view').innerHTML = '';
+    document.getElementById('billing-view').innerHTML = '';
   }
 
   function renderError(message) {
@@ -2296,12 +2671,13 @@
     document.getElementById('pending-view').innerHTML = html;
     document.getElementById('users-view').innerHTML = '';
     document.getElementById('instances-view').innerHTML = '';
+    document.getElementById('billing-view').innerHTML = '';
     var retry = document.getElementById('btn-retry');
     if (retry) retry.onclick = loadAll;
   }
 
   function applyView() {
-    if (!state.workbench || !state.dashboard) return;
+    if (!state.workbench || !state.dashboard || !state.billing) return;
     renderOverview();
     renderControls();
     syncNav();
@@ -2309,12 +2685,14 @@
     document.getElementById('pending-view').hidden = state.view !== 'pending';
     document.getElementById('users-view').hidden = state.view !== 'users';
     document.getElementById('instances-view').hidden = state.view !== 'instances';
+    document.getElementById('billing-view').hidden = state.view !== 'billing';
 
     if (state.view === 'pending') renderPendingView();
     else if (state.view === 'users') renderUsersView();
-    else renderInstancesView();
+    else if (state.view === 'instances') renderInstancesView();
+    else renderBillingView();
 
-    document.getElementById('cache-pill').textContent = '已更新 ' + timeAgo(state.workbench.cachedAt || state.dashboard.cachedAt);
+    document.getElementById('cache-pill').textContent = '已更新 ' + timeAgo(state.billing.cachedAt || state.workbench.cachedAt || state.dashboard.cachedAt);
   }
 
   async function loadAll() {
@@ -2322,10 +2700,12 @@
     try {
       var results = await Promise.all([
         api('api/workbench'),
-        api('api/dashboard')
+        api('api/dashboard'),
+        api('api/billing')
       ]);
       state.workbench = results[0];
       state.dashboard = results[1];
+      state.billing = results[2];
       applyView();
     } catch (err) {
       renderError(err.message);

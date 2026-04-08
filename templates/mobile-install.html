@@ -610,6 +610,23 @@
         });
       }
 
+      function continueStandaloneLaunch() {
+        if (!handoffToken) {
+          showRedeemError();
+          return;
+        }
+        benefitsEl.classList.add('hidden');
+        stepsWrapEl.classList.add('hidden');
+        copyBtn.classList.add('hidden');
+        titleEl.textContent = text.redeemLoadingTitle;
+        subtitleEl.textContent = text.redeemLoadingSubtitle;
+        helperEl.textContent = '';
+        setStatus(text.redeemLoadingStatus);
+        primaryBtn.classList.add('hidden');
+        secondaryBtn.classList.add('hidden');
+        window.location.replace(resolveProductPath(`/m/continue?h=${encodeURIComponent(handoffToken)}`));
+      }
+
       async function redeemHandoff() {
         benefitsEl.classList.add('hidden');
         stepsWrapEl.classList.add('hidden');
@@ -650,7 +667,7 @@
       void registerServiceWorker();
 
       if (isStandalone && handoffToken) {
-        void redeemHandoff();
+        continueStandaloneLaunch();
         return;
       }
 

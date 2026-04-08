@@ -9,6 +9,7 @@ import {
   normalizeSessionDescription,
   normalizeSessionGroup,
 } from './session-naming.mjs';
+import { appendUsageLedgerRecord, buildDetachedUsageLedgerRecord } from './usage-ledger.mjs';
 import { loadSessionLabelPromptContext } from './session-label-context.mjs';
 import {
   normalizeSessionWorkflowPriority,
@@ -82,7 +83,29 @@ function formatHistoryForPrompt(events) {
   });
 }
 
-async function runToolJsonPrompt(sessionMeta, prompt) {
+function appendSummarizerUsage(sessionMeta, usageEvent, usageTracking = {}, state = 'completed') {
+  if (!usageEvent || !usageTracking) return false;
+  try {
+    const record = buildDetachedUsageLedgerRecord({
+      session: sessionMeta,
+      usageEvent,
+      tracking: {
+        tool: sessionMeta.tool,
+        model: sessionMeta.model,
+        effort: sessionMeta.effort,
+        ...usageTracking,
+        state,
+      },
+    });
+    if (!record) return false;
+    return appendUsageLedgerRecord(record);
+  } catch (error) {
+    console.error(`[usage-ledger] Failed to append summarizer usage for ${sessionMeta?.id?.slice?.(0, 8) || 'unknown'}: ${error.message}`);
+    return false;
+  }
+}
+
+async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
   const {
     id: sessionId,
     folder,
@@ -123,12 +146,15 @@ async function runToolJsonPrompt(sessionMeta, prompt) {
 
     const rl = createInterface({ input: proc.stdout });
     const textParts = [];
+    let latestUsageEvent = null;
 
     rl.on('line', (line) => {
       const events = adapter.parseLine(line);
       for (const evt of events) {
         if (evt.type === 'message' && evt.role === 'assistant') {
           textParts.push(evt.content || '');
+        } else if (evt.type === 'usage') {
+          latestUsageEvent = evt;
         }
       }
     });
@@ -144,6 +170,9 @@ async function runToolJsonPrompt(sessionMeta, prompt) {
     });
 
     proc.on('exit', (code) => {
+      if (latestUsageEvent && usageTracking) {
+        appendSummarizerUsage(sessionMeta, latestUsageEvent, usageTracking, code === 0 ? 'completed' : 'failed');
+      }
       const raw = textParts.join('\n').trim();
       if (code !== 0 && !raw) {
         reject(new Error(`${tool} exited with code ${code}`));
@@ -310,7 +339,9 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     'Respond with ONLY valid JSON. No markdown, no explanation.',
   ].filter((line) => line !== '').join('\n');
 
-  const modelText = await runToolJsonPrompt(sessionMeta, prompt);
+  const modelText = await runToolJsonPrompt(sessionMeta, prompt, {
+    operation: 'session_label_suggestion',
+  });
   const labelResult = parseJsonObject(modelText);
   if (shouldGenerateTitle && !labelResult?.title) {
     console.error(`[summarizer] Unexpected title output for ${sessionId.slice(0, 8)}: ${modelText.slice(0, 200)}`);
@@ -454,7 +485,9 @@ async function runSessionWorkflowStateSuggestion(sessionMeta, _options = {}) {
     'Respond with ONLY valid JSON. No markdown, no explanation.',
   ].filter((line) => line !== '').join('\n');
 
-  const modelText = await runToolJsonPrompt(sessionMeta, prompt);
+  const modelText = await runToolJsonPrompt(sessionMeta, prompt, {
+    operation: 'workflow_state_suggestion',
+  });
   const stateResult = parseJsonObject(modelText);
   const rawWorkflowState = typeof stateResult?.workflowState === 'string'
     ? stateResult.workflowState.trim()
@@ -568,7 +601,9 @@ async function runSessionTaskCardSuggestion(sessionMeta, _options = {}) {
     'Respond with ONLY valid JSON. No markdown, no explanation.',
   ].filter((line) => line !== '').join('\n');
 
-  const modelText = await runToolJsonPrompt(sessionMeta, prompt);
+  const modelText = await runToolJsonPrompt(sessionMeta, prompt, {
+    operation: 'task_card_suggestion',
+  });
   const nextTaskCard = normalizeSessionTaskCard(parseJsonObject(modelText));
   if (!nextTaskCard) {
     console.error(`[task-card] Unexpected task card output for ${sessionId.slice(0, 8)}: ${modelText.slice(0, 200)}`);

@@ -2168,13 +2168,17 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
         userMessage: userMessage?.content || '',
         assistantTurnText,
         runPrompt: (prompt) => runDetachedAssistantPrompt({
+          ...session,
           id: sessionId,
-          folder: session.folder,
           tool: finalizedRun.tool || session.tool,
           model: undefined,
           effort: 'low',
           thinking: false,
-        }, prompt),
+        }, prompt, {
+          usageTracking: {
+            operation: 'memory_writeback_review',
+          },
+        }),
       });
     } catch (error) {
       console.error(`[memory-writeback] Async writeback failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
@@ -3191,13 +3195,17 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         listSessions: () => listSessions({ includeArchived: false }),
         listAgents: () => listApps(),
         runPrompt: (prompt) => runDetachedAssistantPrompt({
+          ...session,
           id: sessionId,
-          folder: session.folder,
           tool: session.tool,
           model: undefined,
           effort: 'low',
           thinking: false,
-        }, prompt),
+        }, prompt, {
+          usageTracking: {
+            operation: 'session_dispatch_classifier',
+          },
+        }),
       });
 
       if (dispatchDecision.action !== 'continue') {

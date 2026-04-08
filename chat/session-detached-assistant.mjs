@@ -2,8 +2,28 @@ import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
+import { appendUsageLedgerRecord, buildDetachedUsageLedgerRecord } from './usage-ledger.mjs';
 
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+
+function appendDetachedPromptUsage(sessionMeta, usageEvent, usageTracking = {}, state = 'completed') {
+  if (!usageTracking || !usageEvent) return false;
+  try {
+    const record = buildDetachedUsageLedgerRecord({
+      session: sessionMeta,
+      usageEvent,
+      tracking: {
+        ...usageTracking,
+        state,
+      },
+    });
+    if (!record) return false;
+    return appendUsageLedgerRecord(record);
+  } catch (error) {
+    console.error(`[usage-ledger] Failed to append detached prompt usage for ${sessionMeta?.id?.slice?.(0, 8) || 'unknown'}: ${error.message}`);
+    return false;
+  }
+}
 
 export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = {}) {
   const {
@@ -59,12 +79,15 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
 
     const rl = createInterface({ input: proc.stdout });
     const textParts = [];
+    let latestUsageEvent = null;
 
     rl.on('line', (line) => {
       const events = invocation.adapter.parseLine(line);
       for (const evt of events) {
         if (evt.type === 'message' && evt.role === 'assistant') {
           textParts.push(evt.content || '');
+        } else if (evt.type === 'usage') {
+          latestUsageEvent = evt;
         }
       }
     });
@@ -80,6 +103,14 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
       clearTimeout(timer);
       if (settled) return;
       settled = true;
+      if (latestUsageEvent && options.usageTracking) {
+        appendDetachedPromptUsage(sessionMeta, latestUsageEvent, {
+          tool: options.tool ?? tool,
+          model: options.model ?? model,
+          effort: options.effort ?? effort,
+          ...options.usageTracking,
+        }, code === 0 ? 'completed' : 'failed');
+      }
       const raw = textParts.join('\n').trim();
       if (code !== 0 && !raw) {
         reject(new Error(`${tool} exited with code ${code}`));

@@ -18,7 +18,11 @@ function openSessionsSidebar() {
   return true;
 }
 
-function createNewSessionShortcut({ closeSidebar = true } = {}) {
+function createNewSessionShortcut({
+  closeSidebar = true,
+  forceComposerFocus = false,
+  sourceContext = null,
+} = {}) {
   if (closeSidebar && !isDesktop) closeSidebarFn();
   const tool = preferredTool || selectedTool || toolsList[0]?.id;
   if (!tool) return false;
@@ -39,6 +43,8 @@ function createNewSessionShortcut({ closeSidebar = true } = {}) {
     sourceName: DEFAULT_WEB_SOURCE_NAME,
     templateId: preferredAgentId,
     templateName: preferredAgentName,
+    ...(forceComposerFocus ? { forceComposerFocus: true } : {}),
+    ...(sourceContext && typeof sourceContext === "object" ? { sourceContext } : {}),
   });
 }
 

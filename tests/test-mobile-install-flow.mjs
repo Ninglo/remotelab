@@ -171,13 +171,8 @@ async function main() {
     );
     assert.match(
       installPage.text,
-      /resolveProductPath\('\/api\/install\/handoff\/redeem'\)/,
-      'install page should redeem the handoff through the shared product-path resolver',
-    );
-    assert.match(
-      installPage.text,
       /resolveProductPath\(`\/m\/continue\?h=\$\{encodeURIComponent\(handoffToken\)\}`\)/,
-      'install page should continue in browser through the handoff-aware bridge',
+      'install page should continue through the handoff-aware bridge',
     );
     assert.match(
       installPage.text,

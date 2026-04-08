@@ -12,6 +12,7 @@ import { homedir } from 'os';
 import { promisify } from 'util';
 import { randomBytes, timingSafeEqual, scrypt } from 'crypto';
 import { fullPath } from '../lib/user-shell-env.mjs';
+import { classifyUsageOperation } from '../chat/usage-ledger.mjs';
 
 const scryptAsync = promisify(scrypt);
 const execFileAsync = promisify(execFile);
@@ -651,6 +652,367 @@ function buildUserWorkbenchPayload({
   };
 }
 
+function roundUsageUsd(value) {
+  return Math.round((Number(value) || 0) * 1e6) / 1e6;
+}
+
+function roundUsageRatio(value) {
+  return Math.round((Number(value) || 0) * 10000) / 10000;
+}
+
+function parseIsoTimestampMs(value) {
+  const timestampMs = Date.parse(String(value || '').trim());
+  return Number.isFinite(timestampMs) ? timestampMs : null;
+}
+
+function createUsageAnalyticsBucket(extra = {}) {
+  return {
+    ...extra,
+    runCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    costUsd: 0,
+    estimatedCostUsd: 0,
+    cachedInputTokens: 0,
+    reasoningTokens: 0,
+    backgroundTokens: 0,
+    backgroundRuns: 0,
+    foregroundTokens: 0,
+    foregroundRuns: 0,
+    maxContextTokens: null,
+    maxContextWindowTokens: null,
+    latestTimestamp: '',
+    latestTimestampMs: null,
+  };
+}
+
+function appendUsageAnalyticsMetrics(target, metrics = {}) {
+  target.runCount += Number(metrics.runCount || 0);
+  target.inputTokens += Number(metrics.inputTokens || 0);
+  target.outputTokens += Number(metrics.outputTokens || 0);
+  target.totalTokens += Number(metrics.totalTokens || 0);
+  target.costUsd = roundUsageUsd((target.costUsd || 0) + Number(metrics.costUsd || 0));
+  target.estimatedCostUsd = roundUsageUsd((target.estimatedCostUsd || 0) + Number(metrics.estimatedCostUsd || 0));
+  target.cachedInputTokens += Number(metrics.cachedInputTokens || 0);
+  target.reasoningTokens += Number(metrics.reasoningTokens || 0);
+  target.backgroundTokens += Number(metrics.backgroundTokens || 0);
+  target.backgroundRuns += Number(metrics.backgroundRuns || 0);
+  target.foregroundTokens += Number(metrics.foregroundTokens || 0);
+  target.foregroundRuns += Number(metrics.foregroundRuns || 0);
+  if (Number.isInteger(metrics.maxContextTokens)) {
+    target.maxContextTokens = target.maxContextTokens === null
+      ? metrics.maxContextTokens
+      : Math.max(target.maxContextTokens, metrics.maxContextTokens);
+  }
+  if (Number.isInteger(metrics.maxContextWindowTokens)) {
+    target.maxContextWindowTokens = target.maxContextWindowTokens === null
+      ? metrics.maxContextWindowTokens
+      : Math.max(target.maxContextWindowTokens, metrics.maxContextWindowTokens);
+  }
+}
+
+function touchUsageAnalyticsTimestamp(target, source = {}) {
+  const timestamp = trimString(source.latestTimestamp || source.ts || source.lastSessionAt);
+  const timestampMs = parseIsoTimestampMs(timestamp);
+  if (!Number.isFinite(timestampMs)) return;
+  if (!Number.isFinite(target.latestTimestampMs) || timestampMs >= target.latestTimestampMs) {
+    target.latestTimestamp = new Date(timestampMs).toISOString();
+    target.latestTimestampMs = timestampMs;
+  }
+}
+
+function getOrCreateUsageAnalyticsBucket(map, key, extra = {}) {
+  if (!map.has(key)) {
+    map.set(key, createUsageAnalyticsBucket({ key, ...extra }));
+  }
+  return map.get(key);
+}
+
+function sortUsageAnalyticsBuckets(map, limit = Infinity) {
+  return [...map.values()]
+    .map((bucket) => ({
+      ...bucket,
+      costUsd: roundUsageUsd(bucket.costUsd || 0),
+      estimatedCostUsd: roundUsageUsd(bucket.estimatedCostUsd || 0),
+      backgroundShare: (bucket.totalTokens || 0) > 0
+        ? roundUsageRatio((bucket.backgroundTokens || 0) / bucket.totalTokens)
+        : null,
+    }))
+    .sort((left, right) => {
+      if ((right.totalTokens || 0) !== (left.totalTokens || 0)) {
+        return (right.totalTokens || 0) - (left.totalTokens || 0);
+      }
+      const rightCost = (right.costUsd || 0) + (right.estimatedCostUsd || 0);
+      const leftCost = (left.costUsd || 0) + (left.estimatedCostUsd || 0);
+      if (rightCost !== leftCost) {
+        return rightCost - leftCost;
+      }
+      return String(left.key || '').localeCompare(String(right.key || ''));
+    })
+    .slice(0, limit);
+}
+
+function usageTotalsPresent(totals = {}) {
+  return Number(totals.totalTokens || 0) > 0
+    || Number(totals.runCount || 0) > 0
+    || Number(totals.costUsd || 0) > 0
+    || Number(totals.estimatedCostUsd || 0) > 0;
+}
+
+function mergeUsageBreakdown(map, items = [], decorate = null) {
+  for (const item of Array.isArray(items) ? items : []) {
+    const key = trimString(item?.key || item?.label);
+    if (!key) continue;
+    const extra = decorate ? decorate(item, key) : {};
+    const bucket = getOrCreateUsageAnalyticsBucket(map, key, {
+      label: trimString(item?.label) || key,
+      ...extra,
+    });
+    appendUsageAnalyticsMetrics(bucket, item);
+    touchUsageAnalyticsTimestamp(bucket, item);
+  }
+}
+
+function finalizeUsageEntity(entry) {
+  const topModel = sortUsageAnalyticsBuckets(entry._models || new Map(), 1)[0] || null;
+  const topTool = sortUsageAnalyticsBuckets(entry._tools || new Map(), 1)[0] || null;
+  const topCategory = sortUsageAnalyticsBuckets(entry._categories || new Map(), 1)[0] || null;
+  const topGroup = sortUsageAnalyticsBuckets(entry._groups || new Map(), 1)[0] || null;
+  const {
+    _models,
+    _tools,
+    _categories,
+    _groups,
+    ...publicEntry
+  } = entry;
+  return {
+    ...publicEntry,
+    costUsd: roundUsageUsd(publicEntry.costUsd || 0),
+    estimatedCostUsd: roundUsageUsd(publicEntry.estimatedCostUsd || 0),
+    backgroundShare: (publicEntry.totalTokens || 0) > 0
+      ? roundUsageRatio((publicEntry.backgroundTokens || 0) / publicEntry.totalTokens)
+      : null,
+    topModel,
+    topTool,
+    topCategory,
+    topGroup,
+  };
+}
+
+function buildBillingAnalyticsPayload({
+  dashboardData,
+  workbenchPayload,
+} = {}) {
+  const instances = Array.isArray(dashboardData?.instances) ? dashboardData.instances : [];
+  const users = Array.isArray(workbenchPayload?.users?.rows) ? workbenchPayload.users.rows : [];
+  const userByInstance = new Map(users.filter((user) => user.instanceName).map((user) => [user.instanceName, user]));
+
+  const totals = createUsageAnalyticsBucket();
+  const byModel = new Map();
+  const byTool = new Map();
+  const byOperation = new Map();
+  const byOperationGroup = new Map();
+  const byOperationCategory = new Map();
+  const byInstance = new Map();
+  const byUser = new Map();
+  const topRuns = [];
+  let instancesWithUsage = 0;
+  let unattributedTokens = 0;
+  let unattributedRuns = 0;
+  let windowStartMs = null;
+  let windowEndMs = null;
+  let windowDays = 0;
+
+  for (const instance of instances) {
+    const usageSummary = instance?.usage?.usageSummary || null;
+    const usageTotals = usageSummary?.totals || {};
+    if (!usageTotalsPresent(usageTotals)) continue;
+
+    instancesWithUsage += 1;
+    appendUsageAnalyticsMetrics(totals, usageTotals);
+    touchUsageAnalyticsTimestamp(totals, usageTotals);
+
+    const summaryWindow = usageSummary?.window || {};
+    const startMs = parseIsoTimestampMs(summaryWindow.start);
+    const endMs = parseIsoTimestampMs(summaryWindow.end);
+    if (Number.isFinite(startMs)) {
+      windowStartMs = windowStartMs === null ? startMs : Math.min(windowStartMs, startMs);
+    }
+    if (Number.isFinite(endMs)) {
+      windowEndMs = windowEndMs === null ? endMs : Math.max(windowEndMs, endMs);
+    }
+    if (Number(summaryWindow.days || 0) > windowDays) {
+      windowDays = Number(summaryWindow.days || 0);
+    }
+
+    const boundUser = userByInstance.get(instance.name) || null;
+    const userKey = boundUser ? normalizeUserKey(boundUser.userName) : '';
+    const usageHealth = classifyInstanceHealth(instance);
+
+    const instanceEntry = getOrCreateUsageAnalyticsBucket(byInstance, instance.name, {
+      label: instance.name,
+      instanceName: instance.name,
+      userName: trimString(boundUser?.userName) || trimString(instance?.occupancy?.userName),
+      source: trimString(boundUser?.source),
+      healthKey: usageHealth.key,
+      healthLabel: usageHealth.label,
+      usageStatus: trimString(instance?.usage?.usageStatus),
+      publicBaseUrl: trimString(instance?.publicBaseUrl),
+      publicAccessUrl: trimString(instance?.publicAccessUrl),
+      localBaseUrl: trimString(instance?.localBaseUrl),
+      port: instance?.port,
+      _models: new Map(),
+      _tools: new Map(),
+      _categories: new Map(),
+      _groups: new Map(),
+    });
+    appendUsageAnalyticsMetrics(instanceEntry, usageTotals);
+    touchUsageAnalyticsTimestamp(instanceEntry, usageTotals);
+    mergeUsageBreakdown(instanceEntry._models, usageSummary?.byModel, (item, key) => ({ label: trimString(item?.label) || key }));
+    mergeUsageBreakdown(instanceEntry._tools, usageSummary?.byTool, (item, key) => ({ label: trimString(item?.label) || key }));
+    mergeUsageBreakdown(instanceEntry._categories, usageSummary?.byOperationCategory, (item, key) => ({
+      label: trimString(item?.label) || key,
+      operationGroup: trimString(item?.operationGroup),
+    }));
+    mergeUsageBreakdown(instanceEntry._groups, usageSummary?.byOperationGroup, (item, key) => ({ label: trimString(item?.label) || key }));
+
+    if (boundUser) {
+      const userEntry = getOrCreateUsageAnalyticsBucket(byUser, userKey, {
+        label: boundUser.userName,
+        userKey,
+        userName: boundUser.userName,
+        source: trimString(boundUser.source),
+        lifecycleLabel: trimString(boundUser.lifecycleLabel),
+        bindingStatus: trimString(boundUser.bindingStatus),
+        instanceNames: [],
+        _models: new Map(),
+        _tools: new Map(),
+        _categories: new Map(),
+        _groups: new Map(),
+      });
+      appendUsageAnalyticsMetrics(userEntry, usageTotals);
+      touchUsageAnalyticsTimestamp(userEntry, usageTotals);
+      if (!userEntry.instanceNames.includes(instance.name)) {
+        userEntry.instanceNames.push(instance.name);
+      }
+      mergeUsageBreakdown(userEntry._models, usageSummary?.byModel, (item, key) => ({ label: trimString(item?.label) || key }));
+      mergeUsageBreakdown(userEntry._tools, usageSummary?.byTool, (item, key) => ({ label: trimString(item?.label) || key }));
+      mergeUsageBreakdown(userEntry._categories, usageSummary?.byOperationCategory, (item, key) => ({
+        label: trimString(item?.label) || key,
+        operationGroup: trimString(item?.operationGroup),
+      }));
+      mergeUsageBreakdown(userEntry._groups, usageSummary?.byOperationGroup, (item, key) => ({ label: trimString(item?.label) || key }));
+    } else {
+      unattributedTokens += Number(usageTotals.totalTokens || 0);
+      unattributedRuns += Number(usageTotals.runCount || 0);
+    }
+
+    mergeUsageBreakdown(byModel, usageSummary?.byModel, (item, key) => ({ label: trimString(item?.label) || key }));
+    mergeUsageBreakdown(byTool, usageSummary?.byTool, (item, key) => ({ label: trimString(item?.label) || key }));
+    mergeUsageBreakdown(byOperation, usageSummary?.byOperation, (item, key) => {
+      const classified = classifyUsageOperation(key);
+      return {
+        label: trimString(item?.label) || classified.label || key,
+        operationGroup: classified.group,
+        operationCategory: classified.category,
+        backgroundOperation: classified.background,
+      };
+    });
+    mergeUsageBreakdown(byOperationGroup, usageSummary?.byOperationGroup, (item, key) => ({ label: trimString(item?.label) || key }));
+    mergeUsageBreakdown(byOperationCategory, usageSummary?.byOperationCategory, (item, key) => ({
+      label: trimString(item?.label) || key,
+      operationGroup: trimString(item?.operationGroup),
+    }));
+
+    for (const run of Array.isArray(usageSummary?.topRuns) ? usageSummary.topRuns : []) {
+      const classified = classifyUsageOperation(run);
+      topRuns.push({
+        ...run,
+        instanceName: instance.name,
+        userName: trimString(boundUser?.userName) || '',
+        source: trimString(boundUser?.source) || '',
+        operationGroup: trimString(run.operationGroup) || classified.group,
+        operationCategory: trimString(run.operationCategory) || classified.category,
+        operationLabel: trimString(run.operationLabel) || classified.label,
+        backgroundOperation: run.backgroundOperation === true || classified.background,
+      });
+    }
+  }
+
+  const userRows = sortUsageAnalyticsBuckets(byUser, 200).map((entry) => finalizeUsageEntity(entry));
+  const instanceRows = sortUsageAnalyticsBuckets(byInstance, 200).map((entry) => finalizeUsageEntity(entry));
+  const operationRows = sortUsageAnalyticsBuckets(byOperation, 50).map((entry) => ({
+    ...entry,
+    operationGroup: trimString(entry.operationGroup),
+    operationCategory: trimString(entry.operationCategory),
+    backgroundOperation: entry.backgroundOperation === true,
+  }));
+  const operationGroupRows = sortUsageAnalyticsBuckets(byOperationGroup, 10);
+  const operationCategoryRows = sortUsageAnalyticsBuckets(byOperationCategory, 20).map((entry) => ({
+    ...entry,
+    operationGroup: trimString(entry.operationGroup),
+  }));
+
+  const sortedTopRuns = topRuns
+    .sort((left, right) => {
+      if ((right.totalTokens || 0) !== (left.totalTokens || 0)) {
+        return (right.totalTokens || 0) - (left.totalTokens || 0);
+      }
+      const rightCost = Number(right.costUsd || 0) + Number(right.estimatedCostUsd || 0);
+      const leftCost = Number(left.costUsd || 0) + Number(left.estimatedCostUsd || 0);
+      if (rightCost !== leftCost) {
+        return rightCost - leftCost;
+      }
+      return (parseIsoTimestampMs(right.ts) || 0) - (parseIsoTimestampMs(left.ts) || 0);
+    })
+    .slice(0, 40);
+
+  const summary = {
+    runCount: totals.runCount,
+    totalTokens: totals.totalTokens,
+    inputTokens: totals.inputTokens,
+    outputTokens: totals.outputTokens,
+    cachedInputTokens: totals.cachedInputTokens,
+    reasoningTokens: totals.reasoningTokens,
+    costUsd: roundUsageUsd(totals.costUsd || 0),
+    estimatedCostUsd: roundUsageUsd(totals.estimatedCostUsd || 0),
+    backgroundTokens: totals.backgroundTokens,
+    foregroundTokens: totals.foregroundTokens,
+    backgroundRuns: totals.backgroundRuns,
+    foregroundRuns: totals.foregroundRuns,
+    backgroundShare: totals.totalTokens > 0 ? roundUsageRatio(totals.backgroundTokens / totals.totalTokens) : null,
+    instanceCount: instances.length,
+    instancesWithUsage,
+    userCount: users.length,
+    usersWithUsage: userRows.length,
+    unattributedTokens,
+    unattributedRuns,
+    topCategory: operationCategoryRows[0] || null,
+    topOperation: operationRows[0] || null,
+    topModel: sortUsageAnalyticsBuckets(byModel, 1)[0] || null,
+    topTool: sortUsageAnalyticsBuckets(byTool, 1)[0] || null,
+  };
+
+  return {
+    attributionMode: 'instance_binding',
+    summary,
+    window: {
+      days: windowDays || 0,
+      start: windowStartMs ? new Date(windowStartMs).toISOString() : '',
+      end: windowEndMs ? new Date(windowEndMs).toISOString() : '',
+    },
+    byUser: userRows,
+    byInstance: instanceRows,
+    byModel: sortUsageAnalyticsBuckets(byModel, 20),
+    byTool: sortUsageAnalyticsBuckets(byTool, 20),
+    byOperation: operationRows,
+    byOperationGroup: operationGroupRows,
+    byOperationCategory: operationCategoryRows,
+    topRuns: sortedTopRuns,
+  };
+}
+
 // --- Rate limiting ---
 
 const failedAttempts = new Map(); // ip → { count, lastAttempt }
@@ -889,21 +1251,40 @@ async function apiUserEngagement(req, res) {
   json(res, result);
 }
 
-async function apiWorkbench(req, res) {
-  const [dashboardData, bindingsFile, ledgerText, eventLogText, engagement] = await Promise.all([
-    getDashboardData(),
+async function buildWorkbenchPayload(dashboardData = null) {
+  const effectiveDashboardData = dashboardData || await getDashboardData();
+  const [bindingsFile, ledgerText, eventLogText, engagement] = await Promise.all([
     readJsonFileSafe(USER_BINDINGS_FILE, { bindings: [] }),
     readTextFileSafe(USER_LEDGER_FILE),
     readTextFileSafe(USER_EVENT_LOG_FILE),
     getEngagementData(),
   ]);
 
-  const payload = buildUserWorkbenchPayload({
-    dashboardData,
+  return buildUserWorkbenchPayload({
+    dashboardData: effectiveDashboardData,
     bindings: Array.isArray(bindingsFile?.bindings) ? bindingsFile.bindings : [],
     ledgerCards: parseRelationshipLedger(ledgerText),
     eventLog: parseUserEventLog(eventLogText),
     engagement,
+  });
+}
+
+async function apiWorkbench(req, res) {
+  const dashboardData = await getDashboardData();
+  const payload = await buildWorkbenchPayload(dashboardData);
+
+  json(res, {
+    ...payload,
+    cachedAt: new Date(dashboardCache.updatedAt).toISOString(),
+  });
+}
+
+async function apiBilling(req, res) {
+  const dashboardData = await getDashboardData();
+  const workbenchPayload = await buildWorkbenchPayload(dashboardData);
+  const payload = buildBillingAnalyticsPayload({
+    dashboardData,
+    workbenchPayload,
   });
 
   json(res, {
@@ -952,6 +1333,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/') return await servePage(req, res);
     if (req.method === 'GET' && path === '/api/dashboard') return await apiDashboard(req, res);
     if (req.method === 'GET' && path === '/api/workbench') return await apiWorkbench(req, res);
+    if (req.method === 'GET' && path === '/api/billing') return await apiBilling(req, res);
     if (req.method === 'GET' && path === '/api/user-engagement') return await apiUserEngagement(req, res);
     if (req.method === 'POST' && path === '/api/instances/create') return await apiCreate(req, res);
     if (req.method === 'POST' && path === '/api/converge') return await apiConverge(req, res);

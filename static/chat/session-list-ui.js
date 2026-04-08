@@ -273,7 +273,7 @@ function startRename(itemEl, session) {
   });
 }
 
-function attachSession(id, session) {
+function attachSession(id, session, { forceComposerFocus = false } = {}) {
   const shouldReattach = !hasAttachedSession || currentSessionId !== id;
   const previousSessionId = currentSessionId;
   if (
@@ -303,7 +303,7 @@ function attachSession(id, session) {
     Promise.resolve(stageSessionReviewedForAttachedSession(attachedSession)).catch(() => {});
   }
   if (typeof focusComposer === "function") {
-    focusComposer({ preventScroll: true });
+    focusComposer({ force: forceComposerFocus === true, preventScroll: true });
   } else {
     msgInput.focus();
   }

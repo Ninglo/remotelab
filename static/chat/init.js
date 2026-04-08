@@ -200,6 +200,48 @@ function shouldOpenMobileInstallFlow(authInfo) {
   );
 }
 
+function consumeLaunchIntent() {
+  const url = new URL(window.location.href);
+  const intent = (url.searchParams.get("intent") || "").trim().toLowerCase();
+  if (intent !== "new-session") {
+    return null;
+  }
+  url.searchParams.delete("intent");
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  return {
+    type: "new-session",
+  };
+}
+
+function prepareOwnerLaunchIntentBootstrap(launchIntent) {
+  if (!launchIntent || launchIntent.type !== "new-session" || visitorMode) {
+    return;
+  }
+  pendingNavigationState = null;
+  if (typeof setChatCurrentSession === "function") {
+    setChatCurrentSession(null, { hasAttachedSession: false });
+  } else {
+    currentSessionId = null;
+    hasAttachedSession = false;
+  }
+}
+
+async function handleOwnerLaunchIntent(launchIntent) {
+  if (!launchIntent || launchIntent.type !== "new-session") {
+    return false;
+  }
+  return createNewSessionShortcut({
+    closeSidebar: true,
+    forceComposerFocus: true,
+    sourceContext: {
+      channel: "pwa_shortcut",
+      entrypoint: "manifest_shortcut",
+      shortcutId: "new_session",
+      launchIntent: "new_session",
+    },
+  });
+}
+
 async function resolveInitialAuthInfo() {
   const bootstrapAuthInfo =
     typeof getBootstrapAuthInfo === "function"
@@ -273,6 +315,13 @@ async function initApp() {
       : false,
   });
 
+  const launchIntent = authInfo?.role === "owner" && !isAgentScopedMode()
+    ? consumeLaunchIntent()
+    : null;
+  if (launchIntent) {
+    prepareOwnerLaunchIntentBootstrap(launchIntent);
+  }
+
   if (isAgentScopedMode()) {
     const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });
     let toolsPromise = Promise.resolve();
@@ -293,7 +342,12 @@ async function initApp() {
   const toolsPromise = loadInlineTools({ skipModelLoad: true });
   const sessionsPromise = bootstrapViaHttp({ deferOwnerRestore: true });
   await Promise.all([toolsPromise, sessionsPromise]);
-  restoreOwnerSessionSelection();
+  const launchHandled = launchIntent
+    ? await handleOwnerLaunchIntent(launchIntent)
+    : false;
+  if (!launchHandled) {
+    restoreOwnerSessionSelection();
+  }
   connect();
   setupForegroundRefreshHandlers();
   void loadModelsForCurrentTool();

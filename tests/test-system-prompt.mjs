@@ -6,6 +6,8 @@ import path from 'path';
 const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'remotelab-system-prompt-'));
 process.env.HOME = tempHome;
 process.env.REMOTELAB_MEMORY_DIR = path.join(tempHome, 'instance-data', 'memory');
+process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://trial23.example.com';
+process.env.REMOTELAB_PLATFORM_SKILLS_DIR = path.join(tempHome, '.remotelab', 'platform', 'skills');
 
 const { buildSystemContext } = await import('../chat/system-prompt.mjs');
 
@@ -36,6 +38,10 @@ assert.match(context, /small, removable shared startup slice/);
 assert.match(context, /Prefer agent-side execution and the smallest necessary human checkpoint over handing the user a manual procedure/);
 assert.match(context, /Store only durable memory that changes future judgment/);
 assert.doesNotMatch(contextWithoutSharedDefaults, /Shared Startup Defaults/);
+assert.match(context, /~\/\.remotelab\/bin\/agenda add --title "Title" --start "ISO8601" --duration 60/);
+assert.match(context, /~\/\.remotelab\/platform\/skills\/calendar-write\.md/);
+assert.match(context, /Do not create completion targets for normal interactive calendar requests/);
+assert.doesNotMatch(context, /create a completion target with type "calendar"/);
 assert.match(context, /Cold-Start Context Capture/);
 assert.match(context, /fast first win and building a compact reusable working profile in parallel/);
 assert.match(context, /role, identity, recurring work patterns, common inputs\/tools, stakeholders, output preferences, boundaries, and success criteria/);

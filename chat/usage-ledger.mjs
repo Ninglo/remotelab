@@ -13,6 +13,7 @@ const DEFAULT_TOP = 10;
 let currentDateKey = '';
 let currentStream = null;
 let loggingDisabled = false;
+let detachedUsageSequence = 0;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -145,6 +146,152 @@ function resolveOperationInfo(session = {}, manifest = {}) {
   };
 }
 
+function sanitizeOperationKey(value) {
+  return trimString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'background_prompt';
+}
+
+export function classifyUsageOperation(input, extra = {}) {
+  const source = (input && typeof input === 'object' && !Array.isArray(input))
+    ? input
+    : {
+        operation: input,
+        internalOperation: extra.internalOperation,
+        internalRole: extra.internalRole,
+      };
+  const operation = trimString(source.operation)
+    || trimString(source.internalOperation)
+    || trimString(source.internalRole)
+    || 'user_turn';
+
+  switch (operation) {
+    case 'user_turn':
+      return {
+        key: operation,
+        label: 'User turn',
+        group: 'foreground',
+        category: 'user_chat',
+        background: false,
+      };
+    case 'reply_self_repair':
+      return {
+        key: operation,
+        label: 'Reply self repair',
+        group: 'background',
+        category: 'reply_automation',
+        background: true,
+      };
+    case 'reply_self_check':
+    case 'reply_self_check_review':
+      return {
+        key: operation,
+        label: 'Reply self check',
+        group: 'background',
+        category: 'reply_automation',
+        background: true,
+      };
+    case 'context_compaction_worker':
+    case 'context_compactor':
+      return {
+        key: operation,
+        label: 'Context compaction',
+        group: 'background',
+        category: 'context_management',
+        background: true,
+      };
+    case 'session_label_suggestion':
+      return {
+        key: operation,
+        label: 'Session labeling',
+        group: 'background',
+        category: 'session_management',
+        background: true,
+      };
+    case 'workflow_state_suggestion':
+      return {
+        key: operation,
+        label: 'Workflow state suggestion',
+        group: 'background',
+        category: 'session_management',
+        background: true,
+      };
+    case 'task_card_suggestion':
+      return {
+        key: operation,
+        label: 'Task card suggestion',
+        group: 'background',
+        category: 'memory_management',
+        background: true,
+      };
+    case 'memory_writeback_review':
+      return {
+        key: operation,
+        label: 'Memory writeback review',
+        group: 'background',
+        category: 'memory_management',
+        background: true,
+      };
+    case 'session_dispatch_classifier':
+      return {
+        key: operation,
+        label: 'Session dispatch classifier',
+        group: 'background',
+        category: 'orchestration',
+        background: true,
+      };
+    case 'trigger_delivery':
+      return {
+        key: operation,
+        label: 'Trigger delivery',
+        group: 'background',
+        category: 'delivery',
+        background: true,
+      };
+    case 'agent_delegate':
+      return {
+        key: operation,
+        label: 'Agent delegate',
+        group: 'background',
+        category: 'orchestration',
+        background: true,
+      };
+    default:
+      if (trimString(source.internalOperation) || trimString(source.internalRole)) {
+        return {
+          key: operation,
+          label: operation,
+          group: 'background',
+          category: 'other_internal',
+          background: true,
+        };
+      }
+      return {
+        key: operation,
+        label: operation,
+        group: 'foreground',
+        category: 'other_foreground',
+        background: false,
+      };
+  }
+}
+
+function buildOperationFields(source = {}) {
+  const classified = classifyUsageOperation(source);
+  return {
+    operationGroup: classified.group,
+    operationCategory: classified.category,
+    operationLabel: classified.label,
+    backgroundOperation: classified.background,
+  };
+}
+
+function createDetachedRunId(operation, timestampMs) {
+  detachedUsageSequence += 1;
+  return `detached_${sanitizeOperationKey(operation)}_${timestampMs}_${detachedUsageSequence}`;
+}
+
 export function buildUsageLedgerRecord({
   session,
   run,
@@ -224,6 +371,103 @@ export function buildUsageLedgerRecord({
     ...(operation.internalRole ? { internalRole: operation.internalRole } : {}),
     ...(operation.internalOperation ? { internalOperation: operation.internalOperation } : {}),
     operation: operation.operationKey,
+    ...buildOperationFields({
+      operation: operation.operationKey,
+      internalOperation: operation.internalOperation,
+      internalRole: operation.internalRole,
+    }),
+  };
+}
+
+export function buildDetachedUsageLedgerRecord({
+  session,
+  usageEvent,
+  tracking = {},
+  recordedAt = new Date(),
+} = {}) {
+  if (!session || !usageEvent) return null;
+
+  const timestampMs = normalizeTimestampMs(
+    trimString(tracking.completedAt)
+    || trimString(tracking.recordedAt)
+    || (recordedAt instanceof Date ? recordedAt.toISOString() : recordedAt)
+  );
+  const inputTokens = pickNonNegativeInt(usageEvent.inputTokens);
+  const outputTokens = pickNonNegativeInt(usageEvent.outputTokens);
+  const cachedInputTokens = pickNonNegativeInt(usageEvent.cachedInputTokens);
+  const reasoningTokens = pickNonNegativeInt(usageEvent.reasoningTokens);
+  const contextTokens = pickNonNegativeInt(usageEvent.contextTokens);
+  const contextWindowTokens = pickNonNegativeInt(usageEvent.contextWindowTokens);
+  const costUsd = pickFiniteNumber(usageEvent.costUsd);
+  const estimatedCostUsd = pickFiniteNumber(usageEvent.estimatedCostUsd);
+
+  if (!Number.isFinite(timestampMs)) return null;
+  if (
+    inputTokens === null
+    && outputTokens === null
+    && cachedInputTokens === null
+    && reasoningTokens === null
+    && contextTokens === null
+    && costUsd === null
+    && estimatedCostUsd === null
+  ) {
+    return null;
+  }
+
+  const principal = resolvePrincipal(session);
+  const internalRole = trimString(tracking.internalRole);
+  const internalOperation = trimString(tracking.internalOperation);
+  const operation = trimString(tracking.operation) || internalOperation || internalRole || 'background_prompt';
+  const tool = trimString(tracking.tool || session.tool);
+  const model = trimString(tracking.model || session.model);
+  const effort = trimString(tracking.effort || session.effort);
+  const requestId = trimString(tracking.requestId);
+  const state = trimString(tracking.state) || 'completed';
+  const timestampIso = new Date(timestampMs).toISOString();
+  const totalTokens = (inputTokens || 0) + (outputTokens || 0);
+
+  return {
+    type: 'run_usage',
+    ts: timestampIso,
+    recordedAt: new Date(timestampMs).toISOString(),
+    runId: trimString(tracking.runId) || createDetachedRunId(operation, timestampMs),
+    ...(requestId ? { requestId } : {}),
+    sessionId: trimString(session.id),
+    sessionName: trimString(tracking.sessionName || session.name),
+    ...(trimString(tracking.sessionGroup || session.group) ? { sessionGroup: trimString(tracking.sessionGroup || session.group) } : {}),
+    ...(trimString(tracking.rootSessionId || session.rootSessionId) ? { rootSessionId: trimString(tracking.rootSessionId || session.rootSessionId) } : {}),
+    principalType: principal.principalType,
+    principalId: principal.principalId,
+    principalName: principal.principalName,
+    ...(principal.userId ? { userId: principal.userId } : {}),
+    ...(principal.userName ? { userName: principal.userName } : {}),
+    ...(principal.visitorId ? { visitorId: principal.visitorId } : {}),
+    ...(principal.visitorName ? { visitorName: principal.visitorName } : {}),
+    tool,
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
+    state,
+    totalTokens,
+    inputTokens: inputTokens || 0,
+    outputTokens: outputTokens || 0,
+    ...(cachedInputTokens !== null ? { cachedInputTokens } : {}),
+    ...(reasoningTokens !== null ? { reasoningTokens } : {}),
+    ...(contextTokens !== null ? { contextTokens } : {}),
+    ...(contextWindowTokens !== null ? { contextWindowTokens } : {}),
+    ...(trimString(usageEvent.contextSource) ? { contextSource: trimString(usageEvent.contextSource) } : {}),
+    ...(costUsd !== null ? { costUsd: roundUsd(costUsd) } : {}),
+    ...(estimatedCostUsd !== null ? { estimatedCostUsd: roundUsd(estimatedCostUsd) } : {}),
+    ...(trimString(usageEvent.estimatedCostModel) ? { estimatedCostModel: trimString(usageEvent.estimatedCostModel) } : {}),
+    ...(trimString(usageEvent.costSource) ? { costSource: trimString(usageEvent.costSource) } : {}),
+    internalSession: tracking.internalSession === true || !!internalRole || !!trimString(session.internalRole),
+    ...(internalRole ? { internalRole } : {}),
+    ...(internalOperation ? { internalOperation } : {}),
+    operation,
+    ...buildOperationFields({
+      operation,
+      internalOperation,
+      internalRole,
+    }),
   };
 }
 
@@ -308,6 +552,11 @@ function normalizeLedgerRecord(record) {
     internalRole: trimString(record.internalRole),
     internalOperation: trimString(record.internalOperation),
     operation: trimString(record.operation) || trimString(record.internalOperation) || trimString(record.internalRole) || 'user_turn',
+    ...buildOperationFields({
+      operation: trimString(record.operation) || trimString(record.internalOperation) || trimString(record.internalRole) || 'user_turn',
+      internalOperation: trimString(record.internalOperation),
+      internalRole: trimString(record.internalRole),
+    }),
   };
 }
 
@@ -474,6 +723,10 @@ function summarizeTopRun(record) {
       ? { costSource: record.costSource }
       : {}),
     operation: record.operation,
+    operationGroup: record.operationGroup,
+    operationCategory: record.operationCategory,
+    operationLabel: record.operationLabel,
+    backgroundOperation: record.backgroundOperation === true,
   };
 }
 
@@ -540,10 +793,16 @@ export async function queryUsageLedger(options = {}) {
   const byTool = new Map();
   const byModel = new Map();
   const byOperation = new Map();
+  const byOperationGroup = new Map();
+  const byOperationCategory = new Map();
   const byDay = new Map();
   const bySession = new Map();
   let contextTokenSum = 0;
   let contextTokenCount = 0;
+  let backgroundTokens = 0;
+  let backgroundRuns = 0;
+  let foregroundTokens = 0;
+  let foregroundRuns = 0;
 
   for (const record of records) {
     appendMetrics(totals, record);
@@ -577,6 +836,19 @@ export async function queryUsageLedger(options = {}) {
     appendMetrics(operationBucket, record);
     touchLatest(operationBucket, record);
 
+    const operationGroupKey = trimString(record.operationGroup) || (record.backgroundOperation ? 'background' : 'foreground');
+    const operationGroupBucket = getOrCreateBucket(byOperationGroup, operationGroupKey, { label: operationGroupKey });
+    appendMetrics(operationGroupBucket, record);
+    touchLatest(operationGroupBucket, record);
+
+    const operationCategoryKey = trimString(record.operationCategory) || 'uncategorized';
+    const operationCategoryBucket = getOrCreateBucket(byOperationCategory, operationCategoryKey, {
+      label: operationCategoryKey,
+      operationGroup: operationGroupKey,
+    });
+    appendMetrics(operationCategoryBucket, record);
+    touchLatest(operationCategoryBucket, record);
+
     const dayBucket = getOrCreateBucket(byDay, record.day, { label: record.day });
     appendMetrics(dayBucket, record);
     touchLatest(dayBucket, record);
@@ -591,6 +863,14 @@ export async function queryUsageLedger(options = {}) {
     });
     appendMetrics(sessionBucket, record);
     touchLatest(sessionBucket, record);
+
+    if (record.backgroundOperation) {
+      backgroundTokens += record.totalTokens || 0;
+      backgroundRuns += 1;
+    } else {
+      foregroundTokens += record.totalTokens || 0;
+      foregroundRuns += 1;
+    }
   }
 
   return {
@@ -614,11 +894,20 @@ export async function queryUsageLedger(options = {}) {
       avgContextTokens: contextTokenCount > 0
         ? roundAverage(contextTokenSum / contextTokenCount)
         : null,
+      backgroundTokens,
+      backgroundRuns,
+      foregroundTokens,
+      foregroundRuns,
+      backgroundShare: totals.totalTokens > 0
+        ? roundAverage(backgroundTokens / totals.totalTokens)
+        : null,
     },
     byPrincipal: sortBuckets(byPrincipal, top),
     byTool: sortBuckets(byTool, top),
     byModel: sortBuckets(byModel, top),
     byOperation: sortBuckets(byOperation, top),
+    byOperationGroup: sortBuckets(byOperationGroup, top),
+    byOperationCategory: sortBuckets(byOperationCategory, top),
     byDay: sortBuckets(byDay, top),
     bySession: sortBuckets(bySession, top),
     topRuns: records.slice(0, top).map(summarizeTopRun),

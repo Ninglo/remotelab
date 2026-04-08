@@ -1,5 +1,12 @@
 import { homedir } from 'os';
-import { CHAT_PORT, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL, SHARED_STARTUP_DEFAULTS_ENABLED } from '../lib/config.mjs';
+import { join } from 'path';
+import {
+  CHAT_PORT,
+  MAINLAND_PUBLIC_BASE_URL,
+  PLATFORM_SKILLS_DIR,
+  PUBLIC_BASE_URL,
+  SHARED_STARTUP_DEFAULTS_ENABLED,
+} from '../lib/config.mjs';
 import {
   buildCalendarSubscriptionChannels,
   filterCalendarSubscriptionChannelsForExposure,
@@ -13,6 +20,7 @@ import {
   PROJECTS_MD,
   SKILLS_MD,
   buildPromptPathMap,
+  displayPromptPath,
 } from './prompt-paths.mjs';
 import { MANAGER_RUNTIME_BOUNDARY_SECTION } from './runtime-policy.mjs';
 import { buildSharedStartupDefaultsSection } from './shared-startup-defaults.mjs';
@@ -165,6 +173,9 @@ Bootstrap only needs to be tiny. Detailed memory belongs in projects.md, tasks/,
 
 async function buildConnectorCapabilitiesSection() {
   const connectorSections = [];
+  const home = homedir();
+  const agendaBinaryPath = displayPromptPath(join(home, '.remotelab', 'bin', 'agenda'), home);
+  const calendarSkillPath = displayPromptPath(join(PLATFORM_SKILLS_DIR, 'calendar-write.md'), home);
 
   try {
     const feedInfo = await getFeedInfo();
@@ -183,9 +194,11 @@ async function buildConnectorCapabilitiesSection() {
         ];
 
         connectorSections.push(`### Calendar
-Calendar events default to the instance iCal subscription feed. When the user requests a calendar event, create a completion target with type "calendar". The event is stored locally and immediately available in the .ics feed.
+Calendar events default to the instance iCal subscription feed. For ordinary calendar requests, write directly to that feed with \`${agendaBinaryPath} add --title "Title" --start "ISO8601" --duration 60\`. The write stays instance-local when the shell already carries \`REMOTELAB_INSTANCE_ROOT\` or \`REMOTELAB_CONFIG_DIR\`.
 
-If a calendar completion target already includes a ready bound calendar connector (\`bindingId\` plus any required auth metadata such as \`credentialsPath\`), the dispatcher may deliver to that bound calendar instead of the feed. Use that path when the user explicitly needs first-class calendar notifications instead of subscription-only sync.
+If you need the workflow details, read \`${calendarSkillPath}\`. Do not create completion targets for normal interactive calendar requests.
+
+If the user explicitly needs first-class external calendar notifications and a ready bound calendar connector is already present, you may use that bound connector instead of the feed.
 
 ${subscriptionLines.join('\n')}
 Events in feed: ${feedInfo.eventCount}

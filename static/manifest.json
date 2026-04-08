@@ -7,6 +7,21 @@
   "display": "standalone",
   "background_color": "#0a0a0a",
   "theme_color": "#0a0a0a",
+  "shortcuts": [
+    {
+      "name": "快速记录",
+      "short_name": "记录",
+      "description": "打开后立即新建一个会话",
+      "url": "/?intent=new-session",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
   "share_target": {
     "action": "share-receive",
     "method": "POST",

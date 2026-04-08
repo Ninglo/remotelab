@@ -207,18 +207,22 @@ async function main() {
     const summary = await waitFor(async () => {
       const res = await request(port, 'GET', '/api/usage/summary?days=1&top=5');
       if (res.status !== 200) return false;
-      if ((res.json?.runCount || 0) < 1) return false;
+      const byOperation = Array.isArray(res.json?.byOperation) ? res.json.byOperation : [];
+      if (!byOperation.find((entry) => entry.key === 'user_turn')) return false;
       return res.json;
     }, 'usage ledger summary');
 
-    assert.equal(summary.runCount, 1, 'completed run should be recorded in the usage ledger');
-    assert.equal(summary.totals.inputTokens, 1200, 'summary should preserve provider input tokens');
-    assert.equal(summary.totals.outputTokens, 80, 'summary should preserve provider output tokens');
-    assert.equal(summary.totals.totalTokens, 1280, 'summary should expose input + output totals');
-    assert.equal(summary.totals.costUsd, 0.012345, 'summary should preserve provider cost');
+    assert.ok(summary.runCount >= 1, 'completed run should be recorded in the usage ledger');
+    const userTurnBucket = summary.byOperation.find((entry) => entry.key === 'user_turn');
+    assert.equal(userTurnBucket?.inputTokens, 1200, 'user_turn bucket should preserve provider input tokens');
+    assert.equal(userTurnBucket?.outputTokens, 80, 'user_turn bucket should preserve provider output tokens');
+    assert.equal(userTurnBucket?.totalTokens, 1280, 'user_turn bucket should expose input + output totals');
+    assert.equal(userTurnBucket?.costUsd, 0.012345, 'user_turn bucket should preserve provider cost');
     assert.equal(summary.byTool[0].key, 'fake-claude', 'tool breakdown should include the session tool');
-    assert.equal(summary.byOperation[0].key, 'user_turn', 'normal chat runs should be tagged as user turns');
-    assert.equal(summary.topRuns[0].contextTokens, 1950, 'top runs should expose latest live context');
+    assert.ok(summary.byOperation.find((entry) => entry.key === 'user_turn'), 'normal chat runs should be tagged as user turns');
+    assert.equal(summary.byOperationGroup.find((entry) => entry.key === 'foreground')?.totalTokens, 1280, 'normal chat runs should count as foreground usage');
+    assert.equal(summary.byOperationCategory.find((entry) => entry.key === 'user_chat')?.totalTokens, 1280, 'normal chat runs should be categorized as user chat');
+    assert.equal(summary.topRuns.find((entry) => entry.operation === 'user_turn')?.contextTokens, 1950, 'top runs should expose latest live context');
 
     const ledgerDir = join(configDir, 'usage-ledger');
     assert.equal(existsSync(ledgerDir), true, 'usage ledger directory should be created');

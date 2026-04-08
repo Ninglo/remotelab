@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'fs/promises';
 import { createReadStream, watch } from 'fs';
+import { request as httpRequest } from 'http';
 import { homedir } from 'os';
 import { join, resolve, dirname, basename, extname, relative, isAbsolute, sep } from 'path';
 import { parse as parseUrl, fileURLToPath } from 'url';
@@ -34,9 +35,9 @@ import {
   resolveAttachmentMimeType,
   saveSessionAsTemplate,
   sendMessage,
+  submitHttpMessage,
   setSessionArchived,
   setSessionPinned,
-  submitHttpMessage,
   updateSessionEntryMode,
   updateSessionLastReviewedAt,
   updateSessionGrouping,
@@ -102,6 +103,9 @@ const serviceBuildRoots = [
 ];
 
 const serviceBuildStatusPaths = ['chat', 'lib', 'chat-server.mjs', 'package.json'];
+const ADMIN_PROXY_PREFIX = '/admin';
+const ADMIN_UPSTREAM_HOST = process.env.CHAT_ADMIN_UPSTREAM_HOST || '127.0.0.1';
+const ADMIN_UPSTREAM_PORT = Number.parseInt(process.env.CHAT_ADMIN_UPSTREAM_PORT || '7689', 10) || 7689;
 
 const execFileAsync = promisify(execFile);
 const BUILD_INFO = await loadBuildInfo();
@@ -213,6 +217,7 @@ async function readSessionMessagePayload(req, pathname) {
       ? payload.attachments.filter(Boolean)
       : (Array.isArray(payload?.images) ? payload.images.filter(Boolean) : []);
     return {
+      sessionId: typeof payload?.sessionId === 'string' ? payload.sessionId.trim() : '',
       requestId: typeof payload?.requestId === 'string' ? payload.requestId.trim() : '',
       runId: typeof payload?.runId === 'string' ? payload.runId.trim() : '',
       text: typeof payload?.text === 'string' ? payload.text : '',
@@ -280,6 +285,7 @@ async function readSessionMessagePayload(req, pathname) {
   }
 
   return {
+    sessionId: parseFormString(formData.get('sessionId')),
     requestId: parseFormString(formData.get('requestId')),
     runId: parseFormString(formData.get('runId')),
     text: parseFormString(formData.get('text')),
@@ -1276,9 +1282,97 @@ function parseShareAssetRoute(pathname) {
   return { shareId: match[1], assetId: match[2] };
 }
 
+function isAdminProxyPath(pathname) {
+  return pathname === ADMIN_PROXY_PREFIX || pathname.startsWith(`${ADMIN_PROXY_PREFIX}/`);
+}
+
+function rewriteAdminLocationHeader(location) {
+  const value = String(location || '').trim();
+  if (!value) return value;
+  if (value.startsWith(ADMIN_PROXY_PREFIX)) return value;
+  if (value.startsWith('/')) return `${ADMIN_PROXY_PREFIX}${value}`;
+  return value;
+}
+
+function rewriteAdminSetCookieHeader(headerValue) {
+  const text = String(headerValue || '');
+  const firstSemicolon = text.indexOf(';');
+  const firstPart = firstSemicolon >= 0 ? text.slice(0, firstSemicolon) : text;
+  const suffix = firstSemicolon >= 0 ? text.slice(firstSemicolon + 1) : '';
+  const equalsIndex = firstPart.indexOf('=');
+  if (equalsIndex < 0) return text;
+
+  const originalName = firstPart.slice(0, equalsIndex).trim();
+  const originalValue = firstPart.slice(equalsIndex + 1);
+  const segments = suffix
+    ? suffix.split(';').map((segment) => segment.trim()).filter(Boolean)
+    : [];
+  const filteredSegments = segments.filter((segment) => !/^path=/i.test(segment));
+  filteredSegments.unshift(`Path=${ADMIN_PROXY_PREFIX}`);
+  return `${originalName}=${originalValue}; ${filteredSegments.join('; ')}`;
+}
+
+async function proxyAdminRequest(req, res, parsedUrl) {
+  const pathname = parsedUrl?.pathname || req.url || '/';
+  const strippedPath = pathname.slice(ADMIN_PROXY_PREFIX.length) || '/';
+  const upstreamPath = `${strippedPath}${parsedUrl?.search || ''}`;
+
+  await new Promise((resolveProxy, rejectProxy) => {
+    const upstreamReq = httpRequest({
+      host: ADMIN_UPSTREAM_HOST,
+      port: ADMIN_UPSTREAM_PORT,
+      method: req.method,
+      path: upstreamPath,
+      headers: {
+        ...req.headers,
+        host: `${ADMIN_UPSTREAM_HOST}:${ADMIN_UPSTREAM_PORT}`,
+        'accept-encoding': 'identity',
+        'x-forwarded-prefix': ADMIN_PROXY_PREFIX,
+      },
+    }, (upstreamRes) => {
+      const headers = { ...upstreamRes.headers };
+      if (headers.location) {
+        headers.location = rewriteAdminLocationHeader(headers.location);
+      }
+      if (headers['set-cookie']) {
+        const values = Array.isArray(headers['set-cookie']) ? headers['set-cookie'] : [headers['set-cookie']];
+        headers['set-cookie'] = values.map((value) => rewriteAdminSetCookieHeader(value));
+      }
+      res.writeHead(upstreamRes.statusCode || 502, headers);
+      upstreamRes.pipe(res);
+      upstreamRes.on('end', resolveProxy);
+      upstreamRes.on('error', rejectProxy);
+    });
+
+    upstreamReq.on('error', rejectProxy);
+    req.pipe(upstreamReq);
+  }).catch((error) => {
+    if (!res.headersSent) {
+      res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(`Admin upstream unavailable: ${error?.message || error}`);
+    }
+  });
+}
+
 export async function handleRequest(req, res) {
   const parsedUrl = parseUrl(req.url, true);
   const pathname = parsedUrl.pathname;
+
+  if (isAdminProxyPath(pathname)) {
+    if (!await requireAuth(req, res)) return;
+    const authSession = getAuthSession(req);
+    if (authSession?.role !== 'owner') {
+      if (pathname === `${ADMIN_PROXY_PREFIX}/api` || pathname.startsWith(`${ADMIN_PROXY_PREFIX}/api/`)) {
+        writeJson(res, 403, { error: 'Owner access required' });
+        return;
+      }
+      res.writeHead(403, buildHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }));
+      res.end('Owner access required');
+      return;
+    }
+    await proxyAdminRequest(req, res, parsedUrl);
+    return;
+  }
 
   // Static assets (read from disk each time for hot-reload)
   const staticAsset = await resolveStaticAsset(pathname, parsedUrl.query);
@@ -1424,6 +1518,91 @@ export async function handleRequest(req, res) {
     writeJson,
     writeJsonCached,
   })) {
+    return;
+  }
+
+  if (pathname === '/upload-fallback' && req.method === 'GET') {
+    const sessionId = typeof parsedUrl?.query?.sessionId === 'string' ? parsedUrl.query.sessionId.trim() : '';
+    const escapedSessionId = escapeHtml(sessionId);
+    const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>应急上传</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; margin: 0; background: #f5f2ea; color: #1f2937; }
+    .wrap { max-width: 560px; margin: 0 auto; padding: 24px 16px 40px; }
+    .card { background: #fffdf8; border: 1px solid #d6d3c8; border-radius: 16px; padding: 18px; box-shadow: 0 8px 24px rgba(0,0,0,0.06); }
+    h1 { margin: 0 0 10px; font-size: 24px; }
+    p { line-height: 1.5; color: #4b5563; }
+    label { display: block; margin: 14px 0 6px; font-weight: 600; }
+    input[type="file"], textarea { width: 100%; box-sizing: border-box; }
+    textarea { min-height: 88px; padding: 10px 12px; border: 1px solid #c9c5b8; border-radius: 10px; background: #fff; }
+    input[type="file"] { padding: 10px 0; }
+    button { margin-top: 16px; width: 100%; border: 0; border-radius: 999px; padding: 14px 18px; background: #1f2937; color: #fff; font-size: 16px; font-weight: 600; }
+    .meta { font-size: 13px; color: #6b7280; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>应急上传</h1>
+      <p>这个页面绕过聊天输入框的附件逻辑，直接把文件送进当前会话。</p>
+      <p class="meta">sessionId: ${escapedSessionId || '未指定'}</p>
+      <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="sessionId" value="${escapedSessionId}">
+        <label for="text">说明</label>
+        <textarea id="text" name="text" placeholder="可选：给这个文件加一句说明"></textarea>
+        <label for="attachments">文件</label>
+        <input id="attachments" name="attachments" type="file" required>
+        <button type="submit">上传到当前会话</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>`;
+    res.writeHead(200, buildHeaders({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+    }));
+    res.end(html);
+    return;
+  }
+
+  if (pathname === '/upload-fallback' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readSessionMessagePayload(req, pathname);
+    } catch (error) {
+      res.writeHead(400, buildHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
+      res.end(`<p>上传失败：${escapeHtml(error?.message || 'Bad request')}</p>`);
+      return;
+    }
+    const sessionId = typeof body?.sessionId === 'string' ? body.sessionId.trim() : '';
+    if (!sessionId) {
+      res.writeHead(400, buildHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
+      res.end('<p>上传失败：缺少 sessionId</p>');
+      return;
+    }
+    if (!await requireSessionAccess(res, authSession, sessionId)) return;
+    try {
+      const attachments = await resolveRequestedSessionAttachments(authSession, body.attachments || [], { sessionId });
+      await submitHttpMessage(
+        sessionId,
+        typeof body?.text === 'string' ? body.text.trim() : '',
+        attachments,
+        { tool: 'codex', skipEmptyUserTextValidation: true },
+      );
+      res.writeHead(200, buildHeaders({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      }));
+      res.end('<p>上传成功。现在回到聊天页面刷新一下，就能看到文件了。</p>');
+    } catch (error) {
+      res.writeHead(500, buildHeaders({ 'Content-Type': 'text/html; charset=utf-8' }));
+      res.end(`<p>上传失败：${escapeHtml(error?.message || 'unknown error')}</p>`);
+    }
     return;
   }
 

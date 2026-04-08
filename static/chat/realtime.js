@@ -103,12 +103,15 @@ async function dispatchAction(msg) {
             sourceName: msg.sourceName || "",
             templateId: msg.templateId || "",
             templateName: msg.templateName || "",
+            sourceContext: msg.sourceContext,
           }),
         });
         if (data.session) {
           const session = upsertSession(data.session) || data.session;
           renderSessionList();
-          attachSession(session.id, session);
+          attachSession(session.id, session, {
+            forceComposerFocus: msg.forceComposerFocus === true,
+          });
         } else {
           await fetchSessionsList();
         }

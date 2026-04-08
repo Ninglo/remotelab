@@ -12,9 +12,11 @@ import {
   buildMainlandBaseUrl,
   formatGuestInstance,
   formatGuestInstanceLinks,
+  mergePlatformSkillsIndexContent,
   parseArgs,
   planGuestRuntimeDefaults,
   pickNextTrialInstanceName,
+  syncGuestPlatformSkills,
   syncGuestMailboxProvisioning,
 } from '../lib/guest-instance-command.mjs';
 import {
@@ -371,6 +373,55 @@ assert.equal(
   '',
   'Codex fallback should rely on the tool default instead of a hardcoded effort level',
 );
+
+const mergedSkillsIndex = mergePlatformSkillsIndexContent(`# Skills Index
+
+## Local Skills
+- File: \`skills/daily-assistant.md\`
+`, `<!-- REMOTELAB_PLATFORM_SKILLS:START -->
+## Shared Platform Skills
+### Calendar Write
+- File: \`~/.remotelab/platform/skills/calendar-write.md\`
+<!-- REMOTELAB_PLATFORM_SKILLS:END -->`);
+assert.match(mergedSkillsIndex, /## Local Skills/);
+assert.match(mergedSkillsIndex, /## Shared Platform Skills/);
+
+const platformSkillSyncHome = mkdtempSync(join(tmpdir(), 'remotelab-platform-skills-'));
+try {
+  const memoryDir = join(platformSkillSyncHome, '.remotelab', 'instances', 'trial23', 'memory');
+  const sourceSkillsDir = join(platformSkillSyncHome, '.remotelab', 'skills');
+  const platformSkillsDir = join(platformSkillSyncHome, '.remotelab', 'platform', 'skills');
+  mkdirSync(memoryDir, { recursive: true });
+  mkdirSync(sourceSkillsDir, { recursive: true });
+
+  writeFileSync(join(sourceSkillsDir, 'calendar-write.md'), '# Calendar Write\n', 'utf8');
+  writeFileSync(join(sourceSkillsDir, 'session-debug.md'), '# Session Debug\n', 'utf8');
+  writeFileSync(join(memoryDir, 'skills.md'), `# Skills Index
+
+## Local Skills
+- File: \`skills/daily-assistant.md\`
+`, 'utf8');
+
+  const firstSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
+  assert.equal(firstSync.changed, true);
+  assert.deepEqual(firstSync.seededSkillIds, ['calendar-write', 'session-debug']);
+  assert.deepEqual(firstSync.skillIds, ['calendar-write', 'session-debug']);
+  assert.equal(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), '# Calendar Write\n');
+  assert.equal(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), '# Session Debug\n');
+
+  const syncedIndex = readFileSync(join(memoryDir, 'skills.md'), 'utf8');
+  assert.match(syncedIndex, /## Local Skills/);
+  assert.match(syncedIndex, /## Shared Platform Skills/);
+  assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/calendar-write\.md/);
+  assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/session-debug\.md/);
+
+  const secondSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
+  assert.equal(secondSync.changed, false);
+  const syncedIndexAgain = readFileSync(join(memoryDir, 'skills.md'), 'utf8');
+  assert.equal(syncedIndexAgain, syncedIndex);
+} finally {
+  rmSync(platformSkillSyncHome, { recursive: true, force: true });
+}
 
 // ---- Multi-model micro-agent router (non-codex runtimeFamily) ----
 const ownerRouterTools = [

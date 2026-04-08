@@ -44,7 +44,7 @@ function request(port, path, options = {}) {
         res.on('end', () => {
           let json = null;
           try { json = data ? JSON.parse(data) : null; } catch {}
-          resolve({ status: res.statusCode, json, text: data });
+          resolve({ status: res.statusCode, headers: res.headers, json, text: data });
         });
       },
     );
@@ -240,6 +240,25 @@ function setupTempHome() {
       costSource: 'estimated_gpt_5_4',
       operation: 'user_turn',
     }),
+    JSON.stringify({
+      ts: '2026-03-27T18:00:00.000Z',
+      runId: 'run_trial24_3',
+      sessionId: 'sess-trial-2',
+      sessionName: 'Trial 24 session 2',
+      principalType: 'owner',
+      principalId: 'owner',
+      principalName: 'Owner',
+      tool: 'claude',
+      model: 'claude-sonnet',
+      state: 'completed',
+      totalTokens: 80,
+      inputTokens: 60,
+      outputTokens: 20,
+      estimatedCostUsd: 0.08,
+      estimatedCostModel: 'claude-sonnet',
+      costSource: 'estimated_background',
+      operation: 'session_label_suggestion',
+    }),
   ].join('\n') + '\n', 'utf8');
 
   writeFileSync(join(intakeConfigDir, 'usage-ledger', '2026-03-27.jsonl'), [
@@ -320,21 +339,30 @@ async function main() {
     assert.doesNotMatch(templateSource, /async function confirmCreate[\s\S]*?await loadAll\(\);/, 'custom instance creation should not trigger a full reload');
     assert.match(templateSource, /label: '预留'/, 'instance admin UI should render reserved instances distinctly');
     assert.match(templateSource, /usage\.key === 'occupied' \|\| usage\.key === 'reserved'/, 'occupied filter should include reserved instances');
+    assert.match(templateSource, /data-view="billing"/, 'instance admin UI should expose the billing monitoring view');
+
+    const pageRes = await request(port, '/');
+    assert.equal(pageRes.status, 200, pageRes.text);
+    assert.match(pageRes.text, /RemoteLab Admin/, 'admin root page should render the dashboard shell');
+
+    const billingPageRes = await request(port, '/?view=billing');
+    assert.equal(billingPageRes.status, 200, billingPageRes.text);
+    assert.match(billingPageRes.text, /data-view="billing"/, 'billing view should remain reachable from the admin shell route');
 
     const res = await request(port, '/api/dashboard');
     assert.equal(res.status, 200, res.text);
 
     const data = res.json || {};
     assert.ok(data.summary, res.text);
-    assert.equal(data.summary.usage.totalTokens, 480, 'dashboard summary should include fleet token totals');
+    assert.equal(data.summary.usage.totalTokens, 560, 'dashboard summary should include fleet token totals');
     assert.equal(data.summary.usage.costUsd, 0.25, 'dashboard summary should include exact fleet cost totals');
-    assert.equal(data.summary.usage.estimatedCostUsd, 0.52, 'dashboard summary should include estimated fleet cost totals');
+    assert.equal(data.summary.usage.estimatedCostUsd, 0.6, 'dashboard summary should include estimated fleet cost totals');
     assert.equal(data.summary.usage.byTool[0].key, 'micro-agent', 'dashboard summary should expose tool breakdowns');
 
     const trial24 = data.instances.find((entry) => entry.name === 'trial24');
     const intake1 = data.instances.find((entry) => entry.name === 'intake1');
-    assert.equal(trial24.usage.usageSummary.totals.totalTokens, 390, 'instance payload should include per-instance usage totals');
-    assert.equal(trial24.usage.usageSummary.totals.estimatedCostUsd, 0.4);
+    assert.equal(trial24.usage.usageSummary.totals.totalTokens, 470, 'instance payload should include per-instance usage totals');
+    assert.equal(trial24.usage.usageSummary.totals.estimatedCostUsd, 0.48);
     assert.equal(trial24.usage.usageSummary.byTool[0].key, 'micro-agent');
     assert.equal(intake1.usage.usageSummary.totals.totalTokens, 90);
     assert.equal(intake1.usage.usageSummary.totals.estimatedCostUsd, 0.12);
@@ -354,6 +382,19 @@ async function main() {
     assert.equal(workbench.summary.feedbackUsers, 1, 'workbench should detect feedback signals');
     assert.equal(workbench.instanceSummary.open, 0, 'workbench summary should exclude reserved instances from the available count');
     assert.equal(workbench.instanceSummary.occupied, 2, 'workbench summary should treat reserved instances as unavailable');
+
+    const billingRes = await request(port, '/api/billing');
+    assert.equal(billingRes.status, 200, billingRes.text);
+    const billing = billingRes.json || {};
+    assert.equal(billing.summary.totalTokens, 560, 'billing summary should aggregate fleet tokens');
+    assert.equal(billing.summary.backgroundTokens, 80, 'billing summary should separate background token usage');
+    assert.equal(billing.summary.usersWithUsage, 1, 'billing summary should attribute usage to bound users when possible');
+    assert.equal(billing.byUser[0]?.userName, 'Trial User', 'billing view should attribute bound instance usage to the user');
+    assert.equal(billing.byUser[0]?.totalTokens, 470, 'billing view should roll up user usage by bound instance');
+    const backgroundGroup = (billing.byOperationGroup || []).find((entry) => entry.key === 'background');
+    assert.equal(backgroundGroup?.totalTokens, 80, 'billing view should aggregate background operation groups');
+    const sessionManagementBucket = (billing.byOperationCategory || []).find((entry) => entry.key === 'session_management');
+    assert.equal(sessionManagementBucket?.totalTokens, 80, 'billing view should expose session-management background costs');
 
     const pendingBinding = workbench.pending?.queues?.needsBinding || [];
     const feedbackQueue = workbench.pending?.queues?.feedback || [];
