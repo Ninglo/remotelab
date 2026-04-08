@@ -34,11 +34,68 @@ function parseArgs(argv = []) {
   };
 }
 
+function unescapePlistXml(value) {
+  return String(value || '')
+    .replace(/&apos;/g, '\'')
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&');
+}
+
+function escapeRegex(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseStringValues(block = '') {
+  return Array.from(String(block || '').matchAll(/<string>([\s\S]*?)<\/string>/g))
+    .map((match) => unescapePlistXml(match[1] || ''));
+}
+
+function parseStringDict(block = '') {
+  const entries = Array.from(
+    String(block || '').matchAll(/<key>([\s\S]*?)<\/key>\s*<string>([\s\S]*?)<\/string>/g),
+  );
+  return Object.fromEntries(
+    entries.map(([, key, value]) => [
+      unescapePlistXml(key || ''),
+      unescapePlistXml(value || ''),
+    ]),
+  );
+}
+
+function parseLaunchAgentPlistFallback(content = '') {
+  const source = String(content || '');
+  const extractBlock = (key) => {
+    const pattern = new RegExp(
+      `<key>${escapeRegex(key)}</key>\\s*(<string>[\\s\\S]*?<\\/string>|<array>[\\s\\S]*?<\\/array>|<dict>[\\s\\S]*?<\\/dict>)`,
+    );
+    return source.match(pattern)?.[1] || '';
+  };
+  const readString = (key) => parseStringValues(extractBlock(key))[0] || '';
+  return {
+    Label: readString('Label'),
+    ProgramArguments: parseStringValues(extractBlock('ProgramArguments')),
+    EnvironmentVariables: parseStringDict(extractBlock('EnvironmentVariables')),
+    WorkingDirectory: readString('WorkingDirectory'),
+    StandardOutPath: readString('StandardOutPath'),
+    StandardErrorPath: readString('StandardErrorPath'),
+  };
+}
+
 async function readPlistJson(plistPath) {
-  const result = await execFileAsync('plutil', ['-convert', 'json', '-o', '-', plistPath], {
-    encoding: 'utf8',
-  });
-  return JSON.parse(result.stdout || '{}');
+  try {
+    const result = await execFileAsync('plutil', ['-convert', 'json', '-o', '-', plistPath], {
+      encoding: 'utf8',
+    });
+    return JSON.parse(result.stdout || '{}');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+  const content = await readFile(plistPath, 'utf8');
+  return parseLaunchAgentPlistFallback(content);
 }
 
 async function writeTextAtomic(path, value) {
