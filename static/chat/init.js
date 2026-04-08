@@ -298,6 +298,9 @@ async function initApp() {
   }
 
   if (shouldOpenMobileInstallFlow(authInfo)) {
+    if (typeof ensureServiceWorkerRegistration === "function") {
+      await ensureServiceWorkerRegistration();
+    }
     const installUrl = typeof window.remotelabResolveProductPath === "function"
       ? window.remotelabResolveProductPath("/m/install?source=auto")
       : "m/install?source=auto";

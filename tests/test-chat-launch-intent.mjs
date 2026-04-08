@@ -88,12 +88,16 @@ function createHarness({ href, search, isStandalone = true } = {}) {
   const restoreCalls = [];
   const connectCalls = [];
   const modelLoads = [];
+  const serviceWorkerCalls = [];
+  const locationReplaceCalls = [];
   const location = {
     href,
     pathname: '/',
     search,
     hash: '',
-    replace() {},
+    replace(url) {
+      locationReplaceCalls.push(url);
+    },
   };
   const context = {
     console: {
@@ -180,6 +184,7 @@ function createHarness({ href, search, isStandalone = true } = {}) {
       return false;
     },
     ensureServiceWorkerRegistration() {
+      serviceWorkerCalls.push(true);
       return Promise.resolve(null);
     },
     loadInlineTools() {
@@ -242,6 +247,8 @@ function createHarness({ href, search, isStandalone = true } = {}) {
     restoreCalls,
     connectCalls,
     modelLoads,
+    serviceWorkerCalls,
+    locationReplaceCalls,
   };
 }
 
@@ -292,5 +299,28 @@ await runInit(defaultHarness);
 assert.equal(defaultHarness.createCalls.length, 0, 'normal launches should not auto-create a session');
 assert.equal(defaultHarness.restoreCalls.length, 1, 'normal launches should keep the existing restore path');
 assert.deepEqual(defaultHarness.historyCalls, [], 'normal launches should not rewrite the URL');
+
+const mobileInstallHarness = createHarness({
+  href: 'https://chat.example.com/',
+  search: '',
+  isStandalone: false,
+});
+await runInit(mobileInstallHarness);
+
+assert.equal(
+  mobileInstallHarness.serviceWorkerCalls.length,
+  1,
+  'mobile install redirect should register the service worker before leaving the chat shell',
+);
+assert.deepEqual(
+  mobileInstallHarness.locationReplaceCalls,
+  ['/m/install?source=auto'],
+  'mobile install redirect should forward into the install flow once the service worker step completes',
+);
+assert.equal(
+  mobileInstallHarness.bootstrapCalls.length,
+  0,
+  'mobile install redirect should not bootstrap chat state before switching into install mode',
+);
 
 console.log('test-chat-launch-intent: ok');
