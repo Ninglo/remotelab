@@ -166,6 +166,44 @@
   overflow-y: auto;
 }
 .input-row textarea::placeholder { color: var(--text-muted); }
+.quick-entry-focus-prompt[hidden] {
+  display: none !important;
+}
+.quick-entry-focus-prompt {
+  padding: 0 12px 10px;
+}
+.quick-entry-focus-btn {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+  color: var(--text);
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: transform 0.12s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.quick-entry-focus-btn:active {
+  transform: scale(0.985);
+}
+.quick-entry-focus-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+}
+.quick-entry-focus-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.quick-entry-focus-body {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
 .composer-pending-state {
   display: none;
   align-items: center;

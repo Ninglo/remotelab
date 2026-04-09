@@ -146,7 +146,12 @@ initResponsiveLayout();
 
 const MOBILE_INSTALL_SKIP_STORAGE_KEY = "remotelab.mobileInstall.skipUntil";
 const MOBILE_INSTALL_SKIP_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+const QUICK_ENTRY_FOCUS_PROMPT_DELAY_MS = 420;
+const QUICK_ENTRY_FOCUS_RETRY_DELAY_MS = 160;
 let pendingInstallPromptEvent = null;
+let quickEntryFocusPromptTimer = 0;
+let quickEntryFocusRetryTimer = 0;
+let quickEntryFocusLayoutUnsubscribe = null;
 
 function isMobileInstallEligibleDevice() {
   const ua = navigator.userAgent || "";
@@ -251,6 +256,158 @@ window.addEventListener("beforeinstallprompt", (event) => {
   pendingInstallPromptEvent = event;
 });
 
+function getQuickEntryFocusPromptEls() {
+  return {
+    prompt: document.getElementById("quickEntryFocusPrompt"),
+    button: document.getElementById("quickEntryFocusBtn"),
+  };
+}
+
+function clearQuickEntryFocusTimers() {
+  if (quickEntryFocusPromptTimer) {
+    clearTimeout(quickEntryFocusPromptTimer);
+    quickEntryFocusPromptTimer = 0;
+  }
+  if (quickEntryFocusRetryTimer) {
+    clearTimeout(quickEntryFocusRetryTimer);
+    quickEntryFocusRetryTimer = 0;
+  }
+}
+
+function clearQuickEntryFocusRecovery() {
+  clearQuickEntryFocusTimers();
+  if (typeof quickEntryFocusLayoutUnsubscribe === "function") {
+    quickEntryFocusLayoutUnsubscribe();
+  }
+  quickEntryFocusLayoutUnsubscribe = null;
+  const { prompt } = getQuickEntryFocusPromptEls();
+  if (prompt) {
+    prompt.hidden = true;
+  }
+}
+
+function getQuickEntryLayoutState() {
+  if (window.RemoteLabLayout?.syncNow) {
+    return window.RemoteLabLayout.syncNow("quick-entry-focus-check");
+  }
+  if (window.RemoteLabLayout?.getState) {
+    return window.RemoteLabLayout.getState();
+  }
+  return {
+    isDesktop: typeof isDesktop === "boolean" ? isDesktop : false,
+    keyboardOpen: document.body?.classList?.contains("keyboard-open") === true,
+  };
+}
+
+function canAttemptQuickEntryComposerFocus() {
+  if (visitorMode || shareSnapshotMode || !msgInput || msgInput.disabled) {
+    return false;
+  }
+  const layoutState = getQuickEntryLayoutState();
+  return !layoutState?.isDesktop;
+}
+
+function shouldShowQuickEntryFocusPrompt() {
+  if (!canAttemptQuickEntryComposerFocus()) {
+    return false;
+  }
+  const layoutState = getQuickEntryLayoutState();
+  if (layoutState?.keyboardOpen) {
+    return false;
+  }
+  return !(typeof msgInput.value === "string" && msgInput.value.trim());
+}
+
+function attemptQuickEntryComposerFocus() {
+  if (!msgInput || msgInput.disabled) {
+    return false;
+  }
+  let focused = false;
+  if (typeof focusComposer === "function") {
+    focused = focusComposer({ force: true, preventScroll: true }) === true;
+  } else if (typeof msgInput.focus === "function") {
+    try {
+      msgInput.focus({ preventScroll: true });
+    } catch {
+      msgInput.focus();
+    }
+    focused = true;
+  }
+  if (focused && typeof msgInput.setSelectionRange === "function") {
+    const cursor = typeof msgInput.value === "string" ? msgInput.value.length : 0;
+    try {
+      msgInput.setSelectionRange(cursor, cursor);
+    } catch {}
+  }
+  if (focused && navigator.virtualKeyboard?.show) {
+    try {
+      navigator.virtualKeyboard.show();
+    } catch {}
+  }
+  return focused;
+}
+
+function syncQuickEntryFocusPromptVisibility() {
+  const { prompt } = getQuickEntryFocusPromptEls();
+  if (!prompt) {
+    return false;
+  }
+  const shouldShow = shouldShowQuickEntryFocusPrompt();
+  prompt.hidden = !shouldShow;
+  return shouldShow;
+}
+
+function beginQuickEntryFocusRecovery() {
+  clearQuickEntryFocusRecovery();
+  if (!canAttemptQuickEntryComposerFocus()) {
+    return false;
+  }
+  attemptQuickEntryComposerFocus();
+  if (window.RemoteLabLayout?.subscribe) {
+    quickEntryFocusLayoutUnsubscribe = window.RemoteLabLayout.subscribe((state) => {
+      if (state?.keyboardOpen) {
+        clearQuickEntryFocusRecovery();
+      }
+    });
+  }
+  const { prompt } = getQuickEntryFocusPromptEls();
+  if (!prompt) {
+    return true;
+  }
+  if (!shouldShowQuickEntryFocusPrompt()) {
+    return true;
+  }
+  quickEntryFocusPromptTimer = setTimeout(() => {
+    quickEntryFocusPromptTimer = 0;
+    if (!syncQuickEntryFocusPromptVisibility()) {
+      clearQuickEntryFocusRecovery();
+    }
+  }, QUICK_ENTRY_FOCUS_PROMPT_DELAY_MS);
+  return true;
+}
+
+function wireQuickEntryFocusPrompt() {
+  const { button } = getQuickEntryFocusPromptEls();
+  if (button && !button.dataset.bound) {
+    button.dataset.bound = "1";
+    button.addEventListener("click", () => {
+      attemptQuickEntryComposerFocus();
+      quickEntryFocusRetryTimer = setTimeout(() => {
+        quickEntryFocusRetryTimer = 0;
+        if (!syncQuickEntryFocusPromptVisibility()) {
+          clearQuickEntryFocusRecovery();
+        }
+      }, QUICK_ENTRY_FOCUS_RETRY_DELAY_MS);
+    });
+  }
+  if (msgInput && !msgInput.dataset.quickEntryFocusBound) {
+    msgInput.dataset.quickEntryFocusBound = "1";
+    msgInput.addEventListener("input", () => {
+      clearQuickEntryFocusRecovery();
+    });
+  }
+}
+
 function consumeLaunchIntent() {
   const url = new URL(window.location.href);
   const intent = (url.searchParams.get("intent") || "").trim().toLowerCase();
@@ -281,7 +438,7 @@ async function handleOwnerLaunchIntent(launchIntent) {
   if (!launchIntent || launchIntent.type !== "new-session") {
     return false;
   }
-  return createNewSessionShortcut({
+  const created = await createNewSessionShortcut({
     closeSidebar: true,
     forceComposerFocus: true,
     sourceContext: {
@@ -291,6 +448,10 @@ async function handleOwnerLaunchIntent(launchIntent) {
       launchIntent: "new_session",
     },
   });
+  if (created) {
+    beginQuickEntryFocusRecovery();
+  }
+  return created;
 }
 
 async function resolveInitialAuthInfo() {
@@ -310,6 +471,7 @@ async function resolveInitialAuthInfo() {
 
 async function initApp() {
   captureInstallSkipIntent();
+  wireQuickEntryFocusPrompt();
 
   const shareSnapshot =
     typeof getBootstrapShareSnapshot === "function"
@@ -464,9 +626,7 @@ async function handleShareTargetData() {
       await addAttachmentFiles(sharedFiles);
     }
 
-    if (typeof msgInput !== "undefined" && msgInput) {
-      msgInput.focus();
-    }
+    beginQuickEntryFocusRecovery();
   } catch (err) {
     console.warn("[share-target] Failed to process shared data:", err);
   }

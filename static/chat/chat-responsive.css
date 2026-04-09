@@ -87,6 +87,12 @@
   }
 }
 
+@media (min-width: 768px) {
+  .quick-entry-focus-prompt {
+    display: none !important;
+  }
+}
+
 /* ---- Visitor mode: chat-only, no sidebar ---- */
 body.visitor-mode .sidebar-overlay { display: none !important; }
 body.visitor-mode .header #menuBtn { display: none !important; }

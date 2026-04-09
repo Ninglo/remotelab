@@ -165,6 +165,12 @@
           <button class="send-btn" id="sendBtn" disabled title="Send" aria-label="Send" data-i18n-title="action.send" data-i18n-aria-label="action.send" data-icon="send">&#9654;</button>
           <button class="cancel-btn" id="cancelBtn" title="Stop" aria-label="Stop" data-i18n-title="action.stop" data-i18n-aria-label="action.stop" data-icon="debug-stop" style="display:none">&#9632;</button>
         </div>
+        <div class="quick-entry-focus-prompt" id="quickEntryFocusPrompt" hidden>
+          <button class="quick-entry-focus-btn" id="quickEntryFocusBtn" type="button">
+            <span class="quick-entry-focus-title" data-i18n="quickEntry.focusPrompt.title">Tap to start typing</span>
+            <span class="quick-entry-focus-body" data-i18n="quickEntry.focusPrompt.body">Some phones do not open the keyboard automatically from a PWA shortcut.</span>
+          </button>
+        </div>
         <div class="composer-pending-state" id="composerPendingState" aria-live="polite"></div>
       </div>
       <div class="input-footer">

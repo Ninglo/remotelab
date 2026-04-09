@@ -254,6 +254,7 @@ async function main() {
     assert.doesNotMatch(page.text, /id="forkSessionBtn"/, 'fork should no longer occupy the top header');
     assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"/, 'share should render as a lighter icon-led secondary action');
     assert.match(page.text, /id="msgInput"[\s\S]*id="sendBtn"/, 'send button should render immediately after the composer textarea');
+    assert.match(page.text, /id="quickEntryFocusPrompt" hidden/, 'chat page should include the quick-entry focus recovery prompt shell');
     assert.doesNotMatch(page.text, /id="voiceInputStatus"/);
     assert.match(page.text, /id="tabSettings"/);
     assert.doesNotMatch(page.text, /id="collapseBtn"/, 'desktop sidebar should no longer expose a collapse control');
@@ -308,6 +309,7 @@ async function main() {
     assert.match(combinedChatStyles, /\.messages\s*\{[\s\S]*?min-height:\s*0;/);
     assert.match(combinedChatStyles, /\.messages-inner\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/, 'message column should stay bound to the available chat width');
     assert.match(combinedChatStyles, /\.input-resize-handle\s*\{[\s\S]*?margin:\s*0 calc\(var\(--chat-gutter\) \* -1\) 8px;/, 'resize handle should mirror the current chat gutter so it does not create horizontal overflow on mobile');
+    assert.match(combinedChatStyles, /\.quick-entry-focus-btn\s*\{[\s\S]*?width:\s*100%;/, 'chat styles should expose a full-width quick-entry focus fallback button');
     assert.doesNotMatch(combinedChatStyles, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
     assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'desktop modals should offset against the fixed-width sidebar');
     assert.match(combinedChatStyles, /body\.keyboard-open \.messages/);
