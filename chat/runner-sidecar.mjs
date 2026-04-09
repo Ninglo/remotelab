@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { createToolInvocation, prependAttachmentPaths, resolveCommand, resolveCwd } from './process-runner.mjs';
+import { createToolInvocation, prependAttachmentPaths, resolveCommand } from './process-runner.mjs';
 import { buildFileAssetDirectUrl, materializeFileAssetAttachments } from './file-assets.mjs';
 import {
   buildCodexContextMetricsPayload,
@@ -17,6 +17,7 @@ import {
   updateRun,
   writeRunResult,
 } from './runs.mjs';
+import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { applyManagedRuntimeEnv } from './runtime-policy.mjs';
 
@@ -26,9 +27,108 @@ const PROJECT_ROOT = join(__dirname, '..');
 
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const IDLE_CHECK_INTERVAL_MS = 30 * 1000; // check every 30 seconds
+let fatalSidecarTerminationInFlight = false;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeErrorMessage(error, fallback = 'Unknown sidecar error') {
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();
+  if (error === null || error === undefined) return fallback;
+  try {
+    const serialized = JSON.stringify(error);
+    return serialized && serialized !== '{}' ? serialized : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeDiagnosticDetails(details) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
+  try {
+    return JSON.parse(JSON.stringify(details));
+  } catch {
+    return null;
+  }
+}
+
+async function logSidecarDiagnostic(runId, message, details = null) {
+  const payload = safeDiagnosticDetails(details);
+  const printable = payload ? ` ${JSON.stringify(payload)}` : '';
+  console.error(`[sidecar] ${message}${printable}`);
+  if (!runId) return;
+  try {
+    await appendRunSpoolRecord(runId, {
+      ts: nowIso(),
+      stream: 'error',
+      line: payload ? `${message} ${JSON.stringify(payload)}` : message,
+      json: payload
+        ? { type: 'sidecar.diagnostic', message, details: payload }
+        : { type: 'sidecar.diagnostic', message },
+    });
+  } catch (error) {
+    console.error(`[sidecar] Failed to append diagnostic for run ${runId}: ${normalizeErrorMessage(error)}`);
+  }
+}
+
+async function persistRunTerminalState(runId, result, nextState, options = {}) {
+  try {
+    await writeRunResult(runId, result);
+  } catch (error) {
+    await logSidecarDiagnostic(runId, 'Failed to persist detached runner result', {
+      error: normalizeErrorMessage(error),
+      nextState,
+      resultCompletedAt: result?.completedAt || null,
+    });
+  }
+
+  try {
+    await updateRun(runId, (current) => ({
+      ...current,
+      state: nextState,
+      completedAt: result?.completedAt || nowIso(),
+      result,
+      ...(Object.prototype.hasOwnProperty.call(options, 'failureReason')
+        ? { failureReason: options.failureReason }
+        : {}),
+    }));
+  } catch (error) {
+    await logSidecarDiagnostic(runId, 'Failed to persist detached runner status', {
+      error: normalizeErrorMessage(error),
+      nextState,
+      resultCompletedAt: result?.completedAt || null,
+    });
+  }
+}
+
+async function persistRunFailure(runId, error, options = {}) {
+  const cancelled = options.cancelled === true;
+  const message = normalizeErrorMessage(error);
+  if (options.logMessage !== false) {
+    await logSidecarDiagnostic(
+      runId,
+      options.logLabel || 'Detached runner failed before persisting a result',
+      {
+        error: message,
+        ...(safeDiagnosticDetails(options.details) || {}),
+      },
+    );
+  }
+
+  const result = {
+    completedAt: nowIso(),
+    exitCode: Number.isInteger(options.exitCode) ? options.exitCode : 1,
+    signal: typeof options.signal === 'string' && options.signal ? options.signal : null,
+    cancelled,
+    ...(cancelled ? {} : { error: message }),
+  };
+
+  await persistRunTerminalState(runId, result, cancelled ? 'cancelled' : 'failed', {
+    ...(cancelled ? {} : { failureReason: message }),
+  });
+  return result;
 }
 
 async function cleanEnv(toolId, manifest = {}, options = {}) {
@@ -95,6 +195,46 @@ async function appendCodexContextMetrics(runId) {
   return metrics;
 }
 
+async function appendCodexContextMetricsSafely(runId) {
+  try {
+    if (process.env.REMOTELAB_TEST_THROW_ON_FINALIZATION_METRICS === '1') {
+      throw new Error('Synthetic finalization metrics failure');
+    }
+    return await appendCodexContextMetrics(runId);
+  } catch (error) {
+    await logSidecarDiagnostic(runId, 'Failed to append Codex context metrics during runner finalization', {
+      error: normalizeErrorMessage(error),
+    });
+    return null;
+  }
+}
+
+async function abortSidecarFromFatal(error, label) {
+  if (fatalSidecarTerminationInFlight) return;
+  fatalSidecarTerminationInFlight = true;
+  const details = {};
+  if (typeof error?.stack === 'string' && error.stack) {
+    details.stack = error.stack;
+  }
+  try {
+    await persistRunFailure(runId, error, {
+      logLabel: label,
+      details,
+    });
+  } catch (persistError) {
+    console.error(`[sidecar] Failed to persist fatal termination for run ${runId}: ${normalizeErrorMessage(persistError)}`);
+  }
+  process.exit(1);
+}
+
+process.on('unhandledRejection', (reason) => {
+  void abortSidecarFromFatal(reason, 'Detached runner hit an unhandled rejection');
+});
+
+process.on('uncaughtException', (error) => {
+  void abortSidecarFromFatal(error, 'Detached runner crashed with an uncaught exception');
+});
+
 async function main() {
   if (!runId) {
     process.exit(1);
@@ -111,7 +251,14 @@ async function main() {
     state: 'running',
     startedAt: current.startedAt || nowIso(),
     runnerProcessId: process.pid,
+    runnerUnitName: current?.runnerUnitName || process.env.REMOTELAB_RUNNER_UNIT_NAME || null,
+    runnerUnitScope: current?.runnerUnitScope || process.env.REMOTELAB_RUNNER_UNIT_SCOPE || null,
+    runnerLaunchMode: current?.runnerLaunchMode || process.env.REMOTELAB_RUNNER_LAUNCH_MODE || null,
   }));
+
+  if (process.env.REMOTELAB_TEST_RUNNER_SIDECAR_FAIL_BEFORE_TOOL_SPAWN === '1') {
+    throw new Error('Synthetic sidecar failure before tool spawn');
+  }
 
   const materializedImages = await materializeFileAssetAttachments(manifest.options?.images || []);
   if (materializedImages.some((attachment) => typeof attachment?.assetId === 'string' && typeof attachment?.savedPath === 'string')) {
@@ -165,8 +312,17 @@ async function main() {
     spawnEnv.REMOTELAB_ATTACHMENT_PATHS = JSON.stringify(attachmentPaths);
   }
 
+  const resolvedFolder = resolveRunnableSessionFolder(manifest.folder);
+  if (resolvedFolder.repaired) {
+    await logSidecarDiagnostic(runId, 'Repaired stale session folder before tool launch', {
+      requestedCwd: resolvedFolder.requestedCwd,
+      cwd: resolvedFolder.cwd,
+      reason: resolvedFolder.reason,
+    });
+  }
+
   const proc = spawn(await resolveCommand(command), args, {
-    cwd: resolveCwd(manifest.folder),
+    cwd: resolvedFolder.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: spawnEnv,
   });
@@ -263,25 +419,14 @@ async function main() {
     void (async () => {
       clearInterval(cancelTimer);
       clearInterval(idleTimer);
-      await appendRunSpoolRecord(runId, {
-        ts: nowIso(),
-        stream: 'error',
-        line: error.message,
+      const current = await getRun(runId) || run;
+      await persistRunFailure(runId, error, {
+        cancelled: current.cancelRequested === true,
+        logLabel: 'Detached tool process failed before completion',
+        details: {
+          phase: 'tool-process-error',
+        },
       });
-      const result = {
-        completedAt: nowIso(),
-        exitCode: 1,
-        signal: null,
-        error: error.message,
-      };
-      await writeRunResult(runId, result);
-      await updateRun(runId, (current) => ({
-        ...current,
-        state: current.cancelRequested ? 'cancelled' : 'failed',
-        completedAt: result.completedAt,
-        result,
-        failureReason: error.message,
-      }));
       process.exit(1);
     })();
   });
@@ -292,24 +437,22 @@ async function main() {
       clearInterval(idleTimer);
       const current = await getRun(runId) || run;
       const completedAt = nowIso();
-      await appendCodexContextMetrics(runId);
+      await appendCodexContextMetricsSafely(runId);
       const result = {
         completedAt,
         exitCode: code ?? 1,
         signal: signal || null,
         cancelled: current.cancelRequested === true,
       };
-      await writeRunResult(runId, result);
-      await updateRun(runId, (draft) => ({
-        ...draft,
-        state: draft.cancelRequested
+      await persistRunTerminalState(
+        runId,
+        result,
+        current.cancelRequested
           ? 'cancelled'
           : (code ?? 1) === 0
             ? 'completed'
             : 'failed',
-        completedAt,
-        result,
-      }));
+      );
       process.exit(code ?? 1);
     })();
   });
@@ -317,17 +460,14 @@ async function main() {
 
 main().catch((error) => {
   void (async () => {
-    await appendRunSpoolRecord(runId, {
-      ts: nowIso(),
-      stream: 'error',
-      line: error.message,
+    const current = await getRun(runId);
+    await persistRunFailure(runId, error, {
+      cancelled: current?.cancelRequested === true,
+      logLabel: 'Detached runner main() failed before tool completion',
+      details: {
+        phase: 'main-catch',
+      },
     });
-    await updateRun(runId, (current) => ({
-      ...current,
-      state: current?.cancelRequested ? 'cancelled' : 'failed',
-      completedAt: nowIso(),
-      failureReason: error.message,
-    }));
     process.exit(1);
   })();
 });

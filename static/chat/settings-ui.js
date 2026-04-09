@@ -2,13 +2,10 @@ function t(key, vars) {
   return window.remotelabT ? window.remotelabT(key, vars) : key;
 }
 
-const CREATE_AGENT_TEMPLATE_ID = "app_create_app";
 const HIDDEN_MANAGED_AGENT_IDS = new Set([
   "email",
-  "app_welcome",
-  "app_basic_chat",
-  CREATE_AGENT_TEMPLATE_ID,
 ]);
+const CREATE_AGENT_STARTER_PRESET = "create_agent";
 let managedAppsCache = [];
 let managedAppsLoaded = false;
 
@@ -110,12 +107,6 @@ function temporarilyUpdateButtonLabel(button, label, {
     button.textContent = previousLabel;
     button.disabled = false;
   }, durationMs);
-}
-
-function findManagedAppById(appId) {
-  return Array.isArray(managedAppsCache)
-    ? managedAppsCache.find((app) => app?.id === appId) || null
-    : null;
 }
 
 async function openManagedAppSession(app, { rememberPreference = true } = {}) {
@@ -303,14 +294,26 @@ async function createAgentBuilderSession() {
     createAgentBtn.disabled = true;
   }
   try {
-    if (!managedAppsLoaded) {
-      await fetchManagedApps();
+    const tool = preferredTool || selectedTool || toolsList[0]?.id || "";
+    if (!tool || typeof dispatchAction !== "function") {
+      throw new Error(t("settings.apps.openFailed"));
     }
-    const builderApp = findManagedAppById(CREATE_AGENT_TEMPLATE_ID);
-    if (!builderApp) {
-      throw new Error(t("settings.apps.builderMissing"));
+    if (typeof switchTab === "function") {
+      switchTab("sessions");
     }
-    await openManagedAppSession(builderApp, { rememberPreference: false });
+    if (typeof closeSidebarFn === "function" && !isDesktop) {
+      closeSidebarFn();
+    }
+    await dispatchAction({
+      action: "create",
+      folder: "~",
+      tool,
+      name: t("settings.apps.create"),
+      sourceId: DEFAULT_APP_ID,
+      sourceName: DEFAULT_WEB_SOURCE_NAME,
+      starterPreset: CREATE_AGENT_STARTER_PRESET,
+      forceComposerFocus: true,
+    });
   } finally {
     if (createAgentBtn) {
       createAgentBtn.disabled = false;

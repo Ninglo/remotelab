@@ -3,24 +3,29 @@ import { homedir } from 'os';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-import { CHAT_PORT, INSTANCE_ROOT, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { CHAT_PORT, INSTANCE_ROOT } from '../lib/config.mjs';
 import {
-  buildCalendarSubscriptionChannels,
-  filterCalendarSubscriptionChannelsForExposure,
+  CALENDAR_SUBSCRIBE_HELPER_PATH,
+  buildCalendarSubscribeHelperPath,
   getFeedInfo,
 } from '../lib/connector-calendar-feed.mjs';
 import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
+import {
+  WELCOME_STARTER_MESSAGE,
+  WELCOME_STARTER_SYSTEM_PROMPT,
+  resolveDefaultStarterToolId,
+} from './starter-session-content.mjs';
+import { WELCOME_STARTER_PRESET } from './session-starter-preset.mjs';
 
-import { BASIC_CHAT_APP_ID, WELCOME_APP_ID, getApp } from './apps.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import { appendEvents, readEventsAfter } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { SESSION_ENTRY_MODE_READ } from './session-entry-mode.mjs';
 import {
-  applyTemplateToSession,
   createSession,
   getSession,
   listSessions,
+  setSessionArchived,
   setSessionPinned,
   updateSessionEntryMode,
   updateSessionGrouping,
@@ -43,6 +48,7 @@ const OWNER_BOOTSTRAP_DIGEST_SHOWCASE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:sho
 const OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:showcase:instance_email';
 const OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:guide:calendar_subscribe';
 const OWNER_BOOTSTRAP_SHORTCUTS_GUIDE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:guide:shortcuts';
+const OWNER_BOOTSTRAP_GUEST_MIGRATION_GUIDE_EXTERNAL_TRIGGER_ID = 'owner_bootstrap:guide:guest_local_migration';
 
 async function safeReadJson(filePath, fallbackValue = null) {
   try {
@@ -139,39 +145,55 @@ function buildDigestShowcaseIntro() {
   ].join('\n\n');
 }
 
-async function resolveCalendarSubscriptionUrls() {
+function isGuestBootstrapContext() {
+  const instanceName = basename(INSTANCE_ROOT || '').trim().toLowerCase();
+  return !!instanceName && instanceName !== 'owner';
+}
+
+function buildGuestMigrationGuideMessages() {
+  return [
+    {
+      role: 'assistant',
+      content: [
+        '这个实例已经预留了本地迁移入口。我可以直接从你的旧电脑里盘点项目目录、读取少量说明文本，再把真正有价值的文件拉进这个实例。',
+        '目标不是让你自己判断该上传什么，而是先把“旧电脑里的项目上下文”迁进来，后面就尽量都在这个实例里继续协作。',
+        '你可以直接这样开口：',
+        '- “先连接我的本地文件，从整机里找 xxx 项目，列出最相关的 rvt / dwg / pdf / xlsx。”',
+        '- “先别全量上传，先盘点目录结构，再把最关键的文件拉进当前实例。”',
+        '- “把旧项目里能解释背景的 README、交付说明、表格和图纸先带进来。”',
+      ].join('\n\n'),
+    },
+    {
+      role: 'assistant',
+      content: [
+        '迁移的典型顺序是这样的：',
+        '1. 安装一次本地助手并连上这个实例。',
+        '2. 我先列目录、搜关键词、读少量说明文本，必要时再继续往下钻。',
+        '3. 确认有价值后，再按需把文件拉进当前实例。',
+        '4. 迁移完成后，后续沟通和交付都继续留在这个实例里。',
+        '如果你只知道项目大概在本机哪个盘、哪个目录附近，也够了；剩下的目录盘点和筛选我来做。',
+      ].join('\n\n'),
+    },
+  ];
+}
+
+async function hasCalendarSubscriptionGuide() {
   try {
     const feedInfo = await getFeedInfo();
-    if (!feedInfo?.feedToken) return null;
-    const channels = buildCalendarSubscriptionChannels({
-      feedToken: feedInfo.feedToken,
-      mainlandBaseUrl: MAINLAND_PUBLIC_BASE_URL,
-      publicBaseUrl: PUBLIC_BASE_URL,
-      preferredBaseUrl: MAINLAND_PUBLIC_BASE_URL || PUBLIC_BASE_URL,
-    });
-    const exposedChannels = filterCalendarSubscriptionChannelsForExposure(channels);
-    return exposedChannels.variants.length > 0 ? exposedChannels : null;
+    return !!feedInfo?.feedToken;
   } catch {
-    return null;
+    return false;
   }
 }
 
-function buildCalendarGuideMessages(calendarUrls) {
-  if (!calendarUrls) return null;
-  const variant = calendarUrls.variants[0] || null;
-  const variantLines = variant
-    ? [
-        `**推荐订阅入口：**\n[点击订阅日历](${variant.webcalUrl || variant.httpsUrl})`,
-        `手动订阅地址：\n${variant.httpsUrl}`,
-      ]
-    : [];
-
+function buildCalendarGuideMessages() {
   return [
     {
       role: 'assistant',
       content: [
         '这个实例支持日历订阅功能。我创建的所有日程事件都会写入一个 iCal 订阅源，你只需要订阅一次，之后所有新事件都会自动同步到你的日历 app 里。',
-        ...variantLines,
+        `**推荐订阅入口：**\n[点击订阅日历](${buildCalendarSubscribeHelperPath()})`,
+        `手动订阅入口：\n[使用 HTTPS 订阅](${buildCalendarSubscribeHelperPath({ format: 'https' })})`,
         '点击上面的链接后，系统会弹出"订阅日历？"的确认框，确认即可。',
         '**各平台操作方式：**',
         '- **iOS**：设置 → 日历 → 账户 → 添加账户 → 其他 → 添加已订阅的日历 → 粘贴地址',
@@ -185,33 +207,60 @@ function buildCalendarGuideMessages(calendarUrls) {
 }
 
 async function getOwnerBootstrapSessionDefinitions() {
-  const [mailboxAddress, calendarUrls] = await Promise.all([
+  const [mailboxAddress, calendarGuideEnabled, defaultToolId] = await Promise.all([
     resolveCurrentMailboxAddress(),
-    resolveCalendarSubscriptionUrls(),
+    hasCalendarSubscriptionGuide(),
+    resolveDefaultStarterToolId(),
   ]);
+  const definitions = [];
+  let sidebarOrder = 1;
+  const pushDefinition = (definition) => {
+    definitions.push({
+      ...definition,
+      sidebarOrder,
+    });
+    sidebarOrder += 1;
+  };
 
-  return [
-    {
-      templateId: WELCOME_APP_ID,
+  pushDefinition({
+      starterPreset: WELCOME_STARTER_PRESET,
+      tool: defaultToolId,
+      systemPrompt: WELCOME_STARTER_SYSTEM_PROMPT,
       externalTriggerId: OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID,
       name: 'Welcome',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
-      sidebarOrder: 1,
+      messages: [
+        {
+          role: 'assistant',
+          content: WELCOME_STARTER_MESSAGE,
+        },
+      ],
       extraMessages: [
         {
           role: 'assistant',
           content: buildInboundEmailSetupHint(mailboxAddress),
         },
       ],
-    },
-    {
-      templateId: BASIC_CHAT_APP_ID,
+    });
+
+  if (isGuestBootstrapContext()) {
+    pushDefinition({
+      tool: defaultToolId,
+      externalTriggerId: OWNER_BOOTSTRAP_GUEST_MIGRATION_GUIDE_EXTERNAL_TRIGGER_ID,
+      name: '[引导] 连接本地文件，把旧电脑资料迁进这个实例',
+      entryMode: SESSION_ENTRY_MODE_READ,
+      pinned: true,
+      messages: buildGuestMigrationGuideMessages(),
+    });
+  }
+
+  pushDefinition({
+      tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_FILE_SHOWCASE_EXTERNAL_TRIGGER_ID,
       name: '[示例] 上传一份表格，我把清洗后的文件回给你',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
-      sidebarOrder: 2,
       messages: [
         {
           role: 'assistant',
@@ -254,14 +303,13 @@ async function getOwnerBootstrapSessionDefinitions() {
           ],
         },
       ],
-    },
-    {
-      templateId: BASIC_CHAT_APP_ID,
+    });
+  pushDefinition({
+      tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_DIGEST_SHOWCASE_EXTERNAL_TRIGGER_ID,
       name: '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
-      sidebarOrder: 3,
       messages: [
         {
           role: 'assistant',
@@ -287,14 +335,13 @@ async function getOwnerBootstrapSessionDefinitions() {
           ],
         },
       ],
-    },
-    {
-      templateId: BASIC_CHAT_APP_ID,
+    });
+  pushDefinition({
+      tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID,
       name: '[示例] 发一封邮件到这个实例，会自动开一个新会话',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
-      sidebarOrder: 4,
       messages: [
         {
           role: 'assistant',
@@ -309,23 +356,23 @@ async function getOwnerBootstrapSessionDefinitions() {
           content: '这就是邮件进来后的实际起点。你自己试的时候，不用先进来手动新建聊天；邮件到达后我会先把它挂成单独会话，再继续处理。',
         },
       ],
-    },
-    ...(calendarUrls ? [{
-      templateId: BASIC_CHAT_APP_ID,
+    });
+  if (calendarGuideEnabled) {
+    pushDefinition({
+      tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID,
       name: '[引导] 订阅日历，接收 AI 创建的日程事件',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
-      sidebarOrder: 5,
-      messages: buildCalendarGuideMessages(calendarUrls),
-    }] : []),
-    {
-      templateId: BASIC_CHAT_APP_ID,
+      messages: buildCalendarGuideMessages(),
+    });
+  }
+  pushDefinition({
+      tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_SHORTCUTS_GUIDE_EXTERNAL_TRIGGER_ID,
       name: '[引导] 安装快捷指令，用 Siri 或一键启动 RemoteLab',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
-      sidebarOrder: 6,
       messages: [
         {
           role: 'assistant',
@@ -370,8 +417,9 @@ async function getOwnerBootstrapSessionDefinitions() {
           ].join('\n\n'),
         },
       ],
-    },
-  ];
+    });
+
+  return definitions;
 }
 
 const LEGACY_WELCOME_SHOWCASE_HINT = [
@@ -380,24 +428,14 @@ const LEGACY_WELCOME_SHOWCASE_HINT = [
   '觉得哪个最像你的情况，就直接照着那个方式把你的版本发给我。',
 ].join('\n\n');
 
-function getStarterMessagesForDefinition(definition, app) {
-  return Array.isArray(definition.messages) && definition.messages.length > 0
-    ? definition.messages
-    : (app?.welcomeMessage ? [{ role: 'assistant', content: app.welcomeMessage }] : []);
+function getStarterMessagesForDefinition(definition) {
+  return Array.isArray(definition.messages) ? definition.messages : [];
 }
 
-function resolveBootstrapSessionEntryMode(session, definition) {
-  if (definition?.entryMode !== SESSION_ENTRY_MODE_READ) {
-    return '';
-  }
-  if (
-    definition?.templateId === WELCOME_APP_ID
-    && typeof session?.welcomeOnboardingRetiredAt === 'string'
-    && session.welcomeOnboardingRetiredAt.trim()
-  ) {
-    return '';
-  }
-  return SESSION_ENTRY_MODE_READ;
+function resolveBootstrapSessionEntryMode(_session, definition) {
+  return definition?.entryMode === SESSION_ENTRY_MODE_READ
+    ? SESSION_ENTRY_MODE_READ
+    : '';
 }
 
 async function applyBootstrapSessionPresentation(session, definition) {
@@ -437,6 +475,17 @@ async function appendMissingBootstrapMessages(sessionId, messages = [], existing
   if (pendingEvents.length === 0) return 0;
   await appendEvents(sessionId, pendingEvents);
   return pendingEvents.length;
+}
+
+async function shouldRebuildBootstrapSession(session, definition) {
+  const contents = await loadMessageContents(session.id);
+  if (definition?.externalTriggerId === OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID) {
+    return !contents.some((content) => typeof content === 'string' && content.includes(CALENDAR_SUBSCRIBE_HELPER_PATH));
+  }
+  if (definition?.externalTriggerId === OWNER_BOOTSTRAP_GUEST_MIGRATION_GUIDE_EXTERNAL_TRIGGER_ID) {
+    return !contents.some((content) => typeof content === 'string' && /整机里找 xxx 项目|本机哪个盘、哪个目录附近/u.test(content));
+  }
+  return false;
 }
 
 async function backfillWelcomeGuideMessages(session, mailboxAddress) {
@@ -489,44 +538,22 @@ async function buildMessageEvents(sessionId, messages = []) {
   return events;
 }
 
-async function createOwnerBootstrapSession(definition, { appendLegacyWelcomeHint = false } = {}) {
-  const template = await getApp(definition.templateId);
-  if (!template?.id) return null;
-
-  const usePlainStarterSession = definition.externalTriggerId === OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID;
-
-  let session = await createSession('~', template.tool || 'codex', definition.name || template.name || 'Session', {
+async function createOwnerBootstrapSession(definition) {
+  let session = await createSession('~', definition.tool || 'codex', definition.name || 'Session', {
     sourceId: 'chat',
     sourceName: 'Chat',
     externalTriggerId: definition.externalTriggerId,
-    ...(usePlainStarterSession
-      ? {
-          systemPrompt: typeof template.systemPrompt === 'string' ? template.systemPrompt : '',
-          templateId: template.id,
-          templateName: template.name || '',
-        }
-      : {}),
+    starterPreset: definition.starterPreset || '',
+    systemPrompt: typeof definition.systemPrompt === 'string' ? definition.systemPrompt : '',
   });
-  if (!usePlainStarterSession) {
-    session = await applyTemplateToSession(session.id, template.id) || session;
-  }
   session = await getSession(session.id) || session;
 
   if (Number(session?.messageCount || 0) === 0) {
-    const starterMessages = getStarterMessagesForDefinition(definition, template);
+    const starterMessages = getStarterMessagesForDefinition(definition);
     const extraMessages = Array.isArray(definition.extraMessages) ? definition.extraMessages : [];
     const starterEvents = await buildMessageEvents(session.id, [...starterMessages, ...extraMessages]);
     if (starterEvents.length > 0) {
       await appendEvents(session.id, starterEvents);
-      session = await getSession(session.id) || session;
-    }
-  } else if (appendLegacyWelcomeHint && definition.externalTriggerId === OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID) {
-    const appendedEvents = await buildMessageEvents(session.id, [
-      { role: 'assistant', content: LEGACY_WELCOME_SHOWCASE_HINT },
-      ...(Array.isArray(definition.extraMessages) ? definition.extraMessages : []),
-    ]);
-    if (appendedEvents.length > 0) {
-      await appendEvents(session.id, appendedEvents);
       session = await getSession(session.id) || session;
     }
   }
@@ -555,6 +582,11 @@ export async function backfillOwnerBootstrapSessions() {
 
   for (const definition of ownerBootstrapSessions) {
     let session = sessionsByTrigger.get(definition.externalTriggerId) || null;
+    if (session && await shouldRebuildBootstrapSession(session, definition)) {
+      await setSessionArchived(session.id, true);
+      sessionsByTrigger.delete(definition.externalTriggerId);
+      session = null;
+    }
     if (!session) {
       session = await createOwnerBootstrapSession(definition);
       if (!session) continue;
@@ -576,32 +608,4 @@ export async function backfillOwnerBootstrapSessions() {
     created,
     updated,
   };
-}
-
-export async function ensureOwnerBootstrapSessions() {
-  const ownerBootstrapSessions = await getOwnerBootstrapSessionDefinitions();
-  const ownerSessions = (await listSessions({
-    includeArchived: true,
-  }));
-
-  const activeOwnerSessions = ownerSessions.filter((session) => session?.archived !== true);
-  const hasLegacyBlankWelcomeOnly = activeOwnerSessions.length === 1
-    && activeOwnerSessions[0]?.externalTriggerId === OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID
-    && Number(activeOwnerSessions[0]?.messageCount || 0) <= 1;
-
-  if (activeOwnerSessions.length > 0 && !hasLegacyBlankWelcomeOnly) {
-    return activeOwnerSessions[0];
-  }
-
-  let welcomeSession = null;
-  for (const definition of ownerBootstrapSessions) {
-    const session = await createOwnerBootstrapSession(definition, {
-      appendLegacyWelcomeHint: hasLegacyBlankWelcomeOnly,
-    });
-    if (definition.externalTriggerId === OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID) {
-      welcomeSession = session;
-    }
-  }
-
-  return welcomeSession || activeOwnerSessions[0] || null;
 }

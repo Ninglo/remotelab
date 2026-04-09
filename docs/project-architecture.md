@@ -75,7 +75,7 @@ Use these product nouns when reading or changing current code:
 - **Source / Channel** — where a session was triggered from
   - examples: RemoteLab web UI, email, Feishu, API, automation
 - **Agent** — the reusable behavior/context definition that shapes a session
-  - examples: Chat, Drawing, Video Cut, Report Cleanup
+  - examples: Chat, Drawing, Report Cleanup, Invoice Follow-up
 - **Session** — one concrete work thread
 - **Run** — one execution attempt inside a session
 
@@ -155,12 +155,13 @@ chat-server.mjs  (:7690)
    ├── session + run orchestration
    ├── durable history + run storage
    ├── thin WebSocket invalidation
-   └── detached runner supervision
-           │
-           ▼
-      runner-sidecar.mjs
-           │
-           ▼
+   └── run execution plane
+           ├── launch      (`chat/run-launcher.mjs`)
+           ├── execute     (`chat/runner-sidecar.mjs`)
+           ├── project     (`chat/run-projection.mjs`)
+           └── reconcile   (`chat/run-reconciler.mjs`)
+                │
+                ▼
    local CLI tool (`claude`, `codex`, or compatible wrapper)
 ```
 
@@ -218,11 +219,14 @@ This is where RemoteLab’s actual product behavior lives.
 
 ### 4.3 Runtime layer
 
-Responsible for executing local AI CLIs and producing raw durable output.
+Responsible for launching, executing, projecting, and reconciling run attempts while keeping product policy in the chat control plane.
 
 - `chat/process-runner.mjs`
-- `chat/runner-supervisor.mjs`
+- `chat/run-launcher.mjs`
 - `chat/runner-sidecar.mjs`
+- `chat/run-projection.mjs`
+- `chat/run-reconciler.mjs`
+- `chat/runner-supervisor.mjs` (compatibility shim re-exporting `run-launcher.mjs`)
 - `chat/adapters/claude.mjs`
 - `chat/adapters/codex.mjs`
 - `chat/models.mjs`
@@ -256,8 +260,11 @@ remotelab/
 │   ├── history.mjs                 # normalized event persistence
 │   ├── runs.mjs                    # durable run manifest/status/spool/result storage
 │   ├── process-runner.mjs          # tool/runtime invocation abstraction
-│   ├── runner-supervisor.mjs       # detached runner launcher
+│   ├── run-launcher.mjs            # detached run launch strategy
 │   ├── runner-sidecar.mjs          # raw execution sidecar
+│   ├── run-projection.mjs          # raw spool -> normalized run events
+│   ├── run-reconciler.mjs          # run liveness + terminal reconciliation
+│   ├── runner-supervisor.mjs       # compatibility shim for older imports
 │   ├── summarizer.mjs              # async progress/title/group generation
 │   ├── apps.mjs                    # Agent template CRUD
 │   ├── shares.mjs                  # immutable read-only snapshot creation
@@ -543,9 +550,9 @@ This list describes the current shipped prompt assembly, not the full target own
 
 ### 8.5 Detached runner execution
 
-1. `chat/runner-supervisor.mjs` launches `chat/runner-sidecar.mjs` as a detached child
+1. `chat/run-launcher.mjs` chooses the detached launch strategy and starts `chat/runner-sidecar.mjs`
 2. sidecar loads `manifest.json`
-3. sidecar resolves the actual CLI command through `lib/tools.mjs`
+3. sidecar resolves the actual CLI command through `chat/process-runner.mjs` + `lib/tools.mjs`
 4. sidecar spawns the tool in the session folder / resolved cwd
 5. sidecar writes raw stdout/stderr into `spool.jsonl`
 6. sidecar updates `status.json` and `result.json`
@@ -555,11 +562,12 @@ This list describes the current shipped prompt assembly, not the full target own
 
 1. `chat/session-manager.mjs` watches the run directory
 2. on `spool.jsonl`, `status.json`, or `result.json` changes, it re-syncs the run
-3. raw spool lines are parsed by the correct adapter:
+3. `chat/run-projection.mjs` reads raw spool deltas and uses the correct adapter:
    - `chat/adapters/claude.mjs`
    - `chat/adapters/codex.mjs`
 4. adapter output is converted into normalized events
 5. normalized events are appended into the session history store
+6. when a detached run is missing a terminal artifact, `chat/run-reconciler.mjs` decides whether it is still alive or should be synthesized into a terminal result
 6. the session status is updated and broadcast as invalidation
 
 ### 8.7 Finalization after run completion
@@ -574,7 +582,7 @@ When a run becomes terminal:
   - final session title
   - display group
   - hidden description
-- auto-compaction may run as a conservative fallback if live context exceeds the known model window (or an explicit token override)
+- auto-compaction may run as a conservative fallback if current context exceeds the known model window (or an explicit token override)
 
 ### 8.8 Browser convergence
 
@@ -610,10 +618,10 @@ Visitor entry goes through `/agent/:shareToken`.
 The current flow is:
 
 1. find the Agent by share token
-2. create a visitor auth session
-3. create a fresh chat session seeded from the Agent template
-4. inject the Agent welcome message as the first assistant event if present
-5. set a scoped visitor cookie
+2. mint an agent-scoped visitor auth session
+3. redirect into the shared chat surface with a scoped visitor cookie
+4. let that scoped visitor create and manage one or more sessions under the shared Agent
+5. apply the Agent template and welcome behavior when those sessions are created
 6. redirect to the main chat UI in visitor mode
 
 Visitor limits are enforced by role-aware routing and session scoping.
@@ -658,7 +666,7 @@ Current auto-compaction now runs through a hidden companion session per parent s
 - the visible session inserts a context barrier marker plus a user-visible handoff message
 - `context.json` becomes the authoritative live continuation head for future turns
 
-This keeps continuity visible to the user while making it explicit that older messages above the barrier are no longer in live context.
+This keeps continuity visible to the user while making it explicit that older messages above the barrier are no longer in current context.
 
 ### 9.6 Web push flow
 

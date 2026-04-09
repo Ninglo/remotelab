@@ -19,16 +19,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function escapeRegex(value) {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function buildFeedUrlPattern(baseUrl, scheme = 'https') {
-  const normalizedBaseUrl = String(baseUrl || '').trim().replace(/\/+$/, '');
-  const protocolBaseUrl = normalizedBaseUrl.replace(/^https?:\/\//, `${scheme}://`);
-  return new RegExp(`${escapeRegex(protocolBaseUrl)}/cal/[a-f0-9]+\\.ics`);
-}
-
 async function waitFor(predicate, description, timeoutMs = 10000, intervalMs = 100) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -128,8 +118,6 @@ function setupTempHome({ preseedArchivedBasicChat = false, cloudflaredPort = 0, 
           id: 'legacy_archived_basic_chat',
           folder: '/Users/jiujianian',
           tool: 'fake-codex',
-          appId: 'app_basic_chat',
-          appName: 'Basic Chat',
           name: 'new session',
           autoRenamePending: true,
           created: '2026-03-26T00:40:58.504Z',
@@ -157,14 +145,14 @@ function setupTempHome({ preseedArchivedBasicChat = false, cloudflaredPort = 0, 
   return { home };
 }
 
-async function startServer({ home, port, mainlandBaseUrl = '' }) {
+async function startServer({ home, port }) {
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
       ...process.env,
       HOME: home,
       CHAT_PORT: String(port),
-      REMOTELAB_MAINLAND_PUBLIC_BASE_URL: mainlandBaseUrl,
+      REMOTELAB_BRIDGE_BASE_URL: '',
       REMOTELAB_PUBLIC_BASE_URL: '',
       SECURE_COOKIES: '0',
     },
@@ -192,18 +180,38 @@ async function stopServer(child) {
   await waitFor(() => child.exitCode !== null, 'server shutdown');
 }
 
-async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostname = '', mainlandBaseUrl = '' } = {}) {
-  publicHostname = publicHostname.trim();
-  mainlandBaseUrl = mainlandBaseUrl.trim();
-  const expectCalendarGuide = !!publicHostname || !!mainlandBaseUrl;
+async function restoreStarterSessions(port) {
+  const response = await request(port, 'POST', '/api/bootstrap/owner-sessions/restore', {}, { Cookie: ownerCookie });
+  assert.equal(response.status, 200, 'restore starter sessions action should succeed');
+  assert.equal(response.json?.ok, true, 'restore starter sessions action should return ok');
+  assert.equal(typeof response.json?.welcomeSessionId, 'string', 'restore starter sessions should return a welcome session id');
+  return response.json;
+}
+
+async function assertSessionListEmpty(port, { archivedCount = 0 } = {}) {
+  const list = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
+  assert.equal(list.status, 200, 'owner session list should load');
+  assert.equal(list.json?.archivedCount, archivedCount, 'archived count should be preserved');
+  assert.equal(
+    (list.json?.sessions || []).length,
+    0,
+    'owner session list should stay empty until an explicit bootstrap runs',
+  );
+}
+
+async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const expectedSessionNames = [
     'Welcome',
     '[示例] 上传一份表格，我把清洗后的文件回给你',
     '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
     '[示例] 发一封邮件到这个实例，会自动开一个新会话',
-    ...(expectCalendarGuide ? ['[引导] 订阅日历，接收 AI 创建的日程事件'] : []),
+    '[引导] 订阅日历，接收 AI 创建的日程事件',
+    '[引导] 安装快捷指令，用 Siri 或一键启动 RemoteLab',
   ];
-  const list = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
+  const list = await waitFor(async () => {
+    const response = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
+    return (response.json?.sessions || []).length === expectedSessionNames.length ? response : false;
+  }, 'owner bootstrap sessions');
   assert.equal(list.status, 200, 'owner session list should load');
   assert.equal(list.json?.archivedCount, archivedCount, 'archived count should be preserved');
   assert.equal(
@@ -223,7 +231,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostna
 
   const welcomeSession = list.json?.sessions?.[0];
   assert.ok(welcomeSession?.id, 'welcome session should have an id');
-  assert.equal(welcomeSession.templateId, 'app_welcome', 'welcome session should keep the welcome template while behaving like a normal chat-scoped starter session');
+  assert.equal(welcomeSession.templateId, undefined, 'welcome session should be a plain starter session without app/template coupling');
   assert.equal(welcomeSession.tool, 'micro-agent', 'welcome bootstrap should prefer Micro Agent when it is available');
   assert.equal(welcomeSession.sourceId, 'chat', 'welcome session should be categorized as chat UI');
   assert.equal(welcomeSession.sourceName, 'Chat', 'welcome session should preserve the chat source label');
@@ -304,54 +312,44 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostna
   assert.match(emailUserContent, /Inbound email\.|真实能力验证邮件|自动进到一个新会话/u, 'email showcase should demonstrate the inbound email transcript shape');
   assert.match(emailAssistantContent, /邮件进来后的实际起点|手动新建聊天/u, 'email showcase should end with the actual session handoff explanation');
 
-  if (expectCalendarGuide) {
-    const calendarGuideSession = list.json?.sessions?.[4];
-    assert.ok(calendarGuideSession?.id, 'calendar guide session should exist when a public base URL is available');
+  const calendarGuideSession = list.json?.sessions?.[4];
+  assert.ok(calendarGuideSession?.id, 'calendar guide session should always exist when the calendar feed is enabled');
 
-    const calendarGuideEvents = await request(port, 'GET', `/api/sessions/${calendarGuideSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
-    assert.equal(calendarGuideEvents.status, 200, 'calendar guide session events should load');
-    const calendarGuideMessage = (calendarGuideEvents.json?.events || []).find((event) => event.type === 'message' && event.role === 'assistant');
-    assert.ok(calendarGuideMessage, 'calendar guide session should include an assistant message');
-    const calendarGuideContent = await resolveEventContent(port, calendarGuideSession.id, calendarGuideMessage, { Cookie: ownerCookie });
-    const visibleBaseUrl = mainlandBaseUrl || (publicHostname ? `https://${publicHostname}` : '');
+  const calendarGuideEvents = await request(port, 'GET', `/api/sessions/${calendarGuideSession.id}/events?filter=all`, null, { Cookie: ownerCookie });
+  assert.equal(calendarGuideEvents.status, 200, 'calendar guide session events should load');
+  const calendarGuideMessage = (calendarGuideEvents.json?.events || []).find((event) => event.type === 'message' && event.role === 'assistant');
+  assert.ok(calendarGuideMessage, 'calendar guide session should include an assistant message');
+  const calendarGuideContent = await resolveEventContent(port, calendarGuideSession.id, calendarGuideMessage, { Cookie: ownerCookie });
 
-    assert.match(
-      calendarGuideContent,
-      buildFeedUrlPattern(visibleBaseUrl, 'webcal'),
-      'calendar guide should expose the visible webcal subscription URL',
-    );
-    assert.match(
-      calendarGuideContent,
-      buildFeedUrlPattern(visibleBaseUrl, 'https'),
-      'calendar guide should expose the visible https subscription URL',
-    );
-    assert.doesNotMatch(
-      calendarGuideContent,
-      /127\.0\.0\.1|localhost/,
-      'calendar guide should never expose localhost subscription links',
-    );
-    if (mainlandBaseUrl && publicHostname) {
-      assert.doesNotMatch(
-        calendarGuideContent,
-        buildFeedUrlPattern(`https://${publicHostname}`, 'https'),
-        'calendar guide should hide the public compatibility URL when a mainland link is available',
-      );
-      assert.doesNotMatch(
-        calendarGuideContent,
-        buildFeedUrlPattern(`https://${publicHostname}`, 'webcal'),
-        'calendar guide should hide the public compatibility webcal URL when a mainland link is available',
-      );
-    }
-  }
+  assert.match(
+    calendarGuideContent,
+    /\[点击订阅日历\]\(\/subscribe\/calendar\)/,
+    'calendar guide should link to the stable subscription helper route',
+  );
+  assert.match(
+    calendarGuideContent,
+    /\[使用 HTTPS 订阅\]\(\/subscribe\/calendar\?format=https\)/,
+    'calendar guide should expose the manual helper route instead of a baked absolute URL',
+  );
+  assert.doesNotMatch(
+    calendarGuideContent,
+    /127\.0\.0\.1|localhost|owner\.example\.com/,
+    'calendar guide should avoid persisting host-specific absolute URLs',
+  );
 
   const secondList = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
   assert.equal(secondList.status, 200, 'owner should be able to reload the session list');
   assert.equal(
     (secondList.json?.sessions || []).length,
     expectedSessionNames.length,
-    'reloading should not create duplicate starter sessions',
+    'reloading should keep the explicit starter session set stable',
   );
   assert.equal(secondList.json?.sessions?.[0]?.id, welcomeSession.id, 'starter bootstrap should be idempotent for welcome');
+
+  return {
+    welcomeSessionId: welcomeSession.id,
+    sessions: list.json?.sessions || [],
+  };
 }
 
 async function runScenario(options) {
@@ -360,13 +358,61 @@ async function runScenario(options) {
     ...options,
     cloudflaredPort: port,
   });
-  const server = await startServer({ home, port, mainlandBaseUrl: options?.mainlandBaseUrl || '' });
+  let server = await startServer({ home, port });
   try {
-    await assertWelcomeBootstrapped(port, {
-      archivedCount: options?.preseedArchivedBasicChat ? 1 : 0,
-      publicHostname: options?.publicHostname || '',
-      mainlandBaseUrl: options?.mainlandBaseUrl || '',
+    const initialArchivedCount = options?.preseedArchivedBasicChat ? 1 : 0;
+
+    await assertSessionListEmpty(port, {
+      archivedCount: initialArchivedCount,
     });
+
+    const firstRestore = await restoreStarterSessions(port);
+    const firstSeed = await assertWelcomeBootstrapped(port, {
+      archivedCount: initialArchivedCount,
+    });
+    assert.equal(firstRestore.welcomeSessionId, firstSeed.welcomeSessionId, 'explicit restore should surface the active welcome session');
+
+    const secondRestore = await restoreStarterSessions(port);
+    const secondSeed = await assertWelcomeBootstrapped(port, {
+      archivedCount: initialArchivedCount,
+    });
+    assert.equal(
+      secondSeed.welcomeSessionId,
+      firstSeed.welcomeSessionId,
+      'explicit bootstrap reruns should update in place instead of duplicating active starter sessions',
+    );
+    assert.equal(
+      secondRestore.welcomeSessionId,
+      firstSeed.welcomeSessionId,
+      'repeat restore should keep pointing at the existing active welcome session',
+    );
+
+    for (const session of secondSeed.sessions) {
+      const archive = await request(port, 'PATCH', `/api/sessions/${session.id}`, { archived: true }, { Cookie: ownerCookie });
+      assert.equal(archive.status, 200, `starter session ${session.name} should archive cleanly`);
+    }
+
+    await assertSessionListEmpty(port, {
+      archivedCount: initialArchivedCount + secondSeed.sessions.length,
+    });
+    await assertSessionListEmpty(port, {
+      archivedCount: initialArchivedCount + secondSeed.sessions.length,
+    });
+
+    const restoredAfterClear = await restoreStarterSessions(port);
+    const thirdSeed = await assertWelcomeBootstrapped(port, {
+      archivedCount: initialArchivedCount + secondSeed.sessions.length,
+    });
+    assert.notEqual(
+      restoredAfterClear.welcomeSessionId,
+      firstSeed.welcomeSessionId,
+      'restoring after clearing should create a fresh active welcome session',
+    );
+    assert.equal(
+      restoredAfterClear.welcomeSessionId,
+      thirdSeed.welcomeSessionId,
+      'restore action should return the new active welcome session after a clear',
+    );
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });
@@ -376,7 +422,3 @@ async function runScenario(options) {
 await runScenario();
 await runScenario({ preseedArchivedBasicChat: true });
 await runScenario({ publicHostname: 'owner.example.com' });
-await runScenario({
-  publicHostname: 'owner.example.com',
-  mainlandBaseUrl: 'https://jojotry.nat100.top/owner',
-});

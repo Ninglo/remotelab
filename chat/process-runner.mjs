@@ -1,7 +1,6 @@
-import { homedir } from 'os';
-import { resolve, join } from 'path';
 import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
+import { expandSessionFolder } from './session-folder.mjs';
 import {
   buildToolProcessEnvOverrides,
   getToolDefinitionAsync,
@@ -15,9 +14,7 @@ import {
 import { pathExists } from './fs-utils.mjs';
 
 export function resolveCwd(folder) {
-  if (!folder || folder === '~') return homedir();
-  if (folder.startsWith('~/')) return join(homedir(), folder.slice(2));
-  return resolve(folder);
+  return expandSessionFolder(folder);
 }
 
 const TAG = '[process-runner]';
@@ -35,19 +32,15 @@ export async function resolveCommand(cmd) {
   return cmd;
 }
 
-export async function createToolInvocation(toolId, prompt, options = {}) {
-  const tool = await getToolDefinitionAsync(toolId);
-  const command = tool?.command || await getToolCommandAsync(toolId);
-  const envOverrides = buildToolProcessEnvOverrides(tool || { id: toolId });
-  const runtimeFamily = tool?.runtimeFamily
-    || (toolId === 'claude' ? 'claude-stream-json' : toolId === 'codex' ? 'codex-json' : null);
-  const isClaudeFamily = runtimeFamily === 'claude-stream-json';
-  const isCodexFamily = runtimeFamily === 'codex-json';
-
+export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, toolId = 'unknown') {
+  const normalizedRuntimeFamily = typeof runtimeFamily === 'string' ? runtimeFamily.trim() : '';
+  if (!normalizedRuntimeFamily) {
+    throw new Error(`Tool "${toolId}" is missing runtimeFamily`);
+  }
   let adapter;
   let args;
 
-  if (isClaudeFamily) {
+  if (normalizedRuntimeFamily === 'claude-stream-json') {
     adapter = createClaudeAdapter();
     args = buildClaudeArgs(prompt, {
       dangerouslySkipPermissions: options.dangerouslySkipPermissions,
@@ -59,7 +52,7 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
       model: options.model,
       effort: options.effort,
     });
-  } else if (isCodexFamily) {
+  } else if (normalizedRuntimeFamily === 'codex-json') {
     adapter = createCodexAdapter();
     args = buildCodexArgs(prompt, {
       threadId: options.codexThreadId,
@@ -69,26 +62,30 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
       systemPrefix: options.systemPrefix,
     });
   } else {
-    adapter = createClaudeAdapter();
-    args = buildClaudeArgs(prompt, {
-      dangerouslySkipPermissions: options.dangerouslySkipPermissions,
-      maxTurns: options.maxTurns,
-      continue: options.continue,
-      allowedTools: options.allowedTools,
-      thinking: options.thinking,
-      model: options.model,
-      effort: options.effort,
-    });
+    throw new Error(`Tool "${toolId}" uses unsupported runtimeFamily "${normalizedRuntimeFamily}"`);
   }
 
   return {
-    command,
     adapter,
     args,
+    isClaudeFamily: normalizedRuntimeFamily === 'claude-stream-json',
+    isCodexFamily: normalizedRuntimeFamily === 'codex-json',
+    runtimeFamily: normalizedRuntimeFamily,
+  };
+}
+
+export async function createToolInvocation(toolId, prompt, options = {}) {
+  const tool = await getToolDefinitionAsync(toolId);
+  const command = tool?.command || await getToolCommandAsync(toolId);
+  const envOverrides = buildToolProcessEnvOverrides(tool || { id: toolId });
+  const runtimeFamily = tool?.runtimeFamily
+    || (toolId === 'claude' ? 'claude-stream-json' : toolId === 'codex' ? 'codex-json' : null);
+  const runtimeInvocation = buildRuntimeInvocation(runtimeFamily, prompt, options, toolId);
+
+  return {
+    command,
     envOverrides,
-    isClaudeFamily,
-    isCodexFamily,
-    runtimeFamily,
+    ...runtimeInvocation,
   };
 }
 

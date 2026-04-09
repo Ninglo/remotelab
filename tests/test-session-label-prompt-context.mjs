@@ -27,12 +27,12 @@ writeFileSync(
 - Triggers: RemoteLab, session rename, sidebar hierarchy, prompt tuning
 - First read: \`~/code/remotelab/AGENTS.md\`
 
-## Video Workflow
+## Media Workflow
 
 - Type: recurring non-repo domain
-- Paths: \`~/my_docs/Video/\`, \`~/movies/\`
-- Triggers: video, rough cut, transcript, review
-- First read: \`~/.remotelab/skills/video-cut-review.md\`
+- Paths: \`~/my_docs/Media/\`, \`~/movies/\`
+- Triggers: media, rough cut, transcript, review
+- First read: \`~/.remotelab/skills/media-review.md\`
 `,
   'utf8',
 );

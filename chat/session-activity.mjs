@@ -35,12 +35,12 @@ export function getSessionRunId(session) {
     : null;
 }
 
-export function buildSessionActivity(meta, live, { runState, run, queuedCount }) {
-  const renameState = live?.renameState === 'pending' || live?.renameState === 'failed'
-    ? live.renameState
+export function buildSessionActivity(meta, runtimeState, { runState, run, queuedCount }) {
+  const renameState = runtimeState?.renameState === 'pending' || runtimeState?.renameState === 'failed'
+    ? runtimeState.renameState
     : 'idle';
-  const renameError = typeof live?.renameError === 'string' ? live.renameError : '';
-  const compactState = live?.pendingCompact === true ? 'pending' : 'idle';
+  const renameError = typeof runtimeState?.renameError === 'string' ? runtimeState.renameError : '';
+  const compactState = runtimeState?.pendingCompact === true ? 'pending' : 'idle';
   const queueCount = Number.isInteger(queuedCount) ? queuedCount : 0;
 
   return {

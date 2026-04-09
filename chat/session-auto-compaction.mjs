@@ -16,13 +16,13 @@ import { findLatestAssistantMessageForRun } from './session-assistant-followups.
 
 export const INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR = 'context_compactor';
 
-const AUTO_COMPACT_MARKER_TEXT = 'Older messages above this marker are no longer in the model\'s live context. They remain visible in the transcript, but only the compressed handoff and newer messages below are loaded for continued work.';
+const AUTO_COMPACT_MARKER_TEXT = 'Older messages above this marker are no longer in the model\'s current context. They remain visible in the transcript, but only the compressed handoff and newer messages below are loaded for continued work.';
 const CONTEXT_COMPACTOR_SYSTEM_PROMPT = [
   'You are RemoteLab\'s hidden context compactor for a user-facing session.',
   'Your job is to condense older session context into a compact continuation package.',
   'Preserve the task objective, accepted decisions, constraints, completed work, current state, open questions, and next steps.',
   'Do not include raw tool dumps unless a tiny excerpt is essential.',
-  'Be explicit about what is no longer in live context and what the next worker should rely on.',
+  'Be explicit about what is no longer in the current context and what the next worker should rely on.',
 ].join('\n');
 const DEFAULT_AUTO_COMPACT_CONTEXT_WINDOW_PERCENT = 100;
 
@@ -35,10 +35,10 @@ function parsePositiveIntOrInfinity(value) {
 }
 
 function getConfiguredAutoCompactContextTokens() {
-  return parsePositiveIntOrInfinity(process.env.REMOTELAB_LIVE_CONTEXT_COMPACT_TOKENS);
+  return parsePositiveIntOrInfinity(process.env.REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS);
 }
 
-function getRunLiveContextTokens(run) {
+function getRunCurrentContextTokens(run) {
   return Number.isInteger(run?.contextInputTokens) && run.contextInputTokens > 0
     ? run.contextInputTokens
     : null;
@@ -66,7 +66,7 @@ function getAutoCompactContextTokens(run) {
 }
 
 export function shouldAutoCompactRun(run) {
-  const contextTokens = getRunLiveContextTokens(run);
+  const contextTokens = getRunCurrentContextTokens(run);
   const autoCompactTokens = getAutoCompactContextTokens(run);
   return Number.isInteger(contextTokens)
     && Number.isFinite(autoCompactTokens)
@@ -91,17 +91,17 @@ async function refreshCodexContextMetrics(run) {
 
 function getAutoCompactStatusText(run) {
   const configured = getConfiguredAutoCompactContextTokens();
-  const contextTokens = getRunLiveContextTokens(run);
+  const contextTokens = getRunCurrentContextTokens(run);
   const contextWindowTokens = getRunContextWindowTokens(run);
   if (configured === null && Number.isInteger(contextTokens) && Number.isInteger(contextWindowTokens)) {
     const percent = ((contextTokens / contextWindowTokens) * 100).toFixed(1);
-    return `Live context exceeded the model window (${contextTokens.toLocaleString()} / ${contextWindowTokens.toLocaleString()}, ${percent}%) — compacting conversation…`;
+    return `Current context exceeded the model window (${contextTokens.toLocaleString()} / ${contextWindowTokens.toLocaleString()}, ${percent}%) — compacting conversation…`;
   }
   const autoCompactTokens = getAutoCompactContextTokens(run);
   if (Number.isFinite(autoCompactTokens)) {
-    return `Live context exceeded ${autoCompactTokens.toLocaleString()} tokens — compacting conversation…`;
+    return `Current context exceeded ${autoCompactTokens.toLocaleString()} tokens — compacting conversation…`;
   }
-  return 'Live context overflowed — compacting conversation…';
+  return 'Current context overflowed — compacting conversation…';
 }
 
 function trimCompactionReason(value) {
@@ -121,7 +121,7 @@ function buildQueuedCompactionOperation(sessionId, compactorSessionId, compactio
     phase: 'queued',
     trigger: automatic ? 'automatic' : 'manual',
     title: automatic ? 'Auto Compress queued' : 'Context compaction queued',
-    summary: 'RemoteLab started condensing older live context into a continuation handoff.',
+    summary: 'RemoteLab started condensing older context into a continuation handoff.',
     reason: getCompactionTriggerReason(run, { automatic }),
     targetSessionId: sessionId,
     workerSessionId: compactorSessionId,
@@ -136,7 +136,7 @@ function buildFailedCompactionOperation(sessionId, errorMessage, { automatic = f
     phase: 'failed',
     trigger: automatic ? 'automatic' : 'manual',
     title: automatic ? 'Auto Compress failed' : 'Context compaction failed',
-    summary: 'RemoteLab could not replace older live context with a continuation handoff.',
+    summary: 'RemoteLab could not replace older context with a continuation handoff.',
     reason: errorMessage,
     targetSessionId: sessionId,
     ...(workerSessionId ? { workerSessionId } : {}),
@@ -149,8 +149,8 @@ function buildAppliedCompactionOperation(targetSessionId, run, manifest, summary
     operation: 'compact_context',
     phase: 'applied',
     trigger: automatic ? 'automatic' : 'manual',
-    title: automatic ? 'Live context compacted' : 'Context compaction applied',
-    summary: 'Older live context was replaced with a continuation summary and handoff.',
+    title: automatic ? 'Current context compacted' : 'Context compaction applied',
+    summary: 'Older context was replaced with a continuation summary and handoff.',
     reason: getCompactionTriggerReason(run, { automatic }),
     targetSessionId,
     workerSessionId: run?.sessionId || '',
@@ -170,7 +170,7 @@ function buildFallbackCompactionHandoff(summary, toolIndex) {
   const parts = [
     '# Auto Compress',
     '',
-    '## Kept in live context',
+    '## Kept in current context',
     '- RemoteLab carried forward a compressed continuation summary for the task.',
   ];
 
@@ -179,7 +179,7 @@ function buildFallbackCompactionHandoff(summary, toolIndex) {
     parts.push('', trimmedSummary);
   }
 
-  parts.push('', '## Left out of live context', '- Older messages above the marker are no longer loaded into the model\'s live context.');
+  parts.push('', '## Left out of current context', '- Older messages above the marker are no longer loaded into the model\'s current context.');
   if (toolIndex) {
     parts.push('- Earlier tool activity remains in session history and is summarized as compact retrieval hints.');
   }
@@ -200,16 +200,16 @@ function buildContextCompactionPrompt({ session, existingSummary, conversationBo
     `Compaction trigger: ${automatic ? 'automatic auto-compress' : 'manual compact request'}`,
     '',
     'Goal:',
-    '- Replace older live context with a fresh continuation package.',
+    '- Replace older context with a fresh continuation package.',
     '- Preserve only what the next worker turn truly needs.',
-    '- Treat older tool activity as retrievable hints, not as live prompt material.',
+    '- Treat older tool activity as retrievable hints, not as currently loaded prompt material.',
     '',
     'Rules:',
     '- Use only the supplied session material; do not rely on prior thread state.',
     '- Do not call tools unless absolutely necessary.',
     '- Do not include full raw tool output.',
     '- Mark uncertainty clearly.',
-    '- The user-visible handoff must explicitly say that older messages above the marker are no longer in live context.',
+    '- The user-visible handoff must explicitly say that older messages above the marker are no longer in the current context.',
     '',
     'Return exactly two tagged blocks:',
     '<summary>',
@@ -219,9 +219,9 @@ function buildContextCompactionPrompt({ session, existingSummary, conversationBo
     '',
     '<handoff>',
     '# Auto Compress',
-    '## Kept in live context',
+    '## Kept in current context',
     '- ...',
-    '## Left out of live context',
+    '## Left out of current context',
     '- ...',
     '## Continue from here',
     '- ...',
@@ -455,8 +455,8 @@ async function ensureContextCompactorSession(sourceSessionId, session, run, serv
 }
 
 export async function queueContextCompaction(sessionId, session, run, { automatic = false } = {}, services = {}) {
-  const live = services.ensureLiveSession(sessionId);
-  if (live.pendingCompact) return false;
+  const runtimeState = services.ensureSessionRuntimeState(sessionId);
+  if (runtimeState.pendingCompact) return false;
 
   const snapshot = await getHistorySnapshot(sessionId);
   const compactionSource = await buildCompactionSourcePayload(sessionId, {
@@ -467,7 +467,7 @@ export async function queueContextCompaction(sessionId, session, run, { automati
   const compactorSession = await ensureContextCompactorSession(sessionId, session, run, services);
   if (!compactorSession) return false;
 
-  live.pendingCompact = true;
+  runtimeState.pendingCompact = true;
 
   const statusText = automatic
     ? getAutoCompactStatusText(run)
@@ -507,7 +507,7 @@ export async function queueContextCompaction(sessionId, session, run, { automati
     });
     return true;
   } catch (error) {
-    live.pendingCompact = false;
+    runtimeState.pendingCompact = false;
     const failure = statusEvent(`error: failed to compact context: ${error.message}`);
     await services.appendEvent(sessionId, failure);
     await services.appendEvent(sessionId, buildFailedCompactionOperation(sessionId, error.message, {
@@ -524,7 +524,7 @@ export async function maybeAutoCompact(sessionId, session, run, manifest, servic
   if (manifest?.internalOperation && manifest.internalOperation !== 'reply_self_repair') return false;
   if (services.getSessionQueueCount(session) > 0) return false;
   let effectiveRun = run;
-  let contextTokens = getRunLiveContextTokens(run);
+  let contextTokens = getRunCurrentContextTokens(run);
   let autoCompactTokens = getAutoCompactContextTokens(run);
   if (!Number.isInteger(contextTokens) || !Number.isFinite(autoCompactTokens)) {
     const refreshed = await refreshCodexContextMetrics(run);

@@ -98,7 +98,6 @@ function setupTempHome() {
 
 async function seedCalendarEvent(instanceRoot) {
   process.env.REMOTELAB_INSTANCE_ROOT = instanceRoot;
-  process.env.REMOTELAB_GUEST_MAINLAND_BASE_URL = 'https://jojotry.nat100.top';
   process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://trial24.jiujianian.dev';
   const { addCalendarFeedEvent } = await import(`../lib/connector-calendar-feed.mjs?test=${Date.now()}`);
   await addCalendarFeedEvent({
@@ -118,7 +117,6 @@ async function startServer({ home, instanceRoot, port }) {
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
       REMOTELAB_INSTANCE_ROOT: instanceRoot,
-      REMOTELAB_GUEST_MAINLAND_BASE_URL: 'https://jojotry.nat100.top',
       REMOTELAB_PUBLIC_BASE_URL: 'https://trial24.jiujianian.dev',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -153,29 +151,48 @@ const server = await startServer({ home, instanceRoot, port });
 try {
   const feedRes = await request(port, 'GET', '/api/connectors/calendar/feed', null, {
     Cookie: cookie,
-    Host: 'jojotry.nat100.top',
+    Host: 'trial24.jiujianian.dev',
     'X-Forwarded-Proto': 'https',
     'X-Forwarded-Prefix': '/trial24',
   });
   assert.equal(feedRes.status, 200, 'calendar feed metadata route should load');
   assert.equal(
     feedRes.json?.subscriptionUrl,
-    'https://jojotry.nat100.top/trial24/cal/' + String(feedRes.json?.subscriptionUrl || '').split('/cal/')[1],
-    'preferred subscription URL should use the mainland prefixed path',
+    'https://trial24.jiujianian.dev/cal/' + String(feedRes.json?.subscriptionUrl || '').split('/cal/')[1],
+    'preferred subscription URL should use the visible subdomain host and ignore forwarded path prefixes',
   );
   assert.equal(
     feedRes.json?.webcalUrl,
-    'webcal://jojotry.nat100.top/trial24/cal/' + String(feedRes.json?.subscriptionUrl || '').split('/cal/')[1],
-    'preferred webcal URL should use the mainland prefixed path',
+    'webcal://trial24.jiujianian.dev/cal/' + String(feedRes.json?.subscriptionUrl || '').split('/cal/')[1],
+    'preferred webcal URL should use the visible subdomain host and ignore forwarded path prefixes',
   );
-  assert.equal(feedRes.json?.subscriptionUrls?.mainland?.includes('/trial24/cal/'), true);
-  assert.equal(feedRes.json?.subscriptionUrls?.public, undefined, 'public compatibility URL should stay hidden from feed metadata');
-  assert.equal(feedRes.json?.variants?.[0]?.kind, 'mainland', 'mainland link should be preferred when available');
+  assert.equal(feedRes.json?.subscriptionUrls?.preferred, feedRes.json?.subscriptionUrl);
+  assert.equal(feedRes.json?.subscriptionUrls?.preferredWebcal, feedRes.json?.webcalUrl);
+  assert.equal(feedRes.json?.subscriptionUrls?.bridge, undefined, 'named bridge URLs should not be exposed');
+  assert.equal(feedRes.json?.variants?.[0]?.kind, 'primary', 'request-visible host should be preferred');
   assert.equal(feedRes.json?.variants?.length, 1, 'feed metadata should expose only one visible subscription variant');
   assert.equal(feedRes.json?.eventCount, 1, 'seeded event should be visible in feed metadata');
 
   const feedToken = String(feedRes.json?.subscriptionUrl || '').split('/cal/')[1]?.replace(/\.ics$/, '');
   assert.ok(feedToken, 'feed metadata should expose a usable token');
+
+  const helperRes = await request(port, 'GET', '/subscribe/calendar', null, {
+    Cookie: cookie,
+    Host: 'trial24.jiujianian.dev',
+    'X-Forwarded-Proto': 'https',
+    'X-Forwarded-Prefix': '/trial24',
+  });
+  assert.equal(helperRes.status, 302, 'subscription helper should redirect to the preferred webcal URL');
+  assert.equal(helperRes.headers.location, `webcal://trial24.jiujianian.dev/cal/${feedToken}.ics`);
+
+  const helperHttpsRes = await request(port, 'GET', '/subscribe/calendar?format=https', null, {
+    Cookie: cookie,
+    Host: 'trial24.jiujianian.dev',
+    'X-Forwarded-Proto': 'https',
+    'X-Forwarded-Prefix': '/trial24',
+  });
+  assert.equal(helperHttpsRes.status, 302, 'manual helper should redirect to the https feed URL');
+  assert.equal(helperHttpsRes.headers.location, `https://trial24.jiujianian.dev/cal/${feedToken}.ics`);
 
   const icsRes = await request(port, 'GET', `/cal/${feedToken}.ics`);
   assert.equal(icsRes.status, 200, 'ics feed endpoint should still load from the backend root path');

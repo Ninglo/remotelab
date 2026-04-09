@@ -42,19 +42,17 @@ delete process.env.NATAPP_PROXY_LISTEN_HOST;
 delete process.env.NATAPP_PROXY_LISTEN_PORT;
 delete process.env.NATAPP_ROOT_MODE;
 delete process.env.NATAPP_ROOT_UPSTREAM_PORT;
-delete process.env.NATAPP_OWNER_UPSTREAM_PORT;
-delete process.env.NATAPP_OWNER_ROUTE_PREFIX;
-process.env.NATAPP_MAINLAND_SERVICE_NAME = 'owner';
-process.env.NATAPP_MAINLAND_SERVICE_PORT = '7690';
+process.env.NATAPP_BRIDGE_SERVICE_NAME = 'owner';
+process.env.NATAPP_BRIDGE_SERVICE_PORT = '7690';
 
 const proxy = await import(`../scripts/natapp-dual-proxy.mjs?test=${Date.now()}`);
 
 try {
-  assert.equal(proxy.ROOT_MODE, 'index', 'mainland root should default to a neutral index');
+  assert.equal(proxy.ROOT_MODE, 'index', 'bridge root should default to a neutral index');
 
   const prefixedRoutes = await proxy.loadPrefixedRoutes();
   assert.ok(
-    prefixedRoutes.some((route) => route.prefix === proxy.MAINLAND_SERVICE_PREFIX && route.upstreamPort === proxy.MAINLAND_SERVICE_UPSTREAM_PORT),
+    prefixedRoutes.some((route) => route.prefix === proxy.BRIDGE_SERVICE_PREFIX && route.upstreamPort === proxy.BRIDGE_SERVICE_UPSTREAM_PORT),
     'main service route should be part of the prefixed route table',
   );
   assert.ok(
@@ -74,13 +72,13 @@ try {
   );
 
   const rootRoute = await proxy.mapRequest('/api/sessions');
-  assert.equal(rootRoute, null, 'unprefixed mainland requests should no longer proxy an app surface by default');
+  assert.equal(rootRoute, null, 'unprefixed bridge requests should no longer proxy an app surface by default');
 
-  const ownerRoute = await proxy.mapRequest(`${proxy.MAINLAND_SERVICE_PREFIX}/api/sessions?view=all`);
+  const ownerRoute = await proxy.mapRequest(`${proxy.BRIDGE_SERVICE_PREFIX}/api/sessions?view=all`);
   assert.equal(ownerRoute.prefixed, true);
-  assert.equal(ownerRoute.prefix, proxy.MAINLAND_SERVICE_PREFIX);
+  assert.equal(ownerRoute.prefix, proxy.BRIDGE_SERVICE_PREFIX);
   assert.equal(ownerRoute.cookiePrefix, 'owner__');
-  assert.equal(ownerRoute.upstreamPort, proxy.MAINLAND_SERVICE_UPSTREAM_PORT);
+  assert.equal(ownerRoute.upstreamPort, proxy.BRIDGE_SERVICE_UPSTREAM_PORT);
   assert.equal(ownerRoute.upstreamPath, '/api/sessions?view=all');
 
   const trialRoute = await proxy.mapRequest('/trial4/api/build-info');
@@ -99,7 +97,7 @@ try {
   );
   assert.equal(
     rewrittenCookie,
-    `owner__session_token=abc123; Path=${proxy.MAINLAND_SERVICE_PREFIX}; HttpOnly; SameSite=Lax`,
+    `owner__session_token=abc123; Path=${proxy.BRIDGE_SERVICE_PREFIX}; HttpOnly; SameSite=Lax`,
   );
 
   const upstreamHeaders = proxy.buildUpstreamHeaders({
@@ -107,7 +105,7 @@ try {
     'x-test-header': 'ok',
   }, ownerRoute);
   assert.equal(upstreamHeaders.cookie, 'session_token=abc123; visitor_session_token=def456');
-  assert.equal(upstreamHeaders['x-forwarded-prefix'], proxy.MAINLAND_SERVICE_PREFIX);
+  assert.equal(upstreamHeaders['x-forwarded-prefix'], proxy.BRIDGE_SERVICE_PREFIX);
   assert.equal(upstreamHeaders['x-test-header'], 'ok');
   assert.equal(upstreamHeaders['accept-encoding'], 'identity');
 
@@ -115,7 +113,7 @@ try {
     cookie: 'session_token=legacy-owner; visitor_session_token=legacy-visitor; trial4__session_token=trial-cookie',
   }, ownerRoute);
   assert.equal(bridgedOwnerHeaders.cookie, 'session_token=legacy-owner; visitor_session_token=legacy-visitor');
-  assert.equal(bridgedOwnerHeaders['x-forwarded-prefix'], proxy.MAINLAND_SERVICE_PREFIX);
+  assert.equal(bridgedOwnerHeaders['x-forwarded-prefix'], proxy.BRIDGE_SERVICE_PREFIX);
 
   const bridgedTrialHeaders = proxy.buildUpstreamHeaders({
     cookie: 'trial4__session_token=trial-cookie',
@@ -124,7 +122,7 @@ try {
   assert.equal(bridgedTrialHeaders['x-forwarded-prefix'], '/trial4');
 
   const rootIndex = await proxy.renderRootIndexHtml();
-  assert.match(rootIndex, /prefix-only/i, 'root index should explain the prefix-only mainland rule');
+  assert.match(rootIndex, /prefix-only/i, 'root index should explain the prefix-only bridge rule');
   assert.match(rootIndex, /\/owner\//, 'root index should list the main service prefix');
   assert.match(rootIndex, /\/trial4\//, 'root index should list the repaired trial4 prefix');
 

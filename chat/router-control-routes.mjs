@@ -9,6 +9,7 @@ import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { getModelsForTool } from './models.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
+import { backfillOwnerBootstrapSessions } from './bootstrap-sessions.mjs';
 import { createSessionDetail } from './session-api-shapes.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import {
@@ -117,6 +118,26 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  if (pathname === '/api/bootstrap/owner-sessions/restore' && req.method === 'POST') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    try {
+      const result = await backfillOwnerBootstrapSessions();
+      writeJson(res, 200, {
+        ok: true,
+        created: result.created,
+        updated: result.updated,
+        welcomeSessionId: result.welcomeSession?.id || '',
+        welcomeSession: result.welcomeSession ? createClientSessionDetail(result.welcomeSession) : null,
+      });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to restore starter sessions' });
+    }
+    return true;
+  }
+
   if (pathname === '/api/triggers' && req.method === 'GET') {
     const sessionId = typeof parsedUrl?.query?.sessionId === 'string'
       ? parsedUrl.query.sessionId

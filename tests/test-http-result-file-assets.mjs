@@ -69,10 +69,10 @@ function setupTempHome() {
   const home = mkdtempSync(join(tmpdir(), 'remotelab-http-result-file-assets-'));
   const configDir = join(home, '.config', 'remotelab');
   const localBin = join(home, '.local', 'bin');
-  const videoCutDir = join(home, 'code', 'video-cut');
+  const renderReviewDir = join(home, 'code', 'render-review');
   mkdirSync(configDir, { recursive: true });
   mkdirSync(localBin, { recursive: true });
-  mkdirSync(videoCutDir, { recursive: true });
+  mkdirSync(renderReviewDir, { recursive: true });
 
   writeFileSync(
     join(configDir, 'auth.json'),
@@ -106,7 +106,7 @@ function setupTempHome() {
 const { mkdirSync, writeFileSync } = require('fs');
 const { join } = require('path');
 const outputs = ${JSON.stringify(expectedOutputs)};
-const outputDir = join(process.env.HOME, 'code', 'video-cut');
+const outputDir = join(process.env.HOME, 'code', 'render-review');
 mkdirSync(outputDir, { recursive: true });
 for (const output of outputs) {
   writeFileSync(join(outputDir, output.name), output.content, 'utf8');
@@ -249,8 +249,8 @@ try {
     const createSessionRes = await request(port, 'POST', '/api/sessions', {
       folder: repoRoot,
       tool: 'fake-codex',
-      name: 'Video cut result assets',
-      systemPrompt: 'Use the local video-cut workflow under ~/code/video-cut and do a kept-content review before render.',
+      name: 'Render review result assets',
+      systemPrompt: 'Use the local render-review workflow under ~/code/render-review and do a kept-content review before final export.',
     });
     assert.equal(createSessionRes.status, 201, 'session should be created');
     const session = createSessionRes.json.session;

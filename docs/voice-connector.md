@@ -71,8 +71,8 @@ When the setup is complete, the machine should have:
 
 The expected session scope is:
 
-- `appId`: `voice`
-- `appName`: `Voice`
+- `sourceId`: `voice`
+- `sourceName`: `Voice`
 - `group`: `Voice`
 - `externalTriggerId`: stable per connector, such as `voice:living-room-speaker`
 

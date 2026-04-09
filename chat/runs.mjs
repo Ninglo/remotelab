@@ -143,6 +143,9 @@ function mergeRunRecords(current, proposed) {
   merged.claudeSessionId = pickDefined(proposed?.claudeSessionId, current?.claudeSessionId);
   merged.codexThreadId = pickDefined(proposed?.codexThreadId, current?.codexThreadId);
   merged.runnerProcessId = pickDefined(proposed?.runnerProcessId, current?.runnerProcessId);
+  merged.runnerUnitName = pickDefined(proposed?.runnerUnitName, current?.runnerUnitName);
+  merged.runnerUnitScope = pickDefined(proposed?.runnerUnitScope, current?.runnerUnitScope);
+  merged.runnerLaunchMode = pickDefined(proposed?.runnerLaunchMode, current?.runnerLaunchMode);
   merged.toolProcessId = pickDefined(proposed?.toolProcessId, current?.toolProcessId);
   merged.normalizedLineCount = pickMaxInt(current?.normalizedLineCount, proposed?.normalizedLineCount, 0);
   merged.normalizedByteOffset = pickMaxInt(current?.normalizedByteOffset, proposed?.normalizedByteOffset, 0);
@@ -176,6 +179,9 @@ export function createRunRecord(input = {}) {
     claudeSessionId: input.claudeSessionId || null,
     codexThreadId: input.codexThreadId || null,
     runnerProcessId: input.runnerProcessId || null,
+    runnerUnitName: input.runnerUnitName || null,
+    runnerUnitScope: input.runnerUnitScope || null,
+    runnerLaunchMode: input.runnerLaunchMode || null,
     toolProcessId: input.toolProcessId || null,
     normalizedLineCount: Number.isInteger(input.normalizedLineCount)
       ? input.normalizedLineCount

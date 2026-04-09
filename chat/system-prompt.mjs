@@ -2,14 +2,11 @@ import { homedir } from 'os';
 import { join } from 'path';
 import {
   CHAT_PORT,
-  MAINLAND_PUBLIC_BASE_URL,
   PLATFORM_SKILLS_DIR,
-  PUBLIC_BASE_URL,
   SHARED_STARTUP_DEFAULTS_ENABLED,
 } from '../lib/config.mjs';
 import {
-  buildCalendarSubscriptionChannels,
-  filterCalendarSubscriptionChannelsForExposure,
+  buildCalendarSubscribeHelperPath,
   getFeedInfo,
 } from '../lib/connector-calendar-feed.mjs';
 import { pathExists } from './fs-utils.mjs';
@@ -180,20 +177,12 @@ async function buildConnectorCapabilitiesSection() {
   try {
     const feedInfo = await getFeedInfo();
     if (feedInfo?.feedToken) {
-      const channels = buildCalendarSubscriptionChannels({
-        feedToken: feedInfo.feedToken,
-        mainlandBaseUrl: MAINLAND_PUBLIC_BASE_URL,
-        publicBaseUrl: PUBLIC_BASE_URL,
-        preferredBaseUrl: MAINLAND_PUBLIC_BASE_URL || PUBLIC_BASE_URL,
-      });
-      const exposedChannels = filterCalendarSubscriptionChannelsForExposure(channels);
-      if (exposedChannels.variants.length > 0) {
-        const subscriptionLines = [
-          `Subscription link (webcal): ${exposedChannels.preferredWebcalUrl || exposedChannels.preferredHttpsUrl}`,
-          `Subscription link (https): ${exposedChannels.preferredHttpsUrl}`,
-        ];
+      const subscriptionLines = [
+        `Subscription helper path: ${buildCalendarSubscribeHelperPath()}`,
+        `Manual subscription helper path: ${buildCalendarSubscribeHelperPath({ format: 'https' })}`,
+      ];
 
-        connectorSections.push(`### Calendar
+      connectorSections.push(`### Calendar
 Calendar events default to the instance iCal subscription feed. For ordinary calendar requests, write directly to that feed with \`${agendaBinaryPath} add --title "Title" --start "ISO8601" --duration 60\`. The write stays instance-local when the shell already carries \`REMOTELAB_INSTANCE_ROOT\` or \`REMOTELAB_CONFIG_DIR\`.
 
 If you need the workflow details, read \`${calendarSkillPath}\`. Do not create completion targets for normal interactive calendar requests.
@@ -203,10 +192,9 @@ If the user explicitly needs first-class external calendar notifications and a r
 ${subscriptionLines.join('\n')}
 Events in feed: ${feedInfo.eventCount}
 
-If the user has not yet subscribed, send the webcal:// link directly in the conversation — it is clickable on iOS/macOS and triggers the native "Subscribe to Calendar?" dialog. Keep the message brief: describe what the subscription does, then provide the link. No separate setup page needed.
+If the user has not yet subscribed, send a markdown link such as \`[点击订阅日历](${buildCalendarSubscribeHelperPath()})\` directly in the conversation. Use \`${buildCalendarSubscribeHelperPath({ format: 'https' })}\` only as the manual fallback when the client does not handle the default subscription helper. Keep the message brief: describe what the subscription does, then provide the link. No separate setup page needed.
 
 Do not use the host machine's local Calendar.app or any GUI calendar application.`);
-      }
     }
   } catch {}
 

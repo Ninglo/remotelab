@@ -858,6 +858,27 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
   return sessions;
 }
 
+async function restoreOwnerBootstrapSessions() {
+  if (visitorMode) return null;
+  const data = await fetchJsonOrRedirect('/api/bootstrap/owner-sessions/restore', {
+    method: 'POST',
+  });
+  await fetchSessionsList({ forceFresh: true });
+  const welcomeSessionId = typeof data?.welcomeSessionId === 'string'
+    ? data.welcomeSessionId.trim()
+    : '';
+  if (welcomeSessionId) {
+    const welcomeSession = findClientSessionRecord(welcomeSessionId);
+    if (welcomeSession) {
+      applyNavigationState({ sessionId: welcomeSessionId, tab: getActiveSidebarTabValue() });
+      attachSession(welcomeSessionId, welcomeSession);
+      return data;
+    }
+  }
+  restoreOwnerSessionSelection();
+  return data;
+}
+
 async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
   const allowOrganize = typeof canOrganizeSessionList === "function"
     ? canOrganizeSessionList()

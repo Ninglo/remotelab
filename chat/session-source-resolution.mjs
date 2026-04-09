@@ -34,6 +34,11 @@ export function normalizeSessionUserName(value) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
+export function normalizeSessionPrincipalId(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
 export function formatSessionSourceNameFromId(sourceId) {
   const normalized = typeof sourceId === 'string' ? sourceId.trim() : '';
   if (!normalized) return 'Chat';
@@ -80,6 +85,34 @@ export function resolveRequestedSessionSourceName(extra = {}, sourceId = resolve
   if (builtinSource?.name) return builtinSource.name;
 
   return formatSessionSourceNameFromId(sourceId);
+}
+
+export function resolveAuthSessionPrincipalId(authSession = {}) {
+  return normalizeSessionPrincipalId(authSession?.principalId || authSession?.visitorId);
+}
+
+export function resolveSessionPrincipalId(session = {}) {
+  return normalizeSessionPrincipalId(session?.createdByPrincipalId || session?.visitorId);
+}
+
+export function resolveAuthSessionAgentId(authSession = {}) {
+  return normalizeAppId(authSession?.agentId || authSession?.scope?.agentId);
+}
+
+export function resolveSessionAgentId(session = {}) {
+  return normalizeAppId(session?.templateId);
+}
+
+export function resolveRequestedSessionPrincipalFields(extra = {}) {
+  const explicitCreatedByPrincipalId = normalizeSessionPrincipalId(extra?.createdByPrincipalId);
+  const explicitVisitorId = normalizeSessionPrincipalId(extra?.visitorId);
+  const requestedVisitorName = normalizeSessionVisitorName(extra?.visitorName);
+  const principalId = explicitCreatedByPrincipalId || explicitVisitorId;
+
+  return {
+    createdByPrincipalId: principalId,
+    visitorId: explicitVisitorId || (requestedVisitorName ? principalId : ''),
+  };
 }
 
 // ── Template resolution ──────────────────────────────────────────────

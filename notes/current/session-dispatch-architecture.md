@@ -37,8 +37,8 @@ The dispatch check runs only for external user messages, not for:
 ### What it receives
 
 - the incoming message text + images
-- current session metadata (id, name, group, appId, description, taskCard)
-- available Apps with their scope hints
+- current session metadata (id, name, group, sourceId, templateId, description, taskCard)
+- available Agents with their scope hints
 - recent session list (for routing to existing sessions)
 
 ### What it outputs

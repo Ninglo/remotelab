@@ -17,6 +17,10 @@ import {
 } from '../lib/auth.mjs';
 import { getAgentByShareToken } from './apps.mjs';
 import {
+  normalizeSessionPrincipalId,
+  resolveAuthSessionPrincipalId,
+} from './session-source-resolution.mjs';
+import {
   createInstallHandoff,
   normalizeInstallHandoffToken,
   redeemInstallHandoff,
@@ -338,12 +342,18 @@ if (pathname === '/logout') {
   return true;
 }
 
-// Keep `/app/:shareToken` as a silent compatibility redirect so older shared links still open,
-// but the canonical public surface is now `/agent/:shareToken`.
-const sharedAgentMatch = pathname.match(/^\/(agent|app)\/([^/]+)$/);
+if (/^\/app\/[^/]+$/.test(pathname) && req.method === 'GET') {
+  res.writeHead(404, buildHeaders({
+    'Content-Type': 'text/plain',
+    'Cache-Control': 'no-store, max-age=0, must-revalidate',
+  }));
+  res.end('Not found');
+  return true;
+}
+
+const sharedAgentMatch = pathname.match(/^\/agent\/([^/]+)$/);
 if (sharedAgentMatch && req.method === 'GET') {
-  const routeKind = sharedAgentMatch[1];
-  const shareToken = sharedAgentMatch[2];
+  const shareToken = sharedAgentMatch[1];
   const agent = await getAgentByShareToken(shareToken);
   if (!agent) {
     res.writeHead(404, buildHeaders({
@@ -354,27 +364,19 @@ if (sharedAgentMatch && req.method === 'GET') {
     return true;
   }
 
-  if (routeKind === 'app') {
-    res.writeHead(302, buildHeaders({
-      'Location': `/agent/${encodeURIComponent(shareToken)}`,
-      'Cache-Control': 'no-store, max-age=0, must-revalidate',
-      'Referrer-Policy': 'no-referrer',
-    }));
-    res.end();
-    return true;
-  }
-
   const existingVisitor = getVisitorAuthSession(req);
   const existingVisitorToken = getVisitorSessionToken(req);
+  const existingVisitorPrincipalId = resolveAuthSessionPrincipalId(existingVisitor);
+  const existingVisitorId = normalizeSessionPrincipalId(existingVisitor?.visitorId || existingVisitorPrincipalId);
   const scopedAgentId = typeof existingVisitor?.agentId === 'string'
     ? existingVisitor.agentId.trim()
-    : (typeof existingVisitor?.appId === 'string' ? existingVisitor.appId.trim() : '');
+    : '';
   const canReuseScopedPrincipal = !!(
     existingVisitorToken
     && existingVisitor
     && scopedAgentId
     && scopedAgentId === agent.id
-    && (typeof existingVisitor?.principalId === 'string' || typeof existingVisitor?.visitorId === 'string')
+    && existingVisitorPrincipalId
   );
 
   const sharedPrincipal = canReuseScopedPrincipal
@@ -385,10 +387,8 @@ if (sharedAgentMatch && req.method === 'GET') {
       principalKind: typeof existingVisitor?.principalKind === 'string' && existingVisitor.principalKind.trim()
         ? existingVisitor.principalKind.trim()
         : 'agent_guest',
-      principalId: typeof existingVisitor?.principalId === 'string' && existingVisitor.principalId.trim()
-        ? existingVisitor.principalId.trim()
-        : String(existingVisitor?.visitorId || '').trim(),
-      visitorId: String(existingVisitor?.visitorId || existingVisitor?.principalId || '').trim(),
+      principalId: existingVisitorPrincipalId,
+      visitorId: existingVisitorId || existingVisitorPrincipalId,
       agentId: agent.id,
       agentName: typeof agent?.name === 'string' ? agent.name : '',
       agentTool: typeof agent?.tool === 'string' ? agent.tool : '',

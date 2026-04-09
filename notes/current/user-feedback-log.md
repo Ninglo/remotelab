@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-04-09 — user-local computer access should start as a scoped device bridge, not ambient full-PC control
+
+- Source: direct product discussion while evaluating long-term Revit Live workflow requirements.
+- User slice: owner/operator exploring whether cloud-executed workflows need a path into the end user's own workstation for file-heavy desktop software flows.
+- Observed friction or ask: cloud-side execution is convenient, but some valuable workflows still depend on artifacts or apps that live on the user's own computer; the tempting framing is "let the system just operate the user's computer and find what it needs," so the user does less manual handoff.
+- Signal: this should not become a generic promise of ambient local-computer control. The cleaner product shape is an instance- or workspace-bound local device bridge with explicit capability grants such as folder access, file discovery inside approved paths, background sync/watch, and app-specific local actions. Full arbitrary desktop control is a much heavier trust, security, and support commitment.
+- Product implication: if RemoteLab or a derivative product adds user-local execution, separate the shared substrate from domain adapters. The shared layer should own device registration, authorization, transport, audit, and capability gating; domain layers such as Revit can then add specific local actions on top. Product wording should describe explicit local access grants rather than implying unrestricted access to "your computer."
+- Promote to: future device-binding / local-bridge architecture note, user-facing authorization wording, Revit Live capability planning
+- Follow-up: validate whether the first valuable local capabilities are file/folder grants and app-specific export/open hooks rather than screen/keyboard remote control; only consider broader desktop control if repeated user evidence clearly demands it
+
 ### 2026-04-06 — settings should default to self-explanatory controls, not explanatory copy
 
 - Source: direct product feedback while reviewing the owner settings surface.

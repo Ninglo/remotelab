@@ -274,6 +274,25 @@ try {
     assert.ok(welcomeEvent, 'creating a session from an agent should append the agent welcome message');
     assert.match(welcomeEvent.content || '', /Welcome from the HTTP agent\./);
 
+    const createdFromStarterPreset = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'fake-codex',
+      name: 'Create Agent',
+      starterPreset: 'create_agent',
+    });
+    assert.equal(createdFromStarterPreset.status, 201, 'creating a session from a starter preset should succeed');
+    assert.equal(createdFromStarterPreset.json.session?.templateId, undefined, 'starter presets should not depend on a built-in agent id');
+    assert.match(
+      createdFromStarterPreset.json.session?.systemPrompt || '',
+      /POST \/api\/agents|PATCH \/api\/agents/i,
+      'starter preset sessions should materialize their behavior instructions directly',
+    );
+
+    const starterPresetEvents = await request(port, 'GET', `/api/sessions/${createdFromStarterPreset.json.session.id}/events?filter=all`);
+    const starterWelcomeEvent = (starterPresetEvents.json.events || []).find((event) => event.type === 'message' && event.role === 'assistant');
+    assert.ok(starterWelcomeEvent, 'starter preset sessions should append their opening assistant message');
+    assert.match(starterWelcomeEvent.content || '', /SOP|工作流|RemoteLab Agent/i);
+
     console.log('test-http-session-templates: ok');
   } finally {
     await stopServer(server);

@@ -55,7 +55,36 @@ function renderSessionList() {
   if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
     const empty = document.createElement("div");
     empty.className = "session-filter-empty";
-    empty.textContent = getFilteredSessionEmptyText();
+    const emptyText = document.createElement("div");
+    emptyText.textContent = getFilteredSessionEmptyText();
+    empty.appendChild(emptyText);
+
+    const canRestoreStarterSessions = !visitorMode
+      && activeSourceFilter === FILTER_ALL_VALUE
+      && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
+      && typeof restoreOwnerBootstrapSessions === "function";
+    if (canRestoreStarterSessions) {
+      const restoreButton = document.createElement("button");
+      restoreButton.type = "button";
+      restoreButton.className = "new-session-btn secondary";
+      restoreButton.textContent = t("sidebar.restoreStarterSessions");
+      restoreButton.addEventListener("click", async () => {
+        if (restoreButton.disabled) return;
+        restoreButton.disabled = true;
+        restoreButton.textContent = t("sidebar.restoringStarterSessions");
+        try {
+          await restoreOwnerBootstrapSessions();
+        } catch (error) {
+          console.warn("[sessions] Failed to restore starter sessions:", error?.message || error);
+          restoreButton.textContent = t("sidebar.restoreStarterSessions");
+          restoreButton.disabled = false;
+          return;
+        }
+        restoreButton.textContent = t("sidebar.restoreStarterSessions");
+        restoreButton.disabled = false;
+      });
+      empty.appendChild(restoreButton);
+    }
     sessionList.appendChild(empty);
   }
 

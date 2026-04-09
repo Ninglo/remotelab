@@ -251,8 +251,10 @@ chat-server.mjs (:7690)             chat-server.mjs (:7690)
    ├── session/run orchestration
    ├── durable history + run storage
    ├── thin WS invalidation
-   └── detached runners
+   └── detached run execution plane
 ```
+
+For mainland-friendly public access, `cpolar` can point at that same `chat-server.mjs (:7690)` plane.
 
 Key architectural rules:
 
@@ -294,17 +296,19 @@ remotelab guest-instance links --check     # same, plus current local/public rea
 remotelab guest-instance converge --all    # repoint all guest instances at the current source tree
 ```
 
-If you keep a path-prefixed mainland mirror such as `https://jojotry.nat100.top/<instance>/`, store its shared base URL in `~/.config/remotelab/guest-instance-defaults.json`:
+Subdomain-style public hostnames are the primary external entrypoint. `create`, `create-trial`, `show`, `links`, and `report` all treat `https://<instance>.<domain>` as the canonical access URL.
+
+If you intentionally keep a path-prefixed bridge, store its shared root URL in `~/.config/remotelab/guest-instance-defaults.json`:
 
 ```json
 {
-  "mainlandBaseUrl": "https://jojotry.nat100.top"
+  "bridgeRootBaseUrl": "https://bridge.example.com"
 }
 ```
 
-After that, `remotelab guest-instance create`, `create-trial`, `show`, and `links` automatically print both the regular public link and the mainland-prefixed access link. Use `links` when you want the whole current inventory without manually checking one instance at a time. To keep the path router itself versioned instead of living only in a home-directory script, use `scripts/natapp-dual-proxy.mjs` as the launch-agent target for the mainland bridge service.
+After that, `links` and reports can surface an extra bridge URL when it exists. New instances do not bake bridge routing into their runtime environment by default. Keep this only for deployments that still need the bridge service; otherwise prefer the subdomain entrypoint exclusively.
 
-The mainland bridge should stay prefix-only: every product surface lives under `https://<mainland-base>/<name>/`, including the main owner service (default `https://<mainland-base>/owner/`, local port `7690`). The bare root is now only a neutral route index so the bridge does not silently repoint an established product path. Use `NATAPP_MAINLAND_SERVICE_NAME` / `NATAPP_MAINLAND_SERVICE_PORT` to rename or repoint the main service prefix. Legacy `NATAPP_OWNER_ROUTE_PREFIX` / `NATAPP_OWNER_UPSTREAM_PORT` are still accepted as compatibility aliases. See [docs/mainland-routing.md](docs/mainland-routing.md) for the routing rules and cleanup rationale.
+If you keep the prefix bridge, use `NATAPP_BRIDGE_SERVICE_NAME` / `NATAPP_BRIDGE_SERVICE_PORT` to control it. See [docs/prefix-bridge-routing.md](docs/prefix-bridge-routing.md) for the current routing stance.
 
 If you still have older instance-specific runtime copies such as `remotelab-trial-runtime`, run `remotelab guest-instance converge <name>` or `remotelab guest-instance converge --all`. It keeps the same port, hostname, auth, config, and memory directories, but repoints the launch agent back to the current `~/code/remotelab` source tree so future code updates land everywhere without changing the user-facing link.
 
@@ -323,7 +327,7 @@ RemoteLab now boots the current source tree directly after restart. Use `remotel
 | `REMOTELAB_INSTANCE_ROOT` | unset | Optional isolated data root for an additional instance; defaults to `<root>/config` + `<root>/memory` when set |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, apps, push, and provider-managed homes |
 | `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | Optional user-memory override for pointer-first startup files |
-| `REMOTELAB_LIVE_CONTEXT_COMPACT_TOKENS` | `window overflow` | Optional auto-compact override in live-context tokens; unset = compact only after live context exceeds 100% of a known context window, `Inf` = disable |
+| `REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS` | `window overflow` | Optional auto-compact override in current-context tokens; unset = compact only after current context exceeds 100% of a known context window, `Inf` = disable |
 
 ## Common file locations
 
@@ -341,8 +345,8 @@ These are the default paths when no instance overrides are set.
 | `~/.remotelab/memory/` | Private machine-specific memory used for pointer-first startup |
 | `~/Library/Logs/chat-server.log` | Chat server stdout **(macOS)** |
 | `~/Library/Logs/cloudflared.log` | Tunnel stdout **(macOS)** |
-| `~/.local/share/remotelab/logs/chat-server.log` | Chat server stdout **(Linux)** |
-| `~/.local/share/remotelab/logs/cloudflared.log` | Tunnel stdout **(Linux)** |
+| `/var/log/remotelab/chat-server.log` | Chat server stdout **(Linux)** |
+| `/var/log/remotelab/cloudflared.log` | Tunnel stdout **(Linux)** |
 
 ## Storage growth and manual cleanup
 
@@ -380,8 +384,8 @@ These are the default paths when no instance overrides are set.
 tail -50 ~/Library/Logs/chat-server.error.log
 
 # Linux
-journalctl --user -u remotelab-chat -n 50
-tail -50 ~/.local/share/remotelab/logs/chat-server.error.log
+journalctl -u remotelab.service -n 50
+tail -50 /var/log/remotelab/chat-server.error.log
 ```
 
 **DNS not resolving yet**

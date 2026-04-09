@@ -31,12 +31,12 @@ writeFileSync(
 - Then inspect: \`~/.remotelab/instances/trial6/config/file-assets/reimbursement/报账支出主表.xlsx\`
 - Default action: 收到新的报账邮件后，以现有主表为基础追加更新，核对文字与图片后回传更新后的 Excel。
 
-## Video Workflow
+## Media Workflow
 
 - Type: recurring non-repo domain
-- Paths: \`~/my_docs/Video/\`
-- Triggers: video, rough cut, transcript, review
-- First read: \`~/.remotelab/skills/video-cut-review.md\`
+- Paths: \`~/my_docs/Media/\`
+- Triggers: media, rough cut, transcript, review
+- First read: \`~/.remotelab/skills/media-review.md\`
 `,
   'utf8',
 );
@@ -132,8 +132,6 @@ async function waitFor(predicate, description, timeoutMs = 4000) {
 
 try {
   const previous = await createSession(tempHome, 'fake-codex', '历史报账规则', {
-    appId: 'email',
-    appName: 'Email',
     sourceId: 'email',
     sourceName: 'Email',
     group: 'Mail',
@@ -160,8 +158,6 @@ try {
   });
 
   const session = await createSession(tempHome, 'fake-codex', '报账邮件处理', {
-    appId: 'email',
-    appName: 'Email',
     sourceId: 'email',
     sourceName: 'Email',
     group: 'Mail',

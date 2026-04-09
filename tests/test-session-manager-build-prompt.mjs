@@ -206,7 +206,7 @@ const welcomePrompt = await buildPrompt(
   'session-test-8',
   {
     ...baseSession,
-    templateId: 'app_welcome',
+    starterPreset: 'welcome',
     systemPrompt: 'WELCOME SYSTEM PROMPT',
   },
   '先帮我接住这个需求。',
@@ -222,7 +222,7 @@ const retiredWelcomePrompt = await buildPrompt(
   'session-test-9',
   {
     ...baseSession,
-    templateId: 'app_welcome',
+    starterPreset: 'welcome',
     systemPrompt: 'WELCOME SYSTEM PROMPT',
     welcomeOnboardingRetiredAt: '2025-01-01T00:00:00.000Z',
   },

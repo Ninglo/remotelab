@@ -222,7 +222,7 @@ async function main() {
     assert.ok(summary.byOperation.find((entry) => entry.key === 'user_turn'), 'normal chat runs should be tagged as user turns');
     assert.equal(summary.byOperationGroup.find((entry) => entry.key === 'foreground')?.totalTokens, 1280, 'normal chat runs should count as foreground usage');
     assert.equal(summary.byOperationCategory.find((entry) => entry.key === 'user_chat')?.totalTokens, 1280, 'normal chat runs should be categorized as user chat');
-    assert.equal(summary.topRuns.find((entry) => entry.operation === 'user_turn')?.contextTokens, 1950, 'top runs should expose latest live context');
+    assert.equal(summary.topRuns.find((entry) => entry.operation === 'user_turn')?.contextTokens, 1950, 'top runs should expose latest current context');
 
     const ledgerDir = join(configDir, 'usage-ledger');
     assert.equal(existsSync(ledgerDir), true, 'usage ledger directory should be created');

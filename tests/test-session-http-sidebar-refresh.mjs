@@ -116,14 +116,16 @@ function createContext() {
         name: 'Current session',
         status: 'idle',
         updatedAt: '2026-03-12T09:00:00.000Z',
-        appId: 'chat',
+        sourceId: 'chat',
+        sourceName: 'Chat',
       },
       {
         id: 'sidebar-target',
         name: 'Old sidebar name',
         status: 'idle',
         updatedAt: '2026-03-12T08:00:00.000Z',
-        appId: 'chat',
+        sourceId: 'chat',
+        sourceName: 'Chat',
       },
     ],
     jsonResponseCache: new Map(),
@@ -163,8 +165,8 @@ function createContext() {
     getSessionDisplayName(session) {
       return session?.name || '';
     },
-    getEffectiveSessionAppId(session) {
-      return session?.appId || 'chat';
+    getEffectiveSessionSourceId(session) {
+      return session?.sourceId || 'chat';
     },
     normalizeSessionStatus(status) {
       return status || 'idle';
@@ -207,7 +209,8 @@ function createContext() {
             name: 'Fresh sidebar name',
             status: 'running',
             updatedAt: '2026-03-12T10:00:00.000Z',
-            appId: 'chat',
+            sourceId: 'chat',
+            sourceName: 'Chat',
           },
         });
       }

@@ -6,7 +6,7 @@ import {
   getConnectorBinding,
   listConnectorBindings,
 } from '../lib/connector-bindings.mjs';
-import { CONFIG_DIR, MAINLAND_PUBLIC_BASE_URL, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { BRIDGE_PUBLIC_BASE_URL, CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import {
   generateCalendarAuthUrl,
   handleCalendarAuthCallback,
@@ -17,11 +17,13 @@ import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
+  CALENDAR_SUBSCRIBE_HELPER_PATH,
   buildCalendarSubscriptionChannels,
+  buildSubscriptionUrl,
+  buildWebcalSubscriptionUrl,
   filterCalendarSubscriptionChannelsForExposure,
   generateIcsFeed,
   getFeedInfo,
-  getSubscriptionUrl,
   listCalendarFeedEvents,
 } from '../lib/connector-calendar-feed.mjs';
 import { readEventBody } from './history.mjs';
@@ -57,6 +59,13 @@ function resolveBaseUrl(req) {
   return `${proto}://${host}${prefix}`;
 }
 
+function resolveRequestOrigin(req) {
+  const host = trimString(req.headers?.host || req.headers?.['x-forwarded-host']);
+  const proto = trimString(req.headers?.['x-forwarded-proto']) || 'https';
+  if (!host) return '';
+  return `${proto}://${host}`;
+}
+
 function normalizeForwardedPrefix(value) {
   const trimmed = trimString(value);
   if (!trimmed) return '';
@@ -64,15 +73,24 @@ function normalizeForwardedPrefix(value) {
   return normalized === '/' ? '' : normalized;
 }
 
-function hasPathPrefix(baseUrl) {
-  const normalizedBaseUrl = trimString(baseUrl);
-  if (!normalizedBaseUrl) return false;
-  try {
-    const pathname = new URL(normalizedBaseUrl).pathname.replace(/\/+$/, '');
-    return pathname.length > 0 && pathname !== '/';
-  } catch {
-    return false;
-  }
+function buildVisibleCalendarSubscriptionChannels(req, feedToken) {
+  return filterCalendarSubscriptionChannelsForExposure(buildCalendarSubscriptionChannels({
+    feedToken,
+    primaryBaseUrl: resolveRequestOrigin(req),
+    alternateBaseUrls: [PUBLIC_BASE_URL, BRIDGE_PUBLIC_BASE_URL].filter(Boolean),
+  }));
+}
+
+function resolveCalendarSubscriptionRedirectTargets(req, feedToken) {
+  const requestOrigin = resolveRequestOrigin(req);
+  return {
+    httpsUrl: buildSubscriptionUrl(requestOrigin, feedToken, { allowLocalhost: true })
+      || buildSubscriptionUrl(PUBLIC_BASE_URL, feedToken)
+      || buildSubscriptionUrl(BRIDGE_PUBLIC_BASE_URL, feedToken),
+    webcalUrl: buildWebcalSubscriptionUrl(requestOrigin, feedToken, { allowLocalhost: true })
+      || buildWebcalSubscriptionUrl(PUBLIC_BASE_URL, feedToken)
+      || buildWebcalSubscriptionUrl(BRIDGE_PUBLIC_BASE_URL, feedToken),
+  };
 }
 
 function buildSessionUrl(req, sessionId) {
@@ -347,36 +365,45 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
     return true;
   }
 
+  if (pathname === CALENDAR_SUBSCRIBE_HELPER_PATH && req.method === 'GET') {
+    const url = new URL(req.url || '/', 'http://127.0.0.1');
+    const format = trimString(url.searchParams.get('format')).toLowerCase();
+    const feedInfo = await getFeedInfo();
+    const targets = resolveCalendarSubscriptionRedirectTargets(req, feedInfo.feedToken);
+    const location = format === 'https'
+      ? targets.httpsUrl
+      : targets.webcalUrl || targets.httpsUrl;
+
+    if (!location) {
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Calendar subscription URL is unavailable for this request.');
+      return true;
+    }
+
+    res.writeHead(302, {
+      Location: location,
+      'Cache-Control': 'no-store',
+    });
+    res.end();
+    return true;
+  }
+
   if (pathname === '/api/connectors/calendar/feed' && req.method === 'GET') {
-    const requestBaseUrl = resolveBaseUrl(req);
-    const mainlandBaseUrl = MAINLAND_PUBLIC_BASE_URL || (hasPathPrefix(requestBaseUrl) ? requestBaseUrl : '');
-    const publicBaseUrl = PUBLIC_BASE_URL || (!hasPathPrefix(requestBaseUrl) ? requestBaseUrl : '');
-    const preferredBaseUrl = mainlandBaseUrl || publicBaseUrl || requestBaseUrl;
-    if (!preferredBaseUrl) {
+    const feedInfo = await getFeedInfo();
+    const exposedSubscriptionChannels = buildVisibleCalendarSubscriptionChannels(req, feedInfo.feedToken);
+
+    if (!exposedSubscriptionChannels.preferredHttpsUrl && !exposedSubscriptionChannels.preferredWebcalUrl) {
       writeJson(res, 500, { error: 'Cannot determine public base URL from request headers.' });
       return true;
     }
-    const feedInfo = await getFeedInfo();
-    const subscriptionChannels = buildCalendarSubscriptionChannels({
-      feedToken: feedInfo.feedToken,
-      mainlandBaseUrl,
-      publicBaseUrl,
-      preferredBaseUrl,
-    });
-    const exposedSubscriptionChannels = filterCalendarSubscriptionChannelsForExposure(subscriptionChannels);
-    const subscriptionUrl = exposedSubscriptionChannels.preferredHttpsUrl || await getSubscriptionUrl(preferredBaseUrl);
+
+    const subscriptionUrl = exposedSubscriptionChannels.preferredHttpsUrl;
     writeJson(res, 200, {
       subscriptionUrl,
       webcalUrl: exposedSubscriptionChannels.preferredWebcalUrl,
       subscriptionUrls: {
         preferred: exposedSubscriptionChannels.preferredHttpsUrl,
         preferredWebcal: exposedSubscriptionChannels.preferredWebcalUrl,
-        ...(exposedSubscriptionChannels.mainlandHttpsUrl
-          ? {
-              mainland: exposedSubscriptionChannels.mainlandHttpsUrl,
-              mainlandWebcal: exposedSubscriptionChannels.mainlandWebcalUrl,
-            }
-          : {}),
       },
       variants: exposedSubscriptionChannels.variants,
       calendarName: feedInfo.calendarName,

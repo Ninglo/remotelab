@@ -82,10 +82,13 @@ remotelab/
 │
 ├── chat/                    # ── Chat service modules ──
 │   ├── router.mjs           # All HTTP routes & API endpoints (538 lines)
-│   ├── session-manager.mjs  # Canonical session/run orchestration + reconciliation
-│   ├── process-runner.mjs   # Tool invocation helpers + runtime adapters
+│   ├── session-manager.mjs  # Chat control-plane submit / observe / broadcast
+│   ├── process-runner.mjs   # Tool invocation helpers + explicit runtime adapters
 │   ├── runs.mjs             # Durable run metadata/result/spool storage
-│   ├── runner-supervisor.mjs # Detached runner launcher
+│   ├── run-launcher.mjs     # Detached run launch strategy (systemd / process fallback)
+│   ├── run-projection.mjs   # Raw spool -> normalized run-event projection
+│   ├── run-reconciler.mjs   # Run liveness + missing-result terminalization
+│   ├── runner-supervisor.mjs # Compatibility shim re-exporting run-launcher
 │   ├── runner-sidecar.mjs   # Thin detached executor writing raw spool/status/result
 │   ├── ws.mjs               # WebSocket invalidation channel only
 │   ├── summarizer.mjs       # AI-driven session label suggestions (title/group/description)

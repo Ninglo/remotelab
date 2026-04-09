@@ -428,8 +428,11 @@ export async function createFileAssetUploadIntent({
   mimeType,
   sizeBytes,
   createdBy = 'owner',
+  forceLocal = false,
 } = {}) {
-  requireFileAssetStorageEnabled();
+  if (forceLocal !== true) {
+    requireFileAssetStorageEnabled();
+  }
   const normalizedSessionId = normalizeString(sessionId);
   if (!normalizedSessionId) {
     throw createError('sessionId is required', 'FILE_ASSET_SESSION_REQUIRED', 400);
@@ -453,7 +456,7 @@ export async function createFileAssetUploadIntent({
   });
 
   await ensureDir(CHAT_FILE_ASSETS_DIR);
-  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED) {
+  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED || forceLocal === true) {
     const localFilename = buildLocalObjectFilename(assetId, record.originalName);
     record.storage.provider = 'local';
     record.storage.localFilename = localFilename;
@@ -461,7 +464,7 @@ export async function createFileAssetUploadIntent({
 
   await writeJsonAtomic(fileAssetPath(assetId), record);
 
-  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED) {
+  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED || forceLocal === true) {
     return {
       asset: await buildClientFileAsset(record),
       upload: {

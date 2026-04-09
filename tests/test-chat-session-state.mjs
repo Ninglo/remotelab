@@ -76,8 +76,8 @@ function createBaseContext() {
     archivedSessionCount: 0,
     sessions: [],
     visitorMode: false,
-    getEffectiveSessionAppId(session) {
-      return session?.appId || 'chat';
+    getEffectiveSessionSourceId(session) {
+      return session?.sourceId || 'chat';
     },
     normalizeSessionReviewStamp(value) {
       const trimmed = typeof value === 'string' ? value.trim() : '';

@@ -107,11 +107,11 @@ For those fields, the preferred migration order is:
 ### Current implementation status
 
 - The owner UI no longer exposes app/user sidebar filters or app/user settings panels.
-- `/api/apps*`, `/api/users*`, `/api/visitors*`, `/app/:shareToken`, and `/visitor/:shareToken` are now removed from the active product surface rather than kept as explicit retirement stubs.
-- Share snapshots remain the only public share surface.
-- Owner bootstrap Welcome now lands as a normal starter session with a seeded assistant opening message instead of a product-visible Welcome app flow.
-- Active session presentation, connector routing, fork/delegate inheritance, and template application now read canonical `sourceId` / `sourceName` plus `templateId` / `templateName`.
-- Legacy session `appId` / `appName` fields may still exist in old stored records, but the runtime no longer reads them on the main path.
+- Legacy `/api/apps*`, `/api/users*`, and `/api/visitors*` owner routes are gone from the active product surface, but interactive Agent share is separately reopened by `notes/current/interactive-agent-share-architecture.md`.
+- `/agent/:shareToken` is the canonical interactive Agent share surface, and legacy `/app/:shareToken` has been removed.
+- Share snapshots remain the only read-only public share surface; interactive Agent share is now a separate, scoped non-owner model.
+- Owner bootstrap Welcome now lands as a normal starter session keyed by `starterPreset`, and `Create Agent` now opens from a starter preset instead of a hidden built-in template object.
+- Active session presentation, connector routing, fork/delegate inheritance, and template application now use canonical `sourceId` / `sourceName` plus `templateId` / `templateName`; legacy app-era session fields are dropped during normalization instead of being read as compatibility input.
 
 ---
 

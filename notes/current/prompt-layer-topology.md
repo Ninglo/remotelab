@@ -43,7 +43,7 @@ It should stay small and principle-first.
 
 This layer decides what to activate for the current turn.
 
-Its job is not to preload everything. Its job is to keep the live context small and correctly assembled.
+Its job is not to preload everything. Its job is to keep the current context small and correctly assembled.
 
 Typical responsibilities:
 

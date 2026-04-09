@@ -84,8 +84,9 @@ process.env.PATH = `${tempBin}:${process.env.PATH}`;
 
 const appsModule = await import(pathToFileURL(join(repoRoot, 'chat', 'apps.mjs')).href);
 const sessionManager = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
+const starterPresetModule = await import(pathToFileURL(join(repoRoot, 'chat', 'session-starter-preset.mjs')).href);
 
-const { WELCOME_APP_ID } = appsModule;
+const { WELCOME_STARTER_PRESET } = starterPresetModule;
 const {
   createSession,
   getSession,
@@ -103,7 +104,7 @@ async function waitFor(predicate, description, timeoutMs = 4000) {
 }
 
 const session = await createSession(tempHome, 'fake-codex', 'Welcome Intake', {
-  templateId: WELCOME_APP_ID,
+  starterPreset: WELCOME_STARTER_PRESET,
   group: 'RemoteLab',
   description: 'Welcome app intake state should keep a hidden task card.',
 });

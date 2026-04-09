@@ -143,7 +143,8 @@ function createContext() {
         name: 'Current session',
         status: 'idle',
         updatedAt: '2026-03-12T09:30:00.000Z',
-        appId: 'chat',
+        sourceId: 'chat',
+        sourceName: 'Chat',
         model: 'gpt-5',
         effort: 'high',
         thinking: true,
@@ -154,14 +155,16 @@ function createContext() {
         name: 'Old changed session',
         status: 'idle',
         updatedAt: '2026-03-12T08:30:00.000Z',
-        appId: 'chat',
+        sourceId: 'chat',
+        sourceName: 'Chat',
       },
       {
         id: 'unchanged-session',
         name: 'Stable session',
         status: 'idle',
         updatedAt: '2026-03-12T07:30:00.000Z',
-        appId: 'chat',
+        sourceId: 'chat',
+        sourceName: 'Chat',
       },
     ],
     jsonResponseCache: new Map(),
@@ -201,8 +204,8 @@ function createContext() {
     getSessionDisplayName(session) {
       return session?.name || '';
     },
-    getEffectiveSessionAppId(session) {
-      return session?.appId || 'chat';
+    getEffectiveSessionSourceId(session) {
+      return session?.sourceId || 'chat';
     },
     normalizeSessionStatus(status) {
       return status || 'idle';
@@ -246,14 +249,16 @@ function createContext() {
               name: 'Fresh changed session',
               status: 'running',
               updatedAt: '2026-03-12T10:00:00.000Z',
-              appId: 'chat',
+              sourceId: 'chat',
+              sourceName: 'Chat',
             },
             {
               id: 'current-session',
               name: 'Current session refreshed',
               status: 'running',
               updatedAt: '2026-03-12T09:45:00.000Z',
-              appId: 'chat',
+              sourceId: 'chat',
+              sourceName: 'Chat',
               activity: { queue: { count: 1 } },
             },
             {
@@ -261,7 +266,8 @@ function createContext() {
               name: 'Stable session',
               status: 'idle',
               updatedAt: '2026-03-12T07:30:00.000Z',
-              appId: 'chat',
+              sourceId: 'chat',
+              sourceName: 'Chat',
             },
           ],
           archivedCount: 0,

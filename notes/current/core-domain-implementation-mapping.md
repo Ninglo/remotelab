@@ -40,7 +40,7 @@ Short version:
 |---|---|---|---|---|
 | `Session` | `chat/session-manager.mjs`, `chat/history.mjs` | `chat-sessions.json`, `chat-history/<sessionId>/` | `/api/sessions*`, main chat UI | Partial |
 | `Run` | `chat/runs.mjs`, `chat/session-manager.mjs`, runner modules | `chat-runs/<runId>/` | `/api/runs/:runId`, message/cancel/resume flows | Partial |
-| `App` | `chat/apps.mjs`, `chat/router.mjs` | `apps.json` | `/api/apps*`, `/app/:shareToken` | Partial |
+| `App` | `chat/apps.mjs`, `chat/router.mjs`, `chat/router-control-routes.mjs` | `apps.json` | `/api/agents*`, `/agent/:shareToken`, legacy `/app/:shareToken` redirect | Partial |
 | `Principal` | `lib/auth.mjs`, `chat/router.mjs` | `auth-sessions.json` cookie sessions | `/login`, `/logout`, `/api/auth/me` | Mismatch |
 | `ShareSnapshot` | `chat/shares.mjs`, `chat/router.mjs` | `shared-snapshots/<snapId>.json` | `POST /api/sessions/:id/share`, `GET /share/:id` | Partial |
 | session presentation metadata | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `static/chat.js` | `chat-sessions.json` | session list, empty Progress tab shell | Partial |
@@ -53,10 +53,10 @@ The current code still uses some older names. Use the following translation when
 
 | Contract term | Current code term | Notes |
 |---|---|---|
-| `Principal` | auth session `role`, plus optional `visitorId`, `appId`, `sessionId` | current code does not yet model principal explicitly |
+| `Principal` | auth session `role`, plus optional `visitorId`, `agentId`, `sessionId`, `surfaceMode` | current code does not yet model principal explicitly |
 | owner principal | auth session with `role: 'owner'` | globally privileged |
-| app-scoped non-owner principal | auth session with `role: 'visitor'` | currently narrower than the contract; effectively pinned to one session |
-| app entry surface | `/app/:shareToken` flow | currently creates a new visitor session and logs into that session |
+| app-scoped non-owner principal | auth session with `role: 'visitor'` and `surfaceMode: 'agent_scoped'` | scoped to one Agent, not one pinned session |
+| app entry surface | canonical `/agent/:shareToken`, plus legacy `/app/:shareToken` redirect | mints an agent-scoped visitor auth session and lands in a shared workspace shell |
 | `ShareSnapshot` | snapshot JSON under `shared-snapshots/` | currently materialized, not range-based |
 | derived UI state | sidebar/progress state | stored separately and partly fed by summarizer |
 
@@ -187,8 +187,11 @@ When mapping current code to the contract, treat:
 - `chat/runs.mjs`
 - `chat/session-manager.mjs`
 - `chat/process-runner.mjs`
-- `chat/runner-supervisor.mjs`
+- `chat/run-launcher.mjs`
 - `chat/runner-sidecar.mjs`
+- `chat/run-projection.mjs`
+- `chat/run-reconciler.mjs`
+- `chat/runner-supervisor.mjs` (compatibility shim)
 - `chat/adapters/*.mjs`
 
 ### Current storage

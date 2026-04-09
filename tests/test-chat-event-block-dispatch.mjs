@@ -113,8 +113,8 @@ context.renderHiddenBlockEventsInto({}, [
   { type: 'tool_result', toolName: 'bash' },
   { type: 'file_change', filePath: 'src/app.js' },
   { type: 'usage', outputTokens: 42 },
-  { type: 'context_barrier', content: 'Older messages above this marker are no longer in live context.' },
-  { type: 'context_operation', title: 'Live context compacted' },
+  { type: 'context_barrier', content: 'Older messages above this marker are no longer in the current context.' },
+  { type: 'context_operation', title: 'Current context compacted' },
   { type: 'template_context', content: 'internal note' },
 ]);
 
@@ -127,8 +127,8 @@ assert.deepEqual(calls, [
   'tool_result:bash',
   'file_change:src/app.js',
   'usage:42',
-  'context_barrier:Older messages above this marker are no longer in live context.',
-  'context_operation:Live context compacted',
+  'context_barrier:Older messages above this marker are no longer in the current context.',
+  'context_operation:Current context compacted',
   'unknown:template_context',
 ], 'expanded folded blocks should render all folded event kinds and fall back safely for unknown ones');
 

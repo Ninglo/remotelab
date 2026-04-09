@@ -100,6 +100,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 
 ### Codex Home Directory Trust Check (2026-03-06)
 - `codex exec` can hard-fail with `Not inside a trusted directory and --skip-git-repo-check was not specified.` when `cwd` is the user's home directory, even if approvals/sandbox are already bypassed.
+- When Node reports `spawn /usr/bin/codex ENOENT` inside RemoteLab, do not assume the Codex binary is missing; a non-existent session `cwd` can produce the same error. The quickest fix is to normalize any missing persisted session folder to the current host's valid working directory instead of preserving old absolute paths.
 - In RemoteLab, this presents as a "silent" or "no response" Codex session because the process exits before emitting JSON events; Claude does not have this constraint, so the mismatch looks path-specific.
 - If the product intentionally launches agents from `~` or other non-repo roots, pass `--skip-git-repo-check` in the Codex adapter (or explicitly trust that directory in Codex config).
 
@@ -483,13 +484,18 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Keep the later restore pass for final selection/fallback logic, but let the known session content race ahead in the common case so the first meaningful paint is the active conversation rather than the full list.
 - When session metadata can arrive before `/api/tools`, latch the session's selected tool locally first and only trigger model loading after the tool catalog exists; otherwise startup parallelism can silently leave the runtime controls on the wrong tool.
 
+### Bootstrap Seeding Must Not Hide Inside Normal Business Reads (2026-04-09)
+- Do not use a normal read path like `GET /api/sessions` to recreate onboarding/demo/bootstrap records just because the active collection is empty.
+- "Fresh instance initialization" and "the user later cleared all active items" are different states; if bootstrap content should exist, seed it from setup/create/backfill flows or an explicit restore action, not by inferring intent from an empty business list.
+- If the product still needs first-run recovery, persist a dedicated bootstrap marker or version instead of overloading runtime emptiness as the trigger.
+
 ### Usage Metrics Should Normalize To Context Window Size (2026-03-10)
 - Provider usage fields are not directly comparable: Claude-style runtimes split cached prompt tokens into separate fields, while Codex-style runtimes report full prompt size in `input_tokens` and expose cached tokens only as a subset annotation.
 - The user-facing metric should therefore normalize to a canonical `contextTokens` value that represents the actual prompt/context window size loaded for the turn, not raw billable-token accounting.
 - Preserve provider-native raw `inputTokens` / `outputTokens` for debugging if needed, but label the UI around `context` so operators can judge compaction pressure and context-window saturation correctly.
-- For Codex CLI specifically, the most trustworthy local source for live context is the session JSONL `event_msg` with `payload.type === "token_count"`: use `info.last_token_usage.input_tokens` as live context, `info.total_token_usage.input_tokens` as cumulative/raw turn input, and `info.model_context_window` when present as the provider window size.
-- Codex stdout `turn.completed.usage.input_tokens` can grow with the agent loop and repeated tool calls, so it should not be treated as live context pressure in UI or auto-compaction decisions.
-- Once a clean `contextTokens` contract exists, do not keep compatibility fallbacks that silently reinterpret raw `inputTokens` as live context. Showing nothing is safer than showing a misleading number.
+- For Codex CLI specifically, the most trustworthy local source for current context is the session JSONL `event_msg` with `payload.type === "token_count"`: use `info.last_token_usage.input_tokens` as current context, `info.total_token_usage.input_tokens` as cumulative/raw turn input, and `info.model_context_window` when present as the provider window size.
+- Codex stdout `turn.completed.usage.input_tokens` can grow with the agent loop and repeated tool calls, so it should not be treated as current-context pressure in UI or auto-compaction decisions.
+- Once a clean `contextTokens` contract exists, do not keep compatibility fallbacks that silently reinterpret raw `inputTokens` as current context. Showing nothing is safer than showing a misleading number.
 - If the pressure contract is still unsettled, prefer disabling automatic compaction by default (`Inf`) rather than firing on a threshold that users may mistake for a trustworthy saturation signal.
 
 ### Mobile Input Toolbars Should Scroll Horizontally When Controls Accumulate (2026-03-10)

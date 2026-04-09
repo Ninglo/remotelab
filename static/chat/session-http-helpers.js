@@ -20,7 +20,7 @@ function redirectToLogin() {
   }
 }
 
-const PRODUCT_LOCAL_HREF_RE = /^\/(?:api|share|share-asset|agent|app|visitor|login|logout|m)(?:[/?#]|$)/i;
+const PRODUCT_LOCAL_HREF_RE = /^\/(?:api|share|share-asset|agent|visitor|login|logout|m)(?:[/?#]|$)/i;
 
 function enhanceRenderedContentLinks(root) {
   if (!root) return;

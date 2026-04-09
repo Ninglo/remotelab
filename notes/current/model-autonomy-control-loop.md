@@ -60,7 +60,7 @@ This window is where the model performs a lightweight review of the just-finishe
 
 - end the turn and wait
 - send a short follow-up
-- compact live context
+- compact current context
 - refresh work state
 - spawn a worker session
 - merge a worker result
@@ -134,7 +134,7 @@ The questions are simple:
 
 - Is the user request satisfied for now?
 - Is there unresolved risk or ambiguity that matters?
-- Is live context becoming unhealthy?
+- Is current context becoming unhealthy?
 - Is the next step mostly noisy execution rather than core reasoning?
 - Is user input actually required, or can the system continue autonomously?
 
@@ -189,7 +189,7 @@ This reframes compaction away from “summarize old transcript text” and towar
 The authoritative compaction output should therefore be:
 
 - an updated `workState.continuation`
-- a `contextOp` saying what moved out of live context
+- a `contextOp` saying what moved out of current context
 - retrieval handles for anything left in history
 
 The user-visible handoff text can still exist, but it should be a projection of those objects, not the primary truth.
@@ -285,7 +285,7 @@ Each `contextOp` should expose at least:
 - reason
 - input sources
 - output targets
-- effect on live context
+- effect on current context
 - whether the user needs to care now
 
 On the product surface, this likely means:

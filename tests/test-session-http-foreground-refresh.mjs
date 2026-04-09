@@ -105,7 +105,8 @@ function buildSession({
     status,
     updatedAt,
     latestSeq,
-    appId: 'chat',
+    sourceId: 'chat',
+    sourceName: 'Chat',
     activity: {
       run: { state },
       queue: { state: 'idle', count: 0 },
@@ -242,8 +243,8 @@ function createContext({ fetchImpl, pendingNavigationState = null } = {}) {
     getSessionDisplayName(session) {
       return session?.name || '';
     },
-    getEffectiveSessionAppId(session) {
-      return session?.appId || 'chat';
+    getEffectiveSessionSourceId(session) {
+      return session?.sourceId || 'chat';
     },
     normalizeSessionStatus(status) {
       return status || 'idle';

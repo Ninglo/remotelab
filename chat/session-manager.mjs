@@ -59,6 +59,7 @@ import {
   stripEventAttachmentSavedPaths,
 } from './attachment-utils.mjs';
 import {
+  appendRunSpoolRecord,
   createRun,
   findRunByRequest,
   getRun,
@@ -74,7 +75,9 @@ import {
   updateRun,
   writeRunResult,
 } from './runs.mjs';
-import { spawnDetachedRunner } from './runner-supervisor.mjs';
+import { spawnDetachedRunner } from './run-launcher.mjs';
+import { createRunProjectionService } from './run-projection.mjs';
+import { createDetachedRunReconciler } from './run-reconciler.mjs';
 import {
   buildSessionActivity,
   getSessionQueueCount,
@@ -92,9 +95,9 @@ import {
 import { dispatchSessionEmailCompletionTargets, sanitizeEmailCompletionTargets } from '../lib/agent-mail-completion-targets.mjs';
 import { dispatchSessionConnectorActions, sanitizeAllCompletionTargets } from '../lib/connector-action-dispatcher.mjs';
 import { buildRunConnectorSurface, buildSessionConnectorSurface } from './session-connectors.mjs';
+import { getSessionLocalBridgeSurface } from './local-bridge-store.mjs';
 import {
   DEFAULT_APP_ID,
-  WELCOME_APP_ID,
   createApp,
   getApp,
   getBuiltinApp,
@@ -114,6 +117,10 @@ import {
   buildDelegationHandoff,
   clipCompactionSection,
 } from './session-context-compaction.mjs';
+import {
+  WELCOME_STARTER_PRESET,
+  normalizeSessionStarterPreset,
+} from './session-starter-preset.mjs';
 import {
   buildCodexContextMetricsPayload,
   readLatestCodexSessionMetrics,
@@ -170,8 +177,13 @@ import {
   normalizeSessionUserName,
   normalizeSessionVisitorName,
   parseTimestampMs,
+  resolveAuthSessionAgentId,
+  resolveAuthSessionPrincipalId,
+  resolveRequestedSessionPrincipalFields,
   resolveRequestedSessionSourceId,
   resolveRequestedSessionSourceName,
+  resolveSessionAgentId,
+  resolveSessionPrincipalId,
   resolveSessionSourceId,
   resolveSessionSourceName,
   resolveSessionTemplateId,
@@ -198,6 +210,7 @@ const REPLY_SELF_CHECK_DEFAULT_REASON = 'the latest reply left avoidable unfinis
 const FOLLOW_UP_FLUSH_DELAY_MS = 1500;
 const MAX_RECENT_FOLLOW_UP_REQUEST_IDS = 100;
 const OBSERVED_RUN_POLL_INTERVAL_MS = 250;
+const DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS = 1500;
 
 const MAX_DELEGATION_DEPTH = 3;
 const DELEGATION_RATE_WINDOW_MS = 60_000;
@@ -211,7 +224,7 @@ function normalizeSessionSidebarOrder(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 }
 
-const liveSessions = new Map();
+const sessionRuntimeStateById = new Map();
 const observedRuns = new Map();
 const runSyncPromises = new Map();
 const runPostFinalizePromises = new Map();
@@ -222,7 +235,7 @@ function nowIso() {
 }
 
 function getCompactionServices() {
-  return { appendEvent, broadcastSessionInvalidation, clearPersistedResumeIds, createSession, enrichSessionMeta, ensureLiveSession, getSession, getSessionQueueCount, isContextCompactorSession, loadSessionsMeta, mutateSessionMeta, nowIso, sendMessage };
+  return { appendEvent, broadcastSessionInvalidation, clearPersistedResumeIds, createSession, enrichSessionMeta, ensureSessionRuntimeState, getSession, getSessionQueueCount, isContextCompactorSession, loadSessionsMeta, mutateSessionMeta, nowIso, sendMessage };
 }
 
 function getTaskCardFollowupServices() {
@@ -242,48 +255,28 @@ function normalizeSourceContext(value) {
   }
 }
 
-function isRecordedProcessAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (error?.code === 'ESRCH') return false;
-    return true;
-  }
-}
-
-async function synthesizeDetachedRunTermination(runId, run) {
-  const hasRecordedProcess = Number.isInteger(run?.runnerProcessId) || Number.isInteger(run?.toolProcessId);
-  if (!hasRecordedProcess || isTerminalRunState(run?.state)) {
-    return null;
-  }
-  const runnerAlive = isRecordedProcessAlive(run?.runnerProcessId);
-  const toolAlive = isRecordedProcessAlive(run?.toolProcessId);
-  if (runnerAlive || toolAlive) {
-    return null;
-  }
-
-  const completedAt = nowIso();
-  const cancelled = run?.cancelRequested === true;
-  const error = cancelled ? null : 'Detached runner disappeared before writing a result';
-  const result = {
-    completedAt,
-    exitCode: 1,
-    signal: null,
-    cancelled,
-    ...(error ? { error } : {}),
-  };
-
-  await writeRunResult(runId, result);
-  return await updateRun(runId, (current) => ({
-    ...current,
-    state: cancelled ? 'cancelled' : 'failed',
-    completedAt,
-    result,
-    failureReason: error,
-  })) || run;
-}
+const synthesizeDetachedRunTermination = createDetachedRunReconciler({
+  appendRunSpoolRecord,
+  collectRunOutputPreview,
+  graceMs: DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS,
+  isTerminalRunState,
+  nowIso,
+  updateRun: async (runId, updater) => updateRun(runId, updater),
+  writeRunResult,
+});
+const {
+  collectNormalizedRunEvents,
+  collectNormalizedRunEventDelta,
+} = createRunProjectionService({
+  buildCodexContextMetricsPayload,
+  clipPreview: clipFailurePreview,
+  createToolInvocation,
+  materializeRunSpoolLine,
+  normalizeRunEvents,
+  readLatestCodexSessionMetrics,
+  readRunSpoolDelta,
+  readRunSpoolRecords,
+});
 
 function deriveRunStateFromResult(run, result) {
   if (!result || typeof result !== 'object') return null;
@@ -701,17 +694,17 @@ function resolveQueuedFollowUpDispatchOptions(queue, session) {
 }
 
 function clearFollowUpFlushTimer(sessionId) {
-  const live = liveSessions.get(sessionId);
-  if (!live?.followUpFlushTimer) return false;
-  clearTimeout(live.followUpFlushTimer);
-  delete live.followUpFlushTimer;
+  const runtimeState = sessionRuntimeStateById.get(sessionId);
+  if (!runtimeState?.followUpFlushTimer) return false;
+  clearTimeout(runtimeState.followUpFlushTimer);
+  delete runtimeState.followUpFlushTimer;
   return true;
 }
 
 async function flushQueuedFollowUps(sessionId) {
-  const live = ensureLiveSession(sessionId);
-  if (live.followUpFlushPromise) {
-    return live.followUpFlushPromise;
+  const runtimeState = ensureSessionRuntimeState(sessionId);
+  if (runtimeState.followUpFlushPromise) {
+    return runtimeState.followUpFlushPromise;
   }
 
   const promise = (async () => {
@@ -778,29 +771,29 @@ async function flushQueuedFollowUps(sessionId) {
     scheduleQueuedFollowUpDispatch(sessionId, FOLLOW_UP_FLUSH_DELAY_MS * 2);
     return false;
   }).finally(() => {
-    const current = liveSessions.get(sessionId);
+    const current = sessionRuntimeStateById.get(sessionId);
     if (current?.followUpFlushPromise === promise) {
       delete current.followUpFlushPromise;
     }
   });
 
-  live.followUpFlushPromise = promise;
+  runtimeState.followUpFlushPromise = promise;
   return promise;
 }
 
 function scheduleQueuedFollowUpDispatch(sessionId, delayMs = FOLLOW_UP_FLUSH_DELAY_MS) {
-  const live = ensureLiveSession(sessionId);
-  if (live.followUpFlushPromise) return true;
+  const runtimeState = ensureSessionRuntimeState(sessionId);
+  if (runtimeState.followUpFlushPromise) return true;
   clearFollowUpFlushTimer(sessionId);
-  live.followUpFlushTimer = setTimeout(() => {
-    const current = liveSessions.get(sessionId);
+  runtimeState.followUpFlushTimer = setTimeout(() => {
+    const current = sessionRuntimeStateById.get(sessionId);
     if (current?.followUpFlushTimer) {
       delete current.followUpFlushTimer;
     }
     void flushQueuedFollowUps(sessionId);
   }, delayMs);
-  if (typeof live.followUpFlushTimer.unref === 'function') {
-    live.followUpFlushTimer.unref();
+  if (typeof runtimeState.followUpFlushTimer.unref === 'function') {
+    runtimeState.followUpFlushTimer.unref();
   }
   return true;
 }
@@ -847,17 +840,21 @@ function shouldExposeSession(meta) {
   return !isInternalSession(meta);
 }
 
+function isWelcomeStarterSession(meta) {
+  return normalizeSessionStarterPreset(meta?.starterPreset) === WELCOME_STARTER_PRESET;
+}
+
 function isTaskCardEnabledForSession(meta) {
   if (!meta || isInternalSession(meta)) return false;
   if (meta.visitorId) return false;
   if (normalizeSessionTaskCard(meta.taskCard)) return true;
-  if (resolveSessionTemplateId(meta) === WELCOME_APP_ID) return true;
+  if (isWelcomeStarterSession(meta)) return true;
   return !hasExplicitSessionSource(meta);
 }
 
 function isWelcomeOnboardingActive(meta) {
   if (!meta || isInternalSession(meta)) return false;
-  if (resolveSessionTemplateId(meta) !== WELCOME_APP_ID) return false;
+  if (!isWelcomeStarterSession(meta)) return false;
   return !(typeof meta.welcomeOnboardingRetiredAt === 'string' && meta.welcomeOnboardingRetiredAt.trim());
 }
 
@@ -870,17 +867,17 @@ function shouldRetireWelcomeOnboarding(meta) {
 function shouldIncludeSessionTemplateInstructions(session) {
   const systemPrompt = typeof session?.systemPrompt === 'string' ? session.systemPrompt.trim() : '';
   if (!systemPrompt) return false;
-  if (resolveSessionTemplateId(session) !== WELCOME_APP_ID) return true;
+  if (!isWelcomeStarterSession(session)) return true;
   return isWelcomeOnboardingActive(session);
 }
 
-function ensureLiveSession(sessionId) {
-  let live = liveSessions.get(sessionId);
-  if (!live) {
-    live = {};
-    liveSessions.set(sessionId, live);
+function ensureSessionRuntimeState(sessionId) {
+  let runtimeState = sessionRuntimeStateById.get(sessionId);
+  if (!runtimeState) {
+    runtimeState = {};
+    sessionRuntimeStateById.set(sessionId, runtimeState);
   }
-  return live;
+  return runtimeState;
 }
 
 function isReplySelfRepairOperation(manifest) {
@@ -979,127 +976,6 @@ function observeDetachedRun(sessionId, runId) {
     console.error(`[runs] failed to observe ${runId}: ${error.message}`);
     return false;
   }
-}
-
-function parseRecordTimestamp(record) {
-  const parsed = Date.parse(record?.ts || '');
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-async function createRunRuntimeInvocation(manifest) {
-  return createToolInvocation(manifest.tool, '', {
-    model: manifest.options?.model,
-    effort: manifest.options?.effort,
-    thinking: manifest.options?.thinking,
-  });
-}
-
-function buildRunProjectionPreview(spoolRecords = []) {
-  return (spoolRecords || [])
-    .filter((record) => ['stdout', 'stderr', 'error'].includes(record.stream))
-    .map((record) => {
-      if (record?.json && typeof record.json === 'object') {
-        try {
-          return clipFailurePreview(JSON.stringify(record.json));
-        } catch {}
-      }
-      return typeof record?.line === 'string' ? clipFailurePreview(record.line) : '';
-    })
-    .filter(Boolean)
-    .slice(-3)
-    .join(' | ');
-}
-
-async function maybeAppendProjectedCodexUsage(run, runtimeInvocation, normalizedEvents = [], lastRecordTimestamp = null) {
-  if (!runtimeInvocation?.isCodexFamily || !run?.codexThreadId) {
-    return normalizedEvents;
-  }
-  if (normalizedEvents.some((event) => event?.type === 'usage')) {
-    return normalizedEvents;
-  }
-
-  const metrics = await readLatestCodexSessionMetrics(run.codexThreadId, {
-    startedAt: run.startedAt || run.createdAt || null,
-    completedAt: run.completedAt || run.spoolCompletionDetectedAt || run.finalizedAt || null,
-  });
-  const payload = buildCodexContextMetricsPayload(metrics);
-  if (!payload) {
-    return normalizedEvents;
-  }
-
-  const metricsTimestamp = Date.parse(metrics?.timestamp || '');
-  const stableTimestamp = Number.isFinite(metricsTimestamp) ? metricsTimestamp : lastRecordTimestamp;
-  const parsedEvents = runtimeInvocation.adapter.parseLine(JSON.stringify(payload)).map((event) => ({
-    ...event,
-    ...(Number.isInteger(stableTimestamp) ? { timestamp: stableTimestamp } : {}),
-  }));
-  normalizedEvents.push(...normalizeRunEvents(run, parsedEvents));
-  return normalizedEvents;
-}
-
-async function normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords = [], options = {}) {
-  const { adapter } = runtimeInvocation;
-  const normalizedEvents = [];
-  let lastRecordTimestamp = null;
-
-  for (const record of spoolRecords) {
-    if (record?.stream !== 'stdout') continue;
-    const line = await materializeRunSpoolLine(run.id, record);
-    if (!line) continue;
-    const stableTimestamp = parseRecordTimestamp(record);
-    if (Number.isInteger(stableTimestamp)) {
-      lastRecordTimestamp = stableTimestamp;
-    }
-    const parsedEvents = adapter.parseLine(line).map((event) => ({
-      ...event,
-      ...(Number.isInteger(stableTimestamp) ? { timestamp: stableTimestamp } : {}),
-    }));
-    normalizedEvents.push(...normalizeRunEvents(run, parsedEvents));
-  }
-
-  if (options.flush !== false) {
-    const flushedEvents = adapter.flush().map((event) => ({
-      ...event,
-      ...(Number.isInteger(lastRecordTimestamp) ? { timestamp: lastRecordTimestamp } : {}),
-    }));
-    normalizedEvents.push(...normalizeRunEvents(run, flushedEvents));
-  }
-  if (options.includeCodexContextMetrics === true) {
-    await maybeAppendProjectedCodexUsage(run, runtimeInvocation, normalizedEvents, lastRecordTimestamp);
-  }
-
-  return {
-    normalizedEvents,
-    preview: buildRunProjectionPreview(spoolRecords),
-  };
-}
-
-async function collectNormalizedRunEvents(run, manifest) {
-  const runtimeInvocation = await createRunRuntimeInvocation(manifest);
-  const spoolRecords = await readRunSpoolRecords(run.id);
-  const parsed = await normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords, {
-    includeCodexContextMetrics: true,
-  });
-  return {
-    runtimeInvocation,
-    ...parsed,
-  };
-}
-
-async function collectNormalizedRunEventDelta(run, manifest) {
-  const runtimeInvocation = await createRunRuntimeInvocation(manifest);
-  const delta = await readRunSpoolDelta(run.id, {
-    startOffset: Number.isInteger(run?.normalizedByteOffset) ? run.normalizedByteOffset : 0,
-    skipLines: Number.isInteger(run?.normalizedLineCount) ? run.normalizedLineCount : 0,
-  });
-  const parsed = await normalizeRunSpoolRecords(run, runtimeInvocation, delta.records, { flush: false });
-  return {
-    runtimeInvocation,
-    ...parsed,
-    nextOffset: delta.nextOffset,
-    processedLineCount: delta.processedLineCount,
-    skippedLineCount: delta.skippedLineCount,
-  };
 }
 
 async function buildSessionTimelineEvents(sessionId, options = {}) {
@@ -1454,7 +1330,7 @@ function normalizeSessionReviewedAt(value) {
 }
 
 async function enrichSessionMeta(meta, _options = {}) {
-  const live = liveSessions.get(meta.id);
+  const runtimeState = sessionRuntimeStateById.get(meta.id);
   const snapshot = await getHistorySnapshot(meta.id);
   const queuedCount = getFollowUpQueueCount(meta);
   const runActivity = await resolveSessionRunActivity(meta);
@@ -1464,10 +1340,7 @@ async function enrichSessionMeta(meta, _options = {}) {
     recentFollowUpRequestIds,
     activeRunId,
     activeRun,
-    appId,
-    appName,
-    templateAppId,
-    templateAppName,
+    agentId,
     managerState: _managerState,
     workState: _workState,
     ...rest
@@ -1476,11 +1349,13 @@ async function enrichSessionMeta(meta, _options = {}) {
   const sourceName = resolveSessionSourceName(meta, sourceId);
   const templateId = resolveSessionTemplateId(meta);
   const templateName = resolveSessionTemplateName(meta);
+  const scopedAgentId = meta?.visitorId ? resolveSessionAgentId(meta) : '';
   const session = {
     ...rest,
     entryMode: resolveSessionEntryMode(meta.entryMode),
     sourceId,
     sourceName,
+    ...(scopedAgentId ? { agentId: scopedAgentId } : {}),
     ...(templateId ? { templateId } : {}),
     ...(templateName ? { templateName } : {}),
     latestSeq: snapshot.latestSeq,
@@ -1494,16 +1369,18 @@ async function enrichSessionMeta(meta, _options = {}) {
     contextTokenEstimate: snapshot.contextTokenEstimate,
     managerState,
     workState,
-    activity: buildSessionActivity(meta, live, {
+    activity: buildSessionActivity(meta, runtimeState, {
       runState: runActivity.state,
       run: runActivity.run,
       queuedCount,
     }),
   };
   const connectors = await buildSessionConnectorSurface(session);
+  const localBridge = await getSessionLocalBridgeSurface(session);
   return {
     ...session,
     ...(connectors ? { connectors } : {}),
+    ...(localBridge ? { localBridge } : {}),
   };
 }
 
@@ -1543,11 +1420,11 @@ async function reconcileSessionsMetaList(list) {
 }
 
 function clearRenameState(sessionId, { broadcast = false } = {}) {
-  const live = liveSessions.get(sessionId);
-  if (!live) return false;
-  const hadState = !!live.renameState || !!live.renameError;
-  delete live.renameState;
-  delete live.renameError;
+  const runtimeState = sessionRuntimeStateById.get(sessionId);
+  if (!runtimeState) return false;
+  const hadState = !!runtimeState.renameState || !!runtimeState.renameError;
+  delete runtimeState.renameState;
+  delete runtimeState.renameError;
   if (hadState && broadcast) {
     broadcastSessionInvalidation(sessionId);
   }
@@ -1555,13 +1432,13 @@ function clearRenameState(sessionId, { broadcast = false } = {}) {
 }
 
 function setRenameState(sessionId, renameState, renameError = '') {
-  const live = ensureLiveSession(sessionId);
-  const changed = live.renameState !== renameState || (live.renameError || '') !== renameError;
-  live.renameState = renameState;
+  const runtimeState = ensureSessionRuntimeState(sessionId);
+  const changed = runtimeState.renameState !== renameState || (runtimeState.renameError || '') !== renameError;
+  runtimeState.renameState = renameState;
   if (renameError) {
-    live.renameError = renameError;
+    runtimeState.renameError = renameError;
   } else {
-    delete live.renameError;
+    delete runtimeState.renameError;
   }
   if (changed) {
     broadcastSessionInvalidation(sessionId);
@@ -1582,24 +1459,20 @@ function broadcastSessionsInvalidation() {
   broadcastOwners({ type: 'sessions_invalidated' });
 }
 
-function getAuthAgentId(authSession) {
-  return normalizeAppId(authSession?.agentId || authSession?.appId || authSession?.scope?.agentId);
+function getAuthPrincipalId(authSession) {
+  return resolveAuthSessionPrincipalId(authSession);
 }
 
-function getAuthPrincipalId(authSession) {
-  return typeof authSession?.principalId === 'string' && authSession.principalId.trim()
-    ? authSession.principalId.trim()
-    : (typeof authSession?.visitorId === 'string' ? authSession.visitorId.trim() : '');
+function getAuthAgentId(authSession) {
+  return resolveAuthSessionAgentId(authSession);
 }
 
 function getSessionScopedAgentId(session) {
-  return normalizeAppId(session?.agentId || session?.templateId || session?.appId);
+  return resolveSessionAgentId(session);
 }
 
 function getSessionScopedPrincipalId(session) {
-  return typeof session?.createdByPrincipalId === 'string' && session.createdByPrincipalId.trim()
-    ? session.createdByPrincipalId.trim()
-    : (typeof session?.visitorId === 'string' ? session.visitorId.trim() : '');
+  return resolveSessionPrincipalId(session);
 }
 
 function isAgentScopedAuthSession(authSession) {
@@ -1938,9 +1811,9 @@ function normalizeRunEvents(run, events) {
 }
 
 function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
-  const live = ensureLiveSession(sessionId);
-  if (live.earlyTitlePromise) {
-    return live.earlyTitlePromise;
+  const runtimeState = ensureSessionRuntimeState(sessionId);
+  if (runtimeState.earlyTitlePromise) {
+    return runtimeState.earlyTitlePromise;
   }
 
   const shouldGenerateTitle = isSessionAutoRenamePending(sessionMeta);
@@ -1973,13 +1846,13 @@ function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
       return result;
     })
     .finally(() => {
-      const current = liveSessions.get(sessionId);
+      const current = sessionRuntimeStateById.get(sessionId);
       if (current?.earlyTitlePromise === promise) {
         delete current.earlyTitlePromise;
       }
     });
 
-  live.earlyTitlePromise = promise;
+  runtimeState.earlyTitlePromise = promise;
   return promise;
 }
 
@@ -1987,7 +1860,7 @@ function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
 async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvents = []) {
   let historyChanged = false;
   let sessionChanged = false;
-  const live = liveSessions.get(sessionId);
+  const runtimeState = sessionRuntimeStateById.get(sessionId);
   const directCompaction = manifest?.internalOperation === 'context_compaction';
   const workerCompaction = manifest?.internalOperation === 'context_compaction_worker';
   const compacting = directCompaction || workerCompaction;
@@ -2014,14 +1887,14 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
   }
 
   if (compacting) {
-    const targetLive = workerCompaction && compactionTargetSessionId
-      ? liveSessions.get(compactionTargetSessionId)
-      : live;
-    if (targetLive) {
-      targetLive.pendingCompact = false;
+    const targetRuntimeState = workerCompaction && compactionTargetSessionId
+      ? sessionRuntimeStateById.get(compactionTargetSessionId)
+      : runtimeState;
+    if (targetRuntimeState) {
+      targetRuntimeState.pendingCompact = false;
     }
-    if (live && live !== targetLive) {
-      live.pendingCompact = false;
+    if (runtimeState && runtimeState !== targetRuntimeState) {
+      runtimeState.pendingCompact = false;
     }
 
     if (workerCompaction && compactionTargetSessionId) {
@@ -2346,12 +2219,8 @@ export async function getRunState(runId) {
 
 export async function createSession(folder, tool, name, extra = {}) {
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
-  const requestedAgentId = normalizeAppId(extra.agentId);
-  const requestedCreatedByPrincipalId = typeof extra.createdByPrincipalId === 'string'
-    ? extra.createdByPrincipalId.trim()
-    : '';
-  const requestedVisitorId = typeof extra.visitorId === 'string' ? extra.visitorId.trim() : '';
-  const requestedTemplateId = normalizeAppId(extra.templateId);
+  const { createdByPrincipalId: requestedCreatedByPrincipalId, visitorId: requestedVisitorId } = resolveRequestedSessionPrincipalFields(extra);
+  const requestedTemplateId = normalizeAppId(extra.templateId || extra.agentId);
   const requestedTemplateName = normalizeSessionTemplateName(extra.templateName);
   const requestedSourceId = resolveRequestedSessionSourceId(extra);
   const requestedSourceName = resolveRequestedSessionSourceName(extra, requestedSourceId);
@@ -2361,6 +2230,7 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedUserName = normalizeSessionUserName(extra.userName);
   const requestedGroup = normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
+  const requestedStarterPreset = normalizeSessionStarterPreset(extra.starterPreset);
   const hasRequestedSystemPrompt = Object.prototype.hasOwnProperty.call(extra, 'systemPrompt');
   const requestedSystemPrompt = typeof extra.systemPrompt === 'string' ? extra.systemPrompt : '';
   const hasRequestedModel = Object.prototype.hasOwnProperty.call(extra, 'model');
@@ -2449,11 +2319,6 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (requestedAgentId && updated.agentId !== requestedAgentId) {
-          updated.agentId = requestedAgentId;
-          changed = true;
-        }
-
         if (requestedCreatedByPrincipalId && updated.createdByPrincipalId !== requestedCreatedByPrincipalId) {
           updated.createdByPrincipalId = requestedCreatedByPrincipalId;
           changed = true;
@@ -2476,6 +2341,11 @@ export async function createSession(folder, tool, name, extra = {}) {
 
         if (requestedUserName && updated.userName !== requestedUserName) {
           updated.userName = requestedUserName;
+          changed = true;
+        }
+
+        if (requestedStarterPreset && updated.starterPreset !== requestedStarterPreset) {
+          updated.starterPreset = requestedStarterPreset;
           changed = true;
         }
 
@@ -2562,12 +2432,12 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedSourceName) session.sourceName = requestedSourceName;
     if (requestedTemplateId) session.templateId = requestedTemplateId;
     if (requestedTemplateName) session.templateName = requestedTemplateName;
-    if (requestedAgentId) session.agentId = requestedAgentId;
     if (requestedCreatedByPrincipalId) session.createdByPrincipalId = requestedCreatedByPrincipalId;
     if (requestedVisitorId) session.visitorId = requestedVisitorId;
     if (requestedVisitorName) session.visitorName = requestedVisitorName;
     if (requestedUserId) session.userId = requestedUserId;
     if (requestedUserName) session.userName = requestedUserName;
+    if (requestedStarterPreset) session.starterPreset = requestedStarterPreset;
     if (requestedSystemPrompt) session.systemPrompt = requestedSystemPrompt;
     if (requestedModel) session.model = requestedModel;
     if (requestedEffort) session.effort = requestedEffort;
@@ -3281,7 +3151,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
 
   let activeRun = null;
   let hasActiveRun = false;
-  const hasPendingCompact = liveSessions.get(sessionId)?.pendingCompact === true;
+  const hasPendingCompact = sessionRuntimeStateById.get(sessionId)?.pendingCompact === true;
   const activeRunId = typeof sessionMeta?.activeRunId === 'string' ? sessionMeta.activeRunId : null;
 
   if (activeRunId) {
@@ -3476,10 +3346,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
 
   observeDetachedRun(sessionId, run.id);
-  const spawned = spawnDetachedRunner(run.id);
+  const spawned = await spawnDetachedRunner(run.id);
   await updateRun(run.id, (current) => ({
     ...current,
     runnerProcessId: spawned?.pid || current.runnerProcessId || null,
+    runnerUnitName: spawned?.unitName || current.runnerUnitName || null,
+    runnerUnitScope: spawned?.unitScope || current.runnerUnitScope || null,
+    runnerLaunchMode: spawned?.launchMode || current.runnerLaunchMode || null,
   }));
 
   broadcastSessionInvalidation(sessionId);
@@ -3713,10 +3586,10 @@ export async function compactSession(sessionId) {
 }
 
 export function killAll() {
-  for (const sessionId of liveSessions.keys()) {
+  for (const sessionId of sessionRuntimeStateById.keys()) {
     clearFollowUpFlushTimer(sessionId);
   }
-  liveSessions.clear();
+  sessionRuntimeStateById.clear();
   for (const runId of observedRuns.keys()) {
     stopObservedRun(runId);
   }

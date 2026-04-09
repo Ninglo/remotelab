@@ -5,7 +5,7 @@ import { loadOutboundConfig } from '../lib/agent-mailbox.mjs';
 import { sendOutboundEmail } from '../lib/agent-mail-outbound.mjs';
 import {
   buildStatusSummary,
-  enrichStatusWithLiveCloudflareState,
+  enrichStatusWithDeployedCloudflareState,
 } from '../scripts/agent-mail-cloudflare-routing.mjs';
 
 function trimString(value) {
@@ -43,14 +43,14 @@ const outbound = await loadOutboundConfig(rootDir || undefined);
 const zone = trimString(options.zone) || emailDomain(outbound.from);
 
 let summary = buildStatusSummary({ rootDir: rootDir || undefined, zone });
-summary = await enrichStatusWithLiveCloudflareState(summary);
+summary = await enrichStatusWithDeployedCloudflareState(summary);
 
-if (summary.cloudflare.live?.error) {
-  throw new Error(summary.cloudflare.live.error);
+if (summary.cloudflare.deployed?.error) {
+  throw new Error(summary.cloudflare.deployed.error);
 }
 
-const destinationAddresses = Array.isArray(summary.cloudflare.live?.destinationAddresses)
-  ? summary.cloudflare.live.destinationAddresses
+const destinationAddresses = Array.isArray(summary.cloudflare.deployed?.destinationAddresses)
+  ? summary.cloudflare.deployed.destinationAddresses
   : [];
 const verifiedDestinations = destinationAddresses
   .filter((entry) => trimString(entry?.verifiedAt))
@@ -74,8 +74,8 @@ if (!sender) {
 }
 
 const stamp = new Date().toISOString();
-const subject = `RemoteLab Cloudflare live smoke ${stamp}`;
-const text = `RemoteLab Cloudflare outbound live smoke to ${recipient}.`;
+const subject = `RemoteLab Cloudflare deployed smoke ${stamp}`;
+const text = `RemoteLab Cloudflare outbound deployed smoke to ${recipient}.`;
 
 const result = await sendOutboundEmail({
   to: recipient,

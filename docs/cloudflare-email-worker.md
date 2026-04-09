@@ -53,7 +53,7 @@ If any Cloudflare dashboard action is still needed, the AI should batch those as
 
 - The OAuth session from `wrangler login` is sufficient for Worker deploys, but it is not sufficient for Cloudflare Email Routing API endpoints such as `/zones/:zone_id/email/routing/settings` or `/rules`.
 - For fully scriptable Email Routing changes, use either a dedicated `CLOUDFLARE_API_TOKEN` with zone-level Email Routing access, or a `CLOUDFLARE_GLOBAL_API_KEY`/`CLOUDFLARE_API_KEY` paired with `CLOUDFLARE_EMAIL`.
-- To prepare or sync the desired state from the host machine, run `node scripts/agent-mail-cloudflare-routing.mjs status --live`, `node scripts/agent-mail-cloudflare-routing.mjs sync`, and `node scripts/agent-mail-cloudflare-routing.mjs probe --address trial6@example.com`.
+- To prepare or sync the desired state from the host machine, run `node scripts/agent-mail-cloudflare-routing.mjs status --deployed`, `node scripts/agent-mail-cloudflare-routing.mjs sync`, and `node scripts/agent-mail-cloudflare-routing.mjs probe --address trial6@example.com`.
 
 ## AI execution contract
 
@@ -163,7 +163,7 @@ node tests/test-agent-mail-http-bridge.mjs
 node tests/test-agent-mail-reply.mjs
 node tests/test-agent-mail-worker.mjs
 node tests/test-agent-mail-cloudflare-routing.mjs
-node tests/test-agent-mail-cloudflare-outbound-live.mjs --to verified@example.com
+node tests/test-agent-mail-cloudflare-outbound-deployed.mjs --to verified@example.com
 ```
 
 ## Notes

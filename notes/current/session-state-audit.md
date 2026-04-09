@@ -77,8 +77,8 @@ Some API fields are useful, but are not part of the durable session status axis:
 
 - `queuedMessageCount` — derived from durable `followUpQueue`
 - `recoverable` — derived from `activeRun` plus resume ids
-- `pendingCompact` — derived from in-memory `liveSessions`
-- `renameState` / `renameError` — derived from in-memory `liveSessions`
+- `pendingCompact` — derived from in-memory `sessionRuntimeStateById`
+- `renameState` / `renameError` — derived from in-memory `sessionRuntimeStateById`
 
 Also, normalized history `status` events such as `thinking`, `completed`, `error: ...`, and `cancelled` are transcript events. They are not the canonical session state machine.
 
@@ -119,7 +119,7 @@ This is why “running” in the UI already means more than “there is an activ
 
 The UI shows `renaming` when `renameState === pending`.
 
-But `renameState` is only held in `liveSessions` on the server, so it disappears on restart and is not a durable backend status.
+But `renameState` is only held in `sessionRuntimeStateById` on the server, so it disappears on restart and is not a durable backend status.
 
 ## 3. Gaps and mismatches
 

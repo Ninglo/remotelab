@@ -85,7 +85,7 @@ const context = {
   },
   t(key) {
     if (key === 'replySelfCheck.drawerSummary') return 'Background reply review';
-    if (key === 'context.barrier') return 'Older messages above this marker are no longer in live context.';
+    if (key === 'context.barrier') return 'Older messages above this marker are no longer in the current context.';
     return key;
   },
 };

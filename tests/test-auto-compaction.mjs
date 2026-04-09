@@ -13,10 +13,10 @@ const codexSessionsDir = join(tempHome, '.codex', 'sessions', '2026', '03', '10'
 const compactionWorkerText = JSON.stringify(
   '<summary>Carry forward only the compacted continuation summary.</summary>\n\n'
   + '<handoff># Auto Compress\n\n'
-  + '## Kept in live context\n'
+  + '## Kept in current context\n'
   + '- Carry forward only the compacted continuation summary.\n\n'
-  + '## Left out of live context\n'
-  + '- Older messages above the marker are no longer in live context.\n\n'
+  + '## Left out of current context\n'
+  + '- Older messages above the marker are no longer in the current context.\n\n'
   + '## Continue from here\n'
   + '- Keep going from the fresh handoff.</handoff>'
 );
@@ -118,7 +118,7 @@ writeCodexMetrics('exact-thread', 100, 100);
 
 process.env.HOME = tempHome;
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
-delete process.env.REMOTELAB_LIVE_CONTEXT_COMPACT_TOKENS;
+delete process.env.REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS;
 
 const sessionManager = await import(
   pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href
@@ -191,7 +191,7 @@ try {
   assert.equal(queuedCompactionEvent.operation, 'compact_context');
   assert.equal(queuedCompactionEvent.trigger, 'automatic');
   assert.ok(
-    overflowHistory.some((event) => event.type === 'context_barrier' && /no longer in the model's live context/i.test(event.content || '')),
+    overflowHistory.some((event) => event.type === 'context_barrier' && /no longer in the model's current context/i.test(event.content || '')),
     'overflow session should insert a visible context barrier after auto-compaction',
   );
   assert.ok(

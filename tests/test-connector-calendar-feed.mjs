@@ -209,6 +209,7 @@ async function testBuildSubscriptionUrl() {
   console.log('  [6] buildSubscriptionUrl produces correct URL');
 
   const {
+    buildCalendarSubscribeHelperPath,
     buildSubscriptionUrl,
     buildCalendarSubscriptionChannels,
     filterCalendarSubscriptionChannelsForExposure,
@@ -221,9 +222,9 @@ async function testBuildSubscriptionUrl() {
   const url2 = buildSubscriptionUrl('https://remotelab.jiujianian.dev/', 'abc123');
   assert.equal(url2, 'https://remotelab.jiujianian.dev/cal/abc123.ics');
 
-  // Subpath handling for mainland bridge routes
-  const mainlandUrl = buildSubscriptionUrl('https://jojotry.nat100.top/trial24', 'abc123');
-  assert.equal(mainlandUrl, 'https://jojotry.nat100.top/trial24/cal/abc123.ics');
+  // The low-level URL builder remains generic even though the product now prefers subdomains.
+  const nestedPathUrl = buildSubscriptionUrl('https://gateway.example.com/remotelab', 'abc123');
+  assert.equal(nestedPathUrl, 'https://gateway.example.com/remotelab/cal/abc123.ics');
 
   // Localhost should never become a delivered subscription URL
   const localhostUrl = buildSubscriptionUrl('http://127.0.0.1:7690', 'abc123');
@@ -231,19 +232,18 @@ async function testBuildSubscriptionUrl() {
 
   const channels = buildCalendarSubscriptionChannels({
     feedToken: 'abc123',
-    mainlandBaseUrl: 'https://jojotry.nat100.top/trial24',
-    publicBaseUrl: 'https://trial24.jiujianian.dev',
-    preferredBaseUrl: 'https://jojotry.nat100.top/trial24',
+    primaryBaseUrl: 'https://trial24.jiujianian.dev',
+    alternateBaseUrls: ['https://trial24-alt.jiujianian.dev'],
   });
-  assert.equal(channels.preferredHttpsUrl, 'https://jojotry.nat100.top/trial24/cal/abc123.ics');
-  assert.equal(channels.publicHttpsUrl, 'https://trial24.jiujianian.dev/cal/abc123.ics');
-  assert.equal(channels.variants.length, 2, 'internal channel builder should preserve both mainland and public subscription variants');
-  assert.equal(channels.variants[0].kind, 'mainland', 'mainland link should be preferred when requested');
+  assert.equal(channels.preferredHttpsUrl, 'https://trial24.jiujianian.dev/cal/abc123.ics');
+  assert.equal(channels.variants.length, 2, 'internal channel builder should preserve the primary link plus alternates');
+  assert.equal(channels.variants[0].kind, 'primary', 'primary link should be preferred');
 
   const exposedChannels = filterCalendarSubscriptionChannelsForExposure(channels);
-  assert.equal(exposedChannels.variants.length, 1, 'exposed channel set should hide the public compatibility variant');
-  assert.equal(exposedChannels.variants[0].kind, 'mainland', 'mainland link should be the only exposed variant when available');
-  assert.equal(exposedChannels.publicHttpsUrl, '', 'public compatibility URL should not be exposed');
+  assert.equal(exposedChannels.variants.length, 1, 'exposed channel set should only surface the primary visible variant');
+  assert.equal(exposedChannels.variants[0].kind, 'primary', 'primary link should be the only exposed variant');
+  assert.equal(buildCalendarSubscribeHelperPath(), '/subscribe/calendar');
+  assert.equal(buildCalendarSubscribeHelperPath({ format: 'https' }), '/subscribe/calendar?format=https');
 
   console.log('    PASS');
 }

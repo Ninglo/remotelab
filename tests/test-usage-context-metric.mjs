@@ -76,7 +76,7 @@ try {
   }));
   const codexUsageFromRawStdout = codexRawUsageEvents.find((event) => event.type === 'usage');
 
-  assert.equal(codexUsageFromRawStdout, undefined, 'Codex raw turn.completed usage should not masquerade as live context');
+  assert.equal(codexUsageFromRawStdout, undefined, 'Codex raw turn.completed usage should not masquerade as current context');
 
   const codexThreadId = '019cd5f7-3c2b-7571-bb3c-9cde8f3a6598';
   const codexSessionDir = join(tempHome, '.codex', 'sessions', '2026', '03', '10');
@@ -134,7 +134,7 @@ try {
 
   const codexMetrics = await readLatestCodexSessionMetrics(codexThreadId);
   assert.ok(codexMetrics, 'Codex session metrics should be readable from the session JSONL');
-  assert.equal(codexMetrics.contextTokens, 12326, 'Codex live context should use last_token_usage.input_tokens');
+  assert.equal(codexMetrics.contextTokens, 12326, 'Codex current context should use last_token_usage.input_tokens');
   assert.equal(codexMetrics.inputTokens, 48317, 'Codex raw turn input should preserve total_token_usage.input_tokens');
   assert.equal(codexMetrics.cachedInputTokens, 37632, 'Codex cached input tokens should be preserved when available');
   assert.equal(codexMetrics.outputTokens, 531, 'Codex output tokens should preserve total_token_usage.output_tokens');
@@ -243,7 +243,7 @@ try {
   const codexUsage = codexUsageEvents.find((event) => event.type === 'usage');
 
   assert.ok(codexUsage, 'Codex adapter should emit a usage event from RemoteLab-injected context metrics');
-  assert.equal(codexUsage.contextTokens, 12326, 'Codex usage should use the latest live context size');
+  assert.equal(codexUsage.contextTokens, 12326, 'Codex usage should use the latest current context size');
   assert.equal(codexUsage.inputTokens, 48317, 'Codex usage should preserve raw turn input for diagnostics');
   assert.equal(codexUsage.cachedInputTokens, 37632, 'Codex usage should preserve cached input tokens');
   assert.equal(codexUsage.outputTokens, 531, 'Codex usage should preserve total turn output');
@@ -307,7 +307,7 @@ try {
   assert.equal(newUsage.contextWindowTokens, 258400, 'new usage events should preserve context window data');
   assert.equal(newUsage.contextSource, 'provider_last_token_count', 'new usage events should preserve context source');
   assert.equal(newUsage.costSource, 'estimated_gpt_5_4', 'new usage events should preserve cost source');
-  assert.equal(noContextUsage.contextTokens, undefined, 'new-source usage events should not fall back to raw input when live context is unavailable');
+  assert.equal(noContextUsage.contextTokens, undefined, 'new-source usage events should not fall back to raw input when current context is unavailable');
 
   console.log('test-usage-context-metric: ok');
 } finally {

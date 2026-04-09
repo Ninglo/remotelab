@@ -92,19 +92,29 @@ async function dispatchAction(msg) {
         return true;
       }
       case "create": {
+        const createPayload = {
+          folder: msg.folder || "~",
+          tool: msg.tool,
+          name: msg.name || "",
+          sourceId: msg.sourceId || "",
+          sourceName: msg.sourceName || "",
+          templateId: msg.templateId || "",
+          templateName: msg.templateName || "",
+          sourceContext: msg.sourceContext,
+        };
+        if (Object.prototype.hasOwnProperty.call(msg, "starterPreset")) {
+          createPayload.starterPreset = msg.starterPreset || "";
+        }
+        if (Object.prototype.hasOwnProperty.call(msg, "systemPrompt")) {
+          createPayload.systemPrompt = msg.systemPrompt || "";
+        }
+        if (Object.prototype.hasOwnProperty.call(msg, "welcomeMessage")) {
+          createPayload.welcomeMessage = msg.welcomeMessage || "";
+        }
         const data = await fetchJsonOrRedirect("/api/sessions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            folder: msg.folder || "~",
-            tool: msg.tool,
-            name: msg.name || "",
-            sourceId: msg.sourceId || "",
-            sourceName: msg.sourceName || "",
-            templateId: msg.templateId || "",
-            templateName: msg.templateName || "",
-            sourceContext: msg.sourceContext,
-          }),
+          body: JSON.stringify(createPayload),
         });
         if (data.session) {
           const session = upsertSession(data.session) || data.session;

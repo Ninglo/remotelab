@@ -13,8 +13,10 @@ import {
 } from './session-workflow-state.mjs';
 import { normalizeSessionAgreements } from './session-agreements.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
+import { normalizeStoredSessionFolder } from './session-folder.mjs';
 import { normalizeSessionTaskCard } from './session-task-card.mjs';
 import { DEFAULT_APP_ID, getBuiltinApp, normalizeAppId } from './apps.mjs';
+import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheMtimeMs = null;
@@ -37,6 +39,10 @@ function normalizeStoredSidebarOrder(value) {
 function normalizeStoredSessionSourceName(value) {
   if (typeof value !== 'string') return '';
   return value.trim().replace(/\s+/g, ' ');
+}
+
+function normalizeStoredSessionTemplateName(value) {
+  return normalizeStoredSessionSourceName(value);
 }
 
 function formatStoredSourceNameFromId(sourceId) {
@@ -78,6 +84,56 @@ function normalizeStoredSessionSourceFields(normalized) {
   return changed;
 }
 
+function normalizeStoredSessionTemplateFields(normalized) {
+  let changed = false;
+
+  const nextTemplateId = normalizeAppId(normalized.templateId || normalized.agentId);
+  if (nextTemplateId) {
+    if (normalized.templateId !== nextTemplateId) {
+      normalized.templateId = nextTemplateId;
+      changed = true;
+    }
+  } else if (Object.prototype.hasOwnProperty.call(normalized, 'templateId')) {
+    delete normalized.templateId;
+    changed = true;
+  }
+
+  const nextTemplateName = normalizeStoredSessionTemplateName(normalized.templateName);
+  if (nextTemplateName) {
+    if (normalized.templateName !== nextTemplateName) {
+      normalized.templateName = nextTemplateName;
+      changed = true;
+    }
+  } else if (Object.prototype.hasOwnProperty.call(normalized, 'templateName')) {
+    delete normalized.templateName;
+    changed = true;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'agentId')) {
+    delete normalized.agentId;
+    changed = true;
+  }
+
+  return changed;
+}
+
+function normalizeStoredStarterPreset(normalized) {
+  let changed = false;
+  const nextStarterPreset = normalizeSessionStarterPreset(normalized.starterPreset);
+
+  if (nextStarterPreset) {
+    if (normalized.starterPreset !== nextStarterPreset) {
+      normalized.starterPreset = nextStarterPreset;
+      changed = true;
+    }
+  } else if (Object.prototype.hasOwnProperty.call(normalized, 'starterPreset')) {
+    delete normalized.starterPreset;
+    changed = true;
+  }
+
+  return changed;
+}
+
 function normalizeStoredSessionMeta(meta) {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return { meta: null, changed: true };
@@ -100,7 +156,24 @@ function normalizeStoredSessionMeta(meta) {
     }
   }
 
+  for (const legacyField of ['appId', 'appName', 'templateAppId', 'templateAppName']) {
+    if (Object.prototype.hasOwnProperty.call(normalized, legacyField)) {
+      delete normalized[legacyField];
+      changed = true;
+    }
+  }
+
   changed = normalizeStoredSessionSourceFields(normalized) || changed;
+  changed = normalizeStoredSessionTemplateFields(normalized) || changed;
+  changed = normalizeStoredStarterPreset(normalized) || changed;
+
+  if (Object.prototype.hasOwnProperty.call(normalized, 'folder')) {
+    const nextFolder = normalizeStoredSessionFolder(normalized.folder);
+    if (nextFolder.changed) {
+      normalized.folder = nextFolder.folder;
+      changed = true;
+    }
+  }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'workflowState')) {
     const nextWorkflowState = normalizeSessionWorkflowState(normalized.workflowState || '');

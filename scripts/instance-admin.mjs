@@ -14,6 +14,12 @@ import { randomBytes, timingSafeEqual, scrypt } from 'crypto';
 import { fullPath } from '../lib/user-shell-env.mjs';
 import { parseCloudflaredIngress } from '../lib/cloudflared-config.mjs';
 import { classifyUsageOperation, queryUsageLedger } from '../chat/usage-ledger.mjs';
+import {
+  attachInstanceAccess,
+  loadInstanceAccessDefaults,
+  normalizeBaseUrl,
+  resolveBridgeBaseUrl,
+} from '../lib/instance-access.mjs';
 
 const scryptAsync = promisify(scrypt);
 const execFileAsync = promisify(execFile);
@@ -28,8 +34,8 @@ const OWNER_LAUNCH_AGENT_PATH = join(LAUNCH_AGENTS_DIR, 'com.chatserver.claude.p
 const OWNER_AUTH_FILE = join(HOME, '.config', 'remotelab', 'auth.json');
 const OWNER_CONFIG_DIR = join(HOME, '.config', 'remotelab');
 const OWNER_MEMORY_DIR = join(HOME, '.remotelab', 'memory');
-const GUEST_REGISTRY_FILE = join(HOME, '.config', 'remotelab', 'guest-instances.json');
 const GUEST_DEFAULTS_FILE = join(HOME, '.config', 'remotelab', 'guest-instance-defaults.json');
+const GUEST_REGISTRY_FILE = join(HOME, '.config', 'remotelab', 'guest-instances.json');
 const USER_BINDINGS_FILE = join(HOME, '.config', 'remotelab', 'user-instance-bindings.json');
 const USER_LEDGER_FILE = join(HOME, '.remotelab', 'memory', 'tasks', 'remotelab-user-relationship-ledger.md');
 const USER_EVENT_LOG_FILE = join(HOME, '.remotelab', 'memory', 'tasks', 'remotelab-user-event-log.md');
@@ -179,26 +185,6 @@ function sanitize(name) {
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function normalizeBaseUrl(value) {
-  const trimmed = trimString(value);
-  if (!trimmed) return '';
-  return trimmed.replace(/\/+$/g, '');
-}
-
-function appendUrlPath(baseUrl, segment) {
-  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
-  const normalizedSegment = trimString(segment).replace(/^\/+|\/+$/g, '');
-  if (!normalizedBaseUrl) return '';
-  if (!normalizedSegment) return normalizedBaseUrl;
-  return `${normalizedBaseUrl}/${normalizedSegment}`;
-}
-
-function buildAccessUrl(baseUrl, token = '') {
-  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
-  if (!normalizedBaseUrl) return '';
-  return token ? `${normalizedBaseUrl}/?token=${token}` : normalizedBaseUrl;
 }
 
 function decodeXmlEntities(value) {
@@ -696,19 +682,21 @@ function buildUserWorkbenchPayload({
       priorityScore,
       quickLinks: instance ? {
         publicAccessUrl: trimString(instance.publicAccessUrl) || trimString(instance.publicBaseUrl),
-        mainlandAccessUrl: trimString(instance.mainlandAccessUrl) || trimString(instance.mainlandBaseUrl),
+        bridgeAccessUrl: trimString(instance.bridgeAccessUrl) || trimString(instance.bridgeBaseUrl),
         localAccessUrl: trimString(instance.localAccessUrl) || trimString(instance.localBaseUrl),
-      } : { publicAccessUrl: '', mainlandAccessUrl: '', localAccessUrl: '' },
+        accessChannels: Array.isArray(instance.accessChannels) ? instance.accessChannels : [],
+      } : { publicAccessUrl: '', bridgeAccessUrl: '', localAccessUrl: '', accessChannels: [] },
       instanceDetail: instance ? {
         name: instance.name,
         port: instance.port,
         publicBaseUrl: trimString(instance.publicBaseUrl),
-        mainlandBaseUrl: trimString(instance.mainlandBaseUrl),
+        bridgeBaseUrl: trimString(instance.bridgeBaseUrl),
         localBaseUrl: trimString(instance.localBaseUrl),
         publicAccessUrl: trimString(instance.publicAccessUrl),
-        mainlandAccessUrl: trimString(instance.mainlandAccessUrl),
+        bridgeAccessUrl: trimString(instance.bridgeAccessUrl),
         localAccessUrl: trimString(instance.localAccessUrl),
         token: trimString(instance.token),
+        accessChannels: Array.isArray(instance.accessChannels) ? instance.accessChannels : [],
       } : null,
       events: events.slice(0, 6),
     };
@@ -1320,10 +1308,9 @@ async function resolveCloudflaredPublicBaseUrl(port) {
 }
 
 async function buildOwnerInstanceRecord() {
-  const [ownerPlistContent, legacyOwnerAuth, guestDefaults] = await Promise.all([
+  const [ownerPlistContent, legacyOwnerAuth] = await Promise.all([
     readTextFileSafe(OWNER_LAUNCH_AGENT_PATH),
     readJsonFileSafe(OWNER_AUTH_FILE, {}),
-    readJsonFileSafe(GUEST_DEFAULTS_FILE, {}),
   ]);
 
   const ownerEnv = extractPlistDictStrings(ownerPlistContent, 'EnvironmentVariables');
@@ -1348,13 +1335,16 @@ async function buildOwnerInstanceRecord() {
 
   const token = trimString(ownerAuth?.token);
   const publicBaseUrl = normalizeBaseUrl(ownerEnv.REMOTELAB_PUBLIC_BASE_URL) || cloudPublicBaseUrl;
-  const mainlandRootBaseUrl = normalizeBaseUrl(
-    ownerEnv.REMOTELAB_GUEST_MAINLAND_BASE_URL
-    || guestDefaults?.mainlandBaseUrl
-    || guestDefaults?.mainlandAccessBaseUrl
-  );
-  const mainlandBaseUrl = normalizeBaseUrl(ownerEnv.REMOTELAB_MAINLAND_PUBLIC_BASE_URL)
-    || appendUrlPath(mainlandRootBaseUrl, 'owner');
+  const guestAccessDefaults = await loadInstanceAccessDefaults({
+    defaultsFilePath: GUEST_DEFAULTS_FILE,
+    env: ownerEnv,
+  });
+  const bridgeBaseUrl = resolveBridgeBaseUrl({
+    instanceName: 'owner',
+    explicitBaseUrl: ownerEnv.REMOTELAB_BRIDGE_BASE_URL,
+    bridgeRootBaseUrl: ownerEnv.REMOTELAB_BRIDGE_ROOT_BASE_URL
+      || guestAccessDefaults.bridgeRootBaseUrl,
+  });
   const localBaseUrl = `http://127.0.0.1:${ownerPort}`;
   const sessions = normalizeSessionRecords(rawSessions);
   const lastSessionAt = sessions
@@ -1383,7 +1373,7 @@ async function buildOwnerInstanceRecord() {
     publicBaseUrl ? probeBuildInfo(publicBaseUrl, 4000) : Promise.resolve({ ok: null }),
   ]);
 
-  return {
+  return attachInstanceAccess({
     name: 'owner',
     label: ownerLabel,
     kind: 'owner',
@@ -1394,12 +1384,7 @@ async function buildOwnerInstanceRecord() {
     authFile,
     launchAgentPath: OWNER_LAUNCH_AGENT_PATH,
     publicBaseUrl,
-    mainlandBaseUrl,
     localBaseUrl,
-    publicAccessUrl: buildAccessUrl(publicBaseUrl, token),
-    mainlandAccessUrl: buildAccessUrl(mainlandBaseUrl, token),
-    localAccessUrl: buildAccessUrl(localBaseUrl, token),
-    accessUrl: buildAccessUrl(publicBaseUrl || localBaseUrl, token),
     token,
     localReachable: localReachability.ok === null ? null : localReachability.ok === true,
     publicReachable: publicReachability.ok === null ? null : publicReachability.ok === true,
@@ -1417,7 +1402,10 @@ async function buildOwnerInstanceRecord() {
       usageBrief: 'owner 控制台',
       usageSummary,
     },
-  };
+  }, {
+    token,
+    bridgeBaseUrl,
+  });
 }
 
 async function fetchDashboardData() {
@@ -1496,18 +1484,23 @@ async function apiCreate(req, res) {
 async function apiInstanceAction(res, name, action) {
   const safe = sanitize(name);
   if (!safe) return json(res, { error: 'Invalid name' }, 400);
-  const dashboardData = await getDashboardData();
-  const instance = (dashboardData?.instances || []).find((entry) => entry.name === safe) || null;
-  const plist = trimString(instance?.launchAgentPath) || join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
 
   try {
-    if (action === 'stop') {
-      await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 });
-    } else if (action === 'start') {
-      await execFileAsync('launchctl', ['load', plist], { timeout: 10_000 });
-    } else if (action === 'restart') {
-      await cli(['restart', 'chat'], 180_000);
-      return json(res, { ok: true, action: 'restart-all-chat', requestedName: safe });
+    if (process.platform === 'darwin') {
+      const dashboardData = await getDashboardData();
+      const instance = (dashboardData?.instances || []).find((entry) => entry.name === safe) || null;
+      const plist = trimString(instance?.launchAgentPath) || join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
+      if (action === 'stop') {
+        await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 });
+      } else if (action === 'start') {
+        await execFileAsync('launchctl', ['load', plist], { timeout: 10_000 });
+      } else if (action === 'restart') {
+        await cli(['restart', 'chat'], 180_000);
+        return json(res, { ok: true, action: 'restart-all-chat', requestedName: safe });
+      }
+    } else {
+      const service = safe === 'owner' ? 'remotelab.service' : `remotelab-guest@${safe}.service`;
+      await execFileAsync('systemctl', [action, service], { timeout: 30_000 });
     }
     json(res, { ok: true, action, name: safe });
   } catch (err) {
@@ -1525,13 +1518,15 @@ async function apiDelete(res, name) {
   }
   const plist = trimString(instance?.launchAgentPath) || join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
 
-  // 1. Stop (unload LaunchAgent)
-  await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 }).catch(() => {});
+  if (process.platform === 'darwin') {
+    await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 }).catch(() => {});
+    await unlink(plist).catch(() => {});
+  } else {
+    const service = `remotelab-guest@${safe}.service`;
+    await execFileAsync('systemctl', ['disable', '--now', service], { timeout: 30_000 }).catch(() => {});
+    await unlink(join('/etc/remotelab/guest-instances', `${safe}.env`)).catch(() => {});
+  }
 
-  // 2. Remove plist file
-  await unlink(plist).catch(() => {});
-
-  // 3. Remove from registry
   try {
     const registry = JSON.parse(await readFile(GUEST_REGISTRY_FILE, 'utf8'));
     const filtered = registry.filter(r => r.name !== safe);

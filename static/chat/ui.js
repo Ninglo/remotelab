@@ -1063,18 +1063,18 @@ function updateContextDisplay(contextSize, contextWindowSize) {
   if (contextSize > 0 && currentSessionId) {
     const percent = getContextPercent(contextSize, contextWindowSize);
     contextTokens.textContent = percent !== null
-      ? t("context.liveShort", {
+      ? t("context.currentShort", {
         tokens: formatCompactTokens(contextSize),
         percent: formatContextPercent(percent),
       })
-      : t("context.liveOnly", { tokens: formatCompactTokens(contextSize) });
+      : t("context.currentOnly", { tokens: formatCompactTokens(contextSize) });
     contextTokens.title = percent !== null
-      ? t("context.liveTitleWithWindow", {
+      ? t("context.currentTitleWithWindow", {
         context: contextSize.toLocaleString(),
         window: contextWindowSize.toLocaleString(),
         percent: formatContextPercent(percent, { precise: true }),
       })
-      : t("context.liveTitle", { context: contextSize.toLocaleString() });
+      : t("context.currentTitle", { context: contextSize.toLocaleString() });
     contextTokens.style.display = "";
     compactBtn.style.display = "";
     dropToolsBtn.style.display = "";
@@ -1090,11 +1090,11 @@ function renderUsageInto(container, evt, { updateContext = false } = {}) {
   const output = evt.outputTokens || 0;
   const div = document.createElement("div");
   div.className = "usage-info";
-  const parts = [t("context.usage.live", { tokens: formatCompactTokens(contextSize) })];
+  const parts = [t("context.usage.current", { tokens: formatCompactTokens(contextSize) })];
   if (percent !== null) parts.push(t("context.usage.window", { percent: formatContextPercent(percent, { precise: true }) }));
   if (output > 0) parts.push(t("context.usage.output", { tokens: formatCompactTokens(output) }));
   div.textContent = parts.join(" · ");
-  const hover = [t("context.liveTitle", { context: contextSize.toLocaleString() })];
+  const hover = [t("context.currentTitle", { context: contextSize.toLocaleString() })];
   if (contextWindowSize > 0) hover.push(t("context.hover.window", { window: contextWindowSize.toLocaleString() }));
   if (Number.isFinite(evt?.inputTokens) && evt.inputTokens !== contextSize) {
     hover.push(t("context.hover.rawInput", { tokens: evt.inputTokens.toLocaleString() }));

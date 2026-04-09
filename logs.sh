@@ -14,7 +14,7 @@ if [[ "$(uname)" == "Darwin" ]]; then
     LOG_DIR="$HOME/Library/Logs"
 else
     OS_TYPE="linux"
-    LOG_DIR="$HOME/.local/share/remotelab/logs"
+    LOG_DIR="/var/log/remotelab"
 fi
 
 # ── 颜色 ──────────────────────────────────────────────────────────────────────
@@ -41,19 +41,47 @@ show_status() {
       fi
     done
   else
-    for unit in remotelab-chat remotelab-tunnel; do
-      if systemctl --user list-unit-files "${unit}.service" &>/dev/null 2>&1; then
-        if systemctl --user is-active --quiet "${unit}.service" 2>/dev/null; then
-          pid=$(systemctl --user show -p MainPID --value "${unit}.service" 2>/dev/null || echo "?")
-          echo -e "  ${GREEN}●${RESET} ${unit}.service  (pid=${pid})"
+    local owner_scope=""
+    local owner_unit=""
+    if systemctl list-unit-files remotelab.service &>/dev/null 2>&1 || systemctl status remotelab.service &>/dev/null 2>&1; then
+      owner_scope="system"
+      owner_unit="remotelab"
+    elif systemctl --user list-unit-files remotelab-chat.service &>/dev/null 2>&1 || systemctl --user status remotelab-chat.service &>/dev/null 2>&1; then
+      owner_scope="user"
+      owner_unit="remotelab-chat"
+    fi
+
+    if [[ -n "$owner_unit" ]]; then
+      if [[ "$owner_scope" == "user" ]]; then
+        if systemctl --user is-active --quiet "${owner_unit}.service" 2>/dev/null; then
+          pid=$(systemctl --user show -p MainPID --value "${owner_unit}.service" 2>/dev/null || echo "?")
+          echo -e "  ${GREEN}●${RESET} ${owner_unit}.service  (pid=${pid}, scope=user)"
         else
-          status=$(systemctl --user is-active "${unit}.service" 2>/dev/null || echo "unknown")
-          echo -e "  ${RED}✗${RESET} ${unit}.service  (${status})"
+          status=$(systemctl --user is-active "${owner_unit}.service" 2>/dev/null || echo "unknown")
+          echo -e "  ${RED}✗${RESET} ${owner_unit}.service  (${status}, scope=user)"
         fi
       else
-        echo -e "  ${YELLOW}?${RESET} ${unit}.service  (not installed)"
+        if systemctl is-active --quiet "${owner_unit}.service" 2>/dev/null; then
+          pid=$(systemctl show -p MainPID --value "${owner_unit}.service" 2>/dev/null || echo "?")
+          echo -e "  ${GREEN}●${RESET} ${owner_unit}.service  (pid=${pid}, scope=system)"
+        else
+          status=$(systemctl is-active "${owner_unit}.service" 2>/dev/null || echo "unknown")
+          echo -e "  ${RED}✗${RESET} ${owner_unit}.service  (${status}, scope=system)"
+        fi
       fi
-    done
+    else
+      echo -e "  ${YELLOW}?${RESET} owner chat service  (not installed)"
+    fi
+
+    if systemctl --user list-unit-files remotelab-tunnel.service &>/dev/null 2>&1; then
+      if systemctl --user is-active --quiet remotelab-tunnel.service 2>/dev/null; then
+        pid=$(systemctl --user show -p MainPID --value remotelab-tunnel.service 2>/dev/null || echo "?")
+        echo -e "  ${GREEN}●${RESET} remotelab-tunnel.service  (pid=${pid}, scope=user)"
+      else
+        status=$(systemctl --user is-active remotelab-tunnel.service 2>/dev/null || echo "unknown")
+        echo -e "  ${RED}✗${RESET} remotelab-tunnel.service  (${status}, scope=user)"
+      fi
+    fi
   fi
   echo ""
 }
@@ -91,10 +119,17 @@ case "$CMD" in
   chat)
     echo -e "${BOLD}实时跟踪 chat-server 日志 (Ctrl+C 退出)${RESET}"
     if [[ "$OS_TYPE" == "linux" ]]; then
-      echo -e "${CYAN}journalctl:${RESET} journalctl --user -u remotelab-chat -f"
-      echo ""
-      journalctl --user -u remotelab-chat -f 2>/dev/null || \
-        tail -f "$LOG_DIR/chat-server.log" "$LOG_DIR/chat-server.error.log" 2>/dev/null
+      if systemctl list-unit-files remotelab.service &>/dev/null 2>&1 || systemctl status remotelab.service &>/dev/null 2>&1; then
+        echo -e "${CYAN}journalctl:${RESET} journalctl -u remotelab.service -f"
+        echo ""
+        journalctl -u remotelab.service -f 2>/dev/null || \
+          tail -f "$LOG_DIR/chat-server.log" "$LOG_DIR/chat-server.error.log" 2>/dev/null
+      else
+        echo -e "${CYAN}journalctl:${RESET} journalctl --user -u remotelab-chat -f"
+        echo ""
+        journalctl --user -u remotelab-chat -f 2>/dev/null || \
+          tail -f "$HOME/.local/share/remotelab/logs/chat-server.log" "$HOME/.local/share/remotelab/logs/chat-server.error.log" 2>/dev/null
+      fi
     else
       tail -f "$LOG_DIR/chat-server.log" "$LOG_DIR/chat-server.error.log" 2>/dev/null
     fi
@@ -128,7 +163,11 @@ case "$CMD" in
     if [[ "$OS_TYPE" == "linux" ]]; then
       echo ""
       echo "  # systemd 日志 (更完整):"
-      echo "  journalctl --user -u remotelab-chat -f"
+      if systemctl list-unit-files remotelab.service &>/dev/null 2>&1 || systemctl status remotelab.service &>/dev/null 2>&1; then
+        echo "  journalctl -u remotelab.service -f"
+      else
+        echo "  journalctl --user -u remotelab-chat -f"
+      fi
       echo "  journalctl --user -u remotelab-tunnel -f"
     fi
     ;;

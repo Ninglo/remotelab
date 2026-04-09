@@ -7,9 +7,6 @@ let runtimeSelectionSyncPromise = Promise.resolve();
 let lastSyncedRuntimeSelectionPayload = '';
 const HIDDEN_INLINE_AGENT_IDS = new Set([
   "email",
-  "app_welcome",
-  "app_basic_chat",
-  "app_create_app",
 ]);
 let inlineAgentCatalog = [];
 let inlineAgentCatalogLoaded = false;

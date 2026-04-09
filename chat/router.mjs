@@ -60,7 +60,6 @@ import {
 import { readEventBody } from './history.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
 import { getModelsForTool } from './models.mjs';
-import { ensureOwnerBootstrapSessions } from './bootstrap-sessions.mjs';
 import { createShareSnapshot, getShareAsset, getShareSnapshot } from './shares.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
 import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-display-events.mjs';
@@ -74,9 +73,15 @@ import { pathExists, statOrNull } from './fs-utils.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
+import { handleLocalBridgeOwnerRoutes, handleLocalBridgePublicRoutes } from './router-local-bridge-routes.mjs';
 import { handleCalendarFeedRoute, handleConnectorApiRoutes } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
-import { normalizeAppId } from './apps.mjs';
+import {
+  resolveAuthSessionAgentId,
+  resolveAuthSessionPrincipalId,
+  resolveSessionAgentId,
+  resolveSessionPrincipalId,
+} from './session-source-resolution.mjs';
 import {
   buildFileAssetDirectUrl,
   createFileAssetUploadIntent,
@@ -116,7 +121,6 @@ const pageBuildRoots = [
 let cachedPageBuildInfo = null;
 const frontendBuildWatchers = [];
 let frontendBuildInvalidationTimer = null;
-let ownerBootstrapSessionsPromise = null;
 
 async function listSessionsForClient(options = {}) {
   const sessions = await listSessions(options);
@@ -573,7 +577,7 @@ function trimString(value) {
 }
 
 function getAuthPrincipalId(authSession) {
-  return trimString(authSession?.principalId || authSession?.visitorId);
+  return resolveAuthSessionPrincipalId(authSession);
 }
 
 function getAuthPrincipalKind(authSession) {
@@ -587,7 +591,7 @@ function getAuthSurfaceMode(authSession) {
 }
 
 function getAuthScopeAgentId(authSession) {
-  return normalizeAppId(authSession?.agentId || authSession?.appId || authSession?.scope?.agentId);
+  return resolveAuthSessionAgentId(authSession);
 }
 
 function isAgentScopedAuthSession(authSession) {
@@ -657,11 +661,11 @@ function getAuthCapabilities(authSession) {
 }
 
 function getSessionAgentId(session) {
-  return normalizeAppId(session?.agentId || session?.templateId || session?.appId);
+  return resolveSessionAgentId(session);
 }
 
 function getSessionPrincipalId(session) {
-  return trimString(session?.createdByPrincipalId || session?.visitorId);
+  return resolveSessionPrincipalId(session);
 }
 
 function isSessionVisibleToAuthSession(authSession, session) {
@@ -714,20 +718,6 @@ function buildChatPageBootstrap(authSession) {
     auth: buildAuthInfo(authSession),
     assetUploads: getFileAssetBootstrapConfig(),
   };
-}
-
-async function ensureOwnerStarterSessions() {
-  if (ownerBootstrapSessionsPromise) {
-    return ownerBootstrapSessionsPromise;
-  }
-
-  ownerBootstrapSessionsPromise = ensureOwnerBootstrapSessions();
-
-  try {
-    return await ownerBootstrapSessionsPromise;
-  } finally {
-    ownerBootstrapSessionsPromise = null;
-  }
 }
 
 async function getLatestMtimeMs(path) {
@@ -1471,6 +1461,16 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (await handleLocalBridgePublicRoutes({
+    req,
+    res,
+    pathname,
+    parsedUrl,
+    writeJson,
+  })) {
+    return;
+  }
+
   // Auth required from here on
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
@@ -1502,7 +1502,6 @@ export async function handleRequest(req, res) {
     pathname,
     authSession,
     sessionGetRoute,
-    ensureOwnerStarterSessions,
     createSessionSummaryRef,
     immutablePrivateEventCacheControl: IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL,
     isDirectoryPath,
@@ -1515,6 +1514,17 @@ export async function handleRequest(req, res) {
     resolveRequestedSessionAttachments,
     writeJson,
     writeJsonCached,
+  })) {
+    return;
+  }
+
+  if (await handleLocalBridgeOwnerRoutes({
+    req,
+    res,
+    pathname,
+    authSession,
+    requireSessionAccess,
+    writeJson,
   })) {
     return;
   }

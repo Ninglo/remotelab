@@ -53,14 +53,14 @@ The runtime assembler should keep the active stack small:
 
 ## Context Topology
 
-Treat the live context stack as a small working tree rather than one flat prompt.
+Treat the current context stack as a small working tree rather than one flat prompt.
 
 - Seed / constitution: editable startup defaults, principles, and capability framing.
 - Continuity / handoff: the current workstream state, accepted decisions, open loops, and next-worker entry point.
 - Scope: the relatively stable background for the current project or recurring domain.
 - Task: the current delta inside that scope — what this branch or session is doing now.
 - Side resources: skills and shared learnings loaded only when relevant.
-- Archive: cold history, not default live context.
+- Archive: cold history, not default current context.
 
 ## Session Continuity
 

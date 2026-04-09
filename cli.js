@@ -32,12 +32,13 @@ Usage:
   remotelab setup                    Run interactive setup
   remotelab start                    Start all services
   remotelab stop                     Stop all services
-  remotelab restart [service]        Restart services (chat=owner+guests|tunnel|mainland|all)
+  remotelab restart [service]        Restart services (chat=owner+guests|tunnel|bridge|all)
   remotelab guest-instance           Create isolated guest instances on this machine
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab mail                     Manage agent mailbox and send outbound email
   remotelab assistant-message        Append an assistant message with optional local-file attachments
+  remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab trigger                  Manage durable session triggers
   remotelab usage-summary            Summarize local Codex token usage
   remotelab session-spawn            Spawn a focused parallel session from a source session
@@ -120,6 +121,17 @@ switch (command) {
     const { runAssistantMessageCommand } = await import(scriptPath('lib/assistant-message-command.mjs'));
     try {
       process.exitCode = await runAssistantMessageCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'local-bridge': {
+    const { runLocalBridgeCommand } = await import(scriptPath('lib/local-bridge-command.mjs'));
+    try {
+      process.exitCode = await runLocalBridgeCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

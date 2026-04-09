@@ -159,8 +159,8 @@ function createContext({ shareSnapshotMode = false, entryMode = 'resume' } = {})
     getSessionDisplayName(session) {
       return session?.name || '';
     },
-    getEffectiveSessionAppId(session) {
-      return session?.appId || 'chat';
+    getEffectiveSessionSourceId(session) {
+      return session?.sourceId || 'chat';
     },
     normalizeSessionStatus(status) {
       return status || 'idle';

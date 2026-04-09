@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import {
   buildAccessUrl,
   buildGuestMailboxAddress,
-  buildMainlandBaseUrl,
+  buildBridgeBaseUrl,
   formatGuestInstance,
   formatGuestInstanceLinks,
   mergePlatformSkillsIndexContent,
@@ -80,8 +80,8 @@ assert.equal(
 assert.equal(buildGuestMailboxAddress('试用 用户', { localPart: 'rowan', domain: 'jiujianian.dev' }), '');
 assert.equal(buildAccessUrl('https://trial16.example.com', 'abc123'), 'https://trial16.example.com/?token=abc123');
 assert.equal(
-  buildMainlandBaseUrl('trial16', { mainlandBaseUrl: 'https://jojotry.nat100.top/' }),
-  'https://jojotry.nat100.top/trial16',
+  buildBridgeBaseUrl('trial16', { bridgeRootBaseUrl: 'https://bridge.example.com/' }),
+  'https://bridge.example.com/trial16',
 );
 assert.equal(parseArgs(['create-trial', '--json']).json, true);
 assert.equal(parseArgs(['create-trial', '--json']).trial, true);
@@ -98,7 +98,7 @@ const formattedLinks = formatGuestInstanceLinks([
   {
     name: 'trial24',
     accessUrl: 'https://trial24.example.com/?token=abc123',
-    mainlandAccessUrl: 'https://jojotry.nat100.top/trial24/?token=abc123',
+    bridgeAccessUrl: 'https://bridge.example.com/trial24/?token=abc123',
     localAccessUrl: 'http://127.0.0.1:7711/?token=abc123',
     mailboxAddress: 'trial24@example.com',
     localReachable: true,
@@ -108,7 +108,7 @@ const formattedLinks = formatGuestInstanceLinks([
 ], { check: true });
 assert.match(formattedLinks, /name: trial24/);
 assert.match(formattedLinks, /access: https:\/\/trial24\.example\.com\/\?token=abc123/);
-assert.match(formattedLinks, /mainlandAccess: https:\/\/jojotry\.nat100\.top\/trial24\/\?token=abc123/);
+assert.match(formattedLinks, /bridgeAccess: https:\/\/bridge\.example\.com\/trial24\/\?token=abc123/);
 assert.match(formattedLinks, /localAccess: http:\/\/127\.0\.0\.1:7711\/\?token=abc123/);
 assert.match(formattedLinks, /mailbox: trial24@example\.com/);
 assert.match(formattedLinks, /publicStatus: reachable/);
@@ -212,8 +212,8 @@ const formatted = formatGuestInstance({
   port: 7710,
   localBaseUrl: 'http://127.0.0.1:7710',
   publicBaseUrl: 'https://trial16.example.com',
-  mainlandBaseUrl: 'https://jojotry.nat100.top/trial16',
-  mainlandAccessUrl: 'https://jojotry.nat100.top/trial16/?token=abc123',
+  bridgeBaseUrl: 'https://bridge.example.com/trial16',
+  bridgeAccessUrl: 'https://bridge.example.com/trial16/?token=abc123',
   mailboxAddress: 'rowan+trial16@jiujianian.dev',
   mailboxRoutingStatus: 'synced',
   instanceRoot: '/Users/example/.remotelab/instances/trial16',
@@ -227,8 +227,8 @@ const formatted = formatGuestInstance({
 });
 assert.match(formatted, /mailbox: rowan\+trial16@jiujianian\.dev/);
 assert.match(formatted, /mailboxRouting: synced/);
-assert.match(formatted, /mainland: https:\/\/jojotry\.nat100\.top\/trial16/);
-assert.match(formatted, /mainlandAccess: https:\/\/jojotry\.nat100\.top\/trial16\/\?token=abc123/);
+assert.match(formatted, /bridge: https:\/\/bridge\.example\.com\/trial16/);
+assert.match(formatted, /bridgeAccess: https:\/\/bridge\.example\.com\/trial16\/\?token=abc123/);
 
 const ownerMicroSelection = {
   selectedTool: 'micro-agent',
@@ -605,7 +605,7 @@ try {
   mkdirSync(ownerConfigDir, { recursive: true });
   mkdirSync(instanceRoot, { recursive: true });
   writeFileSync(join(ownerConfigDir, 'guest-instance-defaults.json'), JSON.stringify({
-    mainlandBaseUrl: 'https://jojotry.nat100.top',
+    bridgeRootBaseUrl: 'https://bridge.example.com',
   }, null, 2));
 
   writeFileSync(join(launchAgentsDir, 'com.chatserver.claude.plist'), buildLaunchAgentPlist({
@@ -659,7 +659,7 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_PROVIDER<\/key><string>tos<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
-  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_GUEST_MAINLAND_BASE_URL<\/key><string>https:\/\/jojotry\.nat100\.top<\/string>/);
+  assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_BRIDGE_ROOT_BASE_URL<\/key>/);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_ENABLE_ACTIVE_RELEASE<\/key>/);
 } finally {
   rmSync(syncSandboxHome, { recursive: true, force: true });
@@ -673,7 +673,7 @@ try {
   mkdirSync(configDir, { recursive: true });
   mkdirSync(instanceConfigDir, { recursive: true });
   writeFileSync(join(configDir, 'guest-instance-defaults.json'), JSON.stringify({
-    mainlandBaseUrl: 'https://jojotry.nat100.top',
+    bridgeRootBaseUrl: 'https://bridge.example.com',
   }, null, 2));
   writeFileSync(join(configDir, 'guest-instances.json'), JSON.stringify([
     {
@@ -709,8 +709,12 @@ try {
   assert.equal(linksOutput.length, 1);
   assert.equal(linksOutput[0].name, 'trial24');
   assert.equal(linksOutput[0].accessUrl, 'https://trial24.example.com/?token=abc123');
-  assert.equal(linksOutput[0].mainlandAccessUrl, 'https://jojotry.nat100.top/trial24/?token=abc123');
+  assert.equal(linksOutput[0].bridgeAccessUrl, 'https://bridge.example.com/trial24/?token=abc123');
   assert.equal(linksOutput[0].localAccessUrl, 'http://127.0.0.1:7711/?token=abc123');
+  assert.deepEqual(
+    linksOutput[0].accessChannels.map((channel) => channel.key),
+    ['public', 'bridge', 'local'],
+  );
 
 const singleLinksResult = spawnSync('node', ['cli.js', 'guest-instance', 'links', 'trial24', '--json'], {
     cwd: repoRoot,
@@ -724,6 +728,7 @@ const singleLinksResult = spawnSync('node', ['cli.js', 'guest-instance', 'links'
   const singleLinksOutput = JSON.parse(singleLinksResult.stdout);
   assert.equal(singleLinksOutput.name, 'trial24');
   assert.equal(singleLinksOutput.accessUrl, 'https://trial24.example.com/?token=abc123');
+  assert.equal(singleLinksOutput.bridgeAccessUrl, 'https://bridge.example.com/trial24/?token=abc123');
 } finally {
   rmSync(linksSandboxHome, { recursive: true, force: true });
 }
@@ -749,7 +754,7 @@ try {
   mkdirSync(emptyConfigDir, { recursive: true });
 
   writeFileSync(join(configDir, 'guest-instance-defaults.json'), JSON.stringify({
-    mainlandBaseUrl: 'https://jojotry.nat100.top',
+    bridgeRootBaseUrl: 'https://bridge.example.com',
   }, null, 2));
   writeFileSync(join(configDir, 'guest-instances.json'), JSON.stringify([
     {

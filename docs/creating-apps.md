@@ -25,7 +25,7 @@ Source -> Session <- Agent
 Examples:
 
 - `Email`, `Feishu`, `RemoteLab web`, `API`, `automation` are **Sources**
-- `Chat`, `Drawing`, `Video Cut`, `Report Cleanup` are **Agents**
+- `Chat`, `Drawing`, `Report Cleanup`, `Invoice Follow-up` are **Agents**
 
 Do not treat a source surface as an agent just because it has a dedicated page.
 For example, a drawing request started from Feishu and a drawing request started from the RemoteLab web UI are still the same kind of **Session** if they run under the same drawing **Agent**.

@@ -373,7 +373,7 @@ async function main() {
     assert.equal(visitors.status, 404, 'owner visitors endpoint should be absent from the product surface');
 
     const legacyAgentShare = await request(port, 'GET', '/app/example-token', null, { Cookie: '' });
-    assert.equal(legacyAgentShare.status, 404, 'legacy app share route should reject unknown tokens');
+    assert.equal(legacyAgentShare.status, 404, 'legacy app share route should stay absent');
 
     const agentShare = await request(port, 'GET', '/agent/example-token', null, { Cookie: '' });
     assert.equal(agentShare.status, 404, 'interactive agent share route should reject unknown tokens');
@@ -390,6 +390,9 @@ async function main() {
     assert.equal(createdAgent.status, 201, 'owner should be able to create a shareable agent');
     const createdAgentJson = JSON.parse(createdAgent.text);
     assert.ok(createdAgentJson.shareToken, 'created agent should include a share token');
+
+    const legacySharedEntry = await request(port, 'GET', `/app/${createdAgentJson.shareToken}`, null, { Cookie: '' });
+    assert.equal(legacySharedEntry.status, 404, 'legacy app share links should stay removed');
 
     const sharedEntry = await request(port, 'GET', `/agent/${createdAgentJson.shareToken}`, null, { Cookie: '' });
     assert.equal(sharedEntry.status, 302, 'shared agent route should mint a visitor session and redirect into visitor mode');

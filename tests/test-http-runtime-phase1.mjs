@@ -131,7 +131,7 @@ setTimeout(() => {
   return { home, configDir, localBin };
 }
 
-async function startServer({ home, port, delayMs = 700 }) {
+async function startServer({ home, port, delayMs = 700, envOverrides = {} }) {
   const child = spawn(process.execPath, ['chat-server.mjs'], {
     cwd: repoRoot,
     env: {
@@ -141,6 +141,7 @@ async function startServer({ home, port, delayMs = 700 }) {
       SECURE_COOKIES: '0',
       FAKE_CODEX_DELAY_MS: String(delayMs),
       REMOTELAB_REPLY_SELF_CHECK: 'off',
+      ...envOverrides,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -392,9 +393,9 @@ async function phase4RunnerThin() {
 }
 
 async function phase5RestartSurvival() {
-  const { home } = setupTempHome();
+  const { home, configDir } = setupTempHome();
   const port = randomPort();
-  let server = await startServer({ home, port, delayMs: 1600 });
+  let server = await startServer({ home, port, delayMs: 4000 });
   try {
     const session = await createSession(port, { name: 'Restart', group: 'Tests', description: 'Restart survival' });
     const submit = await submitMessage(port, session.id, 'req-restart', 'slow run');
@@ -421,10 +422,19 @@ async function phase5RestartSurvival() {
 
     await stopServer(server);
     await sleep(500);
-    server = await startServer({ home, port, delayMs: 1600 });
+    server = await startServer({ home, port, delayMs: 4000 });
 
     const finalRun = await waitForRunTerminal(port, submit.json.run.id);
     assert.equal(finalRun.state, 'completed', 'detached run should survive restart');
+    const runDir = join(configDir, 'chat-runs', submit.json.run.id);
+    const persistedStatus = JSON.parse(readFileSync(join(runDir, 'status.json'), 'utf8'));
+    const persistedResult = JSON.parse(readFileSync(join(runDir, 'result.json'), 'utf8'));
+    assert.equal(persistedStatus.state, 'completed', 'persisted run state should converge to completed after restart');
+    assert.equal(persistedResult.exitCode, 0, 'persisted terminal result should retain the successful tool exit');
+    if (persistedStatus.runnerLaunchMode === 'systemd-transient-service') {
+      assert.ok(persistedStatus.runnerUnitName, 'systemd-backed detached runs should persist their transient unit name');
+      assert.ok(persistedStatus.runnerUnitScope, 'systemd-backed detached runs should persist their transient unit scope');
+    }
     const events = await getEvents(port, session.id, 'all');
     assert.ok(events.events.some((event) => event.type === 'message' && event.role === 'assistant'));
 
@@ -1106,6 +1116,80 @@ async function phase16StaleMissingRunnerReconciliation() {
   }
 }
 
+async function phase17SidecarPreSpawnFailurePersistsRootCause() {
+  const { home, configDir } = setupTempHome();
+  const port = randomPort();
+  let server = await startServer({
+    home,
+    port,
+    envOverrides: {
+      REMOTELAB_TEST_RUNNER_SIDECAR_FAIL_BEFORE_TOOL_SPAWN: '1',
+    },
+  });
+  try {
+    const session = await createSession(port, {
+      name: 'Sidecar pre-spawn failure',
+      group: 'Tests',
+      description: 'main() failure should persist the root cause instead of generic detached-runner disappearance',
+    });
+    const submit = await submitMessage(port, session.id, 'req-sidecar-pre-spawn-failure');
+    const failedRun = await waitForRunTerminal(port, submit.json.run.id);
+    assert.equal(failedRun.state, 'failed', 'pre-spawn sidecar failure should mark the run failed');
+    assert.equal(
+      failedRun.failureReason,
+      'Synthetic sidecar failure before tool spawn',
+      'pre-spawn sidecar failure should preserve the original error',
+    );
+    assert.equal(
+      failedRun.result?.error,
+      'Synthetic sidecar failure before tool spawn',
+      'run result should persist the original sidecar failure',
+    );
+
+    const runDir = join(configDir, 'chat-runs', submit.json.run.id);
+    const spool = readFileSync(join(runDir, 'spool.jsonl'), 'utf8');
+    assert.match(spool, /Detached runner main\(\) failed before tool completion/, 'spool should include the sidecar diagnostic label');
+    assert.doesNotMatch(spool, /Detached runner disappeared before writing a result/, 'generic detached-runner synthesis should not mask the main\(\) failure');
+    console.log('phase17-sidecar-pre-spawn-failure-persists-root-cause: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+async function phase18FinalizationMetricsFailureDoesNotMaskSuccess() {
+  const { home, configDir } = setupTempHome();
+  const port = randomPort();
+  let server = await startServer({
+    home,
+    port,
+    envOverrides: {
+      REMOTELAB_TEST_THROW_ON_FINALIZATION_METRICS: '1',
+    },
+  });
+  try {
+    const session = await createSession(port, {
+      name: 'Finalization metrics warning',
+      group: 'Tests',
+      description: 'non-critical finalization failures should not mask a completed tool run',
+    });
+    const submit = await submitMessage(port, session.id, 'req-finalization-metrics-warning');
+    const completedRun = await waitForRunTerminal(port, submit.json.run.id);
+    assert.equal(completedRun.state, 'completed', 'finalization metrics failure should not flip a successful run to failed');
+    assert.equal(completedRun.result?.exitCode, 0, 'successful tool exit should remain recorded');
+    assert.equal(completedRun.failureReason || null, null, 'warning-only finalization should not leave a failure reason');
+
+    const runDir = join(configDir, 'chat-runs', submit.json.run.id);
+    const spool = readFileSync(join(runDir, 'spool.jsonl'), 'utf8');
+    assert.match(spool, /Failed to append Codex context metrics during runner finalization/, 'spool should retain the warning diagnostic');
+    assert.doesNotMatch(spool, /Detached runner disappeared before writing a result/, 'warning-only finalization should not synthesize the generic missing-result failure');
+    console.log('phase18-finalization-metrics-failure-does-not-mask-success: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 const phase = process.argv[2] || 'all';
 const phases = {
   phase1: phase1Contract,
@@ -1126,6 +1210,8 @@ const phases = {
   phase14b: phase14bSessionSpawnCliInternalFinalOnly,
   phase15: phase15NoDuplicateDuringReadHammer,
   phase16: phase16StaleMissingRunnerReconciliation,
+  phase17: phase17SidecarPreSpawnFailurePersistsRootCause,
+  phase18: phase18FinalizationMetricsFailureDoesNotMaskSuccess,
 };
 
 if (phase === 'all') {

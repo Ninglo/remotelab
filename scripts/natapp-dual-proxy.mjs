@@ -9,19 +9,13 @@ import { fileURLToPath } from 'url';
 
 const LISTEN_HOST = process.env.NATAPP_PROXY_LISTEN_HOST || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.NATAPP_PROXY_LISTEN_PORT, 10) || 7699;
-const LEGACY_ROOT_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ROOT_UPSTREAM_PORT, 10) || 0;
+const ROOT_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ROOT_UPSTREAM_PORT, 10) || 0;
 const ROOT_MODE = normalizeRootMode(
-  process.env.NATAPP_ROOT_MODE || (LEGACY_ROOT_UPSTREAM_PORT > 0 ? 'legacy-proxy' : 'index'),
+  process.env.NATAPP_ROOT_MODE || (ROOT_UPSTREAM_PORT > 0 ? 'proxy' : 'index'),
 );
-const MAINLAND_SERVICE_UPSTREAM_PORT = Number.parseInt(
-  process.env.NATAPP_MAINLAND_SERVICE_PORT || process.env.NATAPP_OWNER_UPSTREAM_PORT,
-  10,
-) || 7690;
-const MAINLAND_SERVICE_NAME = normalizeRouteName(
-  process.env.NATAPP_MAINLAND_SERVICE_NAME || process.env.NATAPP_OWNER_ROUTE_PREFIX || 'owner',
-  'owner',
-);
-const MAINLAND_SERVICE_PREFIX = `/${MAINLAND_SERVICE_NAME}`;
+const BRIDGE_SERVICE_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_BRIDGE_SERVICE_PORT, 10) || 7690;
+const BRIDGE_SERVICE_NAME = normalizeRouteName(process.env.NATAPP_BRIDGE_SERVICE_NAME || 'owner', 'owner');
+const BRIDGE_SERVICE_PREFIX = `/${BRIDGE_SERVICE_NAME}`;
 const ADMIN_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ADMIN_PORT, 10) || 7689;
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
 const FALLBACK_PREFIXED_ROUTES = Object.freeze([
@@ -43,7 +37,7 @@ const SPECIAL_PREFIXED_ROUTES = Object.freeze(buildSpecialPrefixedRoutes());
 
 function normalizeRootMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
-  return normalized === 'legacy-proxy' ? 'legacy-proxy' : 'index';
+  return normalized === 'proxy' ? 'proxy' : 'index';
 }
 
 function normalizeRouteName(value, fallback = 'owner') {
@@ -135,13 +129,13 @@ function escapeHtml(value) {
 
 function buildSpecialPrefixedRoutes() {
   const routes = [];
-  if (isValidPort(MAINLAND_SERVICE_UPSTREAM_PORT) && MAINLAND_SERVICE_UPSTREAM_PORT !== LISTEN_PORT) {
+  if (isValidPort(BRIDGE_SERVICE_UPSTREAM_PORT) && BRIDGE_SERVICE_UPSTREAM_PORT !== LISTEN_PORT) {
     routes.push(Object.freeze({
-      name: MAINLAND_SERVICE_NAME,
-      prefix: MAINLAND_SERVICE_PREFIX,
-      upstreamPort: MAINLAND_SERVICE_UPSTREAM_PORT,
-      cookiePrefix: `${MAINLAND_SERVICE_NAME}__`,
-      routeType: 'mainland-service',
+      name: BRIDGE_SERVICE_NAME,
+      prefix: BRIDGE_SERVICE_PREFIX,
+      upstreamPort: BRIDGE_SERVICE_UPSTREAM_PORT,
+      cookiePrefix: `${BRIDGE_SERVICE_NAME}__`,
+      routeType: 'bridge-service',
     }));
   }
   if (isValidPort(ADMIN_UPSTREAM_PORT) && ADMIN_UPSTREAM_PORT !== LISTEN_PORT) {
@@ -216,12 +210,12 @@ async function mapRequest(reqUrl) {
   const parsed = new URL(reqUrl, 'http://127.0.0.1');
   const prefixedRoute = await findPrefixedRoute(parsed.pathname);
   if (!prefixedRoute) {
-    if (ROOT_MODE === 'legacy-proxy' && isValidPort(LEGACY_ROOT_UPSTREAM_PORT)) {
+    if (ROOT_MODE === 'proxy' && isValidPort(ROOT_UPSTREAM_PORT)) {
       return {
         prefixed: false,
         prefix: '',
         cookiePrefix: '',
-        upstreamPort: LEGACY_ROOT_UPSTREAM_PORT,
+        upstreamPort: ROOT_UPSTREAM_PORT,
         upstreamPath: `${parsed.pathname}${parsed.search}`,
       };
     }
@@ -353,7 +347,7 @@ async function renderRootIndexHtml() {
   const routes = (await loadPrefixedRoutes()).map((route) => ({
     name: route.name || route.prefix.replace(/^\/+/, ''),
     href: `${route.prefix}/`,
-    kind: route.routeType === 'mainland-service' ? 'main service' : 'instance',
+    kind: route.routeType === 'bridge-service' ? 'main service' : 'instance',
   }));
 
   const items = routes.length > 0
@@ -367,7 +361,7 @@ async function renderRootIndexHtml() {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>RemoteLab Mainland Bridge</title>
+    <title>RemoteLab Prefix Bridge</title>
     <style>
       :root { color-scheme: light; }
       body { margin: 0; font: 16px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; background: #f6f7f8; color: #172126; }
@@ -383,7 +377,7 @@ async function renderRootIndexHtml() {
   </head>
   <body>
     <main>
-      <h1>RemoteLab Mainland Bridge</h1>
+      <h1>RemoteLab Prefix Bridge</h1>
       <p>This bridge is prefix-only. Open product surfaces under <code>/{name}/</code>.</p>
       <p>Known routes:</p>
       <ul>${items}</ul>
@@ -425,7 +419,7 @@ async function writeRootIndex(req, res) {
 }
 
 function writePrefixOnlyNotFound(res) {
-  const body = 'This mainland bridge is prefix-only. Open /{name}/.\n';
+  const body = 'This prefix bridge is prefix-only. Open /{name}/.\n';
   res.writeHead(404, {
     'content-type': 'text/plain; charset=utf-8',
     'cache-control': 'no-store',
@@ -545,8 +539,8 @@ const IS_MAIN = Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURL
 if (IS_MAIN) {
   server.listen(LISTEN_PORT, LISTEN_HOST, async () => {
     const prefixes = (await loadPrefixedRoutes()).map((route) => route.prefix).join(', ');
-    const rootLabel = ROOT_MODE === 'legacy-proxy' && isValidPort(LEGACY_ROOT_UPSTREAM_PORT)
-      ? `legacy-proxy->${LEGACY_ROOT_UPSTREAM_PORT}`
+    const rootLabel = ROOT_MODE === 'proxy' && isValidPort(ROOT_UPSTREAM_PORT)
+      ? `proxy->${ROOT_UPSTREAM_PORT}`
       : 'index';
     console.log(`natapp dual proxy listening on http://${LISTEN_HOST}:${LISTEN_PORT} (root=${rootLabel}; ${prefixes || 'no prefixed routes'})`);
   });
@@ -555,11 +549,11 @@ if (IS_MAIN) {
 export {
   LISTEN_HOST,
   LISTEN_PORT,
-  LEGACY_ROOT_UPSTREAM_PORT,
+  ROOT_UPSTREAM_PORT,
   ROOT_MODE,
-  MAINLAND_SERVICE_NAME,
-  MAINLAND_SERVICE_UPSTREAM_PORT,
-  MAINLAND_SERVICE_PREFIX,
+  BRIDGE_SERVICE_NAME,
+  BRIDGE_SERVICE_UPSTREAM_PORT,
+  BRIDGE_SERVICE_PREFIX,
   loadPrefixedRoutes,
   mapRequest,
   buildUpstreamHeaders,

@@ -1886,11 +1886,12 @@
     return Object.assign({}, result, {
       name: name,
       publicBaseUrl: String(result && result.publicBaseUrl || '').trim(),
-      mainlandBaseUrl: String(result && result.mainlandBaseUrl || '').trim(),
+      bridgeBaseUrl: String(result && result.bridgeBaseUrl || '').trim(),
       localBaseUrl: String(result && result.localBaseUrl || '').trim(),
       publicAccessUrl: String(result && result.publicAccessUrl || '').trim(),
-      mainlandAccessUrl: String(result && result.mainlandAccessUrl || '').trim(),
+      bridgeAccessUrl: String(result && result.bridgeAccessUrl || '').trim(),
       localAccessUrl: String(result && result.localAccessUrl || '').trim(),
+      accessChannels: Array.isArray(result && result.accessChannels) ? result.accessChannels.slice() : [],
       createdAt: String(result && result.createdAt || new Date().toISOString()).trim(),
       localReachable: typeof result?.localReachable === 'boolean' ? result.localReachable : true,
       publicReachable: typeof result?.publicReachable === 'boolean' ? result.publicReachable : null,
@@ -1941,8 +1942,9 @@
         user.instanceDetail = null;
         user.quickLinks = {
           publicAccessUrl: '',
-          mainlandAccessUrl: '',
-          localAccessUrl: ''
+          bridgeAccessUrl: '',
+          localAccessUrl: '',
+          accessChannels: []
         };
         return user;
       });
@@ -1989,6 +1991,49 @@
       '<a class="link-chip" href="' + esc(href) + '" target="_blank" rel="noreferrer">Open</a>' +
       '<button class="link-chip" type="button" data-copy="' + esc(href) + '">Copy</button>' +
     '</div>';
+  }
+
+  function accessChannelsFor(source) {
+    var fallback = [];
+    if (Array.isArray(source && source.accessChannels) && source.accessChannels.length) {
+      return source.accessChannels.filter(function(channel) {
+        return channel && (channel.accessUrl || channel.baseUrl);
+      }).map(function(channel) {
+        return {
+          key: String(channel.key || '').trim(),
+          label: String(channel.label || '').trim() || 'Route',
+          href: String(channel.accessUrl || channel.baseUrl || '').trim()
+        };
+      });
+    }
+
+    if (source && (source.publicAccessUrl || source.publicBaseUrl)) {
+      fallback.push({ key: 'public', label: 'Public', href: String(source.publicAccessUrl || source.publicBaseUrl).trim() });
+    }
+    if (source && (source.bridgeAccessUrl || source.bridgeBaseUrl)) {
+      fallback.push({
+        key: 'bridge',
+        label: 'Bridge',
+        href: String(source.bridgeAccessUrl || source.bridgeBaseUrl).trim()
+      });
+    }
+    if (source && (source.localAccessUrl || source.localBaseUrl)) {
+      fallback.push({ key: 'local', label: 'Local', href: String(source.localAccessUrl || source.localBaseUrl).trim() });
+    }
+    return fallback;
+  }
+
+  function renderAccessRoutes(source) {
+    return accessChannelsFor(source).map(function(channel) {
+      return routeLine(channel.label, channel.href);
+    }).join('');
+  }
+
+  function renderAccessTags(source) {
+    return accessChannelsFor(source).map(function(channel) {
+      var tone = channel.key === 'public' ? 'accent' : 'muted';
+      return statusTag(channel.label, tone);
+    }).join('');
   }
 
   function renderTimeline(events) {
@@ -2045,9 +2090,7 @@
             '会话数：' + esc(metrics.sessionCount != null ? metrics.sessionCount : '0') +
           '</p>' +
           '<div class="link-list">' +
-            routeLine('CF', user.quickLinks && user.quickLinks.publicAccessUrl) +
-            routeLine('CN', user.quickLinks && user.quickLinks.mainlandAccessUrl) +
-            routeLine('LAN', user.quickLinks && user.quickLinks.localAccessUrl) +
+            renderAccessRoutes(user.quickLinks) +
           '</div>' +
         '</article>' +
       '</div>' +
@@ -2221,9 +2264,7 @@
         '<article class="detail-card">' +
           '<h4>快速入口</h4>' +
           '<div class="link-list">' +
-            routeLine('CF', instance.publicAccessUrl || instance.publicBaseUrl) +
-            routeLine('CN', instance.mainlandAccessUrl || instance.mainlandBaseUrl) +
-            routeLine('LAN', instance.localAccessUrl || instance.localBaseUrl) +
+            renderAccessRoutes(instance) +
           '</div>' +
         '</article>' +
       '</div>' +
@@ -2254,11 +2295,7 @@
     var usage = instanceUsage(instance);
     var health = instanceHealth(instance);
     var binding = instanceBindingDisplay(instance, boundUser);
-    var quickLinks = [
-      instance.publicAccessUrl || instance.publicBaseUrl ? statusTag('CF', 'accent') : '',
-      instance.mainlandAccessUrl || instance.mainlandBaseUrl ? statusTag('CN', 'muted') : '',
-      instance.localAccessUrl || instance.localBaseUrl ? statusTag('LAN', 'muted') : ''
-    ].join('');
+    var quickLinks = renderAccessTags(instance);
     return '<details class="row-card">' +
       '<summary class="row-summary">' +
         '<div class="row-main">' +
@@ -2300,7 +2337,14 @@
       if (query) {
         var boundUser = userByInstance[instance.name];
         var binding = instanceBindingDisplay(instance, boundUser);
-        var haystack = [instance.name, instance.publicBaseUrl, instance.mainlandBaseUrl, instance.localBaseUrl, binding ? binding.userName : '', binding ? binding.note : '']
+        var haystack = [
+          instance.name,
+          instance.publicBaseUrl,
+          instance.bridgeBaseUrl,
+          instance.localBaseUrl,
+          binding ? binding.userName : '',
+          binding ? binding.note : ''
+        ]
           .join(' ')
           .toLowerCase();
         if (haystack.indexOf(query) < 0) return false;

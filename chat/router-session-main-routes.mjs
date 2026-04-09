@@ -2,10 +2,12 @@ import { homedir } from 'os';
 import { join, resolve } from 'path';
 
 import { readBody } from '../lib/utils.mjs';
-import { readEventBody } from './history.mjs';
+import { appendEvent, readEventBody } from './history.mjs';
+import { messageEvent } from './normalizer.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
 import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-display-events.mjs';
 import { rewriteLocalFileLinksInDisplayEvents } from './local-link-rewriter.mjs';
+import { resolveStarterPresetDefinition } from './starter-session-content.mjs';
 import {
   applyTemplateToSession,
   cancelActiveRun,
@@ -19,6 +21,7 @@ import {
   sendMessage,
   submitHttpMessage,
 } from './session-manager.mjs';
+import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 
 function createClientSessionDetail(session) {
   return createSessionDetail(session);
@@ -52,7 +55,6 @@ export async function handleSessionMainRoutes({
   pathname,
   authSession,
   sessionGetRoute,
-  ensureOwnerStarterSessions,
   createSessionSummaryRef,
   immutablePrivateEventCacheControl,
   isDirectoryPath,
@@ -70,9 +72,6 @@ export async function handleSessionMainRoutes({
     if (authSession?.role === 'visitor' && !getGrantedCapability(authSession, 'listSessions')) {
       writeJson(res, 403, { error: 'Access denied' });
       return true;
-    }
-    if (authSession?.role === 'owner') {
-      await ensureOwnerStarterSessions();
     }
     const includeVisitor = authSession?.role === 'owner'
       && ['1', 'true', 'yes'].includes(String(parsedUrl.query.includeVisitor || '').toLowerCase());
@@ -310,7 +309,9 @@ export async function handleSessionMainRoutes({
         templateName,
         group,
         description,
+        starterPreset,
         systemPrompt,
+        welcomeMessage,
         internalRole,
         completionTargets,
         externalTriggerId,
@@ -329,6 +330,12 @@ export async function handleSessionMainRoutes({
           ? authSession.agentTool.trim()
           : tool)
         : tool;
+      const requestedStarterPreset = normalizeSessionStarterPreset(starterPreset);
+      const starterDefinition = requestedStarterPreset
+        ? resolveStarterPresetDefinition(requestedStarterPreset)
+        : null;
+      const explicitSystemPrompt = typeof systemPrompt === 'string' ? systemPrompt : '';
+      const explicitWelcomeMessage = typeof welcomeMessage === 'string' ? welcomeMessage.trim() : '';
       if ((!agentScoped && !folder) || !effectiveTool) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'folder and tool are required' }));
@@ -351,14 +358,17 @@ export async function handleSessionMainRoutes({
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
       };
+      if (requestedStarterPreset) {
+        createOptions.starterPreset = requestedStarterPreset;
+      }
       if (agentScoped) {
-        createOptions.agentId = scopedAgentId;
         createOptions.createdByPrincipalId = scopedPrincipalId;
-        createOptions.visitorId = scopedPrincipalId;
         createOptions.visitorName = 'Guest';
       }
       if (Object.prototype.hasOwnProperty.call(payload, 'systemPrompt')) {
-        createOptions.systemPrompt = typeof systemPrompt === 'string' ? systemPrompt : '';
+        createOptions.systemPrompt = explicitSystemPrompt;
+      } else if (!createOptions.templateId && starterDefinition?.systemPrompt) {
+        createOptions.systemPrompt = starterDefinition.systemPrompt;
       }
       if (Object.prototype.hasOwnProperty.call(payload, 'internalRole')) {
         if (agentScoped) {
@@ -376,12 +386,20 @@ export async function handleSessionMainRoutes({
       if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
         createOptions.sourceContext = sourceContext;
       }
+      const initialWelcomeMessage = createOptions.templateId
+        ? ''
+        : (Object.prototype.hasOwnProperty.call(payload, 'welcomeMessage')
+          ? explicitWelcomeMessage
+          : (starterDefinition?.welcomeMessage || ''));
       let session = await createSession(effectiveFolder, effectiveTool, name || '', createOptions);
       if (createOptions.templateId) {
         session = await applyTemplateToSession(session.id, createOptions.templateId, {
           appendWelcome: true,
           allowVisitor: agentScoped,
         }) || session;
+      } else if (initialWelcomeMessage) {
+        await appendEvent(session.id, messageEvent('assistant', initialWelcomeMessage));
+        session = await getSession(session.id) || session;
       }
 
       res.writeHead(201, { 'Content-Type': 'application/json' });

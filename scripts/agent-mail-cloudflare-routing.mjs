@@ -66,13 +66,13 @@ function safeRuleNameFragment(value) {
 function printUsage(exitCode = 0) {
   const output = exitCode === 0 ? console.log : console.error;
   output(`Usage:
-  node scripts/agent-mail-cloudflare-routing.mjs status [--root <dir>] [--zone <domain>] [--live] [--json]
+  node scripts/agent-mail-cloudflare-routing.mjs status [--root <dir>] [--zone <domain>] [--deployed] [--json]
   node scripts/agent-mail-cloudflare-routing.mjs sync [--root <dir>] [--zone <domain>] [--enable-catch-all] [--json]
   node scripts/agent-mail-cloudflare-routing.mjs probe --address <email> [--mx-host <host>] [--json]
 
 Examples:
   node scripts/agent-mail-cloudflare-routing.mjs status --json
-  node scripts/agent-mail-cloudflare-routing.mjs status --live --json
+  node scripts/agent-mail-cloudflare-routing.mjs status --deployed --json
   node scripts/agent-mail-cloudflare-routing.mjs sync --json
   node scripts/agent-mail-cloudflare-routing.mjs probe --address rowan@jiujianian.dev
   node scripts/agent-mail-cloudflare-routing.mjs probe --address trial6@jiujianian.dev --json
@@ -368,21 +368,21 @@ function printStatusSummary(summary, asJson = false) {
     console.log('Subaddressing required: yes');
   }
 
-  if (summary.cloudflare.live) {
-    if (summary.cloudflare.live.error) {
-      console.log(`Live Cloudflare: ${summary.cloudflare.live.error}`);
+  if (summary.cloudflare.deployed) {
+    if (summary.cloudflare.deployed.error) {
+      console.log(`Deployed Cloudflare: ${summary.cloudflare.deployed.error}`);
     } else {
-      console.log(`Live Cloudflare: status=${summary.cloudflare.live.settings.status || 'unknown'}, synced=${summary.cloudflare.live.settings.synced ? 'yes' : 'no'}, subaddressing=${summary.cloudflare.live.settings.supportSubaddress ? 'on' : 'off'}`);
-      if (summary.cloudflare.live.destinationAddresses?.length) {
+      console.log(`Deployed Cloudflare: status=${summary.cloudflare.deployed.settings.status || 'unknown'}, synced=${summary.cloudflare.deployed.settings.synced ? 'yes' : 'no'}, subaddressing=${summary.cloudflare.deployed.settings.supportSubaddress ? 'on' : 'off'}`);
+      if (summary.cloudflare.deployed.destinationAddresses?.length) {
         console.log('\nDestination addresses:');
-        for (const address of summary.cloudflare.live.destinationAddresses) {
+        for (const address of summary.cloudflare.deployed.destinationAddresses) {
           const status = trimString(address?.status) || (trimString(address?.verifiedAt) ? 'verified' : 'unverified');
           console.log(`- ${address.email}: ${status}`);
         }
       }
-      if (summary.cloudflare.live.missingLiteralWorkerAddresses.length) {
+      if (summary.cloudflare.deployed.missingLiteralWorkerAddresses.length) {
         console.log('\nMissing literal worker routes:');
-        for (const address of summary.cloudflare.live.missingLiteralWorkerAddresses) {
+        for (const address of summary.cloudflare.deployed.missingLiteralWorkerAddresses) {
           console.log(`- ${address}`);
         }
       }
@@ -533,7 +533,7 @@ function summarizeRule(rule) {
   };
 }
 
-function stripRawLiveState(value) {
+function stripRawDeployedState(value) {
   if (!value || typeof value !== 'object') {
     return value;
   }
@@ -541,7 +541,7 @@ function stripRawLiveState(value) {
   return rest;
 }
 
-async function fetchLiveCloudflareState({ zone = '', auth, desiredPlan }) {
+async function fetchDeployedCloudflareState({ zone = '', auth, desiredPlan }) {
   const normalizedZone = trimString(zone).toLowerCase();
   if (!normalizedZone) {
     return { error: 'Mailbox domain not initialized.' };
@@ -600,14 +600,14 @@ async function fetchLiveCloudflareState({ zone = '', auth, desiredPlan }) {
   };
 }
 
-async function enrichStatusWithLiveCloudflareState(summary, { authFile = DEFAULT_CLOUDFLARE_AUTH_FILE } = {}) {
+async function enrichStatusWithDeployedCloudflareState(summary, { authFile = DEFAULT_CLOUDFLARE_AUTH_FILE } = {}) {
   const auth = await loadCloudflareAuth(authFile);
   const desiredPlan = {
     workerName: summary.cloudflare.workerName,
     requiredLiteralWorkerAddresses: summary.cloudflare.requiredLiteralWorkerAddresses,
   };
   try {
-    const live = await fetchLiveCloudflareState({
+    const deployed = await fetchDeployedCloudflareState({
       zone: summary.zone,
       auth,
       desiredPlan,
@@ -616,7 +616,7 @@ async function enrichStatusWithLiveCloudflareState(summary, { authFile = DEFAULT
       ...summary,
       cloudflare: {
         ...summary.cloudflare,
-        live,
+        deployed,
       },
     };
   } catch (error) {
@@ -624,7 +624,7 @@ async function enrichStatusWithLiveCloudflareState(summary, { authFile = DEFAULT
       ...summary,
       cloudflare: {
         ...summary.cloudflare,
-        live: {
+        deployed: {
           error: error instanceof Error ? error.message : String(error),
         },
       },
@@ -732,19 +732,19 @@ async function syncCloudflareRouting({
     requiredLiteralWorkerAddresses: summary.cloudflare.requiredLiteralWorkerAddresses,
     requireSubaddressing: summary.cloudflare.requireSubaddressing,
   };
-  const liveBefore = await fetchLiveCloudflareState({
+  const deployedBefore = await fetchDeployedCloudflareState({
     zone: summary.zone,
     auth,
     desiredPlan,
   });
-  if (liveBefore.error) {
-    throw new Error(liveBefore.error);
+  if (deployedBefore.error) {
+    throw new Error(deployedBefore.error);
   }
 
   const operations = [];
 
-  if (summary.cloudflare.requireSubaddressing && !liveBefore.settings.supportSubaddress) {
-    await updateZoneSettings(auth, liveBefore.zoneId, {
+  if (summary.cloudflare.requireSubaddressing && !deployedBefore.settings.supportSubaddress) {
+    await updateZoneSettings(auth, deployedBefore.zoneId, {
       enabled: true,
       skip_wizard: true,
       support_subaddress: true,
@@ -757,11 +757,11 @@ async function syncCloudflareRouting({
     });
   }
 
-  let refreshedRules = Array.isArray(liveBefore.rawRules) ? liveBefore.rawRules : [];
+  let refreshedRules = Array.isArray(deployedBefore.rawRules) ? deployedBefore.rawRules : [];
   for (const address of summary.cloudflare.requiredLiteralWorkerAddresses) {
     const result = await ensureLiteralWorkerRule({
       auth,
-      zoneId: liveBefore.zoneId,
+      zoneId: deployedBefore.zoneId,
       address,
       workerName: summary.cloudflare.workerName,
       rules: refreshedRules,
@@ -769,7 +769,7 @@ async function syncCloudflareRouting({
     if (result.action !== 'unchanged') {
       operations.push({ type: 'literal_worker_rule', ...result });
       refreshedRules = await cloudflareRequest(auth, {
-        path: `/zones/${liveBefore.zoneId}/email/routing/rules?per_page=100`,
+        path: `/zones/${deployedBefore.zoneId}/email/routing/rules?per_page=100`,
       });
     }
   }
@@ -777,16 +777,16 @@ async function syncCloudflareRouting({
   if (enableCatchAll) {
     const result = await ensureCatchAllWorkerRule({
       auth,
-      zoneId: liveBefore.zoneId,
+      zoneId: deployedBefore.zoneId,
       workerName: summary.cloudflare.workerName,
-      currentRule: liveBefore.rawCatchAllRule,
+      currentRule: deployedBefore.rawCatchAllRule,
     });
     if (result.action !== 'unchanged') {
       operations.push({ type: 'catch_all_rule', ...result });
     }
   }
 
-  const liveAfter = await fetchLiveCloudflareState({
+  const deployedAfter = await fetchDeployedCloudflareState({
     zone: summary.zone,
     auth,
     desiredPlan,
@@ -794,12 +794,12 @@ async function syncCloudflareRouting({
 
   return {
     zone: summary.zone,
-    zoneId: liveBefore.zoneId,
+    zoneId: deployedBefore.zoneId,
     authMode: summarizeCloudflareAuthMode(auth),
     desiredRouteModel: summary.cloudflare.desiredRouteModel,
     operations,
-    before: stripRawLiveState(liveBefore),
-    after: stripRawLiveState(liveAfter),
+    before: stripRawDeployedState(deployedBefore),
+    after: stripRawDeployedState(deployedAfter),
   };
 }
 
@@ -999,7 +999,7 @@ function printSyncResult(result, asJson = false) {
     }
   }
   if (result.after?.settings) {
-    console.log(`Live after: status=${result.after.settings.status || 'unknown'}, synced=${result.after.settings.synced ? 'yes' : 'no'}, subaddressing=${result.after.settings.supportSubaddress ? 'on' : 'off'}`);
+    console.log(`Deployed after: status=${result.after.settings.status || 'unknown'}, synced=${result.after.settings.synced ? 'yes' : 'no'}, subaddressing=${result.after.settings.supportSubaddress ? 'on' : 'off'}`);
   }
 }
 
@@ -1016,8 +1016,8 @@ async function main(argv = process.argv.slice(2)) {
       zone: optionValue(options, 'zone', ''),
       authFile: optionValue(options, 'auth-file', DEFAULT_CLOUDFLARE_AUTH_FILE),
     });
-    if (optionValue(options, 'live', false) === true) {
-      summary = await enrichStatusWithLiveCloudflareState(summary, {
+    if (optionValue(options, 'deployed', false) === true) {
+      summary = await enrichStatusWithDeployedCloudflareState(summary, {
         authFile: optionValue(options, 'auth-file', DEFAULT_CLOUDFLARE_AUTH_FILE),
       });
     }
@@ -1063,7 +1063,7 @@ export {
   buildDesiredCloudflarePlan,
   buildGuestMailboxAddress,
   buildStatusSummary,
-  enrichStatusWithLiveCloudflareState,
+  enrichStatusWithDeployedCloudflareState,
   findLiteralRule,
   literalRuleAddress,
   loadCloudflareAuth,
