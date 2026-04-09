@@ -101,6 +101,7 @@ try {
   assert.match(welcomeApp?.systemPrompt || '', /lightweight side questions|usage motive|recurring bottleneck/i);
   assert.match(welcomeApp?.systemPrompt || '', /internal task frame|backend-owned hidden state|concrete materials/i);
   assert.match(welcomeApp?.systemPrompt || '', /execution surface|local paths|complete handoff/i);
+  assert.match(welcomeApp?.systemPrompt || '', /mainland China|cpolar|without a VPN/i);
   assert.match(welcomeApp?.systemPrompt || '', /inside RemoteLab and on this machine rather than giving the user a manual recipe/i);
   assert.match(welcomeApp?.systemPrompt || '', /login, authorization, or browser access|explicitly exposed RemoteLab surface/i);
   assert.match(welcomeApp?.systemPrompt || '', /machine-side execution and user-visible delivery as separate steps|read, download, open, or otherwise reach the result/i);
@@ -108,6 +109,7 @@ try {
   assert.match(welcomeApp?.welcomeMessage || '', /我是 Rowan|聊天工具|先接手、再梳理、再推进执行/u);
   assert.match(welcomeApp?.welcomeMessage || '', /执行工作的地方|翻文件|取结果的界面/u);
   assert.match(welcomeApp?.welcomeMessage || '', /报表\/表格整理|导出导入|文件批处理/u);
+  assert.match(welcomeApp?.welcomeMessage || '', /cpolar|国内可以直接访问|不用梯子/u);
   assert.match(welcomeApp?.welcomeMessage || '', /prompt 想清楚|一次说齐|进入执行/u);
   assert.match(welcomeApp?.welcomeMessage || '', /登录某个网站|授权某个服务|尽量小的人工确认/u);
   assert.match(welcomeApp?.welcomeMessage || '', /大概是做什么的|最想省掉哪类重复工作|哪些材料或系统/u);

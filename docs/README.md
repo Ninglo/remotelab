@@ -51,6 +51,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 ### Current Core
 
 - `project-architecture.md` — top-down map of the shipped system
+- `cpolar-setup.md` — model-first cpolar setup for mainland-friendly direct access without a VPN
 - `setup.md` — model-first setup contract, one-round input handoff, human checkpoints, and target state
 - `external-message-protocol.md` — canonical integration contract for external channels
 - `creating-apps.md` — user/developer guide for Agents

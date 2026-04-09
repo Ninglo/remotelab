@@ -21,16 +21,22 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 ```text
 我想在这台机器上配置 RemoteLab，这样我就能从不同设备把重复数字工作交给 AI，并让它在真实机器上完成自动化。
 
-网络模式：[cloudflare | tailscale]
+网络模式：[cloudflare | cpolar | tailscale]
 
 # Cloudflare 模式：
 我的域名：[YOUR_DOMAIN]
 我想用的子域名：[SUBDOMAIN]
 
+# cpolar 模式：
+访问策略：[临时公网地址 | 固定二级子域名]
+如果我还没有 cpolar 账号，请按这个链接给我注册指引：https://www.cpolar.com/?channel=0&invite=6WH2
+如果我已经想好了要长期保留的二级子域名，也一起告诉你。
+
 # Tailscale 模式：
 （无需额外配置——宿主机和我想使用的客户端设备都已安装 Tailscale，并在同一个 tailnet 中。）
 
 请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` 当作配置契约和唯一真相来源。
+如果我选择 cpolar 模式，也请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` 当作注册和隧道配置的专项说明。
 不要假设这个仓库已经提前 clone 到本地。如果 `~/code/remotelab` 还不存在，请你先读取那份契约，再自行 clone `https://github.com/Ninglo/remotelab.git`，然后继续完成安装。
 后续流程都留在这个对话里。
 开始执行前，请先用一条消息把缺少的上下文一次性问全，让我集中回复一次。
@@ -40,6 +46,8 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 ```
 
 如果你想先看更完整的说明，可以跳到 [安装细节](#安装细节) 或直接打开 `docs/setup.md`。
+
+如果主要是给中国大陆的同事、客户或自己访问，优先考虑 `cpolar`。它对用户层面的好处很直接：国内可以直接访问，不用梯子。专项文档见 `docs/cpolar-setup.md`。
 
 ---
 
@@ -138,7 +146,7 @@ RemoteLab 在几个点上是刻意有立场的：
 
 ### 安装细节
 
-最快的方式仍然是：把一段 setup prompt 粘贴给部署机器上的 Codex、Claude Code 或其他靠谱的 coding agent。它可以自动完成绝大多数步骤，只会在 Cloudflare 登录这类真正需要人工参与的地方停下来（仅当你选择 Cloudflare 模式时）。
+最快的方式仍然是：把一段 setup prompt 粘贴给部署机器上的 Codex、Claude Code 或其他靠谱的 coding agent。它可以自动完成绝大多数步骤，只会在 Cloudflare 登录、cpolar 注册或 cpolar 后台里保留固定二级子域名这类真正需要人工参与的地方停下来。
 
 这个仓库里的配置类和功能接入类文档都按同一个原则来写：人只需要把 prompt 发给自己的 AI agent，Agent 会尽量在最开始一轮把需要的上下文都问清楚，然后后续流程都留在那段对话里，只有明确标记为 `[HUMAN]` 的步骤才需要人离开对话手工处理。
 
@@ -148,8 +156,9 @@ RemoteLab 在几个点上是刻意有立场的：
 - **macOS**：已安装 Homebrew + Node.js 18+
 - **Linux**：Node.js 18+
 - 至少安装了一个 AI 工具（`codex`、`claude`、`cline` 或兼容的本地工具）
-- **网络**（二选一）：
+- **网络**（三选一）：
   - **Cloudflare Tunnel**：域名已接入 Cloudflare（[免费账号](https://cloudflare.com)，域名约 ¥10–90/年，可从 Namecheap 或 Porkbun 购买）
+  - **cpolar**：适合希望让中国大陆用户直接打开 RemoteLab、无需梯子的场景；注册可走[这个带邀请码的入口](https://www.cpolar.com/?channel=0&invite=6WH2)，详细流程见 `docs/cpolar-setup.md`
   - **Tailscale**：[个人使用免费](https://tailscale.com)——宿主机和你想使用的各个客户端设备都安装 Tailscale 并加入同一个 tailnet，无需域名
 
 **在宿主机开一个新的终端，启动 Codex 或其他 coding agent，然后粘贴这段 prompt：**
@@ -157,16 +166,22 @@ RemoteLab 在几个点上是刻意有立场的：
 ```text
 我想在这台机器上配置 RemoteLab，这样我就能从不同设备把重复数字工作交给 AI，并让它在真实机器上完成自动化。
 
-网络模式：[cloudflare | tailscale]
+网络模式：[cloudflare | cpolar | tailscale]
 
 # Cloudflare 模式：
 我的域名：[YOUR_DOMAIN]
 我想用的子域名：[SUBDOMAIN]
 
+# cpolar 模式：
+访问策略：[临时公网地址 | 固定二级子域名]
+如果我还没有 cpolar 账号，请按这个链接给我注册指引：https://www.cpolar.com/?channel=0&invite=6WH2
+如果我已经想好了要长期保留的二级子域名，也一起告诉你。
+
 # Tailscale 模式：
 （无需额外配置——宿主机和我想使用的客户端设备都已安装 Tailscale，并在同一个 tailnet 中。）
 
 请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` 当作配置契约和唯一真相来源。
+如果我选择 cpolar 模式，也请把 `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` 当作注册和隧道配置的专项说明。
 不要假设这个仓库已经提前 clone 到本地。如果 `~/code/remotelab` 还不存在，请你先读取那份契约，再自行 clone `https://github.com/Ninglo/remotelab.git`，然后继续完成安装。
 后续流程都留在这个对话里。
 开始执行前，请先用一条消息把缺少的上下文一次性问全，让我集中回复一次。
@@ -175,12 +190,13 @@ RemoteLab 在几个点上是刻意有立场的：
 停下来时，请明确告诉我具体要做什么，以及我做完后你会怎么验证。
 ```
 
-如果你想看完整的配置契约和人工节点说明，请直接看 `docs/setup.md`。
+如果你想看完整的配置契约和人工节点说明，请直接看 `docs/setup.md`。如果你关心的是面向中国大陆的直接访问方案，请直接看 `docs/cpolar-setup.md`。
 
 ### 配置完成后你会得到什么
 
 在你想使用的设备上打开 RemoteLab 地址：
 - **Cloudflare**：`https://[subdomain].[domain]/?token=YOUR_TOKEN`
+- **cpolar**：`https://[cpolar-hostname]/?token=YOUR_TOKEN`
 - **Tailscale**：`http://[hostname].[tailnet].ts.net:7690/?token=YOUR_TOKEN`
 
 ![Dashboard](docs/new-dashboard.png)

@@ -21,16 +21,22 @@ If the demo makes sense, do not keep reading. Open a fresh terminal on the host 
 ```text
 I want to set up RemoteLab on this machine so I can hand repetitive digital work to AI from any device and let it automate the work on a real computer.
 
-Network mode: [cloudflare | tailscale]
+Network mode: [cloudflare | cpolar | tailscale]
 
 # For Cloudflare mode:
 My domain: [YOUR_DOMAIN]
 Subdomain I want to use: [SUBDOMAIN]
 
+# For cpolar mode:
+Access preference: [temporary public URL | reserved stable subdomain]
+If I do not already have a cpolar account, use https://www.cpolar.com/?channel=0&invite=6WH2 for signup guidance.
+If I already want a fixed reserved subdomain, include the label I want to keep.
+
 # For Tailscale mode:
 (No extra config needed — the host machine and the client devices I want to use are on the same tailnet.)
 
 Use the setup contract at `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` as the source of truth.
+If I choose cpolar mode, also use `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` as the focused guide for registration and tunnel setup.
 Do not assume the repo is already cloned. If `~/code/remotelab` does not exist yet, fetch that contract, clone `https://github.com/Ninglo/remotelab.git` yourself, and continue.
 Keep the workflow inside this chat.
 Before you start work, collect every missing piece of context in one message so I can answer once.
@@ -40,6 +46,8 @@ When you stop, tell me exactly what I need to do and how you'll verify it after 
 ```
 
 Need the longer version first? Jump to [Setup details](#setup-details) or open `docs/setup.md`.
+
+If the people opening RemoteLab are mainly in mainland China, prefer `cpolar`. The main user-facing benefit is simple: they can open it directly without a VPN. For the focused setup path, use `docs/cpolar-setup.md`.
 
 ---
 
@@ -136,7 +144,7 @@ RemoteLab is opinionated in a few ways:
 
 ### Setup details
 
-The fastest path is still to paste a setup prompt into Codex, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login when that mode is in play.
+The fastest path is still to paste a setup prompt into Codex, Claude Code, or another capable coding agent on the machine that will host RemoteLab. It can handle almost everything automatically and stop only for truly manual steps such as Cloudflare login or cpolar signup / dashboard-only actions when those modes are in play.
 
 Configuration and feature-rollout docs in this repo are model-first and prompt-first: the human copies a prompt into their own AI coding agent, the agent gathers the needed context up front in as few rounds as possible, and the rest of the work stays inside that conversation except for explicit `[HUMAN]` steps.
 
@@ -148,6 +156,7 @@ The best pattern is one early handoff: the agent asks for everything it needs in
 - At least one AI tool installed (`codex`, `claude`, `cline`, or a compatible local tool)
 - **Network** (pick one):
   - **Cloudflare Tunnel**: a domain pointed at Cloudflare ([free account](https://cloudflare.com), domain ~$1–12/yr from Namecheap or Porkbun)
+  - **cpolar**: best when users in mainland China need to open RemoteLab directly without a VPN; register via [the cpolar signup link](https://www.cpolar.com/?channel=0&invite=6WH2) and see `docs/cpolar-setup.md` for the prompt-first flow
   - **Tailscale**: [free for personal use](https://tailscale.com) — install on the host machine and any client device you want to use, join the same tailnet, no domain needed
 
 **Open a fresh terminal on the host machine, start Codex or another coding agent, and paste this:**
@@ -155,16 +164,22 @@ The best pattern is one early handoff: the agent asks for everything it needs in
 ```text
 I want to set up RemoteLab on this machine so I can hand repetitive digital work to AI from any device and let it automate the work on a real computer.
 
-Network mode: [cloudflare | tailscale]
+Network mode: [cloudflare | cpolar | tailscale]
 
 # For Cloudflare mode:
 My domain: [YOUR_DOMAIN]
 Subdomain I want to use: [SUBDOMAIN]
 
+# For cpolar mode:
+Access preference: [temporary public URL | reserved stable subdomain]
+If I do not already have a cpolar account, use https://www.cpolar.com/?channel=0&invite=6WH2 for signup guidance.
+If I already want a fixed reserved subdomain, include the label I want to keep.
+
 # For Tailscale mode:
 (No extra config needed — the host machine and the client devices I want to use are on the same tailnet.)
 
 Use the setup contract at `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md` as the source of truth.
+If I choose cpolar mode, also use `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/cpolar-setup.md` as the focused guide for registration and tunnel setup.
 Do not assume the repo is already cloned. If `~/code/remotelab` does not exist yet, fetch that contract, clone `https://github.com/Ninglo/remotelab.git` yourself, and continue.
 Keep the workflow inside this chat.
 Before you start work, collect every missing piece of context in one message so I can answer once.
@@ -173,12 +188,13 @@ After my reply, continue autonomously and only stop for real [HUMAN] steps, appr
 When you stop, tell me exactly what I need to do and how you'll verify it after I reply.
 ```
 
-If you want the full setup contract and the human-only checkpoints, use `docs/setup.md`.
+If you want the full setup contract and the human-only checkpoints, use `docs/setup.md`. If your main concern is mainland-friendly direct access, use `docs/cpolar-setup.md`.
 
 ### What you'll have when done
 
 Open your RemoteLab URL on the device you want to use:
 - **Cloudflare**: `https://[subdomain].[domain]/?token=YOUR_TOKEN`
+- **cpolar**: `https://[cpolar-hostname]/?token=YOUR_TOKEN`
 - **Tailscale**: `http://[hostname].[tailnet].ts.net:7690/?token=YOUR_TOKEN`
 
 ![Dashboard](docs/new-dashboard.png)

@@ -235,6 +235,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0, publicHostna
   assert.ok(welcomeEvent, 'welcome session should include an assistant onboarding message');
   const welcomeContent = await resolveEventContent(port, welcomeSession.id, welcomeEvent, { Cookie: ownerCookie });
   assert.match(welcomeContent, /我是 Rowan|先接手、再梳理、再推进执行/u, 'welcome copy should come from the built-in Welcome app');
+  assert.match(welcomeContent, /cpolar|国内可以直接访问|不用梯子/u, 'welcome copy should mention cpolar for mainland-friendly access');
   assert.match(welcomeContent, /左侧我已经先放了 3 个真实跑通过的示例会话/u, 'welcome copy should point owners to the verified showcase sessions');
   const welcomeAssistantMessages = await Promise.all(
     (events.json?.events || [])
