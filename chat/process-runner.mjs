@@ -80,7 +80,8 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
   const tool = await getToolDefinitionAsync(toolId);
   const command = tool?.command || await getToolCommandAsync(toolId);
   const envOverrides = buildToolProcessEnvOverrides(tool || { id: toolId });
-  const runtimeFamily = tool?.runtimeFamily
+  const runtimeFamily = (typeof options.runtimeFamily === 'string' && options.runtimeFamily.trim())
+    || tool?.runtimeFamily
     || (toolId === 'claude' ? 'claude-stream-json' : toolId === 'codex' ? 'codex-json' : null);
   const runtimeInvocation = buildRuntimeInvocation(runtimeFamily, prompt, options, toolId);
 

@@ -18,6 +18,7 @@ export function createRunProjectionService({
       model: manifest.options?.model,
       effort: manifest.options?.effort,
       thinking: manifest.options?.thinking,
+      runtimeFamily: manifest.runtimeFamily || manifest.options?.runtimeFamily,
     });
   }
 

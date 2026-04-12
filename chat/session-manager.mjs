@@ -3703,6 +3703,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       session = updatedToolSession;
     }
   }
+  const effectiveToolDefinition = await getToolDefinitionAsync(effectiveTool);
+  const effectiveRuntimeFamily = (typeof effectiveToolDefinition?.runtimeFamily === 'string' && effectiveToolDefinition.runtimeFamily.trim())
+    || (effectiveTool === 'claude' ? 'claude-stream-json' : effectiveTool === 'codex' ? 'codex-json' : null);
 
   const {
     claudeSessionId: persistedClaudeSessionId,
@@ -3737,6 +3740,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       responseId: primaryResponseId || null,
       folder: session.folder,
       tool: effectiveTool,
+      ...(effectiveRuntimeFamily ? { runtimeFamily: effectiveRuntimeFamily } : {}),
       prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options),
       internalOperation: options.internalOperation || null,
       ...(replyPublicationRootRunId ? { replyPublicationRootRunId } : {}),
@@ -3758,6 +3762,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
         thinking: options.thinking === true,
         model: options.model || undefined,
         effort: options.effort || undefined,
+        runtimeFamily: effectiveRuntimeFamily || undefined,
         claudeSessionId: persistedClaudeSessionId || undefined,
         codexThreadId: persistedCodexThreadId || undefined,
       },
