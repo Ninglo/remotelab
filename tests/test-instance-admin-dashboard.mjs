@@ -412,11 +412,15 @@ async function main() {
     assert.doesNotMatch(templateSource, /queueSilentReload|dashboard\/refresh|setTimeout\(loadAll/, 'instance admin UI should not auto-refresh in the background');
     assert.doesNotMatch(templateSource, /async function createTrial[\s\S]*?await loadAll\(\);/, 'trial creation should not trigger a full reload');
     assert.doesNotMatch(templateSource, /async function confirmCreate[\s\S]*?await loadAll\(\);/, 'custom instance creation should not trigger a full reload');
+    assert.match(templateSource, /function ensureBillingData\(options\)/, 'billing data should have an explicit lazy loader');
+    assert.match(templateSource, /includeBilling = options\.includeBilling === true \|\| state\.view === 'billing' \|\| !!state\.billing;/, 'default load should only include billing when needed');
     assert.match(templateSource, /label: '预留'/, 'instance admin UI should render reserved instances distinctly');
     assert.match(templateSource, /usage\.key === 'occupied' \|\| usage\.key === 'reserved'/, 'occupied filter should include reserved instances');
     assert.match(templateSource, /data-view="billing"/, 'instance admin UI should expose the billing monitoring view');
     assert.match(templateSource, /费用优先用 provider 返回值，缺失时再按价格表估算/, 'instance admin UI should explain provider-first fallback pricing');
     assert.match(templateSource, /单次上下文峰值/, 'instance admin UI should label context as a per-run peak instead of raw input volume');
+    assert.match(templateSource, /落后 owner/, 'instance admin UI should surface owner-vs-instance build drift');
+    assert.match(templateSource, /版本一致性/, 'instance admin detail should expose build consistency information');
 
     const pageRes = await request(port, '/');
     assert.equal(pageRes.status, 200, pageRes.text);
@@ -431,6 +435,7 @@ async function main() {
 
     const data = res.json || {};
     assert.ok(data.summary, res.text);
+    assert.equal(data.checksIncluded, false, 'default dashboard load should skip health checks');
     assert.equal(data.summary.usage.totalTokens, 740, 'dashboard summary should include fleet token totals');
     assert.equal(data.summary.usage.costUsd, 0.28, 'dashboard summary should include exact fleet cost totals');
     assert.equal(data.summary.usage.estimatedCostUsd, 0.6017, 'dashboard summary should include estimated fleet cost totals, including fallback model pricing');
@@ -452,11 +457,25 @@ async function main() {
     assert.equal(intake1.usage.usageSummary.totals.totalTokens, 90);
     assert.equal(intake1.usage.usageSummary.totals.estimatedCostUsd, 0.12);
     assert.equal(intake1.usage.usageSummary.byTool[0].key, 'codex');
+    assert.equal(trial24.localReachable, null, 'default dashboard load should not probe local guest health');
+    assert.equal(trial24.publicReachable, null, 'default dashboard load should not probe public guest health');
     assert.equal(intake1.usage.usageStatus, 'reserved', 'reserved ledger entry should keep the instance out of the available pool');
     assert.equal(intake1.usage.usageBrief, '已预留，暂不外发', 'reserved instance should expose an explicit non-shareable usage brief');
     assert.equal(intake1.occupancy?.userName, '朋友分发预留', 'reserved instance should expose occupancy metadata for the UI');
     assert.equal(data.summary.openedCount, 0, 'reserved instances should not count as available');
     assert.equal(data.summary.occupiedCount, 3, 'owner and reserved instances should count as unavailable');
+
+    const checkedRes = await request(port, '/api/dashboard?refresh=1&checks=1');
+    assert.equal(checkedRes.status, 200, checkedRes.text);
+    const checkedData = checkedRes.json || {};
+    const checkedTrial24 = checkedData.instances.find((entry) => entry.name === 'trial24');
+    const checkedOwner = checkedData.instances.find((entry) => entry.name === 'owner');
+    assert.equal(checkedData.checksIncluded, true, 'explicit refresh should include health checks');
+    assert.equal(typeof checkedTrial24.localReachable, 'boolean', 'forced refresh should probe guest local health');
+    assert.equal(typeof checkedTrial24.publicReachable, 'boolean', 'forced refresh should probe guest public health');
+    assert.equal(typeof checkedOwner.localReachable, 'boolean', 'forced refresh should probe owner local health');
+    assert.equal(typeof checkedTrial24.build, 'object', 'forced refresh should surface guest build consistency');
+    assert.equal(typeof checkedOwner.build, 'object', 'forced refresh should surface owner build consistency');
 
     const workbenchRes = await request(port, '/api/workbench');
     assert.equal(workbenchRes.status, 200, workbenchRes.text);

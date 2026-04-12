@@ -1,18 +1,19 @@
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 
+import { MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { appendEvent, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
 import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-display-events.mjs';
-import { rewriteLocalFileLinksInDisplayEvents } from './local-link-rewriter.mjs';
 import { resolveStarterPresetDefinition } from './starter-session-content.mjs';
 import {
   applyTemplateToSession,
   cancelActiveRun,
   createSession,
   getRunState,
+  getSessionReplyPublication,
   getSession,
   getSessionEventsAfter,
   getSessionSourceContext,
@@ -148,7 +149,6 @@ export async function handleSessionMainRoutes({
     const events = buildSessionDisplayEvents(timeline, {
       sessionRunning: session?.activity?.run?.state === 'running',
     });
-    await rewriteLocalFileLinksInDisplayEvents(events, sessionId);
     writeJsonCached(req, res, { sessionId, filter: 'visible', events });
     return true;
   }
@@ -164,6 +164,18 @@ export async function handleSessionMainRoutes({
       return true;
     }
     writeJson(res, 200, { sessionId, sourceContext });
+    return true;
+  }
+
+  if (sessionGetRoute?.kind === 'response') {
+    const { sessionId, responseId } = sessionGetRoute;
+    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+    const replyPublication = await getSessionReplyPublication(sessionId, responseId);
+    if (!replyPublication) {
+      writeJson(res, 404, { error: 'Reply publication not found' });
+      return true;
+    }
+    writeJsonCached(req, res, { sessionId, responseId, replyPublication });
     return true;
   }
 
@@ -251,10 +263,11 @@ export async function handleSessionMainRoutes({
             })
           : await sendMessage(sessionId, payload.text.trim(), [], messageOptions);
         writeJson(res, outcome.duplicate ? 200 : 202, {
-          requestId: requestId || outcome.run?.requestId || null,
+          requestId: requestId || outcome.requestId || outcome.run?.requestId || null,
           duplicate: outcome.duplicate,
           queued: outcome.queued,
           run: outcome.run,
+          response: outcome.response || null,
           session: createClientSessionDetail(outcome.session),
         });
       } catch (error) {
@@ -320,11 +333,14 @@ export async function handleSessionMainRoutes({
       const agentScoped = isAgentScopedAuthSession(authSession);
       const scopedAgentId = getAuthScopeAgentId(authSession);
       const scopedPrincipalId = getAuthPrincipalId(authSession);
+      const requestedFolder = typeof folder === 'string' ? folder.trim() : '';
       const effectiveFolder = agentScoped
-        ? homedir()
-        : (folder.startsWith('~')
-          ? join(homedir(), folder.slice(1))
-          : resolve(folder));
+        ? MANAGED_WORK_ROOT_DIR
+        : (requestedFolder
+          ? (requestedFolder.startsWith('~')
+            ? join(homedir(), requestedFolder.slice(1))
+            : resolve(requestedFolder))
+          : MANAGED_WORK_ROOT_DIR);
       const effectiveTool = agentScoped
         ? (typeof authSession?.agentTool === 'string' && authSession.agentTool.trim()
           ? authSession.agentTool.trim()
@@ -336,9 +352,9 @@ export async function handleSessionMainRoutes({
         : null;
       const explicitSystemPrompt = typeof systemPrompt === 'string' ? systemPrompt : '';
       const explicitWelcomeMessage = typeof welcomeMessage === 'string' ? welcomeMessage.trim() : '';
-      if ((!agentScoped && !folder) || !effectiveTool) {
+      if (!effectiveTool) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'folder and tool are required' }));
+        res.end(JSON.stringify({ error: 'tool is required' }));
         return true;
       }
       if (!await isDirectoryPath(effectiveFolder)) {

@@ -162,6 +162,7 @@ function createContext({
     inputArea,
     inputResizeHandle: makeEventTarget(),
     focusComposerCalls,
+    pendingTurnFeedbackSyncs: 0,
     layoutSubscribers,
     windowResizeListeners,
     visualViewportResizeListeners,
@@ -236,6 +237,9 @@ function createContext({
       revokeObjectURL() {},
     },
     document,
+  };
+  context.syncComposerPendingTurnFeedback = () => {
+    context.pendingTurnFeedbackSyncs += 1;
   };
   context.globalThis = context;
   return context;
@@ -337,6 +341,7 @@ assert.equal(canonicalSendContext.msgInput.readOnly, true, 'composer should beco
 assert.equal(canonicalSendContext.inputArea.classList.contains('is-pending-send'), true, 'pending sends should gray the composer instead of injecting an optimistic chat bubble');
 assert.equal(canonicalSendContext.localStorage.getItem('draft_session-a'), null, 'pending sends should not leave a durable draft behind once the outbound request is in flight');
 assert.equal(canonicalSendContext.composerPendingState.classList.contains('visible'), true, 'pending sends should surface a lightweight sending indicator in the composer');
+assert.ok(canonicalSendContext.pendingTurnFeedbackSyncs > 0, 'pending sends should also trigger message-level pending feedback syncing');
 canonicalSendContext.msgInput.value = '';
 canonicalSendContext.restoreDraft();
 assert.equal(canonicalSendContext.msgInput.value, 'hold the draft until confirmed', 'the active page should still rehydrate the pending send from memory while it is in flight');
@@ -372,8 +377,9 @@ attachmentSendContext.reconcileComposerPendingSendWithEvent({
   role: 'user',
   requestId: 'req_test',
 });
-assert.equal(attachmentSendContext.getComposerAttachmentsState('session-a').length, 0, 'confirmed attachment sends should clear queued attachments from the composer slice');
-assert.deepEqual(revokedAttachmentUrls, ['blob:attachment-1'], 'confirmed attachment sends should release local preview URLs after canonical confirmation');
+assert.equal(attachmentSendContext.getComposerPendingSendState()?.stage, 'processing', 'canonical user echoes should transition the composer into a processing acknowledgment state');
+assert.equal(attachmentSendContext.getComposerAttachmentsState('session-a').length, 0, 'accepted attachment sends should clear queued attachments from the composer slice');
+assert.deepEqual(revokedAttachmentUrls, ['blob:attachment-1'], 'accepted attachment sends should release local preview URLs once the backend confirms receipt');
 
 const attachmentClickSendContext = createContext();
 const attachmentClickSendCalls = [];
@@ -397,10 +403,19 @@ canonicalSendContext.reconcileComposerPendingSendWithEvent({
   role: 'user',
   requestId: 'req_test',
 });
-assert.equal(canonicalSendContext.msgInput.value, '', 'confirmed sends should clear the composer only after the canonical user event arrives');
-assert.equal(canonicalSendContext.msgInput.readOnly, false, 'confirmed sends should restore the composer input state');
-assert.equal(canonicalSendContext.inputArea.classList.contains('is-pending-send'), false, 'confirmed sends should remove the pending composer styling');
-assert.equal(canonicalSendContext.localStorage.getItem('draft_session-a'), null, 'confirmed sends should clear the stored draft');
+assert.equal(canonicalSendContext.msgInput.value, '', 'accepted sends should clear the composer once the canonical user event arrives');
+assert.equal(canonicalSendContext.msgInput.readOnly, false, 'accepted sends should unlock the composer while the run is processing');
+assert.equal(canonicalSendContext.inputArea.classList.contains('is-pending-send'), false, 'processing acknowledgments should not keep the composer in a blocked pending state');
+assert.equal(canonicalSendContext.composerPendingState.textContent, '', 'accepted sends should move the processing acknowledgment out of the composer footer');
+assert.equal(canonicalSendContext.composerPendingState.classList.contains('visible'), false, 'accepted sends should hide the composer footer once the message-level state takes over');
+assert.equal(canonicalSendContext.localStorage.getItem('draft_session-a'), null, 'accepted sends should keep the stored draft cleared after backend receipt');
+canonicalSendContext.reconcileComposerPendingSendWithEvent({
+  type: 'message',
+  role: 'assistant',
+  seq: 1,
+});
+assert.equal(canonicalSendContext.composerPendingState.classList.contains('visible'), false, 'visible assistant progress should clear the processing acknowledgment');
+assert.equal(canonicalSendContext.getComposerPendingSendState(), null, 'visible assistant progress should clear the pending-send tracking state');
 
 const queuedSendContext = createContext();
 queuedSendContext.dispatchAction = async () => true;
@@ -413,8 +428,19 @@ queuedSendContext.reconcileComposerPendingSendWithSession({
   id: 'session-a',
   queuedMessages: [{ requestId: 'req_test' }],
 });
-assert.equal(queuedSendContext.msgInput.value, '', 'queued sends should clear the composer once the server reflects the queued request');
-assert.equal(queuedSendContext.localStorage.getItem('draft_session-a'), null, 'queued sends should also clear the stored draft after server confirmation');
+assert.equal(queuedSendContext.getComposerPendingSendState()?.stage, 'processing', 'queued sends should also switch into the processing acknowledgment state once the server reflects the queued request');
+assert.equal(queuedSendContext.msgInput.value, '', 'queued sends should still clear the composer once the server reflects the queued request');
+assert.equal(queuedSendContext.msgInput.readOnly, false, 'queued sends should unlock the composer after backend receipt');
+queuedSendContext.reconcileComposerPendingSendWithSession({
+  id: 'session-a',
+  activity: {
+    run: { state: 'idle', phase: null, runId: null },
+    queue: { state: 'idle', count: 0 },
+  },
+  queuedMessages: [],
+});
+assert.equal(queuedSendContext.getComposerPendingSendState(), null, 'the processing acknowledgment should clear once queued work is no longer active');
+assert.equal(queuedSendContext.localStorage.getItem('draft_session-a'), null, 'queued sends should also keep the stored draft cleared after backend receipt');
 
 const runningTakeoverContext = createContext();
 runningTakeoverContext.dispatchAction = async () => true;
@@ -440,7 +466,13 @@ runningTakeoverContext.reconcileComposerPendingSendWithSession({
 });
 assert.equal(runningTakeoverContext.msgInput.value, '', 'server running state should immediately clear the local sending draft');
 assert.equal(runningTakeoverContext.msgInput.readOnly, false, 'server running state should immediately unlock the composer');
-assert.equal(runningTakeoverContext.inputArea.classList.contains('is-pending-send'), false, 'server running state should remove pending-send styling');
+assert.equal(runningTakeoverContext.composerPendingState.textContent, '', 'server running state should no longer keep a processing acknowledgment visible in the composer footer');
+assert.equal(runningTakeoverContext.composerPendingState.classList.contains('visible'), false, 'message-level state should replace the composer footer during processing');
+runningTakeoverContext.reconcileComposerPendingSendWithEvent({
+  type: 'tool_use',
+  seq: 1,
+});
+assert.equal(runningTakeoverContext.getComposerPendingSendState(), null, 'visible follow-up progress should clear the processing acknowledgment');
 
 const runningBaselineContext = createContext();
 runningBaselineContext.dispatchAction = async () => true;
@@ -471,7 +503,8 @@ runningBaselineContext.reconcileComposerPendingSendWithSession({
     queue: { state: 'queued', count: 1 },
   },
 });
-assert.equal(runningBaselineContext.msgInput.value, '', 'queue confirmation should clear the pending composer state for follow-up sends');
+assert.equal(runningBaselineContext.getComposerPendingSendState()?.stage, 'processing', 'queue confirmation should move the composer into the processing acknowledgment state for follow-up sends');
+assert.equal(runningBaselineContext.msgInput.value, '', 'queue confirmation should clear the local sending draft for follow-up sends');
 assert.equal(runningBaselineContext.msgInput.readOnly, false, 'queue confirmation should unlock the composer for another follow-up');
 
 const failedSendContext = createContext();

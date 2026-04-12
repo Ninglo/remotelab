@@ -42,6 +42,9 @@ export function buildSessionActivity(meta, runtimeState, { runState, run, queued
   const renameError = typeof runtimeState?.renameError === 'string' ? runtimeState.renameError : '';
   const compactState = runtimeState?.pendingCompact === true ? 'pending' : 'idle';
   const queueCount = Number.isInteger(queuedCount) ? queuedCount : 0;
+  const planningQueue = Array.isArray(meta?.pendingPlanningQueue) ? meta.pendingPlanningQueue : [];
+  const planningCount = planningQueue.length;
+  const activePlanningEntry = planningCount > 0 ? planningQueue[0] : null;
 
   return {
     run: {
@@ -69,6 +72,13 @@ export function buildSessionActivity(meta, runtimeState, { runState, run, queued
     },
     compact: {
       state: compactState,
+    },
+    planning: {
+      state: planningCount > 0 ? 'checking' : 'idle',
+      count: planningCount,
+      requestId: typeof activePlanningEntry?.requestId === 'string' && activePlanningEntry.requestId
+        ? activePlanningEntry.requestId
+        : null,
     },
   };
 }

@@ -1,0 +1,39 @@
+{
+  // Public or semi-public machine shape only.
+  "schemaVersion": 1,
+  "host": {
+    "provider": "digitalocean",
+    "hostname": "remotelab-sfo3-01",
+    "region": "sfo3",
+    "size": "s-2vcpu-4gb",
+    "image": "ubuntu-24-04-x64",
+    "tags": ["remotelab", "owner"],
+    "sshKeys": ["replace-with-digitalocean-ssh-key-fingerprint-or-id"],
+    "repoGitUrl": "https://github.com/Ninglo/remotelab.git",
+    "repoCheckoutPath": "/opt/remotelab",
+    "sshUser": "root"
+  },
+  "network": {
+    "listenPort": 7690,
+    "ownerDomain": "thelab.jiujianian.dev",
+    "ingress": {
+      "provider": "cloudflare",
+      "tunnelId": "replace-with-cloudflare-tunnel-id",
+      "tunnelName": "thelab",
+      "serviceName": "cloudflared-thelab",
+      "credentialsFile": "/etc/cloudflared/replace-with-cloudflare-tunnel-id.json",
+      "localCredentialsFile": "/root/.cloudflared/replace-with-cloudflare-tunnel-id.json",
+      "ownerHostname": "thelab.jiujianian.dev"
+    }
+  },
+  "systemd": {
+    "ownerUnit": "remotelab",
+    "logDir": "/var/log/remotelab"
+  },
+  "connectors": {
+    "calendar": {
+      "googleCredentialsFile": "/etc/remotelab/google-calendar-credentials.json",
+      "googleTokenFile": "/etc/remotelab/google-calendar-token.json"
+    }
+  }
+}

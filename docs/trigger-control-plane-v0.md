@@ -21,6 +21,9 @@ The system stays session-first:
 - delivery reuses the normal session message submission path
 - resulting work still appears as ordinary session activity and run state
 
+This is a deliberate v0 limitation, not a general reminder or notification model.
+If an external message must be sent deterministically to a connector target such as WeChat, this v0 shape is not enough on its own because it only knows how to wake a session, not directly invoke a connector action.
+
 ## Why this exists
 
 Before this slice, automation could be spread across:
@@ -129,6 +132,34 @@ Optional runtime overrides:
 }
 ```
 
+## Known limitation
+
+`session_message` is correct for deferred AI work.
+It is the wrong primitive for deterministic outbound delivery where the payload is already known.
+
+Example of the wrong pattern:
+
+- schedule "at 22:40 send this exact WeChat reminder"
+- deliver it by waking a session
+- wait for an assistant reply
+- expect that reply to automatically flow back into WeChat
+
+That pattern can produce visible RemoteLab activity without any connector-side delivery.
+
+The correct V2 expansion is a second action type:
+
+- `connector_action`
+
+That future shape should carry:
+
+- `connectorId`
+- `actionId`
+- `bindingId`
+- `target`
+- `payload`
+
+and execute through the same connector activation path used by live tool calls.
+
 ## Explicit non-goals for v0
 
 Not in scope yet:
@@ -148,10 +179,11 @@ If this v0 works well, the next steps should likely be:
 
 1. session-scoped trigger listing in the UI
 2. agent-facing trigger creation tools built on the same HTTP/control surface
-3. `external_event` trigger type with the same delivery contract
-4. stable links between trigger objects and control-inbox / reminder flows
+3. `connector_action` action type for deterministic external delivery
+4. `external_event` trigger type with the same delivery contract
+5. stable links between trigger objects and control-inbox / reminder flows
 
 The main rule should stay the same:
 
 automation policy belongs to durable server-owned trigger objects,
-while actual work execution continues to flow through the normal session/run grammar.
+while actual work execution flows either through the normal session/run grammar or through a first-class connector action path, depending on the action type.

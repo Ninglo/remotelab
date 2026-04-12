@@ -1397,6 +1397,7 @@
     workbench: null,
     dashboard: null,
     billing: null,
+    billingPromise: null,
   };
 
   function basePath() {
@@ -1408,6 +1409,17 @@
   function withBase(path) {
     if (/^https?:\/\//.test(path)) return path;
     return basePath() + String(path || '').replace(/^\/+/, '');
+  }
+
+  function buildApiPath(path, options) {
+    var query = new URLSearchParams();
+    if (options && options.force) query.set('refresh', '1');
+    if (options && options.checks) query.set('checks', '1');
+    return query.toString() ? String(path || '').replace(/\?.*$/, '') + '?' + query.toString() : path;
+  }
+
+  function activeViewContainerId() {
+    return state.view + '-view';
   }
 
   function toast(message, type) {
@@ -1475,6 +1487,14 @@
     else nextUrl.searchParams.set('view', view);
     window.history.replaceState({}, '', nextUrl.toString());
     applyView();
+    if (view === 'billing' && !state.billing) {
+      ensureBillingData().then(function() {
+        applyView();
+      }).catch(function(err) {
+        renderError(err.message);
+        toast(err.message, 'err');
+      });
+    }
   }
 
   function timeAgo(iso) {
@@ -1520,6 +1540,7 @@
     var usage = instance.usage || {};
     var key = String(usage.usageStatus || '').toLowerCase();
     if (key === 'active') return 'occupied';
+    if (key === 'stale') return 'occupied';
     if (key === 'opened') return 'open';
     if (key === 'reserved') return 'reserved';
     return key;
@@ -1552,6 +1573,21 @@
     return null;
   }
 
+  function instanceBuildStatus(instance) {
+    var build = instance && instance.build || null;
+    var status = String(build && build.status || '').toLowerCase();
+    if (status === 'stale_runtime') {
+      return { key: 'stale_runtime', label: '落后 owner', tone: 'warn', detail: String(build.detail || '本地运行版本落后于 owner 基线。').trim() };
+    }
+    if (status === 'public_mismatch') {
+      return { key: 'public_mismatch', label: '公网偏差', tone: 'warn', detail: String(build.detail || '公网入口返回的版本和本地实例不一致。').trim() };
+    }
+    if (status === 'current') {
+      return { key: 'current', label: String(build.label || '当前版本').trim(), tone: 'ok', detail: String(build.detail || '实例版本状态正常。').trim() };
+    }
+    return { key: 'unknown', label: '待确认', tone: 'muted', detail: '版本检查尚未完成。' };
+  }
+
   function instanceHealth(instance) {
     var optimisticAction = String(instance && instance.optimisticAction || '').toLowerCase();
     if (optimisticAction === 'start') {
@@ -1567,6 +1603,10 @@
       return { key: 'unknown', label: '待确认', tone: 'muted', detail: '健康检查尚未完成。' };
     }
     if (instance.localReachable && instance.publicReachable !== false) {
+      var buildStatus = instanceBuildStatus(instance);
+      if (buildStatus.key === 'stale_runtime' || buildStatus.key === 'public_mismatch') {
+        return buildStatus;
+      }
       return { key: 'healthy', label: '健康', tone: 'ok', detail: '本地和公网入口都正常。' };
     }
     if (instance.localReachable && instance.publicReachable === false) {
@@ -1774,6 +1814,11 @@
     var note = formatUsageCost(totals) + ' · ' + (totals.runCount || 0) + ' 次调用';
     if (topTool) note += ' · ' + topTool;
     return note;
+  }
+
+  function formatBuildLabel(value) {
+    var text = String(value || '').trim();
+    return text || '待确认';
   }
 
   function missingInstanceHealth(detail) {
@@ -2218,6 +2263,7 @@
 
   function renderInstanceDetail(instance, boundUser) {
     var health = instanceHealth(instance);
+    var build = instanceBuildStatus(instance);
     var usage = instanceUsage(instance);
     var binding = instanceBindingDisplay(instance, boundUser);
     var usageSummary = instanceUsageSummary(instance);
@@ -2255,6 +2301,7 @@
           '<h4>实例信息</h4>' +
           '<p>' +
             'Port：' + esc(instance.port || '') + '<br>' +
+            '版本状态：' + esc(build.label) + '<br>' +
             '最近活跃：' + esc(instance.usage && instance.usage.lastSessionAt ? timeAgo(instance.usage.lastSessionAt) : '暂无') + '<br>' +
             '会话数：' + esc(instance.usage && instance.usage.sessionCount != null ? instance.usage.sessionCount : '0') + '<br>' +
             '总 tokens：' + esc(formatTokenCount(totals.totalTokens)) +
@@ -2268,6 +2315,15 @@
           '</div>' +
         '</article>' +
       '</div>' +
+      '<article class="detail-card">' +
+        '<h4>版本一致性</h4>' +
+        '<p>' +
+          'Owner：' + esc(formatBuildLabel(instance && instance.build && instance.build.ownerLabel)) + '<br>' +
+          '本地：' + esc(formatBuildLabel(instance && instance.build && instance.build.localLabel)) + '<br>' +
+          '公网：' + esc(formatBuildLabel(instance && instance.build && instance.build.publicLabel)) +
+        '</p>' +
+        '<p class="muted">' + esc(build.detail) + '</p>' +
+      '</article>' +
       '<article class="detail-card">' +
         '<h4>API 用量</h4>' +
         (
@@ -2692,7 +2748,7 @@
         { label: '实例总数', value: instanceSummary.total, note: '当前登记的全部实例', tone: 'accent' },
         { label: '可分配', value: instanceSummary.open, note: '适合直接发给新用户', tone: instanceSummary.open ? 'ok' : 'muted' },
         { label: '已占用', value: instanceSummary.occupied, note: '已绑定给具体用户', tone: instanceSummary.occupied ? 'accent' : 'muted' },
-        { label: '异常', value: instanceSummary.attention, note: '技术健康需要诊断', tone: instanceSummary.attention ? 'danger' : 'ok' }
+        { label: '异常', value: instanceSummary.attention, note: '技术健康或版本漂移需要诊断', tone: instanceSummary.attention ? 'danger' : 'ok' }
       ];
     }
 
@@ -2718,17 +2774,34 @@
   }
 
   function syncNav() {
-    var pendingTotal = (state.workbench.pending.summary.needsBindingCount || 0)
-      + (state.workbench.pending.summary.feedbackCount || 0)
-      + (state.workbench.pending.summary.followUpCount || 0);
-    document.getElementById('nav-pending-count').textContent = String(pendingTotal);
-    document.getElementById('nav-users-count').textContent = String(state.workbench.summary.totalUsers || 0);
-    document.getElementById('nav-instances-count').textContent = String(state.workbench.instanceSummary.attention || 0);
-    document.getElementById('nav-billing-count').textContent = String((state.billing.byUser || []).length || 0);
+    var pendingCount = document.getElementById('nav-pending-count');
+    var usersCount = document.getElementById('nav-users-count');
+    var instancesCount = document.getElementById('nav-instances-count');
+    var billingCount = document.getElementById('nav-billing-count');
+    if (state.workbench) {
+      var pendingTotal = (state.workbench.pending.summary.needsBindingCount || 0)
+        + (state.workbench.pending.summary.feedbackCount || 0)
+        + (state.workbench.pending.summary.followUpCount || 0);
+      pendingCount.textContent = String(pendingTotal);
+      usersCount.textContent = String(state.workbench.summary.totalUsers || 0);
+      instancesCount.textContent = String(state.workbench.instanceSummary.attention || 0);
+    } else {
+      pendingCount.textContent = '…';
+      usersCount.textContent = '…';
+      instancesCount.textContent = '…';
+    }
+    billingCount.textContent = state.billing ? String((state.billing.byUser || []).length || 0) : '…';
 
     Array.from(document.querySelectorAll('[data-view]')).forEach(function(link) {
       link.classList.toggle('is-active', link.getAttribute('data-view') === state.view);
     });
+  }
+
+  function syncViewVisibility() {
+    document.getElementById('pending-view').hidden = state.view !== 'pending';
+    document.getElementById('users-view').hidden = state.view !== 'users';
+    document.getElementById('instances-view').hidden = state.view !== 'instances';
+    document.getElementById('billing-view').hidden = state.view !== 'billing';
   }
 
   function renderLoading() {
@@ -2737,52 +2810,94 @@
         '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>' +
       '</div>';
     var skeletonList = '<section class="panel section-panel"><div class="skeleton-list"><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div></div></section>';
-    document.getElementById('pending-view').innerHTML = skeletonList;
+    document.getElementById('pending-view').innerHTML = '';
     document.getElementById('users-view').innerHTML = '';
     document.getElementById('instances-view').innerHTML = '';
     document.getElementById('billing-view').innerHTML = '';
+    document.getElementById(activeViewContainerId()).innerHTML = skeletonList;
   }
 
   function renderError(message) {
     var html = '<section class="panel section-panel"><div class="error-state">' + esc(message) + '<div><button class="btn btn-primary" id="btn-retry">Retry</button></div></div></section>';
-    document.getElementById('pending-view').innerHTML = html;
+    document.getElementById('pending-view').innerHTML = '';
     document.getElementById('users-view').innerHTML = '';
     document.getElementById('instances-view').innerHTML = '';
     document.getElementById('billing-view').innerHTML = '';
+    document.getElementById(activeViewContainerId()).innerHTML = html;
     var retry = document.getElementById('btn-retry');
-    if (retry) retry.onclick = loadAll;
+    if (retry) retry.onclick = function() {
+      loadAll({ includeBilling: state.view === 'billing' || !!state.billing }).catch(function() {});
+    };
   }
 
   function applyView() {
-    if (!state.workbench || !state.dashboard || !state.billing) return;
+    if (!state.workbench || !state.dashboard || (state.view === 'billing' && !state.billing)) {
+      renderControls();
+      syncNav();
+      syncViewVisibility();
+      renderLoading();
+      document.getElementById('cache-pill').textContent = '加载中';
+      return;
+    }
     renderOverview();
     renderControls();
     syncNav();
-
-    document.getElementById('pending-view').hidden = state.view !== 'pending';
-    document.getElementById('users-view').hidden = state.view !== 'users';
-    document.getElementById('instances-view').hidden = state.view !== 'instances';
-    document.getElementById('billing-view').hidden = state.view !== 'billing';
+    syncViewVisibility();
 
     if (state.view === 'pending') renderPendingView();
     else if (state.view === 'users') renderUsersView();
     else if (state.view === 'instances') renderInstancesView();
     else renderBillingView();
 
-    document.getElementById('cache-pill').textContent = '已更新 ' + timeAgo(state.billing.cachedAt || state.workbench.cachedAt || state.dashboard.cachedAt);
+    document.getElementById('cache-pill').textContent = '已更新 ' + timeAgo((state.billing && state.billing.cachedAt) || state.workbench.cachedAt || state.dashboard.cachedAt);
   }
 
-  async function loadAll() {
+  function ensureBillingData(options) {
+    var force = options && options.force;
+    var checks = options && options.checks;
+    if (state.billing && !force) {
+      return Promise.resolve(state.billing);
+    }
+    if (state.billingPromise) {
+      return state.billingPromise;
+    }
+    state.billingPromise = api(buildApiPath('api/billing', {
+      force: !!force,
+      checks: !!checks
+    })).then(function(data) {
+      state.billing = data;
+      return data;
+    }).finally(function() {
+      state.billingPromise = null;
+    });
+    return state.billingPromise;
+  }
+
+  async function loadAll(options) {
+    options = options || {};
+    var includeBilling = options.includeBilling === true || state.view === 'billing' || !!state.billing;
     renderLoading();
     try {
-      var results = await Promise.all([
-        api('api/workbench'),
-        api('api/dashboard'),
-        api('api/billing')
-      ]);
+      var requests = [
+        api(buildApiPath('api/workbench', {
+          force: !!options.force,
+          checks: !!options.checks
+        })),
+        api(buildApiPath('api/dashboard', {
+          force: !!options.force,
+          checks: !!options.checks
+        }))
+      ];
+      if (includeBilling) {
+        requests.push(ensureBillingData({
+          force: !!options.force,
+          checks: !!options.checks
+        }));
+      }
+      var results = await Promise.all(requests);
       state.workbench = results[0];
       state.dashboard = results[1];
-      state.billing = results[2];
+      if (includeBilling) state.billing = results[2];
       applyView();
     } catch (err) {
       renderError(err.message);
@@ -2796,7 +2911,11 @@
     btn.disabled = true;
     btn.textContent = 'Refreshing';
     try {
-      await loadAll();
+      await loadAll({
+        force: true,
+        checks: true,
+        includeBilling: state.view === 'billing' || !!state.billing
+      });
       toast('已刷新', 'ok');
     } catch (err) {
       toast('刷新失败：' + err.message, 'err');
@@ -2999,6 +3118,14 @@
   window.addEventListener('popstate', function() {
     state.view = readViewFromLocation();
     applyView();
+    if (state.view === 'billing' && !state.billing) {
+      ensureBillingData().then(function() {
+        applyView();
+      }).catch(function(err) {
+        renderError(err.message);
+        toast(err.message, 'err');
+      });
+    }
   });
 
   loadAll().catch(function() {});

@@ -35,6 +35,7 @@ const originalEnv = {
   PATH: process.env.PATH,
   SHELL: process.env.SHELL,
   REMOTELAB_USER_SHELL_ENV_B64: process.env.REMOTELAB_USER_SHELL_ENV_B64,
+  IS_SANDBOX: process.env.IS_SANDBOX,
 };
 
 process.env.HOME = tempHome;
@@ -60,6 +61,14 @@ try {
   const env = buildToolProcessEnv();
   assert.equal(env.REMOTELAB_SHELL_TEST_FLAG, 'from-shell-profile', 'tool env should inherit shell-exported variables');
 
+  process.env.IS_SANDBOX = '';
+  const envDefault = buildToolProcessEnv();
+  assert.equal(envDefault.IS_SANDBOX, '1', 'tool env should default IS_SANDBOX to 1');
+
+  process.env.IS_SANDBOX = '0';
+  const envExplicit = buildToolProcessEnv();
+  assert.equal(envExplicit.IS_SANDBOX, '0', 'tool env should preserve explicit IS_SANDBOX=0');
+
   const resolved = await resolveToolCommandPathAsync('shell-path-order-tool');
   assert.equal(resolved, join(shellBin, 'shell-path-order-tool'), 'tool resolution should follow the shell-derived PATH order');
 } finally {
@@ -74,6 +83,8 @@ try {
 
   if (originalEnv.REMOTELAB_USER_SHELL_ENV_B64 === undefined) delete process.env.REMOTELAB_USER_SHELL_ENV_B64;
   else process.env.REMOTELAB_USER_SHELL_ENV_B64 = originalEnv.REMOTELAB_USER_SHELL_ENV_B64;
+  if (originalEnv.IS_SANDBOX === undefined) delete process.env.IS_SANDBOX;
+  else process.env.IS_SANDBOX = originalEnv.IS_SANDBOX;
 
   rmSync(tempHome, { recursive: true, force: true });
 }

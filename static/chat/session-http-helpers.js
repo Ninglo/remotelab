@@ -46,6 +46,18 @@ function enhanceRenderedContentLinks(root) {
       link.rel = "noopener noreferrer";
     }
   });
+
+  root.querySelectorAll("img[src]").forEach((image) => {
+    const src = (image.getAttribute("src") || "").trim();
+    if (!src) return;
+    if (PRODUCT_LOCAL_HREF_RE.test(src) && typeof window.remotelabResolveProductPath === "function") {
+      const resolvedSrc = window.remotelabResolveProductPath(src);
+      if (resolvedSrc) {
+        image.setAttribute("src", resolvedSrc);
+      }
+    }
+    image.loading = "lazy";
+  });
 }
 
 function buildJsonCacheKey(url) {

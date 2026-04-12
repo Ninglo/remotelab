@@ -146,17 +146,20 @@ export async function createSessionLocalBridgeCommand(sessionId, payload = {}) {
   }
 
   let stageAssetId = '';
-  if (name === 'stage') {
+  if (name === 'stage' || name === 'pack') {
     const relPath = trimString(args.relPath);
     if (!trimString(args.rootAlias) || !relPath) {
-      const error = new Error('stage requires rootAlias and relPath');
+      const error = new Error(`${name} requires rootAlias and relPath`);
       error.statusCode = 400;
       throw error;
     }
+    const originalName = name === 'pack'
+      ? `${relPath.replace(/[\\/]/g, '_').replace(/^_+|_+$/g, '')}.tar.gz`
+      : buildStageOriginalName(relPath);
     const intent = await createFileAssetUploadIntent({
       sessionId: session.id,
-      originalName: buildStageOriginalName(relPath),
-      mimeType: trimString(args.mimeType),
+      originalName,
+      mimeType: name === 'pack' ? 'application/gzip' : trimString(args.mimeType),
       sizeBytes: args.sizeBytes,
       createdBy: 'owner',
       forceLocal: true,

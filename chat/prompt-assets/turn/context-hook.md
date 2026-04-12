@@ -15,6 +15,9 @@ Stable context entry points:
 - Skills: {{SKILLS_PATH}}
 - Tasks directory: {{TASKS_PATH}}/
 - System memory: {{SYSTEM_MEMORY_FILE_PATH}}
+- Memory writeback targets config: {{MEMORY_WRITEBACK_TARGETS_FILE_PATH}}
+- Auto user memory: {{AUTO_USER_MEMORY_FILE_PATH}}
+- Auto system memory: {{AUTO_SYSTEM_MEMORY_FILE_PATH}}
 
 Model-managed writable context root:
 - {{MODEL_CONTEXT_ROOT_PATH}}

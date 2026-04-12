@@ -67,11 +67,15 @@ export function shouldUseSystemdDetachedRunner({
 }
 
 function buildDetachedRunnerEnvironment({ launchMode, unitName = null, unitScope = null } = {}) {
+  const sandboxMode = String(process.env.IS_SANDBOX || '').trim();
+  const projectRoot = process.env.REMOTELAB_PROJECT_ROOT || join(__dirname, '..');
   const env = {
     ...process.env,
     REMOTELAB_CHAT_BASE_URL: `http://127.0.0.1:${CHAT_PORT}`,
+    REMOTELAB_PROJECT_ROOT: projectRoot,
     REMOTELAB_USER_SHELL_ENV_B64: serializeUserShellEnvSnapshot(),
     REMOTELAB_RUNNER_LAUNCH_MODE: launchMode || DETACHED_RUNNER_PROCESS_LAUNCH_MODE,
+    ...(sandboxMode ? {} : { IS_SANDBOX: '1' }),
   };
   if (unitName) {
     env.REMOTELAB_RUNNER_UNIT_NAME = unitName;

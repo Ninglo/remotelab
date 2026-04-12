@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RemoteLab Voice Gateway Direct POC</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f1e8;
+      --panel: #fffdf7;
+      --ink: #1f1a16;
+      --muted: #6d6258;
+      --line: #d8cdbd;
+      --accent: #126d61;
+      --accent-strong: #0d574d;
+      --danger: #9c2d2d;
+      --warn: #915c00;
+      --good: #1e6b2c;
+      --shadow: 0 14px 40px rgba(78, 60, 39, 0.09);
+      --radius: 18px;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font: 15px/1.5 "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(18, 109, 97, 0.12), transparent 38%),
+        radial-gradient(circle at bottom right, rgba(184, 114, 49, 0.10), transparent 35%),
+        var(--bg);
+    }
+
+    main {
+      width: min(1120px, calc(100vw - 32px));
+      margin: 28px auto 40px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero,
+    .panel {
+      background: var(--panel);
+      border: 1px solid rgba(112, 94, 74, 0.16);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      padding: 24px 24px 20px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 40px);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+
+    .hero p,
+    .hero li,
+    .note,
+    .status {
+      color: var(--muted);
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 72ch;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .panel {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      font: inherit;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 11px 12px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 16px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+      transition: background 120ms ease, transform 120ms ease;
+    }
+
+    button:hover:enabled {
+      background: var(--accent-strong);
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      transform: none;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .button-row .danger {
+      background: var(--danger);
+    }
+
+    .button-row .ghost {
+      background: #ece4d8;
+      color: var(--ink);
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .status {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #f2ede3;
+      border: 1px solid var(--line);
+    }
+
+    .status strong {
+      color: var(--ink);
+    }
+
+    .status.good strong { color: var(--good); }
+    .status.warn strong { color: var(--warn); }
+    .status.bad strong { color: var(--danger); }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      background: #1f1f1d;
+      color: #e8efe5;
+      border-radius: 14px;
+      overflow: auto;
+      min-height: 260px;
+      font: 12px/1.45 var(--mono);
+    }
+
+    .transcript {
+      padding: 14px;
+      border-radius: 14px;
+      background: #f7f3ea;
+      border: 1px solid var(--line);
+      min-height: 120px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <h1>Voice Gateway Direct POC</h1>
+      <p>这个页面只验证一件事：浏览器能不能不经过 RemoteLab relay，直接连火山边缘大模型网关的 Doubao-ASR Realtime。</p>
+      <ul>
+        <li>鉴权方式固定为浏览器可用的 <code>Sec-WebSocket-Protocol</code> 子协议模式。</li>
+        <li>子协议值采用火山文档所说的“参照 OpenAI 示例”的推断写法，不会改动现网语音入口。</li>
+        <li>如果你的 key 依赖可选的 <code>X-Api-Resource-Id</code> 请求头，这个浏览器 POC 无法覆盖，因为浏览器没有官方 header 注入能力。</li>
+      </ul>
+    </section>
+
+    <section class="layout">
+      <section class="panel">
+        <h2>Connection</h2>
+        <label>
+          Gateway URL
+          <input id="gatewayUrlInput" value="wss://ai-gateway.vei.volces.com/v1/realtime?model=bigmodel" spellcheck="false">
+        </label>
+        <label>
+          API Key
+          <input id="apiKeyInput" type="password" placeholder="Paste gateway API key" spellcheck="false">
+        </label>
+        <div class="grid">
+          <label>
+            Result Type
+            <select id="resultTypeSelect">
+              <option value="0" selected>0 - full result</option>
+              <option value="1">1 - delta result</option>
+            </select>
+          </label>
+          <label>
+            Language Hint
+            <input id="languageHintInput" value="" placeholder="Optional; currently not documented as supported" spellcheck="false">
+          </label>
+        </div>
+        <label>
+          Session Payload
+          <textarea id="sessionPayloadPreview" readonly></textarea>
+        </label>
+        <div class="button-row">
+          <button id="connectBtn">Connect</button>
+          <button id="disconnectBtn" class="ghost" disabled>Disconnect</button>
+        </div>
+        <div class="button-row">
+          <button id="startMicBtn" disabled>Start Mic</button>
+          <button id="stopMicBtn" class="danger" disabled>Stop + Commit</button>
+        </div>
+        <div id="statusBox" class="status"><strong>Idle</strong> Waiting for a direct gateway connection.</div>
+      </section>
+
+      <section class="panel">
+        <h2>Observed Output</h2>
+        <div class="transcript" id="transcriptBox">No transcript yet.</div>
+        <pre id="logBox">Ready.</pre>
+      </section>
+    </section>
+  </main>
+
+  <script src="/voice-gateway-direct-poc.js"></script>
+</body>
+</html>

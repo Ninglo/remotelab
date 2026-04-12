@@ -210,6 +210,39 @@
 .msg-user-bubble.msg-pending {
   opacity: 0.6;
 }
+.msg-user-local-echo .msg-user-bubble {
+  border-style: dashed;
+}
+.msg-user-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  opacity: 0.95;
+}
+.msg-user-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.msg-user-status-uploading .msg-user-status-dot,
+.msg-user-status-sending .msg-user-status-dot {
+  background: var(--text-secondary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-secondary) 14%, transparent);
+}
+.msg-user-status-checking .msg-user-status-dot {
+  background: #b66a00;
+  box-shadow: 0 0 0 3px rgba(182, 106, 0, 0.14);
+}
+.msg-user-status-processing .msg-user-status-dot {
+  background: var(--accent);
+}
 
 /* Failed/unconfirmed message — recovery UI */
 .msg-user-bubble.msg-failed {
@@ -353,6 +386,19 @@
 .md-content th { background: var(--bg-secondary); font-weight: 600; }
 .md-content strong { font-weight: 600; }
 .md-content em { font-style: italic; }
+.md-content img {
+  display: block;
+  max-width: min(100%, 560px);
+  width: auto;
+  height: auto;
+  margin: 0.8em 0;
+  border-radius: 14px;
+  background: var(--bg-secondary);
+}
+.md-content p > img:first-child:last-child {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 
 /* System status */
 .msg-system {

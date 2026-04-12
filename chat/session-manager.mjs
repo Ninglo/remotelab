@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
+import { PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
@@ -106,8 +107,10 @@ import {
 } from './apps.mjs';
 import {
   shouldRunDispatch,
-  classifyDispatch,
-  executeDispatchRouting,
+  shouldUseAsyncDispatchPlanning,
+  executeContinuationPlan,
+  isTrivialContinuationPlan,
+  planSessionContinuations,
 } from './session-dispatch.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import {
@@ -145,10 +148,19 @@ import {
   parseReplySelfCheckDecision,
   summarizeReplySelfCheckReason,
 } from './session-reply-self-check.mjs';
+import {
+  buildReplyPublicationPayload,
+  collectReplyPublicationHistory,
+  getRunResponseIds,
+  normalizeReplyPublicationResponseIds,
+  resolveReplyPublicationUserEvent,
+  runIncludesResponseId,
+} from './reply-publication.mjs';
 import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
 import { extractTaggedBlock } from './session-text-parsing.mjs';
 import { buildTurnContextHook } from './turn-context-hook.mjs';
+import { displayPromptPath } from './prompt-paths.mjs';
 import {
   EXTENSION_MIME_TYPES,
   IMAGE_MAX_DIMENSION,
@@ -165,6 +177,7 @@ import {
 } from './session-attachments.mjs';
 import {
   buildResultAssetReadyMessage,
+  collectAssistantLocalMarkdownImageRewrites,
   collectGeneratedResultFilesFromRun,
   normalizePublishedResultAssetAttachments,
 } from './session-result-files.mjs';
@@ -359,8 +372,10 @@ function buildForkSessionName(session) {
 
 function buildSessionNavigationHref(sessionId) {
   const normalized = typeof sessionId === 'string' ? sessionId.trim() : '';
-  if (!normalized) return '/?tab=sessions';
-  return `/?session=${encodeURIComponent(normalized)}&tab=sessions`;
+  const path = !normalized
+    ? '/?tab=sessions'
+    : `/?session=${encodeURIComponent(normalized)}&tab=sessions`;
+  return PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}${path}` : path;
 }
 
 function buildDelegationNoticeMessage(task, childSession) {
@@ -371,12 +386,14 @@ function buildDelegationNoticeMessage(task, childSession) {
     ? childSession.name.trim()
     : 'new session';
   const childId = typeof childSession?.id === 'string' ? childSession.id.trim() : '';
-  const link = childId ? `[${childName}](${buildSessionNavigationHref(childId)})` : childName;
+  const targetUrl = childId ? buildSessionNavigationHref(childId) : '';
+  const link = targetUrl ? `[${childName}](${targetUrl})` : childName;
   return [
     'Spawned a parallel session for this work.',
     '',
     normalizedTask ? `- Task: ${normalizedTask}` : '',
     `- Session: ${link}`,
+    targetUrl ? `- Open: ${targetUrl}` : '',
     '',
     'This new session is independent and can continue on its own.',
   ].filter(Boolean).join('\n');
@@ -422,6 +439,12 @@ const DELEGATION_TASK_STOPWORDS = new Set([
   'will', 'with', 'without', 'workflow', 'workflows', 'would',
 ]);
 
+const DELEGATION_TASK_DIFFERENTIATORS = new Set([
+  'different',
+  'distinct',
+  'another',
+]);
+
 function buildDelegationTaskTokens(task) {
   const normalized = clipCompactionSection(task, 4000)
     .toLowerCase()
@@ -451,6 +474,14 @@ function delegationTasksLikelyMatch(leftTask, rightTask, explicitFingerprint = '
   const normalizedRight = normalizeDelegationTask(rightTask);
   if (!normalizedLeft || !normalizedRight) return false;
   if (normalizedLeft === normalizedRight) return true;
+
+  const leftRawTokens = new Set(buildDelegationTaskTokens(leftTask));
+  const rightRawTokens = new Set(buildDelegationTaskTokens(rightTask));
+  for (const differentiator of DELEGATION_TASK_DIFFERENTIATORS) {
+    if (leftRawTokens.has(differentiator) !== rightRawTokens.has(differentiator)) {
+      return false;
+    }
+  }
 
   const leftFingerprint = explicitFingerprint || buildDelegationTaskFingerprint(leftTask);
   const rightFingerprint = buildDelegationTaskFingerprint(rightTask);
@@ -517,12 +548,102 @@ function getFollowUpQueueCount(meta) {
   return getFollowUpQueue(meta).length;
 }
 
+function getPendingPlanningQueue(meta) {
+  return Array.isArray(meta?.pendingPlanningQueue) ? meta.pendingPlanningQueue : [];
+}
+
+function getPendingPlanningQueueCount(meta) {
+  return getPendingPlanningQueue(meta).length;
+}
+
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function resolveResponseId(requestId, options = {}) {
+  const explicit = trimString(options.responseId);
+  if (explicit) return explicit;
+  return trimString(requestId);
+}
 
+function buildInitialReplyPublication(run, responseIds = []) {
+  const normalizedResponseIds = normalizeReplyPublicationResponseIds(
+    responseIds,
+    trimString(run?.responseId || run?.requestId),
+  );
+  return {
+    responseIds: normalizedResponseIds,
+    state: 'running',
+    resolution: '',
+    rootRunId: trimString(run?.id),
+    finalRunId: trimString(run?.id),
+    continuationRunIds: [],
+    updatedAt: nowIso(),
+    readyAt: null,
+    failedAt: null,
+    lastError: null,
+  };
+}
+
+function buildReplyPublicationSummary(input = {}) {
+  const responseIds = normalizeReplyPublicationResponseIds(
+    input.responseIds,
+    trimString(input.id || input.responseId),
+  );
+  const state = trimString(input.state) || 'running';
+  return {
+    id: trimString(input.id || responseIds[0] || ''),
+    responseIds,
+    state,
+    ready: state.toLowerCase() === 'ready',
+    resolution: trimString(input.resolution),
+    rootRunId: trimString(input.rootRunId),
+    finalRunId: trimString(input.finalRunId),
+    continuationRunIds: normalizeReplyPublicationResponseIds(input.continuationRunIds || []),
+    updatedAt: trimString(input.updatedAt),
+    readyAt: trimString(input.readyAt),
+    failedAt: trimString(input.failedAt),
+    lastError: trimString(input.lastError),
+    payload: input.payload && typeof input.payload === 'object'
+      ? input.payload
+      : null,
+  };
+}
+
+async function updateRunReplyPublication(runId, updater) {
+  if (!trimString(runId) || typeof updater !== 'function') return null;
+  return updateRun(runId, (current) => {
+    const existing = current?.replyPublication && typeof current.replyPublication === 'object'
+      ? current.replyPublication
+      : buildInitialReplyPublication(current, getRunResponseIds(current));
+    const next = updater(existing, current);
+    if (!next || typeof next !== 'object') {
+      return current;
+    }
+    const normalizedResponseIds = normalizeReplyPublicationResponseIds(
+      next.responseIds,
+      trimString(current?.responseId || current?.requestId),
+    );
+    return {
+      ...current,
+      replyPublication: {
+        ...existing,
+        ...next,
+        responseIds: normalizedResponseIds,
+        updatedAt: trimString(next.updatedAt) || nowIso(),
+      },
+    };
+  });
+}
+
+function deriveReplyPublicationStateFromRun(run = {}) {
+  const state = trimString(run?.state).toLowerCase();
+  if (state === 'failed') return 'failed';
+  if (state === 'cancelled') return 'cancelled';
+  if (state === 'completed') return 'ready';
+  return 'running';
+}
 
 export { resolveAttachmentMimeType } from './session-attachments.mjs';
 
@@ -561,6 +682,10 @@ function sanitizeQueuedFollowUpOptions(options = {}) {
   return next;
 }
 
+function sanitizePendingDispatchOptions(options = {}) {
+  return sanitizeQueuedFollowUpOptions(options);
+}
+
 function buildQueuedFollowUpSourceContext(queue = []) {
   if (!Array.isArray(queue) || queue.length === 0) return null;
   if (queue.length === 1) {
@@ -571,8 +696,10 @@ function buildQueuedFollowUpSourceContext(queue = []) {
       const sourceContext = normalizeSourceContext(entry?.sourceContext);
       if (!sourceContext) return null;
       const requestId = typeof entry?.requestId === 'string' ? entry.requestId.trim() : '';
+      const responseId = typeof entry?.responseId === 'string' ? entry.responseId.trim() : '';
       return {
         ...(requestId ? { requestId } : {}),
+        ...(responseId ? { responseId } : {}),
         sourceContext,
       };
     })
@@ -591,6 +718,7 @@ function serializeQueuedFollowUp(entry) {
   }));
   return {
     requestId: typeof entry?.requestId === 'string' ? entry.requestId : '',
+    responseId: typeof entry?.responseId === 'string' ? entry.responseId : '',
     text: typeof entry?.text === 'string' ? entry.text : '',
     queuedAt: typeof entry?.queuedAt === 'string' ? entry.queuedAt : '',
     ...(attachments.length > 0 ? { attachments, images: attachments } : {}),
@@ -620,6 +748,24 @@ function findQueuedFollowUpByRequest(meta, requestId) {
   const normalized = typeof requestId === 'string' ? requestId.trim() : '';
   if (!normalized) return null;
   return getFollowUpQueue(meta).find((entry) => entry.requestId === normalized) || null;
+}
+
+function findQueuedFollowUpByResponse(meta, responseId) {
+  const normalized = trimString(responseId);
+  if (!normalized) return null;
+  return getFollowUpQueue(meta).find((entry) => trimString(entry?.responseId || entry?.requestId) === normalized) || null;
+}
+
+function findPendingDispatchByRequest(meta, requestId) {
+  const normalized = trimString(requestId);
+  if (!normalized) return null;
+  return getPendingPlanningQueue(meta).find((entry) => trimString(entry?.requestId) === normalized) || null;
+}
+
+function findPendingDispatchByResponse(meta, responseId) {
+  const normalized = trimString(responseId);
+  if (!normalized) return null;
+  return getPendingPlanningQueue(meta).find((entry) => trimString(entry?.responseId || entry?.requestId) === normalized) || null;
 }
 
 function formatQueuedFollowUpTextEntry(entry, index) {
@@ -701,6 +847,14 @@ function clearFollowUpFlushTimer(sessionId) {
   return true;
 }
 
+function clearPendingDispatchFlushTimer(sessionId) {
+  const runtimeState = sessionRuntimeStateById.get(sessionId);
+  if (!runtimeState?.pendingDispatchFlushTimer) return false;
+  clearTimeout(runtimeState.pendingDispatchFlushTimer);
+  delete runtimeState.pendingDispatchFlushTimer;
+  return true;
+}
+
 async function flushQueuedFollowUps(sessionId) {
   const runtimeState = ensureSessionRuntimeState(sessionId);
   if (runtimeState.followUpFlushPromise) {
@@ -724,6 +878,9 @@ async function flushQueuedFollowUps(sessionId) {
     if (queue.length === 0) return false;
 
     const requestIds = queue.map((entry) => entry.requestId).filter(Boolean);
+    const responseIds = queue
+      .map((entry) => trimString(entry?.responseId || entry?.requestId))
+      .filter(Boolean);
     const dispatchText = buildQueuedFollowUpDispatchText(queue);
     const transcriptText = buildQueuedFollowUpTranscriptText(queue);
     const dispatchOptions = resolveQueuedFollowUpDispatchOptions(queue, rawSession);
@@ -731,6 +888,8 @@ async function flushQueuedFollowUps(sessionId) {
 
     await submitHttpMessage(sessionId, dispatchText, [], {
       requestId: createInternalRequestId('queued_batch'),
+      ...(responseIds[0] ? { responseId: responseIds[0] } : {}),
+      ...(responseIds.length > 0 ? { replyPublicationResponseIds: responseIds } : {}),
       tool: dispatchOptions.tool,
       model: dispatchOptions.model,
       effort: dispatchOptions.effort,
@@ -739,6 +898,7 @@ async function flushQueuedFollowUps(sessionId) {
       preSavedAttachments: queue.flatMap((entry) => sanitizeQueuedFollowUpAttachments(getMessageAttachments(entry))),
       recordedUserText: transcriptText,
       queueIfBusy: false,
+      skipDispatch: true,
     });
 
     const cleared = await mutateSessionMeta(sessionId, (session) => {
@@ -781,6 +941,157 @@ async function flushQueuedFollowUps(sessionId) {
   return promise;
 }
 
+async function flushPendingDispatchQueue(sessionId) {
+  const runtimeState = ensureSessionRuntimeState(sessionId);
+  if (runtimeState.pendingDispatchFlushPromise) {
+    return runtimeState.pendingDispatchFlushPromise;
+  }
+
+  const promise = (async () => {
+    clearPendingDispatchFlushTimer(sessionId);
+
+    const rawSession = await findSessionMeta(sessionId);
+    if (!rawSession || rawSession.archived) return false;
+
+    const queue = getPendingPlanningQueue(rawSession);
+    if (queue.length === 0) return false;
+
+    const entry = queue[0];
+    if (!entry || !trimString(entry.requestId) || !trimString(entry.text)) {
+      await mutateSessionMeta(sessionId, (session) => {
+        const currentQueue = getPendingPlanningQueue(session);
+        if (currentQueue.length === 0) return false;
+        session.pendingPlanningQueue = currentQueue.slice(1);
+        if (session.pendingPlanningQueue.length === 0) {
+          delete session.pendingPlanningQueue;
+        }
+        session.updatedAt = nowIso();
+        return true;
+      });
+      broadcastSessionInvalidation(sessionId);
+      return false;
+    }
+
+    const normalizedText = trimString(entry.text);
+    const planningOptions = {
+      requestId: trimString(entry.requestId),
+      ...(trimString(entry.responseId) ? { responseId: trimString(entry.responseId) } : {}),
+      ...sanitizePendingDispatchOptions(entry),
+      preSavedAttachments: sanitizeQueuedFollowUpAttachments(getMessageAttachments(entry)),
+    };
+
+    let completed = false;
+    try {
+      const session = await getSession(sessionId);
+      if (!session || session.archived) return false;
+
+      let plannedElsewhere = false;
+      if (shouldRunDispatch(session, planningOptions)) {
+        try {
+          const continuationPlan = await planSessionContinuations({
+            session,
+            message: normalizedText,
+            loadSessionHistory: (targetSessionId) => loadHistory(targetSessionId, { includeBodies: false }),
+            runPrompt: (prompt) => runDetachedAssistantPrompt({
+              ...session,
+              id: sessionId,
+              tool: session.tool,
+              model: undefined,
+              effort: 'low',
+              thinking: false,
+            }, prompt, {
+              usageTracking: {
+                operation: 'session_continuation_planner',
+              },
+            }),
+          });
+
+          if (!isTrivialContinuationPlan(continuationPlan)) {
+            const planningOutcome = await executeContinuationPlan({
+              plan: continuationPlan,
+              sourceSession: session,
+              sourceSessionId: sessionId,
+              message: normalizedText,
+              images: [],
+              options: planningOptions,
+              createSession: (folder, tool, name, extra) => createSession(folder, tool, name, extra),
+              submitMessage: submitHttpMessage,
+              appendEvent,
+              broadcastInvalidation: broadcastSessionInvalidation,
+              messageEvent,
+              contextOperationEvent,
+              buildSessionNavigationHref,
+              prepareFullParentContext: async () => {
+                const [snapshot, contextHead] = await Promise.all([
+                  getHistorySnapshot(sessionId),
+                  getContextHead(sessionId),
+                ]);
+                return getOrPrepareForkContext(sessionId, snapshot, contextHead);
+              },
+              setPreparedChildContext: async (childSessionId, prepared) => setForkContext(childSessionId, prepared),
+              createDerivedRequestId: (destination, index) => {
+                const prefix = destination?.mode === 'fork' ? 'fork' : 'fresh';
+                return createInternalRequestId(`continuation_${prefix}_${index + 1}`);
+              },
+            });
+            plannedElsewhere = planningOutcome.applied === true;
+          }
+        } catch (dispatchError) {
+          console.error(`[session-continuation] Async planning error during ${sessionId?.slice(0, 8)}: ${dispatchError.message}`);
+        }
+      }
+
+      if (!plannedElsewhere) {
+        await submitHttpMessage(sessionId, normalizedText, [], {
+          ...planningOptions,
+          skipDispatch: true,
+          skipPendingDispatchLookup: true,
+        });
+      }
+      completed = true;
+    } catch (error) {
+      console.error(`[session-continuation] Failed to flush accepted planning queue for ${sessionId}: ${error.message}`);
+    }
+
+    if (!completed) {
+      schedulePendingDispatchFlush(sessionId, FOLLOW_UP_FLUSH_DELAY_MS * 2);
+      return false;
+    }
+
+    const cleared = await mutateSessionMeta(sessionId, (session) => {
+      const currentQueue = getPendingPlanningQueue(session);
+      if (currentQueue.length === 0) return false;
+      const [head, ...rest] = currentQueue;
+      if (trimString(head?.requestId) !== trimString(entry.requestId)) {
+        return false;
+      }
+      if (rest.length > 0) {
+        session.pendingPlanningQueue = rest;
+      } else {
+        delete session.pendingPlanningQueue;
+      }
+      session.updatedAt = nowIso();
+      return true;
+    });
+
+    if (cleared.changed) {
+      broadcastSessionInvalidation(sessionId);
+    }
+    if (getPendingPlanningQueueCount(cleared.meta) > 0) {
+      schedulePendingDispatchFlush(sessionId, 0);
+    }
+    return true;
+  })().finally(() => {
+    const current = sessionRuntimeStateById.get(sessionId);
+    if (current?.pendingDispatchFlushPromise === promise) {
+      delete current.pendingDispatchFlushPromise;
+    }
+  });
+
+  runtimeState.pendingDispatchFlushPromise = promise;
+  return promise;
+}
+
 function scheduleQueuedFollowUpDispatch(sessionId, delayMs = FOLLOW_UP_FLUSH_DELAY_MS) {
   const runtimeState = ensureSessionRuntimeState(sessionId);
   if (runtimeState.followUpFlushPromise) return true;
@@ -798,12 +1109,30 @@ function scheduleQueuedFollowUpDispatch(sessionId, delayMs = FOLLOW_UP_FLUSH_DEL
   return true;
 }
 
+function schedulePendingDispatchFlush(sessionId, delayMs = 0) {
+  const runtimeState = ensureSessionRuntimeState(sessionId);
+  if (runtimeState.pendingDispatchFlushPromise) return true;
+  clearPendingDispatchFlushTimer(sessionId);
+  runtimeState.pendingDispatchFlushTimer = setTimeout(() => {
+    const current = sessionRuntimeStateById.get(sessionId);
+    if (current?.pendingDispatchFlushTimer) {
+      delete current.pendingDispatchFlushTimer;
+    }
+    void flushPendingDispatchQueue(sessionId);
+  }, Math.max(0, delayMs));
+  if (typeof runtimeState.pendingDispatchFlushTimer.unref === 'function') {
+    runtimeState.pendingDispatchFlushTimer.unref();
+  }
+  return true;
+}
+
 function sanitizeForkedEvent(event) {
   if (!event || typeof event !== 'object') return null;
   const next = JSON.parse(JSON.stringify(event));
   delete next.seq;
   delete next.runId;
   delete next.requestId;
+  delete next.responseId;
   delete next.bodyRef;
   delete next.bodyField;
   delete next.bodyAvailable;
@@ -1179,8 +1508,12 @@ export async function appendAssistantMessage(sessionId, text = '', images = [], 
   const event = await appendEvent(sessionId, messageEvent('assistant', normalizedText, buildMessageAttachmentRefs(savedImages), {
     ...(typeof options.source === 'string' && options.source.trim() ? { source: options.source.trim() } : {}),
     ...(typeof options.requestId === 'string' && options.requestId.trim() ? { requestId: options.requestId.trim() } : {}),
+    ...(typeof options.responseId === 'string' && options.responseId.trim() ? { responseId: options.responseId.trim() } : {}),
     ...(typeof options.runId === 'string' && options.runId.trim() ? { runId: options.runId.trim() } : {}),
     ...(typeof options.resultRunId === 'string' && options.resultRunId.trim() ? { resultRunId: options.resultRunId.trim() } : {}),
+    ...(Array.isArray(options.localMarkdownImageRewrites) && options.localMarkdownImageRewrites.length > 0
+      ? { localMarkdownImageRewrites: options.localMarkdownImageRewrites }
+      : {}),
   }));
 
   const touchedSession = await touchSessionMeta(sessionId);
@@ -1225,6 +1558,7 @@ const {
   buildReplySelfRepairPrompt,
   buildResultAssetReadyMessage,
   clearRenameState,
+  collectAssistantLocalMarkdownImageRewrites,
   collectGeneratedResultFilesFromRun,
   contextOperationEvent,
   dispatchSessionEmailCompletionTargets,
@@ -1807,6 +2141,7 @@ function normalizeRunEvents(run, events) {
     ...event,
     runId: run.id,
     ...(run.requestId ? { requestId: run.requestId } : {}),
+    ...(run.responseId ? { responseId: run.responseId } : {}),
   }));
 }
 
@@ -2070,7 +2405,7 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
       const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(
         sessionId, finalizedRun.id, { loadSessionHistory: loadHistory },
       );
-      await maybeRunMemoryWriteback({
+      const result = await maybeRunMemoryWriteback({
         sessionId,
         session,
         run: finalizedRun,
@@ -2089,6 +2424,19 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
           },
         }),
       });
+      if (result?.promotedCount > 0) {
+        const paths = Array.isArray(result.promotedFiles)
+          ? result.promotedFiles.map((filePath) => displayPromptPath(filePath)).filter(Boolean)
+          : [];
+        await appendEvent(sessionId, contextOperationEvent({
+          operation: 'write_memory',
+          phase: 'applied',
+          trigger: 'automatic',
+          title: 'Durable memory updated',
+          summary: `RemoteLab promoted ${result.promotedCount} durable learning(s) for reuse in later turns.`,
+          reason: paths.length > 0 ? `Updated: ${paths.join(', ')}` : '',
+        }));
+      }
     } catch (error) {
       console.error(`[memory-writeback] Async writeback failed for ${sessionId?.slice(0, 8)}: ${error.message}`);
     }
@@ -2120,6 +2468,9 @@ export async function startDetachedRunObservers() {
         observeDetachedRun(meta.id, meta.activeRunId);
         continue;
       }
+    }
+    if (getPendingPlanningQueueCount(meta) > 0) {
+      schedulePendingDispatchFlush(meta.id, 0);
     }
     if (getFollowUpQueueCount(meta) > 0) {
       scheduleQueuedFollowUpDispatch(meta.id);
@@ -2204,6 +2555,103 @@ export async function getSessionSourceContext(sessionId, options = {}) {
   };
 }
 
+async function findReplyPublicationRunByResponseId(sessionId, responseId, history = null) {
+  const normalized = trimString(responseId);
+  if (!normalized) return null;
+  const loadedHistory = Array.isArray(history)
+    ? history
+    : await loadHistory(sessionId, { includeBodies: true });
+  const matchedUserEvent = resolveReplyPublicationUserEvent(loadedHistory, normalized);
+  if (matchedUserEvent?.runId) {
+    const run = await getRun(trimString(matchedUserEvent.runId));
+    if (run?.sessionId === sessionId) {
+      return { run, history: loadedHistory };
+    }
+  }
+
+  for (const runId of await listRunIds()) {
+    const run = await getRun(runId);
+    if (!run || run.sessionId !== sessionId) continue;
+    if (!runIncludesResponseId(run, normalized)) continue;
+    const rootRunId = trimString(run.replyPublicationRootRunId);
+    if (rootRunId && rootRunId !== run.id) {
+      const rootRun = await getRun(rootRunId);
+      if (rootRun?.sessionId === sessionId) {
+        return { run: rootRun, history: loadedHistory };
+      }
+    }
+    return { run, history: loadedHistory };
+  }
+
+  return { run: null, history: loadedHistory };
+}
+
+async function buildReplyPublicationFromRun(sessionId, rootRun, responseId, history = null) {
+  if (!rootRun?.id) return null;
+  const rootRunId = trimString(rootRun.replyPublicationRootRunId);
+  if (rootRunId && rootRunId !== rootRun.id) {
+    const resolvedRootRun = await getRun(rootRunId);
+    if (resolvedRootRun?.sessionId === sessionId) {
+      rootRun = resolvedRootRun;
+    }
+  }
+  const loadedHistory = Array.isArray(history)
+    ? history
+    : await loadHistory(sessionId, { includeBodies: true });
+  const publication = rootRun.replyPublication && typeof rootRun.replyPublication === 'object'
+    ? rootRun.replyPublication
+    : {
+        responseIds: getRunResponseIds(rootRun),
+        state: deriveReplyPublicationStateFromRun(rootRun),
+        rootRunId: rootRun.id,
+        finalRunId: rootRun.id,
+        continuationRunIds: [],
+      };
+  const summary = buildReplyPublicationSummary({
+    ...publication,
+    id: responseId,
+  });
+
+  if (summary.ready) {
+    const payloadHistory = collectReplyPublicationHistory(loadedHistory, rootRun);
+    summary.payload = buildReplyPublicationPayload(payloadHistory, rootRun);
+  }
+
+  return summary;
+}
+
+export async function getSessionReplyPublication(sessionId, responseId) {
+  const normalized = trimString(responseId);
+  if (!normalized) return null;
+
+  const sessionMeta = await findSessionMeta(sessionId);
+  if (!sessionMeta) return null;
+
+  const pendingEntry = findPendingDispatchByResponse(sessionMeta, normalized);
+  const queuedEntry = findQueuedFollowUpByResponse(sessionMeta, normalized);
+  const resolved = await findReplyPublicationRunByResponseId(sessionId, normalized);
+  const rootRun = resolved?.run || null;
+  if (!rootRun) {
+    if (pendingEntry) {
+      return buildReplyPublicationSummary({
+        id: normalized,
+        responseIds: [normalized],
+        state: 'checking',
+      });
+    }
+    if (queuedEntry) {
+      return buildReplyPublicationSummary({
+        id: normalized,
+        responseIds: [normalized],
+        state: 'queued',
+      });
+    }
+    return null;
+  }
+
+  return buildReplyPublicationFromRun(sessionId, rootRun, normalized, resolved?.history || null);
+}
+
 export async function getRunState(runId) {
   const run = await getRun(runId);
   if (!run) return null;
@@ -2211,8 +2659,15 @@ export async function getRunState(runId) {
   if (!effectiveRun) return null;
   const session = await findSessionMeta(effectiveRun.sessionId);
   const connectors = await buildRunConnectorSurface(session, effectiveRun);
+  const primaryResponseId = trimString(effectiveRun.responseId || getRunResponseIds(effectiveRun)[0]);
+  const publication = primaryResponseId
+    ? (trimString(effectiveRun.replyPublicationRootRunId)
+      ? await getSessionReplyPublication(effectiveRun.sessionId, primaryResponseId)
+      : await buildReplyPublicationFromRun(effectiveRun.sessionId, effectiveRun, primaryResponseId, null))
+    : null;
   return {
     ...effectiveRun,
+    ...(publication ? { replyPublication: publication } : {}),
     ...(connectors ? { connectors } : {}),
   };
 }
@@ -3055,6 +3510,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (!requestId) {
     throw new Error('requestId is required');
   }
+  const responseId = resolveResponseId(requestId, options);
   if (!text || typeof text !== 'string' || !text.trim()) {
     throw new Error('text is required');
   }
@@ -3062,10 +3518,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const existingRun = await findRunByRequest(sessionId, requestId);
   if (existingRun) {
     return {
+      requestId,
       duplicate: true,
       queued: false,
       run: await getRun(existingRun.id) || existingRun,
       session: await getSession(sessionId),
+      response: await getSessionReplyPublication(sessionId, responseId),
     };
   }
 
@@ -3081,72 +3539,38 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const existingQueuedFollowUp = findQueuedFollowUpByRequest(sessionMeta, requestId);
   if (existingQueuedFollowUp || hasRecentFollowUpRequestId(sessionMeta, requestId)) {
     return {
+      requestId,
       duplicate: true,
       queued: !!existingQueuedFollowUp,
       run: null,
       session: await getSession(sessionId, {
         includeQueuedMessages: !!existingQueuedFollowUp,
       }),
+      response: buildReplyPublicationSummary({
+        id: responseId,
+        responseIds: [responseId],
+        state: existingQueuedFollowUp ? 'queued' : 'ready',
+      }),
     };
   }
 
   const normalizedText = text.trim();
-
-  // --- Pre-execution dispatch: classify whether this message belongs here ---
-  if (shouldRunDispatch(session, options)) {
-    try {
-      const dispatchDecision = await classifyDispatch({
-        session,
-        message: normalizedText,
-        listSessions: () => listSessions({ includeArchived: false }),
-        listAgents: () => listApps(),
-        runPrompt: (prompt) => runDetachedAssistantPrompt({
-          ...session,
-          id: sessionId,
-          tool: session.tool,
-          model: undefined,
-          effort: 'low',
-          thinking: false,
-        }, prompt, {
-          usageTracking: {
-            operation: 'session_dispatch_classifier',
-          },
-        }),
-      });
-
-      if (dispatchDecision.action !== 'continue') {
-        const routingOutcome = await executeDispatchRouting({
-          decision: dispatchDecision,
-          sourceSessionId: sessionId,
-          message: normalizedText,
-          images,
-          options,
-          createSession: (tool, name, extra) => createSession(session.folder, tool || session.tool, name, extra),
-          submitMessage: submitHttpMessage,
-          getSession,
-          getAgent: getApp,
-          appendEvent,
-          broadcastInvalidation: broadcastSessionInvalidation,
-          messageEvent,
-          statusEvent,
-          contextOperationEvent,
-          buildSessionNavigationHref,
-        });
-
-        if (routingOutcome.routed) {
-          return {
-            duplicate: false,
-            queued: false,
-            dispatched: true,
-            targetSessionId: routingOutcome.targetSessionId,
-            run: routingOutcome.run,
-            session: routingOutcome.targetSession || await getSession(routingOutcome.targetSessionId),
-          };
-        }
-      }
-    } catch (dispatchError) {
-      console.error(`[session-dispatch] Error during dispatch, continuing normally: ${dispatchError.message}`);
-    }
+  const existingPendingDispatch = options.skipPendingDispatchLookup === true
+    ? null
+    : findPendingDispatchByRequest(sessionMeta, requestId);
+  if (existingPendingDispatch) {
+    return {
+      requestId,
+      duplicate: true,
+      queued: false,
+      run: null,
+      session: await getSession(sessionId),
+      response: buildReplyPublicationSummary({
+        id: responseId,
+        responseIds: [responseId],
+        state: 'checking',
+      }),
+    };
   }
 
   let activeRun = null;
@@ -3173,6 +3597,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     const queuedOptions = sanitizeQueuedFollowUpOptions(options);
     const queuedEntry = {
       requestId,
+      responseId,
       text: normalizedText,
       queuedAt: nowIso(),
       images: queuedImages,
@@ -3193,6 +3618,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     }
     broadcastSessionInvalidation(sessionId);
     return {
+      requestId,
       duplicate: wasDuplicateQueueInsert,
       queued: true,
       run: null,
@@ -3201,6 +3627,50 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       }) || (queuedMeta.meta ? await enrichSessionMetaForClient(queuedMeta.meta, {
         includeQueuedMessages: true,
       }) : session),
+      response: buildReplyPublicationSummary({
+        id: responseId,
+        responseIds: [responseId],
+        state: wasDuplicateQueueInsert ? 'queued' : 'queued',
+      }),
+    };
+  }
+
+  if (shouldRunDispatch(session, options) && shouldUseAsyncDispatchPlanning(session, normalizedText)) {
+    const queuedImages = options.preSavedAttachments?.length > 0
+      ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
+      : await saveAttachments(images);
+    const queuedEntry = {
+      requestId,
+      responseId,
+      text: normalizedText,
+      queuedAt: nowIso(),
+      images: queuedImages,
+      ...sanitizePendingDispatchOptions(options),
+    };
+    const queuedDispatchMeta = await mutateSessionMeta(sessionId, (draft) => {
+      const queue = getPendingPlanningQueue(draft);
+      if (queue.some((entry) => trimString(entry?.requestId) === requestId)) {
+        return false;
+      }
+      draft.pendingPlanningQueue = [...queue, queuedEntry];
+      draft.updatedAt = nowIso();
+      return true;
+    });
+    const wasDuplicateQueueInsert = queuedDispatchMeta.changed === false;
+    schedulePendingDispatchFlush(sessionId, 0);
+    broadcastSessionInvalidation(sessionId);
+    return {
+      requestId,
+      duplicate: wasDuplicateQueueInsert,
+      queued: false,
+      run: null,
+      planning: true,
+      session: await getSession(sessionId) || (queuedDispatchMeta.meta ? await enrichSessionMetaForClient(queuedDispatchMeta.meta) : session),
+      response: buildReplyPublicationSummary({
+        id: responseId,
+        responseIds: [responseId],
+        state: 'checking',
+      }),
     };
   }
 
@@ -3238,11 +3708,18 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     claudeSessionId: persistedClaudeSessionId,
     codexThreadId: persistedCodexThreadId,
   } = resolveResumeState(effectiveTool, session, options);
+  const publicationResponseIds = normalizeReplyPublicationResponseIds(
+    options.replyPublicationResponseIds,
+    responseId,
+  );
+  const primaryResponseId = publicationResponseIds[0] || responseId;
+  const replyPublicationRootRunId = trimString(options.replyPublicationRootRunId);
 
   const run = await createRun({
     status: {
       sessionId,
       requestId,
+      responseId: primaryResponseId || null,
       state: 'accepted',
       tool: effectiveTool,
       model: options.model || null,
@@ -3252,14 +3729,18 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       codexThreadId: persistedCodexThreadId,
       providerResumeId: persistedCodexThreadId || persistedClaudeSessionId || null,
       internalOperation: options.internalOperation || null,
+      replyPublicationRootRunId: replyPublicationRootRunId || null,
     },
     manifest: {
       sessionId,
       requestId,
+      responseId: primaryResponseId || null,
       folder: session.folder,
       tool: effectiveTool,
       prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options),
       internalOperation: options.internalOperation || null,
+      ...(replyPublicationRootRunId ? { replyPublicationRootRunId } : {}),
+      ...(publicationResponseIds.length > 0 ? { replyPublicationResponseIds: publicationResponseIds } : {}),
       ...(typeof options.compactionTargetSessionId === 'string' && options.compactionTargetSessionId
         ? { compactionTargetSessionId: options.compactionTargetSessionId }
         : {}),
@@ -3283,6 +3764,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     },
   });
 
+  if (!replyPublicationRootRunId) {
+    await updateRunReplyPublication(run.id, () => buildInitialReplyPublication(run, publicationResponseIds));
+  }
+
   const activeSession = (await mutateSessionMeta(sessionId, (draft) => {
     draft.activeRunId = run.id;
     draft.updatedAt = nowIso();
@@ -3295,6 +3780,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.recordUserMessage !== false) {
     const userEvent = messageEvent('user', recordedUserText, imageRefs.length > 0 ? imageRefs : undefined, {
       requestId,
+      responseId: primaryResponseId || undefined,
       runId: run.id,
       ...(sourceContext ? { sourceContext } : {}),
     });
@@ -3309,6 +3795,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       if (managerTurnContext) {
         await appendEvent(sessionId, managerContextEvent(managerTurnContext, {
           requestId,
+          ...(primaryResponseId ? { responseId: primaryResponseId } : {}),
           runId: run.id,
         }));
       }
@@ -3357,10 +3844,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
 
   broadcastSessionInvalidation(sessionId);
   return {
+    requestId,
     duplicate: false,
     queued: false,
     run: await getRun(run.id) || run,
     session: await getSession(sessionId) || session,
+    response: await getSessionReplyPublication(sessionId, responseId),
   };
 }
 

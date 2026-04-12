@@ -49,6 +49,10 @@
     const sessionId = normalizeSessionId(rawPendingSend.sessionId);
     const requestId = normalizeSessionId(rawPendingSend.requestId);
     if (!sessionId || !requestId) return null;
+    const baselineEventSeq = Number.isInteger(rawPendingSend.baselineEventSeq)
+      && rawPendingSend.baselineEventSeq >= 0
+      ? rawPendingSend.baselineEventSeq
+      : 0;
     return {
       sessionId,
       requestId,
@@ -58,8 +62,20 @@
         rawPendingSend.baselineActivity && typeof rawPendingSend.baselineActivity === "object"
           ? rawPendingSend.baselineActivity
           : null,
-      stage: rawPendingSend.stage === "uploading" ? "uploading" : "sending",
+      baselineEventSeq,
+      stage:
+        rawPendingSend.stage === "uploading"
+          ? "uploading"
+          : rawPendingSend.stage === "checking"
+            ? "checking"
+          : rawPendingSend.stage === "processing"
+            ? "processing"
+            : "sending",
     };
+  }
+
+  function isBlockingPendingSend(pendingSend) {
+    return !!pendingSend && pendingSend.stage !== "processing" && pendingSend.stage !== "checking";
   }
 
   function createState(state = {}) {
@@ -101,7 +117,9 @@
 
   function hasPendingSendForSession(state, sessionId = state?.activeSessionId) {
     const normalizedSessionId = resolveSessionId(state, sessionId);
-    return !!normalizedSessionId && state?.pendingSend?.sessionId === normalizedSessionId;
+    return !!normalizedSessionId
+      && state?.pendingSend?.sessionId === normalizedSessionId
+      && isBlockingPendingSend(state.pendingSend);
   }
 
   function hasUnsavedState(state, sessionId = state?.activeSessionId) {
@@ -111,7 +129,7 @@
   }
 
   function hasAnyUnsavedState(state) {
-    if (state?.pendingSend) return true;
+    if (isBlockingPendingSend(state?.pendingSend)) return true;
     for (const text of Object.values(state?.drafts || {})) {
       if (normalizeDraftText(text).trim()) {
         return true;
@@ -294,6 +312,7 @@
       && a.requestId === b.requestId
       && a.text === b.text
       && a.stage === b.stage
+      && a.baselineEventSeq === b.baselineEventSeq
       && a.baselineActivity === b.baselineActivity
       && sameArray(a.images, b.images);
   }

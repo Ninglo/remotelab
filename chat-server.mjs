@@ -10,6 +10,7 @@ const [
   ws,
   sessionManager,
   triggers,
+  tools,
   { ensureDir },
   embeddedMailWorker,
 ] = await Promise.all([
@@ -20,6 +21,7 @@ const [
   import('./chat/ws.mjs'),
   import('./chat/session-manager.mjs'),
   import('./chat/triggers.mjs'),
+  import('./lib/tools.mjs'),
   import('./chat/fs-utils.mjs'),
   import('./lib/embedded-mail-worker.mjs'),
 ]);
@@ -30,6 +32,7 @@ for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
 
 await apiRequestLog.initApiRequestLog();
 await usageLedger.initUsageLedger();
+await tools.ensureDefaultMicroAgentToolRegistrationAsync();
 
 const server = http.createServer((req, res) => {
   const requestLog = apiRequestLog.startApiRequestLog(req, res);

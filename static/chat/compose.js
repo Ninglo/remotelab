@@ -3,6 +3,12 @@ const fallbackStrings = {
   "compose.pending.uploading": "Uploading attachment\u2026",
   "compose.pending.sendingAttachment": "Sending attachment\u2026",
   "compose.pending.sending": "Sending\u2026",
+  "compose.pending.checking": "Sent, checking routing\u2026",
+  "compose.pending.processing": "Received, processing\u2026",
+  "compose.inline.uploading": "Uploading attachment\u2026",
+  "compose.inline.sending": "Sending\u2026",
+  "compose.inline.checking": "Sent, checking what happens next\u2026",
+  "compose.inline.processing": "Received, processing\u2026",
 };
 
 function fallbackTranslate(key) {
@@ -433,48 +439,77 @@ async function prepareComposerAttachmentsForSend(sessionId, attachments) {
 }
 
 function hasPendingComposerSend() {
-  return !!getComposerPendingSendSnapshot();
+  return isComposerPendingBlocking(getComposerPendingSendSnapshot());
 }
 
-function isComposerPendingForSession(sessionId = currentSessionId) {
+function isComposerPendingBlocking(pendingSend = getComposerPendingSendSnapshot()) {
+  return !!pendingSend && pendingSend.stage !== "processing" && pendingSend.stage !== "checking";
+}
+
+function isComposerPendingForSession(sessionId = currentSessionId, { includeProcessing = true } = {}) {
   const pendingSend = getComposerPendingSendSnapshot();
-  return !!pendingSend && !!sessionId && pendingSend.sessionId === sessionId;
+  if (!(pendingSend && sessionId && pendingSend.sessionId === sessionId)) {
+    return false;
+  }
+  return includeProcessing ? true : isComposerPendingBlocking(pendingSend);
 }
 
 function isComposerPendingForCurrentSession() {
   return isComposerPendingForSession(currentSessionId);
 }
 
+function isComposerBlockingForSession(sessionId = currentSessionId) {
+  return isComposerPendingForSession(sessionId, { includeProcessing: false });
+}
+
+function getComposerPendingBaselineEventSeq(sessionId = currentSessionId) {
+  if (
+    typeof renderedEventState === "object"
+    && renderedEventState
+    && renderedEventState.sessionId === sessionId
+    && Number.isInteger(renderedEventState.latestSeq)
+    && renderedEventState.latestSeq >= 0
+  ) {
+    return renderedEventState.latestSeq;
+  }
+  return 0;
+}
+
 function syncComposerPendingUi() {
   const pendingForCurrentSession = isComposerPendingForCurrentSession();
   const pendingSend = getComposerPendingSendSnapshot();
-  inputArea.classList.toggle("is-pending-send", pendingForCurrentSession);
-  msgInput.readOnly = pendingForCurrentSession;
+  const blockingPendingForCurrentSession = isComposerBlockingForSession(currentSessionId);
+  inputArea.classList.toggle("is-pending-send", blockingPendingForCurrentSession);
+  msgInput.readOnly = blockingPendingForCurrentSession;
+
+  if (typeof syncComposerPendingTurnFeedback === "function") {
+    syncComposerPendingTurnFeedback();
+  }
 
   if (!composerPendingState) {
     return;
   }
-  if (!pendingForCurrentSession) {
+  const shouldShowComposerPending = pendingForCurrentSession
+    && (pendingSend?.stage === "uploading" || pendingSend?.stage === "sending");
+  if (!shouldShowComposerPending) {
     composerPendingState.textContent = "";
     composerPendingState.classList.remove("visible");
     return;
   }
 
   const hasAttachments = Array.isArray(pendingSend?.images) && pendingSend.images.length > 0;
-  composerPendingState.textContent = pendingSend?.stage === "uploading"
-    ? t("compose.pending.uploading")
-    : (hasAttachments && !pendingSend?.text
+  if (pendingSend?.stage === "uploading") {
+    composerPendingState.textContent = t("compose.pending.uploading");
+  } else {
+    composerPendingState.textContent = hasAttachments && !pendingSend?.text
       ? t("compose.pending.sendingAttachment")
-      : t("compose.pending.sending"));
+      : t("compose.pending.sending");
+  }
   composerPendingState.classList.add("visible");
 }
 
-function finalizeComposerPendingSend(requestId) {
-  const completedSend = getComposerPendingSendSnapshot();
+function clearComposerAcceptedSendArtifacts(completedSend) {
   if (!completedSend) return false;
-  if (requestId && completedSend.requestId !== requestId) return false;
-
-  clearComposerPendingSendSnapshot(requestId);
   clearDraft(completedSend.sessionId);
   releaseImageObjectUrls(getComposerAttachmentsSnapshot(completedSend.sessionId));
   if (typeof clearComposerSessionState === "function") {
@@ -490,6 +525,34 @@ function finalizeComposerPendingSend(requestId) {
       renderImagePreviews();
     }
   }
+  return true;
+}
+
+function acknowledgeComposerPendingSend(requestId, options = {}) {
+  const pendingSend = getComposerPendingSendSnapshot();
+  if (!pendingSend) return false;
+  if (requestId && pendingSend.requestId !== requestId) return false;
+  const nextStage = options?.nextStage === "checking" ? "checking" : "processing";
+  if (pendingSend.stage === nextStage) {
+    syncComposerPendingUi();
+    return true;
+  }
+
+  clearComposerAcceptedSendArtifacts(pendingSend);
+  if (typeof patchComposerPendingSendState === "function") {
+    patchComposerPendingSendState({ stage: nextStage });
+  }
+  syncComposerPendingUi();
+  return true;
+}
+
+function finalizeComposerPendingSend(requestId) {
+  const completedSend = getComposerPendingSendSnapshot();
+  if (!completedSend) return false;
+  if (requestId && completedSend.requestId !== requestId) return false;
+
+  clearComposerAcceptedSendArtifacts(completedSend);
+  clearComposerPendingSendSnapshot(requestId);
   syncComposerPendingUi();
   return true;
 }
@@ -504,6 +567,11 @@ function createEmptyComposerActivitySnapshot() {
     queue: {
       state: "idle",
       count: 0,
+    },
+    planning: {
+      state: "idle",
+      count: 0,
+      requestId: null,
     },
   };
 }
@@ -521,6 +589,11 @@ function getComposerSessionActivitySnapshot(session) {
       state: raw?.queue?.state === "queued" && queueCount > 0 ? "queued" : "idle",
       count: queueCount,
     },
+    planning: {
+      state: raw?.planning?.state === "checking" ? "checking" : "idle",
+      count: Number.isInteger(raw?.planning?.count) ? raw.planning.count : 0,
+      requestId: typeof raw?.planning?.requestId === "string" ? raw.planning.requestId : null,
+    },
   };
 }
 
@@ -536,6 +609,13 @@ function hasCanonicalComposerSendAcceptance(session) {
 
   const previousActivity = pendingSend.baselineActivity || createEmptyComposerActivitySnapshot();
   const nextActivity = getComposerSessionActivitySnapshot(session);
+
+  if (
+    nextActivity.planning.state === "checking"
+    && (!nextActivity.planning.requestId || nextActivity.planning.requestId === pendingSend.requestId)
+  ) {
+    return true;
+  }
 
   if (
     nextActivity.queue.state === "queued"
@@ -555,20 +635,77 @@ function hasCanonicalComposerSendAcceptance(session) {
   return false;
 }
 
+function isComposerPendingSessionStillActive(session, pendingSend) {
+  if (!(pendingSend && session?.id && session.id === pendingSend.sessionId)) {
+    return false;
+  }
+
+  const queuedMessages = Array.isArray(session.queuedMessages) ? session.queuedMessages : [];
+  if (queuedMessages.some((item) => item?.requestId === pendingSend.requestId)) {
+    return true;
+  }
+
+  const nextActivity = getComposerSessionActivitySnapshot(session);
+  return (
+    nextActivity.planning.state === "checking"
+      && (!nextActivity.planning.requestId || nextActivity.planning.requestId === pendingSend.requestId)
+  ) || nextActivity.queue.state === "queued"
+    || nextActivity.run.state === "running"
+    || nextActivity.run.phase === "accepted"
+    || nextActivity.run.phase === "running";
+}
+
+function isComposerProcessingProgressEvent(event, pendingSend) {
+  if (!(pendingSend && pendingSend.stage === "processing")) return false;
+  const eventSeq = Number.isInteger(event?.seq) ? event.seq : 0;
+  if (eventSeq <= (pendingSend.baselineEventSeq || 0)) return false;
+  return !(event?.type === "message" && event.role === "user");
+}
+
 function reconcileComposerPendingSendWithSession(session) {
   const pendingSend = getComposerPendingSendSnapshot();
   if (!pendingSend) return false;
   if (!session?.id || session.id !== pendingSend.sessionId) return false;
+  const nextActivity = getComposerSessionActivitySnapshot(session);
+  if (pendingSend.stage === "checking") {
+    if (
+      nextActivity.queue.state === "queued"
+      || nextActivity.run.state === "running"
+      || nextActivity.run.phase === "accepted"
+      || nextActivity.run.phase === "running"
+    ) {
+      return acknowledgeComposerPendingSend(pendingSend.requestId, { nextStage: "processing" });
+    }
+    if (
+      nextActivity.planning.state === "checking"
+      && (!nextActivity.planning.requestId || nextActivity.planning.requestId === pendingSend.requestId)
+    ) {
+      syncComposerPendingUi();
+      return false;
+    }
+    return finalizeComposerPendingSend(pendingSend.requestId);
+  }
+  if (pendingSend.stage === "processing") {
+    if (isComposerPendingSessionStillActive(session, pendingSend)) {
+      syncComposerPendingUi();
+      return false;
+    }
+    return finalizeComposerPendingSend(pendingSend.requestId);
+  }
   if (!hasCanonicalComposerSendAcceptance(session)) return false;
-  return finalizeComposerPendingSend(pendingSend.requestId);
+  return acknowledgeComposerPendingSend(pendingSend.requestId);
 }
 
 function reconcileComposerPendingSendWithEvent(event) {
   const pendingSend = getComposerPendingSendSnapshot();
   if (!pendingSend) return false;
+  if (pendingSend.stage === "processing") {
+    if (!isComposerProcessingProgressEvent(event, pendingSend)) return false;
+    return finalizeComposerPendingSend(pendingSend.requestId);
+  }
   if (event?.type !== "message" || event.role !== "user") return false;
   if (!event.requestId || event.requestId !== pendingSend.requestId) return false;
-  return finalizeComposerPendingSend(event.requestId);
+  return acknowledgeComposerPendingSend(event.requestId);
 }
 
 function getDraftStorageKey(sessionId = currentSessionId) {
@@ -595,7 +732,7 @@ function writeStoredDraft(sessionId = currentSessionId, text = "") {
 
 function getComposerDraftText(sessionId = currentSessionId) {
   if (!sessionId) return "";
-  if (isComposerPendingForSession(sessionId)) {
+  if (isComposerBlockingForSession(sessionId)) {
     return getComposerPendingSendSnapshot()?.text || "";
   }
   return typeof getComposerDraftTextState === "function"
@@ -636,6 +773,7 @@ function sendMessage(existingRequestId) {
       text,
       images: queuedImages,
       baselineActivity: getComposerSessionActivitySnapshot(currentSession),
+      baselineEventSeq: getComposerPendingBaselineEventSeq(sessionId),
       stage: "sending",
     });
   }
@@ -909,7 +1047,7 @@ if (window.RemoteLabLayout?.subscribe) {
 
 // ---- Draft persistence ----
 function saveDraft() {
-  if (!currentSessionId || isComposerPendingForCurrentSession()) return;
+  if (!currentSessionId || isComposerBlockingForSession(currentSessionId)) return;
   writeStoredDraft(currentSessionId, msgInput.value);
 }
 function restoreDraft() {

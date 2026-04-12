@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -16,11 +18,18 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
-const helperVersion = "0.2.0"
+const helperVersion = "0.2.2"
 const autoUpdateInterval = 6 * time.Hour
+const autoUpdatePollInterval = 5 * time.Second
+const commandPollTimeout = 15 * time.Second
+const commandWorkerCount = 4
+const retryBackoff = 2 * time.Second
+const heartbeatInterval = 15 * time.Second
 
 type rootFlag []string
 
@@ -318,10 +327,32 @@ func runServe(argv []string) error {
 
 func serveLoop(cfg Config) error {
 	hostname, _ := os.Hostname()
-	lastHeartbeat := time.Time{}
+	stopCh := make(chan struct{})
+	var workers sync.WaitGroup
+	var activeCommands atomic.Int32
+
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		runHeartbeatLoop(cfg, hostname, stopCh)
+	}()
+
+	for index := 0; index < commandWorkerCount; index++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			runCommandWorker(cfg, &activeCommands, stopCh)
+		}()
+	}
+
+	defer func() {
+		close(stopCh)
+		workers.Wait()
+	}()
+
 	lastUpdateCheck := time.Time{}
 	for {
-		if lastUpdateCheck.IsZero() || time.Since(lastUpdateCheck) >= autoUpdateInterval {
+		if (lastUpdateCheck.IsZero() || time.Since(lastUpdateCheck) >= autoUpdateInterval) && activeCommands.Load() == 0 {
 			updated, err := maybeAutoUpdate(cfg)
 			lastUpdateCheck = time.Now()
 			if err != nil {
@@ -331,44 +362,96 @@ func serveLoop(cfg Config) error {
 				return nil
 			}
 		}
-		if time.Since(lastHeartbeat) >= 15*time.Second {
-			hbReq := heartbeatRequest{
-				Platform:      runtime.GOOS,
-				DeviceName:    hostname,
-				HelperVersion: helperVersion,
-				AllowedRoots:  cfg.AllowedRoots,
+		time.Sleep(autoUpdatePollInterval)
+	}
+}
+
+func runHeartbeatLoop(cfg Config, hostname string, stopCh <-chan struct{}) {
+	for {
+		if err := sendHeartbeat(cfg, hostname); err != nil {
+			fmt.Fprintf(os.Stderr, "heartbeat failed: %v\n", err)
+			if !sleepOrStop(retryBackoff, stopCh) {
+				return
 			}
-			if err := doDeviceJSONRequest(http.MethodPost, cfg, fmt.Sprintf("/api/local-bridge/devices/%s/heartbeat", url.PathEscape(cfg.DeviceID)), hbReq, nil); err != nil {
-				fmt.Fprintf(os.Stderr, "heartbeat failed: %v\n", err)
-				time.Sleep(2 * time.Second)
-				continue
-			}
-			lastHeartbeat = time.Now()
+			continue
+		}
+		if !sleepOrStop(heartbeatInterval, stopCh) {
+			return
+		}
+	}
+}
+
+func sendHeartbeat(cfg Config, hostname string) error {
+	hbReq := heartbeatRequest{
+		Platform:      runtime.GOOS,
+		DeviceName:    hostname,
+		HelperVersion: helperVersion,
+		AllowedRoots:  cfg.AllowedRoots,
+	}
+	return doDeviceJSONRequest(
+		http.MethodPost,
+		cfg,
+		fmt.Sprintf("/api/local-bridge/devices/%s/heartbeat", url.PathEscape(cfg.DeviceID)),
+		hbReq,
+		nil,
+	)
+}
+
+func runCommandWorker(cfg Config, activeCommands *atomic.Int32, stopCh <-chan struct{}) {
+	for {
+		select {
+		case <-stopCh:
+			return
+		default:
 		}
 
 		var envelope commandEnvelope
-		nextPath := fmt.Sprintf("/api/local-bridge/devices/%s/commands/next?timeoutMs=15000", url.PathEscape(cfg.DeviceID))
+		nextPath := fmt.Sprintf(
+			"/api/local-bridge/devices/%s/commands/next?timeoutMs=%d",
+			url.PathEscape(cfg.DeviceID),
+			int(commandPollTimeout/time.Millisecond),
+		)
 		if err := doDeviceJSONRequest(http.MethodGet, cfg, nextPath, nil, &envelope); err != nil {
 			fmt.Fprintf(os.Stderr, "next command failed: %v\n", err)
-			time.Sleep(2 * time.Second)
+			if !sleepOrStop(retryBackoff, stopCh) {
+				return
+			}
 			continue
 		}
 		if envelope.Command == nil || strings.TrimSpace(envelope.Command.ID) == "" {
 			continue
 		}
 
-		result, resultErr := executeCommand(cfg, envelope.Command)
 		payload := commandResultPayload{}
-		if resultErr != nil {
-			payload.Error = resultErr.Error()
-		} else {
+		func() {
+			activeCommands.Add(1)
+			defer activeCommands.Add(-1)
+			result, resultErr := executeCommand(cfg, envelope.Command)
+			if resultErr != nil {
+				payload.Error = resultErr.Error()
+				return
+			}
 			payload.Result = result
-		}
+		}()
+
 		resultPath := fmt.Sprintf("/api/local-bridge/devices/%s/commands/%s/result", url.PathEscape(cfg.DeviceID), url.PathEscape(envelope.Command.ID))
 		if err := doDeviceJSONRequest(http.MethodPost, cfg, resultPath, payload, nil); err != nil {
 			fmt.Fprintf(os.Stderr, "submit result failed: %v\n", err)
-			time.Sleep(2 * time.Second)
+			if !sleepOrStop(retryBackoff, stopCh) {
+				return
+			}
 		}
+	}
+}
+
+func sleepOrStop(duration time.Duration, stopCh <-chan struct{}) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-stopCh:
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -741,6 +824,10 @@ func applyInternalReadAllDefaults(cfg Config) Config {
 	return cfg
 }
 
+var httpClient = &http.Client{
+	Timeout: 45 * time.Second,
+}
+
 func doJSONRequest(method, endpoint, bearerToken string, body interface{}, out interface{}) error {
 	var reader io.Reader
 	if body != nil {
@@ -763,7 +850,7 @@ func doJSONRequest(method, endpoint, bearerToken string, body interface{}, out i
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -796,7 +883,8 @@ func doBinaryRequest(method, endpoint, bearerToken string, outPath string) error
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	downloadClient := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -806,6 +894,9 @@ func doBinaryRequest(method, endpoint, bearerToken string, outPath string) error
 		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return err
+	}
 	file, err := os.Create(outPath)
 	if err != nil {
 		return err
@@ -837,6 +928,8 @@ func executeCommand(cfg Config, command *bridgeCommand) (map[string]interface{},
 		return executeReadText(cfg, command.Args)
 	case "stage":
 		return executeStage(cfg, command)
+	case "pack":
+		return executePack(cfg, command)
 	default:
 		return nil, fmt.Errorf("unsupported command: %s", command.Name)
 	}
@@ -1060,6 +1153,130 @@ func executeStage(cfg Config, command *bridgeCommand) (map[string]interface{}, e
 	return map[string]interface{}{
 		"uploadedSizeBytes": info.Size(),
 		"asset":             finalizeResp.Asset,
+	}, nil
+}
+
+func executePack(cfg Config, command *bridgeCommand) (map[string]interface{}, error) {
+	rootAlias := getStringArg(command.Args, "rootAlias")
+	relPath := getStringArg(command.Args, "relPath")
+	targetPath, _, err := resolveAllowedPath(cfg, rootAlias, relPath)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("pack target is not a directory: %s", relPath)
+	}
+
+	var excludes []string
+	if raw, ok := command.Args["exclude"]; ok {
+		if arr, ok := raw.([]interface{}); ok {
+			for _, v := range arr {
+				if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+					excludes = append(excludes, strings.TrimSpace(s))
+				}
+			}
+		}
+	}
+
+	pr, pw := io.Pipe()
+
+	var packErr error
+	var fileCount int64
+	var rawBytes int64
+
+	go func() {
+		gw := gzip.NewWriter(pw)
+		tw := tar.NewWriter(gw)
+
+		walkErr := filepath.WalkDir(targetPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil // skip unreadable entries
+			}
+			rel, err := filepath.Rel(targetPath, path)
+			if err != nil {
+				return nil
+			}
+			relSlash := filepath.ToSlash(rel)
+
+			for _, pattern := range excludes {
+				if matched, _ := filepath.Match(pattern, relSlash); matched {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if matched, _ := filepath.Match(pattern, filepath.Base(relSlash)); matched {
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+			}
+
+			info, err := d.Info()
+			if err != nil {
+				return nil
+			}
+
+			header, err := tar.FileInfoHeader(info, "")
+			if err != nil {
+				return nil
+			}
+			header.Name = relSlash
+			if d.IsDir() {
+				header.Name += "/"
+			}
+
+			if err := tw.WriteHeader(header); err != nil {
+				return err
+			}
+
+			if !d.IsDir() && info.Mode().IsRegular() {
+				f, err := os.Open(path)
+				if err != nil {
+					return nil // skip unreadable files
+				}
+				n, copyErr := io.Copy(tw, f)
+				f.Close()
+				if copyErr != nil {
+					return copyErr
+				}
+				atomic.AddInt64(&fileCount, 1)
+				atomic.AddInt64(&rawBytes, n)
+			}
+			return nil
+		})
+
+		tw.Close()
+		gw.Close()
+		if walkErr != nil {
+			packErr = walkErr
+		}
+		pw.CloseWithError(walkErr)
+	}()
+
+	uploadPath := fmt.Sprintf("/api/local-bridge/devices/%s/commands/%s/upload", url.PathEscape(cfg.DeviceID), url.PathEscape(command.ID))
+	if err := doDeviceUpload(cfg, uploadPath, "application/gzip", pr); err != nil {
+		return nil, fmt.Errorf("pack upload failed: %w", err)
+	}
+	if packErr != nil {
+		return nil, fmt.Errorf("pack archive failed: %w", packErr)
+	}
+
+	finalizePath := fmt.Sprintf("/api/local-bridge/devices/%s/commands/%s/upload/finalize", url.PathEscape(cfg.DeviceID), url.PathEscape(command.ID))
+	var finalizeResp stageFinalizeResponse
+	if err := doDeviceJSONRequest(http.MethodPost, cfg, finalizePath, map[string]interface{}{}, &finalizeResp); err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"packedFiles": atomic.LoadInt64(&fileCount),
+		"packedBytes": atomic.LoadInt64(&rawBytes),
+		"asset":       finalizeResp.Asset,
 	}, nil
 }
 
@@ -1312,6 +1529,13 @@ func maybeAutoUpdate(cfg Config) (bool, error) {
 	fmt.Fprintf(os.Stderr, "updated helper to %s\n", strings.TrimSpace(manifest.Release.Version))
 
 	if filepath.Clean(currentPath) != filepath.Clean(managedPath) {
+		fmt.Fprintf(
+			os.Stderr,
+			"auto update installed managed helper at %s but current executable is %s; restart using the managed helper path to apply %s\n",
+			managedPath,
+			currentPath,
+			strings.TrimSpace(manifest.Release.Version),
+		)
 		return false, nil
 	}
 	if runtime.GOOS == "windows" {

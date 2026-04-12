@@ -37,6 +37,12 @@ import { createShareSnapshot } from './shares.mjs';
 import { pathExists } from './fs-utils.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
 import {
+  buildClientInstanceSettings,
+  loadInstanceSettings,
+  updateInstanceSettings,
+} from './instance-settings.mjs';
+import { broadcastAll } from './ws-clients.mjs';
+import {
   applyTemplateToSession,
   appendAssistantMessage,
   compactSession,
@@ -58,6 +64,7 @@ import {
 } from './session-manager.mjs';
 
 const uploadedMediaMimeTypes = {
+  csv: 'text/csv; charset=utf-8',
   gif: 'image/gif',
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
@@ -73,6 +80,8 @@ const uploadedMediaMimeTypes = {
   pdf: 'application/pdf',
   png: 'image/png',
   txt: 'text/plain; charset=utf-8',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   wav: 'audio/wav',
   webm: 'video/webm',
   webp: 'image/webp',
@@ -134,6 +143,51 @@ export async function handleControlRoutes({
       });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to restore starter sessions' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/settings' && req.method === 'GET') {
+    try {
+      const settings = await loadInstanceSettings({
+        includeSecrets: authSession?.role === 'owner',
+      });
+      writeJson(res, 200, {
+        settings: buildClientInstanceSettings(settings, { authSession }),
+      });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to load settings' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/settings' && req.method === 'PATCH') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    let payload = {};
+    try {
+      const body = await readBody(req, 65536);
+      payload = body ? JSON.parse(body) : {};
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    try {
+      const patch = payload?.settings && typeof payload.settings === 'object'
+        ? payload.settings
+        : payload;
+      const settings = await updateInstanceSettings(patch);
+      writeJson(res, 200, {
+        settings: buildClientInstanceSettings(settings, { authSession }),
+      });
+      broadcastAll({
+        type: 'instance_settings_updated',
+        updatedAt: settings?.updatedAt || '',
+      });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to save settings' });
     }
     return true;
   }

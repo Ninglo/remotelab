@@ -18,6 +18,7 @@
     "workflow.status.parkedTitle": "Parked for later",
     "workflow.status.queued": "queued",
     "workflow.status.queuedTitle": "{count} follow-up{suffix} queued",
+    "workflow.status.checking": "checking",
     "workflow.status.compacting": "compacting",
     "workflow.status.renaming": "renaming",
     "workflow.status.renameFailed": "rename failed",
@@ -213,6 +214,12 @@
     const compactState = raw?.compact?.state === "pending"
       ? "pending"
       : "idle";
+    const planningCount = Number.isInteger(raw?.planning?.count)
+      ? raw.planning.count
+      : 0;
+    const planningState = raw?.planning?.state === "checking" && planningCount > 0
+      ? "checking"
+      : "idle";
 
     return {
       run: {
@@ -233,6 +240,11 @@
       compact: {
         state: compactState,
       },
+      planning: {
+        state: planningState,
+        count: planningCount,
+        requestId: typeof raw?.planning?.requestId === "string" ? raw.planning.requestId : null,
+      },
     };
   }
 
@@ -240,6 +252,7 @@
     const activity = normalizeSessionActivity(session);
     return activity.run.state === "running"
       || activity.queue.state === "queued"
+      || activity.planning.state === "checking"
       || activity.compact.state === "pending";
   }
 
@@ -274,6 +287,10 @@
           })
           : "",
       ));
+    }
+
+    if (activity.planning.state === "checking") {
+      indicators.push(createStatus("checking", t("workflow.status.checking"), "status-queued", "queued"));
     }
 
     if (activity.compact.state === "pending") {

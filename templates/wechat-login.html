@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f3efe7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#181713" media="(prefers-color-scheme: dark)">
+  <meta name="remotelab-build" content="{{BUILD_TITLE}}">
+  <base href="{{PRODUCT_BASE_HREF}}">
+  <link rel="manifest" href="manifest.json?v={{ASSET_VERSION}}">
+  <link rel="icon" href="favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+  <link rel="icon" href="icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <title>RemoteLab - Connect WeChat</title>
+  <style nonce="{{NONCE}}">
+    :root {
+      color-scheme: light;
+      --page: #f3efe7;
+      --card: rgba(255, 250, 244, 0.92);
+      --border: rgba(67, 54, 41, 0.14);
+      --text: #241c16;
+      --muted: #6f6254;
+      --accent: #0f7a45;
+      --accent-soft: rgba(15, 122, 69, 0.12);
+      --ok: #0f7a45;
+      --ok-soft: rgba(15, 122, 69, 0.12);
+      --shadow: 0 18px 45px rgba(37, 28, 22, 0.08);
+      --qr-surface: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,244,238,0.98));
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --page: #181713;
+        --card: rgba(31, 28, 25, 0.94);
+        --border: rgba(255, 237, 211, 0.08);
+        --text: #f6ede0;
+        --muted: #b9ac9b;
+        --accent: #49c87d;
+        --accent-soft: rgba(73, 200, 125, 0.14);
+        --ok: #49c87d;
+        --ok-soft: rgba(73, 200, 125, 0.14);
+        --shadow: 0 26px 70px rgba(0, 0, 0, 0.34);
+        --qr-surface: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,239,231,0.98));
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      font-family: "SF Pro Display", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(15, 122, 69, 0.10), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(204, 146, 70, 0.12), transparent 22%),
+        var(--page);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding:
+        max(20px, env(safe-area-inset-top))
+        max(20px, env(safe-area-inset-right))
+        max(20px, env(safe-area-inset-bottom))
+        max(20px, env(safe-area-inset-left));
+    }
+
+    .shell {
+      width: min(100%, 440px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      overflow: hidden;
+    }
+
+    .hero {
+      padding: 24px 24px 12px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 14px 0 8px;
+      font-size: 30px;
+      line-height: 1.04;
+      letter-spacing: -0.04em;
+    }
+
+    .intro {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 24px 0;
+      flex-wrap: wrap;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .status-pill.ready {
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+
+    .status-note {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .qr-wrap {
+      padding: 18px 24px 20px;
+    }
+
+    .qr-panel {
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.28);
+    }
+
+    .qr-stage {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+
+    .qr-frame {
+      min-height: 280px;
+      border-radius: 18px;
+      background: var(--qr-surface);
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .qr-image {
+      width: min(100%, 260px);
+      height: auto;
+      display: block;
+      border-radius: 14px;
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.12);
+      background: white;
+    }
+
+    .qr-empty {
+      text-align: center;
+      color: #695f56;
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 220px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .success {
+      display: none;
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--ok-soft);
+      color: var(--ok);
+    }
+
+    .success strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .build-stamp {
+      padding: 0 24px 20px;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+      user-select: text;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <div class="eyebrow">RemoteLab WeChat</div>
+      <h1>Connect This Workspace</h1>
+      <p class="intro">Keep this page open. If the QR code expires, RemoteLab will fetch a fresh one automatically and keep the same entry link.</p>
+    </div>
+
+    <div class="status-row">
+      <div class="status-pill" id="status-pill">Preparing</div>
+      <div class="status-note" id="status-note">Preparing a fresh WeChat QR code...</div>
+    </div>
+
+    <div class="qr-wrap">
+      <div class="qr-panel">
+        <div class="qr-stage" id="qr-stage">Open WeChat and scan the code below.</div>
+        <div class="qr-frame">
+          <img id="qr-image" class="qr-image hidden" alt="WeChat login QR code">
+          <div id="qr-empty" class="qr-empty">Generating a fresh QR code. This usually takes a moment.</div>
+        </div>
+        <div class="actions">
+          <a id="qr-link" class="link hidden" href="#" target="_blank" rel="noreferrer">Open QR image</a>
+          <div class="meta" id="meta-text"></div>
+        </div>
+        <div id="success-panel" class="success">
+          <strong>WeChat connected.</strong>
+          <span id="success-text">This workspace is ready to receive WeChat messages.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="build-stamp" title="{{BUILD_TITLE}}">{{BUILD_LABEL}}</div>
+  </div>
+
+  {{BOOTSTRAP_SCRIPT_TAGS}}
+  <script nonce="{{NONCE}}">
+    (function() {
+      var bootstrap = window.__REMOTELAB_BOOTSTRAP__ || {};
+      var config = bootstrap.wechatLogin || {};
+      var statusEndpoint = config.statusEndpoint || '/api/connectors/wechat/login';
+      var qrEndpoint = config.qrEndpoint || '/api/connectors/wechat/login/qr';
+      var statusPill = document.getElementById('status-pill');
+      var statusNote = document.getElementById('status-note');
+      var qrStage = document.getElementById('qr-stage');
+      var qrImage = document.getElementById('qr-image');
+      var qrEmpty = document.getElementById('qr-empty');
+      var qrLink = document.getElementById('qr-link');
+      var metaText = document.getElementById('meta-text');
+      var successPanel = document.getElementById('success-panel');
+      var successText = document.getElementById('success-text');
+      var currentQrVersion = '';
+      var inFlight = false;
+
+      function stageLabel(status) {
+        if (status === 'connected') return 'Connected';
+        if (status === 'confirmed') return 'Confirming';
+        if (status === 'scaned_but_redirect') return 'Scanned';
+        if (status === 'qr_refreshed') return 'Refreshed';
+        if (status === 'qr_ready' || status === 'wait') return 'Ready To Scan';
+        return 'Preparing';
+      }
+
+      function stageBody(status) {
+        if (status === 'connected') return 'WeChat is now connected for this workspace.';
+        if (status === 'confirmed') return 'WeChat confirmed the scan. RemoteLab is finishing the binding.';
+        if (status === 'scaned_but_redirect') return 'Scan received. Please confirm on your phone if WeChat asks.';
+        if (status === 'qr_refreshed') return 'The old code expired. Scan the refreshed code below.';
+        if (status === 'qr_ready' || status === 'wait') return 'Open WeChat and scan the QR code below.';
+        return 'Preparing a fresh WeChat QR code...';
+      }
+
+      function updateQrImage(version) {
+        if (!version) return;
+        if (version !== currentQrVersion) {
+          currentQrVersion = version;
+          var src = qrEndpoint + '?v=' + encodeURIComponent(version);
+          qrImage.src = src;
+          qrLink.href = src;
+        }
+        qrLink.classList.remove('hidden');
+        qrImage.classList.remove('hidden');
+        qrEmpty.classList.add('hidden');
+      }
+
+      function showWaitingState() {
+        qrImage.classList.add('hidden');
+        qrLink.classList.add('hidden');
+        qrEmpty.classList.remove('hidden');
+      }
+
+      function applyState(state) {
+        if (!state || typeof state !== 'object') return;
+        var status = String(state.status || (state.login && state.login.status) || '');
+        var message = String(state.message || '');
+        var isReady = state.capabilityState === 'ready';
+        statusPill.textContent = stageLabel(status);
+        statusPill.classList.toggle('ready', isReady);
+        statusNote.textContent = message || stageBody(status);
+        qrStage.textContent = stageBody(status);
+        metaText.textContent = state.login && state.login.updatedAt
+          ? 'Updated ' + state.login.updatedAt
+          : '';
+
+        if (isReady) {
+          successPanel.style.display = 'block';
+          successText.textContent = state.account && state.account.userId
+            ? 'Bound to ' + state.account.userId
+            : 'This workspace is ready to receive WeChat messages.';
+          showWaitingState();
+          return;
+        }
+
+        successPanel.style.display = 'none';
+        if (state.qrcodeVersion) {
+          updateQrImage(state.qrcodeVersion);
+        } else {
+          showWaitingState();
+        }
+      }
+
+      async function refreshState() {
+        if (inFlight) return;
+        inFlight = true;
+        try {
+          var response = await fetch(statusEndpoint, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
+          if (!response.ok) {
+            throw new Error('status ' + response.status);
+          }
+          applyState(await response.json());
+        } catch (error) {
+          statusPill.textContent = 'Retrying';
+          statusPill.classList.remove('ready');
+          statusNote.textContent = 'RemoteLab is retrying the WeChat login status check.';
+          qrStage.textContent = 'Waiting for the next status refresh...';
+        } finally {
+          inFlight = false;
+        }
+      }
+
+      qrImage.addEventListener('error', function() {
+        currentQrVersion = '';
+        showWaitingState();
+      });
+
+      applyState(config.initialState || {});
+      refreshState();
+      window.setInterval(refreshState, 2000);
+    })();
+  </script>
+</body>
+</html>

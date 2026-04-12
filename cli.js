@@ -33,12 +33,17 @@ Usage:
   remotelab start                    Start all services
   remotelab stop                     Stop all services
   remotelab restart [service]        Restart services (chat=owner+guests|tunnel|bridge|all)
+  remotelab provision-host           Plan or execute whole-host provider provisioning
+  remotelab bootstrap-host           Converge a Linux host into a RemoteLab host baseline
+  remotelab install-profile          Resolve modules from install env and render runtime plan
+  remotelab validate-profile         Validate host + profile health and report degradation
   remotelab guest-instance           Create isolated guest instances on this machine
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab mail                     Manage agent mailbox and send outbound email
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab local-bridge            Manage linked local helper bridges for a session
+  remotelab agenda                  Manage the instance calendar feed
   remotelab trigger                  Manage durable session triggers
   remotelab usage-summary            Summarize local Codex token usage
   remotelab session-spawn            Spawn a focused parallel session from a source session
@@ -67,6 +72,20 @@ switch (command) {
       await execFileAsync('bash', [scriptPath('restart.sh'), service], { stdio: 'inherit' });
     } catch (err) {
       process.exit(err.status ?? 1);
+    }
+    break;
+  }
+
+  case 'provision-host':
+  case 'bootstrap-host':
+  case 'install-profile':
+  case 'validate-profile': {
+    const { runInstanceFactoryCommand } = await import(scriptPath('lib/instance-factory-command.mjs'));
+    try {
+      process.exitCode = await runInstanceFactoryCommand(command, args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
     }
     break;
   }
@@ -132,6 +151,17 @@ switch (command) {
     const { runLocalBridgeCommand } = await import(scriptPath('lib/local-bridge-command.mjs'));
     try {
       process.exitCode = await runLocalBridgeCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'agenda': {
+    const { runAgendaCommand } = await import(scriptPath('lib/agenda-command.mjs'));
+    try {
+      process.exitCode = await runAgendaCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

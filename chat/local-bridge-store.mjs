@@ -11,6 +11,7 @@ import {
 const PAIRING_CODE_TTL_MS = 10 * 60 * 1000;
 const BOOTSTRAP_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const DEVICE_ONLINE_WINDOW_MS = 60 * 1000;
+const COMMAND_STALE_AFTER_MS = 2 * 60 * 1000;
 const runLocalBridgeMutation = createSerialTaskQueue();
 
 let localBridgeCache = null;
@@ -22,6 +23,11 @@ function nowIso() {
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseIsoMs(value) {
+  const parsed = Date.parse(trimString(value));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function normalizeAllowedRoots(input) {
@@ -99,6 +105,31 @@ function normalizeState(state) {
       error: trimString(entry?.error),
     })).filter((entry) => entry.id && entry.sessionId && entry.deviceId && entry.name),
   };
+}
+
+function isDeviceOnline(device, nowMs = Date.now()) {
+  const lastSeenAtMs = parseIsoMs(device?.lastSeenAt);
+  return lastSeenAtMs > 0 && (nowMs - lastSeenAtMs) <= DEVICE_ONLINE_WINDOW_MS;
+}
+
+function failStaleInProgressCommands(draft, deviceId, nowMs = Date.now()) {
+  const device = draft.devices.find((entry) => entry.id === deviceId);
+  if (isDeviceOnline(device, nowMs)) return [];
+
+  const referenceLastSeenAtMs = parseIsoMs(device?.lastSeenAt);
+  const completedAt = nowIso();
+  const failed = [];
+  for (const command of draft.commands) {
+    if (command.deviceId !== deviceId || command.state !== 'in_progress') continue;
+    const claimedAtMs = parseIsoMs(command.claimedAt) || parseIsoMs(command.createdAt);
+    const referenceMs = Math.max(claimedAtMs, referenceLastSeenAtMs);
+    if (!referenceMs || (nowMs - referenceMs) < COMMAND_STALE_AFTER_MS) continue;
+    command.state = 'failed';
+    command.completedAt = completedAt;
+    command.error = 'Local helper went offline before completing the command';
+    failed.push(command);
+  }
+  return failed;
 }
 
 async function saveStateUnlocked(state) {
@@ -325,6 +356,7 @@ export async function claimNextLocalBridgeCommand(deviceId) {
   const normalizedDeviceId = trimString(deviceId);
   if (!normalizedDeviceId) return null;
   const { result } = await mutateState((draft) => {
+    failStaleInProgressCommands(draft, normalizedDeviceId);
     const command = draft.commands.find((entry) => entry.deviceId === normalizedDeviceId && entry.state === 'queued');
     if (!command) return null;
     command.state = 'in_progress';
@@ -343,6 +375,9 @@ export async function completeLocalBridgeCommand(deviceId, commandId, payload = 
   const { result } = await mutateState((draft) => {
     const command = draft.commands.find((entry) => entry.deviceId === normalizedDeviceId && entry.id === normalizedCommandId);
     if (!command) return null;
+    if (command.state !== 'in_progress') {
+      return command;
+    }
     command.state = error ? 'failed' : 'completed';
     command.completedAt = nowIso();
     command.result = resultPayload;
@@ -379,7 +414,7 @@ export async function getSessionLocalBridgeSurface(session) {
     };
   }
   const lastSeenAt = trimString(device.lastSeenAt);
-  const online = lastSeenAt && (Date.now() - Date.parse(lastSeenAt)) <= DEVICE_ONLINE_WINDOW_MS;
+  const online = isDeviceOnline(device);
   return {
     deviceId: device.id,
     sessionId: device.sessionId,

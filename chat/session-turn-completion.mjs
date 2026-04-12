@@ -1,3 +1,5 @@
+import { normalizeReplyPublicationResponseIds } from './reply-publication.mjs';
+
 export function createSessionTurnCompletionHelpers(services) {
   const {
     REPLY_SELF_CHECK_ACCEPT_STATUS,
@@ -12,6 +14,7 @@ export function createSessionTurnCompletionHelpers(services) {
     buildReplySelfRepairPrompt,
     buildResultAssetReadyMessage,
     clearRenameState,
+    collectAssistantLocalMarkdownImageRewrites,
     collectGeneratedResultFilesFromRun,
     contextOperationEvent,
     dispatchSessionConnectorActions,
@@ -31,6 +34,7 @@ export function createSessionTurnCompletionHelpers(services) {
     isSessionRunning,
     isTerminalRunState,
     listRunIds,
+    loadHistory,
     loadReplySelfCheckTurnContext,
     maybeApplyAssistantTaskCard,
     maybeAutoCompact,
@@ -62,9 +66,75 @@ export function createSessionTurnCompletionHelpers(services) {
     updateSessionWorkflowClassification,
   } = services;
 
-  function queueSessionCompletionTargets(session, run, manifest) {
+  function trimString(value) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  function getReplyPublicationRootRunId(run) {
+    return trimString(run?.replyPublicationRootRunId) || trimString(run?.id);
+  }
+
+  async function updateReplyPublication(run, updater) {
+    const rootRunId = getReplyPublicationRootRunId(run);
+    if (!rootRunId || typeof updater !== 'function') return null;
+    return updateRun(rootRunId, (existing) => {
+      const current = existing?.replyPublication && typeof existing.replyPublication === 'object'
+        ? existing.replyPublication
+        : {
+            responseIds: normalizeReplyPublicationResponseIds([], trimString(existing?.responseId || existing?.requestId || run?.responseId || run?.requestId)),
+            state: 'running',
+            resolution: '',
+            rootRunId,
+            finalRunId: rootRunId,
+            continuationRunIds: [],
+            updatedAt: nowIso(),
+            readyAt: null,
+            failedAt: null,
+            lastError: null,
+          };
+      const next = updater(current, existing);
+      if (!next || typeof next !== 'object') {
+        return existing;
+      }
+      return {
+        ...existing,
+        replyPublication: {
+          ...current,
+          ...next,
+          responseIds: normalizeReplyPublicationResponseIds(
+            next.responseIds,
+            trimString(existing?.responseId || existing?.requestId || run?.responseId || run?.requestId),
+          ),
+          updatedAt: trimString(next.updatedAt) || nowIso(),
+        },
+      };
+    });
+  }
+
+  async function queueSessionCompletionTargets(session, run, manifest) {
     if (!session?.id || !run?.id) return false;
     if (manifest?.internalOperation && !isReplySelfRepairOperation(manifest)) return false;
+    if (isReplySelfRepairOperation(manifest)) {
+      const rootRunId = getReplyPublicationRootRunId(run);
+      const rootRun = rootRunId && rootRunId !== run.id
+        ? await getRun(rootRunId)
+        : run;
+      const publication = rootRun?.replyPublication;
+      if (!publication || trimString(publication.state).toLowerCase() !== 'ready') {
+        return false;
+      }
+      if (trimString(publication.finalRunId) !== trimString(run.id)) {
+        return false;
+      }
+    } else {
+      const publication = run?.replyPublication;
+      if (!publication || trimString(publication.state).toLowerCase() !== 'ready') {
+        return false;
+      }
+      if (trimString(publication.finalRunId) !== trimString(run.id)) {
+        return false;
+      }
+    }
     const targets = sanitizeAllCompletionTargets(session.completionTargets || []);
     if (targets.length === 0) return false;
     dispatchSessionConnectorActions({
@@ -93,7 +163,7 @@ export function createSessionTurnCompletionHelpers(services) {
       if (!session?.completionTargets?.length) continue;
       const manifest = await getRunManifest(runId);
       if (manifest?.internalOperation && !isReplySelfRepairOperation(manifest)) continue;
-      queueSessionCompletionTargets(session, run, manifest);
+      await queueSessionCompletionTargets(session, run, manifest);
     }
   }
 
@@ -185,6 +255,11 @@ export function createSessionTurnCompletionHelpers(services) {
       return null;
     }
 
+    await updateReplyPublication(run, (current) => ({
+      ...current,
+      state: 'reviewing',
+      lastError: null,
+    }));
     await appendEvent(sessionId, statusEvent(REPLY_SELF_CHECK_REVIEWING_STATUS));
     await appendEvent(sessionId, buildReplySelfCheckReviewingOperation());
     broadcastSessionInvalidation(sessionId);
@@ -220,6 +295,15 @@ export function createSessionTurnCompletionHelpers(services) {
       });
     } catch (error) {
       const reason = summarizeReplySelfCheckReason(error.message, 'background reviewer error');
+      await updateReplyPublication(run, (current) => ({
+        ...current,
+        state: 'ready',
+        resolution: 'accepted_as_is',
+        finalRunId: trimString(current.finalRunId) || trimString(run.id),
+        readyAt: current.readyAt || nowIso(),
+        failedAt: null,
+        lastError: reason,
+      }));
       await appendEvent(sessionId, statusEvent(`Assistant self-check: review failed — ${reason}`));
       await appendEvent(sessionId, buildReplySelfCheckFailedOperation(
         'Automatic continuation review failed',
@@ -233,6 +317,15 @@ export function createSessionTurnCompletionHelpers(services) {
     const reviewDecision = parseReplySelfCheckDecision(reviewText);
     const refreshed = await getSession(sessionId);
     if (!refreshed || refreshed.activeRunId || getSessionQueueCount(refreshed) > 0) {
+      await updateReplyPublication(run, (current) => ({
+        ...current,
+        state: 'ready',
+        resolution: 'accepted_after_interruption',
+        finalRunId: trimString(current.finalRunId) || trimString(run.id),
+        readyAt: current.readyAt || nowIso(),
+        failedAt: null,
+        lastError: null,
+      }));
       await appendEvent(sessionId, statusEvent('Assistant self-check: skipped automatic continuation because new work arrived first.'));
       await appendEvent(sessionId, buildReplySelfCheckSkippedOperation(
         'Automatic continuation skipped',
@@ -245,6 +338,15 @@ export function createSessionTurnCompletionHelpers(services) {
 
     if (reviewDecision.action !== 'continue') {
       const reason = summarizeReplySelfCheckReason(reviewDecision.reason, 'the latest reply already finished the requested work');
+      await updateReplyPublication(run, (current) => ({
+        ...current,
+        state: 'ready',
+        resolution: 'accepted_as_is',
+        finalRunId: trimString(current.finalRunId) || trimString(run.id),
+        readyAt: current.readyAt || nowIso(),
+        failedAt: null,
+        lastError: null,
+      }));
       await appendEvent(sessionId, statusEvent(REPLY_SELF_CHECK_ACCEPT_STATUS));
       await appendEvent(sessionId, buildReplySelfCheckSkippedOperation(
         'Automatic continuation not needed',
@@ -261,7 +363,7 @@ export function createSessionTurnCompletionHelpers(services) {
     broadcastSessionInvalidation(sessionId);
 
     try {
-      await sendMessage(sessionId, buildReplySelfRepairPrompt({
+      const continuation = await sendMessage(sessionId, buildReplySelfRepairPrompt({
         userMessage,
         assistantTurnText,
         reviewDecision,
@@ -273,9 +375,31 @@ export function createSessionTurnCompletionHelpers(services) {
         recordUserMessage: false,
         queueIfBusy: false,
         internalOperation: REPLY_SELF_REPAIR_INTERNAL_OPERATION,
+        responseId: trimString(run.responseId || run.requestId),
+        replyPublicationRootRunId: getReplyPublicationRootRunId(run),
       });
+      await updateReplyPublication(run, (current) => ({
+        ...current,
+        state: 'continuing',
+        continuationRunIds: normalizeReplyPublicationResponseIds(
+          [
+            ...(Array.isArray(current.continuationRunIds) ? current.continuationRunIds : []),
+            trimString(continuation?.run?.id),
+          ],
+        ),
+        lastError: null,
+      }));
     } catch (error) {
       const failureReason = summarizeReplySelfCheckReason(error.message, 'unable to launch follow-up reply');
+      await updateReplyPublication(run, (current) => ({
+        ...current,
+        state: 'ready',
+        resolution: 'fallback_original_after_continue_failure',
+        finalRunId: trimString(current.rootRunId) || trimString(run.id),
+        readyAt: current.readyAt || nowIso(),
+        failedAt: null,
+        lastError: failureReason,
+      }));
       await appendEvent(sessionId, statusEvent(`Assistant self-check: failed to continue automatically — ${failureReason}`));
       await appendEvent(sessionId, buildReplySelfCheckFailedOperation(
         'Automatic continuation failed',
@@ -289,6 +413,19 @@ export function createSessionTurnCompletionHelpers(services) {
     return { attempted: true, continued: true };
   }
 
+  async function loadLatestTurnBodyEvents(sessionId) {
+    const history = await loadHistory(sessionId, { includeBodies: true });
+    const body = [];
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const event = history[index];
+      if (event?.type === 'message' && event.role === 'user') {
+        return body.reverse();
+      }
+      body.push(event);
+    }
+    return body.reverse();
+  }
+
   async function maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents) {
     if (manifest?.internalOperation) {
       return false;
@@ -297,7 +434,10 @@ export function createSessionTurnCompletionHelpers(services) {
       return false;
     }
 
-    let attachments = normalizePublishedResultAssetAttachments(run?.publishedResultAssets || []);
+    let publishedResultAssets = Array.isArray(run?.publishedResultAssets)
+      ? run.publishedResultAssets
+      : [];
+    let attachments = normalizePublishedResultAssetAttachments(publishedResultAssets);
     if (attachments.length === 0) {
       const generatedFiles = await collectGeneratedResultFilesFromRun(run, manifest, normalizedEvents);
       if (generatedFiles.length === 0) {
@@ -316,6 +456,7 @@ export function createSessionTurnCompletionHelpers(services) {
           });
           publishedAssets.push({
             assetId: published.id,
+            localPath: file.localPath,
             originalName: published.originalName || file.originalName,
             mimeType: published.mimeType || file.mimeType,
             ...(normalizeAttachmentSizeBytes(published.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(published.sizeBytes) } : {}),
@@ -336,23 +477,37 @@ export function createSessionTurnCompletionHelpers(services) {
           : publishedAssets,
         publishedResultAssetsAt: current.publishedResultAssetsAt || nowIso(),
       })) || run;
-      attachments = normalizePublishedResultAssetAttachments(updatedRun.publishedResultAssets || publishedAssets);
+      publishedResultAssets = Array.isArray(updatedRun.publishedResultAssets) && updatedRun.publishedResultAssets.length > 0
+        ? updatedRun.publishedResultAssets
+        : publishedAssets;
+      attachments = normalizePublishedResultAssetAttachments(publishedResultAssets);
     }
 
     if (attachments.length === 0) {
       return false;
     }
-    if (await findResultAssetMessageForRun(sessionId, run.id)) {
-      return false;
+
+    let didPublish = false;
+    const latestTurnBodyEvents = await loadLatestTurnBodyEvents(sessionId);
+    const localMarkdownImageRewrites = await collectAssistantLocalMarkdownImageRewrites(
+      manifest,
+      latestTurnBodyEvents,
+      publishedResultAssets,
+    );
+
+    if (!(await findResultAssetMessageForRun(sessionId, run.id))) {
+      await appendAssistantMessage(sessionId, buildResultAssetReadyMessage(attachments), [], {
+        preSavedAttachments: attachments,
+        source: 'result_file_assets',
+        resultRunId: run.id,
+        ...(run.responseId ? { responseId: run.responseId } : {}),
+        ...(localMarkdownImageRewrites.length > 0 ? { localMarkdownImageRewrites } : {}),
+        ...(run.requestId ? { requestId: run.requestId } : {}),
+      });
+      didPublish = true;
     }
 
-    await appendAssistantMessage(sessionId, buildResultAssetReadyMessage(attachments), [], {
-      preSavedAttachments: attachments,
-      source: 'result_file_assets',
-      resultRunId: run.id,
-      ...(run.requestId ? { requestId: run.requestId } : {}),
-    });
-    return true;
+    return didPublish;
   }
 
   async function applyGeneratedSessionGrouping(sessionId, summaryResult) {
@@ -419,6 +574,61 @@ export function createSessionTurnCompletionHelpers(services) {
     let sessionChanged = false;
     const allowCompletionEffects = allowsSessionTurnCompletionEffects(manifest);
 
+    if (isReplySelfRepairOperation(manifest)) {
+      if (finalizedRun.state === 'completed') {
+        await updateReplyPublication(finalizedRun, (current) => ({
+          ...current,
+          state: 'ready',
+          resolution: 'auto_continued',
+          finalRunId: trimString(finalizedRun.id),
+          continuationRunIds: normalizeReplyPublicationResponseIds(
+            [
+              ...(Array.isArray(current.continuationRunIds) ? current.continuationRunIds : []),
+              trimString(finalizedRun.id),
+            ],
+          ),
+          readyAt: current.readyAt || nowIso(),
+          failedAt: null,
+          lastError: null,
+        }));
+      } else {
+        await updateReplyPublication(finalizedRun, (current) => ({
+          ...current,
+          state: 'ready',
+          resolution: 'fallback_original_after_continue_failure',
+          finalRunId: trimString(current.rootRunId) || trimString(finalizedRun.replyPublicationRootRunId),
+          readyAt: current.readyAt || nowIso(),
+          failedAt: null,
+          lastError: trimString(finalizedRun.failureReason),
+        }));
+      }
+    } else if (finalizedRun.state === 'failed' || finalizedRun.state === 'cancelled') {
+      await updateReplyPublication(finalizedRun, (current) => ({
+        ...current,
+        state: finalizedRun.state,
+        resolution: '',
+        finalRunId: trimString(current.finalRunId) || trimString(finalizedRun.id),
+        failedAt: current.failedAt || nowIso(),
+        readyAt: null,
+        lastError: trimString(finalizedRun.failureReason),
+      }));
+    } else if (finalizedRun.state === 'completed') {
+      await updateReplyPublication(finalizedRun, (current) => {
+        if (trimString(current.state).toLowerCase() === 'ready') {
+          return current;
+        }
+        return {
+          ...current,
+          state: 'ready',
+          resolution: trimString(current.resolution) || 'accepted_as_is',
+          finalRunId: trimString(current.finalRunId) || trimString(finalizedRun.id),
+          readyAt: current.readyAt || nowIso(),
+          failedAt: null,
+          lastError: null,
+        };
+      });
+    }
+
     if (allowCompletionEffects) {
       const taskCardSession = await maybeApplyAssistantTaskCard(sessionId, finalizedRun.id, session, getTaskCardFollowupServices());
       if (taskCardSession) {
@@ -445,7 +655,7 @@ export function createSessionTurnCompletionHelpers(services) {
     }
 
     if (allowCompletionEffects && !hasQueuedFollowUps) {
-      queueSessionCompletionTargets(session, finalizedRun, manifest);
+      await queueSessionCompletionTargets(session, finalizedRun, manifest);
       scheduleSessionWorkflowStateSuggestion(session, finalizedRun);
     }
 

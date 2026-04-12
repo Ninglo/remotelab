@@ -60,6 +60,8 @@ assert.equal(detectSystemdManagerScope('0::/init.scope\n'), null);
 {
   let spawnInvocation = null;
   let unrefCalled = false;
+  const previousSandbox = process.env.IS_SANDBOX;
+  process.env.IS_SANDBOX = '';
   const spawner = createDetachedRunnerSpawner({
     getScopeImpl: () => 'system',
     execFileImpl: async (command) => {
@@ -92,7 +94,13 @@ assert.equal(detectSystemdManagerScope('0::/init.scope\n'), null);
     spawnInvocation.options.env.REMOTELAB_RUNNER_LAUNCH_MODE,
     DETACHED_RUNNER_PROCESS_LAUNCH_MODE,
   );
+  assert.equal(spawnInvocation.options.env.IS_SANDBOX, '1');
   assert.equal(unrefCalled, true);
+  process.env.IS_SANDBOX = '0';
+  spawnInvocation = null;
+  await spawner('run_fallback_disabled');
+  assert.equal(spawnInvocation.options.env.IS_SANDBOX, '0');
+  process.env.IS_SANDBOX = previousSandbox;
 }
 
 console.log('test-runner-supervisor: ok');

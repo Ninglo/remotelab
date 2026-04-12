@@ -42,7 +42,7 @@ function isValidShareAssetId(id) {
 }
 
 function buildShareAssetUrl(shareId, assetId) {
-  return `../share-asset/${shareId}/${assetId}`;
+  return `share-asset/${shareId}/${assetId}`;
 }
 
 async function readAttachmentBuffer(image) {

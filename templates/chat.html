@@ -94,6 +94,22 @@
           </div>
         </div>
         <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.voice.title">Voice Input</div>
+          <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. The owner can keep the relay setup or try direct gateway voice input here.</div>
+          <div class="settings-inline-form">
+            <select class="settings-inline-select" id="voiceInputProviderSelect" aria-label="Choose a voice input transport" data-i18n-aria-label="settings.voice.providerAriaLabel"></select>
+            <input class="settings-inline-input" id="voiceInputAppId" type="text" autocomplete="off" placeholder="Doubao App ID" data-i18n-placeholder="settings.voice.appIdPlaceholder">
+            <input class="settings-inline-input" id="voiceInputAccessToken" type="text" autocomplete="off" placeholder="Doubao Access Token" data-i18n-placeholder="settings.voice.accessTokenPlaceholder">
+            <select class="settings-inline-select" id="voiceInputClusterPresetSelect" aria-label="Choose voice input model preset" data-i18n-aria-label="settings.voice.clusterPresetAriaLabel"></select>
+            <input class="settings-inline-input" id="voiceInputCluster" type="text" autocomplete="off" placeholder="Custom resource ID" data-i18n-placeholder="settings.voice.clusterCustomPlaceholder" hidden>
+            <input class="settings-inline-input" id="voiceInputGatewayApiKey" type="text" autocomplete="off" placeholder="AI Gateway API key" data-i18n-placeholder="settings.voice.gatewayApiKeyPlaceholder" hidden>
+            <input class="settings-inline-input" id="voiceInputGatewayUrl" type="text" autocomplete="off" placeholder="Realtime gateway URL" data-i18n-placeholder="settings.voice.gatewayUrlPlaceholder" hidden>
+            <input class="settings-inline-input" id="voiceInputGatewayModel" type="text" autocomplete="off" placeholder="Gateway model name" data-i18n-placeholder="settings.voice.gatewayModelPlaceholder" hidden>
+            <select class="settings-inline-select" id="voiceInputLanguageSelect" aria-label="Choose voice input language" data-i18n-aria-label="settings.voice.languageAriaLabel"></select>
+            <div class="settings-app-empty inline-status" id="voiceInputStatus" hidden></div>
+          </div>
+        </div>
+        <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.install.title">Install App</div>
           <div class="settings-section-note" id="settingsInstallNote" data-i18n="settings.install.note">Install RemoteLab on this device.</div>
           <div class="settings-inline-form">
@@ -101,6 +117,13 @@
               <button class="settings-app-btn settings-inline-primary" id="settingsInstallAppBtn" type="button" data-i18n="settings.install.open">Install RemoteLab</button>
             </div>
             <div class="settings-app-empty inline-status" id="settingsInstallStatus" hidden></div>
+          </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.connectors.title">Connectors</div>
+          <div class="settings-section-note" data-i18n="settings.connectors.note">Open connector login or authorization flows here.</div>
+          <div class="settings-apps-list" id="settingsConnectorsList">
+            <div class="settings-app-empty" data-i18n="settings.connectors.loading">Loading connectors…</div>
           </div>
         </div>
         <div class="settings-section">
@@ -134,19 +157,9 @@
       <div class="input-resize-handle" id="inputResizeHandle">
         <div class="input-resize-pill"></div>
       </div>
-      <div class="input-wrapper">
-        <!-- Attachment preview inside wrapper -->
-        <div class="img-preview-strip" id="imgPreviewStrip"></div>
-        <div class="session-mode-banner" id="sessionModeBanner">
-          <div class="session-mode-banner-title" data-i18n="shareSnapshot.bannerTitle">Shared snapshot</div>
-          <div class="session-mode-banner-body" data-i18n="shareSnapshot.bannerBody">This page is read-only. You can open and download shared files here, but you can't send messages from this link.</div>
-        </div>
+      <div class="input-stack">
         <div class="input-config-row">
           <div class="input-config-group left">
-            <button class="img-btn" id="imgBtn" disabled title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
-              <span class="img-btn-icon" data-icon="attach" aria-hidden="true"></span>
-              <span class="img-btn-label" data-i18n="action.upload">Upload</span>
-            </button>
             <select class="tool-select" id="inlineAgentSelect" disabled title="Choose agent for the next session" aria-label="Choose agent for the next session" data-i18n-title="compose.agent.title" data-i18n-aria-label="compose.agent.ariaLabel"></select>
             <select class="tool-select" id="inlineToolSelect" disabled></select>
             <select class="model-select" id="inlineModelSelect" disabled></select>
@@ -159,23 +172,52 @@
             <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)" data-i18n="action.dropTools">Drop tools</button>
           </div>
         </div>
-        <div class="input-row">
-          <input type="file" id="imgFileInput" accept="*/*" multiple hidden>
-          <textarea id="msgInput" placeholder="{{INPUT_PLACEHOLDER_TEXT}}" data-i18n-placeholder="{{INPUT_PLACEHOLDER_I18N_KEY}}" disabled></textarea>
-          <button class="send-btn" id="sendBtn" disabled title="Send" aria-label="Send" data-i18n-title="action.send" data-i18n-aria-label="action.send" data-icon="send">&#9654;</button>
-          <button class="cancel-btn" id="cancelBtn" title="Stop" aria-label="Stop" data-i18n-title="action.stop" data-i18n-aria-label="action.stop" data-icon="debug-stop" style="display:none">&#9632;</button>
+        <div class="input-wrapper">
+          <!-- Attachment preview inside wrapper -->
+          <div class="img-preview-strip" id="imgPreviewStrip"></div>
+          <div class="session-mode-banner" id="sessionModeBanner">
+            <div class="session-mode-banner-title" data-i18n="shareSnapshot.bannerTitle">Shared snapshot</div>
+            <div class="session-mode-banner-body" data-i18n="shareSnapshot.bannerBody">This page is read-only. You can open and download shared files here, but you can't send messages from this link.</div>
+          </div>
+          <div class="input-row">
+            <input type="file" id="imgFileInput" accept="*/*" multiple hidden>
+            <textarea id="msgInput" placeholder="{{INPUT_PLACEHOLDER_TEXT}}" data-i18n-placeholder="{{INPUT_PLACEHOLDER_I18N_KEY}}" disabled></textarea>
+          </div>
+          <div class="input-actions-row">
+            <div class="input-actions-group">
+              <button class="composer-action-btn composer-action-btn--upload" id="imgBtn" type="button" disabled title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
+                <span class="img-btn-icon" data-icon="plus" aria-hidden="true"></span>
+                <span class="img-btn-label sr-only" data-i18n="action.upload">Upload</span>
+              </button>
+            </div>
+            <div class="input-actions-group right">
+              <button class="composer-action-btn voice-btn" id="voiceBtn" type="button" disabled title="Voice input" aria-label="Voice input" data-i18n-title="action.voiceInput" data-i18n-aria-label="action.voiceInput">
+                <span class="voice-btn-visual" aria-hidden="true">
+                  <span class="img-btn-icon voice-btn-icon" data-icon="mic"></span>
+                  <span class="voice-btn-meter">
+                    <span class="voice-btn-meter-bar"></span>
+                    <span class="voice-btn-meter-bar"></span>
+                    <span class="voice-btn-meter-bar"></span>
+                  </span>
+                </span>
+                <span class="img-btn-label sr-only" data-i18n="action.voiceInput">Voice</span>
+              </button>
+              <button class="send-btn" id="sendBtn" disabled title="Send" aria-label="Send" data-i18n-title="action.send" data-i18n-aria-label="action.send" data-icon="send">&#9654;</button>
+              <button class="cancel-btn" id="cancelBtn" title="Stop" aria-label="Stop" data-i18n-title="action.stop" data-i18n-aria-label="action.stop" data-icon="debug-stop" style="display:none">&#9632;</button>
+            </div>
+          </div>
+          <div class="quick-entry-focus-prompt" id="quickEntryFocusPrompt" hidden>
+            <button class="quick-entry-focus-btn" id="quickEntryFocusBtn" type="button">
+              <span class="quick-entry-focus-title" data-i18n="quickEntry.focusPrompt.title">Tap to start typing</span>
+              <span class="quick-entry-focus-body" data-i18n="quickEntry.focusPrompt.body">Some phones do not open the keyboard automatically from a PWA shortcut.</span>
+            </button>
+          </div>
+          <div class="composer-pending-state" id="composerPendingState" aria-live="polite"></div>
         </div>
-        <div class="quick-entry-focus-prompt" id="quickEntryFocusPrompt" hidden>
-          <button class="quick-entry-focus-btn" id="quickEntryFocusBtn" type="button">
-            <span class="quick-entry-focus-title" data-i18n="quickEntry.focusPrompt.title">Tap to start typing</span>
-            <span class="quick-entry-focus-body" data-i18n="quickEntry.focusPrompt.body">Some phones do not open the keyboard automatically from a PWA shortcut.</span>
-          </button>
+        <div class="input-footer">
+          <a href="https://github.com/Ninglo/remotelab" target="_blank" rel="noreferrer noopener" data-i18n="footer.openSource">View project source ↗</a>
+          <span class="input-footer-tagline" data-i18n="footer.tagline">Built with AI &amp; ❤️</span>
         </div>
-        <div class="composer-pending-state" id="composerPendingState" aria-live="polite"></div>
-      </div>
-      <div class="input-footer">
-        <a href="https://github.com/Ninglo/remotelab" target="_blank" rel="noreferrer noopener" data-i18n="footer.openSource">View project source ↗</a>
-        <span class="input-footer-tagline" data-i18n="footer.tagline">Built with AI &amp; ❤️</span>
       </div>
     </div>
   </main>
@@ -289,6 +331,8 @@
 <script src="chat/ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/session-surface-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/session-list-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/instance-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

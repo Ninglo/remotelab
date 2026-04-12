@@ -67,6 +67,7 @@ try {
   assert.match(rewrittenPlist, /<key>REMOTELAB_INSTANCE_ROOT<\/key><string>.*\.remotelab\/instances\/owner<\/string>/);
   assert.match(rewrittenPlist, /<key>CHAT_PORT<\/key><string>7690<\/string>/);
   assert.match(rewrittenPlist, /<key>HOME<\/key><string>/);
+  assert.match(rewrittenPlist, /<key>REMOTELAB_SESSION_DISPATCH<\/key><string>on<\/string>/);
   assert.match(rewrittenPlist, /<key>REMOTELAB_USER_SHELL_ENV_B64<\/key><string>/);
 } finally {
   rmSync(sandboxHome, { recursive: true, force: true });

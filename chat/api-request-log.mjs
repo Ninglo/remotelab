@@ -95,6 +95,7 @@ function classifyApiRoute(method, pathname) {
     if (sessionGetRoute.kind === 'archived-list') return 'GET /api/sessions/archived';
     if (sessionGetRoute.kind === 'detail') return 'GET /api/sessions/:sessionId';
     if (sessionGetRoute.kind === 'events') return 'GET /api/sessions/:sessionId/events';
+    if (sessionGetRoute.kind === 'response') return 'GET /api/sessions/:sessionId/responses/:responseId';
     if (sessionGetRoute.kind === 'event-block') return 'GET /api/sessions/:sessionId/events/blocks/:startSeq-:endSeq';
     if (sessionGetRoute.kind === 'event-body') return 'GET /api/sessions/:sessionId/events/:seq/body';
   }

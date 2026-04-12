@@ -29,6 +29,10 @@ export function parseSessionGetRoute(pathname) {
     return { kind: 'source-context', sessionId };
   }
 
+  if (parts.length === 5 && parts[3] === 'responses' && parts[4]) {
+    return { kind: 'response', sessionId, responseId: decodeURIComponent(parts[4]) };
+  }
+
   if (parts.length === 6 && parts[3] === 'events' && parts[4] === 'blocks') {
     const match = /^([1-9]\d*)-([1-9]\d*)$/.exec(parts[5] || '');
     if (!match) return null;

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "host": {
+    "provider": "digitalocean",
+    "hostname": "miglab-sfo3-01",
+    "region": "sfo3",
+    "size": "s-2vcpu-4gb",
+    "image": "ubuntu-24-04-x64",
+    "tags": ["remotelab", "miglab", "owner"],
+    "repoGitUrl": "https://github.com/Ninglo/remotelab.git",
+    "repoCheckoutPath": "/opt/remotelab",
+    "sshUser": "root"
+  },
+  "network": {
+    "listenPort": 7690,
+    "ownerDomain": "miglab.jiujianian.dev",
+    "ingress": {
+      "provider": "cloudflare",
+      "tunnelId": "e01af7a0-66aa-440a-9bdd-5971eca1ca49",
+      "tunnelName": "miglab",
+      "serviceName": "cloudflared-miglab",
+      "ownerHostname": "miglab.jiujianian.dev",
+      "credentialsFile": "/etc/cloudflared/e01af7a0-66aa-440a-9bdd-5971eca1ca49.json",
+      "localCredentialsFile": "/root/.cloudflared/e01af7a0-66aa-440a-9bdd-5971eca1ca49.json"
+    }
+  },
+  "systemd": {
+    "ownerUnit": "remotelab",
+    "logDir": "/var/log/remotelab"
+  }
+}

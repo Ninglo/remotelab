@@ -129,6 +129,9 @@ function renderEvent(evt, autoScroll) {
   if (!rendered) return;
 
   if (emptyState.parentNode === messagesInner) emptyState.remove();
+  if (typeof syncComposerPendingTurnFeedback === "function") {
+    syncComposerPendingTurnFeedback();
+  }
 
   const shouldScroll =
     autoScroll &&

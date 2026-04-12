@@ -243,10 +243,10 @@ export function classifyUsageOperation(input, extra = {}) {
         category: 'memory_management',
         background: true,
       };
-    case 'session_dispatch_classifier':
+    case 'session_continuation_planner':
       return {
         key: operation,
-        label: 'Session dispatch classifier',
+        label: 'Session continuation planner',
         group: 'background',
         category: 'orchestration',
         background: true,

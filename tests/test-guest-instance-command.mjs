@@ -10,12 +10,15 @@ import {
   buildAccessUrl,
   buildGuestMailboxAddress,
   buildBridgeBaseUrl,
+  buildGuestWeChatConnectorConfig,
   formatGuestInstance,
   formatGuestInstanceLinks,
   mergePlatformSkillsIndexContent,
   parseArgs,
   planGuestRuntimeDefaults,
   pickNextTrialInstanceName,
+  seedGuestWeChatConnectorConfig,
+  startGuestWeChatConnector,
   syncGuestPlatformSkills,
   syncGuestMailboxProvisioning,
 } from '../lib/guest-instance-command.mjs';
@@ -83,12 +86,18 @@ assert.equal(
   buildBridgeBaseUrl('trial16', { bridgeRootBaseUrl: 'https://bridge.example.com/' }),
   'https://bridge.example.com/trial16',
 );
+assert.equal(
+  buildBridgeBaseUrl('trial16', { bridgeBaseUrlTemplate: 'https://{name}-jolab.cpolar.top' }),
+  'https://trial16-jolab.cpolar.top',
+);
 assert.equal(parseArgs(['create-trial', '--json']).json, true);
 assert.equal(parseArgs(['create-trial', '--json']).trial, true);
 assert.equal(parseArgs(['create-trial', '--json']).command, 'create');
 assert.equal(parseArgs(['links']).command, 'links');
 assert.equal(parseArgs(['links', 'trial24', '--check']).name, 'trial24');
 assert.equal(parseArgs(['links', 'trial24', '--check']).check, true);
+assert.equal(parseArgs(['check']).command, 'check');
+assert.equal(parseArgs(['check', 'trial24', '--json']).name, 'trial24');
 assert.equal(parseArgs(['report']).command, 'report');
 assert.equal(parseArgs(['report', 'trial24', '--output-dir', '/tmp/report']).name, 'trial24');
 assert.equal(parseArgs(['report', '--send', '--send-json']).send, true);
@@ -229,6 +238,62 @@ assert.match(formatted, /mailbox: rowan\+trial16@jiujianian\.dev/);
 assert.match(formatted, /mailboxRouting: synced/);
 assert.match(formatted, /bridge: https:\/\/bridge\.example\.com\/trial16/);
 assert.match(formatted, /bridgeAccess: https:\/\/bridge\.example\.com\/trial16\/\?token=abc123/);
+
+const guestWeChatConfig = buildGuestWeChatConnectorConfig({
+  localBaseUrl: 'http://127.0.0.1:7711',
+});
+assert.equal(guestWeChatConfig.chatBaseUrl, 'http://127.0.0.1:7711');
+assert.equal(guestWeChatConfig.sourceName, 'WeChat');
+assert.equal(guestWeChatConfig.group, 'WeChat');
+
+const wechatSeedSandbox = mkdtempSync(join(tmpdir(), 'remotelab-guest-wechat-'));
+try {
+  const configDir = join(wechatSeedSandbox, 'instance', 'config');
+  mkdirSync(configDir, { recursive: true });
+
+  const seededWeChatConfig = await seedGuestWeChatConnectorConfig(configDir, {
+    localBaseUrl: 'http://127.0.0.1:7711',
+  });
+  assert.equal(seededWeChatConfig.changed, true);
+  assert.equal(
+    JSON.parse(readFileSync(seededWeChatConfig.configPath, 'utf8')).chatBaseUrl,
+    'http://127.0.0.1:7711',
+  );
+
+  writeFileSync(seededWeChatConfig.configPath, JSON.stringify({ chatBaseUrl: 'http://127.0.0.1:8800' }, null, 2));
+  const preservedWeChatConfig = await seedGuestWeChatConnectorConfig(configDir, {
+    localBaseUrl: 'http://127.0.0.1:7711',
+  });
+  assert.equal(preservedWeChatConfig.changed, false);
+  assert.equal(
+    JSON.parse(readFileSync(preservedWeChatConfig.configPath, 'utf8')).chatBaseUrl,
+    'http://127.0.0.1:8800',
+  );
+
+  let startInvocation = null;
+  const startResult = await startGuestWeChatConnector({
+    instanceRoot: '/tmp/remotelab-instance',
+    port: 7711,
+    publicBaseUrl: 'https://trial24.example.com',
+    execFileFn: async (command, args, options) => {
+      startInvocation = { command, args, options };
+      return {
+        stdout: 'started wechat connector (pid 123)\n',
+        stderr: '',
+      };
+    },
+  });
+  assert.equal(startResult.stdout, 'started wechat connector (pid 123)');
+  assert.equal(startInvocation.command, join(repoRoot, 'scripts', 'wechat-connector-instance.sh'));
+  assert.deepEqual(startInvocation.args, ['start']);
+  assert.equal(startInvocation.options.cwd, repoRoot);
+  assert.equal(startInvocation.options.env.REMOTELAB_INSTANCE_ROOT, '/tmp/remotelab-instance');
+  assert.equal(startInvocation.options.env.CHAT_PORT, '7711');
+  assert.equal(startInvocation.options.env.REMOTELAB_PUBLIC_BASE_URL, 'https://trial24.example.com');
+  assert.equal(startInvocation.options.env.REMOTELAB_CONFIG_DIR, undefined);
+} finally {
+  rmSync(wechatSeedSandbox, { recursive: true, force: true });
+}
 
 const ownerMicroSelection = {
   selectedTool: 'micro-agent',
@@ -589,6 +654,7 @@ try {
   assert.equal(convergeOutput[0].nextWorkingDirectory, repoRoot);
   assert.equal(convergeOutput[0].drift.hasLegacyReleaseFlags, true);
   assert.equal(convergeOutput[0].drift.missingPublicBaseUrl, true);
+  assert.equal(convergeOutput[0].drift.sessionDispatchChanged, true);
   assert.equal(convergeOutput[0].drift.fileAssetEnvironmentChanged, true);
 } finally {
   rmSync(sandboxHome, { recursive: true, force: true });
@@ -659,6 +725,7 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_PROVIDER<\/key><string>tos<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_SESSION_DISPATCH<\/key><string>on<\/string>/);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_BRIDGE_ROOT_BASE_URL<\/key>/);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_ENABLE_ACTIVE_RELEASE<\/key>/);
 } finally {
@@ -673,7 +740,7 @@ try {
   mkdirSync(configDir, { recursive: true });
   mkdirSync(instanceConfigDir, { recursive: true });
   writeFileSync(join(configDir, 'guest-instance-defaults.json'), JSON.stringify({
-    bridgeRootBaseUrl: 'https://bridge.example.com',
+    bridgeBaseUrlTemplate: 'https://{name}-jolab.cpolar.top',
   }, null, 2));
   writeFileSync(join(configDir, 'guest-instances.json'), JSON.stringify([
     {
@@ -702,6 +769,9 @@ try {
     env: {
       ...process.env,
       HOME: linksSandboxHome,
+      REMOTELAB_BRIDGE_BASE_URL: '',
+      REMOTELAB_BRIDGE_BASE_URL_TEMPLATE: '',
+      REMOTELAB_BRIDGE_ROOT_BASE_URL: '',
     },
   });
   assert.equal(linksResult.status, 0, linksResult.stderr || linksResult.stdout);
@@ -709,7 +779,7 @@ try {
   assert.equal(linksOutput.length, 1);
   assert.equal(linksOutput[0].name, 'trial24');
   assert.equal(linksOutput[0].accessUrl, 'https://trial24.example.com/?token=abc123');
-  assert.equal(linksOutput[0].bridgeAccessUrl, 'https://bridge.example.com/trial24/?token=abc123');
+  assert.equal(linksOutput[0].bridgeAccessUrl, 'https://trial24-jolab.cpolar.top/?token=abc123');
   assert.equal(linksOutput[0].localAccessUrl, 'http://127.0.0.1:7711/?token=abc123');
   assert.deepEqual(
     linksOutput[0].accessChannels.map((channel) => channel.key),
@@ -722,13 +792,16 @@ const singleLinksResult = spawnSync('node', ['cli.js', 'guest-instance', 'links'
     env: {
       ...process.env,
       HOME: linksSandboxHome,
+      REMOTELAB_BRIDGE_BASE_URL: '',
+      REMOTELAB_BRIDGE_BASE_URL_TEMPLATE: '',
+      REMOTELAB_BRIDGE_ROOT_BASE_URL: '',
     },
   });
   assert.equal(singleLinksResult.status, 0, singleLinksResult.stderr || singleLinksResult.stdout);
   const singleLinksOutput = JSON.parse(singleLinksResult.stdout);
   assert.equal(singleLinksOutput.name, 'trial24');
   assert.equal(singleLinksOutput.accessUrl, 'https://trial24.example.com/?token=abc123');
-  assert.equal(singleLinksOutput.bridgeAccessUrl, 'https://bridge.example.com/trial24/?token=abc123');
+  assert.equal(singleLinksOutput.bridgeAccessUrl, 'https://trial24-jolab.cpolar.top/?token=abc123');
 } finally {
   rmSync(linksSandboxHome, { recursive: true, force: true });
 }

@@ -24,8 +24,7 @@
   .messages { padding: 28px 0; }
   .messages-inner,
   .queued-panel,
-  .input-wrapper,
-  .input-footer {
+  .input-stack {
     width: var(--chat-column-width);
     margin-left: auto;
     margin-right: auto;
@@ -77,13 +76,16 @@
   }
 
   body.keyboard-open .input-config-row {
-    padding-top: 6px;
     padding-bottom: 4px;
   }
 
   body.keyboard-open .input-row {
+    padding-top: 8px;
+  }
+
+  body.keyboard-open .input-actions-row {
     padding-top: 6px;
-    padding-bottom: 6px;
+    padding-bottom: 8px;
   }
 }
 
@@ -106,6 +108,7 @@ body.share-snapshot-mode .session-mode-banner {
 body.share-snapshot-mode .input-resize-handle,
 body.share-snapshot-mode .input-config-row,
 body.share-snapshot-mode .input-row,
+body.share-snapshot-mode .input-actions-row,
 body.share-snapshot-mode .composer-pending-state {
   display: none;
 }

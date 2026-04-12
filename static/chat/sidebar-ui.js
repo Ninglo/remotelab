@@ -37,7 +37,9 @@ function createNewSessionShortcut({
   }
   return dispatchAction({
     action: "create",
-    folder: "~",
+    folder: typeof window.remotelabGetDefaultSessionFolder === "function"
+      ? window.remotelabGetDefaultSessionFolder()
+      : "~",
     tool,
     sourceId: DEFAULT_APP_ID,
     sourceName: DEFAULT_WEB_SOURCE_NAME,

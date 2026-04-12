@@ -3,7 +3,12 @@ import { randomUUID } from 'crypto'
 import { setTimeout as delay } from 'timers/promises'
 
 import { AUTH_FILE } from '../lib/config.mjs'
-import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs'
+import {
+  buildAssistantReplyAttachmentFallbackText,
+  selectAssistantReplyEvent,
+  stripHiddenBlocks,
+} from '../lib/reply-selection.mjs'
+import { waitForReplyPublication } from '../lib/reply-publication-client.mjs'
 
 const RUN_POLL_INTERVAL_MS = 1500
 const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000
@@ -199,14 +204,18 @@ async function submitRemoteLabMessage(runtime, sessionId, summary) {
     method: 'POST',
     body: payload,
   })
-  if (![200, 202].includes(result.response.status) || !result.json?.run?.id) {
+  const queued = result.json?.queued === true
+  const duplicate = result.json?.duplicate === true
+  const runId = trimString(result.json?.run?.id)
+  if (![200, 202].includes(result.response.status) || (!runId && !queued && !duplicate)) {
     throw new Error(result.json?.error || result.text || `Failed to submit session message (${result.response.status})`)
   }
 
   return {
     requestId: payload.requestId,
-    runId: result.json.run.id,
-    duplicate: result.json?.duplicate === true,
+    runId: runId || null,
+    queued,
+    duplicate,
   }
 }
 
@@ -232,17 +241,33 @@ async function waitForRunCompletion(runtime, runId) {
 async function generateRemoteLabReply(runtime, summary) {
   const session = await createOrReuseSession(runtime, summary)
   const submission = await submitRemoteLabMessage(runtime, session.id, summary)
-  await waitForRunCompletion(runtime, submission.runId)
-  const replyEvent = await loadAssistantReply(
+  if (!submission.runId && submission.duplicate) {
+    return {
+      sessionId: session.id,
+      runId: '',
+      requestId: submission.requestId,
+      duplicate: true,
+      replyText: '',
+      silent: true,
+    }
+  }
+  const publication = await waitForReplyPublication(
     (path) => requestRemoteLab(runtime, path),
     session.id,
-    submission.runId,
     submission.requestId,
+    {
+      timeoutMs: RUN_POLL_TIMEOUT_MS,
+      intervalMs: RUN_POLL_INTERVAL_MS,
+    },
   )
-  const replyText = normalizeSpokenReplyText(replyEvent?.content)
+  if (publication.state !== 'ready') {
+    throw new Error(`reply publication ${publication.state || 'failed'}`)
+  }
+  const replyText = normalizeSpokenReplyText(publication.payload?.text || '')
+  const finalizedRunId = trimString(publication.finalRunId) || submission.runId || ''
   return {
     sessionId: session.id,
-    runId: submission.runId,
+    runId: finalizedRunId,
     requestId: submission.requestId,
     duplicate: submission.duplicate,
     replyText,

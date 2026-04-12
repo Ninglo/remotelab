@@ -7,7 +7,7 @@ import { parse as parseUrl, fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_ENABLED } from '../lib/config.mjs';
+import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_ENABLED, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import {
   getAuthSession, refreshAuthSession,
 } from '../lib/auth.mjs';
@@ -74,8 +74,13 @@ import { broadcastAll } from './ws-clients.mjs';
 import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleLocalBridgeOwnerRoutes, handleLocalBridgePublicRoutes } from './router-local-bridge-routes.mjs';
-import { handleCalendarFeedRoute, handleConnectorApiRoutes } from './router-connector-routes.mjs';
+import {
+  handleCalendarFeedRoute,
+  handleConnectorApiRoutes,
+  handleConnectorSurfaceRoutes,
+} from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
+import { getBootstrapInstanceSettings } from './instance-settings.mjs';
 import {
   resolveAuthSessionAgentId,
   resolveAuthSessionPrincipalId,
@@ -166,6 +171,7 @@ const staticMimeTypesByExtension = {
 const staticDirResolved = resolve(staticDir);
 const MESSAGE_SUBMISSION_MAX_BYTES = 256 * 1024 * 1024;
 const uploadedMediaMimeTypes = {
+  csv: 'text/csv; charset=utf-8',
   gif: 'image/gif',
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
@@ -181,6 +187,8 @@ const uploadedMediaMimeTypes = {
   pdf: 'application/pdf',
   png: 'image/png',
   txt: 'text/plain; charset=utf-8',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   wav: 'audio/wav',
   webm: 'video/webm',
   webp: 'image/webp',
@@ -713,10 +721,12 @@ function buildAuthInfo(authSession) {
   return info;
 }
 
-function buildChatPageBootstrap(authSession) {
+async function buildChatPageBootstrap(authSession) {
   return {
     auth: buildAuthInfo(authSession),
     assetUploads: getFileAssetBootstrapConfig(),
+    defaultSessionFolder: MANAGED_WORK_ROOT_DIR,
+    settings: await getBootstrapInstanceSettings(authSession),
   };
 }
 
@@ -1102,7 +1112,8 @@ function setShareSnapshotHeaders(res, nonce = '') {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Content-Security-Policy', [
     "default-src 'none'",
-    "base-uri 'none'",
+    // Share pages rely on <base href> so relative asset URLs stay inside the product scope.
+    "base-uri 'self'",
     "form-action 'none'",
     "frame-ancestors 'none'",
     "connect-src 'none'",
@@ -1181,12 +1192,13 @@ function getShareSnapshotPageDisplayName(snapshot) {
   return 'Shared Snapshot';
 }
 
-function buildShareSnapshotPageReplacements(req, shareId, snapshot) {
+function buildShareSnapshotPageReplacements(req, shareId, snapshot, productBasePath = '') {
   const displayName = getShareSnapshotPageDisplayName(snapshot);
   const pageTitle = `${displayName} · Shared Snapshot`;
   const description = 'A read-only RemoteLab conversation snapshot.';
   const origin = getRequestOrigin(req);
-  const shareUrl = origin ? `${origin}/share/${encodeURIComponent(shareId)}` : '';
+  const sharePath = `${ensureDirectoryPathname(productBasePath)}share/${encodeURIComponent(shareId)}`;
+  const shareUrl = origin ? `${origin}${sharePath}` : '';
   const escapedDisplayName = escapeHtml(displayName);
   const escapedDescription = escapeHtml(description);
   const escapedShareUrl = shareUrl ? escapeHtml(shareUrl) : '';
@@ -1217,15 +1229,16 @@ async function writeSnapshotPage(req, res, shareId, {
   failureText = 'Failed to load snapshot page',
 } = {}) {
   const pageNonce = '';
+  const productBasePath = getRequestProductBasePath(req);
   setShareSnapshotHeaders(res, pageNonce);
   try {
     const pageBuildInfo = await getPageBuildInfo();
     const sharePage = await readFile(chatTemplatePath, 'utf8');
     const body = renderPageTemplate(sharePage, pageNonce, {
-      ...buildTemplateReplacements(pageBuildInfo),
-      ...(snapshot ? buildShareSnapshotPageReplacements(req, shareId, snapshot) : {}),
+      ...buildTemplateReplacements(pageBuildInfo, productBasePath),
+      ...(snapshot ? buildShareSnapshotPageReplacements(req, shareId, snapshot, productBasePath) : {}),
       BODY_CLASS: 'visitor-mode share-snapshot-mode',
-      BOOTSTRAP_SCRIPT_TAGS: `<script src="../share-payload/${shareId}.js"></script>`,
+      BOOTSTRAP_SCRIPT_TAGS: `<script src="share-payload/${shareId}.js"></script>`,
     });
     writeCachedResponse(req, res, {
       statusCode: 200,
@@ -1481,12 +1494,30 @@ export async function handleRequest(req, res) {
 
   // ---- API endpoints ----
 
+  if (await handleConnectorSurfaceRoutes({
+    req,
+    res,
+    pathname,
+    authSession,
+    writeJson,
+    buildHeaders,
+    nonce,
+  })) {
+    return;
+  }
+
   if (await handleConnectorApiRoutes({
     req,
     res,
     pathname,
     authSession,
     writeJson,
+    nonce,
+    buildHeaders,
+    getPageBuildInfo,
+    renderPageTemplate,
+    buildTemplateReplacements,
+    serializeJsonForScript,
   })) {
     return;
   }
@@ -1655,11 +1686,11 @@ export async function handleRequest(req, res) {
   if (pathname === '/') {
     try {
       const authSession = getAuthSession(req);
-      const pageBootstrap = buildChatPageBootstrap(authSession);
-      const [pageBuildInfo, chatPage, refreshedCookie] = await Promise.all([
+      const [pageBuildInfo, chatPage, refreshedCookie, pageBootstrap] = await Promise.all([
         getPageBuildInfo(),
         readFile(chatTemplatePath, 'utf8'),
         refreshAuthSession(req),
+        buildChatPageBootstrap(authSession),
       ]);
       res.writeHead(200, buildHeaders({
         'Content-Type': 'text/html; charset=utf-8',

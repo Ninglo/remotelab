@@ -418,6 +418,7 @@ async function buildCompletionTarget(item, rootDir, requestId) {
     id: `mailbox_email_${item.id}`,
     type: 'email',
     requestId,
+    responseId: requestId,
     bindingId: binding.id,
     to: trimString(item?.message?.fromAddress),
     from: resolveReplyFromAddress(item),

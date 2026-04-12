@@ -162,8 +162,10 @@ export async function handleLocalBridgePublicRoutes({
 
   const deviceId = trimString(parts[3]);
   if (!deviceId) return false;
+  console.log(`[local-bridge-diag] device request: ${req.method} ${pathname} device=${deviceId}`);
   const device = await authenticateDeviceRequest(req, deviceId);
   if (!device) {
+    console.log(`[local-bridge-diag] AUTH FAILED for device=${deviceId}`);
     writeJson(res, 401, { error: 'Device authorization required' });
     return true;
   }
@@ -202,11 +204,14 @@ export async function handleLocalBridgePublicRoutes({
       ? Math.min(timeoutMsRaw, 30_000)
       : 0;
     const deadline = Date.now() + timeoutMs;
+    console.log(`[local-bridge-diag] commands/next for device=${deviceId} timeoutMs=${timeoutMs}`);
     let command = await pullNextLocalBridgeCommand(deviceId);
+    console.log(`[local-bridge-diag] first pull result: ${command ? command.id + ' (' + command.name + ')' : 'null'}`);
     while (!command && timeoutMs > 0 && Date.now() < deadline) {
       await sleep(200);
       command = await pullNextLocalBridgeCommand(deviceId);
     }
+    if (command) console.log(`[local-bridge-diag] returning command ${command.id} (${command.name})`);
     writeJson(res, 200, { command });
     return true;
   }

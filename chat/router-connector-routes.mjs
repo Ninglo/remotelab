@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'crypto';
+import { readFile } from 'fs/promises';
 import { homedir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import {
   ensureCalendarConnectorBinding,
   getConnectorBinding,
@@ -12,10 +14,22 @@ import {
   handleCalendarAuthCallback,
 } from '../lib/connector-calendar.mjs';
 import { resolveExternalRuntimeSelection } from '../lib/external-runtime-selection.mjs';
-import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs';
+import {
+  buildAssistantReplyAttachmentFallbackText,
+  selectAssistantReplyEvent,
+  stripHiddenBlocks,
+} from '../lib/reply-selection.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
+import { getConnectorSurface, listConnectorSurfaces } from '../lib/connector-surface-registry.mjs';
+import {
+  getWeChatLoginQrUrl,
+  getWeChatLoginSurface,
+  WECHAT_LOGIN_PAGE_PATH,
+  WECHAT_LOGIN_QR_PATH,
+  WECHAT_LOGIN_STATUS_PATH,
+} from '../lib/wechat-connector-login.mjs';
 import {
   CALENDAR_SUBSCRIBE_HELPER_PATH,
   buildCalendarSubscriptionChannels,
@@ -30,11 +44,13 @@ import { readEventBody } from './history.mjs';
 import {
   createSession,
   getRunState,
+  getSessionReplyPublication,
   getSession,
   getSessionEventsAfter,
   submitHttpMessage,
 } from './session-manager.mjs';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const SHORTCUT_BODY_MAX_BYTES = 32 * 1024;
 const SHORTCUT_DEFAULT_WAIT_MS = 0;
 const SHORTCUT_MAX_WAIT_MS = 20_000;
@@ -44,6 +60,7 @@ const CALENDAR_CONNECTOR_DIR = join(CONFIG_DIR, 'calendar-connector');
 const GOOGLE_CALENDAR_CREDENTIALS_PATH = join(CALENDAR_CONNECTOR_DIR, 'google-oauth-client.json');
 const GOOGLE_CALENDAR_TOKEN_PATH = join(CALENDAR_CONNECTOR_DIR, 'google-calendar-token.json');
 const GOOGLE_CALENDAR_AUTH_STATE_PATH = join(CALENDAR_CONNECTOR_DIR, 'google-calendar-auth-state.json');
+const WECHAT_CONNECTOR_LOGIN_TEMPLATE_PATH = join(__dirname, '..', 'templates', 'wechat-login.html');
 const DEFAULT_CALENDAR_BINDING_ID = 'binding_calendar_21d351117862';
 const DEFAULT_CALENDAR_ACCOUNT_HINT = 'Google Calendar';
 
@@ -71,6 +88,176 @@ function normalizeForwardedPrefix(value) {
   if (!trimmed) return '';
   const normalized = `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
   return normalized === '/' ? '' : normalized;
+}
+
+function getRequestProductBasePath(req) {
+  return normalizeForwardedPrefix(req?.headers?.['x-forwarded-prefix']);
+}
+
+function parseConnectorSurfaceProxyRoute(pathname) {
+  const match = pathname.match(/^\/connectors\/([a-z0-9._:-]+)(\/.*)?$/i);
+  if (!match) return null;
+  return {
+    connectorId: trimString(match[1]).toLowerCase(),
+    tailPath: trimString(match[2]) || '',
+  };
+}
+
+function parseConnectorSurfaceInfoRoute(pathname) {
+  const match = pathname.match(/^\/api\/connectors\/([a-z0-9._:-]+)\/surface$/i);
+  if (!match) return null;
+  return trimString(match[1]).toLowerCase();
+}
+
+function isConnectorSurfaceListRoute(pathname) {
+  return pathname === '/api/connectors/surfaces';
+}
+
+function buildConnectorMountPath(connectorId, tailPath = '') {
+  const normalizedTail = trimString(tailPath);
+  return `/connectors/${encodeURIComponent(connectorId)}${normalizedTail || ''}`;
+}
+
+function buildProxyRequestHeaders(req, { mountPath = '', nonce = '' } = {}) {
+  const headers = {};
+  for (const [rawKey, rawValue] of Object.entries(req.headers || {})) {
+    const key = trimString(rawKey).toLowerCase();
+    if (!key || ['host', 'cookie', 'content-length'].includes(key)) continue;
+    if (rawValue === undefined) continue;
+    headers[key] = Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);
+  }
+  if (mountPath) {
+    headers['x-forwarded-prefix'] = mountPath;
+    headers['x-remotelab-connector-mount'] = mountPath;
+  }
+  if (nonce) {
+    headers['x-remotelab-csp-nonce'] = nonce;
+  }
+  return headers;
+}
+
+function buildProxyResponseHeaders(response, { surface, mountPath }) {
+  const headers = {};
+  for (const [rawKey, rawValue] of response.headers.entries()) {
+    const key = trimString(rawKey).toLowerCase();
+    if (!key) continue;
+    if ([
+      'connection',
+      'content-length',
+      'content-security-policy',
+      'keep-alive',
+      'transfer-encoding',
+      'x-frame-options',
+    ].includes(key)) {
+      continue;
+    }
+    if (key === 'location') {
+      const value = trimString(rawValue);
+      if (!value) continue;
+      if (value.startsWith(surface.baseUrl)) {
+        headers.Location = value.replace(surface.baseUrl, mountPath);
+        continue;
+      }
+      if (value.startsWith('/')) {
+        headers.Location = `${mountPath}${value}`;
+        continue;
+      }
+    }
+    headers[rawKey] = rawValue;
+  }
+  return headers;
+}
+
+async function fetchConnectorSurfaceDescription(surface, { mountPath = '', nonce = '' } = {}) {
+  if (!surface?.baseUrl) return null;
+  const headers = {};
+  if (mountPath) {
+    headers['x-forwarded-prefix'] = mountPath;
+    headers['x-remotelab-connector-mount'] = mountPath;
+  }
+  if (nonce) {
+    headers['x-remotelab-csp-nonce'] = nonce;
+  }
+
+  try {
+    const response = await fetch(new URL('/surface', `${surface.baseUrl}/`), {
+      method: 'GET',
+      headers,
+      redirect: 'manual',
+    });
+    if (!response.ok) return null;
+    return await response.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
+function buildConnectorSurfaceInfoResponse(surface, description = null) {
+  const payload = description && typeof description === 'object' ? description : {};
+  const {
+    connectorId: ignoredConnectorId,
+    baseUrl: ignoredBaseUrl,
+    title: describedTitle,
+    entryPath: describedEntryPath,
+    allowEmbed: describedAllowEmbed,
+    updatedAt: describedUpdatedAt,
+    ...rest
+  } = payload;
+  void ignoredConnectorId;
+  void ignoredBaseUrl;
+
+  return {
+    connectorId: surface.connectorId,
+    title: trimString(describedTitle) || surface.title,
+    entryUrl: buildConnectorMountPath(surface.connectorId, describedEntryPath || surface.entryPath),
+    allowEmbed: describedAllowEmbed !== false && surface.allowEmbed !== false,
+    updatedAt: trimString(describedUpdatedAt) || surface.updatedAt,
+    ...rest,
+  };
+}
+
+async function getLegacyConnectorSurfaceInfo(connectorId) {
+  if (trimString(connectorId).toLowerCase() !== 'wechat') return null;
+  const surface = await getWeChatLoginSurface({
+    autoStart: false,
+    authPath: WECHAT_LOGIN_PAGE_PATH,
+    qrPath: WECHAT_LOGIN_QR_PATH,
+  });
+  return {
+    connectorId: 'wechat',
+    title: 'WeChat',
+    entryUrl: WECHAT_LOGIN_PAGE_PATH,
+    allowEmbed: true,
+    updatedAt: trimString(surface?.login?.updatedAt || surface?.account?.savedAt),
+    surfaceType: 'login',
+    description: 'Scan in WeChat to connect this workspace. The QR code refreshes behind one stable link.',
+    embed: {
+      mode: 'iframe',
+      sameOrigin: true,
+    },
+    surface,
+  };
+}
+
+async function listResolvedConnectorSurfaceInfo({ nonce = '' } = {}) {
+  const results = [];
+  const seen = new Set();
+
+  for (const surface of await listConnectorSurfaces()) {
+    seen.add(surface.connectorId);
+    const mountPath = buildConnectorMountPath(surface.connectorId);
+    const description = await fetchConnectorSurfaceDescription(surface, { mountPath, nonce });
+    results.push(buildConnectorSurfaceInfoResponse(surface, description));
+  }
+
+  const legacyWeChat = await getLegacyConnectorSurfaceInfo('wechat');
+  if (legacyWeChat && !seen.has(legacyWeChat.connectorId)) {
+    results.push(legacyWeChat);
+  }
+
+  return results.sort((left, right) => String(left?.title || left?.connectorId || '').localeCompare(
+    String(right?.title || right?.connectorId || ''),
+  ));
 }
 
 function buildVisibleCalendarSubscriptionChannels(req, feedToken) {
@@ -253,6 +440,28 @@ async function waitForRunResult(runId, timeoutMs) {
   return run;
 }
 
+function isTerminalReplyPublicationState(state) {
+  const normalized = trimString(state).toLowerCase();
+  return normalized === 'ready' || normalized === 'failed' || normalized === 'cancelled';
+}
+
+async function waitForReplyPublicationResult(sessionId, responseId, timeoutMs) {
+  if (!sessionId || !responseId) return null;
+  let publication = await getSessionReplyPublication(sessionId, responseId);
+  if ((publication && isTerminalReplyPublicationState(publication.state)) || timeoutMs <= 0) {
+    return publication;
+  }
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(SHORTCUT_POLL_INTERVAL_MS);
+    publication = await getSessionReplyPublication(sessionId, responseId) || publication;
+    if (publication && isTerminalReplyPublicationState(publication.state)) {
+      return publication;
+    }
+  }
+  return publication;
+}
+
 async function hydrateReplyEvent(sessionId, event) {
   if (!event?.bodyAvailable || event.bodyLoaded !== false || trimString(event.content)) {
     return event;
@@ -281,7 +490,11 @@ async function resolveRunReply(sessionId, run) {
     },
     hydrate: (event) => hydrateReplyEvent(sessionId, event),
   });
-  return selected ? stripHiddenBlocks(selected.content || '') : '';
+  if (!selected) return '';
+  return stripHiddenBlocks([
+    selected.content || '',
+    buildAssistantReplyAttachmentFallbackText(selected),
+  ].filter(Boolean).join('\n\n'));
 }
 
 // ---- Public: iCal feed (.ics) ----
@@ -319,9 +532,213 @@ export async function handleCalendarFeedRoute({ req, res, pathname }) {
   return true;
 }
 
+export async function handleConnectorSurfaceRoutes({
+  req,
+  res,
+  pathname,
+  authSession,
+  writeJson,
+  buildHeaders,
+  nonce,
+}) {
+  if (isConnectorSurfaceListRoute(pathname)) {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    writeJson(res, 200, {
+      surfaces: await listResolvedConnectorSurfaceInfo({ nonce }),
+    });
+    return true;
+  }
+
+  const infoConnectorId = parseConnectorSurfaceInfoRoute(pathname);
+  if (infoConnectorId) {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    const surface = await getConnectorSurface(infoConnectorId);
+    if (!surface) {
+      const fallbackSurface = await getLegacyConnectorSurfaceInfo(infoConnectorId);
+      if (fallbackSurface) {
+        writeJson(res, 200, fallbackSurface);
+        return true;
+      }
+      writeJson(res, 404, { error: 'Connector surface not found' });
+      return true;
+    }
+    const mountPath = buildConnectorMountPath(surface.connectorId);
+    const description = await fetchConnectorSurfaceDescription(surface, { mountPath, nonce });
+    writeJson(res, 200, buildConnectorSurfaceInfoResponse(surface, description));
+    return true;
+  }
+
+  const route = parseConnectorSurfaceProxyRoute(pathname);
+  if (!route) return false;
+  if (authSession?.role !== 'owner') {
+    writeJson(res, 403, { error: 'Owner access required' });
+    return true;
+  }
+
+  const surface = await getConnectorSurface(route.connectorId);
+  if (!surface?.baseUrl) {
+    return false;
+  }
+
+  const mountPath = buildConnectorMountPath(surface.connectorId);
+  const url = new URL(req.url || pathname, 'http://127.0.0.1');
+  const upstreamPath = route.tailPath || surface.entryPath || '/';
+  const upstreamUrl = new URL(upstreamPath, `${surface.baseUrl}/`);
+  upstreamUrl.search = url.search;
+
+  let body;
+  if (!['GET', 'HEAD'].includes(req.method || 'GET')) {
+    try {
+      const rawBody = await readBody(req, CONNECTOR_REQUEST_BODY_MAX_BYTES);
+      body = rawBody ? Buffer.from(rawBody) : undefined;
+    } catch (error) {
+      writeJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 400, {
+        error: error?.code === 'BODY_TOO_LARGE' ? 'Request body too large' : 'Bad request',
+      });
+      return true;
+    }
+  }
+
+  let response;
+  try {
+    response = await fetch(upstreamUrl, {
+      method: req.method || 'GET',
+      headers: buildProxyRequestHeaders(req, { mountPath, nonce }),
+      ...(body ? { body } : {}),
+      redirect: 'manual',
+    });
+  } catch (error) {
+    writeJson(res, 502, { error: `Connector surface unavailable: ${error?.message || 'unknown error'}` });
+    return true;
+  }
+
+  const payload = Buffer.from(await response.arrayBuffer());
+  const headers = buildProxyResponseHeaders(response, { surface, mountPath });
+  headers['Content-Length'] = String(payload.length);
+  res.writeHead(response.status, buildHeaders(headers));
+  res.end(payload);
+  return true;
+}
+
 // ---- Authenticated API routes ----
 
-export async function handleConnectorApiRoutes({ req, res, pathname, authSession, writeJson }) {
+export async function handleConnectorApiRoutes({
+  req,
+  res,
+  pathname,
+  authSession,
+  writeJson,
+  nonce,
+  buildHeaders,
+  getPageBuildInfo,
+  renderPageTemplate,
+  buildTemplateReplacements,
+  serializeJsonForScript,
+}) {
+  if (pathname === WECHAT_LOGIN_PAGE_PATH && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+
+    let template = '';
+    try {
+      template = await readFile(WECHAT_CONNECTOR_LOGIN_TEMPLATE_PATH, 'utf8');
+    } catch {
+      res.writeHead(500, {
+        'Content-Type': 'text/plain; charset=utf-8',
+      });
+      res.end('WeChat login template missing.');
+      return true;
+    }
+
+    const pageBuildInfo = await getPageBuildInfo();
+    const initialState = await getWeChatLoginSurface({ autoStart: true });
+    const body = renderPageTemplate(template, nonce, {
+      ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
+      PAGE_TITLE: 'Connect WeChat',
+      BODY_CLASS: 'wechat-login-page',
+      BOOTSTRAP_JSON: serializeJsonForScript({
+        wechatLogin: {
+          initialState,
+          statusEndpoint: WECHAT_LOGIN_STATUS_PATH,
+          qrEndpoint: WECHAT_LOGIN_QR_PATH,
+        },
+      }),
+    });
+    res.writeHead(200, buildHeaders({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Robots-Tag': 'noindex, nofollow, noarchive',
+    }));
+    res.end(body);
+    return true;
+  }
+
+  if (pathname === WECHAT_LOGIN_STATUS_PATH && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    writeJson(res, 200, await getWeChatLoginSurface({ autoStart: true }));
+    return true;
+  }
+
+  if (pathname === WECHAT_LOGIN_QR_PATH && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    const { surface, qrcodeUrl } = await getWeChatLoginQrUrl({ autoStart: true });
+    if (surface?.capabilityState === 'ready') {
+      res.writeHead(409, buildHeaders({
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      }));
+      res.end('WeChat is already connected.');
+      return true;
+    }
+    if (!qrcodeUrl) {
+      res.writeHead(503, buildHeaders({
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      }));
+      res.end('WeChat QR code is not ready yet.');
+      return true;
+    }
+    try {
+      const response = await fetch(qrcodeUrl);
+      if (!response.ok) {
+        throw new Error(`QR upstream ${response.status}`);
+      }
+      const contentType = trimString(response.headers.get('content-type')) || 'image/png';
+      const body = Buffer.from(await response.arrayBuffer());
+      res.writeHead(200, buildHeaders({
+        'Content-Type': contentType,
+        'Content-Length': String(body.length),
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+        'X-Robots-Tag': 'noindex, nofollow, noarchive',
+      }));
+      res.end(body);
+      return true;
+    } catch (error) {
+      res.writeHead(502, buildHeaders({
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      }));
+      res.end(`Failed to load WeChat QR image: ${error?.message || 'unknown error'}`);
+      return true;
+    }
+  }
+
   if (pathname === '/api/connectors/calendar/google/callback' && req.method === 'GET') {
     const code = trimString(new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('code'));
     const state = trimString(new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('state'));
@@ -564,18 +981,38 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
       });
 
       const sessionUrl = buildSessionUrl(req, session.id);
-      const activeRun = outcome.run?.id ? await waitForRunResult(outcome.run.id, waitMs) : null;
-      if (activeRun && activeRun.state === 'completed') {
-        const reply = await resolveRunReply(session.id, activeRun);
+      const responseId = trimString(outcome.response?.id || requestId);
+      const publication = responseId
+        ? await waitForReplyPublicationResult(session.id, responseId, waitMs)
+        : null;
+      if (publication?.state === 'ready') {
+        const reply = trimString(publication.payload?.text || '');
         writeJson(res, 200, {
           status: 'completed',
           sessionId: session.id,
-          runId: activeRun.id,
+          runId: publication.finalRunId || outcome.run?.id || null,
           requestId,
+          responseId,
           duplicate: outcome.duplicate,
           queued: outcome.queued,
           reply,
           speech: reply,
+          url: sessionUrl,
+        });
+        return true;
+      }
+
+      const activeRun = outcome.run?.id ? await waitForRunResult(outcome.run.id, 0) : null;
+      if (publication && isTerminalReplyPublicationState(publication.state)) {
+        writeJson(res, 200, {
+          status: publication.state,
+          sessionId: session.id,
+          runId: publication.finalRunId || activeRun?.id || outcome.run?.id || null,
+          requestId,
+          responseId,
+          duplicate: outcome.duplicate,
+          queued: outcome.queued,
+          reply: null,
           url: sessionUrl,
         });
         return true;
@@ -587,6 +1024,7 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
           sessionId: session.id,
           runId: activeRun.id,
           requestId,
+          responseId,
           duplicate: outcome.duplicate,
           queued: outcome.queued,
           reply: null,
@@ -601,8 +1039,10 @@ export async function handleConnectorApiRoutes({ req, res, pathname, authSession
         sessionId: session.id,
         runId: activeRun?.id || outcome.run?.id || null,
         requestId,
+        responseId,
         duplicate: outcome.duplicate,
         queued: outcome.queued,
+        responseState: publication?.state || outcome.response?.state || null,
         reply: null,
         url: sessionUrl,
       });

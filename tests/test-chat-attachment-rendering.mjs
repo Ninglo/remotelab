@@ -81,6 +81,9 @@ const context = {
   document: {
     createElement,
   },
+  resolveUiProductPath(path) {
+    return typeof path === 'string' ? path : String(path || '');
+  },
   renderUiIcon(name) {
     return `<svg data-icon="${name}"></svg>`;
   },
@@ -156,14 +159,14 @@ assert.equal(resultAssetNode.children[1].href, '/api/assets/fasset_result_video/
 
 const sharedAssetNode = context.createMessageAttachmentNode({
   assetId: 'asset_shared_attachment',
-  url: '../share-asset/snap_demo/asset_shared_attachment',
+  url: 'share-asset/snap_demo/asset_shared_attachment',
   originalName: 'shared-report.csv',
   mimeType: 'text/csv',
   sizeBytes: 1024,
   renderAs: 'file',
 });
 assert.equal(sharedAssetNode.tagName, 'DIV', 'shared snapshot file attachments should render as attachment rows');
-assert.equal(sharedAssetNode.children[1].href, '../share-asset/snap_demo/asset_shared_attachment?download=1', 'shared snapshot file downloads should stay on the public share asset route');
+assert.equal(sharedAssetNode.children[1].href, 'share-asset/snap_demo/asset_shared_attachment?download=1', 'shared snapshot file downloads should stay on the public share asset route');
 
 const imageAssetNode = context.createMessageAttachmentNode({
   assetId: 'fasset_preview_png',
@@ -175,12 +178,12 @@ assert.equal(imageAssetNode.src, '/api/assets/fasset_preview_png/download', 'ima
 
 const sharedImageNode = context.createMessageAttachmentNode({
   assetId: 'asset_shared_image',
-  url: '../share-asset/snap_demo/asset_shared_image',
+  url: 'share-asset/snap_demo/asset_shared_image',
   originalName: 'share-shot.png',
   mimeType: 'image/png',
 });
 assert.equal(sharedImageNode.tagName, 'IMG', 'shared snapshot images should still render inline previews');
-assert.equal(sharedImageNode.src, '../share-asset/snap_demo/asset_shared_image', 'shared snapshot image previews should use the public share asset route');
+assert.equal(sharedImageNode.src, 'share-asset/snap_demo/asset_shared_image', 'shared snapshot image previews should use the public share asset route');
 
 const genericComposerPreview = context.createComposerAttachmentPreviewNode({
   objectUrl: 'blob:report',

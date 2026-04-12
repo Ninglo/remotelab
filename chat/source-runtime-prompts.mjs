@@ -24,6 +24,19 @@ function buildFeishuRuntimePrompt(session) {
   ].filter(Boolean).join('\n');
 }
 
+function buildWeChatRuntimePrompt(session) {
+  const sourceName = trimString(session?.sourceName) || 'WeChat';
+  return [
+    `You are interacting through ${sourceName} via RemoteLab on the user's own machine.`,
+    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, actually do the work before replying.',
+    `Produce plain text suitable for sending back through ${sourceName}.`,
+    'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
+    'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
+    'Prefer concise direct replies unless the user explicitly asked for depth.',
+    'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
+  ].join('\n');
+}
+
 function buildVoiceRuntimePrompt() {
   return [
     'You are interacting through a local wake-word voice connector powered by RemoteLab on the user\'s own machine.',
@@ -82,6 +95,9 @@ export function buildSourceRuntimePrompt(session) {
   const sourceId = normalizeSourceKey(session?.sourceId);
   if (sourceId === 'feishu' || sourceId === 'lark') {
     return buildFeishuRuntimePrompt(session);
+  }
+  if (sourceId === 'wechat' || sourceId === 'weixin') {
+    return buildWeChatRuntimePrompt(session);
   }
   if (sourceId === 'voice') {
     return buildVoiceRuntimePrompt();

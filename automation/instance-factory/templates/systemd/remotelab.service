@@ -1,0 +1,15 @@
+[Unit]
+Description=RemoteLab owner service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{repoCheckoutPath}}
+EnvironmentFile=/etc/remotelab/install-profile.env
+ExecStart=/usr/bin/env node {{repoCheckoutPath}}/chat-server.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

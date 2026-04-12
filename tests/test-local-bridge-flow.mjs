@@ -197,6 +197,13 @@ function buildDeviceHeaders(token, extra = {}) {
   };
 }
 
+function mutateLocalBridgeState(home, mutator) {
+  const statePath = join(home, '.config', 'remotelab', 'chat-local-bridge.json');
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  mutator(state);
+  writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
+}
+
 try {
   const { home } = setupTempHome();
   const port = randomPort();
@@ -266,6 +273,104 @@ try {
     const statusJson = JSON.parse(statusCli.stdout);
     assert.equal(statusJson.localBridge.state, 'online', 'session status should show the helper online');
     assert.equal(statusJson.localBridge.allowedRoots[0].alias, 'projects', 'session status should surface allowed roots');
+
+    const parallelListCliA = runNodeCliAsync([
+      'cli.js',
+      'local-bridge',
+      'list',
+      '--session',
+      session.id,
+      '--base-url',
+      baseUrl,
+      '--root',
+      'projects',
+      '--path',
+      '.',
+      '--json',
+    ], { HOME: home });
+    const parallelListCliB = runNodeCliAsync([
+      'cli.js',
+      'local-bridge',
+      'list',
+      '--session',
+      session.id,
+      '--base-url',
+      baseUrl,
+      '--root',
+      'projects',
+      '--path',
+      '.',
+      '--json',
+    ], { HOME: home });
+
+    const parallelCommandA = await waitFor(async () => {
+      const res = await request(
+        port,
+        'GET',
+        `/api/local-bridge/devices/${deviceId}/commands/next?timeoutMs=100`,
+        null,
+        buildDeviceHeaders(deviceToken),
+      );
+      if (res.status !== 200 || !res.json?.command?.id) return false;
+      return res.json.command;
+    }, 'parallel list command A');
+    const parallelCommandB = await waitFor(async () => {
+      const res = await request(
+        port,
+        'GET',
+        `/api/local-bridge/devices/${deviceId}/commands/next?timeoutMs=100`,
+        null,
+        buildDeviceHeaders(deviceToken),
+      );
+      if (res.status !== 200 || !res.json?.command?.id) return false;
+      return res.json.command;
+    }, 'parallel list command B');
+    assert.equal(parallelCommandA.name, 'list', 'first concurrent claim should return a list command');
+    assert.equal(parallelCommandB.name, 'list', 'second concurrent claim should return a list command');
+    assert.notEqual(parallelCommandA.id, parallelCommandB.id, 'concurrent pulls should claim distinct commands');
+
+    const parallelResultARes = await request(
+      port,
+      'POST',
+      `/api/local-bridge/devices/${deviceId}/commands/${parallelCommandA.id}/result`,
+      {
+        result: {
+          entries: [
+            { name: 'scope.txt', relPath: 'scope.txt', kind: 'file', size: 12 },
+          ],
+        },
+      },
+      buildDeviceHeaders(deviceToken),
+    );
+    assert.equal(parallelResultARes.status, 200, 'first concurrent command should complete');
+    const parallelResultBRes = await request(
+      port,
+      'POST',
+      `/api/local-bridge/devices/${deviceId}/commands/${parallelCommandB.id}/result`,
+      {
+        result: {
+          entries: [
+            { name: 'main.rvt', relPath: 'main.rvt', kind: 'file', size: 15 },
+          ],
+        },
+      },
+      buildDeviceHeaders(deviceToken),
+    );
+    assert.equal(parallelResultBRes.status, 200, 'second concurrent command should complete');
+
+    const parallelListCliResultA = await parallelListCliA.promise;
+    assert.equal(parallelListCliResultA.code, 0, `first concurrent list CLI should exit cleanly: ${parallelListCliResultA.stderr}`);
+    const parallelListCliJsonA = JSON.parse(parallelListCliResultA.stdout);
+    const parallelListCliResultB = await parallelListCliB.promise;
+    assert.equal(parallelListCliResultB.code, 0, `second concurrent list CLI should exit cleanly: ${parallelListCliResultB.stderr}`);
+    const parallelListCliJsonB = JSON.parse(parallelListCliResultB.stdout);
+    assert.deepEqual(
+      [parallelListCliJsonA, parallelListCliJsonB]
+        .map((entry) => entry.command.result.entries[0].name)
+        .sort(),
+      ['main.rvt', 'scope.txt'],
+      'concurrent list CLIs should each receive one of the completed command results',
+    );
 
     const listCli = runNodeCliAsync([
       'cli.js',
@@ -393,6 +498,84 @@ try {
     const downloadRes = await request(port, 'GET', downloadPath);
     assert.equal(downloadRes.status, 200, 'staged asset should be downloadable from the session');
     assert.equal(downloadRes.buffer.toString('utf8'), 'fake-rvt-binary', 'downloaded staged asset should match uploaded bytes');
+
+    const staleCommandRes = await request(port, 'POST', `/api/sessions/${session.id}/local-bridge/commands`, {
+      name: 'stat',
+      args: { rootAlias: 'projects', relPath: 'scope.txt' },
+    });
+    assert.equal(staleCommandRes.status, 202, 'stale test command should queue');
+    const staleCommandId = staleCommandRes.json?.command?.id;
+    assert.ok(staleCommandId, 'stale test command should return an id');
+
+    const staleClaim = await waitFor(async () => {
+      const res = await request(
+        port,
+        'GET',
+        `/api/local-bridge/devices/${deviceId}/commands/next?timeoutMs=100`,
+        null,
+        buildDeviceHeaders(deviceToken),
+      );
+      if (res.status !== 200 || !res.json?.command?.id) return false;
+      return res.json.command.id === staleCommandId ? res.json.command : false;
+    }, 'stale command claim');
+    assert.equal(staleClaim.name, 'stat', 'stale test should claim the stat command');
+
+    mutateLocalBridgeState(home, (state) => {
+      const staleAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const device = state.devices.find((entry) => entry.id === deviceId);
+      const command = state.commands.find((entry) => entry.id === staleCommandId);
+      device.lastSeenAt = staleAt;
+      command.claimedAt = staleAt;
+    });
+
+    const recoveryCommandRes = await request(port, 'POST', `/api/sessions/${session.id}/local-bridge/commands`, {
+      name: 'stat',
+      args: { rootAlias: 'projects', relPath: 'main.rvt' },
+    });
+    assert.equal(recoveryCommandRes.status, 202, 'recovery command should queue');
+    const recoveryCommandId = recoveryCommandRes.json?.command?.id;
+    assert.ok(recoveryCommandId, 'recovery command should return an id');
+
+    const recoveryClaim = await waitFor(async () => {
+      const res = await request(
+        port,
+        'GET',
+        `/api/local-bridge/devices/${deviceId}/commands/next?timeoutMs=100`,
+        null,
+        buildDeviceHeaders(deviceToken),
+      );
+      if (res.status !== 200 || !res.json?.command?.id) return false;
+      return res.json.command.id === recoveryCommandId ? res.json.command : false;
+    }, 'recovery command claim');
+    assert.equal(recoveryClaim.name, 'stat', 'recovery command should still be claimable after stale cleanup');
+
+    const staleStateRes = await request(port, 'GET', `/api/sessions/${session.id}/local-bridge/commands/${staleCommandId}`);
+    assert.equal(staleStateRes.status, 200, 'stale command should remain queryable');
+    assert.equal(staleStateRes.json?.command?.state, 'failed', 'stale command should be failed once the device is considered offline');
+    assert.match(staleStateRes.json?.command?.error || '', /went offline/i, 'stale command should explain the offline recovery');
+
+    const staleLateResultRes = await request(
+      port,
+      'POST',
+      `/api/local-bridge/devices/${deviceId}/commands/${staleCommandId}/result`,
+      { result: { ignored: true } },
+      buildDeviceHeaders(deviceToken),
+    );
+    assert.equal(staleLateResultRes.status, 200, 'late stale result submission should be accepted idempotently');
+    assert.equal(staleLateResultRes.json?.command?.state, 'failed', 'late stale result should not overwrite the failed state');
+
+    const recoveryResultRes = await request(
+      port,
+      'POST',
+      `/api/local-bridge/devices/${deviceId}/commands/${recoveryCommandId}/result`,
+      {
+        result: {
+          entry: { name: 'main.rvt', relPath: 'main.rvt', kind: 'file', size: 15 },
+        },
+      },
+      buildDeviceHeaders(deviceToken),
+    );
+    assert.equal(recoveryResultRes.status, 200, 'recovery command should complete normally');
 
     console.log('test-local-bridge-flow: ok');
   } finally {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import http from 'http';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -657,6 +657,164 @@ try {
     text: 'Cloudflare outbound client should preserve the requested recipient.',
     inReplyTo: '',
     references: '',
+  });
+
+  const attachmentPath = join(workspace, 'mail-attachment.txt');
+  writeFileSync(attachmentPath, 'attachment-body', 'utf8');
+
+  const ingestedAttachmentOnly = await ingestRawMessage(
+    [
+      'From: owner@example.com',
+      'To: rowan@example.com',
+      'Subject: attachment only reply',
+      'Date: Tue, 10 Mar 2026 03:20:00 +0800',
+      'Message-ID: <mail-cloudflare-attachment-only@example.com>',
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      'please send back only the generated attachment.',
+    ].join('\n'),
+    'cloudflare-worker-attachment-only.eml',
+    mailboxRoot,
+    { text: 'please send back only the generated attachment.' },
+  );
+
+  const approvedAttachmentOnly = await approveMessage(ingestedAttachmentOnly.id, mailboxRoot, 'tester');
+  const attachmentOnlyRequestId = `mailbox_reply_${approvedAttachmentOnly.id}`;
+  const attachmentOnlySession = await createSession(workspace, 'codex', 'Cloudflare attachment-only reply test', {
+    completionTargets: [{
+      type: 'email',
+      requestId: attachmentOnlyRequestId,
+      to: 'owner@example.com',
+      subject: 'Re: attachment only reply',
+      inReplyTo: '<mail-cloudflare-attachment-only@example.com>',
+      references: '<mail-cloudflare-attachment-only@example.com>',
+      mailboxRoot,
+      mailboxItemId: approvedAttachmentOnly.id,
+    }],
+  });
+  const attachmentOnlyRun = await createRun({
+    status: {
+      sessionId: attachmentOnlySession.id,
+      requestId: attachmentOnlyRequestId,
+      state: 'completed',
+      tool: 'codex',
+    },
+    manifest: {
+      sessionId: attachmentOnlySession.id,
+      requestId: attachmentOnlyRequestId,
+      folder: workspace,
+      tool: 'codex',
+      prompt: 'reply with an attachment only',
+      options: {},
+    },
+  });
+
+  await appendEvent(attachmentOnlySession.id, messageEvent('assistant', '', [{
+    originalName: 'mail-attachment.txt',
+    filename: 'mail-attachment.txt',
+    mimeType: 'text/plain',
+    savedPath: attachmentPath,
+    sizeBytes: 15,
+  }], {
+    runId: attachmentOnlyRun.id,
+    requestId: attachmentOnlyRequestId,
+  }));
+
+  const attachmentRequestIndex = requests.length;
+  const attachmentOnlyDeliveries = await dispatchSessionEmailCompletionTargets(attachmentOnlySession, attachmentOnlyRun);
+  assert.equal(attachmentOnlyDeliveries.length, 1);
+  assert.equal(attachmentOnlyDeliveries[0].state, 'sent');
+  assert.equal(requests.length, attachmentRequestIndex + 1);
+  assert.deepEqual(JSON.parse(requests[attachmentRequestIndex].body), {
+    to: ['owner@example.com'],
+    from: 'rowan@example.com',
+    subject: 'Re: attachment only reply',
+    text: 'Attached file: mail-attachment.txt',
+    inReplyTo: '<mail-cloudflare-attachment-only@example.com>',
+    references: '<mail-cloudflare-attachment-only@example.com>',
+    attachments: [{
+      filename: 'mail-attachment.txt',
+      contentType: 'text/plain',
+      contentBase64: Buffer.from('attachment-body', 'utf8').toString('base64'),
+    }],
+  });
+
+  const directResendAttachmentRequests = [];
+  const resendAttachmentResult = await sendOutboundEmail({
+    to: 'owner@example.com',
+    from: 'rowan@example.com',
+    subject: 'Resend attachment send',
+    text: 'Attachment send.',
+    attachments: [{
+      filename: 'mail-attachment.txt',
+      contentType: 'text/plain',
+      contentBase64: Buffer.from('attachment-body', 'utf8').toString('base64'),
+    }],
+  }, {
+    provider: 'resend_api',
+    apiBaseUrl: 'https://api.resend.test',
+    from: 'rowan@example.com',
+    apiKey: 'resend-api-secret',
+  }, {
+    fetchImpl: async (url, init) => {
+      directResendAttachmentRequests.push({ url, init });
+      return new Response(JSON.stringify({ id: 're_attachment_123' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    },
+  });
+  assert.equal(resendAttachmentResult.statusCode, 202);
+  assert.equal(directResendAttachmentRequests.length, 1);
+  assert.deepEqual(JSON.parse(directResendAttachmentRequests[0].init.body), {
+    from: 'rowan@example.com',
+    to: 'owner@example.com',
+    subject: 'Resend attachment send',
+    text: 'Attachment send.',
+    attachments: [{
+      filename: 'mail-attachment.txt',
+      content: Buffer.from('attachment-body', 'utf8').toString('base64'),
+    }],
+  });
+
+  const appleAttachmentMessages = [];
+  const appleAttachmentResult = await sendOutboundEmail({
+    to: 'owner@example.com',
+    from: 'rowan@example.com',
+    subject: 'Apple Mail attachment send',
+    text: 'Attachment send.',
+    attachments: [{
+      filename: 'mail-attachment.txt',
+      contentType: 'text/plain',
+      contentBase64: Buffer.from('attachment-body', 'utf8').toString('base64'),
+      sourcePath: attachmentPath,
+    }],
+  }, {
+    provider: 'apple_mail',
+    account: 'Google',
+  }, {
+    sendAppleMailMessageImpl: async (message) => {
+      appleAttachmentMessages.push(message);
+      return {
+        sender: 'Google <owner@example.com>',
+      };
+    },
+  });
+  assert.equal(appleAttachmentResult.statusCode, 202);
+  assert.equal(appleAttachmentMessages.length, 1);
+  assert.deepEqual(appleAttachmentMessages[0], {
+    provider: 'apple_mail',
+    account: 'Google',
+    from: '',
+    to: ['owner@example.com'],
+    subject: 'Apple Mail attachment send',
+    text: 'Attachment send.',
+    attachments: [{
+      filename: 'mail-attachment.txt',
+      contentType: 'text/plain',
+      contentBase64: Buffer.from('attachment-body', 'utf8').toString('base64'),
+      sourcePath: attachmentPath,
+    }],
   });
 
   const curlRequests = [];

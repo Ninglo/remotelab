@@ -17,6 +17,8 @@ import { ensureDir, pathExists, statOrNull } from './fs-utils.mjs';
 export const MIME_EXTENSIONS = {
   'application/json': '.json',
   'application/pdf': '.pdf',
+  'application/vnd.ms-excel': '.xls',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
   'application/zip': '.zip',
   'audio/mpeg': '.mp3',
   'audio/mp4': '.m4a',
@@ -27,6 +29,7 @@ export const MIME_EXTENSIONS = {
   'image/png': '.png',
   'image/svg+xml': '.svg',
   'image/webp': '.webp',
+  'text/csv': '.csv',
   'text/markdown': '.md',
   'text/plain': '.txt',
   'video/mp4': '.mp4',

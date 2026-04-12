@@ -1,0 +1,13 @@
+[Unit]
+Description=RemoteLab Cloudflare tunnel
+After=network-online.target remotelab.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env cloudflared tunnel --config /etc/cloudflared/config.yml run {{tunnelName}}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

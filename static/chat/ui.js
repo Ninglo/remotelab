@@ -278,6 +278,221 @@ function createComposerAttachmentPreviewNode(attachment) {
   return createAttachmentFileNode(attachment, { compact: true });
 }
 
+function getComposerPendingInlineStatusText(stage) {
+  const key =
+    stage === "uploading"
+      ? "compose.inline.uploading"
+      : stage === "checking"
+        ? "compose.inline.checking"
+        : stage === "processing"
+          ? "compose.inline.processing"
+          : "compose.inline.sending";
+  const translated = typeof t === "function" ? t(key) : key;
+  if (translated && translated !== key) {
+    return translated;
+  }
+  switch (stage) {
+    case "uploading":
+      return "Uploading attachment…";
+    case "checking":
+      return "Sent, checking what happens next…";
+    case "processing":
+      return "Received, processing…";
+    default:
+      return "Sending…";
+  }
+}
+
+function findUserMessageNodesByRequestId(requestId) {
+  if (!messagesInner || !requestId) return [];
+  return Array.from(messagesInner.querySelectorAll(".msg-user"))
+    .filter((node) => (node.dataset?.requestId || "") === requestId);
+}
+
+function findCommittedUserMessageNode(requestId) {
+  return findUserMessageNodesByRequestId(requestId)
+    .find((node) => !node.classList.contains("msg-user-local-echo")) || null;
+}
+
+function findLocalEchoUserMessageNode(requestId) {
+  return findUserMessageNodesByRequestId(requestId)
+    .find((node) => node.classList.contains("msg-user-local-echo")) || null;
+}
+
+function removeComposerPendingUserStatuses({ keepRequestId = "" } = {}) {
+  if (!messagesInner) return;
+  const wraps = Array.from(messagesInner.querySelectorAll(".msg-user"));
+  for (const wrap of wraps) {
+    if (keepRequestId && (wrap.dataset?.requestId || "") === keepRequestId) continue;
+    const bubble = wrap.querySelector(".msg-user-bubble");
+    const status = bubble?.querySelector?.(".msg-user-status[data-owned-by=\"composer-pending\"]");
+    if (status) status.remove();
+    if (wrap.classList.contains("msg-user-local-echo")) {
+      wrap.remove();
+      continue;
+    }
+    bubble?.classList?.remove("msg-pending");
+  }
+}
+
+function setUserMessageStatus(wrap, text, stage = "") {
+  if (!wrap) return;
+  const bubble = wrap.querySelector(".msg-user-bubble");
+  if (!bubble) return;
+  const existing = bubble.querySelector(".msg-user-status[data-owned-by=\"composer-pending\"]");
+  if (!text) {
+    existing?.remove();
+    bubble.classList.remove("msg-pending");
+    return;
+  }
+
+  const status = existing || document.createElement("div");
+  status.className = "msg-user-status";
+  if (stage) status.classList.add(`msg-user-status-${stage}`);
+  status.dataset.ownedBy = "composer-pending";
+
+  let dot = status.querySelector(".msg-user-status-dot");
+  if (!dot) {
+    dot = document.createElement("span");
+    dot.className = "msg-user-status-dot";
+    status.appendChild(dot);
+  }
+
+  let label = status.querySelector(".msg-user-status-text");
+  if (!label) {
+    label = document.createElement("span");
+    label.className = "msg-user-status-text";
+    status.appendChild(label);
+  }
+  label.textContent = text;
+
+  const timestamp = bubble.querySelector(".msg-timestamp");
+  if (existing) {
+    existing.className = status.className;
+    existing.dataset.ownedBy = status.dataset.ownedBy;
+    const existingLabel = existing.querySelector(".msg-user-status-text");
+    if (existingLabel) existingLabel.textContent = text;
+  } else if (timestamp) {
+    bubble.insertBefore(status, timestamp);
+  } else {
+    bubble.appendChild(status);
+  }
+
+  bubble.classList.add("msg-pending");
+}
+
+function createUserMessageNode(evt, {
+  pending = false,
+  localEcho = false,
+  statusText = "",
+  statusStage = "",
+} = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg-user";
+  if (localEcho) {
+    wrap.classList.add("msg-user-local-echo");
+  }
+  if (evt?.requestId) {
+    wrap.dataset.requestId = evt.requestId;
+  }
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg-user-bubble";
+  if (pending) {
+    bubble.classList.add("msg-pending");
+  }
+
+  const userAttachments = Array.isArray(evt?.attachments) && evt.attachments.length > 0
+    ? evt.attachments
+    : (Array.isArray(evt?.images) ? evt.images : []);
+  if (userAttachments.length > 0) {
+    const imgWrap = document.createElement("div");
+    imgWrap.className = "msg-images";
+    for (const img of userAttachments) {
+      const attachmentNode = createMessageAttachmentNode(img);
+      if (!attachmentNode) continue;
+      imgWrap.appendChild(attachmentNode);
+    }
+    bubble.appendChild(imgWrap);
+  }
+  if (evt?.content || evt?.bodyAvailable) {
+    const span = document.createElement("span");
+    const preview = evt.content || evt.bodyPreview || "";
+    span.textContent = formatDecodedDisplayText(preview);
+    bubble.appendChild(span);
+    if (markLazyEventBodyNode(span, evt, {
+      preview: evt.bodyPreview || evt.content || "",
+      renderMode: "text",
+    })) {
+      if (typeof queueHydrateLazyNodes === "function") {
+        queueHydrateLazyNodes(wrap);
+      }
+    }
+  }
+
+  if (statusText) {
+    setUserMessageStatus(wrap, statusText, statusStage);
+  }
+
+  appendMessageTimestamp(bubble, evt?.timestamp, "msg-user-time");
+  wrap.appendChild(bubble);
+  return wrap;
+}
+
+function syncComposerPendingTurnFeedback() {
+  if (!messagesInner) return;
+  const pendingSend = typeof getComposerPendingSendSnapshot === "function"
+    ? getComposerPendingSendSnapshot()
+    : null;
+  const activePending = pendingSend && pendingSend.sessionId === currentSessionId
+    ? pendingSend
+    : null;
+
+  if (!activePending?.requestId) {
+    removeComposerPendingUserStatuses();
+    return;
+  }
+
+  const requestId = activePending.requestId;
+  const statusText = getComposerPendingInlineStatusText(activePending.stage);
+  removeComposerPendingUserStatuses({ keepRequestId: requestId });
+
+  const committedNode = findCommittedUserMessageNode(requestId);
+  const localEchoNode = findLocalEchoUserMessageNode(requestId);
+  if (committedNode) {
+    if (localEchoNode) {
+      localEchoNode.remove();
+    }
+    committedNode.classList.remove("msg-user-local-echo");
+    setUserMessageStatus(committedNode, statusText, activePending.stage);
+    committedNode.querySelector(".msg-user-bubble")?.classList?.remove("msg-pending");
+    return;
+  }
+
+  const target = localEchoNode || createUserMessageNode({
+    requestId,
+    content: activePending.text || "",
+    attachments: activePending.images || [],
+    timestamp: Date.now(),
+  }, {
+    pending: true,
+    localEcho: true,
+    statusText,
+    statusStage: activePending.stage,
+  });
+
+  setUserMessageStatus(target, statusText, activePending.stage);
+  if (!localEchoNode) {
+    messagesInner.appendChild(target);
+    if (emptyState.parentNode === messagesInner) {
+      emptyState.remove();
+    }
+    if (typeof scrollToBottom === "function") {
+      scrollToBottom();
+    }
+  }
+}
+
 // ---- Render functions ----
 function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false } = {}) {
   if (!container) return null;
@@ -288,39 +503,7 @@ function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false
   }
 
   if (role === "user") {
-    const wrap = document.createElement("div");
-    wrap.className = "msg-user";
-    const bubble = document.createElement("div");
-    bubble.className = "msg-user-bubble";
-    const userAttachments = Array.isArray(evt.attachments) && evt.attachments.length > 0
-      ? evt.attachments
-      : (Array.isArray(evt.images) ? evt.images : []);
-    if (userAttachments.length > 0) {
-      const imgWrap = document.createElement("div");
-      imgWrap.className = "msg-images";
-      for (const img of userAttachments) {
-        const attachmentNode = createMessageAttachmentNode(img);
-        if (!attachmentNode) continue;
-        imgWrap.appendChild(attachmentNode);
-      }
-      bubble.appendChild(imgWrap);
-    }
-    if (evt.content || evt.bodyAvailable) {
-      const span = document.createElement("span");
-      const preview = evt.content || evt.bodyPreview || "";
-      span.textContent = formatDecodedDisplayText(preview);
-      bubble.appendChild(span);
-      if (markLazyEventBodyNode(span, evt, {
-        preview: evt.bodyPreview || evt.content || "",
-        renderMode: "text",
-      })) {
-        if (typeof queueHydrateLazyNodes === "function") {
-          queueHydrateLazyNodes(wrap);
-        }
-      }
-    }
-    appendMessageTimestamp(bubble, evt.timestamp, "msg-user-time");
-    wrap.appendChild(bubble);
+    const wrap = createUserMessageNode(evt);
     container.appendChild(wrap);
     return wrap;
   } else {

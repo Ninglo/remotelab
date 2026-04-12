@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-import { CHAT_PORT, INSTANCE_ROOT } from '../lib/config.mjs';
+import { CHAT_PORT, INSTANCE_ROOT, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import {
   CALENDAR_SUBSCRIBE_HELPER_PATH,
   buildCalendarSubscribeHelperPath,
@@ -539,7 +539,7 @@ async function buildMessageEvents(sessionId, messages = []) {
 }
 
 async function createOwnerBootstrapSession(definition) {
-  let session = await createSession('~', definition.tool || 'codex', definition.name || 'Session', {
+  let session = await createSession(MANAGED_WORK_ROOT_DIR, definition.tool || 'codex', definition.name || 'Session', {
     sourceId: 'chat',
     sourceName: 'Chat',
     externalTriggerId: definition.externalTriggerId,

@@ -163,6 +163,7 @@ export function createRunRecord(input = {}) {
     id,
     sessionId: input.sessionId,
     requestId: input.requestId,
+    responseId: input.responseId || null,
     state: input.state || 'accepted',
     tool: input.tool || null,
     model: input.model || null,
@@ -197,6 +198,8 @@ export function createRunRecord(input = {}) {
     failureReason: input.failureReason || null,
     contextInputTokens: Number.isInteger(input.contextInputTokens) ? input.contextInputTokens : null,
     contextWindowTokens: Number.isInteger(input.contextWindowTokens) ? input.contextWindowTokens : null,
+    replyPublicationRootRunId: input.replyPublicationRootRunId || null,
+    replyPublication: input.replyPublication || null,
   };
 }
 

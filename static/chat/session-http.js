@@ -346,7 +346,9 @@ async function createSessionListOrganizerRun(payload) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      folder: "~",
+      folder: typeof window.remotelabGetDefaultSessionFolder === "function"
+        ? window.remotelabGetDefaultSessionFolder()
+        : "~",
       tool: payload?.tool || "codex",
       name: "sort session list",
       systemPrompt: SESSION_LIST_ORGANIZER_SYSTEM_PROMPT,
@@ -759,9 +761,9 @@ function upsertSession(session) {
 }
 
 
-async function fetchSessionSidebar(sessionId) {
+async function fetchSessionSidebar(sessionId, { forceFresh = false } = {}) {
   const url = getSessionSidebarUrl(sessionId);
-  const data = await fetchJsonOrRedirect(url);
+  const data = await fetchJsonOrRedirect(url, buildSessionRefreshRequestOptions(forceFresh));
   return upsertSession(data.session);
 }
 
@@ -1240,10 +1242,10 @@ async function refreshCurrentSession(
   return currentSessionRefreshPromise;
 }
 
-async function refreshSidebarSession(sessionId) {
+async function refreshSidebarSession(sessionId, { forceFresh = false } = {}) {
   if (!sessionId || visitorMode) return null;
   if (sessionId === currentSessionId) {
-    return refreshCurrentSession();
+    return refreshCurrentSession({ forceFresh });
   }
   if (sidebarSessionRefreshPromises.has(sessionId)) {
     pendingSidebarSessionRefreshes.add(sessionId);
@@ -1251,7 +1253,7 @@ async function refreshSidebarSession(sessionId) {
   }
   const request = (async () => {
     try {
-      const session = await fetchSessionSidebar(sessionId);
+      const session = await fetchSessionSidebar(sessionId, { forceFresh });
       if (session) {
         renderSessionList();
       }
@@ -1276,7 +1278,7 @@ async function refreshSidebarSession(sessionId) {
     } finally {
       sidebarSessionRefreshPromises.delete(sessionId);
       if (pendingSidebarSessionRefreshes.delete(sessionId)) {
-        refreshSidebarSession(sessionId).catch(() => {});
+        refreshSidebarSession(sessionId, { forceFresh }).catch(() => {});
       }
     }
   })();

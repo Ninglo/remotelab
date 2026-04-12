@@ -20,6 +20,38 @@ That means platform-specific wrapping stays outside RemoteLab.
 
 ---
 
+## 0. Connector topology classes
+
+Before designing a connector, classify it by **protocol capability**:
+
+- **Gateway-capable**
+  - the upstream platform can support a shared ingress that receives messages for multiple RemoteLab instances and routes them
+  - the same connector can still be deployed as a private single-instance ingress
+- **Instance-only**
+  - the upstream platform cannot support a shared multi-instance gateway
+  - the connector must bind directly to one RemoteLab instance
+
+This yields the primary product rule:
+
+> If a connector is Gateway-capable, it can also run as a single-instance connector.
+> If a connector is Instance-only, it must not be modeled as a shared gateway.
+
+Examples in the current product model:
+
+- **Email** — Gateway-capable
+- **Feishu** — Gateway-capable
+- **WeChat** — Instance-only
+
+Deployment ownership is a separate axis:
+
+- **Official managed** — RemoteLab operates the shared ingress/bot/service
+- **User owned** — the user binds their own upstream account/app/bot and RemoteLab runs the adapter
+
+For Gateway-capable connectors, both ownership models are possible.
+For Instance-only connectors such as WeChat, the normal shape is a user-owned, instance-local connector worker that is seeded and auto-started when the instance is created and never participates in cross-instance routing.
+
+---
+
 ## 1. What RemoteLab is responsible for
 
 RemoteLab owns only the shared conversation/runtime layer:

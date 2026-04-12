@@ -72,6 +72,15 @@ try {
   assert.equal(enrichedReuse.name, '修复支付回调', 'reused pending connector sessions should accept later explicit context');
   assert.equal(enrichedReuse.autoRenamePending, false, 'later explicit context should clear pending auto-rename');
 
+  const explicitWechat = await createSession(baseFolder, 'codex', '微信：客户追问发票状态', {
+    sourceId: 'wechat',
+    sourceName: '微信',
+    group: '微信',
+    externalTriggerId: 'wechat:account_1:user_1',
+  });
+  assert.equal(explicitWechat.name, '客户追问发票状态', 'WeChat connector titles should drop redundant group prefixes');
+  assert.equal(explicitWechat.autoRenamePending, false, 'explicit WeChat connector titles should be preserved');
+
   const chatVisitor = await createSession(baseFolder, 'codex', 'Template Agent', {
     templateId: 'visitor-template',
     templateName: 'Template Agent',

@@ -132,6 +132,27 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  if (req.method === 'GET' && req.url?.startsWith('/api/sessions/sess_voice_1/responses/')) {
+    const prefix = '/api/sessions/sess_voice_1/responses/'
+    const responseId = decodeURIComponent(req.url.slice(prefix.length))
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      replyPublication: {
+        id: responseId,
+        responseIds: [responseId],
+        state: 'ready',
+        ready: true,
+        rootRunId: 'run_voice_1',
+        finalRunId: 'run_voice_1',
+        continuationRunIds: [],
+        payload: {
+          text: '<private>internal</private> 你好，我在线。',
+        },
+      },
+    }))
+    return
+  }
+
   if (req.method === 'GET' && req.url === '/api/runs/run_voice_1') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ run: { id: 'run_voice_1', state: 'completed' } }))
@@ -207,7 +228,10 @@ try {
   assert.equal(reply.requestId, 'voice:living-room-speaker:wake_1')
   assert.equal(reply.replyText, '你好，我在线。')
 } finally {
-  await new Promise((resolve) => server.close(resolve))
+  await new Promise((resolve) => {
+    server.closeAllConnections?.()
+    server.close(resolve)
+  })
 }
 
 console.log('ok - voice connector config defaults load correctly')

@@ -1,194 +1,157 @@
-# Session Dispatch Architecture
+# Session Continuation Planner Architecture
 
-## What this is
+Status: current working architecture as of 2026-04-12
 
-Pre-execution message dispatch: before a message enters the normal turn lifecycle, classify whether it belongs in the current session or should be routed elsewhere.
+## What this note is now
 
-Post-execution turn review: after a turn completes, run experience extraction / memory writeback as part of the existing turn-close autonomy window.
+This note no longer describes the older `route_existing` / `route_new` classifier shape.
 
-This note covers both hooks and how they integrate with existing infrastructure.
+The current design is a pre-turn continuation planner that decides how a new user input should continue relative to the current session:
 
----
+- continue in the current session
+- fork into one or more related branch sessions
+- start one or more fresh sessions with minimal forwarded context
 
-## Problem
+The important change is conceptual: the system is no longer trying to do arbitrary historical-session routing first. It is deciding continuation mode first, then deriving destination sessions and inheritance behavior from that result.
 
-RemoteLab targets non-technical users who do not naturally create new sessions for different topics. They tend to dump everything into one long conversation. This degrades model performance because:
+## Core product definition
 
-- context grows stale and mixed
-- prompt caching hit rate drops when topics shift
-- the model wastes tokens re-establishing context every turn
+Each user message first goes through a hidden planner before the normal assistant turn begins.
 
-The system should absorb this complexity instead of expecting users to manage sessions.
+That planner sees the full current-session context that the main execution path would have used, rather than a thin summary-only view. The reason is simple: deciding whether something is the continuation of the current thread is a transcript-understanding problem, not a keyword-matching problem.
 
----
+The planner does not belong to the main session model. It is a separate pre-turn control layer. The main session model should only handle work that already belongs to it after planning, rather than simultaneously answering the user and improvising routing decisions.
 
-## Pre-execution dispatch hook
+## Ambient assistant surfaces still use the same planner
 
-### Where it runs
+Not every user-facing chat box is a topic-coherent work session. Personal-assistant style connector chats such as WeChat or Feishu DM threads can contain weather checks, reminders, one-off factual questions, and longer project work in the same running chat.
 
-In `submitHttpMessage()`, after validation and duplicate detection, **before** the queue-or-execute decision. This is approximately line 3334 in `session-manager.mjs`.
+The current product cut does not add a second top-level product model for those surfaces. Instead, it keeps one continuation planner and makes that planner more conservative:
 
-The dispatch check runs only for external user messages, not for:
-- internal operations (`internalOperation` set)
-- queued follow-up flushes
-- self-repair continuations
-- visitor sessions (scoped to their App)
+- simple one-off asks should usually remain `continue`
+- topic shift alone is not enough for `fresh`
+- only clearly separate durable work, obviously mismatched turns, or genuinely multi-task inputs should split into `fork` / `fresh`
 
-### What it receives
+This keeps the product simpler while still avoiding the worst over-splitting behavior in loose connector chats.
 
-- the incoming message text + images
-- current session metadata (id, name, group, sourceId, templateId, description, taskCard)
-- available Agents with their scope hints
-- recent session list (for routing to existing sessions)
+## Continuation modes
 
-### What it outputs
+### `continue`
 
-A dispatch decision object:
+The message still belongs to the current session's main thread. The current session remains the owning session and processes the input normally.
 
-```javascript
-{
-  action: 'continue' | 'route_existing' | 'route_new',
-  confidence: number,       // 0-1
-  reason: string,           // short explanation
-  targetSessionId?: string, // for route_existing
-  targetAppId?: string,     // for route_new or route_existing
-  contextSummary?: string,  // relevant context to carry over
-}
-```
+### `fork`
 
-### Decision logic
+The message is strongly related to the current session and still depends on the parent transcript, but should branch into its own child session so the main thread and the new branch can continue independently.
 
-- `continue`: message belongs in current session. Proceed normally.
-- `route_existing`: message belongs in an existing session. Redirect there.
-- `route_new`: message starts a new topic. Create new session, optionally under an App.
+This mode should inherit rich parent context.
 
-Low confidence (< threshold) → fall back to `continue`. Do not auto-route when unsure.
+### `fresh`
 
-### Execution model
+The message should become a new workstream. It may be triggered from the current session, but it should not keep accumulating inside the current session's main thread.
 
-The dispatch classifier makes a single fast-model LLM call. It receives:
-- current session summary (name, description, recent topic)
-- available session summaries (name, group, description, last activity)
-- available App scope hints
-- the new message
+This mode should inherit only a minimal forwarded bridge context, not the full raw parent transcript.
 
-The call should use a small/fast model to minimize latency.
+## Multiple destinations
 
-### APP scope matching
+One user input may return multiple destinations when the planner can clearly identify multiple downstream workstreams inside the same message.
 
-Apps gain a new optional field `scopeHints`:
+This is not "split because several nouns were mentioned." It is only valid when the message truly contains multiple continuations that should proceed separately.
 
-```javascript
-{
-  scopeHints: {
-    triggers: ['植物', 'plant', '识别'],
-    description: 'Plant identification and logging',
-  }
-}
-```
+The planner therefore returns destinations, not merely a single action. Each destination has its own continuation mode and its own inheritance profile.
 
-This enables both keyword pre-filtering (before LLM call) and richer context for the classifier.
+## Inheritance profiles
 
-### Integration with existing delegation
+### `reuse_current_context`
 
-When dispatch decides to route:
-1. Create or find target session (reuse `delegateSession` patterns)
-2. Submit the user's original message to the target session
-3. Inject a lightweight routing notice in the source session
-4. Return the routing outcome to the HTTP caller so frontend can navigate
+Used by `continue`. The current session keeps using its normal prompt and history.
 
----
+### `full_parent_context`
 
-## Post-execution: memory writeback
+Used by `fork`. The child session inherits the full parent continuation context in prompt space. The child does not need a copied visible transcript, but it should receive the same parent continuity material the current session was already using so the branch starts from the same understanding baseline.
 
-### Where it runs
+### `minimal_forwarded_context`
 
-Inside the existing turn-close autonomy window, as an operation type alongside self-check, compaction, label suggestion, and workflow state update.
+Used by `fresh`. The child session receives only the minimal forwarded bridge needed to make sense of why it exists and what constraints or prior facts matter.
 
-Implemented as an extension to `runSessionTurnCompletionEffects()` in `session-turn-completion.mjs`.
+## Prompt/cache shape
 
-### What it does
+The planner and the eventual execution session should share the same upstream context prefix whenever they are reasoning about the same current thread.
 
-After the main turn completes:
-1. Evaluate whether anything durable was learned this turn
-2. If yes, write back to the appropriate memory layer (user-level or system-level)
-3. Record the writeback as a `contextOp` for inspectability
+That means:
 
-### Execution model
+- the current session transcript should be loaded as raw prompt material, not rewritten first
+- the planner should inspect the same current-thread context the main execution path would have used
+- fork branches should reuse that same parent context as prompt inheritance
 
-- Fully async, non-blocking to user
-- Uses the same fast-model approach as dispatch
-- Runs in parallel with other post-turn effects (label suggestion, workflow state)
-- Only fires on substantive turns, not on trivial exchanges
+The cache optimization goal is therefore not "copy the same summary everywhere." It is "reuse the same full upstream context prefix when the semantic relationship actually justifies it."
 
----
+For `fresh` sessions, semantic cleanliness matters more than forcing shared prefix reuse. A fresh session should start from a planner-written bridge summary plus only the required carried facts, not from the whole parent transcript just to chase cache hits.
 
-## UX contract
+## Planner output contract
 
-### Routing notification
+The planner may reason flexibly, but its output contract should stay stable. At minimum it returns:
 
-When a message is routed away from the current session:
+- planner version / confidence
+- overall reasoning and a short user-visible summary
+- one or more destinations
+- for each destination:
+  mode
+  inheritance profile
+  destination reasoning
+  scope framing
+  delivery text
+  forwarded context
+  optional title hint
 
-```
-Source session shows:
-  [status] "This message was handled in another session."
-  [assistant message with link] "I've moved this to [session name] since it's a different topic. → [link]"
+The system should treat that output as the authoritative pre-turn control result.
 
-Target session shows:
-  [normal user message] (the original text)
-  [model responds normally]
-```
+## Execution flow
 
-Frontend behavior:
-- If the user is looking at the source session, show a toast/banner with a jump link
-- WebSocket invalidation fires on both sessions
-- The routing notice is a lightweight assistant message, not a blocking modal
+1. The user submits a message.
+2. The system accepts and persists it, exposing a `checking` planning state.
+3. The pre-turn planner runs against the current session transcript plus the new user input.
+4. If the result is a trivial single `continue`, the message is processed in the current session.
+5. If the result includes `fork` and/or `fresh` destinations:
+   - `continue` destinations stay in the current session
+   - `fork` destinations create child sessions with full parent continuation inheritance
+   - `fresh` destinations create new sessions with minimal forwarded bridge context
+6. The source session or connector surface receives a visible continuation notice when work was moved into one or more durable sessions.
 
-### No routing (default)
+## Visible history vs prompt inheritance
 
-When dispatch decides `continue`, the turn proceeds exactly as it does today. Zero visible difference.
+This architecture explicitly separates prompt inheritance from visible chat history.
 
----
+Forked sessions should feel like they inherited the parent thread because the prompt carries the parent continuation context, not because the UI copied every old message into the child transcript.
 
-## Implementation files
+Fresh sessions should begin with a clean visible history even though the first turn may still carry a small planner-written forwarded bridge in prompt space.
 
-| File | Role |
-|---|---|
-| `chat/session-dispatch.mjs` | New: dispatch classifier + decision logic |
-| `chat/session-dispatch-prompt.mjs` | New: prompt construction for the classifier |
-| `chat/session-manager.mjs` | Modified: integrate dispatch before queue-or-execute |
-| `chat/apps.mjs` | Modified: add `scopeHints` field to App schema |
-| `chat/session-turn-completion.mjs` | Modified: add memory writeback operation |
-| `chat/prompt-assets/turn/dispatch-classifier.md` | New: editable classifier prompt template |
+## Responsibility split
 
----
+The continuation planner owns:
 
-## Rollout
+- deciding continuation mode
+- deciding whether there are multiple destinations
+- deciding inheritance profile per destination
 
-### Phase 1 (this PR): Get the dispatch flow working
+The main session model owns:
 
-- Add `scopeHints` to App schema
-- Build `session-dispatch.mjs` with classifier
-- Integrate into `submitHttpMessage()`
-- Add routing notice UX
-- Ship with conservative threshold (route only on high confidence)
+- only the work assigned to the current session after planning
 
-### Phase 2: Memory writeback
+The session-creation layer owns:
 
-- Add memory writeback to turn-completion
-- Record as contextOp
-- Connect to existing memory system paths
+- creating child/fresh sessions
+- applying the correct inheritance mechanism
+- appending visible continuation notices
 
-### Phase 3: Tuning
+## Relation to old concepts
 
-- Adjust confidence thresholds based on real usage
-- Add session-level dispatch preferences
-- Consider parallel dispatch + main inference for latency optimization
+The new model absorbs older concepts rather than keeping them side by side:
 
----
+- old `dispatch`: absorbed into the continuation planner
+- old `restore`: absorbed into inheritance profiles and prompt inheritance
+- old session-spawn/delegate branching: remains an execution action, but should not act as a second routing brain for the user message itself
 
-## Relation to existing design notes
+The key architectural rule is now:
 
-- `model-autonomy-control-loop.md`: memory writeback fits as an operation in the turn-close autonomy window
-- `app-centric-architecture.md`: `scopeHints` moves Apps toward the universal policy layer vision
-- `session-control-state-phase1.md`: dispatch decisions should eventually project through session control state
+The front door decides continuation mode first. Session execution happens second.

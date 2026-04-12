@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://remotelab.dev/schemas/instance-factory/host.manifest.schema.json",
+  "title": "RemoteLab Host Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "host", "network", "systemd"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "host": {
+      "type": "object",
+      "required": ["provider", "hostname", "region", "repoCheckoutPath"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["digitalocean"]
+        },
+        "hostname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sshKeys": {
+          "type": "array",
+          "items": {
+            "type": ["string", "integer"]
+          }
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "vpcUuid": {
+          "type": "string"
+        },
+        "repoCheckoutPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repoGitUrl": {
+          "type": "string"
+        },
+        "repoGitRef": {
+          "type": "string"
+        },
+        "sshUser": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "network": {
+      "type": "object",
+      "required": ["ownerDomain", "ingress"],
+      "properties": {
+        "listenPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "ownerDomain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ingress": {
+          "type": "object",
+          "required": ["provider"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": ["cloudflare", "cpolar"]
+            },
+            "tunnelName": {
+              "type": "string"
+            },
+            "tunnelId": {
+              "type": "string"
+            },
+            "serviceName": {
+              "type": "string"
+            },
+            "credentialsFile": {
+              "type": "string"
+            },
+            "localCredentialsFile": {
+              "type": "string"
+            },
+            "ownerHostname": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "systemd": {
+      "type": "object",
+      "required": ["ownerUnit"],
+      "properties": {
+        "ownerUnit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logDir": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "connectors": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

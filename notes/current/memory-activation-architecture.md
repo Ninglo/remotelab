@@ -79,6 +79,7 @@ It should not be loaded wholesale for every new session.
 
 - Reflection is mandatory; writeback is selective.
 - Prefer merging/updating existing entries instead of appending near-duplicates.
+- Automatic writeback should route through a safe target catalog; the model may choose among valid targets, but it should not invent arbitrary file paths.
 - Prune memory lightly but regularly: daily during intense debugging, weekly otherwise.
 - Archive or delete stale task notes once they stop helping future work.
 
@@ -86,8 +87,13 @@ It should not be loaded wholesale for every new session.
 
 - `chat/system-prompt.mjs`: define pointer-first startup behavior
 - `chat/shared-startup-defaults.mjs`: removable repo-shared startup defaults slice for a few universal cross-user behaviors
+- `chat/session-memory-writeback.mjs`: post-turn durable learning extraction and persistence
+- `chat/memory-writeback-targets.mjs`: writeback target catalog, config parsing, and safe routing
 - `~/.remotelab/memory/bootstrap.md`: tiny startup layer
 - `~/.remotelab/memory/projects.md`: scope-routing layer
+- `~/.remotelab/memory/writeback-targets.json`: optional operator-owned overrides for writeback targets
+- `~/.remotelab/memory/model-context/auto-user-memory.md`: mandatory user fallback sink for automatic durable learning promotion
+- `memory/auto-system-memory.md`: mandatory system fallback sink for automatic cross-deployment learnings
 - `memory/system.md`: shared principles about activation, writeback, and pruning
 
 ## Shared Startup Slice

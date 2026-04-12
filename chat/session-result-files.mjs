@@ -6,7 +6,7 @@
  */
 
 import { basename, dirname, extname, isAbsolute, resolve } from 'path';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { statOrNull } from './fs-utils.mjs';
 import {
   normalizeAttachmentSizeBytes,
@@ -38,6 +38,14 @@ function expandHomePath(value) {
 // ── Constants ────────────────────────────────────────────────────────
 
 export const RESULT_FILE_COMMAND_OUTPUT_FLAGS = new Set(['-o', '--output', '--out', '--export']);
+const LOCAL_SEARCH_ROOT_PATH_RE = /(?:~\/|\/(?:Users|home|root|opt|private|var|tmp|Volumes|mnt)\/)[^\s"'`<>()]+/g;
+const LOCAL_SEARCH_ROOT_PREFIX_RE = /^(?:~\/|\/(?:Users|home|root|opt|private|var|tmp|Volumes|mnt)\/)/;
+const ASSISTANT_LOCAL_MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)\r\n]+)\)/g;
+const ASSISTANT_LOCAL_MARKDOWN_LINK_RE = /\[([^\]]*)\]\(([^)\r\n]+)\)/g;
+const ASSISTANT_LOCAL_CODE_SPAN_RE = /`([^`\r\n]+)`/g;
+const PRODUCT_LOCAL_ROUTE_RE = /^\/(?:api|share|share-asset|agent|visitor|login|logout|m|subscribe)(?:[/?#]|$)/i;
+const EXTRA_RESULT_FILE_ALLOWED_ROOTS = Object.freeze(['/var/tmp', '/private/tmp']);
+const ARTIFACT_BLOCK_HEADER_RE = /^(?:#{1,6}\s*|\*\*)?artifacts(?:\*\*)?\s*:?\s*$/i;
 
 // ── Path candidate helpers ───────────────────────────────────────────
 
@@ -53,7 +61,7 @@ export function looksLikeResultFilePath(value) {
   const candidate = normalizeResultFilePathCandidate(value);
   if (!candidate || candidate.length > 4096) return false;
   if (/^(https?:|data:|blob:)/i.test(candidate)) return false;
-  if (candidate.startsWith('/api/')) return false;
+  if (PRODUCT_LOCAL_ROUTE_RE.test(candidate)) return false;
   if (/[\r\n]/.test(candidate)) return false;
   if (/[\\/]/.test(candidate) || candidate.startsWith('~/')) return true;
   return /\.[a-z0-9]{1,8}$/i.test(candidate);
@@ -84,7 +92,7 @@ export function normalizeSearchRootCandidate(value, fallbackRoot = '') {
 export function extractSearchRootsFromText(text, fallbackRoot = '') {
   const roots = [];
   const source = typeof text === 'string' ? text : '';
-  const matches = source.match(/(?:~\/|\/Users\/|\/home\/)[^\s"'`<>()]+/g) || [];
+  const matches = source.match(LOCAL_SEARCH_ROOT_PATH_RE) || [];
   for (const match of matches) {
     pushUnique(roots, normalizeSearchRootCandidate(match, fallbackRoot));
   }
@@ -101,7 +109,7 @@ export function extractSearchRootsFromCommand(command, fallbackRoot = '') {
       index += 1;
       continue;
     }
-    if (/^(?:~\/|\/Users\/|\/home\/)/.test(token)) {
+    if (LOCAL_SEARCH_ROOT_PREFIX_RE.test(token)) {
       pushUnique(roots, normalizeSearchRootCandidate(token, fallbackRoot));
       continue;
     }
@@ -164,12 +172,306 @@ export function extractCommandOutputPathCandidates(command = '') {
   return candidates.filter(looksLikeResultFilePath);
 }
 
+function dedupeResultFileTextReferences(references = []) {
+  const ordered = [...references].sort((left, right) => {
+    if (left.index !== right.index) return left.index - right.index;
+    return right.fullMatch.length - left.fullMatch.length;
+  });
+  const unique = [];
+  let lastEnd = -1;
+  for (const reference of ordered) {
+    if (reference.index < lastEnd) continue;
+    unique.push(reference);
+    lastEnd = reference.index + reference.fullMatch.length;
+  }
+  return unique;
+}
+
+function resolveAssistantResultFileDisplayName(candidate, preferredName = '') {
+  const sanitizedPreferred = sanitizeOriginalAttachmentName(preferredName || '');
+  if (sanitizedPreferred && extname(sanitizedPreferred)) {
+    return sanitizedPreferred;
+  }
+  return sanitizeOriginalAttachmentName(candidate) || basename(candidate);
+}
+
+export function extractAssistantResultFileReferences(text = '', options = {}) {
+  const includeMarkdownLinks = options.includeMarkdownLinks !== false;
+  const includeCodeSpans = options.includeCodeSpans !== false;
+  const source = typeof text === 'string' ? text : '';
+  if (!source) return [];
+
+  const references = [];
+
+  if (includeMarkdownLinks) {
+    ASSISTANT_LOCAL_MARKDOWN_LINK_RE.lastIndex = 0;
+    let match;
+    while ((match = ASSISTANT_LOCAL_MARKDOWN_LINK_RE.exec(source)) !== null) {
+      const candidate = normalizeResultFilePathCandidate(match[2] || '');
+      if (!looksLikeResultFilePath(candidate)) continue;
+      references.push({
+        kind: 'markdown_link',
+        fullMatch: match[0],
+        index: match.index,
+        candidate,
+        displayName: resolveAssistantResultFileDisplayName(candidate, match[1] || ''),
+      });
+    }
+  }
+
+  if (includeCodeSpans) {
+    ASSISTANT_LOCAL_CODE_SPAN_RE.lastIndex = 0;
+    let match;
+    while ((match = ASSISTANT_LOCAL_CODE_SPAN_RE.exec(source)) !== null) {
+      const candidate = normalizeResultFilePathCandidate(match[1] || '');
+      if (!looksLikeResultFilePath(candidate)) continue;
+      references.push({
+        kind: 'code_span',
+        fullMatch: match[0],
+        index: match.index,
+        candidate,
+        displayName: resolveAssistantResultFileDisplayName(candidate, candidate),
+      });
+    }
+  }
+
+  return dedupeResultFileTextReferences(references);
+}
+
+export function extractAssistantResultFileCandidatesFromText(text = '', options = {}) {
+  const candidates = [];
+  for (const reference of extractAssistantResultFileReferences(text, options)) {
+    pushUnique(candidates, reference.candidate);
+  }
+  return candidates;
+}
+
+export function extractAssistantLocalMarkdownImageReferences(text = '') {
+  const source = typeof text === 'string' ? text : '';
+  if (!source) return [];
+
+  const references = [];
+  ASSISTANT_LOCAL_MARKDOWN_IMAGE_RE.lastIndex = 0;
+  let match;
+  while ((match = ASSISTANT_LOCAL_MARKDOWN_IMAGE_RE.exec(source)) !== null) {
+    const candidate = normalizeResultFilePathCandidate(match[2] || '');
+    if (!looksLikeResultFilePath(candidate)) continue;
+    references.push({
+      kind: 'markdown_image',
+      fullMatch: match[0],
+      index: match.index,
+      candidate,
+      altText: match[1] || '',
+      displayName: resolveAssistantResultFileDisplayName(candidate, match[1] || ''),
+    });
+  }
+
+  return dedupeResultFileTextReferences(references);
+}
+
+function normalizeArtifactBlockLine(line = '') {
+  return String(line || '')
+    .trim()
+    .replace(/^[-*+]\s+/, '')
+    .replace(/^\d+\.\s+/, '')
+    .trim();
+}
+
+function isArtifactBlockBoundary(line = '') {
+  const trimmed = String(line || '').trim();
+  if (!trimmed) return true;
+  if (/^#{1,6}\s+\S/.test(trimmed)) return true;
+  if (/^[A-Za-z][A-Za-z0-9 _/-]{0,80}:\s*$/.test(trimmed) && !ARTIFACT_BLOCK_HEADER_RE.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+function extractArtifactBlockReferenceFromLine(line = '', index = 0) {
+  const normalizedLine = normalizeArtifactBlockLine(line);
+  if (!normalizedLine) return [];
+
+  const directReferences = extractAssistantResultFileReferences(normalizedLine);
+  if (directReferences.length > 0) {
+    return directReferences.map((reference) => ({
+      ...reference,
+      kind: 'artifact_block',
+      index: index + reference.index,
+    }));
+  }
+
+  const normalizedCandidate = normalizeResultFilePathCandidate(normalizedLine);
+  if (
+    (/^(?:~\/|\/)/.test(normalizedCandidate) || normalizedCandidate.startsWith('./') || normalizedCandidate.startsWith('../'))
+    && !/\s+(?:->|=>|\|)\s+/.test(normalizedLine)
+    && !/^[^/]+:\s+/.test(normalizedLine)
+    && looksLikeResultFilePath(normalizedCandidate)
+  ) {
+    return [{
+      kind: 'artifact_block',
+      fullMatch: normalizedLine,
+      index,
+      candidate: normalizedCandidate,
+      displayName: resolveAssistantResultFileDisplayName(normalizedCandidate, normalizedCandidate),
+    }];
+  }
+
+  const localPathMatch = normalizedLine.match(LOCAL_SEARCH_ROOT_PATH_RE)?.[0] || '';
+  if (localPathMatch) {
+    const candidate = normalizeResultFilePathCandidate(localPathMatch);
+    if (looksLikeResultFilePath(candidate)) {
+      return [{
+        kind: 'artifact_block',
+        fullMatch: normalizedLine,
+        index,
+        candidate,
+        displayName: resolveAssistantResultFileDisplayName(candidate, candidate),
+      }];
+    }
+  }
+
+  const pathishParts = normalizedLine
+    .split(/\s+(?:->|=>|\|)\s+|:\s+/)
+    .map((part) => normalizeResultFilePathCandidate(part))
+    .filter(Boolean);
+  for (let partIndex = pathishParts.length - 1; partIndex >= 0; partIndex -= 1) {
+    const candidate = pathishParts[partIndex];
+    if (!looksLikeResultFilePath(candidate)) continue;
+    const preferredName = partIndex > 0 ? pathishParts[0] : candidate;
+    return [{
+      kind: 'artifact_block',
+      fullMatch: normalizedLine,
+      index,
+      candidate,
+      displayName: resolveAssistantResultFileDisplayName(candidate, preferredName),
+    }];
+  }
+
+  if (!looksLikeResultFilePath(normalizedCandidate)) {
+    return [];
+  }
+  return [{
+    kind: 'artifact_block',
+    fullMatch: normalizedLine,
+    index,
+    candidate: normalizedCandidate,
+    displayName: resolveAssistantResultFileDisplayName(normalizedCandidate, normalizedCandidate),
+  }];
+}
+
+export function extractAssistantArtifactBlockReferences(text = '') {
+  const source = typeof text === 'string' ? text : '';
+  if (!source) return [];
+
+  const lines = source.split(/\r?\n/);
+  const references = [];
+  let offset = 0;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    const headerOffset = offset;
+    offset += line.length + 1;
+    if (!ARTIFACT_BLOCK_HEADER_RE.test(trimmed)) {
+      continue;
+    }
+
+    let bodyOffset = offset;
+    let sawCandidate = false;
+    for (let bodyIndex = index + 1; bodyIndex < lines.length; bodyIndex += 1) {
+      const bodyLine = lines[bodyIndex];
+      const bodyTrimmed = bodyLine.trim();
+      if (!bodyTrimmed) {
+        if (sawCandidate) break;
+        bodyOffset += bodyLine.length + 1;
+        continue;
+      }
+      if (isArtifactBlockBoundary(bodyLine) && !normalizeArtifactBlockLine(bodyLine).startsWith('~/') && !bodyTrimmed.startsWith('/')) {
+        break;
+      }
+      const lineReferences = extractArtifactBlockReferenceFromLine(bodyLine, bodyOffset);
+      if (lineReferences.length > 0) {
+        sawCandidate = true;
+        references.push(...lineReferences);
+      } else if (sawCandidate) {
+        break;
+      }
+      bodyOffset += bodyLine.length + 1;
+    }
+
+    if (sawCandidate) {
+      continue;
+    }
+    offset = headerOffset + line.length + 1;
+  }
+
+  return dedupeResultFileTextReferences(references);
+}
+
+export function stripAssistantArtifactDeliveryHints(text = '') {
+  const source = typeof text === 'string' ? text : '';
+  if (!source) return source;
+
+  const lines = source.split(/\r?\n/);
+  const keptLines = [];
+  let insideArtifactBlock = false;
+  let sawArtifactCandidate = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!insideArtifactBlock && ARTIFACT_BLOCK_HEADER_RE.test(trimmed)) {
+      insideArtifactBlock = true;
+      sawArtifactCandidate = false;
+      continue;
+    }
+    if (insideArtifactBlock) {
+      if (!trimmed) {
+        insideArtifactBlock = false;
+        continue;
+      }
+      const hasArtifactReference = extractArtifactBlockReferenceFromLine(line).length > 0;
+      if (hasArtifactReference) {
+        sawArtifactCandidate = true;
+        continue;
+      }
+      if (sawArtifactCandidate || isArtifactBlockBoundary(line)) {
+        insideArtifactBlock = false;
+      } else {
+        continue;
+      }
+    }
+    if (!insideArtifactBlock) {
+      keptLines.push(line);
+    }
+  }
+
+  let result = keptLines.join('\n');
+  for (const reference of extractAssistantResultFileReferences(result).sort((left, right) => right.index - left.index)) {
+    const replacement = reference.displayName || basename(reference.candidate);
+    result = result.slice(0, reference.index) + replacement + result.slice(reference.index + reference.fullMatch.length);
+  }
+  return result.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 // ── Path resolution ──────────────────────────────────────────────────
 
 export function isPathWithinRoot(filePath, root) {
   const normalizedFile = resolve(filePath);
   const normalizedRoot = resolve(root);
   return normalizedFile === normalizedRoot || normalizedFile.startsWith(`${normalizedRoot}/`);
+}
+
+function collectAllowedResultFileRoots(searchRoots = []) {
+  const roots = [];
+  for (const root of searchRoots || []) {
+    pushUnique(roots, resolve(root));
+  }
+  pushUnique(roots, homedir());
+  pushUnique(roots, resolve(tmpdir()));
+  for (const root of EXTRA_RESULT_FILE_ALLOWED_ROOTS) {
+    pushUnique(roots, resolve(root));
+  }
+  return roots;
 }
 
 export async function resolveExistingResultFilePath(candidate, searchRoots = [], minimumMtimeMs = 0) {
@@ -186,10 +488,7 @@ export async function resolveExistingResultFilePath(candidate, searchRoots = [],
     }
   }
 
-  const allowedRoots = [
-    ...searchRoots.map((root) => resolve(root)),
-    homedir(),
-  ];
+  const allowedRoots = collectAllowedResultFileRoots(searchRoots);
 
   for (const attempt of attempts) {
     if (!allowedRoots.some((root) => isPathWithinRoot(attempt, root))) {
@@ -206,16 +505,50 @@ export async function resolveExistingResultFilePath(candidate, searchRoots = [],
   return null;
 }
 
+async function maybeCollectResolvedResultFile(filesByPath, {
+  candidate,
+  searchRoots = [],
+  minimumMtimeMs = 0,
+  preferredName = '',
+} = {}) {
+  const localPath = await resolveExistingResultFilePath(candidate, searchRoots, minimumMtimeMs);
+  if (!localPath || filesByPath.has(localPath)) return false;
+  const originalName = resolveAssistantResultFileDisplayName(localPath, preferredName || candidate) || basename(localPath);
+  filesByPath.set(localPath, {
+    localPath,
+    originalName,
+    mimeType: resolveAttachmentMimeType('', originalName || basename(localPath)),
+  });
+  return true;
+}
+
 // ── Run-level result collection ──────────────────────────────────────
 
 export async function collectGeneratedResultFilesFromRun(run, manifest, normalizedEvents = []) {
-  const minimumMtimeMs = Date.parse(run?.startedAt || run?.createdAt || '') || 0;
   const filesByPath = new Map();
   let activeCommand = '';
+  const discoveredSearchRoots = collectResultFileSearchRoots(manifest, '');
 
   for (const event of normalizedEvents || []) {
     if (event?.type === 'tool_use' && event.toolName === 'bash') {
       activeCommand = trimString(event.toolInput);
+      for (const root of collectResultFileSearchRoots(manifest, activeCommand)) {
+        pushUnique(discoveredSearchRoots, root);
+      }
+      continue;
+    }
+    if (event?.type === 'message' && event.role === 'assistant') {
+      const references = [
+        ...extractAssistantArtifactBlockReferences(event.content || ''),
+        ...extractAssistantResultFileReferences(event.content || ''),
+      ];
+      for (const reference of references) {
+        await maybeCollectResolvedResultFile(filesByPath, {
+          candidate: reference.candidate,
+          searchRoots: discoveredSearchRoots,
+          preferredName: reference.displayName,
+        });
+      }
       continue;
     }
     if (event?.type !== 'tool_result' || event.toolName !== 'bash') {
@@ -227,6 +560,9 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
     }
 
     const searchRoots = collectResultFileSearchRoots(manifest, activeCommand);
+    for (const root of searchRoots) {
+      pushUnique(discoveredSearchRoots, root);
+    }
     const candidates = [
       ...extractResultFileCandidatesFromOutput(event.output || ''),
       ...extractCommandOutputPathCandidates(activeCommand),
@@ -234,13 +570,9 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
     activeCommand = '';
 
     for (const candidate of candidates) {
-      const localPath = await resolveExistingResultFilePath(candidate, searchRoots, minimumMtimeMs);
-      if (!localPath || filesByPath.has(localPath)) continue;
-      const originalName = sanitizeOriginalAttachmentName(candidate) || basename(localPath);
-      filesByPath.set(localPath, {
-        localPath,
-        originalName,
-        mimeType: resolveAttachmentMimeType('', originalName || basename(localPath)),
+      await maybeCollectResolvedResultFile(filesByPath, {
+        candidate,
+        searchRoots,
       });
     }
   }
@@ -248,7 +580,108 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
   return [...filesByPath.values()];
 }
 
+function collectDiscoveredResultFileSearchRoots(manifest, events = []) {
+  const discoveredSearchRoots = collectResultFileSearchRoots(manifest, '');
+  for (const event of events || []) {
+    if (event?.type !== 'tool_use' || event.toolName !== 'bash') continue;
+    for (const root of collectResultFileSearchRoots(manifest, trimString(event.toolInput))) {
+      pushUnique(discoveredSearchRoots, root);
+    }
+  }
+  return discoveredSearchRoots;
+}
+
+export function buildPublishedResultAssetDownloadUrl(assetId = '') {
+  const normalized = trimString(assetId);
+  if (!normalized) return '';
+  return `/api/assets/${encodeURIComponent(normalized)}/download`;
+}
+
+export async function collectAssistantLocalMarkdownImageRewrites(manifest, events = [], publishedAssets = []) {
+  const publishedAssetsByLocalPath = new Map();
+  for (const asset of publishedAssets || []) {
+    const assetId = trimString(asset?.assetId || asset?.id);
+    const localPath = trimString(asset?.localPath);
+    if (!assetId || !localPath) continue;
+    const originalName = sanitizeOriginalAttachmentName(asset?.originalName || basename(localPath));
+    const mimeType = resolveAttachmentMimeType(asset?.mimeType, originalName || basename(localPath));
+    if (!mimeType.startsWith('image/')) continue;
+    publishedAssetsByLocalPath.set(resolve(localPath), {
+      assetId,
+      url: buildPublishedResultAssetDownloadUrl(assetId),
+    });
+  }
+
+  if (publishedAssetsByLocalPath.size === 0) {
+    return [];
+  }
+
+  const searchRoots = collectDiscoveredResultFileSearchRoots(manifest, events);
+  const rewrites = [];
+  const seen = new Set();
+
+  for (const event of events || []) {
+    if (event?.type !== 'message' || event.role !== 'assistant') continue;
+    if (!Number.isInteger(event.seq) || event.seq < 1) continue;
+    for (const reference of extractAssistantLocalMarkdownImageReferences(event.content || '')) {
+      const localPath = await resolveExistingResultFilePath(reference.candidate, searchRoots);
+      if (!localPath) continue;
+      const published = publishedAssetsByLocalPath.get(resolve(localPath));
+      if (!published?.url) continue;
+      const key = `${event.seq}:${reference.candidate}:${published.assetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rewrites.push({
+        seq: event.seq,
+        candidate: reference.candidate,
+        assetId: published.assetId,
+        url: published.url,
+      });
+    }
+  }
+
+  return rewrites;
+}
+
 // ── Published result asset helpers ───────────────────────────────────
+
+export function rewriteAssistantLocalMarkdownImageTargets(text = '', assetUrlsByCandidate = null) {
+  const source = typeof text === 'string' ? text : '';
+  if (!source) return source;
+
+  const candidateMap = assetUrlsByCandidate instanceof Map
+    ? assetUrlsByCandidate
+    : new Map(
+      (Array.isArray(assetUrlsByCandidate) ? assetUrlsByCandidate : [])
+        .map((entry) => ([
+          normalizeResultFilePathCandidate(entry?.candidate || ''),
+          trimString(entry?.url),
+        ]))
+        .filter(([candidate, url]) => candidate && url),
+    );
+
+  if (candidateMap.size === 0) return source;
+
+  let rewritten = false;
+  let result = '';
+  let cursor = 0;
+  ASSISTANT_LOCAL_MARKDOWN_IMAGE_RE.lastIndex = 0;
+  let match;
+
+  while ((match = ASSISTANT_LOCAL_MARKDOWN_IMAGE_RE.exec(source)) !== null) {
+    const candidate = normalizeResultFilePathCandidate(match[2] || '');
+    const nextUrl = candidateMap.get(candidate);
+    if (!nextUrl) continue;
+    const altText = match[1] || '';
+    result += source.slice(cursor, match.index);
+    result += `![${altText}](${nextUrl})`;
+    cursor = match.index + match[0].length;
+    rewritten = true;
+  }
+
+  if (!rewritten) return source;
+  return result + source.slice(cursor);
+}
 
 export function normalizePublishedResultAssetAttachments(assets = []) {
   return (assets || [])

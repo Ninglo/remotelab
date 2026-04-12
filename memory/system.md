@@ -284,6 +284,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - When the app already keeps a WebSocket open, prefer sending the current page build info on socket connect and rebroadcasting it on frontend file changes; existing pages can then reload from push without adding extra focus/visibility polling.
 - Keep versioned static asset URLs (`?v=` or hashed filenames) on long-lived immutable caching, and let only non-versioned assets or `sw.js` stay on revalidation/no-store policies.
 
+### Pages That Rely On `<base href>` Need CSP-Compatible Asset Tests (2026-04-12)
+- If a page depends on `<base href>` to keep relative scripts, styles, manifests, or payload URLs inside the product scope, its CSP must not use `base-uri 'none'`; browsers will ignore the base tag and silently resolve those assets from the document path instead.
+- Public/share pages should prefer product-root-relative asset and payload URLs such as `chat/...`, `share-payload/...`, and `share-asset/...` over `../...`, so forwarded prefixes keep working without escaping the surface root.
+- Add regression coverage that checks both the HTML and the response headers for public pages: the advertised `<base href>`, a CSP that allows it, and at least one forwarded-prefix scenario.
+
 ### Detached Run State Must Be Read Fresh Across Processes (2026-03-10)
 - `status.json` and `result.json` are shared mutable state between the chat-server control plane and detached runner sidecars, so process-local caches are not authoritative.
 - If `getRun()` serves a cached copy, the UI can stay stuck on `running` or `accepted` after the tool already finished, because spool normalization writes can overwrite fresher terminal state from another process.
@@ -536,11 +541,12 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - For local-first agent products, a provider's long-connection / SDK event mode can be the fastest connector path because it avoids public webhook setup, signature verification, and payload decryption.
 - A reliable pattern is: receive event -> dedupe / enqueue immediately -> acknowledge the provider -> run the canonical session/message/run flow in background -> publish the final assistant reply afterward.
 
-### Local File Paths in Assistant Messages Are Useless to Remote Users (2026-04-08)
-- When the model generates a file for the user (report, export, spreadsheet, image, etc.), a local path or markdown link like `[file.xlsx](/Users/.../file.xlsx)` is meaningless — remote users cannot access the host filesystem.
-- The correct delivery method is `remotelab assistant-message --file <path>`, which publishes the file as a downloadable chat attachment visible to the user.
-- Do not paper over host-only paths with client-side editor rewrites. They still point at the host machine, not a user-reachable surface, and they confuse remote/mobile users.
-- As a safety net, the server rewrites local-file markdown links in assistant messages to downloadable asset URLs at display time. But models should use `assistant-message --file` proactively rather than relying on this fallback.
+### Artifact Delivery Should Be Backend-Owned (2026-04-10)
+- When the model generates a file for the user, the primary contract should be an explicit `Artifacts:` block in the final reply that lists the local file paths to publish.
+- RemoteLab should publish those files after the run completes and surface them through normal attachment UI. The model should not need to call a special upload helper in normal operation.
+- For compatibility and recall, the backend may also scan assistant markdown links and backticked local file paths, plus command output / output flags, but publication should still happen in one backend-owned completion pass.
+- Keep event reads side-effect free. Do not wait until `/events` display time to publish assets or rewrite local paths into download URLs.
+- Favor recall over over-filtering here: if the assistant explicitly names a local file path, it is usually better to publish it than to miss a deliverable the user needed.
 
 ### Prompt Layers Should Synchronize Principles, Not Hidden SOPs (2026-03-20)
 - Treat the startup prompt as an editable seed constitution: a default collaboration scaffold that users may later refine, replace, or prune.

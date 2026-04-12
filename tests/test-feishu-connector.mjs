@@ -464,6 +464,44 @@ const hydratedLegacyReply = await selectAssistantReplyEvent([
 });
 assert.equal(hydratedLegacyReply?.seq, 2, 'reply selection should fall back past a trailing legacy checklist');
 
+const attachmentTextReply = await selectAssistantReplyEvent([
+  {
+    seq: 2,
+    type: 'message',
+    role: 'assistant',
+    runId: 'run_test_4',
+    requestId: 'request_test_4',
+    content: 'The report is ready.',
+  },
+  {
+    seq: 3,
+    type: 'attachment_delivery',
+    role: 'assistant',
+    runId: 'run_test_4',
+    requestId: 'request_test_4',
+    attachments: [{ originalName: 'report.csv', mimeType: 'text/csv' }],
+    images: [{ originalName: 'report.csv', mimeType: 'text/csv' }],
+  },
+], {
+  match: (event) => event.runId === 'run_test_4',
+});
+assert.equal(attachmentTextReply?.seq, 2, 'reply selection should keep the substantive text reply ahead of a later attachment delivery row');
+
+const attachmentOnlyReply = await selectAssistantReplyEvent([
+  {
+    seq: 5,
+    type: 'attachment_delivery',
+    role: 'assistant',
+    runId: 'run_test_5',
+    requestId: 'request_test_5',
+    attachments: [{ originalName: 'export.txt', mimeType: 'text/plain' }],
+    images: [{ originalName: 'export.txt', mimeType: 'text/plain' }],
+  },
+], {
+  match: (event) => event.runId === 'run_test_5',
+});
+assert.equal(attachmentOnlyReply?.seq, 5, 'reply selection should fall back to attachment-only deliveries when no text reply exists');
+
 const mentionSummary = {
   chatType: 'group',
   chatId: 'chat_group_1',
@@ -776,6 +814,25 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_feishu_1/responses/feishu%3Amsg_for_scope') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      replyPublication: {
+        id: 'feishu:msg_for_scope',
+        responseIds: ['feishu:msg_for_scope'],
+        state: 'ready',
+        ready: true,
+        rootRunId: 'run_feishu_1',
+        finalRunId: 'run_feishu_1',
+        continuationRunIds: [],
+        payload: {
+          text: 'Feishu reply ready.',
+        },
+      },
+    }));
+    return;
+  }
+
   if (req.method === 'GET' && req.url === '/api/sessions/sess_feishu_1/events') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -937,6 +994,25 @@ const queuedServer = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/api/runs/run_feishu_queued_1') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ run: { id: 'run_feishu_queued_1', state: 'completed' } }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_feishu_queued_1/responses/feishu%3Amsg_queued_scope') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      replyPublication: {
+        id: 'feishu:msg_queued_scope',
+        responseIds: ['feishu:msg_queued_scope'],
+        state: 'ready',
+        ready: true,
+        rootRunId: 'run_feishu_queued_1',
+        finalRunId: 'run_feishu_queued_1',
+        continuationRunIds: [],
+        payload: {
+          text: 'Queued reply is ready now.',
+        },
+      },
+    }));
     return;
   }
 

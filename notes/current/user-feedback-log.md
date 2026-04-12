@@ -21,6 +21,36 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-04-11 — discussion continuity should outrank session routing until dispatch is trustworthy
+
+- Source: direct product discussion after active design/debug threads were routed into unrelated historical sessions, disrupting the conversation enough that runtime dispatch was temporarily turned off.
+- User slice: mobile-first owner/operator using RemoteLab as a live working discussion surface, not as a demo of orchestration.
+- Observed friction or ask: if dispatch cannot reliably recognize "this is clearly continuing the current thread," then routing feels random and makes the product harder to use than simply staying in one session. Users also want send acceptance and routing checks to be visibly distinct instead of hidden behind a slow `sending` state.
+- Signal: session continuity should dominate dispatch policy. Routing must be conservative, transcript-aware, and visibly post-accept rather than a hidden pre-send stall. Dispatch should remain off until those conditions are good enough in real discussion.
+- Product implication: move toward a single pre-turn planner that sees full current-thread context, defaults to staying in the current session on weak evidence, and restores dispatch only behind clear continuity-first gates.
+- Promote to: `notes/current/session-dispatch-and-direct-delivery-followups.md`, `notes/current/session-dispatch-architecture.md`
+- Follow-up: keep runtime dispatch off for live discussion, treat accepted-to-checking as the correct UX direction, and reopen routing only after transcript-aware validation is in place
+
+### 2026-04-11 — thin connectors still fail if the main instance lacks a first-class source-channel delivery contract
+
+- Source: direct debugging after a WeChat reminder appeared in the RemoteLab session but never reached WeChat, followed by a separate owner-poller outage.
+- User slice: mobile-first owner/operator using WeChat as a serious primary ingress, not a toy connector.
+- Observed friction or ask: if reminder / push delivery requires connector-local code or agent-written shell logic, then the promised "thin connector, main instance owns policy" boundary is not actually real. Missing fast acknowledgements and dead pollers are experienced as product failure, not connector trivia.
+- Signal: RemoteLab needs a main-instance-owned source-channel delivery primitive plus repo-owned connector lifecycle/health management; otherwise thin connectors become an aspiration rather than a stable architecture boundary.
+- Product implication: separate connector transport from outbound policy explicitly, move owner connector lifecycle out of ad hoc local scripts, and treat source-channel reminders as a first-class control-plane capability rather than a session-message workaround.
+- Promote to: `notes/current/wechat-connector-followups.md`, trigger/delivery control-plane work, connector lifecycle management
+- Follow-up: keep the current machine-local direct-send + watchdog stopgaps, but land a repo-owned source-channel delivery contract before treating the connector architecture as stable
+
+### 2026-04-11 — stable connector bugs should trigger a shared contract fix, not a remember-later patch
+
+- Source: direct product discussion after finding that WeChat and other thin connectors can publish the first completed run before reply self-check / automatic continuation has finalized the real user-visible answer.
+- User slice: mobile-first owner/operator using RemoteLab as the main long-lived execution product and explicitly optimizing for future reliability over short-term patch speed.
+- Observed friction or ask: when a bug appears on a stable architecture boundary, a local fix feels deceptively done but creates future memory debt; the operator may not remember the hidden edge case later, especially when they are not reading code day to day.
+- Signal: for mature shared surfaces such as connectors, the default should be to define the missing shared contract now instead of patching one path and trusting future recollection. In this case, reply delivery needs a first-class response/publication lifecycle rather than more per-connector polling heuristics.
+- Product implication: connector reply publication should become a shared server-side contract with stable response identity, finalization state, and canonical outbound payload, and thin connectors should consume that helper/API instead of reasoning from raw run completion.
+- Promote to: `notes/current/connector-reply-publication-architecture.md`, `notes/current/connector-state-surface.md`, connector protocol and helper design
+- Follow-up: implement the shared response-publication surface before adding more thin reply connectors or deepening the callback protocol
+
 ### 2026-04-09 — user-local computer access should start as a scoped device bridge, not ambient full-PC control
 
 - Source: direct product discussion while evaluating long-term Revit Live workflow requirements.

@@ -10,7 +10,11 @@ import { setTimeout as delay } from 'timers/promises'
 import { fileURLToPath, pathToFileURL } from 'url'
 
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs'
-import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs'
+import {
+  buildAssistantReplyAttachmentFallbackText,
+  selectAssistantReplyEvent,
+  stripHiddenBlocks,
+} from '../lib/reply-selection.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = join(__dirname, '..')
@@ -734,7 +738,10 @@ async function generateRemoteLabReply(runtime, trigger, episode, event) {
     runId: submission.runId,
     requestId: submission.requestId,
     duplicate: submission.duplicate,
-    replyText: normalizeSpokenReplyText(replyEvent?.content),
+    replyText: normalizeSpokenReplyText([
+      replyEvent?.content || '',
+      buildAssistantReplyAttachmentFallbackText(replyEvent),
+    ].filter(Boolean).join('\n\n')),
   }
 }
 

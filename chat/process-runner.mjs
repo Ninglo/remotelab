@@ -37,13 +37,15 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
   if (!normalizedRuntimeFamily) {
     throw new Error(`Tool "${toolId}" is missing runtimeFamily`);
   }
+  const allowDangerousPermissionSkip = String(process.env.IS_SANDBOX || '').trim() === '1'
+    && options.dangerouslySkipPermissions;
   let adapter;
   let args;
 
   if (normalizedRuntimeFamily === 'claude-stream-json') {
     adapter = createClaudeAdapter();
     args = buildClaudeArgs(prompt, {
-      dangerouslySkipPermissions: options.dangerouslySkipPermissions,
+      dangerouslySkipPermissions: allowDangerousPermissionSkip,
       resume: options.claudeSessionId,
       maxTurns: options.maxTurns,
       continue: options.continue,

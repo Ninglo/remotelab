@@ -1,66 +1,24 @@
 #!/usr/bin/env node
 
-import { chmod, mkdir, readFile, stat, writeFile } from 'fs/promises';
-import { homedir } from 'os';
-import { dirname, join, resolve } from 'path';
-import { fileURLToPath } from 'url';
+import { mkdir, readFile, stat, writeFile } from 'fs/promises';
+import { dirname } from 'path';
 
 import { TOOLS_FILE } from '../lib/config.mjs';
-
-const HOME = homedir();
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = resolve(__dirname, '..');
-const DEFAULT_TOOL_ID = 'micro-agent';
-const DEFAULT_TOOL_NAME = 'Micro Agent';
-const DEFAULT_COMMAND = 'codex';
-const DEFAULT_MODEL = 'gpt-5.4';
-const DEFAULT_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh'];
-const DEFAULT_REASONING_LEVEL = 'medium';
-const DEFAULT_CLAUDE_REASONING_LEVELS = ['low', 'medium', 'high'];
-const PERSONAL_CODEX_CONFIG_PATH = join(HOME, '.codex', 'config.toml');
-const LEGACY_CONFIG_PATH = join(HOME, '.config', 'remotelab', 'micro-agent.json');
-const DEFAULT_PROVIDER = 'hybrid';
-const HYBRID_RUNTIME_COMMAND = join(REPO_ROOT, 'scripts', 'micro-agent-router.mjs');
-
-const HYBRID_CLAUDE_MODELS = [
-  { id: 'opus', label: 'Claude Opus' },
-  { id: 'sonnet', label: 'Claude Sonnet' },
-];
-
-const HYBRID_DOUBAO_MODELS = [
-  { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro' },
-];
+import {
+  buildMicroAgentToolRecord,
+  detectPreferredCodexModel,
+  MICRO_AGENT_DEFAULT_CODEX_COMMAND,
+  MICRO_AGENT_DEFAULT_MODEL,
+  MICRO_AGENT_DEFAULT_PROVIDER,
+  MICRO_AGENT_DEFAULT_REASONING_LEVEL,
+  MICRO_AGENT_DEFAULT_TOOL_ID,
+  MICRO_AGENT_DEFAULT_TOOL_NAME,
+  MICRO_AGENT_LEGACY_CONFIG_PATH,
+  normalizeMicroAgentProvider,
+} from '../lib/micro-agent-tool.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function buildReasoningModelRecord({ id, label, levels = null, defaultReasoning = '' }) {
-  const record = { id, label };
-  if (Array.isArray(levels) && levels.length > 0) {
-    record.reasoningKind = 'enum';
-    record.supportedReasoningLevels = levels;
-    record.defaultReasoning = defaultReasoning || levels[0];
-  }
-  return record;
-}
-
-function buildHybridModelRecords(primaryModel) {
-  return [
-    buildReasoningModelRecord({
-      id: primaryModel,
-      label: primaryModel,
-      levels: DEFAULT_REASONING_LEVELS,
-      defaultReasoning: DEFAULT_REASONING_LEVEL,
-    }),
-    ...HYBRID_CLAUDE_MODELS.map((entry) => buildReasoningModelRecord({
-      id: entry.id,
-      label: entry.label,
-      levels: DEFAULT_CLAUDE_REASONING_LEVELS,
-      defaultReasoning: DEFAULT_REASONING_LEVEL,
-    })),
-    ...HYBRID_DOUBAO_MODELS.map((entry) => ({ id: entry.id, label: entry.label })),
-  ];
 }
 
 function printUsage(exitCode = 0, errorMessage = '') {
@@ -73,11 +31,11 @@ function printUsage(exitCode = 0, errorMessage = '') {
   node scripts/install-micro-agent.mjs [options]
 
 Options:
-  --provider <id>          Runtime provider: hybrid | codex (default: ${DEFAULT_PROVIDER})
-  --model <id>             Codex / GPT model id (default: detected from ~/.codex/config.toml, else ${DEFAULT_MODEL})
-  --command <cmd>          Command used to launch the runtime in codex mode (default: ${DEFAULT_COMMAND})
-  --tool-id <id>           RemoteLab tool id (default: ${DEFAULT_TOOL_ID})
-  --tool-name <name>       RemoteLab tool label (default: ${DEFAULT_TOOL_NAME})
+  --provider <id>          Runtime provider: hybrid | codex (default: ${MICRO_AGENT_DEFAULT_PROVIDER})
+  --model <id>             Codex / GPT model id (default: detected from ~/.codex/config.toml, else ${MICRO_AGENT_DEFAULT_MODEL})
+  --command <cmd>          Command used to launch the runtime in codex mode (default: ${MICRO_AGENT_DEFAULT_CODEX_COMMAND})
+  --tool-id <id>           RemoteLab tool id (default: ${MICRO_AGENT_DEFAULT_TOOL_ID})
+  --tool-name <name>       RemoteLab tool label (default: ${MICRO_AGENT_DEFAULT_TOOL_NAME})
   -h, --help               Show this help
 
 By default this installer registers a hybrid Micro Agent preset in ~/.config/remotelab/tools.json.
@@ -87,18 +45,18 @@ By default this installer registers a hybrid Micro Agent preset in ~/.config/rem
 
 function parseArgs(argv) {
   const result = {
-    provider: DEFAULT_PROVIDER,
+    provider: MICRO_AGENT_DEFAULT_PROVIDER,
     model: '',
-    command: DEFAULT_COMMAND,
-    toolId: DEFAULT_TOOL_ID,
-    toolName: DEFAULT_TOOL_NAME,
+    command: MICRO_AGENT_DEFAULT_CODEX_COMMAND,
+    toolId: MICRO_AGENT_DEFAULT_TOOL_ID,
+    toolName: MICRO_AGENT_DEFAULT_TOOL_NAME,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
       case '--provider':
-        result.provider = argv[index + 1] || DEFAULT_PROVIDER;
+        result.provider = argv[index + 1] || MICRO_AGENT_DEFAULT_PROVIDER;
         index += 1;
         break;
       case '--model':
@@ -106,15 +64,15 @@ function parseArgs(argv) {
         index += 1;
         break;
       case '--command':
-        result.command = argv[index + 1] || DEFAULT_COMMAND;
+        result.command = argv[index + 1] || MICRO_AGENT_DEFAULT_CODEX_COMMAND;
         index += 1;
         break;
       case '--tool-id':
-        result.toolId = argv[index + 1] || DEFAULT_TOOL_ID;
+        result.toolId = argv[index + 1] || MICRO_AGENT_DEFAULT_TOOL_ID;
         index += 1;
         break;
       case '--tool-name':
-        result.toolName = argv[index + 1] || DEFAULT_TOOL_NAME;
+        result.toolName = argv[index + 1] || MICRO_AGENT_DEFAULT_TOOL_NAME;
         index += 1;
         break;
       case '-h':
@@ -127,11 +85,6 @@ function parseArgs(argv) {
   }
 
   return result;
-}
-
-function normalizeProvider(value) {
-  const normalized = trimString(value).toLowerCase();
-  return normalized === 'codex' ? 'codex' : 'hybrid';
 }
 
 async function pathExists(path) {
@@ -159,67 +112,20 @@ async function saveToolsFile(tools) {
   await writeFile(TOOLS_FILE, `${JSON.stringify(tools, null, 2)}\n`, 'utf8');
 }
 
-async function detectCodexModel() {
-  if (!(await pathExists(PERSONAL_CODEX_CONFIG_PATH))) return '';
-  const raw = await readFile(PERSONAL_CODEX_CONFIG_PATH, 'utf8');
-  const match = raw.match(/^\s*model\s*=\s*["']([^"']+)["']/m);
-  return trimString(match?.[1] || '');
-}
-
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const provider = normalizeProvider(args.provider);
-  let model = '';
-  let record = null;
-
-  if (provider === 'codex') {
-    model = trimString(args.model)
-      || trimString(process.env.CODEX_MODEL)
-      || await detectCodexModel()
-      || DEFAULT_MODEL;
-    record = {
-      id: trimString(args.toolId) || DEFAULT_TOOL_ID,
-      name: trimString(args.toolName) || DEFAULT_TOOL_NAME,
-      visibility: 'private',
-      toolProfile: 'micro-agent',
-      command: trimString(args.command) || DEFAULT_COMMAND,
-      runtimeFamily: 'codex-json',
-      models: [
-        {
-          id: model,
-          label: model,
-          defaultReasoning: DEFAULT_REASONING_LEVEL,
-        },
-      ],
-      reasoning: {
-        kind: 'enum',
-        label: 'Thinking',
-        levels: DEFAULT_REASONING_LEVELS,
-        default: DEFAULT_REASONING_LEVEL,
-      },
-    };
-  } else {
-    model = trimString(args.model)
-      || trimString(process.env.CODEX_MODEL)
-      || await detectCodexModel()
-      || DEFAULT_MODEL;
-    await chmod(HYBRID_RUNTIME_COMMAND, 0o755).catch(() => {});
-    record = {
-      id: trimString(args.toolId) || DEFAULT_TOOL_ID,
-      name: trimString(args.toolName) || DEFAULT_TOOL_NAME,
-      visibility: 'private',
-      toolProfile: 'micro-agent',
-      command: HYBRID_RUNTIME_COMMAND,
-      runtimeFamily: 'claude-stream-json',
-      promptMode: 'bare-user',
-      flattenPrompt: true,
-      models: buildHybridModelRecords(model),
-      reasoning: {
-        kind: 'none',
-        label: 'Thinking',
-      },
-    };
-  }
+  const provider = normalizeMicroAgentProvider(args.provider);
+  const model = trimString(args.model)
+    || trimString(process.env.CODEX_MODEL)
+    || await detectPreferredCodexModel()
+    || MICRO_AGENT_DEFAULT_MODEL;
+  const { record } = await buildMicroAgentToolRecord({
+    provider,
+    model,
+    toolId: trimString(args.toolId) || MICRO_AGENT_DEFAULT_TOOL_ID,
+    toolName: trimString(args.toolName) || MICRO_AGENT_DEFAULT_TOOL_NAME,
+    command: trimString(args.command) || MICRO_AGENT_DEFAULT_CODEX_COMMAND,
+  });
 
   const tools = await loadToolsFile();
   const existingIndex = tools.findIndex((tool) => tool?.id === record.id);
@@ -237,10 +143,10 @@ async function main() {
   console.log(`- Runtime: ${record.runtimeFamily}`);
   console.log(`- Model: ${model}`);
   if (provider === 'codex') {
-    console.log(`- Thinking default: ${DEFAULT_REASONING_LEVEL}`);
+    console.log(`- Thinking default: ${MICRO_AGENT_DEFAULT_REASONING_LEVEL}`);
   }
-  if (await pathExists(LEGACY_CONFIG_PATH)) {
-    console.log(`- Note: legacy config still exists at ${LEGACY_CONFIG_PATH} but is no longer used.`);
+  if (await pathExists(MICRO_AGENT_LEGACY_CONFIG_PATH)) {
+    console.log(`- Note: legacy config still exists at ${MICRO_AGENT_LEGACY_CONFIG_PATH} but is no longer used.`);
   }
 }
 

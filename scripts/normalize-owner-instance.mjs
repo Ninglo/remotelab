@@ -184,6 +184,7 @@ async function main() {
     HOME: trimString(currentPlist.EnvironmentVariables?.HOME) || HOME_DIR,
     CHAT_PORT: trimString(currentPlist.EnvironmentVariables?.CHAT_PORT) || DEFAULT_OWNER_PORT,
     REMOTELAB_INSTANCE_ROOT: OWNER_INSTANCE_ROOT,
+    REMOTELAB_SESSION_DISPATCH: 'on',
     REMOTELAB_USER_SHELL_ENV_B64: trimString(currentPlist.EnvironmentVariables?.REMOTELAB_USER_SHELL_ENV_B64)
       || serializeUserShellEnvSnapshot(),
   };

@@ -298,7 +298,17 @@ remotelab guest-instance converge --all    # repoint all guest instances at the 
 
 Subdomain-style public hostnames are the primary external entrypoint. `create`, `create-trial`, `show`, `links`, and `report` all treat `https://<instance>.<domain>` as the canonical access URL.
 
-If you intentionally keep a path-prefixed bridge, store its shared root URL in `~/.config/remotelab/guest-instance-defaults.json`:
+If you want a second access path that still stays subdomain-style, store a template URL in `~/.config/remotelab/guest-instance-defaults.json`:
+
+```json
+{
+  "bridgeBaseUrlTemplate": "https://{name}-jolab.cpolar.top"
+}
+```
+
+`links` and reports will then surface `owner-jolab`, `trial1-jolab`, and so on as the alternate access URLs.
+
+If you intentionally keep a legacy path-prefixed bridge, store its shared root URL instead:
 
 ```json
 {
@@ -306,7 +316,7 @@ If you intentionally keep a path-prefixed bridge, store its shared root URL in `
 }
 ```
 
-After that, `links` and reports can surface an extra bridge URL when it exists. New instances do not bake bridge routing into their runtime environment by default. Keep this only for deployments that still need the bridge service; otherwise prefer the subdomain entrypoint exclusively.
+After that, `links` and reports can surface an extra bridge URL when it exists. New instances do not bake bridge routing into their runtime environment by default. Keep `bridgeRootBaseUrl` only for deployments that still need the bridge service; otherwise prefer the subdomain entrypoint exclusively.
 
 If you keep the prefix bridge, use `NATAPP_BRIDGE_SERVICE_NAME` / `NATAPP_BRIDGE_SERVICE_PORT` to control it. See [docs/prefix-bridge-routing.md](docs/prefix-bridge-routing.md) for the current routing stance.
 

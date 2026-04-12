@@ -13,6 +13,7 @@ import { promisify } from 'util';
 import { randomBytes, timingSafeEqual, scrypt } from 'crypto';
 import { fullPath } from '../lib/user-shell-env.mjs';
 import { parseCloudflaredIngress } from '../lib/cloudflared-config.mjs';
+import { buildInstanceVersionState, buildStateNeedsAttention, normalizeBuildSummary } from '../lib/build-sync.mjs';
 import { classifyUsageOperation, queryUsageLedger } from '../chat/usage-ledger.mjs';
 import {
   attachInstanceAccess,
@@ -44,6 +45,10 @@ const SESSION_COOKIE = 'admin_session';
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_USAGE_WINDOW_DAYS = 30;
 const DEFAULT_USAGE_BREAKDOWN_TOP = 5;
+const DASHBOARD_CACHE_TTL_MS = 30 * 1000;
+const WORKBENCH_CACHE_TTL_MS = 30 * 1000;
+const BILLING_CACHE_TTL_MS = 30 * 1000;
+const ENGAGEMENT_CACHE_TTL_MS = 2 * 60 * 1000;
 
 const PORT = (() => {
   const idx = process.argv.indexOf('--port');
@@ -140,6 +145,16 @@ function clearSessionCookie() {
   return `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`;
 }
 
+function requestFlag(req, key) {
+  try {
+    const requestUrl = new URL(req.url, `http://${HOST}:${PORT}`);
+    const normalized = trimString(requestUrl.searchParams.get(key)).toLowerCase();
+    return normalized === '1' || normalized === 'true' || normalized === 'yes';
+  } catch {
+    return false;
+  }
+}
+
 // --- Helpers ---
 
 async function cli(args, timeout = 120_000) {
@@ -185,6 +200,43 @@ function sanitize(name) {
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isCacheFresh(cache, ttlMs) {
+  return !!cache?.data && cache.updatedAt > 0 && (Date.now() - cache.updatedAt) < ttlMs;
+}
+
+function cacheIso(updatedAt) {
+  return new Date(updatedAt || Date.now()).toISOString();
+}
+
+function resetCacheState(cache, extras = {}) {
+  cache.data = null;
+  cache.updatedAt = 0;
+  cache.refreshPromise = null;
+  Object.assign(cache, extras);
+}
+
+function invalidateDerivedCaches() {
+  resetCacheState(workbenchCache, {
+    dashboardUpdatedAt: 0,
+    refreshDashboardUpdatedAt: 0,
+  });
+  resetCacheState(billingCache, {
+    dashboardUpdatedAt: 0,
+    workbenchUpdatedAt: 0,
+    refreshDashboardUpdatedAt: 0,
+    refreshWorkbenchUpdatedAt: 0,
+  });
+}
+
+function invalidateAdminCaches() {
+  resetCacheState(dashboardCache, {
+    hasChecks: false,
+    refreshIncludesChecks: false,
+  });
+  invalidateDerivedCaches();
+  resetCacheState(engagementCache);
 }
 
 function decodeXmlEntities(value) {
@@ -327,6 +379,7 @@ function extractInstanceFromHistory(history) {
 function normalizeInstanceUsageKey(value) {
   const key = trimString(value).toLowerCase();
   if (key === 'active') return 'occupied';
+  if (key === 'stale') return 'occupied';
   if (key === 'opened') return 'open';
   if (key === 'reserved') return 'reserved';
   return key;
@@ -525,9 +578,15 @@ function computeDashboardSummary(instances = [], baseSummary = null) {
     openedCount: 0,
     emptyCount: 0,
     emptyNames: [],
+    buildDriftCount: 0,
+    publicBuildMismatchCount: 0,
   };
 
   for (const instance of instances) {
+    const buildStatus = trimString(instance?.build?.status);
+    if (buildStatus === 'stale_runtime') summary.buildDriftCount += 1;
+    if (buildStatus === 'public_mismatch') summary.publicBuildMismatchCount += 1;
+
     const key = normalizeInstanceUsageKey(instance?.usage?.usageStatus);
     if (key === 'occupied' || key === 'reserved') {
       summary.occupiedCount += 1;
@@ -544,6 +603,20 @@ function computeDashboardSummary(instances = [], baseSummary = null) {
   return summary;
 }
 
+function classifyInstanceBuild(instance) {
+  const build = instance?.build && typeof instance.build === 'object' ? instance.build : null;
+  if (!build?.status) {
+    return { key: 'unknown', label: '待确认', tone: 'muted', detail: '版本检查尚未完成。' };
+  }
+  if (build.status === 'stale_runtime') {
+    return { key: 'stale_runtime', label: '落后 owner', tone: 'warn', detail: trimString(build.detail) || '本地运行版本落后于 owner 基线。' };
+  }
+  if (build.status === 'public_mismatch') {
+    return { key: 'public_mismatch', label: '公网偏差', tone: 'warn', detail: trimString(build.detail) || '公网入口返回的版本和本地实例不一致。' };
+  }
+  return { key: 'current', label: trimString(build.label) || '当前版本', tone: 'ok', detail: trimString(build.detail) || '实例版本状态正常。' };
+}
+
 function classifyInstanceHealth(instance) {
   if (!instance) {
     return { key: 'unknown', label: '待确认', tone: 'muted', detail: '当前还没有关联实例。' };
@@ -552,6 +625,10 @@ function classifyInstanceHealth(instance) {
     return { key: 'unknown', label: '待确认', tone: 'muted', detail: '健康探测尚未完成。' };
   }
   if (instance.localReachable && instance.publicReachable !== false) {
+    const buildStatus = classifyInstanceBuild(instance);
+    if (buildStateNeedsAttention(instance?.build)) {
+      return buildStatus;
+    }
     return { key: 'healthy', label: '健康', tone: 'ok', detail: '本地和公网入口都正常。' };
   }
   if (instance.localReachable && instance.publicReachable === false) {
@@ -1273,13 +1350,35 @@ async function servePage(req, res) {
 
 // --- Dashboard cache ---
 
-let dashboardCache = { data: null, updatedAt: 0, refreshPromise: null };
+let dashboardCache = {
+  data: null,
+  updatedAt: 0,
+  refreshPromise: null,
+  hasChecks: false,
+  refreshIncludesChecks: false,
+};
 let engagementCache = { data: null, updatedAt: 0, refreshPromise: null };
+let workbenchCache = {
+  data: null,
+  updatedAt: 0,
+  refreshPromise: null,
+  dashboardUpdatedAt: 0,
+  refreshDashboardUpdatedAt: 0,
+};
+let billingCache = {
+  data: null,
+  updatedAt: 0,
+  refreshPromise: null,
+  dashboardUpdatedAt: 0,
+  workbenchUpdatedAt: 0,
+  refreshDashboardUpdatedAt: 0,
+  refreshWorkbenchUpdatedAt: 0,
+};
 
 async function probeBuildInfo(baseUrl, timeoutMs = 4000) {
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
   if (!normalizedBaseUrl) {
-    return { ok: null };
+    return { ok: null, body: null };
   }
 
   const controller = new AbortController();
@@ -1289,9 +1388,15 @@ async function probeBuildInfo(baseUrl, timeoutMs = 4000) {
       redirect: 'manual',
       signal: controller.signal,
     });
-    return { ok: response.ok };
+    let body = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    return { ok: response.ok, body };
   } catch {
-    return { ok: false };
+    return { ok: false, body: null };
   } finally {
     clearTimeout(timer);
   }
@@ -1307,7 +1412,7 @@ async function resolveCloudflaredPublicBaseUrl(port) {
   return '';
 }
 
-async function buildOwnerInstanceRecord() {
+async function buildOwnerInstanceRecord({ includeChecks = false } = {}) {
   const [ownerPlistContent, legacyOwnerAuth] = await Promise.all([
     readTextFileSafe(OWNER_LAUNCH_AGENT_PATH),
     readJsonFileSafe(OWNER_AUTH_FILE, {}),
@@ -1342,6 +1447,8 @@ async function buildOwnerInstanceRecord() {
   const bridgeBaseUrl = resolveBridgeBaseUrl({
     instanceName: 'owner',
     explicitBaseUrl: ownerEnv.REMOTELAB_BRIDGE_BASE_URL,
+    bridgeBaseUrlTemplate: ownerEnv.REMOTELAB_BRIDGE_BASE_URL_TEMPLATE
+      || guestAccessDefaults.bridgeBaseUrlTemplate,
     bridgeRootBaseUrl: ownerEnv.REMOTELAB_BRIDGE_ROOT_BASE_URL
       || guestAccessDefaults.bridgeRootBaseUrl,
   });
@@ -1368,10 +1475,12 @@ async function buildOwnerInstanceRecord() {
     lastSessionAt,
   };
   const derivedUsageStatus = resolveInstanceUsageStatus(usageSnapshot);
-  const [localReachability, publicReachability] = await Promise.all([
-    probeBuildInfo(localBaseUrl, 1500),
-    publicBaseUrl ? probeBuildInfo(publicBaseUrl, 4000) : Promise.resolve({ ok: null }),
-  ]);
+  const [localReachability, publicReachability] = includeChecks
+    ? await Promise.all([
+        probeBuildInfo(localBaseUrl, 1500),
+        publicBaseUrl ? probeBuildInfo(publicBaseUrl, 4000) : Promise.resolve({ ok: null }),
+      ])
+    : [{ ok: null }, { ok: null }];
 
   return attachInstanceAccess({
     name: 'owner',
@@ -1388,6 +1497,12 @@ async function buildOwnerInstanceRecord() {
     token,
     localReachable: localReachability.ok === null ? null : localReachability.ok === true,
     publicReachable: publicReachability.ok === null ? null : publicReachability.ok === true,
+    build: includeChecks
+      ? buildInstanceVersionState({
+        local: normalizeBuildSummary(localReachability.body),
+        publicBuild: normalizeBuildSummary(publicReachability.body),
+      })
+      : null,
     assignable: false,
     occupancy: {
       instanceName: 'owner',
@@ -1408,12 +1523,12 @@ async function buildOwnerInstanceRecord() {
   });
 }
 
-async function fetchDashboardData() {
+async function fetchDashboardData({ includeChecks = false } = {}) {
   const [links, report, trialOccupancyText, ownerRecord] = await Promise.all([
-    cli(['guest-instance', 'links', '--json', '--check']),
+    cli(['guest-instance', 'links', '--json', ...(includeChecks ? ['--check'] : [])]),
     cli(['guest-instance', 'report', '--json']).catch(() => ({ instances: [], summary: {} })),
     readTextFileSafe(TRIAL_OCCUPANCY_LEDGER_FILE),
-    buildOwnerInstanceRecord(),
+    buildOwnerInstanceRecord({ includeChecks }),
   ]);
   const reportInstances = report.instances || report.rows || [];
   const usageMap = new Map(reportInstances.map(r => [r.name, {
@@ -1436,31 +1551,51 @@ async function fetchDashboardData() {
   };
 }
 
-async function refreshCache() {
-  if (dashboardCache.refreshPromise) return dashboardCache.refreshPromise;
-  dashboardCache.refreshPromise = (async () => {
-    const data = await fetchDashboardData();
+async function refreshDashboardCache({ includeChecks = false } = {}) {
+  if (dashboardCache.refreshPromise) {
+    if (!includeChecks || dashboardCache.refreshIncludesChecks) return dashboardCache.refreshPromise;
+    try {
+      await dashboardCache.refreshPromise;
+    } catch {}
+    if (dashboardCache.data && dashboardCache.hasChecks) return dashboardCache.data;
+  }
+
+  const refreshPromise = (async () => {
+    const data = await fetchDashboardData({ includeChecks });
     dashboardCache.data = data;
     dashboardCache.updatedAt = Date.now();
+    dashboardCache.hasChecks = includeChecks;
     return data;
   })();
+
+  dashboardCache.refreshPromise = refreshPromise;
+  dashboardCache.refreshIncludesChecks = includeChecks;
+
   try {
-    return await dashboardCache.refreshPromise;
+    return await refreshPromise;
   } finally {
-    dashboardCache.refreshPromise = null;
+    if (dashboardCache.refreshPromise === refreshPromise) {
+      dashboardCache.refreshPromise = null;
+      dashboardCache.refreshIncludesChecks = false;
+    }
   }
 }
 
-async function getDashboardData({ force = false } = {}) {
-  void force;
-  return refreshCache();
+async function getDashboardData({ force = false, includeChecks = false } = {}) {
+  if (!force && isCacheFresh(dashboardCache, DASHBOARD_CACHE_TTL_MS) && (!includeChecks || dashboardCache.hasChecks)) {
+    return dashboardCache.data;
+  }
+  return refreshDashboardCache({ includeChecks });
 }
 
 async function apiDashboard(req, res) {
-  const data = await getDashboardData();
+  const force = requestFlag(req, 'refresh') || requestFlag(req, 'force');
+  const includeChecks = requestFlag(req, 'checks') || force;
+  const data = await getDashboardData({ force, includeChecks });
   json(res, {
     ...data,
-    cachedAt: new Date(dashboardCache.updatedAt).toISOString(),
+    cachedAt: cacheIso(dashboardCache.updatedAt),
+    checksIncluded: dashboardCache.hasChecks,
   });
 }
 
@@ -1478,6 +1613,7 @@ async function apiCreate(req, res) {
   args.push('--json');
 
   const result = await cli(args, 180_000);
+  invalidateAdminCaches();
   json(res, result, 201);
 }
 
@@ -1502,6 +1638,7 @@ async function apiInstanceAction(res, name, action) {
       const service = safe === 'owner' ? 'remotelab.service' : `remotelab-guest@${safe}.service`;
       await execFileAsync('systemctl', [action, service], { timeout: 30_000 });
     }
+    invalidateAdminCaches();
     json(res, { ok: true, action, name: safe });
   } catch (err) {
     json(res, { ok: false, error: err.message || String(err) }, 500);
@@ -1537,11 +1674,13 @@ async function apiDelete(res, name) {
     return json(res, { ok: false, error: 'Registry update failed: ' + err.message }, 500);
   }
 
+  invalidateAdminCaches();
   json(res, { ok: true, name: safe, action: 'delete' });
 }
 
 async function apiConverge(req, res) {
   const result = await cli(['guest-instance', 'converge', '--all', '--json'], 180_000);
+  invalidateAdminCaches();
   json(res, result);
 }
 
@@ -1573,22 +1712,28 @@ async function refreshEngagementCache() {
 }
 
 async function getEngagementData({ force = false } = {}) {
-  void force;
+  if (!force && isCacheFresh(engagementCache, ENGAGEMENT_CACHE_TTL_MS)) {
+    return engagementCache.data;
+  }
   return refreshEngagementCache();
 }
 
 async function apiUserEngagement(req, res) {
-  const result = await getEngagementData();
-  json(res, result);
+  const force = requestFlag(req, 'refresh') || requestFlag(req, 'force');
+  const result = await getEngagementData({ force });
+  json(res, {
+    ...result,
+    cachedAt: cacheIso(engagementCache.updatedAt),
+  });
 }
 
-async function buildWorkbenchPayload(dashboardData = null) {
+async function buildWorkbenchPayload(dashboardData = null, { forceEngagement = false } = {}) {
   const effectiveDashboardData = dashboardData || await getDashboardData();
   const [bindingsFile, ledgerText, eventLogText, engagement] = await Promise.all([
     readJsonFileSafe(USER_BINDINGS_FILE, { bindings: [] }),
     readTextFileSafe(USER_LEDGER_FILE),
     readTextFileSafe(USER_EVENT_LOG_FILE),
-    getEngagementData(),
+    getEngagementData({ force: forceEngagement }),
   ]);
 
   return buildUserWorkbenchPayload({
@@ -1600,27 +1745,145 @@ async function buildWorkbenchPayload(dashboardData = null) {
   });
 }
 
+async function getWorkbenchData({
+  force = false,
+  dashboardData = null,
+  dashboardUpdatedAt = 0,
+  forceEngagement = false,
+} = {}) {
+  const effectiveDashboardData = dashboardData || await getDashboardData();
+  const effectiveDashboardUpdatedAt = dashboardUpdatedAt || dashboardCache.updatedAt;
+
+  if (!force && isCacheFresh(workbenchCache, WORKBENCH_CACHE_TTL_MS) && workbenchCache.dashboardUpdatedAt === effectiveDashboardUpdatedAt) {
+    return workbenchCache.data;
+  }
+  if (!force && workbenchCache.refreshPromise && workbenchCache.refreshDashboardUpdatedAt === effectiveDashboardUpdatedAt) {
+    return workbenchCache.refreshPromise;
+  }
+
+  const refreshPromise = (async () => {
+    const payload = await buildWorkbenchPayload(effectiveDashboardData, { forceEngagement });
+    workbenchCache.data = payload;
+    workbenchCache.updatedAt = Date.now();
+    workbenchCache.dashboardUpdatedAt = effectiveDashboardUpdatedAt;
+    return payload;
+  })();
+
+  workbenchCache.refreshPromise = refreshPromise;
+  workbenchCache.refreshDashboardUpdatedAt = effectiveDashboardUpdatedAt;
+
+  try {
+    return await refreshPromise;
+  } finally {
+    if (workbenchCache.refreshPromise === refreshPromise) {
+      workbenchCache.refreshPromise = null;
+      workbenchCache.refreshDashboardUpdatedAt = 0;
+    }
+  }
+}
+
 async function apiWorkbench(req, res) {
-  const dashboardData = await getDashboardData();
-  const payload = await buildWorkbenchPayload(dashboardData);
+  const force = requestFlag(req, 'refresh') || requestFlag(req, 'force');
+  const includeChecks = requestFlag(req, 'checks') || force;
+  const dashboardData = await getDashboardData({ force, includeChecks });
+  const payload = await getWorkbenchData({
+    force,
+    dashboardData,
+    dashboardUpdatedAt: dashboardCache.updatedAt,
+    forceEngagement: force,
+  });
 
   json(res, {
     ...payload,
-    cachedAt: new Date(dashboardCache.updatedAt).toISOString(),
+    cachedAt: cacheIso(workbenchCache.updatedAt || dashboardCache.updatedAt),
+    dashboardCachedAt: cacheIso(dashboardCache.updatedAt),
   });
 }
 
+async function getBillingData({
+  force = false,
+  dashboardData = null,
+  dashboardUpdatedAt = 0,
+  workbenchPayload = null,
+  workbenchUpdatedAt = 0,
+} = {}) {
+  const effectiveDashboardData = dashboardData || await getDashboardData();
+  const effectiveDashboardUpdatedAt = dashboardUpdatedAt || dashboardCache.updatedAt;
+  const effectiveWorkbenchPayload = workbenchPayload || await getWorkbenchData({
+    force,
+    dashboardData: effectiveDashboardData,
+    dashboardUpdatedAt: effectiveDashboardUpdatedAt,
+    forceEngagement: force,
+  });
+  const effectiveWorkbenchUpdatedAt = workbenchUpdatedAt || workbenchCache.updatedAt;
+
+  if (
+    !force
+    && isCacheFresh(billingCache, BILLING_CACHE_TTL_MS)
+    && billingCache.dashboardUpdatedAt === effectiveDashboardUpdatedAt
+    && billingCache.workbenchUpdatedAt === effectiveWorkbenchUpdatedAt
+  ) {
+    return billingCache.data;
+  }
+  if (
+    !force
+    && billingCache.refreshPromise
+    && billingCache.refreshDashboardUpdatedAt === effectiveDashboardUpdatedAt
+    && billingCache.refreshWorkbenchUpdatedAt === effectiveWorkbenchUpdatedAt
+  ) {
+    return billingCache.refreshPromise;
+  }
+
+  const refreshPromise = (async () => {
+    const payload = buildBillingAnalyticsPayload({
+      dashboardData: effectiveDashboardData,
+      workbenchPayload: effectiveWorkbenchPayload,
+    });
+    billingCache.data = payload;
+    billingCache.updatedAt = Date.now();
+    billingCache.dashboardUpdatedAt = effectiveDashboardUpdatedAt;
+    billingCache.workbenchUpdatedAt = effectiveWorkbenchUpdatedAt;
+    return payload;
+  })();
+
+  billingCache.refreshPromise = refreshPromise;
+  billingCache.refreshDashboardUpdatedAt = effectiveDashboardUpdatedAt;
+  billingCache.refreshWorkbenchUpdatedAt = effectiveWorkbenchUpdatedAt;
+
+  try {
+    return await refreshPromise;
+  } finally {
+    if (billingCache.refreshPromise === refreshPromise) {
+      billingCache.refreshPromise = null;
+      billingCache.refreshDashboardUpdatedAt = 0;
+      billingCache.refreshWorkbenchUpdatedAt = 0;
+    }
+  }
+}
+
 async function apiBilling(req, res) {
-  const dashboardData = await getDashboardData();
-  const workbenchPayload = await buildWorkbenchPayload(dashboardData);
-  const payload = buildBillingAnalyticsPayload({
+  const force = requestFlag(req, 'refresh') || requestFlag(req, 'force');
+  const includeChecks = requestFlag(req, 'checks') || force;
+  const dashboardData = await getDashboardData({ force, includeChecks });
+  const workbenchPayload = await getWorkbenchData({
+    force,
     dashboardData,
+    dashboardUpdatedAt: dashboardCache.updatedAt,
+    forceEngagement: force,
+  });
+  const payload = await getBillingData({
+    force,
+    dashboardData,
+    dashboardUpdatedAt: dashboardCache.updatedAt,
     workbenchPayload,
+    workbenchUpdatedAt: workbenchCache.updatedAt,
   });
 
   json(res, {
     ...payload,
-    cachedAt: new Date(dashboardCache.updatedAt).toISOString(),
+    cachedAt: cacheIso(billingCache.updatedAt || workbenchCache.updatedAt || dashboardCache.updatedAt),
+    dashboardCachedAt: cacheIso(dashboardCache.updatedAt),
+    workbenchCachedAt: cacheIso(workbenchCache.updatedAt || dashboardCache.updatedAt),
   });
 }
 

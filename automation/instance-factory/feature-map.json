@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "id": "remotelab",
+      "title": "RemoteLab Core",
+      "kind": "core",
+      "modeKey": "REMOTELAB_MODE",
+      "defaultMode": "on",
+      "requiredEnv": [],
+      "requiredCommands": ["node"],
+      "requiredManifestPaths": ["host.repoCheckoutPath", "systemd.ownerUnit"],
+      "repoCheckoutRequired": true,
+      "systemdUnit": "remotelab",
+      "healthCheck": "http://127.0.0.1:7690/login"
+    },
+    {
+      "id": "ingress.cloudflare",
+      "title": "Cloudflare Ingress",
+      "kind": "ingress",
+      "modeKey": "INGRESS_CLOUDFLARE_MODE",
+      "defaultMode": "auto",
+      "requiredEnv": [
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_TUNNEL_ID",
+        "CLOUDFLARE_TUNNEL_NAME"
+      ],
+      "requiredCommands": ["cloudflared"],
+      "dependsOn": ["remotelab"],
+      "startAfter": ["remotelab"],
+      "systemdUnit": "cloudflared-thelab",
+      "healthCheck": "public owner hostname resolves through Cloudflare Tunnel"
+    },
+    {
+      "id": "ingress.cpolar",
+      "title": "cpolar Ingress",
+      "kind": "ingress",
+      "modeKey": "INGRESS_CPOLAR_MODE",
+      "defaultMode": "off",
+      "requiredEnv": ["CPOLAR_AUTH_TOKEN"],
+      "requiredCommands": ["cpolar"],
+      "dependsOn": ["remotelab"],
+      "startAfter": ["remotelab"],
+      "systemdUnit": "cpolar",
+      "healthCheck": "cpolar public endpoint reaches the owner service"
+    },
+    {
+      "id": "connector.email",
+      "title": "Email Connector",
+      "kind": "connector",
+      "modeKey": "CONNECTOR_EMAIL_MODE",
+      "defaultMode": "auto",
+      "requiredEnv": [
+        "AGENT_MAILBOX_ADDRESS",
+        "AGENT_MAIL_HTTP_BRIDGE_SECRET",
+        "AGENT_MAIL_PUBLIC_BASE_URL"
+      ],
+      "requiredCommands": ["node"],
+      "dependsOn": ["remotelab"],
+      "startAfter": ["remotelab"],
+      "systemdUnit": "remotelab-agent-mail-http-bridge",
+      "healthCheck": "mail webhook bridge accepts authenticated requests"
+    },
+    {
+      "id": "worker.mailbox",
+      "title": "Mailbox Worker",
+      "kind": "sidecar",
+      "modeKey": "WORKER_MAILBOX_MODE",
+      "defaultMode": "auto",
+      "requiredEnv": ["AGENT_MAILBOX_ADDRESS"],
+      "requiredCommands": ["node"],
+      "dependsOn": ["remotelab", "connector.email"],
+      "startAfter": ["connector.email"],
+      "systemdUnit": "remotelab-agent-mail-worker",
+      "healthCheck": "mailbox queue can drain approved items"
+    },
+    {
+      "id": "connector.feishu",
+      "title": "Feishu Connector",
+      "kind": "connector",
+      "modeKey": "CONNECTOR_FEISHU_MODE",
+      "defaultMode": "auto",
+      "requiredEnv": [
+        "FEISHU_APP_ID",
+        "FEISHU_APP_SECRET",
+        "FEISHU_VERIFICATION_TOKEN"
+      ],
+      "requiredCommands": ["node"],
+      "dependsOn": ["remotelab"],
+      "startAfter": ["remotelab"],
+      "systemdUnit": "remotelab-feishu-connector",
+      "healthCheck": "Feishu webhook and polling path succeed"
+    },
+    {
+      "id": "connector.calendar",
+      "title": "Calendar Connector",
+      "kind": "connector",
+      "modeKey": "CONNECTOR_CALENDAR_MODE",
+      "defaultMode": "auto",
+      "requiredEnv": [
+        "CALENDAR_PROVIDER",
+        "CALENDAR_GOOGLE_CREDENTIALS_FILE",
+        "CALENDAR_GOOGLE_TOKEN_FILE"
+      ],
+      "requiredCommands": ["node"],
+      "dependsOn": ["remotelab"],
+      "startAfter": ["remotelab"],
+      "healthCheck": "calendar provider credentials can complete a list or insert flow"
+    }
+  ]
+}

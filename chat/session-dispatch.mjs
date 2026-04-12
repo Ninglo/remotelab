@@ -1,281 +1,424 @@
 /**
- * Pre-execution session dispatch.
+ * Pre-execution session continuation planning.
  *
  * Before a user message enters the normal turn lifecycle, this module
- * classifies whether it belongs in the current session or should be
- * routed to an existing or new session.
+ * decides whether the input should:
+ * - continue in the current session
+ * - fork into one or more related child sessions
+ * - start one or more fresh sessions with minimal forwarded context
  */
 
-import { buildDispatchClassifierPrompt, parseDispatchDecision } from './session-dispatch-prompt.mjs';
+import {
+  buildContinuationPlannerPrompt,
+  parseContinuationPlan,
+} from './session-dispatch-prompt.mjs';
+import { isEnvToggleEnabled } from '../lib/env-toggle.mjs';
 
-const DISPATCH_CONFIDENCE_THRESHOLD = 0.75;
+const CONTINUATION_PLANNER_THRESHOLD = 0.75;
 const DISPATCH_SETTING_ENV = 'REMOTELAB_SESSION_DISPATCH';
-
-function normalizeDispatchSetting(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (!normalized || ['0', 'false', 'off', 'disabled', 'disable', 'none'].includes(normalized)) {
-    return 'off';
-  }
-  if (['1', 'true', 'on', 'enabled', 'enable', 'all'].includes(normalized)) {
-    return 'on';
-  }
-  return normalized;
-}
+const CURRENT_TRANSCRIPT_MAX_CHARS = 22000;
 
 function isDispatchEnabled() {
-  return normalizeDispatchSetting(process.env[DISPATCH_SETTING_ENV]) === 'on';
+  return isEnvToggleEnabled(process.env[DISPATCH_SETTING_ENV], { defaultValue: true });
 }
 
-/**
- * Quick keyword pre-check: does the message text match any Agent's trigger keywords?
- * Returns the matched Agent or null. Used as a fast path before the LLM classifier.
- */
-function matchAgentByTriggers(message, agents) {
-  if (!message || !agents?.length) return null;
-  const lowerMessage = message.toLowerCase();
-  for (const agent of agents) {
-    const triggers = agent.scopeHints?.triggers;
-    if (!Array.isArray(triggers) || triggers.length === 0) continue;
-    for (const trigger of triggers) {
-      if (trigger && lowerMessage.includes(trigger.toLowerCase())) {
-        return agent;
-      }
-    }
-  }
-  return null;
-}
-
-/**
- * Determines whether dispatch classification should run for this message.
- */
 export function shouldRunDispatch(session, options = {}) {
   if (!isDispatchEnabled()) return false;
   if (options.internalOperation) return false;
   if (options.skipDispatch) return false;
   if (session?.visitorId) return false;
-  // Don't dispatch queued follow-up flushes
   if (options.queueIfBusy === false && options.recordUserMessage === false) return false;
   return true;
 }
 
-/**
- * Run the dispatch classifier and return a decision.
- *
- * @param {object} params
- * @param {object} params.session - Current session metadata
- * @param {string} params.message - Incoming user message text
- * @param {Function} params.listSessions - Async function returning active sessions
- * @param {Function} params.listAgents - Async function returning available agents
- * @param {Function} params.runPrompt - Async function to run a one-shot LLM prompt
- * @returns {Promise<object>} Dispatch decision
- */
-export async function classifyDispatch({
-  session,
-  message,
-  listSessions,
-  listAgents,
-  runPrompt,
-}) {
-  const defaultDecision = { action: 'continue', confidence: 1, reason: 'default' };
-
-  // Short messages (greetings, acknowledgments) almost always belong in current session
+export function shouldUseAsyncDispatchPlanning(session, message) {
   const trimmedMessage = String(message || '').trim();
   if (trimmedMessage.length < 5) {
-    return defaultDecision;
+    return false;
   }
-
-  // New/empty sessions always continue
+  if (Number(session?.messageCount || 0) < 2) {
+    return false;
+  }
   if (!session?.name || session.name.startsWith('New Session') || session.autoRenamePending === true) {
-    return defaultDecision;
+    return false;
+  }
+  return true;
+}
+
+function clipTranscript(text, maxChars) {
+  const normalized = String(text || '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxChars) return normalized;
+  const headChars = Math.max(1, Math.floor(maxChars * 0.65));
+  const tailChars = Math.max(1, maxChars - headChars);
+  return `${normalized.slice(0, headChars).trimEnd()}\n[... transcript clipped ...]\n${normalized.slice(-tailChars).trimStart()}`;
+}
+
+function buildTranscriptFromHistory(events, maxChars = CURRENT_TRANSCRIPT_MAX_CHARS) {
+  if (!Array.isArray(events) || events.length === 0) return '';
+  const lines = [];
+  for (const event of events) {
+    if (event?.type !== 'message') continue;
+    const content = String(event.content || '').trim();
+    if (!content) continue;
+    const roleLabel = event.role === 'user'
+      ? 'User'
+      : (event.role === 'assistant' ? 'Assistant' : 'System');
+    lines.push(`[${roleLabel}]: ${content}`);
+  }
+  return clipTranscript(lines.join('\n\n'), maxChars);
+}
+
+function trimString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildDefaultPlan(message, reason = 'default') {
+  const deliveryText = trimString(message);
+  return {
+    confidence: 1,
+    reasoning: reason,
+    userVisibleSummary: '',
+    destinations: [
+      {
+        destinationId: 'dest_1',
+        mode: 'continue',
+        inheritanceProfile: 'reuse_current_context',
+        reasoning: reason,
+        scopeFraming: '',
+        deliveryText,
+        forwardedContext: '',
+        titleHint: '',
+      },
+    ],
+  };
+}
+
+function normalizeDestinations(plan, originalMessage) {
+  const trimmedMessage = trimString(originalMessage);
+  const rawDestinations = Array.isArray(plan?.destinations) ? plan.destinations : [];
+  const normalized = [];
+  let continueSeen = false;
+
+  for (const destination of rawDestinations) {
+    const mode = destination?.mode === 'fork'
+      ? 'fork'
+      : (destination?.mode === 'fresh' ? 'fresh' : 'continue');
+
+    if (mode === 'continue' && continueSeen) {
+      continue;
+    }
+    if (mode === 'continue') {
+      continueSeen = true;
+    }
+
+    const inheritanceProfile = mode === 'fork'
+      ? 'full_parent_context'
+      : (mode === 'fresh' ? 'minimal_forwarded_context' : 'reuse_current_context');
+    const deliveryText = trimString(destination?.deliveryText) || trimmedMessage;
+
+    normalized.push({
+      destinationId: trimString(destination?.destinationId) || `dest_${normalized.length + 1}`,
+      mode,
+      inheritanceProfile: trimString(destination?.inheritanceProfile) || inheritanceProfile,
+      reasoning: trimString(destination?.reasoning),
+      scopeFraming: trimString(destination?.scopeFraming),
+      deliveryText,
+      forwardedContext: trimString(destination?.forwardedContext),
+      titleHint: trimString(destination?.titleHint),
+    });
   }
 
-  let recentSessions = [];
-  let availableAgents = [];
+  if (normalized.length === 0) {
+    return buildDefaultPlan(trimmedMessage, trimString(plan?.reasoning) || 'default').destinations;
+  }
 
+  return normalized;
+}
+
+function normalizePlan(plan, originalMessage) {
+  const destinations = normalizeDestinations(plan, originalMessage);
+  const nonContinueCount = destinations.filter((destination) => destination.mode !== 'continue').length;
+  const confidence = typeof plan?.confidence === 'number'
+    ? Math.max(0, Math.min(1, plan.confidence))
+    : 0;
+
+  if ((nonContinueCount > 0 || destinations.length > 1) && confidence < CONTINUATION_PLANNER_THRESHOLD) {
+    return buildDefaultPlan(originalMessage, `low confidence: ${trimString(plan?.reasoning) || 'continuation planner'}`);
+  }
+
+  return {
+    confidence: confidence || 1,
+    reasoning: trimString(plan?.reasoning),
+    userVisibleSummary: trimString(plan?.userVisibleSummary),
+    destinations,
+  };
+}
+
+export function isTrivialContinuationPlan(plan) {
+  const destinations = Array.isArray(plan?.destinations) ? plan.destinations : [];
+  return destinations.length === 1 && destinations[0]?.mode === 'continue';
+}
+
+export async function planSessionContinuations({
+  session,
+  message,
+  loadSessionHistory,
+  runPrompt,
+}) {
+  const defaultPlan = buildDefaultPlan(message, 'default');
+  const trimmedMessage = trimString(message);
+  if (!shouldUseAsyncDispatchPlanning(session, trimmedMessage)) {
+    return defaultPlan;
+  }
+
+  let currentTranscript = '';
   try {
-    [recentSessions, availableAgents] = await Promise.all([
-      listSessions(),
-      listAgents(),
-    ]);
+    const currentHistory = typeof loadSessionHistory === 'function'
+      ? await loadSessionHistory(session.id)
+      : [];
+    currentTranscript = buildTranscriptFromHistory(currentHistory, CURRENT_TRANSCRIPT_MAX_CHARS);
   } catch (error) {
-    console.error(`[session-dispatch] Failed to load context: ${error.message}`);
-    return defaultDecision;
+    console.error(`[session-continuation] Failed to load current transcript: ${error.message}`);
+    return defaultPlan;
   }
 
-  // Quick keyword match against Agent triggers
-  const triggerMatch = matchAgentByTriggers(trimmedMessage, availableAgents);
-
-  // If the current session already belongs to the matched Agent, no routing needed
-  if (triggerMatch && session.templateId === triggerMatch.id) {
-    return defaultDecision;
+  if (!currentTranscript) {
+    return defaultPlan;
   }
 
-  // Build and run the classifier prompt
-  const prompt = buildDispatchClassifierPrompt({
+  const prompt = buildContinuationPlannerPrompt({
     currentSession: session,
+    currentTranscript,
     message: trimmedMessage,
-    recentSessions,
-    availableAgents,
   });
 
   let rawResponse = '';
   try {
     rawResponse = await runPrompt(prompt);
   } catch (error) {
-    console.error(`[session-dispatch] Classifier failed: ${error.message}`);
-    return defaultDecision;
+    console.error(`[session-continuation] Continuation planner failed: ${error.message}`);
+    return defaultPlan;
   }
 
-  const decision = parseDispatchDecision(rawResponse);
+  const parsedPlan = parseContinuationPlan(rawResponse);
+  const normalizedPlan = normalizePlan(parsedPlan, trimmedMessage);
 
-  // Apply confidence threshold
-  if (decision.action !== 'continue' && decision.confidence < DISPATCH_CONFIDENCE_THRESHOLD) {
-    console.log(
-      `[session-dispatch] Low confidence ${decision.confidence.toFixed(2)} for ${decision.action}, falling back to continue. Reason: ${decision.reason}`
-    );
-    return { ...decision, action: 'continue', reason: `low confidence: ${decision.reason}` };
+  console.log(
+    `[session-continuation] Plan: ${normalizedPlan.destinations.map((destination) => destination.mode).join(', ')}`
+    + ` (confidence: ${(normalizedPlan.confidence || 0).toFixed(2)})`
+    + ` for session ${session.id?.slice(0, 8)}`
+    + ` reason: ${normalizedPlan.reasoning || 'n/a'}`
+  );
+
+  return normalizedPlan;
+}
+
+function buildPrivatePlannerBlock(lines = []) {
+  const content = lines
+    .map((line) => trimString(line))
+    .filter(Boolean)
+    .join('\n');
+  if (!content) return '';
+  return `<private>\n${content}\n</private>`;
+}
+
+function buildDestinationPromptInput(destination, originalMessage, { multipleDestinations = false } = {}) {
+  const deliveryText = trimString(destination?.deliveryText) || trimString(originalMessage);
+  const scopeFraming = trimString(destination?.scopeFraming);
+  const forwardedContext = trimString(destination?.forwardedContext);
+  const mode = trimString(destination?.mode) || 'continue';
+
+  const privateLines = [
+    'RemoteLab continuation planner handoff:',
+    `- continuation mode: ${mode}`,
+    ...(multipleDestinations ? ['- this user turn was split into multiple downstream destinations'] : []),
+    ...(scopeFraming ? [`- scope framing: ${scopeFraming}`] : []),
+    ...(mode === 'fork' ? ['- this session should inherit the parent session context as a rich branch continuation'] : []),
+    ...(mode === 'fresh' ? ['- treat this as a new workstream and use only the forwarded bridge context below as the carry-over from the source session'] : []),
+    ...(forwardedContext ? ['- forwarded bridge context:', forwardedContext] : []),
+  ];
+  const privateBlock = buildPrivatePlannerBlock(privateLines);
+  if (!privateBlock) return deliveryText;
+  return `${privateBlock}\n\n${deliveryText}`;
+}
+
+function buildDestinationNoticeLabel(destination) {
+  if (destination?.mode === 'fork') return 'branch session';
+  if (destination?.mode === 'fresh') return 'new session';
+  return 'current session';
+}
+
+function buildContinuationNoticeMessage(plan, destinations, buildSessionNavigationHref) {
+  const summary = trimString(plan?.userVisibleSummary);
+  const lines = [];
+  if (summary) {
+    lines.push(summary);
+  } else if (destinations.length > 1) {
+    lines.push(`This user turn was split into ${destinations.length} follow-up sessions.`);
+  } else {
+    lines.push('This user turn continues in another session.');
   }
 
-  // Validate route_existing target
-  if (decision.action === 'route_existing') {
-    const targetExists = recentSessions.some((s) => s.id === decision.targetSessionId);
-    if (!targetExists) {
-      console.log(`[session-dispatch] Target session ${decision.targetSessionId} not found, falling back to route_new`);
-      decision.action = 'route_new';
-      decision.targetSessionId = '';
+  for (const destination of destinations) {
+    const session = destination?.session;
+    const sessionId = trimString(session?.id);
+    if (!sessionId) continue;
+    const sessionName = trimString(session?.name) || 'Untitled session';
+    const href = typeof buildSessionNavigationHref === 'function'
+      ? trimString(buildSessionNavigationHref(sessionId))
+      : '';
+    const linkedName = href ? `[${sessionName}](${href})` : sessionName;
+    const reason = trimString(destination?.reasoning);
+    const label = buildDestinationNoticeLabel(destination);
+    if (reason) {
+      lines.push(`A ${label} was created as ${linkedName}. Reason: ${reason}`);
+    } else {
+      lines.push(`A ${label} was created as ${linkedName}.`);
+    }
+    if (href) {
+      lines.push(`Open it here: ${href}`);
     }
   }
 
-  // Inject trigger-matched Agent if classifier didn't suggest one
-  if (triggerMatch && !decision.targetAgentId) {
-    decision.targetAgentId = triggerMatch.id;
-  }
-
-  console.log(
-    `[session-dispatch] Decision: ${decision.action} (confidence: ${decision.confidence.toFixed(2)}) for session ${session.id?.slice(0, 8)}. Reason: ${decision.reason}`
-  );
-
-  return decision;
+  return lines.join('\n\n');
 }
 
-/**
- * Execute a dispatch decision by routing the message to the appropriate session.
- *
- * @param {object} params
- * @param {object} params.decision - The dispatch decision from classifyDispatch
- * @param {string} params.sourceSessionId - The session the message was originally sent to
- * @param {string} params.message - The original user message
- * @param {Array} params.images - The original images
- * @param {object} params.options - The original submitHttpMessage options
- * @param {Function} params.createSession - Async fn to create a new session
- * @param {Function} params.submitMessage - Async fn to submit message to a session
- * @param {Function} params.getSession - Async fn to get session metadata
- * @param {Function} params.getAgent - Async fn to get agent by id
- * @param {Function} params.appendEvent - Async fn to append event to session
- * @param {Function} params.broadcastInvalidation - Fn to broadcast session invalidation
- * @param {Function} params.messageEvent - Fn to create a message event
- * @param {Function} params.statusEvent - Fn to create a status event
- * @param {Function} params.contextOperationEvent - Fn to create a context operation event
- * @param {Function} params.buildSessionNavigationHref - Fn to build session navigation href
- * @returns {Promise<object>} Routing outcome
- */
-export async function executeDispatchRouting({
-  decision,
+export async function executeContinuationPlan({
+  plan,
+  sourceSession,
   sourceSessionId,
   message,
   images,
   options,
   createSession,
   submitMessage,
-  getSession,
-  getAgent,
   appendEvent,
   broadcastInvalidation,
   messageEvent,
-  statusEvent,
   contextOperationEvent,
   buildSessionNavigationHref,
+  prepareFullParentContext,
+  setPreparedChildContext,
+  createDerivedRequestId,
 }) {
-  const targetAgentId = decision.targetAgentId || '';
-  let targetSessionId = decision.targetSessionId || '';
-  let targetSession = null;
-
-  if (decision.action === 'route_existing' && targetSessionId) {
-    targetSession = await getSession(targetSessionId);
-    if (!targetSession) {
-      // Target vanished, fall back to new session
-      decision.action = 'route_new';
-      targetSessionId = '';
-    }
+  const destinations = Array.isArray(plan?.destinations) ? plan.destinations : [];
+  if (destinations.length === 0) {
+    return { applied: false, submittedCurrent: false, created: [] };
   }
 
-  if (decision.action === 'route_new') {
-    // Resolve target Agent for defaults
-    let agent = null;
-    if (targetAgentId) {
-      agent = await getAgent(targetAgentId);
-    }
+  const multipleDestinations = destinations.length > 1;
+  const currentDestination = destinations.find((destination) => destination?.mode === 'continue') || null;
+  const childDestinations = destinations.filter((destination) => destination?.mode === 'fork' || destination?.mode === 'fresh');
+  const createdDestinations = [];
+  let currentOutcome = null;
+  let preparedFullParentContext = null;
 
-    // Create new session with Agent defaults while leaving source untouched.
-    targetSession = await createSession(
-      agent?.tool || '',
-      '',  // name will be auto-generated
+  if (currentDestination) {
+    currentOutcome = await submitMessage(sourceSessionId, buildDestinationPromptInput(currentDestination, message, {
+      multipleDestinations,
+    }), images, {
+      ...options,
+      skipDispatch: true,
+      skipPendingDispatchLookup: true,
+      recordedUserText: trimString(currentDestination.deliveryText) || trimString(message),
+    });
+  }
+
+  for (let index = 0; index < childDestinations.length; index += 1) {
+    const destination = childDestinations[index];
+    const requestId = typeof createDerivedRequestId === 'function'
+      ? createDerivedRequestId(destination, index)
+      : `continuation_${destination.mode}_${index + 1}`;
+    const inheritRuntimePreferences = true;
+    const titleHint = trimString(destination.titleHint);
+    const child = await createSession(
+      sourceSession.folder,
+      (options.tool || sourceSession.tool || '').trim(),
+      titleHint,
       {
-        templateId: targetAgentId || '',
-        templateName: agent?.name || '',
-        systemPrompt: agent?.systemPrompt || '',
+        group: destination.mode === 'fork' ? (sourceSession.group || '') : '',
+        description: destination.mode === 'fork' ? (sourceSession.description || '') : '',
+        sourceId: sourceSession.sourceId || '',
+        sourceName: sourceSession.sourceName || '',
+        templateId: sourceSession.templateId || '',
+        templateName: sourceSession.templateName || '',
+        systemPrompt: sourceSession.systemPrompt || '',
+        activeAgreements: sourceSession.activeAgreements || [],
+        model: inheritRuntimePreferences ? sourceSession.model || '' : '',
+        effort: inheritRuntimePreferences ? sourceSession.effort || '' : '',
+        thinking: inheritRuntimePreferences && sourceSession.thinking === true,
+        userId: sourceSession.userId || '',
+        userName: sourceSession.userName || '',
+        ...(destination.mode === 'fork'
+          ? {
+              forkedFromSessionId: sourceSession.id,
+              forkedFromSeq: sourceSession.latestSeq || 0,
+              rootSessionId: sourceSession.rootSessionId || sourceSession.id,
+              forkedAt: new Date().toISOString(),
+            }
+          : {}),
       },
     );
-
-    if (!targetSession?.id) {
-      console.error('[session-dispatch] Failed to create target session');
-      return { routed: false };
+    if (!child?.id) {
+      continue;
     }
-    targetSessionId = targetSession.id;
+
+    if (destination.mode === 'fork' && typeof prepareFullParentContext === 'function' && typeof setPreparedChildContext === 'function') {
+      if (!preparedFullParentContext) {
+        preparedFullParentContext = await prepareFullParentContext();
+      }
+      if (preparedFullParentContext) {
+        await setPreparedChildContext(child.id, {
+          ...preparedFullParentContext,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    const outcome = await submitMessage(child.id, buildDestinationPromptInput(destination, message, {
+      multipleDestinations,
+    }), images, {
+      ...options,
+      requestId,
+      skipDispatch: true,
+      recordedUserText: trimString(destination.deliveryText) || trimString(message),
+    });
+
+    createdDestinations.push({
+      ...destination,
+      session: outcome.session || child,
+      run: outcome.run || null,
+    });
   }
 
-  if (!targetSessionId) {
-    return { routed: false };
+  if (createdDestinations.length > 0) {
+    await appendEvent(sourceSessionId, contextOperationEvent({
+      operation: 'session_continuation_plan',
+      phase: 'applied',
+      trigger: 'continuation_planner',
+      title: 'Continuation plan applied',
+      summary: trimString(plan?.userVisibleSummary)
+        || (createdDestinations.length > 1
+          ? `Created ${createdDestinations.length} continuation destinations`
+          : 'Created 1 continuation destination'),
+      reason: trimString(plan?.reasoning),
+    }));
+
+    await appendEvent(sourceSessionId, messageEvent(
+      'assistant',
+      buildContinuationNoticeMessage(plan, createdDestinations, buildSessionNavigationHref),
+      undefined,
+      { messageKind: 'session_continuation_notice' },
+    ));
+
+    broadcastInvalidation(sourceSessionId);
   }
-
-  // Submit the user's original message to the target session
-  const outcome = await submitMessage(targetSessionId, message, images, {
-    ...options,
-    skipDispatch: true,  // Prevent recursive dispatch
-  });
-
-  // Add routing notice to source session
-  const targetName = targetSession?.name || 'new session';
-  const link = buildSessionNavigationHref
-    ? `[${targetName}](${buildSessionNavigationHref(targetSessionId)})`
-    : targetName;
-
-  await appendEvent(sourceSessionId, contextOperationEvent({
-    operation: 'dispatch_route',
-    phase: 'applied',
-    trigger: 'session_dispatch',
-    title: 'Message routed to another session',
-    summary: `Routed to ${targetName} because: ${decision.reason}`,
-    targetSessionId,
-  }));
-
-  await appendEvent(sourceSessionId, messageEvent(
-    'assistant',
-    [
-      `This message is about a different topic, so I've moved it to ${link}.`,
-      '',
-      `Reason: ${decision.reason}`,
-    ].join('\n'),
-    undefined,
-    { messageKind: 'session_dispatch_notice' },
-  ));
-
-  broadcastInvalidation(sourceSessionId);
 
   return {
-    routed: true,
-    targetSessionId,
-    targetSession: outcome.session || targetSession,
-    run: outcome.run || null,
+    applied: true,
+    submittedCurrent: !!currentOutcome,
+    currentOutcome,
+    created: createdDestinations,
   };
 }

@@ -312,6 +312,45 @@
   color: var(--text-muted);
   font-size: 11px;
 }
+.settings-connector-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.settings-connector-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.settings-connector-pill.ready {
+  background: rgba(32, 165, 91, 0.12);
+  color: #1d8b50;
+}
+.settings-connector-pill.pending {
+  background: rgba(199, 126, 22, 0.14);
+  color: #a85f09;
+}
+.settings-connector-frame-wrap {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+.settings-connector-frame {
+  display: block;
+  width: 100%;
+  min-height: 480px;
+  border: 0;
+  background: #fff;
+}
 
 .pinned-section { margin-bottom: 8px; }
 .pinned-section-header {

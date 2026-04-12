@@ -93,6 +93,43 @@ Important compatibility note:
 - current storage and API compatibility still use **app/template** terminology in several places
 - in session metadata today, `sourceId/sourceName` represent the trigger surface, while `templateId/templateName` represent the applied reusable agent/template
 
+### 1.2 Connector product model
+
+External connectors should be designed from a **capability-first** model, not from channel-specific one-off rules.
+
+First classify the connector by protocol capability:
+
+- **Gateway-capable**
+  - the upstream surface can support a shared ingress that receives messages for multiple RemoteLab instances and routes them
+  - the same connector can still be bound directly to one instance when a private deployment is preferred
+- **Instance-only**
+  - the upstream surface cannot act as a shared multi-instance gateway
+  - the connector must terminate directly at one RemoteLab instance
+
+Then classify the product/deployment shape separately:
+
+- **Official managed**
+  - RemoteLab runs and maintains the ingress/bot/service as a product surface
+- **User owned**
+  - the user creates or binds their own upstream app/account/bot and RemoteLab only provides the adapter/runtime
+
+The key architecture rule is:
+
+> A Gateway-capable connector can also run in single-instance mode.
+> An Instance-only connector cannot be promoted into a shared gateway.
+
+Current examples:
+
+- **Email** — Gateway-capable, usually shipped as an official managed gateway
+- **Feishu** — Gateway-capable, can be either an official managed shared bot or a user-owned instance-local bot
+- **WeChat** — Instance-only, treated as an instance-local private ingress rather than a shared routing layer
+
+Implementation consequence:
+
+- Gateway-capable connectors belong in a routing-aware ingress layer and need target-instance resolution.
+- Instance-only connectors belong to the instance lifecycle itself: bind state, sync cursors, and long-running workers live with that instance.
+- For guest instances, WeChat follows the instance-local model and is seeded/autostarted when the instance is created so later account binding is fast and local to that instance.
+
 ---
 
 ## 2. Fast orientation for future models

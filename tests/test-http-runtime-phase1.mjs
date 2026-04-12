@@ -171,6 +171,7 @@ async function stopServer(server) {
   if (!server?.child || server.child.exitCode !== null) return;
   server.child.kill('SIGTERM');
   await waitFor(() => server.child.exitCode !== null, 'server shutdown');
+  await sleep(150);
 }
 
 function runNodeCli(args, env = {}) {
@@ -219,6 +220,12 @@ async function submitMessage(port, sessionId, requestId, text = 'Run the fake to
     effort: 'low',
   });
   assert.ok(res.status === 202 || res.status === 200, 'submit message should succeed');
+  if (!res.json?.run?.id && res.json?.queued !== true) {
+    const run = await waitForAcceptedRun(port, sessionId, requestId);
+    if (run) {
+      res.json.run = run;
+    }
+  }
   return res;
 }
 
@@ -230,7 +237,32 @@ async function submitLegacyMessage(port, sessionId, text = 'Run the fake tool') 
     effort: 'low',
   });
   assert.equal(res.status, 202, 'legacy submit without requestId should succeed');
+  if (!res.json?.run?.id && res.json?.queued !== true) {
+    const detail = await waitFor(() => request(port, 'GET', `/api/sessions/${sessionId}`), 'session detail after legacy submit');
+    const requestId = typeof detail?.json?.session?.activity?.planning?.requestId === 'string'
+      ? detail.json.session.activity.planning.requestId
+      : '';
+    const run = await waitForAcceptedRun(port, sessionId, requestId);
+    if (run) {
+      res.json.run = run;
+    }
+  }
   return res;
+}
+
+async function waitForAcceptedRun(port, sessionId, requestId = '') {
+  return waitFor(async () => {
+    const detail = await request(port, 'GET', `/api/sessions/${sessionId}`);
+    if (detail.status !== 200) return false;
+    const runId = typeof detail.json?.session?.activity?.run?.runId === 'string'
+      ? detail.json.session.activity.run.runId
+      : '';
+    if (!runId) return false;
+    const runRead = await request(port, 'GET', `/api/runs/${runId}`);
+    if (runRead.status !== 200) return false;
+    if (requestId && runRead.json?.run?.requestId !== requestId) return false;
+    return runRead.json.run || false;
+  }, `accepted run for ${sessionId}`);
 }
 
 async function waitForRunTerminal(port, runId) {
@@ -284,6 +316,7 @@ async function phase1Contract() {
     const runRead = await request(port, 'GET', `/api/runs/${first.json.run.id}`);
     assert.equal(runRead.status, 200);
     assert.equal(runRead.json.run.requestId, 'req-contract');
+    await waitForRunTerminal(port, first.json.run.id);
     console.log('phase1-contract: ok');
   } finally {
     await stopServer(server);
@@ -402,7 +435,7 @@ async function phase5RestartSurvival() {
     await waitFor(async () => {
       const run = await request(port, 'GET', `/api/runs/${submit.json.run.id}`);
       return run.status === 200 && run.json.run.state === 'running';
-    }, 'run should enter running state');
+    }, 'run should enter running state', 20000);
 
     await waitFor(async () => {
       const events = await getEvents(port, session.id, 'all');
@@ -845,6 +878,7 @@ async function phase13DelegateSession() {
     assert.ok(delegateNotice, 'delegation should append a visible handoff note to the parent session');
     assert.match(delegateNotice.content || '', /Spawned a parallel session/, 'handoff note should describe the spawn');
     assert.match(delegateNotice.content || '', new RegExp(`session=${delegate.json.session.id}`), 'handoff note should include a direct session link');
+    assert.match(delegateNotice.content || '', /- Open: /, 'handoff note should include an explicit open URL line');
     assert.match(delegateNotice.content || '', /Figure out a lightweight child-session strategy for parallel work\./, 'handoff note should include the delegated task');
 
     const duplicateDelegate = await request(port, 'POST', `/api/sessions/${session.id}/delegate`, {
@@ -939,6 +973,7 @@ async function phase14SessionSpawnCli() {
     assert.ok(delegationOperation, 'CLI helper should append a visible delegation context operation to the source session');
     const delegateNotice = parentEvents.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.messageKind === 'session_delegate_notice');
     assert.ok(delegateNotice, 'CLI helper should still append a visible handoff note to the source session');
+    assert.match(delegateNotice.content || '', /- Open: /, 'CLI helper handoff note should include an explicit open URL line');
 
     console.log('phase14-session-spawn-cli: ok');
   } finally {

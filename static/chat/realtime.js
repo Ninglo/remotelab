@@ -93,7 +93,10 @@ async function dispatchAction(msg) {
       }
       case "create": {
         const createPayload = {
-          folder: msg.folder || "~",
+          folder: msg.folder
+            || (typeof window.remotelabGetDefaultSessionFolder === "function"
+              ? window.remotelabGetDefaultSessionFolder()
+              : "~"),
           tool: msg.tool,
           name: msg.name || "",
           sourceId: msg.sourceId || "",
@@ -285,8 +288,17 @@ async function dispatchAction(msg) {
                 ...(msg.thinking ? { thinking: true } : {}),
               }),
             });
-        if (typeof finalizeComposerPendingSend === "function") {
-          finalizeComposerPendingSend(data.requestId || requestId);
+        const acknowledgedRequestId = data.requestId || requestId;
+        const nextPendingStage = data?.session?.activity?.planning?.state === "checking"
+          && (!data?.session?.activity?.planning?.requestId || data.session.activity.planning.requestId === acknowledgedRequestId)
+          ? "checking"
+          : "processing";
+        if (typeof acknowledgeComposerPendingSend === "function") {
+          acknowledgeComposerPendingSend(acknowledgedRequestId, {
+            nextStage: nextPendingStage,
+          });
+        } else if (typeof finalizeComposerPendingSend === "function") {
+          finalizeComposerPendingSend(acknowledgedRequestId);
         }
         if (data.session) {
           const session = upsertSession(data.session) || data.session;
@@ -428,21 +440,21 @@ function handleWsMessage(msg) {
       break;
 
     case "sessions_invalidated":
-      fetchSessionsList().catch(() => {});
+      fetchSessionsList({ forceFresh: true }).catch(() => {});
       if (archivedSessionsLoaded) {
-        fetchArchivedSessions().catch(() => {});
+        fetchArchivedSessions({ forceFresh: true }).catch(() => {});
       }
       break;
 
     case "session_invalidated":
       if (!msg.sessionId) {
-        refreshRealtimeViews().catch(() => {});
+        refreshRealtimeViews({ forceFresh: true }).catch(() => {});
         break;
       }
       if (msg.sessionId === currentSessionId) {
-        refreshCurrentSession().catch(() => {});
+        refreshCurrentSession({ forceFresh: true }).catch(() => {});
       } else if (!visitorMode) {
-        refreshSidebarSession(msg.sessionId).catch(() => {});
+        refreshSidebarSession(msg.sessionId, { forceFresh: true }).catch(() => {});
       }
       break;
 
@@ -451,6 +463,14 @@ function handleWsMessage(msg) {
         showSystemToast(msg.message || "System notification", msg.level || "info");
       } else {
         console.warn("[system_notification]", msg.message);
+      }
+      break;
+
+    case "instance_settings_updated":
+      if (typeof window.remotelabFetchInstanceSettings === "function") {
+        window.remotelabFetchInstanceSettings({ force: true }).catch((error) => {
+          console.warn("[instance_settings_updated] failed to refresh settings:", error?.message || error);
+        });
       }
       break;
 
@@ -485,6 +505,9 @@ function updateStatus(connState, session = getCurrentSession()) {
     }
     syncForkButton();
     syncShareButton();
+    if (typeof window.remotelabRefreshVoiceInputUi === "function") {
+      window.remotelabRefreshVoiceInputUi();
+    }
     return;
   }
   const archived = session?.archived === true;
@@ -498,6 +521,9 @@ function updateStatus(connState, session = getCurrentSession()) {
     sendBtn.title = t("action.send");
     if (typeof syncComposerVoiceCleanupToggle === "function") {
       syncComposerVoiceCleanupToggle();
+    }
+    if (typeof window.remotelabRefreshVoiceInputUi === "function") {
+      window.remotelabRefreshVoiceInputUi();
     }
     return;
   }
@@ -549,4 +575,7 @@ function updateStatus(connState, session = getCurrentSession()) {
   }
   syncForkButton();
   syncShareButton();
+  if (typeof window.remotelabRefreshVoiceInputUi === "function") {
+    window.remotelabRefreshVoiceInputUi();
+  }
 }

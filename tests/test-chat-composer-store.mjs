@@ -67,9 +67,11 @@ const pendingSendState = storeModel.setPendingSend(removedAttachmentState, {
   requestId: 'req_1',
   text: 'draft a',
   images: [attachmentB],
+  baselineEventSeq: 7,
   stage: 'sending',
 });
 assert.equal(storeModel.getPendingSend(pendingSendState)?.requestId, 'req_1');
+assert.equal(storeModel.getPendingSend(pendingSendState)?.baselineEventSeq, 7);
 assert.equal(storeModel.hasPendingSendForSession(pendingSendState, 'session-a'), true);
 
 const patchedPendingSendState = storeModel.patchPendingSend(pendingSendState, {
@@ -77,7 +79,18 @@ const patchedPendingSendState = storeModel.patchPendingSend(pendingSendState, {
 });
 assert.equal(storeModel.getPendingSend(patchedPendingSendState)?.stage, 'uploading');
 
-const clearedPendingSendState = storeModel.clearPendingSend(patchedPendingSendState, {
+const processingPendingSendState = storeModel.patchPendingSend(patchedPendingSendState, {
+  stage: 'processing',
+});
+assert.equal(storeModel.getPendingSend(processingPendingSendState)?.stage, 'processing');
+assert.equal(storeModel.hasPendingSendForSession(processingPendingSendState, 'session-a'), false);
+const processingOnlyState = storeModel.clearSessionState(processingPendingSendState, 'session-a', {
+  clearDraft: true,
+  clearAttachments: true,
+});
+assert.equal(storeModel.hasUnsavedState(processingOnlyState, 'session-a'), false);
+
+const clearedPendingSendState = storeModel.clearPendingSend(processingPendingSendState, {
   requestId: 'req_1',
 });
 assert.equal(storeModel.getPendingSend(clearedPendingSendState), null);

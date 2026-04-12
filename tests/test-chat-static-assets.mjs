@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
+import WebSocket from 'ws';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
@@ -68,6 +69,22 @@ function request(port, method, path, body = null, extraHeaders = {}) {
     req.on('error', reject);
     if (body) req.write(JSON.stringify(body));
     req.end();
+  });
+}
+
+function connectWs(port, wsCookie = cookie) {
+  return new Promise((resolve, reject) => {
+    const messages = [];
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+      headers: { Cookie: wsCookie },
+    });
+    socket.on('message', (data) => {
+      try {
+        messages.push(JSON.parse(data.toString()));
+      } catch {}
+    });
+    socket.on('open', () => resolve({ socket, messages }));
+    socket.on('error', reject);
   });
 }
 
@@ -167,6 +184,10 @@ async function main() {
   const sessionsFile = join(home, '.config', 'remotelab', 'auth-sessions.json');
   const port = randomPort();
   const server = await startServer({ home, port });
+  let ownerWs = null;
+  let ownerWsMessages = [];
+  let visitorWs = null;
+  let visitorWsMessages = [];
 
   try {
     const authMe = await request(port, 'GET', '/api/auth/me');
@@ -190,6 +211,7 @@ async function main() {
     assert.match(page.text, /<meta name="color-scheme" content="light dark">/);
     assert.match(page.text, /<meta name="theme-color" content="#ffffff" media="\(prefers-color-scheme: light\)">/);
     assert.match(page.text, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
+    assert.match(page.text, /id="settingsConnectorsList"/, 'chat page should expose the connectors settings surface');
     const bootstrapMatch = page.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
     assert.ok(bootstrapMatch, 'chat page should inline bootstrap payload');
     const bootstrap = JSON.parse(bootstrapMatch[1]);
@@ -197,6 +219,9 @@ async function main() {
     assert.equal(bootstrap.auth?.surfaceMode, 'owner', 'bootstrap auth should identify the owner surface');
     assert.equal(bootstrap.auth?.principalKind, 'owner', 'bootstrap auth should identify the owner principal kind');
     assert.equal(bootstrap.auth?.capabilities?.createSession, true, 'bootstrap auth should expose owner capabilities');
+    assert.equal(bootstrap.defaultSessionFolder, join(home, '.remotelab', 'workspace'), 'bootstrap should expose the managed default session folder');
+    assert.equal(bootstrap.settings?.voiceInput?.configured, false, 'bootstrap should expose default instance voice settings');
+    assert.equal(bootstrap.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration', 'bootstrap should expose the recommended default voice resource');
     assert.match(page.text, /<script src="chat\/session-store\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/composer-store\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/bootstrap\.js(?:\?v=[^"]*)?"/);
@@ -211,10 +236,64 @@ async function main() {
     assert.match(page.text, /<script src="chat\/ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/session-surface-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/session-list-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/instance-settings\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/compose\.js(?:\?v=[^"]*)?"/);
-    assert.doesNotMatch(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
+    assert.doesNotMatch(page.text, /hydrateVoiceSettingsFromBootstrap/, 'chat page should not inline extra voice-settings hydration fallbacks');
+
+    const ownerSettingsBefore = await request(port, 'GET', '/api/settings');
+    assert.equal(ownerSettingsBefore.status, 200, 'owner should be able to read instance settings');
+    const ownerSettingsBeforeJson = JSON.parse(ownerSettingsBefore.text);
+    assert.equal(ownerSettingsBeforeJson.settings?.voiceInput?.configured, false, 'instance settings should start unconfigured in a fresh home');
+
+    const visitorSettingsPatch = await request(port, 'PATCH', '/api/settings', {
+      settings: {
+        voiceInput: {
+          appId: 'blocked-app',
+        },
+      },
+    }, { Cookie: visitorCookie });
+    assert.equal(visitorSettingsPatch.status, 403, 'visitor should not be able to edit instance settings');
+
+    const ownerWsConnection = await connectWs(port, cookie);
+    ownerWs = ownerWsConnection.socket;
+    ownerWsMessages = ownerWsConnection.messages;
+    const visitorWsConnection = await connectWs(port, visitorCookie);
+    visitorWs = visitorWsConnection.socket;
+    visitorWsMessages = visitorWsConnection.messages;
+
+    const ownerSettingsUpdate = await request(port, 'PATCH', '/api/settings', {
+      settings: {
+        voiceInput: {
+          appId: '3785118246',
+          accessToken: 'token-owner',
+          resourceId: 'volc.seedasr.sauc.duration',
+          language: 'en-US',
+        },
+      },
+    });
+    assert.equal(ownerSettingsUpdate.status, 200, 'owner should be able to save instance settings');
+    const ownerSettingsUpdateJson = JSON.parse(ownerSettingsUpdate.text);
+    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.appId, '3785118246');
+    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.accessToken, 'token-owner');
+    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration');
+    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.configured, true);
+    await waitFor(
+      () => (
+        ownerWsMessages.some((msg) => msg.type === 'instance_settings_updated' && msg.updatedAt)
+        && visitorWsMessages.some((msg) => msg.type === 'instance_settings_updated' && msg.updatedAt)
+      ),
+      'instance settings websocket update',
+    );
+
+    const visitorSettingsRead = await request(port, 'GET', '/api/settings', null, { Cookie: visitorCookie });
+    assert.equal(visitorSettingsRead.status, 200, 'visitor should be able to read sanitized instance settings');
+    const visitorSettingsReadJson = JSON.parse(visitorSettingsRead.text);
+    assert.equal(visitorSettingsReadJson.settings?.voiceInput?.appId, '3785118246');
+    assert.equal(visitorSettingsReadJson.settings?.voiceInput?.accessToken, '', 'visitor settings payload should not expose secrets');
+    assert.equal(visitorSettingsReadJson.settings?.voiceInput?.configured, true, 'visitor settings payload should still expose readiness');
 
     const visitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: visitorCookie });
     assert.equal(visitorPage.status, 200, 'chat page should also render for visitor session');
@@ -229,6 +308,8 @@ async function main() {
     assert.equal(visitorBootstrap.auth?.sessionId, 'visitor-session-id', 'legacy visitor bootstrap should expose the pinned session id');
     assert.equal(visitorBootstrap.auth?.visitorId, 'visitor-123', 'legacy visitor bootstrap should expose visitor identity');
     assert.equal(visitorBootstrap.auth?.capabilities?.listSessions, false, 'legacy visitor bootstrap should not expose multi-session list access');
+    assert.equal(visitorBootstrap.settings?.voiceInput?.accessToken, '', 'visitor bootstrap should not inline voice secrets');
+    assert.equal(visitorBootstrap.settings?.voiceInput?.configured, true, 'visitor bootstrap should still expose shared voice readiness');
     assert.match(page.text, /<script src="chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
@@ -236,6 +317,11 @@ async function main() {
     assert.doesNotMatch(page.text, /id="userFilterSelect"/);
     assert.match(page.text, /id="sortSessionListBtn"/);
     assert.match(page.text, /id="settingsSessionPresentationList"/);
+    assert.match(page.text, /id="voiceInputAppId"/);
+    assert.match(page.text, /id="voiceInputProviderSelect"/);
+    assert.match(page.text, /id="voiceInputClusterPresetSelect"/);
+    assert.match(page.text, /id="voiceInputGatewayApiKey"/);
+    assert.match(page.text, /id="voiceBtn"/);
     assert.doesNotMatch(page.text, /id="settingsUsersList"/);
     assert.doesNotMatch(page.text, /id="settingsAppsList"/);
     assert.doesNotMatch(page.text, /id="newUserNameInput"/);
@@ -253,9 +339,10 @@ async function main() {
     assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label" data-i18n="nav\.sessions">Sessions</, 'session button should include an explicit text label');
     assert.doesNotMatch(page.text, /id="forkSessionBtn"/, 'fork should no longer occupy the top header');
     assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"/, 'share should render as a lighter icon-led secondary action');
-    assert.match(page.text, /id="msgInput"[\s\S]*id="sendBtn"/, 'send button should render immediately after the composer textarea');
+    assert.match(page.text, /class="input-config-row"[\s\S]*class="input-wrapper"/, 'composer should keep tooling controls above the dedicated input shell');
+    assert.match(page.text, /id="msgInput"[\s\S]*class="input-actions-row"[\s\S]*id="imgBtn"[\s\S]*id="voiceBtn"[\s\S]*id="sendBtn"/, 'composer should stack textarea above the action row so buttons no longer squeeze the text width');
     assert.match(page.text, /id="quickEntryFocusPrompt" hidden/, 'chat page should include the quick-entry focus recovery prompt shell');
-    assert.doesNotMatch(page.text, /id="voiceInputStatus"/);
+    assert.match(page.text, /id="voiceInputStatus"/);
     assert.match(page.text, /id="tabSettings"/);
     assert.doesNotMatch(page.text, /id="collapseBtn"/, 'desktop sidebar should no longer expose a collapse control');
     assert.doesNotMatch(page.text, /id="tabProgress"/);
@@ -435,6 +522,15 @@ async function main() {
     assert.equal(sharedCreatedJson.session?.agentId, createdAgentJson.id, 'shared visitor sessions should persist the shared agent id');
     assert.equal(sharedCreatedJson.session?.visitorId, sharedVisitorBootstrap.auth?.principalId, 'shared visitor sessions should be isolated to the minted principal');
     assert.equal(sharedCreatedJson.session?.tool, 'codex', 'shared visitor sessions should inherit the shared agent tool');
+    assert.equal(sharedCreatedJson.session?.folder, join(home, '.remotelab', 'workspace'), 'shared visitor sessions should default to the managed work root');
+
+    const defaultOwnerCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'Owner default workspace session',
+    });
+    assert.equal(defaultOwnerCreated.status, 201, 'owner sessions should be creatable without an explicit folder');
+    const defaultOwnerCreatedJson = JSON.parse(defaultOwnerCreated.text);
+    assert.equal(defaultOwnerCreatedJson.session?.folder, join(home, '.remotelab', 'workspace'), 'owner sessions without a folder should default to the managed work root');
 
     const sharedList = await request(port, 'GET', '/api/sessions?visitor=1', null, { Cookie: sharedVisitorCookie });
     assert.equal(sharedList.status, 200, 'shared visitors should be able to list their workspace sessions');
@@ -718,6 +814,13 @@ async function main() {
     assert.match(settingsUiAsset.text, /function initUiLanguageSettings\(/);
     assert.match(settingsUiAsset.text, /function renderSettingsSessionPresentationPanel\(/);
     assert.match(settingsUiAsset.text, /function initInstallSettings\(/);
+    assert.match(settingsUiAsset.text, /function initVoiceInputSettings\(/);
+    assert.match(settingsUiAsset.text, /function renderVoiceInputClusterOptions\(/);
+
+    const instanceSettingsAsset = await request(port, 'GET', '/chat/instance-settings.js');
+    assert.equal(instanceSettingsAsset.status, 200, 'instance settings asset should load');
+    assert.match(instanceSettingsAsset.text, /function fetchInstanceSettings\(/);
+    assert.match(instanceSettingsAsset.text, /remotelabUpdateInstanceSettings/);
 
     const composeAsset = await request(port, 'GET', '/chat/compose.js');
     assert.equal(composeAsset.status, 200, 'compose asset should load');
@@ -726,7 +829,14 @@ async function main() {
     assert.doesNotMatch(composeAsset.text, /voice-transcriptions/);
 
     const voiceInputAsset = await request(port, 'GET', '/chat/voice-input.js');
-    assert.equal(voiceInputAsset.status, 404, 'removed voice input asset should no longer be served');
+    assert.equal(voiceInputAsset.status, 200, 'voice input asset should load');
+    assert.match(voiceInputAsset.text, /DOUBAO_VOICE_WS_PATH/);
+    assert.match(voiceInputAsset.text, /function startVoiceCapture\(/);
+    assert.match(voiceInputAsset.text, /VOICE_WORKLET_MODULE_PATH/);
+
+    const voiceWorkletAsset = await request(port, 'GET', '/chat/voice-input-worklet.js');
+    assert.equal(voiceWorkletAsset.status, 200, 'voice input worklet asset should load');
+    assert.match(voiceWorkletAsset.text, /registerProcessor\("remotelab-voice-input-processor"/);
 
     const initAssetReload = await request(port, 'GET', '/chat/init.js');
     assert.equal(initAssetReload.status, 200, 'init asset should load');
@@ -737,6 +847,7 @@ async function main() {
     assert.match(initAssetReload.text, /forceComposerFocus: true/, 'launch intent should request a one-time forced composer focus');
     assert.match(page.text, /id="settingsInstallAppBtn"/, 'settings page should expose a direct install button');
     assert.match(page.text, /id="settingsInstallStatus"/, 'settings page should expose install status copy');
+    assert.match(page.text, /class="voice-btn-meter"/, 'voice button should expose a live meter surface');
 
     const tokenLogin = await request(
       port,
@@ -782,6 +893,8 @@ async function main() {
     });
     assert.equal(loader304.status, 304, 'loader should also support conditional GETs');
   } finally {
+    try { ownerWs?.close(); } catch {}
+    try { visitorWs?.close(); } catch {}
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });
   }

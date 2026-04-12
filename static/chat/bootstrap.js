@@ -153,6 +153,11 @@ function normalizeBootstrapAssetUploads(raw) {
 
 const bootstrapAssetUploads = normalizeBootstrapAssetUploads(pageBootstrap.assetUploads);
 
+const bootstrapDefaultSessionFolder = normalizeBootstrapText(pageBootstrap.defaultSessionFolder) || "~";
+window.remotelabGetDefaultSessionFolder = function remotelabGetDefaultSessionFolder() {
+  return bootstrapDefaultSessionFolder || "~";
+};
+
 function normalizeBootstrapShareSnapshot(rawPayload, rawMeta = null) {
   const payload = rawPayload && typeof rawPayload === "object"
     ? rawPayload

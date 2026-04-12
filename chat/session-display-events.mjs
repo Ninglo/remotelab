@@ -3,6 +3,10 @@ import {
   stripAttachmentSavedPath,
   stripEventAttachmentSavedPaths,
 } from './attachment-utils.mjs';
+import {
+  rewriteAssistantLocalMarkdownImageTargets,
+  stripAssistantArtifactDeliveryHints,
+} from './session-result-files.mjs';
 
 const HIDDEN_EVENT_TYPES = new Set(['reasoning', 'manager_context', 'tool_use', 'tool_result', 'file_change']);
 
@@ -120,9 +124,36 @@ function isVisibleEvent(event) {
   return false;
 }
 
-function stripDeferredBodyFields(event) {
+function collectLocalMarkdownImageRewriteMap(events = []) {
+  const rewriteMapBySeq = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    const rewrites = Array.isArray(event?.localMarkdownImageRewrites)
+      ? event.localMarkdownImageRewrites
+      : [];
+    for (const rewrite of rewrites) {
+      const seq = Number.isInteger(rewrite?.seq) ? rewrite.seq : 0;
+      const candidate = typeof rewrite?.candidate === 'string' ? rewrite.candidate.trim() : '';
+      const url = typeof rewrite?.url === 'string' ? rewrite.url.trim() : '';
+      if (seq < 1 || !candidate || !url) continue;
+      if (!rewriteMapBySeq.has(seq)) {
+        rewriteMapBySeq.set(seq, new Map());
+      }
+      rewriteMapBySeq.get(seq).set(candidate, url);
+    }
+  }
+  return rewriteMapBySeq;
+}
+
+function stripDeferredBodyFields(event, { localMarkdownImageRewriteMapBySeq = null } = {}) {
   const next = stripEventAttachmentSavedPaths(cloneJson(event));
   if (!next || typeof next !== 'object') return next;
+  if (next.type === 'message' && next.role === 'assistant' && typeof next.content === 'string') {
+    const messageRewrites = Number.isInteger(next.seq) && localMarkdownImageRewriteMapBySeq instanceof Map
+      ? localMarkdownImageRewriteMapBySeq.get(next.seq)
+      : null;
+    next.content = rewriteAssistantLocalMarkdownImageTargets(next.content, messageRewrites);
+    next.content = stripAssistantArtifactDeliveryHints(next.content);
+  }
   delete next.bodyRef;
   delete next.bodyField;
   delete next.bodyAvailable;
@@ -180,10 +211,10 @@ function buildThinkingBlockEvent(hiddenEvents, state = 'completed') {
   };
 }
 
-function pushVisibleEvent(target, event, { stripAttachments = false } = {}) {
+function pushVisibleEvent(target, event, { stripAttachments = false, localMarkdownImageRewriteMapBySeq = null } = {}) {
   if (!isVisibleEvent(event)) return;
   if (!hasVisibleMessagePayload(event, { includeAttachments: !stripAttachments })) return;
-  const next = stripDeferredBodyFields(event);
+  const next = stripDeferredBodyFields(event, { localMarkdownImageRewriteMapBySeq });
   if (stripAttachments && next?.type === 'message') {
     delete next.attachments;
     delete next.images;
@@ -191,7 +222,11 @@ function pushVisibleEvent(target, event, { stripAttachments = false } = {}) {
   target.push(next);
 }
 
-function emitSegmentedTurnBody(target, bodyEvents, { sessionRunning = false, mirroredAttachmentSeqs = null } = {}) {
+function emitSegmentedTurnBody(target, bodyEvents, {
+  sessionRunning = false,
+  mirroredAttachmentSeqs = null,
+  localMarkdownImageRewriteMapBySeq = null,
+} = {}) {
   const hiddenSegment = [];
 
   for (const event of bodyEvents) {
@@ -206,6 +241,7 @@ function emitSegmentedTurnBody(target, bodyEvents, { sessionRunning = false, mir
 
     pushVisibleEvent(target, event, {
       stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+      localMarkdownImageRewriteMapBySeq,
     });
   }
 
@@ -279,6 +315,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
 
   const mirroredAttachmentSourceEvents = collectMirroredAttachmentSourceEvents(bodyEvents);
   const mirroredAttachmentSeqs = collectMirroredAttachmentSeqs(bodyEvents);
+  const localMarkdownImageRewriteMapBySeq = collectLocalMarkdownImageRewriteMap(bodyEvents);
   const deliveryEvent = buildAttachmentDeliveryEvent(mirroredAttachmentSourceEvents, {
     referenceEvent: bodyEvents[bodyEvents.length - 1] || turn.user,
   });
@@ -296,6 +333,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
     emitSegmentedTurnBody(target, bodyEvents, {
       sessionRunning,
       mirroredAttachmentSeqs,
+      localMarkdownImageRewriteMapBySeq,
     });
     if (deliveryEvent) {
       target.push(deliveryEvent);
@@ -308,6 +346,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
     emitSegmentedTurnBody(target, bodyEvents, {
       sessionRunning,
       mirroredAttachmentSeqs,
+      localMarkdownImageRewriteMapBySeq,
     });
     if (deliveryEvent) {
       target.push(deliveryEvent);
@@ -322,6 +361,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   for (const event of visibleTail) {
     pushVisibleEvent(target, event, {
       stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+      localMarkdownImageRewriteMapBySeq,
     });
   }
   if (deliveryEvent) {

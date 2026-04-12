@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
+import { MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -21,6 +22,15 @@ export function resolveRunnableSessionFolder(folder) {
       requestedCwd,
       repaired: false,
       reason: '',
+    };
+  }
+
+  if (existsSync(MANAGED_WORK_ROOT_DIR)) {
+    return {
+      cwd: MANAGED_WORK_ROOT_DIR,
+      requestedCwd,
+      repaired: true,
+      reason: 'missing-session-folder-fallback-managed-work-root',
     };
   }
 

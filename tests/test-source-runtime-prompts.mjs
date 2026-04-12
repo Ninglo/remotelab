@@ -9,4 +9,8 @@ assert.match(shortcutPrompt, /speech-friendly answer/, 'shortcut runtime prompt 
 const voicePrompt = buildSourceRuntimePrompt({ sourceId: 'voice' });
 assert.doesNotMatch(voicePrompt, /Siri\/Shortcuts connector/, 'voice source id should keep the existing voice prompt');
 
+const wechatPrompt = buildSourceRuntimePrompt({ sourceId: 'wechat', sourceName: 'WeChat' });
+assert.match(wechatPrompt, /WeChat/, 'wechat source id should map to the WeChat runtime prompt');
+assert.match(wechatPrompt, /plain text suitable for sending back through WeChat/i, 'wechat runtime prompt should stay reply-surface aware');
+
 console.log('test-source-runtime-prompts: ok');

@@ -1,0 +1,8 @@
+{
+  "channel": "email",
+  "name": "Email (Cloudflare)",
+  "version": "1.0.0",
+  "entry": "./index.mjs",
+  "capabilities": ["inbound", "outbound"],
+  "description": "Cloudflare Email Routing inbound + Cloudflare Worker outbound"
+}

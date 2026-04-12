@@ -25,7 +25,9 @@ export function buildLocalBridgePromptBlock(session = {}) {
     '  - `remotelab local-bridge stat --root <alias> --path <relPath> --json`',
     '  - `remotelab local-bridge read-text --root <alias> --path <relPath> --json`',
     '  - `remotelab local-bridge stage --root <alias> --path <relPath> --json`',
+    '  - `remotelab local-bridge pack --root <alias> --path <relPath> --exclude "pattern1,pattern2" --json`',
     '- `stage` uploads the selected local file into this RemoteLab session through the normal asset pipeline.',
+    '- `pack` archives an entire directory as tar.gz and uploads it. Use `--exclude` to skip patterns (e.g. `node_modules,.git`).',
     '- Do not invent absolute local paths. Stay within the reported root aliases.',
   ];
   return lines.filter(Boolean).join('\n');

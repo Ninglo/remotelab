@@ -7,7 +7,10 @@ import { dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
-import { selectAssistantReplyEvent } from '../lib/reply-selection.mjs';
+import {
+  buildAssistantReplyAttachmentFallbackText,
+  selectAssistantReplyEvent,
+} from '../lib/reply-selection.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
@@ -1391,7 +1394,10 @@ async function reconcilePendingItem(options, itemState, cookie) {
     automation.requestId,
     cookie,
   );
-  const replyBody = trimString(replyEvent?.content);
+  const replyBody = trimString([
+    replyEvent?.content || '',
+    buildAssistantReplyAttachmentFallbackText(replyEvent),
+  ].filter(Boolean).join('\n\n'));
   if (!replyBody) {
     return {
       automation: {

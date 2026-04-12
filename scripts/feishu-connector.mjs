@@ -13,8 +13,17 @@ import {
   resolveExternalRuntimeSelection,
 } from '../lib/external-runtime-selection.mjs';
 import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
-import { selectAssistantReplyEvent, stripHiddenBlocks } from '../lib/reply-selection.mjs';
+import {
+  buildAssistantReplyAttachmentFallbackText,
+  selectAssistantReplyEvent,
+  stripHiddenBlocks,
+} from '../lib/reply-selection.mjs';
+import { waitForReplyPublication } from '../lib/reply-publication-client.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import {
+  buildConnectorFailureReply,
+  decideConnectorUserVisibleReply,
+} from '../lib/connector-user-visible-reply.mjs';
 
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
@@ -1200,12 +1209,7 @@ function isMainModule() {
 }
 
 function buildFailureReply(summary, reason = '') {
-  const message = trimString(summary?.textPreview || summary?.contentSummary || summary?.rawContent);
-  const prefersChinese = containsCjk(message) || containsCjk(reason);
-  if (prefersChinese) {
-    return '我收到了你的消息，但这次生成回复失败了。你可以稍后再发一次。';
-  }
-  return 'I received your message, but I could not generate a reply just now. Please try again in a moment.';
+  return buildConnectorFailureReply(summary, reason);
 }
 
 async function loadHandledMessages(pathname) {
@@ -1538,17 +1542,8 @@ async function resolveFeishuRuntimeSelection(runtime) {
 async function generateRemoteLabReply(runtime, summary) {
   const runtimeSelection = await resolveFeishuRuntimeSelection(runtime);
   const session = await createOrReuseSession(runtime, summary, runtimeSelection);
-  const readySession = await waitForSessionReady(runtime, session.id, session);
-  const baselineSeq = Number.isInteger(readySession?.latestSeq) ? readySession.latestSeq : 0;
   const submission = await submitRemoteLabMessage(runtime, session.id, summary, runtimeSelection);
-  let runId = submission.runId;
-  if (!runId && submission.queued) {
-    runId = await waitForQueuedRequestRun(runtime, session.id, {
-      requestId: submission.requestId,
-      messageId: summary.messageId,
-      sinceSeq: baselineSeq,
-    });
-  }
+  const runId = submission.runId;
   if (!runId && submission.duplicate) {
     return {
       sessionId: session.id,
@@ -1560,17 +1555,23 @@ async function generateRemoteLabReply(runtime, summary) {
       silent: true,
     };
   }
-  await waitForRunCompletion(runtime, runId);
-  const replyEvent = await loadAssistantReply(
+  const publication = await waitForReplyPublication(
     (path) => requestRemoteLab(runtime, path),
     session.id,
-    runId,
     submission.requestId,
+    {
+      timeoutMs: RUN_POLL_TIMEOUT_MS,
+      intervalMs: RUN_POLL_INTERVAL_MS,
+    },
   );
-  const replyText = normalizeReplyText(replyEvent?.content);
+  if (publication.state !== 'ready') {
+    throw new Error(`reply publication ${publication.state || 'failed'}`);
+  }
+  const replyText = normalizeReplyText(publication.payload?.text || '');
+  const finalizedRunId = trimString(publication.finalRunId) || runId || '';
   return {
     sessionId: session.id,
-    runId,
+    runId: finalizedRunId,
     requestId: submission.requestId,
     duplicate: submission.duplicate,
     queued: submission.queued,
@@ -1918,53 +1919,44 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 
     const generated = await generateReply(runtime, summary);
     const replyText = normalizeReplyText(generated.replyText);
-    if (!replyText) {
-      const confirmationText = generated.duplicate === true
-        ? ''
-        : normalizeReplyText(runtime?.config?.silentConfirmationText);
-      if (confirmationText) {
-        const reply = await sendText(runtime, summary, confirmationText);
-        await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-          status: 'confirmation_sent',
-          sourceLabel,
-          chatId: summary.chatId,
-          sessionId: generated.sessionId,
-          runId: generated.runId,
-          requestId: generated.requestId,
-          duplicate: generated.duplicate,
-          reason: 'empty_assistant_reply',
-          confirmationText,
-          responseMessageId: reply.message_id || '',
-          repliedAt: nowIso(),
-        });
-        console.log(`[feishu-connector] sent confirmation for ${summary.messageId} with ${reply.message_id}`);
-        return;
-      }
+    const finalReply = decideConnectorUserVisibleReply({
+      replyText,
+      duplicate: generated.duplicate,
+      silentConfirmationText: normalizeReplyText(runtime?.config?.silentConfirmationText),
+    });
+    if (finalReply.action === 'silent') {
       await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-        status: 'silent_no_reply',
+        status: finalReply.status,
         sourceLabel,
         chatId: summary.chatId,
         sessionId: generated.sessionId,
         runId: generated.runId,
         requestId: generated.requestId,
         duplicate: generated.duplicate,
-        reason: generated.duplicate === true ? 'duplicate_request' : 'empty_assistant_reply',
+        reason: finalReply.reason,
       });
-      console.log(`[feishu-connector] no reply sent for ${summary.messageId} (${generated.duplicate === true ? 'duplicate request' : 'empty assistant reply'})`);
+      console.log(`[feishu-connector] no reply sent for ${summary.messageId} (${finalReply.reason})`);
       return;
     }
-    const reply = await sendText(runtime, summary, replyText);
+
+    const reply = await sendText(runtime, summary, finalReply.text);
     await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-      status: 'sent',
+      status: finalReply.status,
       sourceLabel,
       chatId: summary.chatId,
       sessionId: generated.sessionId,
       runId: generated.runId,
       requestId: generated.requestId,
       duplicate: generated.duplicate,
+      ...(finalReply.reason ? { reason: finalReply.reason } : {}),
+      ...(finalReply.action === 'send_confirmation' ? { confirmationText: finalReply.text } : {}),
       responseMessageId: reply.message_id || '',
       repliedAt: nowIso(),
     });
+    if (finalReply.action === 'send_confirmation') {
+      console.log(`[feishu-connector] sent confirmation for ${summary.messageId} with ${reply.message_id}`);
+      return;
+    }
     console.log(`[feishu-connector] replied to ${summary.messageId} with ${reply.message_id}`);
   } catch (error) {
     console.error(`[feishu-connector] processing failed for ${summary.messageId}:`, error?.stack || error);

@@ -191,6 +191,7 @@ let attentionRefreshes = 0;
 let scheduledRefreshes = 0;
 let appliedSession = null;
 let requestPayload = null;
+const acknowledgedRequestIds = [];
 const finalizedRequestIds = [];
 
 dispatchContext.currentSessionId = 'session-send';
@@ -222,6 +223,10 @@ dispatchContext.renderSessionList = () => {
 };
 dispatchContext.applyAttachedSessionState = (id, session) => {
   appliedSession = { id, session };
+};
+dispatchContext.acknowledgeComposerPendingSend = (requestId) => {
+  acknowledgedRequestIds.push(requestId);
+  return true;
 };
 dispatchContext.finalizeComposerPendingSend = (requestId) => {
   finalizedRequestIds.push(requestId);
@@ -265,7 +270,8 @@ assert.deepEqual(
 );
 assert.equal(refreshCalls, 2, 'accepted sends should retry the session refresh after a transient failure');
 assert.equal(scheduledRefreshes, 1, 'accepted sends should schedule exactly one async refresh retry');
-assert.deepEqual(finalizedRequestIds, ['req-test'], 'accepted sends should immediately finalize the pending composer request from the HTTP acknowledgment');
+assert.deepEqual(acknowledgedRequestIds, ['req-test'], 'accepted sends should immediately acknowledge the pending composer request from the HTTP acknowledgment');
+assert.deepEqual(finalizedRequestIds, [], 'HTTP acceptance alone should not fully finalize the processing acknowledgment');
 assert.equal(savedPendingCalls, 0, 'frontend should not persist pending-send state');
 assert.equal(clearedPendingCalls, 0, 'frontend should not clear any pending-send cache because none exists');
 assert.equal(attentionRefreshes, 0, 'frontend should not synthesize unread or send-failure attention state');
@@ -301,6 +307,7 @@ detachedSendContext.renderSessionList = () => {};
 detachedSendContext.applyAttachedSessionState = () => {
   throw new Error('send should not reattach a different session while the user is viewing another one');
 };
+detachedSendContext.acknowledgeComposerPendingSend = () => true;
 detachedSendContext.finalizeComposerPendingSend = () => true;
 detachedSendContext.savePendingMessage = () => {};
 detachedSendContext.clearPendingMessage = () => {};
@@ -360,6 +367,7 @@ attachmentCompatContext.fetchJsonOrRedirect = async (url, options = {}) => {
 attachmentCompatContext.upsertSession = (value) => value;
 attachmentCompatContext.renderSessionList = () => {};
 attachmentCompatContext.applyAttachedSessionState = () => {};
+attachmentCompatContext.acknowledgeComposerPendingSend = () => true;
 attachmentCompatContext.finalizeComposerPendingSend = () => true;
 attachmentCompatContext.savePendingMessage = () => {};
 attachmentCompatContext.clearPendingMessage = () => {};

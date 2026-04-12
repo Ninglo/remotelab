@@ -554,10 +554,15 @@ try {
   );
 
   await waitFor(
-    async () => (await getSession(delayedAssetReviewSession.id))?.activity?.run?.state === 'idle',
-    'delayed asset review session should become idle after the self-check accept path',
+    async () => {
+      const delayedAssetSettledHistory = await getHistory(delayedAssetReviewSession.id);
+      return delayedAssetSettledHistory.some((event) => (
+        event.type === 'status'
+        && event.content === 'Assistant self-check: kept the latest reply as-is.'
+      ));
+    },
+    'delayed asset review history should eventually include the self-check accept status',
   );
-
   const delayedAssetSettledHistory = await getHistory(delayedAssetReviewSession.id);
   const delayedAssetAcceptStatus = delayedAssetSettledHistory.find((event) => (
     event.type === 'status'
@@ -569,6 +574,11 @@ try {
       && Number.isInteger(delayedAssetAcceptStatus?.seq)
       && delayedAssetMessage.seq < delayedAssetAcceptStatus.seq,
     'generated result asset message should land in history before the delayed self-check accept path finishes',
+  );
+
+  await waitFor(
+    async () => (await getSession(delayedAssetReviewSession.id))?.activity?.run?.state === 'idle',
+    'delayed asset review session should become idle after the self-check accept path',
   );
 
   await waitFor(

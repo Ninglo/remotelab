@@ -201,7 +201,7 @@ function createContext() {
     switchTab() {},
     applyNavigationState() {},
     fetch: async (url, options = {}) => {
-      fetchCalls.push({ url: String(url), headers: options.headers });
+      fetchCalls.push({ url: String(url), headers: options.headers, cache: options.cache });
       if (String(url) === '/api/sessions/sidebar-target?view=sidebar') {
         return createFetchResponse({
           session: {
@@ -233,5 +233,16 @@ assert.equal(context.renderCalls.length, 1, 'sidebar refresh should rerender the
 assert.equal(context.sessions[0].id, 'sidebar-target', 'sidebar refresh should allow updated sessions to move to the top');
 assert.equal(context.sessions[0].name, 'Fresh sidebar name', 'sidebar refresh should replace stale session metadata');
 assert.equal(context.sessions[0].status, 'running', 'sidebar refresh should expose the refreshed status immediately');
+
+const freshContext = createContext();
+vm.runInNewContext(sessionHttpSource, freshContext, { filename: 'static/chat/session-http.js' });
+
+await freshContext.refreshSidebarSession('sidebar-target', { forceFresh: true });
+
+assert.equal(
+  freshContext.fetchCalls[0]?.cache,
+  'no-store',
+  'force-fresh sidebar refreshes should bypass the JSON response cache on invalidation',
+);
 
 console.log('test-session-http-sidebar-refresh: ok');

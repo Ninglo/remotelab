@@ -21,6 +21,8 @@
     "chat/ui.js",
     "chat/session-surface-ui.js",
     "chat/session-list-ui.js",
+    "chat/instance-settings.js",
+    "chat/voice-input.js",
     "chat/settings-ui.js",
     "chat/sidebar-ui.js",
     "chat/compose.js",
