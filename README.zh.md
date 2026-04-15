@@ -334,7 +334,7 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 |------|--------|------|
 | `CHAT_PORT` | `7690` | Chat server 端口 |
 | `CHAT_BIND_HOST` | `127.0.0.1` | Chat server 监听地址（`127.0.0.1` 用于 Cloudflare / 仅本机访问，`0.0.0.0` 用于 Tailscale 或局域网访问） |
-| `SESSION_EXPIRY` | `86400000` | Cookie 有效期（毫秒，24h） |
+| `SESSION_EXPIRY` | `2592000000` | Cookie 有效期（毫秒，30 天） |
 | `SECURE_COOKIES` | `1` | Tailscale 或本地 HTTP 访问时设为 `0`（无 HTTPS） |
 | `REMOTELAB_INSTANCE_ROOT` | 未设置 | 可选的额外实例数据根目录；设置后默认使用 `<root>/config` + `<root>/memory` |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、apps、push、provider runtime home |

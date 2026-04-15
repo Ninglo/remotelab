@@ -18,7 +18,7 @@
     "workflow.status.parkedTitle": "Parked for later",
     "workflow.status.queued": "queued",
     "workflow.status.queuedTitle": "{count} follow-up{suffix} queued",
-    "workflow.status.checking": "checking",
+    "workflow.status.checking": "reviewing",
     "workflow.status.compacting": "compacting",
     "workflow.status.renaming": "renaming",
     "workflow.status.renameFailed": "rename failed",

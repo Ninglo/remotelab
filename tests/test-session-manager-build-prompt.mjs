@@ -69,7 +69,7 @@ assert.match(freshPrompt, /Stable context entry points:/);
 assert.match(freshPrompt, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
 assert.match(freshPrompt, /Memory writeback targets config: ~\/\.remotelab\/memory\/writeback-targets\.json/);
 assert.match(freshPrompt, /Auto user memory: ~\/\.remotelab\/memory\/model-context\/auto-user-memory\.md/);
-assert.match(freshPrompt, /Auto system memory: \/opt\/remotelab\/memory\/auto-system-memory\.md/);
+assert.match(freshPrompt, /Auto system memory: .*\/memory\/auto-system-memory\.md/);
 assert.match(freshPrompt, /Model-managed writable context root:/);
 assert.match(freshPrompt, /~\/\.remotelab\/memory\/model-context/);
 assert.match(freshPrompt, /execution substrate, not as the end user's personal Mac|Treat the host as execution substrate/);
@@ -166,6 +166,24 @@ const githubSourcePrompt = await buildPrompt(
 );
 
 assert.match(githubSourcePrompt, /Produce plain text or markdown suitable for posting back through GitHub/);
+
+const archerySourcePrompt = await buildPrompt(
+  'session-test-7',
+  {
+    ...baseSession,
+    sourceId: 'archery',
+    sourceName: 'Archery',
+  },
+  'Archery training session uploaded.',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(archerySourcePrompt, /structured training-record connector/);
+assert.match(archerySourcePrompt, /Treat provided scores, totals, and structured session data as the factual source of truth/);
+assert.match(archerySourcePrompt, /post-training coaching note/);
 
 const microAgentPrompt = await buildPrompt(
   'session-test-2',

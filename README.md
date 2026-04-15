@@ -332,7 +332,7 @@ RemoteLab now boots the current source tree directly after restart. Use `remotel
 |----------|---------|-------------|
 | `CHAT_PORT` | `7690` | Chat server port |
 | `CHAT_BIND_HOST` | `127.0.0.1` | Host to bind the chat server (`127.0.0.1` for Cloudflare/local only, `0.0.0.0` for Tailscale or LAN access) |
-| `SESSION_EXPIRY` | `86400000` | Cookie lifetime in ms (24h) |
+| `SESSION_EXPIRY` | `2592000000` | Cookie lifetime in ms (30 days) |
 | `SECURE_COOKIES` | `1` | Set `0` for Tailscale or local HTTP access (no HTTPS) |
 | `REMOTELAB_INSTANCE_ROOT` | unset | Optional isolated data root for an additional instance; defaults to `<root>/config` + `<root>/memory` when set |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, apps, push, and provider-managed homes |

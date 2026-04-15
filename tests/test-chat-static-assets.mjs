@@ -194,7 +194,7 @@ async function main() {
     assert.equal(authMe.status, 200, 'auth info endpoint should work for owner session');
     assert.equal(authMe.headers['set-cookie']?.length, 1, 'auth info should refresh a near-expiry auth cookie');
     assert.match(authMe.headers['set-cookie'][0], /SameSite=Lax/i, 'auth cookie should use SameSite=Lax for better PWA compatibility');
-    assert.match(authMe.headers['set-cookie'][0], /Max-Age=86400/i, 'auth cookie should include an explicit Max-Age');
+    assert.match(authMe.headers['set-cookie'][0], /Max-Age=2592000/i, 'auth cookie should include an explicit Max-Age');
     const authMeJson = JSON.parse(authMe.text);
     assert.equal(authMeJson.role, 'owner', 'auth info should identify the owner principal');
     assert.equal(authMeJson.surfaceMode, 'owner', 'owner auth should stay on the owner surface');
@@ -202,7 +202,7 @@ async function main() {
     assert.equal(authMeJson.capabilities?.manageAgents, true, 'owner auth should expose owner capabilities');
     const refreshedSessions = JSON.parse(readFileSync(sessionsFile, 'utf8'));
     assert.ok(
-      refreshedSessions['test-session']?.expiry > Date.now() + 23 * 60 * 60 * 1000,
+      refreshedSessions['test-session']?.expiry > Date.now() + 29 * 24 * 60 * 60 * 1000,
       'auth info should extend server-side session expiry as a sliding session',
     );
 
@@ -860,7 +860,7 @@ async function main() {
     assert.equal(tokenLogin.headers.location, '/', 'token login should land on the root app');
     assert.equal(tokenLogin.headers['set-cookie']?.length, 1, 'token login should issue a session cookie');
     assert.match(tokenLogin.headers['set-cookie'][0], /SameSite=Lax/i, 'token login cookie should use SameSite=Lax');
-    assert.match(tokenLogin.headers['set-cookie'][0], /Max-Age=86400/i, 'token login cookie should include Max-Age');
+    assert.match(tokenLogin.headers['set-cookie'][0], /Max-Age=2592000/i, 'token login cookie should include Max-Age');
 
     const splitAsset304 = await request(port, 'GET', '/chat/bootstrap.js', null, {
       'If-None-Match': splitAsset.headers.etag,
