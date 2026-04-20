@@ -58,6 +58,22 @@ Turn uploaded English lesson packs into parent-ready weekly review materials tha
 - optional scene vocabulary picture brief or generated image
 - optional cumulative unit summary of core vocabulary, sentence patterns, and grammar
 
+### Workflow
+
+1. read the uploaded weekly material and identify the lesson focus
+2. extract evidence-backed vocabulary, sentence patterns, and grammar
+3. produce the direct-use parent note
+4. produce the goal-based self-check note
+5. optionally create a scene-vocabulary image brief
+6. optionally merge earlier uploads into a unit summary
+
+### Review Gates
+
+- mark inferred content as uncertain when the uploaded material is incomplete
+- ask for the course-goal page only when it materially improves the self-check version
+- prefer direct family-use lines over teacher-facing pedagogy language
+- do not claim image generation or historical merging happened unless the necessary inputs/tools were actually available
+
 ## Behavior Instructions
 
 Use the following as the core Agent prompt.
@@ -127,6 +143,24 @@ For the default weekly output, prefer this structure:
 5. Version A: Direct-Use Parent Note
 6. Version B: Goal-Based Parent Self-Check
 7. Optional Next Assets
+
+## Default Assistant
+
+- `codex`
+
+## Share Plan
+
+- create the Agent through the current owner-side Agent CRUD flow
+- expose the returned share entry as `/agent/{shareToken}`
+- encourage one private-window self-test before broader sharing
+
+## Closest Current Product Artifact
+
+There is not yet a checked-in first-class Agent manifest format in this repo.
+
+The closest current creation artifact is:
+
+- [agent-blueprint-parent-english-courseware.md](/Users/jiujianian/code/remotelab/docs/agent-blueprint-parent-english-courseware.md:1)
 
 ## Demo Prompts
 
