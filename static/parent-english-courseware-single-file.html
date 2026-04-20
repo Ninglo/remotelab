@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="把孩子每周英语课件整理成两版家长可用笔记、课程目标自检、场景词汇图和5分钟家庭复习计划。">
+  <meta name="theme-color" content="#f5efe4">
+  <style>
+:root {
+  color-scheme: light;
+  --bg: #f5efe4;
+  --paper: rgba(255, 250, 243, 0.86);
+  --surface: #fffaf3;
+  --surface-strong: #f7f0e3;
+  --line: rgba(77, 51, 33, 0.14);
+  --text: #2d2118;
+  --muted: #6d5a4c;
+  --accent: #0f8b6d;
+  --accent-soft: rgba(15, 139, 109, 0.12);
+  --accent-strong: #d8572a;
+  --shadow: 0 24px 60px rgba(70, 44, 27, 0.12);
+  --radius-xl: 32px;
+  --radius-lg: 24px;
+  --radius-md: 18px;
+  --max-width: 1240px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(216, 87, 42, 0.12), transparent 30%),
+    radial-gradient(circle at 85% 10%, rgba(15, 139, 109, 0.18), transparent 26%),
+    linear-gradient(180deg, #f5efe4 0%, #f8f3ea 46%, #f6efe2 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.35), transparent 75%);
+  opacity: 0.5;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.page-shell {
+  position: relative;
+  width: min(calc(100% - 32px), var(--max-width));
+  margin: 0 auto;
+  padding: 24px 0 64px;
+}
+
+.topbar {
+  position: sticky;
+  top: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 18px;
+  margin-bottom: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 999px;
+  background: rgba(255, 248, 238, 0.72);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 30px rgba(95, 68, 49, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #0f8b6d, #0d6c80);
+  color: #fffdf8;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.brand-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.brand-copy strong {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.brand-copy span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.topbar-nav a {
+  position: relative;
+}
+
+.topbar-nav a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 100%;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 160ms ease;
+}
+
+.topbar-nav a:hover::after,
+.topbar-nav a:focus-visible::after {
+  transform: scaleX(1);
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 28px;
+  align-items: stretch;
+  min-height: min(100dvh - 120px, 860px);
+}
+
+.hero-copy,
+.hero-panel,
+.output-card,
+.preview-card,
+.gap-card,
+.feature-card,
+.workflow-step,
+.example-card,
+.faq-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--paper);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+}
+
+.hero-copy {
+  padding: 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.eyebrow,
+.output-kicker,
+.gap-label,
+.preview-label {
+  margin: 0 0 14px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.hero h1,
+.section h2,
+.example-copy h2 {
+  margin: 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: clamp(2.9rem, 5vw, 5.7rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.hero-lead,
+.section-heading p:last-child,
+.feature-card p,
+.workflow-step p,
+.gap-card p,
+.faq-item p,
+.example-copy p,
+.output-list li,
+.preview-body p,
+.hero-metrics dd,
+.stack-card li {
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 1rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 30px 0;
+}
+
+.primary-link,
+.secondary-link,
+.audience-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 999px;
+  transition: transform 140ms ease, background-color 140ms ease, border-color 140ms ease;
+}
+
+.primary-link,
+.audience-tab.is-active {
+  background: var(--text);
+  color: #fffaf3;
+}
+
+.secondary-link,
+.audience-tab {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.primary-link:hover,
+.secondary-link:hover,
+.audience-tab:hover {
+  transform: translateY(-1px);
+}
+
+.hero-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+}
+
+.hero-metrics div {
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.hero-metrics dt {
+  margin-bottom: 8px;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.hero-metrics dd {
+  margin: 0;
+  font-size: 0.94rem;
+}
+
+.hero-panel {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  padding: 26px;
+  overflow: hidden;
+}
+
+.hero-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.stack-card {
+  position: relative;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.stack-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.9;
+}
+
+.stack-card--warm::before {
+  background: linear-gradient(155deg, rgba(216, 87, 42, 0.16), rgba(255, 250, 243, 0));
+}
+
+.stack-card--mint::before {
+  background: linear-gradient(155deg, rgba(15, 139, 109, 0.16), rgba(255, 250, 243, 0));
+}
+
+.stack-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.card-tag {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stack-card h2 {
+  margin: 18px 0 14px;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 2rem;
+  letter-spacing: -0.04em;
+}
+
+.stack-card ul,
+.output-list,
+.faq-list,
+.preview-body ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.stack-card li,
+.output-list li,
+.faq-item p,
+.preview-body li {
+  margin-bottom: 8px;
+}
+
+.hero-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.hero-rail span,
+.scene-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--text);
+  font-size: 0.86rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.section {
+  margin-top: 28px;
+}
+
+.section-heading {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.section-heading h2,
+.example-copy h2 {
+  font-size: clamp(2.1rem, 3.8vw, 3.8rem);
+}
+
+.section-heading p:last-child {
+  margin: 0;
+  max-width: 64ch;
+}
+
+.audience-switch {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 999px;
+  background: rgba(255, 251, 247, 0.74);
+  border: 1px solid var(--line);
+}
+
+.output-grid,
+.gap-grid,
+.feature-grid,
+.workflow-grid {
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+.output-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 0.84fr);
+}
+
+.output-card,
+.preview-card,
+.gap-card,
+.feature-card,
+.workflow-step,
+.faq-item {
+  padding: 28px;
+}
+
+.output-card h3,
+.feature-card h3,
+.gap-card h3,
+.workflow-step h3,
+.faq-item h3,
+.preview-body h3 {
+  margin: 0 0 14px;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 1.6rem;
+  letter-spacing: -0.04em;
+}
+
+.output-card.is-hidden {
+  display: none;
+}
+
+.preview-card {
+  background:
+    linear-gradient(180deg, rgba(15, 139, 109, 0.08), rgba(255, 250, 243, 0.95)),
+    var(--paper);
+}
+
+.preview-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.preview-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(45, 33, 24, 0.2);
+}
+
+.preview-body {
+  min-height: 280px;
+}
+
+.preview-body ol {
+  margin-top: 16px;
+}
+
+.gap-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.gap-card {
+  min-height: 220px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(248, 240, 227, 0.7)),
+    var(--paper);
+}
+
+.feature-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.feature-card {
+  min-height: 210px;
+}
+
+.workflow-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.workflow-step {
+  position: relative;
+  overflow: hidden;
+}
+
+.workflow-step span {
+  display: inline-flex;
+  margin-bottom: 22px;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  color: rgba(15, 139, 109, 0.26);
+}
+
+.example-card {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(320px, 1.1fr);
+  gap: 24px;
+  padding: 30px;
+}
+
+.scene-board {
+  position: relative;
+  min-height: 400px;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: linear-gradient(180deg, #f6c36d 0%, #ffd8a2 42%, #fdf1db 100%);
+}
+
+.scene-sky {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.72), transparent 18%),
+    radial-gradient(circle at 72% 24%, rgba(255, 255, 255, 0.52), transparent 15%);
+}
+
+.scene-table {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 20%;
+  height: 18%;
+  border-radius: 32px 32px 14px 14px;
+  background: #fff4e6;
+  box-shadow: 0 18px 26px rgba(126, 69, 22, 0.12);
+}
+
+.scene-cake {
+  position: absolute;
+  left: 34%;
+  bottom: 28%;
+  width: 26%;
+  height: 19%;
+  border-radius: 24px 24px 12px 12px;
+  background: linear-gradient(180deg, #fffdf9 0%, #f3dcc0 100%);
+}
+
+.scene-cake::before,
+.scene-cake::after {
+  content: "";
+  position: absolute;
+  top: -18%;
+  width: 10px;
+  height: 22px;
+  border-radius: 999px;
+  background: #d8572a;
+  box-shadow: 0 -10px 0 1px rgba(255, 214, 122, 0.9);
+}
+
+.scene-cake::before {
+  left: 32%;
+}
+
+.scene-cake::after {
+  right: 32%;
+}
+
+.scene-gift {
+  position: absolute;
+  right: 18%;
+  bottom: 24%;
+  width: 17%;
+  height: 18%;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0f8b6d, #0d6c80);
+}
+
+.scene-gift::before,
+.scene-gift::after {
+  content: "";
+  position: absolute;
+  background: #fff3de;
+}
+
+.scene-gift::before {
+  inset: 0 42% 0 42%;
+}
+
+.scene-gift::after {
+  inset: 42% 0 42% 0;
+}
+
+.scene-balloon {
+  position: absolute;
+  width: 64px;
+  height: 84px;
+  border-radius: 50% 50% 46% 46%;
+  background: #d8572a;
+  box-shadow: inset -8px -10px 0 rgba(255, 255, 255, 0.14);
+  animation: floatBalloon 5s ease-in-out infinite;
+}
+
+.scene-balloon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -50px;
+  width: 2px;
+  height: 52px;
+  background: rgba(110, 84, 59, 0.5);
+}
+
+.scene-balloon--one {
+  left: 16%;
+  top: 16%;
+}
+
+.scene-balloon--two {
+  right: 18%;
+  top: 10%;
+  animation-delay: -2.2s;
+  background: #0f8b6d;
+}
+
+.scene-pill {
+  position: absolute;
+  background: rgba(255, 250, 243, 0.82);
+}
+
+.scene-pill--cake {
+  left: 26%;
+  bottom: 54%;
+}
+
+.scene-pill--gift {
+  right: 9%;
+  bottom: 48%;
+}
+
+.scene-pill--balloon {
+  left: 12%;
+  top: 10%;
+}
+
+.faq-list {
+  display: grid;
+  gap: 16px;
+}
+
+.faq-item h3 {
+  font-size: 1.28rem;
+}
+
+@keyframes floatBalloon {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(3deg);
+  }
+}
+
+@media (max-width: 1080px) {
+  .hero,
+  .output-grid,
+  .example-card {
+    grid-template-columns: 1fr;
+  }
+
+  .gap-grid,
+  .feature-grid,
+  .workflow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero {
+    min-height: auto;
+  }
+
+  .topbar {
+    border-radius: 28px;
+  }
+}
+
+@media (max-width: 720px) {
+  .page-shell {
+    width: min(calc(100% - 20px), var(--max-width));
+    padding-top: 14px;
+  }
+
+  .topbar {
+    position: static;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .topbar-nav {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .hero-copy,
+  .hero-panel,
+  .output-card,
+  .preview-card,
+  .gap-card,
+  .feature-card,
+  .workflow-step,
+  .example-card,
+  .faq-item {
+    border-radius: 24px;
+  }
+
+  .hero-copy,
+  .hero-panel,
+  .output-card,
+  .preview-card,
+  .gap-card,
+  .feature-card,
+  .workflow-step,
+  .faq-item {
+    padding: 22px;
+  }
+
+  .hero h1 {
+    font-size: clamp(2.6rem, 15vw, 4.2rem);
+  }
+
+  .hero-metrics,
+  .gap-grid,
+  .feature-grid,
+  .workflow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-board {
+    min-height: 320px;
+  }
+}
+
+  </style>
+  <title>家长英语课件整理站</title>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="#top">
+        <span class="brand-mark">RL</span>
+        <span class="brand-copy">
+          <strong>RemoteLab</strong>
+          <span>Parent English Courseware Coach</span>
+        </span>
+      </a>
+      <nav class="topbar-nav" aria-label="Page sections">
+        <a href="#outputs">输出</a>
+        <a href="#features">功能</a>
+        <a href="#workflow">流程</a>
+        <a href="#faq">常见问题</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">站在家长视角设计</p>
+          <h1>一份课件，直接变成家里能用的英语复习站点。</h1>
+          <p class="hero-lead">
+            上传当周课件、课程目标页或课堂截图，系统会自动拆出重点词汇、句型、语法，
+            同时给出两版家长笔记，还会把课后复习真正难坚持的环节补齐。
+          </p>
+          <div class="hero-actions">
+            <a class="primary-link" href="#outputs">看家长笔记长什么样</a>
+            <a class="secondary-link" href="#features">看新增功能</a>
+          </div>
+          <dl class="hero-metrics">
+            <div>
+              <dt>2 种笔记</dt>
+              <dd>低英语门槛版 / 课程目标自检版</dd>
+            </div>
+            <div>
+              <dt>5 分钟计划</dt>
+              <dd>自动切成家庭可执行的短复习</dd>
+            </div>
+            <div>
+              <dt>多周汇总</dt>
+              <dd>勾选历史课件生成单元核心清单</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="hero-panel">
+          <div class="hero-stack">
+            <article class="stack-card stack-card--warm">
+              <span class="card-tag">这周已自动整理</span>
+              <h2>Party 单元</h2>
+              <ul>
+                <li>核心词汇 12 个</li>
+                <li>重点句型 4 组</li>
+                <li>语法提醒 2 条</li>
+              </ul>
+            </article>
+            <article class="stack-card stack-card--mint">
+              <span class="card-tag">家长新增需求</span>
+              <h2>真正需要补的功能</h2>
+              <ul>
+                <li>错词回看卡</li>
+                <li>发音跟读提示</li>
+                <li>家长陪练话术</li>
+                <li>课后复习提醒节奏</li>
+              </ul>
+            </article>
+          </div>
+          <div class="hero-rail">
+            <span>词汇</span>
+            <span>句型</span>
+            <span>语法</span>
+            <span>自检</span>
+            <span>场景图</span>
+            <span>陪练脚本</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="outputs">
+        <div class="section-heading">
+          <p class="eyebrow">双版本输出</p>
+          <h2>给不同英文能力的家长，页面应该直接切换成不同工作台。</h2>
+        </div>
+        <div class="audience-switch" role="tablist" aria-label="Parent note modes">
+          <button class="audience-tab is-active" type="button" role="tab" aria-selected="true" data-audience-tab="direct">英文较弱家长</button>
+          <button class="audience-tab" type="button" role="tab" aria-selected="false" data-audience-tab="coach">有英文基础家长</button>
+        </div>
+        <div class="output-grid">
+          <article class="output-card" data-audience-panel="direct">
+            <p class="output-kicker">Version A</p>
+            <h3>拿来就能陪练，不用自己再翻译。</h3>
+            <ul class="output-list">
+              <li>每个词直接给中文义、儿童解释、可对孩子说的话。</li>
+              <li>每个句型给中文提示和一条家长可直接朗读的练习句。</li>
+              <li>语法只讲最低必要规则，避免把家长变成老师。</li>
+              <li>结尾附一份“今晚 5 分钟怎么复习”的顺序脚本。</li>
+            </ul>
+          </article>
+          <article class="output-card is-hidden" data-audience-panel="coach">
+            <p class="output-kicker">Version B</p>
+            <h3>对照课程目标，自查孩子有没有真的学会。</h3>
+            <ul class="output-list">
+              <li>把课程目标页转成可核对的自检问题。</li>
+              <li>加入口头追问、易错点和掌握度清单。</li>
+              <li>保留英文例句，方便家长自由追问和扩展。</li>
+              <li>给出“还没达标时下一步怎么补”的具体建议。</li>
+            </ul>
+          </article>
+
+          <aside class="preview-card">
+            <div class="preview-toolbar">
+              <span class="preview-dot"></span>
+              <span class="preview-dot"></span>
+              <span class="preview-dot"></span>
+            </div>
+            <div class="preview-body" id="previewBody">
+              <p class="preview-label">今晚陪练脚本</p>
+              <h3>Can you bring a gift to the party?</h3>
+              <p>先看图说词，再跟读句子，最后让孩子自己回答 yes / no 和物品名称。</p>
+              <ol>
+                <li>先指着图说: gift, cake, balloon。</li>
+                <li>家长问: Can you bring a gift to the party?</li>
+                <li>孩子回答后，再追问: What gift can you bring?</li>
+              </ol>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-heading">
+          <p class="eyebrow">家长视角补功能</p>
+          <h2>如果只做“知识整理”，复习还不够顺手。还需要把执行难点一起接住。</h2>
+        </div>
+        <div class="gap-grid">
+          <article class="gap-card">
+            <p class="gap-label">建议新增 01</p>
+            <h3>5 分钟复习节奏</h3>
+            <p>自动把本周内容拆成今晚、周中、周末三段任务，减少家长拖延和堆积。</p>
+          </article>
+          <article class="gap-card">
+            <p class="gap-label">建议新增 02</p>
+            <h3>错词与薄弱点回看</h3>
+            <p>把孩子反复答错的词和句型沉成“再看一次”列表，下周复习直接续上。</p>
+          </article>
+          <article class="gap-card">
+            <p class="gap-label">建议新增 03</p>
+            <h3>发音跟读提示</h3>
+            <p>给词汇和句型标注重音、常见误读和家长可用的简短纠音提醒。</p>
+          </article>
+          <article class="gap-card">
+            <p class="gap-label">建议新增 04</p>
+            <h3>家长陪练话术</h3>
+            <p>针对每个单元给可直接说出口的追问句，让陪练更像互动，不像默写。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section feature-section" id="features">
+        <div class="section-heading">
+          <p class="eyebrow">完整能力</p>
+          <h2>页面不只是展示笔记，而是覆盖从“看懂课件”到“在家复习”的整条链路。</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>重点词汇 / 句型 / 语法</h3>
+            <p>自动结构化每周知识点，保留孩子真正要会的核心内容。</p>
+          </article>
+          <article class="feature-card">
+            <h3>课程目标自检</h3>
+            <p>基于课程目标页生成核对问题，不靠家长临场发挥。</p>
+          </article>
+          <article class="feature-card">
+            <h3>场景化词汇图片</h3>
+            <p>例如 party 单元会把 cake、gift、balloon 放进一张完整画面里，以图带词。</p>
+          </article>
+          <article class="feature-card">
+            <h3>单元核心一键汇总</h3>
+            <p>从过往课件里勾选多周内容，自动去重并生成单元总清单。</p>
+          </article>
+          <article class="feature-card">
+            <h3>家庭复习脚本</h3>
+            <p>把“家长下一句该说什么”写出来，降低陪练门槛。</p>
+          </article>
+          <article class="feature-card">
+            <h3>薄弱点延续追踪</h3>
+            <p>把本周没掌握的内容接到下一周，而不是每次重新开始。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section workflow-section" id="workflow">
+        <div class="section-heading">
+          <p class="eyebrow">每周流程</p>
+          <h2>对家长来说，最理想的使用方式应该只有四步。</h2>
+        </div>
+        <div class="workflow-grid">
+          <article class="workflow-step">
+            <span>01</span>
+            <h3>上传当周课件</h3>
+            <p>支持 PDF、截图、课堂拍照和课程目标页。</p>
+          </article>
+          <article class="workflow-step">
+            <span>02</span>
+            <h3>自动生成双版本笔记</h3>
+            <p>一份直接陪练，一份目标自检，避免重复整理。</p>
+          </article>
+          <article class="workflow-step">
+            <span>03</span>
+            <h3>挑选词汇做场景图</h3>
+            <p>把抽象词换成孩子能看懂的生活画面。</p>
+          </article>
+          <article class="workflow-step">
+            <span>04</span>
+            <h3>把错词沉淀到下周</h3>
+            <p>形成连续复习，而不是一周一周断开。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section example-section">
+        <div class="example-card">
+          <div class="example-copy">
+            <p class="eyebrow">页面示例</p>
+            <h2>party 单元的词汇场景图，不是孤立单词，而是一整幕生日派对。</h2>
+            <p>
+              页面会同时给出图像 brief 和配套词汇提示，例如：
+              balloons over the table, cake with candles, wrapped gift, children singing,
+              so the child sees how the word belongs to a scene.
+            </p>
+          </div>
+          <div class="scene-board" aria-label="Party vocabulary scene preview">
+            <div class="scene-sky"></div>
+            <div class="scene-table"></div>
+            <div class="scene-cake"></div>
+            <div class="scene-gift"></div>
+            <div class="scene-balloon scene-balloon--one"></div>
+            <div class="scene-balloon scene-balloon--two"></div>
+            <div class="scene-pill scene-pill--cake">cake</div>
+            <div class="scene-pill scene-pill--gift">gift</div>
+            <div class="scene-pill scene-pill--balloon">balloon</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section faq-section" id="faq">
+        <div class="section-heading">
+          <p class="eyebrow">常见问题</p>
+          <h2>站在真实家庭场景里，家长通常会问这三件事。</h2>
+        </div>
+        <div class="faq-list">
+          <article class="faq-item">
+            <h3>没有课程目标页还能用吗？</h3>
+            <p>可以。系统会先按课件内容整理，但会把不确定的推断标清楚；如果目标页缺失会影响自检质量，再只问一次。</p>
+          </article>
+          <article class="faq-item">
+            <h3>如果家长英语很差，会不会还是看不懂？</h3>
+            <p>不会。低门槛版本默认是中文主导、家长可直接朗读，不要求家长自己组织英文解释。</p>
+          </article>
+          <article class="faq-item">
+            <h3>多周课件怎么变成单元重点？</h3>
+            <p>选择历史课件后，系统会去重、合并并保留递进关系，最后输出单元核心词汇、句型和语法。</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+(function initParentEnglishCoursewarePage(globalScope) {
+  const previewContentByAudience = {
+    direct: {
+      label: '今晚陪练脚本',
+      title: 'Can you bring a gift to the party?',
+      body: '先看图说词，再跟读句子，最后让孩子自己回答 yes / no 和物品名称。',
+      steps: [
+        '先指着图说: gift, cake, balloon。',
+        '家长问: Can you bring a gift to the party?',
+        '孩子回答后，再追问: What gift can you bring?',
+      ],
+    },
+    coach: {
+      label: '课程目标自检',
+      title: '孩子能不能脱离提示自己说完整句？',
+      body: '先不看课件，观察孩子是否能根据 party 场景独立调用词汇和句型。',
+      steps: [
+        '请孩子看图，用完整句说出自己能带什么去 party。',
+        '追问: Why can you bring it? 看孩子是否能扩展原因。',
+        '最后核对: 是否混淆 bring / have，是否漏掉冠词。',
+      ],
+    },
+  };
+
+  function $(selector) {
+    return globalScope.document.querySelector(selector);
+  }
+
+  function $all(selector) {
+    return Array.from(globalScope.document.querySelectorAll(selector));
+  }
+
+  function renderPreview(mode) {
+    const previewBody = $('#previewBody');
+    const preview = previewContentByAudience[mode];
+    if (!previewBody || !preview) return;
+
+    const stepsMarkup = preview.steps.map((step) => `<li>${step}</li>`).join('');
+    previewBody.innerHTML = [
+      `<p class="preview-label">${preview.label}</p>`,
+      `<h3>${preview.title}</h3>`,
+      `<p>${preview.body}</p>`,
+      `<ol>${stepsMarkup}</ol>`,
+    ].join('');
+  }
+
+  function selectAudience(mode) {
+    $all('[data-audience-tab]').forEach((tab) => {
+      const isActive = tab.getAttribute('data-audience-tab') === mode;
+      tab.classList.toggle('is-active', isActive);
+      tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+
+    $all('[data-audience-panel]').forEach((panel) => {
+      const isMatch = panel.getAttribute('data-audience-panel') === mode;
+      panel.classList.toggle('is-hidden', !isMatch);
+    });
+
+    renderPreview(mode);
+  }
+
+  function bindAudienceTabs() {
+    $all('[data-audience-tab]').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const mode = tab.getAttribute('data-audience-tab');
+        if (mode) selectAudience(mode);
+      });
+    });
+  }
+
+  if (!globalScope.document) return;
+  bindAudienceTabs();
+  selectAudience('direct');
+})(window);
+
+  </script>
+</body>
+</html>
