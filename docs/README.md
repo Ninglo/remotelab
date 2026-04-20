@@ -67,6 +67,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 ### Focused Integrations
 
 - `automation-apps.md` — automation-as-Agent pattern for owner-side recurring workflows and review sessions
+- `agent-recipes-parent-english-courseware.md` — concrete Agent recipe for turning weekly English lesson packs into dual-mode parent study aids
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
 - `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector
 - `github-auto-triage.md` — model-first GitHub intake and auto-reply rollout contract

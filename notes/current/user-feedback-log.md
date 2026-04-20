@@ -21,6 +21,17 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-04-20 — parent-facing lesson-pack workflows are a strong early mainstream automation wedge
+
+- Source: direct user product request framed around weekly English after-school courseware and family-side review.
+- User slice: parent handling repeated child-learning follow-up work, often mobile-first and not necessarily confident in the subject themselves.
+- Recurring work: every week the parent receives a lesson deck and wants AI to turn it into usable home-review materials without manually extracting vocabulary, sentence patterns, grammar targets, and practice prompts.
+- Observed friction or ask: generic chat is not enough; the user wants one workflow that can transform uploaded courseware into two distinct output modes at once: a zero-thinking support version for weak-English parents, and a self-check version for stronger parents anchored to course goals. The same workflow also needs optional derivative assets such as scene-based vocabulary pictures and one-click unit core-point summaries across previously uploaded decks.
+- Signal strength: high specificity, recurring cadence, clear audience split, and concrete derivative outputs make this a strong example of the kind of repetitive digital work mainstream users will hand off if the system packages it cleanly.
+- Product implication: RemoteLab should treat "uploaded teaching material -> dual-mode parent deliverable -> optional visual aids / cumulative summary" as a canonical workflow shape. This strengthens the case for conversational Agent creation, reusable knowledge extraction pipelines, multi-output delivery, and asset-return channels that work for non-technical users.
+- Promote to: reusable Agent examples, onboarding/showcase scenarios, future structured-output and cumulative-knowledge product surfaces.
+- Follow-up: capture this as a shareable Agent recipe that can be created through the Agent builder and later extended with image-generation and historical courseware indexing.
+
 ### 2026-04-11 — discussion continuity should outrank session routing until dispatch is trustworthy
 
 - Source: direct product discussion after active design/debug threads were routed into unrelated historical sessions, disrupting the conversation enough that runtime dispatch was temporarily turned off.
@@ -60,6 +71,18 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: if RemoteLab or a derivative product adds user-local execution, separate the shared substrate from domain adapters. The shared layer should own device registration, authorization, transport, audit, and capability gating; domain layers such as Revit can then add specific local actions on top. Product wording should describe explicit local access grants rather than implying unrestricted access to "your computer."
 - Promote to: future device-binding / local-bridge architecture note, user-facing authorization wording, Revit Live capability planning
 - Follow-up: validate whether the first valuable local capabilities are file/folder grants and app-specific export/open hooks rather than screen/keyboard remote control; only consider broader desktop control if repeated user evidence clearly demands it
+=======
+### 2026-04-20 — parent-facing lesson-pack workflows are a strong early mainstream automation wedge
+
+- Source: direct user product request framed around weekly English after-school courseware and family-side review.
+- User slice: parent handling repeated child-learning follow-up work, often mobile-first and not necessarily confident in the subject themselves.
+- Recurring work: every week the parent receives a lesson deck and wants AI to turn it into usable home-review materials without manually extracting vocabulary, sentence patterns, grammar targets, and practice prompts.
+- Observed friction or ask: generic chat is not enough; the user wants one workflow that can transform uploaded courseware into two distinct output modes at once: a zero-thinking support version for weak-English parents, and a self-check version for stronger parents anchored to course goals. The same workflow also needs optional derivative assets such as scene-based vocabulary pictures and one-click unit core-point summaries across previously uploaded decks.
+- Signal strength: high specificity, recurring cadence, clear audience split, and concrete derivative outputs make this a strong example of the kind of repetitive digital work mainstream users will hand off if the system packages it cleanly.
+- Product implication: RemoteLab should treat "uploaded teaching material -> dual-mode parent deliverable -> optional visual aids / cumulative summary" as a canonical workflow shape. This strengthens the case for conversational Agent creation, reusable knowledge extraction pipelines, multi-output delivery, and asset-return channels that work for non-technical users.
+- Promote to: reusable Agent examples, onboarding/showcase scenarios, future structured-output and cumulative-knowledge product surfaces.
+- Follow-up: capture this as a shareable Agent recipe that can be created through the Agent builder and later extended with image-generation and historical courseware indexing.
+>>>>>>> 697cbb7 (add parent english courseware agent recipe)
 
 ### 2026-04-06 — settings should default to self-explanatory controls, not explanatory copy
 
