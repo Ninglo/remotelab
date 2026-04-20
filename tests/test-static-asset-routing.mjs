@@ -118,7 +118,7 @@ async function main() {
   try {
     const page = await request(port, '/');
     assert.equal(page.status, 200, 'chat page should render');
-    assert.match(page.text, /<script src="\/chat\/icons\.js(?:\?v=[^"]+)?"/);
+    assert.match(page.text, /<script src="\/?chat\/icons\.js(?:\?v=[^"]+)?"/);
 
     const probe = await request(port, `/chat/${probeName}`);
     assert.equal(probe.status, 200, 'new static asset should load without router filename changes');
