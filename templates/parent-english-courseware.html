@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="RemoteLab">
+  <meta name="application-name" content="RemoteLab">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5efe4">
+  <meta name="description" content="把孩子每周英语课件整理成两版家长可用笔记、课程目标自检、场景词汇图和5分钟家庭复习计划。">
+  <meta name="remotelab-build" content="{{BUILD_TITLE}}">
+  <base href="{{PRODUCT_BASE_HREF}}">
+  <link rel="manifest" href="manifest.json?v={{ASSET_VERSION}}">
+  <link rel="icon" href="favicon.ico?v={{ASSET_VERSION}}" sizes="any">
+  <link rel="icon" href="icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v={{ASSET_VERSION}}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>{{PAGE_TITLE}}</title>
+  <link rel="stylesheet" href="parent-english-courseware.css?v={{ASSET_VERSION}}">
+</head>
+<body class="{{BODY_CLASS}}">
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="brand-mark">RL</span>
+        <span class="brand-copy">
+          <strong>RemoteLab</strong>
+          <span>Parent English Courseware Coach</span>
+        </span>
+      </a>
+      <nav class="topbar-nav" aria-label="Page sections">
+        <a href="#outputs">输出</a>
+        <a href="#features">功能</a>
+        <a href="#workflow">流程</a>
+        <a href="#faq">常见问题</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">站在家长视角设计</p>
+          <h1>一份课件，直接变成家里能用的英语复习站点。</h1>
+          <p class="hero-lead">
+            上传当周课件、课程目标页或课堂截图，系统会自动拆出重点词汇、句型、语法，
+            同时给出两版家长笔记，还会把课后复习真正难坚持的环节补齐。
+          </p>
+          <div class="hero-actions">
+            <a class="primary-link" href="#outputs">看家长笔记长什么样</a>
+            <a class="secondary-link" href="#features">看新增功能</a>
+          </div>
+          <dl class="hero-metrics">
+            <div>
+              <dt>2 种笔记</dt>
+              <dd>低英语门槛版 / 课程目标自检版</dd>
+            </div>
+            <div>
+              <dt>5 分钟计划</dt>
+              <dd>自动切成家庭可执行的短复习</dd>
+            </div>
+            <div>
+              <dt>多周汇总</dt>
+              <dd>勾选历史课件生成单元核心清单</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="hero-panel">
+          <div class="hero-stack">
+            <article class="stack-card stack-card--warm">
+              <span class="card-tag">这周已自动整理</span>
+              <h2>Party 单元</h2>
+              <ul>
+                <li>核心词汇 12 个</li>
+                <li>重点句型 4 组</li>
+                <li>语法提醒 2 条</li>
+              </ul>
+            </article>
+            <article class="stack-card stack-card--mint">
+              <span class="card-tag">家长新增需求</span>
+              <h2>真正需要补的功能</h2>
+              <ul>
+                <li>错词回看卡</li>
+                <li>发音跟读提示</li>
+                <li>家长陪练话术</li>
+                <li>课后复习提醒节奏</li>
+              </ul>
+            </article>
+          </div>
+          <div class="hero-rail">
+            <span>词汇</span>
+            <span>句型</span>
+            <span>语法</span>
+            <span>自检</span>
+            <span>场景图</span>
+            <span>陪练脚本</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="outputs">
+        <div class="section-heading">
+          <p class="eyebrow">双版本输出</p>
+          <h2>给不同英文能力的家长，页面应该直接切换成不同工作台。</h2>
+        </div>
+        <div class="audience-switch" role="tablist" aria-label="Parent note modes">
+          <button class="audience-tab is-active" type="button" role="tab" aria-selected="true" data-audience-tab="direct">英文较弱家长</button>
+          <button class="audience-tab" type="button" role="tab" aria-selected="false" data-audience-tab="coach">有英文基础家长</button>
+        </div>
+        <div class="output-grid">
+          <article class="output-card" data-audience-panel="direct">
+            <p class="output-kicker">Version A</p>
+            <h3>拿来就能陪练，不用自己再翻译。</h3>
+            <ul class="output-list">
+              <li>每个词直接给中文义、儿童解释、可对孩子说的话。</li>
+              <li>每个句型给中文提示和一条家长可直接朗读的练习句。</li>
+              <li>语法只讲最低必要规则，避免把家长变成老师。</li>
+              <li>结尾附一份“今晚 5 分钟怎么复习”的顺序脚本。</li>
+            </ul>
+          </article>
+          <article class="output-card is-hidden" data-audience-panel="coach">
+            <p class="output-kicker">Version B</p>
+            <h3>对照课程目标，自查孩子有没有真的学会。</h3>
+            <ul class="output-list">
+              <li>把课程目标页转成可核对的自检问题。</li>
+              <li>加入口头追问、易错点和掌握度清单。</li>
+              <li>保留英文例句，方便家长自由追问和扩展。</li>
+              <li>给出“还没达标时下一步怎么补”的具体建议。</li>
+            </ul>
+          </article>
+
+          <aside class="preview-card">
+            <div class="preview-toolbar">
+              <span class="preview-dot"></span>
+              <span class="preview-dot"></span>
+              <span class="preview-dot"></span>
+            </div>
+            <div class="preview-body" id="previewBody">
+              <p class="preview-label">今晚陪练脚本</p>
+              <h3>Can you bring a gift to the party?</h3>
+              <p>先看图说词，再跟读句子，最后让孩子自己回答 yes / no 和物品名称。</p>
+              <ol>
+                <li>先指着图说: gift, cake, balloon。</li>
+                <li>家长问: Can you bring a gift to the party?</li>
+                <li>孩子回答后，再追问: What gift can you bring?</li>
+              </ol>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-heading">
+          <p class="eyebrow">家长视角补功能</p>
+          <h2>如果只做“知识整理”，复习还不够顺手。还需要把执行难点一起接住。</h2>
+        </div>
+        <div class="gap-grid">
+          <article class="gap-card">
+            <p class="gap-label">建议新增 01</p>
+            <h3>5 分钟复习节奏</h3>
+            <p>自动把本周内容拆成今晚、周中、周末三段任务，减少家长拖延和堆积。</p>
+          </article>
+          <article class="gap-card">
+            <p class="gap-label">建议新增 02</p>
+            <h3>错词与薄弱点回看</h3>
+            <p>把孩子反复答错的词和句型沉成“再看一次”列表，下周复习直接续上。</p>
+          </article>
+          <article class="gap-card">
+            <p class="gap-label">建议新增 03</p>
+            <h3>发音跟读提示</h3>
+            <p>给词汇和句型标注重音、常见误读和家长可用的简短纠音提醒。</p>
+          </article>
+          <article class="gap-card">
+            <p class="gap-label">建议新增 04</p>
+            <h3>家长陪练话术</h3>
+            <p>针对每个单元给可直接说出口的追问句，让陪练更像互动，不像默写。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section feature-section" id="features">
+        <div class="section-heading">
+          <p class="eyebrow">完整能力</p>
+          <h2>页面不只是展示笔记，而是覆盖从“看懂课件”到“在家复习”的整条链路。</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card">
+            <h3>重点词汇 / 句型 / 语法</h3>
+            <p>自动结构化每周知识点，保留孩子真正要会的核心内容。</p>
+          </article>
+          <article class="feature-card">
+            <h3>课程目标自检</h3>
+            <p>基于课程目标页生成核对问题，不靠家长临场发挥。</p>
+          </article>
+          <article class="feature-card">
+            <h3>场景化词汇图片</h3>
+            <p>例如 party 单元会把 cake、gift、balloon 放进一张完整画面里，以图带词。</p>
+          </article>
+          <article class="feature-card">
+            <h3>单元核心一键汇总</h3>
+            <p>从过往课件里勾选多周内容，自动去重并生成单元总清单。</p>
+          </article>
+          <article class="feature-card">
+            <h3>家庭复习脚本</h3>
+            <p>把“家长下一句该说什么”写出来，降低陪练门槛。</p>
+          </article>
+          <article class="feature-card">
+            <h3>薄弱点延续追踪</h3>
+            <p>把本周没掌握的内容接到下一周，而不是每次重新开始。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section workflow-section" id="workflow">
+        <div class="section-heading">
+          <p class="eyebrow">每周流程</p>
+          <h2>对家长来说，最理想的使用方式应该只有四步。</h2>
+        </div>
+        <div class="workflow-grid">
+          <article class="workflow-step">
+            <span>01</span>
+            <h3>上传当周课件</h3>
+            <p>支持 PDF、截图、课堂拍照和课程目标页。</p>
+          </article>
+          <article class="workflow-step">
+            <span>02</span>
+            <h3>自动生成双版本笔记</h3>
+            <p>一份直接陪练，一份目标自检，避免重复整理。</p>
+          </article>
+          <article class="workflow-step">
+            <span>03</span>
+            <h3>挑选词汇做场景图</h3>
+            <p>把抽象词换成孩子能看懂的生活画面。</p>
+          </article>
+          <article class="workflow-step">
+            <span>04</span>
+            <h3>把错词沉淀到下周</h3>
+            <p>形成连续复习，而不是一周一周断开。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section example-section">
+        <div class="example-card">
+          <div class="example-copy">
+            <p class="eyebrow">页面示例</p>
+            <h2>party 单元的词汇场景图，不是孤立单词，而是一整幕生日派对。</h2>
+            <p>
+              页面会同时给出图像 brief 和配套词汇提示，例如：
+              balloons over the table, cake with candles, wrapped gift, children singing,
+              so the child sees how the word belongs to a scene.
+            </p>
+          </div>
+          <div class="scene-board" aria-label="Party vocabulary scene preview">
+            <div class="scene-sky"></div>
+            <div class="scene-table"></div>
+            <div class="scene-cake"></div>
+            <div class="scene-gift"></div>
+            <div class="scene-balloon scene-balloon--one"></div>
+            <div class="scene-balloon scene-balloon--two"></div>
+            <div class="scene-pill scene-pill--cake">cake</div>
+            <div class="scene-pill scene-pill--gift">gift</div>
+            <div class="scene-pill scene-pill--balloon">balloon</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section faq-section" id="faq">
+        <div class="section-heading">
+          <p class="eyebrow">常见问题</p>
+          <h2>站在真实家庭场景里，家长通常会问这三件事。</h2>
+        </div>
+        <div class="faq-list">
+          <article class="faq-item">
+            <h3>没有课程目标页还能用吗？</h3>
+            <p>可以。系统会先按课件内容整理，但会把不确定的推断标清楚；如果目标页缺失会影响自检质量，再只问一次。</p>
+          </article>
+          <article class="faq-item">
+            <h3>如果家长英语很差，会不会还是看不懂？</h3>
+            <p>不会。低门槛版本默认是中文主导、家长可直接朗读，不要求家长自己组织英文解释。</p>
+          </article>
+          <article class="faq-item">
+            <h3>多周课件怎么变成单元重点？</h3>
+            <p>选择历史课件后，系统会去重、合并并保留递进关系，最后输出单元核心词汇、句型和语法。</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  {{BOOTSTRAP_SCRIPT_TAGS}}
+  <script src="parent-english-courseware.js?v={{ASSET_VERSION}}"></script>
+</body>
+</html>

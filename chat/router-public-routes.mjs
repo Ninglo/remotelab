@@ -43,6 +43,7 @@ export async function handlePublicRoutes({
   nonce,
   loginTemplatePath,
   mobileInstallTemplatePath,
+  parentEnglishCoursewareTemplatePath,
   getPageBuildInfo,
   buildHeaders,
   renderPageTemplate,
@@ -269,6 +270,26 @@ if (queryToken) {
     res.writeHead(302, { 'Location': '/login' });
     res.end();
   }
+  return true;
+}
+
+if (pathname === '/showcase/parent-english-courseware' && req.method === 'GET') {
+  let pageHtml;
+  const pageBuildInfo = await getPageBuildInfo();
+  try {
+    pageHtml = await readFile(parentEnglishCoursewareTemplatePath, 'utf8');
+  } catch {
+    pageHtml = '<h1>Parent English courseware page missing</h1>';
+  }
+  res.writeHead(200, buildHeaders({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'public, no-cache, max-age=0, must-revalidate',
+  }));
+  res.end(renderPageTemplate(pageHtml, nonce, {
+    ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
+    PAGE_TITLE: 'Weekly English Courseware for Parents',
+    BODY_CLASS: 'marketing-page parent-english-courseware-page',
+  }));
   return true;
 }
 
