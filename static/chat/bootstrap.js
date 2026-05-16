@@ -157,6 +157,12 @@ const bootstrapDefaultSessionFolder = normalizeBootstrapText(pageBootstrap.defau
 window.remotelabGetDefaultSessionFolder = function remotelabGetDefaultSessionFolder() {
   return bootstrapDefaultSessionFolder || "~";
 };
+window.remotelabGetSelectedSessionFolder = function remotelabGetSelectedSessionFolder() {
+  return bootstrapDefaultSessionFolder || "~";
+};
+window.remotelabSetSelectedSessionFolder = function remotelabSetSelectedSessionFolder(folder) {
+  return normalizeBootstrapText(folder) || bootstrapDefaultSessionFolder || "~";
+};
 
 function normalizeBootstrapShareSnapshot(rawPayload, rawMeta = null) {
   const payload = rawPayload && typeof rawPayload === "object"
@@ -345,6 +351,8 @@ const sessionSearchInput = document.getElementById("sessionSearchInput");
 const sidebarViewSwitcher = document.getElementById("sidebarViewSwitcher");
 const viewInboxBtn = document.getElementById("viewInbox");
 const viewProjectsBtn = document.getElementById("viewProjects");
+const workspacePicker = document.getElementById("workspacePicker");
+const workspaceSelect = document.getElementById("workspaceSelect");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
 const settingsSessionPresentationList = document.getElementById("settingsSessionPresentationList");
@@ -1002,7 +1010,7 @@ function withVisitorModeUrl(url) {
 
 let currentTokens = 0;
 
-const DEFAULT_TOOL_ID = "micro-agent";
+const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 
 function normalizeStoredToolId(value) {

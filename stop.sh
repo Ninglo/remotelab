@@ -11,6 +11,7 @@ if [ -f ~/Library/LaunchAgents/com.remotelab.natapp.dual-proxy.plist ]; then
   launchctl unload ~/Library/LaunchAgents/com.remotelab.natapp.dual-proxy.plist 2>/dev/null || echo "natapp prefix bridge not loaded"
 fi
 else
+  sudo systemctl stop remotelab-quick-tunnel.service 2>/dev/null || true
   sudo systemctl stop remotelab.service 2>/dev/null || echo "chat-server not running"
   systemctl --user stop remotelab-tunnel.service 2>/dev/null || true
 fi

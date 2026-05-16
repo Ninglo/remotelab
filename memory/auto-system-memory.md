@@ -34,3 +34,5 @@
 - 公开页/分享页如果依赖 `<base href>`，必须同时保证响应头里的 CSP `base-uri` 允许同源（如 `base-uri 'self'`）；否则浏览器会忽略 `<base>`，静态资源可能按当前分享路由错误解析，进而触发资源路由错配与 MIME 异常。
 - 针对公开页/分享页的回归测试，应成对覆盖这几个约束：HTML 中存在正确的 `<base href>`、响应头允许其生效的 `base-uri`、以及在前缀代理场景（如 `x-forwarded-prefix`）下资源 URL 仍落到正确静态路由。
 - 公开页资源路径应统一使用相对产品根路径的写法，避免使用 `../` 这类向上跳目录的相对路径；这样在分享路由、子路径部署或前缀代理下更稳健。
+- RemoteLab 当前 remote 对话界面代码中没有“用户可切换的 plan 模式”持久开关；现有的 planning 只体现为一次请求中的 `activity.planning.state === "checking"` 预执行检查状态。
+- 若要把 remote 对话界面的“聊天”拆成“agent”和“plan”，轻量方案可先复用现有 tab 机制：Agent 对应普通会话，Plan 按实时 planning/checking 状态筛选；完整方案则需要新增会话级 `planMode: boolean` 并扩展后端存储、API 和前端分栏逻辑。

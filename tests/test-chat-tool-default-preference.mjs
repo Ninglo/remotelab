@@ -52,7 +52,7 @@ const derivePreferredToolIdSource = extractFunctionSource(bootstrapSource, 'deri
 
 const context = {
   console,
-  DEFAULT_TOOL_ID: 'micro-agent',
+  DEFAULT_TOOL_ID: 'codex',
   LEGACY_AUTO_PREFERRED_TOOL_IDS: new Set(['codex', 'micro-agent']),
 };
 context.globalThis = context;
@@ -81,14 +81,14 @@ const ordered = context.prioritizeToolOptions([
 ]);
 assert.deepEqual(
   Array.from(ordered, (tool) => tool.id),
-  ['micro-agent', 'claude', 'codex'],
-  'Micro Agent should be promoted to the front of the picker when available',
+  ['codex', 'claude', 'micro-agent'],
+  'CodeX should be promoted to the front of the picker when available',
 );
 
 assert.equal(
   context.resolvePreferredToolId(ordered, []),
-  'micro-agent',
-  'new picker defaults should fall back to Micro Agent when no explicit choice exists',
+  'codex',
+  'new picker defaults should fall back to CodeX when no explicit choice exists',
 );
 
 assert.equal(

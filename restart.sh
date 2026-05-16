@@ -159,6 +159,33 @@ restart_service() {
   fi
 }
 
+restart_linux_tunnel() {
+  if linux_system_unit_exists "remotelab-quick-tunnel"; then
+    restart_linux_unit "system" "remotelab-quick-tunnel" "cloudflared quick tunnel"
+    return
+  fi
+  restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
+}
+
+print_quick_tunnel_url() {
+  if [[ "$OS_TYPE" != "linux" ]] || ! linux_system_unit_exists "remotelab-quick-tunnel"; then
+    return
+  fi
+  sleep 5
+  local tunnel_url
+  local access_token
+  tunnel_url="$(grep -E '^REMOTELAB_PUBLIC_BASE_URL=' /etc/remotelab/remotelab.env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  if [[ -z "$tunnel_url" ]]; then
+    tunnel_url="$(grep -Eho 'https://[^[:space:]]+trycloudflare\.com' /var/log/remotelab/cloudflared.log /var/log/remotelab/cloudflared.error.log 2>/dev/null | tail -1 || true)"
+  fi
+  access_token="$(node -e 'try { process.stdout.write(JSON.parse(require("fs").readFileSync(process.env.HOME + "/.config/remotelab/auth.json", "utf8")).token || "") } catch {}' 2>/dev/null)"
+  if [[ -n "$tunnel_url" && -n "$access_token" ]]; then
+    echo ""
+    echo "Current access URL:"
+    echo "  ${tunnel_url}/?token=${access_token}"
+  fi
+}
+
 case "$SERVICE" in
   chat)
     echo "Restarting all chat surfaces..."
@@ -170,7 +197,12 @@ case "$SERVICE" in
     ;;
   tunnel)
     echo "Restarting cloudflared..."
-    restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
+    if [[ "$OS_TYPE" == "macos" ]]; then
+      restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
+    else
+      restart_linux_tunnel
+      print_quick_tunnel_url
+    fi
     ;;
   bridge)
     echo "Restarting prefix bridge..."
@@ -180,10 +212,12 @@ case "$SERVICE" in
     echo "Restarting all services..."
     if [[ "$OS_TYPE" == "macos" ]]; then
       restart_all_chat_launchd
+      restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
     else
       restart_linux_chat_surfaces
+      restart_linux_tunnel
+      print_quick_tunnel_url
     fi
-    restart_service "cloudflared" "com.cloudflared.tunnel" "remotelab-tunnel"
     ;;
   *)
     echo "Unknown service: $SERVICE"

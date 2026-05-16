@@ -40,6 +40,7 @@ function applyVisitorMode(authInfo = null) {
   if (menuBtn) menuBtn.style.display = "none";
   if (sortSessionListBtn) sortSessionListBtn.style.display = "none";
   if (newSessionBtn) newSessionBtn.style.display = "none";
+  if (workspacePicker) workspacePicker.style.display = "none";
   // Hide tool/model selectors and context management (visitors use defaults)
   if (inlineAgentSelect) inlineAgentSelect.style.display = "none";
   if (inlineToolSelect) inlineToolSelect.style.display = "none";
@@ -102,6 +103,7 @@ function applyAgentScopedMode(authInfo = null) {
   if (menuBtn) menuBtn.style.display = "";
   if (newSessionBtn) newSessionBtn.style.display = hasAuthCapability("createSession") ? "" : "none";
   if (sortSessionListBtn) sortSessionListBtn.style.display = canOrganizeSessionList() ? "" : "none";
+  if (workspacePicker) workspacePicker.style.display = hasAuthCapability("createSession") ? "" : "none";
   if (tabAgents) tabAgents.style.display = "none";
   if (agentsPanel) agentsPanel.style.display = "none";
   if (inlineAgentSelect) inlineAgentSelect.style.display = canSwitchAgents() ? "" : "none";

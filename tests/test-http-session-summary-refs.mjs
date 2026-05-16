@@ -110,6 +110,8 @@ async function stopServer(child) {
 
 try {
   const { home } = setupTempHome();
+  const customWorkspace = join(home, 'custom-workspace');
+  mkdirSync(customWorkspace, { recursive: true });
   const port = randomPort();
   const server = await startServer({ home, port });
 
@@ -123,6 +125,14 @@ try {
     });
     assert.equal(created.status, 201, 'session creation should succeed');
     const sessionId = created.json.session.id;
+    const otherCreated = await request(port, 'POST', '/api/sessions', {
+      folder: customWorkspace,
+      tool: 'codex',
+      name: 'Other workspace session',
+      group: 'HTTP',
+    });
+    assert.equal(otherCreated.status, 201, 'second workspace session creation should succeed');
+    const otherSessionId = otherCreated.json.session.id;
 
     const list = await request(port, 'GET', '/api/sessions');
     assert.equal(list.status, 200, 'default session list should succeed');
@@ -135,6 +145,35 @@ try {
     const ref = (refs.json.sessionRefs || []).find((entry) => entry.id === sessionId);
     assert.ok(ref, 'refs-only session list should include the created session ref');
     assert.equal(typeof ref.summaryEtag, 'string', 'session refs should expose a summary etag');
+
+    const repoFiltered = await request(port, 'GET', `/api/sessions?folder=${encodeURIComponent(repoRoot)}`);
+    assert.equal(repoFiltered.status, 200, 'folder-filtered active session list should succeed');
+    assert.ok(
+      (repoFiltered.json.sessions || []).some((entry) => entry.id === sessionId),
+      'folder-filtered list should include sessions from the requested workspace',
+    );
+    assert.equal(
+      (repoFiltered.json.sessions || []).some((entry) => entry.id === otherSessionId),
+      false,
+      'folder-filtered list should exclude sessions from other workspaces',
+    );
+
+    const archivedOther = await request(port, 'PATCH', `/api/sessions/${otherSessionId}`, {
+      archived: true,
+    });
+    assert.equal(archivedOther.status, 200, 'archiving the other workspace session should succeed');
+    const archivedFiltered = await request(port, 'GET', `/api/sessions/archived?folder=${encodeURIComponent(customWorkspace)}`);
+    assert.equal(archivedFiltered.status, 200, 'folder-filtered archived session list should succeed');
+    assert.ok(
+      (archivedFiltered.json.sessions || []).some((entry) => entry.id === otherSessionId),
+      'folder-filtered archived list should include archived sessions from the requested workspace',
+    );
+    const archivedRepoFiltered = await request(port, 'GET', `/api/sessions/archived?folder=${encodeURIComponent(repoRoot)}`);
+    assert.equal(
+      (archivedRepoFiltered.json.sessions || []).some((entry) => entry.id === otherSessionId),
+      false,
+      'folder-filtered archived list should exclude archived sessions from other workspaces',
+    );
 
     const summary = await request(port, 'GET', `/api/sessions/${sessionId}?view=summary`);
     assert.equal(summary.status, 200, 'summary session route should succeed');

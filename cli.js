@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -19,10 +19,26 @@ function scriptPath(name) {
 
 async function runShell(script) {
   try {
-    await execFileAsync('bash', [scriptPath(script)], { stdio: 'inherit' });
+    await spawnFile('bash', [scriptPath(script)]);
   } catch (err) {
     process.exit(err.status ?? 1);
   }
+}
+
+function spawnFile(command, args = []) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('exit', (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const error = new Error(signal ? `${command} exited with signal ${signal}` : `${command} exited with code ${code}`);
+      error.status = code ?? 1;
+      reject(error);
+    });
+  });
 }
 
 function printHelp() {
@@ -69,7 +85,7 @@ switch (command) {
   case 'restart': {
     const service = args[0] || 'all';
     try {
-      await execFileAsync('bash', [scriptPath('restart.sh'), service], { stdio: 'inherit' });
+      await spawnFile('bash', [scriptPath('restart.sh'), service]);
     } catch (err) {
       process.exit(err.status ?? 1);
     }
@@ -206,7 +222,7 @@ switch (command) {
 
   case 'generate-token': {
     try {
-      await execFileAsync('node', [scriptPath('generate-token.mjs')], { stdio: 'inherit' });
+      await spawnFile('node', [scriptPath('generate-token.mjs')]);
     } catch (err) {
       process.exit(err.status ?? 1);
     }

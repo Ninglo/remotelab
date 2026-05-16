@@ -59,6 +59,27 @@
         <button class="view-switch-btn active" id="viewInbox" data-view="inbox" data-i18n="sidebar.view.inbox">Inbox</button>
         <button class="view-switch-btn" id="viewProjects" data-view="projects" data-i18n="sidebar.view.projects">Projects</button>
       </div>
+      <div class="sidebar-workspace" id="workspacePicker">
+        <div class="sidebar-section-title" data-i18n="sidebar.workspace.title">Workspace</div>
+        <div class="sidebar-workspace-form">
+          <select class="sidebar-workspace-select" id="workspaceSelect" aria-label="Choose workspace" data-i18n-aria-label="sidebar.workspace.ariaLabel"></select>
+        </div>
+        <div class="sidebar-workspace-custom" id="workspaceCustomPicker" hidden>
+          <select class="sidebar-workspace-select" id="workspaceCustomFolderSelect" aria-label="Choose custom workspace path" data-i18n-aria-label="sidebar.workspace.customPathAriaLabel"></select>
+          <div class="sidebar-workspace-browser" id="workspaceBrowser" hidden>
+            <div class="sidebar-workspace-browser-header">
+              <div id="workspaceBrowserPath" class="sidebar-workspace-browser-path"></div>
+            </div>
+            <select class="sidebar-workspace-browser-select" id="workspaceBrowserSelect" aria-label="Browse folders"></select>
+            <div class="sidebar-workspace-browser-actions">
+              <button type="button" id="workspaceBrowserBack" class="btn">Back</button>
+              <button type="button" id="workspaceBrowserForth" class="btn">Forth</button>
+              <button type="button" id="workspaceBrowserConfirm" class="btn">Confirm</button>
+            </div>
+          </div>
+        </div>
+        <div class="sidebar-section-note" id="workspaceNote" data-i18n="sidebar.workspace.note">New sessions use the selected folder.</div>
+      </div>
       <div class="sidebar-list" id="sessionList"></div>
       <div class="sidebar-filters" id="sidebarFilters">
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
@@ -146,6 +167,10 @@
         <div class="empty-state" id="emptyState">
           <h2 data-i18n="emptyState.title">RemoteLab Chat</h2>
           <p data-i18n="emptyState.body">Select or create a session from the sidebar, then start chatting with your AI coding tool.</p>
+          <div class="empty-state-actions" id="emptyStateActions" hidden>
+            <button type="button" class="empty-state-action primary" id="emptyOpenSessionBtn" data-i18n="emptyState.openSession">Open Session</button>
+            <button type="button" class="empty-state-action" id="emptyCreateAgentBtn" data-i18n="emptyState.createAgent">Create Agent</button>
+          </div>
         </div>
       </div>
     </div>

@@ -17,9 +17,24 @@ function clearMessages({ preserveRunningBlockExpanded = false } = {}) {
   currentThinkingBlock = null;
 }
 
+function syncEmptyStateUi() {
+  const noAttachedSession = !currentSessionId && !hasAttachedSession && !visitorMode && !shareSnapshotMode;
+  if (emptyState) {
+    emptyState.classList.toggle("empty-state--workspace-empty", noAttachedSession);
+  }
+  const actions = document.getElementById("emptyStateActions");
+  if (actions) {
+    actions.hidden = !noAttachedSession;
+  }
+  if (inputArea) {
+    inputArea.hidden = noAttachedSession;
+  }
+}
+
 function showEmpty() {
   messagesInner.innerHTML = "";
   messagesInner.appendChild(emptyState);
+  syncEmptyStateUi();
   if (typeof renderQueuedMessagePanel === "function") {
     renderQueuedMessagePanel(null);
   }

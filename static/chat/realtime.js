@@ -94,9 +94,11 @@ async function dispatchAction(msg) {
       case "create": {
         const createPayload = {
           folder: msg.folder
-            || (typeof window.remotelabGetDefaultSessionFolder === "function"
-              ? window.remotelabGetDefaultSessionFolder()
-              : "~"),
+            || (typeof window.remotelabGetSelectedSessionFolder === "function"
+              ? window.remotelabGetSelectedSessionFolder()
+              : (typeof window.remotelabGetDefaultSessionFolder === "function"
+                ? window.remotelabGetDefaultSessionFolder()
+                : "~")),
           tool: msg.tool,
           name: msg.name || "",
           sourceId: msg.sourceId || "",

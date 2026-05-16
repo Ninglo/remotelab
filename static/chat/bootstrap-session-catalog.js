@@ -497,7 +497,12 @@ function getActiveSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && !session.archived);
+    .filter((session) => session && !session.archived)
+    .filter((session) => (
+      typeof window.remotelabSessionMatchesSelectedWorkspace === "function"
+        ? window.remotelabSessionMatchesSelectedWorkspace(session)
+        : true
+    ));
 }
 
 function getArchivedSessions() {
@@ -508,6 +513,11 @@ function getArchivedSessions() {
         : session
     ))
     .filter((session) => session && session.archived)
+    .filter((session) => (
+      typeof window.remotelabSessionMatchesSelectedWorkspace === "function"
+        ? window.remotelabSessionMatchesSelectedWorkspace(session)
+        : true
+    ))
     .slice()
     .sort((a, b) => getArchivedSessionSortTime(b) - getArchivedSessionSortTime(a));
 }

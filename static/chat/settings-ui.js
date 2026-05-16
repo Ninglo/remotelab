@@ -143,9 +143,11 @@ async function openManagedAppSession(app, { rememberPreference = true } = {}) {
   }
   await dispatchAction({
     action: "create",
-    folder: typeof window.remotelabGetDefaultSessionFolder === "function"
-      ? window.remotelabGetDefaultSessionFolder()
-      : "~",
+    folder: typeof window.remotelabGetSelectedSessionFolder === "function"
+      ? window.remotelabGetSelectedSessionFolder()
+      : (typeof window.remotelabGetDefaultSessionFolder === "function"
+        ? window.remotelabGetDefaultSessionFolder()
+        : "~"),
     tool,
     sourceId: DEFAULT_APP_ID,
     sourceName: DEFAULT_WEB_SOURCE_NAME,
@@ -324,9 +326,11 @@ async function createAgentBuilderSession() {
     }
     await dispatchAction({
       action: "create",
-      folder: typeof window.remotelabGetDefaultSessionFolder === "function"
-        ? window.remotelabGetDefaultSessionFolder()
-        : "~",
+      folder: typeof window.remotelabGetSelectedSessionFolder === "function"
+        ? window.remotelabGetSelectedSessionFolder()
+        : (typeof window.remotelabGetDefaultSessionFolder === "function"
+          ? window.remotelabGetDefaultSessionFolder()
+          : "~"),
       tool,
       name: t("settings.apps.create"),
       sourceId: DEFAULT_APP_ID,

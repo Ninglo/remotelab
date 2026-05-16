@@ -6,9 +6,9 @@ import {
   normalizeSessionStarterPreset,
 } from './session-starter-preset.mjs';
 
-export const PRODUCT_DEFAULT_STARTER_TOOL_ID = 'micro-agent';
+export const PRODUCT_DEFAULT_STARTER_TOOL_ID = 'codex';
 export const FALLBACK_STARTER_TOOL_ID = 'codex';
-export const DEFAULT_STARTER_TOOL_DESCRIPTION = 'Micro Agent when available, otherwise CodeX';
+export const DEFAULT_STARTER_TOOL_DESCRIPTION = 'CodeX';
 
 export async function resolveDefaultStarterToolId() {
   const tools = await getAvailableToolsAsync();

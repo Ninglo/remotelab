@@ -346,9 +346,11 @@ async function createSessionListOrganizerRun(payload) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      folder: typeof window.remotelabGetDefaultSessionFolder === "function"
-        ? window.remotelabGetDefaultSessionFolder()
-        : "~",
+      folder: typeof window.remotelabGetSelectedSessionFolder === "function"
+        ? window.remotelabGetSelectedSessionFolder()
+        : (typeof window.remotelabGetDefaultSessionFolder === "function"
+          ? window.remotelabGetDefaultSessionFolder()
+          : "~"),
       tool: payload?.tool || "codex",
       name: "sort session list",
       systemPrompt: SESSION_LIST_ORGANIZER_SYSTEM_PROMPT,
@@ -767,6 +769,18 @@ async function fetchSessionSidebar(sessionId, { forceFresh = false } = {}) {
   return upsertSession(data.session);
 }
 
+function getWorkspaceFilteredSessionListUrl(baseUrl) {
+  const folder = typeof window.remotelabGetSelectedSessionFolder === "function"
+    ? window.remotelabGetSelectedSessionFolder()
+    : (typeof window.remotelabGetDefaultSessionFolder === "function"
+      ? window.remotelabGetDefaultSessionFolder()
+      : "");
+  const normalizedFolder = typeof folder === "string" ? folder.trim() : "";
+  if (!normalizedFolder) return baseUrl;
+  const separator = String(baseUrl).includes("?") ? "&" : "?";
+  return `${baseUrl}${separator}folder=${encodeURIComponent(normalizedFolder)}`;
+}
+
 async function fetchArchivedSessions({ forceFresh = false } = {}) {
   if (visitorMode) return [];
   if (archivedSessionsRefreshPromise) {
@@ -796,7 +810,7 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
   const request = (async () => {
     try {
       const data = await fetchJsonOrRedirect(
-        ARCHIVED_SESSION_LIST_URL,
+        getWorkspaceFilteredSessionListUrl(ARCHIVED_SESSION_LIST_URL),
         buildSessionRefreshRequestOptions(forceFresh),
       );
       const nextArchivedSessions = applyArchivedSessionListState(data.sessions || [], {
@@ -847,7 +861,7 @@ async function updateSessionRecord(sessionId, payload = {}) {
 async function fetchSessionsList({ forceFresh = false } = {}) {
   if (visitorMode) return [];
   const data = await fetchJsonOrRedirect(
-    SESSION_LIST_URL,
+    getWorkspaceFilteredSessionListUrl(SESSION_LIST_URL),
     buildSessionRefreshRequestOptions(forceFresh),
   );
   applySessionListState(data.sessions || [], {
@@ -934,6 +948,12 @@ async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
 }
 
 function applyAttachedSessionState(id, session) {
+  if (inputArea) {
+    inputArea.hidden = false;
+  }
+  if (typeof syncEmptyStateUi === "function") {
+    syncEmptyStateUi();
+  }
   const attachedSessionRenderState = getAttachedSessionRenderState();
   const nextSignature = getComparableAttachedSessionStateSignature(session || null);
   const shouldRefreshUi = attachedSessionRenderState.sessionId !== id
