@@ -330,6 +330,14 @@ export async function handleSessionMainRoutes({
         externalTriggerId,
         sourceContext,
       } = payload;
+      const requestedInteractionMode = typeof payload.interactionMode === 'string'
+        ? payload.interactionMode.trim().toLowerCase()
+        : '';
+      if (requestedInteractionMode && !['agent', 'plan'].includes(requestedInteractionMode)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'interactionMode must be "agent" or "plan"' }));
+        return true;
+      }
       const agentScoped = isAgentScopedAuthSession(authSession);
       const scopedAgentId = getAuthScopeAgentId(authSession);
       const scopedPrincipalId = getAuthPrincipalId(authSession);
@@ -374,6 +382,8 @@ export async function handleSessionMainRoutes({
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
       };
+      // Persist interactionMode (defaults to 'agent' when omitted)
+      createOptions.interactionMode = requestedInteractionMode || 'agent';
       if (requestedStarterPreset) {
         createOptions.starterPreset = requestedStarterPreset;
       }

@@ -2673,6 +2673,26 @@ export async function getRunState(runId) {
 }
 
 export async function createSession(folder, tool, name, extra = {}) {
+  const hasRequestedInteractionMode = Object.prototype.hasOwnProperty.call(extra, 'interactionMode');
+  const requestedInteractionMode = hasRequestedInteractionMode && typeof extra.interactionMode === 'string'
+    ? extra.interactionMode.trim().toLowerCase()
+    : '';
+  if (hasRequestedInteractionMode && requestedInteractionMode && !['agent', 'plan'].includes(requestedInteractionMode)) {
+    throw new Error('interactionMode must be "agent" or "plan"');
+  }
+  // If no explicit interactionMode requested, try to inherit from fork/delegate source session
+  let inheritedInteractionMode = '';
+  if (!hasRequestedInteractionMode && (extra.forkedFromSessionId || extra.delegatedFromSessionId)) {
+    try {
+      const sourceId = extra.forkedFromSessionId || extra.delegatedFromSessionId;
+      const source = await getSession(sourceId);
+      if (source && typeof source.interactionMode === 'string' && ['agent', 'plan'].includes(source.interactionMode)) {
+        inheritedInteractionMode = source.interactionMode;
+      }
+    } catch (e) {
+      // ignore errors and fall back to default
+    }
+  }
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
   const { createdByPrincipalId: requestedCreatedByPrincipalId, visitorId: requestedVisitorId } = resolveRequestedSessionPrincipalFields(extra);
   const requestedTemplateId = normalizeAppId(extra.templateId || extra.agentId);
@@ -2828,6 +2848,12 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
+        if (hasRequestedInteractionMode) {
+          if (requestedInteractionMode) updated.interactionMode = requestedInteractionMode;
+          else delete updated.interactionMode;
+          changed = true;
+        }
+
         const completionTargets = sanitizeAllCompletionTargets(extra.completionTargets || []);
         if (completionTargets.length > 0 && JSON.stringify(updated.completionTargets || []) !== JSON.stringify(completionTargets)) {
           updated.completionTargets = completionTargets;
@@ -2898,6 +2924,14 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedEffort) session.effort = requestedEffort;
     if (requestedThinking) session.thinking = true;
     if (extra.internalRole) session.internalRole = extra.internalRole;
+    // Set interactionMode: explicit request -> use it; inherit from source -> use it; otherwise default to 'agent'
+    if (requestedInteractionMode) {
+      session.interactionMode = requestedInteractionMode;
+    } else if (inheritedInteractionMode) {
+      session.interactionMode = inheritedInteractionMode;
+    } else {
+      session.interactionMode = 'agent';
+    }
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
     if (requestedSourceContext) session.sourceContext = requestedSourceContext;

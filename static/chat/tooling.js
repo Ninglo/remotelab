@@ -764,6 +764,7 @@ function getInlineAgentOptions() {
   );
   return [
     { id: "", name: t("compose.agent.default") },
+    { id: "__plan", name: t("compose.agent.mode.plan") },
     ...visibleAgents.map((app) => ({
       id: app.id,
       name: normalizeInlineAgentOptionName(app.name) || t("settings.apps.untitled"),

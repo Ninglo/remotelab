@@ -43,7 +43,7 @@ function createNewSessionShortcut({
   if (typeof switchTab === "function") {
     switchTab("sessions");
   }
-  return dispatchAction({
+  const createPayload = {
     action: "create",
     folder: typeof window.remotelabGetSelectedSessionFolder === "function"
       ? window.remotelabGetSelectedSessionFolder()
@@ -57,7 +57,14 @@ function createNewSessionShortcut({
     templateName: preferredAgentName,
     ...(forceComposerFocus ? { forceComposerFocus: true } : {}),
     ...(sourceContext && typeof sourceContext === "object" ? { sourceContext } : {}),
-  });
+  };
+  // If the inline agent picker currently indicates Plan, create a Plan-mode session
+  try {
+    if (typeof inlineAgentSelect !== 'undefined' && inlineAgentSelect && inlineAgentSelect.value === '__plan') {
+      createPayload.interactionMode = 'plan';
+    }
+  } catch (e) {}
+  return dispatchAction(createPayload);
 }
 
 const WORKSPACE_MODE_STORAGE_KEY = "remotelab.workspaceMode";
