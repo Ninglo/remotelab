@@ -828,7 +828,8 @@ async function refreshInlineAgentPicker({ force = false } = {}) {
     ? getPreferredAgentTemplateId()
     : "";
   const preferredAgent = findInlineAgentById(preferredAgentId);
-  if (preferredAgentId && !preferredAgent) {
+  // Allow special pseudo-option '__plan' to be treated as a valid pref, do not clear it
+  if (preferredAgentId && !preferredAgent && preferredAgentId !== '__plan') {
     if (typeof setPreferredAgentTemplate === "function") {
       setPreferredAgentTemplate("");
     }
