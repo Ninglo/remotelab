@@ -509,7 +509,6 @@ function shouldAttemptEventDeltaFetch(
   { runState = "idle" } = {},
 ) {
   if (!EVENT_DELTA_REFRESH_ENABLED) return false;
-  if (runState !== "running") return false;
   if (isShareSnapshotReadOnlyMode()) return false;
   if (currentSessionId !== sessionId) return false;
   if (renderedEventState.sessionId !== sessionId) return false;
