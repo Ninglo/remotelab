@@ -70,18 +70,64 @@ const runningTurnHistory = [
 const runningDisplay = buildSessionDisplayEvents(runningTurnHistory, { sessionRunning: true });
 assert.deepEqual(
   runningDisplay.map((event) => event.type),
-  ['message', 'thinking_block'],
-  'running turns should collapse into a single thinking block instead of streaming multiple visible intermediate fragments',
+  ['message', 'thinking_block', 'message'],
+  'running turns should keep the running thinking block while exposing the latest assistant-visible draft',
 );
 assert.equal(runningDisplay[1].label, 'Thinking · using bash', 'running turns should use the same thinking block label family as completed turns');
 assert.equal(runningDisplay[1].blockStartSeq, 2, 'running collapsed block should start with the first non-user event in the turn');
-assert.equal(runningDisplay[1].blockEndSeq, 6, 'running collapsed block should extend through the latest in-flight event');
+assert.equal(runningDisplay[1].blockEndSeq, 5, 'running collapsed block should end before the visible running assistant draft');
+assert.equal(
+  runningDisplay[2].content,
+  'partial draft that should stay hidden while running',
+  'running turns should stream assistant draft text without waiting for completion',
+);
 
 const runningBlockEvents = buildEventBlockEvents(runningTurnHistory, 2, 6);
 assert.deepEqual(
   runningBlockEvents.map((event) => event.type),
   ['status', 'reasoning', 'tool_use', 'tool_result', 'message'],
   'running folded blocks should preserve intermediate assistant text so the page can still reveal everything on demand',
+);
+
+const runningStreamProgressHistory = [
+  { seq: 1, type: 'message', role: 'user', content: 'stream please' },
+  { seq: 2, type: 'status', role: 'system', content: 'Preparing' },
+  {
+    seq: 3,
+    type: 'message',
+    role: 'assistant',
+    content: 'draft',
+    streamItemId: 'item_stream_1',
+    messageKind: 'stream_progress',
+  },
+  {
+    seq: 4,
+    type: 'message',
+    role: 'assistant',
+    content: 'draft plus more',
+    streamItemId: 'item_stream_1',
+    messageKind: 'stream_progress',
+  },
+  {
+    seq: 5,
+    type: 'message',
+    role: 'assistant',
+    content: 'final',
+    streamItemId: 'item_stream_1',
+    messageKind: 'stream_final',
+  },
+];
+
+const runningStreamProgressDisplay = buildSessionDisplayEvents(runningStreamProgressHistory, { sessionRunning: true });
+assert.deepEqual(
+  runningStreamProgressDisplay.map((event) => event.type),
+  ['message', 'thinking_block', 'message'],
+  'running stream progress should retain only the latest assistant stream version',
+);
+assert.equal(
+  runningStreamProgressDisplay[2].content,
+  'final',
+  'running stream progress should render the newest stream item version',
 );
 
 const hiddenAttachmentHistory = [

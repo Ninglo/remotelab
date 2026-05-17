@@ -106,6 +106,38 @@ function shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs) {
   return Number.isInteger(event?.seq) && mirroredAttachmentSeqs.has(event.seq);
 }
 
+function getStreamItemId(event) {
+  if (!(event && typeof event === 'object')) return '';
+  if (event.type !== 'message' || event.role !== 'assistant') return '';
+  const streamItemId = typeof event.streamItemId === 'string' ? event.streamItemId.trim() : '';
+  return streamItemId;
+}
+
+function collectSupersededStreamMessageSeqs(events = []) {
+  const latestSeqByStreamItemId = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    const streamItemId = getStreamItemId(event);
+    if (!streamItemId) continue;
+    const seq = Number.isInteger(event?.seq) ? event.seq : 0;
+    if (seq < 1) continue;
+    const previous = latestSeqByStreamItemId.get(streamItemId) || 0;
+    if (seq > previous) {
+      latestSeqByStreamItemId.set(streamItemId, seq);
+    }
+  }
+  const supersededSeqs = new Set();
+  for (const event of Array.isArray(events) ? events : []) {
+    const streamItemId = getStreamItemId(event);
+    if (!streamItemId) continue;
+    const seq = Number.isInteger(event?.seq) ? event.seq : 0;
+    if (seq < 1) continue;
+    if (latestSeqByStreamItemId.get(streamItemId) !== seq) {
+      supersededSeqs.add(seq);
+    }
+  }
+  return supersededSeqs;
+}
+
 function isIgnoredStatusEvent(event) {
   if (event?.type !== 'status') return false;
   const content = typeof event.content === 'string' ? event.content.trim().toLowerCase() : '';
@@ -211,8 +243,19 @@ function buildThinkingBlockEvent(hiddenEvents, state = 'completed') {
   };
 }
 
-function pushVisibleEvent(target, event, { stripAttachments = false, localMarkdownImageRewriteMapBySeq = null } = {}) {
+function pushVisibleEvent(
+  target,
+  event,
+  { stripAttachments = false, localMarkdownImageRewriteMapBySeq = null, supersededStreamMessageSeqs = null } = {},
+) {
   if (!isVisibleEvent(event)) return;
+  if (
+    supersededStreamMessageSeqs instanceof Set
+    && Number.isInteger(event?.seq)
+    && supersededStreamMessageSeqs.has(event.seq)
+  ) {
+    return;
+  }
   if (!hasVisibleMessagePayload(event, { includeAttachments: !stripAttachments })) return;
   const next = stripDeferredBodyFields(event, { localMarkdownImageRewriteMapBySeq });
   if (stripAttachments && next?.type === 'message') {
@@ -226,6 +269,7 @@ function emitSegmentedTurnBody(target, bodyEvents, {
   sessionRunning = false,
   mirroredAttachmentSeqs = null,
   localMarkdownImageRewriteMapBySeq = null,
+  supersededStreamMessageSeqs = null,
 } = {}) {
   const hiddenSegment = [];
 
@@ -242,6 +286,7 @@ function emitSegmentedTurnBody(target, bodyEvents, {
     pushVisibleEvent(target, event, {
       stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
       localMarkdownImageRewriteMapBySeq,
+      supersededStreamMessageSeqs,
     });
   }
 
@@ -316,12 +361,40 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   const mirroredAttachmentSourceEvents = collectMirroredAttachmentSourceEvents(bodyEvents);
   const mirroredAttachmentSeqs = collectMirroredAttachmentSeqs(bodyEvents);
   const localMarkdownImageRewriteMapBySeq = collectLocalMarkdownImageRewriteMap(bodyEvents);
+  const supersededStreamMessageSeqs = collectSupersededStreamMessageSeqs(bodyEvents);
   const deliveryEvent = buildAttachmentDeliveryEvent(mirroredAttachmentSourceEvents, {
     referenceEvent: bodyEvents[bodyEvents.length - 1] || turn.user,
   });
 
   if (sessionRunning) {
-    target.push(buildThinkingBlockEvent(bodyEvents, 'running'));
+    const hiddenSegment = [];
+    for (const event of bodyEvents) {
+      const visibleAssistantMessage = event?.type === 'message'
+        && event.role === 'assistant'
+        && !(
+          supersededStreamMessageSeqs instanceof Set
+          && Number.isInteger(event?.seq)
+          && supersededStreamMessageSeqs.has(event.seq)
+        )
+        && hasVisibleMessagePayload(event, {
+          includeAttachments: !shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+        });
+      if (!visibleAssistantMessage) {
+        hiddenSegment.push(event);
+        continue;
+      }
+      if (hiddenSegment.length > 0) {
+        target.push(buildThinkingBlockEvent(hiddenSegment.splice(0), 'running'));
+      }
+      pushVisibleEvent(target, event, {
+        stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+        localMarkdownImageRewriteMapBySeq,
+        supersededStreamMessageSeqs,
+      });
+    }
+    if (hiddenSegment.length > 0) {
+      target.push(buildThinkingBlockEvent(hiddenSegment, 'running'));
+    }
     if (deliveryEvent) {
       target.push(deliveryEvent);
     }
@@ -334,6 +407,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
       sessionRunning,
       mirroredAttachmentSeqs,
       localMarkdownImageRewriteMapBySeq,
+      supersededStreamMessageSeqs,
     });
     if (deliveryEvent) {
       target.push(deliveryEvent);
@@ -347,6 +421,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
       sessionRunning,
       mirroredAttachmentSeqs,
       localMarkdownImageRewriteMapBySeq,
+      supersededStreamMessageSeqs,
     });
     if (deliveryEvent) {
       target.push(deliveryEvent);
@@ -362,6 +437,7 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
     pushVisibleEvent(target, event, {
       stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
       localMarkdownImageRewriteMapBySeq,
+      supersededStreamMessageSeqs,
     });
   }
   if (deliveryEvent) {

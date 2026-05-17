@@ -74,6 +74,12 @@ function collectDeltaVisibleEvents(events = [], afterSeq = 0) {
       resetRequired = true;
       continue;
     }
+    const streamItemId = typeof event?.streamItemId === 'string' ? event.streamItemId.trim() : '';
+    if (event?.type === 'message' && streamItemId) {
+      // Stream-progress messages supersede earlier snapshots with the same streamItemId.
+      // Ask the frontend to do a deterministic full refresh so stale snapshots are removed.
+      resetRequired = true;
+    }
     delta.push(event);
   }
   return {
