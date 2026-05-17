@@ -1,5 +1,6 @@
 import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
+import { createCopilotAdapter, buildCopilotArgs } from './adapters/copilot.mjs';
 import { expandSessionFolder } from './session-folder.mjs';
 import {
   buildToolProcessEnvOverrides,
@@ -61,6 +62,17 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       model: options.model,
       reasoningEffort: options.effort,
       developerInstructions: options.developerInstructions,
+      interactionMode: options.interactionMode,
+      systemPrefix: options.systemPrefix,
+    });
+  } else if (normalizedRuntimeFamily === 'copilot-json') {
+    adapter = createCopilotAdapter();
+    args = buildCopilotArgs(prompt, {
+      threadId: options.codexThreadId,
+      model: options.model,
+      reasoningEffort: options.effort,
+      developerInstructions: options.developerInstructions,
+      interactionMode: options.interactionMode,
       systemPrefix: options.systemPrefix,
     });
   } else {

@@ -254,7 +254,8 @@
           <div id="qr-empty" class="qr-empty">Generating a fresh QR code. This usually takes a moment.</div>
         </div>
         <div class="actions">
-          <a id="qr-link" class="link hidden" href="#" target="_blank" rel="noreferrer">Open QR image</a>
+          <a id="qr-link" class="link hidden" href="#" target="_blank" rel="noreferrer">在新标签页打开二维码页面</a>
+          <button id="qr-open-btn" class="link hidden" type="button">在新标签页打开二维码页面</button>
           <div class="meta" id="meta-text"></div>
         </div>
         <div id="success-panel" class="success">
@@ -304,13 +305,14 @@
         return 'Preparing a fresh WeChat QR code...';
       }
 
-      function updateQrImage(version) {
+      function updateQrImage(version, remoteUrl) {
         if (!version) return;
         if (version !== currentQrVersion) {
           currentQrVersion = version;
           var src = qrEndpoint + '?v=' + encodeURIComponent(version);
           qrImage.src = src;
-          qrLink.href = src;
+          qrLink.href = remoteUrl || src;
+          qrOpenBtn && (qrOpenBtn.dataset.href = remoteUrl || src);
         }
         qrLink.classList.remove('hidden');
         qrImage.classList.remove('hidden');
@@ -347,7 +349,7 @@
 
         successPanel.style.display = 'none';
         if (state.qrcodeVersion) {
-          updateQrImage(state.qrcodeVersion);
+          updateQrImage(state.qrcodeVersion, state.qrcodeUrl || (state.login && state.login.qrcodeUrl));
         } else {
           showWaitingState();
         }
@@ -378,9 +380,21 @@
         }
       }
 
+      var qrOpenBtn = document.getElementById('qr-open-btn');
+      if (qrOpenBtn) {
+        qrOpenBtn.addEventListener('click', function() {
+          var href = qrOpenBtn.dataset && qrOpenBtn.dataset.href;
+          if (href) window.open(href, '_blank');
+        });
+      }
+
       qrImage.addEventListener('error', function() {
         currentQrVersion = '';
-        showWaitingState();
+        qrEmpty.textContent = '二维码内联不可用。请点击下方按钮在新标签页打开二维码页面。';
+        qrLink.classList.remove('hidden');
+        if (qrOpenBtn) qrOpenBtn.classList.remove('hidden');
+        qrImage.classList.add('hidden');
+        qrEmpty.classList.remove('hidden');
       });
 
       applyState(config.initialState || {});

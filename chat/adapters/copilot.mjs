@@ -6,35 +6,7 @@ import { DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS } from '../runtime-policy.mjs';
 
 export { DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS } from '../runtime-policy.mjs';
 
-/**
- * Codex CLI adapter.
- *
- * When run with `codex exec <prompt> --json`, stdout emits JSONL.
- * Each line is a JSON object with a `type` field.
- *
- * Event types:
- *   thread.started  — { type, thread_id }
- *   turn.started    — { type }
- *   turn.completed  — { type, usage: { input_tokens, cached_input_tokens, output_tokens } }
- *   turn.failed     — { type, error: { message } }
- *   item.started    — { type, item: ThreadItem }
- *   item.updated    — { type, item: ThreadItem }
- *   item.completed  — { type, item: ThreadItem }
- *   error           — { type, message }
- *   remotelab.context_metrics — synthetic line injected by RemoteLab sidecar
- *                               after reading Codex's session JSONL token_count data
- *
- * ThreadItem types:
- *   agent_message      — { id, type, text }
- *   reasoning          — { id, type, text }
- *   command_execution  — { id, type, command, aggregated_output, exit_code, status }
- *   file_change        — { id, type, changes: [{ path, kind }], status }
- *   mcp_tool_call      — { id, type, server, tool, arguments, result, error, status }
- *   web_search         — { id, type, query }
- *   todo_list          — { id, type, items: [{ text, completed }] }
- *   error              — { id, type, message }
- */
-export function createCodexAdapter() {
+export function createCopilotAdapter() {
   return {
     parseLine(line) {
       const trimmed = line.trim();
@@ -59,8 +31,6 @@ export function createCodexAdapter() {
           break;
 
         case 'turn.completed':
-          // Codex stdout usage is cumulative across the agent loop, so
-          // RemoteLab injects a later remotelab.context_metrics line instead.
           events.push(statusEvent('completed'));
           break;
 
@@ -85,7 +55,6 @@ export function createCodexAdapter() {
 
         case 'item.started':
         case 'item.updated':
-          // For in-progress items, emit status updates
           if (obj.item) {
             const item = obj.item;
             if (item.type === 'command_execution' && item.status === 'in_progress') {
@@ -188,59 +157,35 @@ function parseItem(item) {
   return events;
 }
 
-/**
- * Optional system instruction prepended to Codex prompts.
- *
- * RemoteLab now leaves this empty by default so local project memory and
- * session prompts remain the primary steering layer. Operators can still set
- * `REMOTELAB_CODEX_SYSTEM_PREFIX` if they want to force an extra prefix.
- */
-const CODEX_SYSTEM_PREFIX = process.env.REMOTELAB_CODEX_SYSTEM_PREFIX || '';
-/**
- * Optional developer instructions passed through Codex's own supported
- * `developer_instructions` config key. This is stronger than a prompt prefix
- * when the manager needs to shape the agent's default reply style.
- */
-const CODEX_DEVELOPER_INSTRUCTIONS = process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS || '';
-const HAS_CODEX_DEVELOPER_INSTRUCTIONS_ENV = Object.prototype.hasOwnProperty.call(
+const COPILOT_SYSTEM_PREFIX = process.env.REMOTELAB_COPILOT_SYSTEM_PREFIX || '';
+const COPILOT_DEVELOPER_INSTRUCTIONS = process.env.REMOTELAB_COPILOT_DEVELOPER_INSTRUCTIONS || '';
+const HAS_COPILOT_DEVELOPER_INSTRUCTIONS_ENV = Object.prototype.hasOwnProperty.call(
   process.env,
-  'REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS',
+  'REMOTELAB_COPILOT_DEVELOPER_INSTRUCTIONS',
 );
 
-function encodeTomlString(value) {
-  return JSON.stringify(String(value || ''));
-}
-
-function resolveDeveloperInstructions(options = {}) {
+function resolveCopilotDeveloperInstructions(options = {}) {
   if (Object.prototype.hasOwnProperty.call(options, 'developerInstructions')) {
     return typeof options.developerInstructions === 'string'
       ? options.developerInstructions.trim()
       : '';
   }
-  if (HAS_CODEX_DEVELOPER_INSTRUCTIONS_ENV) {
-    return CODEX_DEVELOPER_INSTRUCTIONS.trim();
+  if (HAS_COPILOT_DEVELOPER_INSTRUCTIONS_ENV) {
+    return COPILOT_DEVELOPER_INSTRUCTIONS.trim();
   }
   return DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS;
 }
 
-/**
- * Build args for spawning Codex exec.
- */
-export function buildCodexArgs(prompt, options = {}) {
+export function buildCopilotArgs(prompt, options = {}) {
   const args = ['exec'];
-  const developerInstructions = resolveDeveloperInstructions(options);
+  const developerInstructions = resolveCopilotDeveloperInstructions(options);
 
   args.push('--json');
   args.push('--dangerously-bypass-approvals-and-sandbox');
   args.push('--skip-git-repo-check');
 
-  // If frontend requested Plan interaction mode, set Codex CLI mode to 'plan'
-  if ((options.interactionMode || '').toLowerCase() === 'plan') {
-    args.push('-c', `mode=plan`);
-  }
-
   if (developerInstructions) {
-    args.push('-c', `developer_instructions=${encodeTomlString(developerInstructions)}`);
+    args.push('-c', `developer_instructions=${JSON.stringify(String(developerInstructions || ''))}`);
   }
 
   if (options.model) {
@@ -250,7 +195,7 @@ export function buildCodexArgs(prompt, options = {}) {
     args.push('-c', `model_reasoning_effort=${options.reasoningEffort}`);
   }
 
-  const effectivePrompt = (options.systemPrefix ?? CODEX_SYSTEM_PREFIX) + prompt;
+  const effectivePrompt = (options.systemPrefix ?? COPILOT_SYSTEM_PREFIX) + prompt;
 
   if (options.threadId) {
     args.push('resume', options.threadId, effectivePrompt);

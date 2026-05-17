@@ -49,6 +49,7 @@ function buildRuntimeSelectionPayload() {
     selectedEffort: currentToolReasoningKind === 'enum' ? (selectedEffort || '') : '',
     thinkingEnabled: currentToolReasoningKind === 'toggle' ? thinkingEnabled === true : false,
     reasoningKind: currentToolReasoningKind || 'none',
+    interactionMode: (typeof inlineAgentSelect !== 'undefined' && inlineAgentSelect && inlineAgentSelect.value === '__plan') ? 'plan' : '',
   };
 }
 
@@ -957,6 +958,8 @@ if (inlineAgentSelect) {
         name: nextAgent?.name || "",
       });
     }
+    queueRuntimeSelectionSync();
+    persistCurrentSessionToolPreferences();
   });
 }
 

@@ -36,3 +36,9 @@
 - 公开页资源路径应统一使用相对产品根路径的写法，避免使用 `../` 这类向上跳目录的相对路径；这样在分享路由、子路径部署或前缀代理下更稳健。
 - RemoteLab 当前 remote 对话界面代码中没有“用户可切换的 plan 模式”持久开关；现有的 planning 只体现为一次请求中的 `activity.planning.state === "checking"` 预执行检查状态。
 - 若要把 remote 对话界面的“聊天”拆成“agent”和“plan”，轻量方案可先复用现有 tab 机制：Agent 对应普通会话，Plan 按实时 planning/checking 状态筛选；完整方案则需要新增会话级 `planMode: boolean` 并扩展后端存储、API 和前端分栏逻辑。
+- 在 MetaCubeXD 使用同域桥接 API 的部署模式下，`setup` 页不是必需；强制跳转到 `setup` 可能触发“无法正常工作”。可取消强制 setup 跳转，并将默认后端设为当前域名以同域直连桥接 API。
+- Clash 面板通过 HTTPS 部署时，如果浏览器报“HTTPS 页面请求 HTTP 后端被拦截”，常见原因是本地/站点持久化配置里残留了旧的 http:// 后端地址；可在服务端/前端自动迁移为当前 HTTPS origin 的后端地址，并跳过旧 setup 残留，必要时提供清理该站点旧配置的一键入口。
+- RemoteLab 前端流式输出可行，推荐先实现低风险的“WS hint + HTTP delta 增量拉取”，保留现有 invalidation/full refresh 作为回退；token 级流式应作为后续增强。
+- RemoteLab 当前实时链路主要是 ws push invalidation，前端收到 session_invalidated 后通过 HTTP 重拉会话/事件；事件接口默认返回完整可见时间线，不是 delta contract。
+- RemoteLab 前端“类流式”方案当前选型：放弃 Phase 2 的 token streaming，保留现有 WebSocket invalidation 架构，新增按 afterSeq 拉取可见事件增量的 delta 接口，异常时回退全量 events?filter=visible。
+- RemoteLab delta 刷新方案建议前端维护 lastSeenSeq、deltaInFlight、needsFullRefresh；收到 session_invalidated 后合并并发通知，优先 delta append，遇到 resetRequired、丢序、compaction、会话切换或请求异常立即 full refresh。
