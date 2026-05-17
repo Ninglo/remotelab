@@ -506,10 +506,10 @@ function shouldFetchSessionEventsForRefresh(sessionId, session) {
 
 function shouldAttemptEventDeltaFetch(
   sessionId,
-  { runState = "idle", forceFresh = false } = {},
+  { runState = "idle" } = {},
 ) {
   if (!EVENT_DELTA_REFRESH_ENABLED) return false;
-  if (forceFresh || runState !== "running") return false;
+  if (runState !== "running") return false;
   if (isShareSnapshotReadOnlyMode()) return false;
   if (currentSessionId !== sessionId) return false;
   if (renderedEventState.sessionId !== sessionId) return false;
@@ -1235,7 +1235,7 @@ async function fetchSessionEvents(
   const shouldStickToBottom =
     !hadRenderedMessages ||
     messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
-  if (shouldAttemptEventDeltaFetch(sessionId, { runState, forceFresh })) {
+  if (shouldAttemptEventDeltaFetch(sessionId, { runState })) {
     const afterSeq = Number.isInteger(renderedEventState.latestSeq)
       ? renderedEventState.latestSeq
       : 0;

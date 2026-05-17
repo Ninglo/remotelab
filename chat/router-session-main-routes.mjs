@@ -247,6 +247,7 @@ export async function handleSessionMainRoutes({
       : 0;
     const latestSeq = Number.isInteger(session?.latestSeq) ? session.latestSeq : 0;
     if (afterSeq > latestSeq) {
+      console.log(`[events-delta] sessionId=${sessionId} outcome=fallback afterSeq=${afterSeq} latestSeq=${latestSeq} events=0 reason=ahead_of_latest`);
       writeJson(res, 200, {
         sessionId,
         filter: 'visible',
@@ -264,6 +265,7 @@ export async function handleSessionMainRoutes({
       return true;
     }
     if (compactedThroughSeq > 0 && afterSeq < compactedThroughSeq) {
+      console.log(`[events-delta] sessionId=${sessionId} outcome=fallback afterSeq=${afterSeq} compactedThroughSeq=${compactedThroughSeq} events=0 reason=compacted`);
       writeJson(res, 200, {
         sessionId,
         filter: 'visible',
@@ -286,6 +288,12 @@ export async function handleSessionMainRoutes({
       sessionRunning: session?.activity?.run?.state === 'running',
     });
     const delta = collectDeltaVisibleEvents(visibleEvents, afterSeq);
+    const deltaOutcome = delta.resetRequired ? 'fallback' : 'applied';
+    const deltaEventCount = delta.events.length;
+    const deltaFallbackReason = delta.resetRequired ? 'timeline_rebuilt' : '';
+    if (deltaOutcome === 'fallback') {
+      console.log(`[events-delta] sessionId=${sessionId} outcome=${deltaOutcome} afterSeq=${afterSeq} latestSeq=${latestSeq} events=${deltaEventCount} reason=${deltaFallbackReason}`);
+    }
     writeJson(res, 200, {
       sessionId,
       filter: 'visible',
@@ -296,8 +304,8 @@ export async function handleSessionMainRoutes({
       reason: delta.resetRequired ? 'timeline_rebuilt' : '',
       telemetry: {
         transport: 'delta',
-        eventCount: delta.events.length,
-        fallbackReason: delta.resetRequired ? 'timeline_rebuilt' : '',
+        eventCount: deltaEventCount,
+        fallbackReason: deltaFallbackReason,
       },
     });
     return true;
