@@ -94,6 +94,7 @@ const FOREGROUND_REFRESH_THROTTLE_MS = 1500;
 const FOREGROUND_SESSION_LIST_STALE_MS = 15000;
 const FOREGROUND_IDLE_SESSION_STALE_MS = 15000;
 const EVENT_DELTA_REFRESH_ENABLED = true;
+const EVENT_REFRESH_METRICS_SAMPLE_LIMIT = 80;
 let foregroundRefreshPromise = null;
 let foregroundRefreshHandlersReady = false;
 let lastForegroundRefreshAt = 0;
@@ -102,6 +103,86 @@ let lastArchivedSessionsRefreshAt = 0;
 let lastCurrentSessionRefreshAt = 0;
 let lastCurrentSessionRefreshSessionId = null;
 let pendingCurrentSessionRefreshOptions = null;
+
+function nowPerfMs() {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function estimatePayloadBytes(payload) {
+  try {
+    const serialized = JSON.stringify(payload);
+    if (typeof serialized !== "string") return 0;
+    if (typeof TextEncoder === "function") {
+      return new TextEncoder().encode(serialized).length;
+    }
+    return serialized.length;
+  } catch {
+    return 0;
+  }
+}
+
+function ensureEventRefreshMetricsStore() {
+  const root = typeof window !== "undefined" ? window : globalThis;
+  if (!root.__remotelabEventRefreshMetrics || typeof root.__remotelabEventRefreshMetrics !== "object") {
+    root.__remotelabEventRefreshMetrics = {
+      startedAt: new Date().toISOString(),
+      totals: {
+        fullFetches: 0,
+        deltaFetches: 0,
+        deltaApplied: 0,
+        deltaFallbacks: 0,
+        renderedResets: 0,
+        renderedAppends: 0,
+        renderedNoops: 0,
+      },
+      last: null,
+      samples: [],
+    };
+  }
+  if (typeof root.remotelabGetEventRefreshMetrics !== "function") {
+    root.remotelabGetEventRefreshMetrics = () => {
+      const snapshot = root.__remotelabEventRefreshMetrics || {};
+      return JSON.parse(JSON.stringify(snapshot));
+    };
+  }
+  return root.__remotelabEventRefreshMetrics;
+}
+
+function recordEventRefreshMetric(sample = {}) {
+  const store = ensureEventRefreshMetricsStore();
+  const mode = sample.mode === "delta" ? "delta" : "full";
+  const outcome = typeof sample.outcome === "string" ? sample.outcome : "unknown";
+  const renderMode = typeof sample.renderMode === "string" ? sample.renderMode : "";
+  const normalized = {
+    ...sample,
+    mode,
+    outcome,
+    renderMode,
+    at: new Date().toISOString(),
+  };
+  if (mode === "delta") {
+    store.totals.deltaFetches += 1;
+    if (outcome === "applied") {
+      store.totals.deltaApplied += 1;
+    }
+    if (outcome.startsWith("fallback")) {
+      store.totals.deltaFallbacks += 1;
+    }
+  } else {
+    store.totals.fullFetches += 1;
+  }
+  if (renderMode === "reset") store.totals.renderedResets += 1;
+  if (renderMode === "append") store.totals.renderedAppends += 1;
+  if (renderMode === "noop") store.totals.renderedNoops += 1;
+  store.last = normalized;
+  store.samples.push(normalized);
+  if (store.samples.length > EVENT_REFRESH_METRICS_SAMPLE_LIMIT) {
+    store.samples.splice(0, store.samples.length - EVENT_REFRESH_METRICS_SAMPLE_LIMIT);
+  }
+}
 
 function buildSessionRefreshRequestOptions(forceFresh = false) {
   return forceFresh
@@ -1147,6 +1228,7 @@ async function fetchSessionEvents(
   sessionId,
   { runState = "idle", viewportIntent = "preserve", forceFresh = false } = {},
 ) {
+  const requestStartedAt = nowPerfMs();
   const normalizedViewportIntent = normalizeSessionViewportIntent(viewportIntent);
   const hadRenderedMessages =
     messagesInner.children.length > 0 && emptyState.parentNode !== messagesInner;
@@ -1157,14 +1239,17 @@ async function fetchSessionEvents(
     const afterSeq = Number.isInteger(renderedEventState.latestSeq)
       ? renderedEventState.latestSeq
       : 0;
+    const deltaStartedAt = nowPerfMs();
     try {
       const delta = await fetchSessionEventDelta(sessionId, afterSeq, { forceFresh });
+      const deltaRequestMs = Math.max(0, nowPerfMs() - deltaStartedAt);
       if (currentSessionId !== sessionId) return delta.events;
       const hasBackwardSeq = Number.isInteger(delta.latestSeq)
         && delta.latestSeq < renderedEventState.latestSeq;
       const hasMutatedEvent = delta.events.some((event) =>
         Number.isInteger(event?.seq) && event.seq <= afterSeq);
       if (!delta.resetRequired && !hasBackwardSeq && !hasMutatedEvent) {
+        const renderStartedAt = nowPerfMs();
         for (const event of delta.events) {
           reconcilePendingMessageState(event);
           renderEvent(event, false);
@@ -1184,9 +1269,42 @@ async function fetchSessionEvents(
         } else if (delta.events.length > 0 && shouldStickToBottom) {
           scrollToBottom();
         }
+        const renderMs = Math.max(0, nowPerfMs() - renderStartedAt);
+        recordEventRefreshMetric({
+          mode: "delta",
+          outcome: "applied",
+          renderMode: "append",
+          requestMs: deltaRequestMs,
+          renderMs,
+          payloadBytes: estimatePayloadBytes(delta),
+          eventCount: delta.events.length,
+          latestSeq: delta.latestSeq,
+          totalElapsedMs: Math.max(0, nowPerfMs() - requestStartedAt),
+        });
         return delta.events;
       }
+      recordEventRefreshMetric({
+        mode: "delta",
+        outcome: "fallback_reset",
+        renderMode: "noop",
+        requestMs: deltaRequestMs,
+        payloadBytes: estimatePayloadBytes(delta),
+        eventCount: delta.events.length,
+        latestSeq: delta.latestSeq,
+        fallbackReason: delta.reason || (delta.resetRequired ? "reset_required" : (hasBackwardSeq ? "backward_seq" : "mutated_event")),
+        totalElapsedMs: Math.max(0, nowPerfMs() - requestStartedAt),
+      });
     } catch (error) {
+      recordEventRefreshMetric({
+        mode: "delta",
+        outcome: "fallback_error",
+        renderMode: "noop",
+        requestMs: Math.max(0, nowPerfMs() - deltaStartedAt),
+        payloadBytes: 0,
+        eventCount: 0,
+        fallbackReason: error?.message || "delta_error",
+        totalElapsedMs: Math.max(0, nowPerfMs() - requestStartedAt),
+      });
       console.warn("[events-delta] fallback to full events fetch:", error?.message || error);
     }
   }
@@ -1196,6 +1314,7 @@ async function fetchSessionEvents(
       `/api/sessions/${encodeURIComponent(sessionId)}/events?filter=visible`,
       buildSessionRefreshRequestOptions(forceFresh),
     );
+  const fullRequestMs = Math.max(0, nowPerfMs() - requestStartedAt);
   const events = data.events || [];
   if (currentSessionId !== sessionId) return events;
   const renderPlan = getEventRenderPlan(sessionId, events);
@@ -1208,11 +1327,23 @@ async function fetchSessionEvents(
       && refreshExpandedRunningThinkingBlock(sessionId, runningEvent)
     ) {
       updateRenderedEventState(sessionId, events, { runState });
+      recordEventRefreshMetric({
+        mode: "full",
+        outcome: "applied",
+        renderMode: "append",
+        requestMs: fullRequestMs,
+        renderMs: 0,
+        payloadBytes: estimatePayloadBytes(data),
+        eventCount: renderPlan.events.length,
+        latestSeq: getLatestEventSeq(events),
+        totalElapsedMs: Math.max(0, nowPerfMs() - requestStartedAt),
+      });
       return renderPlan.events;
     }
   }
 
   if (renderPlan.mode === "reset") {
+    const renderStartedAt = nowPerfMs();
     const preserveRunningBlockExpanded =
       renderedEventState.sessionId === sessionId
       && renderedEventState.runState === "running"
@@ -1241,10 +1372,23 @@ async function fetchSessionEvents(
     } else if (events.length > 0 && shouldStickToBottom) {
       scrollToBottom();
     }
+    const renderMs = Math.max(0, nowPerfMs() - renderStartedAt);
+    recordEventRefreshMetric({
+      mode: "full",
+      outcome: "applied",
+      renderMode: "reset",
+      requestMs: fullRequestMs,
+      renderMs,
+      payloadBytes: estimatePayloadBytes(data),
+      eventCount: events.length,
+      latestSeq: renderedEventState.latestSeq,
+      totalElapsedMs: Math.max(0, nowPerfMs() - requestStartedAt),
+    });
     return events;
   }
 
   if (renderPlan.mode === "append") {
+    const renderStartedAt = nowPerfMs();
     for (const event of renderPlan.events) {
       reconcilePendingMessageState(event);
       renderEvent(event, false);
@@ -1261,6 +1405,18 @@ async function fetchSessionEvents(
     } else if (renderPlan.events.length > 0 && shouldStickToBottom) {
       scrollToBottom();
     }
+    const renderMs = Math.max(0, nowPerfMs() - renderStartedAt);
+    recordEventRefreshMetric({
+      mode: "full",
+      outcome: "applied",
+      renderMode: "append",
+      requestMs: fullRequestMs,
+      renderMs,
+      payloadBytes: estimatePayloadBytes(data),
+      eventCount: renderPlan.events.length,
+      latestSeq: renderedEventState.latestSeq,
+      totalElapsedMs: Math.max(0, nowPerfMs() - requestStartedAt),
+    });
     return renderPlan.events;
   }
 
@@ -1274,6 +1430,17 @@ async function fetchSessionEvents(
   ) {
     scrollNodeToTop(latestTurnStart);
   }
+  recordEventRefreshMetric({
+    mode: "full",
+    outcome: "applied",
+    renderMode: "noop",
+    requestMs: fullRequestMs,
+    renderMs: 0,
+    payloadBytes: estimatePayloadBytes(data),
+    eventCount: 0,
+    latestSeq: renderedEventState.latestSeq,
+    totalElapsedMs: Math.max(0, nowPerfMs() - requestStartedAt),
+  });
   return events;
 }
 

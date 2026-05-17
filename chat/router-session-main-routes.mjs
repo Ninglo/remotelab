@@ -82,6 +82,15 @@ function collectDeltaVisibleEvents(events = [], afterSeq = 0) {
   };
 }
 
+function getLatestDisplayBoundarySeq(events = []) {
+  let latestSeq = 0;
+  for (const event of Array.isArray(events) ? events : []) {
+    const boundarySeq = getDisplayEventBoundarySeq(event);
+    if (boundarySeq > latestSeq) latestSeq = boundarySeq;
+  }
+  return latestSeq;
+}
+
 export async function handleSessionMainRoutes({
   req,
   res,
@@ -170,7 +179,15 @@ export async function handleSessionMainRoutes({
       : '';
     if (filter === 'all') {
       const events = await getSessionEventsAfter(sessionId, 0);
-      writeJsonCached(req, res, { sessionId, filter: 'all', events });
+      writeJsonCached(req, res, {
+        sessionId,
+        filter: 'all',
+        events,
+        telemetry: {
+          transport: 'full',
+          eventCount: events.length,
+        },
+      });
       return true;
     }
     const session = await getSessionForClient(sessionId);
@@ -182,7 +199,16 @@ export async function handleSessionMainRoutes({
     const events = buildSessionDisplayEvents(timeline, {
       sessionRunning: session?.activity?.run?.state === 'running',
     });
-    writeJsonCached(req, res, { sessionId, filter: 'visible', events });
+    writeJsonCached(req, res, {
+      sessionId,
+      filter: 'visible',
+      events,
+      latestSeq: getLatestDisplayBoundarySeq(events),
+      telemetry: {
+        transport: 'full',
+        eventCount: events.length,
+      },
+    });
     return true;
   }
 
@@ -223,6 +249,11 @@ export async function handleSessionMainRoutes({
         events: [],
         resetRequired: true,
         reason: 'ahead_of_latest',
+        telemetry: {
+          transport: 'delta',
+          eventCount: 0,
+          fallbackReason: 'ahead_of_latest',
+        },
       });
       return true;
     }
@@ -235,6 +266,11 @@ export async function handleSessionMainRoutes({
         events: [],
         resetRequired: true,
         reason: 'compacted',
+        telemetry: {
+          transport: 'delta',
+          eventCount: 0,
+          fallbackReason: 'compacted',
+        },
       });
       return true;
     }
@@ -252,6 +288,11 @@ export async function handleSessionMainRoutes({
       events: delta.events,
       resetRequired: delta.resetRequired,
       reason: delta.resetRequired ? 'timeline_rebuilt' : '',
+      telemetry: {
+        transport: 'delta',
+        eventCount: delta.events.length,
+        fallbackReason: delta.resetRequired ? 'timeline_rebuilt' : '',
+      },
     });
     return true;
   }
