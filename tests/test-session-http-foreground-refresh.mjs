@@ -344,6 +344,24 @@ const firstContext = createContext({
         ],
       }, { url: 'http://127.0.0.1/api/sessions/current-session/events?filter=visible' });
     }
+    if (url.startsWith('/api/sessions/current-session/events/delta?')) {
+      return createFetchResponse({
+        sessionId: 'current-session',
+        filter: 'visible',
+        baseSeq: 0,
+        latestSeq: 5,
+        events: [
+          {
+            seq: 5,
+            type: 'message',
+            role: 'assistant',
+            content: 'Done.',
+          },
+        ],
+        resetRequired: false,
+        reason: '',
+      }, { url: `http://127.0.0.1${url}` });
+    }
     throw new Error(`Unexpected fetch: ${url}`);
   },
 });
@@ -360,13 +378,17 @@ assert.equal(firstContext.serviceWorkerListeners.has('message'), true, 'notifica
 await firstContext.documentListeners.get('visibilitychange')();
 
 assert.deepEqual(
-  firstContext.fetchCalls.map((entry) => entry.url),
+  firstContext.fetchCalls.map((entry) => entry.url).slice(0, 2),
   [
     '/api/sessions',
     '/api/sessions/current-session',
-    '/api/sessions/current-session/events?filter=visible',
   ],
-  'returning to the foreground should refresh the session list, current session, and visible transcript once',
+  'returning to the foreground should refresh the session list and current session once',
+);
+assert.equal(
+  firstContext.fetchCalls.some((entry) => entry.url.startsWith('/api/sessions/current-session/events')),
+  false,
+  'foreground recovery can skip transcript refresh when the current view is already converged',
 );
 assert.equal(
   firstContext.fetchCalls.every((entry) => entry.options.cache !== 'no-store'),
@@ -378,7 +400,7 @@ await firstContext.windowListeners.get('focus')();
 
 assert.equal(
   firstContext.fetchCalls.length,
-  3,
+  2,
   'foreground recovery should throttle duplicate focus-based refreshes fired right after visibilitychange',
 );
 
@@ -423,6 +445,24 @@ const targetedContext = createContext({
         ],
       }, { url: 'http://127.0.0.1/api/sessions/current-session/events?filter=visible' });
     }
+    if (url.startsWith('/api/sessions/current-session/events/delta?')) {
+      return createFetchResponse({
+        sessionId: 'current-session',
+        filter: 'visible',
+        baseSeq: 0,
+        latestSeq: 5,
+        events: [
+          {
+            seq: 5,
+            type: 'message',
+            role: 'assistant',
+            content: 'Still running.',
+          },
+        ],
+        resetRequired: false,
+        reason: '',
+      }, { url: `http://127.0.0.1${url}` });
+    }
     throw new Error(`Unexpected fetch: ${url}`);
   },
 });
@@ -435,12 +475,14 @@ targetedContext.setupForegroundRefreshHandlers();
 await targetedContext.documentListeners.get('visibilitychange')();
 
 assert.deepEqual(
-  targetedContext.fetchCalls.map((entry) => entry.url),
-  [
-    '/api/sessions/current-session',
-    '/api/sessions/current-session/events?filter=visible',
-  ],
-  'foreground recovery should skip a freshly hydrated session list and only refresh the visible running session',
+  targetedContext.fetchCalls.map((entry) => entry.url).slice(0, 1),
+  ['/api/sessions/current-session'],
+  'foreground recovery should skip a freshly hydrated session list and refresh the visible running session',
+);
+assert.equal(
+  targetedContext.fetchCalls.some((entry) => entry.url.startsWith('/api/sessions/current-session/events')),
+  false,
+  'foreground recovery can skip running-session event refresh when nothing new is projected yet',
 );
 
 firstContext.advanceTime(3000);
@@ -456,7 +498,7 @@ assert.equal(firstContext.applyNavigationStateCalls.length, 1, 'notification nav
 assert.equal(firstContext.focusCount, 1, 'notification navigation should focus the existing chat window');
 assert.equal(
   firstContext.fetchCalls.length,
-  6,
+  4,
   'notification-opened sessions should trigger another fresh recovery sync when the tab comes back',
 );
 

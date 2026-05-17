@@ -428,3 +428,32 @@ function updateRenderedEventState(sessionId, events, { runState = "idle" } = {})
   }
 
 }
+
+function appendRenderedEventStateDelta(
+  sessionId,
+  events,
+  { runState = "idle", latestSeq = null } = {},
+) {
+  if (renderedEventState.sessionId !== sessionId) {
+    updateRenderedEventState(sessionId, events, { runState });
+    return;
+  }
+  const deltaEvents = Array.isArray(events) ? events : [];
+  renderedEventState.eventCount += deltaEvents.length;
+  renderedEventState.eventBaseKeys.push(
+    ...deltaEvents.map((event) => getEventRenderBaseKey(event)),
+  );
+  renderedEventState.eventKeys.push(
+    ...deltaEvents.map((event) => getEventRenderKey(event)),
+  );
+  const deltaLatestSeq = getLatestEventSeq(deltaEvents);
+  const latest = Number.isInteger(latestSeq) ? latestSeq : deltaLatestSeq;
+  renderedEventState.latestSeq = Math.max(
+    Number.isInteger(renderedEventState.latestSeq) ? renderedEventState.latestSeq : 0,
+    Number.isInteger(latest) ? latest : 0,
+  );
+  renderedEventState.runState = runState === "running" ? "running" : "idle";
+  if (renderedEventState.runState !== "running") {
+    renderedEventState.runningBlockExpanded = shouldExpandThinkingBlocksByDefaultForSessionUi();
+  }
+}

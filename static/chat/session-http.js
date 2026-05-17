@@ -93,6 +93,7 @@ function notifyCompletion(session) {
 const FOREGROUND_REFRESH_THROTTLE_MS = 1500;
 const FOREGROUND_SESSION_LIST_STALE_MS = 15000;
 const FOREGROUND_IDLE_SESSION_STALE_MS = 15000;
+const EVENT_DELTA_REFRESH_ENABLED = true;
 let foregroundRefreshPromise = null;
 let foregroundRefreshHandlersReady = false;
 let lastForegroundRefreshAt = 0;
@@ -410,6 +411,9 @@ function hasRenderedEventSnapshot(sessionId) {
 }
 
 function shouldFetchSessionEventsForRefresh(sessionId, session) {
+  if (!Number.isInteger(renderedEventState.eventCount) || renderedEventState.eventCount === 0) {
+    return true;
+  }
   const runState = getSessionRunState(session);
   if (runState !== "running") return true;
   if (!hasRenderedEventSnapshot(sessionId)) return true;
@@ -417,6 +421,35 @@ function shouldFetchSessionEventsForRefresh(sessionId, session) {
   if (renderedEventState.runningBlockExpanded === true) return true;
   const latestSeq = Number.isInteger(session?.latestSeq) ? session.latestSeq : 0;
   return latestSeq > renderedEventState.latestSeq;
+}
+
+function shouldAttemptEventDeltaFetch(
+  sessionId,
+  { runState = "idle", forceFresh = false } = {},
+) {
+  if (!EVENT_DELTA_REFRESH_ENABLED) return false;
+  if (forceFresh || runState !== "running") return false;
+  if (isShareSnapshotReadOnlyMode()) return false;
+  if (currentSessionId !== sessionId) return false;
+  if (renderedEventState.sessionId !== sessionId) return false;
+  if (!hasRenderedEventSnapshot(sessionId)) return false;
+  return Number.isInteger(renderedEventState.latestSeq) && renderedEventState.latestSeq >= 0;
+}
+
+async function fetchSessionEventDelta(sessionId, afterSeq, { forceFresh = false } = {}) {
+  const query = new URLSearchParams();
+  query.set("filter", "visible");
+  query.set("afterSeq", String(Math.max(0, Number.isInteger(afterSeq) ? afterSeq : 0)));
+  const data = await fetchJsonOrRedirect(
+    `/api/sessions/${encodeURIComponent(sessionId)}/events/delta?${query.toString()}`,
+    buildSessionRefreshRequestOptions(forceFresh),
+  );
+  return {
+    events: Array.isArray(data?.events) ? data.events : [],
+    latestSeq: Number.isInteger(data?.latestSeq) ? data.latestSeq : null,
+    resetRequired: data?.resetRequired === true,
+    reason: typeof data?.reason === "string" ? data.reason : "",
+  };
 }
 
 function getEventRenderPlan(sessionId, events) {
@@ -1120,6 +1153,43 @@ async function fetchSessionEvents(
   const shouldStickToBottom =
     !hadRenderedMessages ||
     messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+  if (shouldAttemptEventDeltaFetch(sessionId, { runState, forceFresh })) {
+    const afterSeq = Number.isInteger(renderedEventState.latestSeq)
+      ? renderedEventState.latestSeq
+      : 0;
+    try {
+      const delta = await fetchSessionEventDelta(sessionId, afterSeq, { forceFresh });
+      if (currentSessionId !== sessionId) return delta.events;
+      const hasBackwardSeq = Number.isInteger(delta.latestSeq)
+        && delta.latestSeq < renderedEventState.latestSeq;
+      const hasMutatedEvent = delta.events.some((event) =>
+        Number.isInteger(event?.seq) && event.seq <= afterSeq);
+      if (!delta.resetRequired && !hasBackwardSeq && !hasMutatedEvent) {
+        for (const event of delta.events) {
+          reconcilePendingMessageState(event);
+          renderEvent(event, false);
+        }
+        appendRenderedEventStateDelta(sessionId, delta.events, {
+          runState,
+          latestSeq: delta.latestSeq,
+        });
+        const latestTurnStart = applyFinishedTurnCollapseState();
+        if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent: normalizedViewportIntent })) {
+          scrollCurrentSessionViewportToTop();
+        } else if (
+          normalizedViewportIntent === "session_entry"
+          && shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)
+        ) {
+          scrollNodeToTop(latestTurnStart);
+        } else if (delta.events.length > 0 && shouldStickToBottom) {
+          scrollToBottom();
+        }
+        return delta.events;
+      }
+    } catch (error) {
+      console.warn("[events-delta] fallback to full events fetch:", error?.message || error);
+    }
+  }
   const data = isShareSnapshotReadOnlyMode()
     ? { events: getShareSnapshotDisplayEvents() }
     : await fetchJsonOrRedirect(

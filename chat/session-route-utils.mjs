@@ -25,6 +25,10 @@ export function parseSessionGetRoute(pathname) {
     return { kind: 'events', sessionId };
   }
 
+  if (parts.length === 5 && parts[3] === 'events' && parts[4] === 'delta') {
+    return { kind: 'event-delta', sessionId };
+  }
+
   if (parts.length === 4 && parts[3] === 'source-context') {
     return { kind: 'source-context', sessionId };
   }

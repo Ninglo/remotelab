@@ -49,6 +49,39 @@ function getGrantedCapability(authSession, capability, fallback = false) {
     : fallback;
 }
 
+function getDisplayEventBoundarySeq(event) {
+  if (!event || typeof event !== 'object') return 0;
+  if (event.type === 'thinking_block') {
+    const boundary = Number.isInteger(event?.blockEndSeq) ? event.blockEndSeq : 0;
+    if (boundary > 0) return boundary;
+  }
+  return Number.isInteger(event?.seq) ? event.seq : 0;
+}
+
+function collectDeltaVisibleEvents(events = [], afterSeq = 0) {
+  const delta = [];
+  let resetRequired = false;
+  for (const event of Array.isArray(events) ? events : []) {
+    const boundarySeq = getDisplayEventBoundarySeq(event);
+    if (boundarySeq <= afterSeq) continue;
+    if (!Number.isInteger(event?.seq) || event.seq < 1) {
+      resetRequired = true;
+      continue;
+    }
+    // A previously rendered event was mutated (for example, running thinking block grew).
+    // Fall back to full refresh so frontend can re-render deterministically.
+    if (event.seq <= afterSeq) {
+      resetRequired = true;
+      continue;
+    }
+    delta.push(event);
+  }
+  return {
+    events: delta,
+    resetRequired,
+  };
+}
+
 export async function handleSessionMainRoutes({
   req,
   res,
@@ -150,6 +183,76 @@ export async function handleSessionMainRoutes({
       sessionRunning: session?.activity?.run?.state === 'running',
     });
     writeJsonCached(req, res, { sessionId, filter: 'visible', events });
+    return true;
+  }
+
+  if (sessionGetRoute?.kind === 'event-delta') {
+    const { sessionId } = sessionGetRoute;
+    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+    const filter = typeof parsedUrl.query.filter === 'string'
+      ? String(parsedUrl.query.filter || '').trim().toLowerCase()
+      : '';
+    if (filter && filter !== 'visible') {
+      writeJson(res, 400, { error: 'Only filter=visible is supported for delta' });
+      return true;
+    }
+    const rawAfterSeq = typeof parsedUrl.query.afterSeq === 'string'
+      ? parsedUrl.query.afterSeq.trim()
+      : '';
+    const afterSeq = rawAfterSeq ? Number.parseInt(rawAfterSeq, 10) : 0;
+    if (!Number.isInteger(afterSeq) || afterSeq < 0) {
+      writeJson(res, 400, { error: 'afterSeq must be a non-negative integer' });
+      return true;
+    }
+
+    const session = await getSessionForClient(sessionId);
+    if (!session) {
+      writeJson(res, 404, { error: 'Session not found' });
+      return true;
+    }
+    const compactedThroughSeq = Number.isInteger(session?.compactedThroughSeq)
+      ? session.compactedThroughSeq
+      : 0;
+    const latestSeq = Number.isInteger(session?.latestSeq) ? session.latestSeq : 0;
+    if (afterSeq > latestSeq) {
+      writeJson(res, 200, {
+        sessionId,
+        filter: 'visible',
+        baseSeq: afterSeq,
+        latestSeq,
+        events: [],
+        resetRequired: true,
+        reason: 'ahead_of_latest',
+      });
+      return true;
+    }
+    if (compactedThroughSeq > 0 && afterSeq < compactedThroughSeq) {
+      writeJson(res, 200, {
+        sessionId,
+        filter: 'visible',
+        baseSeq: afterSeq,
+        latestSeq,
+        events: [],
+        resetRequired: true,
+        reason: 'compacted',
+      });
+      return true;
+    }
+
+    const timeline = await getSessionTimelineEvents(sessionId);
+    const visibleEvents = buildSessionDisplayEvents(timeline, {
+      sessionRunning: session?.activity?.run?.state === 'running',
+    });
+    const delta = collectDeltaVisibleEvents(visibleEvents, afterSeq);
+    writeJson(res, 200, {
+      sessionId,
+      filter: 'visible',
+      baseSeq: afterSeq,
+      latestSeq,
+      events: delta.events,
+      resetRequired: delta.resetRequired,
+      reason: delta.resetRequired ? 'timeline_rebuilt' : '',
+    });
     return true;
   }
 
