@@ -511,6 +511,20 @@
 .thinking-header:hover { color: var(--text); }
 .thinking-icon { font-size: 14px; flex-shrink: 0; }
 .thinking-label { flex: 1; font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thinking-block.running .thinking-icon {
+  animation: thinking-spin 2s linear infinite;
+}
+.thinking-block.running:not(.collapsed) .thinking-label {
+  animation: thinking-pulse 2s ease-in-out infinite;
+}
+@keyframes thinking-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
 .thinking-chevron {
   font-size: 9px; transition: transform 0.2s; color: var(--text-muted);
   display: inline-flex; align-items: center; justify-content: center;

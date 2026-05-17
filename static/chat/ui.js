@@ -995,6 +995,7 @@ function renderThinkingBlockEvent(evt) {
   const thinking = createDeferredThinkingBlock(getThinkingBlockLabel(evt), {
     collapsed: !expandedByDefault,
   });
+  if (running) thinking.block.classList.add("running");
   thinking.block.dataset.eventSeq = String(Number.isInteger(evt?.seq) ? evt.seq : 0);
   thinking.block.dataset.blockStartSeq = String(Number.isInteger(evt?.blockStartSeq) ? evt.blockStartSeq : 0);
   thinking.block.dataset.blockEndSeq = String(Number.isInteger(evt?.blockEndSeq) ? evt.blockEndSeq : 0);

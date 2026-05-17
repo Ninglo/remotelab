@@ -175,7 +175,7 @@ function shouldFocusLatestTurnStart(node) {
 // ---- Thinking block helpers ----
 function openThinkingBlock() {
   const block = document.createElement("div");
-  block.className = "thinking-block collapsed"; // collapsed by default
+  block.className = "thinking-block collapsed running";
 
   const header = document.createElement("div");
   header.className = "thinking-header";
