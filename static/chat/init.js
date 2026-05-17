@@ -634,4 +634,11 @@ async function handleShareTargetData() {
   }
 }
 
+if (typeof CustomSelect !== "undefined") {
+  window._composeCustomSelects = upgradeSelects(
+    "#inlineAgentSelect, #inlineToolSelect, #inlineModelSelect, #effortSelect",
+    { className: "cs-compact" },
+  );
+}
+
 initApp();

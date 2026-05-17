@@ -1,0 +1,143 @@
+/* ---- Custom Select ---- */
+.custom-select-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.custom-select-wrap .cs-native {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.custom-select-wrap .cs-trigger {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 24px 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  position: relative;
+}
+.custom-select-wrap .cs-trigger::after {
+  content: "";
+  position: absolute;
+  right: 8px; top: 50%;
+  width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 4px solid var(--text-muted);
+  transform: translateY(-50%);
+  transition: transform 0.2s ease;
+}
+.custom-select-wrap.open .cs-trigger::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+.custom-select-wrap .cs-trigger:hover {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+.custom-select-wrap .cs-trigger:focus-visible {
+  border-color: var(--border-strong);
+}
+.custom-select-wrap.open .cs-trigger {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--bg-tertiary);
+}
+.custom-select-wrap.disabled .cs-trigger {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.custom-select-wrap .cs-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Dropdown panel */
+.custom-select-wrap .cs-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1000;
+  min-width: 100%;
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  display: none;
+}
+.custom-select-wrap.open .cs-panel {
+  display: block;
+  animation: cs-fade-in 0.12s ease;
+}
+@keyframes cs-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Option items */
+.custom-select-wrap .cs-option {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+.custom-select-wrap .cs-option:hover {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+.custom-select-wrap .cs-option.selected {
+  color: var(--text);
+  font-weight: 500;
+}
+.custom-select-wrap .cs-option.selected::after {
+  content: "✓";
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.custom-select-wrap .cs-option.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Size variants */
+.custom-select-wrap.cs-compact .cs-trigger {
+  padding: 3px 20px 3px 6px;
+  font-size: 11px;
+}
+.custom-select-wrap.cs-tool { max-width: 100px; }
+.custom-select-wrap.cs-model { max-width: 120px; }
+.custom-select-wrap.cs-effort { max-width: 80px; }
+
+/* Upward panel (when near bottom of screen) */
+.custom-select-wrap.above .cs-panel {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
