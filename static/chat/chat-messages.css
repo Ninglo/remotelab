@@ -514,7 +514,7 @@
 .thinking-block.running .thinking-icon {
   animation: thinking-spin 2s linear infinite;
 }
-.thinking-block.running:not(.collapsed) .thinking-label {
+.thinking-block.running .thinking-label {
   animation: thinking-pulse 2s ease-in-out infinite;
 }
 @keyframes thinking-spin {
