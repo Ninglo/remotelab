@@ -57,6 +57,9 @@ function applyVisitorMode(authInfo = null) {
   }
   syncForkButton();
   syncShareButton();
+  if (typeof syncMobileDisclosureState === "function") {
+    syncMobileDisclosureState();
+  }
 }
 
 function applyAgentScopedMode(authInfo = null) {
@@ -126,6 +129,9 @@ function applyAgentScopedMode(authInfo = null) {
   }
   syncForkButton();
   syncShareButton();
+  if (typeof syncMobileDisclosureState === "function") {
+    syncMobileDisclosureState();
+  }
 }
 
 function applyShareSnapshotMode(snapshot) {
@@ -635,9 +641,29 @@ async function handleShareTargetData() {
 }
 
 if (typeof CustomSelect !== "undefined") {
+  // Compose area (compact inline)
   window._composeCustomSelects = upgradeSelects(
     "#inlineAgentSelect, #inlineToolSelect, #inlineModelSelect, #effortSelect",
     { className: "cs-compact" },
+  );
+  // Sidebar workspace & filter (full width, secondary bg)
+  upgradeSelects(
+    "#workspaceSelect, #workspaceCustomFolderSelect, #sourceFilterSelect",
+    { className: "cs-full cs-full-bg" },
+  );
+  upgradeSelects(
+    "#workspaceBrowserSelect",
+    { className: "cs-full cs-browser" },
+  );
+  // Settings panel (full width)
+  upgradeSelects(
+    "#uiLanguageSelect, #uiThemeSelect, #thinkingBlockDisplaySelect, #voiceInputProviderSelect, #voiceInputClusterPresetSelect, #voiceInputLanguageSelect",
+    { className: "cs-full" },
+  );
+  // Add-tool modal selects
+  upgradeSelects(
+    "#addToolRuntimeFamilySelect, #addToolReasoningKindSelect",
+    { className: "cs-full" },
   );
 }
 

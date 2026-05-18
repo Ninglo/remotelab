@@ -396,7 +396,7 @@ function buildSessionListOrganizerSessionMetadata(session) {
 function buildSessionListOrganizerPayload() {
   const activeSessions = getActiveSessions();
   return {
-    tool: selectedTool || preferredTool || "codex",
+    tool: selectedTool || preferredTool || "claude",
     ...(selectedModel ? { model: selectedModel } : {}),
     ...(selectedEffort ? { effort: selectedEffort } : {}),
     thinking: thinkingEnabled === true,
@@ -433,7 +433,7 @@ async function createSessionListOrganizerRun(payload) {
         : (typeof window.remotelabGetDefaultSessionFolder === "function"
           ? window.remotelabGetDefaultSessionFolder()
           : "~"),
-      tool: payload?.tool || "codex",
+      tool: payload?.tool || "claude",
       name: "sort session list",
       systemPrompt: SESSION_LIST_ORGANIZER_SYSTEM_PROMPT,
       internalRole: SESSION_LIST_ORGANIZER_INTERNAL_ROLE,

@@ -48,10 +48,19 @@
 
   .header-btn--sessions {
     padding: 0 11px;
+    min-height: 40px;
   }
 
-  .header-share-btn {
-    padding: 0 9px;
+  .header-share-btn,
+  .header-refresh-btn {
+    display: none !important;
+  }
+
+  .header-more-btn:not([hidden]) {
+    display: flex;
+    min-width: 44px;
+    min-height: 40px;
+    padding: 0 13px;
   }
 
   #statusText {
@@ -59,6 +68,133 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .composer-controls-btn:not([hidden]) {
+    display: flex;
+    min-width: 96px;
+    height: 40px;
+    padding: 0 16px;
+    border-color: color-mix(in srgb, var(--accent) 10%, var(--border));
+    background: var(--bg-secondary);
+    color: var(--text);
+    font-weight: 650;
+  }
+
+  .composer-controls-btn:not([hidden]):active {
+    background: var(--bg-tertiary);
+    transform: scale(0.98);
+  }
+
+  .input-area.composer-config-open .input-wrapper {
+    position: relative;
+    z-index: 61;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .input-config-row {
+    display: flex;
+    margin-bottom: 8px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .input-config-group.left {
+    display: none;
+  }
+
+  .input-area.composer-config-open .input-config-group.left {
+    position: relative;
+    z-index: 61;
+    display: grid;
+    order: 1;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--bg) 94%, var(--bg-secondary));
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.14);
+  }
+
+  .input-config-group.right {
+    order: 2;
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .input-config-group.right:empty {
+    display: none;
+  }
+
+  .input-config-group.left .custom-select-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .tool-select,
+  .model-select,
+  .effort-select,
+  .thinking-toggle,
+  .compact-btn {
+    width: 100%;
+    max-width: none;
+    min-height: 52px;
+    padding: 0 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    background: var(--bg-secondary);
+    border-color: color-mix(in srgb, var(--border) 72%, transparent);
+    color: var(--text);
+  }
+
+  .input-config-group.left .custom-select-wrap .cs-trigger {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 36px 0 14px;
+    border-radius: 16px;
+    background: var(--bg-secondary);
+    border-color: color-mix(in srgb, var(--border) 72%, transparent);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 580;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .input-config-group.left .custom-select-wrap.open .cs-trigger {
+    background: var(--bg-tertiary);
+    border-color: var(--border-strong);
+  }
+
+  #contextTokens {
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+  }
+
+  .input-config-group.right .compact-btn {
+    width: auto;
+    min-height: 36px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
   }
 
   body.keyboard-open .messages {
@@ -76,7 +212,11 @@
   }
 
   body.keyboard-open .input-config-row {
-    padding-bottom: 4px;
+    margin-bottom: 6px;
+  }
+
+  body.keyboard-open .input-area.composer-config-open .input-config-group.left {
+    padding: 10px;
   }
 
   body.keyboard-open .input-row {

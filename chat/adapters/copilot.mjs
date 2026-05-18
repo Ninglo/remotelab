@@ -57,9 +57,6 @@ export function createCopilotAdapter() {
         case 'item.updated':
           if (obj.item) {
             const item = obj.item;
-            if (obj.type === 'item.updated' && (item.type === 'agent_message' || item.type === 'reasoning')) {
-              events.push(...parseItem(item, { phase: 'updated' }));
-            }
             if (item.type === 'command_execution' && item.status === 'in_progress') {
               events.push(toolUseEvent('bash', item.command || ''));
             }
@@ -68,7 +65,7 @@ export function createCopilotAdapter() {
 
         case 'item.completed':
           if (obj.item) {
-            events.push(...parseItem(obj.item, { phase: 'completed' }));
+            events.push(...parseItem(obj.item));
           }
           break;
 
@@ -89,26 +86,16 @@ export function createCopilotAdapter() {
   };
 }
 
-function parseItem(item, options = {}) {
-  const phase = typeof options.phase === 'string' ? options.phase : 'completed';
+function parseItem(item) {
   const events = [];
 
   switch (item.type) {
     case 'agent_message':
-      if (typeof item.text === 'string' && item.text.trim()) {
-        const streamItemId = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : '';
-        events.push(messageEvent('assistant', item.text || '', undefined, {
-          ...(phase === 'updated' ? { messageKind: 'stream_progress' } : {}),
-          ...(phase === 'completed' ? { messageKind: 'stream_final' } : {}),
-          ...(streamItemId ? { streamItemId } : {}),
-        }));
-      }
+      events.push(messageEvent('assistant', item.text || ''));
       break;
 
     case 'reasoning':
-      if (typeof item.text === 'string' && item.text.trim()) {
-        events.push(reasoningEvent(item.text || ''));
-      }
+      events.push(reasoningEvent(item.text || ''));
       break;
 
     case 'command_execution':

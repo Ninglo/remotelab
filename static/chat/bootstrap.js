@@ -279,6 +279,7 @@ function updateFrontendRefreshUi() {
   if (!hasUpdate) {
     refreshFrontendBtn.removeAttribute("aria-busy");
   }
+  syncMobileDisclosureState?.();
 }
 
 function hasUnsavedComposerState() {
@@ -370,6 +371,10 @@ const msgInput = document.getElementById("msgInput");
 const sendBtn = document.getElementById("sendBtn");
 const headerTitle = document.getElementById("headerTitle");
 const refreshFrontendBtn = document.getElementById("refreshFrontendBtn");
+const headerMoreBtn = document.getElementById("headerMoreBtn");
+const headerOverflowMenu = document.getElementById("headerOverflowMenu");
+const headerOverflowShareBtn = document.getElementById("headerOverflowShareBtn");
+const headerOverflowRefreshBtn = document.getElementById("headerOverflowRefreshBtn");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
 const imgBtn = document.getElementById("imgBtn");
@@ -397,6 +402,8 @@ const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
 const inputResizeHandle = document.getElementById("inputResizeHandle");
+const composerControlsBtn = document.getElementById("composerControlsBtn");
+const composerConfigBackdrop = document.getElementById("composerConfigBackdrop");
 const addToolModal = document.getElementById("addToolModal");
 const closeAddToolModalBtn = document.getElementById("closeAddToolModal");
 const closeAddToolModalFooterBtn = document.getElementById(
@@ -422,6 +429,173 @@ const copyProviderPromptBtn = document.getElementById("copyProviderPromptBtn");
 refreshFrontendBtn?.addEventListener("click", () => {
   void reloadForFreshBuild(newerBuildInfo);
 });
+
+// Mobile disclosure state for header overflow and composer controls
+const mobileDisclosureQuery = window.matchMedia("(max-width: 767px)");
+let headerOverflowOpen = false;
+let composerControlsOpen = false;
+
+function isDisclosureMobileViewport() {
+  return !!mobileDisclosureQuery.matches;
+}
+
+function isElementVisible(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle(el);
+  return style.display !== "none" && style.visibility !== "hidden";
+}
+
+function isHeaderActionAvailable(el) {
+  if (!el) return false;
+  if (el.hidden) return false;
+  if (el.style && el.style.display === "none") return false;
+  return true;
+}
+
+function syncHeaderOverflowMenu() {
+  if (!headerMoreBtn || !headerOverflowMenu) return;
+  const mobile = isDisclosureMobileViewport();
+  const shareAvailable = isHeaderActionAvailable(shareSnapshotBtn);
+  const refreshAvailable = isHeaderActionAvailable(refreshFrontendBtn);
+  const hasItems = shareAvailable || refreshAvailable;
+  headerMoreBtn.hidden = !(mobile && hasItems);
+  headerMoreBtn.setAttribute(
+    "aria-expanded",
+    headerOverflowOpen && !headerMoreBtn.hidden ? "true" : "false",
+  );
+  headerOverflowMenu.hidden = !headerOverflowOpen || headerMoreBtn.hidden;
+  if (headerOverflowShareBtn) headerOverflowShareBtn.hidden = !shareAvailable;
+  if (headerOverflowRefreshBtn) headerOverflowRefreshBtn.hidden = !refreshAvailable;
+  if (headerOverflowMenu.hidden) headerOverflowOpen = false;
+}
+
+function syncComposerControlsDisclosure() {
+  if (!composerControlsBtn || !inputArea || !composerConfigBackdrop) return;
+  const mobile = isDisclosureMobileViewport();
+  const hasControls = !visitorMode && !shareSnapshotMode && (
+    canSwitchAgents()
+    || canChangeRuntimeSelection()
+    || isElementVisible(thinkingToggle)
+  );
+  const visible = mobile && hasControls;
+  composerControlsBtn.hidden = !visible;
+  composerControlsBtn.setAttribute(
+    "aria-expanded",
+    composerControlsOpen && visible ? "true" : "false",
+  );
+  inputArea.classList.toggle("composer-config-open", composerControlsOpen && visible);
+  composerConfigBackdrop.hidden = !(composerControlsOpen && visible);
+  if (!visible) composerControlsOpen = false;
+}
+
+function closeMobileDisclosures() {
+  headerOverflowOpen = false;
+  composerControlsOpen = false;
+  syncHeaderOverflowMenu();
+  syncComposerControlsDisclosure();
+}
+
+function setHeaderOverflowOpen(nextOpen) {
+  headerOverflowOpen = nextOpen === true;
+  if (headerOverflowOpen) composerControlsOpen = false;
+  syncHeaderOverflowMenu();
+  syncComposerControlsDisclosure();
+}
+
+function setComposerControlsOpen(nextOpen) {
+  composerControlsOpen = nextOpen === true;
+  if (composerControlsOpen) headerOverflowOpen = false;
+  syncHeaderOverflowMenu();
+  syncComposerControlsDisclosure();
+}
+
+function syncMobileDisclosureState() {
+  if (!isDisclosureMobileViewport()) {
+    closeMobileDisclosures();
+    return;
+  }
+  syncHeaderOverflowMenu();
+  syncComposerControlsDisclosure();
+}
+
+headerMoreBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setHeaderOverflowOpen(!headerOverflowOpen);
+});
+
+headerOverflowMenu?.addEventListener("click", (event) => {
+  event.stopPropagation();
+});
+
+headerOverflowShareBtn?.addEventListener("click", () => {
+  setHeaderOverflowOpen(false);
+  shareSnapshotBtn?.click();
+});
+
+headerOverflowRefreshBtn?.addEventListener("click", () => {
+  setHeaderOverflowOpen(false);
+  refreshFrontendBtn?.click();
+});
+
+composerControlsBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setComposerControlsOpen(!composerControlsOpen);
+});
+
+composerConfigBackdrop?.addEventListener("click", () => {
+  setComposerControlsOpen(false);
+});
+
+document.addEventListener("click", (event) => {
+  if (!isDisclosureMobileViewport()) return;
+  const target = event.target;
+  if (
+    headerOverflowOpen
+    && headerOverflowMenu
+    && target instanceof Node
+    && !headerOverflowMenu.contains(target)
+    && target !== headerMoreBtn
+  ) {
+    setHeaderOverflowOpen(false);
+  }
+  if (
+    composerControlsOpen
+    && inputArea
+    && target instanceof Node
+    && !inputArea.contains(target)
+    && target !== composerControlsBtn
+  ) {
+    setComposerControlsOpen(false);
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (headerOverflowOpen || composerControlsOpen) closeMobileDisclosures();
+});
+
+if (typeof mobileDisclosureQuery.addEventListener === "function") {
+  mobileDisclosureQuery.addEventListener("change", syncMobileDisclosureState);
+} else if (typeof mobileDisclosureQuery.addListener === "function") {
+  mobileDisclosureQuery.addListener(syncMobileDisclosureState);
+}
+window.addEventListener("resize", syncMobileDisclosureState);
+window.visualViewport?.addEventListener("resize", syncMobileDisclosureState);
+
+if (typeof MutationObserver === "function") {
+  const disclosureObserver = new MutationObserver(() => {
+    syncHeaderOverflowMenu();
+    syncComposerControlsDisclosure();
+  });
+  [shareSnapshotBtn, refreshFrontendBtn, thinkingToggle, compactBtn, dropToolsBtn]
+    .forEach((el) => {
+      if (!el) return;
+      disclosureObserver.observe(el, {
+        attributes: true,
+        attributeFilter: ["style", "hidden", "class", "disabled"],
+      });
+    });
+}
 
 let ws = null;
 const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
@@ -1010,7 +1184,7 @@ function withVisitorModeUrl(url) {
 
 let currentTokens = 0;
 
-const DEFAULT_TOOL_ID = "codex";
+const DEFAULT_TOOL_ID = "claude";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 
 function normalizeStoredToolId(value) {

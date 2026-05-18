@@ -200,7 +200,8 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100%;
-  height: 100%;
+  overflow: visible;
+  position: relative;
   overflow: hidden;
   overscroll-behavior-y: none;
   -webkit-font-smoothing: antialiased;
@@ -208,6 +209,56 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.header-more-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+}
+.header-more-btn[hidden],
+.header-overflow-menu[hidden] {
+  display: none !important;
+}
+.header-more-btn:hover { background: var(--bg-tertiary); color: var(--text); border-color: var(--border-strong); }
+.header-overflow-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 10px;
+  z-index: 45;
+  min-width: 184px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: var(--modal-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.header-overflow-menu-item {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.header-overflow-menu-item:hover { background: var(--bg-tertiary); color: var(--text); border-color: var(--border-strong); }
+.header-overflow-menu-item[hidden] { display: none !important; }
 .app-shell {
   position: fixed;
   inset: 0;
@@ -221,6 +272,7 @@ body {
 
 /* ---- Header ---- */
 .header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -231,7 +283,8 @@ body {
   height: calc(52px + var(--safe-top));
   flex-shrink: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  z-index: 30;
 }
 .header h1 {
   display: block;

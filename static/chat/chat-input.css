@@ -1,10 +1,23 @@
 /* ---- Input area ---- */
 .input-area {
+  position: relative;
   flex-shrink: 0;
   padding: 0 var(--chat-gutter) 10px;
   padding-bottom: calc(10px + var(--safe-bottom));
   background: var(--bg);
   border-top: 1px solid var(--border);
+}
+.input-area.composer-config-open {
+  z-index: 60;
+}
+.composer-config-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--overlay-backdrop);
+}
+.composer-config-backdrop[hidden] {
+  display: none !important;
 }
 
 /* Resize handle */
@@ -140,7 +153,15 @@
   justify-content: center;
   flex-shrink: 0;
   font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+.composer-action-btn:focus {
+  outline: none;
+}
+.composer-action-btn:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-border) 16%, transparent);
 }
 .composer-action-btn:hover {
   border-color: var(--border-strong);
@@ -162,6 +183,18 @@
 .composer-action-btn:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+.composer-controls-btn {
+  display: none;
+  width: auto;
+  min-width: 88px;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.composer-controls-btn[hidden] {
+  display: none !important;
 }
 .composer-action-btn--upload {
   position: static;

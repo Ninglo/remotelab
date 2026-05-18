@@ -49,54 +49,6 @@ function getGrantedCapability(authSession, capability, fallback = false) {
     : fallback;
 }
 
-function getDisplayEventBoundarySeq(event) {
-  if (!event || typeof event !== 'object') return 0;
-  if (event.type === 'thinking_block') {
-    const boundary = Number.isInteger(event?.blockEndSeq) ? event.blockEndSeq : 0;
-    if (boundary > 0) return boundary;
-  }
-  return Number.isInteger(event?.seq) ? event.seq : 0;
-}
-
-function collectDeltaVisibleEvents(events = [], afterSeq = 0) {
-  const delta = [];
-  let resetRequired = false;
-  for (const event of Array.isArray(events) ? events : []) {
-    const boundarySeq = getDisplayEventBoundarySeq(event);
-    if (boundarySeq <= afterSeq) continue;
-    if (!Number.isInteger(event?.seq) || event.seq < 1) {
-      resetRequired = true;
-      continue;
-    }
-    // A previously rendered event was mutated (for example, running thinking block grew).
-    // Fall back to full refresh so frontend can re-render deterministically.
-    if (event.seq <= afterSeq) {
-      resetRequired = true;
-      continue;
-    }
-    const streamItemId = typeof event?.streamItemId === 'string' ? event.streamItemId.trim() : '';
-    if (event?.type === 'message' && streamItemId) {
-      // Stream-progress messages supersede earlier snapshots with the same streamItemId.
-      // Ask the frontend to do a deterministic full refresh so stale snapshots are removed.
-      resetRequired = true;
-    }
-    delta.push(event);
-  }
-  return {
-    events: delta,
-    resetRequired,
-  };
-}
-
-function getLatestDisplayBoundarySeq(events = []) {
-  let latestSeq = 0;
-  for (const event of Array.isArray(events) ? events : []) {
-    const boundarySeq = getDisplayEventBoundarySeq(event);
-    if (boundarySeq > latestSeq) latestSeq = boundarySeq;
-  }
-  return latestSeq;
-}
-
 export async function handleSessionMainRoutes({
   req,
   res,
@@ -185,15 +137,7 @@ export async function handleSessionMainRoutes({
       : '';
     if (filter === 'all') {
       const events = await getSessionEventsAfter(sessionId, 0);
-      writeJsonCached(req, res, {
-        sessionId,
-        filter: 'all',
-        events,
-        telemetry: {
-          transport: 'full',
-          eventCount: events.length,
-        },
-      });
+      writeJsonCached(req, res, { sessionId, filter: 'all', events });
       return true;
     }
     const session = await getSessionForClient(sessionId);
@@ -205,109 +149,7 @@ export async function handleSessionMainRoutes({
     const events = buildSessionDisplayEvents(timeline, {
       sessionRunning: session?.activity?.run?.state === 'running',
     });
-    writeJsonCached(req, res, {
-      sessionId,
-      filter: 'visible',
-      events,
-      latestSeq: getLatestDisplayBoundarySeq(events),
-      telemetry: {
-        transport: 'full',
-        eventCount: events.length,
-      },
-    });
-    return true;
-  }
-
-  if (sessionGetRoute?.kind === 'event-delta') {
-    const { sessionId } = sessionGetRoute;
-    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-    const filter = typeof parsedUrl.query.filter === 'string'
-      ? String(parsedUrl.query.filter || '').trim().toLowerCase()
-      : '';
-    if (filter && filter !== 'visible') {
-      writeJson(res, 400, { error: 'Only filter=visible is supported for delta' });
-      return true;
-    }
-    const rawAfterSeq = typeof parsedUrl.query.afterSeq === 'string'
-      ? parsedUrl.query.afterSeq.trim()
-      : '';
-    const afterSeq = rawAfterSeq ? Number.parseInt(rawAfterSeq, 10) : 0;
-    if (!Number.isInteger(afterSeq) || afterSeq < 0) {
-      writeJson(res, 400, { error: 'afterSeq must be a non-negative integer' });
-      return true;
-    }
-
-    const session = await getSessionForClient(sessionId);
-    if (!session) {
-      writeJson(res, 404, { error: 'Session not found' });
-      return true;
-    }
-    const compactedThroughSeq = Number.isInteger(session?.compactedThroughSeq)
-      ? session.compactedThroughSeq
-      : 0;
-    const latestSeq = Number.isInteger(session?.latestSeq) ? session.latestSeq : 0;
-    if (afterSeq > latestSeq) {
-      console.log(`[events-delta] sessionId=${sessionId} outcome=fallback afterSeq=${afterSeq} latestSeq=${latestSeq} events=0 reason=ahead_of_latest`);
-      writeJson(res, 200, {
-        sessionId,
-        filter: 'visible',
-        baseSeq: afterSeq,
-        latestSeq,
-        events: [],
-        resetRequired: true,
-        reason: 'ahead_of_latest',
-        telemetry: {
-          transport: 'delta',
-          eventCount: 0,
-          fallbackReason: 'ahead_of_latest',
-        },
-      });
-      return true;
-    }
-    if (compactedThroughSeq > 0 && afterSeq < compactedThroughSeq) {
-      console.log(`[events-delta] sessionId=${sessionId} outcome=fallback afterSeq=${afterSeq} compactedThroughSeq=${compactedThroughSeq} events=0 reason=compacted`);
-      writeJson(res, 200, {
-        sessionId,
-        filter: 'visible',
-        baseSeq: afterSeq,
-        latestSeq,
-        events: [],
-        resetRequired: true,
-        reason: 'compacted',
-        telemetry: {
-          transport: 'delta',
-          eventCount: 0,
-          fallbackReason: 'compacted',
-        },
-      });
-      return true;
-    }
-
-    const timeline = await getSessionTimelineEvents(sessionId);
-    const visibleEvents = buildSessionDisplayEvents(timeline, {
-      sessionRunning: session?.activity?.run?.state === 'running',
-    });
-    const delta = collectDeltaVisibleEvents(visibleEvents, afterSeq);
-    const deltaOutcome = delta.resetRequired ? 'fallback' : 'applied';
-    const deltaEventCount = delta.events.length;
-    const deltaFallbackReason = delta.resetRequired ? 'timeline_rebuilt' : '';
-    if (deltaOutcome === 'fallback') {
-      console.log(`[events-delta] sessionId=${sessionId} outcome=${deltaOutcome} afterSeq=${afterSeq} latestSeq=${latestSeq} events=${deltaEventCount} reason=${deltaFallbackReason}`);
-    }
-    writeJson(res, 200, {
-      sessionId,
-      filter: 'visible',
-      baseSeq: afterSeq,
-      latestSeq,
-      events: delta.events,
-      resetRequired: delta.resetRequired,
-      reason: delta.resetRequired ? 'timeline_rebuilt' : '',
-      telemetry: {
-        transport: 'delta',
-        eventCount: deltaEventCount,
-        fallbackReason: deltaFallbackReason,
-      },
-    });
+    writeJsonCached(req, res, { sessionId, filter: 'visible', events });
     return true;
   }
 

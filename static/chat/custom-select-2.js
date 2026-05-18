@@ -1,5 +1,5 @@
 /* custom-select.js — wraps native <select> into a styled dropdown */
-/* @version 2026-05-18b */
+/* @version 2026-05-18c */
 
 (function () {
   "use strict";
@@ -14,17 +14,20 @@
       this._open = false;
       this._selectedIdx = -1;
       this._hoverIdx = -1;
+      this._syncRaf = 0;
 
       this._build();
       this._syncFromNative();
       this._bindEvents();
+      this._interceptNativeProperties();
 
       INSTANCES.set(selectEl, this);
 
-      // Force-sync with increasing delays to catch async option loading
-      [50, 150, 400, 1000, 2500].forEach((ms) => {
-        setTimeout(() => this._syncFromNative(), ms);
-      });
+      // Safety net: re-sync after async option loading in case MutationObserver
+      // or property interception missed a change (e.g. select.innerHTML batch)
+      this._retryTimers = [50, 200, 600, 1500].map((ms) =>
+        setTimeout(() => this._syncFromNative(), ms),
+      );
     }
 
     _build() {
@@ -99,29 +102,23 @@
     }
 
     _updateSelected() {
-      let idx = this.native.selectedIndex;
-      // If native select has options but no selection (selectedIndex === -1),
-      // attempt to set it to the first option so trigger text is populated on mobile browsers
-      if (idx < 0 && this.native.options && this.native.options.length > 0) {
-        try {
-          this.native.selectedIndex = 0;
-        } catch (e) {
-          // ignore if browser disallows setting selectedIndex
-        }
-        idx = this.native.selectedIndex;
-      }
+      const idx = this.native.selectedIndex;
       this._selectedIdx = idx;
       this._options.forEach((el, i) => {
         const isSel = i === idx;
         el.classList.toggle("selected", isSel);
         el.setAttribute("aria-selected", String(isSel));
       });
-      const text =
-        idx >= 0 && this.native.options[idx]
-          ? this.native.options[idx].textContent
-          : "";
-      this.triggerText.textContent = text;
-      this.trigger.removeAttribute("title");
+      const hasOption = idx >= 0 && this.native.options[idx];
+      const text = hasOption ? this.native.options[idx].textContent : "";
+      // Debug: show diagnostic info when text is empty so we can diagnose the issue
+      if (!text) {
+        const optCount = this.native.options.length;
+        const optTexts = Array.from(this.native.options).map(o => o.textContent).join(', ');
+        this.triggerText.textContent = `[${this.native.id || '?'}: idx=${idx} opts=${optCount} [${optTexts}]]`;
+      } else {
+        this.triggerText.textContent = text;
+      }
     }
 
     _updateDisabled() {
@@ -135,6 +132,37 @@
       } else {
         this.wrap.style.display = "";
       }
+    }
+
+    // Intercept .value / .selectedIndex so programmatic writes trigger a sync.
+    // MutationObserver only catches DOM attribute/childList changes — not JS
+    // property assignments like select.value = "foo".
+    _interceptNativeProperties() {
+      const self = this;
+      const native = this.native;
+
+      const valueDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+      if (valueDesc && valueDesc.set) {
+        Object.defineProperty(native, "value", {
+          get() { return valueDesc.get.call(this); },
+          set(v) { valueDesc.set.call(this, v); self._scheduleTextSync(); },
+          configurable: true,
+        });
+      }
+
+      const idxDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "selectedIndex");
+      if (idxDesc && idxDesc.set) {
+        Object.defineProperty(native, "selectedIndex", {
+          get() { return idxDesc.get.call(this); },
+          set(v) { idxDesc.set.call(this, v); self._scheduleTextSync(); },
+          configurable: true,
+        });
+      }
+    }
+
+    _scheduleTextSync() {
+      cancelAnimationFrame(this._syncRaf);
+      this._syncRaf = requestAnimationFrame(() => this._updateSelected());
     }
 
     _bindEvents() {
@@ -236,16 +264,13 @@
         const triggerRect = this.trigger.getBoundingClientRect();
         const panelEl = this.panel;
         const spaceBelow = window.innerHeight - triggerRect.bottom;
-        const composerMobileUpward =
-          window.matchMedia?.("(max-width: 767px)")?.matches
-          && !!this.wrap.closest("#inputConfigRow");
         const gap = 4;
 
         // Estimate panel height
         panelEl.style.left = triggerRect.left + "px";
         panelEl.style.minWidth = triggerRect.width + "px";
 
-        if ((composerMobileUpward && triggerRect.top > 80) || (spaceBelow < 200 && triggerRect.top > spaceBelow)) {
+        if (spaceBelow < 200 && triggerRect.top > spaceBelow) {
           // Open above
           this.wrap.classList.add("above");
           panelEl.style.top = "auto";
@@ -295,8 +320,13 @@
     destroy() {
       this.close();
       this._observer.disconnect();
+      cancelAnimationFrame(this._syncRaf);
+      if (this._retryTimers) this._retryTimers.forEach(clearTimeout);
       if (this._scrollHandler) window.removeEventListener("scroll", this._scrollHandler, true);
       if (this._resizeHandler) window.removeEventListener("resize", this._resizeHandler);
+      // Restore original property descriptors (remove instance-level overrides)
+      delete this.native.value;
+      delete this.native.selectedIndex;
       // Restore native select
       this.wrap.parentNode.insertBefore(this.native, this.wrap);
       this.native.classList.remove("cs-native");

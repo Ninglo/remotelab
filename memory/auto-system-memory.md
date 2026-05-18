@@ -42,3 +42,7 @@
 - RemoteLab 当前实时链路主要是 ws push invalidation，前端收到 session_invalidated 后通过 HTTP 重拉会话/事件；事件接口默认返回完整可见时间线，不是 delta contract。
 - RemoteLab 前端“类流式”方案当前选型：放弃 Phase 2 的 token streaming，保留现有 WebSocket invalidation 架构，新增按 afterSeq 拉取可见事件增量的 delta 接口，异常时回退全量 events?filter=visible。
 - RemoteLab delta 刷新方案建议前端维护 lastSeenSeq、deltaInFlight、needsFullRefresh；收到 session_invalidated 后合并并发通知，优先 delta append，遇到 resetRequired、丢序、compaction、会话切换或请求异常立即 full refresh。
+- RemoteLab 当前已实现“类流式”输出：运行中会话优先通过 delta 增量拉取并在前端追加渲染；异常、重排或压缩时回退到全量 `events?filter=visible`，并有基础 telemetry 观测 delta 命中与回退。
+- RemoteLab 的流式输出方案不是 token 逐字流，而是基于事件 delta 的增量渲染方案。
+- ttyd 终端服务必须以 ubuntu 用户身份运行，而非 root，以避免安全风险。
+- 通过 nginx sub_filter 注入 PWA 代码（manifest.json、service worker、beforeinstallprompt 事件处理）是一种无需修改上游应用即可为其添加「安装为应用」能力的通用方案。适用于 ttyd 等不可修改源码的 Web 服务。

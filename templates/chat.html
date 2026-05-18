@@ -35,6 +35,11 @@
     <span class="header-action-label" data-i18n="action.share">Share</span>
   </button>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
+  <button class="header-more-btn" id="headerMoreBtn" type="button" aria-controls="headerOverflowMenu" aria-expanded="false" title="More" aria-label="More" data-i18n-title="action.more" data-i18n-aria-label="action.more" data-i18n="action.more">More</button>
+  <div class="header-overflow-menu" id="headerOverflowMenu" hidden>
+    <button class="header-overflow-menu-item" id="headerOverflowShareBtn" type="button" data-i18n="action.share">Share</button>
+    <button class="header-overflow-menu-item" id="headerOverflowRefreshBtn" type="button" data-i18n="action.reloadFrontend">Reload latest frontend</button>
+  </div>
   <span class="status-dot" id="statusDot"></span>
   <span id="statusText" data-i18n="{{STATUS_I18N_KEY}}">{{STATUS_TEXT}}</span>
 </div>
@@ -182,8 +187,9 @@
       <div class="input-resize-handle" id="inputResizeHandle">
         <div class="input-resize-pill"></div>
       </div>
+      <div class="composer-config-backdrop" id="composerConfigBackdrop" hidden></div>
       <div class="input-stack">
-        <div class="input-config-row">
+        <div class="input-config-row" id="inputConfigRow">
           <div class="input-config-group left">
             <select class="tool-select" id="inlineAgentSelect" disabled title="Choose agent for the next session" aria-label="Choose agent for the next session" data-i18n-title="compose.agent.title" data-i18n-aria-label="compose.agent.ariaLabel"></select>
             <select class="tool-select" id="inlineToolSelect" disabled></select>
@@ -216,6 +222,7 @@
               </button>
             </div>
             <div class="input-actions-group right">
+              <button class="composer-action-btn composer-controls-btn" id="composerControlsBtn" type="button" aria-controls="inputConfigRow" aria-expanded="false" title="Switch mode" aria-label="Switch mode" data-i18n-title="action.switchMode" data-i18n-aria-label="action.switchMode" data-i18n="action.switchMode">Switch mode</button>
               <button class="composer-action-btn voice-btn" id="voiceBtn" type="button" disabled title="Voice input" aria-label="Voice input" data-i18n-title="action.voiceInput" data-i18n-aria-label="action.voiceInput">
                 <span class="voice-btn-visual" aria-hidden="true">
                   <span class="img-btn-icon voice-btn-icon" data-icon="mic"></span>
