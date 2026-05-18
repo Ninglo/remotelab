@@ -204,6 +204,86 @@ function renderSessionStatusHtml(statusInfo) {
   return `<span class="${statusInfo.className}"${title}>● ${esc(statusInfo.label)}</span>`;
 }
 
+let _activeContextMenu = null;
+
+function closeSessionContextMenu() {
+  if (!_activeContextMenu) return;
+  _activeContextMenu.remove();
+  _activeContextMenu = null;
+  document.removeEventListener("pointerdown", _ctxOutsideHandler, true);
+  document.removeEventListener("keydown", _ctxKeyHandler, true);
+}
+
+function _ctxOutsideHandler(e) {
+  if (_activeContextMenu && !_activeContextMenu.contains(e.target)) {
+    closeSessionContextMenu();
+  }
+}
+
+function _ctxKeyHandler(e) {
+  if (e.key === "Escape") closeSessionContextMenu();
+}
+
+function openSessionContextMenu(session, anchorEl, renameWrapper) {
+  closeSessionContextMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "session-context-menu";
+
+  const pinLabel = session.pinned ? t("action.unpin") : t("action.pin");
+  const pinIcon = renderUiIcon(session.pinned ? "pinned" : "pin");
+  const renameLabel = t("action.rename");
+  const archiveLabel = t("action.archive");
+
+  menu.innerHTML = `
+    <button class="session-context-menu-item" type="button" data-action="pin">${pinIcon}<span>${esc(pinLabel)}</span></button>
+    <button class="session-context-menu-item" type="button" data-action="rename">${renderUiIcon("edit")}<span>${esc(renameLabel)}</span></button>
+    <button class="session-context-menu-item danger" type="button" data-action="archive">${renderUiIcon("archive")}<span>${esc(archiveLabel)}</span></button>`;
+
+  // Wire actions
+  menu.querySelector('[data-action="pin"]').addEventListener("click", () => {
+    dispatchAction({ action: session.pinned ? "unpin" : "pin", sessionId: session.id });
+    closeSessionContextMenu();
+  });
+  menu.querySelector('[data-action="rename"]').addEventListener("click", () => {
+    closeSessionContextMenu();
+    const itemEl = anchorEl.closest ? anchorEl : anchorEl.parentElement;
+    startRename(itemEl, session);
+  });
+  menu.querySelector('[data-action="archive"]').addEventListener("click", () => {
+    dispatchAction({ action: "archive", sessionId: session.id });
+    closeSessionContextMenu();
+  });
+
+  // Position: fixed, to the right of the anchor
+  document.body.appendChild(menu);
+  _activeContextMenu = menu;
+
+  const rect = anchorEl.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const gap = 4;
+  let left = rect.right + gap;
+  let top = rect.top;
+
+  // Flip left if not enough space on the right
+  if (left + menuRect.width > window.innerWidth - 8) {
+    left = rect.left - menuRect.width - gap;
+  }
+  // Clamp left
+  if (left < 8) left = 8;
+  // Clamp top
+  if (top + menuRect.height > window.innerHeight - 8) {
+    top = window.innerHeight - menuRect.height - 8;
+  }
+  if (top < 8) top = 8;
+
+  menu.style.left = left + "px";
+  menu.style.top = top + "px";
+
+  document.addEventListener("pointerdown", _ctxOutsideHandler, true);
+  document.addEventListener("keydown", _ctxKeyHandler, true);
+}
+
 function createActiveSessionItem(session, { showGroup = false } = {}) {
   const statusInfo = getSessionMetaStatusInfo(session);
   const completeRead = isSessionCompleteAndReviewed(session);
@@ -227,7 +307,6 @@ function createActiveSessionItem(session, { showGroup = false } = {}) {
   }
 
   const metaHtml = metaParts.join(" · ");
-  const pinTitle = session.pinned ? t("action.unpin") : t("action.pin");
 
   // Show description as a second line when available
   const description = typeof session?.description === "string" ? session.description.trim() : "";
@@ -240,34 +319,54 @@ function createActiveSessionItem(session, { showGroup = false } = {}) {
       <div class="session-item-name">${session.pinned ? `<span class="session-pin-badge" title="${esc(t("sidebar.pinned"))}">${renderUiIcon("pinned")}</span>` : ""}${esc(displayName)}</div>
       ${metaHtml ? `<div class="session-item-meta">${metaHtml}</div>` : ""}
       ${descriptionHtml}
-    </div>
-    <div class="session-item-actions">
-      <button class="session-action-btn pin${session.pinned ? " pinned" : ""}" type="button" title="${pinTitle}" aria-label="${pinTitle}" data-id="${session.id}">${renderUiIcon(session.pinned ? "pinned" : "pin")}</button>
-      <button class="session-action-btn rename" type="button" title="${esc(t("action.rename"))}" aria-label="${esc(t("action.rename"))}" data-id="${session.id}">${renderUiIcon("edit")}</button>
-      <button class="session-action-btn archive" type="button" title="${esc(t("action.archive"))}" aria-label="${esc(t("action.archive"))}" data-id="${session.id}">${renderUiIcon("archive")}</button>
     </div>`;
 
+  // Click to attach session
   div.addEventListener("click", (e) => {
-    if (e.target.closest(".session-action-btn")) {
-      return;
-    }
     attachSession(session.id, session);
     if (!isDesktop) closeSidebarFn();
   });
 
-  div.querySelector(".pin").addEventListener("click", (e) => {
-    e.stopPropagation();
-    dispatchAction({ action: session.pinned ? "unpin" : "pin", sessionId: session.id });
+  // Long-press detection for context menu
+  let longPressTimer = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+
+  div.addEventListener("pointerdown", (e) => {
+    if (e.button && e.button !== 0) return; // only primary button
+    longPressStartX = e.clientX;
+    longPressStartY = e.clientY;
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      e.preventDefault();
+      openSessionContextMenu(session, div);
+    }, 500);
   });
 
-  div.querySelector(".rename").addEventListener("click", (e) => {
-    e.stopPropagation();
-    startRename(div, session);
+  div.addEventListener("pointermove", (e) => {
+    if (!longPressTimer) return;
+    const dx = e.clientX - longPressStartX;
+    const dy = e.clientY - longPressStartY;
+    if (dx * dx + dy * dy > 25) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
   });
 
-  div.querySelector(".archive").addEventListener("click", (e) => {
-    e.stopPropagation();
-    dispatchAction({ action: "archive", sessionId: session.id });
+  const cancelLongPress = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
+  div.addEventListener("pointerup", cancelLongPress);
+  div.addEventListener("pointerleave", cancelLongPress);
+  div.addEventListener("pointercancel", cancelLongPress);
+
+  // Right-click context menu (desktop)
+  div.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    openSessionContextMenu(session, div);
   });
 
   return div;
