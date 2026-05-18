@@ -10,7 +10,7 @@ It does not care much whether the control surface is a phone, tablet, or desktop
 
 ![RemoteLab across surfaces](docs/readme-multisurface-demo.png)
 
-> Current baseline: `v0.3` — an owner-first session runtime, durable on-disk history, executor adapters, App-based workflow packaging, and a no-build web UI that works across phone and desktop.
+> Current baseline: `v0.3.2` — an owner-first session runtime, durable on-disk history, executor adapters, App-based workflow packaging, delta-based real-time streaming, interaction modes, and a no-build web UI that works across phone and desktop.
 
 > Reach the same system from desktop, phone, and integration surfaces like Feishu or email-driven flows.
 
@@ -101,6 +101,7 @@ The current product model is intentionally simple:
 - `Run` — one execution attempt inside a session
 - `App` — a reusable workflow / policy package for starting sessions
 - `Share snapshot` — an immutable read-only export of a session
+- `Interaction mode` — per-session behavior setting (`agent` for direct execution, `plan` for planning-first mode)
 
 The architectural assumptions behind that model:
 
@@ -132,6 +133,9 @@ RemoteLab is opinionated in a few ways:
 - let the UI follow your system light/dark appearance automatically
 - create immutable read-only share snapshots
 - create App links for visitor-scoped entry flows
+- watch agent thinking and output stream in near-real-time as it works
+- switch between agent and plan interaction modes per session
+- enjoy a polished mobile experience with touch-optimized controls and adaptive layouts
 
 ### Provider note
 
@@ -261,6 +265,7 @@ Key architectural rules:
 - `Session` is the primary durable object; `Run` is the execution object beneath it
 - browser state always converges back to HTTP reads
 - WebSocket is an invalidation channel, not the canonical transcript
+- session events use delta transport: the frontend fetches only new events since the last known offset, reducing bandwidth and improving response time
 - active work can recover after control-plane restarts because the durable state is on disk
 - `7690` is the shipped chat/control plane; restart recovery now removes the need for a permanent second validation service
 

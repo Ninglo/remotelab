@@ -62,11 +62,11 @@
 .input-wrapper {
   position: relative;
   background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
+  border-radius: 18px;
   overflow: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 6px 22px rgba(16, 21, 39, 0.08);
 }
 .session-mode-banner {
   display: none;
@@ -86,8 +86,8 @@
   color: var(--text-secondary);
 }
 .input-wrapper:focus-within {
-  border-color: var(--focus-border);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-border) 12%, transparent);
+  border-color: color-mix(in srgb, var(--focus-border) 74%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-border) 16%, transparent);
 }
 .input-config-row {
   display: flex; align-items: center; gap: 10px;
@@ -112,7 +112,7 @@
 }
 .tool-select, .model-select, .effort-select {
   padding: 4px 8px; background: transparent; border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text-secondary); font-size: 12px; outline: none;
+  border-radius: 8px; color: var(--text-secondary); font-size: 12px; outline: none;
   cursor: pointer; font-family: inherit;
   transition: border-color 0.15s ease, color 0.15s ease;
 }
@@ -122,7 +122,7 @@
 .tool-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
 .thinking-toggle {
   padding: 4px 10px; background: transparent; border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text-muted); font-size: 12px;
+  border-radius: 8px; color: var(--text-muted); font-size: 12px;
   cursor: pointer; white-space: nowrap; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; font-family: inherit;
 }
 .thinking-toggle:hover { border-color: var(--border-strong); color: var(--text-secondary); }
@@ -135,17 +135,25 @@
 }
 .compact-btn {
   background: none; border: 1px solid var(--border); color: var(--text-muted);
-  font-size: 11px; cursor: pointer; padding: 2px 7px; border-radius: 4px;
+  font-size: 11px; cursor: pointer; padding: 3px 9px; border-radius: 999px;
   line-height: 1.4; white-space: nowrap; flex-shrink: 0; font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 .compact-btn:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+.compact-btn:focus {
+  outline: none;
+}
+.compact-btn:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-border) 16%, transparent);
+}
 .composer-action-btn {
   width: 34px;
   height: 34px;
   padding: 0;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--bg-secondary);
   color: var(--text-secondary);
   cursor: pointer;
   display: flex;
@@ -431,7 +439,7 @@
   margin-left: auto;
 }
 .send-btn {
-  width: 34px; height: 34px; border-radius: 50%; border: none;
+  width: 36px; height: 36px; border-radius: 999px; border: none;
   background: var(--accent); color: var(--bg); font-size: 16px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   transition: opacity 0.15s ease, transform 0.1s ease, background 0.15s ease;
@@ -507,6 +515,19 @@
   margin-top: 8px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* ---- ChatGPT-style composer polish ---- */
+.input-config-row {
+  gap: 8px;
+}
+
+.input-actions-row {
+  padding: 9px 10px 10px;
+}
+
+.img-preview-strip {
+  border-bottom-color: color-mix(in srgb, var(--border) 86%, transparent);
 }
 
 /* Attachment preview strip */

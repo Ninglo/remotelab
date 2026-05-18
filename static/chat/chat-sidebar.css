@@ -613,3 +613,66 @@
   cursor: pointer; border-radius: 6px; margin-top: 2px; font-family: inherit;
 }
 .ac-suggestions button:hover { background: var(--bg-tertiary); }
+
+/* ---- ChatGPT-style sidebar polish ---- */
+.sidebar {
+  background: color-mix(in srgb, var(--bg-secondary) 88%, var(--bg));
+}
+
+.sidebar-search-input,
+.sidebar-workspace-select,
+.sidebar-filter-select,
+.settings-inline-input,
+.settings-inline-select,
+.settings-inline-textarea {
+  min-height: 36px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.sidebar-tabs {
+  margin: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sidebar-tab {
+  padding: 8px 0;
+  border-bottom: 0;
+  margin-bottom: 0;
+}
+
+.sidebar-tab.active {
+  background: var(--bg);
+  border-bottom-color: transparent;
+}
+
+.session-item {
+  border-radius: 12px;
+  margin-bottom: 4px;
+  padding: 9px 10px 9px 12px;
+}
+
+.session-item.active {
+  background: color-mix(in srgb, var(--bg-tertiary) 80%, var(--bg));
+  border-color: color-mix(in srgb, var(--border-strong) 78%, transparent);
+}
+
+.folder-group-header,
+.archived-section-header {
+  border-radius: 10px;
+}
+
+.new-session-btn {
+  border-radius: 12px;
+}
+
+.new-session-btn.secondary {
+  background: var(--bg-secondary);
+}
+
+.settings-app-btn {
+  border-radius: 10px;
+  min-height: 34px;
+}

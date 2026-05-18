@@ -10,7 +10,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 ![RemoteLab 跨端演示](docs/readme-multisurface-demo.png)
 
-> 当前基线：`v0.3` —— owner-first 的 session 运行时、落盘的持久历史、可替换的 executor adapter、基于 App 的 workflow packaging，以及同时兼容手机和桌面的无构建 Web UI。
+> 当前基线：`v0.3.2` —— owner-first 的 session 运行时、落盘的持久历史、可替换的 executor adapter、基于 App 的 workflow packaging、基于 delta 的实时流式推送、交互模式，以及同时兼容手机和桌面的无构建 Web UI。
 
 > 同一套系统可以从桌面、手机，以及飞书 / 邮件这类接入面进入。
 
@@ -103,6 +103,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 - `Run` —— 会话内部的一次执行尝试
 - `App` —— 启动会话用的可复用 workflow / policy package
 - `Share snapshot` —— 不可变的只读会话导出
+- `Interaction mode` —— 每会话的行为设置（`agent` 直接执行模式，`plan` 规划优先模式）
 
 这些模型背后的架构假设是：
 
@@ -134,6 +135,9 @@ RemoteLab 在几个点上是刻意有立场的：
 - 界面自动跟随系统亮色 / 暗色外观
 - 生成不可变的只读分享快照
 - 用 App 链接做 visitor 范围内的入口流转
+- 近实时地观察 agent 的思考过程和输出流
+- 在每个会话中切换 agent（直接执行）和 plan（规划优先）两种交互模式
+- 享受经过打磨的移动端体验，包括触摸优化控件和自适应布局
 
 ### Provider 说明
 
@@ -263,6 +267,7 @@ chat-server.mjs (:7690)             chat-server.mjs (:7690)
 - `Session` 是主持久对象，`Run` 是它下面的执行对象
 - 浏览器状态始终要回收敛到 HTTP 读取结果
 - WebSocket 是无效化通道，不是规范消息通道
+- 会话事件使用增量传输（delta transport）：前端只拉取上次已知偏移量之后的新事件，降低带宽消耗并提升响应速度
 - 之所以能在控制面重启后恢复活跃工作，是因为真正的状态在磁盘上
 - 开发 RemoteLab 自身时，`7690` 就是唯一默认 chat/control plane；现在依赖干净重启后的恢复能力，而不是常驻第二个验证服务
 
@@ -326,7 +331,9 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 
 完成收敛后，这些共享代码树的 guest runtime 会在各自重启后直接吃到当前源码版本：外部链接保持不变，实例自己的状态、资源、config 和 memory 仍然继续隔离，但不再额外经过一层 release snapshot。
 
-如果你希望每个 guest instance 都有一个对外可用的收件地址，优先做法应该是把 Cloudflare Email Routing 配成 catch-all -> Email Worker，而不是给每个实例单独建邮箱账号。`node scripts/agent-mail-cloudflare-routing.mjs status` 会打印期望的路由形态，`probe --address <email>` 可以直接验证像 `trial6@example.com` 这样的地址当前在 SMTP 层是否会被接受。
+如果你希望每个 guest instance 都有一个对外可用的收件地址，优先做法应该是把 Cloudflare Email Routing 配成 catch-all -> Email Worker，而不是给每个实例单独建邮箱账号。`node scripts/agent-mail-cloudflare-routing.mjs status` 会打印期望的路由形态，`sync` 可以补齐早期未自动配置的旧实例，`probe --address <email>` 可以直接验证像 `trial6@example.com` 这样的地址当前在 SMTP 层是否会被接受。
+
+RemoteLab 现在在重启后会直接加载当前源码树。当你希望 owner 界面也更新到最新代码时，使用 `remotelab restart chat` 即可；已经指向共享源码树的 guest 实例会在各自重启后自动获取同样的代码更新。
 
 ## 配置项
 
@@ -339,6 +346,7 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 | `REMOTELAB_INSTANCE_ROOT` | 未设置 | 可选的额外实例数据根目录；设置后默认使用 `<root>/config` + `<root>/memory` |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、apps、push、provider runtime home |
 | `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | 可选的用户 memory 目录覆盖，供 pointer-first 启动使用 |
+| `REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS` | `window overflow` | 可选的自动压缩触发阈值（以当前上下文 token 数为单位）；未设置时仅在当前上下文超过已知窗口 100% 时触发压缩，设为 `Inf` 则禁用 |
 
 ## 常用文件位置
 
@@ -359,6 +367,21 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 | `/var/log/remotelab/chat-server.log` | Chat server 标准输出 **(Linux)** |
 | `/var/log/remotelab/cloudflared.log` | Tunnel 标准输出 **(Linux)** |
 
+## 存储增长与手动清理
+
+- RemoteLab 是持久化优先的：会话历史、run 输出、产物和日志会随时间在磁盘上持续累积。
+- 归档一个会话只是组织层面的操作。它会从活跃列表中隐藏该会话，但**不会**删除背后存储的历史或 run 数据。
+- 在长期运行的安装中，存储增长可能会很显著，尤其是当你保留长时间的对话、大型工具输出、大量推理轨迹或生成的产物时。
+- RemoteLab **不会**自动删除旧数据，目前也没有一键清理功能。这是有意为之：保留用户数据比猜测哪些可以安全删除更稳妥。
+- 如果你想回收磁盘空间，定期从终端检查旧的已归档会话并手动清理，或者让 AI operator 帮你谨慎清理。
+- 实际上，大部分存储增长集中在 `~/.config/remotelab/chat-history/` 和 `~/.config/remotelab/chat-runs/` 下。
+
+## 临时额外实例
+
+- `scripts/chat-instance.sh` 现在除了旧的 `--home` 模式，也支持 `--instance-root`、`--config-dir` 和 `--memory-dir`。
+- 如果你想让第二实例继续复用当前机器的 provider 登录状态、但把 RemoteLab 自己的数据和 memory 完全隔离，优先用 `--instance-root`。
+- 示例：`scripts/chat-instance.sh start --port 7692 --name companion --instance-root ~/.remotelab/instances/companion --secure-cookies 1`
+
 ## 安全
 
 - **Cloudflare 模式**：通过 Cloudflare 提供 HTTPS（边缘 TLS，机器侧仍是本地 HTTP）；服务只绑定 `127.0.0.1`
@@ -370,12 +393,6 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 - 默认服务只绑定 `127.0.0.1`，不直接暴露到公网；如需局域网访问，设置 `CHAT_BIND_HOST=0.0.0.0`
 - 分享快照是只读的，并与 owner 聊天面隔离
 - CSP 头使用基于 nonce 的脚本白名单
-
-## 手动起第二实例
-
-- `scripts/chat-instance.sh` 现在除了旧的 `--home` 模式，也支持 `--instance-root`、`--config-dir`、`--memory-dir`。
-- 如果你想让第二实例继续复用当前机器的 provider 登录状态、但把 RemoteLab 自己的数据和 memory 完全隔离，优先用 `--instance-root`。
-- 示例：`scripts/chat-instance.sh start --port 7692 --name companion --instance-root ~/.remotelab/instances/companion --secure-cookies 1`
 
 ## 故障排查
 

@@ -6,6 +6,16 @@
 - Removes the last hidden web voice-cleanup path so the composer now sends text directly.
 - Keeps session workflow organization derived from `workflowState`, `workflowPriority`, review state, and live activity instead of a parallel planning surface.
 
+## v0.3.2
+
+- Adds session events delta transport: the frontend now fetches only new events since the last known offset, reducing bandwidth and improving response time for active runs.
+- Adds interaction mode support (`agent` | `plan`): sessions can now specify an interaction mode that changes how the AI agent behaves. A Plan selector is available in the UI.
+- Adds a custom select component for compose-area dropdowns (tool, model, effort, thinking selectors) replacing native `<select>` elements for better mobile and desktop styling.
+- Improves mobile disclosure and control layout: better touch handling, keyboard-adaptive layout, and polished sidebar disclosure behavior.
+- Adds spinning gear + pulsing label animation to running thinking blocks, making active agent reasoning visually distinguishable even when the block is collapsed.
+- Surfaces running assistant stream updates before full completion, so users see partial output as the agent works.
+- Adds phase-0 realtime refresh telemetry instrumentation for monitoring delta transport health.
+
 ## v0.3.1
 
 - Fixes mobile keyboard layout so the shell behaves as stable header + content + composer rows.

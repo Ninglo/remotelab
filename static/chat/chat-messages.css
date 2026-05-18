@@ -262,6 +262,30 @@
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
 }
+
+/* ---- ChatGPT-style message polish ---- */
+.messages {
+  padding-top: 18px;
+}
+
+.msg-user-bubble {
+  border-radius: 18px;
+  border-bottom-right-radius: 7px;
+  padding: 10px 15px;
+}
+
+.msg-images .attachment-card {
+  border-radius: 14px;
+  background: var(--bg);
+}
+
+.attachment-file-icon {
+  border-radius: 11px;
+}
+
+.attachment-download-btn {
+  min-height: 30px;
+}
 .msg-user-status-uploading .msg-user-status-dot,
 .msg-user-status-sending .msg-user-status-dot {
   background: var(--text-secondary);

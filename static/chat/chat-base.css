@@ -1,18 +1,18 @@
 :root {
   color-scheme: light;
-  --bg: #ffffff;
-  --bg-secondary: #f8f8fa;
-  --bg-tertiary: #f0f0f3;
-  --border: #e5e5ea;
-  --border-strong: #c7c7cc;
-  --text: #1c1c1e;
-  --text-secondary: #636366;
-  --text-muted: #8e8e93;
-  --accent: #1c1c1e;
-  --accent-dim: #f0f0f3;
-  --surface-hover: #f2f2f5;
-  --user-bubble: #f0f0f3;
-  --tool-bg: #f9f9fb;
+  --bg: #f7f7f8;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f2f2f4;
+  --border: #e3e3e7;
+  --border-strong: #c8c9d1;
+  --text: #1f1f23;
+  --text-secondary: #575a67;
+  --text-muted: #8b8f9e;
+  --accent: #202123;
+  --accent-dim: #f1f1f3;
+  --surface-hover: #ececf1;
+  --user-bubble: #ececf1;
+  --tool-bg: #fbfbfc;
   --success: #16a34a;
   --success-bg: #f0fdf4;
   --notice: #2563eb;
@@ -23,14 +23,14 @@
   --warning: #d97706;
   --issue: #ea580c;
   --failed-message-border: #f59e0b;
-  --copy-btn-bg: rgba(255,255,255,0.88);
+  --copy-btn-bg: rgba(255,255,255,0.92);
   --copy-btn-success-border: rgba(22, 163, 74, 0.18);
-  --overlay-backdrop: rgba(0,0,0,0.25);
-  --modal-backdrop: rgba(0,0,0,0.4);
+  --overlay-backdrop: rgba(15,17,23,0.22);
+  --modal-backdrop: rgba(15,17,23,0.42);
   --image-remove-bg: rgba(0,0,0,0.55);
   --image-remove-bg-hover: rgba(0,0,0,0.72);
-  --modal-shadow: 0 24px 48px -12px rgba(0,0,0,0.18);
-  --focus-border: #a1a1aa;
+  --modal-shadow: 0 22px 46px -20px rgba(16, 21, 39, 0.38);
+  --focus-border: #9ba2b5;
   --app-height: 100dvh;
   --keyboard-inset-height: 0px;
   --chat-gutter: 16px;
@@ -44,19 +44,19 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #161618;
-    --bg-secondary: #1c1c1f;
-    --bg-tertiary: #252528;
-    --border: #2c2c30;
-    --border-strong: #3a3a40;
-    --text: #e5e5ea;
-    --text-secondary: #a1a1a8;
-    --text-muted: #6e6e76;
-    --accent: #e5e5ea;
-    --accent-dim: #252528;
-    --surface-hover: #2a2a2e;
-    --user-bubble: #222225;
-    --tool-bg: #1a1a1d;
+    --bg: #202123;
+    --bg-secondary: #2b2d31;
+    --bg-tertiary: #353841;
+    --border: #3c414d;
+    --border-strong: #4b5161;
+    --text: #ececf1;
+    --text-secondary: #c1c5d0;
+    --text-muted: #9aa0af;
+    --accent: #ececf1;
+    --accent-dim: #353841;
+    --surface-hover: #343741;
+    --user-bubble: #2f3137;
+    --tool-bg: #24262c;
     --success: #34d399;
     --success-bg: #0d261a;
     --notice: #60a5fa;
@@ -67,14 +67,14 @@
     --warning: #fbbf24;
     --issue: #fb923c;
     --failed-message-border: #f59e0b;
-    --copy-btn-bg: rgba(28,28,31,0.92);
+    --copy-btn-bg: rgba(33,35,41,0.95);
     --copy-btn-success-border: rgba(52, 211, 153, 0.2);
-    --overlay-backdrop: rgba(0,0,0,0.5);
-    --modal-backdrop: rgba(0,0,0,0.6);
+    --overlay-backdrop: rgba(6,8,14,0.56);
+    --modal-backdrop: rgba(6,8,14,0.64);
     --image-remove-bg: rgba(10,10,12,0.75);
     --image-remove-bg-hover: rgba(10,10,12,0.88);
-    --modal-shadow: 0 24px 48px -12px rgba(0,0,0,0.5);
-    --focus-border: #52525b;
+    --modal-shadow: 0 28px 58px -24px rgba(0,0,0,0.72);
+    --focus-border: #69708a;
   }
 }
 
@@ -209,6 +209,10 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+.app-shell {
+  background: var(--bg);
+}
+
 .header-more-btn {
   display: none;
   align-items: center;
@@ -223,7 +227,15 @@ body {
   font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
   transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+}
+.header-more-btn:focus {
+  outline: none;
+}
+.header-more-btn:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-border) 16%, transparent);
 }
 .header-more-btn[hidden],
 .header-overflow-menu[hidden] {

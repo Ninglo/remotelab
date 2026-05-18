@@ -1,6 +1,6 @@
 {
   "name": "@ninglo/remotelab",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "AI workbench for super-individuals: orchestrate agents and distribute agentic-native apps",
   "type": "module",
   "license": "MIT",
