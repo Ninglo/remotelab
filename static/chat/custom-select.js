@@ -269,8 +269,11 @@
         });
       });
 
-      // Close on scroll or resize
-      this._scrollHandler = () => this.close();
+      // Close on scroll or resize (but not when scrolling inside the panel)
+      this._scrollHandler = (e) => {
+        if (this.panel.contains(e.target)) return;
+        this.close();
+      };
       this._resizeHandler = () => this.close();
       window.addEventListener("scroll", this._scrollHandler, true);
       window.addEventListener("resize", this._resizeHandler);
