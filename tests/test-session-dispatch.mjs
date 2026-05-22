@@ -16,8 +16,8 @@ const previousDispatchSetting = process.env.REMOTELAB_SESSION_DISPATCH;
 delete process.env.REMOTELAB_SESSION_DISPATCH;
 assert.equal(
   shouldRunDispatch({ id: 'session-1' }, {}),
-  true,
-  'continuation planning should default to enabled when the env var is unset',
+  false,
+  'continuation planning should default to disabled when the env var is unset',
 );
 
 process.env.REMOTELAB_SESSION_DISPATCH = 'off';

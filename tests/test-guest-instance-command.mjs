@@ -725,7 +725,7 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_PROVIDER<\/key><string>tos<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
-  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_SESSION_DISPATCH<\/key><string>on<\/string>/);
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_SESSION_DISPATCH<\/key><string>off<\/string>/);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_BRIDGE_ROOT_BASE_URL<\/key>/);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_ENABLE_ACTIVE_RELEASE<\/key>/);
 } finally {

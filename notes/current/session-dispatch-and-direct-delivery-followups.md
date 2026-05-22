@@ -28,7 +28,7 @@ Companions:
   per-destination inheritance profiles
 - The planner should still read the current-session transcript as primary evidence.
 - The repo implementation now aims to remove old `route_existing` / `route_new` semantics from the main path rather than hardening them further.
-- The continuation planner path is now implemented and the owner instance has `REMOTELAB_SESSION_DISPATCH=on` again for the new `continue` / `fork` / `fresh` flow.
+- The continuation-routing path exists, but live instances should keep `REMOTELAB_SESSION_DISPATCH=off` until the routing design is revisited with stronger transcript-aware validation.
 - The current inheritance rule is now sharper:
   `fork` should reuse full parent continuation context
   `fresh` should start from planner-written minimal bridge context

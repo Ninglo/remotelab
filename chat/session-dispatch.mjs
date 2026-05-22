@@ -19,7 +19,7 @@ const DISPATCH_SETTING_ENV = 'REMOTELAB_SESSION_DISPATCH';
 const CURRENT_TRANSCRIPT_MAX_CHARS = 22000;
 
 function isDispatchEnabled() {
-  return isEnvToggleEnabled(process.env[DISPATCH_SETTING_ENV], { defaultValue: true });
+  return isEnvToggleEnabled(process.env[DISPATCH_SETTING_ENV], { defaultValue: false });
 }
 
 export function shouldRunDispatch(session, options = {}) {
