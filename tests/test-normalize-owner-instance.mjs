@@ -43,6 +43,7 @@ try {
   assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
   const dryRunOutput = JSON.parse(dryRun.stdout);
   assert.equal(dryRunOutput.ownerInstanceRoot, join(sandboxHome, '.remotelab', 'instances', 'owner'));
+  assert.equal(dryRunOutput.cliShim.changed, true);
   assert.equal(dryRunOutput.aliases.length, 2);
   assert.equal(dryRunOutput.aliases.every((entry) => entry.changed === true), true);
   assert.equal(dryRunOutput.plistChanged, true);
@@ -60,6 +61,7 @@ try {
   assert.equal(applyOutput.restarted, false);
 
   const ownerRoot = join(sandboxHome, '.remotelab', 'instances', 'owner');
+  assert.equal(realpathSync(join(ownerRoot, '.local', 'bin', 'remotelab')), realpathSync(join(repoRoot, 'cli.js')));
   assert.equal(realpathSync(join(ownerRoot, 'config')), realpathSync(join(sandboxHome, '.config', 'remotelab')));
   assert.equal(realpathSync(join(ownerRoot, 'memory')), realpathSync(join(sandboxHome, '.remotelab', 'memory')));
 

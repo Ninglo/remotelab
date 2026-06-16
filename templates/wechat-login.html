@@ -193,11 +193,28 @@
       flex-wrap: wrap;
     }
 
+    .action-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
     .link {
       color: var(--accent);
       text-decoration: none;
       font-size: 14px;
       font-weight: 600;
+    }
+
+    .link-button {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
     }
 
     .meta {
@@ -254,7 +271,10 @@
           <div id="qr-empty" class="qr-empty">Generating a fresh QR code. This usually takes a moment.</div>
         </div>
         <div class="actions">
-          <a id="qr-link" class="link hidden" href="#" target="_blank" rel="noreferrer">Open QR image</a>
+          <div class="action-links">
+            <a id="qr-link" class="link hidden" href="#" target="_blank" rel="noreferrer">Open login link</a>
+            <button id="copy-link-btn" class="link-button hidden" type="button">Copy login link</button>
+          </div>
           <div class="meta" id="meta-text"></div>
         </div>
         <div id="success-panel" class="success">
@@ -272,19 +292,40 @@
     (function() {
       var bootstrap = window.__REMOTELAB_BOOTSTRAP__ || {};
       var config = bootstrap.wechatLogin || {};
-      var statusEndpoint = config.statusEndpoint || '/api/connectors/wechat/login';
-      var qrEndpoint = config.qrEndpoint || '/api/connectors/wechat/login/qr';
+      function resolveProductPath(path) {
+        if (typeof window.remotelabResolveProductPath === 'function') {
+          return window.remotelabResolveProductPath(path);
+        }
+        return path;
+      }
+      var statusEndpoint = resolveProductPath(config.statusEndpoint || '/api/connectors/wechat/login');
+      var qrEndpoint = resolveProductPath(config.qrEndpoint || '/api/connectors/wechat/login/qr');
+      var openEndpoint = resolveProductPath(
+        (config.initialState && config.initialState.loginLinkPath)
+        || config.openEndpoint
+        || '/connectors/wechat/login/open',
+      );
       var statusPill = document.getElementById('status-pill');
       var statusNote = document.getElementById('status-note');
       var qrStage = document.getElementById('qr-stage');
       var qrImage = document.getElementById('qr-image');
       var qrEmpty = document.getElementById('qr-empty');
       var qrLink = document.getElementById('qr-link');
+      var copyLinkBtn = document.getElementById('copy-link-btn');
       var metaText = document.getElementById('meta-text');
       var successPanel = document.getElementById('success-panel');
       var successText = document.getElementById('success-text');
       var currentQrVersion = '';
       var inFlight = false;
+      var copyResetTimer = 0;
+
+      function resolveAbsoluteUrl(path) {
+        try {
+          return new URL(path, window.location.href).toString();
+        } catch {
+          return path;
+        }
+      }
 
       function stageLabel(status) {
         if (status === 'connected') return 'Connected';
@@ -310,9 +351,10 @@
           currentQrVersion = version;
           var src = qrEndpoint + '?v=' + encodeURIComponent(version);
           qrImage.src = src;
-          qrLink.href = src;
         }
+        qrLink.href = openEndpoint;
         qrLink.classList.remove('hidden');
+        copyLinkBtn.classList.remove('hidden');
         qrImage.classList.remove('hidden');
         qrEmpty.classList.add('hidden');
       }
@@ -320,6 +362,7 @@
       function showWaitingState() {
         qrImage.classList.add('hidden');
         qrLink.classList.add('hidden');
+        copyLinkBtn.classList.add('hidden');
         qrEmpty.classList.remove('hidden');
       }
 
@@ -328,6 +371,9 @@
         var status = String(state.status || (state.login && state.login.status) || '');
         var message = String(state.message || '');
         var isReady = state.capabilityState === 'ready';
+        if (state.loginLinkPath) {
+          openEndpoint = resolveProductPath(String(state.loginLinkPath));
+        }
         statusPill.textContent = stageLabel(status);
         statusPill.classList.toggle('ready', isReady);
         statusNote.textContent = message || stageBody(status);
@@ -352,6 +398,27 @@
           showWaitingState();
         }
       }
+
+      copyLinkBtn.addEventListener('click', async function() {
+        var label = 'Copy login link';
+        var copiedLabel = 'Copied';
+        var value = resolveAbsoluteUrl(openEndpoint);
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(value);
+          } else {
+            window.prompt('Copy this login link', value);
+          }
+          copyLinkBtn.textContent = copiedLabel;
+        } catch {
+          window.prompt('Copy this login link', value);
+          copyLinkBtn.textContent = copiedLabel;
+        }
+        window.clearTimeout(copyResetTimer);
+        copyResetTimer = window.setTimeout(function() {
+          copyLinkBtn.textContent = label;
+        }, 1800);
+      });
 
       async function refreshState() {
         if (inFlight) return;

@@ -10,13 +10,16 @@ mkdirSync(personalCodexHome, { recursive: true });
 writeFileSync(join(personalCodexHome, 'auth.json'), '{"token":"test"}\n', 'utf8');
 
 process.env.HOME = home;
+process.env.REMOTELAB_MACHINE_CODEX_HOME = personalCodexHome;
 
 const {
   DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
   MANAGER_RUNTIME_BOUNDARY_SECTION,
   MANAGER_TURN_POLICY_REMINDER,
   applyManagedRuntimeEnv,
+  applySharedCodexLock,
   ensureManagedCodexHome,
+  isSharedCodexRuntime,
 } = await import('../chat/runtime-policy.mjs');
 
 try {
@@ -47,7 +50,14 @@ try {
     codexAuthSource: join(personalCodexHome, 'auth.json'),
     codexHomeMode: 'personal',
   });
-  assert.equal(personalEnv.CODEX_HOME, '/tmp/personal', 'personal mode should preserve the existing CODEX_HOME');
+  assert.equal(personalEnv.CODEX_HOME, personalCodexHome, 'personal mode should use the machine command-line Codex home');
+
+  const inheritEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/inherit' }, {
+    codexHomeDir: managedHome,
+    codexAuthSource: join(personalCodexHome, 'auth.json'),
+    codexHomeMode: 'inherit',
+  });
+  assert.equal(inheritEnv.CODEX_HOME, '/tmp/inherit', 'inherit mode should preserve the existing CODEX_HOME');
 
   const customCodexEnv = await applyManagedRuntimeEnv('micro-agent', { FOO: 'baz' }, {
     runtimeFamily: 'codex-json',
@@ -57,6 +67,19 @@ try {
   });
   assert.equal(customCodexEnv.FOO, 'baz', 'custom Codex runtime should preserve unrelated env values');
   assert.equal(customCodexEnv.CODEX_HOME, managedHome, 'custom Codex runtimes should also use the manager-owned CODEX_HOME');
+
+  const defaultCodexEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/default' });
+  assert.equal(defaultCodexEnv.CODEX_HOME, personalCodexHome, 'default Codex mode should use the machine command-line Codex home');
+  const legacySharedEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/shared' }, {
+    codexHomeMode: 'shared',
+  });
+  assert.equal(legacySharedEnv.CODEX_HOME, personalCodexHome, 'legacy shared mode should collapse to the machine command-line Codex home');
+  assert.equal(isSharedCodexRuntime('codex', 'codex-json'), false, 'shared Codex runtime mode should be disabled');
+  assert.deepEqual(
+    applySharedCodexLock('codex', '/usr/bin/codex', ['exec', 'hello'], 'codex-json'),
+    { command: '/usr/bin/codex', args: ['exec', 'hello'] },
+    'Codex invocations should no longer use the shared-home flock wrapper',
+  );
 
   const nonCodexEnv = await applyManagedRuntimeEnv('claude', { HOME: home }, {
     codexHomeDir: managedHome,
@@ -282,5 +305,6 @@ try {
 
   console.log('test-runtime-policy: ok');
 } finally {
+  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   rmSync(home, { recursive: true, force: true });
 }

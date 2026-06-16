@@ -50,6 +50,7 @@ const GENERIC_SESSION_TITLE_KEYS = new Set([
   'topic',
   'topics',
   'voice',
+  'whatsapp',
   'wechat',
   'weixin',
   '会话',
@@ -63,6 +64,7 @@ const GENERIC_SESSION_TITLE_KEYS = new Set([
   '私聊',
   '话题',
   '语音',
+  'whatsapp',
   '微信',
   '连接器',
   '邮件',
@@ -248,6 +250,10 @@ export function isSessionAutoRenamePending(session) {
   }
   const name = typeof session === 'string' ? session : session.name;
   return !normalizeSessionName(name) || normalizeSessionName(name) === DEFAULT_SESSION_NAME;
+}
+
+export function isSessionTitleLocked(session) {
+  return !!(session && typeof session === 'object' && session.titleLocked === true);
 }
 
 export function buildTemporarySessionName(text, maxChars = TEMP_SESSION_NAME_MAX_CHARS) {

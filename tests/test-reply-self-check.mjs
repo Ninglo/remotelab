@@ -32,6 +32,7 @@ const replacesOpenOfferWithResult = prompt.includes('Replace any prior open offe
 const avoidsFakeChoiceRepair = prompt.includes('Do not turn a single-track task into a menu of options');
 const isDelayedReviewScenario = prompt.includes('延迟复核场景');
 const isDelayedAssetReviewScenario = prompt.includes('延迟附件复核场景');
+const isPureFileDeliveryReviewScenario = prompt.includes('纯文件交付复核场景');
 const outputDelayMs = isReplyReviewPrompt
   ? (isDelayedAssetReviewScenario ? 700 : (isDelayedReviewScenario ? 450 : 0))
   : 0;
@@ -69,6 +70,7 @@ if (isWorkflowPrompt) {
   const isPseudoForkScenario = prompt.includes('你选一个我再继续');
   const hasVisibleAnswer = prompt.includes('真正有效答复：把缺的结论直接补齐。');
   const hasDisplayedChecklist = prompt.includes('[ ] todo checklist');
+  const hasDisplayedPureFileDelivery = prompt.includes('[Displayed attachment delivery: pure-delivery-output.csv]');
   items = [{
     type: 'agent_message',
     text: '<hide>' + JSON.stringify(isChecklistScenario
@@ -80,6 +82,16 @@ if (isWorkflowPrompt) {
         continuationPrompt: hasVisibleAnswer && hasDisplayedChecklist
           ? '直接补上最后缺的结论，不要重复前面的真正有效答复，也不要重复 checklist。'
           : '',
+      }
+      : isPureFileDeliveryReviewScenario
+      ? {
+        action: hasDisplayedPureFileDelivery ? 'accept' : 'continue',
+        reason: hasDisplayedPureFileDelivery
+          ? '这一轮已经通过可见附件交付了文件结果。'
+          : 'review prompt missed the generated file delivery attachment.',
+        continuationPrompt: hasDisplayedPureFileDelivery
+          ? ''
+          : '不要重复生成文件；确认已经交付的文件结果。',
       }
       : isExplicitBlockerScenario
       ? {
@@ -168,6 +180,22 @@ if (isWorkflowPrompt) {
       text: '导出文件已经生成；但删除原件这一步需要你先明确确认，我才能继续执行。',
     },
   ];
+} else if (prompt.includes('纯文件交付复核场景')) {
+  const relativeOutputPath = 'generated/pure-delivery-output.csv';
+  writeGeneratedResultAsset(relativeOutputPath, 'id,value\\n1,done\\n');
+  items = [
+    {
+      type: 'command_execution',
+      command: 'export --output ' + relativeOutputPath,
+      aggregated_output: 'generated to ' + relativeOutputPath,
+      exit_code: 0,
+      status: 'completed',
+    },
+    {
+      type: 'agent_message',
+      text: '导出文件已经生成。',
+    },
+  ];
 } else if (prompt.includes('延迟复核场景')) {
   items = [{
     type: 'agent_message',
@@ -227,6 +255,13 @@ writeFileSync(
 
 process.env.HOME = tempHome;
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
+process.env.REMOTELAB_INSTANCE_ROOT = '';
+process.env.REMOTELAB_CONFIG_DIR = configDir;
+process.env.REMOTELAB_MEMORY_DIR = join(tempHome, '.remotelab', 'memory');
+process.env.REMOTELAB_SHARED_TOOLS_DIR = join(tempHome, '.remotelab', 'shared-tools');
+process.env.REMOTELAB_TOOLS_ENABLED_FILE = join(configDir, 'tools-enabled.md');
+process.env.REMOTELAB_TOOL_OVERLAYS_DIR = join(configDir, 'tool-overlays');
+process.env.REMOTELAB_WORK_ROOT_DIR = join(tempHome, 'workspace');
 
 const sessionManager = await import(
   pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href
@@ -586,6 +621,56 @@ try {
     'workflow classification should update only after the delayed asset review self-check finishes',
   );
 
+  const pureFileDeliverySession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Pure File Delivery', {
+    group: 'RemoteLab',
+    description: 'Verify reply self-check treats current-turn generated result files as delivered work.',
+  });
+
+  await sendMessage(pureFileDeliverySession.id, '纯文件交付复核场景：生成导出文件并直接交付，交付完成就算这一轮结束。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+
+  await waitFor(
+    async () => {
+      const pureFileHistory = await getHistory(pureFileDeliverySession.id);
+      return pureFileHistory.some((event) => (
+        event.type === 'message'
+        && event.role === 'assistant'
+        && event.source === 'result_file_assets'
+        && event.attachments?.some((attachment) => attachment.originalName === 'pure-delivery-output.csv')
+      ));
+    },
+    'pure file delivery scenario should publish the generated result file',
+  );
+
+  await waitFor(
+    async () => {
+      const pureFileHistory = await getHistory(pureFileDeliverySession.id);
+      return pureFileHistory.some((event) => (
+        event.type === 'status'
+        && event.content === 'Assistant self-check: kept the latest reply as-is.'
+      ));
+    },
+    'self-check should accept a turn whose generated result file was delivered as a session attachment',
+  );
+
+  await waitFor(
+    async () => (await getSession(pureFileDeliverySession.id))?.activity?.run?.state === 'idle',
+    'pure file delivery session should become idle after the self-check accept path',
+  );
+
+  const pureFileHistory = await getHistory(pureFileDeliverySession.id);
+  const pureFileStatusTexts = pureFileHistory
+    .filter((event) => event.type === 'status')
+    .map((event) => event.content || '');
+  assert.equal(
+    pureFileStatusTexts.some((text) => text.startsWith('Assistant self-check: continuing automatically — ')),
+    false,
+    'self-check should not auto-continue when the current turn already delivered the generated file',
+  );
+
   const blockerSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Explicit Blocker', {
     group: 'RemoteLab',
     description: 'Verify self-check accepts a reply that stops for an explicit user-side destructive blocker.',
@@ -695,7 +780,12 @@ try {
   );
 } finally {
   killAll();
-  rmSync(tempHome, { recursive: true, force: true });
+  rmSync(tempHome, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 50,
+  });
 }
 
 console.log('test-reply-self-check: ok');

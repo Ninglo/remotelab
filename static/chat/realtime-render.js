@@ -28,6 +28,9 @@ function showEmpty() {
   if (typeof syncSessionTemplateControls === "function") {
     syncSessionTemplateControls();
   }
+  if (typeof syncComposerPendingTurnFeedback === "function") {
+    syncComposerPendingTurnFeedback();
+  }
   syncForkButton();
   syncShareButton();
 }

@@ -19,7 +19,7 @@ import {
 } from './runs.mjs';
 import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
-import { applyManagedRuntimeEnv } from './runtime-policy.mjs';
+import { applyManagedRuntimeEnv, applySharedCodexLock } from './runtime-policy.mjs';
 
 const runId = process.argv[2];
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -170,6 +170,7 @@ async function appendCodexContextMetrics(runId) {
   if (!current?.codexThreadId) return null;
 
   const metrics = await readLatestCodexSessionMetrics(current.codexThreadId, {
+    model: current.model || null,
     startedAt: current.startedAt || current.createdAt || null,
     completedAt: current.completedAt || null,
   });
@@ -321,7 +322,14 @@ async function main() {
     });
   }
 
-  const proc = spawn(await resolveCommand(command), args, {
+  const resolvedCommand = await resolveCommand(command);
+  const lockedInvocation = applySharedCodexLock(
+    manifest.tool || '',
+    resolvedCommand,
+    args,
+    runtimeFamily,
+  );
+  const proc = spawn(await resolveCommand(lockedInvocation.command), lockedInvocation.args, {
     cwd: resolvedFolder.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: spawnEnv,

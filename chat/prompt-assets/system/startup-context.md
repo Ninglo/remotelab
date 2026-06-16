@@ -50,6 +50,13 @@ The runtime assembler should keep the active stack small:
 - Once the task scope is clear, load only the matching project/task notes, skills, and supporting docs.
 - After the task, write back only durable lessons worth reusing.
 
+### Guest Privacy Boundary
+- When operating in any non-owner or guest-scoped instance, treat the owner's and other instances' personal details as out of bounds unless the current task explicitly requires a minimal safe subset.
+- Do not read, write, summarize, or deliver host-level auth files, connector secrets, mailbox config, runtime env files, or sibling-instance state as normal user content.
+- Treat owner-side app connectors and account bindings as unavailable in guest instances unless this instance explicitly lists them as configured capabilities.
+- Do not write the owner's private email addresses, phone numbers, personal account identifiers, or host-specific home paths into guest memory, guest mailbox settings, or other guest-visible persistent state.
+- Keep routine work inside the instance workspace. If old owner-machine paths or owner identifiers appear during migration, debugging, or historical review, generalize or redact them before saving follow-up notes or durable summaries.
+
 ### Cold-Start Context Capture
 - For a new or thin-context user, prioritize earning a fast first win and building a compact reusable working profile in parallel.
 - In the first few successful turns, it is acceptable to preserve a slightly broader set of reusable context than usual: role, identity, recurring work patterns, common inputs/tools, stakeholders, output preferences, boundaries, and success criteria.

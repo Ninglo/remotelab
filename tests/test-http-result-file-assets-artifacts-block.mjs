@@ -182,6 +182,21 @@ async function waitForRunTerminal(port, runId) {
   }, `run ${runId} terminal`);
 }
 
+async function waitForAcceptedRun(port, sessionId, requestId = '') {
+  return waitFor(async () => {
+    const detail = await request(port, 'GET', `/api/sessions/${sessionId}`);
+    if (detail.status !== 200) return false;
+    const runId = typeof detail.json?.session?.activity?.run?.runId === 'string'
+      ? detail.json.session.activity.run.runId
+      : '';
+    if (!runId) return false;
+    const runRead = await request(port, 'GET', `/api/runs/${runId}`);
+    if (runRead.status !== 200) return false;
+    if (requestId && runRead.json?.run?.requestId !== requestId) return false;
+    return runRead.json.run || false;
+  }, `accepted run for ${sessionId}`);
+}
+
 try {
   const { home, configDir, outputPaths } = setupTempHome();
   const port = randomPort();
@@ -197,17 +212,21 @@ try {
     assert.equal(createSessionRes.status, 201, 'session should be created');
     const session = createSessionRes.json.session;
 
+    const requestId = 'req-result-file-asset-artifacts-block';
     const messageRes = await request(port, 'POST', `/api/sessions/${session.id}/messages`, {
-      requestId: 'req-result-file-asset-artifacts-block',
+      requestId,
       text: 'Generate the exports and return them.',
       tool: 'fake-codex',
       model: 'fake-model',
       effort: 'low',
     });
     assert.ok(messageRes.status === 200 || messageRes.status === 202, 'message should be accepted');
-    assert.ok(messageRes.json?.run?.id, 'message should create a run');
+    const acceptedRun = messageRes.json?.run?.id
+      ? messageRes.json.run
+      : (messageRes.json?.queued === true ? null : await waitForAcceptedRun(port, session.id, requestId));
+    assert.ok(acceptedRun?.id, 'message should create a run');
 
-    const run = await waitForRunTerminal(port, messageRes.json.run.id);
+    const run = await waitForRunTerminal(port, acceptedRun.id);
     assert.equal(run.state, 'completed', 'run should complete');
 
     const resultMessage = await waitFor(async () => {

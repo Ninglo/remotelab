@@ -194,7 +194,7 @@ async function main() {
     assert.equal(authMe.status, 200, 'auth info endpoint should work for owner session');
     assert.equal(authMe.headers['set-cookie']?.length, 1, 'auth info should refresh a near-expiry auth cookie');
     assert.match(authMe.headers['set-cookie'][0], /SameSite=Lax/i, 'auth cookie should use SameSite=Lax for better PWA compatibility');
-    assert.match(authMe.headers['set-cookie'][0], /Max-Age=86400/i, 'auth cookie should include an explicit Max-Age');
+    assert.match(authMe.headers['set-cookie'][0], /Max-Age=2592000/i, 'auth cookie should include an explicit Max-Age');
     const authMeJson = JSON.parse(authMe.text);
     assert.equal(authMeJson.role, 'owner', 'auth info should identify the owner principal');
     assert.equal(authMeJson.surfaceMode, 'owner', 'owner auth should stay on the owner surface');
@@ -202,7 +202,7 @@ async function main() {
     assert.equal(authMeJson.capabilities?.manageAgents, true, 'owner auth should expose owner capabilities');
     const refreshedSessions = JSON.parse(readFileSync(sessionsFile, 'utf8'));
     assert.ok(
-      refreshedSessions['test-session']?.expiry > Date.now() + 23 * 60 * 60 * 1000,
+      refreshedSessions['test-session']?.expiry > Date.now() + 29 * 24 * 60 * 60 * 1000,
       'auth info should extend server-side session expiry as a sliding session',
     );
 
@@ -247,6 +247,7 @@ async function main() {
     assert.equal(ownerSettingsBefore.status, 200, 'owner should be able to read instance settings');
     const ownerSettingsBeforeJson = JSON.parse(ownerSettingsBefore.text);
     assert.equal(ownerSettingsBeforeJson.settings?.voiceInput?.configured, false, 'instance settings should start unconfigured in a fresh home');
+    assert.equal(ownerSettingsBeforeJson.settings?.googleOAuth?.configured, false, 'google oauth settings should start unconfigured in a fresh home');
 
     const visitorSettingsPatch = await request(port, 'PATCH', '/api/settings', {
       settings: {
@@ -280,6 +281,22 @@ async function main() {
     assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.accessToken, 'token-owner');
     assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration');
     assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.configured, true);
+
+    const ownerGoogleOAuthUpdate = await request(port, 'PATCH', '/api/settings', {
+      settings: {
+        googleOAuth: {
+          clientId: 'google-client-id',
+          clientSecret: 'google-client-secret',
+          redirectUri: 'https://chat.example.com/api/connectors/gmail/google/callback',
+        },
+      },
+    });
+    assert.equal(ownerGoogleOAuthUpdate.status, 200, 'owner should be able to save google oauth settings');
+    const ownerGoogleOAuthUpdateJson = JSON.parse(ownerGoogleOAuthUpdate.text);
+    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.clientId, 'google-client-id');
+    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.clientSecret, 'google-client-secret');
+    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.redirectUri, 'https://chat.example.com/api/connectors/gmail/google/callback');
+    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.configured, true);
     await waitFor(
       () => (
         ownerWsMessages.some((msg) => msg.type === 'instance_settings_updated' && msg.updatedAt)
@@ -294,6 +311,9 @@ async function main() {
     assert.equal(visitorSettingsReadJson.settings?.voiceInput?.appId, '3785118246');
     assert.equal(visitorSettingsReadJson.settings?.voiceInput?.accessToken, '', 'visitor settings payload should not expose secrets');
     assert.equal(visitorSettingsReadJson.settings?.voiceInput?.configured, true, 'visitor settings payload should still expose readiness');
+    assert.equal(visitorSettingsReadJson.settings?.googleOAuth?.clientId, 'google-client-id');
+    assert.equal(visitorSettingsReadJson.settings?.googleOAuth?.clientSecret, '', 'visitor settings payload should not expose google oauth secrets');
+    assert.equal(visitorSettingsReadJson.settings?.googleOAuth?.configured, true, 'visitor settings payload should still expose google oauth readiness');
 
     const visitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: visitorCookie });
     assert.equal(visitorPage.status, 200, 'chat page should also render for visitor session');
@@ -310,6 +330,8 @@ async function main() {
     assert.equal(visitorBootstrap.auth?.capabilities?.listSessions, false, 'legacy visitor bootstrap should not expose multi-session list access');
     assert.equal(visitorBootstrap.settings?.voiceInput?.accessToken, '', 'visitor bootstrap should not inline voice secrets');
     assert.equal(visitorBootstrap.settings?.voiceInput?.configured, true, 'visitor bootstrap should still expose shared voice readiness');
+    assert.equal(visitorBootstrap.settings?.googleOAuth?.clientSecret, '', 'visitor bootstrap should not inline google oauth secrets');
+    assert.equal(visitorBootstrap.settings?.googleOAuth?.configured, true, 'visitor bootstrap should still expose google oauth readiness');
     assert.match(page.text, /<script src="chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
@@ -321,6 +343,11 @@ async function main() {
     assert.match(page.text, /id="voiceInputProviderSelect"/);
     assert.match(page.text, /id="voiceInputClusterPresetSelect"/);
     assert.match(page.text, /id="voiceInputGatewayApiKey"/);
+    assert.doesNotMatch(page.text, /id="googleOAuthSettingsSection"/, 'chat settings should not expose Google OAuth admin controls in frontend');
+    assert.doesNotMatch(page.text, /id="googleOAuthClientId"/);
+    assert.doesNotMatch(page.text, /id="googleOAuthClientSecret"/);
+    assert.doesNotMatch(page.text, /id="googleOAuthRedirectUri"/);
+    assert.doesNotMatch(page.text, /id="googleOAuthSaveBtn"/);
     assert.match(page.text, /id="voiceBtn"/);
     assert.doesNotMatch(page.text, /id="settingsUsersList"/);
     assert.doesNotMatch(page.text, /id="settingsAppsList"/);
@@ -860,7 +887,7 @@ async function main() {
     assert.equal(tokenLogin.headers.location, '/', 'token login should land on the root app');
     assert.equal(tokenLogin.headers['set-cookie']?.length, 1, 'token login should issue a session cookie');
     assert.match(tokenLogin.headers['set-cookie'][0], /SameSite=Lax/i, 'token login cookie should use SameSite=Lax');
-    assert.match(tokenLogin.headers['set-cookie'][0], /Max-Age=86400/i, 'token login cookie should include Max-Age');
+    assert.match(tokenLogin.headers['set-cookie'][0], /Max-Age=2592000/i, 'token login cookie should include Max-Age');
 
     const splitAsset304 = await request(port, 'GET', '/chat/bootstrap.js', null, {
       'If-None-Match': splitAsset.headers.etag,

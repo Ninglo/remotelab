@@ -8,7 +8,13 @@ import {
   selectAssistantReplyEvent,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs'
-import { waitForReplyPublication } from '../lib/reply-publication-client.mjs'
+import {
+  createConnectorSession,
+  loadConnectorAssistantReply,
+  normalizeConnectorPublicationText,
+  submitConnectorMessage,
+  waitForConnectorPublication,
+} from '../lib/connector-turn-flow.mjs'
 
 const RUN_POLL_INTERVAL_MS = 1500
 const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000
@@ -239,22 +245,41 @@ async function waitForRunCompletion(runtime, runId) {
 }
 
 async function generateRemoteLabReply(runtime, summary) {
-  const session = await createOrReuseSession(runtime, summary)
-  const submission = await submitRemoteLabMessage(runtime, session.id, summary)
+  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options)
+  const session = await createConnectorSession(requester, {
+    folder: runtime.config.sessionFolder,
+    tool: runtime.config.sessionTool,
+    name: buildSessionName(runtime.config, summary),
+    sourceId: 'voice',
+    sourceName: runtime.config.appName,
+    group: runtime.config.group,
+    description: buildSessionDescription(runtime.config, summary),
+    systemPrompt: runtime.config.systemPrompt,
+    externalTriggerId: buildExternalTriggerId(summary, runtime.config),
+  })
+  const submission = await submitConnectorMessage(requester, session.id, {
+    requestId: buildRequestId(summary, runtime.config),
+    text: buildRemoteLabMessage(summary),
+    tool: runtime.config.sessionTool,
+    thinking: runtime.config.thinking === true,
+    ...(runtime.config.model ? { model: runtime.config.model } : {}),
+    ...(runtime.config.effort ? { effort: runtime.config.effort } : {}),
+  })
   if (!submission.runId && submission.duplicate) {
     return {
       sessionId: session.id,
       runId: '',
       requestId: submission.requestId,
+      responseId: submission.responseId,
       duplicate: true,
       replyText: '',
       silent: true,
     }
   }
-  const publication = await waitForReplyPublication(
-    (path) => requestRemoteLab(runtime, path),
+  const publication = await waitForConnectorPublication(
+    requester,
     session.id,
-    submission.requestId,
+    submission.responseId,
     {
       timeoutMs: RUN_POLL_TIMEOUT_MS,
       intervalMs: RUN_POLL_INTERVAL_MS,
@@ -263,12 +288,20 @@ async function generateRemoteLabReply(runtime, summary) {
   if (publication.state !== 'ready') {
     throw new Error(`reply publication ${publication.state || 'failed'}`)
   }
-  const replyText = normalizeSpokenReplyText(publication.payload?.text || '')
+  let replyText = normalizeSpokenReplyText(normalizeConnectorPublicationText(publication))
   const finalizedRunId = trimString(publication.finalRunId) || submission.runId || ''
+  if (!replyText) {
+    const replyEvent = await loadConnectorAssistantReply(requester, session.id, {
+      runId: finalizedRunId,
+      requestId: submission.requestId,
+    })
+    replyText = normalizeSpokenReplyText(replyEvent?.normalizedContent || replyEvent?.content || '')
+  }
   return {
     sessionId: session.id,
     runId: finalizedRunId,
     requestId: submission.requestId,
+    responseId: submission.responseId,
     duplicate: submission.duplicate,
     replyText,
     silent: !replyText,

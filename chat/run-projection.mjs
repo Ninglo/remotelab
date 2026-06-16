@@ -47,6 +47,7 @@ export function createRunProjectionService({
     }
 
     const metrics = await readLatestCodexSessionMetrics(run.codexThreadId, {
+      model: run.model || null,
       startedAt: run.startedAt || run.createdAt || null,
       completedAt: run.completedAt || run.spoolCompletionDetectedAt || run.finalizedAt || null,
     });

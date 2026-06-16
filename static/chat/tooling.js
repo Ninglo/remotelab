@@ -1039,7 +1039,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       inlineModelSelect.value = "";
       selectedModel = "";
     }
-    inlineModelSelect.style.display = currentToolModels.length > 0 ? "" : "none";
+    inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
     applyCurrentModelReasoningUi({ sessionPreferences });
     queueRuntimeSelectionSync();
   } catch {

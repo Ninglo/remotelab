@@ -21,6 +21,80 @@ function getInboxBandForSession(session) {
   return 3;
 }
 
+function getProjectGroupSessionSortTime(session) {
+  if (typeof getSessionSortTime === "function") {
+    return getSessionSortTime(session);
+  }
+  const stamp = session?.lastEventAt || session?.updatedAt || session?.created || "";
+  const time = new Date(stamp).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function getProjectGroupRunningRank(groupEntry) {
+  const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
+  return groupSessions.some((session) => {
+    const activity = typeof getSessionActivity === "function" ? getSessionActivity(session) : null;
+    return activity?.run?.state === "running";
+  }) ? 1 : 0;
+}
+
+function getProjectGroupAttentionRank(groupEntry) {
+  const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
+  if (groupSessions.length === 0) return 6;
+  return groupSessions.reduce((bestRank, session) => {
+    const band = typeof getInboxBandForSession === "function"
+      ? getInboxBandForSession(session)
+      : 3;
+    return Math.min(bestRank, band);
+  }, 6);
+}
+
+function getProjectGroupLatestActivityTime(groupEntry) {
+  const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
+  return groupSessions.reduce(
+    (latestTime, session) => Math.max(latestTime, getProjectGroupSessionSortTime(session)),
+    0,
+  );
+}
+
+function getProjectGroupOrganizerOrder(groupEntry) {
+  const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
+  return groupSessions.reduce((bestOrder, session) => {
+    const rawOrder = typeof session?.sidebarOrder === "number"
+      ? session.sidebarOrder
+      : Number.parseInt(String(session?.sidebarOrder || "").trim(), 10);
+    if (!Number.isInteger(rawOrder) || rawOrder <= 0) return bestOrder;
+    return bestOrder > 0 ? Math.min(bestOrder, rawOrder) : rawOrder;
+  }, 0);
+}
+
+function compareProjectGroupsByLatestActivity(a, b) {
+  const runningDiff = getProjectGroupRunningRank(b) - getProjectGroupRunningRank(a);
+  if (runningDiff) return runningDiff;
+
+  const attentionDiff = getProjectGroupAttentionRank(a) - getProjectGroupAttentionRank(b);
+  if (attentionDiff) return attentionDiff;
+
+  const organizerOrderA = getProjectGroupOrganizerOrder(a);
+  const organizerOrderB = getProjectGroupOrganizerOrder(b);
+  if (organizerOrderA && organizerOrderB && organizerOrderA !== organizerOrderB) {
+    return organizerOrderA - organizerOrderB;
+  }
+
+  const latestActivityDiff = getProjectGroupLatestActivityTime(b) - getProjectGroupLatestActivityTime(a);
+  if (latestActivityDiff) return latestActivityDiff;
+
+  return String(a.label || a.title || a.key || "").localeCompare(
+    String(b.label || b.title || b.key || ""),
+    undefined,
+    { numeric: true, sensitivity: "base" },
+  );
+}
+
+function sortProjectGroupsByLatestActivity(groupEntries) {
+  return groupEntries.slice().sort(compareProjectGroupsByLatestActivity);
+}
+
 function renderSessionList() {
   sessionList.innerHTML = "";
   const pinnedSessions = getVisiblePinnedSessions();
@@ -146,7 +220,8 @@ function renderProjectsView(visibleSessions) {
     groups.get(groupInfo.key).sessions.push(s);
   }
 
-  for (const [groupKey, groupEntry] of groups) {
+  for (const groupEntry of sortProjectGroupsByLatestActivity([...groups.values()])) {
+    const groupKey = groupEntry.key;
     const folderSessions = groupEntry.sessions;
     const group = document.createElement("div");
     group.className = "folder-group";

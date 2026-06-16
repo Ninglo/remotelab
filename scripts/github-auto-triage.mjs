@@ -409,7 +409,7 @@ function isMaintainer(login, maintainers) {
 
 async function fetchUpdatedItems(repo, sinceIso, limit) {
   const payload = await runGhJson([
-    'api', '--paginate', '--slurp', '-X', 'GET', `repos/${repo}/issues`,
+    'api', '-X', 'GET', `repos/${repo}/issues`,
     '-f', 'state=all', '-f', 'sort=updated', '-f', 'direction=desc', '-f', 'per_page=100', '-f', `since=${sinceIso}`,
   ]);
   return flattenPages(payload).slice(0, limit);
@@ -429,14 +429,14 @@ async function fetchItems(repo, sinceIso, limit, onlyNumbers) {
 
 async function fetchIssueComments(repo, number) {
   const payload = await runGhJson([
-    'api', '--paginate', '--slurp', '-X', 'GET', `repos/${repo}/issues/${number}/comments`, '-f', 'per_page=100',
+    'api', '-X', 'GET', `repos/${repo}/issues/${number}/comments`, '-f', 'per_page=100',
   ]);
   return flattenPages(payload);
 }
 
 async function fetchPullRequestReviews(repo, number) {
   const payload = await runGhJson([
-    'api', '--paginate', '--slurp', '-X', 'GET', `repos/${repo}/pulls/${number}/reviews`, '-f', 'per_page=100',
+    'api', '-X', 'GET', `repos/${repo}/pulls/${number}/reviews`, '-f', 'per_page=100',
   ]);
   return flattenPages(payload);
 }
@@ -1362,7 +1362,20 @@ async function reconcilePendingItem(options, itemState, cookie) {
 
   const runResult = await requestJson(options.chatBaseUrl, `/api/runs/${automation.runId}`, { cookie });
   if (!runResult.response.ok || !runResult.json?.run) {
-    throw new Error(runResult.json?.error || runResult.text || `Failed to load run ${automation.runId}`);
+    const message = runResult.json?.error || runResult.text || `Failed to load run ${automation.runId}`;
+    if (/run not found/i.test(message)) {
+      return {
+        automation: {
+          ...automation,
+          status: 'reply_abandoned',
+          lastError: message,
+          updatedAt: nowIso(),
+        },
+        action: { mode: 'skipped', reason: 'stale automation run missing' },
+        replyBody: trimString(automation.replyBody),
+      };
+    }
+    throw new Error(message);
   }
 
   const run = runResult.json.run;

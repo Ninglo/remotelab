@@ -6,6 +6,13 @@ import net from 'net';
 import { homedir } from 'os';
 import { join } from 'path';
 
+import {
+  buildGuestRouteServiceTarget,
+  firstHostnameLabel,
+  normalizeRouteHost,
+  stripHostPort,
+} from '../lib/guest-instance-routes.mjs';
+
 const LISTEN_HOST = String(process.env.HK_HOST_ROUTER_LISTEN_HOST || '127.0.0.1').trim() || '127.0.0.1';
 const LISTEN_PORT = Number.parseInt(process.env.HK_HOST_ROUTER_LISTEN_PORT, 10) || 7705;
 const OWNER_LABEL = normalizeLabel(process.env.HK_HOST_ROUTER_OWNER_LABEL || 'owner');
@@ -15,6 +22,7 @@ const HUB_PORT = Number.parseInt(process.env.HK_HOST_ROUTER_HUB_PORT, 10) || 769
 const ADMIN_LABEL = normalizeLabel(process.env.HK_HOST_ROUTER_ADMIN_LABEL || 'admin');
 const ADMIN_PORT = Number.parseInt(process.env.HK_HOST_ROUTER_ADMIN_PORT, 10) || 7689;
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
+const GUEST_ROUTE_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instance-routes.json');
 
 let registryCache = { loadedAt: 0, routes: new Map() };
 
@@ -22,31 +30,16 @@ function normalizeLabel(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
 }
 
-function normalizeHost(value) {
-  return String(value || '').trim().toLowerCase().replace(/\.+$/, '');
-}
-
 function isValidPort(value) {
   return Number.isInteger(value) && value >= 1 && value <= 65535;
 }
 
 function stripPort(host) {
-  const normalized = normalizeHost(host);
-  if (!normalized) return '';
-  if (normalized.startsWith('[')) {
-    const closingIndex = normalized.indexOf(']');
-    if (closingIndex >= 0) return normalized.slice(1, closingIndex);
-  }
-  const lastColon = normalized.lastIndexOf(':');
-  if (lastColon > 0 && normalized.indexOf(':') === lastColon) {
-    return normalized.slice(0, lastColon);
-  }
-  return normalized;
+  return stripHostPort(host);
 }
 
 function firstLabel(host) {
-  const normalized = stripPort(host);
-  return normalizeLabel(normalized.split('.').filter(Boolean)[0] || '');
+  return firstHostnameLabel(host);
 }
 
 function writePlain(res, statusCode, body) {
@@ -80,6 +73,25 @@ async function loadGuestRoutes() {
         const hostLabel = firstLabel(hostname);
 
         if (name) routes.set(name, port);
+        if (hostname) routes.set(hostname, port);
+        if (hostLabel) routes.set(hostLabel, port);
+      }
+    }
+  } catch {
+    // Keep static routes only.
+  }
+
+  try {
+    const parsed = JSON.parse(await readFile(GUEST_ROUTE_REGISTRY_FILE, 'utf8'));
+    if (Array.isArray(parsed)) {
+      for (const record of parsed) {
+        const serviceTarget = buildGuestRouteServiceTarget(record);
+        if (!serviceTarget) continue;
+        const port = Number.parseInt(new URL(serviceTarget).port, 10) || 0;
+        if (!isValidPort(port) || port === LISTEN_PORT) continue;
+
+        const hostname = normalizeRouteHost(record?.hostname);
+        const hostLabel = firstLabel(hostname);
         if (hostname) routes.set(hostname, port);
         if (hostLabel) routes.set(hostLabel, port);
       }

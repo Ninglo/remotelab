@@ -124,6 +124,80 @@ Guardrail:
 
 - do not reopen connector identity vs host strategy unless the runtime implementation proves the contract impossible
 
+### `C0.5` — Service Stability / Activation Unification
+
+Goal:
+
+- stop treating connector liveness and activation as per-connector folklore
+- define one instance-level runtime contract for chat-server, sidecars, surfaces, and self-recovery
+
+Why this is now explicit:
+
+- the `trial66` WeChat login `502` incident showed a platform-level lifecycle gap, not only a WeChat bug
+- current runtime ownership is mixed across fixed systemd units, transient units, in-process workers, timer repair scripts, and one-shot startup helpers
+- the platform still lacks one clear answer to "who is supposed to keep this runtime alive for this instance?"
+
+Current concrete mismatch to resolve:
+
+- owner / guest chat-server lifecycle is template-driven and durable
+- detached runs already have a distinct transient-unit model
+- mail still mixes embedded worker behavior with owner-level service ownership
+- Feishu is a fixed owner sidecar
+- WeChat still mixes transient units, timer-based repairs, and one-shot guest startup
+- connector surfaces are cached manifests, but the platform has not consistently treated them as derived state rather than truth
+
+Target outcome:
+
+- one instance-scoped activation contract for runtime lifecycle
+- repo-owned unit/target naming for owner, guest, and connector sidecars
+- explicit desired state for which connectors should be active for one instance
+- one supervisor / reconciler responsibility boundary for ensure, restart, degrade, and stale-surface cleanup
+- one shared health/status vocabulary across connectors
+
+Minimum design points to settle:
+
+- canonical unit naming:
+  - `remotelab-chat@<instance>.service`
+  - `remotelab-connector-<id>@<instance>.service`
+  - `remotelab-instance-supervisor@<instance>.service`
+  - optional `remotelab-instance@<instance>.target`
+- desired state location:
+  - per-instance config, likely `config/connector-activations.json`
+- supervisor responsibility:
+  - boot ensure
+  - periodic reconcile
+  - crash restart / backoff handling
+  - stale surface invalidation
+  - transition to `auth_required` when binding/login is missing
+- truth vs cache:
+  - binding/login/process/heartbeat are truth
+  - connector surface manifest is derived cache and must be discarded when unreachable
+- shared state machine:
+  - `starting`
+  - `ready`
+  - `auth_required`
+  - `degraded`
+  - `crash_loop`
+  - `stopped`
+
+Acceptance:
+
+- a guest instance restart cannot leave chat-server healthy while its configured connector surface still points at a dead port
+- the platform can answer, for each instance and connector, who owns lifecycle, what the desired state is, and whether the runtime is healthy
+- a user-discovered `502` is no longer the primary way connector death is detected
+
+First shipped stopgap from the `trial66` incident:
+
+- guest startup now ensures configured WeChat connectors
+- connector surface reads/proxying now probe reachability and clear stale manifests
+
+Follow-up work still required:
+
+- fold owner/trial WeChat transient units into repo-owned instance-scoped units
+- clean up mail worker lifecycle so it has one clear owner
+- expose instance/connector health through one inspectable surface instead of logs + stale files
+- make this lifecycle contract the base for future connector activations, not just WeChat recovery
+
 ### `C1` — Add trigger support for deferred connector actions
 
 Goal:

@@ -21,6 +21,63 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-06-15 — remote SSH Codex workers should become a first-class execution target
+
+- Source: direct owner architecture request while discussing RemoteLab as the control surface for distributed Codex work.
+- User slice: owner/operator who wants to steer work from RemoteLab while execution may happen on one or many SSH-accessible machines.
+- Observed friction or ask: the desired high-end shape is RemoteLab coordinating multiple SSH hosts, each running Codex workers for delegated tasks; the acceptable near-term shape is deploying RemoteLab on a single remote SSH host and letting it operate that host's local Codex.
+- Signal strength: concrete product/architecture direction tied to existing multi-session orchestration and token-aware task splitting needs.
+- Product implication: the current local-CLI run model should grow a worker/host execution abstraction. Remote host administration and guest-instance lifecycle are useful foundations, but they are not yet a complete remote Codex worker pool; the clean direction is a coordinator that dispatches bounded sessions/runs to registered worker hosts, tracks health/capabilities/load, and aggregates results through RemoteLab's normal session/run history rather than ad hoc SSH transcripts.
+- Promote to: provider/runtime architecture, instance-factory/fleet admin roadmap, session dispatch design.
+- Follow-up: define an MVP contract for one remote host first, then generalize to host registry, per-worker auth, workspace/artifact transfer, usage/compaction telemetry, and fan-out aggregation.
+
+### 2026-06-15 — reply self-check must count visible file delivery as turn completion
+
+- Source: direct owner feedback after observing RemoteLab's background self-review on file-result turns.
+- User slice: owner using RemoteLab to hand off work where the final deliverable is a generated file attachment rather than only chat text.
+- Observed friction or ask: self-review could not see files the model had sent into the session, so a turn that had already delivered its result as an attachment could be judged unfinished and trigger unnecessary continuation.
+- Signal strength: concrete product correctness issue in the turn-close loop.
+- Product implication: completion review must use the same user-visible turn projection that includes result-file asset messages, not only the raw assistant text for the run.
+- Promote to: reply self-check context contract, result-file asset regression tests, connector publication semantics.
+
+### 2026-06-12 — Projects sorting should rebalance workstreams, not create one Project per session
+
+- Source: direct owner product discussion while reviewing the Projects sidebar / Sort List behavior.
+- User slice: owner using Chat UI sessions as the daily work-recovery surface.
+- Observed friction or ask: a session-first system still needs controlled grouping granularity; if each conversation becomes its own Project, the Projects list loses meaning, but overly broad buckets also make later recovery hard.
+- Signal strength: concrete owner instance sample showed 20 active Chat UI sessions spread across 17 Projects, including 16 singleton groups, while the current density budget is roughly 6 Projects.
+- Product implication: per-session auto-labeling should be treated as provisional, while Sort List should run a full scoped rebalance over the active-session snapshot, merging related singleton feature slices, renaming compressed groups to clearer workstream topics, and splitting only genuinely distinct workstreams.
+- Promote to: `notes/current/session-first-workflow-surfaces.md`, session label prompt, Sort List organizer prompt
+- Follow-up: watch whether the next real Sort List run reduces singleton groups without collapsing unrelated KOL, RemoteLab, and growth work into one broad bucket; if autonomous sorting is added, gate it behind deterministic drift metrics, cooldowns, and explicit source scope rather than triggering after every new session.
+
+### 2026-06-02 — automatic continuation replies should show both visible answer parts
+
+- Source: direct owner feedback while using the background reply self-check / auto-continuation feature
+- User slice: owner reviewing chat replies on mobile after self-check triggers a follow-up turn
+- Observed friction or ask: when self-check decides the assistant stopped too early and launches an automatic continuation, the earlier visible assistant reply was folded into a hidden thought block even though the user needs the original reply plus the continuation to understand the final answer
+- Signal strength: concrete repeated review behavior; self-check hit rate is rising and the user now routinely expands the previous folded message to recover the full conclusion
+- Product implication: visible transcript projection should treat the original already-shown assistant message and the auto-continuation repair message as two user-facing parts of one final answer; hidden execution work can remain collapsed, but answer content should not be hidden by default
+- Promote to: reply self-check display contract, session visible timeline regression tests, connector publication semantics
+- Follow-up: keep this as a projection/cache-compatible behavior rather than a broad API contract change unless future surfaces need explicit response-part metadata
+
+### 2026-05-28 — threaded chat surfaces should map topics to isolated AI sessions
+
+- Source: direct owner product discussion while extending Feishu topic-group support.
+- User slice: mobile-first owner/operator using IM connectors as a serious ongoing AI work surface.
+- Observed friction or ask: a normal conversation group should keep the existing shared-session behavior, but a topic group should treat each topic as an independent discussion so unrelated work does not contaminate context.
+- Signal strength: concrete connector behavior request with immediate implementation path in Feishu.
+- Product implication: threaded external surfaces should make the group/channel the long-lived entry point and the topic/thread the session boundary; connector routing keys should prefer channel plus topic/thread identifiers when available.
+- Promote to: connector routing defaults, Feishu/Lark connector tests, future threaded connector protocol
+
+### 2026-05-25 — message timestamps need full date context
+
+- Source: direct owner UI request while using the RemoteLab chat transcript
+- User slice: mobile-first owner reading session history from the chat surface
+- Observed friction or ask: per-message timestamps showed time-of-day but not the date, making older or cross-day conversation history feel incomplete
+- Signal strength: concrete in-product readability issue with a low-risk UI fix
+- Product implication: transcript metadata should show complete local date and time wherever message-level timing is already exposed
+- Promote to: chat transcript timestamp defaults and frontend smoke coverage
+
 ### 2026-04-11 — discussion continuity should outrank session routing until dispatch is trustworthy
 
 - Source: direct product discussion after active design/debug threads were routed into unrelated historical sessions, disrupting the conversation enough that runtime dispatch was temporarily turned off.
@@ -253,6 +310,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promoted to: `notes/directional/product-vision.md`, `notes/current/product-mainline.md`
 
 ## Entry template
+
+### 2026-05-25 — large audio attachment send should not be tied to message submission
+
+- Source: live trial8 user report while sending an audio-file request from mobile chat
+- User slice: mobile-first owner using chat as the primary intake surface
+- Observed friction or ask: after tapping send with an audio attachment, the composer stayed in sending state and then failed, leaving the draft in the input
+- Signal strength: concrete failed workflow with server evidence; two `/messages` uploads stayed open for about five minutes and ended as aborted requests
+- Product implication: non-storage installs still need direct local attachment upload before message submission so large media files do not hold the whole message request open
+- Promote to: composer attachment upload reliability and local file-asset defaults
+- Follow-up: consider visible upload progress and clearer failure copy for slow or interrupted mobile uploads
 
 ### YYYY-MM-DD — short title
 

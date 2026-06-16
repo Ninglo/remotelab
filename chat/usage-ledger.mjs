@@ -243,6 +243,14 @@ export function classifyUsageOperation(input, extra = {}) {
         category: 'memory_management',
         background: true,
       };
+    case 'session_continuation_gate':
+      return {
+        key: operation,
+        label: 'Session continuation gate',
+        group: 'background',
+        category: 'orchestration',
+        background: true,
+      };
     case 'session_continuation_planner':
       return {
         key: operation,

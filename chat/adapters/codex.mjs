@@ -3,6 +3,10 @@ import {
   fileChangeEvent, reasoningEvent, statusEvent, usageEvent,
 } from '../normalizer.mjs';
 import { DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS } from '../runtime-policy.mjs';
+import {
+  INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED,
+  IS_GUEST_INSTANCE,
+} from '../../lib/config.mjs';
 
 export { DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS } from '../runtime-policy.mjs';
 
@@ -223,16 +227,32 @@ function resolveDeveloperInstructions(options = {}) {
   return DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS;
 }
 
+function envFlagEnabled(value, fallback = false) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return fallback;
+  return !['0', 'false', 'no', 'off'].includes(normalized);
+}
+
 /**
  * Build args for spawning Codex exec.
  */
 export function buildCodexArgs(prompt, options = {}) {
   const args = ['exec'];
   const developerInstructions = resolveDeveloperInstructions(options);
+  const disableApps = Object.prototype.hasOwnProperty.call(options, 'disableApps')
+    ? options.disableApps === true
+    : (IS_GUEST_INSTANCE && envFlagEnabled(process.env.REMOTELAB_CODEX_DISABLE_APPS, true));
 
   args.push('--json');
-  args.push('--dangerously-bypass-approvals-and-sandbox');
+  if (IS_GUEST_INSTANCE) {
+    args.push('-s', INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED ? 'workspace-write' : 'danger-full-access');
+  } else {
+    args.push('--dangerously-bypass-approvals-and-sandbox');
+  }
   args.push('--skip-git-repo-check');
+  if (disableApps) {
+    args.push('--disable', 'apps');
+  }
 
   if (developerInstructions) {
     args.push('-c', `developer_instructions=${encodeTomlString(developerInstructions)}`);

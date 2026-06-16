@@ -63,6 +63,7 @@ writeFileSync(
 process.env.HOME = home;
 process.env.PATH = `${binDir}:${process.env.PATH}`;
 process.env.FAKE_CODEX_DELAY_MS = '120';
+process.env.REMOTELAB_SESSION_DISPATCH = 'off';
 
 const sessionManager = await import(
   pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href

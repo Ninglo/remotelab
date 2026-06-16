@@ -138,4 +138,4 @@ Turn-level reminders still matter, but they should stay light. They should reinf
 - `chat/system-prompt.mjs` should describe the seed layer, context topology, routing posture, and selective memory activation.
 - `chat/session-continuation.mjs` should frame handoff as continuity for the active workstream.
 - `chat/session-manager.mjs` should keep turn activation compact and principle-first.
-- `chat/session-routing.mjs` should reinforce bounded-work / bounded-context routing.
+- `chat/session-dispatch.mjs` plus `chat/session-dispatch-prompt.mjs` should keep continuation routing semantic, two-staged, and free of hardcoded bounded-work heuristics in the hot path.

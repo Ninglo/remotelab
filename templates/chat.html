@@ -180,15 +180,17 @@
             <div class="session-mode-banner-body" data-i18n="shareSnapshot.bannerBody">This page is read-only. You can open and download shared files here, but you can't send messages from this link.</div>
           </div>
           <div class="input-row">
-            <input type="file" id="imgFileInput" accept="*/*" multiple hidden>
             <textarea id="msgInput" placeholder="{{INPUT_PLACEHOLDER_TEXT}}" data-i18n-placeholder="{{INPUT_PLACEHOLDER_I18N_KEY}}" disabled></textarea>
           </div>
           <div class="input-actions-row">
             <div class="input-actions-group">
-              <button class="composer-action-btn composer-action-btn--upload" id="imgBtn" type="button" disabled title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
-                <span class="img-btn-icon" data-icon="plus" aria-hidden="true"></span>
-                <span class="img-btn-label sr-only" data-i18n="action.upload">Upload</span>
-              </button>
+              <div class="composer-file-picker">
+                <input type="file" id="imgFileInput" class="composer-file-input" accept="*/*" multiple disabled title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
+                <button class="composer-action-btn composer-action-btn--upload" id="imgBtn" type="button" disabled tabindex="-1" aria-hidden="true" title="Attach files" aria-label="Attach files" data-i18n-title="action.attachFiles" data-i18n-aria-label="action.attachFiles">
+                  <span class="img-btn-icon" data-icon="plus" aria-hidden="true"></span>
+                  <span class="img-btn-label sr-only" data-i18n="action.upload">Upload</span>
+                </button>
+              </div>
             </div>
             <div class="input-actions-group right">
               <button class="composer-action-btn voice-btn" id="voiceBtn" type="button" disabled title="Voice input" aria-label="Voice input" data-i18n-title="action.voiceInput" data-i18n-aria-label="action.voiceInput">

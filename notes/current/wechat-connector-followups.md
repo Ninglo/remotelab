@@ -15,6 +15,14 @@ Primary coordination note:
 - use `notes/current/connector-v2-todo.md` for shared platform sequencing
 - keep this note focused on WeChat-specific follow-ups and stopgaps
 
+Recent status:
+
+- `2026-04-16`: the `trial66` login `502` incident confirmed a broader service-stability / activation gap, not only a WeChat-specific bug.
+- A first stopgap has landed in code:
+  - guest startup ensures configured WeChat connectors
+  - stale connector surface manifests are cleared when their local port is unreachable
+- The remaining lifecycle unification work is now tracked under `notes/current/connector-v2-todo.md` item `C0.5` instead of living only in this WeChat note.
+
 ## Why this note exists
 
 - A user-facing WeChat reminder appeared inside the RemoteLab session but did not reach WeChat.

@@ -1,12 +1,13 @@
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 
-import { MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
+import { IS_GUEST_INSTANCE, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { appendEvent, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
 import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-display-events.mjs';
+import { clampGuestSessionFolder } from './session-folder.mjs';
 import { resolveStarterPresetDefinition } from './starter-session-content.mjs';
 import {
   applyTemplateToSession,
@@ -334,13 +335,17 @@ export async function handleSessionMainRoutes({
       const scopedAgentId = getAuthScopeAgentId(authSession);
       const scopedPrincipalId = getAuthPrincipalId(authSession);
       const requestedFolder = typeof folder === 'string' ? folder.trim() : '';
-      const effectiveFolder = agentScoped
+      const requestedEffectiveFolder = agentScoped
         ? MANAGED_WORK_ROOT_DIR
         : (requestedFolder
           ? (requestedFolder.startsWith('~')
             ? join(homedir(), requestedFolder.slice(1))
             : resolve(requestedFolder))
           : MANAGED_WORK_ROOT_DIR);
+      const effectiveFolder = clampGuestSessionFolder(requestedEffectiveFolder, {
+        isGuestInstance: IS_GUEST_INSTANCE,
+        managedWorkRoot: MANAGED_WORK_ROOT_DIR,
+      }).folder;
       const effectiveTool = agentScoped
         ? (typeof authSession?.agentTool === 'string' && authSession.agentTool.trim()
           ? authSession.agentTool.trim()

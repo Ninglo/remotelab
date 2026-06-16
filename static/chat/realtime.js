@@ -176,13 +176,23 @@ async function dispatchAction(msg) {
       case "archive":
       case "unarchive": {
         const shouldArchive = msg.action === "archive";
-        const previousSession = applyOptimisticSessionArchiveState(msg.sessionId, shouldArchive);
+        const previousSession = typeof getChatStoreSession === "function"
+          ? getChatStoreSession(msg.sessionId)
+          : (sessions.find((session) => session.id === msg.sessionId) || null);
+        const optimisticArchiveMutation = previousSession
+          && typeof beginSessionArchiveOptimisticMutation === "function"
+          ? beginSessionArchiveOptimisticMutation(msg.sessionId, shouldArchive)
+          : null;
+        const optimisticPreviousSession = applyOptimisticSessionArchiveState(msg.sessionId, shouldArchive);
         try {
           const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(msg.sessionId)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ archived: shouldArchive }),
           });
+          if (optimisticArchiveMutation && typeof finishSessionArchiveOptimisticMutation === "function") {
+            finishSessionArchiveOptimisticMutation(msg.sessionId);
+          }
           if (data.session) {
             const session = upsertSession(data.session) || data.session;
             renderSessionList();
@@ -195,8 +205,11 @@ async function dispatchAction(msg) {
             await fetchSessionsList();
           }
         } catch (error) {
-          if (previousSession) {
-            restoreOptimisticSessionSnapshot(previousSession);
+          if (optimisticArchiveMutation && typeof finishSessionArchiveOptimisticMutation === "function") {
+            finishSessionArchiveOptimisticMutation(msg.sessionId);
+          }
+          if (optimisticPreviousSession || previousSession) {
+            restoreOptimisticSessionSnapshot(optimisticPreviousSession || previousSession);
           }
           throw error;
         }
@@ -289,8 +302,8 @@ async function dispatchAction(msg) {
               }),
             });
         const acknowledgedRequestId = data.requestId || requestId;
-        const nextPendingStage = data?.session?.activity?.planning?.state === "checking"
-          && (!data?.session?.activity?.planning?.requestId || data.session.activity.planning.requestId === acknowledgedRequestId)
+        const nextPendingStage = data?.session?.activity?.continuation?.state === "checking"
+          && (!data?.session?.activity?.continuation?.requestId || data.session.activity.continuation.requestId === acknowledgedRequestId)
           ? "checking"
           : "processing";
         if (typeof acknowledgeComposerPendingSend === "function") {
@@ -492,7 +505,7 @@ function updateStatus(connState, session = getCurrentSession()) {
     sendBtn.disabled = true;
     sendBtn.title = t("action.readOnly");
     cancelBtn.style.display = "none";
-    imgBtn.disabled = true;
+    setAttachmentPickerDisabled(true);
     inlineToolSelect.disabled = true;
     inlineModelSelect.disabled = true;
     thinkingToggle.disabled = true;
@@ -519,6 +532,7 @@ function updateStatus(connState, session = getCurrentSession()) {
     sendBtn.style.display = "";
     sendBtn.disabled = !currentSessionId || archived;
     sendBtn.title = t("action.send");
+    setAttachmentPickerDisabled(!currentSessionId || archived);
     if (typeof syncComposerVoiceCleanupToggle === "function") {
       syncComposerVoiceCleanupToggle();
     }
@@ -562,7 +576,7 @@ function updateStatus(connState, session = getCurrentSession()) {
   sendBtn.disabled = !hasSession || archived;
   sendBtn.title = inputBusy ? t("action.queueFollowUp") : t("action.send");
   cancelBtn.style.display = runIsActive && hasSession ? "flex" : "none";
-  imgBtn.disabled = !hasSession || archived;
+  setAttachmentPickerDisabled(!hasSession || archived);
   inlineToolSelect.disabled = visitorMode || archived;
   inlineModelSelect.disabled = !hasSession || archived;
   thinkingToggle.disabled = !hasSession || archived;

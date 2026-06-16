@@ -1,8 +1,7 @@
 import { readFile, readdir } from 'fs/promises';
-import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 
-import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
+import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_ENABLED, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent } from './apps.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
@@ -35,6 +34,11 @@ import {
 } from './file-assets.mjs';
 import { createShareSnapshot } from './shares.mjs';
 import { pathExists } from './fs-utils.mjs';
+import {
+  isScopedInstanceUserSurface,
+  isUserVisiblePathAllowed,
+  resolveUserVisiblePathInput,
+} from './instance-visible-paths.mjs';
 import { queryUsageLedger } from './usage-ledger.mjs';
 import {
   buildClientInstanceSettings,
@@ -305,6 +309,7 @@ export async function handleControlRoutes({
         mimeType: typeof payload?.mimeType === 'string' ? payload.mimeType : '',
         sizeBytes: payload?.sizeBytes,
         createdBy: authSession?.role === 'visitor' ? 'visitor' : 'owner',
+        forceLocal: !FILE_ASSET_STORAGE_ENABLED,
       });
       writeJson(res, 200, intent);
     } catch (error) {
@@ -999,13 +1004,18 @@ export async function handleControlRoutes({
     const query = parsedUrl.query.q || '';
     const suggestions = [];
     try {
-      const resolvedQuery = query.startsWith('~') ? join(homedir(), query.slice(1)) : query;
+      const scopedUserSurface = isScopedInstanceUserSurface();
+      const resolvedQuery = resolveUserVisiblePathInput(query);
       const parentDir = dirname(resolvedQuery);
       const prefix = basename(resolvedQuery);
-      if (await isDirectoryPath(parentDir)) {
+      if (
+        (!scopedUserSurface || isUserVisiblePathAllowed(parentDir))
+        && await isDirectoryPath(parentDir)
+      ) {
         for (const entry of await readdir(parentDir)) {
           if (!prefix.startsWith('.') && entry.startsWith('.')) continue;
           const fullPath = join(parentDir, entry);
+          if (scopedUserSurface && !isUserVisiblePathAllowed(fullPath)) continue;
           if (await isDirectoryPath(fullPath)) {
             if (entry.toLowerCase().startsWith(prefix.toLowerCase())) {
               suggestions.push(fullPath);
@@ -1021,20 +1031,25 @@ export async function handleControlRoutes({
   if (pathname === '/api/browse' && req.method === 'GET') {
     const pathQuery = parsedUrl.query.path || '~';
     try {
-      const resolvedPath = pathQuery === '~' || pathQuery === ''
-        ? homedir()
-        : pathQuery.startsWith('~')
-          ? join(homedir(), pathQuery.slice(1))
-          : resolve(pathQuery);
+      const scopedUserSurface = isScopedInstanceUserSurface();
+      const resolvedPath = resolveUserVisiblePathInput(pathQuery);
+      if (scopedUserSurface && !isUserVisiblePathAllowed(resolvedPath)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Path is outside this instance workspace' }));
+        return true;
+      }
       const children = [];
       let parent = null;
       if (await isDirectoryPath(resolvedPath)) {
         const parentPath = dirname(resolvedPath);
-        parent = parentPath !== resolvedPath ? parentPath : null;
+        parent = parentPath !== resolvedPath && (!scopedUserSurface || isUserVisiblePathAllowed(parentPath))
+          ? parentPath
+          : null;
         for (const entry of await readdir(resolvedPath)) {
           if (entry.startsWith('.')) continue;
           const fullPath = join(resolvedPath, entry);
           try {
+            if (scopedUserSurface && !isUserVisiblePathAllowed(fullPath)) continue;
             if (await isDirectoryPath(fullPath)) children.push({ name: entry, path: fullPath });
           } catch {}
         }

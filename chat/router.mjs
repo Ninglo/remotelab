@@ -2,6 +2,7 @@ import { readFile, readdir } from 'fs/promises';
 import { createReadStream, watch } from 'fs';
 import { request as httpRequest } from 'http';
 import { homedir } from 'os';
+import { performance } from 'perf_hooks';
 import { join, resolve, dirname, basename, extname, relative, isAbsolute, sep } from 'path';
 import { parse as parseUrl, fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -152,6 +153,7 @@ function createClientSessionDetail(session) {
 const staticMimeTypesByExtension = {
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
+  '.html': 'text/html; charset=utf-8',
   '.ico': 'image/x-icon',
   '.jpeg': 'image/jpeg',
   '.jpg': 'image/jpeg',
@@ -218,6 +220,12 @@ function parseFormJson(value, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function createHttpRequestId(prefix = 'http') {
+  const safePrefix = String(prefix || 'http').replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 32) || 'http';
+  const seed = `${safePrefix}:${Date.now()}:${process.pid}:${Math.random()}`;
+  return `${safePrefix}_${createHash('sha256').update(seed).digest('hex').slice(0, 24)}`;
 }
 
 async function readSessionMessagePayload(req, pathname) {
@@ -430,6 +438,7 @@ async function maybePublishSavedAttachmentsToFileAssets(savedAttachments = [], o
         originalName: attachment.originalName,
         mimeType: attachment.mimeType,
         createdBy: options?.createdBy,
+        allowInternalPath: true,
       });
       return {
         assetId: published.id,
@@ -964,6 +973,25 @@ function buildHeaders(headers = {}) {
     'X-RemoteLab-Build': BUILD_INFO.title,
     ...headers,
   };
+}
+
+function formatServerTiming(entries = []) {
+  const parts = [];
+  for (const [name, value] of entries) {
+    if (!name || !Number.isFinite(value)) continue;
+    const duration = Math.max(0, value);
+    parts.push(`${name};dur=${duration.toFixed(3)}`);
+  }
+  return parts.join(', ');
+}
+
+async function measureStep(timings, key, task) {
+  const startMs = performance.now();
+  try {
+    return await task();
+  } finally {
+    timings[key] = performance.now() - startMs;
+  }
 }
 
 function streamResponse(res, filepath, headers = {}) {
@@ -1648,11 +1676,17 @@ export async function handleRequest(req, res) {
     if (!await requireSessionAccess(res, authSession, sessionId)) return;
     try {
       const attachments = await resolveRequestedSessionAttachments(authSession, body.attachments || [], { sessionId });
+      const messageText = typeof body?.text === 'string' && body.text.trim()
+        ? body.text.trim()
+        : (attachments.length > 0 ? '(attachment)' : '');
       await submitHttpMessage(
         sessionId,
-        typeof body?.text === 'string' ? body.text.trim() : '',
-        attachments,
-        { tool: 'codex', skipEmptyUserTextValidation: true },
+        messageText,
+        [],
+        {
+          requestId: createHttpRequestId('upload_fallback'),
+          ...(attachments.length > 0 ? { preSavedAttachments: attachments } : {}),
+        },
       );
       res.writeHead(200, buildHeaders({
         'Content-Type': 'text/html; charset=utf-8',
@@ -1684,25 +1718,39 @@ export async function handleRequest(req, res) {
 
   // Main page (chat UI) — read from disk each time for hot-reload
   if (pathname === '/') {
+    const timings = {};
+    const totalStartMs = performance.now();
     try {
       const authSession = getAuthSession(req);
       const [pageBuildInfo, chatPage, refreshedCookie, pageBootstrap] = await Promise.all([
-        getPageBuildInfo(),
-        readFile(chatTemplatePath, 'utf8'),
-        refreshAuthSession(req),
-        buildChatPageBootstrap(authSession),
+        measureStep(timings, 'build', async () => getPageBuildInfo()),
+        measureStep(timings, 'template', async () => readFile(chatTemplatePath, 'utf8')),
+        measureStep(timings, 'refresh_auth', async () => refreshAuthSession(req)),
+        measureStep(timings, 'bootstrap', async () => buildChatPageBootstrap(authSession)),
       ]);
+      const renderStartMs = performance.now();
+      const body = renderPageTemplate(chatPage, nonce, {
+        ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
+        BOOTSTRAP_JSON: serializeJsonForScript(pageBootstrap),
+      });
+      timings.render = performance.now() - renderStartMs;
+      timings.total = performance.now() - totalStartMs;
       res.writeHead(200, buildHeaders({
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
+        'Server-Timing': formatServerTiming([
+          ['build', timings.build],
+          ['template', timings.template],
+          ['refresh_auth', timings.refresh_auth],
+          ['bootstrap', timings.bootstrap],
+          ['render', timings.render],
+          ['total', timings.total],
+        ]),
         ...(refreshedCookie ? { 'Set-Cookie': refreshedCookie } : {}),
       }));
-      res.end(renderPageTemplate(chatPage, nonce, {
-        ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
-        BOOTSTRAP_JSON: serializeJsonForScript(pageBootstrap),
-      }));
+      res.end(body);
     } catch {
       res.writeHead(500, buildHeaders({ 'Content-Type': 'text/plain' }));
       res.end('Failed to load chat page');

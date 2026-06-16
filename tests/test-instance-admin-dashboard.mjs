@@ -59,6 +59,7 @@ function request(port, path, options = {}) {
 function setupTempHome() {
   const home = mkdtempSync(join(tmpdir(), 'remotelab-instance-admin-'));
   const configDir = join(home, '.config', 'remotelab');
+  const fleetHostsDir = join(configDir, 'fleet', 'hosts');
   const launchAgentsDir = join(home, 'Library', 'LaunchAgents');
   const memoryTasksDir = join(home, '.remotelab', 'memory', 'tasks');
   const trialRoot = join(home, '.remotelab', 'instances', 'trial24');
@@ -67,6 +68,7 @@ function setupTempHome() {
   const intakeConfigDir = join(intakeRoot, 'config');
 
   mkdirSync(configDir, { recursive: true });
+  mkdirSync(fleetHostsDir, { recursive: true });
   mkdirSync(launchAgentsDir, { recursive: true });
   mkdirSync(memoryTasksDir, { recursive: true });
   mkdirSync(join(configDir, 'usage-ledger'), { recursive: true });
@@ -359,6 +361,80 @@ function setupTempHome() {
     }),
   ].join('\n') + '\n', 'utf8');
 
+  writeFileSync(
+    join(fleetHostsDir, 'control.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name: 'control',
+      displayName: 'control',
+      role: 'control',
+      runtime: 'local',
+      local: true,
+      sshHost: '',
+      sshUser: 'root',
+      ring: 'dev',
+      labels: ['remotelab', 'control-plane'],
+      notes: 'temp control host',
+      createdAt: '2026-03-28T00:00:00.000Z',
+      updatedAt: '2026-03-28T00:00:00.000Z',
+      lastSyncAt: '',
+      lastSyncStatus: '',
+      lastSyncError: '',
+      instanceSource: 'local_registry',
+      instanceSnapshot: {
+        collectedAt: '',
+        source: 'local_guest_registry',
+        instances: [],
+      },
+    }, null, 2),
+    'utf8',
+  );
+  writeFileSync(
+    join(fleetHostsDir, 'remote-a.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      name: 'remote-a',
+      displayName: 'remote-a',
+      role: 'dedicated',
+      runtime: 'ssh',
+      local: false,
+      sshHost: '10.0.0.8',
+      sshUser: 'root',
+      ring: 'canary',
+      labels: ['remotelab', 'factory'],
+      notes: 'temp remote host',
+      createdAt: '2026-03-28T00:00:00.000Z',
+      updatedAt: '2026-03-28T00:00:00.000Z',
+      lastSyncAt: '2026-03-28T00:00:00.000Z',
+      lastSyncStatus: 'ok',
+      lastSyncError: '',
+      instanceSource: 'snapshot',
+      instanceSnapshot: {
+        collectedAt: '2026-03-28T00:00:00.000Z',
+        source: 'imported_snapshot',
+        instances: [
+          {
+            name: 'share-1',
+            port: 7801,
+            hostname: 'share-1.example.com',
+            publicBaseUrl: 'https://share-1.example.com',
+            localBaseUrl: 'http://127.0.0.1:7801',
+            createdAt: '2026-03-28T00:00:00.000Z',
+          },
+          {
+            name: 'share-2',
+            port: 7802,
+            hostname: 'share-2.example.com',
+            publicBaseUrl: 'https://share-2.example.com',
+            localBaseUrl: 'http://127.0.0.1:7802',
+            createdAt: '2026-03-28T00:05:00.000Z',
+          },
+        ],
+      },
+    }, null, 2),
+    'utf8',
+  );
+
   return { home };
 }
 
@@ -421,6 +497,12 @@ async function main() {
     assert.match(templateSource, /单次上下文峰值/, 'instance admin UI should label context as a per-run peak instead of raw input volume');
     assert.match(templateSource, /落后 owner/, 'instance admin UI should surface owner-vs-instance build drift');
     assert.match(templateSource, /版本一致性/, 'instance admin detail should expose build consistency information');
+    assert.match(templateSource, /创建 5 个试用实例/, 'instance admin UI should default trial creation to a 5-instance batch');
+    assert.match(templateSource, /id="inp-count"/, 'instance admin UI should expose batch count for custom create');
+    assert.match(templateSource, /id="host-select"/, 'instance admin UI should expose a host selector for fleet-targeted actions');
+    assert.match(templateSource, /id="btn-host-sync"/, 'instance admin UI should expose a host-scoped sync action');
+    assert.match(templateSource, /data-host-sync/, 'instance admin UI should render host-scoped sync controls');
+    assert.match(templateSource, /fleet layer/, 'instance admin UI should render a fleet host section');
 
     const pageRes = await request(port, '/');
     assert.equal(pageRes.status, 200, pageRes.text);
@@ -435,6 +517,10 @@ async function main() {
 
     const data = res.json || {};
     assert.ok(data.summary, res.text);
+    assert.ok(data.fleet, 'dashboard payload should include fleet host data');
+    assert.equal(data.fleet.hostCount, 2, 'temp-home dashboard should report both the local control host and the imported remote host');
+    assert.equal(data.fleet.instanceCount, 4, 'fleet view should reflect local plus imported remote instances');
+    assert.ok((data.fleet.hosts || []).some((entry) => entry.name === 'remote-a'), 'fleet view should include the imported remote host');
     assert.equal(data.checksIncluded, false, 'default dashboard load should skip health checks');
     assert.equal(data.summary.usage.totalTokens, 740, 'dashboard summary should include fleet token totals');
     assert.equal(data.summary.usage.costUsd, 0.28, 'dashboard summary should include exact fleet cost totals');
@@ -476,6 +562,11 @@ async function main() {
     assert.equal(typeof checkedOwner.localReachable, 'boolean', 'forced refresh should probe owner local health');
     assert.equal(typeof checkedTrial24.build, 'object', 'forced refresh should surface guest build consistency');
     assert.equal(typeof checkedOwner.build, 'object', 'forced refresh should surface owner build consistency');
+
+    const syncRes = await request(port, '/api/hosts/control/sync', { method: 'POST' });
+    assert.equal(syncRes.status, 200, syncRes.text);
+    assert.equal(syncRes.json?.host, 'control', 'host sync endpoint should return the synced control host');
+    assert.equal(syncRes.json?.hostView?.instanceCount, 2, 'host sync endpoint should refresh the local control host snapshot');
 
     const workbenchRes = await request(port, '/api/workbench');
     assert.equal(workbenchRes.status, 200, workbenchRes.text);

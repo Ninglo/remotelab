@@ -31,6 +31,7 @@ export function createSessionTurnCompletionHelpers(services) {
     isInternalSession,
     isReplySelfRepairOperation,
     isSessionAutoRenamePending,
+    isSessionTitleLocked,
     isSessionRunning,
     isTerminalRunState,
     listRunIds,
@@ -53,6 +54,7 @@ export function createSessionTurnCompletionHelpers(services) {
     sanitizeAllCompletionTargets,
     sanitizeEmailCompletionTargets,
     scheduleQueuedFollowUpDispatch,
+    schedulePostTurnProjectMaintenance,
     scheduleSessionTaskCardSuggestion,
     sendCompletionPush,
     sendMessage,
@@ -113,25 +115,26 @@ export function createSessionTurnCompletionHelpers(services) {
 
   async function queueSessionCompletionTargets(session, run, manifest) {
     if (!session?.id || !run?.id) return false;
+    const latestRun = await getRun(run.id) || run;
     if (manifest?.internalOperation && !isReplySelfRepairOperation(manifest)) return false;
     if (isReplySelfRepairOperation(manifest)) {
-      const rootRunId = getReplyPublicationRootRunId(run);
+      const rootRunId = getReplyPublicationRootRunId(latestRun);
       const rootRun = rootRunId && rootRunId !== run.id
         ? await getRun(rootRunId)
-        : run;
+        : latestRun;
       const publication = rootRun?.replyPublication;
       if (!publication || trimString(publication.state).toLowerCase() !== 'ready') {
         return false;
       }
-      if (trimString(publication.finalRunId) !== trimString(run.id)) {
+      if (trimString(publication.finalRunId) !== trimString(latestRun.id)) {
         return false;
       }
     } else {
-      const publication = run?.replyPublication;
+      const publication = latestRun?.replyPublication;
       if (!publication || trimString(publication.state).toLowerCase() !== 'ready') {
         return false;
       }
-      if (trimString(publication.finalRunId) !== trimString(run.id)) {
+      if (trimString(publication.finalRunId) !== trimString(latestRun.id)) {
         return false;
       }
     }
@@ -140,8 +143,8 @@ export function createSessionTurnCompletionHelpers(services) {
     dispatchSessionConnectorActions({
       ...session,
       completionTargets: targets,
-    }, run).catch((error) => {
-      console.error(`[connector-action-dispatcher] ${session.id}/${run.id}: ${error.message}`);
+    }, latestRun).catch((error) => {
+      console.error(`[connector-action-dispatcher] ${session.id}/${latestRun.id}: ${error.message}`);
     });
     return true;
   }
@@ -248,7 +251,7 @@ export function createSessionTurnCompletionHelpers(services) {
       return null;
     }
 
-    const { userMessage, assistantTurnText } = await loadReplySelfCheckTurnContext(sessionId, run.id, {
+    const { userMessage, assistantTurnText, priorContextText } = await loadReplySelfCheckTurnContext(sessionId, run.id, {
       loadSessionHistory: services.loadHistory,
     });
     if (!assistantTurnText) {
@@ -266,6 +269,7 @@ export function createSessionTurnCompletionHelpers(services) {
 
     return {
       session: latestSession,
+      priorContextText,
       userMessage,
       assistantTurnText,
     };
@@ -276,7 +280,7 @@ export function createSessionTurnCompletionHelpers(services) {
       return { attempted: false, continued: false };
     }
 
-    const { userMessage, assistantTurnText } = preparedCheck;
+    const { userMessage, assistantTurnText, priorContextText } = preparedCheck;
     const effectiveSession = preparedCheck.session || session;
 
     let reviewText = '';
@@ -288,7 +292,7 @@ export function createSessionTurnCompletionHelpers(services) {
         model: run.model || undefined,
         effort: run.effort || undefined,
         thinking: false,
-      }, buildReplySelfCheckPrompt({ userMessage, assistantTurnText }), {
+      }, buildReplySelfCheckPrompt({ userMessage, assistantTurnText, priorContextText }), {
         usageTracking: {
           operation: 'reply_self_check_review',
         },
@@ -366,6 +370,7 @@ export function createSessionTurnCompletionHelpers(services) {
       const continuation = await sendMessage(sessionId, buildReplySelfRepairPrompt({
         userMessage,
         assistantTurnText,
+        priorContextText,
         reviewDecision,
       }), [], {
         tool: run.tool || session.tool,
@@ -569,6 +574,16 @@ export function createSessionTurnCompletionHelpers(services) {
     return true;
   }
 
+  function scheduleProjectMaintenanceAfterTurn(session, reason = 'turn_completion') {
+    if (typeof schedulePostTurnProjectMaintenance !== 'function' || !session?.id) return false;
+    try {
+      return schedulePostTurnProjectMaintenance(session, { reason });
+    } catch (error) {
+      console.error(`[project-maintenance] Failed to schedule for ${session.id?.slice(0, 8)}: ${error.message}`);
+      return false;
+    }
+  }
+
   async function runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest) {
     let session = latestSession;
     let sessionChanged = false;
@@ -661,8 +676,13 @@ export function createSessionTurnCompletionHelpers(services) {
 
     const needsRename = isSessionAutoRenamePending(session);
     const needsGrouping = !session.group || !session.description;
+    const shouldRefreshTitle = !isSessionTitleLocked(session);
+    const shouldRefreshLabels = allowCompletionEffects
+      && !needsRename
+      && !hasQueuedFollowUps
+      && !isInternalSession(session);
 
-    if (needsRename || needsGrouping) {
+    if (needsRename || needsGrouping || shouldRefreshLabels) {
       if (needsRename) {
         setRenameState(sessionId, 'pending');
       }
@@ -683,8 +703,13 @@ export function createSessionTurnCompletionHelpers(services) {
         },
         async (newName) => {
           const currentSession = await getSession(sessionId);
-          if (!isSessionAutoRenamePending(currentSession)) return null;
-          return renameSession(sessionId, newName);
+          if (!currentSession) return null;
+          if (!isSessionAutoRenamePending(currentSession) && !shouldRefreshTitle) return null;
+          return renameSession(sessionId, newName, { lockTitle: false });
+        },
+        {
+          refreshTitle: shouldRefreshLabels && shouldRefreshTitle,
+          refreshGrouping: shouldRefreshLabels,
         },
       );
 
@@ -703,6 +728,9 @@ export function createSessionTurnCompletionHelpers(services) {
             clearRenameState(sessionId, { broadcast: true });
           }
           if (allowCompletionEffects && !hasQueuedFollowUps) {
+            scheduleProjectMaintenanceAfterTurn(updated || session, 'label_update');
+          }
+          if (allowCompletionEffects && !hasQueuedFollowUps) {
             await maybeSendSessionCompletionPush(sessionId, updated || session);
           }
         });
@@ -710,8 +738,14 @@ export function createSessionTurnCompletionHelpers(services) {
       }
 
       labelSuggestionDone.then(async (labelResult) => {
-        await applyGeneratedSessionGrouping(sessionId, labelResult);
+        const grouped = await applyGeneratedSessionGrouping(sessionId, labelResult);
+        const updated = grouped || await getSession(sessionId);
+        if (allowCompletionEffects && !hasQueuedFollowUps) {
+          scheduleProjectMaintenanceAfterTurn(updated || session, 'label_update');
+        }
       });
+    } else if (allowCompletionEffects && !hasQueuedFollowUps) {
+      scheduleProjectMaintenanceAfterTurn(session, 'turn_completion');
     }
 
     if (allowCompletionEffects && !hasQueuedFollowUps) {

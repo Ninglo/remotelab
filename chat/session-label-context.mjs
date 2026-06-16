@@ -652,7 +652,7 @@ function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
   if (!Array.isArray(sessions)) return '';
 
   const relevant = sessions
-    .filter((session) => session && session.id !== currentSessionId && session.archived !== true)
+    .filter((session) => session && session.id !== currentSessionId && session.archived !== true && !session.internalRole)
     .map((session) => ({
       id: session.id,
       group: normalizeSessionGroup(session.group || ''),
@@ -666,31 +666,11 @@ function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
       || session.description
       || (session.name && session.name !== DEFAULT_SESSION_NAME)
     ))
-    .sort((a, b) => {
-      const groupDelta = Number(Boolean(b.group)) - Number(Boolean(a.group));
-      return groupDelta || sortSessionsByRecency(a, b);
-    });
+    .sort((a, b) => sortSessionsByRecency(a, b));
 
   if (relevant.length === 0) return '';
 
-  const groupCounts = new Map();
-  for (const session of relevant) {
-    if (!session.group) continue;
-    groupCounts.set(session.group, (groupCounts.get(session.group) || 0) + 1);
-  }
-
   const lines = [];
-  if (groupCounts.size > 0) {
-    const summary = [...groupCounts.entries()]
-      .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
-      .slice(0, 6)
-      .map(([group, count]) => `${group} (${count})`)
-      .join(', ');
-    if (summary) {
-      lines.push(`Known active groups: ${summary}`);
-    }
-  }
-
   for (const session of relevant.slice(0, MAX_SESSION_CATALOG_ENTRIES)) {
     const groupLabel = session.group || 'Ungrouped';
     const title = session.name || '(unnamed)';

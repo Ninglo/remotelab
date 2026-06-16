@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { execFile as execFileCallback } from 'child_process';
-import { copyFile, mkdir, readFile, realpath, rename, symlink, writeFile } from 'fs/promises';
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 
 import { buildLaunchAgentPlist } from '../lib/guest-instance.mjs';
+import { syncGuestPlatformSkills } from '../lib/guest-instance-command.mjs';
 import { serializeUserShellEnvSnapshot } from '../lib/user-shell-env.mjs';
 
 const execFileAsync = promisify(execFileCallback);
@@ -16,14 +17,27 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '..');
 const HOME_DIR = homedir();
 const OWNER_INSTANCE_ROOT = join(HOME_DIR, '.remotelab', 'instances', 'owner');
+const OWNER_WORKSPACE_DIR = join(OWNER_INSTANCE_ROOT, 'workspace');
+const OWNER_TMP_DIR = join(OWNER_INSTANCE_ROOT, 'tmp');
 const LEGACY_CONFIG_DIR = join(HOME_DIR, '.config', 'remotelab');
 const LEGACY_MEMORY_DIR = join(HOME_DIR, '.remotelab', 'memory');
 const OWNER_LAUNCH_AGENT_PATH = join(HOME_DIR, 'Library', 'LaunchAgents', 'com.chatserver.claude.plist');
+const OWNER_SYSTEMD_ENV_FILE = '/etc/remotelab/remotelab.env';
+const OWNER_SYSTEMD_SERVICE_NAME = 'remotelab.service';
 const OWNER_BUILD_INFO_URL = 'http://127.0.0.1:7690/api/build-info';
 const DEFAULT_OWNER_PORT = '7690';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+async function pathExists(path) {
+  try {
+    await lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function parseArgs(argv = []) {
@@ -62,6 +76,26 @@ function parseStringDict(block = '') {
       unescapePlistXml(value || ''),
     ]),
   );
+}
+
+function parseEnvFile(content = '') {
+  const env = {};
+  for (const line of String(content || '').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const separatorIndex = trimmed.indexOf('=');
+    if (separatorIndex <= 0) continue;
+    env[trimmed.slice(0, separatorIndex).trim()] = trimmed.slice(separatorIndex + 1).trim();
+  }
+  return env;
+}
+
+function serializeEnvFile(env = {}) {
+  return Object.entries(env)
+    .filter(([key, value]) => trimString(key) && trimString(value))
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n') + '\n';
 }
 
 function parseLaunchAgentPlistFallback(content = '') {
@@ -116,6 +150,10 @@ async function ensurePathAlias(linkPath, targetPath, options = {}) {
   const dryRun = options.dryRun === true;
   const targetRealPath = await realpath(targetPath);
   try {
+    const existing = await lstat(linkPath);
+    if (!existing.isSymbolicLink()) {
+      return { path: linkPath, target: targetPath, changed: false, reason: 'existing-path' };
+    }
     const linkRealPath = await realpath(linkPath);
     if (linkRealPath === targetRealPath) {
       return { path: linkPath, target: targetPath, changed: false };
@@ -132,11 +170,80 @@ async function ensurePathAlias(linkPath, targetPath, options = {}) {
   return { path: linkPath, target: targetPath, changed: true };
 }
 
+async function ensureRemoteLabCliShim(homeDir, options = {}) {
+  const dryRun = options.dryRun === true;
+  const linkPath = join(homeDir, '.local', 'bin', 'remotelab');
+  const targetPath = join(PROJECT_ROOT, 'cli.js');
+  const targetRealPath = await realpath(targetPath);
+
+  try {
+    const existing = await lstat(linkPath);
+    if (!existing.isSymbolicLink()) {
+      return { path: linkPath, target: targetPath, changed: false, reason: 'existing-path' };
+    }
+    try {
+      const linkRealPath = await realpath(linkPath);
+      if (linkRealPath === targetRealPath) {
+        return { path: linkPath, target: targetPath, changed: false };
+      }
+    } catch {}
+    if (!dryRun) {
+      await rm(linkPath, { force: true });
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+
+  if (!dryRun) {
+    await mkdir(dirname(linkPath), { recursive: true });
+    await symlink(targetPath, linkPath);
+  }
+  return { path: linkPath, target: targetPath, changed: true };
+}
+
+async function copyMissingTree(sourceDir, targetDir, options = {}) {
+  if (!await pathExists(sourceDir)) {
+    return { changed: false, copiedFiles: 0 };
+  }
+
+  const dryRun = options.dryRun === true;
+  let copiedFiles = 0;
+  const entries = await readdir(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = join(sourceDir, entry.name);
+    const targetPath = join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      if (!dryRun) {
+        await mkdir(targetPath, { recursive: true });
+      }
+      const nested = await copyMissingTree(sourcePath, targetPath, options);
+      copiedFiles += nested.copiedFiles;
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (await pathExists(targetPath)) continue;
+    copiedFiles += 1;
+    if (!dryRun) {
+      await mkdir(dirname(targetPath), { recursive: true });
+      await copyFile(sourcePath, targetPath);
+    }
+  }
+
+  return {
+    changed: copiedFiles > 0,
+    copiedFiles,
+  };
+}
+
 async function reloadOwnerLaunchAgent() {
   try {
     await execFileAsync('launchctl', ['unload', OWNER_LAUNCH_AGENT_PATH], { stdio: 'ignore' });
   } catch {}
   await execFileAsync('launchctl', ['load', OWNER_LAUNCH_AGENT_PATH], { stdio: 'ignore' });
+}
+
+async function restartOwnerSystemdService() {
+  await execFileAsync('systemctl', ['restart', OWNER_SYSTEMD_SERVICE_NAME], { stdio: 'ignore' });
 }
 
 async function fetchBuildInfo(url) {
@@ -170,54 +277,98 @@ async function waitForBuildInfo(url, timeoutMs = 30000) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
 
+  await mkdir(OWNER_INSTANCE_ROOT, { recursive: true });
+  await mkdir(OWNER_WORKSPACE_DIR, { recursive: true });
+  await mkdir(OWNER_TMP_DIR, { recursive: true });
+  const cliShim = await ensureRemoteLabCliShim(OWNER_INSTANCE_ROOT, options);
+
   const aliases = [
     await ensurePathAlias(join(OWNER_INSTANCE_ROOT, 'config'), LEGACY_CONFIG_DIR, options),
     await ensurePathAlias(join(OWNER_INSTANCE_ROOT, 'memory'), LEGACY_MEMORY_DIR, options),
   ];
-
-  const currentPlist = await readPlistJson(OWNER_LAUNCH_AGENT_PATH);
-  const currentContent = await readFile(OWNER_LAUNCH_AGENT_PATH, 'utf8');
-  const environmentVariables = {
-    ...(currentPlist.EnvironmentVariables && typeof currentPlist.EnvironmentVariables === 'object'
-      ? currentPlist.EnvironmentVariables
-      : {}),
-    HOME: trimString(currentPlist.EnvironmentVariables?.HOME) || HOME_DIR,
-    CHAT_PORT: trimString(currentPlist.EnvironmentVariables?.CHAT_PORT) || DEFAULT_OWNER_PORT,
-    REMOTELAB_INSTANCE_ROOT: OWNER_INSTANCE_ROOT,
-    REMOTELAB_SESSION_DISPATCH: 'off',
-    REMOTELAB_USER_SHELL_ENV_B64: trimString(currentPlist.EnvironmentVariables?.REMOTELAB_USER_SHELL_ENV_B64)
-      || serializeUserShellEnvSnapshot(),
-  };
-
-  const nextContent = buildLaunchAgentPlist({
-    label: trimString(currentPlist.Label) || 'com.chatserver.claude',
-    nodePath: trimString(currentPlist.ProgramArguments?.[0]) || process.execPath,
-    chatServerPath: trimString(currentPlist.ProgramArguments?.[1]) || join(PROJECT_ROOT, 'chat-server.mjs'),
-    workingDirectory: PROJECT_ROOT,
-    standardOutPath: trimString(currentPlist.StandardOutPath) || join(HOME_DIR, 'Library', 'Logs', 'chat-server.log'),
-    standardErrorPath: trimString(currentPlist.StandardErrorPath) || join(HOME_DIR, 'Library', 'Logs', 'chat-server.error.log'),
-    environmentVariables,
+  const memoryBackfill = aliases[1]?.reason === 'existing-path'
+    ? await copyMissingTree(LEGACY_MEMORY_DIR, join(OWNER_INSTANCE_ROOT, 'memory'), options)
+    : { changed: false, copiedFiles: 0 };
+  const platformSkills = await syncGuestPlatformSkills(join(OWNER_INSTANCE_ROOT, 'memory'), {
+    dryRun: options.dryRun,
+    homeDir: HOME_DIR,
   });
+  const usesLaunchAgent = await pathExists(OWNER_LAUNCH_AGENT_PATH);
 
-  const plistChanged = currentContent !== nextContent;
+  let plistChanged = false;
+  let envChanged = false;
   let backupPath = '';
-  if (!options.dryRun && plistChanged) {
-    backupPath = await backupFile(OWNER_LAUNCH_AGENT_PATH);
-    await writeTextAtomic(OWNER_LAUNCH_AGENT_PATH, nextContent);
+  if (usesLaunchAgent) {
+    const currentPlist = await readPlistJson(OWNER_LAUNCH_AGENT_PATH);
+    const currentContent = await readFile(OWNER_LAUNCH_AGENT_PATH, 'utf8');
+    const environmentVariables = {
+      ...(currentPlist.EnvironmentVariables && typeof currentPlist.EnvironmentVariables === 'object'
+        ? currentPlist.EnvironmentVariables
+        : {}),
+      HOME: OWNER_INSTANCE_ROOT,
+      CHAT_PORT: trimString(currentPlist.EnvironmentVariables?.CHAT_PORT) || DEFAULT_OWNER_PORT,
+      REMOTELAB_INSTANCE_ROOT: OWNER_INSTANCE_ROOT,
+      REMOTELAB_SESSION_DISPATCH: 'off',
+      TMPDIR: OWNER_TMP_DIR,
+      REMOTELAB_USER_SHELL_ENV_B64: trimString(currentPlist.EnvironmentVariables?.REMOTELAB_USER_SHELL_ENV_B64)
+        || serializeUserShellEnvSnapshot(),
+    };
+
+    const nextContent = buildLaunchAgentPlist({
+      label: trimString(currentPlist.Label) || 'com.chatserver.claude',
+      nodePath: trimString(currentPlist.ProgramArguments?.[0]) || process.execPath,
+      chatServerPath: trimString(currentPlist.ProgramArguments?.[1]) || join(PROJECT_ROOT, 'chat-server.mjs'),
+      workingDirectory: PROJECT_ROOT,
+      standardOutPath: trimString(currentPlist.StandardOutPath) || join(HOME_DIR, 'Library', 'Logs', 'chat-server.log'),
+      standardErrorPath: trimString(currentPlist.StandardErrorPath) || join(HOME_DIR, 'Library', 'Logs', 'chat-server.error.log'),
+      environmentVariables,
+    });
+
+    plistChanged = currentContent !== nextContent;
+    if (!options.dryRun && plistChanged) {
+      backupPath = await backupFile(OWNER_LAUNCH_AGENT_PATH);
+      await writeTextAtomic(OWNER_LAUNCH_AGENT_PATH, nextContent);
+    }
+  } else {
+    const currentContent = await readFile(OWNER_SYSTEMD_ENV_FILE, 'utf8').catch((error) => {
+      if (error?.code === 'ENOENT') return '';
+      throw error;
+    });
+    const environmentVariables = parseEnvFile(currentContent);
+    environmentVariables.HOME = OWNER_INSTANCE_ROOT;
+    environmentVariables.PATH = trimString(environmentVariables.PATH) || trimString(process.env.PATH) || '/usr/local/bin:/usr/bin:/bin';
+    environmentVariables.CHAT_PORT = trimString(environmentVariables.CHAT_PORT) || DEFAULT_OWNER_PORT;
+    environmentVariables.REMOTELAB_INSTANCE_ROOT = OWNER_INSTANCE_ROOT;
+    environmentVariables.REMOTELAB_SESSION_DISPATCH = 'off';
+    environmentVariables.TMPDIR = OWNER_TMP_DIR;
+    const nextContent = serializeEnvFile(environmentVariables);
+    envChanged = currentContent !== nextContent;
+    if (!options.dryRun && envChanged) {
+      backupPath = await backupFile(OWNER_SYSTEMD_ENV_FILE);
+      await writeTextAtomic(OWNER_SYSTEMD_ENV_FILE, nextContent);
+    }
   }
 
   let restarted = false;
   let buildInfo = null;
   if (!options.dryRun && !options.noRestart) {
-    await reloadOwnerLaunchAgent();
+    if (usesLaunchAgent) {
+      await reloadOwnerLaunchAgent();
+    } else {
+      await restartOwnerSystemdService();
+    }
     restarted = true;
     buildInfo = await waitForBuildInfo(OWNER_BUILD_INFO_URL);
   }
 
   const result = {
     ownerInstanceRoot: OWNER_INSTANCE_ROOT,
+    cliShim,
     aliases,
+    memoryBackfill,
+    platformSkills,
     plistChanged,
+    envChanged,
     backupPath,
     restarted,
     buildInfoOk: !!buildInfo,

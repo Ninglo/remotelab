@@ -16,6 +16,43 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const trimmed = trimString(value);
+    if (trimmed) return trimmed;
+  }
+  return '';
+}
+
+function normalizeStringArray(values = []) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.map((value) => trimString(value)).filter(Boolean))];
+}
+
+function normalizeGoogleOAuthSettings(rawValue = {}, { includeSecrets = true } = {}) {
+  const value = rawValue && typeof rawValue === 'object'
+    ? rawValue
+    : {};
+  const clientId = firstNonEmpty(value.clientId, value.client_id);
+  const rawClientSecret = firstNonEmpty(value.clientSecret, value.client_secret);
+  const clientSecret = includeSecrets ? rawClientSecret : '';
+  const redirectUris = normalizeStringArray([
+    trimString(value.redirectUri),
+    ...(Array.isArray(value.redirectUris) ? value.redirectUris : []),
+    ...(Array.isArray(value.redirect_uris) ? value.redirect_uris : []),
+  ]);
+  const redirectUri = redirectUris[0] || '';
+  const configured = value.configured === true || !!(clientId && rawClientSecret && redirectUri);
+  return {
+    clientId,
+    clientSecret,
+    redirectUri,
+    redirectUris,
+    configured,
+    updatedAt: trimString(value.updatedAt),
+  };
+}
+
 function normalizeVoiceInputSettings(rawValue = {}, { includeSecrets = true } = {}) {
   const value = rawValue && typeof rawValue === 'object'
     ? rawValue
@@ -66,10 +103,12 @@ export function normalizeInstanceSettings(rawValue = {}, { includeSecrets = true
     ? rawValue
     : {};
   const voiceInput = normalizeVoiceInputSettings(value.voiceInput, { includeSecrets });
+  const googleOAuth = normalizeGoogleOAuthSettings(value.googleOAuth, { includeSecrets });
   return {
     version: 1,
-    updatedAt: trimString(value.updatedAt) || voiceInput.updatedAt,
+    updatedAt: trimString(value.updatedAt) || voiceInput.updatedAt || googleOAuth.updatedAt,
     voiceInput,
+    googleOAuth,
   };
 }
 
@@ -161,6 +200,15 @@ export async function updateInstanceSettings(rawPatch = {}) {
           includeSecrets: true,
         })
         : current.voiceInput,
+      googleOAuth: Object.prototype.hasOwnProperty.call(patch, 'googleOAuth')
+        ? normalizeGoogleOAuthSettings({
+          ...current.googleOAuth,
+          ...(patch.googleOAuth && typeof patch.googleOAuth === 'object' ? patch.googleOAuth : {}),
+          updatedAt: now,
+        }, {
+          includeSecrets: true,
+        })
+        : current.googleOAuth,
     };
     await writeJsonAtomic(INSTANCE_SETTINGS_FILE, next);
     return cloneValue(next);
@@ -170,4 +218,9 @@ export async function updateInstanceSettings(rawPatch = {}) {
 export async function loadServerVoiceInputSettings() {
   const settings = await loadRawInstanceSettings();
   return normalizeVoiceInputSettings(settings.voiceInput, { includeSecrets: true });
+}
+
+export async function loadServerGoogleOAuthSettings() {
+  const settings = await loadRawInstanceSettings();
+  return normalizeGoogleOAuthSettings(settings.googleOAuth, { includeSecrets: true });
 }

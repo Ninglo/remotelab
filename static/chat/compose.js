@@ -77,6 +77,22 @@ function createComposerAttachmentAbortError() {
   return error;
 }
 
+function isComposerAttachmentAbortError(error) {
+  return error?.name === "AbortError";
+}
+
+function buildComposerAttachmentMessageUploadFallback(attachments = []) {
+  return (Array.isArray(attachments) ? attachments : [])
+    .filter((attachment) => attachment && typeof attachment === "object")
+    .map((attachment) => {
+      if (!attachment.file) return attachment;
+      const nextAttachment = { ...attachment };
+      delete nextAttachment.uploadState;
+      delete nextAttachment.uploadError;
+      return nextAttachment;
+    });
+}
+
 function buildComposerAttachmentUploadKey(sessionId, localId) {
   return `${sessionId || ""}:${localId || ""}`;
 }
@@ -268,10 +284,10 @@ async function runComposerAttachmentUpload(sessionId, localId) {
       updateComposerAttachmentByLocalId(sessionId, localId, (nextAttachment) => nextAttachment
         ? {
           ...nextAttachment,
-          uploadState: error?.name === "AbortError"
+          uploadState: isComposerAttachmentAbortError(error)
             ? "queued"
             : "failed",
-          uploadError: error?.name === "AbortError"
+          uploadError: isComposerAttachmentAbortError(error)
             ? nextAttachment?.uploadError || ""
             : (error?.message || "Attachment upload failed"),
         }
@@ -568,7 +584,7 @@ function createEmptyComposerActivitySnapshot() {
       state: "idle",
       count: 0,
     },
-    planning: {
+    continuation: {
       state: "idle",
       count: 0,
       requestId: null,
@@ -589,10 +605,10 @@ function getComposerSessionActivitySnapshot(session) {
       state: raw?.queue?.state === "queued" && queueCount > 0 ? "queued" : "idle",
       count: queueCount,
     },
-    planning: {
-      state: raw?.planning?.state === "checking" ? "checking" : "idle",
-      count: Number.isInteger(raw?.planning?.count) ? raw.planning.count : 0,
-      requestId: typeof raw?.planning?.requestId === "string" ? raw.planning.requestId : null,
+    continuation: {
+      state: raw?.continuation?.state === "checking" ? "checking" : "idle",
+      count: Number.isInteger(raw?.continuation?.count) ? raw.continuation.count : 0,
+      requestId: typeof raw?.continuation?.requestId === "string" ? raw.continuation.requestId : null,
     },
   };
 }
@@ -611,8 +627,8 @@ function hasCanonicalComposerSendAcceptance(session) {
   const nextActivity = getComposerSessionActivitySnapshot(session);
 
   if (
-    nextActivity.planning.state === "checking"
-    && (!nextActivity.planning.requestId || nextActivity.planning.requestId === pendingSend.requestId)
+    nextActivity.continuation.state === "checking"
+    && (!nextActivity.continuation.requestId || nextActivity.continuation.requestId === pendingSend.requestId)
   ) {
     return true;
   }
@@ -647,8 +663,8 @@ function isComposerPendingSessionStillActive(session, pendingSend) {
 
   const nextActivity = getComposerSessionActivitySnapshot(session);
   return (
-    nextActivity.planning.state === "checking"
-      && (!nextActivity.planning.requestId || nextActivity.planning.requestId === pendingSend.requestId)
+    nextActivity.continuation.state === "checking"
+      && (!nextActivity.continuation.requestId || nextActivity.continuation.requestId === pendingSend.requestId)
   ) || nextActivity.queue.state === "queued"
     || nextActivity.run.state === "running"
     || nextActivity.run.phase === "accepted"
@@ -677,8 +693,8 @@ function reconcileComposerPendingSendWithSession(session) {
       return acknowledgeComposerPendingSend(pendingSend.requestId, { nextStage: "processing" });
     }
     if (
-      nextActivity.planning.state === "checking"
-      && (!nextActivity.planning.requestId || nextActivity.planning.requestId === pendingSend.requestId)
+      nextActivity.continuation.state === "checking"
+      && (!nextActivity.continuation.requestId || nextActivity.continuation.requestId === pendingSend.requestId)
     ) {
       syncComposerPendingUi();
       return false;
@@ -793,7 +809,18 @@ function sendMessage(existingRequestId) {
           patchComposerPendingSendState({ stage: "uploading" });
         }
         syncComposerPendingUi();
-        outboundImages = await prepareComposerAttachmentsForSend(sessionId, queuedImages);
+        try {
+          outboundImages = await prepareComposerAttachmentsForSend(sessionId, queuedImages);
+        } catch (uploadError) {
+          if (isComposerAttachmentAbortError(uploadError)) {
+            throw uploadError;
+          }
+          console.warn(
+            "Composer direct attachment upload failed; falling back to message upload.",
+            uploadError,
+          );
+          outboundImages = buildComposerAttachmentMessageUploadFallback(queuedImages);
+        }
         const pendingSend = getComposerPendingSendSnapshot();
         if (!(pendingSend && pendingSend.requestId === requestId)) return;
         replaceComposerAttachmentsSnapshot(sessionId, outboundImages);

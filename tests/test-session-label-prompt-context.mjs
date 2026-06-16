@@ -173,10 +173,13 @@ try {
         && current?.description === 'Tune the auto-rename prompt using session history and scope hints.';
     },
     'session should use enriched prompt context for early naming',
+    8000,
   );
 
   const promptLog = readFileSync(promptLogPath, 'utf8');
-  assert.match(promptLog, /Treat the display group as a flexible project-like container/);
+  assert.match(promptLog, /RemoteLab only has one visible Projects level/);
+  assert.match(promptLog, /do not create a new group for every one-off feature slice/);
+  assert.match(promptLog, /prefer the closest existing workstream group/);
   assert.match(promptLog, /Earlier session context:/);
   assert.match(promptLog, /Known scope router entries:/);
   assert.match(promptLog, /Current non-archived sessions:/);

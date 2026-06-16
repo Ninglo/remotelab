@@ -183,7 +183,7 @@ try {
     const requestId = 'req-planning-accept';
     const res = await request(port, 'POST', `/api/sessions/${session.id}/messages`, {
       requestId,
-      text: 'Please investigate the workflow design problem before you answer.',
+      text: '把 UI 卡片那条线单独拉出来，别继续和 planner 架构讨论混在一起。',
       tool: 'fake-codex',
       model: 'fake-model',
       effort: 'low',
@@ -193,8 +193,8 @@ try {
     assert.equal(res.json.requestId, requestId, 'accepted planning response should preserve requestId');
     assert.equal(res.json.queued, false, 'accepted planning response should not masquerade as queued');
     assert.equal(res.json.run, null, 'accepted planning response should not create a run synchronously');
-    assert.equal(res.json.session?.activity?.planning?.state, 'checking', 'session activity should expose planning/checking');
-    assert.equal(res.json.session?.activity?.planning?.requestId, requestId, 'planning activity should expose the active requestId');
+    assert.equal(res.json.session?.activity?.continuation?.state, 'checking', 'session activity should expose continuation/checking');
+    assert.equal(res.json.session?.activity?.continuation?.requestId, requestId, 'continuation activity should expose the active requestId');
 
     const detailWithRun = await waitFor(async () => {
       const detail = await request(port, 'GET', `/api/sessions/${session.id}`);
@@ -210,12 +210,12 @@ try {
     const detailAfterPlanning = await waitFor(async () => {
       const detail = await request(port, 'GET', `/api/sessions/${session.id}`);
       if (detail.status !== 200) return false;
-      return detail.json?.session?.activity?.planning?.state === 'idle'
+      return detail.json?.session?.activity?.continuation?.state === 'idle'
         ? detail.json.session
         : false;
     }, 'planning state to clear after live run acceptance');
 
-    assert.equal(detailAfterPlanning.activity?.planning?.state, 'idle', 'planning state should eventually clear after acceptance');
+    assert.equal(detailAfterPlanning.activity?.continuation?.state, 'idle', 'continuation state should eventually clear after acceptance');
 
     const run = await waitForRunTerminal(port, detailWithRun.activity.run.runId);
     assert.equal(run.requestId, requestId, 'run should keep the original requestId through planning');

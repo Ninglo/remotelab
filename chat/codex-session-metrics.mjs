@@ -5,12 +5,18 @@ import { join } from 'path';
 import readline from 'readline';
 import { statOrNull } from './fs-utils.mjs';
 import { CODEX_MANAGED_HOME_DIR } from '../lib/config.mjs';
-import { estimateGpt54CostUsd, getGpt54PricingMetadata } from '../lib/openai-pricing.mjs';
+import { estimateUsageCost, getPricingMetadataForModel } from '../lib/openai-pricing.mjs';
 
 const SESSION_LOG_CACHE = new Map();
 const TAIL_CHUNK_BYTES = 128 * 1024;
 const MAX_TAIL_SCAN_BYTES = 2 * 1024 * 1024;
 let cachedSessionsRootsKey = '';
+const FALLBACK_CODEX_PRICING_MODEL = 'gpt-5.4';
+
+function resolveCodexPricingMetadata(model) {
+  return getPricingMetadataForModel(model, { tool: 'codex' })
+    || getPricingMetadataForModel(FALLBACK_CODEX_PRICING_MODEL, { tool: 'codex' });
+}
 
 function buildUniqueRoots(paths = []) {
   const seen = new Set();
@@ -259,12 +265,14 @@ export async function readLatestCodexSessionMetrics(threadId, options = {}) {
   if (windowUsage?.latestUsage) {
     const latestUsage = windowUsage.latestUsage;
     const deltaUsage = windowUsage.deltaUsage;
-    const estimatedCostUsd = estimateGpt54CostUsd({
+    const pricingMetadata = resolveCodexPricingMetadata(options.model);
+    const estimatedCostUsd = estimateUsageCost({
+      model: pricingMetadata?.pricingModel || FALLBACK_CODEX_PRICING_MODEL,
+      tool: 'codex',
       inputTokens: deltaUsage.inputTokens,
       cachedInputTokens: deltaUsage.cachedInputTokens,
       outputTokens: deltaUsage.outputTokens,
-    });
-    const pricingMetadata = getGpt54PricingMetadata();
+    })?.estimatedCostUsd ?? null;
 
     return {
       threadId,
@@ -278,8 +286,8 @@ export async function readLatestCodexSessionMetrics(threadId, options = {}) {
       reasoningTokens: deltaUsage.reasoningTokens,
       contextWindowTokens: latestUsage.contextWindowTokens,
       ...(Number.isFinite(estimatedCostUsd) ? { estimatedCostUsd } : {}),
-      estimatedCostModel: pricingMetadata.pricingModel,
-      costSource: pricingMetadata.costSource,
+      ...(pricingMetadata?.pricingModel ? { estimatedCostModel: pricingMetadata.pricingModel } : {}),
+      ...(pricingMetadata?.costSource ? { costSource: pricingMetadata.costSource } : {}),
     };
   }
 
@@ -292,12 +300,14 @@ export async function readLatestCodexSessionMetrics(threadId, options = {}) {
   const latestUsage = readTokenUsageRecord(tokenCountRecord);
   const contextTokens = latestUsage?.contextTokens;
   if (!Number.isInteger(contextTokens)) return null;
-  const estimatedCostUsd = estimateGpt54CostUsd({
+  const pricingMetadata = resolveCodexPricingMetadata(options.model);
+  const estimatedCostUsd = estimateUsageCost({
+    model: pricingMetadata?.pricingModel || FALLBACK_CODEX_PRICING_MODEL,
+    tool: 'codex',
     inputTokens: latestUsage.inputTokens,
     cachedInputTokens: latestUsage.cachedInputTokens,
     outputTokens: latestUsage.outputTokens,
-  });
-  const pricingMetadata = getGpt54PricingMetadata();
+  })?.estimatedCostUsd ?? null;
 
   return {
     threadId,
@@ -311,8 +321,8 @@ export async function readLatestCodexSessionMetrics(threadId, options = {}) {
     reasoningTokens: latestUsage.reasoningTokens,
     contextWindowTokens: latestUsage.contextWindowTokens,
     ...(Number.isFinite(estimatedCostUsd) ? { estimatedCostUsd } : {}),
-    estimatedCostModel: pricingMetadata.pricingModel,
-    costSource: pricingMetadata.costSource,
+    ...(pricingMetadata?.pricingModel ? { estimatedCostModel: pricingMetadata.pricingModel } : {}),
+    ...(pricingMetadata?.costSource ? { costSource: pricingMetadata.costSource } : {}),
   };
 }
 

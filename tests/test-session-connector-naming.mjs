@@ -81,6 +81,15 @@ try {
   assert.equal(explicitWechat.name, '客户追问发票状态', 'WeChat connector titles should drop redundant group prefixes');
   assert.equal(explicitWechat.autoRenamePending, false, 'explicit WeChat connector titles should be preserved');
 
+  const explicitWhatsApp = await createSession(baseFolder, 'codex', 'WhatsApp: invoice follow-up', {
+    sourceId: 'whatsapp',
+    sourceName: 'WhatsApp',
+    group: 'WhatsApp',
+    externalTriggerId: 'whatsapp:phone_1:user_1',
+  });
+  assert.equal(explicitWhatsApp.name, 'invoice follow-up', 'WhatsApp connector titles should drop redundant group prefixes');
+  assert.equal(explicitWhatsApp.autoRenamePending, false, 'explicit WhatsApp connector titles should be preserved');
+
   const chatVisitor = await createSession(baseFolder, 'codex', 'Template Agent', {
     templateId: 'visitor-template',
     templateName: 'Template Agent',

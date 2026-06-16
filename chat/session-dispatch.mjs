@@ -1,22 +1,28 @@
 /**
- * Pre-execution session continuation planning.
+ * Pre-execution session continuation routing.
  *
- * Before a user message enters the normal turn lifecycle, this module
- * decides whether the input should:
- * - continue in the current session
- * - fork into one or more related child sessions
- * - start one or more fresh sessions with minimal forwarded context
+ * Before a user message enters the normal turn lifecycle, this module:
+ * - runs a lightweight stage-1 gate to decide whether heavy split planning is needed
+ * - runs the heavier stage-2 planner only when stage 1 escalates
+ * - executes the resulting continuation plan when the turn should branch
  */
 
 import {
+  buildContinuationGatePrompt,
   buildContinuationPlannerPrompt,
+  parseContinuationGateDecision,
+  parseWorkstreamAssessment,
   parseContinuationPlan,
 } from './session-dispatch-prompt.mjs';
 import { isEnvToggleEnabled } from '../lib/env-toggle.mjs';
 
+const CONTINUATION_GATE_THRESHOLD = 0.7;
 const CONTINUATION_PLANNER_THRESHOLD = 0.75;
 const DISPATCH_SETTING_ENV = 'REMOTELAB_SESSION_DISPATCH';
+const GATE_TRANSCRIPT_MAX_CHARS = 5000;
+const GATE_TRANSCRIPT_MESSAGE_LIMIT = 6;
 const CURRENT_TRANSCRIPT_MAX_CHARS = 22000;
+const CURRENT_TRANSCRIPT_MESSAGE_LIMIT = 16;
 
 function isDispatchEnabled() {
   return isEnvToggleEnabled(process.env[DISPATCH_SETTING_ENV], { defaultValue: false });
@@ -27,19 +33,17 @@ export function shouldRunDispatch(session, options = {}) {
   if (options.internalOperation) return false;
   if (options.skipDispatch) return false;
   if (session?.visitorId) return false;
+  if (session?.internalRole) return false;
   if (options.queueIfBusy === false && options.recordUserMessage === false) return false;
   return true;
 }
 
-export function shouldUseAsyncDispatchPlanning(session, message) {
+export function shouldPrepareContinuationCheck(session, message) {
   const trimmedMessage = String(message || '').trim();
-  if (trimmedMessage.length < 5) {
+  if (!session?.id) {
     return false;
   }
-  if (Number(session?.messageCount || 0) < 2) {
-    return false;
-  }
-  if (!session?.name || session.name.startsWith('New Session') || session.autoRenamePending === true) {
+  if (!trimmedMessage) {
     return false;
   }
   return true;
@@ -54,10 +58,20 @@ function clipTranscript(text, maxChars) {
   return `${normalized.slice(0, headChars).trimEnd()}\n[... transcript clipped ...]\n${normalized.slice(-tailChars).trimStart()}`;
 }
 
-function buildTranscriptFromHistory(events, maxChars = CURRENT_TRANSCRIPT_MAX_CHARS) {
+function buildTranscriptFromHistory(
+  events,
+  {
+    maxChars = CURRENT_TRANSCRIPT_MAX_CHARS,
+    messageLimit = CURRENT_TRANSCRIPT_MESSAGE_LIMIT,
+  } = {},
+) {
   if (!Array.isArray(events) || events.length === 0) return '';
+  const messageEvents = events.filter((event) => event?.type === 'message');
+  const recentEvents = messageEvents.length > messageLimit
+    ? messageEvents.slice(-messageLimit)
+    : messageEvents;
   const lines = [];
-  for (const event of events) {
+  for (const event of recentEvents) {
     if (event?.type !== 'message') continue;
     const content = String(event.content || '').trim();
     if (!content) continue;
@@ -71,6 +85,15 @@ function buildTranscriptFromHistory(events, maxChars = CURRENT_TRANSCRIPT_MAX_CH
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildDefaultGateDecision(reason = 'default') {
+  return {
+    action: 'continue_direct',
+    workstreamRelation: 'same_workstream',
+    confidence: 1,
+    reasoning: reason,
+  };
 }
 
 function buildDefaultPlan(message, reason = 'default') {
@@ -91,6 +114,33 @@ function buildDefaultPlan(message, reason = 'default') {
         titleHint: '',
       },
     ],
+  };
+}
+
+function normalizeGateDecision(decision, { includePlannerAction = true } = {}) {
+  const action = decision?.action === 'needs_planning'
+    ? 'needs_planning'
+    : 'continue_direct';
+  const workstreamRelation = decision?.workstreamRelation === 'same_session_shift'
+    ? 'same_session_shift'
+    : (decision?.workstreamRelation === 'separate_workstream' ? 'separate_workstream' : 'same_workstream');
+  const confidence = typeof decision?.confidence === 'number'
+    ? Math.max(0, Math.min(1, decision.confidence))
+    : 0;
+
+  if (includePlannerAction && action === 'needs_planning' && confidence < CONTINUATION_GATE_THRESHOLD) {
+    return buildDefaultGateDecision(`low confidence: ${trimString(decision?.reasoning) || 'continuation gate'}`);
+  }
+
+  if (workstreamRelation !== 'same_workstream' && confidence < CONTINUATION_GATE_THRESHOLD) {
+    return buildDefaultGateDecision(`low confidence: ${trimString(decision?.reasoning) || 'continuation gate'}`);
+  }
+
+  return {
+    ...(includePlannerAction ? { action } : {}),
+    workstreamRelation,
+    confidence: confidence || 1,
+    reasoning: trimString(decision?.reasoning),
   };
 }
 
@@ -160,28 +210,145 @@ export function isTrivialContinuationPlan(plan) {
   return destinations.length === 1 && destinations[0]?.mode === 'continue';
 }
 
+async function resolveSessionHistory({
+  session,
+  history,
+  loadSessionHistory,
+}) {
+  if (Array.isArray(history)) {
+    return history;
+  }
+  if (typeof loadSessionHistory === 'function' && session?.id) {
+    return loadSessionHistory(session.id);
+  }
+  return [];
+}
+
+export async function checkSessionContinuationNeed({
+  session,
+  message,
+  history,
+  loadSessionHistory,
+  runPrompt,
+}) {
+  return assessSessionWorkstream({
+    session,
+    text: message,
+    history,
+    loadSessionHistory,
+    runPrompt,
+    candidateLabel: 'Incoming user message',
+    includePlannerAction: true,
+    logPrefix: '[session-continuation] Gate',
+  });
+}
+
+export async function assessSessionWorkstream({
+  session,
+  text,
+  history,
+  loadSessionHistory,
+  runPrompt,
+  candidateLabel = 'Candidate input',
+  includePlannerAction = true,
+  logPrefix = '[session-workstream]',
+}) {
+  const defaultDecision = buildDefaultGateDecision('default');
+  const trimmedMessage = trimString(text);
+  if (!shouldPrepareContinuationCheck(session, trimmedMessage)) {
+    return includePlannerAction
+      ? defaultDecision
+      : { ...defaultDecision, action: undefined };
+  }
+
+  let currentHistory = [];
+  try {
+    currentHistory = await resolveSessionHistory({
+      session,
+      history,
+      loadSessionHistory,
+    });
+  } catch (error) {
+    console.error(`${logPrefix} failed to load history: ${error.message}`);
+    return includePlannerAction
+      ? defaultDecision
+      : { ...defaultDecision, action: undefined };
+  }
+
+  const currentTranscript = buildTranscriptFromHistory(currentHistory, {
+    maxChars: GATE_TRANSCRIPT_MAX_CHARS,
+    messageLimit: GATE_TRANSCRIPT_MESSAGE_LIMIT,
+  });
+
+  if (!currentTranscript) {
+    return includePlannerAction
+      ? defaultDecision
+      : { ...defaultDecision, action: undefined };
+  }
+
+  const prompt = buildContinuationGatePrompt({
+    currentSession: session,
+    currentTranscript,
+    message: trimmedMessage,
+    candidateLabel,
+    includePlannerAction,
+  });
+
+  let rawResponse = '';
+  try {
+    rawResponse = await runPrompt(prompt);
+  } catch (error) {
+    console.error(`${logPrefix} failed: ${error.message}`);
+    return includePlannerAction
+      ? defaultDecision
+      : { ...defaultDecision, action: undefined };
+  }
+
+  const parsedDecision = includePlannerAction
+    ? parseContinuationGateDecision(rawResponse)
+    : parseWorkstreamAssessment(rawResponse, { includePlannerAction: false });
+  const normalizedDecision = normalizeGateDecision(parsedDecision, { includePlannerAction });
+
+  console.log(
+    `${logPrefix}: ${normalizedDecision.workstreamRelation}`
+    + (includePlannerAction ? ` / ${normalizedDecision.action}` : '')
+    + ` (confidence: ${(normalizedDecision.confidence || 0).toFixed(2)})`
+    + ` for session ${session.id?.slice(0, 8)}`
+    + ` reason: ${normalizedDecision.reasoning || 'n/a'}`
+  );
+
+  return normalizedDecision;
+}
+
 export async function planSessionContinuations({
   session,
   message,
+  history,
   loadSessionHistory,
   runPrompt,
 }) {
   const defaultPlan = buildDefaultPlan(message, 'default');
   const trimmedMessage = trimString(message);
-  if (!shouldUseAsyncDispatchPlanning(session, trimmedMessage)) {
+  if (!shouldPrepareContinuationCheck(session, trimmedMessage)) {
     return defaultPlan;
   }
 
-  let currentTranscript = '';
+  let currentHistory = [];
   try {
-    const currentHistory = typeof loadSessionHistory === 'function'
-      ? await loadSessionHistory(session.id)
-      : [];
-    currentTranscript = buildTranscriptFromHistory(currentHistory, CURRENT_TRANSCRIPT_MAX_CHARS);
+    currentHistory = await resolveSessionHistory({
+      session,
+      history,
+      loadSessionHistory,
+    });
   } catch (error) {
-    console.error(`[session-continuation] Failed to load current transcript: ${error.message}`);
+    console.error(`[session-continuation] Failed to load continuation planner history: ${error.message}`);
     return defaultPlan;
   }
+
+  const currentTranscript = buildTranscriptFromHistory(currentHistory, {
+    maxChars: CURRENT_TRANSCRIPT_MAX_CHARS,
+    messageLimit: CURRENT_TRANSCRIPT_MESSAGE_LIMIT,
+  });
 
   if (!currentTranscript) {
     return defaultPlan;

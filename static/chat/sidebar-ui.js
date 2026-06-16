@@ -264,11 +264,24 @@ function renderImagePreviews() {
   }
 }
 
-imgBtn.addEventListener("click", () => {
+function isAttachmentPickerBlocked() {
   if (typeof hasPendingComposerSend === "function" && hasPendingComposerSend()) {
+    return true;
+  }
+  return !currentSessionId || imgFileInput?.disabled === true;
+}
+
+imgBtn.addEventListener("click", (event) => {
+  if (isAttachmentPickerBlocked()) {
+    event.preventDefault();
     return;
   }
   imgFileInput.click();
+});
+imgFileInput.addEventListener("click", (event) => {
+  if (isAttachmentPickerBlocked()) {
+    event.preventDefault();
+  }
 });
 imgFileInput.addEventListener("change", () => {
   if (imgFileInput.files.length > 0) addAttachmentFiles(imgFileInput.files);

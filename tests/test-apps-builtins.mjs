@@ -98,7 +98,7 @@ try {
     welcomeMessage: '',
     skills: [],
   });
-  assert.equal(defaultToolApp.tool, 'micro-agent', 'new agents should default to Micro Agent when available');
+  assert.equal(defaultToolApp.tool, 'codex', 'new agents should default to CodeX');
 
   const afterCreate = await listApps();
   assert.equal(afterCreate.some((app) => app.id === custom.id), true);

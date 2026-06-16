@@ -4,10 +4,10 @@ import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
-import { estimateGpt54CostUsd, getGpt54PricingMetadata } from '../lib/openai-pricing.mjs';
+import { estimateUsageCost, getPricingMetadataForModel } from '../lib/openai-pricing.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CODEX_MODEL = 'gpt-5.4';
+const DEFAULT_CODEX_MODEL = 'gpt-5.5';
 const DEFAULT_CLAUDE_MODEL = 'sonnet';
 const CLAUDE_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku']);
 const CLAUDE_MODEL_PREFIXES = ['claude-'];
@@ -208,7 +208,8 @@ async function runDoubaoRoute({ prompt, model, effort }) {
 
 async function runCodexRoute({ prompt, model, effort }) {
   const resolvedModel = trimString(model) || DEFAULT_CODEX_MODEL;
-  const pricingMetadata = getGpt54PricingMetadata();
+  const pricingMetadata = getPricingMetadataForModel(resolvedModel, { tool: 'codex' })
+    || getPricingMetadataForModel('gpt-5.4', { tool: 'codex' });
   const sessionId = randomUUID();
   let sawSystem = false;
   let sawResult = false;
@@ -284,11 +285,13 @@ async function runCodexRoute({ prompt, model, effort }) {
       if (parsed.type === 'turn.completed') {
         sawResult = true;
         const usage = buildClaudeLikeUsage(parsed.usage);
-        const estimatedCostUsd = estimateGpt54CostUsd({
+        const estimatedCostUsd = estimateUsageCost({
+          model: resolvedModel,
+          tool: 'codex',
           inputTokens: usage.input_tokens,
           cachedInputTokens: usage.cached_input_tokens,
           outputTokens: usage.output_tokens,
-        });
+        })?.estimatedCostUsd ?? null;
         emitJsonLine({
           type: 'result',
           subtype: 'success',
@@ -301,8 +304,8 @@ async function runCodexRoute({ prompt, model, effort }) {
           session_id: sessionId,
           usage,
           ...(Number.isFinite(estimatedCostUsd) ? { estimated_cost_usd: estimatedCostUsd } : {}),
-          estimated_cost_model: pricingMetadata.pricingModel,
-          cost_source: pricingMetadata.costSource,
+          ...(pricingMetadata?.pricingModel ? { estimated_cost_model: pricingMetadata.pricingModel } : {}),
+          ...(pricingMetadata?.costSource ? { cost_source: pricingMetadata.costSource } : {}),
           modelUsage: {
             [resolvedModel]: {
               inputTokens: usage.input_tokens,
@@ -313,7 +316,7 @@ async function runCodexRoute({ prompt, model, effort }) {
               ...(Number.isFinite(estimatedCostUsd)
                 ? { estimatedCostUSD: estimatedCostUsd }
                 : {}),
-              pricingModel: pricingMetadata.pricingModel,
+              ...(pricingMetadata?.pricingModel ? { pricingModel: pricingMetadata.pricingModel } : {}),
             },
           },
           permission_denials: [],
@@ -355,11 +358,11 @@ async function runCodexRoute({ prompt, model, effort }) {
         [resolvedModel]: {
           inputTokens: 0,
           outputTokens: 0,
-          pricingModel: pricingMetadata.pricingModel,
+          ...(pricingMetadata?.pricingModel ? { pricingModel: pricingMetadata.pricingModel } : {}),
         },
       },
-      estimated_cost_model: pricingMetadata.pricingModel,
-      cost_source: pricingMetadata.costSource,
+      ...(pricingMetadata?.pricingModel ? { estimated_cost_model: pricingMetadata.pricingModel } : {}),
+      ...(pricingMetadata?.costSource ? { cost_source: pricingMetadata.costSource } : {}),
       permission_denials: [],
       uuid: randomUUID(),
     });

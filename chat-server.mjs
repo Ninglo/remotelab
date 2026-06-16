@@ -13,6 +13,7 @@ const [
   tools,
   { ensureDir },
   embeddedMailWorker,
+  guestWeChatConnectorStartup,
 ] = await Promise.all([
   import('./lib/config.mjs'),
   import('./chat/router.mjs'),
@@ -24,6 +25,7 @@ const [
   import('./lib/tools.mjs'),
   import('./chat/fs-utils.mjs'),
   import('./lib/embedded-mail-worker.mjs'),
+  import('./lib/guest-wechat-connector-startup.mjs'),
 ]);
 
 for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
@@ -77,4 +79,14 @@ process.on('SIGINT', shutdown);
 server.listen(CHAT_PORT, CHAT_BIND_HOST, () => {
   console.log(`Chat server listening on http://${CHAT_BIND_HOST}:${CHAT_PORT}`);
   console.log(`Cookie mode: ${SECURE_COOKIES ? 'Secure (HTTPS)' : 'Non-secure (localhost)'}`);
+  void (async () => {
+    try {
+      const result = await guestWeChatConnectorStartup.ensureGuestWeChatConnectorStartup();
+      if (result?.attempted) {
+        console.log(`[startup] guest WeChat connector ensure: ${result.stdout || result.reason}`);
+      }
+    } catch (error) {
+      console.error(`[startup] guest WeChat connector ensure failed: ${error?.message || error}`);
+    }
+  })();
 });

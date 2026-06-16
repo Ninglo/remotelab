@@ -1211,7 +1211,7 @@
       </button>
 
       <div class="top-actions">
-        <button class="btn btn-primary" id="btn-trial">创建试用实例</button>
+        <button class="btn btn-primary" id="btn-trial">创建 5 个试用实例</button>
         <button class="btn btn-primary" id="btn-custom">创建自定义实例</button>
         <button class="btn" id="btn-converge">收敛库存</button>
         <button class="btn" id="btn-refresh">刷新</button>
@@ -1246,6 +1246,11 @@
       </label>
       <div class="control-side">
         <div class="chip-row" id="filter-chips"></div>
+        <label class="sort-field" id="host-field" hidden>
+          <span>目标机器</span>
+          <select id="host-select" aria-label="目标机器"></select>
+        </label>
+        <button class="btn" id="btn-host-sync" hidden>同步目标机器</button>
         <label class="sort-field" id="sort-field" hidden>
           <span id="sort-label">排序</span>
           <select id="sort-select" aria-label="排序方式"></select>
@@ -1264,9 +1269,13 @@
 
 <dialog id="dlg-create">
   <h2>创建实例</h2>
-  <p>使用短小的实例名，只保留小写字母、数字和连字符。</p>
+  <p>使用短小的实例名前缀，只保留小写字母、数字和连字符。默认一次创建 5 个，方便直接分发。</p>
+  <label for="inp-host">目标机器</label>
+  <select id="inp-host"></select>
   <label for="inp-name">实例名</label>
   <input type="text" id="inp-name" placeholder="例如：demo" autocomplete="off" spellcheck="false">
+  <label for="inp-count">数量</label>
+  <input type="number" id="inp-count" min="1" max="20" value="5" inputmode="numeric">
   <div class="dialog-actions">
     <button class="btn" id="btn-dlg-cancel">取消</button>
     <button class="btn btn-primary" id="btn-dlg-confirm">创建</button>
@@ -1381,6 +1390,7 @@
   var state = {
     view: readViewFromLocation(),
     search: '',
+    selectedHost: '',
     filters: {
       pending: 'all',
       users: 'all',
@@ -1399,6 +1409,10 @@
     billing: null,
     billingPromise: null,
   };
+
+  function sanitizeName(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  }
 
   function basePath() {
     var path = window.location.pathname || '/';
@@ -1475,6 +1489,56 @@
 
   function currentSort() {
     return state.sorts[state.view] || 'default';
+  }
+
+  function ensureSelectedHostValue() {
+    var hosts = fleetHosts();
+    if (!hosts.length) {
+      state.selectedHost = '';
+      return '';
+    }
+    var current = sanitizeName(state.selectedHost);
+    if (current && hosts.some(function(host) { return sanitizeName(host && host.name) === current; })) {
+      state.selectedHost = current;
+      return current;
+    }
+    var preferred = hosts.find(function(host) {
+      return host && (host.local || host.runtime === 'local');
+    }) || hosts[0];
+    state.selectedHost = sanitizeName(preferred && preferred.name);
+    return state.selectedHost;
+  }
+
+  function selectedHostName() {
+    return ensureSelectedHostValue();
+  }
+
+  function selectedFleetHost() {
+    var target = selectedHostName();
+    return fleetHosts().find(function(host) {
+      return sanitizeName(host && host.name) === target;
+    }) || null;
+  }
+
+  function selectedHostLabel() {
+    var host = selectedFleetHost();
+    return host ? (host.displayName || host.name || '未命名机器') : '未选择机器';
+  }
+
+  function selectedHostIsLocal() {
+    var host = selectedFleetHost();
+    return !!(host && (host.local || host.runtime === 'local'));
+  }
+
+  function setSelectedHost(hostName, options) {
+    var safeHost = sanitizeName(hostName);
+    if (!safeHost) return;
+    state.selectedHost = safeHost;
+    if (options && options.resetSearch) {
+      state.search = '';
+      document.getElementById('search-input').value = '';
+    }
+    if (!options || options.apply !== false) applyView();
   }
 
   function setView(view) {
@@ -1951,16 +2015,23 @@
     });
   }
 
-  function applyLocalCreatedInstance(result) {
+  function applyLocalCreatedResults(result, hostName) {
     if (!state.dashboard || !state.workbench) return false;
-    var created = buildLocalCreatedInstance(result);
-    if (!created) return false;
-    upsertInstanceRecord(created);
+    if (hostName) state.selectedHost = sanitizeName(hostName);
+    var createdResults = Array.isArray(result) ? result : [result];
+    var createdNames = [];
+    createdResults.forEach(function(entry) {
+      var created = buildLocalCreatedInstance(entry);
+      if (!created) return;
+      upsertInstanceRecord(created);
+      createdNames.push(created.name);
+    });
+    if (!createdNames.length) return false;
     refreshLocalInstanceSummary();
     touchLocalCacheTime();
     setView('instances');
-    state.search = created.name;
-    document.getElementById('search-input').value = created.name;
+    state.search = createdNames.length === 1 ? createdNames[0] : '';
+    document.getElementById('search-input').value = state.search;
     applyView();
     return true;
   }
@@ -1977,8 +2048,9 @@
     });
   }
 
-  function applyLocalInstanceAction(name, action) {
+  function applyLocalInstanceAction(name, action, hostName) {
     if (!state.dashboard || !state.workbench) return false;
+    if (hostName) state.selectedHost = sanitizeName(hostName);
     if (action === 'delete') {
       var removed = removeInstanceRecord(name);
       if (!removed) return false;
@@ -2022,6 +2094,77 @@
       return user;
     });
     refreshLocalInstanceSummary();
+    touchLocalCacheTime();
+    applyView();
+    return true;
+  }
+
+  function applyCreatedPayload(payload, hostName) {
+    var safeHost = sanitizeName(hostName || payload && payload.host || selectedHostName());
+    if (payload && payload.hostView) replaceFleetHostRecord(payload.hostView);
+    if (!safeHost) return false;
+    if (fleetHosts().find(function(host) {
+      return sanitizeName(host && host.name) === safeHost && (host.local || host.runtime === 'local');
+    })) {
+      return applyLocalCreatedResults(payload && payload.result != null ? payload.result : payload, safeHost);
+    }
+    var createdResults = Array.isArray(payload && payload.result)
+      ? payload.result
+      : (payload && payload.result ? [payload.result] : (Array.isArray(payload) ? payload : (payload ? [payload] : [])));
+    var createdNames = createdResults.map(function(entry) {
+      return String(entry && entry.name || '').trim();
+    }).filter(Boolean);
+    state.selectedHost = safeHost;
+    touchLocalCacheTime();
+    setView('instances');
+    state.search = createdNames.length === 1 ? createdNames[0] : '';
+    document.getElementById('search-input').value = state.search;
+    applyView();
+    return true;
+  }
+
+  function applyInstanceActionPayload(payload, name, action, hostName) {
+    var safeHost = sanitizeName(hostName || payload && payload.host || selectedHostName());
+    if (payload && payload.hostView) replaceFleetHostRecord(payload.hostView);
+    if (!safeHost) return false;
+    if (fleetHosts().find(function(host) {
+      return sanitizeName(host && host.name) === safeHost && (host.local || host.runtime === 'local');
+    })) {
+      return applyLocalInstanceAction(name, action, safeHost);
+    }
+    state.selectedHost = safeHost;
+    if (action === 'delete') {
+      touchLocalCacheTime();
+      applyView();
+      return true;
+    }
+    patchFleetInstanceRecord(safeHost, name, function(instance) {
+      instance.optimisticAction = action;
+      if (!instance.usage) {
+        instance.usage = {
+          sessionCount: 0,
+          authSessionCount: 0,
+          lastSessionAt: '',
+          usageStatus: 'opened',
+          usageBrief: '远端实例快照',
+          usageSummary: null,
+        };
+      }
+      if (action === 'stop') {
+        instance.localReachable = false;
+        instance.publicReachable = false;
+        instance.usage.usageBrief = '已停止，等待远端同步';
+      } else if (action === 'start') {
+        instance.localReachable = null;
+        instance.publicReachable = null;
+        instance.usage.usageBrief = '启动中，等待远端同步';
+      } else if (action === 'restart') {
+        instance.localReachable = null;
+        instance.publicReachable = null;
+        instance.usage.usageBrief = '重启中，等待远端同步';
+      }
+      return instance;
+    });
     touchLocalCacheTime();
     applyView();
     return true;
@@ -2266,6 +2409,10 @@
     var build = instanceBuildStatus(instance);
     var usage = instanceUsage(instance);
     var binding = instanceBindingDisplay(instance, boundUser);
+    var hostName = sanitizeName(instance && instance.hostName || selectedHostName());
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === hostName;
+    }) || selectedFleetHost();
     var usageSummary = instanceUsageSummary(instance);
     var totals = instanceUsageTotals(instance);
     var hasUsageData = usageSummary && ((totals.runCount || 0) || (usageSummary.filesScanned || 0) || (usageSummary.recordsScanned || 0));
@@ -2281,9 +2428,9 @@
       actions.push('<button class="action-btn" type="button" data-copy="' + esc(instance.token) + '">复制 token</button>');
     }
     actions.push(
-      '<button class="action-btn" type="button" data-instance-action="restart" data-name="' + esc(instance.name) + '" data-tone="primary">统一重启</button>',
-      '<button class="action-btn" type="button" data-instance-action="' + esc(primaryAction.action) + '" data-name="' + esc(instance.name) + '" data-tone="' + esc(primaryAction.tone) + '">' + esc(primaryAction.label) + '</button>',
-      '<button class="action-btn" type="button" data-instance-action="delete" data-name="' + esc(instance.name) + '" data-tone="danger">删除</button>'
+      '<button class="action-btn" type="button" data-instance-action="restart" data-name="' + esc(instance.name) + '" data-host="' + esc(hostName) + '" data-tone="primary">统一重启</button>',
+      '<button class="action-btn" type="button" data-instance-action="' + esc(primaryAction.action) + '" data-name="' + esc(instance.name) + '" data-host="' + esc(hostName) + '" data-tone="' + esc(primaryAction.tone) + '">' + esc(primaryAction.label) + '</button>',
+      '<button class="action-btn" type="button" data-instance-action="delete" data-name="' + esc(instance.name) + '" data-host="' + esc(hostName) + '" data-tone="danger">删除</button>'
     );
 
     return '<div class="detail-body">' +
@@ -2300,6 +2447,7 @@
         '<article class="detail-card">' +
           '<h4>实例信息</h4>' +
           '<p>' +
+            'Host：' + esc(host ? (host.displayName || host.name) : hostName || '-') + '<br>' +
             'Port：' + esc(instance.port || '') + '<br>' +
             '版本状态：' + esc(build.label) + '<br>' +
             '最近活跃：' + esc(instance.usage && instance.usage.lastSessionAt ? timeAgo(instance.usage.lastSessionAt) : '暂无') + '<br>' +
@@ -2352,11 +2500,14 @@
     var health = instanceHealth(instance);
     var binding = instanceBindingDisplay(instance, boundUser);
     var quickLinks = renderAccessTags(instance);
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === sanitizeName(instance && instance.hostName);
+    }) || selectedFleetHost();
     return '<details class="row-card">' +
       '<summary class="row-summary">' +
         '<div class="row-main">' +
           '<p class="row-title">' + esc(instance.name) + '</p>' +
-          '<p class="row-sub">' + esc(binding ? binding.userName : '未绑定用户') + '</p>' +
+          '<p class="row-sub">' + esc(binding ? binding.userName : '未绑定用户') + ' · ' + esc(host ? (host.displayName || host.name) : selectedHostLabel()) + '</p>' +
         '</div>' +
         '<div class="row-cell">' +
           '<span class="cell-label">状态</span>' +
@@ -2381,14 +2532,199 @@
     '</details>';
   }
 
+  function fleetHosts() {
+    return state.dashboard && state.dashboard.fleet && Array.isArray(state.dashboard.fleet.hosts)
+      ? state.dashboard.fleet.hosts
+      : [];
+  }
+
+  function replaceFleetHostRecord(hostView) {
+    if (!state.dashboard || !state.dashboard.fleet || !hostView || !hostView.name) return null;
+    var safeHost = sanitizeName(hostView.name);
+    var hosts = fleetHosts().filter(function(host) {
+      return sanitizeName(host && host.name) !== safeHost;
+    });
+    hosts.push(hostView);
+    hosts.sort(function(left, right) {
+      return String(left && left.name || '').localeCompare(String(right && right.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+    state.dashboard.fleet.hosts = hosts;
+    state.dashboard.fleet.hostCount = hosts.length;
+    state.dashboard.fleet.instanceCount = hosts.reduce(function(sum, host) {
+      return sum + Number(host && host.instanceCount || (host && host.instances && host.instances.length) || 0);
+    }, 0);
+    ensureSelectedHostValue();
+    return hostView;
+  }
+
+  function patchFleetInstanceRecord(hostName, instanceName, mapper) {
+    var safeHost = sanitizeName(hostName);
+    var safeInstance = String(instanceName || '').trim();
+    if (!safeHost || !safeInstance || !state.dashboard || !state.dashboard.fleet) return null;
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === safeHost;
+    });
+    if (!host || !Array.isArray(host.instances)) return null;
+    var nextInstances = host.instances.slice();
+    var index = nextInstances.findIndex(function(instance) { return instance && instance.name === safeInstance; });
+    if (index < 0) return null;
+    var next = mapper(Object.assign({}, nextInstances[index], {
+      usage: Object.assign({}, nextInstances[index] && nextInstances[index].usage || {})
+    }));
+    if (!next) return null;
+    nextInstances[index] = next;
+    host = Object.assign({}, host, {
+      instances: nextInstances,
+      instanceCount: nextInstances.length,
+    });
+    replaceFleetHostRecord(host);
+    return next;
+  }
+
+  function normalizeHostInstance(instance, host) {
+    return Object.assign({
+      hostName: sanitizeName(host && host.name),
+      accessChannels: [],
+      localReachable: null,
+      publicReachable: null,
+      usage: {
+        sessionCount: 0,
+        authSessionCount: 0,
+        lastSessionAt: '',
+        usageStatus: 'opened',
+        usageBrief: host && (host.local || host.runtime === 'local') ? '等待使用' : '远端实例快照',
+        usageSummary: null,
+      },
+    }, instance || {});
+  }
+
+  function instancesForHost(host) {
+    if (!host) return [];
+    if (host.local || host.runtime === 'local') {
+      return (state.dashboard && Array.isArray(state.dashboard.instances) ? state.dashboard.instances : []).map(function(instance) {
+        return Object.assign({ hostName: sanitizeName(host.name) }, instance);
+      });
+    }
+    return (Array.isArray(host.instances) ? host.instances : []).map(function(instance) {
+      return normalizeHostInstance(instance, host);
+    });
+  }
+
+  function fleetSyncStatus(host) {
+    var status = String(host && host.lastSyncStatus || '').toLowerCase();
+    if (status === 'error') {
+      return { label: '同步失败', tone: 'danger', note: String(host && host.lastSyncError || '远端同步失败').trim() || '远端同步失败' };
+    }
+    if (status === 'ok') {
+      return { label: '已同步', tone: 'ok', note: String(host && host.effectiveCollectedAt || host.lastSyncAt || '').trim() };
+    }
+    if (host && (host.local || host.runtime === 'local')) {
+      return { label: '本机直读', tone: 'accent', note: String(host && host.effectiveCollectedAt || '').trim() };
+    }
+    return { label: '待同步', tone: 'muted', note: '还没有远端快照' };
+  }
+
+  function renderFleetHostDetail(host) {
+    var sync = fleetSyncStatus(host);
+    var instances = Array.isArray(host && host.instances) ? host.instances : [];
+    return '<div class="detail-body">' +
+      '<div class="detail-grid">' +
+        '<article class="detail-card">' +
+          '<h4>Host 信息</h4>' +
+          '<p>' +
+            '角色：' + esc(host.role || 'dedicated') + '<br>' +
+            '运行方式：' + esc(host.runtime || '-') + '<br>' +
+            'Ring：' + esc(host.ring || '-') + '<br>' +
+            '实例数：' + esc(host.instanceCount != null ? host.instanceCount : instances.length) +
+          '</p>' +
+          '<p class="muted">' + esc(sync.note || '等待下一次同步。') + '</p>' +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>连接信息</h4>' +
+          '<p>' +
+            'SSH：' + esc(host.local ? 'local' : ((host.sshUser || 'root') + '@' + (host.sshHost || '-'))) + '<br>' +
+            '来源：' + esc(host.effectiveInstanceSource || host.instanceSource || '-') + '<br>' +
+            '最后同步：' + esc(host.lastSyncAt ? timeAgo(host.lastSyncAt) : '暂无') +
+          '</p>' +
+          '<p class="muted">' + esc(host.notes || '') + '</p>' +
+        '</article>' +
+        '<article class="detail-card">' +
+          '<h4>实例清单</h4>' +
+          (
+            instances.length
+              ? '<div class="tag-wrap">' + instances.map(function(instance) {
+                  return statusTag(instance.name, 'muted');
+                }).join('') + '</div>'
+              : '<p>当前没有实例。</p>'
+          ) +
+        '</article>' +
+      '</div>' +
+      '<div class="detail-actions">' +
+        '<button class="action-btn" type="button" data-select-host="' + esc(host.name) + '" data-tone="primary">切换为目标机器</button>' +
+        '<button class="action-btn" type="button" data-host-sync="' + esc(host.name) + '">同步这台机器</button>' +
+        '<button class="action-btn" type="button" data-host-trial="' + esc(host.name) + '" data-tone="primary">在这台机器创建 5 个试用实例</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderFleetHostRow(host) {
+    var sync = fleetSyncStatus(host);
+    var isSelected = sanitizeName(host && host.name) === selectedHostName();
+    return '<details class="row-card">' +
+      '<summary class="row-summary">' +
+        '<div class="row-main">' +
+          '<p class="row-title">' + esc(host.displayName || host.name) + '</p>' +
+          '<p class="row-sub">' + esc(host.local ? '当前控制机' : ((host.sshUser || 'root') + '@' + (host.sshHost || '-'))) + '</p>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">Host 状态</span>' +
+          '<div class="tag-wrap">' + statusTag(host.role || 'dedicated', host.local ? 'accent' : 'muted') + statusTag(sync.label, sync.tone) + (isSelected ? statusTag('当前目标', 'accent') : '') + '</div>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">实例数</span>' +
+          '<strong class="cell-value">' + esc(host.instanceCount != null ? host.instanceCount : 0) + '</strong>' +
+          '<span class="cell-note">' + esc(host.ring || '未分 ring') + '</span>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">来源</span>' +
+          '<strong class="cell-value">' + esc(host.effectiveInstanceSource || host.instanceSource || '-') + '</strong>' +
+          '<span class="cell-note">' + esc(sync.note || '等待同步') + '</span>' +
+        '</div>' +
+        '<div class="row-cell">' +
+          '<span class="cell-label">实例预览</span>' +
+          '<strong class="cell-value">' + esc((host.instances || []).slice(0, 3).map(function(instance) { return instance.name; }).join(', ') || '无') + '</strong>' +
+          '<span class="cell-note">' + esc((host.instances || []).length > 3 ? ('+' + ((host.instances || []).length - 3) + ' 个') : '') + '</span>' +
+        '</div>' +
+      '</summary>' +
+      renderFleetHostDetail(host) +
+    '</details>';
+  }
+
+  function renderFleetSection() {
+    var hosts = fleetHosts();
+    if (!hosts.length) return '';
+    return '<section class="panel section-panel">' +
+      '<div class="section-panel-head">' +
+        '<div>' +
+          '<p class="eyebrow">fleet layer</p>' +
+          '<h3>机器总览</h3>' +
+          '<p class="section-panel-copy">先看三台机器的实例分布和同步状态，再切到目标机器做创建、删除和刷新。</p>' +
+        '</div>' +
+        '<div class="section-count"><strong>' + esc(hosts.length) + '</strong><span>台机器</span></div>' +
+      '</div>' +
+      '<div class="list-stack">' + hosts.map(renderFleetHostRow).join('') + '</div>' +
+    '</section>';
+  }
+
   function renderInstancesView() {
     var container = document.getElementById('instances-view');
+    var selectedHost = selectedFleetHost();
     var userByInstance = {};
     (state.workbench.users.rows || []).forEach(function(user) {
       if (user.instanceName) userByInstance[user.instanceName] = user;
     });
 
-    var rows = (state.dashboard.instances || []).filter(function(instance) {
+    var rows = instancesForHost(selectedHost).filter(function(instance) {
       var query = state.search.trim().toLowerCase();
       if (query) {
         var boundUser = userByInstance[instance.name];
@@ -2415,12 +2751,12 @@
       return true;
     }).sort(compareInstances);
 
-    container.innerHTML = '<section class="panel section-panel">' +
+    container.innerHTML = renderFleetSection() + '<section class="panel section-panel">' +
       '<div class="section-panel-head">' +
         '<div>' +
           '<p class="eyebrow">instance rows</p>' +
-          '<h3>实例资源列表</h3>' +
-          '<p class="section-panel-copy">实例页只做资源调度和技术诊断，不再抢首页注意力。</p>' +
+          '<h3>实例资源列表 · ' + esc(selectedHost ? (selectedHost.displayName || selectedHost.name) : '未选择机器') + '</h3>' +
+          '<p class="section-panel-copy">当前只展示目标机器上的实例；创建、删除、收敛和同步也都会打到这台机器。</p>' +
         '</div>' +
         '<div class="section-count"><strong>' + esc(rows.length) + '</strong><span>个实例</span></div>' +
       '</div>' +
@@ -2696,6 +3032,23 @@
     document.getElementById('filter-chips').innerHTML = config.filters.map(function(filter) {
       return '<button class="chip' + (currentFilter() === filter.key ? ' is-active' : '') + '" type="button" data-filter="' + esc(filter.key) + '">' + esc(filter.label) + '</button>';
     }).join('');
+    var hostField = document.getElementById('host-field');
+    var hostSelect = document.getElementById('host-select');
+    var hostSyncButton = document.getElementById('btn-host-sync');
+    if (state.view === 'instances' && fleetHosts().length) {
+      var currentHost = selectedHostName();
+      hostField.hidden = false;
+      hostSyncButton.hidden = false;
+      hostSelect.innerHTML = fleetHosts().map(function(host) {
+        var label = (host.displayName || host.name || '未命名机器') + (host.local || host.runtime === 'local' ? ' · 当前控制机' : '');
+        return '<option value="' + esc(host.name) + '"' + (sanitizeName(host.name) === currentHost ? ' selected' : '') + '>' + esc(label) + '</option>';
+      }).join('');
+      hostSelect.value = selectedFleetHost() ? (selectedFleetHost().name || currentHost) : currentHost;
+    } else {
+      hostField.hidden = true;
+      hostSyncButton.hidden = true;
+      hostSelect.innerHTML = '';
+    }
     var sortField = document.getElementById('sort-field');
     var sortSelect = document.getElementById('sort-select');
     if (config.sorts && config.sorts.length) {
@@ -2744,11 +3097,25 @@
       ];
     } else {
       var instanceSummary = state.workbench.instanceSummary;
+      var fleet = state.dashboard.fleet || {};
+      var targetHost = selectedFleetHost();
+      var targetRows = instancesForHost(targetHost);
+      var targetAssignable = targetRows.filter(function(instance) {
+        return instanceUsage(instance).key === 'available';
+      }).length;
+      var targetAttention = targetRows.filter(function(instance) {
+        return instanceHealth(instance).key !== 'healthy';
+      }).length;
+      var fleetHostsCount = Number(fleet.hostCount || fleetHosts().length || 0);
+      var fleetInstanceCount = Number(fleet.instanceCount || 0);
+      var fleetSyncErrors = fleetHosts().filter(function(host) {
+        return String(host && host.lastSyncStatus || '').toLowerCase() === 'error';
+      }).length;
       metrics = [
-        { label: '实例总数', value: instanceSummary.total, note: '当前登记的全部实例', tone: 'accent' },
-        { label: '可分配', value: instanceSummary.open, note: '适合直接发给新用户', tone: instanceSummary.open ? 'ok' : 'muted' },
-        { label: '已占用', value: instanceSummary.occupied, note: '已绑定给具体用户', tone: instanceSummary.occupied ? 'accent' : 'muted' },
-        { label: '异常', value: instanceSummary.attention, note: '技术健康或版本漂移需要诊断', tone: instanceSummary.attention ? 'danger' : 'ok' }
+        { label: '机器总数', value: fleetHostsCount || 1, note: '当前纳入 admin 平面的 host', tone: 'accent' },
+        { label: '全局实例', value: fleetInstanceCount || instanceSummary.total, note: '三台机器上的总实例数', tone: 'accent' },
+        { label: '目标机实例', value: targetRows.length, note: selectedHostLabel(), tone: 'accent' },
+        { label: '目标机可分配', value: targetAssignable, note: '只看当前选中机器', tone: targetAssignable ? 'ok' : (targetAttention ? 'warn' : 'muted') }
       ];
     }
 
@@ -2769,7 +3136,9 @@
       document.getElementById('page-meta').innerHTML =
         '<span>cache ' + esc(timeAgo(state.workbench.cachedAt || state.dashboard.cachedAt)) + '</span>' +
         '<span>' + esc(state.workbench.summary.totalUsers) + ' 位用户</span>' +
-        '<span>' + esc(state.workbench.instanceSummary.total) + ' 个实例</span>';
+        '<span>' + esc((state.dashboard.fleet && state.dashboard.fleet.hostCount) || 1) + ' 台机器</span>' +
+        '<span>' + esc((state.dashboard.fleet && state.dashboard.fleet.instanceCount) || state.workbench.instanceSummary.total) + ' 个实例</span>' +
+        '<span>目标：' + esc(selectedHostLabel()) + '</span>';
     }
   }
 
@@ -2839,6 +3208,7 @@
       document.getElementById('cache-pill').textContent = '加载中';
       return;
     }
+    ensureSelectedHostValue();
     renderOverview();
     renderControls();
     syncNav();
@@ -2898,6 +3268,7 @@
       state.workbench = results[0];
       state.dashboard = results[1];
       if (includeBilling) state.billing = results[2];
+      ensureSelectedHostValue();
       applyView();
     } catch (err) {
       renderError(err.message);
@@ -2927,12 +3298,19 @@
 
   async function createTrial() {
     var btn = document.getElementById('btn-trial');
+    var hostName = selectedHostName();
+    var targetHost = fleetHosts().find(function(host) {
+      return sanitizeName(host && host.name) === hostName;
+    });
+    var hostLabel = targetHost ? (targetHost.displayName || targetHost.name) : selectedHostLabel();
     btn.disabled = true;
-    toast('正在创建试用实例', 'info');
+    toast('正在向 ' + hostLabel + ' 创建 5 个试用实例', 'info');
     try {
-      var result = await api('api/instances/create', { method: 'POST', body: { trial: true } });
-      toast('已创建 ' + result.name, 'ok');
-      if (!applyLocalCreatedInstance(result)) {
+      var result = await api('api/instances/create', { method: 'POST', body: { trial: true, count: 5, host: hostName } });
+      var createdPayload = Array.isArray(result && result.result) ? result.result : (result && result.result ? [result.result] : []);
+      var createdCount = createdPayload.length || 1;
+      toast(createdCount > 1 ? ('已创建 ' + createdCount + ' 个试用实例') : ('已创建 ' + (createdPayload[0] && createdPayload[0].name || '试用实例')), 'ok');
+      if (!applyCreatedPayload(result, hostName)) {
         toast('列表未就绪，请手动刷新查看新实例', 'info');
       }
     } catch (err) {
@@ -2943,23 +3321,38 @@
   }
 
   function showCreateDialog() {
+    var currentHost = selectedHostName();
     document.getElementById('inp-name').value = '';
+    document.getElementById('inp-count').value = '5';
+    document.getElementById('inp-host').innerHTML = fleetHosts().map(function(host) {
+      var label = (host.displayName || host.name || '未命名机器') + (host.local || host.runtime === 'local' ? ' · 当前控制机' : '');
+      return '<option value="' + esc(host.name) + '"' + (sanitizeName(host.name) === currentHost ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
+    document.getElementById('inp-host').value = selectedFleetHost() ? (selectedFleetHost().name || currentHost) : currentHost;
     document.getElementById('dlg-create').showModal();
     document.getElementById('inp-name').focus();
   }
 
   async function confirmCreate() {
     var raw = document.getElementById('inp-name').value.trim();
+    var count = Math.max(1, Number.parseInt(document.getElementById('inp-count').value || '5', 10) || 5);
+    var hostName = sanitizeName(document.getElementById('inp-host').value || selectedHostName());
+    var targetHost = fleetHosts().find(function(host) {
+      return sanitizeName(host && host.name) === hostName;
+    });
+    var hostLabel = targetHost ? (targetHost.displayName || targetHost.name) : selectedHostLabel();
     if (!raw) {
       toast('实例名不能为空', 'err');
       return;
     }
     document.getElementById('dlg-create').close();
-    toast('正在创建 ' + raw, 'info');
+    toast('正在向 ' + hostLabel + ' 创建 ' + count + ' 个 ' + raw, 'info');
     try {
-      var result = await api('api/instances/create', { method: 'POST', body: { name: raw } });
-      toast('已创建 ' + result.name, 'ok');
-      if (!applyLocalCreatedInstance(result)) {
+      var result = await api('api/instances/create', { method: 'POST', body: { name: raw, count: count, host: hostName } });
+      var createdPayload = Array.isArray(result && result.result) ? result.result : (result && result.result ? [result.result] : []);
+      var createdCount = createdPayload.length || 1;
+      toast(createdCount > 1 ? ('已创建 ' + createdCount + ' 个实例') : ('已创建 ' + (createdPayload[0] && createdPayload[0].name || raw)), 'ok');
+      if (!applyCreatedPayload(result, hostName)) {
         toast('列表未就绪，请手动刷新查看新实例', 'info');
       }
     } catch (err) {
@@ -2967,45 +3360,91 @@
     }
   }
 
-  async function instanceAction(name, action) {
-    toast('正在' + action + ' ' + name, 'info');
+  async function instanceAction(name, action, hostName) {
+    var targetHost = sanitizeName(hostName || selectedHostName());
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === targetHost;
+    });
+    var hostLabel = host ? (host.displayName || host.name) : selectedHostLabel();
+    toast('正在' + action + ' ' + name + ' @ ' + hostLabel, 'info');
     try {
-      await api('api/instances/' + encodeURIComponent(name) + '/' + action, { method: 'POST' });
-      applyLocalInstanceAction(name, action);
+      var result = await api('api/instances/' + encodeURIComponent(name) + '/' + action, { method: 'POST', body: { host: targetHost } });
+      applyInstanceActionPayload(result, name, action, targetHost);
       toast(name + ' 已' + action, 'ok');
     } catch (err) {
       toast(action + ' 失败：' + err.message, 'err');
     }
   }
 
-  function showDeleteDialog(name) {
-    state.pendingDelete = name;
-    document.getElementById('del-name').textContent = name;
+  function showDeleteDialog(name, hostName) {
+    state.pendingDelete = {
+      name: name,
+      host: sanitizeName(hostName || selectedHostName())
+    };
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === state.pendingDelete.host;
+    });
+    document.getElementById('del-name').textContent = name + ' @ ' + (host ? (host.displayName || host.name) : selectedHostLabel());
     document.getElementById('dlg-delete').showModal();
   }
 
   async function confirmDelete() {
     if (!state.pendingDelete) return;
-    var name = state.pendingDelete;
+    var target = state.pendingDelete;
+    var name = target.name;
+    var hostName = sanitizeName(target.host || selectedHostName());
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === hostName;
+    });
+    var hostLabel = host ? (host.displayName || host.name) : selectedHostLabel();
     state.pendingDelete = null;
     document.getElementById('dlg-delete').close();
-    toast('正在删除 ' + name, 'info');
+    toast('正在删除 ' + name + ' @ ' + hostLabel, 'info');
     try {
-      await api('api/instances/' + encodeURIComponent(name) + '/delete', { method: 'POST' });
-      applyLocalInstanceAction(name, 'delete');
+      var result = await api('api/instances/' + encodeURIComponent(name) + '/delete', { method: 'POST', body: { host: hostName } });
+      applyInstanceActionPayload(result, name, 'delete', hostName);
       toast(name + ' 已删除', 'ok');
     } catch (err) {
       toast('删除失败：' + err.message, 'err');
     }
   }
 
+  async function syncHost(hostName) {
+    var safeHost = sanitizeName(hostName || selectedHostName());
+    if (!safeHost) return;
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === safeHost;
+    });
+    var hostLabel = host ? (host.displayName || host.name) : safeHost;
+    toast('正在同步 ' + hostLabel, 'info');
+    try {
+      var result = await api('api/hosts/' + encodeURIComponent(safeHost) + '/sync', { method: 'POST' });
+      if (result && result.hostView) replaceFleetHostRecord(result.hostView);
+      state.selectedHost = safeHost;
+      touchLocalCacheTime();
+      applyView();
+      toast('已同步 ' + hostLabel, 'ok');
+    } catch (err) {
+      toast('同步失败：' + err.message, 'err');
+    }
+  }
+
   async function convergeAll() {
     var btn = document.getElementById('btn-converge');
+    var hostName = selectedHostName();
+    var host = fleetHosts().find(function(entry) {
+      return sanitizeName(entry && entry.name) === hostName;
+    });
+    var hostLabel = host ? (host.displayName || host.name) : selectedHostLabel();
     btn.disabled = true;
-    toast('正在收敛实例库存', 'info');
+    toast('正在收敛 ' + hostLabel + ' 的实例库存', 'info');
     try {
-      var result = await api('api/converge', { method: 'POST' });
-      toast('已收敛 ' + (Array.isArray(result) ? result.length : 0) + ' 个实例', 'ok');
+      var result = await api('api/converge', { method: 'POST', body: { host: hostName } });
+      if (result && result.hostView) replaceFleetHostRecord(result.hostView);
+      touchLocalCacheTime();
+      applyView();
+      var convergeResult = result && result.result;
+      toast('已收敛 ' + (Array.isArray(convergeResult) ? convergeResult.length : 0) + ' 个实例', 'ok');
     } catch (err) {
       toast('收敛失败：' + err.message, 'err');
     } finally {
@@ -3037,6 +3476,13 @@
     applyView();
   });
 
+  document.getElementById('host-select').addEventListener('change', function(event) {
+    setSelectedHost(event.target.value, { apply: false });
+    state.search = '';
+    document.getElementById('search-input').value = '';
+    applyView();
+  });
+
   document.body.addEventListener('click', function(event) {
     var copyNode = event.target.closest('[data-copy]');
     if (copyNode) {
@@ -3057,18 +3503,40 @@
       return;
     }
 
+    var selectHostNode = event.target.closest('[data-select-host]');
+    if (selectHostNode) {
+      setSelectedHost(selectHostNode.getAttribute('data-select-host'), { resetSearch: true, apply: false });
+      setView('instances');
+      return;
+    }
+
+    var hostSyncNode = event.target.closest('[data-host-sync]');
+    if (hostSyncNode) {
+      syncHost(hostSyncNode.getAttribute('data-host-sync'));
+      return;
+    }
+
+    var hostTrialNode = event.target.closest('[data-host-trial]');
+    if (hostTrialNode) {
+      setSelectedHost(hostTrialNode.getAttribute('data-host-trial'), { apply: false });
+      createTrial();
+      return;
+    }
+
     var instanceActionNode = event.target.closest('[data-instance-action]');
     if (instanceActionNode) {
       var name = instanceActionNode.getAttribute('data-name');
       var action = instanceActionNode.getAttribute('data-instance-action');
-      if (action === 'delete') showDeleteDialog(name);
-      else instanceAction(name, action);
+      var hostName = instanceActionNode.getAttribute('data-host') || selectedHostName();
+      if (action === 'delete') showDeleteDialog(name, hostName);
+      else instanceAction(name, action, hostName);
     }
   });
 
   document.getElementById('btn-trial').onclick = createTrial;
   document.getElementById('btn-custom').onclick = showCreateDialog;
   document.getElementById('btn-converge').onclick = convergeAll;
+  document.getElementById('btn-host-sync').onclick = function() { syncHost(selectedHostName()); };
   document.getElementById('btn-refresh').onclick = forceRefresh;
   document.getElementById('btn-logout').onclick = function() { window.location.href = withBase('logout'); };
   document.getElementById('btn-dlg-cancel').onclick = function() { document.getElementById('dlg-create').close(); };

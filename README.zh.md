@@ -10,7 +10,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 ![RemoteLab 跨端演示](docs/readme-multisurface-demo.png)
 
-> 当前基线：`v0.3` —— owner-first 的 session 运行时、落盘的持久历史、可替换的 executor adapter、基于 App 的 workflow packaging，以及同时兼容手机和桌面的无构建 Web UI。
+> 当前基线：`v0.3` —— owner-first 的 session 运行时、落盘的持久历史、内建 Welcome 引导和示例会话、可复用的 Agent 打包能力，以及同时兼容手机和桌面的无构建 Web UI。
 
 > 同一套系统可以从桌面、手机，以及飞书 / 邮件这类接入面进入。
 
@@ -65,11 +65,11 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 - 最值得解决的问题，不是鼓励用户同时开无数个 session，而是先找到那些确实值得自动化的重复工作。
 - 目标用户默认不是 AI-native，也不是天生会写 prompt 的产品经理；AI 需要先帮他们把问题澄清、把输入要齐、把方案设计出来。
-- 首屏不能只是一个空的 session list。新用户需要一个默认的 `Welcome App`：先用很短的话说明 RemoteLab 能做什么，再收集用户的角色背景和重复工作痛点，把他们引导到第一个具体 automation 上。
+- 首屏不能只是一个空的 session list。新用户需要一条内建的 Welcome 引导，配上几个真实示例会话和一个清晰的第一步，而不是只给一个空白侧边栏和输入框。
 - 模型接入、机器、权限、连接与运维复杂度应该尽量封装在服务内部；普通用户面对的应该是一个开箱即用的入口，而不是一套需要先理解和配置的技术栈。
 - 最好的切入点是简单、明确、回报快的数字工作：数据整理、分析、文件处理、报表、通知、脚本化重复操作。
 - 手机 + 桌面 + 真机执行是组合优势：用户可以随手发上下文，AI 在真实机器上做重活，结果和审批再回到最方便的设备上。
-- `Session`、`App`、并发和分发仍然重要，但它们更像能力层或后续放大的方向，不应该压过首期价值验证。
+- `Session`、`Agent`、并发和分发仍然重要，但它们更像能力层或后续放大的方向，不应该压过首期价值验证。
 
 ### RemoteLab 是什么
 
@@ -78,7 +78,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 - 一个尽量把模型、机器、权限与运维复杂度封装在服务端的低门槛 AI 服务
 - 一个让手机端发起、桌面端继续、AI 在本机执行的跨端控制面
 - 一个帮助人类在长任务中恢复上下文、而不是反复重讲需求的持久化工作线程系统
-- 一个可以把验证过的自动化 workflow 封装成可复用 `App` 的 packaging layer
+- 一个可以把验证过的自动化 workflow 封装成可复用 `Agent` 的 packaging layer
 
 ### RemoteLab 不是什么
 
@@ -93,7 +93,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 ### 两条核心产品线
 
 1. **先帮用户解决重复数字工作。** RemoteLab 要能接住一个模糊但反复出现的任务，帮用户澄清输入、输出和约束，然后尽快把它变成一个能稳定省时间的自动化流程。
-2. **再把被验证的 workflow 包装和复用。** 当某个自动化真的帮用户省下时间后，再把它沉淀成 `App`、模板或其他可复用入口，逐步扩展到同一个人或相邻人群的类似问题。
+2. **再把被验证的 workflow 包装和复用。** 当某个自动化真的帮用户省下时间后，再把它沉淀成 `Agent`、模板或其他可复用入口，逐步扩展到同一个人或相邻人群的类似问题。
 
 ### 产品语法
 
@@ -101,7 +101,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 - `Session` —— 持久化的工作线程
 - `Run` —— 会话内部的一次执行尝试
-- `App` —— 启动会话用的可复用 workflow / policy package
+- `Agent` —— 启动会话用的可复用 workflow / policy package
 - `Share snapshot` —— 不可变的只读会话导出
 
 这些模型背后的架构假设是：
@@ -109,7 +109,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 - HTTP 是规范状态路径，WebSocket 只负责提示“有东西变了”
 - 浏览器是控制面，不是系统事实来源
 - 运行时进程可以丢，持久状态必须落在磁盘上
-- 产品默认单 owner，visitor 访问通过 `Apps` 进行 scope 控制
+- 产品默认单 owner，visitor 访问通过 `Agents` 进行 scope 控制
 - 前端保持轻量、无框架，并兼容不同端的使用方式
 
 ### 为什么这个边界重要
@@ -120,7 +120,7 @@ RemoteLab 在几个点上是刻意有立场的：
 - **通过用户可达的界面交付，而不是甩本地路径。** AI 可以操作这台机器，但用户协作面应该是 RemoteLab 和显式暴露的产品界面；如果结果只存在于宿主机本地，还不算完成交付。
 - **不重造执行器这一层。** RemoteLab 不应该把主要精力花在优化单任务 Agent 内部实现细节上。
 - **强调上下文恢复，不堆原始日志。** 比起终端连续性，durable session 更重要。
-- **强调 workflow packaging，不只是分享 prompt。** `App` 不是一段复制粘贴文本，而是一种可复用的工作形态。
+- **强调 workflow packaging，不只是分享 prompt。** `Agent` 不是一段复制粘贴文本，而是一种可复用的工作形态。
 - **接入最强工具，并保持可替换。** 它更像一层稳定抽象，让更强执行器出现时可以被快速接入，而不是把自己做成重闭环 runtime。
 
 ### 你现在可以做什么
@@ -133,7 +133,7 @@ RemoteLab 在几个点上是刻意有立场的：
 - 直接往聊天里粘贴截图
 - 界面自动跟随系统亮色 / 暗色外观
 - 生成不可变的只读分享快照
-- 用 App 链接做 visitor 范围内的入口流转
+- 用 Agent 链接做 visitor 范围内的入口流转
 
 ### Provider 说明
 
@@ -206,7 +206,7 @@ RemoteLab 在几个点上是刻意有立场的：
 - 发送消息时，界面会在后台不断重新拉取规范 HTTP 状态
 - 关掉浏览器后再回来，不会丢失会话线程
 - 生成不可变的只读会话分享快照
-- 按需配置基于 App 的 visitor 流程和推送通知
+- 按需配置基于 Agent 的 visitor 流程和推送通知
 
 ### 日常使用
 
@@ -295,10 +295,16 @@ remotelab guest-instance create-trial      # 创建下一个标准 trial 实例
 remotelab guest-instance links             # 打印所有 guest 实例的带 token 分享链接
 remotelab guest-instance links trial24     # 打印单个实例的带 token 分享链接
 remotelab guest-instance links --check     # 在链接之外顺手探测当前本地/公网可达性
+remotelab guest-instance expose trial24 --label report --port 3000
+                                          # 把实例自己拥有的 loopback 端口暴露成 trial24-report.<domain>
+remotelab guest-instance unexpose trial24 --label report
+                                          # 删除这条受控的公网子域名映射
 remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当前源码树
 ```
 
 现在默认的外部入口模型是子域名。`create`、`create-trial`、`show`、`links` 和 `report` 都把 `https://<instance>.<domain>` 当成主入口来展示。
+
+如果某个 guest instance 里还跑着一个预览页、报告页或临时 review 服务，需要额外给它一个公网地址，就用 `remotelab guest-instance expose <instance> --label <label> --port <port>`。这个命令不会再去直接改 Cloudflare tunnel 配置，而是把映射写进 host router 读取的受控 registry。v1 故意收得比较紧：实例必须已经隔离、目标端口必须先在 loopback 上监听、而且监听进程必须属于该实例自己的系统用户。
 
 如果你需要第二套入口，但仍然坚持子域名模型，可以把模板地址写进 `~/.config/remotelab/guest-instance-defaults.json`：
 
@@ -334,7 +340,7 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 |------|--------|------|
 | `CHAT_PORT` | `7690` | Chat server 端口 |
 | `CHAT_BIND_HOST` | `127.0.0.1` | Chat server 监听地址（`127.0.0.1` 用于 Cloudflare / 仅本机访问，`0.0.0.0` 用于 Tailscale 或局域网访问） |
-| `SESSION_EXPIRY` | `86400000` | Cookie 有效期（毫秒，24h） |
+| `SESSION_EXPIRY` | `2592000000` | Cookie 有效期（毫秒，30 天） |
 | `SECURE_COOKIES` | `1` | Tailscale 或本地 HTTP 访问时设为 `0`（无 HTTPS） |
 | `REMOTELAB_INSTANCE_ROOT` | 未设置 | 可选的额外实例数据根目录；设置后默认使用 `<root>/config` + `<root>/memory` |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、apps、push、provider runtime home |

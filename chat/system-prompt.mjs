@@ -1,7 +1,10 @@
 import { homedir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 import {
   CHAT_PORT,
+  INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED,
+  INSTANCE_ROOT,
+  MANAGED_WORK_ROOT_DIR,
   PLATFORM_SKILLS_DIR,
   SHARED_STARTUP_DEFAULTS_ENABLED,
 } from '../lib/config.mjs';
@@ -63,7 +66,9 @@ function buildSessionSpawnSection({ currentSessionId, chatPort }) {
 - Preferred command:
   - remotelab trigger create --in 2h --text "Follow up on this later" --json
 - Use trigger-created session wake-ups only when the future work genuinely requires AI reasoning, drafting, or conversation continuation.
+- Do not use a trigger-created wake-up just because the user said "remind me". A simple time-based reminder such as "remind me tomorrow at 3pm" should usually become a direct calendar/schedule update or other deterministic delivery.
 - For deterministic external delivery such as reminders, notifications, or simple outbound pushes, prefer a direct connector action when one is available instead of waking a session just to restate the message.
+- Reserve trigger-created session wake-ups for recurring or open-ended future AI work such as daily feedback, scheduled reviews, or "check the calendar and brief me" style tasks.
 - The trigger command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --session explicitly.
 - If the remotelab command is unavailable in PATH, use:
   - node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
@@ -165,6 +170,28 @@ This machine is missing both bootstrap.md and global.md. Before diving into deta
 Bootstrap only needs to be tiny. Detailed memory belongs in projects.md, tasks/, or global.md.`;
   }
 
+  const scopedInstanceName = basename(INSTANCE_ROOT || '').trim().toLowerCase();
+  if (INSTANCE_ROOT && scopedInstanceName) {
+    context += INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED
+      ? `
+
+## Instance Isolation Boundary
+This session is running inside the instance-scoped environment \`${scopedInstanceName}\`.
+- Treat this instance as its own machine-scoped environment, not as a view into broader host storage.
+- The default user-visible file surface is ${displayPromptPath(MANAGED_WORK_ROOT_DIR, home)}. Keep routine work, imports, and exports there.
+- Paths outside ${displayPromptPath(INSTANCE_ROOT, home)} are host-level by default. Do not browse, read, summarize, attach, or persist them unless the task explicitly requires a minimal safe subset and that material has first been moved into this instance.
+- Even inside ${displayPromptPath(INSTANCE_ROOT, home)}, auth files, mailbox config, connector secrets, and runtime state are operational data rather than normal user content.
+- Never inspect sibling-instance roots, unrelated host-level dotfiles, or broader host storage just because they exist on disk.`
+      : `
+
+## Instance Local Access
+This session is running inside the instance-scoped environment \`${scopedInstanceName}\`.
+- The default user-visible file surface is ${displayPromptPath(MANAGED_WORK_ROOT_DIR, home)}. Keep routine work, imports, and exports there when possible.
+- Local filesystem access and localhost service calls are not hard-confined to ${displayPromptPath(INSTANCE_ROOT, home)}. If a compatibility scenario genuinely requires broader machine access, you may use it.
+- Treat broader host paths as exceptional rather than default. Avoid unrelated paths, sibling-instance state, auth files, mailbox config, connector secrets, and runtime state unless the task genuinely requires them.
+- This relaxed local access mode does not weaken RemoteLab authentication, share-link scoping, or the existing external network isolation boundaries.`;
+  }
+
   context += await buildConnectorCapabilitiesSection();
 
   return context;
@@ -190,6 +217,8 @@ Calendar events default to the instance iCal subscription feed. For ordinary cal
 
 For workflow details, use \`${agendaHelpCommand}\`. If the \`remotelab\` command is unavailable in PATH, use \`${agendaFallbackHelpCommand}\`. Do not create completion targets for normal interactive calendar requests.
 
+Treat most user requests phrased like "remind me tomorrow at 3" or "next week remind me to send this" as normal interactive calendar requests that should only update the schedule/feed. Reserve trigger-created session wake-ups for recurring or tool-using workflows such as daily feedback, scheduled reviews, or calendar-check tasks that need fresh AI work at that future time.
+
 If the user explicitly needs first-class external calendar notifications and a ready bound calendar connector is already present, you may use that bound connector instead of the feed.
 
 ${subscriptionLines.join('\n')}
@@ -200,6 +229,17 @@ If the user has not yet subscribed, send a markdown link such as \`[点击订阅
 Do not use the host machine's local Calendar.app or any GUI calendar application.`);
     }
   } catch {}
+
+  connectorSections.push(`### Gmail
+This workspace can connect one Gmail account for mailbox automation. After Gmail is connected, prefer the \`remotelab gmail\` CLI for mailbox actions instead of asking the user to paste raw message bodies or forward email manually.
+
+If the user mentions Gmail, email, inbox, mailbox, latest mail, recent mail, or asks you to find/read/search messages, first run \`remotelab gmail status --json\`. Do not claim Gmail is unavailable, ask for IMAP credentials, or say there is no access until you have checked the live Gmail status for this workspace.
+
+If Gmail status is \`ready\`, use the Gmail CLI for the mailbox task. Use \`remotelab gmail --help\` for the available actions. Prefer \`--json\` when calling Gmail commands from the shell.
+
+Supported Gmail operations include search, read, archive, mark-read, label changes, reply, and send through the bound Gmail account.
+
+If the user asks to connect Gmail or Gmail is not ready yet, direct them to the Gmail connector in Settings or to \`/connectors/gmail\`. Do not use host browser cookies or ambient local Gmail sessions as a fallback.`);
 
   let section = `
 

@@ -17,6 +17,7 @@ import { normalizeStoredSessionFolder } from './session-folder.mjs';
 import { normalizeSessionTaskCard } from './session-task-card.mjs';
 import { DEFAULT_APP_ID, getBuiltinApp, normalizeAppId } from './apps.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
+import { migrateLegacySessionRuntimeFields } from '../lib/legacy-micro-agent.mjs';
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheMtimeMs = null;
@@ -134,6 +135,52 @@ function normalizeStoredStarterPreset(normalized) {
   return changed;
 }
 
+function normalizeStoredPendingContinuationQueue(normalized) {
+  let changed = false;
+
+  const hasContinuationQueue = Object.prototype.hasOwnProperty.call(normalized, 'pendingContinuationQueue');
+  const hasLegacyPlanningQueue = Object.prototype.hasOwnProperty.call(normalized, 'pendingPlanningQueue');
+  const continuationQueue = Array.isArray(normalized.pendingContinuationQueue)
+    ? normalized.pendingContinuationQueue
+    : [];
+  const legacyPlanningQueue = Array.isArray(normalized.pendingPlanningQueue)
+    ? normalized.pendingPlanningQueue
+    : [];
+
+  let nextQueue = continuationQueue;
+  if (nextQueue.length === 0 && legacyPlanningQueue.length > 0) {
+    nextQueue = legacyPlanningQueue;
+  }
+
+  if (nextQueue.length > 0) {
+    if (!hasContinuationQueue || normalized.pendingContinuationQueue !== nextQueue) {
+      normalized.pendingContinuationQueue = nextQueue;
+      changed = true;
+    }
+  } else if (hasContinuationQueue) {
+    delete normalized.pendingContinuationQueue;
+    changed = true;
+  }
+
+  if (hasLegacyPlanningQueue) {
+    delete normalized.pendingPlanningQueue;
+    changed = true;
+  }
+
+  return changed;
+}
+
+function normalizeStoredTitleLock(normalized) {
+  if (normalized.titleLocked === true) {
+    return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, 'titleLocked')) {
+    delete normalized.titleLocked;
+    return true;
+  }
+  return false;
+}
+
 function normalizeStoredSessionMeta(meta) {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return { meta: null, changed: true };
@@ -141,6 +188,17 @@ function normalizeStoredSessionMeta(meta) {
 
   const normalized = { ...meta };
   let changed = false;
+
+  const migratedRuntime = migrateLegacySessionRuntimeFields(normalized);
+  if (
+    (normalized.tool || '') !== (migratedRuntime.tool || '')
+    || (normalized.model || '') !== (migratedRuntime.model || '')
+    || (normalized.effort || '') !== (migratedRuntime.effort || '')
+    || (normalized.thinking || false) !== (migratedRuntime.thinking || false)
+  ) {
+    Object.assign(normalized, migratedRuntime);
+    changed = true;
+  }
 
   for (const legacyField of ['activeRun', 'status', 'queuedMessageCount', 'pendingCompact', 'renameState', 'renameError', 'recoverable']) {
     if (Object.prototype.hasOwnProperty.call(normalized, legacyField)) {
@@ -166,6 +224,8 @@ function normalizeStoredSessionMeta(meta) {
   changed = normalizeStoredSessionSourceFields(normalized) || changed;
   changed = normalizeStoredSessionTemplateFields(normalized) || changed;
   changed = normalizeStoredStarterPreset(normalized) || changed;
+  changed = normalizeStoredPendingContinuationQueue(normalized) || changed;
+  changed = normalizeStoredTitleLock(normalized) || changed;
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'folder')) {
     const nextFolder = normalizeStoredSessionFolder(normalized.folder);

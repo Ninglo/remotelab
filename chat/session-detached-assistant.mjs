@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
+import { applyManagedRuntimeEnv, applySharedCodexLock } from './runtime-policy.mjs';
 import { appendUsageLedgerRecord, buildDetachedUsageLedgerRecord } from './usage-ledger.mjs';
 
 const DEFAULT_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
@@ -53,14 +54,24 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
     developerInstructions: options.developerInstructions,
   });
   const resolvedCmd = await resolveCommand(invocation.command);
+  const lockedInvocation = applySharedCodexLock(
+    tool,
+    resolvedCmd,
+    invocation.args,
+    invocation.runtimeFamily,
+  );
   const resolvedFolder = resolveCwd(folder);
-  const env = buildToolProcessEnv(invocation.envOverrides || {});
+  let env = buildToolProcessEnv(invocation.envOverrides || {});
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
+  env = await applyManagedRuntimeEnv(tool, env, {
+    runtimeFamily: invocation.runtimeFamily,
+    codexHomeMode: options.codexHomeMode || 'managed',
+  });
 
   return new Promise((resolve, reject) => {
     let settled = false;
-    const proc = spawn(resolvedCmd, invocation.args, {
+    const proc = spawn(lockedInvocation.command, lockedInvocation.args, {
       cwd: resolvedFolder,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -1,4 +1,5 @@
 import { readFile } from 'fs/promises';
+import { performance } from 'perf_hooks';
 import { SESSION_EXPIRY } from '../lib/config.mjs';
 import {
   sessions,
@@ -66,6 +67,16 @@ function normalizeForwardedPrefix(value) {
   if (!trimmed) return '';
   const normalized = `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
   return normalized === '/' ? '' : normalized;
+}
+
+function formatServerTiming(entries = []) {
+  const parts = [];
+  for (const [name, value] of entries) {
+    if (!name || !Number.isFinite(value)) continue;
+    const duration = Math.max(0, value);
+    parts.push(`${name};dur=${duration.toFixed(3)}`);
+  }
+  return parts.join(', ');
 }
 
 function getRequestProductBasePath(req) {
@@ -262,7 +273,16 @@ if (queryToken) {
     const sessionToken = generateToken();
     sessions.set(sessionToken, { expiry: Date.now() + SESSION_EXPIRY, role: 'owner' });
     await saveAuthSessionsAsync();
-    res.writeHead(302, { 'Location': '/', 'Set-Cookie': setCookie(sessionToken) });
+    const redirectParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(parsedUrl.query || {})) {
+      if (key === 'token') continue;
+      const values = Array.isArray(value) ? value : [value];
+      for (const item of values) {
+        if (typeof item === 'string' && item) redirectParams.append(key, item);
+      }
+    }
+    const redirectLocation = redirectParams.toString() ? `/?${redirectParams.toString()}` : '/';
+    res.writeHead(302, { 'Location': redirectLocation, 'Set-Cookie': setCookie(sessionToken) });
     res.end();
   } else {
     recordFailedAttempt(ip);
@@ -307,22 +327,37 @@ if (pathname === '/login' && req.method === 'POST') {
 
 // Login — GET (show form)
 if (pathname === '/login') {
+  const requestStartMs = performance.now();
   const hasError = parsedUrl.query.error === '1';
   const mode = parsedUrl.query.mode === 'token' ? 'token' : 'pw';
   let loginHtml;
+  const buildStartMs = performance.now();
   const pageBuildInfo = await getPageBuildInfo();
+  const buildMs = performance.now() - buildStartMs;
+  const templateStartMs = performance.now();
   try { loginHtml = await readFile(loginTemplatePath, 'utf8'); } catch { loginHtml = '<h1>Login template missing</h1>'; }
+  const templateMs = performance.now() - templateStartMs;
+  const renderStartMs = performance.now();
+  const body = renderPageTemplate(loginHtml, nonce, {
+    ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
+    ERROR_CLASS: hasError ? '' : 'hidden',
+    MODE: mode,
+  });
+  const renderMs = performance.now() - renderStartMs;
+  const totalMs = performance.now() - requestStartMs;
   res.writeHead(200, buildHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
+    'Server-Timing': formatServerTiming([
+      ['build', buildMs],
+      ['template', templateMs],
+      ['render', renderMs],
+      ['total', totalMs],
+    ]),
   }));
-  res.end(renderPageTemplate(loginHtml, nonce, {
-    ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
-    ERROR_CLASS: hasError ? '' : 'hidden',
-    MODE: mode,
-  }));
+  res.end(body);
   return true;
 }
 

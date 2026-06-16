@@ -73,9 +73,10 @@ try {
     '[引导] 连接本地文件，把旧电脑资料迁进这个实例',
     'guest bootstrap should insert the local migration guide right after Welcome',
   );
-  assert.ok(
-    sessionNames.includes('[示例] 上传一份表格，我把清洗后的文件回给你'),
-    'guest bootstrap should keep the existing showcase sessions',
+  assert.deepEqual(
+    sessionNames.slice(0, 2),
+    ['Welcome', '[引导] 连接本地文件，把旧电脑资料迁进这个实例'],
+    'guest bootstrap should stay minimal by default',
   );
 
   const migrationSession = sessions.find((session) => session.name === '[引导] 连接本地文件，把旧电脑资料迁进这个实例');

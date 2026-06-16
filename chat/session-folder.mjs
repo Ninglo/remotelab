@@ -1,10 +1,51 @@
 import { existsSync } from 'fs';
 import { homedir } from 'os';
-import { join, resolve } from 'path';
-import { MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
+import { isAbsolute, join, relative, resolve } from 'path';
+import {
+  INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED,
+  IS_INSTANCE_SCOPED,
+  MANAGED_WORK_ROOT_DIR,
+} from '../lib/config.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function isPathWithinRoot(targetPath, rootPath) {
+  const normalizedTargetPath = trimString(targetPath);
+  const normalizedRootPath = trimString(rootPath);
+  if (!normalizedTargetPath || !normalizedRootPath) return false;
+  const resolvedTarget = resolve(normalizedTargetPath);
+  const resolvedRoot = resolve(normalizedRootPath);
+  const relativePath = relative(resolvedRoot, resolvedTarget);
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+}
+
+export function clampGuestSessionFolder(folder, options = {}) {
+  const isGuestInstance = typeof options.isGuestInstance === 'boolean'
+    ? options.isGuestInstance
+    : IS_INSTANCE_SCOPED;
+  const managedWorkRoot = trimString(options.managedWorkRoot) || MANAGED_WORK_ROOT_DIR;
+  if (!isGuestInstance || !trimString(managedWorkRoot) || !INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED) {
+    return {
+      folder,
+      clamped: false,
+      reason: '',
+    };
+  }
+  const resolvedFolder = resolve(trimString(folder) || managedWorkRoot);
+  if (isPathWithinRoot(resolvedFolder, managedWorkRoot)) {
+    return {
+      folder: resolvedFolder,
+      clamped: false,
+      reason: '',
+    };
+  }
+  return {
+    folder: managedWorkRoot,
+    clamped: true,
+    reason: 'outside-guest-managed-work-root',
+  };
 }
 
 export function expandSessionFolder(folder) {
@@ -16,6 +57,15 @@ export function expandSessionFolder(folder) {
 
 export function resolveRunnableSessionFolder(folder) {
   const requestedCwd = expandSessionFolder(folder);
+  const guestBoundary = clampGuestSessionFolder(requestedCwd);
+  if (guestBoundary.clamped) {
+    return {
+      cwd: guestBoundary.folder,
+      requestedCwd,
+      repaired: true,
+      reason: guestBoundary.reason,
+    };
+  }
   if (existsSync(requestedCwd)) {
     return {
       cwd: requestedCwd,

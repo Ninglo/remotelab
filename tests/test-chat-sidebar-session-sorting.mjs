@@ -8,6 +8,7 @@ import vm from 'vm';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const bootstrapSource = readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap.js'), 'utf8') + '\n' + readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap-session-catalog.js'), 'utf8');
+const sessionListUiSource = readFileSync(join(repoRoot, 'static', 'chat', 'session-list-ui.js'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
@@ -47,6 +48,13 @@ const getSessionSortTimeSource = extractFunctionSource(bootstrapSource, 'getSess
 const getSessionPinSortRankSource = extractFunctionSource(bootstrapSource, 'getSessionPinSortRank');
 const compareSessionListSessionsSource = extractFunctionSource(bootstrapSource, 'compareSessionListSessions');
 const sortSessionsInPlaceSource = extractFunctionSource(bootstrapSource, 'sortSessionsInPlace');
+const getProjectGroupSessionSortTimeSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupSessionSortTime');
+const getProjectGroupRunningRankSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupRunningRank');
+const getProjectGroupAttentionRankSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupAttentionRank');
+const getProjectGroupLatestActivityTimeSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupLatestActivityTime');
+const getProjectGroupOrganizerOrderSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupOrganizerOrder');
+const compareProjectGroupsByLatestActivitySource = extractFunctionSource(sessionListUiSource, 'compareProjectGroupsByLatestActivity');
+const sortProjectGroupsByLatestActivitySource = extractFunctionSource(sessionListUiSource, 'sortProjectGroupsByLatestActivity');
 
 const context = {
   console,
@@ -60,6 +68,16 @@ const context = {
         || (Date.parse(b.lastEventAt || b.updatedAt || b.created || '') || 0)
           - (Date.parse(a.lastEventAt || a.updatedAt || a.created || '') || 0);
     },
+  },
+  getSessionActivity(session) {
+    return {
+      run: {
+        state: session?.activity?.run?.state === 'running' ? 'running' : 'idle',
+      },
+    };
+  },
+  getInboxBandForSession(session) {
+    return Number.isInteger(session?.attentionBand) ? session.attentionBand : 3;
   },
   sessions: [
     {
@@ -96,6 +114,108 @@ assert.deepEqual(
   context.sessions.map((session) => session.id),
   ['pinned-session', 'actual-activity-newer', 'metadata-only-newer'],
   'sidebar sorting should follow pinning first and then the delegated attention comparator',
+);
+
+vm.runInNewContext(
+  [
+    getProjectGroupSessionSortTimeSource,
+    getProjectGroupRunningRankSource,
+    getProjectGroupAttentionRankSource,
+    getProjectGroupLatestActivityTimeSource,
+    getProjectGroupOrganizerOrderSource,
+    compareProjectGroupsByLatestActivitySource,
+    sortProjectGroupsByLatestActivitySource,
+  ].join('\n'),
+  context,
+  { filename: 'static/chat/session-list-ui.js' },
+);
+
+const projectGroups = [
+  {
+    key: 'june-01',
+    label: 'June 1 project',
+    sessions: [
+      { id: 'june-01', lastEventAt: '2026-06-01T10:00:00.000Z' },
+    ],
+  },
+  {
+    key: 'june-05',
+    label: 'June 5 project',
+    sessions: [
+      { id: 'june-05-old', lastEventAt: '2026-06-04T10:00:00.000Z' },
+      { id: 'june-05', lastEventAt: '2026-06-05T10:00:00.000Z' },
+    ],
+  },
+  {
+    key: 'running',
+    label: 'Running project',
+    sessions: [
+      {
+        id: 'running',
+        lastEventAt: '2026-06-02T10:00:00.000Z',
+        activity: { run: { state: 'running' } },
+      },
+    ],
+  },
+  {
+    key: 'june-10',
+    label: 'June 10 project',
+    sessions: [
+      { id: 'june-10', lastEventAt: '2026-06-10T10:00:00.000Z' },
+    ],
+  },
+];
+
+assert.deepEqual(
+  context.sortProjectGroupsByLatestActivity(projectGroups).map((group) => group.key),
+  ['running', 'june-10', 'june-05', 'june-01'],
+  'Projects view should sort unorganized project groups by current running state first and then latest activity descending',
+);
+
+const organizedGroups = [
+  {
+    key: 'organized-later',
+    label: 'Organized later',
+    sessions: [
+      { id: 'organized-later', sidebarOrder: 8, lastEventAt: '2026-06-10T10:00:00.000Z' },
+    ],
+  },
+  {
+    key: 'organized-first',
+    label: 'Organized first',
+    sessions: [
+      { id: 'organized-first', sidebarOrder: 2, lastEventAt: '2026-06-01T10:00:00.000Z' },
+    ],
+  },
+];
+
+assert.deepEqual(
+  context.sortProjectGroupsByLatestActivity(organizedGroups).map((group) => group.key),
+  ['organized-first', 'organized-later'],
+  'Projects view should honor organizer sidebar order across groups when both groups have explicit order',
+);
+
+const attentionGroups = [
+  {
+    key: 'organized-first',
+    label: 'Organized first',
+    sessions: [
+      { id: 'organized-first', sidebarOrder: 1, attentionBand: 3, lastEventAt: '2026-06-10T10:00:00.000Z' },
+    ],
+  },
+  {
+    key: 'needs-attention',
+    label: 'Needs attention',
+    sessions: [
+      { id: 'needs-attention', sidebarOrder: 9, attentionBand: 1, lastEventAt: '2026-06-01T10:00:00.000Z' },
+    ],
+  },
+];
+
+assert.deepEqual(
+  context.sortProjectGroupsByLatestActivity(attentionGroups).map((group) => group.key),
+  ['needs-attention', 'organized-first'],
+  'Projects view should raise groups needing attention before organized order',
 );
 
 console.log('test-chat-sidebar-session-sorting: ok');

@@ -97,6 +97,27 @@ function setupTempHome() {
   writeFileSync(
     join(localBin, 'fake-codex'),
     `#!/usr/bin/env node
+const args = process.argv.slice(2);
+const joinedArgs = args.join(' ');
+const fs = require('fs');
+const path = require('path');
+const failOnResumeFile = process.env.HOME
+  ? fs.existsSync(path.join(process.env.HOME, '.config', 'remotelab', 'fake-fail-on-resume'))
+  : false;
+if (
+  args.includes('resume')
+  && (
+    failOnResumeFile
+    ||
+    process.env.FAKE_CODEX_FAIL_ON_RESUME === '1'
+    || joinedArgs.includes('provider rollout disappeared')
+  )
+) {
+  const index = args.indexOf('resume');
+  const threadId = args[index + 1] || 'thread-test';
+  console.error(\`Error: thread/resume: thread/resume failed: no rollout found for thread id \${threadId}\`);
+  process.exit(1);
+}
 const delay = Number(process.env.FAKE_CODEX_DELAY_MS || '700');
 const firstStepDelay = Math.max(50, Math.min(delay - 50, Math.floor(delay * 0.3)));
 let cancelled = false;
@@ -239,8 +260,8 @@ async function submitLegacyMessage(port, sessionId, text = 'Run the fake tool') 
   assert.equal(res.status, 202, 'legacy submit without requestId should succeed');
   if (!res.json?.run?.id && res.json?.queued !== true) {
     const detail = await waitFor(() => request(port, 'GET', `/api/sessions/${sessionId}`), 'session detail after legacy submit');
-    const requestId = typeof detail?.json?.session?.activity?.planning?.requestId === 'string'
-      ? detail.json.session.activity.planning.requestId
+    const requestId = typeof detail?.json?.session?.activity?.continuation?.requestId === 'string'
+      ? detail.json.session.activity.continuation.requestId
       : '';
     const run = await waitForAcceptedRun(port, sessionId, requestId);
     if (run) {
@@ -281,6 +302,16 @@ async function waitForRunState(port, runId, expectedState) {
     if (res.json.run.state !== expectedState) return false;
     return res.json.run;
   }, `run ${runId} ${expectedState}`);
+}
+
+async function waitForSessionBusy(port, sessionId) {
+  return waitFor(async () => {
+    const detail = await request(port, 'GET', `/api/sessions/${sessionId}`);
+    if (detail.status !== 200) return false;
+    return detail.json?.session?.activity?.run?.state === 'running'
+      ? detail.json.session
+      : false;
+  }, `session ${sessionId} busy`);
 }
 
 function readRunManifest(home, runId) {
@@ -589,7 +620,7 @@ async function phase8CancelRecovery() {
   try {
     const session = await createSession(port, { name: 'Cancel', group: 'Tests', description: 'Cancel recovery' });
     const submit = await submitMessage(port, session.id, 'req-cancel', 'slow run for cancel');
-    await waitForRunState(port, submit.json.run.id, 'running');
+    await waitForSessionBusy(port, session.id);
 
     const cancel = await request(port, 'POST', `/api/sessions/${session.id}/cancel`);
     assert.equal(cancel.status, 200, 'cancel request should succeed');
@@ -769,7 +800,7 @@ async function phase11ForkSession() {
 
     const running = await createSession(port, { name: 'Fork busy', group: 'Tests', description: 'Fork rejection while running' });
     const runningSubmit = await submitMessage(port, running.id, 'req-fork-busy', 'slow run for rejection');
-    await waitForRunState(port, runningSubmit.json.run.id, 'running');
+    await waitForSessionBusy(port, running.id);
     const reject = await request(port, 'POST', `/api/sessions/${running.id}/fork`);
     assert.equal(reject.status, 409, 'fork should reject running sessions');
     assert.equal(reject.json.error, 'Session is running');
@@ -793,7 +824,7 @@ async function phase12QueuedMessageRouteContract() {
     });
 
     const first = await submitMessage(port, session.id, 'req-queued-first', 'Keep the fake run busy');
-    await waitForRunState(port, first.json.run.id, 'running');
+    await waitForSessionBusy(port, session.id);
 
     const queued = await submitMessage(port, session.id, 'req-queued-second', 'Follow-up while busy');
     assert.equal(queued.status, 202, 'queued follow-up should still return 202');
@@ -922,7 +953,7 @@ async function phase13DelegateSession() {
       description: 'Delegate while running',
     });
     const runningSubmit = await submitMessage(port, running.id, 'req-delegate-busy', 'slow run for delegate rejection');
-    await waitForRunState(port, runningSubmit.json.run.id, 'running');
+    await waitForSessionBusy(port, running.id);
     const runningDelegate = await request(port, 'POST', `/api/sessions/${running.id}/delegate`, {
       task: 'Spawn a child anyway',
     });
@@ -1039,7 +1070,7 @@ async function phase15NoDuplicateDuringReadHammer() {
     });
 
     const submit = await submitMessage(port, session.id, 'req-read-hammer', 'Hammer the read paths while the fake run is active');
-    await waitForRunState(port, submit.json.run.id, 'running');
+    await waitForSessionBusy(port, session.id);
 
     for (let round = 0; round < 6; round += 1) {
       const batch = [];
@@ -1225,6 +1256,68 @@ async function phase18FinalizationMetricsFailureDoesNotMaskSuccess() {
   }
 }
 
+async function phase19CodexMissingRolloutClearsResumeId() {
+  const { home, configDir } = setupTempHome();
+  const port = randomPort();
+  const server = await startServer({ home, port });
+  try {
+    const session = await createSession(port, {
+      name: 'Codex missing rollout',
+      group: 'Tests',
+      description: 'missing provider rollout should clear stale resume state',
+    });
+
+    const first = await submitMessage(port, session.id, 'req-missing-rollout-first');
+    assert.ok(first.status === 202 || first.status === 200, 'submit first Codex message should succeed');
+    if (!first.json?.run?.id) {
+      first.json.run = await waitForAcceptedRun(port, session.id, 'req-missing-rollout-first');
+    }
+    const firstRun = await waitForRunTerminal(port, first.json.run.id);
+    assert.equal(firstRun.state, 'completed', 'initial non-resume run should complete');
+
+    const sessionsPath = join(configDir, 'chat-sessions.json');
+    let sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
+    let sessionRecord = sessions.find((entry) => entry.id === session.id);
+    assert.equal(sessionRecord?.codexThreadId, 'thread-test', 'successful Codex run should persist the resume thread');
+
+    writeFileSync(join(configDir, 'fake-fail-on-resume'), '1', 'utf8');
+    const stale = await submitMessage(port, session.id, 'req-missing-rollout-stale', 'resume after provider rollout disappeared');
+    assert.ok(stale.status === 202 || stale.status === 200, 'submit stale Codex message should succeed');
+    if (!stale.json?.run?.id) {
+      stale.json.run = await waitForAcceptedRun(port, session.id, 'req-missing-rollout-stale');
+    }
+    const staleRun = await waitForRunTerminal(port, stale.json.run.id);
+    assert.equal(staleRun.state, 'failed', 'missing rollout should fail the affected run');
+    assert.match(
+      staleRun.failureReason || '',
+      /Saved Codex resume thread is no longer available/,
+      'run failure should explain the stale resume state',
+    );
+
+    const events = await getEvents(port, session.id, 'all');
+    assert.ok(
+      events.events.some((event) => event.type === 'status' && /Saved Codex resume thread/.test(event.content || '')),
+      'session history should surface the provider resume failure',
+    );
+
+    sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
+    sessionRecord = sessions.find((entry) => entry.id === session.id);
+    assert.equal(sessionRecord?.codexThreadId, undefined, 'stale Codex resume id should be cleared');
+
+    const recovered = await submitMessage(port, session.id, 'req-missing-rollout-recovered', 'run after resume id was cleared');
+    assert.ok(recovered.status === 202 || recovered.status === 200, 'submit recovered Codex message should succeed');
+    if (!recovered.json?.run?.id) {
+      recovered.json.run = await waitForAcceptedRun(port, session.id, 'req-missing-rollout-recovered');
+    }
+    const recoveredRun = await waitForRunTerminal(port, recovered.json.run.id);
+    assert.equal(recoveredRun.state, 'completed', 'next run should start a fresh Codex thread after clearing stale resume state');
+    console.log('phase19-codex-missing-rollout-clears-resume-id: ok');
+  } finally {
+    await stopServer(server);
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 const phase = process.argv[2] || 'all';
 const phases = {
   phase1: phase1Contract,
@@ -1247,6 +1340,7 @@ const phases = {
   phase16: phase16StaleMissingRunnerReconciliation,
   phase17: phase17SidecarPreSpawnFailurePersistsRootCause,
   phase18: phase18FinalizationMetricsFailureDoesNotMaskSuccess,
+  phase19: phase19CodexMissingRolloutClearsResumeId,
 };
 
 if (phase === 'all') {

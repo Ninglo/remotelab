@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'crypto';
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
@@ -18,12 +19,20 @@ import {
   selectAssistantReplyEvent,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
-import { waitForReplyPublication } from '../lib/reply-publication-client.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import {
   buildConnectorFailureReply,
   decideConnectorUserVisibleReply,
 } from '../lib/connector-user-visible-reply.mjs';
+import { ConnectorDriver } from '../lib/connector-driver.mjs';
+import { createFeishuConnectorTransport } from '../lib/connector-driver-transports.mjs';
+import {
+  createConnectorSession,
+  loadConnectorAssistantReply,
+  normalizeConnectorPublicationText,
+  submitConnectorMessage,
+  waitForConnectorPublication,
+} from '../lib/connector-turn-flow.mjs';
 
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
@@ -49,9 +58,10 @@ const DEFAULT_SESSION_SYSTEM_PROMPT = [
   'Keep connector-specific overrides minimal and only describe constraints not already owned by RemoteLab backend prompt logic.',
 ].join('\n');
 const RUN_POLL_INTERVAL_MS = 1500;
-const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
+const RUN_POLL_TIMEOUT_MS = 0;
 const MAX_FEISHU_TEXT_LENGTH = 5000;
 const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
+const MAX_FEISHU_RESOURCE_BYTES = 100 * 1024 * 1024;
 const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
 const CONNECTOR_PID_FILENAME = 'connector.pid';
 const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;
@@ -172,6 +182,14 @@ function trimString(value) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function createPollDeadline(timeoutMs) {
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : 0;
+}
+
+function pollDeadlineElapsed(deadline) {
+  return deadline > 0 && Date.now() >= deadline;
 }
 
 function normalizeRegion(value) {
@@ -549,6 +567,62 @@ function extractStructuredTextPreview(value) {
   return truncateLogPreview(fragments.join(' '));
 }
 
+function selectPostContentVariant(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (Array.isArray(value.content)) return value;
+  for (const key of ['zh_cn', 'en_us', 'ja_jp']) {
+    const candidate = value[key];
+    if (candidate && typeof candidate === 'object' && Array.isArray(candidate.content)) {
+      return candidate;
+    }
+  }
+  for (const candidate of Object.values(value)) {
+    if (candidate && typeof candidate === 'object' && Array.isArray(candidate.content)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function renderPostElementText(element) {
+  if (typeof element === 'string') return element;
+  if (!element || typeof element !== 'object') return '';
+  const tag = trimString(element.tag).toLowerCase();
+  if (tag === 'at') {
+    const name = trimString(element.user_name || element.name || element.text);
+    const userId = trimString(element.user_id);
+    return name ? `@${name.replace(/^@+/, '')}` : (userId ? `@${userId.replace(/^@+/, '')}` : '');
+  }
+  if (['text', 'md', 'a'].includes(tag)) {
+    return typeof element.text === 'string' ? element.text : '';
+  }
+  if (tag === 'img' || tag === 'image') return '[image]';
+  if (tag === 'media') return '[media]';
+  if (tag === 'file') {
+    const fileName = trimString(element.file_name || element.name);
+    return fileName ? `[file: ${fileName}]` : '[file]';
+  }
+  return typeof element.text === 'string' ? element.text : '';
+}
+
+function extractPostMessageText(parsedContent) {
+  const variant = selectPostContentVariant(parsedContent);
+  if (!variant) return extractStructuredTextPreview(parsedContent);
+
+  const lines = [];
+  const title = trimString(variant.title);
+  if (title) lines.push(title);
+
+  for (const block of variant.content) {
+    const elements = Array.isArray(block) ? block : [block];
+    const line = elements.map(renderPostElementText).join('').trimEnd();
+    if (line.trim()) {
+      lines.push(line);
+    }
+  }
+  return lines.join('\n').trim();
+}
+
 function contentKeyPreview(parsedContent) {
   if (!parsedContent || Array.isArray(parsedContent) || typeof parsedContent !== 'object') {
     return [];
@@ -556,15 +630,58 @@ function contentKeyPreview(parsedContent) {
   return Object.keys(parsedContent).filter(Boolean).slice(0, 6);
 }
 
+function addFeishuImageKey(keys, seen, value) {
+  const key = trimString(value);
+  if (!key || seen.has(key)) return;
+  seen.add(key);
+  keys.push(key);
+}
+
+function collectFeishuImageKeys(value, keys, seen, depth = 0) {
+  if (depth > 8 || value === null || value === undefined) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectFeishuImageKeys(item, keys, seen, depth + 1);
+    }
+    return;
+  }
+  if (typeof value !== 'object') {
+    return;
+  }
+
+  addFeishuImageKey(keys, seen, value.image_key);
+  addFeishuImageKey(keys, seen, value.imageKey);
+  const tag = trimString(value.tag).toLowerCase();
+  if (tag === 'img' || tag === 'image') {
+    addFeishuImageKey(keys, seen, value.file_key);
+    addFeishuImageKey(keys, seen, value.fileKey);
+  }
+  for (const child of Object.values(value)) {
+    collectFeishuImageKeys(child, keys, seen, depth + 1);
+  }
+}
+
+function extractFeishuImageKeysFromContent(parsedContent) {
+  const keys = [];
+  collectFeishuImageKeys(parsedContent, keys, new Set());
+  return keys;
+}
+
 function summarizeMessageContent(messageType, rawContent) {
   const normalizedType = trimString(messageType).toLowerCase();
   const parsedContent = parseMessageContent(rawContent);
+  const imageKeys = extractFeishuImageKeysFromContent(parsedContent);
+  let messageText = '';
   let textPreview = '';
 
   if (normalizedType === 'text') {
-    textPreview = parseTextPreview(rawContent) || trimString(rawContent);
+    messageText = parseTextPreview(rawContent) || trimString(rawContent);
+    textPreview = messageText;
   } else if (normalizedType === 'post') {
-    textPreview = extractStructuredTextPreview(parsedContent);
+    messageText = extractPostMessageText(parsedContent);
+    textPreview = truncateLogPreview(messageText || extractStructuredTextPreview(parsedContent));
   } else if (normalizedType === 'file') {
     textPreview = trimString(parsedContent?.file_name || parsedContent?.name);
   } else if (normalizedType === 'share_chat') {
@@ -612,9 +729,11 @@ function summarizeMessageContent(messageType, rawContent) {
   })();
 
   return {
+    messageText,
     textPreview,
     contentSummary,
     contentKeys: contentKeyPreview(parsedContent),
+    imageKeys,
   };
 }
 
@@ -624,8 +743,11 @@ function summarizeEventForLog(summary) {
     eventType: summary?.eventType || '',
     chatId: summary?.chatId || '',
     chatType: summary?.chatType || '',
+    groupMessageType: summary?.groupMessageType || '',
+    chatMode: summary?.chatMode || '',
     messageId: summary?.messageId || '',
     messageType: summary?.messageType || '',
+    rootId: summary?.rootId || '',
     threadId: summary?.threadId || '',
     senderOpenId: summary?.sender?.openId || '',
     mentionCount: Array.isArray(summary?.mentions) ? summary.mentions.length : 0,
@@ -656,6 +778,8 @@ function summarizeEvent(data) {
     },
     chatId: message.chat_id || '',
     chatType: message.chat_type || '',
+    groupMessageType: message.group_message_type || data?.group_message_type || '',
+    chatMode: message.chat_mode || data?.chat_mode || '',
     messageId: message.message_id || '',
     rootId: message.root_id || '',
     parentId: message.parent_id || '',
@@ -669,9 +793,11 @@ function summarizeEvent(data) {
       unionId: mention?.id?.union_id || '',
       tenantKey: mention?.tenant_key || '',
     })),
+    messageText: normalizedContent.messageText,
     textPreview: normalizedContent.textPreview,
     contentSummary: normalizedContent.contentSummary,
     contentKeys: normalizedContent.contentKeys,
+    imageKeys: normalizedContent.imageKeys,
     rawContent,
   };
 }
@@ -695,15 +821,21 @@ function summarizeLegacyMessageEvent(data) {
     },
     chatId: data?.open_chat_id || data?.chat_id || '',
     chatType: data?.chat_type || '',
+    groupMessageType: data?.group_message_type || '',
+    chatMode: data?.chat_mode || '',
     messageId: data?.open_message_id || data?.message_id || '',
     rootId: '',
     parentId: '',
     threadId: '',
     messageType,
     mentions: [],
+    messageText: typeof data?.text_without_at_bot === 'string'
+      ? data.text_without_at_bot
+      : normalizedContent.messageText,
     textPreview: typeof data?.text_without_at_bot === 'string' ? data.text_without_at_bot : normalizedContent.textPreview,
     contentSummary: normalizedContent.contentSummary,
     contentKeys: normalizedContent.contentKeys,
+    imageKeys: normalizedContent.imageKeys,
     rawContent,
   };
 }
@@ -1021,8 +1153,46 @@ function sanitizeIdPart(value) {
     .replace(/^_+|_+$/g, '') || 'unknown';
 }
 
+function normalizeFeishuMode(value) {
+  return trimString(value).toLowerCase().replace(/[_\s-]+/g, '_');
+}
+
+function isFeishuTopicChat(summary) {
+  const chatType = normalizeFeishuMode(summary?.chatType);
+  const groupMessageType = normalizeFeishuMode(summary?.groupMessageType);
+  const chatMode = normalizeFeishuMode(summary?.chatMode);
+  return chatType === 'topic'
+    || groupMessageType === 'thread'
+    || groupMessageType === 'topic'
+    || chatMode === 'thread'
+    || chatMode === 'topic';
+}
+
+function buildFeishuTopicId(summary) {
+  const threadId = trimString(summary?.threadId);
+  if (threadId) return threadId;
+
+  const rootId = trimString(summary?.rootId);
+  if (rootId) return rootId;
+
+  if (isFeishuTopicChat(summary)) {
+    return trimString(summary?.parentId) || trimString(summary?.messageId);
+  }
+
+  return '';
+}
+
+function buildFeishuConversationKind(summary) {
+  return buildFeishuTopicId(summary) ? 'topic' : sanitizeIdPart(summary?.chatType || 'chat');
+}
+
 function buildExternalTriggerId(summary) {
-  return `feishu:${sanitizeIdPart(summary.chatType || 'chat')}:${sanitizeIdPart(summary.chatId || 'unknown_chat')}`;
+  const chatId = sanitizeIdPart(summary?.chatId || 'unknown_chat');
+  const topicId = buildFeishuTopicId(summary);
+  if (topicId) {
+    return `feishu:topic:${chatId}:${sanitizeIdPart(topicId)}`;
+  }
+  return `feishu:${sanitizeIdPart(summary?.chatType || 'chat')}:${chatId}`;
 }
 
 function buildRequestId(summary) {
@@ -1033,11 +1203,27 @@ function buildReplyUuid(summary) {
   return `reply:${sanitizeIdPart(summary.messageId || `${Date.now()}`).slice(0, 60)}`;
 }
 
-function buildSessionName(summary) {
-  return trimString(summary.chatName);
+function buildFeishuApiUuid(value, summary) {
+  const seed = trimString(value) || buildReplyUuid(summary);
+  const normalized = seed
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (normalized && normalized.length <= 64) {
+    return normalized;
+  }
+  const digest = createHash('sha1').update(seed || `${Date.now()}`).digest('hex').slice(0, 32);
+  return `rl_${digest}`;
+}
+
+function buildSessionName() {
+  return '';
 }
 
 function buildSessionDescription(summary) {
+  if (buildFeishuTopicId(summary)) {
+    return 'Inbound Feishu topic thread';
+  }
   const chatType = trimString(summary?.chatType);
   return chatType ? `Inbound Feishu ${chatType} chat` : 'Inbound Feishu chat';
 }
@@ -1060,32 +1246,84 @@ function renderMentionPreview(text, mentions) {
   return rendered;
 }
 
+function getSummaryFeishuImageKeys(summary) {
+  const explicitKeys = Array.isArray(summary?.imageKeys)
+    ? summary.imageKeys.map((key) => trimString(key)).filter(Boolean)
+    : [];
+  if (explicitKeys.length > 0) {
+    return Array.from(new Set(explicitKeys));
+  }
+  return extractFeishuImageKeysFromContent(parseMessageContent(summary?.rawContent));
+}
+
+function isSupportedRemoteLabInboundMessage(summary) {
+  const messageType = trimString(summary?.messageType).toLowerCase();
+  if (!messageType || messageType === 'text') return true;
+  if (messageType === 'image') return getSummaryFeishuImageKeys(summary).length > 0;
+  if (messageType === 'post') {
+    return Boolean(trimString(summary?.messageText || summary?.textPreview))
+      || getSummaryFeishuImageKeys(summary).length > 0;
+  }
+  return false;
+}
+
 function buildRemoteLabMessage(summary) {
-  const rawMessage = trimString(summary.textPreview);
+  const rawMessage = trimString(summary.messageText) || trimString(summary.textPreview);
   const renderedMessage = renderMentionPreview(rawMessage, summary.mentions);
   const displayMessage = renderedMessage || rawMessage || trimString(summary.contentSummary) || '[non-text or empty message]';
   const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
   const senderPrefix = summary?.chatType === 'group' && senderName ? `${senderName}: ` : '';
-  return `${senderPrefix}${displayMessage}`;
+  const downloadFailures = Array.isArray(summary?.attachmentDownloadFailures)
+    ? summary.attachmentDownloadFailures
+    : [];
+  const failureText = downloadFailures.length > 0
+    ? `\n\n[Feishu attachment download failed for ${downloadFailures.length} image(s).]`
+    : '';
+  return `${senderPrefix}${displayMessage}${failureText}`;
 }
 
 function buildSessionSourceContext(summary) {
+  const topicId = buildFeishuTopicId(summary);
   const context = {
     connector: 'feishu',
+    conversationKind: buildFeishuConversationKind(summary),
     chatType: trimString(summary?.chatType),
     chatId: trimString(summary?.chatId),
   };
   const chatName = trimString(summary?.chatName);
   if (chatName) context.chatName = chatName;
+  const groupMessageType = trimString(summary?.groupMessageType);
+  if (groupMessageType) context.groupMessageType = groupMessageType;
+  const chatMode = trimString(summary?.chatMode);
+  if (chatMode) context.chatMode = chatMode;
+  if (topicId) context.topicId = topicId;
+  const threadId = trimString(summary?.threadId);
+  if (threadId) context.threadId = threadId;
+  const rootId = trimString(summary?.rootId);
+  if (rootId) context.rootId = rootId;
   return context;
 }
 
 function buildMessageSourceContext(summary) {
+  const topicId = buildFeishuTopicId(summary);
+  const imageKeys = getSummaryFeishuImageKeys(summary);
   const context = {
     connector: 'feishu',
     messageId: trimString(summary?.messageId),
     chatType: trimString(summary?.chatType),
+    conversationKind: buildFeishuConversationKind(summary),
   };
+  if (topicId) context.topicId = topicId;
+  const threadId = trimString(summary?.threadId);
+  if (threadId) context.threadId = threadId;
+  const rootId = trimString(summary?.rootId);
+  if (rootId) context.rootId = rootId;
+  const parentId = trimString(summary?.parentId);
+  if (parentId) context.parentId = parentId;
+  const groupMessageType = trimString(summary?.groupMessageType);
+  if (groupMessageType) context.groupMessageType = groupMessageType;
+  const chatMode = trimString(summary?.chatMode);
+  if (chatMode) context.chatMode = chatMode;
   const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
   if (senderName) {
     context.sender = { name: senderName };
@@ -1108,7 +1346,177 @@ function buildMessageSourceContext(summary) {
   if (contentSummary) {
     context.contentSummary = contentSummary;
   }
+  if (imageKeys.length > 0) {
+    context.attachments = {
+      imageCount: imageKeys.length,
+    };
+  }
   return context;
+}
+
+function normalizeHeaderValue(headers, name) {
+  if (!headers || !name) return '';
+  if (typeof headers.get === 'function') {
+    return trimString(headers.get(name));
+  }
+  const lowerName = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (String(key).toLowerCase() === lowerName) {
+      return Array.isArray(value) ? trimString(value[0]) : trimString(value);
+    }
+  }
+  return '';
+}
+
+function normalizeContentType(value) {
+  return trimString(value).split(';', 1)[0].toLowerCase();
+}
+
+function detectImageMimeType(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return '';
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (buffer.subarray(0, 3).toString('ascii') === 'GIF') {
+    return 'image/gif';
+  }
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return 'image/webp';
+  }
+  return '';
+}
+
+function normalizeFeishuAttachmentMimeType(headers, buffer, fallbackType = 'image') {
+  const headerMimeType = normalizeContentType(normalizeHeaderValue(headers, 'content-type'));
+  if (headerMimeType && headerMimeType !== 'application/octet-stream') {
+    return headerMimeType;
+  }
+  return detectImageMimeType(buffer) || (fallbackType === 'image' ? 'image/png' : (headerMimeType || 'application/octet-stream'));
+}
+
+function extensionForAttachmentMimeType(mimeType) {
+  switch (normalizeContentType(mimeType)) {
+    case 'image/jpeg':
+      return '.jpg';
+    case 'image/png':
+      return '.png';
+    case 'image/gif':
+      return '.gif';
+    case 'image/webp':
+      return '.webp';
+    default:
+      return '.bin';
+  }
+}
+
+function parseContentDispositionFilename(value) {
+  const header = trimString(value);
+  if (!header) return '';
+  const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch {
+      return encoded[1];
+    }
+  }
+  const quoted = header.match(/filename="([^"]+)"/i);
+  if (quoted?.[1]) return quoted[1];
+  const plain = header.match(/filename=([^;]+)/i);
+  return plain?.[1] ? plain[1].trim() : '';
+}
+
+function sanitizeFeishuAttachmentOriginalName(value) {
+  const normalized = trimString(value).replace(/\\/g, '/');
+  return (normalized.split('/').filter(Boolean).pop() || '').replace(/\s+/g, ' ').slice(0, 255);
+}
+
+function buildFeishuAttachmentOriginalName(headers, fileKey, mimeType, index) {
+  const fromHeader = sanitizeFeishuAttachmentOriginalName(
+    parseContentDispositionFilename(normalizeHeaderValue(headers, 'content-disposition')),
+  );
+  if (fromHeader) return fromHeader;
+  const safeKey = sanitizeIdPart(fileKey).slice(0, 80) || `image_${index + 1}`;
+  return `${safeKey}${extensionForAttachmentMimeType(mimeType)}`;
+}
+
+async function readStreamBuffer(readable, options = {}) {
+  if (!readable || typeof readable[Symbol.asyncIterator] !== 'function') {
+    throw new Error('Feishu resource response is not a readable stream');
+  }
+  const maxBytes = Number.isInteger(options.maxBytes) && options.maxBytes > 0
+    ? options.maxBytes
+    : MAX_FEISHU_RESOURCE_BYTES;
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of readable) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxBytes) {
+      throw new Error(`Feishu resource exceeds ${maxBytes} bytes`);
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+async function downloadFeishuMessageResource(runtime, { messageId, fileKey, type = 'image', index = 0 } = {}) {
+  const normalizedMessageId = trimString(messageId);
+  const normalizedFileKey = trimString(fileKey);
+  const normalizedType = trimString(type) || 'image';
+  if (!normalizedMessageId || !normalizedFileKey) {
+    throw new Error('Feishu resource message_id and file_key are required');
+  }
+  if (!runtime?.appClient?.im?.v1?.messageResource?.get) {
+    throw new Error('Feishu message resource download API is unavailable');
+  }
+  const resource = await runtime.appClient.im.v1.messageResource.get({
+    params: {
+      type: normalizedType,
+    },
+    path: {
+      message_id: normalizedMessageId,
+      file_key: normalizedFileKey,
+    },
+  });
+  const buffer = await readStreamBuffer(resource.getReadableStream(), {
+    maxBytes: MAX_FEISHU_RESOURCE_BYTES,
+  });
+  const mimeType = normalizeFeishuAttachmentMimeType(resource.headers, buffer, normalizedType);
+  return {
+    data: buffer.toString('base64'),
+    mimeType,
+    originalName: buildFeishuAttachmentOriginalName(resource.headers, normalizedFileKey, mimeType, index),
+    sizeBytes: buffer.length,
+  };
+}
+
+async function resolveFeishuMessageAttachments(runtime, summary) {
+  const messageId = trimString(summary?.messageId);
+  const imageKeys = getSummaryFeishuImageKeys(summary);
+  const attachments = [];
+  const failures = [];
+  for (const [index, imageKey] of imageKeys.entries()) {
+    try {
+      attachments.push(await downloadFeishuMessageResource(runtime, {
+        messageId,
+        fileKey: imageKey,
+        type: 'image',
+        index,
+      }));
+    } catch (error) {
+      failures.push({
+        type: 'image',
+        fileKey: imageKey,
+        error: error?.message || String(error),
+      });
+      console.warn(`[feishu-connector] failed to download image resource for ${messageId}: ${error?.message || error}`);
+    }
+  }
+  return { attachments, failures };
 }
 
 async function readOwnerToken() {
@@ -1268,6 +1676,7 @@ function createRuntimeContext(config, storagePaths, accessState) {
     }),
     processingMessageIds: new Set(),
     chatQueues: new Map(),
+    chatMetadataCache: new Map(),
     authToken: '',
     authCookie: '',
   };
@@ -1288,6 +1697,73 @@ function enqueueByChat(runtime, summary, worker) {
       runtime.chatQueues.delete(key);
     }
   });
+}
+
+async function loadFeishuChatMetadata(runtime, chatId) {
+  const normalizedChatId = trimString(chatId);
+  if (!normalizedChatId || !runtime?.appClient?.im?.v1?.chat?.get) {
+    return null;
+  }
+  if (!runtime.chatMetadataCache) {
+    runtime.chatMetadataCache = new Map();
+  }
+  if (runtime.chatMetadataCache.has(normalizedChatId)) {
+    return runtime.chatMetadataCache.get(normalizedChatId);
+  }
+
+  try {
+    const response = await runtime.appClient.im.v1.chat.get({
+      params: {
+        user_id_type: 'open_id',
+      },
+      path: {
+        chat_id: normalizedChatId,
+      },
+    });
+    if (response.code !== undefined && response.code !== 0) {
+      throw new Error(response.msg || `Failed to load Feishu chat metadata (${response.code})`);
+    }
+    const metadata = {
+      name: trimString(response.data?.name),
+      groupMessageType: trimString(response.data?.group_message_type),
+      chatMode: trimString(response.data?.chat_mode),
+      chatType: trimString(response.data?.chat_type),
+    };
+    runtime.chatMetadataCache.set(normalizedChatId, metadata);
+    return metadata;
+  } catch (error) {
+    console.warn(`[feishu-connector] failed to load chat metadata for ${normalizedChatId}: ${error?.message || error}`);
+    runtime.chatMetadataCache.set(normalizedChatId, null);
+    return null;
+  }
+}
+
+async function enrichSummaryWithChatMetadata(runtime, summary) {
+  if (!summary || typeof summary !== 'object') {
+    return summary;
+  }
+  const chatType = normalizeFeishuMode(summary.chatType);
+  if (!['group', 'topic'].includes(chatType)) {
+    return summary;
+  }
+
+  const hasTopicMode = trimString(summary.groupMessageType) || trimString(summary.chatMode) || trimString(summary.chatName);
+  if (hasTopicMode) {
+    return summary;
+  }
+
+  const metadata = await loadFeishuChatMetadata(runtime, summary.chatId);
+  if (!metadata) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    chatName: trimString(summary.chatName) || metadata.name,
+    groupMessageType: trimString(summary.groupMessageType) || metadata.groupMessageType,
+    chatMode: trimString(summary.chatMode) || metadata.chatMode,
+    chatType: trimString(summary.chatType) || metadata.chatType,
+  };
 }
 
 async function ensureAuthCookie(runtime, forceRefresh = false) {
@@ -1337,13 +1813,13 @@ function isRemoteLabSessionBusy(session) {
 }
 
 async function waitForSessionReady(runtime, sessionId, initialSession = null) {
-  const deadline = Date.now() + RUN_POLL_TIMEOUT_MS;
+  const deadline = createPollDeadline(RUN_POLL_TIMEOUT_MS);
   let session = initialSession
     && initialSession.id === sessionId
     && initialSession.activity
     ? initialSession
     : null;
-  while (Date.now() < deadline) {
+  while (!pollDeadlineElapsed(deadline)) {
     if (!session) {
       session = await loadRemoteLabSession(runtime, sessionId);
     }
@@ -1419,8 +1895,8 @@ function findQueuedRequestRunId(events, { requestId, messageId, sinceSeq = 0 } =
 }
 
 async function waitForQueuedRequestRun(runtime, sessionId, match = {}) {
-  const deadline = Date.now() + RUN_POLL_TIMEOUT_MS;
-  while (Date.now() < deadline) {
+  const deadline = createPollDeadline(RUN_POLL_TIMEOUT_MS);
+  while (!pollDeadlineElapsed(deadline)) {
     const events = await loadRemoteLabEvents(runtime, sessionId);
     const runId = findQueuedRequestRunId(events, match);
     if (runId) {
@@ -1456,12 +1932,17 @@ async function createOrReuseSession(runtime, summary, runtimeSelection) {
 }
 
 async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelection) {
+  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, summary);
+  const messageSummary = attachmentResolution.failures.length > 0
+    ? { ...summary, attachmentDownloadFailures: attachmentResolution.failures }
+    : summary;
   const payload = {
     requestId: buildRequestId(summary),
-    text: buildRemoteLabMessage(summary),
+    text: buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
-    sourceContext: buildMessageSourceContext(summary),
+    sourceContext: buildMessageSourceContext(messageSummary),
   };
+  if (attachmentResolution.attachments.length > 0) payload.attachments = attachmentResolution.attachments;
   if (runtimeSelection.thinking) payload.thinking = true;
   if (runtimeSelection.model) payload.model = runtimeSelection.model;
   if (runtimeSelection.effort) payload.effort = runtimeSelection.effort;
@@ -1473,12 +1954,14 @@ async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelect
   const queued = result.json?.queued === true;
   const duplicate = result.json?.duplicate === true;
   const runId = trimString(result.json?.run?.id);
-  if (![200, 202].includes(result.response.status) || (!runId && !queued && !duplicate)) {
+  const responseId = trimString(result.json?.response?.id) || payload.requestId;
+  if (![200, 202].includes(result.response.status)) {
     throw new Error(result.json?.error || result.text || `Failed to submit session message (${result.response.status})`);
   }
 
   return {
     requestId: payload.requestId,
+    responseId,
     runId: runId || null,
     duplicate,
     queued,
@@ -1486,8 +1969,8 @@ async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelect
 }
 
 async function waitForRunCompletion(runtime, runId) {
-  const deadline = Date.now() + RUN_POLL_TIMEOUT_MS;
-  while (Date.now() < deadline) {
+  const deadline = createPollDeadline(RUN_POLL_TIMEOUT_MS);
+  while (!pollDeadlineElapsed(deadline)) {
     const result = await requestRemoteLab(runtime, `/api/runs/${runId}`);
     if (!result.response.ok || !result.json?.run) {
       throw new Error(result.json?.error || result.text || `Failed to load run ${runId}`);
@@ -1540,25 +2023,40 @@ async function resolveFeishuRuntimeSelection(runtime) {
 }
 
 async function generateRemoteLabReply(runtime, summary) {
+  const effectiveSummary = await enrichSummaryWithChatMetadata(runtime, summary);
   const runtimeSelection = await resolveFeishuRuntimeSelection(runtime);
-  const session = await createOrReuseSession(runtime, summary, runtimeSelection);
-  const submission = await submitRemoteLabMessage(runtime, session.id, summary, runtimeSelection);
+  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, effectiveSummary);
+  const messageSummary = attachmentResolution.failures.length > 0
+    ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
+    : effectiveSummary;
+  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
+  const session = await createConnectorSession(requester, {
+    folder: runtime.config.sessionFolder,
+    tool: runtimeSelection.tool,
+    name: buildSessionName(effectiveSummary),
+    sourceId: 'feishu',
+    sourceName: runtime.config.region === 'lark-global' ? 'Lark' : 'Feishu',
+    group: 'Feishu',
+    description: buildSessionDescription(effectiveSummary),
+    systemPrompt: runtime.config.systemPrompt,
+    externalTriggerId: buildExternalTriggerId(effectiveSummary),
+    sourceContext: buildSessionSourceContext(effectiveSummary),
+  });
+  const submission = await submitConnectorMessage(requester, session.id, {
+    requestId: buildRequestId(effectiveSummary),
+    text: buildRemoteLabMessage(messageSummary),
+    tool: runtimeSelection.tool,
+    sourceContext: buildMessageSourceContext(messageSummary),
+    ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
+    ...(runtimeSelection.thinking ? { thinking: true } : {}),
+    ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
+    ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
+  });
   const runId = submission.runId;
-  if (!runId && submission.duplicate) {
-    return {
-      sessionId: session.id,
-      runId: '',
-      requestId: submission.requestId,
-      duplicate: true,
-      queued: submission.queued,
-      replyText: '',
-      silent: true,
-    };
-  }
-  const publication = await waitForReplyPublication(
-    (path) => requestRemoteLab(runtime, path),
+  const publication = await waitForConnectorPublication(
+    requester,
     session.id,
-    submission.requestId,
+    submission.responseId,
     {
       timeoutMs: RUN_POLL_TIMEOUT_MS,
       intervalMs: RUN_POLL_INTERVAL_MS,
@@ -1567,14 +2065,24 @@ async function generateRemoteLabReply(runtime, summary) {
   if (publication.state !== 'ready') {
     throw new Error(`reply publication ${publication.state || 'failed'}`);
   }
-  const replyText = normalizeReplyText(publication.payload?.text || '');
+  let replyText = normalizeReplyText(normalizeConnectorPublicationText(publication));
   const finalizedRunId = trimString(publication.finalRunId) || runId || '';
+  if (!replyText) {
+    const replyEvent = await loadConnectorAssistantReply(requester, session.id, {
+      runId: finalizedRunId,
+      requestId: submission.requestId,
+    });
+    replyText = normalizeReplyText(replyEvent?.normalizedContent || replyEvent?.content || '');
+  }
   return {
     sessionId: session.id,
     runId: finalizedRunId,
     requestId: submission.requestId,
+    responseId: submission.responseId,
     duplicate: submission.duplicate,
     queued: submission.queued,
+    attachmentCount: attachmentResolution.attachments.length,
+    attachmentDownloadFailureCount: attachmentResolution.failures.length,
     replyText,
     silent: !replyText,
   };
@@ -1614,6 +2122,71 @@ function compileFeishuReplyText(text, mentions) {
     compiled = compiled.split(alias).join(tag);
   }
   return compiled;
+}
+
+function normalizeMentionEntries(mentions) {
+  return (Array.isArray(mentions) ? mentions : [])
+    .map((mention) => ({
+      mention,
+      token: trimString(mention?.key),
+      targetId: resolveMentionTargetId(mention),
+      displayName: mentionDisplayName(mention),
+    }))
+    .filter((entry) => entry.targetId && (entry.token || entry.displayName));
+}
+
+function findNextMentionMatch(line, mentionEntries, startIndex) {
+  let best = null;
+  for (const entry of mentionEntries) {
+    const markers = [
+      entry.token,
+      entry.displayName ? `@${entry.displayName}` : '',
+    ].filter(Boolean);
+    for (const marker of markers) {
+      const index = line.indexOf(marker, startIndex);
+      if (index < 0) continue;
+      if (!best || index < best.index || (index === best.index && marker.length > best.marker.length)) {
+        best = { entry, marker, index };
+      }
+    }
+  }
+  return best;
+}
+
+function renderFeishuMarkdownLineElements(line, mentionEntries) {
+  const elements = [];
+  let cursor = 0;
+  while (cursor < line.length) {
+    const match = findNextMentionMatch(line, mentionEntries, cursor);
+    if (!match) {
+      elements.push({ tag: 'md', text: line.slice(cursor) });
+      break;
+    }
+    if (match.index > cursor) {
+      elements.push({ tag: 'md', text: line.slice(cursor, match.index) });
+    }
+    elements.push({
+      tag: 'at',
+      user_id: match.entry.targetId,
+      user_name: match.entry.displayName || match.entry.targetId,
+    });
+    cursor = match.index + match.marker.length;
+  }
+  return elements.filter((element) => element.text !== '');
+}
+
+function buildFeishuPostContent(text, mentions) {
+  const normalized = normalizeReplyText(text);
+  const mentionEntries = normalizeMentionEntries(mentions)
+    .sort((left, right) => Math.max(right.token.length, right.displayName.length) - Math.max(left.token.length, left.displayName.length));
+  const content = normalized.split('\n').map((line) => {
+    if (!line.trim()) {
+      return [{ tag: 'text', text: '\u200B' }];
+    }
+    const elements = renderFeishuMarkdownLineElements(line, mentionEntries);
+    return elements.length > 0 ? elements : [{ tag: 'text', text: '\u200B' }];
+  });
+  return JSON.stringify({ zh_cn: { content } });
 }
 
 function isProcessingReactionEnabled(runtime) {
@@ -1669,22 +2242,70 @@ async function removeProcessingReaction(runtime, summary, reaction) {
   return true;
 }
 
-async function sendFeishuText(runtime, summary, text) {
+async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
+  const content = buildFeishuPostContent(text, mentions);
+  const replyUuid = buildFeishuApiUuid(uuid, summary);
+  if (buildFeishuTopicId(summary)) {
+    const response = await runtime.appClient.im.v1.message.reply({
+      path: {
+        message_id: summary.messageId,
+      },
+      data: {
+        msg_type: 'post',
+        content,
+        reply_in_thread: true,
+        uuid: replyUuid,
+      },
+    });
+    if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
+      throw new Error(response.msg || 'Failed to send Feishu topic reply');
+    }
+    return response.data;
+  }
+
   const response = await runtime.appClient.im.v1.message.create({
     params: {
       receive_id_type: 'chat_id',
     },
     data: {
       receive_id: summary.chatId,
-      msg_type: 'text',
-      content: JSON.stringify({ text: compileFeishuReplyText(text, summary?.mentions) }),
-      uuid: buildReplyUuid(summary),
+      msg_type: 'post',
+      content,
+      uuid: replyUuid,
     },
   });
   if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
     throw new Error(response.msg || 'Failed to send Feishu reply');
   }
   return response.data;
+}
+
+async function deliverFeishuVisibleReply(runtime, summary, {
+  responseId = '',
+  kind = 'content',
+  text = '',
+}, sendFeishuTextImpl = sendFeishuText) {
+  const transport = createFeishuConnectorTransport({
+    runtime,
+    summary,
+    sendFeishuTextImpl,
+  });
+  const driver = new ConnectorDriver({
+    targetId: buildExternalTriggerId(summary),
+    transport,
+  });
+  const delivery = await driver.dispatchMessage({
+    responseId: trimString(responseId) || buildRequestId(summary),
+    kind,
+    text,
+    order: 0,
+  });
+  if (delivery.record.state !== 'delivered') {
+    throw new Error(delivery.record.lastError || 'Failed to deliver Feishu reply');
+  }
+  return {
+    message_id: delivery.record.externalId || '',
+  };
 }
 
 function isProcessableMessage(summary) {
@@ -1710,7 +2331,7 @@ function normalizeLocalCommandText(text) {
 function extractLocalCommand(summary) {
   const chatType = trimString(summary?.chatType).toLowerCase();
   if (!['group', 'topic'].includes(chatType)) return null;
-  const normalized = normalizeLocalCommandText(summary?.textPreview || summary?.rawContent);
+  const normalized = normalizeLocalCommandText(summary?.messageText || summary?.textPreview || summary?.rawContent);
   if (!normalized) return null;
   if (APPROVE_CURRENT_CHAT_COMMANDS.has(normalized)) {
     return { type: 'approve_current_chat' };
@@ -1881,7 +2502,7 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   let processingReaction = null;
   try {
     const messageType = trimString(summary.messageType).toLowerCase();
-    if (messageType && messageType !== 'text') {
+    if (messageType && !isSupportedRemoteLabInboundMessage(summary)) {
       await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
         status: 'silent_no_reply',
         sourceLabel,
@@ -1911,6 +2532,8 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       }
     }
 
+    summary = await enrichSummaryWithChatMetadata(runtime, summary);
+
     try {
       processingReaction = await addReaction(runtime, summary);
     } catch (reactionError) {
@@ -1939,7 +2562,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       return;
     }
 
-    const reply = await sendText(runtime, summary, finalReply.text);
+    const reply = await deliverFeishuVisibleReply(runtime, summary, {
+      responseId: generated.responseId || generated.requestId,
+      kind: finalReply.action === 'send_confirmation' ? 'summary' : 'content',
+      text: finalReply.text,
+    }, sendText);
     await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
       status: finalReply.status,
       sourceLabel,
@@ -1962,7 +2589,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
     console.error(`[feishu-connector] processing failed for ${summary.messageId}:`, error?.stack || error);
     try {
       const fallback = buildFailureReply(summary, error?.message || '');
-      const reply = await sendText(runtime, summary, fallback);
+      const reply = await deliverFeishuVisibleReply(runtime, summary, {
+        responseId: buildRequestId(summary),
+        kind: 'summary',
+        text: fallback,
+      }, sendText);
       await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
         status: 'failed_with_notice',
         sourceLabel,
@@ -1990,11 +2621,17 @@ export {
   DEFAULT_SESSION_SYSTEM_PROMPT,
   buildApprovedChatReply,
   buildChatAccessStatusReply,
+  buildExternalTriggerId,
+  buildFeishuTopicId,
+  buildMessageSourceContext,
   buildRemoteLabMessage,
   buildSessionDescription,
+  buildSessionSourceContext,
   claimConnectorPidLock,
+  buildFeishuPostContent,
   compileFeishuReplyText,
   createRuntimeContext,
+  downloadFeishuMessageResource,
   ensureAuthCookie,
   ensureAllowedSendersFile,
   extractLocalCommand,
@@ -2012,6 +2649,8 @@ export {
   queueAccessStateFlush,
   releaseConnectorPidLock,
   removeProcessingReaction,
+  resolveFeishuMessageAttachments,
+  sendFeishuText,
   snapshotAccessState,
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,

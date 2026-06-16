@@ -27,6 +27,7 @@ import {
   statOrNull,
   writeJsonAtomic,
 } from './fs-utils.mjs';
+import { isUserVisiblePathAllowed } from './instance-visible-paths.mjs';
 
 const FILE_ASSET_ID_PATTERN = /^fasset_[a-f0-9]{24}$/;
 const runFileAssetMutation = createSerialTaskQueue();
@@ -404,10 +405,11 @@ async function buildClientFileAsset(record, { includeDirectUrl = false } = {}) {
 }
 
 export function getFileAssetBootstrapConfig() {
+  const localDirectUploadEnabled = !FILE_ASSET_STORAGE_ENABLED;
   return {
-    enabled: FILE_ASSET_STORAGE_ENABLED,
-    directUpload: FILE_ASSET_DIRECT_UPLOAD_ENABLED,
-    provider: FILE_ASSET_STORAGE_ENABLED ? FILE_ASSET_STORAGE_PROVIDER : '',
+    enabled: FILE_ASSET_STORAGE_ENABLED || localDirectUploadEnabled,
+    directUpload: FILE_ASSET_DIRECT_UPLOAD_ENABLED || localDirectUploadEnabled,
+    provider: FILE_ASSET_STORAGE_ENABLED ? FILE_ASSET_STORAGE_PROVIDER : 'local',
   };
 }
 
@@ -429,6 +431,7 @@ export async function createFileAssetUploadIntent({
   sizeBytes,
   createdBy = 'owner',
   forceLocal = false,
+  forceStorage = false,
 } = {}) {
   if (forceLocal !== true) {
     requireFileAssetStorageEnabled();
@@ -456,7 +459,8 @@ export async function createFileAssetUploadIntent({
   });
 
   await ensureDir(CHAT_FILE_ASSETS_DIR);
-  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED || forceLocal === true) {
+  const useLocalUpload = forceLocal === true || (forceStorage !== true && !FILE_ASSET_DIRECT_UPLOAD_ENABLED);
+  if (useLocalUpload) {
     const localFilename = buildLocalObjectFilename(assetId, record.originalName);
     record.storage.provider = 'local';
     record.storage.localFilename = localFilename;
@@ -464,7 +468,7 @@ export async function createFileAssetUploadIntent({
 
   await writeJsonAtomic(fileAssetPath(assetId), record);
 
-  if (!FILE_ASSET_DIRECT_UPLOAD_ENABLED || forceLocal === true) {
+  if (useLocalUpload) {
     return {
       asset: await buildClientFileAsset(record),
       upload: {
@@ -710,10 +714,17 @@ export async function publishLocalFileAssetFromPath({
   originalName,
   mimeType,
   createdBy = 'owner',
+  allowInternalPath = false,
 } = {}) {
   const filePath = normalizeString(localPath);
+  if (!filePath) {
+    throw createError('localPath must point to a file', 'FILE_ASSET_LOCAL_PATH_INVALID', 400);
+  }
+  if (!allowInternalPath && !isUserVisiblePathAllowed(filePath)) {
+    throw createError('localPath is outside this instance workspace', 'FILE_ASSET_LOCAL_PATH_FORBIDDEN', 403);
+  }
   const fileStats = await statOrNull(filePath);
-  if (!filePath || !fileStats?.isFile()) {
+  if (!fileStats?.isFile()) {
     throw createError('localPath must point to a file', 'FILE_ASSET_LOCAL_PATH_INVALID', 400);
   }
 
@@ -762,6 +773,7 @@ export async function publishLocalFileAssetFromPath({
     mimeType,
     sizeBytes: fileStats.size,
     createdBy,
+    forceStorage: true,
   });
 
   const response = await fetch(intent.upload.url, {

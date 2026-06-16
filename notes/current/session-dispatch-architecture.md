@@ -1,38 +1,98 @@
-# Session Continuation Planner Architecture
+# Session Continuation Routing Architecture
 
-Status: current working architecture as of 2026-04-12
+Status: current working architecture as of 2026-04-14
 
 ## What this note is now
 
-This note no longer describes the older `route_existing` / `route_new` classifier shape.
+This note no longer describes the older `route_existing` / `route_new` classifier shape, and it also no longer describes the interim "every eligible turn goes straight into the full planner" design.
 
-The current design is a pre-turn continuation planner that decides how a new user input should continue relative to the current session:
+The current design is a two-stage pre-turn continuation-routing flow:
 
-- continue in the current session
-- fork into one or more related branch sessions
-- start one or more fresh sessions with minimal forwarded context
+- stage 1: a lightweight model gate decides whether the incoming user turn can continue directly in the current session or whether it needs full split planning
+- stage 2: only when stage 1 returns `needs_planning`, a full continuation planner decides concrete destinations and inheritance behavior
 
-The important change is conceptual: the system is no longer trying to do arbitrary historical-session routing first. It is deciding continuation mode first, then deriving destination sessions and inheritance behavior from that result.
+The important change is conceptual: the system is no longer trying to solve "should we split?" and "how exactly should we split?" with either hardcoded message rules or one overloaded planner call. Those are now separate responsibilities.
 
 ## Core product definition
 
-Each user message first goes through a hidden planner before the normal assistant turn begins.
+Each user message that is eligible for continuation routing first goes through a hidden pre-turn control layer before the normal assistant turn begins.
 
-That planner sees the full current-session context that the main execution path would have used, rather than a thin summary-only view. The reason is simple: deciding whether something is the continuation of the current thread is a transcript-understanding problem, not a keyword-matching problem.
+That control layer now has two model surfaces:
 
-The planner does not belong to the main session model. It is a separate pre-turn control layer. The main session model should only handle work that already belongs to it after planning, rather than simultaneously answering the user and improvising routing decisions.
+- the continuation gate:
+  lightweight
+  transcript-light
+  binary contract
+  answers only whether this turn should continue directly or escalate into full split planning
+- the continuation planner:
+  heavier
+  full-context
+  destination-producing
+  answers how the turn should continue when splitting is actually needed
 
-## Ambient assistant surfaces still use the same planner
+The main session model should only handle work that already belongs to it after this routing layer finishes. It should not simultaneously answer the user and improvise session-routing decisions.
+
+The important architectural boundary is:
+
+- code may keep structural entry guards such as `dispatch enabled`, `message present`, `session exists`, or `internal turn exclusions`
+- code should not own semantic routing rules such as keyword lists, topic-shift heuristics, agenda detection, or hardcoded split phrases
+- semantic continuation decisions belong to model contracts:
+  stage 1 decides `continue_direct` vs `needs_planning`
+  stage 2 decides `continue` / `fork` / `fresh`
+
+## Ambient assistant surfaces still use the same routing stack
 
 Not every user-facing chat box is a topic-coherent work session. Personal-assistant style connector chats such as WeChat or Feishu DM threads can contain weather checks, reminders, one-off factual questions, and longer project work in the same running chat.
 
-The current product cut does not add a second top-level product model for those surfaces. Instead, it keeps one continuation planner and makes that planner more conservative:
+The current product cut does not add a second top-level product model for those surfaces. Instead, it keeps one continuation-routing stack and makes stage 1 conservative:
 
-- simple one-off asks should usually remain `continue`
-- topic shift alone is not enough for `fresh`
-- only clearly separate durable work, obviously mismatched turns, or genuinely multi-task inputs should split into `fork` / `fresh`
+- simple one-off asks should usually remain `continue_direct`
+- topic shift alone is not enough to escalate into full split planning
+- only clearly separate durable work, obviously mismatched turns, or genuinely multi-task inputs should escalate into stage 2 and potentially split into `fork` / `fresh`
 
 This keeps the product simpler while still avoiding the worst over-splitting behavior in loose connector chats.
+
+## Stage 1: continuation gate
+
+Stage 1 is intentionally not a keyword filter. It is a small model judgment with a deliberately narrow output contract.
+
+Its job is only to answer:
+
+- `continue_direct`
+- `needs_planning`
+
+It should see a compressed view of the current session:
+
+- current session identity/summary fields
+- the incoming user message
+- only a recent transcript slice rather than the full planner context window
+
+It should not:
+
+- invent destination sessions
+- rewrite delivery text
+- decide `fork` versus `fresh`
+- generate forwarded bridge context
+
+Its design goal is to keep the hot path cheap while still being semantic rather than hardcoded.
+
+The default bias is:
+
+- weak evidence resolves to `continue_direct`
+- only meaningful evidence of a separate downstream workstream escalates to `needs_planning`
+
+## Stage 2: continuation planner
+
+Stage 2 is the existing full continuation planner, but it no longer runs on every eligible turn.
+
+It only runs after stage 1 returns `needs_planning`.
+
+Stage 2 sees the fuller current-session context because it is solving a more expensive problem:
+
+- should the current session keep one destination
+- should one or more branch sessions be created
+- should one or more fresh sessions be created
+- what forwarded bridge context and scope framing each destination needs
 
 ## Continuation modes
 
@@ -76,19 +136,37 @@ Used by `fresh`. The child session receives only the minimal forwarded bridge ne
 
 ## Prompt/cache shape
 
-The planner and the eventual execution session should share the same upstream context prefix whenever they are reasoning about the same current thread.
+The gate and planner intentionally do not use the same amount of context.
+
+The gate should stay small and cheap. The planner and the eventual execution session should share the same upstream context prefix whenever they are reasoning about the same current thread.
 
 That means:
 
-- the current session transcript should be loaded as raw prompt material, not rewritten first
-- the planner should inspect the same current-thread context the main execution path would have used
+- the gate should inspect only a compressed recent current-thread slice
+- the planner should inspect the same fuller current-thread context the split decision needs
 - fork branches should reuse that same parent context as prompt inheritance
 
-The cache optimization goal is therefore not "copy the same summary everywhere." It is "reuse the same full upstream context prefix when the semantic relationship actually justifies it."
+The optimization goal is therefore not "copy the same summary everywhere." It is:
+
+- keep the gate cheap
+- only pay the full-context planning cost on actual split candidates
+- reuse the same full upstream context prefix when the semantic relationship actually justifies it
 
 For `fresh` sessions, semantic cleanliness matters more than forcing shared prefix reuse. A fresh session should start from a planner-written bridge summary plus only the required carried facts, not from the whole parent transcript just to chase cache hits.
 
-## Planner output contract
+## Output contracts
+
+### Stage 1 gate contract
+
+The gate may reason flexibly, but its output contract should stay narrow. At minimum it returns:
+
+- action: `continue_direct` or `needs_planning`
+- confidence
+- reasoning
+
+The system should treat stage 1 as an escalation decision, not as a hidden destination planner.
+
+### Stage 2 planner contract
 
 The planner may reason flexibly, but its output contract should stay stable. At minimum it returns:
 
@@ -104,19 +182,21 @@ The planner may reason flexibly, but its output contract should stay stable. At 
   forwarded context
   optional title hint
 
-The system should treat that output as the authoritative pre-turn control result.
+The system should treat stage 2 output as the authoritative destination plan once stage 1 has escalated into it.
 
 ## Execution flow
 
 1. The user submits a message.
 2. The system accepts and persists it, exposing a `checking` planning state.
-3. The pre-turn planner runs against the current session transcript plus the new user input.
-4. If the result is a trivial single `continue`, the message is processed in the current session.
-5. If the result includes `fork` and/or `fresh` destinations:
+3. Stage 1 runs against a compressed recent current-session slice plus the new user input.
+4. If stage 1 returns `continue_direct`, the message is processed in the current session without invoking the full planner.
+5. If stage 1 returns `needs_planning`, stage 2 runs against the fuller current-session context.
+6. If stage 2 returns a trivial single `continue`, the message is processed in the current session.
+7. If the result includes `fork` and/or `fresh` destinations:
    - `continue` destinations stay in the current session
    - `fork` destinations create child sessions with full parent continuation inheritance
    - `fresh` destinations create new sessions with minimal forwarded bridge context
-6. The source session or connector surface receives a visible continuation notice when work was moved into one or more durable sessions.
+8. The source session or connector surface receives a visible continuation notice when work was moved into one or more durable sessions.
 
 ## Visible history vs prompt inheritance
 
@@ -128,11 +208,17 @@ Fresh sessions should begin with a clean visible history even though the first t
 
 ## Responsibility split
 
+The continuation gate owns:
+
+- deciding whether the turn can continue directly
+- deciding whether full split planning is worth paying for
+
 The continuation planner owns:
 
-- deciding continuation mode
+- deciding continuation mode once planning is required
 - deciding whether there are multiple destinations
 - deciding inheritance profile per destination
+- deciding concrete split/no-split execution for the current user input after escalation
 
 The main session model owns:
 
@@ -149,9 +235,10 @@ The session-creation layer owns:
 The new model absorbs older concepts rather than keeping them side by side:
 
 - old `dispatch`: absorbed into the continuation planner
+- old hardcoded routing heuristics: replaced by the lightweight continuation gate
 - old `restore`: absorbed into inheritance profiles and prompt inheritance
 - old session-spawn/delegate branching: remains an execution action, but should not act as a second routing brain for the user message itself
 
 The key architectural rule is now:
 
-The front door decides continuation mode first. Session execution happens second.
+The front door first decides whether heavy planning is needed. If yes, it then decides continuation mode. Session execution happens second.

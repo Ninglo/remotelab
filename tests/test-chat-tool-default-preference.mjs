@@ -52,8 +52,9 @@ const derivePreferredToolIdSource = extractFunctionSource(bootstrapSource, 'deri
 
 const context = {
   console,
-  DEFAULT_TOOL_ID: 'micro-agent',
+  DEFAULT_TOOL_ID: 'codex',
   LEGACY_AUTO_PREFERRED_TOOL_IDS: new Set(['codex', 'micro-agent']),
+  LEGACY_REMOVED_TOOL_IDS: new Set(['micro-agent']),
 };
 context.globalThis = context;
 
@@ -74,21 +75,21 @@ vm.runInNewContext(
   { filename: 'static/chat/layout-tooling.js' },
 );
 
-const ordered = context.prioritizeToolOptions([
+const ordered = context.prioritizeToolOptions(context.filterPrimaryToolOptions([
   { id: 'claude', name: 'Claude Code' },
   { id: 'micro-agent', name: 'Micro Agent' },
   { id: 'codex', name: 'CodeX' },
-]);
+]));
 assert.deepEqual(
   Array.from(ordered, (tool) => tool.id),
-  ['micro-agent', 'claude', 'codex'],
-  'Micro Agent should be promoted to the front of the picker when available',
+  ['codex', 'claude'],
+  'legacy Micro Agent should be removed from the primary picker',
 );
 
 assert.equal(
   context.resolvePreferredToolId(ordered, []),
-  'micro-agent',
-  'new picker defaults should fall back to Micro Agent when no explicit choice exists',
+  'codex',
+  'new picker defaults should fall back to CodeX when no explicit choice exists',
 );
 
 assert.equal(
@@ -117,8 +118,8 @@ assert.equal(
 
 assert.equal(
   context.derivePreferredToolId('micro-agent', 'micro-agent'),
-  'micro-agent',
-  'explicit micro-agent selections should still be preserved',
+  'codex',
+  'legacy explicit micro-agent selections should be migrated to CodeX',
 );
 
 assert.equal(
@@ -140,8 +141,8 @@ const allVisible = context.filterPrimaryToolOptions([
 ]);
 assert.deepEqual(
   Array.from(allVisible, (tool) => tool.id),
-  ['codex', 'micro-agent', 'claude'],
-  'all tools should be visible regardless of visibility flag',
+  ['codex', 'claude'],
+  'legacy Micro Agent should be hidden from primary tool options',
 );
 
 const keptPrivate = context.filterPrimaryToolOptions([
@@ -150,8 +151,8 @@ const keptPrivate = context.filterPrimaryToolOptions([
 ], { keepIds: ['micro-agent'] });
 assert.deepEqual(
   Array.from(keptPrivate, (tool) => tool.id),
-  ['codex', 'micro-agent'],
-  'the current private tool should remain visible when an existing session already uses it',
+  ['codex'],
+  'legacy Micro Agent should stay hidden even when stale state references it',
 );
 
 const keptHiddenClaude = context.filterPrimaryToolOptions([

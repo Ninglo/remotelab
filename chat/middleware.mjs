@@ -1,6 +1,7 @@
 import { randomBytes } from 'crypto';
 import { isAuthenticated } from '../lib/auth.mjs';
 import { FILE_ASSET_ALLOWED_ORIGINS } from '../lib/config.mjs';
+import { getConnectorSurface, isConnectorSurfacePublicPath } from '../lib/connector-surface-registry.mjs';
 
 // ---- Rate limiting ----
 
@@ -70,6 +71,22 @@ export function generateNonce() {
   return randomBytes(16).toString('base64');
 }
 
+function parseConnectorSurfaceProxyRoute(pathname = '') {
+  const match = String(pathname || '').match(/^\/connectors\/([a-z0-9._:-]+)(\/.*)?$/i);
+  if (!match) return null;
+  return {
+    connectorId: String(match[1] || '').trim().toLowerCase(),
+    tailPath: String(match[2] || '').trim() || '/',
+  };
+}
+
+async function allowsUnauthenticatedConnectorSurfaceRequest(pathname = '') {
+  const route = parseConnectorSurfaceProxyRoute(pathname);
+  if (!route?.connectorId) return false;
+  const surface = await getConnectorSurface(route.connectorId);
+  return isConnectorSurfacePublicPath(surface, route.tailPath);
+}
+
 // ---- Auth middleware ----
 
 /**
@@ -78,6 +95,30 @@ export function generateNonce() {
  */
 export async function requireAuth(req, res) {
   if (isAuthenticated(req)) return true;
+  const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
+  if (
+    requestUrl.pathname === '/api/connectors/gmail/google/callback'
+    || requestUrl.pathname === '/api/connectors/calendar/google/callback'
+    || requestUrl.pathname.endsWith('/api/connectors/gmail/google/callback')
+    || requestUrl.pathname.endsWith('/api/connectors/calendar/google/callback')
+  ) {
+    return true;
+  }
+  if (await allowsUnauthenticatedConnectorSurfaceRequest(requestUrl.pathname)) {
+    return true;
+  }
+  if (
+    requestUrl.pathname === '/connectors/wechat/login/open'
+    || requestUrl.pathname.endsWith('/connectors/wechat/login/open')
+  ) {
+    const { verifyWeChatLoginOpenRequest } = await import('../lib/wechat-connector-login.mjs');
+    if (await verifyWeChatLoginOpenRequest({
+      pathname: requestUrl.pathname,
+      searchParams: requestUrl.searchParams,
+    })) {
+      return true;
+    }
+  }
   const { authenticateBearerToken } = await import('../lib/auth.mjs');
   if (await authenticateBearerToken(req)) return true;
   if ((req.url || '').startsWith('/api/')) {

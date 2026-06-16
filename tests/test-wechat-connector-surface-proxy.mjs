@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { createHash } from 'crypto';
 import { spawn } from 'child_process';
 import http from 'http';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -42,14 +41,17 @@ async function waitFor(predicate, description, timeoutMs = 12000, intervalMs = 1
   throw new Error(`Timed out: ${description}`);
 }
 
-function request(port, path, { method = 'GET', cookie = ownerCookie } = {}) {
+function request(port, path, { method = 'GET', cookie = ownerCookie, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({
       hostname: '127.0.0.1',
       port,
       path,
       method,
-      headers: cookie ? { Cookie: cookie } : {},
+      headers: {
+        ...(cookie ? { Cookie: cookie } : {}),
+        ...(headers && typeof headers === 'object' ? headers : {}),
+      },
     }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
@@ -66,10 +68,6 @@ function request(port, path, { method = 'GET', cookie = ownerCookie } = {}) {
     req.on('error', reject);
     req.end();
   });
-}
-
-function qrVersion(url) {
-  return createHash('sha1').update(url).digest('hex').slice(0, 12);
 }
 
 function setupTempHome(upstreamPort, chatPort) {
@@ -295,7 +293,6 @@ async function main() {
   const upstreamPort = randomPort(52000);
   const chatPort = randomPort(44000);
   const qrTwoUrl = `http://127.0.0.1:${upstreamPort}/qr/qr_test_2.png`;
-  const expectedQrVersion = qrVersion(qrTwoUrl);
   const upstream = await startUpstreamServer(upstreamPort);
   const { home, configDir, connectorDir, configPath } = setupTempHome(upstreamPort, chatPort);
   let chatServer = null;
@@ -328,18 +325,56 @@ async function main() {
     assert.equal(page.status, 200, 'proxied connector page should render');
     assert.match(page.text, /Connect This Workspace/);
 
+    const prefixedSurfaceInfo = await request(chatPort, '/api/connectors/wechat/surface', {
+      headers: { 'x-forwarded-prefix': '/owner' },
+    });
+    assert.equal(prefixedSurfaceInfo.status, 200, 'prefixed connector surface info should resolve');
+    const prefixedSurfacePayload = JSON.parse(prefixedSurfaceInfo.text);
+    assert.equal(
+      prefixedSurfacePayload.surface?.requiresUserAction?.href,
+      '/owner/connectors/wechat/login',
+      'prefixed connector surface info should advertise public-prefixed login href',
+    );
+
+    const prefixedPage = await request(chatPort, '/connectors/wechat/login', {
+      headers: { 'x-forwarded-prefix': '/owner' },
+    });
+    assert.equal(prefixedPage.status, 200, 'prefixed proxied connector page should render');
+    assert.match(
+      prefixedPage.text,
+      /var statusEndpoint = '\/owner\/connectors\/wechat\/login\/status';/,
+      'prefixed proxied connector page should keep status requests on the public-prefixed path',
+    );
+    assert.match(
+      prefixedPage.text,
+      /var qrEndpoint = '\/owner\/connectors\/wechat\/login\/qr';/,
+      'prefixed proxied connector page should keep QR requests on the public-prefixed path',
+    );
+
     const surfaceState = await waitFor(async () => {
       const res = await request(chatPort, '/connectors/wechat/login/status');
       if (res.status !== 200) return false;
       const payload = JSON.parse(res.text);
-      return payload.qrcodeVersion === expectedQrVersion ? payload : false;
+      return payload.qrcodeVersion ? payload : false;
     }, 'proxied connector status should expose refreshed QR');
     assert.equal(surfaceState.capabilityState, 'authorization_required');
+    const signedLoginLink = new URL(surfaceState.loginLinkPath, 'http://127.0.0.1');
+    assert.equal(signedLoginLink.pathname, '/connectors/wechat/login/open');
+    assert.ok(signedLoginLink.searchParams.get('lid'));
+    assert.match(String(signedLoginLink.searchParams.get('sig') || ''), /^[a-f0-9]{32}$/);
 
-    const qrImage = await request(chatPort, `/connectors/wechat/login/qr?v=${expectedQrVersion}`);
+    const qrImage = await request(chatPort, `/connectors/wechat/login/qr?v=${surfaceState.qrcodeVersion}`);
     assert.equal(qrImage.status, 200, 'proxied connector QR path should serve current image');
     assert.match(String(qrImage.headers['content-type'] || ''), /^image\/png/);
-    assert.deepEqual(qrImage.body, Buffer.from('qr-two'));
+    assert.deepEqual(qrImage.body.subarray(0, 8), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+
+    const unsignedOpenLink = await request(chatPort, '/connectors/wechat/login/open', { cookie: '' });
+    assert.equal(unsignedOpenLink.status, 302, 'bare proxied login link should stay behind the normal login gate');
+    assert.equal(unsignedOpenLink.headers.location, '/login');
+
+    const openLink = await request(chatPort, surfaceState.loginLinkPath, { cookie: '' });
+    assert.equal(openLink.status, 302, 'proxied stable login link should redirect to the current upstream login URL');
+    assert.equal(openLink.headers.location, qrTwoUrl);
 
     const metrics = upstream.getMetrics();
     assert.ok(metrics.qrFetchCount >= 2, 'connector-owned login flow should refresh expired QR');

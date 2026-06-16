@@ -274,4 +274,67 @@ assert.deepEqual(
   'context operations should stay visible in the main transcript instead of being folded into the hidden implementation block',
 );
 
+const autoContinuationHistory = [
+  { seq: 1, type: 'message', role: 'user', content: '把结论完整说完', responseId: 'resp_auto_continue' },
+  { seq: 2, type: 'reasoning', role: 'assistant', content: 'Preparing the first answer', responseId: 'resp_auto_continue', runId: 'run_original' },
+  { seq: 3, type: 'tool_use', role: 'assistant', toolName: 'shell', toolInput: 'inspect', responseId: 'resp_auto_continue', runId: 'run_original' },
+  { seq: 4, type: 'tool_result', role: 'system', output: 'ok', exitCode: 0, responseId: 'resp_auto_continue', runId: 'run_original' },
+  { seq: 5, type: 'message', role: 'assistant', content: '第一段：我先说明原因。', responseId: 'resp_auto_continue', runId: 'run_original' },
+  { seq: 6, type: 'status', role: 'system', content: 'Assistant self-check: reviewing the latest reply for early stop…' },
+  {
+    seq: 7,
+    type: 'context_operation',
+    role: 'system',
+    operation: 'continue_turn',
+    phase: 'queued',
+    trigger: 'automatic',
+    title: 'Automatic continuation reviewing',
+    summary: 'RemoteLab is checking whether the latest reply stopped too early.',
+  },
+  { seq: 8, type: 'status', role: 'system', content: 'Assistant self-check: continuing automatically — reply stopped early' },
+  {
+    seq: 9,
+    type: 'context_operation',
+    role: 'system',
+    operation: 'continue_turn',
+    phase: 'applied',
+    trigger: 'automatic',
+    title: 'Automatic continuation started',
+    summary: 'RemoteLab launched a follow-up turn to finish avoidable unfinished work.',
+  },
+  { seq: 10, type: 'reasoning', role: 'assistant', content: 'Preparing the continuation', responseId: 'resp_auto_continue', runId: 'run_continued' },
+  { seq: 11, type: 'tool_use', role: 'assistant', toolName: 'shell', toolInput: 'verify', responseId: 'resp_auto_continue', runId: 'run_continued' },
+  { seq: 12, type: 'tool_result', role: 'system', output: 'done', exitCode: 0, responseId: 'resp_auto_continue', runId: 'run_continued' },
+  { seq: 13, type: 'message', role: 'assistant', content: '第二段：这是补上的最终结论。', responseId: 'resp_auto_continue', runId: 'run_continued' },
+];
+
+const autoContinuationDisplay = buildSessionDisplayEvents(autoContinuationHistory, { sessionRunning: false });
+assert.deepEqual(
+  autoContinuationDisplay.map((event) => event.type),
+  [
+    'message',
+    'thinking_block',
+    'message',
+    'status',
+    'context_operation',
+    'status',
+    'context_operation',
+    'thinking_block',
+    'message',
+  ],
+  'automatic self-check continuations should keep both user-visible assistant reply parts in the main transcript',
+);
+const autoContinuationAssistantMessages = autoContinuationDisplay.filter(
+  (event) => event.type === 'message' && event.role === 'assistant',
+);
+assert.deepEqual(
+  autoContinuationAssistantMessages.map((event) => event.content),
+  ['第一段：我先说明原因。', '第二段：这是补上的最终结论。'],
+  'automatic continuation display should expose the original visible reply and the repair reply together',
+);
+assert.equal(autoContinuationDisplay[1].blockStartSeq, 2, 'original-run hidden work should stay in its own folded block');
+assert.equal(autoContinuationDisplay[1].blockEndSeq, 4, 'original-run folded block should stop before the first visible reply');
+assert.equal(autoContinuationDisplay[7].blockStartSeq, 10, 'repair-run hidden work should stay folded after the self-check drawer');
+assert.equal(autoContinuationDisplay[7].blockEndSeq, 12, 'repair-run folded block should stop before the continued visible reply');
+
 console.log('test-session-display-events: ok');

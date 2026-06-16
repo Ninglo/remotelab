@@ -1,20 +1,27 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 import { spawnSync } from 'child_process';
+import http from 'http';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { tmpdir, userInfo } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import {
   buildAccessUrl,
+  buildGuestExposedRouteRecord,
+  buildGuestPathValue,
   buildGuestMailboxAddress,
+  buildGuestSafeMailboxAutomation,
+  buildGuestSafeOutboundConfig,
   buildBridgeBaseUrl,
   buildGuestWeChatConnectorConfig,
   formatGuestInstance,
   formatGuestInstanceLinks,
+  mergePersistedGuestRegistry,
   mergePlatformSkillsIndexContent,
   parseArgs,
+  planGuestInstanceCreateNames,
   planGuestRuntimeDefaults,
   pickNextTrialInstanceName,
   seedGuestWeChatConnectorConfig,
@@ -32,6 +39,11 @@ import {
   selectPrimaryHostnameForPort,
   upsertCloudflaredIngress,
 } from '../lib/guest-instance.mjs';
+import {
+  buildGuestExposedHostname,
+  buildGuestRouteKey,
+  mergePersistedGuestRouteRegistry,
+} from '../lib/guest-instance-routes.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -81,6 +93,22 @@ assert.equal(
   'trial-16@jiujianian.dev',
 );
 assert.equal(buildGuestMailboxAddress('试用 用户', { localPart: 'rowan', domain: 'jiujianian.dev' }), '');
+assert.equal(
+  buildGuestPathValue({
+    homeDir: '/var/lib/remotelab-guests/trial67',
+    basePath: '/usr/local/bin:/root/.remotelab/instances/trial67/.local/bin:/bin',
+  }),
+  '/usr/local/bin:/var/lib/remotelab-guests/trial67/.local/bin:/bin',
+  'migrated isolated guests should rewrite legacy instance-root PATH entries into the new home',
+);
+assert.equal(
+  buildGuestPathValue({
+    homeDir: '/var/lib/remotelab-guests/trial78',
+    basePath: '/usr/local/bin:/var/lib/remotelab-guests/trial78/.remotelab/instances/owner/.local/bin:/bin',
+  }),
+  '/usr/local/bin:/var/lib/remotelab-guests/trial78/.local/bin:/bin',
+  'nested owner-instance PATH entries should collapse back into the current guest home',
+);
 assert.equal(buildAccessUrl('https://trial16.example.com', 'abc123'), 'https://trial16.example.com/?token=abc123');
 assert.equal(
   buildBridgeBaseUrl('trial16', { bridgeRootBaseUrl: 'https://bridge.example.com/' }),
@@ -93,15 +121,109 @@ assert.equal(
 assert.equal(parseArgs(['create-trial', '--json']).json, true);
 assert.equal(parseArgs(['create-trial', '--json']).trial, true);
 assert.equal(parseArgs(['create-trial', '--json']).command, 'create');
+assert.equal(parseArgs(['create-trial', '--count', '5', '--json']).count, 5);
 assert.equal(parseArgs(['links']).command, 'links');
 assert.equal(parseArgs(['links', 'trial24', '--check']).name, 'trial24');
 assert.equal(parseArgs(['links', 'trial24', '--check']).check, true);
+assert.equal(parseArgs(['expose', 'trial24', '--label', 'report', '--port', '3000']).command, 'expose');
+assert.equal(parseArgs(['expose', 'trial24', '--label', 'report', '--port', '3000']).label, 'report');
+assert.equal(parseArgs(['unexpose', 'trial24', '--label', 'report']).command, 'unexpose');
 assert.equal(parseArgs(['check']).command, 'check');
 assert.equal(parseArgs(['check', 'trial24', '--json']).name, 'trial24');
 assert.equal(parseArgs(['report']).command, 'report');
 assert.equal(parseArgs(['report', 'trial24', '--output-dir', '/tmp/report']).name, 'trial24');
 assert.equal(parseArgs(['report', '--send', '--send-json']).send, true);
 assert.equal(parseArgs(['report', '--send', '--send-json']).sendJson, true);
+assert.throws(() => parseArgs(['links', '--count', '2']), /--count is only supported by create/);
+assert.throws(() => parseArgs(['create', '--count', '3', '--port', '7711']), /--port is only supported for single-instance create/);
+assert.throws(() => parseArgs(['expose', 'trial24', '--label', 'report']), /expose requires --port <port>/);
+assert.throws(() => parseArgs(['unexpose', 'trial24', '--label', 'report', '--port', '3000']), /--port is only supported by expose/);
+assert.equal(
+  buildGuestExposedHostname({
+    hostname: 'trial24.example.com',
+    label: 'report',
+  }),
+  'trial24-report.example.com',
+);
+assert.equal(
+  buildGuestExposedRouteRecord({
+    name: 'trial24',
+    hostname: 'trial24.example.com',
+  }, {
+    label: 'report',
+    port: 3000,
+  }).hostname,
+  'trial24-report.example.com',
+);
+assert.deepEqual(
+  mergePersistedGuestRouteRegistry([
+    { instanceName: 'trial24', label: 'report', port: 3000, hostname: 'trial24-report.example.com' },
+  ], [
+    { instanceName: 'trial24', label: 'preview', port: 3001, hostname: 'trial24-preview.example.com' },
+  ]).map((entry) => buildGuestRouteKey(entry)),
+  ['trial24:preview', 'trial24:report'],
+);
+assert.throws(() => parseArgs(['create', '--count', '3']), /--count requires <name> or --trial/);
+
+assert.deepEqual(
+  planGuestInstanceCreateNames({ trial: true, count: 3 }, {
+    registry: [{ name: 'trial1' }, { name: 'trial2' }],
+    isolatedAgents: [{ name: 'trial4' }],
+  }),
+  ['trial5', 'trial6', 'trial7'],
+);
+assert.deepEqual(
+  planGuestInstanceCreateNames({ name: 'share', count: 3 }, {
+    registry: [{ name: 'share-2' }],
+    isolatedAgents: [],
+  }),
+  ['share-1', 'share-3', 'share-4'],
+);
+
+const mergedRegistry = mergePersistedGuestRegistry([
+  {
+    name: 'miglab',
+    label: 'remotelab-external@miglab',
+    hostname: 'factory-sfo3-0410104844.jiujianian.dev',
+    publicBaseUrl: 'https://factory-sfo3-0410104844.jiujianian.dev',
+    authFile: '/tmp/miglab.auth.json',
+    mailboxAddress: 'miglab@jiujianian.dev',
+    source: 'registry',
+  },
+  {
+    name: 'trial24',
+    label: 'com.chatserver.trial24',
+    port: 7711,
+    hostname: 'trial24-old.example.com',
+    publicBaseUrl: 'https://trial24-old.example.com',
+    localBaseUrl: 'http://127.0.0.1:7711',
+    createdAt: '2026-03-26T14:56:25.700Z',
+  },
+], [
+  {
+    name: 'trial24',
+    label: 'com.chatserver.trial24',
+    port: 7711,
+    hostname: 'trial24.example.com',
+    publicBaseUrl: 'https://trial24.example.com',
+    localBaseUrl: 'http://127.0.0.1:7711',
+    createdAt: '2026-03-26T14:56:25.700Z',
+  },
+  {
+    name: 'trial25',
+    label: 'com.chatserver.trial25',
+    port: 7712,
+    hostname: 'trial25.example.com',
+    publicBaseUrl: 'https://trial25.example.com',
+    localBaseUrl: 'http://127.0.0.1:7712',
+    createdAt: '2026-03-26T15:56:25.700Z',
+  },
+]);
+assert.equal(mergedRegistry.length, 3);
+assert.equal(mergedRegistry.find((record) => record.name === 'miglab')?.mailboxAddress, 'miglab@jiujianian.dev');
+assert.equal(mergedRegistry.find((record) => record.name === 'miglab')?.source, 'registry');
+assert.equal(mergedRegistry.find((record) => record.name === 'trial24')?.publicBaseUrl, 'https://trial24.example.com');
+assert.equal(mergedRegistry.find((record) => record.name === 'trial25')?.localBaseUrl, 'http://127.0.0.1:7712');
 
 const formattedLinks = formatGuestInstanceLinks([
   {
@@ -160,6 +282,52 @@ const failedProvisioning = await syncGuestMailboxProvisioning({ name: 'trial16' 
 assert.equal(failedProvisioning.mailboxAddress, 'rowan+trial16@jiujianian.dev');
 assert.equal(failedProvisioning.status, 'failed');
 assert.match(failedProvisioning.detail, /bad token/);
+
+assert.deepEqual(
+  buildGuestSafeOutboundConfig({
+    provider: 'cloudflare_worker',
+    workerBaseUrl: 'https://worker.example.com',
+    account: 'owner@example.com',
+    from: 'owner@example.com',
+    workerToken: 'secret-worker-token',
+    workerTokenEnv: 'WORKER_TOKEN_ENV',
+    apiKey: 'secret-api-key',
+    apiKeyEnv: 'API_KEY_ENV',
+    apiBaseUrl: 'https://api.example.com',
+    replyTo: 'owner-reply@example.com',
+  }),
+  {
+    provider: 'cloudflare_worker',
+    workerBaseUrl: 'https://worker.example.com',
+    account: '',
+    from: '',
+    workerToken: '',
+    workerTokenEnv: 'WORKER_TOKEN_ENV',
+    apiKey: '',
+    apiKeyEnv: 'API_KEY_ENV',
+    apiBaseUrl: 'https://api.example.com',
+    replyTo: '',
+    fallback: null,
+  },
+  'guest outbound config should preserve non-secret transport endpoints while scrubbing owner identity and credentials',
+);
+
+assert.deepEqual(
+  buildGuestSafeMailboxAutomation({
+    chatBaseUrl: 'http://127.0.0.1:7690',
+    authFile: '/owner/auth.json',
+    deliveryMode: 'reply_email',
+  }, {
+    localBaseUrl: 'http://127.0.0.1:7711',
+    authFile: '/guest/auth.json',
+  }),
+  {
+    chatBaseUrl: 'http://127.0.0.1:7711',
+    authFile: '/guest/auth.json',
+    deliveryMode: 'session_only',
+  },
+  'guest mailbox automation should stay instance-local and disable inherited reply-email delivery by default',
+);
 
 assert.equal(parseTunnelName(baseConfig), 'claude-code-remote');
 assert.equal(selectPrimaryHostnameForPort(baseConfig, { port: 7690 }), 'remotelab.example.com');
@@ -245,6 +413,7 @@ const guestWeChatConfig = buildGuestWeChatConnectorConfig({
 assert.equal(guestWeChatConfig.chatBaseUrl, 'http://127.0.0.1:7711');
 assert.equal(guestWeChatConfig.sourceName, 'WeChat');
 assert.equal(guestWeChatConfig.group, 'WeChat');
+assert.equal(guestWeChatConfig.autoStart, false);
 
 const wechatSeedSandbox = mkdtempSync(join(tmpdir(), 'remotelab-guest-wechat-'));
 try {
@@ -297,7 +466,7 @@ try {
 
 const ownerMicroSelection = {
   selectedTool: 'micro-agent',
-  selectedModel: 'gpt-5.4',
+  selectedModel: 'gpt-5.5',
   selectedEffort: 'xhigh',
   thinkingEnabled: false,
   reasoningKind: 'enum',
@@ -309,7 +478,7 @@ const ownerTools = [
     command: 'codex',
     toolProfile: 'micro-agent',
     runtimeFamily: 'codex-json',
-    models: [{ id: 'gpt-5.4', label: 'gpt-5.4' }],
+    models: [{ id: 'gpt-5.5', label: 'gpt-5.5' }],
     reasoning: { kind: 'none', label: 'Thinking' },
   },
 ];
@@ -325,17 +494,17 @@ const plannedLegacyGuestDefaults = planGuestRuntimeDefaults({
     reasoningKind: 'enum',
   },
   guestTools: [],
-  detectedModel: 'gpt-5.4',
+  detectedModel: 'gpt-5.5',
 });
 assert.deepEqual(
   plannedLegacyGuestDefaults.tools.map((tool) => tool.id),
-  ['micro-agent'],
-  'legacy guests should inherit safe Codex-backed owner presets',
+  [],
+  'legacy micro-agent presets should not be copied into guest defaults',
 );
 assert.equal(
   plannedLegacyGuestDefaults.selection.selectedTool,
   'codex',
-  'legacy guests should keep an existing valid built-in selection during convergence',
+  'legacy guests should keep an existing valid CodeX selection during convergence',
 );
 
 const plannedFreshGuestDefaults = planGuestRuntimeDefaults({
@@ -343,27 +512,32 @@ const plannedFreshGuestDefaults = planGuestRuntimeDefaults({
   ownerTools,
   guestSelection: null,
   guestTools: [],
-  detectedModel: 'gpt-5.4',
+  detectedModel: 'gpt-5.5',
 });
 assert.equal(
   plannedFreshGuestDefaults.selection.selectedTool,
-  'micro-agent',
-  'fresh guests should still inherit the owner-selected micro-agent preset',
+  'codex',
+  'fresh guests should migrate legacy micro-agent defaults to CodeX',
 );
 assert.equal(
   plannedFreshGuestDefaults.selection.selectedModel,
-  'gpt-5.4',
-  'fresh guests should keep the micro-agent model default',
+  'gpt-5.5',
+  'fresh guests should adopt the product-default CodeX model',
 );
 assert.equal(
-  plannedFreshGuestDefaults.tools[0].reasoning.kind,
-  'none',
-  'guest should mirror the owner tool reasoning config as-is',
+  plannedFreshGuestDefaults.tools.length,
+  0,
+  'legacy micro-agent tool records should be dropped from guest defaults',
 );
 assert.equal(
   plannedFreshGuestDefaults.selection.reasoningKind,
-  'none',
-  'guest reasoning kind should match the owner tool config',
+  'enum',
+  'guest reasoning should follow the CodeX migration target',
+);
+assert.equal(
+  plannedFreshGuestDefaults.selection.selectedEffort,
+  'medium',
+  'fresh guests should adopt the product-default CodeX effort',
 );
 
 const plannedUpdatedGuestDefaults = planGuestRuntimeDefaults({
@@ -380,22 +554,27 @@ const plannedUpdatedGuestDefaults = planGuestRuntimeDefaults({
     ...ownerTools[0],
     models: [{ id: 'gpt-5.2-codex', label: 'gpt-5.2-codex' }],
   }],
-  detectedModel: 'gpt-5.4',
+  detectedModel: 'gpt-5.5',
 });
 assert.equal(
-  plannedUpdatedGuestDefaults.tools[0].models[0].id,
-  'gpt-5.4',
-  'safe owner presets should refresh stale guest copies by tool id',
+  plannedUpdatedGuestDefaults.tools.length,
+  0,
+  'stale legacy guest tool copies should be removed during convergence',
+);
+assert.equal(
+  plannedUpdatedGuestDefaults.selection.selectedTool,
+  'codex',
+  'stale legacy guest selections should be migrated to CodeX',
 );
 assert.equal(
   plannedUpdatedGuestDefaults.selection.selectedModel,
-  'gpt-5.4',
-  'stale guest model selections should be normalized to the current tool default',
+  'gpt-5.5',
+  'stale guest model selections should be normalized to the product-default CodeX model',
 );
 assert.equal(
   plannedUpdatedGuestDefaults.selection.selectedEffort,
-  '',
-  'reasoning kind none means no effort selection',
+  'medium',
+  'stale guest effort selections should be normalized to the product-default CodeX effort',
 );
 
 const plannedProductDefaultGuestDefaults = planGuestRuntimeDefaults({
@@ -403,17 +582,17 @@ const plannedProductDefaultGuestDefaults = planGuestRuntimeDefaults({
   ownerTools,
   guestSelection: null,
   guestTools: [],
-  detectedModel: 'gpt-5.4',
+  detectedModel: 'gpt-5.5',
 });
 assert.equal(
   plannedProductDefaultGuestDefaults.selection.selectedTool,
-  'micro-agent',
-  'new guest instances should prefer Micro Agent when it is available',
+  'codex',
+  'new guest instances should prefer CodeX',
 );
 assert.equal(
   plannedProductDefaultGuestDefaults.selection.reasoningKind,
-  'none',
-  'the product default should mirror the owner tool reasoning config',
+  'enum',
+  'the product default should use CodeX enum reasoning',
 );
 
 const plannedCodexFallbackDefaults = planGuestRuntimeDefaults({
@@ -421,7 +600,7 @@ const plannedCodexFallbackDefaults = planGuestRuntimeDefaults({
   ownerTools: [],
   guestSelection: null,
   guestTools: [],
-  detectedModel: 'gpt-5.4',
+  detectedModel: 'gpt-5.5',
 });
 assert.equal(
   plannedCodexFallbackDefaults.selection.selectedTool,
@@ -430,13 +609,13 @@ assert.equal(
 );
 assert.equal(
   plannedCodexFallbackDefaults.selection.selectedModel,
-  'gpt-5.4',
+  'gpt-5.5',
   'Codex fallback should still adopt the detected owner model',
 );
 assert.equal(
   plannedCodexFallbackDefaults.selection.selectedEffort,
-  '',
-  'Codex fallback should rely on the tool default instead of a hardcoded effort level',
+  'medium',
+  'Codex fallback should use the product-default effort level',
 );
 
 const mergedSkillsIndex = mergePlatformSkillsIndexContent(`# Skills Index
@@ -454,13 +633,8 @@ assert.match(mergedSkillsIndex, /## Shared Platform Skills/);
 const platformSkillSyncHome = mkdtempSync(join(tmpdir(), 'remotelab-platform-skills-'));
 try {
   const memoryDir = join(platformSkillSyncHome, '.remotelab', 'instances', 'trial23', 'memory');
-  const sourceSkillsDir = join(platformSkillSyncHome, '.remotelab', 'skills');
   const platformSkillsDir = join(platformSkillSyncHome, '.remotelab', 'platform', 'skills');
   mkdirSync(memoryDir, { recursive: true });
-  mkdirSync(sourceSkillsDir, { recursive: true });
-
-  writeFileSync(join(sourceSkillsDir, 'calendar-write.md'), '# Calendar Write\n', 'utf8');
-  writeFileSync(join(sourceSkillsDir, 'session-debug.md'), '# Session Debug\n', 'utf8');
   writeFileSync(join(memoryDir, 'skills.md'), `# Skills Index
 
 ## Local Skills
@@ -469,16 +643,18 @@ try {
 
   const firstSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
   assert.equal(firstSync.changed, true);
-  assert.deepEqual(firstSync.seededSkillIds, ['calendar-write', 'session-debug']);
-  assert.deepEqual(firstSync.skillIds, ['calendar-write', 'session-debug']);
-  assert.equal(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), '# Calendar Write\n');
-  assert.equal(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), '# Session Debug\n');
+  assert.deepEqual(firstSync.seededSkillIds, ['calendar-write', 'session-debug', 'guest-port-expose']);
+  assert.deepEqual(firstSync.skillIds, ['calendar-write', 'session-debug', 'guest-port-expose']);
+  assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
+  assert.match(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), /Session Debug/);
+  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Guest Port Expose/);
 
   const syncedIndex = readFileSync(join(memoryDir, 'skills.md'), 'utf8');
   assert.match(syncedIndex, /## Local Skills/);
   assert.match(syncedIndex, /## Shared Platform Skills/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/calendar-write\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/session-debug\.md/);
+  assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/guest-port-expose\.md/);
 
   const secondSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
   assert.equal(secondSync.changed, false);
@@ -500,7 +676,7 @@ const ownerRouterTools = [
     flattenPrompt: true,
     visibility: 'private',
     models: [
-      { id: 'gpt-5.4', label: 'gpt-5.4', defaultReasoning: 'medium' },
+      { id: 'gpt-5.5', label: 'gpt-5.5', defaultReasoning: 'medium' },
       { id: 'opus', label: 'Claude Opus', defaultReasoning: 'medium' },
       { id: 'sonnet', label: 'Claude Sonnet', defaultReasoning: 'medium' },
       { id: 'doubao-seed-2-0-pro-260215', label: 'Doubao Pro', defaultReasoning: 'medium' },
@@ -514,45 +690,28 @@ const plannedRouterFreshGuest = planGuestRuntimeDefaults({
   ownerTools: ownerRouterTools,
   guestSelection: null,
   guestTools: [],
-  detectedModel: 'gpt-5.4',
+  detectedModel: 'gpt-5.5',
 });
 assert.deepEqual(
   plannedRouterFreshGuest.tools.map((tool) => tool.id),
-  ['micro-agent'],
-  'router-based micro-agent should sync to fresh guest instances',
-);
-assert.equal(
-  plannedRouterFreshGuest.tools[0].command,
-  '/Users/example/code/remotelab/scripts/micro-agent-router.mjs',
-  'router command path should be preserved in guest copy',
-);
-assert.equal(
-  plannedRouterFreshGuest.tools[0].runtimeFamily,
-  'claude-stream-json',
-  'runtimeFamily should be preserved in guest copy',
-);
-assert.deepEqual(
-  plannedRouterFreshGuest.tools[0].models.map((m) => m.id),
-  ['gpt-5.4', 'opus', 'sonnet', 'doubao-seed-2-0-pro-260215'],
-  'all four models (GPT, Claude Opus, Claude Sonnet, Doubao) must be present in guest copy',
+  [],
+  'legacy router-based micro-agent should not sync to fresh guest instances',
 );
 assert.equal(
   plannedRouterFreshGuest.selection.selectedTool,
-  'micro-agent',
-  'fresh guest should default to micro-agent when available',
+  'codex',
+  'fresh guest should migrate router-based micro-agent defaults to CodeX',
 );
-assert.deepEqual(
-  plannedRouterFreshGuest.tools[0].reasoning,
-  { kind: 'none', label: 'Thinking' },
-  'non-codex micro-agent should preserve original reasoning (not force enum)',
-);
+assert.equal(plannedRouterFreshGuest.selection.selectedModel, 'gpt-5.5');
+assert.equal(plannedRouterFreshGuest.selection.selectedEffort, 'medium');
+assert.equal(plannedRouterFreshGuest.selection.reasoningKind, 'enum');
 
 const plannedRouterStaleGuest = planGuestRuntimeDefaults({
   ownerSelection: ownerMicroSelection,
   ownerTools: ownerRouterTools,
   guestSelection: {
     selectedTool: 'micro-agent',
-    selectedModel: 'gpt-5.4',
+    selectedModel: 'gpt-5.5',
     selectedEffort: 'medium',
     thinkingEnabled: false,
     reasoningKind: 'enum',
@@ -563,31 +722,15 @@ const plannedRouterStaleGuest = planGuestRuntimeDefaults({
     command: 'codex',
     toolProfile: 'micro-agent',
     runtimeFamily: 'codex-json',
-    models: [{ id: 'gpt-5.4', label: 'gpt-5.4' }],
+    models: [{ id: 'gpt-5.5', label: 'gpt-5.5' }],
     reasoning: { kind: 'enum', label: 'Thinking', levels: ['low', 'medium', 'high', 'xhigh'], default: 'medium' },
   }],
-  detectedModel: 'gpt-5.4',
+  detectedModel: 'gpt-5.5',
 });
-assert.equal(
-  plannedRouterStaleGuest.tools[0].command,
-  '/Users/example/code/remotelab/scripts/micro-agent-router.mjs',
-  'stale codex-based guest tool should be upgraded to the router command',
-);
-assert.equal(
-  plannedRouterStaleGuest.tools[0].runtimeFamily,
-  'claude-stream-json',
-  'stale guest runtimeFamily should be upgraded from codex-json to claude-stream-json',
-);
-assert.equal(
-  plannedRouterStaleGuest.tools[0].models.length,
-  4,
-  'stale guest should receive all four models after sync',
-);
-assert.deepEqual(
-  plannedRouterStaleGuest.tools[0].models.map((m) => m.id),
-  ['gpt-5.4', 'opus', 'sonnet', 'doubao-seed-2-0-pro-260215'],
-  'stale guest model list should match owner exactly',
-);
+assert.equal(plannedRouterStaleGuest.tools.length, 0);
+assert.equal(plannedRouterStaleGuest.selection.selectedTool, 'codex');
+assert.equal(plannedRouterStaleGuest.selection.selectedModel, 'gpt-5.5');
+assert.equal(plannedRouterStaleGuest.selection.selectedEffort, 'medium');
 
 const sandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-'));
 try {
@@ -656,8 +799,66 @@ try {
   assert.equal(convergeOutput[0].drift.missingPublicBaseUrl, true);
   assert.equal(convergeOutput[0].drift.sessionDispatchChanged, true);
   assert.equal(convergeOutput[0].drift.fileAssetEnvironmentChanged, true);
+  assert.equal(convergeOutput[0].drift.homeChanged, true);
+  assert.equal(convergeOutput[0].drift.missingTmpDir, true);
 } finally {
   rmSync(sandboxHome, { recursive: true, force: true });
+}
+
+const linuxOwnerEnvSandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-linux-owner-env-'));
+try {
+  const launchAgentsDir = join(linuxOwnerEnvSandboxHome, 'Library', 'LaunchAgents');
+  const logDir = join(linuxOwnerEnvSandboxHome, 'Library', 'Logs');
+  const cloudflaredDir = join(linuxOwnerEnvSandboxHome, '.cloudflared');
+  const instanceRoot = join(linuxOwnerEnvSandboxHome, '.remotelab', 'instances', 'trial');
+  const ownerEnvFile = join(linuxOwnerEnvSandboxHome, 'owner.env');
+  mkdirSync(launchAgentsDir, { recursive: true });
+  mkdirSync(logDir, { recursive: true });
+  mkdirSync(cloudflaredDir, { recursive: true });
+  mkdirSync(instanceRoot, { recursive: true });
+
+  writeFileSync(ownerEnvFile, Object.entries(ownerFileAssetEnvironment)
+    .map(([key, value]) => `${key}=${value}`)
+    .join('\n') + '\n');
+
+  writeFileSync(join(cloudflaredDir, 'config.yml'), `tunnel: test-tunnel\n\ningress:\n  - hostname: trial.example.com\n    service: http://127.0.0.1:7696\n  - service: http_status:404\n`);
+
+  writeFileSync(join(launchAgentsDir, 'com.chatserver.trial.plist'), buildLaunchAgentPlist({
+    label: 'com.chatserver.trial',
+    nodePath: '/usr/local/bin/node',
+    chatServerPath: join(repoRoot, 'chat-server.mjs'),
+    workingDirectory: repoRoot,
+    standardOutPath: join(logDir, 'chat-server-trial.log'),
+    standardErrorPath: join(logDir, 'chat-server-trial.error.log'),
+    environmentVariables: {
+      CHAT_PORT: '7696',
+      HOME: linuxOwnerEnvSandboxHome,
+      REMOTELAB_INSTANCE_ROOT: instanceRoot,
+      SECURE_COOKIES: '1',
+    },
+  }));
+
+  const env = {
+    ...process.env,
+    HOME: linuxOwnerEnvSandboxHome,
+    REMOTELAB_OWNER_SYSTEMD_ENV_FILE: ownerEnvFile,
+  };
+  for (const key of Object.keys(ownerFileAssetEnvironment)) {
+    delete env[key];
+  }
+
+  const convergeResult = spawnSync('node', ['cli.js', 'guest-instance', 'converge', 'trial', '--dry-run', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env,
+  });
+  assert.equal(convergeResult.status, 0, convergeResult.stderr || convergeResult.stdout);
+  const convergeOutput = JSON.parse(convergeResult.stdout);
+  assert.equal(convergeOutput.length, 1);
+  assert.equal(convergeOutput[0].name, 'trial');
+  assert.equal(convergeOutput[0].drift.fileAssetEnvironmentChanged, true);
+} finally {
+  rmSync(linuxOwnerEnvSandboxHome, { recursive: true, force: true });
 }
 
 const syncSandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-sync-'));
@@ -726,6 +927,16 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_SESSION_DISPATCH<\/key><string>off<\/string>/);
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_CODEX_HOME_MODE<\/key><string>personal<\/string>/);
+  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_MACHINE_CODEX_HOME<\/key><string>\/root\/\.codex<\/string>/);
+  assert.doesNotMatch(rewrittenGuestPlist, /REMOTELAB_SHARED_CODEX_HOME/);
+  assert.match(rewrittenGuestPlist, new RegExp(`<key>HOME<\\/key><string>${instanceRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`));
+  assert.match(rewrittenGuestPlist, new RegExp(`<key>TMPDIR<\\/key><string>${join(instanceRoot, 'tmp').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`));
+  const shellSnapshotMatch = rewrittenGuestPlist.match(/<key>REMOTELAB_USER_SHELL_ENV_B64<\/key><string>([^<]+)<\/string>/);
+  assert.ok(shellSnapshotMatch, 'converged guest plist should include a shell env snapshot');
+  const shellSnapshot = JSON.parse(Buffer.from(shellSnapshotMatch[1], 'base64').toString('utf8'));
+  assert.equal(shellSnapshot.env.HOME, instanceRoot);
+  assert.equal(shellSnapshot.env.PATH.includes(`${instanceRoot}/.remotelab/instances/`), false);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_BRIDGE_ROOT_BASE_URL<\/key>/);
   assert.doesNotMatch(rewrittenGuestPlist, /<key>REMOTELAB_ENABLE_ACTIVE_RELEASE<\/key>/);
 } finally {
@@ -816,7 +1027,7 @@ try {
   const trialConfigDir = join(trialRoot, 'config');
   const intakeConfigDir = join(intakeRoot, 'config');
   const emptyConfigDir = join(emptyRoot, 'config');
-  const reportNow = new Date();
+  const reportNow = new Date('2026-03-28T12:00:00.000Z');
   const recentUpdate = new Date(reportNow.getTime() - 60 * 60 * 1000).toISOString();
   const earlierUpdate = new Date(reportNow.getTime() - 2 * 60 * 60 * 1000).toISOString();
   const createdFirst = new Date(reportNow.getTime() - 5 * 60 * 60 * 1000).toISOString();
@@ -968,6 +1179,7 @@ try {
     env: {
       ...process.env,
       HOME: reportSandboxHome,
+      REMOTELAB_GUEST_REPORT_NOW: reportNow.toISOString(),
     },
   });
   assert.equal(reportResult.status, 0, reportResult.stderr || reportResult.stdout);
@@ -1017,6 +1229,7 @@ try {
     env: {
       ...process.env,
       HOME: reportSandboxHome,
+      REMOTELAB_GUEST_REPORT_NOW: reportNow.toISOString(),
     },
   });
   assert.equal(singleReportResult.status, 0, singleReportResult.stderr || singleReportResult.stdout);
@@ -1026,6 +1239,89 @@ try {
   assert.equal(singleReportOutput.instances[0].name, 'intake1');
 } finally {
   rmSync(reportSandboxHome, { recursive: true, force: true });
+}
+
+const exposeSandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-expose-'));
+const exposeServer = http.createServer((req, res) => {
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end('ok');
+});
+await new Promise((resolve) => exposeServer.listen(0, '127.0.0.1', resolve));
+try {
+  const configDir = join(exposeSandboxHome, '.config', 'remotelab');
+  const instanceRoot = join(exposeSandboxHome, '.remotelab', 'instances', 'trial24');
+  const instanceConfigDir = join(instanceRoot, 'config');
+  const authFile = join(instanceConfigDir, 'auth.json');
+  const exposePort = Number(exposeServer.address()?.port || 0);
+  mkdirSync(configDir, { recursive: true });
+  mkdirSync(instanceConfigDir, { recursive: true });
+  writeFileSync(authFile, JSON.stringify({ token: 'route-token' }, null, 2));
+  writeFileSync(join(configDir, 'guest-instances.json'), JSON.stringify([
+    {
+      name: 'trial24',
+      label: 'com.chatserver.trial24',
+      port: 7711,
+      hostname: 'trial24.example.com',
+      instanceRoot,
+      configDir: instanceConfigDir,
+      memoryDir: join(instanceRoot, 'memory'),
+      authFile,
+      publicBaseUrl: 'https://trial24.example.com',
+      localBaseUrl: 'http://127.0.0.1:7711',
+      isolatedUser: userInfo().username,
+      createdAt: '2026-03-26T14:56:25.700Z',
+    },
+  ], null, 2));
+
+  const exposeResult = spawnSync('node', ['cli.js', 'guest-instance', 'expose', 'trial24', '--label', 'report', '--port', String(exposePort), '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: exposeSandboxHome,
+    },
+  });
+  assert.equal(exposeResult.status, 0, exposeResult.stderr || exposeResult.stdout);
+  const exposeOutput = JSON.parse(exposeResult.stdout);
+  assert.equal(exposeOutput.instanceName, 'trial24');
+  assert.equal(exposeOutput.hostname, 'trial24-report.example.com');
+  assert.equal(exposeOutput.serviceTarget, `http://127.0.0.1:${exposePort}`);
+  assert.equal(exposeOutput.accessUrl, 'https://trial24-report.example.com/?token=route-token');
+
+  const secondExposeResult = spawnSync('node', ['cli.js', 'guest-instance', 'expose', 'trial24', '--label', 'report', '--port', String(exposePort), '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: exposeSandboxHome,
+    },
+  });
+  assert.equal(secondExposeResult.status, 0, secondExposeResult.stderr || secondExposeResult.stdout);
+  const secondExposeOutput = JSON.parse(secondExposeResult.stdout);
+  assert.equal(secondExposeOutput.changed, false);
+
+  const routesPath = join(configDir, 'guest-instance-routes.json');
+  const persistedRoutes = JSON.parse(readFileSync(routesPath, 'utf8'));
+  assert.equal(persistedRoutes.length, 1);
+  assert.equal(persistedRoutes[0].instanceName, 'trial24');
+  assert.equal(persistedRoutes[0].label, 'report');
+  assert.equal(persistedRoutes[0].hostname, 'trial24-report.example.com');
+
+  const unexposeResult = spawnSync('node', ['cli.js', 'guest-instance', 'unexpose', 'trial24', '--label', 'report', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: exposeSandboxHome,
+    },
+  });
+  assert.equal(unexposeResult.status, 0, unexposeResult.stderr || unexposeResult.stdout);
+  const unexposeOutput = JSON.parse(unexposeResult.stdout);
+  assert.equal(unexposeOutput.changed, true);
+  assert.equal(JSON.parse(readFileSync(routesPath, 'utf8')).length, 0);
+} finally {
+  await new Promise((resolve) => exposeServer.close(resolve));
+  rmSync(exposeSandboxHome, { recursive: true, force: true });
 }
 
 console.log('test-guest-instance-command: ok');

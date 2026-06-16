@@ -13,6 +13,14 @@
     return typeof value === "string" ? value.trim() : "";
   }
 
+  function firstNonEmpty(...values) {
+    for (const value of values) {
+      const trimmed = trimString(value);
+      if (trimmed) return trimmed;
+    }
+    return "";
+  }
+
   function normalizeVoiceInputSettings(rawValue = {}) {
     const value = rawValue && typeof rawValue === "object"
       ? rawValue
@@ -53,15 +61,38 @@
     };
   }
 
+  function normalizeGoogleOAuthSettings(rawValue = {}) {
+    const value = rawValue && typeof rawValue === "object"
+      ? rawValue
+      : {};
+    const clientId = firstNonEmpty(value.clientId, value.client_id);
+    const clientSecret = firstNonEmpty(value.clientSecret, value.client_secret);
+    const redirectUri = firstNonEmpty(
+      value.redirectUri,
+      Array.isArray(value.redirectUris) ? value.redirectUris[0] : "",
+      Array.isArray(value.redirect_uris) ? value.redirect_uris[0] : "",
+    );
+    const configured = value.configured === true || !!(clientId && clientSecret && redirectUri);
+    return {
+      clientId,
+      clientSecret,
+      redirectUri,
+      configured,
+      updatedAt: trimString(value.updatedAt),
+    };
+  }
+
   function normalizeInstanceSettings(rawValue = {}) {
     const value = rawValue && typeof rawValue === "object"
       ? rawValue
       : {};
     const voiceInput = normalizeVoiceInputSettings(value.voiceInput);
+    const googleOAuth = normalizeGoogleOAuthSettings(value.googleOAuth);
     return {
       version: 1,
-      updatedAt: trimString(value.updatedAt) || voiceInput.updatedAt,
+      updatedAt: trimString(value.updatedAt) || voiceInput.updatedAt || googleOAuth.updatedAt,
       voiceInput,
+      googleOAuth,
     };
   }
 
@@ -135,6 +166,10 @@
         ...current.voiceInput,
         ...(nextPatch.voiceInput && typeof nextPatch.voiceInput === "object" ? nextPatch.voiceInput : {}),
       },
+      googleOAuth: {
+        ...current.googleOAuth,
+        ...(nextPatch.googleOAuth && typeof nextPatch.googleOAuth === "object" ? nextPatch.googleOAuth : {}),
+      },
     });
   }
 
@@ -200,5 +235,8 @@
   globalScope.remotelabCanManageInstanceSettings = canManageInstanceSettings;
   globalScope.remotelabGetVoiceInputInstanceSettings = function remotelabGetVoiceInputInstanceSettings() {
     return normalizeVoiceInputSettings(currentInstanceSettings.voiceInput);
+  };
+  globalScope.remotelabGetGoogleOAuthInstanceSettings = function remotelabGetGoogleOAuthInstanceSettings() {
+    return normalizeGoogleOAuthSettings(currentInstanceSettings.googleOAuth);
   };
 })(window);

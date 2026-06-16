@@ -214,6 +214,23 @@ export async function createLocalBridgeBootstrapToken(sessionId, extra = {}) {
   return bootstrapToken;
 }
 
+export async function getLocalBridgeBootstrapToken(token, options = {}) {
+  const normalizedToken = trimString(token);
+  if (!normalizedToken) return null;
+  const includeUsed = options?.includeUsed !== false;
+  const state = await loadLocalBridgeState();
+  const entry = state.bootstrapTokens.find((candidate) => candidate.token === normalizedToken) || null;
+  if (!entry) return null;
+  const expiresAt = Date.parse(entry.expiresAt || 0);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    return null;
+  }
+  if (!includeUsed && entry.usedAt) {
+    return null;
+  }
+  return entry;
+}
+
 export async function redeemLocalBridgePairingCode(code, extra = {}) {
   const normalizedCode = trimString(code).toLowerCase();
   if (!normalizedCode) throw new Error('code is required');

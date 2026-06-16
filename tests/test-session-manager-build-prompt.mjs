@@ -167,6 +167,24 @@ const githubSourcePrompt = await buildPrompt(
 
 assert.match(githubSourcePrompt, /Produce plain text or markdown suitable for posting back through GitHub/);
 
+const archerySourcePrompt = await buildPrompt(
+  'session-test-7',
+  {
+    ...baseSession,
+    sourceId: 'archery',
+    sourceName: 'Archery',
+  },
+  'Archery training session uploaded.',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(archerySourcePrompt, /structured training-record connector/);
+assert.match(archerySourcePrompt, /Treat provided scores, totals, and structured session data as the factual source of truth/);
+assert.match(archerySourcePrompt, /post-training coaching note/);
+
 const microAgentPrompt = await buildPrompt(
   'session-test-2',
   baseSession,

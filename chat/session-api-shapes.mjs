@@ -12,6 +12,7 @@ function stripSessionShape(session, {
   delete cloned.sourceContext;
   delete cloned.delegatedFromSessionId;
   delete cloned.delegatedAt;
+  delete cloned.titleLocked;
   if (!includeQueuedMessages) {
     delete cloned.queuedMessages;
   }

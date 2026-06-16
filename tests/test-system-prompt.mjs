@@ -5,12 +5,13 @@ import path from 'path';
 
 const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'remotelab-system-prompt-'));
 process.env.HOME = tempHome;
+process.env.REMOTELAB_INSTANCE_ROOT = path.join(tempHome, 'instance-data');
 process.env.REMOTELAB_MEMORY_DIR = path.join(tempHome, 'instance-data', 'memory');
 process.env.REMOTELAB_WORK_ROOT_DIR = path.join(tempHome, 'instance-data', 'workspace');
 process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://trial23.example.com';
 process.env.REMOTELAB_PLATFORM_SKILLS_DIR = path.join(tempHome, '.remotelab', 'platform', 'skills');
 
-const { buildSystemContext } = await import('../chat/system-prompt.mjs');
+const { buildSystemContext } = await import(`../chat/system-prompt.mjs?t=${Date.now()}`);
 
 const context = await buildSystemContext({ sessionId: 'session-test-123' });
 const contextWithoutSharedDefaults = await buildSystemContext({
@@ -48,6 +49,7 @@ assert.match(context, /node "\$REMOTELAB_PROJECT_ROOT\/cli\.js" agenda add --tit
 assert.match(context, /remotelab agenda --help/);
 assert.match(context, /node "\$REMOTELAB_PROJECT_ROOT\/cli\.js" agenda --help/);
 assert.match(context, /Do not create completion targets for normal interactive calendar requests/);
+assert.match(context, /Treat most user requests phrased like "remind me tomorrow at 3" or "next week remind me to send this" as normal interactive calendar requests that should only update the schedule\/feed/);
 assert.match(context, /Subscription helper path: \/subscribe\/calendar/);
 assert.match(context, /Manual subscription helper path: \/subscribe\/calendar\?format=https/);
 assert.match(context, /\[点击订阅日历\]\(\/subscribe\/calendar\)/);
@@ -84,7 +86,9 @@ assert.match(context, /parent session may coordinate while each child session ow
 assert.match(context, /remotelab session-spawn --task/);
 assert.match(context, /remotelab trigger create --in 2h --text/);
 assert.match(context, /Use trigger-created session wake-ups only when the future work genuinely requires AI reasoning, drafting, or conversation continuation/);
+assert.match(context, /Do not use a trigger-created wake-up just because the user said "remind me"/);
 assert.match(context, /For deterministic external delivery such as reminders, notifications, or simple outbound pushes, prefer a direct connector action when one is available instead of waking a session just to restate the message/);
+assert.match(context, /Reserve trigger-created session wake-ups for recurring or open-ended future AI work such as daily feedback, scheduled reviews, or "check the calendar and brief me" style tasks/);
 assert.match(context, /include an explicit `Artifacts:` block in the final reply/i);
 assert.match(context, /Preferred format:\n  - Artifacts:\n  - - \.\/report\.pdf\n  - - \.\/charts\/summary\.png/);
 assert.match(context, /--wait --json/);
@@ -107,7 +111,15 @@ assert.match(context, /Pause only for a real blocker: an explicitly requested st
 assert.match(context, /Do not treat the absence of micro-instructions as a blocker; execution-layer decisions are part of your job/);
 assert.match(context, /~\/instance-data\/memory\//);
 assert.match(context, /~\/instance-data\/workspace/);
+assert.match(context, /\[platform-shared-memory\]\/system\.md/);
+assert.match(context, /Location: \[platform-shared-memory\]\//);
 assert.doesNotMatch(context, /~\/\.remotelab\/memory\//);
+assert.doesNotMatch(context, /\/opt\/remotelab\/memory\/system\.md/);
+assert.match(context, /Instance Local Access/);
+assert.match(context, /running inside the instance-scoped environment `instance-data`/);
+assert.match(context, /default user-visible file surface is ~\/instance-data\/workspace/);
+assert.match(context, /Local filesystem access and localhost service calls are not hard-confined to ~\/instance-data/);
+assert.match(context, /relaxed local access mode does not weaken RemoteLab authentication, share-link scoping, or the existing external network isolation boundaries/);
 assert.match(context, /Agent Self-Management/);
 assert.match(context, /flexible control surface, not a brittle scenario router/);
 assert.match(context, /reusable capability, skill, wrapper, note, or prior session pattern/);

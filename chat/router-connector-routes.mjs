@@ -1,18 +1,33 @@
 import { createHash, randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
-import { homedir } from 'os';
+import { homedir, userInfo } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import QRCode from 'qrcode';
 import {
   ensureCalendarConnectorBinding,
+  ensureGmailConnectorBinding,
   getConnectorBinding,
   listConnectorBindings,
 } from '../lib/connector-bindings.mjs';
 import { BRIDGE_PUBLIC_BASE_URL, CONFIG_DIR, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { CHAT_PORT, IS_GUEST_INSTANCE } from '../lib/config.mjs';
 import {
   generateCalendarAuthUrl,
   handleCalendarAuthCallback,
 } from '../lib/connector-calendar.mjs';
+import {
+  DEFAULT_GMAIL_BINDING_ID,
+  GMAIL_OAUTH_SCOPES,
+  GOOGLE_GMAIL_AUTH_STATE_PATH,
+  GOOGLE_GMAIL_CREDENTIALS_PATH,
+  GOOGLE_GMAIL_TOKEN_PATH,
+  generateGmailAuthUrl,
+  getGmailProfile,
+  gmailCredentialsPresent,
+  handleGmailAuthCallback,
+  resolveGmailCredentialsPath,
+} from '../lib/connector-gmail.mjs';
 import { resolveExternalRuntimeSelection } from '../lib/external-runtime-selection.mjs';
 import {
   buildAssistantReplyAttachmentFallbackText,
@@ -20,12 +35,19 @@ import {
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
-import { pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
+import { createSerialTaskQueue, pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
-import { getConnectorSurface, listConnectorSurfaces } from '../lib/connector-surface-registry.mjs';
+import {
+  getConnectorSurface,
+  getReachableConnectorSurface,
+  isConnectorSurfacePublicPath,
+  listReachableConnectorSurfaces,
+} from '../lib/connector-surface-registry.mjs';
 import {
   getWeChatLoginQrUrl,
   getWeChatLoginSurface,
+  verifyWeChatLoginOpenRequest,
+  WECHAT_LOGIN_OPEN_PATH,
   WECHAT_LOGIN_PAGE_PATH,
   WECHAT_LOGIN_QR_PATH,
   WECHAT_LOGIN_STATUS_PATH,
@@ -40,6 +62,7 @@ import {
   getFeedInfo,
   listCalendarFeedEvents,
 } from '../lib/connector-calendar-feed.mjs';
+import { buildBridgeBaseUrl, loadInstanceAccessDefaults, normalizeBaseUrl } from '../lib/instance-access.mjs';
 import { readEventBody } from './history.mjs';
 import {
   createSession,
@@ -63,9 +86,60 @@ const GOOGLE_CALENDAR_AUTH_STATE_PATH = join(CALENDAR_CONNECTOR_DIR, 'google-cal
 const WECHAT_CONNECTOR_LOGIN_TEMPLATE_PATH = join(__dirname, '..', 'templates', 'wechat-login.html');
 const DEFAULT_CALENDAR_BINDING_ID = 'binding_calendar_21d351117862';
 const DEFAULT_CALENDAR_ACCOUNT_HINT = 'Google Calendar';
+const GMAIL_CONNECTOR_PAGE_PATH = '/connectors/gmail';
+const WHATSAPP_BUSINESS_CONNECTOR_ID = 'whatsapp-business';
+const WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH = `/connectors/${WHATSAPP_BUSINESS_CONNECTOR_ID}`;
+const GMAIL_STATUS_PATH = '/api/connectors/gmail/google/status';
+const GMAIL_CREDENTIALS_PATH = '/api/connectors/gmail/google/credentials';
+const GMAIL_AUTHORIZE_PATH = '/api/connectors/gmail/google/authorize';
+const GMAIL_CALLBACK_PATH = '/api/connectors/gmail/google/callback';
+const GMAIL_AUTH_STATE_TTL_MS = 30 * 60 * 1000;
+const mutateGmailAuthState = createSerialTaskQueue();
+const GMAIL_OAUTH_CALLBACK_BASE_URL_ENV = 'REMOTELAB_GMAIL_OAUTH_CALLBACK_BASE_URL';
+const GOOGLE_OAUTH_CALLBACK_BASE_URL_ENV = 'REMOTELAB_GOOGLE_OAUTH_CALLBACK_BASE_URL';
+const SHARED_CONFIG_DIR_ENV = 'REMOTELAB_SHARED_CONFIG_DIR';
+const SYSTEM_HOME_ENV = 'REMOTELAB_SYSTEM_HOME';
+const GMAIL_AUTH_RELAY_STATE_PATH = resolveSharedGmailRelayStatePath();
+const mutateGmailRelayState = createSerialTaskQueue();
+const WHATSAPP_BUSINESS_CONNECTOR_INSTANCE_SCRIPT_PATH = join(__dirname, '..', 'scripts', 'whatsapp-business-connector-instance.sh');
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const trimmed = trimString(value);
+    if (trimmed) return trimmed;
+  }
+  return '';
+}
+
+function resolveSystemHomeDir() {
+  return firstNonEmpty(
+    process.env[SYSTEM_HOME_ENV],
+    userInfo().homedir,
+    process.env.HOME,
+  );
+}
+
+function resolvePathRelativeToHome(value, homeDir = '') {
+  const trimmed = trimString(value);
+  const normalizedHome = trimString(homeDir);
+  if (!trimmed) return '';
+  if (trimmed === '~') return normalizedHome;
+  if (trimmed.startsWith('~/')) return join(normalizedHome, trimmed.slice(2));
+  return trimmed;
+}
+
+function resolveSharedConfigDir() {
+  const systemHome = resolveSystemHomeDir();
+  return resolvePathRelativeToHome(process.env[SHARED_CONFIG_DIR_ENV], systemHome)
+    || join(systemHome, '.config', 'remotelab');
+}
+
+function resolveSharedGmailRelayStatePath() {
+  return join(resolveSharedConfigDir(), 'gmail-connector', 'google-gmail-auth-relay-state.json');
 }
 
 function resolveBaseUrl(req) {
@@ -94,6 +168,41 @@ function getRequestProductBasePath(req) {
   return normalizeForwardedPrefix(req?.headers?.['x-forwarded-prefix']);
 }
 
+async function execFileAsync(file, args = []) {
+  const { execFile } = await import('child_process');
+  return await new Promise((resolve, reject) => {
+    execFile(file, args, (error, stdout = '', stderr = '') => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+async function waitForConnectorSurface(connectorId, {
+  timeoutMs = 8_000,
+  intervalMs = 250,
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const surface = await getConnectorSurface(connectorId);
+    if (surface?.baseUrl) return surface;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return null;
+}
+
+async function ensureWhatsAppBusinessConnectorSurfaceRunning() {
+  const existing = await getConnectorSurface(WHATSAPP_BUSINESS_CONNECTOR_ID);
+  if (existing?.baseUrl) return existing;
+  await execFileAsync(WHATSAPP_BUSINESS_CONNECTOR_INSTANCE_SCRIPT_PATH, ['start']);
+  return waitForConnectorSurface(WHATSAPP_BUSINESS_CONNECTOR_ID);
+}
+
 function parseConnectorSurfaceProxyRoute(pathname) {
   const match = pathname.match(/^\/connectors\/([a-z0-9._:-]+)(\/.*)?$/i);
   if (!match) return null;
@@ -116,6 +225,30 @@ function isConnectorSurfaceListRoute(pathname) {
 function buildConnectorMountPath(connectorId, tailPath = '') {
   const normalizedTail = trimString(tailPath);
   return `/connectors/${encodeURIComponent(connectorId)}${normalizedTail || ''}`;
+}
+
+function prependProductBasePath(pathname, productBasePath = '') {
+  const normalizedPath = trimString(pathname) || '/';
+  const normalizedBase = normalizeForwardedPrefix(productBasePath);
+  if (!normalizedBase) return normalizedPath;
+  if (
+    normalizedPath === normalizedBase
+    || normalizedPath.startsWith(`${normalizedBase}/`)
+    || normalizedPath.startsWith(`${normalizedBase}?`)
+    || normalizedPath.startsWith(`${normalizedBase}#`)
+  ) {
+    return normalizedPath;
+  }
+  return normalizedPath === '/'
+    ? normalizedBase
+    : `${normalizedBase}${normalizedPath}`;
+}
+
+function buildPublicConnectorMountPath(req, connectorId, tailPath = '') {
+  return prependProductBasePath(
+    buildConnectorMountPath(connectorId, tailPath),
+    getRequestProductBasePath(req),
+  );
 }
 
 function buildProxyRequestHeaders(req, { mountPath = '', nonce = '' } = {}) {
@@ -216,12 +349,51 @@ function buildConnectorSurfaceInfoResponse(surface, description = null) {
   };
 }
 
-async function getLegacyConnectorSurfaceInfo(connectorId) {
-  if (trimString(connectorId).toLowerCase() !== 'wechat') return null;
+async function getLegacyConnectorSurfaceInfo(connectorId, { productBasePath = '' } = {}) {
+  const normalizedConnectorId = trimString(connectorId).toLowerCase();
+  if (normalizedConnectorId === 'gmail') {
+    return {
+      connectorId: 'gmail',
+      title: 'Gmail',
+      entryUrl: GMAIL_CONNECTOR_PAGE_PATH,
+      allowEmbed: false,
+      updatedAt: new Date().toISOString(),
+      surfaceType: 'login',
+      description: 'Connect one Gmail account so RemoteLab can search, read, label, archive, reply, and send on behalf of this workspace.',
+      surface: await getGmailAuthStatus({
+        headers: {},
+      }),
+    };
+  }
+  if (normalizedConnectorId === WHATSAPP_BUSINESS_CONNECTOR_ID) {
+    return {
+      connectorId: WHATSAPP_BUSINESS_CONNECTOR_ID,
+      title: 'WhatsApp Business',
+      entryUrl: WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH,
+      allowEmbed: true,
+      updatedAt: new Date().toISOString(),
+      surfaceType: 'setup',
+      description: 'Connect one WhatsApp Business Cloud API number so RemoteLab can receive webhook messages and send plain-text replies.',
+      embed: {
+        mode: 'iframe',
+        sameOrigin: true,
+      },
+      surface: {
+        capabilityState: 'authorization_required',
+        status: 'authorization_required',
+        message: 'Open the connector once to start the local runtime and finish setup.',
+      },
+    };
+  }
+  if (normalizedConnectorId !== 'wechat') return null;
+  const authPath = prependProductBasePath(WECHAT_LOGIN_PAGE_PATH, productBasePath);
+  const qrPath = prependProductBasePath(WECHAT_LOGIN_QR_PATH, productBasePath);
+  const openPath = prependProductBasePath(WECHAT_LOGIN_OPEN_PATH, productBasePath);
   const surface = await getWeChatLoginSurface({
     autoStart: false,
-    authPath: WECHAT_LOGIN_PAGE_PATH,
-    qrPath: WECHAT_LOGIN_QR_PATH,
+    authPath,
+    qrPath,
+    openPath,
   });
   return {
     connectorId: 'wechat',
@@ -239,20 +411,25 @@ async function getLegacyConnectorSurfaceInfo(connectorId) {
   };
 }
 
-async function listResolvedConnectorSurfaceInfo({ nonce = '' } = {}) {
+async function listResolvedConnectorSurfaceInfo({ nonce = '', productBasePath = '' } = {}) {
   const results = [];
   const seen = new Set();
 
-  for (const surface of await listConnectorSurfaces()) {
+  for (const surface of await listReachableConnectorSurfaces({ clearStale: true, timeoutMs: 500 })) {
     seen.add(surface.connectorId);
-    const mountPath = buildConnectorMountPath(surface.connectorId);
+    const mountPath = prependProductBasePath(
+      buildConnectorMountPath(surface.connectorId),
+      productBasePath,
+    );
     const description = await fetchConnectorSurfaceDescription(surface, { mountPath, nonce });
     results.push(buildConnectorSurfaceInfoResponse(surface, description));
   }
 
-  const legacyWeChat = await getLegacyConnectorSurfaceInfo('wechat');
-  if (legacyWeChat && !seen.has(legacyWeChat.connectorId)) {
-    results.push(legacyWeChat);
+  for (const connectorId of ['gmail', WHATSAPP_BUSINESS_CONNECTOR_ID, 'wechat']) {
+    const legacySurface = await getLegacyConnectorSurfaceInfo(connectorId, { productBasePath });
+    if (legacySurface && !seen.has(legacySurface.connectorId)) {
+      results.push(legacySurface);
+    }
   }
 
   return results.sort((left, right) => String(left?.title || left?.connectorId || '').localeCompare(
@@ -285,6 +462,72 @@ function buildSessionUrl(req, sessionId) {
   if (!baseUrl) return '';
   if (!sessionId) return `${baseUrl}/`;
   return `${baseUrl}/?session=${encodeURIComponent(sessionId)}`;
+}
+
+function buildAbsoluteRequestUrl(req, pathname) {
+  const origin = resolveRequestOrigin(req);
+  const normalizedPath = trimString(pathname);
+  if (!origin || !normalizedPath) return normalizedPath;
+  try {
+    return new URL(normalizedPath, `${origin}/`).toString();
+  } catch {
+    return normalizedPath;
+  }
+}
+
+async function handleWeChatLoginOpenRequest({
+  req,
+  res,
+  pathname,
+  authSession,
+  buildHeaders,
+  writeJson,
+} = {}) {
+  const requestUrl = new URL(req.url || pathname || WECHAT_LOGIN_OPEN_PATH, 'http://127.0.0.1');
+  const publicPathname = prependProductBasePath(pathname, getRequestProductBasePath(req));
+  const ownerAccess = authSession?.role === 'owner';
+  const publicGrantAccess = ownerAccess || await verifyWeChatLoginOpenRequest({
+    pathname: publicPathname,
+    searchParams: requestUrl.searchParams,
+  });
+
+  if (!publicGrantAccess) {
+    if (ownerAccess) {
+      writeJson(res, 403, { error: 'Owner access required' });
+    } else {
+      res.writeHead(403, buildHeaders({
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      }));
+      res.end('WeChat login link is invalid or expired.');
+    }
+    return true;
+  }
+
+  const { surface, qrcodeUrl } = await getWeChatLoginQrUrl({ autoStart: ownerAccess });
+  if (surface?.capabilityState === 'ready') {
+    res.writeHead(409, buildHeaders({
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+    }));
+    res.end('WeChat is already connected.');
+    return true;
+  }
+  if (!qrcodeUrl) {
+    res.writeHead(503, buildHeaders({
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+    }));
+    res.end('WeChat login link is not ready yet.');
+    return true;
+  }
+  res.writeHead(302, buildHeaders({
+    'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+    Location: qrcodeUrl,
+    'X-Robots-Tag': 'noindex, nofollow, noarchive',
+  }));
+  res.end();
+  return true;
 }
 
 async function resolveShortcutRuntime(payload) {
@@ -400,6 +643,205 @@ function resolveCalendarAuthRedirectUri(req) {
   return `${baseUrl}/api/connectors/calendar/google/callback`;
 }
 
+async function resolveSharedGmailAuthBaseUrl(req) {
+  const explicitBaseUrl = normalizeBaseUrl(firstNonEmpty(
+    process.env[GMAIL_OAUTH_CALLBACK_BASE_URL_ENV],
+    process.env[GOOGLE_OAUTH_CALLBACK_BASE_URL_ENV],
+  ));
+  if (explicitBaseUrl) return explicitBaseUrl;
+  if (!IS_GUEST_INSTANCE) {
+    return PUBLIC_BASE_URL || resolveBaseUrl(req);
+  }
+
+  const defaultsFilePath = join(resolveSystemHomeDir(), '.config', 'remotelab', 'guest-instance-defaults.json');
+  const defaults = await loadInstanceAccessDefaults({
+    defaultsFilePath,
+    env: {},
+  });
+  const ownerBaseUrl = buildBridgeBaseUrl('owner', defaults);
+  return ownerBaseUrl || PUBLIC_BASE_URL || resolveBaseUrl(req);
+}
+
+async function resolveGmailAuthRedirectUri(req) {
+  const baseUrl = await resolveSharedGmailAuthBaseUrl(req);
+  if (!baseUrl) return '';
+  return `${baseUrl}${GMAIL_CALLBACK_PATH}`;
+}
+
+function normalizeGmailRelayStateEntry(raw = {}) {
+  const value = raw && typeof raw === 'object' ? raw : {};
+  const state = trimString(value.state);
+  const createdAt = trimString(value.createdAt) || new Date().toISOString();
+  if (!state) return null;
+  const callbackUrl = trimString(value.callbackUrl);
+  if (!callbackUrl) return null;
+  return {
+    state,
+    callbackUrl,
+    createdAt,
+  };
+}
+
+function normalizeGmailRelayStateEntries(raw = null) {
+  const normalized = {};
+  const now = Date.now();
+  if (!raw || typeof raw !== 'object') return normalized;
+  const rawEntries = raw.entries && typeof raw.entries === 'object' ? raw.entries : {};
+  for (const [state, value] of Object.entries(rawEntries)) {
+    const entry = normalizeGmailRelayStateEntry({ state, ...(value || {}) });
+    if (!entry) continue;
+    const createdAtMs = Date.parse(trimString(entry.createdAt));
+    if (Number.isFinite(createdAtMs) && createdAtMs < now - GMAIL_AUTH_STATE_TTL_MS) continue;
+    normalized[entry.state] = entry;
+  }
+  return normalized;
+}
+
+async function loadGmailRelayStateEntries() {
+  const raw = await readJson(GMAIL_AUTH_RELAY_STATE_PATH, null);
+  return normalizeGmailRelayStateEntries(raw);
+}
+
+async function saveGmailRelayStateEntries(entries = {}) {
+  await writeJsonAtomic(GMAIL_AUTH_RELAY_STATE_PATH, {
+    version: 1,
+    entries,
+  });
+}
+
+async function putGmailRelayStateEntry(state, entry = {}) {
+  const normalizedState = trimString(state);
+  if (!normalizedState) return null;
+  return await mutateGmailRelayState(async () => {
+    const entries = await loadGmailRelayStateEntries();
+    const normalizedEntry = normalizeGmailRelayStateEntry({
+      ...entry,
+      state: normalizedState,
+      createdAt: trimString(entry.createdAt) || new Date().toISOString(),
+    });
+    if (!normalizedEntry) return null;
+    entries[normalizedState] = normalizedEntry;
+    await saveGmailRelayStateEntries(entries);
+    return normalizedEntry;
+  });
+}
+
+async function getGmailRelayStateEntry(state) {
+  const normalizedState = trimString(state);
+  if (!normalizedState) return null;
+  return await mutateGmailRelayState(async () => {
+    const entries = await loadGmailRelayStateEntries();
+    return entries[normalizedState] || null;
+  });
+}
+
+async function clearGmailRelayStateEntry(state) {
+  const normalizedState = trimString(state);
+  if (!normalizedState) return;
+  await mutateGmailRelayState(async () => {
+    const entries = await loadGmailRelayStateEntries();
+    if (!Object.prototype.hasOwnProperty.call(entries, normalizedState)) return;
+    delete entries[normalizedState];
+    await saveGmailRelayStateEntries(entries);
+  });
+}
+
+function buildLocalCallbackUrl() {
+  return `http://127.0.0.1:${CHAT_PORT}${GMAIL_CALLBACK_PATH}`;
+}
+
+function buildAbsoluteProductUrl(req, pathname) {
+  const baseUrl = resolveBaseUrl(req) || PUBLIC_BASE_URL || BRIDGE_PUBLIC_BASE_URL;
+  const path = prependProductBasePath(pathname, getRequestProductBasePath(req));
+  return baseUrl ? `${baseUrl}${path}` : path;
+}
+
+function normalizeGmailAuthStateEntry(raw = {}) {
+  const value = raw && typeof raw === 'object' ? raw : {};
+  const state = trimString(value.state);
+  const createdAt = trimString(value.createdAt) || new Date().toISOString();
+  if (!state) return null;
+  return {
+    state,
+    bindingId: trimString(value.bindingId),
+    title: trimString(value.title),
+    credentialsPath: trimString(value.credentialsPath),
+    tokenPath: trimString(value.tokenPath),
+    redirectUri: trimString(value.redirectUri),
+    connectPath: trimString(value.connectPath),
+    createdAt,
+  };
+}
+
+function normalizeGmailAuthStateEntries(raw = null) {
+  const normalized = {};
+  const now = Date.now();
+  const keepEntry = (entry) => {
+    const createdAtMs = Date.parse(trimString(entry?.createdAt));
+    if (Number.isFinite(createdAtMs) && createdAtMs < now - GMAIL_AUTH_STATE_TTL_MS) return;
+    normalized[entry.state] = entry;
+  };
+  if (raw && typeof raw === 'object') {
+    const legacyEntry = normalizeGmailAuthStateEntry(raw);
+    if (legacyEntry) keepEntry(legacyEntry);
+    const rawEntries = raw.entries && typeof raw.entries === 'object' ? raw.entries : {};
+    for (const [state, value] of Object.entries(rawEntries)) {
+      const entry = normalizeGmailAuthStateEntry({ state, ...(value || {}) });
+      if (entry) keepEntry(entry);
+    }
+  }
+  return normalized;
+}
+
+async function loadGmailAuthStateEntries() {
+  const raw = await readJson(GOOGLE_GMAIL_AUTH_STATE_PATH, null);
+  return normalizeGmailAuthStateEntries(raw);
+}
+
+async function saveGmailAuthStateEntries(entries = {}) {
+  await writeJsonAtomic(GOOGLE_GMAIL_AUTH_STATE_PATH, {
+    version: 1,
+    entries,
+  });
+}
+
+async function putGmailAuthStateEntry(state, entry = {}) {
+  const normalizedState = trimString(state);
+  if (!normalizedState) return null;
+  return await mutateGmailAuthState(async () => {
+    const entries = await loadGmailAuthStateEntries();
+    const normalizedEntry = normalizeGmailAuthStateEntry({
+      ...entry,
+      state: normalizedState,
+      createdAt: trimString(entry.createdAt) || new Date().toISOString(),
+    });
+    if (!normalizedEntry) return null;
+    entries[normalizedState] = normalizedEntry;
+    await saveGmailAuthStateEntries(entries);
+    return normalizedEntry;
+  });
+}
+
+async function getGmailAuthStateEntry(state) {
+  const normalizedState = trimString(state);
+  if (!normalizedState) return null;
+  return await mutateGmailAuthState(async () => {
+    const entries = await loadGmailAuthStateEntries();
+    return entries[normalizedState] || null;
+  });
+}
+
+async function clearGmailAuthStateEntry(state) {
+  const normalizedState = trimString(state);
+  if (!normalizedState) return;
+  await mutateGmailAuthState(async () => {
+    const entries = await loadGmailAuthStateEntries();
+    if (!Object.prototype.hasOwnProperty.call(entries, normalizedState)) return;
+    delete entries[normalizedState];
+    await saveGmailAuthStateEntries(entries);
+  });
+}
+
 async function getCalendarAuthStatus(req) {
   const binding = await getConnectorBinding(DEFAULT_CALENDAR_BINDING_ID, { includeCompatibilityEmail: false });
   const credentialsPresent = await pathExists(GOOGLE_CALENDAR_CREDENTIALS_PATH);
@@ -422,6 +864,296 @@ async function getCalendarAuthStatus(req) {
         }
       : null,
   };
+}
+
+async function getGmailAuthStatus(req) {
+  const binding = await getConnectorBinding(DEFAULT_GMAIL_BINDING_ID, { includeCompatibilityEmail: false });
+  let credentialsPath = '';
+  let credentialsPresent = false;
+  let setupError = '';
+  try {
+    credentialsPath = await resolveGmailCredentialsPath();
+    credentialsPresent = await gmailCredentialsPresent(credentialsPath);
+  } catch (error) {
+    setupError = firstNonEmpty(error?.message, 'Google OAuth credentials are invalid.');
+  }
+  const tokenPresent = !!trimString(binding?.tokenPath) && await pathExists(trimString(binding.tokenPath));
+  const redirectUri = await resolveGmailAuthRedirectUri(req);
+  const bindingCapabilityState = trimString(binding?.capabilityState);
+  let capabilityState = credentialsPresent ? 'authorization_required' : 'binding_required';
+  let status = credentialsPresent ? 'authorization_required' : 'binding_required';
+  let message = credentialsPresent
+    ? 'Authorize Gmail once in a new page, then RemoteLab can use this mailbox for automation.'
+    : 'Connect Gmail once to enable mailbox automation in this workspace.';
+  if (setupError) {
+    capabilityState = 'setup_required';
+    status = 'setup_required';
+    message = `This deployment has an invalid Gmail OAuth configuration: ${setupError}`;
+  } else if (!credentialsPresent) {
+    capabilityState = 'setup_required';
+    status = 'setup_required';
+    message = 'This deployment still needs Google OAuth configured before users can connect Gmail.';
+  } else if (bindingCapabilityState === 'ready') {
+    capabilityState = 'ready';
+    status = 'ready';
+    message = trimString(binding?.accountHint)
+      ? `Connected as ${trimString(binding.accountHint)}.`
+      : 'Gmail is connected.';
+  } else if (bindingCapabilityState === 'authorization_required') {
+    capabilityState = 'authorization_required';
+    status = 'authorization_required';
+    message = 'Authorize Gmail once in a new page, then RemoteLab can use this mailbox for automation.';
+  }
+  return {
+    provider: 'google',
+    capabilityState,
+    status,
+    message,
+    setupError,
+    redirectUri,
+    credentialsPath,
+    tokenPath: GOOGLE_GMAIL_TOKEN_PATH,
+    credentialsPresent,
+    tokenPresent,
+    binding: binding?.connectorId === 'gmail'
+      ? {
+          id: trimString(binding.id),
+          title: trimString(binding.title),
+          provider: trimString(binding.provider),
+          accountHint: trimString(binding.accountHint),
+          capabilityState: trimString(binding.capabilityState),
+          gmailScope: trimString(binding.gmailScope),
+        }
+      : null,
+  };
+}
+
+function renderGmailConnectorPageHtml({
+  nonce = '',
+  statusPath = GMAIL_STATUS_PATH,
+  authorizePath = GMAIL_AUTHORIZE_PATH,
+} = {}) {
+  const statusJson = JSON.stringify(statusPath);
+  const authorizeJson = JSON.stringify(authorizePath);
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>RemoteLab - Connect Gmail</title>
+  <style nonce="${nonce}">
+    :root {
+      color-scheme: light;
+      --page: #f5f0e8;
+      --card: rgba(255, 251, 246, 0.95);
+      --border: rgba(80, 63, 44, 0.12);
+      --text: #241c16;
+      --muted: #786a59;
+      --accent: #b3412d;
+      --accent-soft: rgba(179, 65, 45, 0.12);
+      --ok: #18714a;
+      --ok-soft: rgba(24, 113, 74, 0.12);
+      --shadow: 0 24px 60px rgba(34, 27, 22, 0.12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      padding: 20px;
+      display: grid;
+      place-items: center;
+      font-family: "SF Pro Display", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(179, 65, 45, 0.08), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(39, 111, 74, 0.10), transparent 24%),
+        var(--page);
+      color: var(--text);
+    }
+    .shell {
+      width: min(100%, 460px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    h1 {
+      margin: 14px 0 10px;
+      font-size: 30px;
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 14px;
+    }
+    .status {
+      margin-top: 18px;
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.45);
+    }
+    .status strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 8px;
+    }
+    .status-line {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 6px;
+      word-break: break-word;
+    }
+    .status-line.ok {
+      color: var(--ok);
+    }
+    .button-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      background: var(--accent);
+      color: white;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    button[disabled] {
+      opacity: 0.6;
+      cursor: wait;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="eyebrow">RemoteLab Gmail</div>
+    <h1>Connect Gmail</h1>
+    <p>Connect one Gmail account to this workspace. After that, RemoteLab can search, read, label, archive, reply, and send from the connected mailbox.</p>
+    <p>This Google sign-in opens in a new page. If you are viewing RemoteLab inside an embedded page, keep this tab open and finish the Google consent flow in the newly opened page.</p>
+    <div class="status" id="statusCard">
+      <strong id="statusTitle">Checking Gmail status…</strong>
+      <div class="status-line" id="statusDetail"></div>
+      <div class="status-line" id="statusAccount"></div>
+    </div>
+    <div class="button-row">
+      <button id="connectBtn" type="button">Connect Gmail</button>
+      <button id="refreshBtn" class="secondary" type="button">Refresh</button>
+    </div>
+  </div>
+  <script nonce="${nonce}">
+    const statusEndpoint = ${statusJson};
+    const authorizeEndpoint = ${authorizeJson};
+    const connectBtn = document.getElementById('connectBtn');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const statusTitle = document.getElementById('statusTitle');
+    const statusDetail = document.getElementById('statusDetail');
+    const statusAccount = document.getElementById('statusAccount');
+
+    let lastStatus = null;
+
+    function renderStatus(payload) {
+      lastStatus = payload || null;
+      const binding = payload?.binding || null;
+      const ready = payload?.capabilityState === 'ready' || binding?.capabilityState === 'ready';
+      if (payload?.capabilityState === 'setup_required' || !payload?.credentialsPresent) {
+        statusTitle.textContent = 'Gmail is not available yet';
+      statusDetail.textContent = payload?.message || 'This deployment still needs Google OAuth configured by the operator. Once that is ready, this page will let you connect Gmail.';
+        statusAccount.textContent = '';
+        statusAccount.className = 'status-line';
+        connectBtn.disabled = true;
+        return;
+      }
+      connectBtn.disabled = false;
+      if (ready) {
+        statusTitle.textContent = 'Gmail is connected';
+        statusDetail.textContent = 'This workspace can now use Gmail automation.';
+        statusAccount.textContent = binding?.accountHint ? ('Connected as ' + binding.accountHint) : 'Connected';
+        connectBtn.textContent = 'Reconnect Gmail';
+        statusAccount.className = 'status-line ok';
+        return;
+      }
+      statusTitle.textContent = binding?.capabilityState === 'authorization_required'
+        ? 'Authorization required'
+        : 'Gmail is not connected yet';
+      statusDetail.textContent = 'Authorize Gmail in a new page, then RemoteLab can use this mailbox for automation.';
+      statusAccount.textContent = binding?.accountHint ? ('Pending account: ' + binding.accountHint) : '';
+      connectBtn.textContent = 'Connect Gmail';
+      statusAccount.className = 'status-line';
+    }
+
+    async function refreshStatus() {
+      const response = await fetch(statusEndpoint, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to load Gmail status');
+      }
+      renderStatus(payload);
+    }
+
+    async function startAuthorization() {
+      connectBtn.disabled = true;
+      try {
+        const response = await fetch(authorizeEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({}),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Failed to start Gmail authorization');
+        }
+        const opened = window.open(payload.authUrl, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          if (window.top && window.top !== window) {
+            window.top.location.href = payload.authUrl;
+          } else {
+            window.location.href = payload.authUrl;
+          }
+        }
+      } catch (error) {
+        connectBtn.disabled = false;
+        statusTitle.textContent = 'Failed to start Gmail authorization';
+        statusDetail.textContent = error?.message || 'Unknown error';
+      }
+    }
+
+    connectBtn.addEventListener('click', () => void startAuthorization());
+    refreshBtn.addEventListener('click', () => void refreshStatus());
+    void refreshStatus().catch((error) => {
+      statusTitle.textContent = 'Failed to load Gmail status';
+      statusDetail.textContent = error?.message || 'Unknown error';
+    });
+  </script>
+</body>
+</html>`;
 }
 
 async function waitForRunResult(runId, timeoutMs) {
@@ -547,7 +1279,10 @@ export async function handleConnectorSurfaceRoutes({
       return true;
     }
     writeJson(res, 200, {
-      surfaces: await listResolvedConnectorSurfaceInfo({ nonce }),
+      surfaces: await listResolvedConnectorSurfaceInfo({
+        nonce,
+        productBasePath: getRequestProductBasePath(req),
+      }),
     });
     return true;
   }
@@ -558,9 +1293,14 @@ export async function handleConnectorSurfaceRoutes({
       writeJson(res, 403, { error: 'Owner access required' });
       return true;
     }
-    const surface = await getConnectorSurface(infoConnectorId);
+    const surface = await getReachableConnectorSurface(infoConnectorId, {
+      clearStale: true,
+      timeoutMs: 500,
+    });
     if (!surface) {
-      const fallbackSurface = await getLegacyConnectorSurfaceInfo(infoConnectorId);
+      const fallbackSurface = await getLegacyConnectorSurfaceInfo(infoConnectorId, {
+        productBasePath: getRequestProductBasePath(req),
+      });
       if (fallbackSurface) {
         writeJson(res, 200, fallbackSurface);
         return true;
@@ -568,25 +1308,41 @@ export async function handleConnectorSurfaceRoutes({
       writeJson(res, 404, { error: 'Connector surface not found' });
       return true;
     }
-    const mountPath = buildConnectorMountPath(surface.connectorId);
+    const mountPath = buildPublicConnectorMountPath(req, surface.connectorId);
     const description = await fetchConnectorSurfaceDescription(surface, { mountPath, nonce });
     writeJson(res, 200, buildConnectorSurfaceInfoResponse(surface, description));
     return true;
   }
 
-  const route = parseConnectorSurfaceProxyRoute(pathname);
-  if (!route) return false;
-  if (authSession?.role !== 'owner') {
-    writeJson(res, 403, { error: 'Owner access required' });
-    return true;
+  if (pathname === WECHAT_LOGIN_OPEN_PATH && req.method === 'GET') {
+    return await handleWeChatLoginOpenRequest({
+      req,
+      res,
+      pathname,
+      authSession,
+      buildHeaders,
+      writeJson,
+    });
   }
 
-  const surface = await getConnectorSurface(route.connectorId);
+  const route = parseConnectorSurfaceProxyRoute(pathname);
+  if (!route) return false;
+
+  const surface = await getReachableConnectorSurface(route.connectorId, {
+    clearStale: true,
+    timeoutMs: 500,
+  });
   if (!surface?.baseUrl) {
     return false;
   }
 
-  const mountPath = buildConnectorMountPath(surface.connectorId);
+  const isPublicProxyPath = isConnectorSurfacePublicPath(surface, route.tailPath);
+  if (authSession?.role !== 'owner' && !isPublicProxyPath) {
+    writeJson(res, 403, { error: 'Owner access required' });
+    return true;
+  }
+
+  const mountPath = buildPublicConnectorMountPath(req, surface.connectorId);
   const url = new URL(req.url || pathname, 'http://127.0.0.1');
   const upstreamPath = route.tailPath || surface.entryPath || '/';
   const upstreamUrl = new URL(upstreamPath, `${surface.baseUrl}/`);
@@ -641,6 +1397,58 @@ export async function handleConnectorApiRoutes({
   buildTemplateReplacements,
   serializeJsonForScript,
 }) {
+  if (pathname === WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+
+    try {
+      const surface = await ensureWhatsAppBusinessConnectorSurfaceRunning();
+      if (!surface?.baseUrl) {
+        writeJson(res, 502, { error: 'WhatsApp Business connector failed to start.' });
+        return true;
+      }
+    } catch (error) {
+      writeJson(res, 502, {
+        error: firstNonEmpty(
+          trimString(error?.stderr),
+          trimString(error?.stdout),
+          trimString(error?.message),
+          'WhatsApp Business connector failed to start.',
+        ),
+      });
+      return true;
+    }
+
+    res.writeHead(302, buildHeaders({
+      Location: prependProductBasePath(WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH, getRequestProductBasePath(req)),
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+    }));
+    res.end();
+    return true;
+  }
+
+  if (pathname === GMAIL_CONNECTOR_PAGE_PATH && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    res.writeHead(200, buildHeaders({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'X-Robots-Tag': 'noindex, nofollow, noarchive',
+    }));
+    res.end(renderGmailConnectorPageHtml({
+      nonce,
+      statusPath: prependProductBasePath(GMAIL_STATUS_PATH, getRequestProductBasePath(req)),
+      authorizePath: prependProductBasePath(GMAIL_AUTHORIZE_PATH, getRequestProductBasePath(req)),
+    }));
+    return true;
+  }
+
   if (pathname === WECHAT_LOGIN_PAGE_PATH && req.method === 'GET') {
     if (authSession?.role !== 'owner') {
       writeJson(res, 403, { error: 'Owner access required' });
@@ -659,7 +1467,17 @@ export async function handleConnectorApiRoutes({
     }
 
     const pageBuildInfo = await getPageBuildInfo();
-    const initialState = await getWeChatLoginSurface({ autoStart: true });
+    const productBasePath = getRequestProductBasePath(req);
+    const authPath = prependProductBasePath(WECHAT_LOGIN_PAGE_PATH, productBasePath);
+    const statusPath = prependProductBasePath(WECHAT_LOGIN_STATUS_PATH, productBasePath);
+    const qrPath = prependProductBasePath(WECHAT_LOGIN_QR_PATH, productBasePath);
+    const openPath = prependProductBasePath(WECHAT_LOGIN_OPEN_PATH, productBasePath);
+    const initialState = await getWeChatLoginSurface({
+      autoStart: true,
+      authPath,
+      qrPath,
+      openPath,
+    });
     const body = renderPageTemplate(template, nonce, {
       ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
       PAGE_TITLE: 'Connect WeChat',
@@ -667,8 +1485,9 @@ export async function handleConnectorApiRoutes({
       BOOTSTRAP_JSON: serializeJsonForScript({
         wechatLogin: {
           initialState,
-          statusEndpoint: WECHAT_LOGIN_STATUS_PATH,
-          qrEndpoint: WECHAT_LOGIN_QR_PATH,
+          statusEndpoint: statusPath,
+          qrEndpoint: qrPath,
+          openEndpoint: openPath,
         },
       }),
     });
@@ -688,7 +1507,160 @@ export async function handleConnectorApiRoutes({
       writeJson(res, 403, { error: 'Owner access required' });
       return true;
     }
-    writeJson(res, 200, await getWeChatLoginSurface({ autoStart: true }));
+    const productBasePath = getRequestProductBasePath(req);
+    writeJson(res, 200, await getWeChatLoginSurface({
+      autoStart: true,
+      authPath: prependProductBasePath(WECHAT_LOGIN_PAGE_PATH, productBasePath),
+      qrPath: prependProductBasePath(WECHAT_LOGIN_QR_PATH, productBasePath),
+      openPath: prependProductBasePath(WECHAT_LOGIN_OPEN_PATH, productBasePath),
+    }));
+    return true;
+  }
+
+  if (pathname === GMAIL_STATUS_PATH && req.method === 'GET') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+    res.writeHead(200, buildHeaders({
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    }));
+    res.end(JSON.stringify(await getGmailAuthStatus(req)));
+    return true;
+  }
+
+  if (pathname === GMAIL_CREDENTIALS_PATH && req.method === 'POST') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+
+    let payload;
+    try {
+      payload = await readConnectorPayload(req);
+    } catch (error) {
+      writeJson(res, error.statusCode || 400, { error: error.message || 'Bad request' });
+      return true;
+    }
+
+    const credentialsText = firstNonEmpty(
+      trimString(payload?.credentialsText),
+      typeof payload?.credentials === 'string' ? trimString(payload.credentials) : '',
+    );
+    if (!credentialsText) {
+      writeJson(res, 400, { error: 'Missing Gmail OAuth client JSON.' });
+      return true;
+    }
+
+    let credentials;
+    try {
+      credentials = JSON.parse(credentialsText);
+    } catch {
+      writeJson(res, 400, { error: 'Gmail OAuth client JSON is invalid.' });
+      return true;
+    }
+
+    const config = credentials?.installed || credentials?.web || credentials;
+    if (!trimString(config?.client_id) || !trimString(config?.client_secret)) {
+      writeJson(res, 400, { error: 'OAuth client JSON must include client_id and client_secret.' });
+      return true;
+    }
+    if (!trimString(config?.redirect_uri) && !(Array.isArray(config?.redirect_uris) && config.redirect_uris.length > 0)) {
+      writeJson(res, 400, { error: 'OAuth client JSON must include at least one redirect URI.' });
+      return true;
+    }
+
+    await writeJsonAtomic(GOOGLE_GMAIL_CREDENTIALS_PATH, credentials);
+    writeJson(res, 200, {
+      saved: true,
+      credentialsPath: GOOGLE_GMAIL_CREDENTIALS_PATH,
+    });
+    return true;
+  }
+
+  if (pathname === GMAIL_AUTHORIZE_PATH && req.method === 'POST') {
+    if (authSession?.role !== 'owner') {
+      writeJson(res, 403, { error: 'Owner access required' });
+      return true;
+    }
+
+    let payload;
+    try {
+      payload = await readConnectorPayload(req);
+    } catch (error) {
+      writeJson(res, error.statusCode || 400, { error: error.message || 'Bad request' });
+      return true;
+    }
+
+    const redirectUri = await resolveGmailAuthRedirectUri(req);
+    if (!redirectUri) {
+      writeJson(res, 500, { error: 'Cannot determine public callback URL from request headers.' });
+      return true;
+    }
+
+    let credentialsPath = '';
+    try {
+      credentialsPath = await resolveGmailCredentialsPath();
+    } catch (error) {
+      writeJson(res, 409, {
+        error: firstNonEmpty(error?.message, 'Invalid Google OAuth client credentials.'),
+        redirectUri,
+      });
+      return true;
+    }
+
+    if (!await gmailCredentialsPresent(credentialsPath)) {
+      writeJson(res, 409, {
+        error: 'Missing Google OAuth client credentials.',
+        redirectUri,
+        credentialsPath,
+      });
+      return true;
+    }
+
+    const binding = await ensureGmailConnectorBinding({
+      bindingId: DEFAULT_GMAIL_BINDING_ID,
+      provider: 'google',
+      title: trimString(payload?.title) || 'Gmail',
+      tokenPath: '',
+      gmailScope: GMAIL_OAUTH_SCOPES.join(' '),
+    });
+    const state = randomUUID();
+    const localCallbackUrl = buildLocalCallbackUrl();
+    const connectUrl = buildAbsoluteProductUrl(req, GMAIL_CONNECTOR_PAGE_PATH);
+    await putGmailAuthStateEntry(state, {
+      state,
+      bindingId: binding.id,
+      title: binding.title,
+      credentialsPath,
+      tokenPath: GOOGLE_GMAIL_TOKEN_PATH,
+      redirectUri,
+      connectPath: connectUrl,
+      createdAt: new Date().toISOString(),
+    });
+    if (trimString(localCallbackUrl) && trimString(redirectUri) && trimString(localCallbackUrl) !== trimString(redirectUri)) {
+      await putGmailRelayStateEntry(state, {
+        state,
+        callbackUrl: `${localCallbackUrl}?relay_target=1`,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    const authUrl = await generateGmailAuthUrl({
+      credentialsPath,
+      redirectUri,
+      state,
+      scopes: GMAIL_OAUTH_SCOPES,
+    });
+    writeJson(res, 200, {
+      authUrl,
+      redirectUri,
+      bindingId: binding.id,
+      credentialsPath,
+      tokenPath: GOOGLE_GMAIL_TOKEN_PATH,
+    });
     return true;
   }
 
@@ -715,14 +1687,14 @@ export async function handleConnectorApiRoutes({
       return true;
     }
     try {
-      const response = await fetch(qrcodeUrl);
-      if (!response.ok) {
-        throw new Error(`QR upstream ${response.status}`);
-      }
-      const contentType = trimString(response.headers.get('content-type')) || 'image/png';
-      const body = Buffer.from(await response.arrayBuffer());
+      const body = await QRCode.toBuffer(qrcodeUrl, {
+        type: 'png',
+        width: 400,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+      });
       res.writeHead(200, buildHeaders({
-        'Content-Type': contentType,
+        'Content-Type': 'image/png',
         'Content-Length': String(body.length),
         'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
         'X-Robots-Tag': 'noindex, nofollow, noarchive',
@@ -734,7 +1706,97 @@ export async function handleConnectorApiRoutes({
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
       }));
-      res.end(`Failed to load WeChat QR image: ${error?.message || 'unknown error'}`);
+      res.end(`Failed to generate WeChat QR image: ${error?.message || 'unknown error'}`);
+      return true;
+    }
+  }
+
+  if (pathname === WECHAT_LOGIN_OPEN_PATH && req.method === 'GET') {
+    return await handleWeChatLoginOpenRequest({
+      req,
+      res,
+      pathname,
+      authSession,
+      buildHeaders,
+      writeJson,
+    });
+  }
+
+  if (pathname === GMAIL_CALLBACK_PATH && req.method === 'GET') {
+    const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
+    const code = trimString(requestUrl.searchParams.get('code'));
+    const state = trimString(requestUrl.searchParams.get('state'));
+    const relayTarget = trimString(requestUrl.searchParams.get('relay_target'));
+    const isRelayTargetRequest = relayTarget === '1' || trimString(req.headers?.['x-remotelab-gmail-relay']) === '1';
+    const relayState = !isRelayTargetRequest ? await getGmailRelayStateEntry(state) : null;
+    if (!isRelayTargetRequest && code && state && relayState?.callbackUrl) {
+      try {
+        const relayUrl = new URL(trimString(relayState.callbackUrl));
+        relayUrl.searchParams.set('code', code);
+        relayUrl.searchParams.set('state', state);
+        const relayResponse = await fetch(relayUrl, {
+          headers: {
+            'x-remotelab-gmail-relay': '1',
+          },
+        });
+        const relayBody = await relayResponse.text();
+        await clearGmailRelayStateEntry(state);
+        res.writeHead(relayResponse.status, {
+          'Content-Type': relayResponse.headers.get('content-type') || 'text/plain; charset=utf-8',
+        });
+        res.end(relayBody);
+        return true;
+      } catch (error) {
+        await clearGmailRelayStateEntry(state);
+        res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(`Gmail authorization relay failed: ${error?.message || 'unknown error'}`);
+        return true;
+      }
+    }
+    const authState = await getGmailAuthStateEntry(state);
+    const redirectUri = trimString(authState?.redirectUri) || await resolveGmailAuthRedirectUri(req);
+
+    if (!code || !state || !redirectUri || !authState) {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Gmail authorization callback is invalid or expired.');
+      return true;
+    }
+
+    try {
+      await handleGmailAuthCallback({
+        credentialsPath: trimString(authState.credentialsPath),
+        tokenPath: trimString(authState.tokenPath) || GOOGLE_GMAIL_TOKEN_PATH,
+        code,
+        redirectUri,
+      });
+      await ensureGmailConnectorBinding({
+        bindingId: trimString(authState.bindingId) || DEFAULT_GMAIL_BINDING_ID,
+        provider: 'google',
+        tokenPath: trimString(authState.tokenPath) || GOOGLE_GMAIL_TOKEN_PATH,
+        title: trimString(authState.title) || 'Gmail',
+        gmailScope: GMAIL_OAUTH_SCOPES.join(' '),
+      });
+      const profile = await getGmailProfile({
+        bindingId: trimString(authState.bindingId) || DEFAULT_GMAIL_BINDING_ID,
+        credentialsPath: trimString(authState.credentialsPath),
+      });
+      await ensureGmailConnectorBinding({
+        bindingId: trimString(authState.bindingId) || DEFAULT_GMAIL_BINDING_ID,
+        provider: 'google',
+        accountHint: trimString(profile?.emailAddress),
+        tokenPath: trimString(authState.tokenPath) || GOOGLE_GMAIL_TOKEN_PATH,
+        title: trimString(profile?.emailAddress) || trimString(authState.title) || 'Gmail',
+        gmailScope: GMAIL_OAUTH_SCOPES.join(' '),
+      });
+      await clearGmailAuthStateEntry(state);
+      await clearGmailRelayStateEntry(state);
+      const connectPath = trimString(authState.connectPath) || prependProductBasePath(GMAIL_CONNECTOR_PAGE_PATH, getRequestProductBasePath(req));
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="1;url=${connectPath}"><title>Gmail Connected</title></head><body style="font-family: sans-serif; padding: 24px;">Gmail authorization succeeded. Returning to RemoteLab…</body></html>`);
+      return true;
+    } catch (error) {
+      res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(`Gmail authorization failed: ${error.message || 'unknown error'}`);
       return true;
     }
   }
@@ -1056,3 +2118,13 @@ export async function handleConnectorApiRoutes({
 
   return false;
 }
+
+export const __testing = {
+  resolveGmailAuthRedirectUri,
+  normalizeGmailAuthStateEntries,
+  loadGmailAuthStateEntries,
+  saveGmailAuthStateEntries,
+  putGmailAuthStateEntry,
+  getGmailAuthStateEntry,
+  clearGmailAuthStateEntry,
+};

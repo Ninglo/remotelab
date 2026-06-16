@@ -588,6 +588,69 @@ assert.equal(
   'settling the attached session should rerender the sidebar once the hold is released',
 );
 
+const archiveMutationContext = createBaseContext();
+vm.runInNewContext(sessionReviewSnippet, archiveMutationContext, {
+  filename: 'chat-session-archive-mutation-runtime.js',
+});
+
+const archiveStartEpoch = archiveMutationContext.getSessionArchiveMutationEpoch();
+archiveMutationContext.beginSessionArchiveOptimisticMutation('session-pending-archive', true);
+assert.equal(
+  archiveMutationContext.isSessionArchiveMutationEpochCurrent(archiveStartEpoch),
+  false,
+  'starting an optimistic archive should invalidate older session refreshes',
+);
+assert.equal(
+  archiveMutationContext.applySessionArchiveOptimisticMutation({
+    id: 'session-pending-archive',
+    pinned: true,
+  })?.archived,
+  true,
+  'pending archive state should override stale active session payloads',
+);
+assert.equal(
+  archiveMutationContext.applySessionArchiveOptimisticMutation({
+    id: 'session-pending-archive',
+    pinned: true,
+  })?.pinned,
+  undefined,
+  'pending archive state should clear stale pin state locally',
+);
+assert.equal(
+  archiveMutationContext.adjustArchivedCountForSessionArchiveOptimisticMutations(
+    0,
+    [{ id: 'session-pending-archive' }],
+    { listKind: 'active' },
+  ),
+  1,
+  'pending archive state should keep the archive count from dropping on stale active-list refreshes',
+);
+const archivePendingEpoch = archiveMutationContext.getSessionArchiveMutationEpoch();
+archiveMutationContext.finishSessionArchiveOptimisticMutation('session-pending-archive');
+assert.equal(
+  archiveMutationContext.isSessionArchiveMutationEpochCurrent(archivePendingEpoch),
+  false,
+  'finishing an optimistic archive should invalidate refreshes that raced the mutation',
+);
+
+archiveMutationContext.beginSessionArchiveOptimisticMutation('session-pending-restore', false);
+const restoredOverlay = archiveMutationContext.applySessionArchiveOptimisticMutation({
+  id: 'session-pending-restore',
+  archived: true,
+  archivedAt: '2026-03-12T10:00:00.000Z',
+});
+assert.equal(restoredOverlay.archived, undefined, 'pending restore state should override stale archived payloads');
+assert.equal(restoredOverlay.archivedAt, undefined, 'pending restore state should clear stale archive timestamps');
+assert.equal(
+  archiveMutationContext.adjustArchivedCountForSessionArchiveOptimisticMutations(
+    1,
+    [{ id: 'session-pending-restore', archived: true }],
+    { listKind: 'archived' },
+  ),
+  0,
+  'pending restore state should keep the archive count from rising on stale archived-list refreshes',
+);
+
 const heldArchiveVisibilityContext = createBaseContext();
 heldArchiveVisibilityContext.currentSessionId = 'session-current';
 heldArchiveVisibilityContext.sessions = [

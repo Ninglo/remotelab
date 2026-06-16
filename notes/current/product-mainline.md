@@ -60,6 +60,7 @@ Evidence log: `notes/current/user-feedback-log.md`
 - `README.md` / `README.zh.md` — user-facing product promise
 - `notes/current/session-main-flow-next-push.md` — near-term capability push
 - `notes/current/session-first-workflow-surfaces.md` — workflow-organization baseline for session-first surfaces
+- `notes/current/group-goal-summary-surface.md` — current exploration for treating grouped sessions as an AI-generated work-item summary/detail surface without adding a new durable Goal object
 
 ## What is worth logging
 

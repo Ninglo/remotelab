@@ -1,6 +1,6 @@
 # Session Dispatch And Direct Delivery Follow-ups
 
-Status: active execution todo as of 2026-04-12
+Status: active execution todo as of 2026-04-14
 
 Companions:
 
@@ -23,12 +23,17 @@ Companions:
   any continuation planning should be visible afterward instead of hiding inside `sending`
 - The architecture direction is no longer arbitrary historical-session routing first.
   It is now:
-  pre-turn continuation planner
+  stage-1 continuation gate
+  stage-2 continuation planner
   continuation modes (`continue` / `fork` / `fresh`)
   per-destination inheritance profiles
-- The planner should still read the current-session transcript as primary evidence.
-- The repo implementation now aims to remove old `route_existing` / `route_new` semantics from the main path rather than hardening them further.
+- The stage-1 gate should read only a compressed recent current-session slice plus the new user input.
+- The stage-2 planner should still read the fuller current-session transcript as primary evidence when stage 1 escalates into planning.
+- Code-level gates should stay structural rather than owning keyword-level split logic.
+- The repo implementation now aims to remove old `route_existing` / `route_new` semantics and old message-content routing heuristics from the main path rather than hardening them further.
 - The continuation-routing path exists, but live instances should keep `REMOTELAB_SESSION_DISPATCH=off` until the routing design is revisited with stronger transcript-aware validation.
+- Persisted accepted-check queue state now writes `pendingContinuationQueue`; legacy `pendingPlanningQueue` should be normalized away on load rather than kept alive as a parallel storage shape.
+- The frontend/API activity contract for this stage is `session.activity.continuation`, with `checking` as the visible accepted-but-still-routing state.
 - The current inheritance rule is now sharper:
   `fork` should reuse full parent continuation context
   `fresh` should start from planner-written minimal bridge context
@@ -42,34 +47,37 @@ Companions:
 
 ## Priority backlog
 
-### P0 — restore session continuity through continuation-mode planning
+### P0 — restore session continuity through two-stage continuation routing
 
 - Problem:
   Misrouting an active design or debugging thread is worse than not routing at all. When the system cannot reliably recognize "this is clearly continuing the current thread," dispatch becomes a product regression rather than a convenience.
 - Desired outcome:
   The front door should make continuity-first continuation decisions before the main session runs.
 - Required shape:
-  The planner should see the full current-session transcript plus session description.
-  Weak evidence should resolve to `continue current session`.
+  Stage 1 should use a lightweight model gate, not hardcoded message-content `if/else`.
+  Stage 1 should see only compressed recent context and return `continue_direct` or `needs_planning`.
+  Weak evidence should resolve to `continue_direct`.
+  Stage 2 should see the fuller current-session transcript plus session description.
   Related-but-separate work should become `fork`, not an arbitrary historical-session route.
   Truly new work should become `fresh`, with only minimal forwarded bridge context.
 - Acceptance:
   Multi-turn design/debug discussions that mention overlapping implementation keywords do not jump into unrelated historical sessions.
 
-### P0 — unify routing and splitting into one pre-turn planner
+### P0 — separate split detection from split planning cleanly
 
 - Problem:
-  The system has drifted toward two decision surfaces:
-  user-message routing
-  agent-side delegation/session spawning
-  They see largely the same information and should not each invent their own strategy.
+  "Do we need to split?" and "how should we split?" are different-complexity questions, but the system keeps drifting between hardcoded gates and one overloaded planner.
 - Desired outcome:
-  One pre-turn planner decides continuation mode and downstream destinations before normal model execution begins.
+  The send path should have exactly two semantic model layers with distinct scope:
+  stage 1 decides whether full planning is needed
+  stage 2 decides concrete destinations only when needed
 - Required shape:
+  Stage 1 should not invent child sessions, rewrite delivery text, or choose `fork` versus `fresh`.
+  Stage 2 should own destination design, inheritance profile, forwarded bridge context, and title hints.
   Normal model execution should consume already-scoped work rather than re-deciding whether to split or route.
-  Delegation/session-spawn should become an execution action chosen by the planner, not a separate second strategy layer.
+  Delegation/session-spawn should remain an execution action, not a second routing brain.
 - Acceptance:
-  There is one dominant planning contract for routing/splitting, and downstream runs inherit scope instead of improvising it.
+  There is one clean gate contract and one clean planner contract, and downstream runs inherit scope instead of improvising it.
 
 ### P0 — keep send fast and make checking explicit
 
@@ -81,6 +89,7 @@ Companions:
 - Required shape:
   `sending` should end as soon as the transport accepts the message.
   `checking` should be explicit and non-blocking.
+  `checking` may cover both stage 1 and stage 2 internally, but the implementation should keep those phases distinct in code.
   The primary feedback should attach to the just-sent user message in the chat flow rather than living only in the composer footer.
   Final visible outcomes should distinguish:
   stayed here
@@ -151,38 +160,41 @@ Companions:
   Once the new planner/restoration direction is stable, current notes should describe the real target behavior without mixing historical implementation phases into one fuzzy narrative.
 - Acceptance:
   A new contributor can read the notes tree and understand:
-  why dispatch is currently off
-  what the continuation planner now does
+  why hardcoded routing heuristics were removed
+  what stage 1 now does
+  what stage 2 now does
   how direct delivery differs from AI conversation
 
 ## Immediate operating rule until the backlog lands
 
 - Do not re-enable the old arbitrary historical-session routing path.
-- Keep the new continuation planner path (`continue` / `fork` / `fresh`) as the only routing path on the main instance.
+- Keep the two-stage continuation-routing path as the only routing path on the main instance.
 - Do not treat deterministic reminders or plain outbound pushes as normal AI conversation turns.
 - Prefer direct connector delivery when the outcome is already known and no model reasoning is required.
 - Use this note as the backlog anchor before splitting the work into narrower implementation sessions.
 
-## Restore criteria for the continuation planner
+## Restore criteria for the continuation-routing stack
 
-- The planner uses full current-session transcript context, not only sparse summary fields.
-- In loose personal-assistant connector chats, simple self-contained asks should still usually resolve to `continue`.
-- Weak evidence defaults to `continue`.
+- Stage 1 uses compressed recent current-session context, not hardcoded message heuristics.
+- Stage 2 uses full current-session transcript context once stage 1 escalates.
+- In loose personal-assistant connector chats, simple self-contained asks should still usually resolve to `continue_direct`.
+- Weak evidence defaults to `continue_direct`.
 - `fork` is used for related branches that still need full parent context.
 - `fresh` is used for new workstreams with minimal forwarded bridge context.
 - Send UX clearly shows accepted versus checking versus routed outcomes.
 - The main system can explain routing decisions in a lightweight visible way without interrupting discussion.
 
-## Current remaining todo after landing the first planner path
+## Current remaining todo after landing the two-stage path
 
-- Validate the planner in real owner-session usage and watch for the two main failure modes:
+- Validate the gate and planner in real owner-session usage and watch for the two main failure modes:
   over-eager splitting
   under-splitting that leaves unrelated work in one thread
 - Validate that loose connector chats do not over-split on simple self-contained asks, while clearly separate or complex work still splits when appropriate.
-- Improve observability so it is easier to inspect why a turn became `continue`, `fork`, or `fresh` without reading raw prompt output.
-- Keep cleaning old naming residue in code and docs where `dispatch` still means the older routing model rather than the new continuation planner.
+- Improve observability so it is easier to inspect why stage 1 stayed direct or escalated, and why stage 2 became `continue`, `fork`, or `fresh`, without reading raw prompt output.
+- Keep cleaning old naming residue in code and docs where `dispatch` still means the older routing model rather than the new continuation-routing stack.
 - Polish the visible continuation notice / card layer so routed outcomes are easier to understand at a glance.
-- Measure the actual runtime effect of sharing full current-session context between planner and execution:
+- Measure the actual runtime effect of the two-stage model path:
   latency
   token cost
+  gate false-positive / false-negative rate
   prompt-cache behavior

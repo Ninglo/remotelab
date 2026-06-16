@@ -9,6 +9,11 @@ import { basename, dirname, extname, isAbsolute, resolve } from 'path';
 import { homedir, tmpdir } from 'os';
 import { statOrNull } from './fs-utils.mjs';
 import {
+  getUserVisibleRoots,
+  isScopedInstanceUserSurface,
+  isUserVisiblePathAllowed,
+} from './instance-visible-paths.mjs';
+import {
   normalizeAttachmentSizeBytes,
   resolveAttachmentMimeType,
   sanitizeOriginalAttachmentName,
@@ -44,6 +49,9 @@ const ASSISTANT_LOCAL_MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)\r\n]+)\)/g;
 const ASSISTANT_LOCAL_MARKDOWN_LINK_RE = /\[([^\]]*)\]\(([^)\r\n]+)\)/g;
 const ASSISTANT_LOCAL_CODE_SPAN_RE = /`([^`\r\n]+)`/g;
 const PRODUCT_LOCAL_ROUTE_RE = /^\/(?:api|share|share-asset|agent|visitor|login|logout|m|subscribe)(?:[/?#]|$)/i;
+const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+const WINDOWS_ABSOLUTE_PATH_RE = /^(?:[a-z]:[\\/]|\\\\)/i;
+const EXPLICIT_LOCAL_RELATIVE_PATH_RE = /^(?:\.\.?[\\/])/;
 const EXTRA_RESULT_FILE_ALLOWED_ROOTS = Object.freeze(['/var/tmp', '/private/tmp']);
 const ARTIFACT_BLOCK_HEADER_RE = /^(?:#{1,6}\s*|\*\*)?artifacts(?:\*\*)?\s*:?\s*$/i;
 
@@ -65,6 +73,120 @@ export function looksLikeResultFilePath(value) {
   if (/[\r\n]/.test(candidate)) return false;
   if (/[\\/]/.test(candidate) || candidate.startsWith('~/')) return true;
   return /\.[a-z0-9]{1,8}$/i.test(candidate);
+}
+
+function stripResultFileReferenceDecorations(value) {
+  let candidate = normalizeResultFilePathCandidate(value);
+  if (!candidate) return '';
+  const suffixIndex = candidate.search(/[?#]/);
+  if (suffixIndex >= 0) {
+    candidate = candidate.slice(0, suffixIndex);
+  }
+  if (
+    /^(?:~\/|\/|\.{1,2}[\\/])/i.test(candidate)
+    || WINDOWS_ABSOLUTE_PATH_RE.test(candidate)
+  ) {
+    candidate = candidate.replace(/:(\d+)(?::\d+)?$/, '');
+  }
+  return candidate.replace(/[\\/]+$/, '');
+}
+
+function hasFileLikeBasename(value) {
+  const normalized = stripResultFileReferenceDecorations(value);
+  if (!normalized) return false;
+  const name = basename(normalized);
+  if (!name || name === '.' || name === '..') return false;
+  return /\.[a-z0-9]{1,16}$/i.test(name);
+}
+
+function hasImageLikeBasename(value) {
+  const normalized = stripResultFileReferenceDecorations(value);
+  if (!normalized) return false;
+  const name = basename(normalized);
+  if (!name || name === '.' || name === '..') return false;
+  return /\.(?:png|jpe?g|gif|webp|svg|bmp|avif|tiff?)$/i.test(name);
+}
+
+// Keep inline assistant-message cleanup stricter than artifact extraction so ordinary web links
+// and repo-relative markdown targets are not mistaken for downloadable local files.
+function looksLikeAssistantInlineLocalFileReference(value) {
+  const candidate = normalizeResultFilePathCandidate(value);
+  if (!candidate || candidate.length > 4096) return false;
+  if (WINDOWS_ABSOLUTE_PATH_RE.test(candidate)) return true;
+  if (URL_SCHEME_RE.test(candidate) || candidate.startsWith('//')) return false;
+  if (PRODUCT_LOCAL_ROUTE_RE.test(candidate)) return false;
+  if (/^[?#]/.test(candidate)) return false;
+  if (/[\r\n]/.test(candidate)) return false;
+  return LOCAL_SEARCH_ROOT_PREFIX_RE.test(candidate);
+}
+
+function looksLikeAssistantArtifactBlockLocalFileReference(value) {
+  const candidate = normalizeResultFilePathCandidate(value);
+  if (!candidate || candidate.length > 4096) return false;
+  if (WINDOWS_ABSOLUTE_PATH_RE.test(candidate)) return true;
+  if (URL_SCHEME_RE.test(candidate) || candidate.startsWith('//')) return false;
+  if (PRODUCT_LOCAL_ROUTE_RE.test(candidate)) return false;
+  if (/^[?#]/.test(candidate)) return false;
+  if (/[\r\n]/.test(candidate)) return false;
+  if (LOCAL_SEARCH_ROOT_PREFIX_RE.test(candidate)) return true;
+  if (EXPLICIT_LOCAL_RELATIVE_PATH_RE.test(candidate)) return hasFileLikeBasename(candidate);
+  return hasFileLikeBasename(candidate);
+}
+
+function looksLikeAssistantLocalMarkdownImageReference(value) {
+  const candidate = normalizeResultFilePathCandidate(value);
+  if (!candidate || candidate.length > 4096) return false;
+  if (WINDOWS_ABSOLUTE_PATH_RE.test(candidate)) return true;
+  if (URL_SCHEME_RE.test(candidate) || candidate.startsWith('//')) return false;
+  if (PRODUCT_LOCAL_ROUTE_RE.test(candidate)) return false;
+  if (/^[?#]/.test(candidate)) return false;
+  if (/[\r\n]/.test(candidate)) return false;
+  if (LOCAL_SEARCH_ROOT_PREFIX_RE.test(candidate)) return true;
+  if (EXPLICIT_LOCAL_RELATIVE_PATH_RE.test(candidate)) return hasImageLikeBasename(candidate);
+  return false;
+}
+
+function extractAssistantTextFileReferences(text = '', options = {}, isLocalReference = looksLikeAssistantInlineLocalFileReference) {
+  const includeMarkdownLinks = options.includeMarkdownLinks !== false;
+  const includeCodeSpans = options.includeCodeSpans !== false;
+  const source = typeof text === 'string' ? text : '';
+  if (!source) return [];
+
+  const references = [];
+
+  if (includeMarkdownLinks) {
+    ASSISTANT_LOCAL_MARKDOWN_LINK_RE.lastIndex = 0;
+    let match;
+    while ((match = ASSISTANT_LOCAL_MARKDOWN_LINK_RE.exec(source)) !== null) {
+      const candidate = normalizeResultFilePathCandidate(match[2] || '');
+      if (!isLocalReference(candidate)) continue;
+      references.push({
+        kind: 'markdown_link',
+        fullMatch: match[0],
+        index: match.index,
+        candidate,
+        displayName: resolveAssistantResultFileDisplayName(candidate, match[1] || ''),
+      });
+    }
+  }
+
+  if (includeCodeSpans) {
+    ASSISTANT_LOCAL_CODE_SPAN_RE.lastIndex = 0;
+    let match;
+    while ((match = ASSISTANT_LOCAL_CODE_SPAN_RE.exec(source)) !== null) {
+      const candidate = normalizeResultFilePathCandidate(match[1] || '');
+      if (!isLocalReference(candidate)) continue;
+      references.push({
+        kind: 'code_span',
+        fullMatch: match[0],
+        index: match.index,
+        candidate,
+        displayName: resolveAssistantResultFileDisplayName(candidate, candidate),
+      });
+    }
+  }
+
+  return dedupeResultFileTextReferences(references);
 }
 
 // ── Shell / text scanning ────────────────────────────────────────────
@@ -196,46 +318,7 @@ function resolveAssistantResultFileDisplayName(candidate, preferredName = '') {
 }
 
 export function extractAssistantResultFileReferences(text = '', options = {}) {
-  const includeMarkdownLinks = options.includeMarkdownLinks !== false;
-  const includeCodeSpans = options.includeCodeSpans !== false;
-  const source = typeof text === 'string' ? text : '';
-  if (!source) return [];
-
-  const references = [];
-
-  if (includeMarkdownLinks) {
-    ASSISTANT_LOCAL_MARKDOWN_LINK_RE.lastIndex = 0;
-    let match;
-    while ((match = ASSISTANT_LOCAL_MARKDOWN_LINK_RE.exec(source)) !== null) {
-      const candidate = normalizeResultFilePathCandidate(match[2] || '');
-      if (!looksLikeResultFilePath(candidate)) continue;
-      references.push({
-        kind: 'markdown_link',
-        fullMatch: match[0],
-        index: match.index,
-        candidate,
-        displayName: resolveAssistantResultFileDisplayName(candidate, match[1] || ''),
-      });
-    }
-  }
-
-  if (includeCodeSpans) {
-    ASSISTANT_LOCAL_CODE_SPAN_RE.lastIndex = 0;
-    let match;
-    while ((match = ASSISTANT_LOCAL_CODE_SPAN_RE.exec(source)) !== null) {
-      const candidate = normalizeResultFilePathCandidate(match[1] || '');
-      if (!looksLikeResultFilePath(candidate)) continue;
-      references.push({
-        kind: 'code_span',
-        fullMatch: match[0],
-        index: match.index,
-        candidate,
-        displayName: resolveAssistantResultFileDisplayName(candidate, candidate),
-      });
-    }
-  }
-
-  return dedupeResultFileTextReferences(references);
+  return extractAssistantTextFileReferences(text, options, looksLikeAssistantInlineLocalFileReference);
 }
 
 export function extractAssistantResultFileCandidatesFromText(text = '', options = {}) {
@@ -255,7 +338,7 @@ export function extractAssistantLocalMarkdownImageReferences(text = '') {
   let match;
   while ((match = ASSISTANT_LOCAL_MARKDOWN_IMAGE_RE.exec(source)) !== null) {
     const candidate = normalizeResultFilePathCandidate(match[2] || '');
-    if (!looksLikeResultFilePath(candidate)) continue;
+    if (!looksLikeAssistantLocalMarkdownImageReference(candidate)) continue;
     references.push({
       kind: 'markdown_image',
       fullMatch: match[0],
@@ -291,9 +374,13 @@ function extractArtifactBlockReferenceFromLine(line = '', index = 0) {
   const normalizedLine = normalizeArtifactBlockLine(line);
   if (!normalizedLine) return [];
 
-  const directReferences = extractAssistantResultFileReferences(normalizedLine);
-  if (directReferences.length > 0) {
-    return directReferences.map((reference) => ({
+  const explicitReferences = extractAssistantTextFileReferences(
+    normalizedLine,
+    {},
+    looksLikeAssistantArtifactBlockLocalFileReference,
+  );
+  if (explicitReferences.length > 0) {
+    return explicitReferences.map((reference) => ({
       ...reference,
       kind: 'artifact_block',
       index: index + reference.index,
@@ -305,7 +392,7 @@ function extractArtifactBlockReferenceFromLine(line = '', index = 0) {
     (/^(?:~\/|\/)/.test(normalizedCandidate) || normalizedCandidate.startsWith('./') || normalizedCandidate.startsWith('../'))
     && !/\s+(?:->|=>|\|)\s+/.test(normalizedLine)
     && !/^[^/]+:\s+/.test(normalizedLine)
-    && looksLikeResultFilePath(normalizedCandidate)
+    && looksLikeAssistantArtifactBlockLocalFileReference(normalizedCandidate)
   ) {
     return [{
       kind: 'artifact_block',
@@ -319,7 +406,7 @@ function extractArtifactBlockReferenceFromLine(line = '', index = 0) {
   const localPathMatch = normalizedLine.match(LOCAL_SEARCH_ROOT_PATH_RE)?.[0] || '';
   if (localPathMatch) {
     const candidate = normalizeResultFilePathCandidate(localPathMatch);
-    if (looksLikeResultFilePath(candidate)) {
+    if (looksLikeAssistantArtifactBlockLocalFileReference(candidate)) {
       return [{
         kind: 'artifact_block',
         fullMatch: normalizedLine,
@@ -336,7 +423,7 @@ function extractArtifactBlockReferenceFromLine(line = '', index = 0) {
     .filter(Boolean);
   for (let partIndex = pathishParts.length - 1; partIndex >= 0; partIndex -= 1) {
     const candidate = pathishParts[partIndex];
-    if (!looksLikeResultFilePath(candidate)) continue;
+    if (!looksLikeAssistantArtifactBlockLocalFileReference(candidate)) continue;
     const preferredName = partIndex > 0 ? pathishParts[0] : candidate;
     return [{
       kind: 'artifact_block',
@@ -347,7 +434,7 @@ function extractArtifactBlockReferenceFromLine(line = '', index = 0) {
     }];
   }
 
-  if (!looksLikeResultFilePath(normalizedCandidate)) {
+  if (!looksLikeAssistantArtifactBlockLocalFileReference(normalizedCandidate)) {
     return [];
   }
   return [{
@@ -462,6 +549,19 @@ export function isPathWithinRoot(filePath, root) {
 }
 
 function collectAllowedResultFileRoots(searchRoots = []) {
+  if (isScopedInstanceUserSurface()) {
+    const roots = [];
+    for (const root of getUserVisibleRoots()) {
+      pushUnique(roots, resolve(root));
+    }
+    for (const root of searchRoots || []) {
+      const resolvedRoot = resolve(root);
+      if (!isUserVisiblePathAllowed(resolvedRoot)) continue;
+      pushUnique(roots, resolvedRoot);
+    }
+    return roots;
+  }
+
   const roots = [];
   for (const root of searchRoots || []) {
     pushUnique(roots, resolve(root));
@@ -522,12 +622,22 @@ async function maybeCollectResolvedResultFile(filesByPath, {
   return true;
 }
 
+function resolveRunResultMinimumMtimeMs(run) {
+  const parsed = Date.parse(
+    trimString(run?.startedAt)
+    || trimString(run?.createdAt)
+    || '',
+  );
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 // ── Run-level result collection ──────────────────────────────────────
 
 export async function collectGeneratedResultFilesFromRun(run, manifest, normalizedEvents = []) {
   const filesByPath = new Map();
   let activeCommand = '';
   const discoveredSearchRoots = collectResultFileSearchRoots(manifest, '');
+  const minimumMtimeMs = resolveRunResultMinimumMtimeMs(run);
 
   for (const event of normalizedEvents || []) {
     if (event?.type === 'tool_use' && event.toolName === 'bash') {
@@ -546,6 +656,7 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
         await maybeCollectResolvedResultFile(filesByPath, {
           candidate: reference.candidate,
           searchRoots: discoveredSearchRoots,
+          minimumMtimeMs: reference.kind === 'artifact_block' ? 0 : minimumMtimeMs,
           preferredName: reference.displayName,
         });
       }
@@ -573,6 +684,7 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
       await maybeCollectResolvedResultFile(filesByPath, {
         candidate,
         searchRoots,
+        minimumMtimeMs,
       });
     }
   }

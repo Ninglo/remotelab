@@ -7,6 +7,7 @@ import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 import { setTimeout as delay } from 'timers/promises';
 import { pathToFileURL } from 'url';
+import QRCode from 'qrcode';
 
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
 import {
@@ -18,18 +19,26 @@ import {
   selectAssistantReplyEvent,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
-import { waitForReplyPublication } from '../lib/reply-publication-client.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import {
   buildConnectorFailureReply,
   decideConnectorUserVisibleReply,
 } from '../lib/connector-user-visible-reply.mjs';
+import { ConnectorDriver } from '../lib/connector-driver.mjs';
+import { createWeChatConnectorTransport } from '../lib/connector-driver-transports.mjs';
 import {
   loadConnectorSurfaceTemplate,
   renderConnectorSurfaceTemplate,
   startConnectorSurfaceServer,
 } from '../lib/connector-sdk/surface.mjs';
 import { getWeChatLoginQrUrl, getWeChatLoginSurface } from '../lib/wechat-connector-login.mjs';
+import {
+  createConnectorSession,
+  loadConnectorAssistantReply,
+  normalizeConnectorPublicationText,
+  submitConnectorMessage,
+  waitForConnectorPublication,
+} from '../lib/connector-turn-flow.mjs';
 
 const DEFAULT_STORAGE_DIR = join(CONFIG_DIR, 'wechat-connector');
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_WECHAT_CONFIG_PATH
@@ -913,11 +922,26 @@ function buildDefaultSurfaceLoginTemplate() {
       margin-top: 14px;
       flex-wrap: wrap;
     }
+    .action-links {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
     .link {
       color: var(--accent);
       text-decoration: none;
       font-size: 14px;
       font-weight: 600;
+    }
+    .link-button {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
     }
     .success {
       display: none;
@@ -954,7 +978,10 @@ function buildDefaultSurfaceLoginTemplate() {
           <div id="qr-empty" class="qr-empty">Generating a fresh QR code. This usually takes a moment.</div>
         </div>
         <div class="actions">
-          <a id="qr-link" class="link hidden" href="#" target="_blank" rel="noreferrer">Open QR image</a>
+          <div class="action-links">
+            <a id="qr-link" class="link hidden" href="#" target="_blank" rel="noreferrer">Open login link</a>
+            <button id="copy-link-btn" class="link-button hidden" type="button">Copy login link</button>
+          </div>
           <div class="meta" id="meta-text"></div>
         </div>
         <div id="success-panel" class="success">
@@ -968,17 +995,28 @@ function buildDefaultSurfaceLoginTemplate() {
     (function() {
       var statusEndpoint = '{{STATUS_PATH}}';
       var qrEndpoint = '{{QR_PATH}}';
+      var openEndpoint = '{{OPEN_PATH}}';
       var statusPill = document.getElementById('status-pill');
       var statusNote = document.getElementById('status-note');
       var qrStage = document.getElementById('qr-stage');
       var qrImage = document.getElementById('qr-image');
       var qrEmpty = document.getElementById('qr-empty');
       var qrLink = document.getElementById('qr-link');
+      var copyLinkBtn = document.getElementById('copy-link-btn');
       var metaText = document.getElementById('meta-text');
       var successPanel = document.getElementById('success-panel');
       var successText = document.getElementById('success-text');
       var currentQrVersion = '';
       var inFlight = false;
+      var copyResetTimer = 0;
+
+      function resolveAbsoluteUrl(path) {
+        try {
+          return new URL(path, window.location.href).toString();
+        } catch {
+          return path;
+        }
+      }
 
       function stageLabel(status) {
         if (status === 'connected') return 'Connected';
@@ -1004,16 +1042,18 @@ function buildDefaultSurfaceLoginTemplate() {
           currentQrVersion = version;
           var src = qrEndpoint + '?v=' + encodeURIComponent(version);
           qrImage.src = src;
-          qrLink.href = src;
         }
+        qrLink.href = openEndpoint;
         qrImage.classList.remove('hidden');
         qrLink.classList.remove('hidden');
+        copyLinkBtn.classList.remove('hidden');
         qrEmpty.classList.add('hidden');
       }
 
       function showWaitingState() {
         qrImage.classList.add('hidden');
         qrLink.classList.add('hidden');
+        copyLinkBtn.classList.add('hidden');
         qrEmpty.classList.remove('hidden');
       }
 
@@ -1021,6 +1061,9 @@ function buildDefaultSurfaceLoginTemplate() {
         if (!state || typeof state !== 'object') return;
         var status = String(state.status || (state.login && state.login.status) || '');
         var isReady = state.capabilityState === 'ready';
+        if (state.loginLinkPath) {
+          openEndpoint = String(state.loginLinkPath);
+        }
         statusPill.textContent = stageLabel(status);
         statusPill.classList.toggle('ready', isReady);
         statusNote.textContent = String(state.message || stageBody(status));
@@ -1041,6 +1084,27 @@ function buildDefaultSurfaceLoginTemplate() {
           showWaitingState();
         }
       }
+
+      copyLinkBtn.addEventListener('click', async function() {
+        var label = 'Copy login link';
+        var copiedLabel = 'Copied';
+        var value = resolveAbsoluteUrl(openEndpoint);
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(value);
+          } else {
+            window.prompt('Copy this login link', value);
+          }
+          copyLinkBtn.textContent = copiedLabel;
+        } catch {
+          window.prompt('Copy this login link', value);
+          copyLinkBtn.textContent = copiedLabel;
+        }
+        window.clearTimeout(copyResetTimer);
+        copyResetTimer = window.setTimeout(function() {
+          copyLinkBtn.textContent = label;
+        }, 1800);
+      });
 
       async function refreshState() {
         if (inFlight) return;
@@ -1069,6 +1133,31 @@ function buildDefaultSurfaceLoginTemplate() {
   </script>
 </body>
 </html>`;
+}
+
+function resolveRequestHeaderValue(value) {
+  if (Array.isArray(value)) {
+    return trimString(value[0]);
+  }
+  return trimString(typeof value === 'string' ? value.split(',')[0] : value);
+}
+
+function resolveSurfaceRequestOrigin(req) {
+  const host = resolveRequestHeaderValue(req.headers?.['x-forwarded-host']) || resolveRequestHeaderValue(req.headers?.host);
+  const proto = resolveRequestHeaderValue(req.headers?.['x-forwarded-proto']) || 'http';
+  if (!host) return '';
+  return `${proto}://${host}`;
+}
+
+function buildAbsoluteSurfaceUrl(req, pathname) {
+  const origin = resolveSurfaceRequestOrigin(req);
+  const normalizedPath = trimString(pathname);
+  if (!origin || !normalizedPath) return normalizedPath;
+  try {
+    return new URL(normalizedPath, `${origin}/`).toString();
+  } catch {
+    return normalizedPath;
+  }
 }
 
 async function startWeChatSurfaceServer(runtime) {
@@ -1107,11 +1196,13 @@ async function startWeChatSurfaceServer(runtime) {
         autoStart: false,
         authPath: `${mountPrefix}${entryPath}`,
         qrPath: `${mountPrefix}${entryPath}/qr`,
+        openPath: `${mountPrefix}${entryPath}/open`,
       }),
     }),
     handleRequest: async ({ req, res, url, mountPrefix, nonce, sendJson }) => {
       const statusPath = `${mountPrefix}${entryPath}/status`;
       const qrPath = `${mountPrefix}${entryPath}/qr`;
+      const openPath = `${mountPrefix}${entryPath}/open`;
 
       if (req.method === 'GET' && url.pathname === entryPath) {
         const body = renderConnectorSurfaceTemplate(template, {
@@ -1119,6 +1210,7 @@ async function startWeChatSurfaceServer(runtime) {
           TITLE: title,
           STATUS_PATH: statusPath,
           QR_PATH: qrPath,
+          OPEN_PATH: openPath,
         });
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
@@ -1133,6 +1225,7 @@ async function startWeChatSurfaceServer(runtime) {
           autoStart: true,
           authPath: `${mountPrefix}${entryPath}`,
           qrPath,
+          openPath,
         });
         sendJson(res, 200, surface);
         return true;
@@ -1157,14 +1250,14 @@ async function startWeChatSurfaceServer(runtime) {
           return true;
         }
         try {
-          const response = await fetch(qrcodeUrl);
-          if (!response.ok) {
-            throw new Error(`QR upstream ${response.status}`);
-          }
-          const contentType = trimString(response.headers.get('content-type')) || 'image/png';
-          const body = Buffer.from(await response.arrayBuffer());
+          const body = await QRCode.toBuffer(qrcodeUrl, {
+            type: 'png',
+            width: 400,
+            margin: 2,
+            errorCorrectionLevel: 'M',
+          });
           res.writeHead(200, {
-            'Content-Type': contentType,
+            'Content-Type': 'image/png',
             'Content-Length': String(body.length),
             'Cache-Control': 'no-store, max-age=0, must-revalidate',
           });
@@ -1174,8 +1267,34 @@ async function startWeChatSurfaceServer(runtime) {
             'Content-Type': 'text/plain; charset=utf-8',
             'Cache-Control': 'no-store, max-age=0, must-revalidate',
           });
-          res.end(`Failed to load WeChat QR image: ${error?.message || 'unknown error'}`);
+          res.end(`Failed to generate WeChat QR image: ${error?.message || 'unknown error'}`);
         }
+        return true;
+      }
+
+      if (req.method === 'GET' && url.pathname === `${entryPath}/open`) {
+        const { surface, qrcodeUrl } = await getWeChatLoginQrUrl({ autoStart: true });
+        if (surface?.capabilityState === 'ready') {
+          res.writeHead(409, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store, max-age=0, must-revalidate',
+          });
+          res.end('WeChat is already connected.');
+          return true;
+        }
+        if (!qrcodeUrl) {
+          res.writeHead(503, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Cache-Control': 'no-store, max-age=0, must-revalidate',
+          });
+          res.end('WeChat login link is not ready yet.');
+          return true;
+        }
+        res.writeHead(302, {
+          Location: qrcodeUrl,
+          'Cache-Control': 'no-store, max-age=0, must-revalidate',
+        });
+        res.end();
         return true;
       }
 
@@ -2102,7 +2221,19 @@ async function generateRemoteLabReply(runtime, summary) {
   });
 
   const sessionStartedAt = Date.now();
-  const session = await createOrReuseSession(runtime, summary, runtimeSelection);
+  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
+  const session = await createConnectorSession(requester, {
+    folder: runtime.config.sessionFolder,
+    tool: runtimeSelection.tool,
+    name: buildSessionName(summary),
+    sourceId: REMOTELAB_SESSION_APP_ID,
+    sourceName: runtime.config.sourceName,
+    group: runtime.config.group,
+    description: buildSessionDescription(summary),
+    systemPrompt: runtime.config.systemPrompt,
+    externalTriggerId: buildExternalTriggerId(summary),
+    sourceContext: buildSessionSourceContext(summary),
+  });
   const readySession = await waitForSessionReady(runtime, session.id, session);
   const baselineSeq = Number.isInteger(readySession?.latestSeq) ? readySession.latestSeq : 0;
   const sessionMs = elapsedMs(sessionStartedAt);
@@ -2114,7 +2245,15 @@ async function generateRemoteLabReply(runtime, summary) {
   });
 
   const submitStartedAt = Date.now();
-  const submission = await submitRemoteLabMessage(runtime, session.id, summary, runtimeSelection);
+  const submission = await submitConnectorMessage(requester, session.id, {
+    requestId: buildRequestId(summary),
+    text: buildRemoteLabMessage(summary),
+    tool: runtimeSelection.tool,
+    sourceContext: buildMessageSourceContext(summary),
+    ...(runtimeSelection.thinking ? { thinking: true } : {}),
+    ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
+    ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
+  });
   const submitMs = elapsedMs(submitStartedAt);
   logConnectorStage('message submitted', {
     messageId: summary.messageId,
@@ -2122,14 +2261,18 @@ async function generateRemoteLabReply(runtime, summary) {
     requestId: submission.requestId,
     runId: submission.runId || '',
     duplicate: submission.duplicate,
+    queued: submission.queued === true,
     submitMs,
   });
+  if (submission.queued && !submission.runId && !submission.duplicate) {
+    throw new Error('RemoteLab queued the WeChat request; expected an immediate run');
+  }
 
   const runId = submission.runId;
   const responseId = submission.responseId;
   const publicationStartedAt = Date.now();
-  const publication = await waitForReplyPublication(
-    (path) => requestRemoteLab(runtime, path),
+  const publication = await waitForConnectorPublication(
+    requester,
     session.id,
     responseId,
     {
@@ -2151,10 +2294,10 @@ async function generateRemoteLabReply(runtime, summary) {
 
   const replyLoadStartedAt = Date.now();
   const finalizedRunId = trimString(publication.finalRunId) || runId || '';
-  let replyText = normalizeReplyText(publication.payload?.text || '');
+  let replyText = normalizeReplyText(normalizeConnectorPublicationText(publication));
   if (!replyText) {
     const replyEvent = await loadAssistantReply(
-      (path) => requestRemoteLab(runtime, path),
+      requester,
       session.id,
       finalizedRunId,
       submission.requestId,
@@ -2175,6 +2318,7 @@ async function generateRemoteLabReply(runtime, summary) {
     sessionId: session.id,
     runId: finalizedRunId,
     requestId: submission.requestId,
+    responseId,
     duplicate: submission.duplicate,
     replyText,
     silent: !replyText,
@@ -2221,6 +2365,34 @@ async function sendWeChatText(runtime, summary, text) {
   });
 
   return { message_id: clientId };
+}
+
+async function deliverWeChatVisibleReply(runtime, summary, {
+  responseId = '',
+  kind = 'content',
+  text = '',
+}, sendWeChatTextImpl = sendWeChatText) {
+  const transport = createWeChatConnectorTransport({
+    runtime,
+    summary,
+    sendWeChatTextImpl,
+  });
+  const driver = new ConnectorDriver({
+    targetId: `wechat:${trimString(summary?.accountId) || 'account'}:${trimString(summary?.peerUserId) || 'peer'}`,
+    transport,
+  });
+  const delivery = await driver.dispatchMessage({
+    responseId: trimString(responseId) || buildRequestId(summary),
+    kind,
+    text,
+    order: 0,
+  });
+  if (delivery.record.state !== 'delivered') {
+    throw new Error(delivery.record.lastError || 'Failed to deliver WeChat reply');
+  }
+  return {
+    message_id: delivery.record.externalId || '',
+  };
 }
 
 async function sendDirectWeChatText(runtime, {
@@ -2461,7 +2633,11 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
     }
     processingAckAttempted = true;
     try {
-      const reply = await sendText(runtime, summary, processingAckText);
+      const reply = await deliverWeChatVisibleReply(runtime, summary, {
+        responseId: buildRequestId(summary),
+        kind: 'content',
+        text: processingAckText,
+      }, sendText);
       processingAck = {
         messageId: trimString(reply?.message_id),
         sentAt: nowIso(),
@@ -2546,7 +2722,11 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
     }
 
     const replySendStartedAt = Date.now();
-    const reply = await sendText(runtime, summary, finalReply.text);
+    const reply = await deliverWeChatVisibleReply(runtime, summary, {
+      responseId: generated.responseId || generated.requestId,
+      kind: finalReply.action === 'send_confirmation' ? 'summary' : 'content',
+      text: finalReply.text,
+    }, sendText);
     const replySendMs = elapsedMs(replySendStartedAt);
     const processingMs = elapsedMs(processingStartedAt);
     await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
@@ -2593,7 +2773,11 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
     console.error(`[wechat-connector] processing failed for ${summary.messageId}:`, error?.stack || error);
     try {
       const fallback = buildFailureReply(summary, error?.message || '');
-      const reply = await sendText(runtime, summary, fallback);
+      const reply = await deliverWeChatVisibleReply(runtime, summary, {
+        responseId: buildRequestId(summary),
+        kind: 'summary',
+        text: fallback,
+      }, sendText);
       await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
         status: 'failed_with_notice',
         accountId: summary.accountId,

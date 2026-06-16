@@ -388,6 +388,18 @@ const agentsPanel = document.getElementById("agentsPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
+
+function setAttachmentPickerDisabled(disabled) {
+  const nextDisabled = disabled === true;
+  if (imgBtn) {
+    imgBtn.disabled = nextDisabled;
+    imgBtn.setAttribute("aria-disabled", nextDisabled ? "true" : "false");
+  }
+  if (imgFileInput) {
+    imgFileInput.disabled = nextDisabled;
+    imgFileInput.setAttribute("aria-disabled", nextDisabled ? "true" : "false");
+  }
+}
 const inputResizeHandle = document.getElementById("inputResizeHandle");
 const addToolModal = document.getElementById("addToolModal");
 const closeAddToolModalBtn = document.getElementById("closeAddToolModal");
@@ -711,6 +723,9 @@ const eventBodyRequests = new Map();
 const eventBlockCache = new Map();
 const eventBlockRequests = new Map();
 const messageTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
@@ -1002,11 +1017,15 @@ function withVisitorModeUrl(url) {
 
 let currentTokens = 0;
 
-const DEFAULT_TOOL_ID = "micro-agent";
+const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
+const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
+const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.5";
+const PRODUCT_DEFAULT_CODEX_EFFORT = "medium";
 
 function normalizeStoredToolId(value) {
-  return typeof value === "string" ? value.trim() : "";
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return LEGACY_REMOVED_TOOL_IDS.has(normalized) ? DEFAULT_TOOL_ID : normalized;
 }
 
 function normalizeStoredAgentTemplateId(value) {
@@ -1030,6 +1049,29 @@ function derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool) {
   }
   return null;
 }
+
+function migrateLegacyMicroAgentLocalStorage() {
+  const rawPreferredTool = typeof localStorage.getItem("preferredTool") === "string"
+    ? localStorage.getItem("preferredTool").trim()
+    : "";
+  const rawSelectedTool = typeof localStorage.getItem("selectedTool") === "string"
+    ? localStorage.getItem("selectedTool").trim()
+    : "";
+  if (!LEGACY_REMOVED_TOOL_IDS.has(rawPreferredTool) && !LEGACY_REMOVED_TOOL_IDS.has(rawSelectedTool)) {
+    return;
+  }
+
+  localStorage.setItem("preferredTool", DEFAULT_TOOL_ID);
+  localStorage.setItem("selectedTool", DEFAULT_TOOL_ID);
+  localStorage.setItem(`selectedModel_${DEFAULT_TOOL_ID}`, PRODUCT_DEFAULT_CODEX_MODEL);
+  localStorage.setItem(`selectedEffort_${DEFAULT_TOOL_ID}`, PRODUCT_DEFAULT_CODEX_EFFORT);
+  for (const toolId of LEGACY_REMOVED_TOOL_IDS) {
+    localStorage.removeItem(`selectedModel_${toolId}`);
+    localStorage.removeItem(`selectedEffort_${toolId}`);
+  }
+}
+
+migrateLegacyMicroAgentLocalStorage();
 
 const storedPreferredTool = normalizeStoredToolId(localStorage.getItem("preferredTool"));
 const storedLegacySelectedTool = normalizeStoredToolId(localStorage.getItem("selectedTool"));

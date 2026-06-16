@@ -1513,7 +1513,7 @@ async function buildOwnerInstanceRecord({ includeChecks = false } = {}) {
     },
     usage: {
       ...usageSnapshot,
-      usageStatus: (derivedUsageStatus === 'opened' || derivedUsageStatus === 'empty') ? 'active' : derivedUsageStatus,
+      usageStatus: 'occupied',
       usageBrief: 'owner 控制台',
       usageSummary,
     },
@@ -1524,11 +1524,12 @@ async function buildOwnerInstanceRecord({ includeChecks = false } = {}) {
 }
 
 async function fetchDashboardData({ includeChecks = false } = {}) {
-  const [links, report, trialOccupancyText, ownerRecord] = await Promise.all([
+  const [links, report, trialOccupancyText, ownerRecord, fleet] = await Promise.all([
     cli(['guest-instance', 'links', '--json', ...(includeChecks ? ['--check'] : [])]),
     cli(['guest-instance', 'report', '--json']).catch(() => ({ instances: [], summary: {} })),
     readTextFileSafe(TRIAL_OCCUPANCY_LEDGER_FILE),
     buildOwnerInstanceRecord({ includeChecks }),
+    cli(['admin', 'summary', ...(includeChecks ? ['--sync'] : []), '--json']).catch(() => ({ hosts: [], hostCount: 0, instanceCount: 0 })),
   ]);
   const reportInstances = report.instances || report.rows || [];
   const usageMap = new Map(reportInstances.map(r => [r.name, {
@@ -1546,6 +1547,7 @@ async function fetchDashboardData({ includeChecks = false } = {}) {
   }, occupancyEntries.get(inst.name) || null));
   const instances = ownerRecord ? [ownerRecord, ...guestInstances] : guestInstances;
   return {
+    fleet,
     instances,
     summary: computeDashboardSummary(instances, { usage: buildFleetUsageSummary(instances) }),
   };
@@ -1599,9 +1601,44 @@ async function apiDashboard(req, res) {
   });
 }
 
+function getFleetHostsFromDashboard(dashboardData = null) {
+  const hosts = dashboardData?.fleet?.hosts;
+  return Array.isArray(hosts) ? hosts : [];
+}
+
+function pickDefaultFleetHost(dashboardData = null) {
+  const hosts = getFleetHostsFromDashboard(dashboardData);
+  const localHost = hosts.find((host) => host && (host.local || host.runtime === 'local'));
+  return sanitize(localHost?.name || hosts[0]?.name || '');
+}
+
+async function resolveTargetHostName(inputHost = '') {
+  const requested = sanitize(inputHost);
+  if (requested) return requested;
+  const dashboardData = await getDashboardData();
+  const fallback = pickDefaultFleetHost(dashboardData);
+  if (!fallback) throw new Error('No managed host is available yet');
+  return fallback;
+}
+
+async function runAdminInstanceCommand(args = [], timeout = 180_000) {
+  return cli(['admin', 'instances', ...args], timeout);
+}
+
+async function syncManagedHost(hostName, dashboardData = null) {
+  const safeHost = sanitize(hostName);
+  if (!safeHost) throw new Error('Host is required');
+  const effectiveDashboard = dashboardData || await getDashboardData();
+  const host = getFleetHostsFromDashboard(effectiveDashboard).find((entry) => sanitize(entry?.name) === safeHost);
+  if (!host) throw new Error(`Managed host not found: ${safeHost}`);
+  return cli(['admin', 'hosts', host.local || host.runtime === 'local' ? 'sync-local' : 'sync-remote', safeHost, '--json'], 180_000);
+}
+
 async function apiCreate(req, res) {
   const data = await readBody(req);
-  const args = ['guest-instance'];
+  const host = await resolveTargetHostName(data.host);
+  const args = [];
+  const count = Number.parseInt(String(data.count || ''), 10);
   if (data.trial) {
     args.push('create-trial');
   } else {
@@ -1609,77 +1646,64 @@ async function apiCreate(req, res) {
     if (!name) return json(res, { error: 'Name is required' }, 400);
     args.push('create', name);
   }
+  args.push('--host', host);
+  if (Number.isInteger(count) && count > 1) {
+    args.push('--count', String(count));
+  }
   if (data.localOnly) args.push('--local-only');
   args.push('--json');
 
-  const result = await cli(args, 180_000);
+  const result = await runAdminInstanceCommand(args, 180_000);
   invalidateAdminCaches();
   json(res, result, 201);
 }
 
-async function apiInstanceAction(res, name, action) {
+async function apiHostSync(res, hostName) {
+  const result = await syncManagedHost(hostName);
+  invalidateAdminCaches();
+  json(res, {
+    host: sanitize(hostName),
+    hostView: result,
+  });
+}
+
+async function apiInstanceAction(req, res, name, action) {
   const safe = sanitize(name);
   if (!safe) return json(res, { error: 'Invalid name' }, 400);
 
   try {
-    if (process.platform === 'darwin') {
-      const dashboardData = await getDashboardData();
-      const instance = (dashboardData?.instances || []).find((entry) => entry.name === safe) || null;
-      const plist = trimString(instance?.launchAgentPath) || join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
-      if (action === 'stop') {
-        await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 });
-      } else if (action === 'start') {
-        await execFileAsync('launchctl', ['load', plist], { timeout: 10_000 });
-      } else if (action === 'restart') {
-        await cli(['restart', 'chat'], 180_000);
-        return json(res, { ok: true, action: 'restart-all-chat', requestedName: safe });
-      }
-    } else {
-      const service = safe === 'owner' ? 'remotelab.service' : `remotelab-guest@${safe}.service`;
-      await execFileAsync('systemctl', [action, service], { timeout: 30_000 });
-    }
+    const body = await readBody(req);
+    const host = await resolveTargetHostName(body.host);
+    const result = await runAdminInstanceCommand([action, safe, '--host', host, '--json'], 180_000);
     invalidateAdminCaches();
-    json(res, { ok: true, action, name: safe });
+    json(res, result);
   } catch (err) {
     json(res, { ok: false, error: err.message || String(err) }, 500);
   }
 }
 
-async function apiDelete(res, name) {
+async function apiDelete(req, res, name) {
   const safe = sanitize(name);
   if (!safe) return json(res, { error: 'Invalid name' }, 400);
-  const dashboardData = await getDashboardData();
-  const instance = (dashboardData?.instances || []).find((entry) => entry.name === safe) || null;
-  if (instance?.kind === 'owner') {
-    return json(res, { ok: false, error: 'Owner instance cannot be deleted' }, 400);
-  }
-  const plist = trimString(instance?.launchAgentPath) || join(LAUNCH_AGENTS_DIR, `com.chatserver.${safe}.plist`);
-
-  if (process.platform === 'darwin') {
-    await execFileAsync('launchctl', ['unload', plist], { timeout: 10_000 }).catch(() => {});
-    await unlink(plist).catch(() => {});
-  } else {
-    const service = `remotelab-guest@${safe}.service`;
-    await execFileAsync('systemctl', ['disable', '--now', service], { timeout: 30_000 }).catch(() => {});
-    await unlink(join('/etc/remotelab/guest-instances', `${safe}.env`)).catch(() => {});
-  }
-
   try {
-    const registry = JSON.parse(await readFile(GUEST_REGISTRY_FILE, 'utf8'));
-    const filtered = registry.filter(r => r.name !== safe);
-    if (filtered.length < registry.length) {
-      await writeFile(GUEST_REGISTRY_FILE, JSON.stringify(filtered, null, 2) + '\n');
+    const body = await readBody(req);
+    const host = await resolveTargetHostName(body.host);
+    const dashboardData = await getDashboardData();
+    if (safe === 'owner' && host === pickDefaultFleetHost(dashboardData)) {
+      return json(res, { ok: false, error: 'Owner instance cannot be deleted' }, 400);
     }
+    const result = await runAdminInstanceCommand(['delete', safe, '--host', host, '--json'], 180_000);
+    invalidateAdminCaches();
+    json(res, result);
   } catch (err) {
-    return json(res, { ok: false, error: 'Registry update failed: ' + err.message }, 500);
+    json(res, { ok: false, error: err.message || String(err) }, 500);
   }
-
-  invalidateAdminCaches();
-  json(res, { ok: true, name: safe, action: 'delete' });
 }
 
 async function apiConverge(req, res) {
-  const result = await cli(['guest-instance', 'converge', '--all', '--json'], 180_000);
+  const body = await readBody(req);
+  const host = await resolveTargetHostName(body.host);
+  const result = await runAdminInstanceCommand(['converge', '--host', host, '--all', '--json'], 180_000);
   invalidateAdminCaches();
   json(res, result);
 }
@@ -1932,10 +1956,15 @@ const server = createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/instances/create') return await apiCreate(req, res);
     if (req.method === 'POST' && path === '/api/converge') return await apiConverge(req, res);
 
+    const hostSyncMatch = path.match(/^\/api\/hosts\/([a-z0-9-]+)\/sync$/);
+    if (req.method === 'POST' && hostSyncMatch) {
+      return await apiHostSync(res, hostSyncMatch[1]);
+    }
+
     const m = path.match(/^\/api\/instances\/([a-z0-9-]+)\/(stop|start|restart|delete)$/);
     if (req.method === 'POST' && m) {
-      if (m[2] === 'delete') return await apiDelete(res, m[1]);
-      return await apiInstanceAction(res, m[1], m[2]);
+      if (m[2] === 'delete') return await apiDelete(req, res, m[1]);
+      return await apiInstanceAction(req, res, m[1], m[2]);
     }
 
     res.writeHead(404);

@@ -134,22 +134,15 @@ try {
 
   server = await startServer({ home, localBin, port });
 
-  await waitFor(() => existsSync(toolsPath), 'default micro-agent bootstrap');
-  const tools = JSON.parse(readFileSync(toolsPath, 'utf8'));
-  const microAgent = tools.find((tool) => tool.id === 'micro-agent');
-
-  assert.ok(microAgent, 'startup should seed a default micro-agent tool');
-  assert.equal(microAgent.toolProfile, 'micro-agent');
-  assert.equal(microAgent.visibility, 'private');
-  assert.match(microAgent.command, /scripts\/micro-agent-router\.mjs$/);
-  assert.equal(microAgent.runtimeFamily, 'claude-stream-json');
+  await sleep(300);
+  assert.equal(existsSync(toolsPath), false, 'startup should not seed a default micro-agent tool');
 
   const response = await request(port, 'GET', '/api/tools');
   assert.equal(response.status, 200, response.text);
   assert.equal(
     response.json?.tools?.some((tool) => tool.id === 'micro-agent'),
-    true,
-    'seeded micro-agent should be visible through the tools API',
+    false,
+    'micro-agent should not appear through the tools API unless the owner explicitly installs it',
   );
 } finally {
   await stopServer(server);

@@ -116,6 +116,13 @@ function isHiddenEvent(event) {
   return HIDDEN_EVENT_TYPES.has(event?.type);
 }
 
+function isAutomaticContinuationEvent(event) {
+  return event?.type === 'context_operation'
+    && event.operation === 'continue_turn'
+    && event.trigger === 'automatic'
+    && event.phase === 'applied';
+}
+
 function isVisibleEvent(event) {
   if (!event || typeof event !== 'object') return false;
   if (event.type === 'message') return true;
@@ -263,6 +270,51 @@ function findLastHiddenEventIndex(events = []) {
   return -1;
 }
 
+function findAutomaticContinuationIndex(events = []) {
+  for (let index = 0; index < events.length; index += 1) {
+    if (isAutomaticContinuationEvent(events[index])) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function hasAssistantMessage(events = []) {
+  return events.some((event) => isAssistantMessageEvent(event));
+}
+
+function emitAutoContinuedTurnBody(target, bodyEvents, {
+  mirroredAttachmentSeqs = null,
+  localMarkdownImageRewriteMapBySeq = null,
+} = {}) {
+  const continuationIndex = findAutomaticContinuationIndex(bodyEvents);
+  if (continuationIndex < 1) return false;
+
+  const preContinuationEvents = bodyEvents.slice(0, continuationIndex);
+  const lastHiddenBeforeContinuation = findLastHiddenEventIndex(preContinuationEvents);
+  const originalReplyEvents = preContinuationEvents.slice(lastHiddenBeforeContinuation + 1);
+  if (!hasAssistantMessage(originalReplyEvents)) return false;
+
+  const foldedPrefix = preContinuationEvents.slice(0, lastHiddenBeforeContinuation + 1);
+  if (foldedPrefix.length > 0) {
+    target.push(buildThinkingBlockEvent(foldedPrefix, 'completed'));
+  }
+
+  for (const event of originalReplyEvents) {
+    pushVisibleEvent(target, event, {
+      stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+      localMarkdownImageRewriteMapBySeq,
+    });
+  }
+
+  emitSegmentedTurnBody(target, bodyEvents.slice(continuationIndex), {
+    sessionRunning: false,
+    mirroredAttachmentSeqs,
+    localMarkdownImageRewriteMapBySeq,
+  });
+  return true;
+}
+
 function findTurnForBlockRange(history = [], startSeq = 0, endSeq = 0) {
   const normalizedHistory = Array.isArray(history) ? history : [];
   let startIndex = -1;
@@ -322,6 +374,16 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
 
   if (sessionRunning) {
     target.push(buildThinkingBlockEvent(bodyEvents, 'running'));
+    if (deliveryEvent) {
+      target.push(deliveryEvent);
+    }
+    return;
+  }
+
+  if (emitAutoContinuedTurnBody(target, bodyEvents, {
+    mirroredAttachmentSeqs,
+    localMarkdownImageRewriteMapBySeq,
+  })) {
     if (deliveryEvent) {
       target.push(deliveryEvent);
     }

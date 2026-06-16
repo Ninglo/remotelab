@@ -29,8 +29,8 @@ const DEFAULT_CONFIG_PATH = join(homedir(), '.config', 'remotelab', 'feishu-conn
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_STATUS_TAIL = 5;
 const DEFAULT_BACKFILL_COUNT = 2;
-const DEFAULT_BACKFILL_TOOL = 'micro-agent';
-const DEFAULT_BACKFILL_MODEL = 'gpt-5.4';
+const DEFAULT_BACKFILL_TOOL = 'codex';
+const DEFAULT_BACKFILL_MODEL = 'gpt-5.5';
 const DEFAULT_BACKFILL_EFFORT = 'low';
 const DEFAULT_LAUNCHD_LABEL = 'com.remotelab.feishu-connector';
 

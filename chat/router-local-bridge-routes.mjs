@@ -2,7 +2,8 @@ import { createReadStream } from 'fs';
 import { readBody } from '../lib/utils.mjs';
 import { PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { buildLocalHelperReleaseManifest, ensureLocalHelperRelease } from '../lib/local-helper-release.mjs';
-import { getLocalBridgeDeviceByToken } from './local-bridge-store.mjs';
+import { buildLocalBridgeBootstrapInstallBundle, buildLocalBridgeBootstrapInstaller } from '../lib/local-bridge-installer-scripts.mjs';
+import { getLocalBridgeBootstrapToken, getLocalBridgeDeviceByToken } from './local-bridge-store.mjs';
 import {
   completeLocalBridgeCommandForDevice,
   createSessionLocalBridgeBootstrap,
@@ -20,6 +21,13 @@ import {
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeForwardedPrefix(value) {
+  const trimmed = trimString(value);
+  if (!trimmed) return '';
+  const normalized = `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
+  return normalized === '/' ? '' : normalized;
 }
 
 function getBearerToken(req) {
@@ -43,10 +51,11 @@ function sleep(ms) {
 function resolveRequestBaseUrl(req) {
   const forwardedProto = trimString(req?.headers?.['x-forwarded-proto']);
   const forwardedHost = trimString(req?.headers?.['x-forwarded-host']);
+  const prefix = normalizeForwardedPrefix(req?.headers?.['x-forwarded-prefix']);
   const host = forwardedHost || trimString(req?.headers?.host);
   const protocol = forwardedProto || (req?.socket?.encrypted ? 'https' : 'http');
   if (!host) return trimString(PUBLIC_BASE_URL);
-  return `${protocol}://${host}`;
+  return `${protocol}://${host}${prefix}`;
 }
 
 async function authenticateDeviceRequest(req, deviceId) {
@@ -156,6 +165,34 @@ export async function handleLocalBridgePublicRoutes({
       });
     } catch (error) {
       writeJson(res, error?.statusCode || 400, { error: error.message || 'Failed to redeem bootstrap token' });
+    }
+    return true;
+  }
+
+  if (parts.length === 5 && parts[2] === 'bootstrap' && parts[3] === 'installers' && parts[4] === 'download' && req.method === 'GET') {
+    const token = trimString(parsedUrl?.query?.bootstrapToken);
+    const platform = trimString(parsedUrl?.query?.platform);
+    const format = trimString(parsedUrl?.query?.format);
+    const bootstrap = await getLocalBridgeBootstrapToken(token, { includeUsed: true });
+    if (!bootstrap) {
+      writeJson(res, 404, { error: 'Bootstrap token not found or expired' });
+      return true;
+    }
+    try {
+      const installer = buildLocalBridgeBootstrapInstaller({
+        baseUrl: resolveRequestBaseUrl(req),
+        token: bootstrap.token,
+        platform,
+        format,
+      });
+      res.writeHead(200, {
+        'Content-Type': installer.contentType,
+        'Content-Disposition': `attachment; filename="${installer.filename}"`,
+        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+      });
+      res.end(installer.body);
+    } catch (error) {
+      writeJson(res, error?.statusCode || 400, { error: error.message || 'Failed to build installer download' });
     }
     return true;
   }
@@ -314,7 +351,8 @@ export async function handleLocalBridgeOwnerRoutes({
     }
     try {
       const bootstrap = await createSessionLocalBridgeBootstrap(sessionId, payload || {});
-      writeJson(res, 201, { bootstrap });
+      const installBundle = buildLocalBridgeBootstrapInstallBundle(resolveRequestBaseUrl(req), bootstrap.token);
+      writeJson(res, 201, { bootstrap, ...installBundle });
     } catch (error) {
       writeJson(res, error?.statusCode || 400, { error: error.message || 'Failed to create local bridge bootstrap token' });
     }

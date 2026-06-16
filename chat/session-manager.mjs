@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
-import { PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { IS_GUEST_INSTANCE, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
@@ -42,6 +42,7 @@ import { broadcastOwners, getClientsMatching } from './ws-clients.mjs';
 import {
   buildTemporarySessionName,
   isSessionAutoRenamePending,
+  isSessionTitleLocked,
   normalizeSessionDescription,
   normalizeSessionGroup,
   resolveInitialSessionName,
@@ -107,7 +108,8 @@ import {
 } from './apps.mjs';
 import {
   shouldRunDispatch,
-  shouldUseAsyncDispatchPlanning,
+  shouldPrepareContinuationCheck,
+  checkSessionContinuationNeed,
   executeContinuationPlan,
   isTrivialContinuationPlan,
   planSessionContinuations,
@@ -116,6 +118,9 @@ import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import {
   normalizeSessionTaskCard,
 } from './session-task-card.mjs';
+import {
+  createSessionProjectMaintenanceScheduler,
+} from './session-project-maintenance.mjs';
 import {
   buildDelegationHandoff,
   clipCompactionSection,
@@ -202,6 +207,12 @@ import {
   resolveSessionTemplateId,
   resolveSessionTemplateName,
 } from './session-source-resolution.mjs';
+import {
+  isLegacyMicroAgentToolId,
+  normalizeLegacyToolId,
+  PRODUCT_DEFAULT_CODEX_EFFORT,
+  PRODUCT_DEFAULT_CODEX_MODEL,
+} from '../lib/legacy-micro-agent.mjs';
 
 const VISITOR_TURN_GUARDRAIL = [
   '<private>',
@@ -235,6 +246,28 @@ function normalizeSessionSidebarOrder(value) {
     ? value
     : parseInt(String(value || '').trim(), 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function normalizeLegacyRuntimeRequest({
+  tool = '',
+  model = '',
+  effort = '',
+  thinking = false,
+} = {}) {
+  if (!isLegacyMicroAgentToolId(tool)) {
+    return {
+      tool: normalizeLegacyToolId(tool),
+      model,
+      effort,
+      thinking,
+    };
+  }
+  return {
+    tool: normalizeLegacyToolId(tool),
+    model: PRODUCT_DEFAULT_CODEX_MODEL,
+    effort: PRODUCT_DEFAULT_CODEX_EFFORT,
+    thinking: false,
+  };
 }
 
 const sessionRuntimeStateById = new Map();
@@ -335,6 +368,28 @@ function clipFailurePreview(text, maxChars = 280) {
   return `${normalized.slice(0, Math.max(1, maxChars - 3)).trimEnd()}...`;
 }
 
+function normalizeProviderFailurePreview(text, maxChars = 280) {
+  const clipped = clipFailurePreview(text, Math.max(maxChars * 2, maxChars));
+  if (!clipped) return '';
+  const parts = clipped
+    .split(/\s+\|\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part && !part.includes('remotelab.context_metrics'));
+  return clipFailurePreview(parts.join(' | ') || clipped, maxChars);
+}
+
+function isCodexMissingRolloutFailure(text) {
+  const normalized = typeof text === 'string' ? text : '';
+  return /thread\/resume failed:\s*no rollout found for thread id/i.test(normalized)
+    || /\bno rollout found for thread id\b/i.test(normalized);
+}
+
+function isCodexResumeUnavailableFailure(text) {
+  const normalized = typeof text === 'string' ? text : '';
+  return isCodexMissingRolloutFailure(normalized)
+    || /Saved Codex resume thread is no longer available/i.test(normalized);
+}
+
 async function collectRunOutputPreview(runId, maxLines = 3) {
   const records = await readRunSpoolRecords(runId);
   if (!Array.isArray(records) || records.length === 0) return '';
@@ -351,14 +406,17 @@ async function collectRunOutputPreview(runId, maxLines = 3) {
 }
 
 async function deriveStructuredRuntimeFailureReason(runId, previewText = '') {
-  const preview = clipFailurePreview(previewText) || await collectRunOutputPreview(runId);
+  const preview = normalizeProviderFailurePreview(previewText) || await collectRunOutputPreview(runId);
+  if (isCodexMissingRolloutFailure(preview)) {
+    return 'Saved Codex resume thread is no longer available; RemoteLab cleared it. Please resend the message.';
+  }
   if (preview && /(请登录|登录超时|auth|authentication|sso|sign in|login)/i.test(preview)) {
     return `Provider requires interactive login before RemoteLab can use it: ${preview}`;
   }
   if (preview) {
-    return `Provider exited without emitting structured events: ${preview}`;
+    return `Provider exited before completing the turn: ${preview}`;
   }
-  return 'Provider exited without emitting structured events';
+  return 'Provider exited before completing the turn';
 }
 
 function generateId() {
@@ -548,12 +606,24 @@ function getFollowUpQueueCount(meta) {
   return getFollowUpQueue(meta).length;
 }
 
-function getPendingPlanningQueue(meta) {
-  return Array.isArray(meta?.pendingPlanningQueue) ? meta.pendingPlanningQueue : [];
+function getPendingContinuationQueue(meta) {
+  return Array.isArray(meta?.pendingContinuationQueue) ? meta.pendingContinuationQueue : [];
 }
 
-function getPendingPlanningQueueCount(meta) {
-  return getPendingPlanningQueue(meta).length;
+function getPendingContinuationQueueCount(meta) {
+  return getPendingContinuationQueue(meta).length;
+}
+
+function setPendingContinuationQueue(meta, entries) {
+  const nextEntries = Array.isArray(entries) ? entries : [];
+  if (nextEntries.length > 0) {
+    meta.pendingContinuationQueue = nextEntries;
+  } else {
+    delete meta.pendingContinuationQueue;
+  }
+  if (Object.prototype.hasOwnProperty.call(meta, 'pendingPlanningQueue')) {
+    delete meta.pendingPlanningQueue;
+  }
 }
 
 
@@ -756,16 +826,16 @@ function findQueuedFollowUpByResponse(meta, responseId) {
   return getFollowUpQueue(meta).find((entry) => trimString(entry?.responseId || entry?.requestId) === normalized) || null;
 }
 
-function findPendingDispatchByRequest(meta, requestId) {
+function findPendingContinuationByRequest(meta, requestId) {
   const normalized = trimString(requestId);
   if (!normalized) return null;
-  return getPendingPlanningQueue(meta).find((entry) => trimString(entry?.requestId) === normalized) || null;
+  return getPendingContinuationQueue(meta).find((entry) => trimString(entry?.requestId) === normalized) || null;
 }
 
-function findPendingDispatchByResponse(meta, responseId) {
+function findPendingContinuationByResponse(meta, responseId) {
   const normalized = trimString(responseId);
   if (!normalized) return null;
-  return getPendingPlanningQueue(meta).find((entry) => trimString(entry?.responseId || entry?.requestId) === normalized) || null;
+  return getPendingContinuationQueue(meta).find((entry) => trimString(entry?.responseId || entry?.requestId) === normalized) || null;
 }
 
 function formatQueuedFollowUpTextEntry(entry, index) {
@@ -861,6 +931,7 @@ async function flushQueuedFollowUps(sessionId) {
     return runtimeState.followUpFlushPromise;
   }
 
+  let followUpRescheduleDelayMs = null;
   const promise = (async () => {
     clearFollowUpFlushTimer(sessionId);
 
@@ -928,12 +999,15 @@ async function flushQueuedFollowUps(sessionId) {
     return true;
   })().catch((error) => {
     console.error(`[follow-up-queue] failed to flush ${sessionId}: ${error.message}`);
-    scheduleQueuedFollowUpDispatch(sessionId, FOLLOW_UP_FLUSH_DELAY_MS * 2);
+    followUpRescheduleDelayMs = FOLLOW_UP_FLUSH_DELAY_MS * 2;
     return false;
   }).finally(() => {
     const current = sessionRuntimeStateById.get(sessionId);
     if (current?.followUpFlushPromise === promise) {
       delete current.followUpFlushPromise;
+      if (followUpRescheduleDelayMs !== null) {
+        scheduleQueuedFollowUpDispatch(sessionId, followUpRescheduleDelayMs);
+      }
     }
   });
 
@@ -947,24 +1021,22 @@ async function flushPendingDispatchQueue(sessionId) {
     return runtimeState.pendingDispatchFlushPromise;
   }
 
+  let pendingDispatchRescheduleDelayMs = null;
   const promise = (async () => {
     clearPendingDispatchFlushTimer(sessionId);
 
     const rawSession = await findSessionMeta(sessionId);
     if (!rawSession || rawSession.archived) return false;
 
-    const queue = getPendingPlanningQueue(rawSession);
+    const queue = getPendingContinuationQueue(rawSession);
     if (queue.length === 0) return false;
 
     const entry = queue[0];
     if (!entry || !trimString(entry.requestId) || !trimString(entry.text)) {
       await mutateSessionMeta(sessionId, (session) => {
-        const currentQueue = getPendingPlanningQueue(session);
+        const currentQueue = getPendingContinuationQueue(session);
         if (currentQueue.length === 0) return false;
-        session.pendingPlanningQueue = currentQueue.slice(1);
-        if (session.pendingPlanningQueue.length === 0) {
-          delete session.pendingPlanningQueue;
-        }
+        setPendingContinuationQueue(session, currentQueue.slice(1));
         session.updatedAt = nowIso();
         return true;
       });
@@ -988,53 +1060,65 @@ async function flushPendingDispatchQueue(sessionId) {
       let plannedElsewhere = false;
       if (shouldRunDispatch(session, planningOptions)) {
         try {
-          const continuationPlan = await planSessionContinuations({
-            session,
-            message: normalizedText,
-            loadSessionHistory: (targetSessionId) => loadHistory(targetSessionId, { includeBodies: false }),
-            runPrompt: (prompt) => runDetachedAssistantPrompt({
-              ...session,
-              id: sessionId,
-              tool: session.tool,
-              model: undefined,
-              effort: 'low',
-              thinking: false,
-            }, prompt, {
-              usageTracking: {
-                operation: 'session_continuation_planner',
-              },
-            }),
+          const history = await loadHistory(sessionId, { includeBodies: false });
+          const runRoutingPrompt = (operation) => (prompt) => runDetachedAssistantPrompt({
+            ...session,
+            id: sessionId,
+            tool: session.tool,
+            model: undefined,
+            effort: 'low',
+            thinking: false,
+          }, prompt, {
+            usageTracking: {
+              operation,
+            },
           });
 
-          if (!isTrivialContinuationPlan(continuationPlan)) {
-            const planningOutcome = await executeContinuationPlan({
-              plan: continuationPlan,
-              sourceSession: session,
-              sourceSessionId: sessionId,
+          const continuationGate = await checkSessionContinuationNeed({
+            session,
+            message: normalizedText,
+            history,
+            runPrompt: runRoutingPrompt('session_continuation_gate'),
+          });
+
+          if (continuationGate.action === 'needs_planning') {
+            const continuationPlan = await planSessionContinuations({
+              session,
               message: normalizedText,
-              images: [],
-              options: planningOptions,
-              createSession: (folder, tool, name, extra) => createSession(folder, tool, name, extra),
-              submitMessage: submitHttpMessage,
-              appendEvent,
-              broadcastInvalidation: broadcastSessionInvalidation,
-              messageEvent,
-              contextOperationEvent,
-              buildSessionNavigationHref,
-              prepareFullParentContext: async () => {
-                const [snapshot, contextHead] = await Promise.all([
-                  getHistorySnapshot(sessionId),
-                  getContextHead(sessionId),
-                ]);
-                return getOrPrepareForkContext(sessionId, snapshot, contextHead);
-              },
-              setPreparedChildContext: async (childSessionId, prepared) => setForkContext(childSessionId, prepared),
-              createDerivedRequestId: (destination, index) => {
-                const prefix = destination?.mode === 'fork' ? 'fork' : 'fresh';
-                return createInternalRequestId(`continuation_${prefix}_${index + 1}`);
-              },
+              history,
+              runPrompt: runRoutingPrompt('session_continuation_planner'),
             });
-            plannedElsewhere = planningOutcome.applied === true;
+
+            if (!isTrivialContinuationPlan(continuationPlan)) {
+              const planningOutcome = await executeContinuationPlan({
+                plan: continuationPlan,
+                sourceSession: session,
+                sourceSessionId: sessionId,
+                message: normalizedText,
+                images: [],
+                options: planningOptions,
+                createSession: (folder, tool, name, extra) => createSession(folder, tool, name, extra),
+                submitMessage: submitHttpMessage,
+                appendEvent,
+                broadcastInvalidation: broadcastSessionInvalidation,
+                messageEvent,
+                contextOperationEvent,
+                buildSessionNavigationHref,
+                prepareFullParentContext: async () => {
+                  const [snapshot, contextHead] = await Promise.all([
+                    getHistorySnapshot(sessionId),
+                    getContextHead(sessionId),
+                  ]);
+                  return getOrPrepareForkContext(sessionId, snapshot, contextHead);
+                },
+                setPreparedChildContext: async (childSessionId, prepared) => setForkContext(childSessionId, prepared),
+                createDerivedRequestId: (destination, index) => {
+                  const prefix = destination?.mode === 'fork' ? 'fork' : 'fresh';
+                  return createInternalRequestId(`continuation_${prefix}_${index + 1}`);
+                },
+              });
+              plannedElsewhere = planningOutcome.applied === true;
+            }
           }
         } catch (dispatchError) {
           console.error(`[session-continuation] Async planning error during ${sessionId?.slice(0, 8)}: ${dispatchError.message}`);
@@ -1050,26 +1134,22 @@ async function flushPendingDispatchQueue(sessionId) {
       }
       completed = true;
     } catch (error) {
-      console.error(`[session-continuation] Failed to flush accepted planning queue for ${sessionId}: ${error.message}`);
+      console.error(`[session-continuation] Failed to flush accepted continuation queue for ${sessionId}: ${error.message}`);
     }
 
     if (!completed) {
-      schedulePendingDispatchFlush(sessionId, FOLLOW_UP_FLUSH_DELAY_MS * 2);
+      pendingDispatchRescheduleDelayMs = FOLLOW_UP_FLUSH_DELAY_MS * 2;
       return false;
     }
 
     const cleared = await mutateSessionMeta(sessionId, (session) => {
-      const currentQueue = getPendingPlanningQueue(session);
+      const currentQueue = getPendingContinuationQueue(session);
       if (currentQueue.length === 0) return false;
       const [head, ...rest] = currentQueue;
       if (trimString(head?.requestId) !== trimString(entry.requestId)) {
         return false;
       }
-      if (rest.length > 0) {
-        session.pendingPlanningQueue = rest;
-      } else {
-        delete session.pendingPlanningQueue;
-      }
+      setPendingContinuationQueue(session, rest);
       session.updatedAt = nowIso();
       return true;
     });
@@ -1077,14 +1157,17 @@ async function flushPendingDispatchQueue(sessionId) {
     if (cleared.changed) {
       broadcastSessionInvalidation(sessionId);
     }
-    if (getPendingPlanningQueueCount(cleared.meta) > 0) {
-      schedulePendingDispatchFlush(sessionId, 0);
+    if (getPendingContinuationQueueCount(cleared.meta) > 0) {
+      pendingDispatchRescheduleDelayMs = 0;
     }
     return true;
   })().finally(() => {
     const current = sessionRuntimeStateById.get(sessionId);
     if (current?.pendingDispatchFlushPromise === promise) {
       delete current.pendingDispatchFlushPromise;
+      if (pendingDispatchRescheduleDelayMs !== null) {
+        schedulePendingDispatchFlush(sessionId, pendingDispatchRescheduleDelayMs);
+      }
     }
   });
 
@@ -1129,6 +1212,9 @@ function schedulePendingDispatchFlush(sessionId, delayMs = 0) {
 function sanitizeForkedEvent(event) {
   if (!event || typeof event !== 'object') return null;
   const next = JSON.parse(JSON.stringify(event));
+  if (IS_GUEST_INSTANCE && next.type === 'manager_context') {
+    return null;
+  }
   delete next.seq;
   delete next.runId;
   delete next.requestId;
@@ -1443,6 +1529,14 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   )
     ? await deriveStructuredRuntimeFailureReason(runId, terminalProjection?.preview || projection.preview)
     : null;
+  const structuredFailurePreview = terminalProjection?.preview || projection.preview;
+  const structuredRuntimeFailureReason = (
+    isStructuredRuntime
+    && inferredState === 'failed'
+    && !run.failureReason
+  )
+    ? await deriveStructuredRuntimeFailureReason(runId, structuredFailurePreview)
+    : null;
 
   if (zeroStructuredOutputReason) {
     run = await updateRun(runId, (current) => ({
@@ -1452,6 +1546,24 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       result,
       failureReason: zeroStructuredOutputReason,
     })) || run;
+  }
+  if (structuredRuntimeFailureReason) {
+    run = await updateRun(runId, (current) => ({
+      ...current,
+      failureReason: structuredRuntimeFailureReason,
+    })) || run;
+  }
+  if (
+    projection.runtimeInvocation.isCodexFamily
+    && run.codexThreadId
+    && isCodexResumeUnavailableFailure([
+      structuredFailurePreview,
+      structuredRuntimeFailureReason,
+      run.failureReason,
+    ].filter(Boolean).join(' | '))
+  ) {
+    const cleared = await clearPersistedResumeIds(sessionId);
+    sessionChanged = sessionChanged || cleared;
   }
 
   if (!isTerminalRunState(run.state)) {
@@ -1536,6 +1648,14 @@ async function touchSessionMeta(sessionId, extra = {}) {
 }
 
 const {
+  schedulePostTurnProjectMaintenance,
+} = createSessionProjectMaintenanceScheduler({
+  createSession,
+  loadSessionsMeta,
+  sendMessage,
+});
+
+const {
   applyGeneratedSessionGrouping,
   maybePublishRunResultAssets,
   maybeRunReplySelfCheck,
@@ -1576,6 +1696,7 @@ const {
   isInternalSession,
   isReplySelfRepairOperation,
   isSessionAutoRenamePending,
+  isSessionTitleLocked,
   isSessionRunning,
   isTerminalRunState,
   listRunIds,
@@ -1597,6 +1718,7 @@ const {
   runDetachedAssistantPrompt,
   sanitizeEmailCompletionTargets,
   scheduleQueuedFollowUpDispatch,
+  schedulePostTurnProjectMaintenance,
   scheduleSessionTaskCardSuggestion,
   sendCompletionPush,
   sendMessage,
@@ -2019,7 +2141,7 @@ async function buildManagerTurnContextText(session, _text = '') {
   return buildTurnContextHook(session);
 }
 
-function resolveResumeState(toolId, session, options = {}) {
+function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
   if (options.freshThread === true) {
     return {
       hasResume: false,
@@ -2029,7 +2151,10 @@ function resolveResumeState(toolId, session, options = {}) {
   }
 
   const tool = typeof toolId === 'string' ? toolId.trim() : '';
-  if (tool === 'claude') {
+  const family = typeof runtimeFamily === 'string' && runtimeFamily.trim()
+    ? runtimeFamily.trim()
+    : (typeof options.runtimeFamily === 'string' ? options.runtimeFamily.trim() : '');
+  if (tool === 'claude' || family === 'claude-stream-json') {
     const claudeSessionId = session?.claudeSessionId || null;
     return {
       hasResume: !!claudeSessionId,
@@ -2038,7 +2163,7 @@ function resolveResumeState(toolId, session, options = {}) {
     };
   }
 
-  if (tool === 'codex') {
+  if (tool === 'codex' || family === 'codex-json') {
     const codexThreadId = session?.codexThreadId || null;
     return {
       hasResume: !!codexThreadId,
@@ -2060,13 +2185,17 @@ function wrapPrivatePromptBlock(text) {
   return ['<private>', normalized, '</private>'].join('\n');
 }
 
+function shouldPersistManagerTurnContext() {
+  return !IS_GUEST_INSTANCE;
+}
+
 export async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}) {
   const toolDefinition = await getToolDefinitionAsync(effectiveTool);
   const promptMode = toolDefinition?.promptMode === 'bare-user'
     ? 'bare-user'
     : 'default';
   const flattenPrompt = toolDefinition?.flattenPrompt === true;
-  const { hasResume } = resolveResumeState(effectiveTool, session, options);
+  const { hasResume } = resolveResumeState(effectiveTool, session, options, toolDefinition?.runtimeFamily || '');
   let continuationContext = '';
 
   if (!hasResume && options.skipSessionContinuation !== true) {
@@ -2161,7 +2290,7 @@ function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
     async (newName) => {
       const currentSession = await getSession(sessionId);
       if (!isSessionAutoRenamePending(currentSession)) return null;
-      return renameSession(sessionId, newName);
+      return renameSession(sessionId, newName, { lockTitle: false });
     },
   )
     .then(async (result) => {
@@ -2272,7 +2401,7 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
       delete session.activeRunId;
       changed = true;
     }
-    if (!compacting) {
+    if (!compacting && run.state === 'completed') {
       if (run.claudeSessionId && session.claudeSessionId !== run.claudeSessionId) {
         session.claudeSessionId = run.claudeSessionId;
         changed = true;
@@ -2469,7 +2598,7 @@ export async function startDetachedRunObservers() {
         continue;
       }
     }
-    if (getPendingPlanningQueueCount(meta) > 0) {
+    if (getPendingContinuationQueueCount(meta) > 0) {
       schedulePendingDispatchFlush(meta.id, 0);
     }
     if (getFollowUpQueueCount(meta) > 0) {
@@ -2627,7 +2756,7 @@ export async function getSessionReplyPublication(sessionId, responseId) {
   const sessionMeta = await findSessionMeta(sessionId);
   if (!sessionMeta) return null;
 
-  const pendingEntry = findPendingDispatchByResponse(sessionMeta, normalized);
+  const pendingEntry = findPendingContinuationByResponse(sessionMeta, normalized);
   const queuedEntry = findQueuedFollowUpByResponse(sessionMeta, normalized);
   const resolved = await findReplyPublicationRunByResponseId(sessionId, normalized);
   const rootRun = resolved?.run || null;
@@ -2673,6 +2802,12 @@ export async function getRunState(runId) {
 }
 
 export async function createSession(folder, tool, name, extra = {}) {
+  const normalizedRuntimeRequest = normalizeLegacyRuntimeRequest({
+    tool,
+    model: typeof extra.model === 'string' ? extra.model.trim() : '',
+    effort: typeof extra.effort === 'string' ? extra.effort.trim() : '',
+    thinking: extra.thinking === true,
+  });
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
   const { createdByPrincipalId: requestedCreatedByPrincipalId, visitorId: requestedVisitorId } = resolveRequestedSessionPrincipalFields(extra);
   const requestedTemplateId = normalizeAppId(extra.templateId || extra.agentId);
@@ -2688,12 +2823,12 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedStarterPreset = normalizeSessionStarterPreset(extra.starterPreset);
   const hasRequestedSystemPrompt = Object.prototype.hasOwnProperty.call(extra, 'systemPrompt');
   const requestedSystemPrompt = typeof extra.systemPrompt === 'string' ? extra.systemPrompt : '';
-  const hasRequestedModel = Object.prototype.hasOwnProperty.call(extra, 'model');
-  const requestedModel = typeof extra.model === 'string' ? extra.model.trim() : '';
-  const hasRequestedEffort = Object.prototype.hasOwnProperty.call(extra, 'effort');
-  const requestedEffort = typeof extra.effort === 'string' ? extra.effort.trim() : '';
-  const hasRequestedThinking = Object.prototype.hasOwnProperty.call(extra, 'thinking');
-  const requestedThinking = extra.thinking === true;
+  const hasRequestedModel = Object.prototype.hasOwnProperty.call(extra, 'model') || isLegacyMicroAgentToolId(tool);
+  const requestedModel = normalizedRuntimeRequest.model;
+  const hasRequestedEffort = Object.prototype.hasOwnProperty.call(extra, 'effort') || isLegacyMicroAgentToolId(tool);
+  const requestedEffort = normalizedRuntimeRequest.effort;
+  const hasRequestedThinking = Object.prototype.hasOwnProperty.call(extra, 'thinking') || isLegacyMicroAgentToolId(tool);
+  const requestedThinking = normalizedRuntimeRequest.thinking;
   const hasRequestedSourceContext = Object.prototype.hasOwnProperty.call(extra, 'sourceContext');
   const requestedSourceContext = normalizeSourceContext(extra.sourceContext);
   const hasRequestedActiveAgreements = Object.prototype.hasOwnProperty.call(extra, 'activeAgreements');
@@ -2735,9 +2870,15 @@ export async function createSession(folder, tool, name, extra = {}) {
           externalTriggerId: externalTriggerId || updated.externalTriggerId || '',
         });
         if (isSessionAutoRenamePending(updated) && !refreshedInitialNaming.autoRenamePending) {
-          if (updated.name !== refreshedInitialNaming.name || updated.autoRenamePending !== false) {
+          const nextTitleLocked = true;
+          if (
+            updated.name !== refreshedInitialNaming.name
+            || updated.autoRenamePending !== false
+            || updated.titleLocked !== nextTitleLocked
+          ) {
             updated.name = refreshedInitialNaming.name;
             updated.autoRenamePending = false;
+            updated.titleLocked = nextTitleLocked;
             changed = true;
           }
         }
@@ -2801,6 +2942,11 @@ export async function createSession(folder, tool, name, extra = {}) {
 
         if (requestedStarterPreset && updated.starterPreset !== requestedStarterPreset) {
           updated.starterPreset = requestedStarterPreset;
+          changed = true;
+        }
+
+        if (updated.tool !== normalizedRuntimeRequest.tool) {
+          updated.tool = normalizedRuntimeRequest.tool;
           changed = true;
         }
 
@@ -2872,13 +3018,14 @@ export async function createSession(folder, tool, name, extra = {}) {
     const session = {
       id,
       folder,
-      tool,
+      tool: normalizedRuntimeRequest.tool,
       sourceId: requestedSourceId,
       name: initialNaming.name,
       autoRenamePending: initialNaming.autoRenamePending,
       created: now,
       updatedAt: now,
     };
+    if (!initialNaming.autoRenamePending) session.titleLocked = true;
 
     if (requestedGroup) session.group = requestedGroup;
     if (requestedDescription) session.description = requestedDescription;
@@ -2896,7 +3043,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedSystemPrompt) session.systemPrompt = requestedSystemPrompt;
     if (requestedModel) session.model = requestedModel;
     if (requestedEffort) session.effort = requestedEffort;
-    if (requestedThinking) session.thinking = true;
+    if (hasRequestedThinking) session.thinking = requestedThinking;
     if (extra.internalRole) session.internalRole = extra.internalRole;
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
@@ -2986,10 +3133,18 @@ export async function renameSession(id, name, options = {}) {
   const result = await mutateSessionMeta(id, (session) => {
     const preserveAutoRename = options.preserveAutoRename === true;
     const nextPending = preserveAutoRename;
-    const changed = session.name !== nextName || session.autoRenamePending !== nextPending;
+    const lockTitle = options.lockTitle !== false && preserveAutoRename !== true;
+    const changed = session.name !== nextName
+      || session.autoRenamePending !== nextPending
+      || session.titleLocked !== lockTitle;
     if (!changed) return false;
     session.name = nextName;
     session.autoRenamePending = nextPending;
+    if (lockTitle) {
+      session.titleLocked = true;
+    } else {
+      delete session.titleLocked;
+    }
     session.updatedAt = nowIso();
     return true;
   });
@@ -3265,12 +3420,31 @@ export async function updateSessionWorkflowClassification(id, payload = {}) {
 }
 
 async function updateSessionTool(id, tool) {
-  const nextTool = typeof tool === 'string' ? tool.trim() : '';
+  const nextTool = normalizeLegacyToolId(tool);
   if (!nextTool) return null;
+  const migratingLegacyMicroAgent = isLegacyMicroAgentToolId(tool);
 
   const result = await mutateSessionMeta(id, (session) => {
-    if (session.tool === nextTool) return false;
-    session.tool = nextTool;
+    let changed = false;
+    if (session.tool !== nextTool) {
+      session.tool = nextTool;
+      changed = true;
+    }
+    if (migratingLegacyMicroAgent) {
+      if ((session.model || '') !== PRODUCT_DEFAULT_CODEX_MODEL) {
+        session.model = PRODUCT_DEFAULT_CODEX_MODEL;
+        changed = true;
+      }
+      if ((session.effort || '') !== PRODUCT_DEFAULT_CODEX_EFFORT) {
+        session.effort = PRODUCT_DEFAULT_CODEX_EFFORT;
+        changed = true;
+      }
+      if (session.thinking !== false) {
+        session.thinking = false;
+        changed = true;
+      }
+    }
+    if (!changed) return false;
     session.updatedAt = nowIso();
     return true;
   });
@@ -3288,7 +3462,8 @@ async function applySessionTemplateMetadata(id, template, extra = {}) {
     const nextTemplateId = normalizeAppId(template?.id);
     const nextTemplateName = typeof template?.name === 'string' ? template.name.trim() : '';
     const nextSystemPrompt = typeof template?.systemPrompt === 'string' ? template.systemPrompt : '';
-    const nextTool = typeof template?.tool === 'string' ? template.tool.trim() : '';
+    const nextTool = normalizeLegacyToolId(template?.tool);
+    const migratingLegacyMicroAgent = isLegacyMicroAgentToolId(template?.tool);
 
     if (nextTemplateId) {
       if (session.templateId !== nextTemplateId) {
@@ -3323,6 +3498,20 @@ async function applySessionTemplateMetadata(id, template, extra = {}) {
     if (nextTool && session.tool !== nextTool) {
       session.tool = nextTool;
       changed = true;
+    }
+    if (migratingLegacyMicroAgent) {
+      if ((session.model || '') !== PRODUCT_DEFAULT_CODEX_MODEL) {
+        session.model = PRODUCT_DEFAULT_CODEX_MODEL;
+        changed = true;
+      }
+      if ((session.effort || '') !== PRODUCT_DEFAULT_CODEX_EFFORT) {
+        session.effort = PRODUCT_DEFAULT_CODEX_EFFORT;
+        changed = true;
+      }
+      if (session.thinking !== false) {
+        session.thinking = false;
+        changed = true;
+      }
     }
 
     if (Object.prototype.hasOwnProperty.call(extra, 'templateAppliedAt')) {
@@ -3360,9 +3549,14 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
     return getSession(id);
   }
 
-  const nextTool = hasToolPatch && typeof patch.tool === 'string'
-    ? patch.tool.trim()
-    : '';
+  const normalizedRuntimePatch = normalizeLegacyRuntimeRequest({
+    tool: hasToolPatch ? patch.tool : '',
+    model: hasModelPatch ? patch.model : '',
+    effort: hasEffortPatch ? patch.effort : '',
+    thinking: hasThinkingPatch ? patch.thinking === true : false,
+  });
+  const migratingLegacyMicroAgent = hasToolPatch && isLegacyMicroAgentToolId(patch.tool);
+  const nextTool = hasToolPatch ? normalizedRuntimePatch.tool : '';
   let toolChanged = false;
 
   const result = await mutateSessionMeta(id, (session) => {
@@ -3374,24 +3568,24 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
       changed = true;
     }
 
-    if (hasModelPatch) {
-      const nextModel = typeof patch.model === 'string' ? patch.model.trim() : '';
+    if (hasModelPatch || migratingLegacyMicroAgent) {
+      const nextModel = hasModelPatch || migratingLegacyMicroAgent ? normalizedRuntimePatch.model : '';
       if ((session.model || '') !== nextModel) {
         session.model = nextModel;
         changed = true;
       }
     }
 
-    if (hasEffortPatch) {
-      const nextEffort = typeof patch.effort === 'string' ? patch.effort.trim() : '';
+    if (hasEffortPatch || migratingLegacyMicroAgent) {
+      const nextEffort = hasEffortPatch || migratingLegacyMicroAgent ? normalizedRuntimePatch.effort : '';
       if ((session.effort || '') !== nextEffort) {
         session.effort = nextEffort;
         changed = true;
       }
     }
 
-    if (hasThinkingPatch) {
-      const nextThinking = patch.thinking === true;
+    if (hasThinkingPatch || migratingLegacyMicroAgent) {
+      const nextThinking = normalizedRuntimePatch.thinking;
       if (session.thinking !== nextThinking) {
         session.thinking = nextThinking;
         changed = true;
@@ -3557,7 +3751,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const normalizedText = text.trim();
   const existingPendingDispatch = options.skipPendingDispatchLookup === true
     ? null
-    : findPendingDispatchByRequest(sessionMeta, requestId);
+    : findPendingContinuationByRequest(sessionMeta, requestId);
   if (existingPendingDispatch) {
     return {
       requestId,
@@ -3635,7 +3829,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     };
   }
 
-  if (shouldRunDispatch(session, options) && shouldUseAsyncDispatchPlanning(session, normalizedText)) {
+  const snapshot = await getHistorySnapshot(sessionId);
+  const hasPriorUserMessage = (snapshot.userMessageCount || 0) > 0;
+
+  if (hasPriorUserMessage && shouldRunDispatch(session, options) && shouldPrepareContinuationCheck(session, normalizedText)) {
     const queuedImages = options.preSavedAttachments?.length > 0
       ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
       : await saveAttachments(images);
@@ -3648,11 +3845,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ...sanitizePendingDispatchOptions(options),
     };
     const queuedDispatchMeta = await mutateSessionMeta(sessionId, (draft) => {
-      const queue = getPendingPlanningQueue(draft);
+      const queue = getPendingContinuationQueue(draft);
       if (queue.some((entry) => trimString(entry?.requestId) === requestId)) {
         return false;
       }
-      draft.pendingPlanningQueue = [...queue, queuedEntry];
+      setPendingContinuationQueue(draft, [...queue, queuedEntry]);
       draft.updatedAt = nowIso();
       return true;
     });
@@ -3664,7 +3861,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       duplicate: wasDuplicateQueueInsert,
       queued: false,
       run: null,
-      planning: true,
+      continuation: true,
       session: await getSession(sessionId) || (queuedDispatchMeta.meta ? await enrichSessionMetaForClient(queuedDispatchMeta.meta) : session),
       response: buildReplyPublicationSummary({
         id: responseId,
@@ -3674,7 +3871,6 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     };
   }
 
-  const snapshot = await getHistorySnapshot(sessionId);
   const previousTool = session.tool;
   const effectiveTool = options.tool || session.tool;
   const recordedUserText = typeof options.recordedUserText === 'string' && options.recordedUserText.trim()
@@ -3710,7 +3906,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const {
     claudeSessionId: persistedClaudeSessionId,
     codexThreadId: persistedCodexThreadId,
-  } = resolveResumeState(effectiveTool, session, options);
+  } = resolveResumeState(effectiveTool, session, options, effectiveRuntimeFamily);
   const publicationResponseIds = normalizeReplyPublicationResponseIds(
     options.replyPublicationResponseIds,
     responseId,
@@ -3797,7 +3993,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       : 'default';
     if (promptMode === 'default') {
       const managerTurnContext = await buildManagerTurnContextText(session, normalizedText);
-      if (managerTurnContext) {
+      if (managerTurnContext && shouldPersistManagerTurnContext()) {
         await appendEvent(sessionId, managerContextEvent(managerTurnContext, {
           requestId,
           ...(primaryResponseId ? { responseId: primaryResponseId } : {}),
@@ -3810,7 +4006,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (!options.internalOperation && isFirstRecordedUserMessage && isSessionAutoRenamePending(session)) {
     const draftName = buildTemporarySessionName(recordedUserText);
     if (draftName && draftName !== session.name) {
-      const renamed = await renameSession(sessionId, draftName, { preserveAutoRename: true });
+      const renamed = await renameSession(sessionId, draftName, {
+        preserveAutoRename: true,
+        lockTitle: false,
+      });
       if (renamed) {
         session = renamed;
       }

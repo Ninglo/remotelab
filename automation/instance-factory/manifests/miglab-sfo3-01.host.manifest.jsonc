@@ -16,12 +16,12 @@
     "ownerDomain": "miglab.jiujianian.dev",
     "ingress": {
       "provider": "cloudflare",
-      "tunnelId": "e01af7a0-66aa-440a-9bdd-5971eca1ca49",
-      "tunnelName": "miglab",
+      "tunnelId": "b5d054b5-78dd-45af-8863-3aa9d0945447",
+      "tunnelName": "miglab-sfo3-owner",
       "serviceName": "cloudflared-miglab",
       "ownerHostname": "miglab.jiujianian.dev",
-      "credentialsFile": "/etc/cloudflared/e01af7a0-66aa-440a-9bdd-5971eca1ca49.json",
-      "localCredentialsFile": "/root/.cloudflared/e01af7a0-66aa-440a-9bdd-5971eca1ca49.json"
+      "credentialsFile": "/etc/cloudflared/b5d054b5-78dd-45af-8863-3aa9d0945447.json",
+      "localCredentialsFile": "/root/.cloudflared/b5d054b5-78dd-45af-8863-3aa9d0945447.json"
     }
   },
   "systemd": {

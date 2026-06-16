@@ -46,6 +46,7 @@ assert.equal(
 let renamed = await renameSession(seeded.id, 'Better title');
 assert.equal(renamed.name, 'Better title', 'manual rename should update the title');
 assert.equal(renamed.group, 'RemoteLab', 'manual rename should preserve group metadata');
+assert.equal(renamed.titleLocked, true, 'manual rename should lock later automatic title refresh');
 assert.equal(
   renamed.description,
   'Build sidebar grouping for AI sessions.',

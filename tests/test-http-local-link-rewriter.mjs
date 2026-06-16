@@ -212,6 +212,21 @@ async function waitForRunTerminal(port, runId) {
   }, `run ${runId} terminal`);
 }
 
+async function waitForAcceptedRun(port, sessionId, requestId = '') {
+  return waitFor(async () => {
+    const detail = await request(port, 'GET', `/api/sessions/${sessionId}`);
+    if (detail.status !== 200) return false;
+    const runId = typeof detail.json?.session?.activity?.run?.runId === 'string'
+      ? detail.json.session.activity.run.runId
+      : '';
+    if (!runId) return false;
+    const runRead = await request(port, 'GET', `/api/runs/${runId}`);
+    if (runRead.status !== 200) return false;
+    if (requestId && runRead.json?.run?.requestId !== requestId) return false;
+    return runRead.json.run || false;
+  }, `accepted run for ${sessionId}`);
+}
+
 try {
   const { home, configDir } = setupTempHome();
   const port = randomPort();
@@ -227,24 +242,45 @@ try {
     assert.equal(createSessionRes.status, 201, 'session should be created');
     const session = createSessionRes.json.session;
 
+    const requestId = 'req-local-link-rewriter';
     const messageRes = await request(port, 'POST', `/api/sessions/${session.id}/messages`, {
-      requestId: 'req-local-link-rewriter',
+      requestId,
       text: 'Generate a spreadsheet and return it.',
       tool: 'fake-codex',
       model: 'fake-model',
       effort: 'low',
     });
     assert.ok(messageRes.status === 200 || messageRes.status === 202, 'message should be accepted');
-    assert.ok(messageRes.json?.run?.id, 'message should create a run');
+    const acceptedRun = messageRes.json?.run?.id
+      ? messageRes.json.run
+      : (messageRes.json?.queued === true ? null : await waitForAcceptedRun(port, session.id, requestId));
+    assert.ok(acceptedRun?.id, 'message should create a run');
 
-    const run = await waitForRunTerminal(port, messageRes.json.run.id);
+    const run = await waitForRunTerminal(port, acceptedRun.id);
     assert.equal(run.state, 'completed', 'run should complete');
 
-    const allEventsRes = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=all`);
-    assert.equal(allEventsRes.status, 200, 'all-events route should load');
-    const rawAssistant = allEventsRes.json.events.find((event) => event.type === 'message' && event.role === 'assistant');
-    assert.ok(rawAssistant, 'raw event history should include the assistant message');
+    const resultMessage = await waitFor(async () => {
+      const res = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=all`);
+      if (res.status !== 200) return false;
+      const events = res.json?.events || [];
+      const generated = events.find((event) => (
+        event.type === 'message'
+        && event.role === 'assistant'
+        && event.source === 'result_file_assets'
+        && event.resultRunId === run.id
+      ));
+      const original = events.find((event) => (
+        event.type === 'message'
+        && event.role === 'assistant'
+        && typeof event.content === 'string'
+        && event.content.startsWith('Download it here:')
+      ));
+      return generated && original ? { generated, original } : false;
+    }, 'local-link result-file message');
+    const rawAssistant = resultMessage.original;
     assert.match(rawAssistant.content, /\[March report\.xlsx\]\(.+exports\/March report\.xlsx\)/, 'raw history should preserve the original local path');
+    assert.equal(resultMessage.generated.images?.length, 1, 'generated result message should attach the published file');
+    assert.equal(resultMessage.generated.images[0].originalName, outputName, 'generated attachment should preserve the original file name');
 
     const visibleEventsRes = await waitFor(async () => {
       const res = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=visible`);
@@ -253,45 +289,48 @@ try {
       return assistant ? { res, assistant } : false;
     }, 'visible assistant message');
     const visibleAssistant = visibleEventsRes.assistant;
-    assert.match(
+    assert.equal(
       visibleAssistant.content,
-      /\[March report\.xlsx\]\(\/api\/assets\/(fasset_[a-f0-9]{24})\/download\)/,
-      'visible assistant content should rewrite the local path to a downloadable asset URL',
+      'Download it here: March report.xlsx',
+      'visible assistant content should collapse inline local paths to a safe file name instead of rewriting the body link',
     );
     assert.doesNotMatch(
       visibleAssistant.content,
       /exports\/March report\.xlsx/,
       'visible assistant content should not leak the host-local export path',
     );
+    assert.doesNotMatch(
+      visibleAssistant.content,
+      /\/api\/assets\/fasset_[a-f0-9]{24}\/download/,
+      'visible assistant content should not inline a generated asset URL',
+    );
 
     const secondVisibleEventsRes = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=visible`);
     assert.equal(secondVisibleEventsRes.status, 200, 'visible-events route should remain readable on repeat fetches');
-    const secondVisibleAssistant = secondVisibleEventsRes.json.events.find((event) => event.type === 'message' && event.role === 'assistant');
+    const secondVisibleAssistant = secondVisibleEventsRes.json.events.find((event) => event.type === 'message' && event.role === 'assistant' && typeof event.content === 'string' && event.content.startsWith('Download it here:'));
     assert.equal(
       secondVisibleAssistant?.content,
       visibleAssistant.content,
-      'repeated visible fetches should reuse the same rewritten download URL instead of creating duplicates',
+      'repeated visible fetches should keep the same collapsed visible content',
     );
 
-    const assetIdMatch = visibleAssistant.content.match(/\/api\/assets\/(fasset_[a-f0-9]{24})\/download/);
-    assert.ok(assetIdMatch, 'rewritten content should expose a downloadable asset id');
-    const assetId = assetIdMatch[1];
+    const assetId = resultMessage.generated.images[0].assetId;
 
     const assetRes = await request(port, 'GET', `/api/assets/${assetId}`);
-    assert.equal(assetRes.status, 200, 'rewritten asset metadata should load');
-    assert.equal(assetRes.json.asset.originalName, outputName, 'rewritten asset should preserve the original file name');
+    assert.equal(assetRes.status, 200, 'published asset metadata should load');
+    assert.equal(assetRes.json.asset.originalName, outputName, 'published asset should preserve the original file name');
 
     const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download?download=1`, {
       method: 'GET',
       headers: { Cookie: cookie },
       redirect: 'manual',
     });
-    assert.equal(downloadRes.status, 200, 'rewritten asset should be downloadable');
-    assert.equal(await downloadRes.text(), outputContent, 'rewritten asset download should return the generated file');
+    assert.equal(downloadRes.status, 200, 'published asset should be downloadable');
+    assert.equal(await downloadRes.text(), outputContent, 'published asset download should return the generated file');
 
     const rawAfterVisibleRes = await request(port, 'GET', `/api/sessions/${session.id}/events?filter=all`);
     assert.equal(rawAfterVisibleRes.status, 200, 'all-events route should still load after rewrite-on-read');
-    const rawAfterVisibleAssistant = rawAfterVisibleRes.json.events.find((event) => event.type === 'message' && event.role === 'assistant');
+    const rawAfterVisibleAssistant = rawAfterVisibleRes.json.events.find((event) => event.type === 'message' && event.role === 'assistant' && typeof event.content === 'string' && event.content.startsWith('Download it here:'));
     assert.equal(
       rawAfterVisibleAssistant?.content,
       rawAssistant.content,

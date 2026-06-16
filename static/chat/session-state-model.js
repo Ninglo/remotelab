@@ -214,10 +214,10 @@
     const compactState = raw?.compact?.state === "pending"
       ? "pending"
       : "idle";
-    const planningCount = Number.isInteger(raw?.planning?.count)
-      ? raw.planning.count
+    const continuationCount = Number.isInteger(raw?.continuation?.count)
+      ? raw.continuation.count
       : 0;
-    const planningState = raw?.planning?.state === "checking" && planningCount > 0
+    const continuationState = raw?.continuation?.state === "checking" && continuationCount > 0
       ? "checking"
       : "idle";
 
@@ -240,10 +240,10 @@
       compact: {
         state: compactState,
       },
-      planning: {
-        state: planningState,
-        count: planningCount,
-        requestId: typeof raw?.planning?.requestId === "string" ? raw.planning.requestId : null,
+      continuation: {
+        state: continuationState,
+        count: continuationCount,
+        requestId: typeof raw?.continuation?.requestId === "string" ? raw.continuation.requestId : null,
       },
     };
   }
@@ -252,7 +252,7 @@
     const activity = normalizeSessionActivity(session);
     return activity.run.state === "running"
       || activity.queue.state === "queued"
-      || activity.planning.state === "checking"
+      || activity.continuation.state === "checking"
       || activity.compact.state === "pending";
   }
 
@@ -289,7 +289,7 @@
       ));
     }
 
-    if (activity.planning.state === "checking") {
+    if (activity.continuation.state === "checking") {
       indicators.push(createStatus("checking", t("workflow.status.checking"), "status-queued", "queued"));
     }
 

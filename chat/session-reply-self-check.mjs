@@ -1,4 +1,5 @@
 import { buildSessionDisplayEvents } from './session-display-events.mjs';
+import { prepareSessionContinuationBody } from './session-continuation.mjs';
 import { extractTaggedBlock, parseJsonObjectText } from './session-text-parsing.mjs';
 
 function normalizeReplySelfCheckText(value) {
@@ -53,6 +54,23 @@ function buildReplySelfCheckDisplayedAssistantTurn(history = []) {
   return parts.join('\n\n').trim();
 }
 
+function buildReplySelfCheckPriorContext(history = [], beforeSeq = 0) {
+  if (!Number.isInteger(beforeSeq) || beforeSeq < 1) {
+    return '';
+  }
+  const priorHistory = history.filter((event) => !Number.isInteger(event?.seq) || event.seq < beforeSeq);
+  if (priorHistory.length === 0) {
+    return '';
+  }
+  return clipReplySelfCheckText(prepareSessionContinuationBody(priorHistory), 6000);
+}
+
+function isReplySelfCheckRunEvent(event, runId = '') {
+  if (!runId) return true;
+  if (event?.runId === runId) return true;
+  return event?.source === 'result_file_assets' && event?.resultRunId === runId;
+}
+
 export async function loadReplySelfCheckTurnContext(sessionId, runId, { loadSessionHistory } = {}) {
   if (typeof loadSessionHistory !== 'function') {
     throw new TypeError('loadReplySelfCheckTurnContext requires loadSessionHistory');
@@ -64,7 +82,7 @@ export async function loadReplySelfCheckTurnContext(sessionId, runId, { loadSess
   let latestAssistantMessage = null;
 
   for (const event of history) {
-    if (runId && event?.runId !== runId) continue;
+    if (!isReplySelfCheckRunEvent(event, runId)) continue;
     runHistory.push(event);
     if (event?.type === 'message' && event.role === 'user') {
       userMessage = event;
@@ -80,8 +98,10 @@ export async function loadReplySelfCheckTurnContext(sessionId, runId, { loadSess
     : runHistory;
   const assistantTurnText = buildReplySelfCheckDisplayedAssistantTurn(turnHistory)
     || normalizeReplySelfCheckText(latestAssistantMessage?.content || '');
+  const priorContextText = buildReplySelfCheckPriorContext(history, userMessage?.seq);
 
   return {
+    priorContextText,
     userMessage,
     assistantTurnText,
   };
@@ -94,7 +114,7 @@ export function summarizeReplySelfCheckReason(value, fallback = 'the latest repl
   return `${text.slice(0, 157).trimEnd()}…`;
 }
 
-export function buildReplySelfCheckPrompt({ userMessage, assistantTurnText }) {
+export function buildReplySelfCheckPrompt({ userMessage, assistantTurnText, priorContextText }) {
   return [
     'You are RemoteLab\'s hidden end-of-turn completion reviewer.',
     'Judge only whether the latest assistant reply stopped too early for the current user turn.',
@@ -118,12 +138,15 @@ export function buildReplySelfCheckPrompt({ userMessage, assistantTurnText }) {
     'Write reason and continuationPrompt in the user\'s language.',
     'Do not output any text outside the <hide> block.',
     '',
+    priorContextText ? 'Relevant earlier session context before this turn:' : '',
+    priorContextText ? clipReplySelfCheckText(priorContextText, 6000) : '',
+    priorContextText ? '' : '',
     'Current user message:',
     clipReplySelfCheckText(userMessage?.content || '', 3000) || '[none]',
     '',
     'Latest assistant turn content shown to the user:',
     clipReplySelfCheckText(assistantTurnText || '', 5000) || '[none]',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 export function parseReplySelfCheckDecision(content) {
@@ -140,7 +163,7 @@ export function parseReplySelfCheckDecision(content) {
   };
 }
 
-export function buildReplySelfRepairPrompt({ userMessage, assistantTurnText, reviewDecision }) {
+export function buildReplySelfRepairPrompt({ userMessage, assistantTurnText, priorContextText, reviewDecision }) {
   const continuationPrompt = String(reviewDecision?.continuationPrompt || '').trim();
   const reason = summarizeReplySelfCheckReason(reviewDecision?.reason || 'finish the missing work now');
   return [
@@ -158,6 +181,9 @@ export function buildReplySelfRepairPrompt({ userMessage, assistantTurnText, rev
     'Only stop if a concrete user-side blocker truly prevents safe progress.',
     'If you still truly need user input, state exactly what is missing and why it is required.',
     '',
+    priorContextText ? 'Relevant earlier session context before this turn:' : '',
+    priorContextText ? clipReplySelfCheckText(priorContextText, 6000) : '',
+    priorContextText ? '' : '',
     'Original user message:',
     clipReplySelfCheckText(userMessage?.content || '', 3000) || '[none]',
     '',
@@ -168,5 +194,5 @@ export function buildReplySelfRepairPrompt({ userMessage, assistantTurnText, rev
     continuationPrompt || `Finish the missing work now. Reviewer reason: ${reason}`,
     '',
     'Return only the next user-visible assistant message.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }

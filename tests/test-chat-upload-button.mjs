@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 
 const templateSource = readFileSync(join(repoRoot, 'templates', 'chat.html'), 'utf8');
+const chatInputCssSource = readFileSync(join(repoRoot, 'static', 'chat', 'chat-input.css'), 'utf8');
 const i18nSource = readFileSync(join(repoRoot, 'static', 'chat', 'i18n.js'), 'utf8');
 
 const uploadButtonIndex = templateSource.indexOf('id="imgBtn"');
@@ -26,9 +27,14 @@ assert.ok(textareaIndex < actionsRowIndex, 'composer actions should render below
 assert.ok(textareaIndex < uploadButtonIndex, 'upload button should no longer reduce textarea width by rendering before the input text');
 
 assert.match(templateSource, /class="composer-action-btn composer-action-btn--upload" id="imgBtn"/, 'upload button should keep the dedicated composer action styling');
+assert.match(templateSource, /class="composer-file-picker"[\s\S]*id="imgFileInput" class="composer-file-input" accept="\*\/\*" multiple disabled[\s\S]*id="imgBtn"/, 'upload control should expose the real file input over the visible plus button');
+assert.doesNotMatch(templateSource, /id="imgFileInput"[^>]*hidden/, 'upload file input should not be hidden because mobile browsers can reject programmatic clicks on hidden file inputs');
 assert.match(templateSource, /<span class="img-btn-label sr-only" data-i18n="action\.upload">Upload<\/span>/, 'upload button should keep an accessible label even in the icon-only layout');
 assert.match(templateSource, /title="Attach files" aria-label="Attach files" data-i18n-title="action\.attachFiles" data-i18n-aria-label="action\.attachFiles"/, 'upload button should keep descriptive accessibility text');
 assert.match(templateSource, /<span class="img-btn-icon" data-icon="plus" aria-hidden="true"><\/span>/, 'upload button should render as a plus icon in the composer action row');
+
+assert.match(chatInputCssSource, /\.composer-file-input\s*\{[\s\S]*opacity: 0;[\s\S]*cursor: pointer;/, 'upload input should be transparent but remain the real clickable target');
+assert.match(chatInputCssSource, /\.composer-file-picker \.composer-action-btn\s*\{[\s\S]*pointer-events: none;/, 'visible upload button should not intercept taps meant for the file input');
 
 assert.match(i18nSource, /"action\.upload": "Upload"/, 'english UI copy should label the control as Upload');
 assert.match(i18nSource, /"action\.attachFiles": "Attach files"/, 'english accessibility copy should describe file uploads clearly');

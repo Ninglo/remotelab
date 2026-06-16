@@ -14,7 +14,7 @@ function buildFeishuRuntimePrompt(session) {
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, or run something, actually do the work before replying.',
     'Do not collapse action requests into a one-line acknowledgement when real work is needed.',
     'Match the user\'s language when practical.',
-    `Produce plain text suitable for sending back through ${sourceName}.`,
+    `Produce plain text or markdown suitable for sending back through ${sourceName}; markdown will be rendered as Feishu/Lark rich text.`,
     'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
@@ -33,6 +33,19 @@ function buildWeChatRuntimePrompt(session) {
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
     'Prefer concise direct replies unless the user explicitly asked for depth.',
+    'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
+  ].join('\n');
+}
+
+function buildWhatsAppRuntimePrompt(session) {
+  const sourceName = trimString(session?.sourceName) || 'WhatsApp';
+  return [
+    `You are interacting through ${sourceName} via RemoteLab on the user's own machine.`,
+    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, actually do the work before replying.',
+    `Produce plain text suitable for sending back through ${sourceName}.`,
+    'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
+    'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
+    'Prefer concise, mobile-friendly replies unless the user explicitly asked for depth.',
     'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
   ].join('\n');
 }
@@ -91,6 +104,20 @@ function buildGithubRuntimePrompt(session) {
   ].join('\n');
 }
 
+function buildArcheryRuntimePrompt(session) {
+  const sourceName = trimString(session?.sourceName) || 'Archery';
+  return [
+    `You are interacting through ${sourceName}, a structured training-record connector powered by RemoteLab on the user's own machine.`,
+    'The inbound message usually contains one training upload plus optional tags or environment notes.',
+    'Treat provided scores, totals, and structured session data as the factual source of truth; do not invent missing metrics.',
+    'Behave like the same RemoteLab executor you would be in ChatUI, but your output should read like a useful post-training coaching note.',
+    'Focus on today summary, likely issues, risk points, and the next training arrangement.',
+    'If historical context matters, use existing session context or inspect source-context; do not pretend you saw history that is not available.',
+    `Produce plain text suitable for rendering back inside the ${sourceName} frontend or a lightweight training report view.`,
+    'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
+  ].join('\n');
+}
+
 export function buildSourceRuntimePrompt(session) {
   const sourceId = normalizeSourceKey(session?.sourceId);
   if (sourceId === 'feishu' || sourceId === 'lark') {
@@ -98,6 +125,9 @@ export function buildSourceRuntimePrompt(session) {
   }
   if (sourceId === 'wechat' || sourceId === 'weixin') {
     return buildWeChatRuntimePrompt(session);
+  }
+  if (sourceId === 'whatsapp' || sourceId === 'whatsapp-business') {
+    return buildWhatsAppRuntimePrompt(session);
   }
   if (sourceId === 'voice') {
     return buildVoiceRuntimePrompt();
@@ -113,6 +143,9 @@ export function buildSourceRuntimePrompt(session) {
   }
   if (sourceId === 'github' || sourceId === 'github-ci') {
     return buildGithubRuntimePrompt(session);
+  }
+  if (sourceId === 'archery') {
+    return buildArcheryRuntimePrompt(session);
   }
   return '';
 }

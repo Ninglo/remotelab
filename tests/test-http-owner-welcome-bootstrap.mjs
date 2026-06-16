@@ -202,11 +202,11 @@ async function assertSessionListEmpty(port, { archivedCount = 0 } = {}) {
 async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const expectedSessionNames = [
     'Welcome',
-    '[示例] 上传一份表格，我把清洗后的文件回给你',
-    '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
-    '[示例] 发一封邮件到这个实例，会自动开一个新会话',
-    '[引导] 订阅日历，接收 AI 创建的日程事件',
-    '[引导] 安装快捷指令，用 Siri 或一键启动 RemoteLab',
+    '[示例] 把一份 Excel / CSV 清洗后回给我',
+    '[示例] 每天早上把行业热点整理后发到我邮箱',
+    '[示例] 发邮件进来后，自动开新会话继续处理',
+    '[入口] 订阅日历，接收 AI 创建的日程',
+    '[入口] 安装快捷指令，更快打开 RemoteLab',
   ];
   const list = await waitFor(async () => {
     const response = await request(port, 'GET', '/api/sessions', null, { Cookie: ownerCookie });
@@ -224,7 +224,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   assert.deepEqual(sessionNames, expectedSessionNames, 'starter sessions should appear in the intended sidebar order');
 
   for (const [index, session] of (list.json?.sessions || []).entries()) {
-    assert.equal(session.pinned, true, 'starter sessions should be pinned for discoverability');
+    assert.equal(session.pinned === true, index < 4, 'only the welcome flow and concrete showcase sessions should stay pinned');
     assert.equal(session.sidebarOrder, index + 1, 'starter sessions should keep a stable sidebar order');
     assert.equal(session.entryMode, 'read', 'starter sessions should open in read mode');
   }
@@ -232,7 +232,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const welcomeSession = list.json?.sessions?.[0];
   assert.ok(welcomeSession?.id, 'welcome session should have an id');
   assert.equal(welcomeSession.templateId, undefined, 'welcome session should be a plain starter session without app/template coupling');
-  assert.equal(welcomeSession.tool, 'micro-agent', 'welcome bootstrap should prefer Micro Agent when it is available');
+  assert.equal(welcomeSession.tool, 'codex', 'welcome bootstrap should prefer CodeX');
   assert.equal(welcomeSession.sourceId, 'chat', 'welcome session should be categorized as chat UI');
   assert.equal(welcomeSession.sourceName, 'Chat', 'welcome session should preserve the chat source label');
   assert.ok(Number(welcomeSession.messageCount || 0) >= 1, 'welcome session should include the starter assistant message');
@@ -244,7 +244,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const welcomeContent = await resolveEventContent(port, welcomeSession.id, welcomeEvent, { Cookie: ownerCookie });
   assert.match(welcomeContent, /我是 Rowan|先接手、再梳理、再推进执行/u, 'welcome copy should come from the built-in Welcome app');
   assert.match(welcomeContent, /cpolar|国内可以直接访问|不用梯子/u, 'welcome copy should mention cpolar for mainland-friendly access');
-  assert.match(welcomeContent, /左侧我已经先放了 3 个真实跑通过的示例会话/u, 'welcome copy should point owners to the verified showcase sessions');
+  assert.match(welcomeContent, /左侧我先放了 3 个真实跑通过的示例会话/u, 'welcome copy should point owners to the verified showcase sessions');
   const welcomeAssistantMessages = await Promise.all(
     (events.json?.events || [])
       .filter((event) => event.type === 'message' && event.role === 'assistant')
@@ -255,7 +255,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
     'welcome bootstrap should warn that inbound email tests need the sender address allowlisted first',
   );
   assert.ok(
-    welcomeAssistantMessages.some((content) => /3 个真实跑通过的示例会话|发邮件进实例自动开新会话/u.test(content)),
+    welcomeAssistantMessages.some((content) => /3 个真实跑通过的示例会话|发邮件进来后自动开新会话/u.test(content)),
     'welcome bootstrap should mention the three pinned examples when backfilled',
   );
 
@@ -308,7 +308,7 @@ async function assertWelcomeBootstrapped(port, { archivedCount = 0 } = {}) {
   const emailIntroContent = await resolveEventContent(port, emailShowcaseSession.id, emailShowcaseMessages[0], { Cookie: ownerCookie });
   const emailUserContent = await resolveEventContent(port, emailShowcaseSession.id, emailShowcaseMessages[1], { Cookie: ownerCookie });
   const emailAssistantContent = await resolveEventContent(port, emailShowcaseSession.id, emailShowcaseMessages[2], { Cookie: ownerCookie });
-  assert.match(emailIntroContent, /收件地址|允许发件人|自动多出一个新会话/u, 'email showcase should explain the inbound-email entry flow');
+  assert.match(emailIntroContent, /工作入口|收件地址|允许发件人|自动多出一个新会话/u, 'email showcase should explain the inbound-email entry flow');
   assert.match(emailUserContent, /Inbound email\.|真实能力验证邮件|自动进到一个新会话/u, 'email showcase should demonstrate the inbound email transcript shape');
   assert.match(emailAssistantContent, /邮件进来后的实际起点|手动新建聊天/u, 'email showcase should end with the actual session handoff explanation');
 

@@ -10,7 +10,7 @@ It does not care much whether the control surface is a phone, tablet, or desktop
 
 ![RemoteLab across surfaces](docs/readme-multisurface-demo.png)
 
-> Current baseline: `v0.3` — an owner-first session runtime, durable on-disk history, executor adapters, App-based workflow packaging, and a no-build web UI that works across phone and desktop.
+> Current baseline: `v0.3` — an owner-first session runtime, durable on-disk history, a built-in Welcome flow with concrete example sessions, reusable Agent packaging, and a no-build web UI that works across phone and desktop.
 
 > Reach the same system from desktop, phone, and integration surfaces like Feishu or email-driven flows.
 
@@ -65,10 +65,10 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - Most target users are not AI-native operators and do not arrive with product-manager-grade prompts; the AI needs to help clarify the task, gather examples, and design a workable approach.
 - The product should absorb most of the operational complexity: tool choice, model choice, session structure, and machine-side execution are implementation details unless the user explicitly needs to care.
 - The first high-fit user slice is not literally everyone with a computer; it looks more like time-pressed middle managers / owner-operators in traditional industries who both coordinate others and still personally carry repetitive digital admin work.
-- The first screen cannot be a blank session list. New users need a default `Welcome App` that briefly explains what RemoteLab can do, asks about their role and repetitive-work pain point, and guides them toward one concrete first automation.
+- The first screen cannot be a blank session list. New users need a built-in Welcome flow with concrete example transcripts and one clear first automation path, not an empty sidebar and a generic text box.
 - The best wedge is simple, fast-payback digital work: data cleanup, analysis, file processing, reports, notifications, and other repetitive scriptable tasks.
 - Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and review results or approvals from the most convenient device.
-- `Session`, `App`, and reusable local workflow building blocks still matter, but they are enabling layers or later multipliers rather than the first headline.
+- `Session`, `Agent`, and reusable local workflow building blocks still matter, but they are enabling layers or later multipliers rather than the first headline.
 
 ### What RemoteLab is
 
@@ -76,7 +76,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - an AI collaboration entry point that helps users turn vague problems into executable plans
 - a cross-surface control plane where people can start from phone, continue from desktop, and let the machine do the work
 - a durable work-thread system that helps humans recover context instead of repeatedly re-explaining the task
-- a packaging layer that can turn proven automations into reusable `Apps`
+- a packaging layer that can turn proven automations into reusable `Agents`
 
 ### What RemoteLab is not
 
@@ -91,7 +91,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 ### Two core product layers
 
 1. **First, solve repetitive digital work.** RemoteLab should accept a messy but recurring task, help the user clarify inputs, outputs, and constraints, and turn it into an automation that reliably saves time.
-2. **Then package and reuse what works.** Once an automation proves valuable, RemoteLab can turn it into an `App`, template, or other reusable entry point for the same user or nearby user groups.
+2. **Then package and reuse what works.** Once an automation proves valuable, RemoteLab can turn it into an `Agent`, template, or other reusable entry point for the same user or nearby user groups.
 
 ### Product grammar
 
@@ -99,7 +99,7 @@ The current product model is intentionally simple:
 
 - `Session` — the durable work thread
 - `Run` — one execution attempt inside a session
-- `App` — a reusable workflow / policy package for starting sessions
+- `Agent` — a reusable workflow / policy package for starting sessions
 - `Share snapshot` — an immutable read-only export of a session
 
 The architectural assumptions behind that model:
@@ -107,7 +107,7 @@ The architectural assumptions behind that model:
 - HTTP is the canonical state path and WebSocket only hints that something changed
 - the browser is a control surface, not the system of record
 - runtime processes are disposable; durable state lives on disk
-- the product is single-owner first, with visitor access scoped through `Apps`
+- the product is single-owner first, with visitor access scoped through `Agents`
 - the frontend stays framework-light and endpoint-flexible
 
 ### Why this boundary matters
@@ -118,7 +118,7 @@ RemoteLab is opinionated in a few ways:
 - **Deliver through reachable surfaces, not host paths.** The AI may operate the machine, but the user collaborates through RemoteLab and explicitly exposed product surfaces. A result that only exists on the host is not a finished handoff.
 - **Do not rebuild the executor layer.** RemoteLab should not spend most of its energy optimizing single-task agent internals.
 - **Recover context, do not dump logs.** Durable sessions matter more than raw terminal continuity.
-- **Package workflows, do not just share prompts.** `Apps` are reusable operating shapes, not just copy-pasted text.
+- **Package workflows, do not just share prompts.** `Agents` are reusable operating shapes, not just copy-pasted text.
 - **Integrate the strongest tools, keep them replaceable.** The point is a stable abstraction layer so better executors can be adopted quickly as the ecosystem evolves.
 
 ### What you can do
@@ -131,7 +131,7 @@ RemoteLab is opinionated in a few ways:
 - paste screenshots directly into the chat
 - let the UI follow your system light/dark appearance automatically
 - create immutable read-only share snapshots
-- create App links for visitor-scoped entry flows
+- create Agent links for visitor-scoped entry flows
 
 ### Provider note
 
@@ -204,7 +204,7 @@ Open your RemoteLab URL on the device you want to use:
 - send messages while the UI re-fetches canonical HTTP state in the background
 - leave and come back later without losing the conversation thread
 - share immutable read-only snapshots of a session
-- optionally configure App-based visitor flows and push notifications
+- optionally configure Agent-based visitor flows and push notifications
 
 ### Daily usage
 
@@ -293,10 +293,16 @@ remotelab guest-instance create-trial      # create the next standard trial inst
 remotelab guest-instance links             # print tokenized share links for every guest instance
 remotelab guest-instance links trial24     # print tokenized share links for one instance
 remotelab guest-instance links --check     # same, plus current local/public reachability
+remotelab guest-instance expose trial24 --label report --port 3000
+                                          # publish one guest-owned loopback port as trial24-report.<domain>
+remotelab guest-instance unexpose trial24 --label report
+                                          # remove that controlled public route
 remotelab guest-instance converge --all    # repoint all guest instances at the current source tree
 ```
 
 Subdomain-style public hostnames are the primary external entrypoint. `create`, `create-trial`, `show`, `links`, and `report` all treat `https://<instance>.<domain>` as the canonical access URL.
+
+When a guest instance needs one extra public URL for a preview app or report server, use `remotelab guest-instance expose <instance> --label <label> --port <port>`. This does not edit the Cloudflare tunnel config directly. Instead it writes a controlled guest-route registry that the host router reads behind the existing wildcard domain. v1 intentionally stays strict: the instance must be isolated, the target port must already be listening on loopback only, and the listener must belong to the same guest instance user.
 
 If you want a second access path that still stays subdomain-style, store a template URL in `~/.config/remotelab/guest-instance-defaults.json`:
 
@@ -332,7 +338,7 @@ RemoteLab now boots the current source tree directly after restart. Use `remotel
 |----------|---------|-------------|
 | `CHAT_PORT` | `7690` | Chat server port |
 | `CHAT_BIND_HOST` | `127.0.0.1` | Host to bind the chat server (`127.0.0.1` for Cloudflare/local only, `0.0.0.0` for Tailscale or LAN access) |
-| `SESSION_EXPIRY` | `86400000` | Cookie lifetime in ms (24h) |
+| `SESSION_EXPIRY` | `2592000000` | Cookie lifetime in ms (30 days) |
 | `SECURE_COOKIES` | `1` | Set `0` for Tailscale or local HTTP access (no HTTPS) |
 | `REMOTELAB_INSTANCE_ROOT` | unset | Optional isolated data root for an additional instance; defaults to `<root>/config` + `<root>/memory` when set |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, apps, push, and provider-managed homes |

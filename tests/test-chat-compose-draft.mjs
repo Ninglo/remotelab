@@ -610,4 +610,82 @@ assert.equal(directUploadSendCalls[0]?.images?.[0]?.assetId, 'fasset_uploaded', 
 assert.equal(Boolean(directUploadSendCalls[0]?.images?.[0]?.file), false, 'direct-upload send should not fall back to multipart file bytes');
 assert.equal(directUploadSendContext.getComposerAttachmentsState('session-a')[0]?.uploadState, 'uploaded', 'direct-upload send should persist the uploaded attachment state in the composer');
 
+const directUploadFallbackContext = createContext();
+const directUploadFallbackSendCalls = [];
+const directUploadFallbackFetchJsonCalls = [];
+directUploadFallbackContext.getBootstrapAssetUploads = () => ({
+  enabled: true,
+  directUpload: true,
+  provider: 'tos',
+});
+directUploadFallbackContext.fetch = async (url) => {
+  if (url !== 'https://tos.example/broken-upload') {
+    throw new Error(`Unexpected fallback upload url: ${url}`);
+  }
+  return {
+    ok: false,
+    status: 403,
+    headers: {
+      get() {
+        return '';
+      },
+    },
+  };
+};
+directUploadFallbackContext.fetchJsonOrRedirect = async (url, options = {}) => {
+  directUploadFallbackFetchJsonCalls.push({ url, options });
+  if (url === '/api/assets/upload-intents') {
+    return {
+      asset: {
+        id: 'fasset_failed_upload',
+        originalName: 'photo.png',
+        mimeType: 'image/png',
+        sizeBytes: 12,
+        downloadUrl: '/api/assets/fasset_failed_upload/download',
+      },
+      upload: {
+        method: 'PUT',
+        url: 'https://tos.example/broken-upload',
+        headers: {
+          'Content-Type': 'image/png',
+        },
+      },
+    };
+  }
+  throw new Error(`Unexpected fallback fetchJsonOrRedirect call: ${url}`);
+};
+directUploadFallbackContext.dispatchAction = async (payload) => {
+  directUploadFallbackSendCalls.push(payload);
+  return true;
+};
+loadComposeContext(directUploadFallbackContext);
+directUploadFallbackContext.replaceComposerAttachmentsState(
+  [{
+    localId: 'cattach_fallback',
+    file: {
+      name: 'photo.png',
+      type: 'image/png',
+      size: 12,
+      async arrayBuffer() {
+        return Buffer.from('image-bytes');
+      },
+    },
+    objectUrl: 'blob:photo',
+    originalName: 'photo.png',
+    mimeType: 'image/png',
+    sizeBytes: 12,
+    uploadState: 'queued',
+  }],
+  { sessionId: 'session-a' },
+);
+directUploadFallbackContext.sendMessage();
+await new Promise((resolve) => setTimeout(resolve, 0));
+await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(directUploadFallbackFetchJsonCalls.length, 1, 'failed direct-upload sends should only create the initial upload intent before falling back');
+assert.equal(directUploadFallbackSendCalls.length, 1, 'failed direct-upload sends should still dispatch the message once');
+assert.equal(directUploadFallbackSendCalls[0]?.images?.length, 1, 'fallback sends should preserve the attachment');
+assert.equal(directUploadFallbackSendCalls[0]?.images?.[0]?.file?.name, 'photo.png', 'fallback sends should submit the original local file for multipart handling');
+assert.equal(directUploadFallbackSendCalls[0]?.images?.[0]?.assetId, undefined, 'fallback sends should not require a finalized asset id');
+assert.equal(directUploadFallbackContext.getComposerAttachmentsState('session-a')[0]?.uploadState, undefined, 'fallback sends should clear stale direct-upload failure state from the composer');
+
 console.log('test-chat-compose-draft: ok');

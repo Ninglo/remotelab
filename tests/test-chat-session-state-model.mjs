@@ -11,6 +11,10 @@ const source = readFileSync(
   join(repoRoot, 'static', 'chat', 'session-state-model.js'),
   'utf8',
 );
+const i18nSource = readFileSync(
+  join(repoRoot, 'static', 'chat', 'i18n.js'),
+  'utf8',
+);
 
 const context = { console };
 context.globalThis = context;
@@ -23,6 +27,65 @@ vm.runInNewContext(source, context, {
 const model = context.RemoteLabSessionStateModel;
 
 assert.ok(model, 'session state model should attach to the global scope');
+
+function createI18nContext() {
+  const storage = new Map();
+  const context = {
+    console,
+    navigator: {
+      language: 'en',
+      languages: ['en'],
+    },
+    localStorage: {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null;
+      },
+      setItem(key, value) {
+        storage.set(key, String(value));
+      },
+      removeItem(key) {
+        storage.delete(key);
+      },
+    },
+    document: {
+      readyState: 'complete',
+      documentElement: { lang: '' },
+      querySelectorAll() {
+        return [];
+      },
+    },
+    dispatchEvent() {},
+    CustomEvent: class CustomEvent {
+      constructor(type, init = {}) {
+        this.type = type;
+        this.detail = init.detail;
+      }
+    },
+  };
+  context.globalThis = context;
+  context.window = context;
+  vm.runInNewContext(i18nSource, context, {
+    filename: 'i18n.js',
+  });
+  return context;
+}
+
+const fallbackStringsMatch = source.match(/const fallbackStrings = \{([\s\S]*?)\n  \};/);
+assert.ok(fallbackStringsMatch, 'session state model should define fallback strings');
+const fallbackI18nKeys = [...fallbackStringsMatch[1].matchAll(/"([^"]+)":/g)].map((match) => match[1]);
+
+const i18nContext = createI18nContext();
+assert.ok(i18nContext.RemoteLabI18n, 'i18n runtime should attach to the global scope');
+for (const language of ['en', 'zh-CN']) {
+  i18nContext.RemoteLabI18n.setUiLanguagePreference(language);
+  for (const key of fallbackI18nKeys) {
+    assert.notEqual(
+      i18nContext.RemoteLabI18n.t(key),
+      key,
+      `${language} i18n should include the session state key ${key}`,
+    );
+  }
+}
 
 function makeActivity(overrides = {}) {
   return {

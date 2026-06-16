@@ -75,7 +75,9 @@ export function shouldAutoCompactRun(run) {
 
 async function refreshCodexContextMetrics(run) {
   if (!run?.id || !run?.codexThreadId) return null;
-  const metrics = await readLatestCodexSessionMetrics(run.codexThreadId);
+  const metrics = await readLatestCodexSessionMetrics(run.codexThreadId, {
+    model: run.model || null,
+  });
   if (!Number.isInteger(metrics?.contextTokens)) return null;
 
   await updateRun(run.id, (current) => ({

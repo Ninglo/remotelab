@@ -5,12 +5,8 @@
 - If a post-turn reviewer writes only to a backend candidate JSONL and produces neither a formal memory write nor a visible `context_operation`, users will consistently conclude that the feature did not take effect.
 - The engineering issue is not just persistence but observability: a hidden candidate artifact does not satisfy the product contract for "memory saved" because neither the durable state nor the user-visible feedback channel changed.
 - When debugging similar reports, first verify whether the system produced a real memory landing point and whether the turn exposed a visible context update; if both are absent, treat the report as a valid UX/contract failure rather than user misunderstanding.
-
-- 对以后所有 RemoteLab 部署，一个稳定可复用的排查结论是：如果 post-turn reviewer 只把结果写入后台候选 JSONL，却没有形成正式 memory 落点，也没有产生用户可感知的 context_operation，那么应视为产品语义上“没有真正记住”，用户也会稳定判断为功能未生效。
-- 排查类似记忆未生效问题时，应优先检查两点：是否生成了正式、可复用的 memory 写入落点；当前 turn 是否留下了用户可感知的 context 更新信号。若两者同时缺失，即使后台候选 JSONL 已写入，也应按“可观察性缺失导致的有效失败”处理。
-
-- 在 RemoteLab 部署里，如果 post-turn reviewer 只把结果写入后台候选 JSONL，没有形成正式 memory 落点，也没有产生用户可见的 context_operation，应视为“功能未真正生效”，因为系统缺少可复用的持久状态与可观察反馈。
-- 排查“后台似乎处理了但用户认为没生效”的问题时，优先核查两点：是否写入了正式且可被后续流程读取的 memory，以及这一轮是否提供了用户可感知的 context_operation 或等价上下文更新信号；若两者都缺失，应按“正式落点与可观察性双缺失导致的有效失败”处理。
+- 对以后所有 RemoteLab 部署，一个稳定可复用的排查结论是：如果 post-turn reviewer 只把结果写入后台候选 JSONL，却没有形成正式 memory 落点，也没有产生用户可感知的 `context_operation`，应视为产品语义上“没有真正记住”。
+- 排查类似“后台似乎处理了但用户认为没生效”的问题时，优先检查两点：是否生成了正式、可复用的 memory 写入落点，以及当前 turn 是否留下了用户可感知的 context 更新信号；若两者同时缺失，应按“可观察性缺失导致的有效失败”处理。
 
 ## Learnings
 
@@ -34,3 +30,144 @@
 - 公开页/分享页如果依赖 `<base href>`，必须同时保证响应头里的 CSP `base-uri` 允许同源（如 `base-uri 'self'`）；否则浏览器会忽略 `<base>`，静态资源可能按当前分享路由错误解析，进而触发资源路由错配与 MIME 异常。
 - 针对公开页/分享页的回归测试，应成对覆盖这几个约束：HTML 中存在正确的 `<base href>`、响应头允许其生效的 `base-uri`、以及在前缀代理场景（如 `x-forwarded-prefix`）下资源 URL 仍落到正确静态路由。
 - 公开页资源路径应统一使用相对产品根路径的写法，避免使用 `../` 这类向上跳目录的相对路径；这样在分享路由、子路径部署或前缀代理下更稳健。
+- Connector-owned surface 在前缀代理场景下不能只把 mount 前缀当成 `/connectors/<id>`；向上游 surface 传递 `x-forwarded-prefix` / `x-remotelab-connector-mount` 时必须保留完整公开前缀（例如 `/owner/connectors/wechat`），否则 surface 内部再发出的状态轮询、二维码图片等绝对路径请求会丢失产品前缀并在公开部署下失效。回归测试应同时覆盖 surface HTML 内生成的后续请求路径，而不只验证首屏 iframe 是否能打开。
+- 微信登录上游返回的 `qrcodeUrl` 目前是一个会在前端自行画码的 HTML 页面，不是稳定的 PNG 图片地址。RemoteLab 自己的 WeChat connector surface 仍应本地生成 `/login/qr` 的 PNG，并额外提供可复制的 `/login/open` 链接；但如果实测发现微信扫码只接受“微信自己的 upstream URL”而不接受本地 redirect 作为二维码内容，那么二维码 PNG 里应直接编码当前 upstream `qrcodeUrl`，而不是编码本地 `/login/open`。此时 `/login/open` 仍可作为无浏览器登录态的签名直跳入口保留在页面下方。对应地，`qrcodeVersion` 必须跟随真实二维码内容变化：当二维码内容直接取自 upstream `qrcodeUrl` 时，应优先锚定 `qrcodeUrl`，而不是 `loginId`，否则上游换码后前端不会刷新到新的可扫码二维码。
+- 飞书 connector 需要兼容服务端中间态 `response.state=checking`（planning/self-check 阶段），不能将其误判为失败；应像微信 connector 一样继续等待 `publication ready`。
+- 远程环境存在进程被杀的风险，长时间运行的爬虫任务（如Playwright）容易中断。应优先产出可本地运行的脚本包而非仅在远程跑完全部任务。
+- 在当前 RemoteLab 对话式执行环境里，普通对话不会像后台 worker 一样在用户离开后持续运行；如果没有持续存活的 running 会话或明确的后台执行机制，任务不会在数小时内自动继续推进。
+- 当用户期待长时间连续推进任务时，需要明确依赖持续 running 状态或后台执行链路；如果界面已显示结束，通常表示并未继续真实执行。
+- 当前这套 Codex + ChatGPT account 环境不支持 `opus` 模型；在委派/新会话启动时如果默认落到 `opus` 会直接报 `invalid_request_error` 并导致任务无法开始。
+- RemoteLab 会话发送链路里，普通消息变慢的一个可复现原因是服务端在很多正常输入上也先走了一次额外的会话分流/规划检查，再创建主 run；可通过把触发条件收紧到明显的 fork/fresh/多工作流信号，并把 planner 上下文限制到最近 16 条消息来降低首响延迟。
+- RemoteLab 前端存在一个偶发的用户消息“发送后像丢失”的展示问题：当界面刷新到尚无 canonical user event 的空消息区时，消息列表会先被清空，但本地 pending 回显未重新挂回；需要在空态渲染后补做 pending 回显同步，直到服务端消息写回。
+- RemoteLab 的 owner 侧 `agent-mail-worker` 在处理带实例子地址的邮件时，运行时解析只看 `~/.config/remotelab/guest-instances.json`（以及本地发现出的 guest runtime）；如果外部实例只存在于其他状态文件或 UI 侧记录里，而没有写进这个 registry，邮件会以 `Mailbox recipient targeted guest instance "<name>" but no matching guest instance was found` 失败。外部 runtime 改名、补绑域名或迁移后，要同步校正这个 registry。
+- 公众号文章自动化导出的稳妥方案是优先走微信官方 API：有发布能力权限时可用已发布文章接口和永久素材接口做定时全量/增量备份；拿不到权限时只能走浏览器自动化或私有接口，这类非官方方案适合临时抢救式导出，不适合长期生产备份。
+- RemoteLab 更新策略已确定分为两条路径：开发机采用 `source` 模式，把 owner、同机 N 个 guest 实例和所有 code-bound sidecar 视为同一个 host-level update domain，一次代码更新后做全量收敛；其他独立部署机器采用 `git_ref` 模式，按明确 commit 更新并支持回滚。
+- RemoteLab 需要补一个 host 级 `runtime-inventory.json`，统一声明哪些 unit 必须随代码更新重启、哪些仅在配置变化时重启、哪些必须排除在代码更新之外，作为多进程一致更新的基础。
+- 当前 RemoteLab 更新链路的已确认问题包括：`restart.sh` 只覆盖部分服务；`instance-factory` 与现网 systemd unit 名存在漂移（如 `remotelab-agent-mail-http-bridge` 与现网 `remotelab-agent-mail-bridge`）；ingress 不应绑定到普通代码更新流程。建议实施顺序为先做 `update-local` + inventory/alias 支持，再做 `update-host` 的 pinned-ref + rollback，最后做 `fleet-update` 的 ring rollout。
+- 在 4GB 级别、同机承载大量 RemoteLab guest instance 的部署上，外部看到的 `Cloudflare Tunnel error` 不一定是 tunnel/DNS 配置坏了；如果同时出现 `cloudflared` edge 断连、`systemd-journald`/`snapd` watchdog 超时、以及 OOM 日志，根因更可能是主机内存压力导致整机短时卡顿。稳妥缓解手段是三件事一起做：补持久 swap、给会拉起 Chromium/Chrome 的业务服务加 `MemoryHigh`/`MemoryMax` 护栏、并提高这些非核心服务的 `OOMScoreAdjust`，优先牺牲它们而不是让入口服务被拖死。
+- RemoteLab 在“是否先做拆线/新会话检查”上采用保守触发策略：只有输入中出现明显的多工作流结构、明确拆线/新开会话意图，或在已有上下文下出现路由控制词时才检查；默认普通连续追问直接进入主模型，以压低 false positive 和额外时延。
+- 会话分流检查的收益只在用户输入本身明确表达“需要拆线/新会话/多独立事项”时成立；误触发会带来真实的 planner 额外调用和前端回显时序风险，因此策略上宁可少触发、允许后续再 fork。
+- 在 RemoteLab 架构上，用户实例不应持有高风险敏感 token；语音、资产上传、Cloudflare 额外地址分配等能力应由平台侧托管，而不是直接暴露给用户实例。
+- RemoteLab 侧载能力的目标分层是：`Lab Core` 仅负责工作台/会话/UI，`Capability Assistant Service` 统一承接 secret、签名、公网入口和高风险能力调用，用户实例仅拿到单次、短时、资源范围受限的能力令牌。
+- 将高风险能力从用户实例中抽离到独立助手服务后，可同时支持风险隔离、主进程瘦身，以及后续的计费、分级、额度、审计和撤销策略。
+- 当 RemoteLab 某条 session 连续报 `No conversation found with session ID ...` 且表现为用户发消息后无回复时，常见根因是 session 元数据里持久化的 provider conversation id（如 `claudeSessionId`）已失效；可采用最小修复：仅清掉该失效续写指针，保留任务卡、上下文和正文内容，让下一次消息在同一条 RemoteLab session 内重新建立有效的 provider 会话。
+- Google/Gmail OAuth 管理员配置目前不能仅靠 `gcloud` 完成：`gcloud iam oauth-clients create` 不支持 `gmail.modify` 这类 Gmail scope。要为 Gmail 接入创建可用的 Web OAuth client，仍需在 Google Cloud Console 的 `Google Auth platform` 中手动完成 Branding/Consent 与 `Web application` Client 配置。
+- 排查 Gmail connector OAuth 时，如果状态显示 `credentialsPresent: true` 但 `binding` 仍是 `null`，且 Google 返回 `redirect_uri_mismatch`，说明本地 client id/secret 已生效，但 Google Cloud 侧还没有放行当前回调地址；需要在 OAuth client 的 `Authorized redirect URIs` 中精确添加当前 callback URL。
+- RemoteLab 的 Gmail/Google OAuth 应采用“一个产品级 OAuth client + 多条精确 redirect URI”的模型，而不是每个实例单独建 client；Google Cloud Console 需为每个实例分别配置 `https://<实例域名>/api/connectors/gmail/google/callback`，RemoteLab 在运行时按当前实例自动选择对应回调。
+- RemoteLab 管理员设置中的 Gmail OAuth 配置已从单个 `redirectUri` 扩展为：当前实例回调地址只读显示，另提供可维护多条额外 redirect URI 的列表。
+- RemoteLab 会话 `rename`/自动标题失败的一个可复用根因是：后台触发的 Codex 子进程若未补上托管运行时环境（尤其 `CODEX_HOME`），在 systemd 服务下会拿不到正确认证/运行时配置，导致 rename 任务失败。修复方式是在这类后台调用里统一套用 `applyManagedRuntimeEnv(...)`，并补对应回归测试。
+- RemoteLab 的 `codex` 模型下拉曾因后端只依赖 `models_cache.json` 而在无缓存实例上返回空数组，修复方式是：后端在无缓存时回退到 `config.toml` 和最近 Codex 会话里实际使用过的模型；前端即使模型数组暂时为空也不要把模型选择框整块隐藏。
+- RemoteLab 的 Codex 模型下拉在 `models_cache.json` 不完整或缺失时，不应只依赖本机探测结果；应硬编码 8 个基础 Codex 模型作为基线，再用缓存和本机探测结果做覆盖补全。
+- Codex 基础模型目录固定包含 8 个模型，并保留特定推理限制与默认值，例如 `gpt-5.1-codex-mini` 仅支持 `medium/high`，`gpt-5.3-codex-spark` 默认 `high`。
+- RemoteLab 的 Google/Gmail OAuth 配置应作为后端共享配置管理，不应出现在前端实例设置中，也不应由单个实例覆盖。
+- 当 Gmail 共享 credentials 已存在但用户尚未完成 Google 授权时，状态应显示为 `binding_required`，而不是 `setup_required` 或 `Gmail is not available yet`。
+- RemoteLab 的 Gmail OAuth 已采用“共享凭据 + 共享 callback + guest 本地回收”的方案：guest instance 不再要求各自持有 Gmail OAuth client，优先继承后端共享 Google OAuth 配置；授权时统一使用 owner 域名下的 callback，再通过 state 路由回目标 guest 实例落 token/binding。
+- 若 Gmail 授权仍报 `redirect_uri_mismatch`，当前应优先检查 Google Cloud Console 的 Web OAuth client 是否已将共享回调 URI 加入 `Authorized redirect URIs`；例如 `https://owner.jiujianian-dev-world.win/api/connectors/gmail/google/callback`。这是该链路的外部依赖，不是 RemoteLab 代码内问题。
+- 当用户询问 Gmail、邮箱、inbox、最新邮件等内容时，误判常见原因不是 connector 不可用，而是 assistant 没有实际调用 Gmail 能力；应先执行 Gmail 状态检查再决定是否回退到“未授权”说明。
+- `tests/test-static-asset-routing.mjs` 需要接受相对路径和绝对路径两种 split-asset 引用（如 `chat/icons.js` 与 `/chat/icons.js`）；页面使用 `<base href="/">` 时两者都属于有效合同，避免把这种差异误判为前端回归。
+- 部分前端烟雾测试直接在当前 shell 里运行会因缺少 clean instance 环境而失败；应优先通过 `scripts/run-with-clean-instance-env.mjs` 包装后的 CI 等价路径验证。
+- RemoteLab 运行时选择已确定移除 `Micro Agent` 选项，并将原先默认或历史 `micro-agent` 实例统一迁移到 `codex / gpt-5.4 / medium`。
+- RemoteLab 聊天如果发消息后无模型回应，可能是保存的 Codex resume thread 已失效，Codex 启动时报 `no rollout found for thread id`。应把这类 stderr 失败明确投到聊天侧，并自动清除旧 thread id，让下一条消息新开线程恢复。
+- RemoteLab 的 async continuation / follow-up 队列如果在 flush promise 尚未清理时调用下一次 `schedule*Flush()`，调度函数会因为看到现存 promise 直接 no-op，导致剩余消息永久停在 `checking`。修复模式是先记录需要重调度的 delay，在 `finally` 删除当前 promise 后再调用调度函数；排查时看 session meta 里的 `pendingContinuationQueue` 是否长期非空且无 active run。
+- RemoteLab 会话如果长期显示 checking，可能不是模型仍在运行，而是消息卡在 pendingContinuationQueue；已确认过一个根因是队列 flush 完一条后，在当前 flush promise 尚未清理时调度下一条，调度被状态锁吞掉，导致后续消息永久不动。修复方向是等当前 flush promise 清掉后再调度下一条。
+- RemoteLab 服务端收到 multipart 附件后若需要发布为 file asset，不能复用受 `REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED=0` 影响的浏览器 upload intent；服务端 offload 应强制生成对象存储 PUT URL。否则会拿到相对 `/api/assets/:id/upload` URL，发布失败后退回老式本地附件引用，导致图片/文件会话后续处理不稳定。
+- 较新的 npm 版本不再允许 `npm config set optional true`；安装 Codex 时应跳过该设置，改用 `sudo npm install -g @openai/codex@latest --include=optional` 来包含可选依赖。
+- 安装 @openai/codex npm 包时，正常耗时通常为 1-5 分钟，网络慢也多在 10 分钟以内；若超过 10 分钟完全无输出，可用 Control+C 中断后改用 `sudo npm install -g @openai/codex@latest --include=optional --verbose` 查看详细下载进度。
+- 在 macOS 上不要单独安装 `@openai/codex-darwin-arm64@latest`；该包在 npm registry 返回 404，Codex 应优先按官方方式用 `brew install --cask codex` 安装。
+- RemoteLab 图片/附件作为新会话第一条消息时，不应先进入会话路由检查；应直接创建运行，避免上传后卡在 checking 或报错。
+- RemoteLab 服务端接收 multipart 图片后，如果对象存储开启但浏览器直传关闭，应强制走服务端对象存储 offload，避免退回不稳定的本地图片引用。
+- RemoteLab 的 /upload-fallback 应急上传页提交附件时需要携带 requestId，并使用已保存附件提交，避免附件被二次保存成空文件或直接失败。
+- Linux 上重启 RemoteLab chat surface 时，guest 实例是 `remotelab-guest@name.service` 这类模板实例，不能只用 `systemctl list-unit-files 'remotelab-guest@*.service'` 枚举；要同时看 `systemctl list-units ... --all`，否则 `restart chat` 会漏掉正在运行的 guest，导致代码修复后实例仍跑旧进程。
+- RemoteLab 的 Linux `restart chat`/`restart.sh` 需要枚举并重启模板化的 `remotelab-guest@*.service`，否则 guest 实例可能继续运行旧的 `chat-server` 进程，导致 owner 已修复但其他实例仍有上传/附件问题。
+- 修复 RemoteLab chat surface 后，应同时验证 owner 与所有 guest 的 `/api/build-info` 一致、guest 服务均为 `active/running`，并检查日志中是否仍有 upload / attachment / file asset 报错。
+- 美国出口/IP 代理调试的复用验收方法：用 `curl https://ipinfo.io/json` 检查 `country` 是否为 `US`、IP 是否非本地出口；用浏览器打开 `ipinfo.io` 或 Cloudflare trace 验证浏览器流量；用 `curl -I https://www.google.com` 验证实际访问；关闭/开启 Clash 各测一次做对比。若终端仍显示本地出口，优先检查系统代理、终端代理/TUN Mode、当前节点选择。
+- 使用 GitHub fine-grained token 推送包含 `.github/workflows/*` 的提交时，除了 Contents/Actions/Pages 等权限，还需要给目标仓库开启 `Workflows: Read and write`；否则 GitHub 会认证通过但拒绝写入 workflow 文件。
+- ClashX 在 macOS 弹出安装/更新 privileged helper / helper tool 的提示时，通常不是订阅或节点问题，而是需要管理员权限安装用于修改系统代理的 helper；可信来源可输入本机管理员密码安装，之后重启 ClashX 并开启系统代理。若无管理员权限只能手动/浏览器代理或找管理员；反复弹窗多半是 helper 损坏或版本过旧，可从可信来源重装新版。
+- 测试成绩录入提不出任务时，需检查官网待办分页是否被大量考勤任务挤到较后页；后端不能写死只扫前 8 页，应按官网真实分页持续扫描。已出现过 K339/K218 测试待办在第 9 页以后导致误判 0 条任务的回归。
+- Cloudflare quick tunnel 出现 530 通常表示临时隧道已断开或注销；若临时链接频繁断开，应改用 Cloudflare named tunnel / 固定域名，而不是继续依赖 quick tunnel。
+- RemoteLab 有自有 Cloudflare 域名和通配路由；`trial8.jiujianian-dev-world.win` 是 RemoteLab 会话入口，不应被当作用户本地服务/网页原型的公开预览域名。
+- RemoteLab 预览发布应优先使用自有稳定子域名，避免让用户依赖 `trycloudflare.com` quick tunnel；quick tunnel 依赖进程常驻，轮次结束后容易断链。
+- 后续应提供一等公民的预览发布能力，例如 `remotelab expose` 或“发布预览”按钮，让 guest agent 请求 owner/router 侧分配稳定子域名；面向终端用户的预览 slug 不应暴露 `trial8` 这类实验感入口名。
+- RemoteLab 受控 Cloudflare 预览发布已可用时，应引导会话使用 `node /opt/remotelab/cli.js guest-instance expose <instance> --label <label> --port <port> --json`，不要继续使用 `trycloudflare.com` 或误判为 Safari/VPN 问题。
+- RemoteLab 的 `/share/snap_...` 链接是只读快照；live 会话更新后，旧分享快照不会自动更新，如需展示新状态要重新生成分享快照。
+- 在 RemoteLab/Cloudflare 隧道环境中，如果页面显示 Cloudflare 502 Bad gateway，常见原因是本地源站服务（例如 FastAPI 后端）已退出；应先检查后端进程、`/api/health` 和公网入口状态，并可用带自动重启的后台守护进程避免服务退出后页面不可达。
+- 在 RemoteLab 发布临时 Web 应用时，如果公开地址持续 502，应检查后端端口是否真的有服务监听；后台启动方式可能没有让服务持续存活，改用前台长连接方式启动后端后再验证页面和 `/api/health` 是否返回 200。
+- RemoteLab 上传图片会话无法发送的根因曾出在前端发送链路：图片/文件先预上传为 asset 时，如果预上传失败会中止整次发送。修复策略是预上传失败时清理本次预上传状态，并回退到随消息 multipart 上传，保证图片仍可发送。
+- RemoteLab 当前聊天上传控件支持任意文件类型，音频附件支持显示和播放；音频发不出去通常不是因为音频类型被禁止。
+- RemoteLab 单次消息提交附件大小上限约为 256MB；附件发送失败的常见原因包括文件过大、会话仍在发送/运行导致附件选择锁定、移动端浏览器上传中断、或附件仍处于 queued/uploading 状态时就点击发送。
+- RemoteLab 图片/资产上传应默认走对象存储直传；不要退回到 owner/guest 代理上传作为常规路径，因为这会引入额外的跨实例和服务端转发问题。
+- RemoteLab 对象存储直传依赖 owner systemd 环境里的 `REMOTELAB_ASSET_STORAGE_*` 配置；guest converge 也需要能读取 `/etc/remotelab/remotelab.env` 才能把对象存储配置正确收敛到 guest。
+- 上线或修复 RemoteLab 对象存储直传时，应先确认使用的是标准对象存储 AK/SK 并做预签名 PUT smoke test；不要把会触发 `Credential is mal-formed` 的旧缓存 TOS 凭据写入线上环境。
+- RemoteLab 音频附件发送失败的一种复现模式：点击发送后一直显示“正在发送中”，随后失败且输入内容留在输入框内，通常表示消息尚未提交成功，问题发生在附件上传到消息接口阶段，而不是模型处理阶段。
+- 针对 RemoteLab 附件上传卡住超时的修复方案：将发送流程改为先单独上传附件，再发送文字消息，避免大音频或慢网络导致整条消息提交接口长时间等待完整文件后中断。
+- RemoteLab 消息列表的产品行为已定为：每条聊天消息下方展示完整日期和时间，而不是只展示时间；格式保留到秒。
+- RemoteLab 前端消息时间行应设置为不换行，避免完整日期时间在手机端被拆成两行；相关 smoke 测试为 `node tests/test-chat-split-frontend-smoke.mjs`。
+- RemoteLab 会话 archive/restore 的乐观隐藏会被归档前已发出的 session list/sidebar/current-session 刷新请求回写旧 active 状态，导致“先隐藏又展示再隐藏”的跳动；修复思路是为归档 mutation 增加 epoch 和 pending overlay，让旧刷新结果不回写，并在请求未完成时用本地乐观状态覆盖旧 payload 的 archive 标记和归档计数。
+- 当公网预览链接出现 Cloudflare 502 且域名仍可解析时，常见原因是回源端口上的临时预览进程已退出；应改用稳定托管方式，不依赖当前聊天会话存活，并用公网 HTTP 200 校验。
+- RemoteLab 接入飞书 bot 的推荐方案是使用“飞书企业自建应用机器人 + 长连接事件订阅”，订阅 `im.message.receive_v1`，而不是群自定义 Webhook 机器人；这样无需公网回调地址，只需本机 connector 保持在线。
+- RemoteLab 飞书 Bot connector 曾因 systemd 服务环境中的 auth 配置路径错误，导致本地 RemoteLab 接口调用失败并返回英文兜底提示；排查同类问题时应先核对 connector 服务环境和 auth 路径。
+- RemoteLab 飞书 Bot connector 需要支持飞书富文本 `post` 消息的文字提取；旧逻辑只处理纯文本会导致富文本任务被静默跳过。
+- RemoteLab 飞书 Bot connector 的出站 AI 回复应默认按飞书富文本 `post` 发送，并用 `md` tag 承载 markdown 行；`lark-cli im +messages-send/+messages-reply --markdown` 也是同一思路，避免把 AI markdown 作为纯文本裸发。
+- 对飞书话题手动补发 RemoteLab 最后一条回复时，若 `lark-cli --markdown` 直发因多行内容触发 `99992402 field validation failed`，可改用 `scripts/feishu-connector.mjs` 导出的 `sendFeishuText`，它会走 connector 的 post 渲染和短 uuid 逻辑并能正确回复到 `thread_id`。
+- 排查 RemoteLab 飞书 Bot 消息链路后，可用重放简单消息（如 `hello`）验证 RemoteLab 回复生成，并运行 `test-feishu-connector` 做回归；因飞书会对同一条消息去重，验证时应发送新消息。
+- KOL review / 达人搜索类网页交付应默认发布为公网 HTTPS 页面：静态 HTML 先通过本机服务托管，再绑定到可访问的 Cloudflare 域名，并在回复中直接给各页面链接。
+- 飞书 CLI 已支持在话题群里回复消息，可用于把话题作为独立 AI 会话容器。
+- 在飞书话题群集成 AI 时，推荐按 `chat_id + topic_id/root_message_id` 绑定 RemoteLab session：群作为长期入口，话题作为独立上下文；话题内回复继续同一上下文，新话题默认新上下文，以避免上下文污染。
+- RemoteLab 飞书 connector 的群聊会话隔离策略：普通会话群继续按 chat_id 复用同一个 session；话题群单独按 chat_id + thread/topic id 建独立 session，并通过 message.reply 携带 reply_in_thread: true 回复到对应话题。
+- 飞书话题群场景需要在 source context 中保留 topicId / threadId / rootId，便于后续排查、回看和确认同一话题上下文复用、不同话题上下文隔离。
+- RemoteLab 的 Feishu topic 触发会话不应由 connector 设置会话标题；connector 传空标题，交给 RemoteLab 自动重命名 feature 接管。
+- Feishu `message.reply` 的 `uuid` 字段长度会触发校验失败（如 `99992402 field validation failed`）；RemoteLab connector driver 应为飞书回复生成合法短 hash 作为 uuid。
+- Feishu 话题群触发 RemoteLab 会话时，session 隔离键继续使用 `chat_id + thread_id/topic_id`，话题内回帖走 `message.reply(... reply_in_thread: true)`。
+- RemoteLab 飞书 bot 的 AI 回复默认应按 Markdown 富文本发送，而不是纯文本裸发；AI 回复通常就是 Markdown，飞书侧默认渲染可读性更好。
+- `lark-cli` 支持 `--markdown`；RemoteLab 飞书 connector 可将出站回复转成飞书富文本 `post`，使用 `md` tag 渲染 Markdown，并保留空行、处理 `@` 提及为飞书 `at` 元素。
+- 当 RemoteLab 公网页面改动后用户反馈“没变化”时，一个可复用处理方式是在页面内嵌当前 BUILD_VERSION，并通过 `ui_build` 查询参数自动强制跳转到最新版本，同时给 CSS/JS 资源同步追加同一版本号用于缓存刷新。
+- 飞书 IM 读取群消息上下文时，仅完成基础授权可能不够；如果实际只拿到部分权限，需要补齐“读群消息”和“联系人基础信息”权限后再继续读取群消息。
+- 飞书 connector 处理 `post` 富文本事件时，应从完整 `rawContent` 提取用户正文；日志预览只能用于日志，不能作为提交给 RemoteLab 的正文，否则长消息会被截断。该问题已在 `scripts/feishu-connector.mjs` 修复，并用超过 8 行富文本和 `@Rowan` 还原的回归测试覆盖。
+- RemoteLab 的飞书消息图片接入已采用现有 attachments 架构实现：从飞书消息中的 image_key 调用 im.v1.messageResource.get 下载二进制，再作为标准 attachments 提交；不引入单独的“飞书图片 URL”机制。
+- 飞书 connector 现在应支持纯 image 消息和富文本 post 中的 img 元素；图片下载失败时保留消息流转，降级提交包含失败提示的文本。
+- 静态网页发布后若用户怀疑缓存或版本号未生效，可在页面内加入可见的强制版本验证组件：同时比对 URL、HTML、CSS、JS 中的 build/token，状态异常时自动强刷一次，并显示醒目的 MISMATCH 告警和手动强制刷新按钮。
+- RemoteLab 的回复补全/后台 self-check 命中后，UI 应把第一轮已展示的 assistant 回复和后续 repair 回复都展示在主消息流中；隐藏执行和 self-check 状态仍保持折叠。普通一次性回复的折叠策略不变。
+- 这次回复补全展示改造没有改变 API 形状，而是调整 visible timeline 的服务端投影，使其兼容现有缓存体系；相关改动集中在 session-display-events.mjs，并用 test-session-display-events.mjs 与 test-chat-reply-self-check-collapse.mjs 验证。
+- RemoteLab detached runner 如果在 `materializeFileAssetAttachments()` 下载大文件阶段卡住，会表现为 run 长期 running、`toolProcessId` 为空、`normalizedLineCount` 为 0，普通 cancel 只会设置 `cancelRequested`，不会立即中断还没进入 tool spawn 的 sidecar。应优先检查对应 `remotelab-runner-<runId>` systemd unit、file-assets-cache 临时文件是否持续增长；必要时停止该 runner unit，让 run reconciler 将已请求取消的运行合成为 `cancelled` 并释放后续队列。若取消后出现 `queued_batch_*` 新 run 重放同一条大附件请求，需要同步拦停这个新 run；临时恢复可用 `assistant-message --session <id> --text ...` 直接补交答案，避免再次触发附件本地化。
+- RemoteLab 会话若长时间无回复，可能是上一条带大附件的消息卡在“下载/本地化附件”阶段，模型尚未启动；普通取消可能只标记取消而不会立即中断该阶段，导致后续消息排队。处理方式是停掉卡住的运行器并同步状态，使原请求变为 cancelled，释放队列。
+- RemoteLab 会话若因重复上传约 100MB+ 的大 PDF 附件卡在附件本地化阶段，可先停止并取消卡住的运行，再拦截系统自动重放的同一条大附件请求，避免反复卡住；必要时基于已能读取的 PDF 目录/主题信息和用户已提供职责直接继续产出。
+- 在 RemoteLab 预览/远程实例里，用户通常不是在实例本机浏览页面；涉及登录、OAuth callback、跳转链接时不要默认使用 localhost，应优先使用可公开访问的预览域名。
+- 飞书 CLI `scopes/apply` 返回 `unauthorized scopes were empty` 表示当前没有待管理员授权的剩余 scope；`im:message:send_as_bot`、`im:chat:create` 等 tenant/bot scope 可能不会出现在 OAuth user token scope 里，应以实际发消息、建群、拉人和事件消费验证为准。
+- 在飞书内嵌浏览器里展示静态表格页面时，避免使用写死偏移高度的 sticky 表头；飞书滚动容器高度可能与预估不一致，导致表头悬到页面中间。遇到此类问题可改回普通表头并重新覆盖发布链接。
+- RemoteLab 公开页面可以承接“找达人”需求并触发 Rowan 执行，但不能做成无鉴权公开执行入口；应只允许已登录 owner 的浏览器按钮创建新的 RemoteLab 执行会话并发送需求，未登录时明确提示登录态缺失。
+- 对于需要多个 session 配合的复杂任务，采用“主控 session + 受控 Codex/子 session worker”的模式：主 session 定义假设、目标、验收标准和可独立验证的问题；子 session 执行边界清楚的验证任务并返回结论、证据、风险和建议。
+- 多轮多 session 推进时，主 session 应维护简短当前状态，包括已确认事实、已做改动、未解决问题和下一轮验证目标；必要时写成临时工作记录，避免只依赖上下文记忆。
+- 飞书 ID 配置表单应容忍运营粘贴整段 bot 回复文本，并自动提取其中的 `oc_...` 群 ID 或 `ou_...` open_id 保存，降低手动配置门槛。
+- 飞书/内嵌浏览器中打开的 RemoteLab 静态表单页，`localStorage` 可能被清理或不稳定；需要可靠草稿保存时，优先采用 `localStorage + cookie + IndexedDB` 多层持久化，并提供“恢复草稿 / 清空草稿”和保存状态提示。
+- RemoteLab Sort Chat UI 的 project 分组目标应优先作为侧边栏消费单元，而不是严格知识分类；目前倾向于只做一层 project，并根据会话数量动态调整粗细：会话少时可细分，会话多时合并，保持 project 数量大致稳定、便于扫读和处理。
+- RemoteLab 会话侧栏的 Sort List 不应默认全量整理所有来源；日常真正消费的是 Chat UI，会话列表里的 Bot/Feishu/Automation 主要用于审计保留，避免参与默认整理而干扰日常列表。
+- RemoteLab Session 侧栏整理逻辑：如果前端来源筛选器选中 Chat UI/Bot/Automation 等具体来源，Sort List 只整理当前来源；如果是 All Origins，则默认只整理 Chat UI。
+- 不要把后台子代理称为用户可见的 RemoteLab 会话；如果说“分开的会话/新 session”，必须确实通过 RemoteLab session API 创建用户可见会话，并提供可打开的链接和 session ID。
+- RemoteLab 的 WhatsApp 接入方向已确认适合采用共同业务语义 adapter：入站归一为 conversationKey/requestId/text/attachments/sourceContext，核心复用 create/reuse session -> submit message -> wait reply publication，出站由平台 adapter 渲染为飞书 post、WhatsApp text message 等格式。
+- RemoteLab WhatsApp 最小闭环可以在 API 层验证，不必须走 RemoteLab 前端；bind 页面本质是写入 accessToken、phoneNumberId、verifyToken、appSecret、wabaId，可通过配置文件或 connector /config API 完成。Meta 侧账号/资产的一次性准备仍可能需要 Dashboard 操作。
+- RemoteLab 文件上传加号按钮在移动端 Safari / PWA 中不能依赖 JS 触发 hidden file input；应让真实透明的 file input 覆盖可点击区域，并同步 disabled 状态，避免原生上传控件被浏览器拦截。
+- 在多 Session / 多 Codex 协作中，应把 token 消耗、压缩次数、运行时长、输出证据密度下降、对象数量过多等信号作为任务复杂度报警器；当 worker 已压缩 2 次以上或实际干活进程压缩 3-4 次时，默认不再适合继续承担精细判断，应抽取已完成事实和剩余清单后重新分片派发。
+- 大批量验证、游戏素材检测、账号筛选等任务不应默认交给单个长上下文 worker；更稳妥的模式是先定义统一检查表，再按小批量或单对象分片给多个 worker，由主 session 聚合、查漏、处理冲突和低证据项，并对异常项或抽样通过项做二轮复核。
+- RemoteLab 的 Projects 视图应按项目内最新会话活动/最后修改时间倒序排序；包含正在运行会话的项目默认视为最新并置顶。Inbox 的注意力排序不受该规则影响。
+- Agency 提报消费流中，飞书创建多维表和数据表的返回字段实际为 `data.base.base_token` 与 `data.table.id`；相关解析逻辑需要兼容这两个路径，否则会误判创建失败。
+- WhatsApp 接入准备时，普通 WhatsApp 账号不能提供 API 或 Access token，只能作为测试接收号；API 凭证应来自 Meta WhatsApp Business Platform / Cloud API，需要收集 Access token、Phone number ID、WhatsApp Business Account ID，并避免在群聊中直接暴露 token。
+- 飞书群消息里的表格样例可能不会以原始 Tab 到达 bot：单元格间可能被渲染成多空格，URL 可能变成 Markdown 链接 `[url](url)`。KOL 提报解析器和错误提示应兼容 Tab 与飞书渲染后的多空格，并从 Markdown 链接中提取真实 URL。
+- RemoteLab 用户 onboarding 可用 6 步表达：选定 1-2 个试点场景、准备样例材料、配置工作空间、跑通第一次真实任务、固化成工作流、团队推广使用；用户侧负责提供场景/素材/验收反馈，运维技术方负责工作区/权限/连接器配置、执行首个任务并沉淀可复用流程。
+- RemoteLab 当前飞书 Adapter 比 WhatsApp Adapter 成熟：飞书已支持 Agency 提报 intake、达人话题上下文、群/成员/环境权限、出站话题通知、批量提报回执、较完整命令反馈、event audit 和配置 UI；WhatsApp 仍是 P0 adapter，主要适合 Twilio Sandbox 演示。
+- 若要把 WhatsApp Adapter 对齐飞书 Adapter，优先级是：1）手机号绑定 Agency/成员权限；2）WhatsApp 会话上下文绑定最近讨论的 KOL；3）WhatsApp 新达人提报 intake；之后再补 webhook audit、配置页和测试发送 UI。
+- Twilio WhatsApp Sandbox 收到消息后回复 “You said: ... Configure your WhatsApp Sandbox's Inbound URL...” 通常表示 Sandbox 的 Inbound URL/When a message comes in 尚未配置到业务 webhook；需在 Sandbox 设置中配置入站 webhook 并使用 POST。
+- RemoteLab Projects 列表的分组策略已对齐：Project 应作为用户下次回来恢复工作的入口，不应等同于“一次会话”，也不应做成严格 taxonomy；粒度要避免过粗或过细。
+- RemoteLab Projects 排序/分组组织器应支持全局 scoped rebalance：分类时可以重排已有组、修改旧组、合并过细 singleton，而不是只操作当前单条会话；单会话分类结果应视为 provisional，优先复用合适的既有 workstream。
+- 当前 Chat UI 样本中 20 个活跃会话被拆成 17 个 Projects、16 个 singleton，被认为明显偏细；按现有密度预算，目标规模更接近约 6 个 Projects。
+- RemoteLab Projects 当前采用“Project 只是 session 的分组投影”的轻量架构是合理的；单会话分类只负责临时贴签，真正的纠偏权应交给 Sort List 做 scoped 全量重排。只有当 Project 需要固定身份、pin、手动合并/拆分历史或独立状态时，才应升级为真正的 Workstream/Project object。
+- 为防止 Projects 分组持续腐败，Sort List 应接收 groupSummary（已有 group 数、singleton 数/比例、最大组、singleton 示例），prompt 明确允许 full scoped rebalance（改旧组、并组、拆组），单会话 label prompt 则优先复用已有 workstream，仅在 outcome/lifecycle/source/context 明显不同才新建 group。
+- Projects 视图排序策略：运行中优先，其次需要注意的组，再按 Sort List 写入的 sidebarOrder 稳定排序普通组；没有整理顺序的新组按最新活动兜底。Sort List 按钮状态应显示当前 scope，避免 All Origins 下实际整理局部来源时交互不透明。
+- Projects/session 分组排序策略倾向于分层处理：新 session 创建/命名时只做当前 session 的小修小补；中度漂移只提示 Sort recommended；只有严重漂移且通过确定性指标、scope、cooldown、前台 turn 结束、无 organizer 并发等硬卡控时，才允许 autonomous Sort List。
+- Projects 自主整理应由 deterministic drift detector 判断是否触发，AI organizer 只在触发后负责合并、重命名和排序；可用指标包括 scoped sessions、group 数相对 targetProjectCount、singleton 数量和 singleton ratio。
+- RemoteLab 公开链接打不开并返回 502 时，优先检查公开路由指向的后端端口是否仍有进程存活；本次问题是路由仍指向已退出的 7903，切回稳定运行的 7900 后页面恢复 200。
+- RemoteLab 公开链接返回 502 时，常见原因是公开路由指向了已退出的后端端口；应检查并把同一个公开 URL 重新指向稳定运行的页面服务端口。
+- RemoteLab 的 Project 整理策略应从“一次性给 session 算分类/标签”改为“持续维护的工作流容器”：新会话默认优先挂到已有 Project，只有高置信是新的长期主题时才新建 Project。
+- Project 排布质量的关键指标之一是 singleton 比例；如果大量 Project 只有 1 个 session，说明分类过细且整理失败。Sort List 应支持合并、拆分、重命名和压缩 singleton，而不只是重新排序。
+- RemoteLab Project 名称不应由首个 session 固定生成，而应基于当前成员 sessions 的整体语义持续反推；当内容漂移或手动整理后，应允许重命名并把用户手动合并/排序结果作为强反馈。
+- RemoteLab 远程 Codex 执行的推荐架构：短期支持将 RemoteLab 部署在 SSH 主机上并调用该机本地 Codex；多 SSH 主机形态应补远程 worker 调度层，由主控 RemoteLab 调度各主机上的 RemoteLab worker，再由 worker 调本机 Codex，不建议长期依赖主控直接 `ssh host codex ...`。
+- RemoteLab 的 Self review 判定一轮是否完成时，需要把同一 run 中通过 `resultRunId` 关联的 `result_file_assets` 消息纳入用户实际可见内容；否则文件型交付会被误判为未完成。

@@ -2,12 +2,15 @@
 import assert from 'assert/strict';
 
 const {
+  checkSessionContinuationNeed,
   executeContinuationPlan,
   isTrivialContinuationPlan,
   planSessionContinuations,
   shouldRunDispatch,
+  shouldPrepareContinuationCheck,
 } = await import('../chat/session-dispatch.mjs');
 const {
+  buildContinuationGatePrompt,
   buildContinuationPlannerPrompt,
 } = await import('../chat/session-dispatch-prompt.mjs');
 
@@ -52,6 +55,140 @@ assert.equal(
   'normal user turns should still be eligible for continuation planning',
 );
 
+assert.equal(
+  shouldPrepareContinuationCheck({
+    id: 'session-simple',
+  }, ''),
+  false,
+  'empty messages should not enter continuation checking',
+);
+
+assert.equal(
+  shouldPrepareContinuationCheck({
+    id: 'session-simple',
+  }, '继续把这个 bug 修掉。'),
+  true,
+  'ordinary single-track follow-ups should still enter continuation checking so stage 1 can decide whether heavy planning is needed',
+);
+
+assert.equal(
+  shouldPrepareContinuationCheck({
+    id: 'session-branch',
+  }, '把 UI 卡片那条线单独拉出来，别继续和 planner 架构讨论混在一起。'),
+  true,
+  'explicit branch-off requests should also enter continuation checking through the same structural gate',
+);
+
+assert.equal(
+  shouldPrepareContinuationCheck(null, 'anything'),
+  false,
+  'missing sessions should not enter continuation planning',
+);
+
+const gatePrompt = buildContinuationGatePrompt({
+  currentSession: {
+    id: 'session-source',
+    name: '个人助手聊天',
+    description: '同一个聊天框里会出现散漫的个人助手请求。',
+  },
+  currentTranscript: '[User]: 北京天气怎么样？\n\n[Assistant]: 今天北京晴。\n\n[User]: 明天下午提醒我开会。',
+  message: '上海后天会下雨吗？',
+});
+
+assert.match(
+  gatePrompt,
+  /"same_workstream": the current session identity still fits\./,
+  'gate prompt should define the stable same-workstream relation',
+);
+
+assert.match(
+  gatePrompt,
+  /"same_session_shift": the current session should still own this input, but the session's main visible frontier has materially shifted enough that later relabeling may be appropriate\./,
+  'gate prompt should define the relabel-worthy same-session-shift relation',
+);
+
+assert.match(
+  gatePrompt,
+  /Default to "continue_direct" when uncertain\./,
+  'gate prompt should explicitly bias weak evidence toward staying direct',
+);
+
+const directGateDecision = await checkSessionContinuationNeed({
+  session: {
+    id: 'session-source',
+    name: '个人助手聊天',
+    description: '同一个聊天框里会出现散漫的个人助手请求。',
+  },
+  message: '上海后天会下雨吗？',
+  loadSessionHistory: async () => [
+    { type: 'message', role: 'user', content: '北京天气怎么样？' },
+    { type: 'message', role: 'assistant', content: '今天北京晴。' },
+    { type: 'message', role: 'user', content: '明天下午提醒我开会。' },
+  ],
+  runPrompt: async () => '<hide>{"action":"continue_direct","workstreamRelation":"same_workstream","confidence":0.93,"reasoning":"这是一个简单的一次性提问。"}<\/hide>',
+});
+
+assert.equal(
+  directGateDecision.action,
+  'continue_direct',
+  'simple one-off asks should stay on the direct path',
+);
+assert.equal(
+  directGateDecision.workstreamRelation,
+  'same_workstream',
+  'simple one-off asks should not redefine the session workstream',
+);
+
+const escalatedGateDecision = await checkSessionContinuationNeed({
+  session: {
+    id: 'session-source',
+    name: '会话分流复用判定',
+    description: '梳理会话分流与复用判定逻辑。',
+  },
+  message: '把 UI 卡片那条线单独拉出来，别继续和 planner 架构讨论混在一起。',
+  loadSessionHistory: async () => [
+    { type: 'message', role: 'user', content: '我们是不是应该把分流和 delegate 统一成单一 planner？' },
+    { type: 'message', role: 'assistant', content: '当前主线是会话分流机制本身。' },
+  ],
+  runPrompt: async () => '<hide>{"action":"needs_planning","workstreamRelation":"separate_workstream","confidence":0.91,"reasoning":"用户明确要求把相关子线单独拉出。"}<\/hide>',
+});
+
+assert.equal(
+  escalatedGateDecision.action,
+  'needs_planning',
+  'explicit branch-off requests should escalate into full planning',
+);
+assert.equal(
+  escalatedGateDecision.workstreamRelation,
+  'separate_workstream',
+  'explicit branch-off requests should be marked as a separate workstream',
+);
+
+const lowConfidenceGateDecision = await checkSessionContinuationNeed({
+  session: {
+    id: 'session-source',
+    name: '会话分流复用判定',
+    description: '梳理会话分流与复用判定逻辑。',
+  },
+  message: '顺手再聊聊别的吧。',
+  loadSessionHistory: async () => [
+    { type: 'message', role: 'user', content: '我们是不是应该把分流和 delegate 统一成单一 planner？' },
+    { type: 'message', role: 'assistant', content: '当前主线是会话分流机制本身。' },
+  ],
+  runPrompt: async () => '<hide>{"action":"needs_planning","workstreamRelation":"separate_workstream","confidence":0.31,"reasoning":"也许应该规划一下。"}<\/hide>',
+});
+
+assert.equal(
+  lowConfidenceGateDecision.action,
+  'continue_direct',
+  'low-confidence escalation should fall back to the cheap direct path',
+);
+assert.equal(
+  lowConfidenceGateDecision.workstreamRelation,
+  'same_workstream',
+  'low-confidence workstream shifts should also fall back to the stable default relation',
+);
+
 const emptyTranscriptPlan = await planSessionContinuations({
   session: {
     id: 'session-empty',
@@ -91,6 +228,18 @@ assert.match(
   plannerPrompt,
   /Topic shift alone is not enough for "fresh"/,
   'planner prompt should make topic shift alone insufficient for fresh session creation',
+);
+
+assert.match(
+  plannerPrompt,
+  /A simple time-based reminder or schedule update request should usually stay as "continue"/,
+  'planner prompt should keep plain reminder asks in the current session',
+);
+
+assert.match(
+  plannerPrompt,
+  /Recurring feedback loops, scheduled reviews, "check my calendar and tell me what changed", or other future AI work.*may justify "fresh" or "fork"/,
+  'planner prompt should distinguish recurring AI work from simple reminders',
 );
 
 const continuePlan = await planSessionContinuations({

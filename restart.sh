@@ -134,7 +134,10 @@ restart_linux_chat_surfaces() {
     local guest_units=()
     while IFS= read -r unit; do
       [[ -n "$unit" ]] && guest_units+=("$unit")
-    done < <(systemctl list-unit-files 'remotelab-guest@*.service' --no-legend --plain 2>/dev/null | awk '{print $1}' | sed 's/\.service$//')
+    done < <({
+      systemctl list-units 'remotelab-guest@*.service' --all --no-legend --plain 2>/dev/null | awk '{print $1}'
+      systemctl list-unit-files 'remotelab-guest@*.service' --no-legend --plain 2>/dev/null | awk '{print $1}'
+    } | sed 's/\.service$//' | grep -E '^remotelab-guest@[^[:space:]]+$' | sort -u)
 
     if [[ "${#guest_units[@]}" -gt 0 ]]; then
       echo "  guest chat surfaces: restarting ${#guest_units[@]} services"

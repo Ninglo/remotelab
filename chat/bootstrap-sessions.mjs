@@ -64,6 +64,12 @@ function normalizeMailboxName(value) {
     : '';
 }
 
+function envFlagEnabled(value, fallback = false) {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!normalized) return fallback;
+  return !['0', 'false', 'no', 'off'].includes(normalized);
+}
+
 function buildGuestMailboxAddress(instanceName, ownerIdentity) {
   const normalizedInstanceName = normalizeMailboxName(instanceName);
   const localPart = typeof ownerIdentity?.localPart === 'string' ? ownerIdentity.localPart.trim() : '';
@@ -107,7 +113,8 @@ function buildEmailShowcaseIntro(mailboxAddress) {
   if (mailboxAddress) {
     return [
       '这个示例基于我刚验证过的真实链路。',
-      `这个实例当前的收件地址是 \`${mailboxAddress}\`。你直接给它发邮件，左侧会自动多出一个新会话。`,
+      '它展示的不是“邮件提醒”，而是邮件本身可以成为一个工作入口。',
+      `这个实例当前的收件地址是 \`${mailboxAddress}\`。你直接给它发邮件，左侧会自动多出一个新会话，我会从那条线程继续接手处理。`,
       '正式测试前，先把你会用来发送的邮箱告诉我，我会先把它设成允许发件人；不然安全机制会先把邮件拦掉。',
       '下面这条用户消息，就是邮件进入会话后实际会出现的格式。',
     ].join('\n\n');
@@ -115,7 +122,8 @@ function buildEmailShowcaseIntro(mailboxAddress) {
 
   return [
     '这个示例基于我刚验证过的真实链路。',
-    '实例启用邮箱接入后，你直接给它发邮件，左侧会自动多出一个新会话。',
+    '它展示的不是“邮件提醒”，而是邮件本身可以成为一个工作入口。',
+    '实例启用邮箱接入后，你直接给它发邮件，左侧会自动多出一个新会话，我会从那条线程继续接手处理。',
     '正式测试前，先把你会用来发送的邮箱告诉我，我会先把它设成允许发件人；不然安全机制会先把邮件拦掉。',
     '下面这条用户消息，就是邮件进入会话后实际会出现的格式。',
   ].join('\n\n');
@@ -124,7 +132,7 @@ function buildEmailShowcaseIntro(mailboxAddress) {
 function buildEmailShowcaseUserMessage(mailboxAddress) {
   return [
     'Inbound email.',
-    '- From: jiujianian@gmail.com',
+    '- From: approved-sender@example.com',
     '- Subject: 真实能力验证邮件',
     '- Date: (no date)',
     '- Message-ID: (no message id)',
@@ -148,6 +156,16 @@ function buildDigestShowcaseIntro() {
 function isGuestBootstrapContext() {
   const instanceName = basename(INSTANCE_ROOT || '').trim().toLowerCase();
   return !!instanceName && instanceName !== 'owner';
+}
+
+function shouldIncludeMailboxBootstrap() {
+  if (!isGuestBootstrapContext()) return true;
+  return envFlagEnabled(process.env.REMOTELAB_ENABLE_GUEST_MAIL_BOOTSTRAP, false);
+}
+
+function shouldUseMinimalGuestBootstrap() {
+  if (!isGuestBootstrapContext()) return false;
+  return !envFlagEnabled(process.env.REMOTELAB_ENABLE_GUEST_BOOTSTRAP_SHOWCASES, false);
 }
 
 function buildGuestMigrationGuideMessages() {
@@ -206,12 +224,14 @@ function buildCalendarGuideMessages() {
   ];
 }
 
-async function getOwnerBootstrapSessionDefinitions() {
+export async function getOwnerBootstrapSessionDefinitions() {
   const [mailboxAddress, calendarGuideEnabled, defaultToolId] = await Promise.all([
     resolveCurrentMailboxAddress(),
     hasCalendarSubscriptionGuide(),
     resolveDefaultStarterToolId(),
   ]);
+  const includeMailboxBootstrap = shouldIncludeMailboxBootstrap();
+  const minimalGuestBootstrap = shouldUseMinimalGuestBootstrap();
   const definitions = [];
   let sidebarOrder = 1;
   const pushDefinition = (definition) => {
@@ -236,12 +256,14 @@ async function getOwnerBootstrapSessionDefinitions() {
           content: WELCOME_STARTER_MESSAGE,
         },
       ],
-      extraMessages: [
-        {
-          role: 'assistant',
-          content: buildInboundEmailSetupHint(mailboxAddress),
-        },
-      ],
+      extraMessages: includeMailboxBootstrap
+        ? [
+          {
+            role: 'assistant',
+            content: buildInboundEmailSetupHint(mailboxAddress),
+          },
+        ]
+        : [],
     });
 
   if (isGuestBootstrapContext()) {
@@ -255,10 +277,14 @@ async function getOwnerBootstrapSessionDefinitions() {
     });
   }
 
+  if (minimalGuestBootstrap) {
+    return definitions;
+  }
+
   pushDefinition({
       tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_FILE_SHOWCASE_EXTERNAL_TRIGGER_ID,
-      name: '[示例] 上传一份表格，我把清洗后的文件回给你',
+      name: '[示例] 把一份 Excel / CSV 清洗后回给我',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
       messages: [
@@ -307,7 +333,7 @@ async function getOwnerBootstrapSessionDefinitions() {
   pushDefinition({
       tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_DIGEST_SHOWCASE_EXTERNAL_TRIGGER_ID,
-      name: '[示例] 汇总最近行业热点，并把摘要发到指定邮箱',
+      name: '[示例] 每天早上把行业热点整理后发到我邮箱',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
       messages: [
@@ -336,10 +362,11 @@ async function getOwnerBootstrapSessionDefinitions() {
         },
       ],
     });
-  pushDefinition({
+  if (includeMailboxBootstrap) {
+    pushDefinition({
       tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID,
-      name: '[示例] 发一封邮件到这个实例，会自动开一个新会话',
+      name: '[示例] 发邮件进来后，自动开新会话继续处理',
       entryMode: SESSION_ENTRY_MODE_READ,
       pinned: true,
       messages: [
@@ -357,22 +384,23 @@ async function getOwnerBootstrapSessionDefinitions() {
         },
       ],
     });
+  }
   if (calendarGuideEnabled) {
     pushDefinition({
       tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID,
-      name: '[引导] 订阅日历，接收 AI 创建的日程事件',
+      name: '[入口] 订阅日历，接收 AI 创建的日程',
       entryMode: SESSION_ENTRY_MODE_READ,
-      pinned: true,
+      pinned: false,
       messages: buildCalendarGuideMessages(),
     });
   }
   pushDefinition({
       tool: defaultToolId,
       externalTriggerId: OWNER_BOOTSTRAP_SHORTCUTS_GUIDE_EXTERNAL_TRIGGER_ID,
-      name: '[引导] 安装快捷指令，用 Siri 或一键启动 RemoteLab',
+      name: '[入口] 安装快捷指令，更快打开 RemoteLab',
       entryMode: SESSION_ENTRY_MODE_READ,
-      pinned: true,
+      pinned: false,
       messages: [
         {
           role: 'assistant',
@@ -423,8 +451,8 @@ async function getOwnerBootstrapSessionDefinitions() {
 }
 
 const LEGACY_WELCOME_SHOWCASE_HINT = [
-  '另外，左侧现在已经给你放了 3 个真实跑通过的示例会话：表格清洗回传、行业热点摘要发邮箱、以及发邮件进实例自动开新会话。',
-  '你可以按兴趣点开看看，主要是参考：用户通常怎么开头、我会怎么交付，以及结果会长什么样。',
+  '另外，左侧前面 3 个是我先放好的真实示例：表格清洗回传、行业热点摘要发邮箱、以及发邮件进来后自动开新会话。',
+  '你可以按兴趣点开看看，主要是参考：用户通常怎么开头、我会怎么推进，以及最后交付会长什么样。',
   '觉得哪个最像你的情况，就直接照着那个方式把你的版本发给我。',
 ].join('\n\n');
 
@@ -447,8 +475,8 @@ async function applyBootstrapSessionPresentation(session, definition) {
     nextSession.id,
     resolveBootstrapSessionEntryMode(nextSession, definition),
   ) || nextSession;
-  if (definition.pinned === true) {
-    nextSession = await setSessionPinned(nextSession.id, true) || nextSession;
+  if (typeof definition.pinned === 'boolean') {
+    nextSession = await setSessionPinned(nextSession.id, definition.pinned) || nextSession;
   }
   if (nextSession?.updatedAt) {
     nextSession = await updateSessionLastReviewedAt(nextSession.id, nextSession.updatedAt) || nextSession;
@@ -479,22 +507,37 @@ async function appendMissingBootstrapMessages(sessionId, messages = [], existing
 
 async function shouldRebuildBootstrapSession(session, definition) {
   const contents = await loadMessageContents(session.id);
+  const includeMailboxBootstrap = shouldIncludeMailboxBootstrap();
+  const minimalGuestBootstrap = shouldUseMinimalGuestBootstrap();
+  if (typeof definition?.tool === 'string' && definition.tool.trim() && session?.tool !== definition.tool) {
+    return true;
+  }
+  if (definition?.externalTriggerId === OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID && (minimalGuestBootstrap || !includeMailboxBootstrap)) {
+    return contents.some(
+      (content) => typeof content === 'string' && /3 个真实跑通过的示例会话|允许发件人|收件地址|自动开新会话/u.test(content),
+    );
+  }
   if (definition?.externalTriggerId === OWNER_BOOTSTRAP_CALENDAR_SUBSCRIBE_EXTERNAL_TRIGGER_ID) {
     return !contents.some((content) => typeof content === 'string' && content.includes(CALENDAR_SUBSCRIBE_HELPER_PATH));
   }
   if (definition?.externalTriggerId === OWNER_BOOTSTRAP_GUEST_MIGRATION_GUIDE_EXTERNAL_TRIGGER_ID) {
     return !contents.some((content) => typeof content === 'string' && /整机里找 xxx 项目|本机哪个盘、哪个目录附近/u.test(content));
   }
+  if (definition?.externalTriggerId === OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID) {
+    if (!includeMailboxBootstrap) return true;
+    return contents.some((content) => typeof content === 'string' && content.includes('- From: jiujianian@gmail.com'));
+  }
   return false;
 }
 
 async function backfillWelcomeGuideMessages(session, mailboxAddress) {
   const existingContents = await loadMessageContents(session.id);
+  const includeMailboxBootstrap = shouldIncludeMailboxBootstrap();
   const followups = [];
-  if (!existingContents.some((content) => /3 个真实跑通过的示例会话|发邮件进实例自动开新会话/u.test(content))) {
+  if (includeMailboxBootstrap && !existingContents.some((content) => /3 个真实跑通过的示例会话|发邮件进实例自动开新会话/u.test(content))) {
     followups.push({ role: 'assistant', content: LEGACY_WELCOME_SHOWCASE_HINT });
   }
-  if (!existingContents.some((content) => /允许发件人|安全机制会先把邮件拦掉/u.test(content))) {
+  if (includeMailboxBootstrap && !existingContents.some((content) => /允许发件人|安全机制会先把邮件拦掉/u.test(content))) {
     followups.push({ role: 'assistant', content: buildInboundEmailSetupHint(mailboxAddress) });
   }
   await appendMissingBootstrapMessages(session.id, followups, existingContents);
@@ -566,6 +609,8 @@ export async function backfillOwnerBootstrapSessions() {
     getOwnerBootstrapSessionDefinitions(),
     resolveCurrentMailboxAddress(),
   ]);
+  const includeMailboxBootstrap = shouldIncludeMailboxBootstrap();
+  const minimalGuestBootstrap = shouldUseMinimalGuestBootstrap();
   const ownerSessions = (await listSessions({
     includeArchived: true,
   }));
@@ -579,6 +624,24 @@ export async function backfillOwnerBootstrapSessions() {
   const created = [];
   const updated = [];
   let welcomeSession = sessionsByTrigger.get(OWNER_BOOTSTRAP_WELCOME_SESSION_EXTERNAL_TRIGGER_ID) || null;
+  const allowedTriggerIds = new Set(ownerBootstrapSessions.map((definition) => definition.externalTriggerId));
+
+  if (!includeMailboxBootstrap) {
+    const legacyEmailShowcase = sessionsByTrigger.get(OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID) || null;
+    if (legacyEmailShowcase) {
+      await setSessionArchived(legacyEmailShowcase.id, true);
+      sessionsByTrigger.delete(OWNER_BOOTSTRAP_INSTANCE_EMAIL_EXTERNAL_TRIGGER_ID);
+    }
+  }
+  if (minimalGuestBootstrap) {
+    for (const session of activeOwnerSessions) {
+      const triggerId = typeof session?.externalTriggerId === 'string' ? session.externalTriggerId.trim() : '';
+      if (!triggerId.startsWith('owner_bootstrap:')) continue;
+      if (allowedTriggerIds.has(triggerId)) continue;
+      await setSessionArchived(session.id, true);
+      sessionsByTrigger.delete(triggerId);
+    }
+  }
 
   for (const definition of ownerBootstrapSessions) {
     let session = sessionsByTrigger.get(definition.externalTriggerId) || null;

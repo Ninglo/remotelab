@@ -6,6 +6,7 @@ import { promises as fs } from 'fs';
 import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { waitForReplyPublication } from '../lib/reply-publication-client.mjs';
 
 const HOME = homedir();
 const DEFAULT_CONFIG_PATH = join(HOME, '.config', 'remotelab', 'remote-capability-monitor', 'config.json');
@@ -980,20 +981,32 @@ async function submitDigestToRemoteLab(config, { runAt, firstRun, pendingInteres
     cookie,
     body: messagePayload,
   });
-  if (![200, 202].includes(submitResult.response.status) || !submitResult.json?.run?.id) {
+  if (![200, 202].includes(submitResult.response.status)) {
     throw new Error(submitResult.json?.error || submitResult.text || `Failed to submit digest message (${submitResult.response.status})`);
   }
-
-  const run = await waitForRunCompletion(baseUrl, submitResult.json.run.id, cookie);
+  const responseId = trimString(submitResult.json?.response?.id) || requestId;
+  const requester = (path, options = {}) => requestJson(baseUrl, path, { cookie, ...options });
+  const publication = await waitForReplyPublication(requester, session.id, responseId, {
+    timeoutMs: RUN_POLL_TIMEOUT_MS,
+    intervalMs: RUN_POLL_INTERVAL_MS,
+  });
+  if (publication.state !== 'ready') {
+    throw new Error(`reply publication ${publication.state || 'failed'}`);
+  }
+  const finalizedRunId = trimString(publication.finalRunId) || trimString(submitResult.json?.run?.id);
+  const runResult = finalizedRunId
+    ? await requestJson(baseUrl, `/api/runs/${finalizedRunId}`, { cookie })
+    : null;
+  const runState = trimString(runResult?.json?.run?.state) || 'completed';
 
   return {
-    success: run.state === 'completed',
+    success: runState === 'completed',
     agentId,
-    appName: trimString(app.name),
+    appName: trimString(agent.name),
     sessionId: session.id,
-    runId: submitResult.json.run.id,
+    runId: finalizedRunId || null,
     requestId,
-    runState: run.state,
+    runState,
     duplicate: submitResult.json?.duplicate === true,
     sessionUrl: buildSessionUrl(session.id),
   };

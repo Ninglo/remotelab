@@ -82,6 +82,7 @@ In practical terms:
 - attention cues are derived from `workflowState`, `workflowPriority`, and review timestamps
 - any future secondary workflow view must still point back to the underlying session
 - the session list and any future workflow view are projections over the same canonical objects
+- a goal-oriented group summary/detail surface is acceptable as a derived projection over grouped sessions, as long as `group` stays a facet and the projection does not become hidden durable truth
 
 So the correct mental model is:
 
@@ -120,6 +121,76 @@ So the right current reading is:
 ```text
 group = a session facet, not a new object
 ```
+
+## Projects List Grouping Strategy
+
+The owner-facing Projects list should optimize for work recovery, not taxonomy purity.
+
+A Project group is the entry the owner would reasonably open next time to resume a related workstream. It should be:
+
+- broader than a single implementation step or one chat turn
+- narrower than a whole company, repo, or product area when that bucket would mix unrelated decisions
+- stable enough to collect repeated sessions over time
+- small enough that the sessions inside share user intent, context, files, decisions, or next actions
+
+The failure mode to avoid is one session becoming one Project. In the current owner Chat UI sample on 2026-06-12, 20 active Chat UI sessions produced 17 groups, with 16 singleton groups. The current target budget for that density is roughly 6 Projects. That is a clear over-splitting signal, even though some individual labels are semantically accurate.
+
+Singleton Projects are acceptable only when the workstream is genuinely standalone, newly emerging but likely to recur, currently high-priority, or unrelated to every existing group. Otherwise, a narrow one-off session should be merged into the closest active Project group, with the session title and description carrying the specific subtask.
+
+Grouping should be allowed to rebalance previous choices. A per-session label generated at creation time is provisional because it sees incomplete global context. The session-list organizer is the canonical cleanup pass for the current sidebar: it receives the scoped active-session snapshot and may rewrite `group` and `sidebarOrder` across every session in that scope. It should not behave as append-only classification for one new row.
+
+This also means Project compression is allowed without introducing a Project object. If several older groups become fragments of one better workstream topic, the organizer can choose a clearer shared Project name and patch every included session to that `group`. The durable data remains session metadata; the compression is a scoped maintenance pass over those sessions.
+
+Rebalancing should use the whole scoped snapshot:
+
+- title, description, current group, workflow state, priority, source, folder, and recency
+- the current group count versus the target budget
+- singleton ratio and obvious near-duplicate groups
+- source scope, so Chat UI sorting does not get polluted by Feishu/Bot/Automation audit sessions unless that source filter was explicitly selected
+
+If the metadata is insufficient for an important merge/split decision, the organizer may inspect a small number of ambiguous session details. It should not do broad archaeology before every sort; the normal path is global metadata first, targeted detail reads only for high-impact ambiguity.
+
+Default granularity rules:
+
+- Merge sessions when they are slices of the same user-facing workstream, even if their immediate titles mention different features.
+- Split sessions when they have different outcomes, lifecycles, owners, source/audit behavior, or would make the group harder to resume.
+- Keep high-priority active work separate when merging would hide the next action.
+- Prefer a readable sidebar over a perfectly semantic hierarchy, because RemoteLab currently has only one visible Projects level.
+
+Sorting should serve return-to-work. Running groups should rise first, groups needing owner attention should rise next, and then organized groups should follow the lowest `sidebarOrder` among their sessions. Latest activity remains the fallback for unorganized or newly created groups, so fresh work can still surface before the next Sort List rebalance. A true group-level pin/order object is only needed later if Projects become first-class objects.
+
+### Drift-Triggered Sort List
+
+Do not run a full Sort List rebalance after every new session. That would make the sidebar feel unstable and would spend model work on noise.
+
+Use three levels instead:
+
+1. **Local repair** during single-session labeling.
+   - Prefer a plausible existing workstream group for the new session.
+   - Let the title and description carry subtask specificity.
+   - Do not rewrite older sessions from this path.
+
+2. **Sort recommended** when deterministic health metrics show drift.
+   - This can update the button, badge, or subtle status text.
+   - It should be driven by cheap `groupSummary` metrics, not by an LLM deciding to invoke itself.
+   - Good first thresholds: at least 8 scoped sessions, actual group count above `targetProjectCount * 1.5`, at least 4 singleton groups, or singleton ratio at or above 0.45.
+
+3. **Autonomous Sort List** only for severe drift and with cooldowns.
+   - Scope must be explicit, usually Chat UI.
+   - No organizer run already in flight.
+   - Do not run more than once per source scope per day by default.
+   - Require a severe signal such as group count above `targetProjectCount * 2`, at least 6 singleton groups, or singleton ratio at or above 0.6.
+   - Run only after the current user-facing turn reaches a terminal state, not while the user is typing or while many foreground sessions are running.
+   - The run may patch only `group` and `sidebarOrder` on scoped non-archived sessions.
+
+The important separation is:
+
+```text
+deterministic drift detector decides whether sorting is warranted
+AI organizer decides how to merge, rename, split, and order once invoked
+```
+
+This keeps the self-healing loop strict enough to avoid constant churn while still allowing the Projects list to recover when fragmentation becomes obvious.
 
 ---
 

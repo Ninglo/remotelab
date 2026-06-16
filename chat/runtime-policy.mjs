@@ -1,7 +1,8 @@
 import { copyFile, lstat, readlink, symlink, unlink } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
-import { CODEX_MANAGED_HOME_DIR } from '../lib/config.mjs';
+import { CODEX_MANAGED_HOME_DIR, IS_GUEST_INSTANCE, IS_INSTANCE_SCOPED } from '../lib/config.mjs';
+import { writeGuestCodexAuthFile } from '../lib/codex-auth-redaction.mjs';
 import {
   createSerialTaskQueue,
   ensureDir,
@@ -18,7 +19,8 @@ export const MANAGER_RUNTIME_BOUNDARY_SECTION = (await readPromptAsset('runtime/
 export const MANAGER_TURN_POLICY_REMINDER = await readInlinePromptAsset('runtime/manager-turn-reminder.txt');
 export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = await readInlinePromptAsset('runtime/codex-developer-instructions.txt');
 
-const DEFAULT_CODEX_HOME_MODE = 'managed';
+const DEFAULT_CODEX_HOME_MODE = 'personal';
+const DEFAULT_MACHINE_CODEX_HOME_DIR = '/root/.codex';
 const MANAGED_CODEX_HOME_NOTES = [
   '# RemoteLab-managed Codex runtime home.',
   '# Keep this intentionally minimal.',
@@ -38,10 +40,33 @@ const managedCodexHomeQueue = createSerialTaskQueue();
 
 function normalizeCodexHomeMode(value) {
   const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'personal' || normalized === 'inherit') {
+  if (normalized === 'inherit') {
+    return 'inherit';
+  }
+  if (normalized === 'personal' || normalized === 'machine') {
     return 'personal';
   }
+  if (normalized === 'managed') {
+    return 'managed';
+  }
   return DEFAULT_CODEX_HOME_MODE;
+}
+
+function trimString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function machineCodexHomeDir() {
+  return trimString(process.env.REMOTELAB_MACHINE_CODEX_HOME)
+    || (IS_INSTANCE_SCOPED ? DEFAULT_MACHINE_CODEX_HOME_DIR : PERSONAL_CODEX_HOME);
+}
+
+export function isSharedCodexRuntime(toolId, runtimeFamily = '') {
+  return false;
+}
+
+export function applySharedCodexLock(toolId, command, args = [], runtimeFamily = '') {
+  return { command, args };
 }
 
 async function ensureSymlinkOrCopy(sourcePath, targetPath) {
@@ -87,7 +112,20 @@ export async function ensureManagedCodexHome(options = {}) {
     await ensureDir(homeDir);
     await writeTextAtomic(join(homeDir, 'config.toml'), MANAGED_CODEX_HOME_NOTES);
     await writeTextAtomic(join(homeDir, 'AGENTS.md'), '');
-    await ensureSymlinkOrCopy(authSource, join(homeDir, 'auth.json'));
+    const syncAuth = options.syncAuth !== false;
+    if (!syncAuth) {
+      return homeDir;
+    }
+    if (options.linkAuth === true) {
+      await ensureSymlinkOrCopy(authSource, join(homeDir, 'auth.json'));
+    } else if (IS_GUEST_INSTANCE) {
+      await writeGuestCodexAuthFile({
+        sourcePath: authSource,
+        targetPath: join(homeDir, 'auth.json'),
+      });
+    } else {
+      await ensureSymlinkOrCopy(authSource, join(homeDir, 'auth.json'));
+    }
     return homeDir;
   });
 }
@@ -103,7 +141,13 @@ export async function applyManagedRuntimeEnv(toolId, baseEnv = {}, options = {})
   }
 
   const mode = normalizeCodexHomeMode(options.codexHomeMode || process.env.REMOTELAB_CODEX_HOME_MODE);
+  if (mode === 'inherit') {
+    return env;
+  }
+
   if (mode === 'personal') {
+    delete env.CODEX_HOME;
+    env.CODEX_HOME = machineCodexHomeDir();
     return env;
   }
 

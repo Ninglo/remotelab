@@ -336,6 +336,14 @@ for (const fileName of orderedFiles) {
   vm.runInNewContext(source, context, { filename: `static/chat/${fileName}` });
 }
 
+const messageTimeOptions = vm.runInNewContext('messageTimeFormatter.resolvedOptions()', context);
+assert.equal(messageTimeOptions.year, 'numeric', 'message timestamps should include the full date year');
+assert.equal(messageTimeOptions.month, '2-digit', 'message timestamps should include the full date month');
+assert.equal(messageTimeOptions.day, '2-digit', 'message timestamps should include the full date day');
+assert.equal(messageTimeOptions.hour, '2-digit', 'message timestamps should keep the hour');
+assert.equal(messageTimeOptions.minute, '2-digit', 'message timestamps should keep the minute');
+assert.equal(messageTimeOptions.second, '2-digit', 'message timestamps should keep the second');
+
 await new Promise((resolve) => setTimeout(resolve, 0));
 await new Promise((resolve) => setTimeout(resolve, 0));
 

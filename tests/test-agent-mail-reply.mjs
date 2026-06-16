@@ -739,6 +739,56 @@ try {
     }],
   });
 
+  const missingQueueRequestId = 'mailbox_reply_missing_legacy_queue';
+  const missingQueueSession = await createSession(workspace, 'codex', 'Cloudflare missing queue item reply test', {
+    completionTargets: [{
+      type: 'email',
+      requestId: missingQueueRequestId,
+      to: 'owner@example.com',
+      subject: 'Re: legacy recovery',
+      inReplyTo: '<mail-cloudflare-missing-queue@example.com>',
+      references: '<mail-cloudflare-missing-queue@example.com>',
+      mailboxRoot,
+      mailboxItemId: 'mail_missing_legacy_queue',
+    }],
+  });
+  const missingQueueRun = await createRun({
+    status: {
+      sessionId: missingQueueSession.id,
+      requestId: missingQueueRequestId,
+      state: 'completed',
+      tool: 'codex',
+    },
+    manifest: {
+      sessionId: missingQueueSession.id,
+      requestId: missingQueueRequestId,
+      folder: workspace,
+      tool: 'codex',
+      prompt: 'reply even when the mailbox queue item is gone',
+      options: {},
+    },
+  });
+
+  await appendEvent(missingQueueSession.id, messageEvent('assistant', 'Legacy queue recovery reply.', undefined, {
+    runId: missingQueueRun.id,
+    requestId: missingQueueRequestId,
+  }));
+
+  const missingQueueRequestIndex = requests.length;
+  const missingQueueDeliveries = await dispatchSessionEmailCompletionTargets(missingQueueSession, missingQueueRun);
+  assert.equal(missingQueueDeliveries.length, 1);
+  assert.equal(missingQueueDeliveries[0].state, 'sent');
+  assert.equal(requests.length, missingQueueRequestIndex + 1);
+  assert.deepEqual(JSON.parse(requests[missingQueueRequestIndex].body), {
+    to: ['owner@example.com'],
+    from: 'rowan@example.com',
+    subject: 'Re: legacy recovery',
+    text: 'Legacy queue recovery reply.',
+    inReplyTo: '<mail-cloudflare-missing-queue@example.com>',
+    references: '<mail-cloudflare-missing-queue@example.com>',
+  });
+  assert.equal((await findQueueItem('mail_missing_legacy_queue', mailboxRoot))?.item || null, null);
+
   const directResendAttachmentRequests = [];
   const resendAttachmentResult = await sendOutboundEmail({
     to: 'owner@example.com',

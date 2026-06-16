@@ -8,8 +8,7 @@
  * non-blocking to the user.
  */
 
-import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { readFile } from 'fs/promises';
 import {
   buildAutoMemorySectionHeading,
   buildNewMemoryTargetFilePreamble,
@@ -18,14 +17,10 @@ import {
   resolveMemoryWritebackTarget,
 } from './memory-writeback-targets.mjs';
 import { extractTaggedBlock, parseJsonObjectText } from './session-text-parsing.mjs';
-import {
-  MODEL_CONTEXT_DIR,
-} from './prompt-paths.mjs';
 import { isEnvToggleEnabled } from '../lib/env-toggle.mjs';
-import { createKeyedTaskQueue, ensureDir, writeTextAtomic } from './fs-utils.mjs';
+import { createKeyedTaskQueue, writeTextAtomic } from './fs-utils.mjs';
 
 const WRITEBACK_SETTING_ENV = 'REMOTELAB_MEMORY_WRITEBACK';
-const SESSION_LEARNINGS_DIR = join(MODEL_CONTEXT_DIR, 'session-learnings');
 const memoryWritebackQueue = createKeyedTaskQueue();
 
 function isWritebackEnabled() {
@@ -182,25 +177,6 @@ function escapeRegExp(value) {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function appendToLearningsFile(learnings, sessionId, sessionName) {
-  if (!learnings.length) return;
-
-  await memoryWritebackQueue(join(SESSION_LEARNINGS_DIR, 'learnings.jsonl'), async () => {
-    await ensureDir(SESSION_LEARNINGS_DIR);
-    const filePath = join(SESSION_LEARNINGS_DIR, 'learnings.jsonl');
-    const timestamp = new Date().toISOString();
-
-    const lines = learnings.map((learning) => JSON.stringify({
-      ...learning,
-      sessionId: sessionId?.slice(0, 12) || '',
-      sessionName: sessionName?.slice(0, 60) || '',
-      timestamp,
-    }));
-
-    await writeFile(filePath, lines.join('\n') + '\n', { flag: 'a' });
-  });
-}
-
 async function promoteLearningsToDurableMemory(learnings) {
   const targets = await loadMemoryWritebackTargets();
   const learningsByTarget = new Map();
@@ -284,7 +260,6 @@ export async function maybeRunMemoryWriteback({
   }
 
   try {
-    await appendToLearningsFile(decision.learnings, sessionId, session?.name);
     const { promotedFiles, promotedCount } = await promoteLearningsToDurableMemory(decision.learnings);
     console.log(
       `[memory-writeback] Wrote ${decision.learnings.length} learning(s) from session ${sessionId?.slice(0, 8)}`

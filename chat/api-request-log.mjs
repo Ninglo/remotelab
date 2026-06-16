@@ -88,7 +88,7 @@ function writeRecord(record, timestamp = new Date()) {
   stream.write(`${JSON.stringify(record)}\n`);
 }
 
-function classifyApiRoute(method, pathname) {
+function classifyRequestRoute(method, pathname) {
   const sessionGetRoute = method === 'GET' ? parseSessionGetRoute(pathname) : null;
   if (sessionGetRoute) {
     if (sessionGetRoute.kind === 'list') return 'GET /api/sessions';
@@ -139,12 +139,20 @@ function classifyApiRoute(method, pathname) {
     }
   }
 
+  if (pathname === '/login' && method === 'GET') return 'GET /login';
+  if (pathname === '/login' && method === 'POST') return 'POST /login';
+  if (pathname === '/' && method === 'GET') return 'GET /';
   return `${method} ${pathname}`;
 }
 
-function isApiRequest(req) {
-  const pathname = parseUrl(req.url || '').pathname || '';
-  return pathname.startsWith('/api/');
+function classifyRequestKind(pathname) {
+  return pathname.startsWith('/api/') ? 'api' : 'page';
+}
+
+function shouldLogRequest(pathname) {
+  if (pathname.startsWith('/api/')) return true;
+  if (pathname === '/login' || pathname === '/') return true;
+  return false;
 }
 
 function requestBytes(req) {
@@ -163,14 +171,15 @@ function serializeError(error) {
 }
 
 export function startApiRequestLog(req, res) {
-  if (!isApiRequest(req)) {
+  const parsedUrl = parseUrl(req.url || '', true);
+  const pathname = parsedUrl.pathname || '';
+  if (!shouldLogRequest(pathname)) {
     return { markError() {} };
   }
 
   const requestSeq = ++nextRequestSeq;
-  const parsedUrl = parseUrl(req.url || '', true);
-  const pathname = parsedUrl.pathname || '';
-  const search = parsedUrl.search || '';
+  const requestKind = classifyRequestKind(pathname);
+  const search = requestKind === 'api' ? (parsedUrl.search || '') : '';
   const startedAt = new Date();
   const startedHr = process.hrtime.bigint();
   const bodyBytes = requestBytes(req);
@@ -218,10 +227,11 @@ export function startApiRequestLog(req, res) {
       seq: requestSeq,
       pid: process.pid,
       port: CHAT_PORT,
+      requestKind,
       ts: startedAt.toISOString(),
       method: req.method || 'GET',
       pathname,
-      route: classifyApiRoute(req.method || 'GET', pathname),
+      route: classifyRequestRoute(req.method || 'GET', pathname),
       search: search ? truncate(search, 512) : '',
       queryKeys: Object.keys(parsedUrl.query || {}).sort(),
       requestBytes: bodyBytes,

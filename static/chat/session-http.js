@@ -236,12 +236,22 @@ const SESSION_LIST_ORGANIZER_POLL_INTERVAL_MS = 1200;
 const SESSION_LIST_ORGANIZER_POLL_TIMEOUT_MS = 90 * 1000;
 const SESSION_LIST_ORGANIZER_INTERNAL_ROLE = "session_list_organizer";
 const DEFAULT_SORT_SESSION_LIST_BUTTON_LABEL = "Sort List";
+const SESSION_HTTP_SOURCE_FILTER_CHAT_VALUE = typeof SOURCE_FILTER_CHAT_VALUE !== "undefined" ? SOURCE_FILTER_CHAT_VALUE : "chat_ui";
+const SESSION_HTTP_SOURCE_FILTER_BOT_VALUE = typeof SOURCE_FILTER_BOT_VALUE !== "undefined" ? SOURCE_FILTER_BOT_VALUE : "bot";
+const SESSION_HTTP_SOURCE_FILTER_AUTOMATION_VALUE = typeof SOURCE_FILTER_AUTOMATION_VALUE !== "undefined" ? SOURCE_FILTER_AUTOMATION_VALUE : "automation";
+const SESSION_HTTP_FILTER_ALL_VALUE = typeof FILTER_ALL_VALUE !== "undefined" ? FILTER_ALL_VALUE : "all";
+const SESSION_LIST_ORGANIZER_SOURCE_LABELS = {
+  [SESSION_HTTP_SOURCE_FILTER_CHAT_VALUE]: "Chat UI",
+  [SESSION_HTTP_SOURCE_FILTER_BOT_VALUE]: "Bot",
+  [SESSION_HTTP_SOURCE_FILTER_AUTOMATION_VALUE]: "Automation",
+  [SESSION_HTTP_FILTER_ALL_VALUE]: "All origins",
+};
 let sessionListOrganizerInFlight = null;
 let sessionListOrganizerLabelResetTimer = null;
 
 const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   "You are RemoteLab's hidden session-list organizer.",
-  "Your job is to improve the owner's non-archived session sidebar structure using the provided metadata snapshot.",
+  "Your job is to improve the owner's scoped non-archived session sidebar structure using the provided metadata snapshot.",
   "Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.",
   "Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.",
   "Use `remotelab api GET /api/sessions` if you need to double-check current state.",
@@ -251,8 +261,19 @@ const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   "Example PATCH body: {\"group\":\"RemoteLab\",\"sidebarOrder\":3}",
   "If `remotelab` is unavailable in PATH, use `node \"$REMOTELAB_PROJECT_ROOT/cli.js\" api ...` instead.",
   "`sidebarOrder` must be a positive integer; smaller numbers sort first.",
-  "Assign unique contiguous `sidebarOrder` values across the current non-archived sessions you organize.",
-  "Prefer a small number of clear, stable groups; avoid one giant catch-all group when the list is dense.",
+  "Assign unique contiguous `sidebarOrder` values across only the scoped sessions included in the snapshot.",
+  "Do not patch sessions outside the snapshot; other source categories are intentionally left untouched for audit or automation review.",
+  "RemoteLab only has one visible Projects level, so optimize groups as sidebar consumption units rather than a strict taxonomy.",
+  "Use the provided `targetProjectCount` as a soft budget: when there are few sessions, groups may be fine-grained; when there are many sessions, merge related workstreams into coarser projects.",
+  "Use the provided `groupSummary` to detect over-splitting; a high singleton count is a stronger signal than individually reasonable group labels.",
+  "Avoid excessive singleton groups when `totalSessions` is greater than `targetProjectCount`.",
+  "Treat existing group assignments as provisional; this is a full scoped rebalance, so you may merge, split, or rewrite groups across the entire snapshot.",
+  "Project compression is allowed: when several existing groups are fragments of the same workstream, choose a clearer shared Project name and patch every affected session to that new `group`.",
+  "Do not only classify the newest session; improve older scoped sessions when the global list has drifted.",
+  "Do not create one Project per session unless the session is genuinely standalone, newly emerging but likely to recur, or high-priority active work that needs its own entry.",
+  "If metadata is insufficient for an important merge/split decision, inspect a small number of ambiguous sessions with the API instead of inventing narrowly isolated groups.",
+  "If semantic purity conflicts with scanability, prefer the grouping that keeps the Projects view easier to consume.",
+  "Keep genuinely unrelated or high-priority active work separate even if that creates a small group.",
   "Return only a brief plain-text summary of the grouping strategy you applied.",
 ].join("\n");
 
@@ -300,6 +321,18 @@ function buildSessionListOrganizerSessionMetadata(session) {
       : null,
     pinned: session?.pinned === true,
     tool: clipSessionListOrganizerText(session?.tool || "", 40),
+    sourceId: clipSessionListOrganizerText(
+      typeof getEffectiveSessionSourceId === "function"
+        ? getEffectiveSessionSourceId(session)
+        : (session?.sourceId || ""),
+      80,
+    ),
+    sourceCategory: clipSessionListOrganizerText(
+      typeof getSessionSourceCategory === "function"
+        ? getSessionSourceCategory(session)
+        : "",
+      40,
+    ),
     sourceName: clipSessionListOrganizerText(session?.sourceName || "", 80),
     folder: clipSessionListOrganizerText(session?.folder || "", 180),
     workflowState: clipSessionListOrganizerText(session?.workflowState || "", 40),
@@ -311,28 +344,160 @@ function buildSessionListOrganizerSessionMetadata(session) {
   };
 }
 
+function buildSessionListOrganizerGroupSummary(sessions, targetProjectCount = 0) {
+  const normalizedSessions = Array.isArray(sessions) ? sessions : [];
+  const groups = new Map();
+  for (const session of normalizedSessions) {
+    const rawGroup = typeof session?.existingGroup === "string" && session.existingGroup.trim()
+      ? session.existingGroup.trim()
+      : "(ungrouped)";
+    if (!groups.has(rawGroup)) {
+      groups.set(rawGroup, {
+        group: rawGroup,
+        count: 0,
+        examples: [],
+      });
+    }
+    const group = groups.get(rawGroup);
+    group.count += 1;
+    const title = clipSessionListOrganizerText(session?.title || "", 80);
+    if (title && group.examples.length < 3) {
+      group.examples.push(title);
+    }
+  }
+
+  const groupList = [...groups.values()].sort((a, b) => (
+    (b.count - a.count)
+    || a.group.localeCompare(b.group, undefined, { numeric: true, sensitivity: "base" })
+  ));
+  const singletonGroups = groupList.filter((group) => group.count === 1);
+  const totalGroups = groupList.length;
+  const parsedTarget = Number.isInteger(targetProjectCount) && targetProjectCount > 0
+    ? targetProjectCount
+    : 0;
+  const singletonRatio = totalGroups > 0
+    ? Number((singletonGroups.length / totalGroups).toFixed(2))
+    : 0;
+
+  return {
+    totalGroups,
+    targetProjectCount: parsedTarget,
+    overTarget: parsedTarget > 0 && totalGroups > parsedTarget,
+    singletonGroups: singletonGroups.length,
+    singletonRatio,
+    largestGroups: groupList.slice(0, 8),
+    singletonExamples: singletonGroups.slice(0, 12).map((group) => ({
+      group: group.group,
+      title: group.examples[0] || "",
+    })),
+  };
+}
+
+function getSessionListOrganizerSourceLabel(sourceFilter) {
+  return SESSION_LIST_ORGANIZER_SOURCE_LABELS[sourceFilter] || SESSION_LIST_ORGANIZER_SOURCE_LABELS[FILTER_ALL_VALUE];
+}
+
+function getSessionListOrganizerTargetProjectCount(totalSessions) {
+  if (!Number.isInteger(totalSessions) || totalSessions <= 0) return 0;
+  if (totalSessions <= 5) return totalSessions;
+  if (totalSessions <= 18) return Math.min(totalSessions, Math.max(4, Math.min(6, Math.round(totalSessions / 3))));
+  if (totalSessions <= 40) return Math.min(totalSessions, Math.max(6, Math.min(8, Math.round(totalSessions / 5))));
+  return Math.min(totalSessions, Math.max(8, Math.min(10, Math.round(totalSessions / 8))));
+}
+
+function getSessionListOrganizerScope() {
+  const currentSourceFilter = typeof getActiveSourceFilterValue === "function"
+    ? normalizeSourceFilter(getActiveSourceFilterValue())
+    : normalizeSourceFilter(activeSourceFilter);
+  const defaultedToChatUi = currentSourceFilter === FILTER_ALL_VALUE;
+  const organizerSourceFilter = defaultedToChatUi ? SESSION_HTTP_SOURCE_FILTER_CHAT_VALUE : currentSourceFilter;
+  const scopedSessions = getActiveSessions().filter((session) => (
+    typeof matchesSourceFilter === "function"
+      ? matchesSourceFilter(session, organizerSourceFilter)
+      : organizerSourceFilter === FILTER_ALL_VALUE
+  ));
+  const targetProjectCount = getSessionListOrganizerTargetProjectCount(scopedSessions.length);
+  return {
+    currentSourceFilter,
+    organizerSourceFilter,
+    defaultedToChatUi,
+    sourceLabel: getSessionListOrganizerSourceLabel(organizerSourceFilter),
+    targetProjectCount,
+    targetSessionsPerProject: targetProjectCount > 0
+      ? Math.ceil(scopedSessions.length / targetProjectCount)
+      : 0,
+    sessions: scopedSessions,
+  };
+}
+
 function buildSessionListOrganizerPayload() {
-  const activeSessions = getActiveSessions();
+  const scope = getSessionListOrganizerScope();
+  const sessions = scope.sessions.map(buildSessionListOrganizerSessionMetadata).filter((session) => session.id);
+  const groupSummary = buildSessionListOrganizerGroupSummary(sessions, scope.targetProjectCount);
   return {
     tool: selectedTool || preferredTool || "codex",
     ...(selectedModel ? { model: selectedModel } : {}),
     ...(selectedEffort ? { effort: selectedEffort } : {}),
     thinking: thinkingEnabled === true,
-    sessions: activeSessions.map(buildSessionListOrganizerSessionMetadata).filter((session) => session.id),
+    scope: {
+      currentSourceFilter: scope.currentSourceFilter,
+      organizerSourceFilter: scope.organizerSourceFilter,
+      sourceLabel: scope.sourceLabel,
+      defaultedToChatUi: scope.defaultedToChatUi,
+      targetProjectCount: scope.targetProjectCount,
+      targetSessionsPerProject: scope.targetSessionsPerProject,
+    },
+    groupSummary,
+    sessions,
   };
 }
 
-function buildSessionListOrganizerTask(sessions) {
+function buildSessionListOrganizerTask(input) {
+  const normalizedInput = Array.isArray(input)
+    ? { sessions: input }
+    : (input && typeof input === "object" ? input : {});
+  const sessions = Array.isArray(normalizedInput.sessions) ? normalizedInput.sessions : [];
+  const scope = normalizedInput.scope && typeof normalizedInput.scope === "object"
+    ? normalizedInput.scope
+    : {};
+  const totalSessions = sessions.length;
+  const targetProjectCount = Number.isInteger(scope.targetProjectCount) && scope.targetProjectCount > 0
+    ? scope.targetProjectCount
+    : getSessionListOrganizerTargetProjectCount(totalSessions);
+  const targetSessionsPerProject = Number.isInteger(scope.targetSessionsPerProject) && scope.targetSessionsPerProject > 0
+    ? scope.targetSessionsPerProject
+    : (targetProjectCount > 0 ? Math.ceil(totalSessions / targetProjectCount) : 0);
+  const groupSummary = normalizedInput.groupSummary && typeof normalizedInput.groupSummary === "object"
+    ? normalizedInput.groupSummary
+    : buildSessionListOrganizerGroupSummary(sessions, targetProjectCount);
   const payload = {
     generatedAt: new Date().toISOString(),
-    totalSessions: Array.isArray(sessions) ? sessions.length : 0,
-    sessions: Array.isArray(sessions) ? sessions : [],
+    totalSessions,
+    targetProjectCount,
+    targetSessionsPerProject,
+    scope,
+    groupSummary,
+    sessions,
   };
   return [
-    "Organize the current non-archived RemoteLab session list using the provided metadata snapshot.",
-    "Choose clearer groups and a better sidebar ordering based on the current session density.",
+    "Organize only the scoped non-archived RemoteLab sessions included in the provided metadata snapshot.",
+    "Choose clearer Projects groups and a better sidebar ordering based on actual workstream similarity, current user consumption, and the target project budget.",
+    `Target roughly ${targetProjectCount} Projects groups for ${totalSessions} scoped sessions; this is a soft budget, not an exact quota.`,
+    targetSessionsPerProject > 0
+      ? `Aim for about ${targetSessionsPerProject} sessions per Project when the workstreams are related enough to merge.`
+      : "",
+    `Current snapshot has ${groupSummary.totalGroups || 0} existing groups and ${groupSummary.singletonGroups || 0} singleton groups; use this as the main over-splitting signal.`,
+    groupSummary.overTarget || (groupSummary.singletonRatio || 0) >= 0.35
+      ? "The current grouping is likely over-split. Prioritize merging related singleton or near-duplicate groups before fine-tuning order."
+      : "",
+    "Treat this as a full scoped rebalance: previous groups are useful hints, not fixed truth, and singleton groups should be merged when they are just feature slices of the same workstream.",
+    "If several old groups now read as fragments of one better topic, compress them by assigning a clearer shared `group` name to every included session.",
+    scope?.sourceLabel
+      ? `The organizer scope is ${scope.sourceLabel}${scope.defaultedToChatUi ? " because All origins is too broad for daily sorting." : "."}`
+      : "",
     "Apply changes by calling the RemoteLab API from this machine; do not merely suggest them.",
     "Snapshot fields like `title`, `brief`, `existingGroup`, and `existingSidebarOrder` are read-only context.",
+    "Do not patch any session that is not present in the `sessions` array below.",
     "When patching a session, send only `group` and `sidebarOrder` in the API body.",
     "",
     "<session_list_organizer_input>",
@@ -366,7 +531,7 @@ async function createSessionListOrganizerRun(payload) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      text: buildSessionListOrganizerTask(payload?.sessions || []),
+      text: buildSessionListOrganizerTask(payload || {}),
       ...(payload?.model ? { model: payload.model } : {}),
       ...(payload?.effort ? { effort: payload.effort } : {}),
       ...(payload?.thinking ? { thinking: true } : {}),
@@ -477,6 +642,104 @@ function reconcilePendingMessageState(event) {
 
 const pendingSessionReviewSyncs = new Map();
 let heldSidebarSessionState = null;
+const optimisticSessionArchiveMutations = new Map();
+let sessionArchiveMutationEpoch = 0;
+
+function normalizeSessionArchiveMutationId(sessionId) {
+  return typeof sessionId === "string" && sessionId.trim()
+    ? sessionId.trim()
+    : "";
+}
+
+function getSessionArchiveMutationEpoch() {
+  return sessionArchiveMutationEpoch;
+}
+
+function isSessionArchiveMutationEpochCurrent(epoch) {
+  return epoch === sessionArchiveMutationEpoch;
+}
+
+function bumpSessionArchiveMutationEpoch() {
+  sessionArchiveMutationEpoch += 1;
+  return sessionArchiveMutationEpoch;
+}
+
+function beginSessionArchiveOptimisticMutation(sessionId, archived) {
+  const normalizedSessionId = normalizeSessionArchiveMutationId(sessionId);
+  if (!normalizedSessionId) return null;
+  const shouldArchive = archived === true;
+  const existing = optimisticSessionArchiveMutations.get(normalizedSessionId) || null;
+  const mutation = {
+    sessionId: normalizedSessionId,
+    archived: shouldArchive,
+    archivedAt: shouldArchive
+      ? (existing?.archivedAt || new Date().toISOString())
+      : "",
+    epoch: bumpSessionArchiveMutationEpoch(),
+  };
+  optimisticSessionArchiveMutations.set(normalizedSessionId, mutation);
+  return mutation;
+}
+
+function finishSessionArchiveOptimisticMutation(sessionId) {
+  const normalizedSessionId = normalizeSessionArchiveMutationId(sessionId);
+  if (!normalizedSessionId) return null;
+  const existing = optimisticSessionArchiveMutations.get(normalizedSessionId) || null;
+  if (!existing) return null;
+  optimisticSessionArchiveMutations.delete(normalizedSessionId);
+  bumpSessionArchiveMutationEpoch();
+  return existing;
+}
+
+function getSessionArchiveOptimisticMutation(sessionId) {
+  const normalizedSessionId = normalizeSessionArchiveMutationId(sessionId);
+  if (!normalizedSessionId) return null;
+  return optimisticSessionArchiveMutations.get(normalizedSessionId) || null;
+}
+
+function applySessionArchiveOptimisticMutation(session) {
+  if (!session?.id) return session;
+  const mutation = getSessionArchiveOptimisticMutation(session.id);
+  if (!mutation) return session;
+  const next = { ...session };
+  if (mutation.archived) {
+    next.archived = true;
+    next.archivedAt = next.archivedAt || mutation.archivedAt || new Date().toISOString();
+    delete next.pinned;
+    return next;
+  }
+  delete next.archived;
+  delete next.archivedAt;
+  return next;
+}
+
+function adjustArchivedCountForSessionArchiveOptimisticMutations(
+  archivedCount,
+  responseSessions = [],
+  { listKind = "active" } = {},
+) {
+  let nextCount = Number.isInteger(archivedCount) && archivedCount >= 0
+    ? archivedCount
+    : 0;
+  if (optimisticSessionArchiveMutations.size === 0) return nextCount;
+  const responseIds = new Set(
+    (Array.isArray(responseSessions) ? responseSessions : [])
+      .map((session) => session?.id)
+      .filter(Boolean),
+  );
+  const isArchivedList = listKind === "archived";
+  for (const mutation of optimisticSessionArchiveMutations.values()) {
+    const responseHasSession = responseIds.has(mutation.sessionId);
+    if (mutation.archived) {
+      if ((isArchivedList && !responseHasSession) || (!isArchivedList && responseHasSession)) {
+        nextCount += 1;
+      }
+    } else if ((isArchivedList && responseHasSession) || (!isArchivedList && !responseHasSession)) {
+      nextCount = Math.max(0, nextCount - 1);
+    }
+  }
+  return nextCount;
+}
 
 function cloneSessionForSidebarHold(session) {
   if (!session || typeof session !== "object") return null;
@@ -683,7 +946,10 @@ function normalizeSessionRecord(session, previous = null) {
   const queueCount = Number.isInteger(session?.activity?.queue?.count)
     ? session.activity.queue.count
     : 0;
-  const normalized = { ...session };
+  const sessionWithOptimisticArchive = typeof applySessionArchiveOptimisticMutation === "function"
+    ? applySessionArchiveOptimisticMutation(session)
+    : session;
+  const normalized = { ...sessionWithOptimisticArchive };
   if (!Object.prototype.hasOwnProperty.call(session || {}, "queuedMessages")) {
     if (queueCount > 0 && Array.isArray(previous?.queuedMessages)) {
       normalized.queuedMessages = previous.queuedMessages;
@@ -763,7 +1029,18 @@ function upsertSession(session) {
 
 async function fetchSessionSidebar(sessionId, { forceFresh = false } = {}) {
   const url = getSessionSidebarUrl(sessionId);
+  const archiveMutationEpoch = typeof getSessionArchiveMutationEpoch === "function"
+    ? getSessionArchiveMutationEpoch()
+    : 0;
   const data = await fetchJsonOrRedirect(url, buildSessionRefreshRequestOptions(forceFresh));
+  if (
+    typeof isSessionArchiveMutationEpochCurrent === "function"
+    && !isSessionArchiveMutationEpochCurrent(archiveMutationEpoch)
+  ) {
+    return typeof getChatStoreSession === "function"
+      ? getChatStoreSession(sessionId)
+      : (sessions.find((session) => session.id === sessionId) || null);
+  }
   return upsertSession(data.session);
 }
 
@@ -795,14 +1072,40 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
   renderSessionList();
   const request = (async () => {
     try {
+      const archiveMutationEpoch = typeof getSessionArchiveMutationEpoch === "function"
+        ? getSessionArchiveMutationEpoch()
+        : 0;
       const data = await fetchJsonOrRedirect(
         ARCHIVED_SESSION_LIST_URL,
         buildSessionRefreshRequestOptions(forceFresh),
       );
+      if (
+        typeof isSessionArchiveMutationEpochCurrent === "function"
+        && !isSessionArchiveMutationEpochCurrent(archiveMutationEpoch)
+      ) {
+        if (typeof setChatArchivedSessionsLoading === "function") {
+          setChatArchivedSessionsLoading(false);
+        } else {
+          archivedSessionsLoading = false;
+        }
+        renderSessionList();
+        return typeof getArchivedSessions === "function"
+          ? getArchivedSessions()
+          : sessions.filter((session) => session?.archived === true);
+      }
+      const archivedSessionsPayload = data.sessions || [];
       const nextArchivedSessions = applyArchivedSessionListState(data.sessions || [], {
-        archivedCount: Number.isInteger(data.archivedCount)
-          ? data.archivedCount
-          : (Array.isArray(data.sessions) ? data.sessions.length : 0),
+        archivedCount: typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
+          ? adjustArchivedCountForSessionArchiveOptimisticMutations(
+            Number.isInteger(data.archivedCount)
+              ? data.archivedCount
+              : (Array.isArray(data.sessions) ? data.sessions.length : 0),
+            archivedSessionsPayload,
+            { listKind: "archived" },
+          )
+          : (Number.isInteger(data.archivedCount)
+            ? data.archivedCount
+            : (Array.isArray(data.sessions) ? data.sessions.length : 0)),
       });
       lastArchivedSessionsRefreshAt = Date.now();
       return nextArchivedSessions;
@@ -846,12 +1149,28 @@ async function updateSessionRecord(sessionId, payload = {}) {
 
 async function fetchSessionsList({ forceFresh = false } = {}) {
   if (visitorMode) return [];
+  const archiveMutationEpoch = typeof getSessionArchiveMutationEpoch === "function"
+    ? getSessionArchiveMutationEpoch()
+    : 0;
   const data = await fetchJsonOrRedirect(
     SESSION_LIST_URL,
     buildSessionRefreshRequestOptions(forceFresh),
   );
+  if (
+    typeof isSessionArchiveMutationEpochCurrent === "function"
+    && !isSessionArchiveMutationEpochCurrent(archiveMutationEpoch)
+  ) {
+    return sessions;
+  }
+  const sessionsPayload = data.sessions || [];
   applySessionListState(data.sessions || [], {
-    archivedCount: Number.isInteger(data.archivedCount) ? data.archivedCount : 0,
+    archivedCount: typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
+      ? adjustArchivedCountForSessionArchiveOptimisticMutations(
+        Number.isInteger(data.archivedCount) ? data.archivedCount : 0,
+        sessionsPayload,
+        { listKind: "active" },
+      )
+      : (Number.isInteger(data.archivedCount) ? data.archivedCount : 0),
   });
   lastSessionsListRefreshAt = Date.now();
   if (typeof renderSettingsSessionPresentationPanel === "function") {
@@ -895,11 +1214,12 @@ async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
     return false;
   }
 
+  const sortScopeLabel = payload?.scope?.sourceLabel || "sessions";
   if (sessionListOrganizerLabelResetTimer) {
     window.clearTimeout(sessionListOrganizerLabelResetTimer);
     sessionListOrganizerLabelResetTimer = null;
   }
-  setSortSessionListButtonState("Sorting…", { busy: true });
+  setSortSessionListButtonState(`Sorting ${sortScopeLabel}…`, { busy: true });
 
   const request = (async () => {
     try {
@@ -917,7 +1237,7 @@ async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
       if (closeSidebar && !isDesktop) {
         closeSidebarFn();
       }
-      setSortSessionListButtonState("Sorted", { busy: false });
+      setSortSessionListButtonState(`Sorted ${sortScopeLabel}`, { busy: false });
       return true;
     } catch (error) {
       console.warn("[sessions] Failed to organize the session list:", error.message);
@@ -969,17 +1289,18 @@ function applyAttachedSessionState(id, session) {
     renderQueuedMessagePanel(session);
   }
 
-  if (session?.tool) {
+  const effectiveSessionTool = session?.tool === "micro-agent" ? "codex" : session?.tool;
+  if (effectiveSessionTool) {
     const availableTools = typeof allToolsList !== "undefined" && Array.isArray(allToolsList)
       ? allToolsList
       : (Array.isArray(toolsList) ? toolsList : []);
-    const toolAvailable = availableTools.some((tool) => tool.id === session.tool);
+    const toolAvailable = availableTools.some((tool) => tool.id === effectiveSessionTool);
     if (toolAvailable || availableTools.length === 0) {
       if (toolAvailable && typeof refreshPrimaryToolPicker === "function") {
-        refreshPrimaryToolPicker({ keepToolIds: [session.tool], selectedValue: session.tool });
+        refreshPrimaryToolPicker({ keepToolIds: [effectiveSessionTool], selectedValue: effectiveSessionTool });
       }
-      inlineToolSelect.value = session.tool;
-      selectedTool = session.tool;
+      inlineToolSelect.value = effectiveSessionTool;
+      selectedTool = effectiveSessionTool;
     }
     if (toolAvailable) {
       Promise.resolve(loadModelsForCurrentTool()).catch(() => {});
@@ -1068,10 +1389,21 @@ async function fetchSessionState(sessionId, { forceFresh = false } = {}) {
     lastCurrentSessionRefreshSessionId = sessionId;
     return normalized;
   }
+  const archiveMutationEpoch = typeof getSessionArchiveMutationEpoch === "function"
+    ? getSessionArchiveMutationEpoch()
+    : 0;
   const data = await fetchJsonOrRedirect(
     `/api/sessions/${encodeURIComponent(sessionId)}`,
     buildSessionRefreshRequestOptions(forceFresh),
   );
+  if (
+    typeof isSessionArchiveMutationEpochCurrent === "function"
+    && !isSessionArchiveMutationEpochCurrent(archiveMutationEpoch)
+  ) {
+    return typeof getChatStoreSession === "function"
+      ? getChatStoreSession(sessionId)
+      : (sessions.find((entry) => entry.id === sessionId) || null);
+  }
   const previous = typeof getChatStoreSession === "function"
     ? getChatStoreSession(sessionId)
     : (sessions.find((entry) => entry.id === sessionId) || null);

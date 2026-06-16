@@ -215,7 +215,7 @@ Reusable AI workflows shareable via link. Each Agent defines: name, systemPrompt
 
 - **Token**: 256-bit random hex, timing-safe comparison
 - **Password**: scrypt-hashed alternative
-- **Cookies**: HttpOnly + Secure + SameSite=Strict, 24h expiry
+- **Cookies**: HttpOnly + Secure + SameSite=Lax, 30-day expiry
 - **Rate limiting**: Exponential backoff on login failures (max 15min)
 - **Network**: Services listen on 127.0.0.1 only; external access via Cloudflare Tunnel
 - **CSP**: Nonce-based script allowlist

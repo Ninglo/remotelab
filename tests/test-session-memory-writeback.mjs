@@ -1,14 +1,22 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 const previousHome = process.env.HOME;
 const previousWritebackSetting = process.env.REMOTELAB_MEMORY_WRITEBACK;
+const previousInstanceRoot = process.env.REMOTELAB_INSTANCE_ROOT;
+const previousConfigDir = process.env.REMOTELAB_CONFIG_DIR;
+const previousMemoryDir = process.env.REMOTELAB_MEMORY_DIR;
+const previousWorkRoot = process.env.REMOTELAB_WORK_ROOT_DIR;
 
 const tempHome = await mkdtemp(join(tmpdir(), 'remotelab-memory-writeback-'));
 process.env.HOME = tempHome;
+delete process.env.REMOTELAB_INSTANCE_ROOT;
+process.env.REMOTELAB_CONFIG_DIR = join(tempHome, '.config', 'remotelab');
+process.env.REMOTELAB_MEMORY_DIR = join(tempHome, '.remotelab', 'memory');
+process.env.REMOTELAB_WORK_ROOT_DIR = join(tempHome, '.remotelab', 'workspace');
 
 const { maybeRunMemoryWriteback } = await import('../chat/session-memory-writeback.mjs');
 
@@ -42,11 +50,13 @@ assert.match(lastPrompt, /Available memory targets:/, 'writeback prompt should n
 assert.match(lastPrompt, /user_preferences \| user \| ~\/\.remotelab\/memory\/model-context\/preferences\.md/, 'prompt should expose specific user memory targets');
 assert.match(lastPrompt, /user_auto_memory \| user \| ~\/\.remotelab\/memory\/model-context\/auto-user-memory\.md/, 'prompt should keep the auto fallback target');
 
-const auditLog = await readFile(
-  join(tempHome, '.remotelab', 'memory', 'model-context', 'session-learnings', 'learnings.jsonl'),
-  'utf8',
+await assert.rejects(
+  access(
+    join(tempHome, '.remotelab', 'memory', 'model-context', 'session-learnings', 'learnings.jsonl'),
+  ),
+  { code: 'ENOENT' },
+  'memory writeback should not create a raw session-learnings audit log',
 );
-assert.match(auditLog, /User prefers compact audit summaries\./);
 
 const userAutoMemory = await readFile(
   join(tempHome, '.remotelab', 'memory', 'model-context', 'auto-user-memory.md'),
@@ -123,6 +133,14 @@ assert.equal(promptCalls, 3, 'explicit off should prevent the reviewer prompt fr
 
 if (previousWritebackSetting === undefined) delete process.env.REMOTELAB_MEMORY_WRITEBACK;
 else process.env.REMOTELAB_MEMORY_WRITEBACK = previousWritebackSetting;
+if (previousInstanceRoot === undefined) delete process.env.REMOTELAB_INSTANCE_ROOT;
+else process.env.REMOTELAB_INSTANCE_ROOT = previousInstanceRoot;
+if (previousConfigDir === undefined) delete process.env.REMOTELAB_CONFIG_DIR;
+else process.env.REMOTELAB_CONFIG_DIR = previousConfigDir;
+if (previousMemoryDir === undefined) delete process.env.REMOTELAB_MEMORY_DIR;
+else process.env.REMOTELAB_MEMORY_DIR = previousMemoryDir;
+if (previousWorkRoot === undefined) delete process.env.REMOTELAB_WORK_ROOT_DIR;
+else process.env.REMOTELAB_WORK_ROOT_DIR = previousWorkRoot;
 if (previousHome === undefined) delete process.env.HOME;
 else process.env.HOME = previousHome;
 await rm(tempHome, { recursive: true, force: true });

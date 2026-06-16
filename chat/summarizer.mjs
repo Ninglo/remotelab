@@ -1,8 +1,9 @@
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
-import { readLastTurnEvents } from './history.mjs';
+import { loadHistory, readLastTurnEvents } from './history.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
+import { applyManagedRuntimeEnv, applySharedCodexLock } from './runtime-policy.mjs';
 import {
   normalizeGeneratedSessionTitle,
   isSessionAutoRenamePending,
@@ -16,6 +17,7 @@ import {
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
 import { normalizeSessionTaskCard } from './session-task-card.mjs';
+import { assessSessionWorkstream } from './session-dispatch.mjs';
 
 function clipPromptText(value, maxChars) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -119,7 +121,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     throw new Error('Session label suggestion requires an explicit tool');
   }
 
-  const { command, adapter, args, envOverrides } = await createToolInvocation(tool, prompt, {
+  const { command, adapter, args, envOverrides, runtimeFamily } = await createToolInvocation(tool, prompt, {
     dangerouslySkipPermissions: true,
     model,
     effort,
@@ -127,17 +129,22 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     systemPrefix: '',
   });
   const resolvedCmd = await resolveCommand(command);
+  const lockedInvocation = applySharedCodexLock(tool, resolvedCmd, args, runtimeFamily);
   const resolvedFolder = resolveCwd(folder);
   console.log(
-    `[summarizer] Calling tool=${tool} cmd=${resolvedCmd} model=${model || 'default'} effort=${effort || 'default'} thinking=${!!thinking} for session ${sessionId.slice(0, 8)}`
+    `[summarizer] Calling tool=${tool} cmd=${lockedInvocation.command} model=${model || 'default'} effort=${effort || 'default'} thinking=${!!thinking} for session ${sessionId.slice(0, 8)}`
   );
 
-  const subEnv = buildToolProcessEnv(envOverrides || {});
+  let subEnv = buildToolProcessEnv(envOverrides || {});
   delete subEnv.CLAUDECODE;
   delete subEnv.CLAUDE_CODE_ENTRYPOINT;
+  subEnv = await applyManagedRuntimeEnv(tool, subEnv, {
+    runtimeFamily,
+    codexHomeMode: 'managed',
+  });
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(resolvedCmd, args, {
+    const proc = spawn(lockedInvocation.command, lockedInvocation.args, {
       cwd: resolvedFolder,
       env: subEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -272,16 +279,12 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
   } = sessionMeta;
 
   const shouldGenerateTitle = isSessionAutoRenamePending({ name, autoRenamePending });
+  const shouldRefreshTitle = options.refreshTitle === true && !shouldGenerateTitle;
   const currentGroup = normalizeSessionGroup(group || '');
   const currentDescription = normalizeSessionDescription(description || '');
   const shouldGenerateGrouping = !currentGroup || !currentDescription;
-  if (!shouldGenerateTitle && !shouldGenerateGrouping) {
-    return {
-      ok: true,
-      skipped: 'session_labels_not_needed',
-      rename: { attempted: false, renamed: false },
-    };
-  }
+  const shouldRefreshGrouping = options.refreshGrouping === true && !shouldGenerateGrouping;
+  const currentName = normalizeGeneratedSessionTitle(name || '', currentGroup || '');
 
   const lastTurnEvents = await readLastTurnEvents(sessionId, { includeBodies: true });
   if (lastTurnEvents.length === 0) {
@@ -303,6 +306,38 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     };
   }
 
+  let workstreamAssessment = null;
+  if (shouldRefreshTitle || shouldRefreshGrouping) {
+    const history = await loadHistory(sessionId, { includeBodies: false });
+    workstreamAssessment = await assessSessionWorkstream({
+      session: sessionMeta,
+      text: turnText,
+      history,
+      candidateLabel: 'Latest completed turn',
+      includePlannerAction: false,
+      logPrefix: '[session-workstream] Relabel',
+      runPrompt: (prompt) => runToolJsonPrompt(sessionMeta, prompt, {
+        operation: 'session_workstream_assessment',
+      }),
+    });
+  }
+
+  const allowRefresh = workstreamAssessment?.workstreamRelation === 'same_session_shift';
+  const effectiveRefreshTitle = shouldRefreshTitle && allowRefresh;
+  const effectiveRefreshGrouping = shouldRefreshGrouping && allowRefresh;
+  const shouldEvaluateTitle = shouldGenerateTitle || effectiveRefreshTitle;
+  const shouldEvaluateGrouping = shouldGenerateGrouping || effectiveRefreshGrouping;
+  if (!shouldEvaluateTitle && !shouldEvaluateGrouping) {
+    return {
+      ok: true,
+      ...(workstreamAssessment ? { workstreamAssessment } : {}),
+      skipped: workstreamAssessment?.workstreamRelation === 'separate_workstream'
+        ? 'separate_workstream'
+        : 'session_labels_not_needed',
+      rename: { attempted: false, renamed: false },
+    };
+  }
+
   const promptContext = await loadSessionLabelPromptContext({
     ...sessionMeta,
     group: currentGroup,
@@ -311,9 +346,14 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
 
   const prompt = [
     'You are naming a developer session. Be concise and literal.',
-    'Treat the display group as a flexible project-like container: usually the top-level project or recurring domain. The title should name the concrete subtask inside that group.',
-    'Reuse an existing display group when the scope clearly matches. Create a new group only when the work clearly belongs to a different project or domain.',
-    'The latest turn may be underspecified. Use earlier session context, scope-router hints, and existing session metadata to infer the right top-level project before naming.',
+    'Use these roles: "group" = workflow coupling, "title" = the current frontier of the session, "description" = the current work semantics.',
+    'RemoteLab only has one visible Projects level, so the display group should be a work-recovery entry, not a strict taxonomy label.',
+    'Avoid both extremes: do not use a broad repo/product bucket that mixes unrelated decisions, and do not create a new group for every one-off feature slice.',
+    'Use existing non-archived sessions as a bounded catalog. Reuse an existing group when this session clearly belongs to the same user-facing workstream.',
+    'Create a new group only when the work has a distinct outcome, lifecycle, context, or source boundary from the existing groups.',
+    'If the fit is plausible but not perfect, prefer the closest existing workstream group and let the title/description carry the concrete subtask.',
+    'The title should name the concrete work happening inside that group.',
+    'The latest turn may be underspecified. Use earlier session context, scope-router hints, and existing session metadata to infer the right workstream before naming.',
     '',
     `Session folder: ${folder}`,
     `Current session name: ${name || '(unnamed)'}`,
@@ -323,18 +363,25 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     promptContext.contextSummary ? `Earlier session context:\n${promptContext.contextSummary}` : '',
     promptContext.scopeRouter ? `Known scope router entries:\n${promptContext.scopeRouter}` : '',
     promptContext.existingSessions ? `Current non-archived sessions:\n${promptContext.existingSessions}` : '',
+    workstreamAssessment?.workstreamRelation === 'same_session_shift'
+      ? `Shared workstream assessment: same_session_shift — ${workstreamAssessment.reasoning || 'the current session still owns this turn, but the main frontier has moved.'}`
+      : '',
     shouldGenerateTitle ? 'The current name is only a temporary draft. Generate a better final title based on the latest full turn, using the user request as the main signal and the assistant reply to sharpen the task wording.' : '',
-    shouldGenerateGrouping ? 'Also generate a stable one-level display group for session-list organization. This is not a filesystem path.' : '',
-    shouldGenerateTitle ? 'The display group is shown separately in the UI. The title must focus on the specific task inside that group and should not repeat the group/domain words unless disambiguation truly requires it.' : '',
-    shouldGenerateTitle ? 'Likewise, avoid repeating connector, provider, or source labels that are already captured elsewhere in session metadata unless they add real disambiguating context.' : '',
+    effectiveRefreshTitle ? 'The current title is already user-visible. Keep it exactly as-is unless the session main workstream has materially shifted or the title is now too broad or stale.' : '',
+    effectiveRefreshTitle ? 'Do not rename just to polish wording, swap synonyms, or emphasize a minor substep. If the current title still fits, return it unchanged.' : '',
+    shouldEvaluateGrouping ? 'Also generate a stable one-level display group for session-list organization. This is not a filesystem path.' : '',
+    effectiveRefreshGrouping ? 'The group should be more stable than the title. Do not change the group for small focus shifts inside the same workstream.' : '',
+    effectiveRefreshGrouping ? 'Keep the current group and description when they still fit. Only change them when the main workstream has actually moved.' : '',
+    shouldEvaluateTitle ? 'The display group is shown separately in the UI. The title must focus on the specific task inside that group and should not repeat the group words unless disambiguation truly requires it.' : '',
+    shouldEvaluateTitle ? 'Likewise, avoid repeating connector, provider, or source labels that are already captured elsewhere in session metadata unless they add real disambiguating context.' : '',
     '',
     'Latest turn:',
     turnText,
     '',
     'Write a JSON object with exactly these fields:',
-    shouldGenerateTitle ? '- "title": 2-5 words — a short descriptive session title (for example: "Fix auth bug", "Refactor naming flow").' : '',
-    shouldGenerateGrouping ? '- "group": 1-3 words — a stable display group for similar work (for example: "RemoteLab", "Video tooling", "Hiring"). Not a path.' : '',
-    shouldGenerateGrouping ? '- "description": One sentence — a compact hidden description of the work, useful for future regrouping.' : '',
+    shouldEvaluateTitle ? '- "title": 2-6 words — a short descriptive session title. If the current title still fits, return it unchanged.' : '',
+    shouldEvaluateGrouping ? '- "group": 1-4 words — a stable display group for the workstream. Prefer an existing fitting workstream over a new one-off label; avoid broad repo/domain buckets. Not a path.' : '',
+    shouldEvaluateGrouping ? '- "description": One sentence — a compact hidden description of the current workstream, useful for future regrouping.' : '',
     '',
     'Respond with ONLY valid JSON. No markdown, no explanation.',
   ].filter((line) => line !== '').join('\n');
@@ -353,7 +400,7 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
   }
 
   const suggestedLabels = {};
-  if (shouldGenerateGrouping) {
+  if (shouldEvaluateGrouping) {
     const nextGroup = normalizeSessionGroup(labelResult?.group || '');
     const nextDescription = normalizeSessionDescription(labelResult?.description || '');
     if (nextGroup) {
@@ -364,9 +411,10 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     }
   }
 
-  if (!shouldGenerateTitle) {
+  if (!shouldEvaluateTitle) {
     return {
       ok: true,
+      ...(workstreamAssessment ? { workstreamAssessment } : {}),
       ...(Object.keys(suggestedLabels).length > 0 ? { summary: suggestedLabels } : {}),
       rename: { attempted: false, renamed: false },
     };
@@ -375,15 +423,16 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
   if (!onRename) {
     return {
       ok: true,
-      title: labelResult.title,
+      title: labelResult?.title || currentName,
+      ...(workstreamAssessment ? { workstreamAssessment } : {}),
       ...(Object.keys(suggestedLabels).length > 0 ? { summary: suggestedLabels } : {}),
       rename: { attempted: true, renamed: false, error: 'No rename callback provided' },
     };
   }
 
   const finalGroup = normalizeSessionGroup(suggestedLabels.group || currentGroup || '');
-  const newName = normalizeGeneratedSessionTitle(labelResult.title, finalGroup);
-  if (!newName) {
+  const proposedName = normalizeGeneratedSessionTitle(labelResult?.title || '', finalGroup);
+  if (shouldGenerateTitle && !proposedName) {
     return {
       ok: false,
       error: 'Empty title generated',
@@ -391,10 +440,22 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     };
   }
 
+  const newName = proposedName || currentName;
+  if (!newName || newName === currentName) {
+    return {
+      ok: true,
+      title: currentName,
+      ...(workstreamAssessment ? { workstreamAssessment } : {}),
+      ...(Object.keys(suggestedLabels).length > 0 ? { summary: suggestedLabels } : {}),
+      rename: { attempted: false, renamed: false },
+    };
+  }
+
   const renamed = await onRename(newName);
   return {
     ok: true,
     title: newName,
+    ...(workstreamAssessment ? { workstreamAssessment } : {}),
     ...(Object.keys(suggestedLabels).length > 0 ? { summary: suggestedLabels } : {}),
     rename: renamed
       ? { attempted: true, renamed: true, title: newName }

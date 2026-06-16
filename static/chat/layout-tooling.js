@@ -104,7 +104,8 @@ function normalizeToolId(value) {
 
 function filterPrimaryToolOptions(toolOptions = []) {
   return (Array.isArray(toolOptions) ? toolOptions : []).filter((tool) => {
-    return tool && typeof tool === "object" && normalizeToolId(tool.id);
+    const toolId = normalizeToolId(tool?.id);
+    return tool && typeof tool === "object" && toolId && toolId !== "micro-agent";
   });
 }
 
