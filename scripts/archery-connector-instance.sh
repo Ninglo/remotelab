@@ -8,6 +8,7 @@ CONFIG_PATH="$CONFIG_DIR/config.json"
 PID_FILE="$CONFIG_DIR/connector.pid"
 LOG_PATH="$CONFIG_DIR/connector.log"
 NODE_BIN="${NODE_BIN:-$(command -v node)}"
+SURFACE_PATH="${REMOTELAB_CONFIG_DIR:-$HOME/.config/remotelab}/connector-surfaces/archery.json"
 
 mkdir -p "$CONFIG_DIR"
 
@@ -18,7 +19,7 @@ write_default_config() {
 
   cat > "$CONFIG_PATH" <<EOF
 {
-  "port": 7696,
+  "port": 7796,
   "host": "127.0.0.1",
   "deliveryMode": "direct",
   "threadMode": "athlete",
@@ -47,7 +48,7 @@ running_pid() {
     return 1
   fi
 
-  if kill -0 "$pid" 2>/dev/null; then
+  if kill -0 "$pid" 2>/dev/null && ps -p "$pid" -o command= 2>/dev/null | grep -q 'connectors/archery/index.mjs'; then
     printf '%s\n' "$pid"
     return 0
   fi
@@ -56,9 +57,32 @@ running_pid() {
   return 1
 }
 
+configured_port() {
+  write_default_config
+  "$NODE_BIN" -e "const fs=require('fs'); const raw=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); console.log(Number(raw.port)||7796)" "$CONFIG_PATH"
+}
+
+listener_pid() {
+  local port line pid
+  port="$(configured_port)"
+  line="$(ss -ltnp 2>/dev/null | awk -v port=":${port}" '$4 ~ (port "$") { print; exit }')"
+  if [[ -z "$line" ]]; then
+    return 1
+  fi
+  pid="$(printf '%s\n' "$line" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p')"
+  if [[ -z "$pid" ]]; then
+    return 1
+  fi
+  if ! ps -p "$pid" -o command= 2>/dev/null | grep -q 'connectors/archery/index.mjs'; then
+    return 1
+  fi
+  printf '%s\n' "$pid"
+}
+
 start_instance() {
   local pid
-  if pid="$(running_pid)"; then
+  if pid="$(running_pid)" || pid="$(listener_pid)"; then
+    printf '%s\n' "$pid" > "$PID_FILE"
     echo "archery connector already running (pid $pid)"
     echo "config: $CONFIG_PATH"
     echo "log: $LOG_PATH"
@@ -70,17 +94,18 @@ start_instance() {
 
   (
     cd "$ROOT_DIR"
-    nohup env \
+    nohup setsid env \
       PATH="$PATH" \
       HOME="$HOME" \
       USER="${USER:-}" \
       SHELL="${SHELL:-/bin/bash}" \
       "$NODE_BIN" connectors/archery/index.mjs --state-dir "$CONFIG_DIR" >> "$LOG_PATH" 2>&1 < /dev/null &
-    echo $! > "$PID_FILE"
+    printf '%s\n' "$!" > "$PID_FILE"
   )
 
   for _ in $(seq 1 40); do
-    if pid="$(running_pid)"; then
+    if pid="$(listener_pid)" || pid="$(running_pid)"; then
+      printf '%s\n' "$pid" > "$PID_FILE"
       echo "started archery connector (pid $pid)"
       echo "config: $CONFIG_PATH"
       echo "log: $LOG_PATH"
@@ -96,7 +121,7 @@ start_instance() {
 
 stop_instance() {
   local pid
-  if ! pid="$(running_pid)"; then
+  if ! pid="$(running_pid)" && ! pid="$(listener_pid)"; then
     rm -f "$PID_FILE"
     echo "archery connector is already stopped"
     return 0
@@ -106,6 +131,7 @@ stop_instance() {
   for _ in $(seq 1 40); do
     if ! kill -0 "$pid" 2>/dev/null; then
       rm -f "$PID_FILE"
+      rm -f "$SURFACE_PATH"
       echo "stopped archery connector (pid $pid)"
       return 0
     fi
@@ -114,17 +140,20 @@ stop_instance() {
 
   kill -9 "$pid" 2>/dev/null || true
   rm -f "$PID_FILE"
+  rm -f "$SURFACE_PATH"
   echo "force-stopped archery connector (pid $pid)"
 }
 
 show_status() {
   local pid
-  if ! pid="$(running_pid)"; then
+  if ! pid="$(running_pid)" && ! pid="$(listener_pid)"; then
     echo "archery connector is not running"
     echo "config: $CONFIG_PATH"
     echo "log: $LOG_PATH"
     return 1
   fi
+
+  printf '%s\n' "$pid" > "$PID_FILE"
 
   echo "archery connector is running"
   echo "pid: $pid"

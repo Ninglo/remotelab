@@ -35,6 +35,7 @@ credentials.txt
 [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.txt
 
 # Node
+node_modules
 node_modules/
 
 # Cloudflare worker local config

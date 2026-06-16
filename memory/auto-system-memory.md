@@ -171,3 +171,18 @@
 - RemoteLab Project 名称不应由首个 session 固定生成，而应基于当前成员 sessions 的整体语义持续反推；当内容漂移或手动整理后，应允许重命名并把用户手动合并/排序结果作为强反馈。
 - RemoteLab 远程 Codex 执行的推荐架构：短期支持将 RemoteLab 部署在 SSH 主机上并调用该机本地 Codex；多 SSH 主机形态应补远程 worker 调度层，由主控 RemoteLab 调度各主机上的 RemoteLab worker，再由 worker 调本机 Codex，不建议长期依赖主控直接 `ssh host codex ...`。
 - RemoteLab 的 Self review 判定一轮是否完成时，需要把同一 run 中通过 `resultRunId` 关联的 `result_file_assets` 消息纳入用户实际可见内容；否则文件型交付会被误判为未完成。
+- RemoteLab 产品中的 `checking` 状态不应暴露内部 i18n key；应展示为人类可读文案，中文用“梳理中”，英文用 `reviewing`。
+- RemoteLab 当前前后端同仓、同服务一起发版；涉及前端/API 展示契约变更时，可直接整体验迁到新契约，不需要为“老前端 + 新后端”保留兼容分支。
+- RemoteLab 的提醒产品语义应显式分流：大多数“什么时间提醒我”属于只更新日程；只有像“每天开启定时反馈”“定期检查日历并反馈”这类需要复杂能力或持续 AI 工作流的场景，才应走 trigger/开启聊天流程。
+- 当前提醒分流主要靠 prompt 的软控制，缺少把“简单提醒写日程 vs 复杂定时任务走 trigger/chat”写成明确规则和对照例子的硬化约束；后续应通过补充分流规则和测试样例来稳定该策略。
+- RemoteLab 产品上，分享链接在用户首次进入且当前没有活动会话时，应自动触发一次与“新建会话”按钮相同的创建流程，避免用户先看到空白页并增加理解成本。
+- 单机多租户隔离方案确定：用 systemd ProtectProc=invisible + ProcSubset=pid 隐藏进程，env 文件 chmod 600 root:root，父目录 chmod 711 防枚举，网络端口按 UID iptables 限制（优先级低）。目标是让用户完全感知不到其他实例存在。
+- 迁移 RemoteLab trial 实例时，如果旧实例的 provider 不稳定、无法可靠自导出，可以直接从旧实例的会话内容重建记忆、会话历史和基础资料附件；迁移完成后应再做一次追平，并校验旧实例会话总数、缺失数和历史落后数。
+- RemoteLab 对外购买咨询目前直接引导到微信 `qimkwwxb`，用于了解购买方式、版本、报价或试用。
+- RemoteLab 的对外定位不是“单一底层模型产品”，而是将大模型能力接入受控真实环境与工作流的产品层，强调可读写文件、运行命令、结合上下文持续完成实际任务。
+- RemoteLab 当前登录不是纯浏览器 cookie：owner/visitor 登录都会在服务端 `auth-sessions.json` 保存 session，并按 `expiry` 校验；默认 TTL 目前是 `24h`。
+- RemoteLab 会话策略不应采用真正永久登录；更合适的方向是 owner 使用长周期 + 滑动续期，visitor 保持更短。
+- RemoteLab 当前改密码或重新生成 token 只会更新 `auth.json`，不会清空 `auth-sessions.json` 中旧 session；后续应补上密码修改或 token 轮换时撤销旧 session。
+- RemoteLab 收费策略已讨论确定方向：ToC 锚点 199元/月；ToB Channel Pack 阶梯定价（5/10/20+实例，单价 160→140→120）；Stripe Checkout + Customer Portal 不自建支付页；白标分轻/深两级；BYOK 自带 key 降价策略；Agent 分享链接付费墙优先做渠道分发场景。
+- 目前已有 usage-ledger token 用量追踪和 model-pricing 成本估算、admin dashboard /api/billing 端点，但无 Stripe 代码、无 payment 逻辑、无白标机制、无 BYOK 实现。
+- RemoteLab 当前决定将登录态过期时间调整为 30 天，先按试运行方案观察效果。

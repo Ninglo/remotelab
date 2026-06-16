@@ -108,7 +108,7 @@ Historical imports use the same normalization path through `POST /archery/import
 
 ```json
 {
-  "port": 7696,
+  "port": 7796,
   "host": "127.0.0.1",
   "channel": "archery",
   "callbackToken": "",

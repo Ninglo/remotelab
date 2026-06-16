@@ -17,6 +17,7 @@ import {
   CHAT_PORT,
   MANAGED_WORK_ROOT_DIR,
 } from '../../lib/config.mjs'
+import { registerConnectorSurface } from '../../lib/connector-surface-registry.mjs'
 import {
   existsSync,
   mkdirSync,
@@ -28,6 +29,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+let activeConnector = null
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : ''
@@ -47,11 +49,26 @@ function normalizeBaseUrl(value) {
   return trimString(value).replace(/\/+$/, '')
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
 function safeId(value, fallback = 'default') {
   const normalized = trimString(value)
     .replace(/[^a-zA-Z0-9._:-]+/g, '_')
     .replace(/^_+|_+$/g, '')
   return normalized || fallback
+}
+
+function buildConnectorBaseUrl(config) {
+  const host = trimString(config.host)
+  const publicHost = !host || host === '0.0.0.0' || host === '::' ? '127.0.0.1' : host
+  return `http://${publicHost}:${config.port}`
 }
 
 function normalizeDistanceLabel(value) {
@@ -438,7 +455,7 @@ export function readStoredArcheryReply(stateDir, lookup = {}) {
 
 function loadConfig(stateDir) {
   const defaults = {
-    port: 7696,
+    port: 7796,
     host: '127.0.0.1',
     channel: 'archery',
     callbackToken: '',
@@ -455,6 +472,7 @@ function loadConfig(stateDir) {
     sessionFolder: MANAGED_WORK_ROOT_DIR,
     replyPollTimeoutMs: 10 * 60 * 1000,
     replyPollIntervalMs: 1500,
+    surfaceTitle: 'Archery Coach',
   }
   const configPath = join(stateDir, 'config.json')
   if (!existsSync(configPath)) return defaults
@@ -517,6 +535,66 @@ function buildSchemaExample() {
       },
     ],
   }
+}
+
+function buildSurfaceInfo(config, baseUrl) {
+  return {
+    connectorId: 'archery',
+    title: trimString(config.surfaceTitle) || 'Archery Coach',
+    entryPath: '/',
+    allowEmbed: true,
+    capabilities: ['session_upload', 'history_import', 'reply_poll'],
+    description: 'Upload one training session or a history import, then poll for the generated coaching reply.',
+    endpoints: {
+      schema: `${baseUrl}/archery/schema`,
+      submitSession: `${baseUrl}/archery/session`,
+      importHistory: `${baseUrl}/archery/import`,
+      pollReply: `${baseUrl}/archery/replies?requestId=...`,
+      latestAthleteReply: `${baseUrl}/archery/replies?athleteId=...`,
+    },
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function buildSurfaceHtml(config, baseUrl) {
+  const info = buildSurfaceInfo(config, baseUrl)
+  const endpoints = Object.entries(info.endpoints)
+    .map(([label, value]) => `<li><strong>${escapeHtml(label)}</strong><code>${escapeHtml(value)}</code></li>`)
+    .join('')
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(info.title)}</title>
+    <style>
+      :root { color-scheme: light; }
+      body { margin: 0; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f4f1ea; color: #1f2937; }
+      main { max-width: 760px; margin: 0 auto; padding: 48px 20px 64px; }
+      h1 { margin: 0 0 12px; font-size: 32px; }
+      p { line-height: 1.6; margin: 0 0 14px; }
+      .card { background: white; border-radius: 18px; padding: 24px; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08); margin-top: 20px; }
+      ul { padding-left: 20px; }
+      li { margin: 10px 0; }
+      code { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 6px; background: #f3f4f6; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+      a { color: #0f766e; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(info.title)}</h1>
+      <p>This connector accepts structured archery training records, opens or reuses one long-lived RemoteLab coach session per athlete, and caches the generated reply for the frontend to poll.</p>
+      <div class="card">
+        <p>Recommended frontend base URL:</p>
+        <p><code>/connectors/archery</code></p>
+        <p>Available endpoints:</p>
+        <ul>${endpoints}</ul>
+        <p>Schema example: <a href="${escapeHtml(info.endpoints.schema)}">${escapeHtml(info.endpoints.schema)}</a></p>
+      </div>
+    </main>
+  </body>
+</html>`
 }
 
 function buildImportItems(payload) {
@@ -729,7 +807,7 @@ export async function startArcheryConnector(options = {}) {
       const payload = await readBody(req)
       const message = normalizeArcherySession(payload, config)
       const result = await deliverArcheryMessage(message, config, connector, stateDir)
-      const baseUrl = `http://${config.host}:${config.port}`
+      const baseUrl = buildConnectorBaseUrl(config)
       const statusCode = result.delivered ? 202 : 502
       sendArcheryJson(res, statusCode, {
         ok: result.delivered,
@@ -823,7 +901,27 @@ export async function startArcheryConnector(options = {}) {
     })
   })
 
+  connector.route('GET', '/surface', async (_req, res) => {
+    sendArcheryJson(res, 200, buildSurfaceInfo(config, buildConnectorBaseUrl(config)))
+  })
+
+  connector.route('GET', '/', async (_req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+    })
+    res.end(buildSurfaceHtml(config, buildConnectorBaseUrl(config)))
+  })
+
   await connector.start()
+  await registerConnectorSurface({
+    connectorId: 'archery',
+    title: trimString(config.surfaceTitle) || 'Archery Coach',
+    baseUrl: buildConnectorBaseUrl(config),
+    entryPath: '/',
+    allowEmbed: true,
+  })
+  activeConnector = connector
   console.log(`Archery connector listening on ${config.host}:${config.port}`)
   return connector
 }

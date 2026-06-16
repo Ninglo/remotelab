@@ -50,6 +50,8 @@ const baseSession = {
   ],
 };
 
+const memoryRootPattern = String.raw`(?:~\/\.remotelab\/memory|\/.*\/\.remotelab\/instances\/[^/\s]+\/memory)`;
+
 const freshPrompt = await buildPrompt(
   'session-test-1',
   baseSession,
@@ -66,12 +68,12 @@ assert.match(freshPrompt, /do not mirror its headings, bullets, or checklist str
 assert.match(freshPrompt, /active working agreements/);
 assert.match(freshPrompt, /默认用自然连贯的段落表达，不要自己起标题和列表/);
 assert.match(freshPrompt, /Stable context entry points:/);
-assert.match(freshPrompt, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
-assert.match(freshPrompt, /Memory writeback targets config: ~\/\.remotelab\/memory\/writeback-targets\.json/);
-assert.match(freshPrompt, /Auto user memory: ~\/\.remotelab\/memory\/model-context\/auto-user-memory\.md/);
-assert.match(freshPrompt, /Auto system memory: \/opt\/remotelab\/memory\/auto-system-memory\.md/);
+assert.match(freshPrompt, new RegExp(`Projects: ${memoryRootPattern}\\/projects\\.md`));
+assert.match(freshPrompt, new RegExp(`Memory writeback targets config: ${memoryRootPattern}\\/writeback-targets\\.json`));
+assert.match(freshPrompt, new RegExp(`Auto user memory: ${memoryRootPattern}\\/model-context\\/auto-user-memory\\.md`));
+assert.match(freshPrompt, /Auto system memory: (?:.*\/memory|\[platform-shared-memory\])\/auto-system-memory\.md/);
 assert.match(freshPrompt, /Model-managed writable context root:/);
-assert.match(freshPrompt, /~\/\.remotelab\/memory\/model-context/);
+assert.match(freshPrompt, new RegExp(`${memoryRootPattern}\\/model-context`));
 assert.match(freshPrompt, /execution substrate, not as the end user's personal Mac|Treat the host as execution substrate/);
 assert.match(freshPrompt, /only use connectors and delivery channels that are explicitly configured|prefer instance-scoped connectors/);
 assert.doesNotMatch(freshPrompt, /Subscription link \(webcal\): webcal:\/\/127\.0\.0\.1:/);

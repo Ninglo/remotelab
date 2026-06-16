@@ -540,6 +540,17 @@ async function initApp() {
     }
     await Promise.all([toolsPromise, sessionsPromise]);
     restoreOwnerSessionSelection();
+    const shouldAutoCreateScopedSession = !currentSessionId
+      && Array.isArray(sessions)
+      && sessions.length === 0
+      && hasAuthCapability("createSession")
+      && !(new URL(window.location.href)).searchParams.has("share");
+    if (shouldAutoCreateScopedSession) {
+      await createNewSessionShortcut({
+        closeSidebar: true,
+        forceComposerFocus: true,
+      });
+    }
     connect();
     setupForegroundRefreshHandlers();
     if (canChangeRuntimeSelection()) {
