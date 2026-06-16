@@ -2,10 +2,10 @@
 import assert from 'assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
-import { pathToFileURL } from 'url';
+import { dirname, join } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 
-const repoRoot = '/opt/remotelab';
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const moduleUrl = pathToFileURL(join(repoRoot, 'lib', 'guest-wechat-connector-startup.mjs')).href;
 const { ensureGuestWeChatConnectorStartup } = await import(moduleUrl);
 
