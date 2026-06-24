@@ -14,6 +14,10 @@ process.env.HOME = tempHome;
 const { selectAssistantReplyEvent } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-selection.mjs')).href);
 const { waitForReplyPublication } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-publication-client.mjs')).href);
 const { saveUiRuntimeSelection } = await import(pathToFileURL(join(repoRoot, 'lib', 'runtime-selection.mjs')).href);
+const {
+  findConnectorMessageIndexRecord,
+  upsertConnectorMessageIndexRecord,
+} = await import(pathToFileURL(join(repoRoot, 'lib', 'connector-message-index.mjs')).href);
 
 const {
   DEFAULT_SESSION_SYSTEM_PROMPT,
@@ -37,8 +41,11 @@ const {
   resolveFeishuMessageAttachments,
   buildFeishuPostContent,
   buildExternalTriggerId,
+  buildFeishuMessageIndexRecord,
+  buildFeishuQueueKey,
   buildMessageSourceContext,
   buildSessionSourceContext,
+  resolveFeishuTopicForkParentSessionId,
   sendFeishuText,
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,
@@ -48,6 +55,7 @@ const runtime = {
   processingMessageIds: new Set(),
   storagePaths: {
     handledMessagesPath: '/tmp/remotelab-feishu-connector-test-handled.json',
+    messageIndexPath: join(tempHome, 'connector-message-index.json'),
   },
 };
 
@@ -68,6 +76,47 @@ const noTimeoutPublication = await waitForReplyPublication(async () => {
 });
 assert.equal(noTimeoutPublication.state, 'ready');
 assert.equal(publicationPolls, 3, 'timeoutMs=0 should wait until a terminal reply publication');
+
+assert.equal(
+  buildFeishuQueueKey({ chatType: 'group', chatId: 'chat_topic_test', threadId: 'thread_a' }),
+  'feishu:topic:chat_topic_test:thread_a',
+  'topic messages should queue by topic, not only by group chat',
+);
+assert.equal(
+  buildFeishuQueueKey({ chatType: 'group', chatId: 'chat_topic_test', rootId: 'root_a' }),
+  'feishu:topic:chat_topic_test:root_a',
+  'root-id topic messages should queue by topic root',
+);
+assert.notEqual(
+  buildFeishuQueueKey({ chatType: 'group', chatId: 'chat_topic_test', threadId: 'thread_a' }),
+  buildFeishuQueueKey({ chatType: 'group', chatId: 'chat_topic_test', threadId: 'thread_b' }),
+  'different topics in the same group should use different queue keys',
+);
+assert.equal(
+  buildFeishuQueueKey({ chatType: 'group', chatId: 'chat_topic_test', messageId: 'msg_a' }),
+  buildFeishuQueueKey({ chatType: 'group', chatId: 'chat_topic_test', messageId: 'msg_b' }),
+  'non-topic group messages should still serialize by group chat',
+);
+assert.deepEqual(
+  buildFeishuMessageIndexRecord({
+    tenantKey: 'tenant_topic_test',
+    chatType: 'group',
+    chatId: 'chat_topic_test',
+    messageId: 'msg_topic_root_index',
+    threadId: 'thread_topic_index',
+  }, 'sess_topic_index'),
+  {
+    connector: 'feishu',
+    accountId: 'tenant_topic_test',
+    messageId: 'msg_topic_root_index',
+    sessionId: 'sess_topic_index',
+    chatId: 'chat_topic_test',
+    conversationId: 'thread_topic_index',
+    externalTriggerId: 'feishu:topic:chat_topic_test:thread_topic_index',
+    direction: 'inbound',
+  },
+  'Feishu message index records should keep connector, message, session, and conversation identity',
+);
 
 const summary = {
   messageId: 'msg_test_1',
@@ -169,6 +218,14 @@ assert.equal(handled[0].messageId, 'msg_test_confirmation_plain_1');
 assert.equal(handled[0].metadata.status, 'confirmation_sent');
 assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
 assert.equal(handled[0].metadata.responseMessageId, 'out_confirmation_plain_test_1');
+const outboundConfirmationIndexRecord = await findConnectorMessageIndexRecord(runtime.storagePaths.messageIndexPath, {
+  connector: 'feishu',
+  messageId: 'out_confirmation_plain_test_1',
+  chatId: 'chat_test_1',
+});
+assert.equal(outboundConfirmationIndexRecord?.sessionId, 'session_confirmation_plain_test_1');
+assert.equal(outboundConfirmationIndexRecord?.sourceMessageId, 'msg_test_confirmation_plain_1');
+assert.equal(outboundConfirmationIndexRecord?.direction, 'outbound');
 
 const connectorLockDir = join(tempHome, 'connector-lock');
 const claimedLock = await claimConnectorPidLock(connectorLockDir, 54321);
@@ -1226,6 +1283,265 @@ try {
 } finally {
   await new Promise((resolve) => server.close(resolve));
   await rm(tempHome, { recursive: true, force: true });
+}
+
+const topicForkTempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-topic-fork-'));
+const topicForkIndexPath = join(topicForkTempDir, 'connector-message-index.json');
+await upsertConnectorMessageIndexRecord(topicForkIndexPath, {
+  connector: 'feishu',
+  accountId: 'tenant_topic_fork',
+  messageId: 'msg_topic_parent_1',
+  sessionId: 'sess_parent_topic_fork',
+  chatId: 'chat_topic_fork_1',
+  externalTriggerId: 'feishu:group:chat_topic_fork_1',
+});
+await upsertConnectorMessageIndexRecord(topicForkIndexPath, {
+  connector: 'feishu',
+  accountId: 'tenant_topic_fork',
+  messageId: 'bot_reply_topic_parent_1',
+  sessionId: 'sess_parent_topic_fork',
+  chatId: 'chat_topic_fork_1',
+  externalTriggerId: 'feishu:group:chat_topic_fork_1',
+  sourceMessageId: 'msg_topic_parent_1',
+  direction: 'outbound',
+});
+
+let topicForkPayload = null;
+let topicForkSubmittedPayload = null;
+let topicFreshCreateCalled = false;
+const topicForkServer = http.createServer(async (req, res) => {
+  let body = '';
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+  await new Promise((resolve) => req.on('end', resolve));
+
+  if (req.method === 'GET' && req.url === '/api/sessions?sourceId=feishu') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      sessions: [{
+        id: 'sess_parent_topic_fork',
+        sourceId: 'feishu',
+        externalTriggerId: 'feishu:group:chat_topic_fork_1',
+      }],
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_parent_topic_fork') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      session: {
+        id: 'sess_parent_topic_fork',
+        sourceId: 'feishu',
+        sourceContext: { connector: 'feishu', chatId: 'chat_topic_fork_1' },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_parent_topic_fork/events?filter=all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      events: [{
+        seq: 2,
+        type: 'message',
+        role: 'user',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fork_1',
+          messageId: 'msg_topic_parent_1',
+        },
+      }],
+    }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/sessions/sess_parent_topic_fork/fork') {
+    topicForkPayload = JSON.parse(body || '{}');
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ session: { id: 'sess_topic_child_1' } }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/sessions') {
+    topicFreshCreateCalled = true;
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ session: { id: 'sess_unexpected_fresh_topic' } }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/sessions/sess_topic_child_1/messages') {
+    topicForkSubmittedPayload = JSON.parse(body || '{}');
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ run: { id: 'run_topic_child_1' } }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_child_1/responses/feishu%3Amsg_topic_child_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      replyPublication: {
+        state: 'ready',
+        ready: true,
+        finalRunId: 'run_topic_child_1',
+        payload: { text: 'Topic fork reply.' },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_child_1/events') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ events: [] }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+await new Promise((resolve) => topicForkServer.listen(0, '127.0.0.1', resolve));
+
+try {
+  const address = topicForkServer.address();
+  const topicSummaryForParent = {
+    tenantKey: 'tenant_topic_fork',
+    chatType: 'group',
+    chatId: 'chat_topic_fork_1',
+    messageId: 'msg_topic_child_1',
+    rootId: 'msg_topic_parent_1',
+    parentId: 'msg_topic_parent_1',
+    threadId: 'thread_topic_child_1',
+    textPreview: 'Continue this in a topic.',
+    sender: { openId: 'ou_topic_fork', tenantKey: 'tenant_topic_fork' },
+  };
+  const parentSessionId = await resolveFeishuTopicForkParentSessionId(
+    {
+      storagePaths: { messageIndexPath: topicForkIndexPath },
+    },
+    async (path, options = {}) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const text = await response.text();
+      return { response, text, json: text ? JSON.parse(text) : null };
+    },
+    topicSummaryForParent,
+  );
+  assert.equal(parentSessionId, 'sess_parent_topic_fork');
+  const factsOnlyParentSessionId = await resolveFeishuTopicForkParentSessionId(
+    {
+      storagePaths: { messageIndexPath: join(topicForkTempDir, 'empty-index.json') },
+    },
+    async (path, options = {}) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const text = await response.text();
+      return { response, text, json: text ? JSON.parse(text) : null };
+    },
+    topicSummaryForParent,
+  );
+  assert.equal(factsOnlyParentSessionId, 'sess_parent_topic_fork', 'topic parent lookup should fall back to session/events facts when the rebuildable index misses');
+  const botReplyParentSessionId = await resolveFeishuTopicForkParentSessionId(
+    {
+      storagePaths: { messageIndexPath: topicForkIndexPath },
+    },
+    async (path, options = {}) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const text = await response.text();
+      return { response, text, json: text ? JSON.parse(text) : null };
+    },
+    {
+      ...topicSummaryForParent,
+      messageId: 'msg_topic_child_from_bot_reply_1',
+      rootId: 'topic_root_independent_1',
+      parentId: 'bot_reply_topic_parent_1',
+      threadId: 'thread_topic_from_bot_reply_1',
+    },
+  );
+  assert.equal(
+    botReplyParentSessionId,
+    'sess_parent_topic_fork',
+    'topic parent lookup should try parentId when rootId is an independent topic root id',
+  );
+  const handledOnlyPath = join(topicForkTempDir, 'handled-only.json');
+  await writeFile(handledOnlyPath, JSON.stringify({
+    messages: {
+      msg_topic_parent_1: {
+        status: 'sent',
+        chatId: 'chat_topic_fork_1',
+        sessionId: 'sess_parent_topic_fork',
+        responseMessageId: 'legacy_bot_reply_topic_parent_1',
+      },
+    },
+  }));
+  const handledOnlyParentSessionId = await resolveFeishuTopicForkParentSessionId(
+    {
+      storagePaths: {
+        handledMessagesPath: handledOnlyPath,
+        messageIndexPath: join(topicForkTempDir, 'handled-only-empty-index.json'),
+      },
+    },
+    async (path, options = {}) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const text = await response.text();
+      return { response, text, json: text ? JSON.parse(text) : null };
+    },
+    {
+      ...topicSummaryForParent,
+      messageId: 'msg_topic_child_from_legacy_bot_reply_1',
+      rootId: 'legacy_bot_reply_topic_parent_1',
+      parentId: 'legacy_bot_reply_topic_parent_1',
+      threadId: 'thread_topic_from_legacy_bot_reply_1',
+    },
+  );
+  assert.equal(
+    handledOnlyParentSessionId,
+    'sess_parent_topic_fork',
+    'topic parent lookup should backfill legacy outbound bot replies from handled messages',
+  );
+
+  const reply = await generateRemoteLabReply(
+    {
+      authCookie: 'session_token=test-cookie',
+      authToken: 'ignored',
+      storagePaths: { messageIndexPath: topicForkIndexPath },
+      config: {
+        chatBaseUrl: `http://127.0.0.1:${address.port}`,
+        sessionFolder: repoRoot,
+        sessionTool: 'codex',
+        systemPrompt: 'Reply with plain text only.',
+      },
+      appClient: {},
+    },
+    topicSummaryForParent,
+  );
+
+  assert.equal(topicFreshCreateCalled, false, 'new topics with a verified parent should fork instead of fresh-create');
+  assert.equal(topicForkPayload?.externalTriggerId, 'feishu:topic:chat_topic_fork_1:thread_topic_child_1');
+  assert.equal(topicForkPayload?.sourceContext?.conversationKind, 'topic');
+  assert.equal(topicForkPayload?.sourceContext?.chatId, 'chat_topic_fork_1');
+  assert.equal(topicForkPayload?.sourceContext?.topicId, 'thread_topic_child_1');
+  assert.equal(topicForkSubmittedPayload?.sourceContext?.messageId, 'msg_topic_child_1');
+  assert.equal(reply.sessionId, 'sess_topic_child_1');
+  assert.equal(reply.replyText, 'Topic fork reply.');
+} finally {
+  await new Promise((resolve) => topicForkServer.close(resolve));
+  await rm(topicForkTempDir, { recursive: true, force: true });
 }
 
 let planningSubmittedPayload = null;

@@ -184,6 +184,41 @@ try {
   );
   assert.equal(typeof childForkContext?.updatedAt, 'string', 'forked prepared context should keep its own timestamp');
 
+  const connectorChild = await forkSession(parent.id, {
+    name: 'Inbound Feishu topic thread',
+    group: 'Feishu',
+    description: 'Topic fork from Feishu',
+    sourceId: 'feishu',
+    sourceName: 'Feishu',
+    externalTriggerId: 'feishu:topic:chat_test:thread_test',
+    sourceContext: {
+      connector: 'feishu',
+      conversationKind: 'topic',
+      chatId: 'chat_test',
+      topicId: 'thread_test',
+    },
+  });
+  assert.ok(connectorChild, 'connector fork should create a child session');
+  assert.equal(connectorChild.forkedFromSessionId, parent.id, 'connector fork should retain parent lineage');
+  assert.equal(connectorChild.autoRenamePending, true, 'connector fork should keep normal connector auto-rename behavior');
+  assert.equal(connectorChild.group, 'Feishu', 'connector fork should accept child group override');
+  assert.equal(connectorChild.sourceId, 'feishu', 'connector fork should accept child source id override');
+  assert.equal(connectorChild.sourceName, 'Feishu', 'connector fork should accept child source name override');
+  assert.equal(connectorChild.externalTriggerId, 'feishu:topic:chat_test:thread_test', 'connector fork should bind child external trigger id');
+  assert.equal(connectorChild.sourceContext?.conversationKind, 'topic', 'connector fork should bind child source context');
+  const reusedConnectorChild = await forkSession(parent.id, {
+    externalTriggerId: 'feishu:topic:chat_test:thread_test',
+    sourceContext: {
+      connector: 'feishu',
+      conversationKind: 'topic',
+      chatId: 'chat_test',
+      topicId: 'thread_test',
+    },
+  });
+  assert.equal(reusedConnectorChild?.id, connectorChild.id, 'connector fork should reuse an existing external trigger child');
+  const reusedHistory = await getHistory(reusedConnectorChild.id);
+  assert.equal(reusedHistory.length, parentHistory.length, 'reusing a connector fork should not append duplicate copied history');
+
   const promptParent = await createSession(workspace, 'missing-tool', 'Prompt cache parent', {
     group: 'Painting',
     description: 'Prepared context prompt reuse',

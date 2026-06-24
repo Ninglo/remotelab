@@ -33,6 +33,10 @@ import {
   submitConnectorMessage,
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
+import {
+  findConnectorMessageIndexRecord,
+  upsertConnectorMessageIndexRecord,
+} from '../lib/connector-message-index.mjs';
 
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
@@ -59,6 +63,7 @@ const DEFAULT_SESSION_SYSTEM_PROMPT = [
 ].join('\n');
 const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 0;
+const PROCESS_KEEPALIVE_INTERVAL_MS = 60_000;
 const MAX_FEISHU_TEXT_LENGTH = 5000;
 const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
 const MAX_FEISHU_RESOURCE_BYTES = 100 * 1024 * 1024;
@@ -1195,6 +1200,18 @@ function buildExternalTriggerId(summary) {
   return `feishu:${sanitizeIdPart(summary?.chatType || 'chat')}:${chatId}`;
 }
 
+function buildFeishuQueueKey(summary) {
+  const chatId = trimString(summary?.chatId);
+  const topicId = buildFeishuTopicId(summary);
+  if (topicId) {
+    return `feishu:topic:${sanitizeIdPart(chatId || 'unknown_chat')}:${sanitizeIdPart(topicId)}`;
+  }
+  if (chatId) {
+    return `feishu:${sanitizeIdPart(summary?.chatType || 'chat')}:${sanitizeIdPart(chatId)}`;
+  }
+  return `feishu:message:${sanitizeIdPart(summary?.messageId || 'unknown_message')}`;
+}
+
 function buildRequestId(summary) {
   return `feishu:${sanitizeIdPart(summary.messageId || `${Date.now()}`)}`;
 }
@@ -1683,7 +1700,7 @@ function createRuntimeContext(config, storagePaths, accessState) {
 }
 
 function enqueueByChat(runtime, summary, worker) {
-  const key = summary.chatId || summary.messageId || 'unknown_chat';
+  const key = buildFeishuQueueKey(summary);
   const previous = runtime.chatQueues.get(key) || Promise.resolve();
   const next = previous
     .catch(() => {})
@@ -1907,6 +1924,202 @@ async function waitForQueuedRequestRun(runtime, sessionId, match = {}) {
   throw new Error(`queued request timed out after ${RUN_POLL_TIMEOUT_MS}ms`);
 }
 
+function buildFeishuMessageIndexRecord(summary, sessionId) {
+  const messageId = trimString(summary?.messageId);
+  const normalizedSessionId = trimString(sessionId);
+  if (!messageId || !normalizedSessionId) return null;
+  return {
+    connector: 'feishu',
+    accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey),
+    messageId,
+    sessionId: normalizedSessionId,
+    chatId: trimString(summary?.chatId),
+    conversationId: buildFeishuTopicId(summary) || buildExternalTriggerId(summary),
+    externalTriggerId: buildExternalTriggerId(summary),
+    direction: 'inbound',
+  };
+}
+
+function buildFeishuOutboundMessageIndexRecord(summary, sessionId, outboundMessageId) {
+  const messageId = trimString(outboundMessageId);
+  const normalizedSessionId = trimString(sessionId);
+  if (!messageId || !normalizedSessionId) return null;
+  return {
+    connector: 'feishu',
+    accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey),
+    messageId,
+    sessionId: normalizedSessionId,
+    chatId: trimString(summary?.chatId),
+    conversationId: buildFeishuTopicId(summary) || buildExternalTriggerId(summary),
+    externalTriggerId: buildExternalTriggerId(summary),
+    sourceMessageId: trimString(summary?.messageId),
+    direction: 'outbound',
+  };
+}
+
+async function recordFeishuMessageSession(runtime, summary, sessionId) {
+  const pathname = trimString(runtime?.storagePaths?.messageIndexPath);
+  if (!pathname) return null;
+  const record = buildFeishuMessageIndexRecord(summary, sessionId);
+  if (!record) return null;
+  return await upsertConnectorMessageIndexRecord(pathname, record);
+}
+
+async function recordFeishuOutboundMessageSession(runtime, summary, sessionId, outboundMessageId) {
+  const pathname = trimString(runtime?.storagePaths?.messageIndexPath);
+  if (!pathname) return null;
+  const record = buildFeishuOutboundMessageIndexRecord(summary, sessionId, outboundMessageId);
+  if (!record) return null;
+  return await upsertConnectorMessageIndexRecord(pathname, record);
+}
+
+async function loadRemoteLabSessionWithRequester(requester, sessionId) {
+  const result = await requester(`/api/sessions/${encodeURIComponent(sessionId)}`);
+  if (!result.response?.ok || !result.json?.session) return null;
+  return result.json.session;
+}
+
+async function loadRemoteLabEventsWithRequester(requester, sessionId) {
+  const result = await requester(`/api/sessions/${encodeURIComponent(sessionId)}/events?filter=all`);
+  if (!result.response?.ok || !Array.isArray(result.json?.events)) return [];
+  return result.json.events;
+}
+
+function sessionMatchesFeishuChat(session, summary) {
+  if (trimString(session?.sourceId) !== 'feishu') return false;
+  const chatId = trimString(summary?.chatId);
+  if (!chatId) return true;
+  const contextChatId = trimString(session?.sourceContext?.chatId);
+  return !contextChatId || contextChatId === chatId;
+}
+
+async function verifyFeishuSessionReferencesMessage(requester, sessionId, summary, messageId) {
+  const session = await loadRemoteLabSessionWithRequester(requester, sessionId);
+  if (!session || !sessionMatchesFeishuChat(session, summary)) return false;
+  const events = await loadRemoteLabEventsWithRequester(requester, sessionId);
+  return events.some((event) => sourceContextReferencesRequest(event?.sourceContext, '', messageId));
+}
+
+async function verifyFeishuIndexedSessionRecord(requester, record, summary, messageId) {
+  const sessionId = trimString(record?.sessionId);
+  if (!sessionId) return false;
+  const verificationMessageId = trimString(record?.sourceMessageId) || trimString(messageId);
+  if (!verificationMessageId) return false;
+  return await verifyFeishuSessionReferencesMessage(requester, sessionId, summary, verificationMessageId);
+}
+
+function feishuSessionTriggerMatchesChat(session, summary) {
+  const chatId = trimString(summary?.chatId);
+  if (!chatId) return true;
+  const triggerId = trimString(session?.externalTriggerId);
+  return triggerId === `feishu:${sanitizeIdPart(summary?.chatType || 'chat')}:${sanitizeIdPart(chatId)}`
+    || triggerId.startsWith(`feishu:topic:${sanitizeIdPart(chatId)}:`);
+}
+
+async function findFeishuParentSessionFromFacts(requester, summary, messageId) {
+  const result = await requester('/api/sessions?sourceId=feishu');
+  if (!result.response?.ok || !Array.isArray(result.json?.sessions)) return '';
+  const candidates = result.json.sessions.filter((session) => (
+    trimString(session?.id)
+    && trimString(session?.sourceId) === 'feishu'
+    && session?.archived !== true
+    && feishuSessionTriggerMatchesChat(session, summary)
+  ));
+  for (const candidate of candidates) {
+    if (await verifyFeishuSessionReferencesMessage(requester, candidate.id, summary, messageId)) {
+      return candidate.id;
+    }
+  }
+  return '';
+}
+
+async function findFeishuParentSessionFromHandledMessages(runtime, requester, summary, messageId) {
+  const handledPath = trimString(runtime?.storagePaths?.handledMessagesPath);
+  if (!handledPath) return null;
+  const state = await loadHandledMessages(handledPath);
+  const messages = state?.messages && typeof state.messages === 'object' && !Array.isArray(state.messages)
+    ? state.messages
+    : {};
+  const chatId = trimString(summary?.chatId);
+  for (const [sourceMessageId, metadata] of Object.entries(messages)) {
+    if (trimString(metadata?.responseMessageId) !== messageId) continue;
+    if (chatId && trimString(metadata?.chatId) && trimString(metadata.chatId) !== chatId) continue;
+    const sessionId = trimString(metadata?.sessionId);
+    const verifiedSourceMessageId = trimString(sourceMessageId);
+    if (!sessionId || !verifiedSourceMessageId) continue;
+    if (await verifyFeishuSessionReferencesMessage(requester, sessionId, summary, verifiedSourceMessageId)) {
+      return {
+        sessionId,
+        sourceMessageId: verifiedSourceMessageId,
+      };
+    }
+  }
+  return null;
+}
+
+function collectFeishuTopicParentMessageCandidates(summary) {
+  const currentMessageId = trimString(summary?.messageId);
+  const seen = new Set();
+  const candidates = [];
+  for (const value of [summary?.rootId, summary?.parentId, summary?.threadId]) {
+    const messageId = trimString(value);
+    if (!messageId || messageId === currentMessageId || seen.has(messageId)) continue;
+    seen.add(messageId);
+    candidates.push(messageId);
+  }
+  return candidates;
+}
+
+async function resolveFeishuTopicForkParentSessionId(runtime, requester, summary) {
+  if (!buildFeishuTopicId(summary)) return '';
+  const parentMessageIds = collectFeishuTopicParentMessageCandidates(summary);
+  if (parentMessageIds.length === 0) return '';
+  const indexPath = trimString(runtime?.storagePaths?.messageIndexPath);
+  for (const parentMessageId of parentMessageIds) {
+    if (indexPath) {
+      const indexed = await findConnectorMessageIndexRecord(indexPath, {
+        connector: 'feishu',
+        accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey),
+        messageId: parentMessageId,
+        chatId: trimString(summary?.chatId),
+      });
+      const sessionId = trimString(indexed?.sessionId);
+      if (sessionId && await verifyFeishuIndexedSessionRecord(requester, indexed, summary, parentMessageId)) {
+        return sessionId;
+      }
+    }
+    const factSessionId = await findFeishuParentSessionFromFacts(requester, summary, parentMessageId);
+    if (factSessionId && indexPath) {
+      await upsertConnectorMessageIndexRecord(indexPath, {
+        connector: 'feishu',
+        accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey),
+        messageId: parentMessageId,
+        sessionId: factSessionId,
+        chatId: trimString(summary?.chatId),
+        externalTriggerId: buildExternalTriggerId({ ...summary, messageId: parentMessageId, threadId: '', rootId: '', parentId: '' }),
+        direction: 'inbound',
+      });
+    }
+    if (factSessionId) return factSessionId;
+    const handledMatch = await findFeishuParentSessionFromHandledMessages(runtime, requester, summary, parentMessageId);
+    if (handledMatch?.sessionId && indexPath) {
+      await upsertConnectorMessageIndexRecord(indexPath, {
+        connector: 'feishu',
+        accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey),
+        messageId: parentMessageId,
+        sessionId: handledMatch.sessionId,
+        chatId: trimString(summary?.chatId),
+        externalTriggerId: buildExternalTriggerId({ ...summary, messageId: parentMessageId, threadId: '', rootId: '', parentId: '' }),
+        sourceMessageId: handledMatch.sourceMessageId,
+        direction: 'outbound',
+      });
+    }
+    if (handledMatch?.sessionId) return handledMatch.sessionId;
+  }
+  console.warn(`[feishu-connector] no verified topic fork parent session found for ${summary.messageId}; candidates=${parentMessageIds.join(',')}`);
+  return '';
+}
+
 async function createOrReuseSession(runtime, summary, runtimeSelection) {
   const sourceName = runtime.config.region === 'lark-global' ? 'Lark' : 'Feishu';
   const payload = {
@@ -2030,7 +2243,7 @@ async function generateRemoteLabReply(runtime, summary) {
     ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
     : effectiveSummary;
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
-  const session = await createConnectorSession(requester, {
+  const sessionPayload = {
     folder: runtime.config.sessionFolder,
     tool: runtimeSelection.tool,
     name: buildSessionName(effectiveSummary),
@@ -2041,6 +2254,11 @@ async function generateRemoteLabReply(runtime, summary) {
     systemPrompt: runtime.config.systemPrompt,
     externalTriggerId: buildExternalTriggerId(effectiveSummary),
     sourceContext: buildSessionSourceContext(effectiveSummary),
+  };
+  const forkFromSessionId = await resolveFeishuTopicForkParentSessionId(runtime, requester, effectiveSummary);
+  const session = await createConnectorSession(requester, sessionPayload, {
+    forkFromSessionId,
+    fallbackCreateOnForkFailure: true,
   });
   const submission = await submitConnectorMessage(requester, session.id, {
     requestId: buildRequestId(effectiveSummary),
@@ -2541,6 +2759,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
     }
 
     const generated = await generateReply(runtime, summary);
+    try {
+      await recordFeishuMessageSession(runtime, summary, generated.sessionId);
+    } catch (indexError) {
+      console.warn(`[feishu-connector] failed to update message index for ${summary.messageId}: ${indexError?.message || indexError}`);
+    }
     const replyText = normalizeReplyText(generated.replyText);
     const finalReply = decideConnectorUserVisibleReply({
       replyText,
@@ -2567,6 +2790,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       kind: finalReply.action === 'send_confirmation' ? 'summary' : 'content',
       text: finalReply.text,
     }, sendText);
+    try {
+      await recordFeishuOutboundMessageSession(runtime, summary, generated.sessionId, reply.message_id);
+    } catch (indexError) {
+      console.warn(`[feishu-connector] failed to update outbound message index for ${reply.message_id || summary.messageId}: ${indexError?.message || indexError}`);
+    }
     await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
       status: finalReply.status,
       sourceLabel,
@@ -2622,6 +2850,8 @@ export {
   buildApprovedChatReply,
   buildChatAccessStatusReply,
   buildExternalTriggerId,
+  buildFeishuMessageIndexRecord,
+  buildFeishuQueueKey,
   buildFeishuTopicId,
   buildMessageSourceContext,
   buildRemoteLabMessage,
@@ -2649,6 +2879,7 @@ export {
   queueAccessStateFlush,
   releaseConnectorPidLock,
   removeProcessingReaction,
+  resolveFeishuTopicForkParentSessionId,
   resolveFeishuMessageAttachments,
   sendFeishuText,
   snapshotAccessState,
@@ -2676,6 +2907,7 @@ async function main() {
     eventsLogPath: join(config.storageDir, 'events.jsonl'),
     knownSendersPath: join(config.storageDir, 'known-senders.json'),
     handledMessagesPath: join(config.storageDir, 'handled-messages.json'),
+    messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths, accessState);
   const wsClient = new Lark.WSClient({
@@ -2738,6 +2970,7 @@ async function main() {
   console.log(`[feishu-connector] event log: ${storagePaths.eventsLogPath}`);
   console.log(`[feishu-connector] known senders: ${storagePaths.knownSendersPath}`);
   console.log(`[feishu-connector] handled messages: ${storagePaths.handledMessagesPath}`);
+  console.log(`[feishu-connector] message index: ${storagePaths.messageIndexPath}`);
   console.log(`[feishu-connector] RemoteLab base URL: ${config.chatBaseUrl}`);
   console.log(`[feishu-connector] session folder: ${config.sessionFolder}`);
   console.log(
@@ -2769,6 +3002,7 @@ async function main() {
     return;
   }
 
+  setInterval(() => {}, PROCESS_KEEPALIVE_INTERVAL_MS);
   await new Promise(() => {});
 }
 
