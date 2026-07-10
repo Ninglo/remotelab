@@ -555,3 +555,18 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Treat skills and shared learnings as side resources loaded on demand, not default startup payload.
 - Make multi-session routing a first-class principle: bounded work should prefer bounded context, so independently completable goals often deserve separate sessions.
 - Turn-level reminders should reinforce judgment priorities and invariants, not narrate every action as a long hidden checklist.
+
+### Auto-Promoted Shared Memory Is A Review Queue (2026-07-10)
+- Treat automatically proposed system learnings as untrusted review candidates, not publication-ready shared memory.
+- Promote only stable cross-deployment lessons into the curated system memory. Route user, machine, customer, project, deployment, and one-off incident details to local or scoped memory instead.
+- A clean secret scan is not enough: publication review must also reject private paths, hostnames, account identifiers, customer data, internal pricing, and raw operational residue.
+- After curation, leave the auto-promotion queue empty so a dirty diff remains a visible signal that review is still required.
+
+### Scheduled Background Work Needs An Initialized Automation Session (2026-07-10)
+- Do not bind a time-based trigger to a newly created empty session: empty sessions may be auto-archived before the trigger fires, making later delivery fail because the target session is archived.
+- Initialize a dedicated recurring-work session with a real message/run before scheduling it, then renew future triggers against that same durable session.
+- Background workflows that are not ordinary chat conversations should use an explicit non-chat origin such as `automation`, so they stay out of the user's day-to-day chat-origin flow.
+
+### Reply Publication Reads Should Reconcile Terminal Runs (2026-07-10)
+- A reply-publication query may encounter a continuation run that is already terminal but has not completed post-finalization effects yet.
+- Reconcile and finalize terminal root/continuation candidates before returning publication state, and wait for their post-finalization work so callers do not remain stuck on `continuing` after the underlying run completed.

@@ -25,7 +25,7 @@ let lastPrompt = '';
 const runPrompt = async (prompt) => {
   promptCalls += 1;
   lastPrompt = prompt;
-  return `<hide>{"shouldWrite":true,"learnings":[{"category":"workflow","content":"User prefers compact audit summaries.","layer":"user"}]}</hide>`;
+  return `<hide>{"shouldWrite":true,"learnings":[{"category":"workflow","content":"User prefers compact audit summaries.","layer":"user","targetId":"user_auto_memory"}]}</hide>`;
 };
 
 delete process.env.REMOTELAB_MEMORY_WRITEBACK;
@@ -49,6 +49,10 @@ assert.equal(promptCalls, 1, 'memory writeback should invoke the reviewer prompt
 assert.match(lastPrompt, /Available memory targets:/, 'writeback prompt should now expose candidate memory targets');
 assert.match(lastPrompt, /user_preferences \| user \| ~\/\.remotelab\/memory\/model-context\/preferences\.md/, 'prompt should expose specific user memory targets');
 assert.match(lastPrompt, /user_auto_memory \| user \| ~\/\.remotelab\/memory\/model-context\/auto-user-memory\.md/, 'prompt should keep the auto fallback target');
+assert.match(lastPrompt, /Choose the smallest correct layer by impact radius/, 'prompt should require impact-radius routing');
+assert.match(lastPrompt, /Use user_preferences only for stable cross-session preferences/, 'prompt should protect global preferences from project detail');
+assert.match(lastPrompt, /Dated one-off release records/, 'prompt should reject one-off operational residue');
+assert.match(lastPrompt, /Every learning must include a listed targetId/, 'prompt should require explicit routing');
 
 await assert.rejects(
   access(
@@ -74,6 +78,30 @@ const duplicateResult = await maybeRunMemoryWriteback({
   runPrompt,
 });
 assert.equal(duplicateResult.promotedCount, 0, 'duplicate learnings should not be re-appended to the durable memory file');
+
+const userAutoMemoryBeforeInvalidRoute = await readFile(
+  join(tempHome, '.remotelab', 'memory', 'model-context', 'auto-user-memory.md'),
+  'utf8',
+);
+const invalidRouteResult = await maybeRunMemoryWriteback({
+  sessionId: 'sess_memory_invalid_route',
+  session: { name: 'Memory audit', group: 'Testing' },
+  run: { id: 'run_invalid_route' },
+  userMessage: 'This learning should not fall back if the reviewer invents a target.',
+  assistantTurnText: 'This is a sufficiently long assistant message to exercise invalid target handling and confirm that an invented target id is not silently routed into fallback memory.',
+  runPrompt: async (prompt) => {
+    promptCalls += 1;
+    lastPrompt = prompt;
+    return `<hide>{"shouldWrite":true,"learnings":[{"category":"workflow","content":"Invented targets must not pollute fallback memory.","layer":"user","targetId":"invented_target"}]}</hide>`;
+  },
+});
+assert.equal(invalidRouteResult.promotedCount, 0, 'invalid target ids should not be silently promoted into fallback memory');
+assert.deepEqual(invalidRouteResult.promotedFiles, [], 'invalid target ids should not report promoted files');
+assert.equal(
+  await readFile(join(tempHome, '.remotelab', 'memory', 'model-context', 'auto-user-memory.md'), 'utf8'),
+  userAutoMemoryBeforeInvalidRoute,
+  'invalid target ids should leave fallback memory unchanged',
+);
 
 await mkdir(join(tempHome, '.remotelab', 'memory'), { recursive: true });
 await writeFile(
@@ -129,7 +157,7 @@ const explicitOffResult = await maybeRunMemoryWriteback({
   runPrompt,
 });
 assert.deepEqual(explicitOffResult, { attempted: false, written: false }, 'memory writeback should still respect an explicit off setting');
-assert.equal(promptCalls, 3, 'explicit off should prevent the reviewer prompt from running');
+assert.equal(promptCalls, 4, 'explicit off should prevent the reviewer prompt from running');
 
 if (previousWritebackSetting === undefined) delete process.env.REMOTELAB_MEMORY_WRITEBACK;
 else process.env.REMOTELAB_MEMORY_WRITEBACK = previousWritebackSetting;

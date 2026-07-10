@@ -118,8 +118,8 @@ async function buildTaskTargets() {
       path: filePath,
       layer: 'user',
       description: title
-        ? `Recurring task/project note: ${title}. Use when the learning mainly belongs to this workstream.`
-        : `Recurring task/project note: ${relativePath}. Use when the learning mainly belongs to this workstream.`,
+        ? `Recurring task/project note: ${title}. Use for project, domain, trigger-specific, status, decision, or workflow learnings that mainly belong to this workstream instead of global memory.`
+        : `Recurring task/project note: ${relativePath}. Use for project, domain, trigger-specific, status, decision, or workflow learnings that mainly belong to this workstream instead of global memory.`,
       categories: ['workflow', 'decision', 'environment', 'solution'],
       kind: 'task_note',
     });
@@ -133,7 +133,7 @@ async function buildDefaultTargets() {
       id: 'user_preferences',
       path: join(MODEL_CONTEXT_DIR, 'preferences.md'),
       layer: 'user',
-      description: 'Durable user preferences and collaboration defaults across many tasks.',
+      description: 'Stable cross-session user preferences and collaboration defaults only. Do not store project, domain, implementation, release, or incident details here.',
       categories: ['preference', 'workflow', 'decision'],
       kind: 'preferences',
     },
@@ -141,7 +141,7 @@ async function buildDefaultTargets() {
       id: 'user_global',
       path: join(MEMORY_DIR, 'global.md'),
       layer: 'user',
-      description: 'Deeper local background facts that are stable but should not live in startup context.',
+      description: 'Deeper stable local background facts that should not live in startup context. Prefer task notes for project-specific rules or history.',
       categories: ['environment', 'decision', 'workflow'],
       kind: 'global',
     },
@@ -149,7 +149,7 @@ async function buildDefaultTargets() {
       id: 'user_automation',
       path: join(MEMORY_DIR, 'automation.md'),
       layer: 'user',
-      description: 'Reusable personal automation patterns and stable execution habits.',
+      description: 'Reusable cross-task automation patterns and stable execution habits, not one-off command logs or incident traces.',
       categories: ['workflow', 'solution', 'decision'],
       kind: 'automation',
     },
@@ -166,7 +166,7 @@ async function buildDefaultTargets() {
       id: USER_AUTO_MEMORY_TARGET_ID,
       path: AUTO_USER_MEMORY_FILE,
       layer: 'user',
-      description: 'Safe fallback sink for durable user memory when no more specific user file is clearly correct.',
+      description: 'Last-resort sink for one concise cross-task user or machine fact when no specific user target fits. Never use for project/domain details or dated one-off records.',
       categories: ['preference', 'workflow', 'decision', 'environment', 'solution'],
       kind: 'auto_fallback',
     },
@@ -174,7 +174,7 @@ async function buildDefaultTargets() {
       id: SYSTEM_AUTO_MEMORY_TARGET_ID,
       path: AUTO_SYSTEM_MEMORY_FILE,
       layer: 'system',
-      description: 'Safe fallback sink for cross-deployment RemoteLab learnings before any manual curation into system memory.',
+      description: 'Last-resort sink for concise cross-deployment RemoteLab learnings before manual curation. Do not store user-, machine-, project-, or incident-specific details.',
       categories: ['workflow', 'decision', 'environment', 'solution'],
       kind: 'auto_fallback',
     },
@@ -282,11 +282,15 @@ export function getFallbackMemoryWritebackTarget(targets = [], layer = 'user') {
 
 export function resolveMemoryWritebackTarget(targets = [], learning = {}) {
   const targetMap = buildMemoryWritebackTargetMap(targets);
-  const requestedTarget = targetMap.get(normalizeTargetId(learning?.targetId));
+  const normalizedTargetId = normalizeTargetId(learning?.targetId);
+  if (!normalizedTargetId) {
+    return null;
+  }
+  const requestedTarget = targetMap.get(normalizedTargetId);
   if (requestedTarget && requestedTarget.layer === learning?.layer) {
     return requestedTarget;
   }
-  return getFallbackMemoryWritebackTarget(targets, learning?.layer === 'system' ? 'system' : 'user');
+  return null;
 }
 
 export function formatMemoryWritebackTargetsForPrompt(targets = []) {

@@ -34,6 +34,13 @@ function clipText(text, maxChars = 3000) {
   return `${normalized.slice(0, maxChars).trimEnd()}…`;
 }
 
+function normalizeLearningContent(value) {
+  return String(value || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function buildMemoryWritebackPrompt({
   userMessage,
   assistantTurnText,
@@ -58,6 +65,17 @@ export function buildMemoryWritebackPrompt({
     '- Information that\'s already obvious from context',
     '- Speculative or unverified conclusions',
     '- Trivial exchanges (greetings, acknowledgments)',
+    '- Dated one-off release records, run directories, backup filenames, raw command output, or investigation residue',
+    '',
+    'Routing and normalization rules:',
+    '- Choose the smallest correct layer by impact radius: global only for facts that should affect unrelated future sessions',
+    '- Route project, product, domain, customer, deployment, or incident-specific learnings to a matching task/project note when one exists',
+    '- Use user_preferences only for stable cross-session preferences and collaboration defaults; do not put project/domain rules there',
+    '- Use user_auto_memory only as a last-resort short cross-task machine/user fact when no specific user target fits',
+    '- Use system_auto_memory only for universal RemoteLab behavior that applies across deployments, not this user, machine, or project',
+    '- If a learning would only matter after a specific trigger phrase, skill, repo, product, or project is in scope, do not write it to global memory',
+    '- Normalize each learning into one concise rule or decision; do not preserve raw transcript wording, examples, dates, paths, IDs, or case dumps unless essential',
+    '- If the turn merely repeats or reinforces an existing rule without changing future behavior, skip it',
     '',
     'Session context:',
     sessionName ? `Session: ${sessionName}` : '',
@@ -82,6 +100,7 @@ export function buildMemoryWritebackPrompt({
     '',
     'If shouldWrite is false, return an empty learnings array.',
     'Prefer a specific existing user memory file when there is a clear fit; use the auto fallback targets only when no specific target is clearly correct.',
+    'Every learning must include a listed targetId; if no listed target is appropriate, skip that learning instead of forcing it into auto memory.',
     'Do not invent target ids that are not listed above.',
     'Write learnings in the user\'s language.',
     'Do not output any text outside the <hide> block.',
@@ -99,7 +118,8 @@ export function parseWritebackDecision(content) {
 
   const learnings = Array.isArray(parsed.learnings)
     ? parsed.learnings
-        .filter((l) => l && typeof l.content === 'string' && l.content.trim())
+        .map((l) => ({ ...l, content: normalizeLearningContent(l?.content) }))
+        .filter((l) => l && typeof l.content === 'string' && l.content)
         .map((l) => ({
           category: ['preference', 'workflow', 'decision', 'environment', 'solution'].includes(l.category)
             ? l.category
