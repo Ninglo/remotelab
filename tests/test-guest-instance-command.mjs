@@ -521,7 +521,7 @@ assert.equal(
 );
 assert.equal(
   plannedFreshGuestDefaults.selection.selectedModel,
-  'gpt-5.5',
+  'gpt-5.6-sol',
   'fresh guests should adopt the product-default CodeX model',
 );
 assert.equal(
@@ -568,7 +568,7 @@ assert.equal(
 );
 assert.equal(
   plannedUpdatedGuestDefaults.selection.selectedModel,
-  'gpt-5.5',
+  'gpt-5.6-sol',
   'stale guest model selections should be normalized to the product-default CodeX model',
 );
 assert.equal(
@@ -702,7 +702,7 @@ assert.equal(
   'codex',
   'fresh guest should migrate router-based micro-agent defaults to CodeX',
 );
-assert.equal(plannedRouterFreshGuest.selection.selectedModel, 'gpt-5.5');
+assert.equal(plannedRouterFreshGuest.selection.selectedModel, 'gpt-5.6-sol');
 assert.equal(plannedRouterFreshGuest.selection.selectedEffort, 'medium');
 assert.equal(plannedRouterFreshGuest.selection.reasoningKind, 'enum');
 
@@ -729,7 +729,7 @@ const plannedRouterStaleGuest = planGuestRuntimeDefaults({
 });
 assert.equal(plannedRouterStaleGuest.tools.length, 0);
 assert.equal(plannedRouterStaleGuest.selection.selectedTool, 'codex');
-assert.equal(plannedRouterStaleGuest.selection.selectedModel, 'gpt-5.5');
+assert.equal(plannedRouterStaleGuest.selection.selectedModel, 'gpt-5.6-sol');
 assert.equal(plannedRouterStaleGuest.selection.selectedEffort, 'medium');
 
 const sandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-'));
