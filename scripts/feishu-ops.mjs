@@ -20,12 +20,17 @@ import {
   createRuntimeContext,
   loadConfig,
   loadPersistedAccessState,
-  normalizeReplyText,
 } from './feishu-connector.mjs';
+import {
+  FEISHU_CONNECTOR_NAME,
+  LARK_CONNECTOR_NAME,
+  normalizeReplyText,
+} from '../connectors/feishu/index.mjs';
 
 const execFile = promisify(execFileCallback);
 
-const DEFAULT_CONFIG_PATH = join(homedir(), '.config', 'remotelab', 'feishu-connector', 'config.json');
+const DEFAULT_SYSTEMD_UNIT = 'remotelab-feishu-connector.service';
+const DEFAULT_INSTANCE_CONFIG_PATH = join(homedir(), '.config', 'remotelab', 'feishu-connector', 'config.json');
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_STATUS_TAIL = 5;
 const DEFAULT_BACKFILL_COUNT = 2;
@@ -36,6 +41,13 @@ const DEFAULT_LAUNCHD_LABEL = 'com.remotelab.feishu-connector';
 
 const SOURCE_ID = 'feishu-manual-backfill';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+function configuredDefaultConfigPath() {
+  const explicitPath = trimString(process.env.REMOTELAB_FEISHU_CONFIG_PATH || process.env.FEISHU_CONNECTOR_CONFIG_PATH);
+  return explicitPath || DEFAULT_INSTANCE_CONFIG_PATH;
+}
+
+const DEFAULT_CONFIG_PATH = configuredDefaultConfigPath();
 
 function printUsage(exitCode, errorMessage = '') {
   if (errorMessage) {
@@ -79,6 +91,7 @@ export function parseArgs(argv = []) {
   const options = {
     command: '',
     configPath: DEFAULT_CONFIG_PATH,
+    configExplicit: false,
     tail: DEFAULT_STATUS_TAIL,
     count: DEFAULT_BACKFILL_COUNT,
     chatId: '',
@@ -99,6 +112,7 @@ export function parseArgs(argv = []) {
     switch (arg) {
       case '--config':
         options.configPath = argv[index + 1] || '';
+        options.configExplicit = true;
         index += 1;
         break;
       case '--tail':
@@ -193,6 +207,37 @@ async function pathExists(pathname) {
   } catch {
     return false;
   }
+}
+
+export function parseSystemdExecStartConfigPath(value) {
+  const source = String(value || '');
+  const match = source.match(/--config(?:=|\s+)(?:"([^"]+)"|'([^']+)'|([^\s;]+))/);
+  return trimString(match?.[1] || match?.[2] || match?.[3]);
+}
+
+async function resolveSystemdConnectorConfigPath() {
+  if (process.platform !== 'linux') return '';
+  try {
+    await execFile('systemctl', ['is-active', '--quiet', DEFAULT_SYSTEMD_UNIT]);
+    const { stdout } = await execFile('systemctl', [
+      'show',
+      DEFAULT_SYSTEMD_UNIT,
+      '--property=ExecStart',
+      '--value',
+    ]);
+    const configPath = parseSystemdExecStartConfigPath(stdout);
+    return configPath && await pathExists(configPath) ? configPath : '';
+  } catch {
+    return '';
+  }
+}
+
+async function resolveDefaultConfigPath() {
+  const configuredPath = configuredDefaultConfigPath();
+  if (trimString(process.env.REMOTELAB_FEISHU_CONFIG_PATH || process.env.FEISHU_CONNECTOR_CONFIG_PATH)) {
+    return configuredPath;
+  }
+  return await resolveSystemdConnectorConfigPath() || configuredPath;
 }
 
 function resolveOptionalPath(value, baseDir, fallbackPath) {
@@ -445,7 +490,7 @@ async function printStatus(snapshot, options = {}) {
 }
 
 async function createBackfillSession(client, snapshot, options) {
-  const sourceName = snapshot.config.region === 'lark-global' ? 'Lark' : 'Feishu';
+  const sourceName = snapshot.config.region === 'lark-global' ? LARK_CONNECTOR_NAME : FEISHU_CONNECTOR_NAME;
   const result = await client.request('/api/sessions', {
     method: 'POST',
     body: {
@@ -454,7 +499,7 @@ async function createBackfillSession(client, snapshot, options) {
       name: 'Feishu backlog catch-up',
       sourceId: SOURCE_ID,
       sourceName,
-      group: 'Feishu',
+      group: FEISHU_CONNECTOR_NAME,
       description: 'Manual catch-up reply for previously silent connector messages',
       systemPrompt: 'You are replying through a Feishu bot on the user\'s own machine. Output exactly one plain-text Chinese message that is safe to send back into Feishu right now. Keep it concise, natural, and free of technical details. Do not output markdown, bullets, quotes, emoji, emoticons, sticker aliases like [委屈], or explanation.',
     },
@@ -623,6 +668,9 @@ export async function main(argv = process.argv.slice(2)) {
     printUsage(options.help ? 0 : 1, options.help ? '' : 'A command is required');
   }
 
+  if (!options.configExplicit) {
+    options.configPath = await resolveDefaultConfigPath();
+  }
   const snapshot = await loadSnapshot({ configPath: options.configPath });
   switch (options.command) {
     case 'status':

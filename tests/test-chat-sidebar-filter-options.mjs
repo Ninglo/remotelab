@@ -45,6 +45,14 @@ function extractFunctionSource(source, functionName) {
 
 const functionSources = [
   'isSidebarFilterControlVisible',
+  'normalizeSourceId',
+  'normalizeSourceFilter',
+  'getSourceFilterDefinitions',
+  'getSourceFilterValues',
+  'formatSourceNameFromId',
+  'getEffectiveSessionSourceId',
+  'sourceIdMatchesFilterRule',
+  'getSessionSourceCategory',
   'getVisibleSourceFilterOptions',
   'syncSidebarFiltersVisibility',
   'renderSourceFilterOptions',
@@ -94,8 +102,24 @@ function createHarness({
     },
     FILTER_ALL_VALUE: '__all__',
     SOURCE_FILTER_CHAT_VALUE: 'chat_ui',
+    SOURCE_FILTER_FEISHU_VALUE: 'feishu',
+    SOURCE_FILTER_EMAIL_VALUE: 'email',
     SOURCE_FILTER_BOT_VALUE: 'bot',
     SOURCE_FILTER_AUTOMATION_VALUE: 'automation',
+    SOURCE_FILTER_DEFINITIONS: [
+      ['chat_ui', 'sidebar.filter.source.chat'],
+      ['feishu', 'sidebar.filter.source.feishu'],
+      ['email', 'sidebar.filter.source.email'],
+      ['bot', 'sidebar.filter.source.bots'],
+      ['automation', 'sidebar.filter.source.automation'],
+    ],
+    SOURCE_FILTER_SOURCE_ID_RULES: [
+      { category: 'automation', exact: ['automation'], prefixes: ['automation'] },
+      { category: 'email', exact: ['email', 'mail', 'gmail', 'feishu-mail', 'lark-mail'], prefixes: ['email', 'mail', 'gmail', 'feishu-mail', 'lark-mail'] },
+      { category: 'feishu', exact: ['feishu', 'lark'], prefixes: ['feishu-bot', 'lark-bot'] },
+    ],
+    DEFAULT_APP_ID: 'chat',
+    DEFAULT_APP_NAME: 'Chat',
     visitorMode: false,
     activeTab: 'sessions',
     activeSourceFilter,
@@ -120,9 +144,6 @@ function createHarness({
     },
     getSessionCountForSourceFilter(value) {
       return sourceCounts[value] ?? 0;
-    },
-    normalizeSourceFilter(value) {
-      return ['chat_ui', 'bot', 'automation'].includes(value) ? value : '__all__';
     },
     persistActiveSourceFilter(value) {
       state.persistedSource.push(value);
@@ -156,8 +177,10 @@ function createHarness({
 {
   const { context } = createHarness({
     sourceCounts: {
-      __all__: 6,
+      __all__: 9,
       chat_ui: 3,
+      feishu: 2,
+      email: 1,
       bot: 2,
       automation: 1,
     },
@@ -166,9 +189,22 @@ function createHarness({
   assert.equal(context.sourceFilterSelect.style.display, '', 'source filter should stay visible when multiple origins have sessions');
   assert.deepEqual(
     getOptionValues(context.sourceFilterSelect),
-    ['__all__', 'chat_ui', 'bot', 'automation'],
+    ['__all__', 'chat_ui', 'feishu', 'email', 'bot', 'automation'],
     'source filter should render all visible origin options',
   );
+}
+
+{
+  const { context } = createHarness();
+  assert.equal(context.normalizeSourceFilter('feishu'), 'feishu', 'Feishu should be a first-class origin filter');
+  assert.equal(context.normalizeSourceFilter('email'), 'email', 'Email should be a first-class origin filter');
+  assert.equal(context.getSessionSourceCategory({ sourceId: 'chat' }), 'chat_ui');
+  assert.equal(context.getSessionSourceCategory({ sourceId: 'feishu' }), 'feishu');
+  assert.equal(context.getSessionSourceCategory({ sourceId: 'lark' }), 'feishu');
+  assert.equal(context.getSessionSourceCategory({ sourceId: 'feishu-mail' }), 'email', 'Feishu Mail audit sessions should not be hidden in the Feishu bot origin');
+  assert.equal(context.getSessionSourceCategory({ sourceId: 'gmail' }), 'email');
+  assert.equal(context.getSessionSourceCategory({ sourceId: 'automation-contract-audit' }), 'automation');
+  assert.equal(context.getSessionSourceCategory({ sourceId: 'wechat' }), 'bot');
 }
 
 console.log('test-chat-sidebar-filter-options: ok');

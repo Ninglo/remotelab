@@ -438,8 +438,34 @@ const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
 const UI_THEME_STORAGE_KEY = "remotelab.theme";
 const FILTER_ALL_VALUE = "__all__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
+const SOURCE_FILTER_FEISHU_VALUE = "feishu";
+const SOURCE_FILTER_EMAIL_VALUE = "email";
 const SOURCE_FILTER_BOT_VALUE = "bot";
 const SOURCE_FILTER_AUTOMATION_VALUE = "automation";
+const SOURCE_FILTER_DEFINITIONS = Object.freeze([
+  [SOURCE_FILTER_CHAT_VALUE, "sidebar.filter.source.chat"],
+  [SOURCE_FILTER_FEISHU_VALUE, "sidebar.filter.source.feishu"],
+  [SOURCE_FILTER_EMAIL_VALUE, "sidebar.filter.source.email"],
+  [SOURCE_FILTER_BOT_VALUE, "sidebar.filter.source.bots"],
+  [SOURCE_FILTER_AUTOMATION_VALUE, "sidebar.filter.source.automation"],
+]);
+const SOURCE_FILTER_SOURCE_ID_RULES = Object.freeze([
+  {
+    category: SOURCE_FILTER_AUTOMATION_VALUE,
+    exact: ["automation"],
+    prefixes: ["automation"],
+  },
+  {
+    category: SOURCE_FILTER_EMAIL_VALUE,
+    exact: ["email", "mail", "gmail", "feishu-mail", "lark-mail"],
+    prefixes: ["email", "mail", "gmail", "feishu-mail", "lark-mail"],
+  },
+  {
+    category: SOURCE_FILTER_FEISHU_VALUE,
+    exact: ["feishu", "lark"],
+    prefixes: ["feishu-bot", "lark-bot"],
+  },
+]);
 const DEFAULT_APP_ID = "chat";
 const DEFAULT_APP_NAME = "Chat";
 const DEFAULT_WEB_SOURCE_NAME = "RemoteLab";

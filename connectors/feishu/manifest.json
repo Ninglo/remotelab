@@ -1,0 +1,10 @@
+{
+  "id": "feishu",
+  "channel": "feishu",
+  "name": "Feishu / Lark Bot",
+  "version": "1.0.0",
+  "entry": "./index.mjs",
+  "capabilities": ["inbound", "outbound", "reply", "actions"],
+  "hostStrategies": ["local", "gateway"],
+  "description": "Feishu/Lark app-bot inbound, threaded replies, and outbound message actions."
+}

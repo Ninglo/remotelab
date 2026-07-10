@@ -7,8 +7,25 @@ CONFIG_DIR="$HOME/.config/remotelab/feishu-connector"
 PID_FILE="$CONFIG_DIR/connector.pid"
 LOG_PATH="$CONFIG_DIR/connector.log"
 NODE_BIN="${NODE_BIN:-$(command -v node)}"
+SYSTEMD_UNIT="${REMOTELAB_FEISHU_CONNECTOR_SYSTEMD_UNIT:-remotelab-feishu-connector.service}"
 
 mkdir -p "$CONFIG_DIR"
+
+systemd_main_pid() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! systemctl is-active --quiet "$SYSTEMD_UNIT" 2>/dev/null; then
+    return 1
+  fi
+
+  local pid
+  pid="$(systemctl show "$SYSTEMD_UNIT" --property=MainPID --value 2>/dev/null || true)"
+  if [[ -z "$pid" || "$pid" == "0" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$pid"
+}
 
 running_pid() {
   if [[ ! -f "$PID_FILE" ]]; then
@@ -31,13 +48,15 @@ running_pid() {
 }
 
 wait_for_ready() {
-  local pid
+  local pid log_offset tail_offset
   pid="$1"
+  log_offset="${2:-0}"
+  tail_offset=$((log_offset + 1))
   for _ in $(seq 1 40); do
     if ! kill -0 "$pid" 2>/dev/null; then
       return 1
     fi
-    if [[ -f "$LOG_PATH" ]] && grep -q 'persistent connection ready' "$LOG_PATH"; then
+    if [[ -f "$LOG_PATH" ]] && tail -c +"$tail_offset" "$LOG_PATH" 2>/dev/null | grep -q 'persistent connection ready'; then
       return 0
     fi
     sleep 0.5
@@ -46,13 +65,28 @@ wait_for_ready() {
 }
 
 start_instance() {
-  local pid
+  local pid systemd_pid log_offset
+  if systemd_pid="$(systemd_main_pid)"; then
+    if pid="$(running_pid)" && [[ "$pid" != "$systemd_pid" ]]; then
+      kill "$pid" 2>/dev/null || true
+      rm -f "$PID_FILE"
+      echo "stopped duplicate instance feishu connector (pid $pid); systemd owns the connector"
+    fi
+    echo "feishu connector already running under systemd ($SYSTEMD_UNIT, pid $systemd_pid)"
+    echo "not starting a second Feishu event consumer"
+    return 0
+  fi
+
   if pid="$(running_pid)"; then
     echo "feishu connector already running (pid $pid)"
     echo "log: $LOG_PATH"
     return 0
   fi
 
+  log_offset=0
+  if [[ -f "$LOG_PATH" ]]; then
+    log_offset="$(wc -c < "$LOG_PATH" 2>/dev/null || printf '0')"
+  fi
   printf '\n=== start %s ===\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_PATH"
 
   (
@@ -67,7 +101,7 @@ start_instance() {
   )
 
   pid="$(cat "$PID_FILE")"
-  if ! wait_for_ready "$pid"; then
+  if ! wait_for_ready "$pid" "$log_offset"; then
     echo "failed to start feishu connector" >&2
     tail -n 80 "$LOG_PATH" >&2 || true
     exit 1
@@ -101,7 +135,23 @@ stop_instance() {
 }
 
 show_status() {
-  local pid
+  local pid systemd_pid
+  if systemd_pid="$(systemd_main_pid)"; then
+    echo "systemd feishu connector is running"
+    echo "unit: $SYSTEMD_UNIT"
+    echo "pid: $systemd_pid"
+    ps -p "$systemd_pid" -o pid=,ppid=,user=,lstart=,command=
+    if pid="$(running_pid)" && [[ "$pid" != "$systemd_pid" ]]; then
+      echo
+      echo "duplicate instance feishu connector is also running"
+      echo "pid: $pid"
+      echo "log: $LOG_PATH"
+      ps -p "$pid" -o pid=,ppid=,user=,lstart=,command=
+      return 2
+    fi
+    return 0
+  fi
+
   if ! pid="$(running_pid)"; then
     echo "feishu connector is not running"
     echo "log: $LOG_PATH"
@@ -126,8 +176,14 @@ case "$ACTION" in
     stop_instance
     ;;
   restart)
-    stop_instance
-    start_instance
+    if systemd_pid="$(systemd_main_pid)"; then
+      systemctl restart "$SYSTEMD_UNIT"
+      echo "restarted systemd feishu connector ($SYSTEMD_UNIT)"
+      show_status
+    else
+      stop_instance
+      start_instance
+    fi
     ;;
   status)
     show_status

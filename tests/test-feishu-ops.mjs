@@ -11,6 +11,7 @@ const {
   formatFeishuApiError,
   parseArgs,
   parseJsonLines,
+  parseSystemdExecStartConfigPath,
   selectBackfillMessages,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-ops.mjs')).href);
 
@@ -21,6 +22,16 @@ assert.equal(parsed.tool, 'micro-agent');
 assert.equal(parsed.model, 'gpt-5.4');
 assert.equal(parsed.effort, 'low');
 assert.equal(parsed.dryRun, true);
+
+assert.equal(
+  parseSystemdExecStartConfigPath('{ path=/usr/bin/node ; argv[]=/usr/bin/node /opt/remotelab/scripts/feishu-connector.mjs --config /srv/remotelab/feishu/config.json ; }'),
+  '/srv/remotelab/feishu/config.json',
+);
+assert.equal(
+  parseSystemdExecStartConfigPath('/usr/bin/node connector.mjs --config="/srv/remotelab/feishu bot/config.json"'),
+  '/srv/remotelab/feishu bot/config.json',
+);
+assert.equal(parseSystemdExecStartConfigPath('/usr/bin/node connector.mjs'), '');
 
 const jsonLines = parseJsonLines('{"ok":1}\nnot-json\n{"ok":2}\n');
 assert.equal(jsonLines.records.length, 2);

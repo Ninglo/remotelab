@@ -234,13 +234,23 @@ function normalizeSourceId(sourceId, { fallbackDefault = false } = {}) {
 
 function normalizeSourceFilter(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
-  return [
-    SOURCE_FILTER_CHAT_VALUE,
-    SOURCE_FILTER_BOT_VALUE,
-    SOURCE_FILTER_AUTOMATION_VALUE,
-  ].includes(normalized)
+  return getSourceFilterValues().includes(normalized)
     ? normalized
     : FILTER_ALL_VALUE;
+}
+
+function getSourceFilterDefinitions() {
+  return typeof SOURCE_FILTER_DEFINITIONS !== "undefined" && Array.isArray(SOURCE_FILTER_DEFINITIONS)
+    ? SOURCE_FILTER_DEFINITIONS
+    : [
+      [SOURCE_FILTER_CHAT_VALUE, "sidebar.filter.source.chat"],
+      [SOURCE_FILTER_BOT_VALUE, "sidebar.filter.source.bots"],
+      [SOURCE_FILTER_AUTOMATION_VALUE, "sidebar.filter.source.automation"],
+    ];
+}
+
+function getSourceFilterValues() {
+  return getSourceFilterDefinitions().map(([value]) => value);
 }
 
 function persistActiveSourceFilter(value) {
@@ -270,11 +280,30 @@ function getEffectiveSessionSourceName(session) {
   return formatSourceNameFromId(getEffectiveSessionSourceId(session));
 }
 
+function sourceIdMatchesFilterRule(sourceId, rule) {
+  const normalizedSourceId = normalizeSourceId(sourceId).toLowerCase();
+  if (!normalizedSourceId || !rule || typeof rule !== "object") return false;
+  const exactValues = Array.isArray(rule.exact) ? rule.exact : [];
+  if (exactValues.some((value) => normalizedSourceId === String(value || "").toLowerCase())) {
+    return true;
+  }
+  const prefixes = Array.isArray(rule.prefixes) ? rule.prefixes : [];
+  return prefixes.some((prefix) => {
+    const normalizedPrefix = String(prefix || "").toLowerCase();
+    return normalizedPrefix && normalizedSourceId.startsWith(normalizedPrefix);
+  });
+}
+
 function getSessionSourceCategory(session) {
   const sourceId = getEffectiveSessionSourceId(session);
   if (sourceId === DEFAULT_APP_ID) return SOURCE_FILTER_CHAT_VALUE;
-  if (sourceId === "automation" || sourceId.startsWith("automation")) {
-    return SOURCE_FILTER_AUTOMATION_VALUE;
+  const rules = typeof SOURCE_FILTER_SOURCE_ID_RULES !== "undefined" && Array.isArray(SOURCE_FILTER_SOURCE_ID_RULES)
+    ? SOURCE_FILTER_SOURCE_ID_RULES
+    : [];
+  for (const rule of rules) {
+    if (sourceIdMatchesFilterRule(sourceId, rule)) {
+      return rule.category || SOURCE_FILTER_BOT_VALUE;
+    }
   }
   return SOURCE_FILTER_BOT_VALUE;
 }
@@ -332,11 +361,9 @@ function isSidebarFilterControlVisible(control) {
 }
 
 function getVisibleSourceFilterOptions() {
-  return [
-    [SOURCE_FILTER_CHAT_VALUE, t("sidebar.filter.source.chat")],
-    [SOURCE_FILTER_BOT_VALUE, t("sidebar.filter.source.bots")],
-    [SOURCE_FILTER_AUTOMATION_VALUE, t("sidebar.filter.source.automation")],
-  ].filter(([value]) => getSessionCountForSourceFilter(value) > 0);
+  return getSourceFilterDefinitions()
+    .map(([value, labelKey]) => [value, t(labelKey)])
+    .filter(([value]) => getSessionCountForSourceFilter(value) > 0);
 }
 
 function syncSidebarFiltersVisibility(showingSessions = null) {
