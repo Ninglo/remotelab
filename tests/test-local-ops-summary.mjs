@@ -271,9 +271,11 @@ try {
   assert.equal(trial5?.highPriorityWaitingSessionCount, 1, 'trial5 should expose waiting follow-up count');
 
   const summary = renderLocalOpsSummary(report);
-  assert.match(summary, /product activity 2\/2 trial users active, 2 user messages, 2 new sessions/i, 'summary should prioritize product activity');
+  assert.doesNotMatch(summary, /product activity/i, 'summary should not prioritize product activity');
+  assert.doesNotMatch(summary, /user messages/i, 'summary should not enumerate trial message counts');
+  assert.doesNotMatch(summary, /trial5/i, 'summary should not enumerate individual trial names by default');
   assert.match(summary, /host pressure low/i, 'summary should still mention host pressure');
-  assert.match(summary, /trial services active in window: 2\/2/i, 'summary should mention trial activity');
+  assert.match(summary, /trial services: 2\/2 running/i, 'summary should mention trial service runtime counts');
 
   const sidecar = await generateLocalOpsSidecar({
     homeDir: tempHome,
@@ -289,8 +291,10 @@ try {
     }),
   });
 
-  assert.match(readFileSync(sidecar.markdownPath, 'utf8'), /## Product Signals/, 'markdown should include product signals section');
-  assert.match(readFileSync(sidecar.markdownPath, 'utf8'), /trial5 · Trial5 follow-up session/, 'markdown should surface follow-up session names');
+  assert.doesNotMatch(readFileSync(sidecar.markdownPath, 'utf8'), /## Product Signals/, 'markdown should not include product signals by default');
+  assert.doesNotMatch(readFileSync(sidecar.markdownPath, 'utf8'), /trial5 · Trial5 follow-up session/, 'markdown should not surface follow-up session names by default');
+  assert.doesNotMatch(readFileSync(sidecar.markdownPath, 'utf8'), /trial5 —/i, 'markdown should not enumerate individual trial services by default');
+  assert.doesNotMatch(readFileSync(sidecar.markdownPath, 'utf8'), /user messages in window/i, 'markdown should not enumerate trial user-message counts by default');
   assert.match(readFileSync(sidecar.jsonPath, 'utf8'), /"candidatePauseNames": \[/, 'json sidecar should include pause candidates');
 
   console.log('test-local-ops-summary: ok');
