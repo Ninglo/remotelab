@@ -2749,6 +2749,34 @@ async function buildReplyPublicationFromRun(sessionId, rootRun, responseId, hist
   return summary;
 }
 
+async function reconcileReplyPublicationRuns(sessionId, rootRun) {
+  if (!sessionId || !rootRun?.id) return rootRun;
+  const publication = rootRun.replyPublication && typeof rootRun.replyPublication === 'object'
+    ? rootRun.replyPublication
+    : null;
+  const candidateRunIds = normalizeReplyPublicationResponseIds([
+    rootRun.id,
+    ...(Array.isArray(publication?.continuationRunIds) ? publication.continuationRunIds : []),
+    trimString(publication?.finalRunId),
+  ]);
+
+  let changed = false;
+  for (const candidateRunId of candidateRunIds) {
+    const candidate = await getRun(candidateRunId);
+    if (!candidate || candidate.sessionId !== sessionId) continue;
+    if (!candidate.finalizedAt && isTerminalRunState(candidate.state)) {
+      const synced = await flushDetachedRunIfNeeded(sessionId, candidateRunId);
+      changed = changed || !!synced;
+      const postFinalize = runPostFinalizePromises.get(candidateRunId);
+      if (postFinalize) {
+        await postFinalize;
+      }
+    }
+  }
+
+  return changed ? (await getRun(rootRun.id) || rootRun) : rootRun;
+}
+
 export async function getSessionReplyPublication(sessionId, responseId) {
   const normalized = trimString(responseId);
   if (!normalized) return null;
@@ -2759,7 +2787,7 @@ export async function getSessionReplyPublication(sessionId, responseId) {
   const pendingEntry = findPendingContinuationByResponse(sessionMeta, normalized);
   const queuedEntry = findQueuedFollowUpByResponse(sessionMeta, normalized);
   const resolved = await findReplyPublicationRunByResponseId(sessionId, normalized);
-  const rootRun = resolved?.run || null;
+  let rootRun = resolved?.run || null;
   if (!rootRun) {
     if (pendingEntry) {
       return buildReplyPublicationSummary({
@@ -2778,7 +2806,9 @@ export async function getSessionReplyPublication(sessionId, responseId) {
     return null;
   }
 
-  return buildReplyPublicationFromRun(sessionId, rootRun, normalized, resolved?.history || null);
+  const reconciledRootRun = await reconcileReplyPublicationRuns(sessionId, rootRun);
+  const publicationHistory = reconciledRootRun === rootRun ? (resolved?.history || null) : null;
+  return buildReplyPublicationFromRun(sessionId, reconciledRootRun, normalized, publicationHistory);
 }
 
 export async function getRunState(runId) {

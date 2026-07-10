@@ -101,6 +101,9 @@ writeFileSync(
 );
 
 process.env.HOME = tempHome;
+process.env.REMOTELAB_CONFIG_DIR = configDir;
+process.env.REMOTELAB_WORK_ROOT_DIR = join(tempHome, 'workspace');
+delete process.env.REMOTELAB_INSTANCE_ROOT;
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
 
 const sessionManager = await import(
@@ -114,6 +117,15 @@ const {
   killAll,
   sendMessage,
 } = sessionManager;
+
+const {
+  appendRunSpoolRecord,
+  createRun,
+  updateRun,
+  writeRunResult,
+} = await import(
+  pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href
+);
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -189,6 +201,88 @@ try {
   assert.notEqual(continuationFinal?.finalRunId, continuationRunId, 'continuation should finish on a repair run');
   assert.match(String(continuationFinal?.payload?.text || ''), /极短执行守则：/, 'final payload should include the continued reply');
   assert.match(String(continuationFinal?.payload?.text || ''), /我已经分析了机制问题/, 'final payload should preserve the visible original reply');
+
+  const lazyResponseId = continuationResponseId;
+  const lazyCompletedAt = new Date().toISOString();
+  const lazyRun = await createRun({
+    status: {
+      sessionId: continuationSession.id,
+      requestId: 'compat_lazy_reply_publication_test',
+      responseId: lazyResponseId,
+      state: 'completed',
+      tool: 'fake-codex',
+      model: 'fake-model',
+      effort: 'low',
+      completedAt: lazyCompletedAt,
+      result: { completedAt: lazyCompletedAt, exitCode: 0, signal: null },
+      replyPublicationRootRunId: continuationRunId,
+    },
+    manifest: {
+      sessionId: continuationSession.id,
+      requestId: 'compat_lazy_reply_publication_test',
+      responseId: lazyResponseId,
+      folder: tempHome,
+      tool: 'fake-codex',
+      runtimeFamily: 'codex-json',
+      prompt: 'lazy reply publication finalization test',
+      internalOperation: 'reply_self_repair',
+      replyPublicationRootRunId: continuationRunId,
+      replyPublicationResponseIds: [lazyResponseId],
+      options: { model: 'fake-model', effort: 'low', runtimeFamily: 'codex-json' },
+    },
+  });
+  await appendRunSpoolRecord(lazyRun.id, {
+    ts: lazyCompletedAt,
+    stream: 'stdout',
+    line: JSON.stringify({ type: 'thread.started', thread_id: 'reply-publication-thread' }),
+    json: { type: 'thread.started', thread_id: 'reply-publication-thread' },
+  });
+  await appendRunSpoolRecord(lazyRun.id, {
+    ts: lazyCompletedAt,
+    stream: 'stdout',
+    line: JSON.stringify({ type: 'turn.started' }),
+    json: { type: 'turn.started' },
+  });
+  await appendRunSpoolRecord(lazyRun.id, {
+    ts: lazyCompletedAt,
+    stream: 'stdout',
+    line: JSON.stringify({
+      type: 'item.completed',
+      item: { type: 'agent_message', text: '懒恢复最终回复：publication 查询应该触发 finalized。' },
+    }),
+    json: {
+      type: 'item.completed',
+      item: { type: 'agent_message', text: '懒恢复最终回复：publication 查询应该触发 finalized。' },
+    },
+  });
+  await appendRunSpoolRecord(lazyRun.id, {
+    ts: lazyCompletedAt,
+    stream: 'stdout',
+    line: JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }),
+    json: { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } },
+  });
+  await writeRunResult(lazyRun.id, { completedAt: lazyCompletedAt, exitCode: 0, signal: null });
+  await updateRun(continuationRunId, (current) => ({
+    ...current,
+    replyPublication: {
+      ...(current.replyPublication || {}),
+      responseIds: [lazyResponseId],
+      state: 'continuing',
+      resolution: '',
+      rootRunId: continuationRunId,
+      finalRunId: continuationRunId,
+      continuationRunIds: [lazyRun.id],
+      updatedAt: lazyCompletedAt,
+      readyAt: null,
+      failedAt: null,
+      lastError: null,
+    },
+  }));
+
+  const lazyFinal = await getSessionReplyPublication(continuationSession.id, lazyResponseId);
+  assert.equal(lazyFinal?.state, 'ready', 'publication lookup should finalize completed continuation runs lazily');
+  assert.equal(lazyFinal?.finalRunId, lazyRun.id);
+  assert.match(String(lazyFinal?.payload?.text || ''), /懒恢复最终回复/, 'lazy-finalized payload should include continuation text');
 
   const blockerSession = await createSession(tempHome, 'fake-codex', 'Reply Publication Blocker', {
     group: 'RemoteLab',
