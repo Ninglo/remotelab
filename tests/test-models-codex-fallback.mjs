@@ -48,15 +48,13 @@ try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
   const result = await getModelsForTool('codex');
   const hardcodedModelIds = [
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
     'gpt-5.5',
     'gpt-5.4',
-    'gpt-5.2-codex',
-    'gpt-5.1-codex-max',
     'gpt-5.4-mini',
-    'gpt-5.3-codex',
     'gpt-5.3-codex-spark',
-    'gpt-5.2',
-    'gpt-5.1-codex-mini',
   ];
 
   assert.equal(result.defaultModel, 'gpt-5.3-codex');
@@ -70,11 +68,11 @@ try {
     true,
     'Codex should always expose the hardcoded baseline model catalog',
   );
-  assert.deepEqual(result.effortLevels, ['low', 'medium', 'high', 'xhigh']);
+  assert.deepEqual(result.effortLevels, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
   assert.deepEqual(result.reasoning, {
     kind: 'enum',
     label: 'Thinking',
-    levels: ['low', 'medium', 'high', 'xhigh'],
+    levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     default: 'medium',
   });
 } finally {

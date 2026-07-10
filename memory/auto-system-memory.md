@@ -57,8 +57,8 @@
 - RemoteLab 管理员设置中的 Gmail OAuth 配置已从单个 `redirectUri` 扩展为：当前实例回调地址只读显示，另提供可维护多条额外 redirect URI 的列表。
 - RemoteLab 会话 `rename`/自动标题失败的一个可复用根因是：后台触发的 Codex 子进程若未补上托管运行时环境（尤其 `CODEX_HOME`），在 systemd 服务下会拿不到正确认证/运行时配置，导致 rename 任务失败。修复方式是在这类后台调用里统一套用 `applyManagedRuntimeEnv(...)`，并补对应回归测试。
 - RemoteLab 的 `codex` 模型下拉曾因后端只依赖 `models_cache.json` 而在无缓存实例上返回空数组，修复方式是：后端在无缓存时回退到 `config.toml` 和最近 Codex 会话里实际使用过的模型；前端即使模型数组暂时为空也不要把模型选择框整块隐藏。
-- RemoteLab 的 Codex 模型下拉在 `models_cache.json` 不完整或缺失时，不应只依赖本机探测结果；应硬编码 8 个基础 Codex 模型作为基线，再用缓存和本机探测结果做覆盖补全。
-- Codex 基础模型目录固定包含 8 个模型，并保留特定推理限制与默认值，例如 `gpt-5.1-codex-mini` 仅支持 `medium/high`，`gpt-5.3-codex-spark` 默认 `high`。
+- RemoteLab 的 Codex 模型下拉在 `models_cache.json` 不完整或缺失时，不应只依赖本机探测结果；应硬编码当前公开/缓存可见的基础 Codex 模型作为基线，再用缓存和本机探测结果做覆盖补全。
+- 2026-07-10 的 Codex 基础模型目录应包含 GPT-5.6 family：`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-5.5`、`gpt-5.4`、`gpt-5.4-mini`、`gpt-5.3-codex-spark`。Sol/Terra 支持 `low/medium/high/xhigh/max/ultra`，Luna 支持到 `max`；历史 session 探测到的旧模型应保守使用旧 reasoning levels。
 - RemoteLab 的 Google/Gmail OAuth 配置应作为后端共享配置管理，不应出现在前端实例设置中，也不应由单个实例覆盖。
 - 当 Gmail 共享 credentials 已存在但用户尚未完成 Google 授权时，状态应显示为 `binding_required`，而不是 `setup_required` 或 `Gmail is not available yet`。
 - RemoteLab 的 Gmail OAuth 已采用“共享凭据 + 共享 callback + guest 本地回收”的方案：guest instance 不再要求各自持有 Gmail OAuth client，优先继承后端共享 Google OAuth 配置；授权时统一使用 owner 域名下的 callback，再通过 state 路由回目标 guest 实例落 token/binding。
@@ -66,7 +66,7 @@
 - 当用户询问 Gmail、邮箱、inbox、最新邮件等内容时，误判常见原因不是 connector 不可用，而是 assistant 没有实际调用 Gmail 能力；应先执行 Gmail 状态检查再决定是否回退到“未授权”说明。
 - `tests/test-static-asset-routing.mjs` 需要接受相对路径和绝对路径两种 split-asset 引用（如 `chat/icons.js` 与 `/chat/icons.js`）；页面使用 `<base href="/">` 时两者都属于有效合同，避免把这种差异误判为前端回归。
 - 部分前端烟雾测试直接在当前 shell 里运行会因缺少 clean instance 环境而失败；应优先通过 `scripts/run-with-clean-instance-env.mjs` 包装后的 CI 等价路径验证。
-- RemoteLab 运行时选择已确定移除 `Micro Agent` 选项，并将原先默认或历史 `micro-agent` 实例统一迁移到 `codex / gpt-5.4 / medium`。
+- RemoteLab 运行时选择已确定移除 `Micro Agent` 选项，并将原先默认或历史 `micro-agent` 实例统一迁移到 `codex`；默认 Codex model 已从 `gpt-5.5` 升到 `gpt-5.6-sol`，产品级默认 effort 仍保持 `medium`，实例/个人 Codex 配置可覆盖。
 - RemoteLab 聊天如果发消息后无模型回应，可能是保存的 Codex resume thread 已失效，Codex 启动时报 `no rollout found for thread id`。应把这类 stderr 失败明确投到聊天侧，并自动清除旧 thread id，让下一条消息新开线程恢复。
 - RemoteLab 的 async continuation / follow-up 队列如果在 flush promise 尚未清理时调用下一次 `schedule*Flush()`，调度函数会因为看到现存 promise 直接 no-op，导致剩余消息永久停在 `checking`。修复模式是先记录需要重调度的 delay，在 `finally` 删除当前 promise 后再调用调度函数；排查时看 session meta 里的 `pendingContinuationQueue` 是否长期非空且无 active run。
 - RemoteLab 会话如果长期显示 checking，可能不是模型仍在运行，而是消息卡在 pendingContinuationQueue；已确认过一个根因是队列 flush 完一条后，在当前 flush promise 尚未清理时调度下一条，调度被状态锁吞掉，导致后续消息永久不动。修复方向是等当前 flush promise 清掉后再调度下一条。

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { estimateUsageCost, getPricingMetadataForModel } from '../lib/openai-pricing.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CODEX_MODEL = 'gpt-5.5';
+const DEFAULT_CODEX_MODEL = 'gpt-5.6-sol';
 const DEFAULT_CLAUDE_MODEL = 'sonnet';
 const CLAUDE_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku']);
 const CLAUDE_MODEL_PREFIXES = ['claude-'];

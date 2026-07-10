@@ -19,58 +19,46 @@ const DEFAULT_CODEX_REASONING = Object.freeze({
 });
 const HARDCODED_CODEX_MODELS = Object.freeze([
   {
+    id: 'gpt-5.6-sol',
+    label: 'GPT-5.6-Sol',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultEffort: 'low',
+  },
+  {
+    id: 'gpt-5.6-terra',
+    label: 'GPT-5.6-Terra',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultEffort: 'medium',
+  },
+  {
+    id: 'gpt-5.6-luna',
+    label: 'GPT-5.6-Luna',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultEffort: 'medium',
+  },
+  {
     id: 'gpt-5.5',
-    label: 'gpt-5.5',
+    label: 'GPT-5.5',
     effortLevels: ['low', 'medium', 'high', 'xhigh'],
     defaultEffort: 'medium',
   },
   {
     id: 'gpt-5.4',
-    label: 'gpt-5.4',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.2-codex',
-    label: 'gpt-5.2-codex',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.1-codex-max',
-    label: 'gpt-5.1-codex-max',
+    label: 'GPT-5.4',
     effortLevels: ['low', 'medium', 'high', 'xhigh'],
     defaultEffort: 'medium',
   },
   {
     id: 'gpt-5.4-mini',
-    label: 'gpt-5.4-mini',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.3-codex',
-    label: 'gpt-5.3-codex',
+    label: 'GPT-5.4-Mini',
     effortLevels: ['low', 'medium', 'high', 'xhigh'],
     defaultEffort: 'medium',
   },
   {
     id: 'gpt-5.3-codex-spark',
-    label: 'gpt-5.3-codex-spark',
+    label: 'GPT-5.3-Codex-Spark',
     effortLevels: ['low', 'medium', 'high', 'xhigh'],
     defaultEffort: 'high',
-  },
-  {
-    id: 'gpt-5.2',
-    label: 'gpt-5.2',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.1-codex-mini',
-    label: 'gpt-5.1-codex-mini',
-    effortLevels: ['medium', 'high'],
-    defaultEffort: 'medium',
   },
 ]);
 const HARDCODED_CODEX_MODEL_IDS = HARDCODED_CODEX_MODELS.map((model) => model.id);
@@ -235,10 +223,27 @@ function createBaseCodexModelMap() {
   );
 }
 
-function buildCodexResponse(models = [], preferredDefaultModel = '') {
+function buildCodexResponse(models = [], preferredDefaultModel = '', preferredDefaultEffort = '') {
   const normalizedModels = Array.isArray(models)
     ? models.filter((model) => model && typeof model === 'object' && trimString(model.id))
     : [];
+  const defaultModel = trimString(preferredDefaultModel);
+  const defaultModelRecord = defaultModel
+    ? normalizedModels.find((model) => trimString(model.id) === defaultModel)
+    : null;
+  const defaultModelLevels = Array.isArray(defaultModelRecord?.effortLevels)
+    ? defaultModelRecord.effortLevels.map((level) => trimString(level)).filter(Boolean)
+    : [];
+  const configuredEffort = trimString(preferredDefaultEffort);
+  const resolvedDefaultEffort = configuredEffort && (
+    defaultModelLevels.length === 0 || defaultModelLevels.includes(configuredEffort)
+  )
+    ? configuredEffort
+    : (
+      defaultModelRecord?.defaultEffort
+      || normalizedModels[0]?.defaultEffort
+      || DEFAULT_CODEX_REASONING.default
+    );
   const responseLevels = [...new Set(
     normalizedModels.flatMap((model) => (
       Array.isArray(model?.effortLevels) ? model.effortLevels : []
@@ -248,11 +253,8 @@ function buildCodexResponse(models = [], preferredDefaultModel = '') {
   )];
   const reasoning = buildCodexReasoning(
     responseLevels.length > 0 ? responseLevels : DEFAULT_CODEX_REASONING.levels,
-    normalizedModels.find((model) => trimString(model.id) === trimString(preferredDefaultModel))?.defaultEffort
-      || normalizedModels[0]?.defaultEffort
-      || DEFAULT_CODEX_REASONING.default,
+    resolvedDefaultEffort,
   );
-  const defaultModel = trimString(preferredDefaultModel);
   return {
     models: normalizedModels,
     effortLevels: [...reasoning.levels],
@@ -263,13 +265,17 @@ function buildCodexResponse(models = [], preferredDefaultModel = '') {
   };
 }
 
-async function readCodexConfiguredModel(homeDir) {
+async function readCodexConfiguredSettings(homeDir) {
   try {
     const raw = await readFile(join(homeDir, '.codex', 'config.toml'), 'utf-8');
-    const match = raw.match(/^\s*model\s*=\s*["']([^"']+)["']/m);
-    return trimString(match?.[1]);
+    const modelMatch = raw.match(/^\s*model\s*=\s*["']([^"']+)["']/m);
+    const effortMatch = raw.match(/^\s*model_reasoning_effort\s*=\s*["']([^"']+)["']/m);
+    return {
+      model: trimString(modelMatch?.[1]),
+      effort: trimString(effortMatch?.[1]),
+    };
   } catch {
-    return '';
+    return { model: '', effort: '' };
   }
 }
 
@@ -392,7 +398,8 @@ async function getCodexModels() {
     return codexModelsCache;
   }
   const homeDir = homedir();
-  const configuredModel = await readCodexConfiguredModel(homeDir);
+  const configuredSettings = await readCodexConfiguredSettings(homeDir);
+  const configuredModel = configuredSettings.model;
   const recentModels = await readCodexRecentModels(homeDir);
   const modelMap = createBaseCodexModelMap();
 
@@ -429,6 +436,7 @@ async function getCodexModels() {
   codexModelsCache = buildCodexResponse(
     orderedModels,
     configuredModel || recentModels[0] || HARDCODED_CODEX_MODEL_IDS[0] || '',
+    configuredSettings.effort,
   );
   return codexModelsCache;
 }
