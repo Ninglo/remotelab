@@ -56,7 +56,7 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function machineCodexHomeDir() {
+export function resolveMachineCodexHomeDir() {
   return trimString(process.env.REMOTELAB_MACHINE_CODEX_HOME)
     || (IS_INSTANCE_SCOPED ? DEFAULT_MACHINE_CODEX_HOME_DIR : PERSONAL_CODEX_HOME);
 }
@@ -147,7 +147,7 @@ export async function applyManagedRuntimeEnv(toolId, baseEnv = {}, options = {})
 
   if (mode === 'personal') {
     delete env.CODEX_HOME;
-    env.CODEX_HOME = machineCodexHomeDir();
+    env.CODEX_HOME = resolveMachineCodexHomeDir();
     return env;
   }
 

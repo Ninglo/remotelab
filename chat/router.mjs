@@ -74,6 +74,7 @@ import { pathExists, statOrNull } from './fs-utils.mjs';
 import { broadcastAll } from './ws-clients.mjs';
 import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
+import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
 import { handleLocalBridgeOwnerRoutes, handleLocalBridgePublicRoutes } from './router-local-bridge-routes.mjs';
 import {
   handleCalendarFeedRoute,
@@ -1291,6 +1292,7 @@ function serializeJsonForScript(value) {
 }
 
 function isOwnerOnlyRoute(pathname, method) {
+  if (pathname.startsWith('/api/codex-auth') && ['GET', 'POST'].includes(method)) return true;
   if (pathname === '/api/triggers' && (method === 'GET' || method === 'POST')) return true;
   if (pathname.startsWith('/api/triggers/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
@@ -1583,6 +1585,16 @@ export async function handleRequest(req, res) {
     pathname,
     authSession,
     requireSessionAccess,
+    writeJson,
+  })) {
+    return;
+  }
+
+  if (await handleCodexAuthRoutes({
+    req,
+    res,
+    pathname,
+    authSession,
     writeJson,
   })) {
     return;

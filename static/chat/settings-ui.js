@@ -24,6 +24,173 @@ const settingsConnectorsList = document.getElementById("settingsConnectorsList")
 let connectorSurfacesCache = [];
 let connectorSurfacesLoaded = false;
 let expandedConnectorSurfaceId = "";
+let codexAuthState = null;
+let codexAuthPollTimer = null;
+
+function getCodexAuthCopy() {
+  const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
+  return isChinese ? {
+    title: "Codex 登录",
+    checking: "检测中…",
+    authenticated: "已登录",
+    awaiting: "等待登录",
+    loggedOut: "未登录",
+    unavailable: "未安装 Codex",
+    failed: "登录异常",
+    check: "检查状态",
+    start: "获取登录码",
+    retry: "重新获取",
+    open: "打开登录页",
+    copy: "复制验证码",
+    copied: "已复制",
+  } : {
+    title: "Codex login",
+    checking: "Checking…",
+    authenticated: "Signed in",
+    awaiting: "Waiting for sign-in",
+    loggedOut: "Signed out",
+    unavailable: "Codex is not installed",
+    failed: "Login issue",
+    check: "Check status",
+    start: "Get login code",
+    retry: "Get a new code",
+    open: "Open login page",
+    copy: "Copy code",
+    copied: "Copied",
+  };
+}
+
+function ensureCodexAuthSection() {
+  if (!settingsPanel || !canManageInstanceSettingsFromUi()) return null;
+  let section = document.getElementById("settingsCodexAuthSection");
+  if (section) return section;
+  section = document.createElement("div");
+  section.className = "settings-section";
+  section.id = "settingsCodexAuthSection";
+  section.innerHTML = `
+    <div class="settings-section-title" id="settingsCodexAuthTitle"></div>
+    <div class="settings-connector-status">
+      <span class="settings-connector-pill pending" id="settingsCodexAuthPill"></span>
+    </div>
+    <div class="settings-app-actions">
+      <button class="settings-app-btn" id="settingsCodexAuthCheckBtn" type="button"></button>
+      <button class="settings-app-btn" id="settingsCodexAuthLoginBtn" type="button"></button>
+    </div>
+    <div class="settings-app-card" id="settingsCodexAuthDevice" hidden>
+      <div class="settings-app-name" id="settingsCodexAuthCode"></div>
+      <div class="settings-app-actions">
+        <a class="settings-app-btn" id="settingsCodexAuthLink" target="_blank" rel="noopener noreferrer"></a>
+        <button class="settings-app-btn" id="settingsCodexAuthCopyBtn" type="button"></button>
+      </div>
+    </div>
+    <div class="settings-app-empty inline-status" id="settingsCodexAuthError" hidden></div>
+  `;
+  settingsPanel.prepend(section);
+  document.getElementById("settingsCodexAuthCheckBtn")?.addEventListener("click", () => {
+    void refreshCodexAuthStatus({ force: true });
+  });
+  document.getElementById("settingsCodexAuthLoginBtn")?.addEventListener("click", () => {
+    void startCodexDeviceLogin();
+  });
+  document.getElementById("settingsCodexAuthCopyBtn")?.addEventListener("click", async (event) => {
+    const code = String(codexAuthState?.userCode || "");
+    if (!code) return;
+    if (typeof copyText === "function") await copyText(code);
+    else await navigator.clipboard.writeText(code);
+    const copy = getCodexAuthCopy();
+    temporarilyUpdateButtonLabel(event.currentTarget, copy.copied, { resetLabel: copy.copy });
+  });
+  return section;
+}
+
+function stopCodexAuthPolling() {
+  if (codexAuthPollTimer) window.clearInterval(codexAuthPollTimer);
+  codexAuthPollTimer = null;
+}
+
+function startCodexAuthPolling() {
+  if (codexAuthPollTimer) return;
+  codexAuthPollTimer = window.setInterval(() => {
+    void refreshCodexAuthStatus({ silent: true });
+  }, 2500);
+}
+
+function renderCodexAuthPanel({ checking = false } = {}) {
+  if (!ensureCodexAuthSection()) return;
+  const copy = getCodexAuthCopy();
+  const state = codexAuthState || {};
+  const title = document.getElementById("settingsCodexAuthTitle");
+  const pill = document.getElementById("settingsCodexAuthPill");
+  const checkBtn = document.getElementById("settingsCodexAuthCheckBtn");
+  const loginBtn = document.getElementById("settingsCodexAuthLoginBtn");
+  const device = document.getElementById("settingsCodexAuthDevice");
+  const code = document.getElementById("settingsCodexAuthCode");
+  const link = document.getElementById("settingsCodexAuthLink");
+  const copyBtn = document.getElementById("settingsCodexAuthCopyBtn");
+  const error = document.getElementById("settingsCodexAuthError");
+  const awaiting = !state.loggedIn && state.deviceLoginActive && state.userCode;
+
+  title.textContent = copy.title;
+  checkBtn.textContent = copy.check;
+  loginBtn.textContent = awaiting ? copy.retry : copy.start;
+  loginBtn.hidden = state.loggedIn === true;
+  loginBtn.disabled = checking || state.available === false;
+  checkBtn.disabled = checking;
+
+  let statusLabel = copy.loggedOut;
+  let tone = "pending";
+  if (checking) statusLabel = copy.checking;
+  else if (state.loggedIn) {
+    statusLabel = copy.authenticated;
+    tone = "ready";
+  } else if (awaiting) statusLabel = copy.awaiting;
+  else if (state.available === false) statusLabel = copy.unavailable;
+  else if (state.phase === "failed") statusLabel = copy.failed;
+  pill.className = `settings-connector-pill ${tone}`;
+  pill.textContent = statusLabel;
+
+  device.hidden = !awaiting;
+  code.textContent = awaiting ? state.userCode : "";
+  link.textContent = copy.open;
+  link.href = awaiting ? state.verificationUri : "";
+  copyBtn.textContent = copy.copy;
+  error.hidden = !state.error;
+  error.textContent = state.error || "";
+
+  if (awaiting) startCodexAuthPolling();
+  else stopCodexAuthPolling();
+}
+
+async function refreshCodexAuthStatus({ silent = false } = {}) {
+  renderCodexAuthPanel({ checking: !silent });
+  try {
+    const data = await fetchJsonOrRedirect("/api/codex-auth/status", {
+      cache: "no-store",
+      revalidate: false,
+    });
+    codexAuthState = data?.codexAuth || {};
+  } catch (error) {
+    codexAuthState = { phase: "failed", error: error?.message || "Codex status check failed" };
+  }
+  renderCodexAuthPanel();
+}
+
+async function startCodexDeviceLogin() {
+  const loginBtn = document.getElementById("settingsCodexAuthLoginBtn");
+  if (loginBtn) loginBtn.disabled = true;
+  try {
+    const data = await fetchJsonOrRedirect("/api/codex-auth/device-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ restart: true }),
+      revalidate: false,
+    });
+    codexAuthState = data?.codexAuth || {};
+  } catch (error) {
+    codexAuthState = { phase: "failed", error: error?.message || "Codex login failed" };
+  }
+  renderCodexAuthPanel();
+}
 
 function canManageAgentsFromUi() {
   return typeof canManageAgents === "function"
@@ -1194,6 +1361,8 @@ function renderSettingsSessionPresentationPanel() {
 }
 
 initUiLanguageSettings();
+ensureCodexAuthSection();
+void refreshCodexAuthStatus();
 initThemeSettings();
 initThinkingBlockDisplaySettings();
 void initVoiceInputSettings();
@@ -1222,12 +1391,14 @@ if (tabAgents && tabAgents.dataset.appsBound !== "true") {
 
 if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
   tabSettings.addEventListener("click", () => {
+    void refreshCodexAuthStatus({ force: true });
     void renderSettingsConnectorsPanel({ force: true });
   });
   tabSettings.dataset.connectorsBound = "true";
 }
 
 window.addEventListener("remotelab:localechange", () => {
+  renderCodexAuthPanel();
   if (uiLanguageSelect) {
     syncUiLanguageSelect();
   }
