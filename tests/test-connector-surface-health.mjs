@@ -3,10 +3,10 @@ import assert from 'assert/strict';
 import http from 'http';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
-import { pathToFileURL } from 'url';
+import { dirname, join } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 
-const repoRoot = '/opt/remotelab';
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));

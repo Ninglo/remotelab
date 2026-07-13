@@ -152,6 +152,23 @@ async function waitFor(predicate, description, timeoutMs = 20000) {
   throw new Error(`Timed out: ${description}`);
 }
 
+async function removeTempHomeWithRetries() {
+  let lastError = null;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      rmSync(tempHome, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(error?.code)) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  throw lastError;
+}
+
 try {
   const overflowSession = await createSession(tempHome, 'fake-codex', 'Overflow Fallback', {
     group: 'RemoteLab',
@@ -262,5 +279,5 @@ try {
   console.log('test-auto-compaction: ok');
 } finally {
   killAll();
-  rmSync(tempHome, { recursive: true, force: true });
+  await removeTempHomeWithRetries();
 }
