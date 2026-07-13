@@ -91,6 +91,9 @@ async function startServer({ home, port }) {
       ...process.env,
       HOME: home,
       CHAT_PORT: String(port),
+      REMOTELAB_INSTANCE_ROOT: '',
+      REMOTELAB_CONFIG_DIR: join(home, '.config', 'remotelab'),
+      REMOTELAB_MEMORY_DIR: join(home, '.remotelab', 'memory'),
       SECURE_COOKIES: '0',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -141,6 +144,8 @@ async function main() {
   const port = randomPort();
   const seed = Date.now().toString(36);
   const frontendProbePath = join(repoRoot, 'static', 'chat', `__build_info_probe_${seed}.js`);
+  const publicPageProbeDir = join(repoRoot, 'static', 'public-pages', `__build_info_probe_${seed}`);
+  const publicPageProbePath = join(publicPageProbeDir, 'index.html');
   const serviceProbePath = join(repoRoot, 'chat', `__service_build_probe_${seed}.mjs`);
   const bootstrapSource = readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap.js'), 'utf8');
   let server = null;
@@ -206,6 +211,16 @@ async function main() {
     assert.match(chatPage.text, new RegExp(escapeRegex(`Build ${initial.label}`)));
     assert.match(chatPage.text, new RegExp(escapeRegex(initial.title)));
 
+    mkdirSync(publicPageProbeDir, { recursive: true });
+    writeFileSync(publicPageProbePath, '<!doctype html><title>published page probe</title>\n', 'utf8');
+    await sleep(350);
+    const publishedPageBuild = (await fetchBuildInfo(port)).payload;
+    assert.equal(
+      publishedPageBuild.frontendFingerprint,
+      initial.frontendFingerprint,
+      'published page changes should not invalidate the shared chat frontend build',
+    );
+
     await sleep(350);
     writeFileSync(frontendProbePath, 'window.__REMOTELAB_BUILD_INFO_PROBE__ = true;\n', 'utf8');
     await waitFor(
@@ -268,6 +283,7 @@ async function main() {
     ws?.close();
     await stopServer(server);
     rmSync(frontendProbePath, { force: true });
+    rmSync(publicPageProbeDir, { recursive: true, force: true });
     rmSync(serviceProbePath, { force: true });
   }
 }

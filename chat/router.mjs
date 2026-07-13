@@ -121,9 +121,33 @@ const ADMIN_UPSTREAM_PORT = Number.parseInt(process.env.CHAT_ADMIN_UPSTREAM_PORT
 
 const execFileAsync = promisify(execFile);
 const BUILD_INFO = await loadBuildInfo();
+const staticChatDir = join(staticDir, 'chat');
+const staticRootBuildAssets = [
+  'apple-touch-icon.png',
+  'chat.js',
+  'favicon.ico',
+  'icon-192.png',
+  'icon-512.png',
+  'icon.svg',
+  'manifest.json',
+  'marked.min.js',
+  'sw.js',
+  'voice-gateway-direct-poc.html',
+  'voice-gateway-direct-poc.js',
+].map((name) => join(staticDir, name));
 const pageBuildRoots = [
   join(__dirname, '..', 'templates'),
-  staticDir,
+  staticChatDir,
+  ...staticRootBuildAssets,
+];
+const pageBuildWatchRoots = [
+  { root: join(__dirname, '..', 'templates'), recursive: true },
+  { root: staticChatDir, recursive: true },
+  {
+    root: staticDir,
+    recursive: false,
+    ignoredTopLevelNames: new Set(['chat', 'public-pages']),
+  },
 ];
 let cachedPageBuildInfo = null;
 const frontendBuildWatchers = [];
@@ -823,12 +847,19 @@ function scheduleFrontendBuildInvalidation() {
 
 function startFrontendBuildWatchers() {
   if (frontendBuildWatchers.length > 0) return;
-  for (const root of pageBuildRoots) {
+  for (const {
+    root,
+    recursive,
+    ignoredTopLevelNames = new Set(),
+  } of pageBuildWatchRoots) {
     try {
-      const watcher = watch(root, { recursive: true }, (_eventType, filename) => {
+      const watcher = watch(root, { recursive }, (_eventType, filename) => {
         const changedPath = String(filename || '');
         if (changedPath) {
           const segments = changedPath.split(/[\\/]+/).filter(Boolean);
+          if (ignoredTopLevelNames.has(segments[0])) {
+            return;
+          }
           if (segments.some((segment) => segment.startsWith('.'))) {
             return;
           }
