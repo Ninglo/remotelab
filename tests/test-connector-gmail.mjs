@@ -30,6 +30,7 @@ const {
 } = await import(pathToFileURL(join(repoRoot, 'lib', 'connector-bindings.mjs')).href);
 
 const {
+  __testing,
   gmailCredentialsPresent,
   parseGmailWebUrl,
   resolveGmailCredentialsPath,
@@ -89,6 +90,20 @@ try {
   assert.equal(messageUrl.kind, 'message');
   assert.equal(messageUrl.rawId, '1862488384038594553');
   assert.ok(messageUrl.candidates.includes(BigInt('1862488384038594553').toString(16)));
+
+  const mime = __testing.buildMimeMessage({
+    from: 'creator@example.com',
+    to: ['operator@example.com'],
+    subject: 'Re: Contract test',
+    text: 'First line\n\nSecond paragraph',
+    inReplyTo: '<original@example.com>',
+    references: '<original@example.com>',
+  });
+  assert.match(
+    mime,
+    /Content-Transfer-Encoding: 8bit\r\n\r\nFirst line\n\nSecond paragraph$/,
+    'Gmail MIME must preserve the required blank line between headers and the body',
+  );
 
   console.log('test-connector-gmail: ok');
 } finally {
