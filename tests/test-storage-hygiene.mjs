@@ -76,8 +76,11 @@ try {
   mkdirSync(join(instanceRoot, 'owner', 'config'), { recursive: true });
   touchTreeOld(oldTemp);
 
+  const publicTmp = join(publicPagesRoot, 'page-a', 'tmp-qa');
+  writeOldFile(join(publicTmp, 'screenshot.png'), 'temporary artifact');
+  touchTreeOld(publicTmp);
   const publicArtifacts = join(publicPagesRoot, 'page-a', 'artifacts');
-  writeOldFile(join(publicArtifacts, 'screenshot.png'), 'artifact');
+  writeOldFile(join(publicArtifacts, 'download.zip'), 'published artifact');
   touchTreeOld(publicArtifacts);
   const publicAsset = join(publicPagesRoot, 'page-a', 'assets', 'hero.png');
   writeOldFile(publicAsset, 'keep');
@@ -107,7 +110,8 @@ try {
   assert.equal(existsSync(oldRun), false, 'old terminal runs should be removed');
   assert.equal(existsSync(rawProviderSession), false, 'old raw provider transcripts should be removed');
   assert.equal(existsSync(oldTemp), false, 'old instance temp data should be removed');
-  assert.equal(existsSync(publicArtifacts), false, 'old published staging data should be removed');
+  assert.equal(existsSync(publicTmp), false, 'old published temporary data should be removed');
+  assert.equal(existsSync(publicArtifacts), true, 'published artifacts must be preserved');
   assert.equal(existsSync(activeRun), true, 'active runs must never be removed');
   assert.equal(existsSync(publicAsset), true, 'published runtime assets must be preserved');
 
@@ -115,4 +119,3 @@ try {
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
-

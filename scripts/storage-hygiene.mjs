@@ -74,7 +74,7 @@ Options:
                                        Raw provider transcript retention (default: 60)
   --temp-retention-days <days>         Instance temp retention (default: 7)
   --public-staging-retention-days <days>
-                                       Published tmp/artifacts retention (default: 3)
+                                       Published temporary-dir retention (default: 3)
   -h, --help                           Show this help`;
 }
 
@@ -246,7 +246,7 @@ async function collectTempCandidates(candidates, tempRoots, options) {
 }
 
 function isPublishedStagingName(name) {
-  return name === 'artifacts' || name === 'tmp' || name === 'tmp-qa' || name.startsWith('tmp-');
+  return name === 'tmp' || name === 'tmp-qa' || name.startsWith('tmp-');
 }
 
 async function collectPublishedStagingCandidates(candidates, publicPagesRoot, options) {
@@ -362,4 +362,3 @@ main().catch((error) => {
   console.error(error.stack || error.message || error);
   process.exitCode = 1;
 });
-
