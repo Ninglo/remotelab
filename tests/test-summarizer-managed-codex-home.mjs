@@ -82,6 +82,8 @@ process.env.REMOTELAB_CONFIG_DIR = tempConfig;
 process.env.REMOTELAB_MEMORY_DIR = tempMemory;
 process.env.REMOTELAB_TEST_CODEX_HOME_CAPTURE = envCapturePath;
 delete process.env.REMOTELAB_INSTANCE_ROOT;
+delete process.env.REMOTELAB_CODEX_HOME_MODE;
+delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
 delete process.env.CODEX_HOME;
 
 const sessionManager = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
@@ -120,6 +122,35 @@ assert.equal(result?.rename?.renamed, true, 'summarizer should be able to rename
 assert.equal(updated?.name, result?.title, 'session title should match the summarizer-applied title');
 assert.equal(updated?.autoRenamePending, false);
 assert.equal(capturedCodexHome, expectedManagedHome, 'background summarizer codex run should receive managed CODEX_HOME');
+
+const machineCodexHome = join(tempHome, 'machine-codex-home');
+process.env.REMOTELAB_CODEX_HOME_MODE = 'personal';
+process.env.REMOTELAB_MACHINE_CODEX_HOME = machineCodexHome;
+writeFileSync(envCapturePath, '', 'utf8');
+
+const personalSession = await createSession(tempHome, fakeToolId, '', {});
+await appendEvent(personalSession.id, messageEvent('user', 'Please verify explicit personal Codex home selection.'));
+await appendEvent(personalSession.id, messageEvent('assistant', 'I will verify explicit personal Codex home selection.'));
+
+await triggerSessionLabelSuggestion(
+  {
+    id: personalSession.id,
+    folder: personalSession.folder,
+    name: personalSession.name || '',
+    group: personalSession.group || '',
+    description: personalSession.description || '',
+    sourceName: personalSession.sourceName || '',
+    autoRenamePending: personalSession.autoRenamePending,
+    tool: fakeToolId,
+  },
+  async (newName) => renameSession(personalSession.id, newName, { lockTitle: false }),
+);
+
+assert.equal(
+  readFileSync(envCapturePath, 'utf8').trim(),
+  machineCodexHome,
+  'explicit personal mode should route summarizer codex runs to the configured machine Codex home',
+);
 
 killAll();
 rmSync(tempHome, { recursive: true, force: true });

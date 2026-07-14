@@ -9,6 +9,7 @@ import {
   isSessionAutoRenamePending,
   normalizeSessionDescription,
   normalizeSessionGroup,
+  normalizeSessionSpace,
 } from './session-naming.mjs';
 import { appendUsageLedgerRecord, buildDetachedUsageLedgerRecord } from './usage-ledger.mjs';
 import { loadSessionLabelPromptContext } from './session-label-context.mjs';
@@ -140,7 +141,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
   delete subEnv.CLAUDE_CODE_ENTRYPOINT;
   subEnv = await applyManagedRuntimeEnv(tool, subEnv, {
     runtimeFamily,
-    codexHomeMode: 'managed',
+    codexHomeMode: process.env.REMOTELAB_CODEX_HOME_MODE || 'managed',
   });
 
   return new Promise((resolve, reject) => {
@@ -272,6 +273,7 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     id: sessionId,
     folder,
     name,
+    space,
     group,
     description,
     sourceName,
@@ -280,9 +282,10 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
 
   const shouldGenerateTitle = isSessionAutoRenamePending({ name, autoRenamePending });
   const shouldRefreshTitle = options.refreshTitle === true && !shouldGenerateTitle;
+  const currentSpace = normalizeSessionSpace(space || '');
   const currentGroup = normalizeSessionGroup(group || '');
   const currentDescription = normalizeSessionDescription(description || '');
-  const shouldGenerateGrouping = !currentGroup || !currentDescription;
+  const shouldGenerateGrouping = !currentSpace || !currentGroup || !currentDescription;
   const shouldRefreshGrouping = options.refreshGrouping === true && !shouldGenerateGrouping;
   const currentName = normalizeGeneratedSessionTitle(name || '', currentGroup || '');
 
@@ -340,14 +343,16 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
 
   const promptContext = await loadSessionLabelPromptContext({
     ...sessionMeta,
+    space: currentSpace,
     group: currentGroup,
     description: currentDescription,
   }, turnText);
 
   const prompt = [
     'You are naming a developer session. Be concise and literal.',
-    'Use these roles: "group" = workflow coupling, "title" = the current frontier of the session, "description" = the current work semantics.',
-    'RemoteLab only has one visible Projects level, so the display group should be a work-recovery entry, not a strict taxonomy label.',
+    'Use these roles: "space" = broad durable context, "group" = a recoverable workstream inside that space, "title" = the current frontier, "description" = the current work semantics.',
+    'RemoteLab has a two-level sidebar: Spaces are broad context boundaries, while Projects groups are concrete work-recovery entries inside a Space.',
+    'Reuse an existing Space whenever possible. Create a new Space only for a genuinely distinct long-lived domain, role, or context boundary.',
     'Avoid both extremes: do not use a broad repo/product bucket that mixes unrelated decisions, and do not create a new group for every one-off feature slice.',
     'Use existing non-archived sessions as a bounded catalog. Reuse an existing group when this session clearly belongs to the same user-facing workstream.',
     'Create a new group only when the work has a distinct outcome, lifecycle, context, or source boundary from the existing groups.',
@@ -357,6 +362,7 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     '',
     `Session folder: ${folder}`,
     `Current session name: ${name || '(unnamed)'}`,
+    currentSpace ? `Current Space: ${currentSpace}` : '',
     currentGroup ? `Current display group: ${currentGroup}` : '',
     currentDescription ? `Current session description: ${currentDescription}` : '',
     sourceName ? `Current source label: ${sourceName}` : '',
@@ -369,7 +375,8 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     shouldGenerateTitle ? 'The current name is only a temporary draft. Generate a better final title based on the latest full turn, using the user request as the main signal and the assistant reply to sharpen the task wording.' : '',
     effectiveRefreshTitle ? 'The current title is already user-visible. Keep it exactly as-is unless the session main workstream has materially shifted or the title is now too broad or stale.' : '',
     effectiveRefreshTitle ? 'Do not rename just to polish wording, swap synonyms, or emphasize a minor substep. If the current title still fits, return it unchanged.' : '',
-    shouldEvaluateGrouping ? 'Also generate a stable one-level display group for session-list organization. This is not a filesystem path.' : '',
+    shouldEvaluateGrouping ? 'Also generate a stable Space and Project group for session-list organization. Neither value is a filesystem path.' : '',
+    effectiveRefreshGrouping ? 'The Space should be the most stable label. Do not change it for ordinary project or focus shifts.' : '',
     effectiveRefreshGrouping ? 'The group should be more stable than the title. Do not change the group for small focus shifts inside the same workstream.' : '',
     effectiveRefreshGrouping ? 'Keep the current group and description when they still fit. Only change them when the main workstream has actually moved.' : '',
     shouldEvaluateTitle ? 'The display group is shown separately in the UI. The title must focus on the specific task inside that group and should not repeat the group words unless disambiguation truly requires it.' : '',
@@ -380,6 +387,7 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     '',
     'Write a JSON object with exactly these fields:',
     shouldEvaluateTitle ? '- "title": 2-6 words — a short descriptive session title. If the current title still fits, return it unchanged.' : '',
+    shouldEvaluateGrouping ? '- "space": 1-3 words — a broad, durable context boundary. Prefer an existing fitting Space and keep the total set small. Use "Loose" only for genuinely temporary or ambiguous work.' : '',
     shouldEvaluateGrouping ? '- "group": 1-4 words — a stable display group for the workstream. Prefer an existing fitting workstream over a new one-off label; avoid broad repo/domain buckets. Not a path.' : '',
     shouldEvaluateGrouping ? '- "description": One sentence — a compact hidden description of the current workstream, useful for future regrouping.' : '',
     '',
@@ -401,8 +409,12 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
 
   const suggestedLabels = {};
   if (shouldEvaluateGrouping) {
+    const nextSpace = normalizeSessionSpace(labelResult?.space || '');
     const nextGroup = normalizeSessionGroup(labelResult?.group || '');
     const nextDescription = normalizeSessionDescription(labelResult?.description || '');
+    if (nextSpace) {
+      suggestedLabels.space = nextSpace;
+    }
     if (nextGroup) {
       suggestedLabels.group = nextGroup;
     }

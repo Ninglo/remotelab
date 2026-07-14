@@ -45,6 +45,7 @@ function extractFunctionSource(source, functionName) {
 
 const renderSessionMessageCountSource = extractFunctionSource(sessionSurfaceUiSource, 'renderSessionMessageCount');
 const buildSessionMetaPartsSource = extractFunctionSource(sessionSurfaceUiSource, 'buildSessionMetaParts');
+const getSessionRowStatusInfoSource = extractFunctionSource(sessionSurfaceUiSource, 'getSessionRowStatusInfo');
 
 const state = { scopeCalls: 0, statusCalls: 0 };
 const context = {
@@ -61,11 +62,11 @@ const context = {
     state.scopeCalls += 1;
     return ['<span>scope</span>'];
   },
-  getSessionReviewStatusInfo() {
-    return null;
+  getSessionReviewStatusInfo(session) {
+    return session?.reviewStatus || null;
   },
-  getSessionStatusSummary() {
-    return { primary: { key: 'running', label: 'running' } };
+  getSessionStatusSummary(session) {
+    return { primary: session?.liveStatus || { key: 'idle', label: '' } };
   },
   renderSessionStatusHtml(statusInfo) {
     if (!statusInfo?.label) return '';
@@ -75,14 +76,14 @@ const context = {
 };
 context.globalThis = context;
 vm.runInNewContext(
-  `${renderSessionMessageCountSource}\n${buildSessionMetaPartsSource}\nglobalThis.renderSessionMessageCount = renderSessionMessageCount;\nglobalThis.buildSessionMetaParts = buildSessionMetaParts;`,
+  `${renderSessionMessageCountSource}\n${buildSessionMetaPartsSource}\n${getSessionRowStatusInfoSource}\nglobalThis.renderSessionMessageCount = renderSessionMessageCount;\nglobalThis.buildSessionMetaParts = buildSessionMetaParts;\nglobalThis.getSessionRowStatusInfo = getSessionRowStatusInfo;`,
   context,
   { filename: 'static/chat/session-surface-ui.js' },
 );
 
 assert.equal(
   context.renderSessionMessageCount({ messageCount: 5, activeMessageCount: 2 }),
-  '<span class="session-item-count" title="Messages in this session">5 msgs</span>',
+  '<span class="session-item-count" title="Messages in this session">(5)</span>',
   'session list should show the full session message count, not the active-context count',
 );
 
@@ -90,12 +91,39 @@ const parts = context.buildSessionMetaParts({ messageCount: 5 });
 assert.equal(
   JSON.stringify(parts),
   JSON.stringify([
-    '<span>running</span>',
-    '<span class="session-item-count" title="Messages in this session">5 msgs</span>',
+    '<span class="session-item-count" title="Messages in this session">(5)</span>',
   ]),
-  'session list metadata should keep the compact live status first and the count secondary',
+  'session list metadata should keep only the compact message count in the detail line',
 );
 assert.equal(state.scopeCalls, 0, 'session list metadata should not render source/app/user scope labels anymore');
-assert.equal(state.statusCalls, 1, 'session list metadata should still render the live run status');
+assert.equal(state.statusCalls, 0, 'session list metadata should not render verbose status text');
+
+const runningStatus = { key: 'running', label: 'running' };
+const unreadStatus = { key: 'unread', label: 'new' };
+assert.equal(
+  context.getSessionRowStatusInfo({ liveStatus: runningStatus, workflowState: 'done', reviewStatus: unreadStatus }),
+  runningStatus,
+  'running should be the only live state that renders a row dot',
+);
+assert.equal(
+  context.getSessionRowStatusInfo({ liveStatus: { key: 'queued', label: 'queued' }, workflowState: 'active' }),
+  null,
+  'queued and other transient states should not add decorative row dots',
+);
+assert.equal(
+  context.getSessionRowStatusInfo({ workflowState: 'done', reviewStatus: unreadStatus }),
+  unreadStatus,
+  'completed unread work should render one attention dot',
+);
+assert.equal(
+  context.getSessionRowStatusInfo({ workflowState: 'waiting_user', reviewStatus: unreadStatus }),
+  null,
+  'unread status should stay hidden unless the session is completed',
+);
+assert.equal(
+  context.getSessionRowStatusInfo({ workflowState: 'done' }),
+  null,
+  'reviewed completed work should not render a dot',
+);
 
 console.log('test-chat-session-list-meta: ok');

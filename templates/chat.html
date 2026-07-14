@@ -29,7 +29,7 @@
     <span class="header-btn-icon" data-icon="menu" aria-hidden="true"></span>
     <span class="header-btn-label" data-i18n="nav.sessions">Sessions</span>
   </button>
-  <h1 id="headerTitle" data-i18n="app.chatTitle">RemoteLab Chat</h1>
+  <h1 id="headerTitle"><span class="header-product-name">RemoteLab</span></h1>
   <button class="header-share-btn" id="shareSnapshotBtn" title="Share" aria-label="Share" data-i18n-title="action.share" data-i18n-aria-label="action.share" style="display:none">
     <span class="header-action-icon" data-icon="share" aria-hidden="true"></span>
     <span class="header-action-label" data-i18n="action.share">Share</span>
@@ -43,22 +43,17 @@
   <!-- Sidebar overlay -->
   <div class="sidebar-overlay" id="sidebarOverlay">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <h2>RemoteLab</h2>
-        <button class="header-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
-      </div>
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" id="tabSessions" data-i18n="nav.sessions">Sessions</button>
         <button class="sidebar-tab" id="tabAgents" data-i18n="nav.agents">Agent</button>
         <button class="sidebar-tab" id="tabSettings" data-i18n="nav.settings">Settings</button>
-      </div>
-      <div class="sidebar-search" id="sidebarSearch">
-        <input class="sidebar-search-input" id="sessionSearchInput" type="search" placeholder="Search sessions…" autocomplete="off" data-i18n-placeholder="sidebar.search.placeholder" />
+        <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
       </div>
       <div class="sidebar-view-switcher" id="sidebarViewSwitcher">
         <button class="view-switch-btn active" id="viewInbox" data-view="inbox" data-i18n="sidebar.view.inbox">Inbox</button>
         <button class="view-switch-btn" id="viewProjects" data-view="projects" data-i18n="sidebar.view.projects">Projects</button>
       </div>
+      <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
       <div class="sidebar-list" id="sessionList"></div>
       <div class="sidebar-filters" id="sidebarFilters">
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
@@ -134,7 +129,6 @@
         </div>
       </div>
       <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
-      <button class="new-session-btn secondary" id="sortSessionListBtn" data-i18n="sidebar.sortList">Sort List</button>
       <button class="new-session-btn" id="newSessionBtn" data-i18n="sidebar.newSession">+ New Session</button>
     </aside>
   </div>

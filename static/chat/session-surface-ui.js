@@ -109,8 +109,7 @@ function renderSessionMessageCount(session) {
     ? session.messageCount
     : (Number.isInteger(session?.activeMessageCount) ? session.activeMessageCount : 0);
   if (count <= 0) return "";
-  const label = t("session.messages", { count, suffix: count === 1 ? "" : "s" });
-  return `<span class="session-item-count" title="${esc(t("session.messagesTitle"))}">${esc(label)}</span>`;
+  return `<span class="session-item-count" title="${esc(t("session.messagesTitle"))}">(${count})</span>`;
 }
 
 function getSessionMetaStatusInfo(session) {
@@ -144,13 +143,6 @@ function isSessionCompleteAndReviewed(session) {
 
 function buildSessionMetaParts(session) {
   const parts = [];
-  const reviewHtml = renderSessionStatusHtml(getSessionReviewStatusInfo(session));
-  if (reviewHtml) parts.push(reviewHtml);
-  const liveStatus = getSessionStatusSummary(session).primary;
-  const statusHtml = liveStatus?.key && liveStatus.key !== "idle"
-    ? renderSessionStatusHtml(liveStatus)
-    : "";
-  if (statusHtml) parts.push(statusHtml);
   const countHtml = renderSessionMessageCount(session);
   if (countHtml) parts.push(countHtml);
   return parts;
@@ -204,8 +196,29 @@ function renderSessionStatusHtml(statusInfo) {
   return `<span class="${statusInfo.className}"${title}>● ${esc(statusInfo.label)}</span>`;
 }
 
-function createActiveSessionItem(session, { showGroup = false } = {}) {
+function renderSessionStatusDot(statusInfo) {
+  if (!statusInfo?.label || statusInfo.key === "idle") return "";
+  const statusClass = statusInfo.className ? ` ${statusInfo.className}` : "";
+  const title = statusInfo.title || statusInfo.label;
+  return `<span class="session-status-dot${statusClass}" title="${esc(title)}" aria-label="${esc(statusInfo.label)}"></span>`;
+}
+
+function getSessionRowStatusInfo(session) {
+  const liveStatus = getSessionStatusSummary(session).primary;
+  if (liveStatus?.key === "running") return liveStatus;
+
+  const workflowState = typeof window !== "undefined"
+    && window.RemoteLabSessionStateModel
+    && typeof window.RemoteLabSessionStateModel.normalizeSessionWorkflowState === "function"
+    ? window.RemoteLabSessionStateModel.normalizeSessionWorkflowState(session?.workflowState || "")
+    : String(session?.workflowState || "").trim().toLowerCase();
+  if (workflowState !== "done") return null;
+  return getSessionReviewStatusInfo(session);
+}
+
+function createActiveSessionItem(session) {
   const statusInfo = getSessionMetaStatusInfo(session);
+  const displayStatusInfo = getSessionRowStatusInfo(session);
   const completeRead = isSessionCompleteAndReviewed(session);
   const div = document.createElement("div");
   div.className =
@@ -217,34 +230,37 @@ function createActiveSessionItem(session, { showGroup = false } = {}) {
 
   const displayName = getSessionDisplayName(session);
   const metaParts = buildSessionMetaParts(session);
-
-  // In inbox view, show the group as a tag in meta
-  if (showGroup) {
-    const groupName = typeof session?.group === "string" ? session.group.trim() : "";
-    if (groupName) {
-      metaParts.push(`<span class="session-group-tag" title="${esc(groupName)}">${esc(groupName)}</span>`);
-    }
-  }
-
-  const metaHtml = metaParts.join(" · ");
+  const countHtml = metaParts.join("");
+  const statusDotHtml = renderSessionStatusDot(displayStatusInfo);
   const pinTitle = session.pinned ? t("action.unpin") : t("action.pin");
 
-  // Show description as a second line when available
   const description = typeof session?.description === "string" ? session.description.trim() : "";
-  const descriptionHtml = description
-    ? `<div class="session-item-description" title="${esc(description)}">${esc(description)}</div>`
+  const messageCount = Number.isInteger(session?.messageCount)
+    ? session.messageCount
+    : (Number.isInteger(session?.activeMessageCount) ? session.activeMessageCount : 0);
+  const detailTitle = [
+    countHtml ? t("session.messages", {
+      count: messageCount,
+      suffix: messageCount === 1 ? "" : "s",
+    }) : "",
+    description,
+  ].filter(Boolean).join(" · ");
+  const descriptionHtml = countHtml || description
+    ? `<div class="session-item-description" title="${esc(detailTitle)}">${countHtml}${description ? `<span class="session-item-description-text">${esc(description)}</span>` : ""}</div>`
     : "";
 
   div.innerHTML = `
     <div class="session-item-info">
-      <div class="session-item-name">${session.pinned ? `<span class="session-pin-badge" title="${esc(t("sidebar.pinned"))}">${renderUiIcon("pinned")}</span>` : ""}${esc(displayName)}</div>
-      ${metaHtml ? `<div class="session-item-meta">${metaHtml}</div>` : ""}
+      <div class="session-item-title-row">
+        ${statusDotHtml}
+        <div class="session-item-name">${esc(displayName)}</div>
+        <div class="session-item-actions">
+          <button class="session-action-btn rename" type="button" title="${esc(t("action.rename"))}" aria-label="${esc(t("action.rename"))}" data-id="${session.id}">${renderUiIcon("edit")}</button>
+          <button class="session-action-btn archive" type="button" title="${esc(t("action.archive"))}" aria-label="${esc(t("action.archive"))}" data-id="${session.id}">${renderUiIcon("archive")}</button>
+          <button class="session-action-btn pin${session.pinned ? " pinned" : ""}" type="button" title="${pinTitle}" aria-label="${pinTitle}" data-id="${session.id}">${renderUiIcon(session.pinned ? "pinned" : "pin")}</button>
+        </div>
+      </div>
       ${descriptionHtml}
-    </div>
-    <div class="session-item-actions">
-      <button class="session-action-btn pin${session.pinned ? " pinned" : ""}" type="button" title="${pinTitle}" aria-label="${pinTitle}" data-id="${session.id}">${renderUiIcon(session.pinned ? "pinned" : "pin")}</button>
-      <button class="session-action-btn rename" type="button" title="${esc(t("action.rename"))}" aria-label="${esc(t("action.rename"))}" data-id="${session.id}">${renderUiIcon("edit")}</button>
-      <button class="session-action-btn archive" type="button" title="${esc(t("action.archive"))}" aria-label="${esc(t("action.archive"))}" data-id="${session.id}">${renderUiIcon("archive")}</button>
     </div>`;
 
   div.addEventListener("click", (e) => {

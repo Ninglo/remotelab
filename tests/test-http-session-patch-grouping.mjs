@@ -128,6 +128,11 @@ try {
   });
   assert.equal(invalidGroup.status, 400, 'invalid group type should be rejected');
 
+  const invalidSpace = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
+    space: 123,
+  });
+  assert.equal(invalidSpace.status, 400, 'invalid space type should be rejected');
+
   const invalidSidebarOrder = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
     sidebarOrder: 0,
   });
@@ -144,12 +149,14 @@ try {
   assert.equal(invalidEntryModeValue.status, 400, 'unknown entry mode should be rejected');
 
   const patched = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
+    space: '  Product  ',
     group: '  RemoteLab  ',
     description: '  Session-driven orchestration work.  ',
     sidebarOrder: 4,
     entryMode: 'read',
   });
-  assert.equal(patched.status, 200, 'session patch should accept group, description, sidebar order, and entry mode');
+  assert.equal(patched.status, 200, 'session patch should accept space, group, description, sidebar order, and entry mode');
+  assert.equal(patched.json.session.space, 'Product', 'patch should trim and persist space');
   assert.equal(patched.json.session.group, 'RemoteLab', 'patch should trim and persist group');
   assert.equal(
     patched.json.session.description,
@@ -161,6 +168,7 @@ try {
 
   const detail = await request(port, 'GET', `/api/sessions/${sessionId}`);
   assert.equal(detail.status, 200, 'detail route should succeed after patch');
+  assert.equal(detail.json.session.space, 'Product', 'detail route should expose patched space');
   assert.equal(detail.json.session.group, 'RemoteLab', 'detail route should expose patched group');
   assert.equal(
     detail.json.session.description,
@@ -174,6 +182,7 @@ try {
   assert.equal(listed.status, 200, 'session list should succeed');
   const listedSession = (listed.json.sessions || []).find((entry) => entry.id === sessionId);
   assert.ok(listedSession, 'session list should include the patched session');
+  assert.equal(listedSession.space, 'Product', 'session list should expose patched space');
   assert.equal(listedSession.group, 'RemoteLab', 'session list should expose patched group');
   assert.equal(
     listedSession.description,
@@ -184,12 +193,14 @@ try {
   assert.equal(listedSession.entryMode, 'read', 'session list should expose patched entry mode');
 
   const cleared = await request(port, 'PATCH', `/api/sessions/${sessionId}`, {
+    space: null,
     group: null,
     description: '',
     sidebarOrder: null,
     entryMode: null,
   });
-  assert.equal(cleared.status, 200, 'patch should accept clearing group, description, sidebar order, and entry mode');
+  assert.equal(cleared.status, 200, 'patch should accept clearing space, group, description, sidebar order, and entry mode');
+  assert.equal(cleared.json.session.space, undefined, 'patch should clear space');
   assert.equal(cleared.json.session.group, undefined, 'patch should clear group');
   assert.equal(cleared.json.session.description, undefined, 'patch should clear description');
   assert.equal(cleared.json.session.sidebarOrder, undefined, 'patch should clear sidebar order');

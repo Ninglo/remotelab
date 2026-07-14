@@ -174,6 +174,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Persist an explicit boolean like `autoRenamePending`; otherwise a temporary draft title blocks the later AI rename, and a late AI callback can overwrite a user's manual rename.
 - The rename callback itself should re-check that pending flag at execution time, not just when the background summary job started.
 
+### Background Model Tasks Must Reuse The Instance Runtime Home (2026-07-11)
+- Background model calls such as session title/group summarizers must resolve the same instance runtime home and provider-auth selection as foreground runs.
+- Hard-coding a managed Codex home can silently send background work to stale guest auth while foreground work still succeeds, producing misleading provider `401` failures only in auto-rename or other suggestion jobs.
+- Keep runtime-home selection in one shared resolver and regression-test both foreground and background paths with a non-default instance home.
+
 ### Active Session Restore Should Share One Deep-Link Contract (2026-03-06)
 - Refresh restore, sidebar tab restore, and notification-open behavior should not each pick their own session separately; drive all three from the same `session`/`tab` deep-link contract plus one persisted local fallback.
 - Good precedence is: explicit notification/URL target first, then last locally active session, then most recently updated session.
@@ -271,6 +276,10 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - A startup rule like "read all memory files at the start of every session" is an architectural mismatch if the product goal is focus and bounded context; it turns retrieval into unconditional preload.
 
 ### Memory Writeback Must Be Sparse And Pruned (2026-03-06)
+- Reflection is valuable, but memory writes should be rare and selective. Persist only durable lessons with clear expected reuse.
+- Prefer editing, merging, or deleting existing memory instead of appending near-duplicate notes.
+- Memory hygiene should happen on a light cadence: daily during intense debugging or weekly otherwise.
+- Archive or trim stale task notes once they stop improving future execution.
 
 ### HTTP Reconciliation Must Not Spam Realtime (2026-03-09)
 - If HTTP reads reconcile detached-runner spool files into canonical history, do not emit WebSocket/SSE invalidations on every read path by default.
@@ -297,10 +306,6 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Reconciliation should also treat a present `result.json` as terminal evidence if `status.json` is still non-terminal; that state can happen if the sidecar writes the result file and then dies or is interrupted before its final status write lands.
 - When backfilling terminal state from `result.json`, prefer `result.cancelled` over a later `cancelRequested` flag. A user can press Stop after a successful run already completed, and that late cancel request must not rewrite a completed run into `cancelled`.
 - If a session record still carries `activeRunId`, force a detached-run sync on session reads even when the cached run already looks terminal/finalized; otherwise APIs like session fork can clone a half-reconciled history before the terminal spool flush has materialized into durable session state.
-- Reflection is valuable, but memory writes should be rare and selective. Persist only durable lessons with clear expected reuse.
-- Prefer editing, merging, or deleting existing memory instead of appending near-duplicate notes.
-- Memory hygiene should happen on a light cadence: daily during intense debugging or weekly otherwise.
-- Archive or trim stale task notes once they stop improving future execution.
 
 ### Boot Memory Should Stay Pointer-Sized (2026-03-06)
 - In RemoteLab, the built-in boot prompt should stay a small pointer/index that tells the agent which memory files exist; do not inline full memory documents there.
@@ -384,6 +389,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - A scheduled review flow is not real until the launch agent is actually loaded and a forced run succeeds end-to-end; having plist files on disk is not enough.
 - Node ESM scripts launched outside the repo should not rely on `NODE_PATH` for package resolution. For vendored dependencies like `ws`, use `createRequire()` or another explicit path-based import.
 - Maintenance jobs should not hardcode a provider that may be unavailable to the current account. Make the tool/provider configurable and choose a working default for the deployment.
+
+### Fleet Health Probes Need Bounded Concurrency And Separate Runtime Truth (2026-07-11)
+- Probing a large instance fleet with one unbounded `Promise.all` can create its own CPU/load spike, time out healthy local endpoints, and then falsely report most services as stopped.
+- Bound per-instance inspection concurrency and preserve separate facts for service-manager state, local HTTP reachability, public reachability, and recent product activity; none is a safe alias for all the others.
+- If the health report contradicts systemd/listeners or appears during a probe-induced load spike, verify live runtime state before parking services or using the count for capacity decisions.
 
 ### Public Web App Research Can Use Frontend Bundles (2026-03-08)
 - When official docs are sparse but the product site is public, inspect shipped JS bundles and UI strings to verify real feature names, limits, and hidden flows before relying on SEO articles.

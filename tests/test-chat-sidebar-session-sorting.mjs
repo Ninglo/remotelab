@@ -48,6 +48,10 @@ const getSessionSortTimeSource = extractFunctionSource(bootstrapSource, 'getSess
 const getSessionPinSortRankSource = extractFunctionSource(bootstrapSource, 'getSessionPinSortRank');
 const compareSessionListSessionsSource = extractFunctionSource(bootstrapSource, 'compareSessionListSessions');
 const sortSessionsInPlaceSource = extractFunctionSource(bootstrapSource, 'sortSessionsInPlace');
+const matchesSearchQuerySource = extractFunctionSource(bootstrapSource, 'matchesSearchQuery');
+const getSessionSpaceValueSource = extractFunctionSource(bootstrapSource, 'getSessionSpaceValue');
+const matchesSessionSpaceSource = extractFunctionSource(bootstrapSource, 'matchesSessionSpace');
+const getActiveSessionsSource = extractFunctionSource(bootstrapSource, 'getActiveSessions');
 const getProjectGroupSessionSortTimeSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupSessionSortTime');
 const getProjectGroupRunningRankSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupRunningRank');
 const getProjectGroupAttentionRankSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupAttentionRank');
@@ -79,6 +83,10 @@ const context = {
   getInboxBandForSession(session) {
     return Number.isInteger(session?.attentionBand) ? session.attentionBand : 3;
   },
+  SESSION_SPACE_ALL_VALUE: '__all_spaces__',
+  SESSION_SPACE_LOOSE_VALUE: '__loose_space__',
+  activeSessionSpace: '__all_spaces__',
+  sessionSearchQuery: '',
   sessions: [
     {
       id: 'metadata-only-newer',
@@ -103,7 +111,7 @@ const context = {
 context.globalThis = context;
 
 vm.runInNewContext(
-  `${getSessionSortTimeSource}\n${getSessionPinSortRankSource}\n${compareSessionListSessionsSource}\n${sortSessionsInPlaceSource}`,
+  `${getSessionSortTimeSource}\n${getSessionPinSortRankSource}\n${compareSessionListSessionsSource}\n${sortSessionsInPlaceSource}\n${matchesSearchQuerySource}\n${getSessionSpaceValueSource}\n${matchesSessionSpaceSource}\n${getActiveSessionsSource}`,
   context,
   { filename: 'static/chat/bootstrap-session-catalog.js' },
 );
@@ -114,6 +122,30 @@ assert.deepEqual(
   context.sessions.map((session) => session.id),
   ['pinned-session', 'actual-activity-newer', 'metadata-only-newer'],
   'sidebar sorting should follow pinning first and then the delegated attention comparator',
+);
+
+assert.equal(context.getSessionSpaceValue({ space: 'Product' }), 'Product');
+assert.equal(context.getSessionSpaceValue({ space: 'Loose' }), '__loose_space__');
+assert.equal(context.getSessionSpaceValue({}), '__loose_space__');
+assert.equal(context.matchesSessionSpace({ space: 'Product' }, 'Product'), true);
+assert.equal(context.matchesSessionSpace({ space: 'Content' }, 'Product'), false);
+assert.equal(context.matchesSessionSpace({ space: 'Content' }, '__all_spaces__'), true);
+context.sessionSearchQuery = 'product';
+assert.equal(
+  context.matchesSearchQuery({ name: 'Unrelated', space: 'Product', group: '', description: '' }),
+  true,
+  'session search should include AI-assigned Space names',
+);
+context.sessionSearchQuery = '';
+
+context.sessions.push(
+  { id: 'hidden-organizer', internalRole: 'session_list_organizer' },
+  { id: 'archived-session', archived: true },
+);
+assert.deepEqual(
+  context.getActiveSessions().map((session) => session.id),
+  ['pinned-session', 'actual-activity-newer', 'metadata-only-newer'],
+  'user-facing session lists should exclude hidden internal and archived sessions',
 );
 
 vm.runInNewContext(

@@ -13,6 +13,7 @@ import {
   getForkContext,
   getHistorySnapshot,
   loadHistory,
+  readLastTurnEvents,
   readEventsAfter,
   setForkContext,
   setContextHead,
@@ -45,6 +46,7 @@ import {
   isSessionTitleLocked,
   normalizeSessionDescription,
   normalizeSessionGroup,
+  normalizeSessionSpace,
   resolveInitialSessionName,
 } from './session-naming.mjs';
 import {
@@ -120,6 +122,7 @@ import {
 } from './session-task-card.mjs';
 import {
   createSessionProjectMaintenanceScheduler,
+  SESSION_LIST_ORGANIZER_INTERNAL_ROLE,
 } from './session-project-maintenance.mjs';
 import {
   buildDelegationHandoff,
@@ -235,6 +238,7 @@ const FOLLOW_UP_FLUSH_DELAY_MS = 1500;
 const MAX_RECENT_FOLLOW_UP_REQUEST_IDS = 100;
 const OBSERVED_RUN_POLL_INTERVAL_MS = 250;
 const DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS = 1500;
+const PENDING_SESSION_LABEL_RESUME_LIMIT = 12;
 
 const MAX_DELEGATION_DEPTH = 3;
 const DELEGATION_RATE_WINDOW_MS = 60_000;
@@ -1243,6 +1247,10 @@ function isContextCompactorSession(meta) {
   return getInternalSessionRole(meta) === INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR;
 }
 
+function shouldAutoArchiveFinishedInternalSession(meta) {
+  return getInternalSessionRole(meta) === SESSION_LIST_ORGANIZER_INTERNAL_ROLE;
+}
+
 function hasExplicitSessionSource(meta) {
   const sourceId = normalizeAppId(meta?.sourceId);
   if (!sourceId || sourceId === DEFAULT_APP_ID) {
@@ -1709,6 +1717,7 @@ const {
   normalizePublishedResultAssetAttachments,
   normalizeSessionDescription,
   normalizeSessionGroup,
+  normalizeSessionSpace,
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
   nowIso,
@@ -1863,6 +1872,63 @@ async function reconcileSessionMeta(meta) {
   if (!meta?.activeRunId) return meta;
   await syncDetachedRun(meta.id, meta.activeRunId);
   return await findSessionMeta(meta.id) || meta;
+}
+
+async function clearStaleActiveRunId(sessionId, runId) {
+  const result = await mutateSessionMeta(sessionId, (session) => {
+    if (session.activeRunId !== runId) return false;
+    delete session.activeRunId;
+    session.updatedAt = nowIso();
+    return true;
+  });
+  if (result.changed) {
+    broadcastSessionInvalidation(sessionId);
+  }
+  return result.meta;
+}
+
+async function reconcileTerminalActiveSessionMeta(meta) {
+  const sessionId = typeof meta?.id === 'string' ? meta.id : '';
+  const activeRunId = typeof meta?.activeRunId === 'string' ? meta.activeRunId.trim() : '';
+  if (!sessionId || !activeRunId) return meta;
+
+  let run = await getRun(activeRunId);
+  if (!run) {
+    return await clearStaleActiveRunId(sessionId, activeRunId) || await findSessionMeta(sessionId) || meta;
+  }
+  if (!isTerminalRunState(run.state)) {
+    return meta;
+  }
+
+  run = await syncDetachedRun(sessionId, activeRunId) || await getRun(activeRunId) || run;
+  const current = await findSessionMeta(sessionId) || meta;
+  if (current.activeRunId === activeRunId && isTerminalRunState(run.state)) {
+    return await clearStaleActiveRunId(sessionId, activeRunId) || current;
+  }
+  return current;
+}
+
+async function reconcileTerminalActiveSessionsMetaList(list, options = {}) {
+  const pendingOnly = options.pendingOnly === true;
+  const includeArchived = options.includeArchived === true;
+  let changed = false;
+
+  for (const meta of list) {
+    if (!meta?.activeRunId) continue;
+    if (!includeArchived && meta.archived) continue;
+    if (pendingOnly && !isSessionAutoRenamePending(meta)) continue;
+    try {
+      const activeRunId = meta.activeRunId;
+      const reconciled = await reconcileTerminalActiveSessionMeta(meta);
+      if (activeRunId && reconciled?.activeRunId !== activeRunId) {
+        changed = true;
+      }
+    } catch (error) {
+      console.error(`[runs] Failed to reconcile terminal active run for ${meta.id?.slice(0, 8) || 'unknown'}: ${error.message}`);
+    }
+  }
+
+  return changed ? await loadSessionsMeta() : list;
 }
 
 async function reconcileSessionsMetaList(list) {
@@ -2320,6 +2386,133 @@ function launchEarlySessionLabelSuggestion(sessionId, sessionMeta) {
   return promise;
 }
 
+async function hasPromptableSessionTurn(sessionId) {
+  try {
+    const events = await readLastTurnEvents(sessionId, { includeBodies: true });
+    return events.some((event) => (
+      event?.type === 'message'
+      && (event.role === 'user' || event.role === 'assistant')
+      && typeof event.content === 'string'
+      && event.content.trim()
+    ));
+  } catch {
+    return false;
+  }
+}
+
+async function repairPendingSessionLabel(sessionMeta, options = {}) {
+  const sessionId = sessionMeta?.id;
+  if (!sessionId || !isSessionAutoRenamePending(sessionMeta) || sessionMeta.activeRunId || sessionMeta.archived) {
+    return null;
+  }
+  const runtimeState = ensureSessionRuntimeState(sessionId);
+  if (runtimeState.pendingLabelRepairPromise) {
+    return runtimeState.pendingLabelRepairPromise;
+  }
+
+  if (!await hasPromptableSessionTurn(sessionId)) {
+    return null;
+  }
+
+  setRenameState(sessionId, 'pending');
+  const promise = triggerSessionLabelSuggestion(
+    {
+      id: sessionId,
+      folder: sessionMeta.folder,
+      name: sessionMeta.name || '',
+      space: sessionMeta.space || '',
+      group: sessionMeta.group || '',
+      description: sessionMeta.description || '',
+      sourceName: sessionMeta.sourceName || '',
+      autoRenamePending: sessionMeta.autoRenamePending,
+      tool: sessionMeta.tool,
+      model: sessionMeta.model || undefined,
+      effort: sessionMeta.effort || undefined,
+      thinking: sessionMeta.thinking === true,
+    },
+    async (newName) => {
+      const currentSession = await getSession(sessionId);
+      if (!isSessionAutoRenamePending(currentSession)) return null;
+      return renameSession(sessionId, newName, { lockTitle: false });
+    },
+    {
+      skipReason: options.reason || 'Pending label repair no longer needed',
+    },
+  )
+    .then(async (result) => {
+      const grouped = await applyGeneratedSessionGrouping(sessionId, result);
+      const updated = grouped || await getSession(sessionId);
+      if (updated && isSessionAutoRenamePending(updated)) {
+        setRenameState(
+          sessionId,
+          'failed',
+          result?.rename?.error || result?.error || 'No title generated',
+        );
+      } else {
+        clearRenameState(sessionId, { broadcast: true });
+      }
+      return updated;
+    })
+    .finally(() => {
+      const current = sessionRuntimeStateById.get(sessionId);
+      if (current?.pendingLabelRepairPromise === promise) {
+        delete current.pendingLabelRepairPromise;
+      }
+    });
+
+  runtimeState.pendingLabelRepairPromise = promise;
+  return promise;
+}
+
+export async function resumePendingSessionLabels(options = {}) {
+  const parsedLimit = Number.parseInt(String(options.limit ?? PENDING_SESSION_LABEL_RESUME_LIMIT), 10);
+  const limit = Number.isInteger(parsedLimit) && parsedLimit > 0
+    ? parsedLimit
+    : PENDING_SESSION_LABEL_RESUME_LIMIT;
+  const waitForCompletion = options.waitForCompletion === true;
+  let metas = await loadSessionsMeta();
+  metas = await reconcileTerminalActiveSessionsMetaList(metas, {
+    pendingOnly: true,
+  });
+  const candidates = metas
+    .filter((meta) => (
+      isSessionAutoRenamePending(meta)
+      && !meta.activeRunId
+      && !meta.archived
+    ))
+    .sort((a, b) => getSessionSortTime(b) - getSessionSortTime(a))
+    .slice(0, limit);
+
+  const work = (async () => {
+    let repairedCount = 0;
+    for (const meta of candidates) {
+      try {
+        const repaired = await repairPendingSessionLabel(meta, {
+          reason: 'Pending session label resumed after restart',
+        });
+        if (repaired && !isSessionAutoRenamePending(repaired)) repairedCount += 1;
+      } catch (error) {
+        console.error(`[summarizer] Pending label repair failed for ${meta.id?.slice(0, 8) || 'unknown'}: ${error.message}`);
+      }
+    }
+    return repairedCount;
+  })();
+
+  if (waitForCompletion) {
+    return await work;
+  }
+  work.catch((error) => {
+    console.error(`[summarizer] Pending label repair sweep failed: ${error.message}`);
+  });
+  return candidates.length;
+}
+
+function schedulePendingSessionLabelResume() {
+  resumePendingSessionLabels().catch((error) => {
+    console.error(`[summarizer] Failed to schedule pending label repair: ${error.message}`);
+  });
+}
+
 
 async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvents = []) {
   let historyChanged = false;
@@ -2425,6 +2618,11 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     finalizedAt: current.finalizedAt || nowIso(),
   })) || run;
 
+  if (shouldAutoArchiveFinishedInternalSession(finalizedMeta.meta)) {
+    await setSessionArchived(sessionId, true);
+    sessionChanged = true;
+  }
+
   if (compacting) {
     if (workerCompaction && compactionTargetSessionId) {
       const targetSession = await getSession(compactionTargetSessionId);
@@ -2438,6 +2636,11 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     broadcastSessionInvalidation(sessionId);
     return { historyChanged, sessionChanged };
   }
+  if (finalizedRun.state === 'completed') {
+    historyChanged = await maybePublishRunResultAssets(sessionId, finalizedRun, manifest, fullNormalizedEvents)
+      || historyChanged;
+  }
+
   scheduleDetachedRunPostFinalization(sessionId, finalizedRun, manifest, fullNormalizedEvents);
 
   return { historyChanged, sessionChanged };
@@ -2590,6 +2793,7 @@ async function syncDetachedRun(sessionId, runId) {
 }
 
 export async function startDetachedRunObservers() {
+  schedulePendingSessionLabelResume();
   for (const meta of await loadSessionsMeta()) {
     if (meta?.activeRunId) {
       const run = await syncDetachedRun(meta.id, meta.activeRunId) || await getRun(meta.activeRunId);
@@ -2606,6 +2810,7 @@ export async function startDetachedRunObservers() {
     }
   }
   await resumePendingCompletionTargets();
+  schedulePendingSessionLabelResume();
 }
 
 export async function listSessions({
@@ -2615,7 +2820,9 @@ export async function listSessions({
   sourceId = '',
   includeQueuedMessages = false,
 } = {}) {
-  const metas = await loadSessionsMeta();
+  const metas = await reconcileTerminalActiveSessionsMetaList(await loadSessionsMeta(), {
+    includeArchived: true,
+  });
   const normalizedTemplateId = normalizeAppId(templateId);
   const normalizedSourceId = normalizeAppId(sourceId);
   const filtered = metas
@@ -2642,7 +2849,7 @@ export async function getSession(id, options = {}) {
   const metas = await loadSessionsMeta();
   const meta = metas.find((entry) => entry.id === id) || await findSessionMeta(id);
   if (!meta) return null;
-  return enrichSessionMetaForClient(meta, options);
+  return enrichSessionMetaForClient(await reconcileTerminalActiveSessionMeta(meta), options);
 }
 
 export async function getSessionEventsAfter(sessionId, afterSeq = 0, options = {}) {
@@ -2848,6 +3055,7 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedVisitorName = normalizeSessionVisitorName(extra.visitorName);
   const requestedUserId = typeof extra.userId === 'string' ? extra.userId.trim() : '';
   const requestedUserName = normalizeSessionUserName(extra.userName);
+  const requestedSpace = normalizeSessionSpace(extra.space || '');
   const requestedGroup = normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
   const requestedStarterPreset = normalizeSessionStarterPreset(extra.starterPreset);
@@ -2878,6 +3086,11 @@ export async function createSession(folder, tool, name, extra = {}) {
         const existing = metas[existingIndex];
         const updated = { ...existing };
         let changed = false;
+
+        if (requestedSpace && updated.space !== requestedSpace) {
+          updated.space = requestedSpace;
+          changed = true;
+        }
 
         if (requestedGroup && updated.group !== requestedGroup) {
           updated.group = requestedGroup;
@@ -3057,6 +3270,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     };
     if (!initialNaming.autoRenamePending) session.titleLocked = true;
 
+    if (requestedSpace) session.space = requestedSpace;
     if (requestedGroup) session.group = requestedGroup;
     if (requestedDescription) session.description = requestedDescription;
     if (workflowState) session.workflowState = workflowState;
@@ -3188,6 +3402,18 @@ export async function renameSession(id, name, options = {}) {
 export async function updateSessionGrouping(id, patch = {}) {
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
+    if (Object.prototype.hasOwnProperty.call(patch, 'space')) {
+      const nextSpace = normalizeSessionSpace(patch.space || '');
+      if (nextSpace) {
+        if (session.space !== nextSpace) {
+          session.space = nextSpace;
+          changed = true;
+        }
+      } else if (session.space) {
+        delete session.space;
+        changed = true;
+      }
+    }
     if (Object.prototype.hasOwnProperty.call(patch, 'group')) {
       const nextGroup = normalizeSessionGroup(patch.group || '');
       if (nextGroup) {
@@ -4047,6 +4273,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
 
   const needsEarlySessionLabeling = isSessionAutoRenamePending(session)
+    || !session.space
     || !session.group
     || !session.description;
 
@@ -4055,6 +4282,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       id: sessionId,
       folder: session.folder,
       name: session.name || '',
+      space: session.space || '',
       group: session.group || '',
       description: session.description || '',
       sourceName: session.sourceName || '',
@@ -4128,6 +4356,7 @@ export async function forkSession(sessionId) {
   const forkContext = await getOrPrepareForkContext(sessionId, snapshot, contextHead);
 
   const child = await createSession(source.folder, source.tool, buildForkSessionName(source), {
+    space: source.space || '',
     group: source.group || '',
     description: source.description || '',
     sourceId: source.sourceId || '',

@@ -18,7 +18,7 @@
     border-right: none; z-index: auto; transition: none; padding-top: 0;
   }
   .sidebar-overlay.open .sidebar { left: auto; }
-  .sidebar-header #closeSidebar { display: none; }
+  .sidebar-close-btn { display: none; }
 
   /* Desktop: strip side padding from containers; 70% width on inner elements */
   .messages { padding: 28px 0; }
@@ -38,6 +38,11 @@
 @media (max-width: 767px) {
   :root {
     --chat-gutter: 10px;
+  }
+
+  .header h1.has-session .header-product-name,
+  .header h1.has-session .header-title-divider {
+    display: none;
   }
 
   .header {

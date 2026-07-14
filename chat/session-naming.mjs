@@ -1,5 +1,6 @@
 export const DEFAULT_SESSION_NAME = 'new session';
 const TEMP_SESSION_NAME_MAX_CHARS = 12;
+const SESSION_SPACE_MAX_CHARS = 24;
 const SESSION_GROUP_MAX_CHARS = 32;
 const SESSION_DESCRIPTION_MAX_CHARS = 160;
 const SESSION_CONTEXT_LABEL_MAX_CHARS = 64;
@@ -207,6 +208,10 @@ export function normalizeSessionName(name) {
 
 export function normalizeSessionGroup(group) {
   return normalizeSessionText(group, SESSION_GROUP_MAX_CHARS);
+}
+
+export function normalizeSessionSpace(space) {
+  return normalizeSessionText(space, SESSION_SPACE_MAX_CHARS);
 }
 
 export function normalizeSessionDescription(description) {

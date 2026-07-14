@@ -690,6 +690,8 @@ const archiveContext = createBaseContext();
 let archiveFilterRefreshes = 0;
 let archiveRequest = null;
 const archiveAppliedStates = [];
+const archiveSettledSessions = [];
+let archiveSelectionRestores = 0;
 
 archiveContext.currentSessionId = 'session-archive';
 archiveContext.sessions = [
@@ -717,6 +719,14 @@ archiveContext.refreshAppCatalog = () => {
   archiveFilterRefreshes += 1;
 };
 archiveContext.renderSessionList = () => {};
+archiveContext.settleAttachedSessionSidebarState = (options) => {
+  archiveSettledSessions.push({ ...options });
+  return Promise.resolve();
+};
+archiveContext.restoreOwnerSessionSelection = () => {
+  archiveSelectionRestores += 1;
+  archiveContext.currentSessionId = 'session-newer';
+};
 archiveContext.applyAttachedSessionState = (id, session) => {
   archiveAppliedStates.push({
     id,
@@ -776,6 +786,21 @@ assert.deepEqual(
   archiveRequest?.attachedStates,
   [{ id: 'session-archive', archived: true, pinned: false }],
   'archiving the current session should update the attached view immediately',
+);
+assert.deepEqual(
+  archiveSettledSessions,
+  [{ sessionId: 'session-archive', sync: false, render: false }],
+  'archiving the current session should release its held sidebar snapshot without racing another write',
+);
+assert.equal(
+  archiveSelectionRestores,
+  1,
+  'archiving the current session should select the first remaining active session after server acceptance',
+);
+assert.equal(
+  archiveContext.currentSessionId,
+  'session-newer',
+  'the archived session should no longer remain attached after archive succeeds',
 );
 assert.equal(archiveFilterRefreshes, 1, 'archive should refresh sidebar filter state during the optimistic update');
 

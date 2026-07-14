@@ -99,9 +99,11 @@ if (viewProjectsBtn) {
 }
 
 // ---- Session list actions ----
-sortSessionListBtn.addEventListener("click", () => {
-  void createSortSessionListShortcut();
-});
+if (sortSessionListBtn) {
+  sortSessionListBtn.addEventListener("click", () => {
+    void createSortSessionListShortcut();
+  });
+}
 
 newSessionBtn.addEventListener("click", () => {
   createNewSessionShortcut();

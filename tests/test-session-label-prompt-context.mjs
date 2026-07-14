@@ -45,7 +45,7 @@ const fs = require('fs');
 const prompt = process.argv[process.argv.length - 1] || '';
 const isLabelPrompt = prompt.includes('You are naming a developer session');
 const wantsTitle = prompt.includes('"title"');
-const wantsGrouping = prompt.includes('"group"') && prompt.includes('"description"');
+const wantsGrouping = prompt.includes('"space"') && prompt.includes('"group"') && prompt.includes('"description"');
 const delayMs = isLabelPrompt ? 50 : 220;
 
 if (isLabelPrompt && process.env.PROMPT_LOG_FILE) {
@@ -57,11 +57,13 @@ const text = isLabelPrompt
       wantsTitle
         ? {
             title: 'RemoteLab Prompt Tuning',
+            space: 'Product',
             group: 'RemoteLab',
             description: 'Tune the auto-rename prompt using session history and scope hints.',
           }
         : wantsGrouping
           ? {
+              space: 'Product',
               group: 'RemoteLab',
               description: 'Tune the auto-rename prompt using session history and scope hints.',
             }
@@ -141,10 +143,12 @@ async function waitFor(predicate, description, timeoutMs = 4000) {
 
 try {
   await createSession(tempHome, 'fake-codex', 'Naming Flow', {
+    space: 'Product',
     group: 'RemoteLab',
     description: 'Refactor session naming and grouping.',
   });
   await createSession(tempHome, 'fake-codex', 'Rough Cut Review', {
+    space: 'Content',
     group: 'Video Workflow',
     description: 'Review edit decisions for the current draft.',
   });
@@ -169,6 +173,7 @@ try {
     async () => {
       const current = await getSession(target.id);
       return current?.name === 'Prompt Tuning'
+        && current?.space === 'Product'
         && current?.group === 'RemoteLab'
         && current?.description === 'Tune the auto-rename prompt using session history and scope hints.';
     },
@@ -177,7 +182,7 @@ try {
   );
 
   const promptLog = readFileSync(promptLogPath, 'utf8');
-  assert.match(promptLog, /RemoteLab only has one visible Projects level/);
+  assert.match(promptLog, /RemoteLab has a two-level sidebar/);
   assert.match(promptLog, /do not create a new group for every one-off feature slice/);
   assert.match(promptLog, /prefer the closest existing workstream group/);
   assert.match(promptLog, /Earlier session context:/);
@@ -185,8 +190,8 @@ try {
   assert.match(promptLog, /Current non-archived sessions:/);
   assert.match(promptLog, /RemoteLab session grouping, rename prompts/);
   assert.match(promptLog, /- RemoteLab — code repo/);
-  assert.match(promptLog, /\[RemoteLab\] Naming Flow — Refactor session naming and grouping\./);
-  assert.match(promptLog, /\[Video Workflow\] Rough Cut Review — Review edit decisions for the current draft\./);
+  assert.match(promptLog, /\[Product \/ RemoteLab\] Naming Flow — Refactor session naming and grouping\./);
+  assert.match(promptLog, /\[Content \/ Video Workflow\] Rough Cut Review — Review edit decisions for the current draft\./);
 
   await waitFor(
     async () => (await getSession(target.id))?.activity?.run?.state === 'idle',

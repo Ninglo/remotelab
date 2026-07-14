@@ -487,6 +487,7 @@ export async function handleControlRoutes({
     const hasModelPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'model');
     const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
     const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
+    const hasSpacePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'space');
     const hasGroupPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'group');
     const hasDescriptionPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'description');
     const hasSidebarOrderPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'sidebarOrder');
@@ -517,6 +518,10 @@ export async function handleControlRoutes({
     }
     if (hasThinkingPatch && typeof patch.thinking !== 'boolean') {
       writeJson(res, 400, { error: 'thinking must be a boolean' });
+      return true;
+    }
+    if (hasSpacePatch && patch.space !== null && typeof patch.space !== 'string') {
+      writeJson(res, 400, { error: 'space must be a string or null' });
       return true;
     }
     if (hasGroupPatch && patch.group !== null && typeof patch.group !== 'string') {
@@ -624,8 +629,9 @@ export async function handleControlRoutes({
     if (hasPinnedPatch) {
       session = await setSessionPinned(sessionId, patch.pinned) || session;
     }
-    if (hasGroupPatch || hasDescriptionPatch || hasSidebarOrderPatch) {
+    if (hasSpacePatch || hasGroupPatch || hasDescriptionPatch || hasSidebarOrderPatch) {
       session = await updateSessionGrouping(sessionId, {
+        ...(hasSpacePatch ? { space: patch.space ?? '' } : {}),
         ...(hasGroupPatch ? { group: patch.group ?? '' } : {}),
         ...(hasDescriptionPatch ? { description: patch.description ?? '' } : {}),
         ...(hasSidebarOrderPatch ? { sidebarOrder: patch.sidebarOrder ?? null } : {}),

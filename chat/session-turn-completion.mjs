@@ -44,6 +44,7 @@ export function createSessionTurnCompletionHelpers(services) {
     normalizePublishedResultAssetAttachments,
     normalizeSessionDescription,
     normalizeSessionGroup,
+    normalizeSessionSpace,
     normalizeSessionWorkflowPriority,
     normalizeSessionWorkflowState,
     nowIso,
@@ -247,7 +248,7 @@ export function createSessionTurnCompletionHelpers(services) {
       return null;
     }
     const latestSession = await getSession(sessionId);
-    if (!latestSession || latestSession.activeRunId || getSessionQueueCount(latestSession) > 0) {
+    if (!latestSession || isSessionRunning(latestSession) || getSessionQueueCount(latestSession) > 0) {
       return null;
     }
 
@@ -320,7 +321,7 @@ export function createSessionTurnCompletionHelpers(services) {
 
     const reviewDecision = parseReplySelfCheckDecision(reviewText);
     const refreshed = await getSession(sessionId);
-    if (!refreshed || refreshed.activeRunId || getSessionQueueCount(refreshed) > 0) {
+    if (!refreshed || isSessionRunning(refreshed) || getSessionQueueCount(refreshed) > 0) {
       await updateReplyPublication(run, (current) => ({
         ...current,
         state: 'ready',
@@ -449,8 +450,7 @@ export function createSessionTurnCompletionHelpers(services) {
         return false;
       }
 
-      const publishedAssets = [];
-      for (const file of generatedFiles) {
+      const publishedAssets = (await Promise.all(generatedFiles.map(async (file) => {
         try {
           const published = await publishLocalFileAssetFromPath({
             sessionId,
@@ -459,17 +459,18 @@ export function createSessionTurnCompletionHelpers(services) {
             mimeType: file.mimeType,
             createdBy: 'assistant',
           });
-          publishedAssets.push({
+          return {
             assetId: published.id,
             localPath: file.localPath,
             originalName: published.originalName || file.originalName,
             mimeType: published.mimeType || file.mimeType,
             ...(normalizeAttachmentSizeBytes(published.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(published.sizeBytes) } : {}),
-          });
+          };
         } catch (error) {
           console.error(`[result-file-assets] Failed to publish ${file.localPath}: ${error?.message || error}`);
+          return null;
         }
-      }
+      }))).filter(Boolean);
 
       if (publishedAssets.length === 0) {
         return false;
@@ -521,6 +522,9 @@ export function createSessionTurnCompletionHelpers(services) {
     const current = await getSession(sessionId);
     if (!current) return null;
 
+    const nextSpace = summary.space === undefined
+      ? (current.space || '')
+      : normalizeSessionSpace(summary.space || '');
     const nextGroup = summary.group === undefined
       ? (current.group || '')
       : normalizeSessionGroup(summary.group || '');
@@ -528,11 +532,16 @@ export function createSessionTurnCompletionHelpers(services) {
       ? (current.description || '')
       : normalizeSessionDescription(summary.description || '');
 
-    if ((nextGroup || '') === (current.group || '') && (nextDescription || '') === (current.description || '')) {
+    if (
+      (nextSpace || '') === (current.space || '')
+      && (nextGroup || '') === (current.group || '')
+      && (nextDescription || '') === (current.description || '')
+    ) {
       return current;
     }
 
     return updateSessionGrouping(sessionId, {
+      space: nextSpace,
       group: nextGroup,
       description: nextDescription,
     });
@@ -674,13 +683,14 @@ export function createSessionTurnCompletionHelpers(services) {
       scheduleSessionWorkflowStateSuggestion(session, finalizedRun);
     }
 
-    const needsRename = isSessionAutoRenamePending(session);
-    const needsGrouping = !session.group || !session.description;
+    const internalSession = isInternalSession(session);
+    const needsRename = !internalSession && isSessionAutoRenamePending(session);
+    const needsGrouping = !internalSession && (!session.space || !session.group || !session.description);
     const shouldRefreshTitle = !isSessionTitleLocked(session);
     const shouldRefreshLabels = allowCompletionEffects
       && !needsRename
       && !hasQueuedFollowUps
-      && !isInternalSession(session);
+      && !internalSession;
 
     if (needsRename || needsGrouping || shouldRefreshLabels) {
       if (needsRename) {
@@ -692,6 +702,7 @@ export function createSessionTurnCompletionHelpers(services) {
           id: sessionId,
           folder: session.folder,
           name: session.name || '',
+          space: session.space || '',
           group: session.group || '',
           description: session.description || '',
           sourceName: session.sourceName || '',

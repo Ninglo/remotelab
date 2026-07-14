@@ -21,13 +21,13 @@ const prompt = process.argv[process.argv.length - 1] || '';
 const isLabelPrompt = prompt.includes('You are naming a developer session');
 const isWorkstreamPrompt = prompt.includes('You are RemoteLab\\'s hidden workstream assessor for the CURRENT session');
 const wantsTitle = prompt.includes('"title"');
-const wantsGrouping = prompt.includes('"group"') && prompt.includes('"description"');
+const wantsGrouping = prompt.includes('"space"') && prompt.includes('"group"') && prompt.includes('"description"');
 const delayMs = (isLabelPrompt || isWorkstreamPrompt) ? 50 : 220;
 
 function buildPayload(title, group, description) {
-  if (wantsTitle && wantsGrouping) return { title, group, description };
+  if (wantsTitle && wantsGrouping) return { title, space: 'Product', group, description };
   if (wantsTitle) return { title };
-  if (wantsGrouping) return { group, description };
+  if (wantsGrouping) return { space: 'Product', group, description };
   return {};
 }
 

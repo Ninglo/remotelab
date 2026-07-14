@@ -91,7 +91,7 @@ remotelab/
 │   ├── runner-supervisor.mjs # Compatibility shim re-exporting run-launcher
 │   ├── runner-sidecar.mjs   # Thin detached executor writing raw spool/status/result
 │   ├── ws.mjs               # WebSocket invalidation channel only
-│   ├── summarizer.mjs       # AI-driven session label suggestions (title/group/description)
+│   ├── summarizer.mjs       # AI-driven session label suggestions (title/space/group/description)
 │   ├── apps.mjs             # Agent (template) CRUD & persistence (89 lines)
 │   ├── system-prompt.mjs    # Build system context injected into AI sessions (83 lines)
 │   ├── normalizer.mjs       # Convert tool output → standard event format (45 lines)
@@ -197,7 +197,7 @@ Reusable AI workflows shareable via link. Each Agent defines: name, systemPrompt
 - **Visitor**: Accesses only a specific Agent via share link. Sees chat-only UI (no sidebar). Each Visitor gets an independent Session. This is NOT multi-user — Visitors are scoped guests.
 
 ### Session Labeling
-`summarizer.mjs` now exists to suggest canonical session presentation metadata — `title`, `group`, and hidden `description` — without owning any separate Progress state. The `Progress` tab remains only as an empty UI shell reserved for future surfaces.
+`summarizer.mjs` suggests canonical session presentation metadata — `title`, broad AI-managed `space`, workstream `group`, and hidden `description`. The sidebar renders Space as a context switcher above Project groups; `Loose` is the reserved Space for genuinely temporary or ambiguous work. Users are not expected to manually classify sessions.
 
 ### Memory System (Pointer-First)
 - **Storage tiers** still matter:

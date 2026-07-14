@@ -327,13 +327,27 @@ function matchesSearchQuery(session) {
   if (!sessionSearchQuery) return true;
   const query = sessionSearchQuery.toLowerCase();
   const name = (session?.name || "").toLowerCase();
+  const space = (session?.space || "").toLowerCase();
   const group = (session?.group || "").toLowerCase();
   const description = (session?.description || "").toLowerCase();
-  return name.includes(query) || group.includes(query) || description.includes(query);
+  return name.includes(query) || space.includes(query) || group.includes(query) || description.includes(query);
+}
+
+function getSessionSpaceValue(session) {
+  const space = typeof session?.space === "string" ? session.space.trim() : "";
+  if (space.toLowerCase() === "loose") return SESSION_SPACE_LOOSE_VALUE;
+  return space || SESSION_SPACE_LOOSE_VALUE;
+}
+
+function matchesSessionSpace(session, spaceFilter = activeSessionSpace) {
+  if (!spaceFilter || spaceFilter === SESSION_SPACE_ALL_VALUE) return true;
+  return getSessionSpaceValue(session) === spaceFilter;
 }
 
 function matchesCurrentFilters(session) {
-  return matchesSourceFilter(session, activeSourceFilter) && matchesSearchQuery(session);
+  return matchesSourceFilter(session, activeSourceFilter)
+    && matchesSessionSpace(session, activeSessionSpace)
+    && matchesSearchQuery(session);
 }
 
 function getVisibleActiveSessions() {
@@ -524,7 +538,7 @@ function getActiveSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && !session.archived);
+    .filter((session) => session && !session.archived && !session.internalRole);
 }
 
 function getArchivedSessions() {
@@ -534,7 +548,7 @@ function getArchivedSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && session.archived)
+    .filter((session) => session && session.archived && !session.internalRole)
     .slice()
     .sort((a, b) => getArchivedSessionSortTime(b) - getArchivedSessionSortTime(a));
 }
@@ -544,7 +558,7 @@ function getLatestSession() {
 }
 
 function getLatestActiveSession() {
-  return sessions.find((session) => !session.archived) || null;
+  return getActiveSessions()[0] || null;
 }
 
 function getLatestSessionForCurrentFilters() {
@@ -552,9 +566,7 @@ function getLatestSessionForCurrentFilters() {
 }
 
 function getLatestActiveSessionForCurrentFilters() {
-  return sessions.find(
-    (session) => !session.archived && matchesCurrentFilters(session),
-  ) || null;
+  return getActiveSessions().find((session) => matchesCurrentFilters(session)) || null;
 }
 
 function resolveRestoreTargetSession() {
@@ -566,12 +578,10 @@ function resolveRestoreTargetSession() {
   }
   if (currentSessionId) {
     const current = sessions.find((session) => session.id === currentSessionId);
-    if (current && matchesCurrentFilters(current)) return current;
+    if (current && !current.archived && matchesCurrentFilters(current)) return current;
   }
   return getLatestActiveSessionForCurrentFilters()
-    || getLatestSessionForCurrentFilters()
-    || getLatestActiveSession()
-    || getLatestSession();
+    || getLatestActiveSession();
 }
 
 function applyNavigationState(rawState) {

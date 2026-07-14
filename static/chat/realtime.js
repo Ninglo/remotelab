@@ -176,9 +176,17 @@ async function dispatchAction(msg) {
       case "archive":
       case "unarchive": {
         const shouldArchive = msg.action === "archive";
+        const archivingCurrentSession = shouldArchive && currentSessionId === msg.sessionId;
         const previousSession = typeof getChatStoreSession === "function"
           ? getChatStoreSession(msg.sessionId)
           : (sessions.find((session) => session.id === msg.sessionId) || null);
+        if (archivingCurrentSession && typeof settleAttachedSessionSidebarState === "function") {
+          Promise.resolve(settleAttachedSessionSidebarState({
+            sessionId: msg.sessionId,
+            sync: false,
+            render: false,
+          })).catch(() => {});
+        }
         const optimisticArchiveMutation = previousSession
           && typeof beginSessionArchiveOptimisticMutation === "function"
           ? beginSessionArchiveOptimisticMutation(msg.sessionId, shouldArchive)
@@ -196,8 +204,15 @@ async function dispatchAction(msg) {
           if (data.session) {
             const session = upsertSession(data.session) || data.session;
             renderSessionList();
-            if (currentSessionId === msg.sessionId) {
+            if (archivingCurrentSession && typeof restoreOwnerSessionSelection === "function") {
+              restoreOwnerSessionSelection();
+            } else if (currentSessionId === msg.sessionId) {
               applyAttachedSessionState(msg.sessionId, session);
+            }
+          } else if (archivingCurrentSession) {
+            await fetchSessionsList();
+            if (typeof restoreOwnerSessionSelection === "function") {
+              restoreOwnerSessionSelection();
             }
           } else if (currentSessionId === msg.sessionId) {
             await refreshCurrentSession();
@@ -421,9 +436,8 @@ function applyOptimisticSessionArchiveState(sessionId, archived) {
   }
   if (currentSessionId === sessionId) {
     applyAttachedSessionState(sessionId, next);
-  } else {
-    renderSessionList();
   }
+  renderSessionList();
   return previous;
 }
 

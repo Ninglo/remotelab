@@ -309,6 +309,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Implication: prioritize intake, welcome flow, review, delivery, and a trusted first outcome over showcasing orchestration depth
 - Promoted to: `notes/directional/product-vision.md`, `notes/current/product-mainline.md`
 
+### 2026-07-12 — session organization should be AI-owned, compact, and Space-based
+
+- Source: direct owner review of the live mobile session sidebar
+- User slice: mobile-first owner with hundreds of long-lived and temporary sessions
+- Observed friction or ask: colorful status dots on every row create visual noise; only active execution and completed-but-unread results deserve row-level indicators. Manual sorting is also the wrong ownership model: AI should assign durable Spaces and Projects while temporary sessions remain explicitly loose.
+- Signal strength: direct review after implementing and visually testing a denser two-line session row
+- Product implication: keep session rows compact and mostly monochrome; retain dots only for running and completed-unread states; use an AI-managed Space switcher above Project groups with no manual classification controls
+- Promote to: session naming/grouping metadata, sidebar information architecture, automatic project maintenance
+- Follow-up: backfill existing Chat UI sessions into a small set of Spaces, then tune Space labels and cardinality from real use rather than fixed rules
+
 ## Entry template
 
 ### 2026-05-25 — large audio attachment send should not be tied to message submission

@@ -11,6 +11,7 @@ import {
   normalizeSessionDescription,
   normalizeSessionGroup,
   normalizeSessionName,
+  normalizeSessionSpace,
 } from './session-naming.mjs';
 
 const PROJECTS_MD = join(MEMORY_DIR, 'projects.md');
@@ -248,6 +249,7 @@ function scoreScopeRouterEntry(entry, context = {}) {
   const haystack = normalizeInlineText([
     context.folder,
     context.name,
+    context.space,
     context.group,
     context.description,
     context.turnText,
@@ -394,6 +396,7 @@ function buildTaskCardSearchParts(taskCard) {
 
 function buildRelatedSessionHaystack(meta, contextHead = null) {
   const parts = [
+    meta?.space,
     meta?.group,
     meta?.name,
     meta?.description,
@@ -655,6 +658,7 @@ function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
     .filter((session) => session && session.id !== currentSessionId && session.archived !== true && !session.internalRole)
     .map((session) => ({
       id: session.id,
+      space: normalizeSessionSpace(session.space || ''),
       group: normalizeSessionGroup(session.group || ''),
       name: normalizeSessionName(session.name || ''),
       description: normalizeSessionDescription(session.description || ''),
@@ -662,7 +666,8 @@ function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
       created: session.created || '',
     }))
     .filter((session) => (
-      session.group
+      session.space
+      || session.group
       || session.description
       || (session.name && session.name !== DEFAULT_SESSION_NAME)
     ))
@@ -672,10 +677,11 @@ function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
 
   const lines = [];
   for (const session of relevant.slice(0, MAX_SESSION_CATALOG_ENTRIES)) {
+    const spaceLabel = session.space || 'No Space';
     const groupLabel = session.group || 'Ungrouped';
     const title = session.name || '(unnamed)';
     const description = session.description ? ` — ${session.description}` : '';
-    const line = clipText(`- [${groupLabel}] ${title}${description}`, MAX_LINE_CHARS);
+    const line = clipText(`- [${spaceLabel} / ${groupLabel}] ${title}${description}`, MAX_LINE_CHARS);
     if (!line) continue;
     const nextText = lines.length === 0 ? line : `${lines.join('\n')}\n${line}`;
     if (nextText.length > MAX_SESSION_CATALOG_CHARS) break;
@@ -705,6 +711,7 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
   const scopeRouter = buildScopeRouterPromptContext(projectsMarkdown, {
     folder: sessionMeta?.folder || '',
     name: sessionMeta?.name || '',
+    space: sessionMeta?.space || '',
     group: sessionMeta?.group || '',
     description: sessionMeta?.description || '',
     turnText,
@@ -724,6 +731,7 @@ export async function loadExecutionMemoryPromptContext(sessionMeta, turnText) {
   const selected = selectExecutionScopeRouterEntries(projectsMarkdown, {
     folder: sessionMeta?.folder || '',
     name: sessionMeta?.name || '',
+    space: sessionMeta?.space || '',
     group: sessionMeta?.group || '',
     description: sessionMeta?.description || '',
     turnText,

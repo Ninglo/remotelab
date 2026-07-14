@@ -234,7 +234,9 @@ body {
   overflow: hidden;
 }
 .header h1 {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -243,6 +245,15 @@ body {
   max-width: 100%;
   color: var(--text);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.header-product-name,
+.header-title-divider { flex: 0 0 auto; }
+.header-product-name { color: var(--text-secondary); }
+.header-title-divider { color: var(--text-muted); font-weight: 400; }
+.header-session-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

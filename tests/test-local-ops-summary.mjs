@@ -270,6 +270,26 @@ try {
   assert.equal(trial5?.status, 'active', 'newly created waiting trial should still be marked active');
   assert.equal(trial5?.highPriorityWaitingSessionCount, 1, 'trial5 should expose waiting follow-up count');
 
+  let activeProbes = 0;
+  let maxActiveProbes = 0;
+  await collectLocalOpsReport({
+    homeDir: tempHome,
+    date: '2026-03-24',
+    days: 1,
+    nowMs: Date.parse('2026-03-24T12:00:00.000Z'),
+    hostMetrics,
+    chatServerProcesses,
+    trialConcurrency: 1,
+    instanceStatusProbe: async () => {
+      activeProbes += 1;
+      maxActiveProbes = Math.max(maxActiveProbes, activeProbes);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeProbes -= 1;
+      return { localReachable: true, publicReachable: true };
+    },
+  });
+  assert.equal(maxActiveProbes, 1, 'trial inspection should honor the configured concurrency limit');
+
   const summary = renderLocalOpsSummary(report);
   assert.doesNotMatch(summary, /product activity/i, 'summary should not prioritize product activity');
   assert.doesNotMatch(summary, /user messages/i, 'summary should not enumerate trial message counts');

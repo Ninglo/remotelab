@@ -76,6 +76,8 @@ Use these product nouns when reading or changing current code:
   - examples: RemoteLab web UI, email, Feishu, API, automation
 - **Agent** — the reusable behavior/context definition that shapes a session
   - examples: Chat, Drawing, Report Cleanup, Invoice Follow-up
+- **Space** — an AI-managed broad context boundary used to switch between durable areas of work
+- **Project / Group** — a concrete recoverable workstream inside a Space
 - **Session** — one concrete work thread
 - **Run** — one execution attempt inside a session
 
@@ -83,7 +85,8 @@ The intended relationship is:
 
 ```text
 Source -> Session <- Agent
-             |
+             |  \
+             |   -> Space -> Project / Group
              -> Run
 ```
 
@@ -92,6 +95,7 @@ Important compatibility note:
 - user-facing product language is moving toward **Agent**
 - current storage and API compatibility still use **app/template** terminology in several places
 - in session metadata today, `sourceId/sourceName` represent the trigger surface, while `templateId/templateName` represent the applied reusable agent/template
+- `space/group/description` are presentation metadata suggested by AI; `Loose` is the explicit fallback for temporary or ambiguous sessions
 
 ### 1.2 Connector product model
 

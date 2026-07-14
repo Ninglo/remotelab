@@ -335,9 +335,10 @@ async function main() {
     assert.match(page.text, /<script src="chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
+    assert.match(page.text, /id="sidebarSpaceSwitcher"/);
     assert.doesNotMatch(page.text, /id="sessionAppFilterSelect"/);
     assert.doesNotMatch(page.text, /id="userFilterSelect"/);
-    assert.match(page.text, /id="sortSessionListBtn"/);
+    assert.doesNotMatch(page.text, /id="sortSessionListBtn"/);
     assert.match(page.text, /id="settingsSessionPresentationList"/);
     assert.match(page.text, /id="voiceInputAppId"/);
     assert.match(page.text, /id="voiceInputProviderSelect"/);

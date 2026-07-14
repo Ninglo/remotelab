@@ -343,6 +343,7 @@ const sidebarFilters = document.getElementById("sidebarFilters");
 const sidebarSearch = document.getElementById("sidebarSearch");
 const sessionSearchInput = document.getElementById("sessionSearchInput");
 const sidebarViewSwitcher = document.getElementById("sidebarViewSwitcher");
+const sidebarSpaceSwitcher = document.getElementById("sidebarSpaceSwitcher");
 const viewInboxBtn = document.getElementById("viewInbox");
 const viewProjectsBtn = document.getElementById("viewProjects");
 const sessionList = document.getElementById("sessionList");
@@ -377,6 +378,24 @@ const contextTokens = document.getElementById("contextTokens");
 const compactBtn = document.getElementById("compactBtn");
 const dropToolsBtn = document.getElementById("dropToolsBtn");
 const saveTemplateBtn = document.getElementById("saveTemplateBtn");
+
+function renderHeaderSessionTitle(sessionName = "") {
+  if (!headerTitle) return;
+  headerTitle.classList.toggle("has-session", Boolean(sessionName));
+  const productName = document.createElement("span");
+  productName.className = "header-product-name";
+  productName.textContent = "RemoteLab";
+  headerTitle.replaceChildren(productName);
+  if (!sessionName) return;
+
+  const divider = document.createElement("span");
+  divider.className = "header-title-divider";
+  divider.textContent = "·";
+  const title = document.createElement("span");
+  title.className = "header-session-name";
+  title.textContent = sessionName;
+  headerTitle.append(divider, title);
+}
 const sessionTemplateRow = document.getElementById("sessionTemplateRow");
 const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
@@ -1127,6 +1146,9 @@ let isDesktop = window.matchMedia("(min-width: 768px)").matches;
 const ADD_MORE_TOOL_VALUE = "__add_more__";
 const COLLAPSED_GROUPS_STORAGE_KEY = "collapsedSessionGroups";
 const SESSION_VIEW_MODE_STORAGE_KEY = "sessionViewMode";
+const ACTIVE_SESSION_SPACE_STORAGE_KEY = "activeSessionSpace";
+const SESSION_SPACE_ALL_VALUE = "__all_spaces__";
+const SESSION_SPACE_LOOSE_VALUE = "__loose_space__";
 let isSavingToolConfig = false;
 let collapsedFolders = JSON.parse(
   localStorage.getItem(COLLAPSED_GROUPS_STORAGE_KEY) ||
@@ -1135,6 +1157,7 @@ let collapsedFolders = JSON.parse(
 );
 let sessionSearchQuery = "";
 let sessionViewMode = localStorage.getItem(SESSION_VIEW_MODE_STORAGE_KEY) || "inbox";
+let activeSessionSpace = localStorage.getItem(ACTIVE_SESSION_SPACE_STORAGE_KEY) || SESSION_SPACE_ALL_VALUE;
 
 function setPreferredAgentTemplate(value, { name = "", persist = true } = {}) {
   preferredAgentTemplateId = normalizeStoredAgentTemplateId(value);

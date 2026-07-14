@@ -7,6 +7,7 @@ import {
   createSessionProjectMaintenanceScheduler,
   evaluateProjectMaintenanceHealth,
   getSessionListOrganizerTargetProjectCount,
+  getSessionListOrganizerTargetSpaceCount,
   isProjectMaintenanceScopedSession,
 } from '../chat/session-project-maintenance.mjs';
 
@@ -18,6 +19,7 @@ function makeSession(id, group, extra = {}) {
     sourceId: 'chat',
     sourceName: 'RemoteLab',
     name: extra.name || id,
+    space: Object.prototype.hasOwnProperty.call(extra, 'space') ? extra.space : 'Work',
     group,
     description: extra.description || `${id} description`,
     created: extra.created || '2026-06-15T00:00:00.000Z',
@@ -28,6 +30,7 @@ function makeSession(id, group, extra = {}) {
 
 assert.equal(getSessionListOrganizerTargetProjectCount(18), 6);
 assert.equal(getSessionListOrganizerTargetProjectCount(40), 8);
+assert.equal(getSessionListOrganizerTargetSpaceCount(40), 3);
 
 assert.equal(isProjectMaintenanceScopedSession(makeSession('chat', 'RemoteLab')), true);
 assert.equal(isProjectMaintenanceScopedSession(makeSession('mail', 'Mail', { sourceId: 'gmail' })), false);
@@ -47,6 +50,8 @@ const unhealthySessions = [
 const unhealthyPayload = buildProjectMaintenancePayload(unhealthySessions, unhealthySessions[0]);
 assert.equal(unhealthyPayload.totalSessions, 6, 'payload should scope to Chat UI sessions only');
 assert.equal(unhealthyPayload.targetProjectCount, 4, 'payload should include a dynamic project-count budget');
+assert.equal(unhealthyPayload.targetSpaceCount, 2, 'payload should include a compact Space-count budget');
+assert.equal(unhealthyPayload.sessions[0].existingSpace, 'Work', 'payload should expose current Space as read-only context');
 assert.equal(unhealthyPayload.groupSummary.singletonGroups, 4, 'payload should expose singleton project count');
 
 const unhealthy = evaluateProjectMaintenanceHealth(unhealthySessions, unhealthySessions[0]);
@@ -62,6 +67,12 @@ const healthySessions = [
 ];
 const healthy = evaluateProjectMaintenanceHealth(healthySessions, healthySessions[0]);
 assert.equal(healthy.shouldRun, false, 'already compact organized sessions should not trigger maintenance');
+
+const missingSpaceSessions = healthySessions.map((session, index) => (
+  index === 0 ? { ...session, space: '' } : session
+));
+const missingSpace = evaluateProjectMaintenanceHealth(missingSpaceSessions, missingSpaceSessions[0]);
+assert.ok(missingSpace.reasons.includes('missing_space'), 'missing Space assignments should trigger AI maintenance');
 
 const createdSessions = [];
 const sentMessages = [];

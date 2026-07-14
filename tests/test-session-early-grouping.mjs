@@ -20,18 +20,20 @@ writeFileSync(
 const prompt = process.argv[process.argv.length - 1] || '';
 const isLabelPrompt = prompt.includes('You are naming a developer session');
 const wantsTitle = prompt.includes('"title"');
-const wantsGrouping = prompt.includes('"group"') && prompt.includes('"description"');
+const wantsGrouping = prompt.includes('"space"') && prompt.includes('"group"') && prompt.includes('"description"');
 const delayMs = isLabelPrompt ? 50 : 220;
 const text = isLabelPrompt
   ? JSON.stringify(
       wantsTitle
         ? {
             title: 'RemoteLab Should Stay Hidden',
+            space: 'Product',
             group: 'RemoteLab',
             description: 'Classify the feature work before the first run finishes.',
           }
         : wantsGrouping
           ? {
+              space: 'Product',
               group: 'RemoteLab',
               description: 'Classify the feature work before the first run finishes.',
             }
@@ -121,6 +123,7 @@ await waitFor(
   async () => {
     const current = await getSession(session.id);
     return current?.name === 'Precise Feature Task'
+      && current?.space === 'Product'
       && current?.group === 'RemoteLab'
       && current?.description === 'Classify the feature work before the first run finishes.';
   },
@@ -141,6 +144,7 @@ await waitFor(
 const finished = await getSession(session.id);
 assert.equal(finished?.name, 'Precise Feature Task', 'existing titles should stay unchanged during grouping-only labeling');
 assert.equal(finished?.autoRenamePending, false, 'grouping-only labeling should not reopen auto-rename');
+assert.equal(finished?.space, 'Product', 'finished session should keep the early AI Space');
 assert.equal(finished?.group, 'RemoteLab', 'finished session should keep the early AI grouping');
 assert.equal(
   finished?.description,

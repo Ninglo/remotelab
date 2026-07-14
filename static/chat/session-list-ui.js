@@ -95,8 +95,70 @@ function sortProjectGroupsByLatestActivity(groupEntries) {
   return groupEntries.slice().sort(compareProjectGroupsByLatestActivity);
 }
 
+function getSessionSpaceEntries() {
+  const spaces = new Map();
+  for (const session of getActiveSessions()) {
+    if (!matchesSourceFilter(session, activeSourceFilter) || !matchesSearchQuery(session)) continue;
+    const value = getSessionSpaceValue(session);
+    const label = value === SESSION_SPACE_LOOSE_VALUE
+      ? t("sidebar.space.loose")
+      : value;
+    if (!spaces.has(value)) {
+      spaces.set(value, { key: value, label, title: label, sessions: [] });
+    }
+    spaces.get(value).sessions.push(session);
+  }
+  return sortProjectGroupsByLatestActivity([...spaces.values()]);
+}
+
+function renderSessionSpaceSwitcher() {
+  if (!sidebarSpaceSwitcher) return;
+  const entries = getSessionSpaceEntries();
+  const namedEntries = entries.filter((entry) => entry.key !== SESSION_SPACE_LOOSE_VALUE);
+  if (namedEntries.length === 0) {
+    sidebarSpaceSwitcher.hidden = true;
+    activeSessionSpace = SESSION_SPACE_ALL_VALUE;
+    return;
+  }
+
+  if (
+    activeSessionSpace !== SESSION_SPACE_ALL_VALUE
+    && !entries.some((entry) => entry.key === activeSessionSpace)
+  ) {
+    activeSessionSpace = SESSION_SPACE_ALL_VALUE;
+    localStorage.setItem(ACTIVE_SESSION_SPACE_STORAGE_KEY, activeSessionSpace);
+  }
+
+  const allEntry = {
+    key: SESSION_SPACE_ALL_VALUE,
+    label: t("sidebar.space.all"),
+    title: t("sidebar.space.all"),
+    sessions: entries.flatMap((entry) => entry.sessions),
+  };
+  sidebarSpaceSwitcher.innerHTML = "";
+  for (const entry of [allEntry, ...entries]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "space-switch-btn" + (entry.key === activeSessionSpace ? " active" : "");
+    button.textContent = entry.label;
+    button.title = `${entry.title} (${entry.sessions.length})`;
+    button.setAttribute("aria-pressed", entry.key === activeSessionSpace ? "true" : "false");
+    button.addEventListener("click", () => {
+      if (entry.key === activeSessionSpace) return;
+      activeSessionSpace = entry.key;
+      localStorage.setItem(ACTIVE_SESSION_SPACE_STORAGE_KEY, activeSessionSpace);
+      sessionList.classList.add("switching-space");
+      renderSessionList();
+      requestAnimationFrame(() => sessionList.classList.remove("switching-space"));
+    });
+    sidebarSpaceSwitcher.appendChild(button);
+  }
+  sidebarSpaceSwitcher.hidden = false;
+}
+
 function renderSessionList() {
   sessionList.innerHTML = "";
+  renderSessionSpaceSwitcher();
   const pinnedSessions = getVisiblePinnedSessions();
   const visibleSessions = getVisibleActiveSessions();
 
@@ -201,7 +263,7 @@ function renderInboxView(visibleSessions) {
     const items = document.createElement("div");
     items.className = "folder-group-items";
     for (const s of sessions) {
-      items.appendChild(createActiveSessionItem(s, { showGroup: true }));
+      items.appendChild(createActiveSessionItem(s));
     }
 
     group.appendChild(header);

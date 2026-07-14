@@ -19,13 +19,14 @@ writeFileSync(
   `#!/usr/bin/env node
 const prompt = process.argv[process.argv.length - 1] || '';
 const isTitlePrompt = prompt.includes('You are naming a developer session');
-const wantsGrouping = prompt.includes('"group"') && prompt.includes('"description"');
+const wantsGrouping = prompt.includes('"space"') && prompt.includes('"group"') && prompt.includes('"description"');
 const delayMs = isTitlePrompt ? 50 : 220;
 const text = isTitlePrompt
   ? JSON.stringify(
       wantsGrouping
         ? {
             title: 'RemoteLab Rename Flow',
+            space: 'Product',
             group: 'RemoteLab',
             description: 'Refactor the naming flow before the first run finishes.',
           }

@@ -11,15 +11,16 @@ const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   'Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.',
   'Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.',
   'Use `remotelab api GET /api/sessions` if you need to double-check current state.',
-  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `group` and `sidebarOrder`.',
-  'Only writable API fields for this task are `group` and `sidebarOrder`.',
-  'Never send read-only snapshot keys such as `title`, `brief`, `existingGroup`, `existingSidebarOrder`, `currentGroup`, or `currentSidebarOrder` in PATCH bodies.',
-  'Example PATCH body: {"group":"RemoteLab","sidebarOrder":3}',
+  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `space`, `group`, and `sidebarOrder`.',
+  'Only writable API fields for this task are `space`, `group`, and `sidebarOrder`.',
+  'Never send read-only snapshot keys such as `title`, `brief`, `existingSpace`, `existingGroup`, or `existingSidebarOrder` in PATCH bodies.',
+  'Example PATCH body: {"space":"Product","group":"RemoteLab","sidebarOrder":3}',
   'If `remotelab` is unavailable in PATH, use `node "$REMOTELAB_PROJECT_ROOT/cli.js" api ...` instead.',
   '`sidebarOrder` must be a positive integer; smaller numbers sort first.',
   'Assign unique contiguous `sidebarOrder` values across only the scoped sessions included in the snapshot.',
   'Do not patch sessions outside the snapshot; other source categories are intentionally left untouched for audit or automation review.',
-  'RemoteLab only has one visible Projects level, so optimize groups as sidebar consumption units rather than a strict taxonomy.',
+  'RemoteLab has two visible levels: a small set of broad Spaces, then concrete Projects groups inside each Space.',
+  'Use the provided `targetSpaceCount` as a soft upper budget. Reuse broad durable Spaces and do not create a Space for every Project.',
   'Use the provided `targetProjectCount` as a soft budget: when there are few sessions, groups may be fine-grained; when there are many sessions, merge related workstreams into coarser projects.',
   'Use the provided `groupSummary` to detect over-splitting; a high singleton count is a stronger signal than individually reasonable group labels.',
   'Avoid excessive singleton groups when `totalSessions` is greater than `targetProjectCount`.',
@@ -77,6 +78,15 @@ export function getSessionListOrganizerTargetProjectCount(totalSessions) {
   return Math.min(totalSessions, Math.max(8, Math.min(10, Math.round(totalSessions / 8))));
 }
 
+export function getSessionListOrganizerTargetSpaceCount(totalSessions) {
+  if (!Number.isInteger(totalSessions) || totalSessions <= 0) return 0;
+  if (totalSessions <= 12) return Math.min(2, totalSessions);
+  if (totalSessions <= 40) return 3;
+  if (totalSessions <= 120) return 4;
+  if (totalSessions <= 240) return 5;
+  return 6;
+}
+
 export function buildProjectMaintenanceSessionMetadata(session) {
   const taskCard = session?.taskCard && typeof session.taskCard === 'object' ? session.taskCard : null;
   const brief = [
@@ -88,6 +98,7 @@ export function buildProjectMaintenanceSessionMetadata(session) {
     id: trimString(session?.id),
     title: clipText(session?.name || '', 160),
     brief: clipText(brief, 360),
+    existingSpace: trimString(session?.space) ? clipText(session.space, 60) : null,
     existingGroup: trimString(session?.group) ? clipText(session.group, 80) : null,
     existingSidebarOrder: normalizeSidebarOrder(session?.sidebarOrder) || null,
     pinned: session?.pinned === true,
@@ -157,6 +168,7 @@ export function buildProjectMaintenancePayload(sessions, triggerSession = null) 
     .filter(isProjectMaintenanceScopedSession)
     .sort((a, b) => getSessionSortTime(b) - getSessionSortTime(a));
   const targetProjectCount = getSessionListOrganizerTargetProjectCount(scopedSessions.length);
+  const targetSpaceCount = getSessionListOrganizerTargetSpaceCount(scopedSessions.length);
   const sessionPayloads = scopedSessions
     .map(buildProjectMaintenanceSessionMetadata)
     .filter((session) => session.id);
@@ -164,6 +176,7 @@ export function buildProjectMaintenancePayload(sessions, triggerSession = null) 
   return {
     generatedAt: new Date().toISOString(),
     totalSessions: sessionPayloads.length,
+    targetSpaceCount,
     targetProjectCount,
     targetSessionsPerProject: targetProjectCount > 0
       ? Math.ceil(sessionPayloads.length / targetProjectCount)
@@ -192,6 +205,7 @@ export function evaluateProjectMaintenanceHealth(sessions, triggerSession = null
   }
 
   const missingSidebarOrderCount = payload.sessions.filter((session) => !session.existingSidebarOrder).length;
+  const missingSpaceCount = payload.sessions.filter((session) => !session.existingSpace).length;
   const triggerGroup = trimString(triggerSession?.group) || '(ungrouped)';
   const triggerGroupSize = payload.sessions.filter((session) => (
     (trimString(session.existingGroup) || '(ungrouped)') === triggerGroup
@@ -213,6 +227,9 @@ export function evaluateProjectMaintenanceHealth(sessions, triggerSession = null
   if (missingSidebarOrderCount > 0) {
     reasons.push('missing_sidebar_order');
   }
+  if (missingSpaceCount > 0) {
+    reasons.push('missing_space');
+  }
 
   return {
     shouldRun: reasons.length > 0,
@@ -221,6 +238,7 @@ export function evaluateProjectMaintenanceHealth(sessions, triggerSession = null
       ...payload,
       health: {
         reasons,
+        missingSpaceCount,
         missingSidebarOrderCount,
         triggerGroup,
         triggerGroupSize,
@@ -234,6 +252,9 @@ export function buildProjectMaintenanceTask(input) {
     ? input
     : { sessions: [] };
   const totalSessions = Array.isArray(payload.sessions) ? payload.sessions.length : 0;
+  const targetSpaceCount = Number.isInteger(payload.targetSpaceCount) && payload.targetSpaceCount > 0
+    ? payload.targetSpaceCount
+    : getSessionListOrganizerTargetSpaceCount(totalSessions);
   const targetProjectCount = Number.isInteger(payload.targetProjectCount) && payload.targetProjectCount > 0
     ? payload.targetProjectCount
     : getSessionListOrganizerTargetProjectCount(totalSessions);
@@ -246,6 +267,8 @@ export function buildProjectMaintenanceTask(input) {
   return [
     'Organize only the scoped non-archived RemoteLab Chat UI sessions included in the provided metadata snapshot.',
     'This run was triggered automatically after a session state change. Keep the result stable and conservative, but fix obvious drift.',
+    `Create or reuse roughly ${targetSpaceCount} broad Spaces for ${totalSessions} scoped sessions; this is a soft upper budget, not a target to fill.`,
+    'Spaces are durable context boundaries. Projects are concrete workstreams inside a Space. Assign genuinely temporary or ambiguous sessions to the reserved `Loose` Space rather than inventing a weak category.',
     'Choose clearer Projects groups and a better sidebar ordering based on actual workstream similarity, current user consumption, and the target project budget.',
     `Target roughly ${targetProjectCount} Projects groups for ${totalSessions} scoped sessions; this is a soft budget, not an exact quota.`,
     targetSessionsPerProject > 0
@@ -258,13 +281,14 @@ export function buildProjectMaintenanceTask(input) {
     'Treat this as a full scoped rebalance: previous groups are useful hints, not fixed truth, and singleton groups should be merged when they are just feature slices of the same workstream.',
     'If several old groups now read as fragments of one better topic, compress them by assigning a clearer shared `group` name to every included session.',
     'Apply changes by calling the RemoteLab API from this machine; do not merely suggest them.',
-    'Snapshot fields like `title`, `brief`, `existingGroup`, and `existingSidebarOrder` are read-only context.',
+    'Snapshot fields like `title`, `brief`, `existingSpace`, `existingGroup`, and `existingSidebarOrder` are read-only context.',
     'Do not patch any session that is not present in the `sessions` array below.',
-    'When patching a session, send only `group` and `sidebarOrder` in the API body.',
+    'When patching a session, send only `space`, `group`, and `sidebarOrder` in the API body.',
     '',
     '<session_list_organizer_input>',
     JSON.stringify({
       ...payload,
+      targetSpaceCount,
       targetProjectCount,
       targetSessionsPerProject,
       groupSummary,

@@ -1073,22 +1073,36 @@ if (window.RemoteLabLayout?.subscribe) {
 }
 
 // ---- Draft persistence ----
+let restoredDraftSessionId = "";
+
 function saveDraft() {
   if (!currentSessionId || isComposerBlockingForSession(currentSessionId)) return;
   writeStoredDraft(currentSessionId, msgInput.value);
 }
+
 function restoreDraft() {
+  const sessionId = currentSessionId;
   if (typeof setComposerActiveSession === "function") {
-    setComposerActiveSession(currentSessionId);
+    setComposerActiveSession(sessionId);
   }
-  syncComposerDraftState(currentSessionId, readStoredDraft(currentSessionId));
-  msgInput.value = getComposerDraftText(currentSessionId);
+
+  const sameSession = !!sessionId && restoredDraftSessionId === sessionId;
+  const composerFocused = document.activeElement === msgInput;
+  if (sameSession && composerFocused && !isComposerBlockingForSession(sessionId)) {
+    writeStoredDraft(sessionId, msgInput.value);
+  } else {
+    syncComposerDraftState(sessionId, readStoredDraft(sessionId));
+    msgInput.value = getComposerDraftText(sessionId);
+  }
+  restoredDraftSessionId = sessionId || "";
+
   autoResizeInput();
   if (typeof renderImagePreviews === "function") {
     renderImagePreviews();
   }
   syncComposerPendingUi();
 }
+
 function clearDraft(sessionId = currentSessionId) {
   writeStoredDraft(sessionId, "");
 }
@@ -1168,6 +1182,7 @@ function switchTab(tab, { syncState = true } = {}) {
   const resolvedSessionList = typeof sessionList !== "undefined" ? sessionList : null;
   const resolvedSidebarSearch = typeof sidebarSearch !== "undefined" ? sidebarSearch : null;
   const resolvedSidebarViewSwitcher = typeof sidebarViewSwitcher !== "undefined" ? sidebarViewSwitcher : null;
+  const resolvedSidebarSpaceSwitcher = typeof sidebarSpaceSwitcher !== "undefined" ? sidebarSpaceSwitcher : null;
   const resolvedAgentsPanel = typeof agentsPanel !== "undefined" ? agentsPanel : null;
   const resolvedSettingsPanel = typeof settingsPanel !== "undefined" ? settingsPanel : null;
   const resolvedSessionListFooter = typeof sessionListFooter !== "undefined" ? sessionListFooter : null;
@@ -1211,6 +1226,7 @@ function switchTab(tab, { syncState = true } = {}) {
   if (resolvedSessionList) resolvedSessionList.style.display = showingSessions ? "" : "none";
   if (resolvedSidebarSearch) resolvedSidebarSearch.style.display = showingSessions ? "" : "none";
   if (resolvedSidebarViewSwitcher) resolvedSidebarViewSwitcher.style.display = showingSessions ? "" : "none";
+  if (resolvedSidebarSpaceSwitcher) resolvedSidebarSpaceSwitcher.style.display = showingSessions ? "" : "none";
   if (resolvedAgentsPanel) resolvedAgentsPanel.classList.toggle("visible", showingAgents);
   if (resolvedSettingsPanel) resolvedSettingsPanel.classList.toggle("visible", showingSettings);
   if (resolvedSessionListFooter) resolvedSessionListFooter.classList.toggle("hidden", !showingSessions);
