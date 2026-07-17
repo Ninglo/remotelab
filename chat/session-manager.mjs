@@ -90,6 +90,7 @@ import {
   resolveSessionRunActivity,
 } from './session-activity.mjs';
 import {
+  findSessionByExternalTriggerId,
   findSessionMeta,
   findSessionMetaCached,
   loadSessionsMeta,
@@ -4342,7 +4343,13 @@ export async function getHistory(sessionId) {
   return loadHistory(sessionId);
 }
 
-export async function forkSession(sessionId) {
+export async function forkSession(sessionId, options = {}) {
+  const requestedExternalTriggerId = typeof options.externalTriggerId === 'string' ? options.externalTriggerId.trim() : '';
+  if (requestedExternalTriggerId) {
+    const existing = await findSessionByExternalTriggerId(requestedExternalTriggerId);
+    if (existing) return await getSession(existing.id) || existing;
+  }
+
   const source = await getSession(sessionId);
   if (!source) return null;
   if (source.visitorId) return null;
@@ -4355,18 +4362,21 @@ export async function forkSession(sessionId) {
   ]);
   const forkContext = await getOrPrepareForkContext(sessionId, snapshot, contextHead);
 
-  const child = await createSession(source.folder, source.tool, buildForkSessionName(source), {
+  const hasSourceContextOverride = Object.prototype.hasOwnProperty.call(options, 'sourceContext');
+  const child = await createSession(source.folder, source.tool, typeof options.name === 'string' && options.name.trim() ? options.name.trim() : buildForkSessionName(source), {
     space: source.space || '',
-    group: source.group || '',
-    description: source.description || '',
-    sourceId: source.sourceId || '',
-    sourceName: source.sourceName || '',
-    templateId: source.templateId || '',
-    templateName: source.templateName || '',
-    systemPrompt: source.systemPrompt || '',
+    group: typeof options.group === 'string' && options.group.trim() ? options.group.trim() : (source.group || ''),
+    description: typeof options.description === 'string' && options.description.trim() ? options.description.trim() : (source.description || ''),
+    sourceId: typeof options.sourceId === 'string' && options.sourceId.trim() ? options.sourceId.trim() : (source.sourceId || ''),
+    sourceName: typeof options.sourceName === 'string' && options.sourceName.trim() ? options.sourceName.trim() : (source.sourceName || ''),
+    templateId: typeof options.templateId === 'string' && options.templateId.trim() ? options.templateId.trim() : (source.templateId || ''),
+    templateName: typeof options.templateName === 'string' && options.templateName.trim() ? options.templateName.trim() : (source.templateName || ''),
+    systemPrompt: Object.prototype.hasOwnProperty.call(options, 'systemPrompt') && typeof options.systemPrompt === 'string' ? options.systemPrompt : (source.systemPrompt || ''),
     activeAgreements: source.activeAgreements || [],
     userId: source.userId || '',
     userName: source.userName || '',
+    externalTriggerId: requestedExternalTriggerId,
+    ...(hasSourceContextOverride ? { sourceContext: options.sourceContext } : {}),
     forkedFromSessionId: source.id,
     forkedFromSeq: source.latestSeq || 0,
     rootSessionId: source.rootSessionId || source.id,

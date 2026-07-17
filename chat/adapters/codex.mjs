@@ -7,6 +7,7 @@ import {
   INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED,
   IS_GUEST_INSTANCE,
 } from '../../lib/config.mjs';
+import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
 
 export { DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS } from '../runtime-policy.mjs';
 
@@ -273,5 +274,5 @@ export function buildCodexArgs(prompt, options = {}) {
     args.push(effectivePrompt);
   }
 
-  return args;
+  return sanitizeSpawnArgs(args);
 }

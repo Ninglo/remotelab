@@ -10,11 +10,14 @@ import {
   buildExternalTriggerId,
   buildFeishuConversationQueueKey,
   buildFeishuApiUuid,
+  buildFeishuMessageIndexRecord,
+  buildFeishuOutboundMessageIndexRecord,
   buildFeishuPostContent,
   buildMessageSourceContext,
   buildRemoteLabMessage,
   buildRequestId,
   buildSessionSourceContext,
+  collectFeishuTopicParentMessageCandidates,
   feishuMatchFn,
   normalizeReplyText,
   summarizeFeishuEvent,
@@ -90,6 +93,37 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
   rootId: 'om_topic_root_1',
 });
 assert.deepEqual(buildMessageSourceContext(topicSummary).attachments, { imageCount: 1 });
+assert.deepEqual(
+  collectFeishuTopicParentMessageCandidates({
+    ...topicSummary,
+    rootId: 'independent_topic_root',
+    parentId: 'bot_reply_message',
+    threadId: 'thread_1',
+  }),
+  ['independent_topic_root', 'bot_reply_message', 'thread_1'],
+  'topic parent lookup should try root, parent, and thread identities independently',
+);
+assert.deepEqual(buildFeishuMessageIndexRecord(topicSummary, 'session-1'), {
+  connector: 'feishu',
+  accountId: 'tenant_1',
+  messageId: 'om_topic_reply_1',
+  sessionId: 'session-1',
+  chatId: 'oc_chat_1',
+  conversationId: 'thread_1',
+  externalTriggerId: 'feishu:topic:oc_chat_1:thread_1',
+  direction: 'inbound',
+});
+assert.deepEqual(buildFeishuOutboundMessageIndexRecord(topicSummary, 'session-1', 'om_bot_reply_1'), {
+  connector: 'feishu',
+  accountId: 'tenant_1',
+  messageId: 'om_bot_reply_1',
+  sessionId: 'session-1',
+  chatId: 'oc_chat_1',
+  conversationId: 'thread_1',
+  externalTriggerId: 'feishu:topic:oc_chat_1:thread_1',
+  sourceMessageId: 'om_topic_reply_1',
+  direction: 'outbound',
+});
 
 const postSummary = summarizeFeishuEvent({
   message: {
@@ -131,6 +165,24 @@ const postContent = JSON.parse(buildFeishuPostContent('**处理完成**\n@Alex �
 assert.equal(postContent.zh_cn.content[0][0].tag, 'md');
 assert.equal(postContent.zh_cn.content[1][0].tag, 'at');
 assert.equal(postContent.zh_cn.content[1][0].user_id, 'ou_alex_1');
+
+const inlineMathPostContent = JSON.parse(buildFeishuPostContent('结论：$x_i = y^2$，请看 @Alex', [
+  { key: '@_alex', name: 'Alex', openId: 'ou_alex_1' },
+]));
+assert.deepEqual(inlineMathPostContent.zh_cn.content[0], [
+  { tag: 'md', text: '结论：' },
+  { tag: 'text', text: 'xᵢ = y²' },
+  { tag: 'md', text: '，请看 ' },
+  { tag: 'at', user_id: 'ou_alex_1', user_name: 'Alex' },
+]);
+
+const displayMathPostContent = JSON.parse(buildFeishuPostContent('公式如下：\n$$\n\\frac{a_b}{c^2}\n$$\n完成'));
+assert.deepEqual(displayMathPostContent.zh_cn.content, [
+  [{ tag: 'md', text: '公式如下：' }],
+  [{ tag: 'text', text: '公式：' }],
+  [{ tag: 'text', text: '(a_b)/(c²)' }],
+  [{ tag: 'md', text: '完成' }],
+]);
 
 assert.equal(buildFeishuApiUuid('resp:feishu:0:content').includes(':'), false);
 assert.equal(feishuMatchFn('oc_chat_1', { sourceContext: { chatId: 'oc_chat_1' } }), true);
