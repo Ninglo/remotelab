@@ -1066,7 +1066,8 @@ const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
 const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.5";
-const PRODUCT_DEFAULT_CODEX_EFFORT = "medium";
+const PRODUCT_DEFAULT_CODEX_EFFORT = "xhigh";
+const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "xhigh-v1";
 
 function normalizeStoredToolId(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -1117,6 +1118,15 @@ function migrateLegacyMicroAgentLocalStorage() {
 }
 
 migrateLegacyMicroAgentLocalStorage();
+
+function migrateCodexEffortDefaultLocalStorage() {
+  const migrationKey = "codexEffortDefaultMigration";
+  if (localStorage.getItem(migrationKey) === CODEX_EFFORT_DEFAULT_MIGRATION_VERSION) return;
+  localStorage.setItem(`selectedEffort_${DEFAULT_TOOL_ID}`, PRODUCT_DEFAULT_CODEX_EFFORT);
+  localStorage.setItem(migrationKey, CODEX_EFFORT_DEFAULT_MIGRATION_VERSION);
+}
+
+migrateCodexEffortDefaultLocalStorage();
 
 const storedPreferredTool = normalizeStoredToolId(localStorage.getItem("preferredTool"));
 const storedLegacySelectedTool = normalizeStoredToolId(localStorage.getItem("selectedTool"));
