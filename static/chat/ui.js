@@ -32,10 +32,204 @@ function renderUiIcon(name, className = "") {
 
 const replySelfCheckDrawerByContainer = new WeakMap();
 
+function escapeMathHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function looksLikeMathSource(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /(?:\\[a-zA-Z]+|[_^=+\-*/<>]|[{}]|\d)/.test(text);
+}
+
+const LATEX_MATH_COMMANDS = {
+  alpha: ["mi", "\u03b1"],
+  beta: ["mi", "\u03b2"],
+  gamma: ["mi", "\u03b3"],
+  delta: ["mi", "\u03b4"],
+  epsilon: ["mi", "\u03b5"],
+  theta: ["mi", "\u03b8"],
+  lambda: ["mi", "\u03bb"],
+  mu: ["mi", "\u03bc"],
+  pi: ["mi", "\u03c0"],
+  rho: ["mi", "\u03c1"],
+  sigma: ["mi", "\u03c3"],
+  tau: ["mi", "\u03c4"],
+  phi: ["mi", "\u03c6"],
+  omega: ["mi", "\u03c9"],
+  Gamma: ["mi", "\u0393"],
+  Delta: ["mi", "\u0394"],
+  Theta: ["mi", "\u0398"],
+  Lambda: ["mi", "\u039b"],
+  Pi: ["mi", "\u03a0"],
+  Sigma: ["mi", "\u03a3"],
+  Phi: ["mi", "\u03a6"],
+  Omega: ["mi", "\u03a9"],
+  cdot: ["mo", "\u22c5"],
+  times: ["mo", "\u00d7"],
+  div: ["mo", "\u00f7"],
+  leq: ["mo", "\u2264"],
+  geq: ["mo", "\u2265"],
+  neq: ["mo", "\u2260"],
+  approx: ["mo", "\u2248"],
+  pm: ["mo", "\u00b1"],
+  infty: ["mi", "\u221e"],
+  to: ["mo", "\u2192"],
+  rightarrow: ["mo", "\u2192"],
+  leftarrow: ["mo", "\u2190"],
+  sum: ["mo", "\u2211"],
+  prod: ["mo", "\u220f"],
+  int: ["mo", "\u222b"],
+};
+
+function wrapMathMrow(parts) {
+  const filtered = parts.filter(Boolean);
+  if (filtered.length === 0) return "";
+  if (filtered.length === 1) return filtered[0];
+  return `<mrow>${filtered.join("")}</mrow>`;
+}
+
+function parseLatexCommandName(parser) {
+  const start = parser.index;
+  while (parser.index < parser.source.length && /[a-zA-Z]/.test(parser.source[parser.index])) {
+    parser.index += 1;
+  }
+  if (parser.index === start && parser.index < parser.source.length) {
+    parser.index += 1;
+  }
+  return parser.source.slice(start, parser.index);
+}
+
+function skipLatexWhitespace(parser) {
+  while (parser.index < parser.source.length && /\s/.test(parser.source[parser.index])) {
+    parser.index += 1;
+  }
+}
+
+function parseLatexBaseAtom(parser, stopChar = "") {
+  skipLatexWhitespace(parser);
+  if (parser.index >= parser.source.length) return "";
+  const char = parser.source[parser.index];
+  if (stopChar && char === stopChar) return "";
+  if (char === "{") {
+    parser.index += 1;
+    const grouped = parseLatexExpression(parser, "}");
+    if (parser.source[parser.index] === "}") parser.index += 1;
+    return grouped;
+  }
+  if (char === "\\") {
+    parser.index += 1;
+    const command = parseLatexCommandName(parser);
+    if (command === "frac") {
+      const numerator = parseLatexBaseAtom(parser);
+      const denominator = parseLatexBaseAtom(parser);
+      return `<mfrac>${numerator || "<mrow></mrow>"}${denominator || "<mrow></mrow>"}</mfrac>`;
+    }
+    if (command === "sqrt") {
+      const radicand = parseLatexBaseAtom(parser);
+      return `<msqrt>${radicand || "<mrow></mrow>"}</msqrt>`;
+    }
+    if (command === "left" || command === "right") {
+      skipLatexWhitespace(parser);
+      if (parser.index < parser.source.length) parser.index += 1;
+      return "";
+    }
+    const mapped = LATEX_MATH_COMMANDS[command];
+    if (mapped) return `<${mapped[0]}>${escapeMathHtml(mapped[1])}</${mapped[0]}>`;
+    return `<mi>${escapeMathHtml(command || "\\")}</mi>`;
+  }
+  parser.index += 1;
+  if (/[a-zA-Z]/.test(char)) return `<mi>${escapeMathHtml(char)}</mi>`;
+  if (/\d/.test(char)) return `<mn>${escapeMathHtml(char)}</mn>`;
+  return `<mo>${escapeMathHtml(char)}</mo>`;
+}
+
+function parseLatexAtom(parser, stopChar = "") {
+  let base = parseLatexBaseAtom(parser, stopChar);
+  if (!base) return "";
+  let subscript = "";
+  let superscript = "";
+  let consumedScript = true;
+  while (consumedScript) {
+    consumedScript = false;
+    skipLatexWhitespace(parser);
+    const marker = parser.source[parser.index];
+    if (marker === "_" || marker === "^") {
+      parser.index += 1;
+      const script = parseLatexBaseAtom(parser, stopChar);
+      if (marker === "_") subscript = script;
+      if (marker === "^") superscript = script;
+      consumedScript = true;
+    }
+  }
+  if (subscript && superscript) return `<msubsup>${base}${subscript}${superscript}</msubsup>`;
+  if (subscript) return `<msub>${base}${subscript}</msub>`;
+  if (superscript) return `<msup>${base}${superscript}</msup>`;
+  return base;
+}
+
+function parseLatexExpression(parser, stopChar = "") {
+  const parts = [];
+  while (parser.index < parser.source.length) {
+    skipLatexWhitespace(parser);
+    if (stopChar && parser.source[parser.index] === stopChar) break;
+    const atom = parseLatexAtom(parser, stopChar);
+    if (!atom) break;
+    parts.push(atom);
+  }
+  return wrapMathMrow(parts);
+}
+
+function renderLatexToMathMl(value, display) {
+  const source = String(value || "").trim();
+  if (!source) return "";
+  const parser = { source, index: 0 };
+  const body = parseLatexExpression(parser) || `<mtext>${escapeMathHtml(source)}</mtext>`;
+  const displayAttribute = display ? ' display="block"' : "";
+  const className = display ? "math-display" : "math-inline";
+  return `<math class="${className}"${displayAttribute} data-math="${display ? "display" : "inline"}" xmlns="http://www.w3.org/1998/Math/MathML">${body}</math>`;
+}
+
+function renderMathHtml(value, display) {
+  return renderLatexToMathMl(value, display);
+}
+
+function transformMathInMarkdownSegment(segment) {
+  let transformed = String(segment || "")
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, formula) => renderMathHtml(formula, true))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, formula) => renderMathHtml(formula, true))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, formula) => renderMathHtml(formula, false));
+
+  transformed = transformed.replace(/(^|[^\\$])\$([^\n$]{1,240}?)\$(?!\$)/g, (match, prefix, formula) => {
+    if (!looksLikeMathSource(formula)) return match;
+    return `${prefix}${renderMathHtml(formula, false)}`;
+  });
+  return transformed;
+}
+
+function renderMathInMarkdownSource(source) {
+  const placeholders = [];
+  const protectedSource = String(source || "").replace(/```[\s\S]*?```|`[^`\n]*(?:`|$)/g, (match) => {
+    const token = `\u0000MATH_PROTECTED_${placeholders.length}\u0000`;
+    placeholders.push(match);
+    return token;
+  });
+  const rendered = transformMathInMarkdownSegment(protectedSource);
+  return rendered.replace(/\u0000MATH_PROTECTED_(\d+)\u0000/g, (_, index) => placeholders[Number(index)] || "");
+}
+
 function renderMarkdownIntoNode(node, markdown) {
   const source = typeof markdown === "string" ? markdown : "";
   const visibleSource = formatDecodedDisplayText(source);
-  const rendered = marked.parse(visibleSource);
+  const markdownSource = typeof renderMathInMarkdownSource === "function"
+    ? renderMathInMarkdownSource(visibleSource)
+    : visibleSource;
+  const rendered = marked.parse(markdownSource);
   if (rendered.trim()) {
     node.innerHTML = rendered;
     enhanceCodeBlocks(node);

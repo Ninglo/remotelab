@@ -366,6 +366,25 @@
 .md-content pre code {
   background: none; padding: 0; font-size: 0.85em; border-radius: 0;
 }
+.md-content .math-inline,
+.md-content .math-display {
+  font-family: math, "Cambria Math", "STIX Two Math", "Latin Modern Math", serif;
+  color: var(--text);
+}
+.md-content .math-inline {
+  display: inline;
+  font-size: 1.05em;
+  vertical-align: -0.08em;
+}
+.md-content .math-display {
+  display: block;
+  width: 100%;
+  margin: 0.85em 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  line-height: 1.65;
+  text-align: center;
+}
 .md-content blockquote {
   border-left: 3px solid var(--border-strong);
   margin: 0 0 0.75em; padding: 2px 0 2px 12px;
