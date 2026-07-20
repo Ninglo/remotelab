@@ -2,6 +2,7 @@ import {
   messageEvent, toolUseEvent, toolResultEvent,
   reasoningEvent, statusEvent, usageEvent,
 } from '../normalizer.mjs';
+import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
 
 /**
  * Claude Code adapter.
@@ -194,5 +195,5 @@ export function buildClaudeArgs(prompt, options = {}) {
   }
   // effort === 'none' → no --effort flag → thinking disabled
 
-  return args;
+  return sanitizeSpawnArgs(args);
 }

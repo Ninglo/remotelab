@@ -56,6 +56,11 @@ import {
   submitConnectorMessage,
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
+import {
+  recordFeishuMessageSession,
+  recordFeishuOutboundMessageSession,
+  resolveFeishuTopicForkParentSessionId,
+} from '../connectors/feishu/session-flow.mjs';
 
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
@@ -1466,7 +1471,7 @@ async function generateRemoteLabReply(runtime, summary) {
     ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
     : effectiveSummary;
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
-  const session = await createConnectorSession(requester, {
+  const sessionPayload = {
     folder: runtime.config.sessionFolder,
     tool: runtimeSelection.tool,
     name: buildSessionName(effectiveSummary),
@@ -1477,6 +1482,13 @@ async function generateRemoteLabReply(runtime, summary) {
     systemPrompt: runtime.config.systemPrompt,
     externalTriggerId: buildExternalTriggerId(effectiveSummary),
     sourceContext: buildSessionSourceContext(effectiveSummary),
+  };
+  const forkFromSessionId = await resolveFeishuTopicForkParentSessionId(runtime, requester, effectiveSummary, {
+    loadHandledMessages,
+  });
+  const session = await createConnectorSession(requester, sessionPayload, {
+    forkFromSessionId,
+    fallbackCreateOnForkFailure: true,
   });
   const submission = await submitConnectorMessage(requester, session.id, {
     requestId: buildRequestId(effectiveSummary),
@@ -1876,6 +1888,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
     }
 
     const generated = await generateReply(runtime, summary);
+    try {
+      await recordFeishuMessageSession(runtime, summary, generated.sessionId);
+    } catch (indexError) {
+      console.warn(`[feishu-connector] failed to update message index for ${summary.messageId}: ${indexError?.message || indexError}`);
+    }
     const replyText = normalizeReplyText(generated.replyText);
     const finalReply = decideConnectorUserVisibleReply({
       replyText,
@@ -1902,6 +1919,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       kind: finalReply.action === 'send_confirmation' ? 'summary' : 'content',
       text: finalReply.text,
     }, sendText);
+    try {
+      await recordFeishuOutboundMessageSession(runtime, summary, generated.sessionId, reply.message_id);
+    } catch (indexError) {
+      console.warn(`[feishu-connector] failed to update outbound message index for ${reply.message_id || summary.messageId}: ${indexError?.message || indexError}`);
+    }
     await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
       status: finalReply.status,
       sourceLabel,
@@ -1984,6 +2006,7 @@ export {
   queueAccessStateFlush,
   releaseConnectorPidLock,
   removeProcessingReaction,
+  resolveFeishuTopicForkParentSessionId,
   resolveFeishuMessageAttachments,
   sendFeishuText,
   snapshotAccessState,
@@ -2011,6 +2034,7 @@ async function main() {
     eventsLogPath: join(config.storageDir, 'events.jsonl'),
     knownSendersPath: join(config.storageDir, 'known-senders.json'),
     handledMessagesPath: join(config.storageDir, 'handled-messages.json'),
+    messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths, accessState);
   const wsClient = new Lark.WSClient({
@@ -2073,6 +2097,7 @@ async function main() {
   console.log(`[feishu-connector] event log: ${storagePaths.eventsLogPath}`);
   console.log(`[feishu-connector] known senders: ${storagePaths.knownSendersPath}`);
   console.log(`[feishu-connector] handled messages: ${storagePaths.handledMessagesPath}`);
+  console.log(`[feishu-connector] message index: ${storagePaths.messageIndexPath}`);
   console.log(`[feishu-connector] RemoteLab base URL: ${config.chatBaseUrl}`);
   console.log(`[feishu-connector] session folder: ${config.sessionFolder}`);
   console.log(

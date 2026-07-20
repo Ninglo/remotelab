@@ -184,6 +184,31 @@ try {
   );
   assert.equal(typeof childForkContext?.updatedAt, 'string', 'forked prepared context should keep its own timestamp');
 
+  const connectorChild = await forkSession(parent.id, {
+    name: 'Inbound Feishu topic thread',
+    group: 'Feishu',
+    description: 'Topic fork from Feishu',
+    sourceId: 'feishu',
+    sourceName: 'Feishu',
+    externalTriggerId: 'feishu:topic:chat_test:thread_test',
+    sourceContext: {
+      connector: 'feishu',
+      conversationKind: 'topic',
+      chatId: 'chat_test',
+      topicId: 'thread_test',
+    },
+  });
+  assert.ok(connectorChild, 'connector fork should create a child session');
+  assert.equal(connectorChild.forkedFromSessionId, parent.id);
+  assert.equal(connectorChild.group, 'Feishu');
+  assert.equal(connectorChild.externalTriggerId, 'feishu:topic:chat_test:thread_test');
+  assert.equal(connectorChild.sourceContext?.topicId, 'thread_test');
+  const reusedConnectorChild = await forkSession(parent.id, {
+    externalTriggerId: 'feishu:topic:chat_test:thread_test',
+    sourceContext: { connector: 'feishu', topicId: 'thread_test' },
+  });
+  assert.equal(reusedConnectorChild?.id, connectorChild.id, 'connector fork should be idempotent by external trigger id');
+
   const promptParent = await createSession(workspace, 'missing-tool', 'Prompt cache parent', {
     group: 'Painting',
     description: 'Prepared context prompt reuse',

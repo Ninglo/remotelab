@@ -837,6 +837,14 @@ export async function handleControlRoutes({
         writeJson(res, 403, { error: 'Access denied' });
         return true;
       }
+      let payload = {};
+      try {
+        const body = await readBody(req, 10240);
+        payload = body ? JSON.parse(body) : {};
+      } catch {
+        writeJson(res, 400, { error: 'Invalid request body' });
+        return true;
+      }
       const source = await getSessionForClient(sessionId);
       if (!source) {
         writeJson(res, 404, { error: 'Session not found' });
@@ -850,7 +858,7 @@ export async function handleControlRoutes({
         writeJson(res, 409, { error: 'Session is running' });
         return true;
       }
-      const session = await forkSession(sessionId);
+      const session = await forkSession(sessionId, payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {});
       if (!session) {
         writeJson(res, 409, { error: 'Unable to fork session' });
         return true;
