@@ -26,11 +26,18 @@ import {
   LARK_CONNECTOR_NAME,
   normalizeReplyText,
 } from '../connectors/feishu/index.mjs';
+import { CONFIG_DIR } from '../lib/config.mjs';
+import {
+  buildFeishuBotRestartPlan,
+  discoverFeishuBots,
+  findFeishuBot,
+} from '../lib/feishu-bot-registry.mjs';
 
 const execFile = promisify(execFileCallback);
 
 const DEFAULT_SYSTEMD_UNIT = 'remotelab-feishu-connector.service';
-const DEFAULT_INSTANCE_CONFIG_PATH = join(homedir(), '.config', 'remotelab', 'feishu-connector', 'config.json');
+const DEFAULT_INSTANCE_CONFIG_PATH = join(CONFIG_DIR, 'feishu-connector', 'config.json');
+const DEFAULT_BOT_REGISTRY_PATH = join(CONFIG_DIR, 'feishu-bots.json');
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_STATUS_TAIL = 5;
 const DEFAULT_BACKFILL_COUNT = 2;
@@ -60,12 +67,17 @@ function printUsage(exitCode, errorMessage = '') {
   node scripts/feishu-ops.mjs <command> [options]
 
 Commands:
+  discover             Discover Bot configs and runtime owners, then update the registry
+  list                 Discover and list registered Bots
   status               Show connector runtime, process state, and recent silent replies
-  restart              Restart the connector and show status
+  restart              Restart the selected Bot connector and show status
   backfill             Create a fresh reply session for recent silent text messages
 
 Options:
+  --bot <id>           Select a registered Bot (for example: default or bot-b)
+  --registry <path>    Bot registry path (default: ${DEFAULT_BOT_REGISTRY_PATH})
   --config <path>      Config file path (default: ${DEFAULT_CONFIG_PATH})
+  --json               Print discovery/list/status output as JSON
   --tail <n>           Number of recent entries to show for status (default: ${DEFAULT_STATUS_TAIL})
   --count <n>          Number of silent messages to use for backfill (default: ${DEFAULT_BACKFILL_COUNT})
   --chat-id <id>       Target a specific chat for backfill
@@ -80,8 +92,11 @@ Options:
   -h, --help           Show this help
 
 Examples:
+  node scripts/feishu-ops.mjs discover --json
+  node scripts/feishu-ops.mjs list
+  node scripts/feishu-ops.mjs status --bot bot-b
+  node scripts/feishu-ops.mjs restart --bot bot-b
   node scripts/feishu-ops.mjs status
-  node scripts/feishu-ops.mjs restart
   node scripts/feishu-ops.mjs backfill --count 2 --tool micro-agent --model gpt-5.4 --effort low
   node scripts/feishu-ops.mjs backfill --message-id om_xxx --dry-run`);
   process.exit(exitCode);
@@ -90,6 +105,10 @@ Examples:
 export function parseArgs(argv = []) {
   const options = {
     command: '',
+    botId: '',
+    registryPath: trimString(
+      process.env.REMOTELAB_FEISHU_BOT_REGISTRY_PATH || DEFAULT_BOT_REGISTRY_PATH,
+    ),
     configPath: DEFAULT_CONFIG_PATH,
     configExplicit: false,
     tail: DEFAULT_STATUS_TAIL,
@@ -103,6 +122,7 @@ export function parseArgs(argv = []) {
     timeoutMs: DEFAULT_RUN_POLL_TIMEOUT_MS,
     dryRun: false,
     send: true,
+    json: false,
     help: false,
   };
 
@@ -110,6 +130,14 @@ export function parseArgs(argv = []) {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
+      case '--bot':
+        options.botId = argv[index + 1] || '';
+        index += 1;
+        break;
+      case '--registry':
+        options.registryPath = argv[index + 1] || '';
+        index += 1;
+        break;
       case '--config':
         options.configPath = argv[index + 1] || '';
         options.configExplicit = true;
@@ -157,6 +185,9 @@ export function parseArgs(argv = []) {
       case '--no-send':
         options.send = false;
         break;
+      case '--json':
+        options.json = true;
+        break;
       case '--help':
       case '-h':
         options.help = true;
@@ -168,6 +199,8 @@ export function parseArgs(argv = []) {
   }
 
   options.command = trimString(positional[0]).toLowerCase();
+  options.botId = trimString(options.botId);
+  options.registryPath = trimString(options.registryPath);
   options.configPath = trimString(options.configPath);
   options.chatId = trimString(options.chatId);
   options.messageId = trimString(options.messageId);
@@ -270,8 +303,8 @@ async function loadPaths(configPath) {
     configDir,
     storageDir,
     allowedSendersPath,
-    pidPath: join(configDir, 'connector.pid'),
-    connectorLogPath: join(configDir, 'connector.log'),
+    pidPath: join(storageDir, 'connector.pid'),
+    connectorLogPath: join(storageDir, 'connector.log'),
     launchdStdoutPath: join(configDir, 'launchd.stdout.log'),
     launchdStderrPath: join(configDir, 'launchd.stderr.log'),
     eventLogPath: join(storageDir, 'events.jsonl'),
@@ -489,6 +522,71 @@ async function printStatus(snapshot, options = {}) {
   }
 }
 
+function printBotBinding(bot) {
+  console.log(`Bot: ${bot.id}`);
+  console.log(`Binding: config=${bot.configPath}`);
+  if (bot.runtime?.kind === 'systemd') {
+    console.log(`Owner: systemd unit=${bot.runtime.unit} pid=${bot.runtime.pid || '(none)'}`);
+    return;
+  }
+  if (bot.runtime?.kind === 'process') {
+    console.log(`Owner: process pid=${bot.runtime.pid || '(none)'}`);
+    return;
+  }
+  console.log(`Owner: ${bot.runtime?.kind || 'none'}`);
+}
+
+function printBotRegistry(registry, options = {}) {
+  if (options.json) {
+    console.log(JSON.stringify(registry, null, 2));
+    return;
+  }
+  console.log(`Feishu Bot registry: ${registry.registryPath}`);
+  console.log(`Discovered: ${registry.discoveredAt}`);
+  if (registry.bots.length === 0) {
+    console.log('- no Bots found');
+    return;
+  }
+  for (const bot of registry.bots) {
+    const owner = bot.runtime?.kind === 'systemd'
+      ? `systemd:${bot.runtime.unit}`
+      : bot.runtime?.kind === 'process'
+        ? `process:${bot.runtime.pid}`
+        : bot.runtime?.kind || 'none';
+    const issues = bot.issues?.length ? ` issues=${bot.issues.join(',')}` : '';
+    console.log(`- ${bot.id} | ${bot.status} | ${owner} | ${bot.configPath}${issues}`);
+  }
+}
+
+async function discoverRegistry(options) {
+  return discoverFeishuBots({
+    configDir: CONFIG_DIR,
+    defaultConfigPath: configuredDefaultConfigPath(),
+    registryPath: options.registryPath,
+    configPaths: options.configExplicit ? [options.configPath] : [],
+  });
+}
+
+function resolveRegisteredBot(registry, options) {
+  const selector = options.botId || (options.configExplicit ? options.configPath : 'default');
+  const bot = findFeishuBot(registry, selector);
+  if (bot) return bot;
+  const available = registry.bots.map((candidate) => candidate.id).join(', ') || 'none';
+  throw new Error(`Feishu Bot "${selector}" is not registered (available: ${available})`);
+}
+
+function buildStatusJson(snapshot, bot) {
+  return {
+    bot,
+    connector: snapshot.connector,
+    storageDir: snapshot.paths.storageDir,
+    eventCount: snapshot.records.length,
+    invalidEventLines: snapshot.invalidLines,
+    silentTextReplies: collectSilentTextRecords(snapshot.records).length,
+    unhandledTextReplies: collectUnhandledTextRecords(snapshot.records).length,
+  };
+}
+
 async function createBackfillSession(client, snapshot, options) {
   const sourceName = snapshot.config.region === 'lark-global' ? LARK_CONNECTOR_NAME : FEISHU_CONNECTOR_NAME;
   const result = await client.request('/api/sessions', {
@@ -593,26 +691,43 @@ async function markMessagesBackfilled(pathname, messages, metadata) {
   await writeFile(pathname, JSON.stringify(next, null, 2));
 }
 
-async function runRestart(snapshot) {
-  const usedLaunchd = process.platform === 'darwin' && await pathExists(snapshot.paths.launchdPlistPath);
-  if (usedLaunchd) {
-    const target = `gui/${process.getuid()}/${DEFAULT_LAUNCHD_LABEL}`;
-    try {
-      await execFile('launchctl', ['kickstart', '-k', target]);
-    } catch {
-      await execFile('launchctl', ['unload', snapshot.paths.launchdPlistPath]).catch(() => {});
-      await execFile('launchctl', ['load', snapshot.paths.launchdPlistPath]);
+async function runRestart(bot, options) {
+  const helperPath = join(REPO_ROOT, 'scripts', 'feishu-connector-instance.sh');
+  const plan = buildFeishuBotRestartPlan(bot, { helperPath });
+  if (bot.runtime?.kind === 'process') {
+    const currentSnapshot = await loadSnapshot({ configPath: bot.configPath });
+    if (!currentSnapshot.connector.running || currentSnapshot.connector.pid !== bot.runtime.pid) {
+      throw new Error(
+        `Refusing to restart Bot "${bot.id}": registry pid ${bot.runtime.pid || '(none)'} `
+          + `does not match config pid ${currentSnapshot.connector.pid || '(none)'}`,
+      );
     }
-  } else {
-    await execFile(join(REPO_ROOT, 'scripts', 'feishu-connector-instance.sh'), ['restart'], { cwd: REPO_ROOT });
   }
+  const result = await execFile(plan.command, plan.args, { cwd: REPO_ROOT });
+  if (trimString(result.stdout)) console.log(trimString(result.stdout));
+  if (trimString(result.stderr)) console.error(trimString(result.stderr));
 
-  await sleep(2500);
-  const nextSnapshot = await loadSnapshot({ configPath: snapshot.paths.configPath });
-  await printStatus(nextSnapshot, { tail: DEFAULT_STATUS_TAIL });
-  if (!nextSnapshot.connector.running) {
-    throw new Error('Connector restart did not produce a running process');
+  let registry = null;
+  let nextBot = null;
+  let nextSnapshot = null;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await sleep(500);
+    registry = await discoverRegistry(options);
+    nextBot = findFeishuBot(registry, bot.id);
+    if (nextBot) {
+      nextSnapshot = await loadSnapshot({ configPath: nextBot.configPath });
+      if (nextSnapshot.connector.running && nextBot.status === 'running') break;
+    }
   }
+  if (!nextBot || !nextSnapshot?.connector.running || nextBot.status !== 'running') {
+    throw new Error(`Connector restart did not produce a running process for Bot "${bot.id}"`);
+  }
+  if (options.json) {
+    console.log(JSON.stringify(buildStatusJson(nextSnapshot, nextBot), null, 2));
+    return;
+  }
+  printBotBinding(nextBot);
+  await printStatus(nextSnapshot, { tail: DEFAULT_STATUS_TAIL });
 }
 
 async function runBackfill(snapshot, options) {
@@ -668,16 +783,38 @@ export async function main(argv = process.argv.slice(2)) {
     printUsage(options.help ? 0 : 1, options.help ? '' : 'A command is required');
   }
 
-  if (!options.configExplicit) {
+  if (options.botId && options.configExplicit) {
+    throw new Error('Use either --bot or --config, not both');
+  }
+  if (!options.registryPath) {
+    throw new Error('Missing Bot registry path');
+  }
+  if (['discover', 'list'].includes(options.command)) {
+    const registry = await discoverRegistry(options);
+    printBotRegistry(registry, options);
+    return 0;
+  }
+
+  let bot = null;
+  if (['status', 'restart'].includes(options.command) || options.botId) {
+    const registry = await discoverRegistry(options);
+    bot = resolveRegisteredBot(registry, options);
+    options.configPath = bot.configPath;
+  } else if (!options.configExplicit) {
     options.configPath = await resolveDefaultConfigPath();
   }
   const snapshot = await loadSnapshot({ configPath: options.configPath });
   switch (options.command) {
     case 'status':
+      if (options.json) {
+        console.log(JSON.stringify(buildStatusJson(snapshot, bot), null, 2));
+        return 0;
+      }
+      printBotBinding(bot);
       await printStatus(snapshot, options);
       return 0;
     case 'restart':
-      await runRestart(snapshot);
+      await runRestart(bot, options);
       return 0;
     case 'backfill':
       await runBackfill(snapshot, options);

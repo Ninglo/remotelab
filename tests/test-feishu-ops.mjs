@@ -23,6 +23,14 @@ assert.equal(parsed.model, 'gpt-5.4');
 assert.equal(parsed.effort, 'low');
 assert.equal(parsed.dryRun, true);
 
+const botTargeted = parseArgs([
+  'restart',
+  '--bot', 'bot-b',
+  '--registry', '/srv/remotelab/feishu-bots.json',
+]);
+assert.equal(botTargeted.botId, 'bot-b');
+assert.equal(botTargeted.registryPath, '/srv/remotelab/feishu-bots.json');
+
 assert.equal(
   parseSystemdExecStartConfigPath('{ path=/usr/bin/node ; argv[]=/usr/bin/node /opt/remotelab/scripts/feishu-connector.mjs --config /srv/remotelab/feishu/config.json ; }'),
   '/srv/remotelab/feishu/config.json',
