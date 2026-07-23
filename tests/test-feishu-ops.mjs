@@ -12,6 +12,7 @@ const {
   parseArgs,
   parseJsonLines,
   parseSystemdExecStartConfigPath,
+  resolveRegisteredBot,
   selectBackfillMessages,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-ops.mjs')).href);
 
@@ -30,6 +31,39 @@ const botTargeted = parseArgs([
 ]);
 assert.equal(botTargeted.botId, 'bot-b');
 assert.equal(botTargeted.registryPath, '/srv/remotelab/feishu-bots.json');
+
+const uniqueCustomBot = {
+  id: 'custom-bot',
+  configPath: '/srv/remotelab/custom-bot/config.json',
+  issues: [],
+};
+assert.equal(
+  resolveRegisteredBot({
+    bots: [
+      {
+        id: 'default',
+        configPath: '/missing/default/config.json',
+        issues: ['config_missing'],
+      },
+      uniqueCustomBot,
+    ],
+  }, {
+    botId: '',
+    configExplicit: false,
+    configPath: '',
+  }),
+  uniqueCustomBot,
+);
+assert.throws(
+  () => resolveRegisteredBot({
+    bots: [uniqueCustomBot],
+  }, {
+    botId: 'default',
+    configExplicit: false,
+    configPath: '',
+  }),
+  /not registered/i,
+);
 
 assert.equal(
   parseSystemdExecStartConfigPath('{ path=/usr/bin/node ; argv[]=/usr/bin/node /opt/remotelab/scripts/feishu-connector.mjs --config /srv/remotelab/feishu/config.json ; }'),

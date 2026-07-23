@@ -9,6 +9,7 @@ import {
   discoverFeishuBots,
   findFeishuBot,
   parseFeishuConnectorProcessRows,
+  parseFeishuLaunchdPlist,
   parseFeishuSystemdShow,
 } from '../lib/feishu-bot-registry.mjs';
 
@@ -51,6 +52,30 @@ try {
   assert.equal(systemdFact.configPath, botBConfigPath);
   assert.equal(systemdFact.pid, 2202);
 
+  const launchdPlistPath = join(tempHome, 'Library', 'LaunchAgents', 'com.remotelab.feishu-connector.plist');
+  const launchdFact = parseFeishuLaunchdPlist({
+    Label: 'com.remotelab.feishu-connector',
+    ProgramArguments: [
+      '/usr/local/bin/node',
+      '/opt/remotelab/scripts/feishu-connector.mjs',
+    ],
+    EnvironmentVariables: {
+      HOME: tempHome,
+    },
+  }, [
+    'state = running',
+    'pid = 1101',
+  ].join('\n'), {
+    defaultConfigPath,
+    plistPath: launchdPlistPath,
+    uid: 501,
+  });
+  assert.equal(launchdFact.label, 'com.remotelab.feishu-connector');
+  assert.equal(launchdFact.configPath, defaultConfigPath);
+  assert.equal(launchdFact.pid, 1101);
+  assert.equal(launchdFact.activeState, 'running');
+  assert.equal(launchdFact.target, 'gui/501/com.remotelab.feishu-connector');
+
   const processFacts = parseFeishuConnectorProcessRows([
     '1101 node /opt/remotelab/scripts/feishu-connector.mjs',
     `2202 node /opt/remotelab/scripts/feishu-connector.mjs --config ${botBConfigPath}`,
@@ -70,6 +95,7 @@ try {
     registryPath,
     processFacts,
     systemdFacts: [systemdFact],
+    launchdFacts: [launchdFact],
     discoveredAt: '2026-07-23T12:00:00.000Z',
   });
   assert.equal(registry.version, 1);
@@ -81,7 +107,7 @@ try {
   const defaultBot = findFeishuBot(registry, 'default');
   assert.ok(defaultBot);
   assert.equal(defaultBot.configPath, defaultConfigPath);
-  assert.equal(defaultBot.runtime.kind, 'process');
+  assert.equal(defaultBot.runtime.kind, 'launchd');
   assert.equal(defaultBot.runtime.pid, 1101);
 
   const botB = findFeishuBot(registry, 'bot-b');
@@ -104,9 +130,10 @@ try {
   assert.deepEqual(buildFeishuBotRestartPlan(defaultBot, {
     helperPath: '/repo/scripts/feishu-connector-instance.sh',
   }), {
-    kind: 'process',
-    command: '/repo/scripts/feishu-connector-instance.sh',
-    args: ['restart', '--config', defaultConfigPath],
+    kind: 'launchd',
+    command: 'launchctl',
+    args: ['kickstart', '-k', 'gui/501/com.remotelab.feishu-connector'],
+    plistPath: launchdPlistPath,
   });
 
   assert.throws(

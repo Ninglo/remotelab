@@ -529,6 +529,10 @@ function printBotBinding(bot) {
     console.log(`Owner: systemd unit=${bot.runtime.unit} pid=${bot.runtime.pid || '(none)'}`);
     return;
   }
+  if (bot.runtime?.kind === 'launchd') {
+    console.log(`Owner: launchd label=${bot.runtime.label} pid=${bot.runtime.pid || '(none)'}`);
+    return;
+  }
   if (bot.runtime?.kind === 'process') {
     console.log(`Owner: process pid=${bot.runtime.pid || '(none)'}`);
     return;
@@ -550,9 +554,11 @@ function printBotRegistry(registry, options = {}) {
   for (const bot of registry.bots) {
     const owner = bot.runtime?.kind === 'systemd'
       ? `systemd:${bot.runtime.unit}`
-      : bot.runtime?.kind === 'process'
-        ? `process:${bot.runtime.pid}`
-        : bot.runtime?.kind || 'none';
+      : bot.runtime?.kind === 'launchd'
+        ? `launchd:${bot.runtime.label}`
+        : bot.runtime?.kind === 'process'
+          ? `process:${bot.runtime.pid}`
+          : bot.runtime?.kind || 'none';
     const issues = bot.issues?.length ? ` issues=${bot.issues.join(',')}` : '';
     console.log(`- ${bot.id} | ${bot.status} | ${owner} | ${bot.configPath}${issues}`);
   }
@@ -567,11 +573,26 @@ async function discoverRegistry(options) {
   });
 }
 
-function resolveRegisteredBot(registry, options) {
+function hasValidBotConfig(bot) {
+  return !bot?.issues?.includes('config_missing')
+    && !bot?.issues?.includes('config_invalid');
+}
+
+export function resolveRegisteredBot(registry, options) {
+  const explicitSelector = Boolean(options.botId) || options.configExplicit;
   const selector = options.botId || (options.configExplicit ? options.configPath : 'default');
   const bot = findFeishuBot(registry, selector);
-  if (bot) return bot;
-  const available = registry.bots.map((candidate) => candidate.id).join(', ') || 'none';
+  if (bot && (explicitSelector || hasValidBotConfig(bot))) return bot;
+
+  if (!explicitSelector) {
+    const validBots = (Array.isArray(registry?.bots) ? registry.bots : [])
+      .filter(hasValidBotConfig);
+    if (validBots.length === 1) return validBots[0];
+  }
+
+  const available = (Array.isArray(registry?.bots) ? registry.bots : [])
+    .map((candidate) => candidate.id)
+    .join(', ') || 'none';
   throw new Error(`Feishu Bot "${selector}" is not registered (available: ${available})`);
 }
 
@@ -703,7 +724,14 @@ async function runRestart(bot, options) {
       );
     }
   }
-  const result = await execFile(plan.command, plan.args, { cwd: REPO_ROOT });
+  let result;
+  try {
+    result = await execFile(plan.command, plan.args, { cwd: REPO_ROOT });
+  } catch (error) {
+    if (plan.kind !== 'launchd' || !plan.plistPath) throw error;
+    await execFile('launchctl', ['unload', plan.plistPath], { cwd: REPO_ROOT }).catch(() => {});
+    result = await execFile('launchctl', ['load', plan.plistPath], { cwd: REPO_ROOT });
+  }
   if (trimString(result.stdout)) console.log(trimString(result.stdout));
   if (trimString(result.stderr)) console.error(trimString(result.stderr));
 

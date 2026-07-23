@@ -140,9 +140,16 @@ npm run feishu:ops -- discover --config /srv/remotelab/bot-b/config.json
 
 Before every Bot-targeted `status` or `restart`, discovery refreshes the
 registry. A systemd-managed Bot is restarted through its exact recorded unit.
+A macOS launchd-managed Bot is restarted through its exact LaunchAgent label,
+with the legacy unload/load path retained as a fallback.
 A directly managed Bot is restarted through its exact config path and
 `storageDir`. If more than one runtime owner matches a config, restart fails
 closed as ambiguous instead of choosing a process.
+
+With no `--bot` or `--config`, the legacy `default` Bot is preferred. If no
+valid Bot named `default` exists and exactly one valid Bot is discovered, that
+single Bot is selected automatically. Multiple valid Bots still require an
+explicit selector.
 
 ## Config contract
 
