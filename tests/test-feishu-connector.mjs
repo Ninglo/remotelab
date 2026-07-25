@@ -39,6 +39,7 @@ const {
   buildExternalTriggerId,
   buildMessageSourceContext,
   buildSessionSourceContext,
+  resolveFeishuTopicForkParentSessionId,
   sendFeishuText,
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,
@@ -1509,13 +1510,413 @@ try {
   await new Promise((resolve) => queuedServer.close(resolve));
 }
 
+let topicMetadataSessionPayload = null;
+let topicMetadataSubmittedPayload = null;
+const topicMetadataRuntime = createRuntimeContext({
+  appId: 'cli_test',
+  appSecret: 'test-secret',
+  region: 'feishu-cn',
+  loggerLevel: 'error',
+  intakePolicy: {
+    mode: 'allow_all',
+    accessStatePath: join(tempHome, 'topic-metadata-access-state.json'),
+    allowedSendersPath: join(tempHome, 'topic-metadata-allowed-senders.json'),
+  },
+  storeRawEvents: false,
+  chatBaseUrl: 'http://127.0.0.1:7690',
+  sessionFolder: repoRoot,
+  sessionTool: 'codex',
+  systemPrompt: 'Reply with plain text only.',
+  thinking: false,
+  model: '',
+  effort: '',
+}, {
+  eventsLogPath: join(tempHome, 'topic-metadata-events.jsonl'),
+  knownSendersPath: join(tempHome, 'topic-metadata-known-senders.json'),
+  handledMessagesPath: join(tempHome, 'topic-metadata-handled-messages.json'),
+  messageIndexPath: join(tempHome, 'topic-metadata-message-index.json'),
+});
+topicMetadataRuntime.chatMetadataCache.set('chat_topic_metadata_1', {
+  name: 'Topic Metadata Chat',
+  groupMessageType: 'thread',
+  chatMode: 'topic',
+  chatType: 'group',
+});
+topicMetadataRuntime.authCookie = 'session_token=topic-metadata-test';
+topicMetadataRuntime.authToken = 'ignored';
+
+const topicMetadataServer = http.createServer(async (req, res) => {
+  let body = '';
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+  await new Promise((resolve) => req.on('end', resolve));
+
+  if (req.method === 'POST' && req.url === '/api/sessions') {
+    if (body) {
+      topicMetadataSessionPayload = JSON.parse(body);
+    }
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ session: { id: 'sess_topic_metadata_test_1' } }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/sessions/sess_topic_metadata_test_1/messages') {
+    topicMetadataSubmittedPayload = JSON.parse(body);
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ run: { id: 'run_topic_metadata_test_1' } }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions?sourceId=feishu') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ sessions: [] }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_metadata_test_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      session: {
+        id: 'sess_topic_metadata_test_1',
+        latestSeq: 1,
+        activity: {
+          run: { state: 'idle' },
+          queue: { count: 0 },
+          compact: { state: 'idle' },
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_metadata_test_1/responses/feishu%3Amsg_topic_metadata_test_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      replyPublication: {
+        id: 'feishu:msg_topic_metadata_test_1',
+        responseIds: ['feishu:msg_topic_metadata_test_1'],
+        state: 'ready',
+        ready: true,
+        rootRunId: 'run_topic_metadata_test_1',
+        finalRunId: 'run_topic_metadata_test_1',
+        continuationRunIds: [],
+        payload: {
+          text: 'Metadata scope reply.',
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/runs/run_topic_metadata_test_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ run: { id: 'run_topic_metadata_test_1', state: 'completed' } }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_metadata_test_1/events?filter=all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ events: [] }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+await new Promise((resolve) => topicMetadataServer.listen(0, '127.0.0.1', resolve));
+try {
+  const address = topicMetadataServer.address();
+  topicMetadataRuntime.config.chatBaseUrl = `http://127.0.0.1:${address.port}`;
+  const topicMetadataReply = await generateRemoteLabReply(topicMetadataRuntime, {
+    chatType: 'group',
+    chatId: 'chat_topic_metadata_1',
+    messageId: 'msg_topic_metadata_test_1',
+    textPreview: 'No groupMessageType or chatMode in payload.',
+    chatName: 'Topic Metadata Chat',
+    sender: {
+      openId: 'ou_topic_metadata_sender_1',
+      tenantKey: 'tenant_topic_metadata_1',
+    },
+  });
+  assert.equal(topicMetadataSessionPayload?.externalTriggerId, 'feishu:topic:chat_topic_metadata_1:msg_topic_metadata_test_1');
+  assert.equal(topicMetadataSessionPayload?.sourceContext?.conversationKind, 'topic');
+  assert.equal(topicMetadataSessionPayload?.sourceContext?.topicId, 'msg_topic_metadata_test_1');
+  assert.equal(topicMetadataSubmittedPayload?.sourceContext?.messageId, 'msg_topic_metadata_test_1');
+  assert.equal(topicMetadataReply.sessionId, 'sess_topic_metadata_test_1');
+  assert.equal(topicMetadataReply.replyText, 'Metadata scope reply.');
+} finally {
+  await new Promise((resolve) => topicMetadataServer.close(resolve));
+}
+
+const topicFallbackHandledPath = join(tempHome, 'topic-fallback-handled.json');
+await writeFile(topicFallbackHandledPath, JSON.stringify({
+  messages: {
+    topic_msg_old: {
+      status: 'sent',
+      chatId: 'chat_topic_fallback_group_1',
+      sessionId: 'sess_topic_fallback_old_1',
+      responseMessageId: 'msg_topic_fallback_old_reply',
+      updatedAt: '2026-07-24T18:00:00.000Z',
+    },
+    topic_msg_recent: {
+      status: 'sent',
+      chatId: 'chat_topic_fallback_group_1',
+      sessionId: 'sess_topic_fallback_recent_1',
+      responseMessageId: 'msg_topic_fallback_recent_reply',
+      updatedAt: '2026-07-24T21:00:00.000Z',
+    },
+  },
+}));
+const topicFallbackRuntime = {
+  storagePaths: {
+    handledMessagesPath: topicFallbackHandledPath,
+    messageIndexPath: join(tempHome, 'topic-fallback-message-index.json'),
+  },
+};
+
+const readHandledMessagesForTest = async (pathname) => JSON.parse(await readFile(pathname, 'utf8'));
+
+const topicFallbackServer = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/api/sessions?sourceId=feishu') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      sessions: [{
+        id: 'sess_topic_fallback_old_1',
+        sourceId: 'feishu',
+        externalTriggerId: 'feishu:topic:chat_topic_fallback_group_1:old_root',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_group_1',
+          conversationKind: 'topic',
+          chatMode: 'topic',
+        },
+        updatedAt: '2026-07-24T18:30:00.000Z',
+      }, {
+        id: 'sess_topic_fallback_recent_1',
+        sourceId: 'feishu',
+        externalTriggerId: 'feishu:topic:chat_topic_fallback_group_1:recent_root',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_group_1',
+          conversationKind: 'topic',
+          chatMode: 'topic',
+        },
+        updatedAt: '2026-07-24T20:00:00.000Z',
+      }],
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_recent_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      session: {
+        id: 'sess_topic_fallback_recent_1',
+        sourceId: 'feishu',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_group_1',
+          conversationKind: 'topic',
+          chatMode: 'topic',
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_recent_1/events?filter=all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      events: [{
+        seq: 1,
+        type: 'message',
+        role: 'user',
+        sourceContext: {
+          connector: 'feishu',
+          messageId: 'topic_msg_recent',
+        },
+      }],
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_old_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      session: {
+        id: 'sess_topic_fallback_old_1',
+        sourceId: 'feishu',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_group_1',
+          conversationKind: 'topic',
+          chatMode: 'topic',
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_old_1/events?filter=all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      events: [{
+        seq: 1,
+        type: 'message',
+        role: 'user',
+        sourceContext: {
+          connector: 'feishu',
+          messageId: 'topic_msg_old',
+        },
+      }],
+    }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+await new Promise((resolve) => topicFallbackServer.listen(0, '127.0.0.1', resolve));
+try {
+  const fallbackSessionId = await resolveFeishuTopicForkParentSessionId(topicFallbackRuntime, async (path, options = {}) => {
+    const port = topicFallbackServer.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: options.method || 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const text = await response.text();
+    return { response, text, json: text ? JSON.parse(text) : null };
+  }, {
+    chatType: 'group',
+    chatId: 'chat_topic_fallback_group_1',
+    messageId: 'msg_topic_fallback_current_1',
+    chatMode: 'topic',
+    textPreview: 'Continue topic, no parent ids',
+    sender: { openId: 'ou_topic_fallback_1', tenantKey: 'tenant_topic_fallback_1' },
+  }, {
+    loadHandledMessages: readHandledMessagesForTest,
+  });
+  assert.equal(fallbackSessionId, 'sess_topic_fallback_recent_1');
+} finally {
+  await new Promise((resolve) => topicFallbackServer.close(resolve));
+}
+
+const groupContentFallbackHandledPath = join(tempHome, 'topic-fallback-content-handled.json');
+await writeFile(groupContentFallbackHandledPath, JSON.stringify({
+  messages: {
+    group_msg_general: {
+      status: 'sent',
+      chatId: 'chat_topic_fallback_group_1',
+      sessionId: 'sess_topic_fallback_general_1',
+      responseMessageId: 'msg_topic_fallback_general_reply',
+      updatedAt: '2026-07-24T20:30:00.000Z',
+    },
+  },
+}));
+const groupContentFallbackRuntime = {
+  storagePaths: {
+    handledMessagesPath: groupContentFallbackHandledPath,
+    messageIndexPath: join(tempHome, 'topic-fallback-content-message-index.json'),
+  },
+};
+
+const groupContentFallbackServer = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/api/sessions?sourceId=feishu') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      sessions: [{
+        id: 'sess_topic_fallback_general_1',
+        sourceId: 'feishu',
+        externalTriggerId: 'feishu:group:chat_topic_fallback_group_1',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_group_1',
+          conversationKind: 'chat',
+          chatMode: 'group',
+        },
+        updatedAt: '2026-07-24T20:30:00.000Z',
+      }],
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_general_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      session: {
+        id: 'sess_topic_fallback_general_1',
+        sourceId: 'feishu',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_group_1',
+          conversationKind: 'chat',
+          chatMode: 'group',
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_general_1/events?filter=all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      events: [{
+        seq: 1,
+        type: 'message',
+        role: 'user',
+        sourceContext: {
+          connector: 'feishu',
+          messageId: 'group_msg_general',
+        },
+      }],
+    }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+await new Promise((resolve) => groupContentFallbackServer.listen(0, '127.0.0.1', resolve));
+try {
+  const groupContentFallbackSessionId = await resolveFeishuTopicForkParentSessionId(groupContentFallbackRuntime, async (path, options = {}) => {
+    const port = groupContentFallbackServer.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: options.method || 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    const text = await response.text();
+    return { response, text, json: text ? JSON.parse(text) : null };
+  }, {
+    chatType: 'group',
+    chatId: 'chat_topic_fallback_group_1',
+    messageId: 'msg_topic_fallback_current_2',
+    chatMode: 'topic',
+    textPreview: 'Continue group, no parent ids',
+    sender: { openId: 'ou_topic_fallback_2', tenantKey: 'tenant_topic_fallback_2' },
+  }, {
+    loadHandledMessages: readHandledMessagesForTest,
+  });
+  assert.equal(groupContentFallbackSessionId, 'sess_topic_fallback_general_1');
+} finally {
+  await new Promise((resolve) => groupContentFallbackServer.close(resolve));
+}
+
 console.log('ok - empty assistant replies stay silent');
 console.log('ok - processing reactions bracket delayed Feishu replies');
 console.log('ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments');
 console.log('ok - mention tokens are rendered inbound and compiled outbound');
+console.log('ok - topic metadata from chat metadata fallback enables topic-scoped sessions');
 console.log('ok - whitelist file reloads without restart');
 console.log('ok - local group approval commands persist approved chats');
 console.log('ok - approved chats auto-grant newly joined members');
+console.log('ok - topic session parent fallback can recover nearest recent topic session');
+console.log('ok - same-group content fallback can reuse nearest recent chat session when no topic parent trace');
 console.log('ok - generated Feishu sessions use the feishu app scope');
 console.log('ok - planning-phase Feishu replies wait for publication readiness');
 console.log('ok - queued Feishu follow-ups wait for the eventual assistant reply');

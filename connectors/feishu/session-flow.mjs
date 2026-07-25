@@ -39,6 +39,150 @@ async function sessionReferencesMessage(requester, sessionId, summary, messageId
   return events.some((event) => sourceContextReferencesMessage(event?.sourceContext, messageId));
 }
 
+function parseFeishuHandledFallbackUpdatedAt(metadata) {
+  const updatedAt = Date.parse(trimString(metadata?.updatedAt) || '');
+  if (Number.isFinite(updatedAt)) return updatedAt;
+  const repliedAt = Date.parse(trimString(metadata?.repliedAt) || '');
+  if (Number.isFinite(repliedAt)) return repliedAt;
+  const handledAt = Date.parse(trimString(metadata?.handledAt) || '');
+  if (Number.isFinite(handledAt)) return handledAt;
+  return 0;
+}
+
+async function collectFeishuHandledTopicFallbackCandidates(runtime, summary, loadHandledMessages) {
+  if (typeof loadHandledMessages !== 'function') return [];
+  const handledPath = trimString(runtime?.storagePaths?.handledMessagesPath);
+  if (!handledPath) return [];
+
+  const state = await loadHandledMessages(handledPath);
+  const messages = state?.messages && typeof state.messages === 'object' && !Array.isArray(state.messages)
+    ? state.messages
+    : {};
+  const chatId = trimString(summary?.chatId);
+
+  return Object.entries(messages)
+    .filter(([sourceMessageId, metadata]) => {
+      if (!metadata || typeof metadata !== 'object') return false;
+      if (!['sent', 'confirmation_sent'].includes(trimString(metadata.status))) return false;
+      if (!trimString(metadata?.sessionId)) return false;
+      const metadataChatId = trimString(metadata.chatId);
+      if (chatId && metadataChatId && metadataChatId !== chatId) return false;
+      if (!trimString(metadata.responseMessageId) && trimString(sourceMessageId) === trimString(summary?.messageId)) return false;
+      return true;
+    })
+    .map(([sourceMessageId, metadata]) => ({
+      sessionId: trimString(metadata.sessionId),
+      sourceMessageId: trimString(metadata.sourceMessageId) || trimString(sourceMessageId),
+      responseMessageId: trimString(metadata.responseMessageId),
+      chatId: trimString(metadata.chatId),
+      updatedAt: parseFeishuHandledFallbackUpdatedAt(metadata),
+    }))
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+function parseFeishuSessionRecency(value) {
+  const timestamp = Date.parse(trimString(value) || '');
+  if (Number.isFinite(timestamp)) return timestamp;
+  return 0;
+}
+
+function getFeishuSessionRecency(session) {
+  const candidates = [
+    session?.updatedAt,
+    session?.createdAt,
+    session?.updatedTime,
+    session?.createdTime,
+    session?.startedAt,
+    session?.startedTime,
+    session?.latestEventAt,
+    session?.lastUpdatedAt,
+    session?.lastEventAt,
+  ];
+  for (const value of candidates) {
+    const parsed = parseFeishuSessionRecency(value);
+    if (parsed > 0) {
+      return parsed;
+    }
+  }
+  if (Number.isInteger(session?.latestSeq)) {
+    return session.latestSeq;
+  }
+  return 0;
+}
+
+async function findFeishuRecentTopicSessionCandidates(requester, summary) {
+  const result = await requester('/api/sessions?sourceId=feishu');
+  if (!result.response?.ok || !Array.isArray(result.json?.sessions)) return [];
+
+  const chatId = trimString(summary?.chatId);
+  const chatPrefix = sanitizeIdPart(chatId);
+  const summaryChatType = sanitizeIdPart(summary?.chatType || 'chat');
+  return result.json.sessions
+    .filter((session) => {
+      if (!session || typeof session !== 'object') return false;
+      if (!trimString(session.id)) return false;
+      if (trimString(session?.sourceId) !== FEISHU_CONNECTOR_ID) return false;
+      if (session.archived === true) return false;
+      const sessionChatId = trimString(session?.sourceContext?.chatId);
+      if (chatId && sessionChatId && sessionChatId !== chatId) return false;
+      const context = session?.sourceContext;
+      const contextConversationKind = trimString(context?.conversationKind).toLowerCase();
+      const contextChatMode = trimString(context?.chatMode).toLowerCase();
+      const contextGroupMessageType = trimString(context?.groupMessageType).toLowerCase();
+      const trigger = trimString(session?.externalTriggerId);
+      const matchesChatTrigger = chatPrefix
+        ? trigger === `feishu:${summaryChatType}:${chatPrefix}` || trigger.startsWith(`feishu:${summaryChatType}:${chatPrefix}:`)
+        : trigger.startsWith('feishu:');
+      const isChatContext = (
+        contextConversationKind === 'chat'
+        || contextChatMode === 'chat'
+        || contextGroupMessageType === 'chat'
+      );
+      const isTopicContext = (
+        contextConversationKind === 'topic'
+        || contextChatMode === 'topic'
+        || contextGroupMessageType === 'topic'
+      );
+      const matchesTopicTrigger = chatPrefix
+        ? trigger.startsWith(`feishu:topic:${chatPrefix}:`)
+        : trigger.startsWith('feishu:topic:');
+      return matchesChatTrigger || matchesTopicTrigger || isChatContext || isTopicContext;
+    })
+    .map((session) => ({
+      id: trimString(session.id),
+      recency: getFeishuSessionRecency(session),
+    }))
+    .sort((left, right) => {
+      if (right.recency !== left.recency) return right.recency - left.recency;
+      return left.id.localeCompare(right.id);
+    });
+}
+
+async function findFeishuTopicFallbackParentSessionId(runtime, requester, summary, loadHandledMessages) {
+  const recentTopicSessions = await findFeishuRecentTopicSessionCandidates(requester, summary);
+  if (recentTopicSessions.length === 0) return '';
+
+  const topicSessionIds = new Set(recentTopicSessions.map((entry) => entry.id).filter(Boolean));
+  const fallbackHandled = await collectFeishuHandledTopicFallbackCandidates(runtime, summary, loadHandledMessages);
+  const chatScopedFallback = fallbackHandled.filter((record) => (
+    topicSessionIds.has(record.sessionId) && Boolean(record.sourceMessageId)
+  ));
+
+  for (const fallback of chatScopedFallback) {
+    const verificationMessageId = fallback.sourceMessageId || fallback.responseMessageId;
+    if (verificationMessageId && await sessionReferencesMessage(requester, fallback.sessionId, summary, verificationMessageId)) {
+      return fallback.sessionId;
+    }
+  }
+
+  const latestHandledSessionId = chatScopedFallback[0]?.sessionId;
+  if (latestHandledSessionId) {
+    return latestHandledSessionId;
+  }
+
+  return recentTopicSessions[0]?.id || '';
+}
+
 function sessionTriggerMatchesChat(session, summary) {
   const chatId = trimString(summary?.chatId);
   if (!chatId) return true;
@@ -101,7 +245,9 @@ export async function resolveFeishuTopicForkParentSessionId(runtime, requester, 
 } = {}) {
   if (!buildFeishuTopicId(summary)) return '';
   const parentMessageIds = collectFeishuTopicParentMessageCandidates(summary);
-  if (parentMessageIds.length === 0) return '';
+  if (parentMessageIds.length === 0) {
+    return await findFeishuTopicFallbackParentSessionId(runtime, requester, summary, loadHandledMessages);
+  }
   const indexPath = trimString(runtime?.storagePaths?.messageIndexPath);
 
   for (const parentMessageId of parentMessageIds) {
@@ -134,11 +280,11 @@ export async function resolveFeishuTopicForkParentSessionId(runtime, requester, 
     }
 
     const handledMatch = await findParentFromHandledMessages(runtime, requester, summary, parentMessageId, loadHandledMessages);
-    if (handledMatch?.sessionId) {
-      if (indexPath) {
-        await upsertConnectorMessageIndexRecord(indexPath, {
-          connector: FEISHU_CONNECTOR_ID,
-          accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey),
+      if (handledMatch?.sessionId) {
+        if (indexPath) {
+          await upsertConnectorMessageIndexRecord(indexPath, {
+            connector: FEISHU_CONNECTOR_ID,
+            accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey),
           messageId: parentMessageId,
           sessionId: handledMatch.sessionId,
           chatId: trimString(summary?.chatId),
@@ -149,5 +295,5 @@ export async function resolveFeishuTopicForkParentSessionId(runtime, requester, 
       return handledMatch.sessionId;
     }
   }
-  return '';
+  return await findFeishuTopicFallbackParentSessionId(runtime, requester, summary, loadHandledMessages);
 }
