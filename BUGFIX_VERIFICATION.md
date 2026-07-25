@@ -1,5 +1,62 @@
 # Bug Fix Verification
 
+## PR #21 Feishu Topic Metadata CI Regression
+
+### Bug Description
+
+`enrichSummaryWithChatMetadata` treated a present `chatName` as proof that topic
+mode metadata was already complete. Normal group-message payloads that included
+the chat name but omitted `groupMessageType` and `chatMode` therefore skipped
+the cached chat metadata lookup and generated a group-scoped trigger instead of
+a topic-scoped trigger.
+
+### Step 1: RED - Reproduce Bug
+
+- [x] Existing regression scenario at `tests/test-feishu-connector.mjs:1632`
+  covers a payload with `chatName` but without the two topic mode fields.
+- [x] GitHub Actions run `30155661717` failed on that scenario before the fix.
+
+Failure evidence:
+
+```text
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'feishu:group:chat_topic_metadata_1'
+- 'feishu:topic:chat_topic_metadata_1:msg_topic_metadata_test_1'
+at tests/test-feishu-connector.mjs:1643:10
+```
+
+### Step 2: GREEN - Fix Applied
+
+- [x] Metadata enrichment now short-circuits only when `groupMessageType` or
+  `chatMode` is present; `chatName` no longer suppresses topic metadata lookup.
+- [x] The focused Feishu connector regression test passes.
+
+Success evidence:
+
+```text
+ok - topic metadata from chat metadata fallback enables topic-scoped sessions
+```
+
+### Step 3: REFACTOR - Clean Up
+
+- [x] The change is limited to the incorrect short-circuit condition.
+- [x] Full `npm test` suite passes.
+- [x] `npm run lint:filesize` exits successfully.
+- [x] Task changes pass `git diff --check`.
+
+### Final Verification
+
+- [x] Existing unrelated machine-local memory, credentials, and generated
+  reports remain outside the task commit.
+- [x] The regression remains covered by the existing smoke suite.
+
+**Fixed by:** Harness Agent
+**Date:** 2026-07-25
+
+---
+
 ## Bug Description
 
 Feishu Bot operations did not preserve two legacy single-Bot behaviors:
