@@ -3,15 +3,75 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 ACTION="${1:-start}"
-CONFIG_DIR="$HOME/.config/remotelab/feishu-connector"
-PID_FILE="$CONFIG_DIR/connector.pid"
-LOG_PATH="$CONFIG_DIR/connector.log"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
 NODE_BIN="${NODE_BIN:-$(command -v node)}"
-SYSTEMD_UNIT="${REMOTELAB_FEISHU_CONNECTOR_SYSTEMD_UNIT:-remotelab-feishu-connector.service}"
+DEFAULT_CONFIG_ROOT="${REMOTELAB_CONFIG_DIR:-$HOME/.config/remotelab}"
+DEFAULT_CONFIG_PATH="$DEFAULT_CONFIG_ROOT/feishu-connector/config.json"
+CONFIG_PATH="${REMOTELAB_FEISHU_CONFIG_PATH:-$DEFAULT_CONFIG_PATH}"
+CONFIG_EXPLICIT=false
+if [[ -n "${REMOTELAB_FEISHU_CONFIG_PATH:-}" ]]; then
+  CONFIG_EXPLICIT=true
+fi
+SYSTEMD_UNIT="${REMOTELAB_FEISHU_CONNECTOR_SYSTEMD_UNIT:-}"
 
-mkdir -p "$CONFIG_DIR"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "missing value for --config" >&2
+        exit 2
+      fi
+      CONFIG_PATH="$2"
+      CONFIG_EXPLICIT=true
+      shift 2
+      ;;
+    --systemd-unit)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "missing value for --systemd-unit" >&2
+        exit 2
+      fi
+      SYSTEMD_UNIT="$2"
+      shift 2
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$CONFIG_EXPLICIT" == false && -z "$SYSTEMD_UNIT" ]]; then
+  SYSTEMD_UNIT="remotelab-feishu-connector.service"
+fi
+if [[ ! -f "$CONFIG_PATH" ]]; then
+  echo "feishu connector config does not exist: $CONFIG_PATH" >&2
+  exit 2
+fi
+
+CONFIG_PATH="$(cd -- "$(dirname -- "$CONFIG_PATH")" && pwd)/$(basename -- "$CONFIG_PATH")"
+CONFIG_DIR="$(dirname -- "$CONFIG_PATH")"
+STORAGE_DIR="$(
+  cd "$ROOT_DIR"
+  "$NODE_BIN" --input-type=module -e '
+    import { readFile } from "fs/promises";
+    import { dirname, resolve } from "path";
+    const configPath = process.argv[1];
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    const storageDir = typeof config.storageDir === "string" ? config.storageDir.trim() : "";
+    console.log(storageDir ? resolve(storageDir) : dirname(configPath));
+  ' "$CONFIG_PATH"
+)"
+PID_FILE="$STORAGE_DIR/connector.pid"
+LOG_PATH="$STORAGE_DIR/connector.log"
+
+mkdir -p "$STORAGE_DIR"
 
 systemd_main_pid() {
+  if [[ -z "$SYSTEMD_UNIT" ]]; then
+    return 1
+  fi
   if ! command -v systemctl >/dev/null 2>&1; then
     return 1
   fi
@@ -25,6 +85,42 @@ systemd_main_pid() {
     return 1
   fi
   printf '%s\n' "$pid"
+}
+
+process_matches_config() {
+  local pid command_line
+  pid="$1"
+  command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+  if [[ "$command_line" != *"scripts/feishu-connector.mjs"* ]]; then
+    return 1
+  fi
+  if [[ "$command_line" == *"--config $CONFIG_PATH"* || "$command_line" == *"--config=$CONFIG_PATH"* ]]; then
+    return 0
+  fi
+  if [[ "$CONFIG_PATH" == "$DEFAULT_CONFIG_PATH" && "$command_line" != *"--config"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+validate_pid_file() {
+  if [[ ! -f "$PID_FILE" ]]; then
+    return 0
+  fi
+  local pid
+  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ ]]; then
+    rm -f "$PID_FILE"
+    return 0
+  fi
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$PID_FILE"
+    return 0
+  fi
+  if ! process_matches_config "$pid"; then
+    echo "refusing to operate on pid $pid: process does not match config $CONFIG_PATH" >&2
+    exit 2
+  fi
 }
 
 running_pid() {
@@ -96,7 +192,7 @@ start_instance() {
       HOME="$HOME" \
       USER="${USER:-}" \
       SHELL="${SHELL:-/bin/bash}" \
-      "$NODE_BIN" scripts/feishu-connector.mjs >> "$LOG_PATH" 2>&1 < /dev/null &
+      "$NODE_BIN" scripts/feishu-connector.mjs --config "$CONFIG_PATH" >> "$LOG_PATH" 2>&1 < /dev/null &
     echo $! > "$PID_FILE"
   )
 
@@ -138,6 +234,7 @@ show_status() {
   local pid systemd_pid
   if systemd_pid="$(systemd_main_pid)"; then
     echo "systemd feishu connector is running"
+    echo "config: $CONFIG_PATH"
     echo "unit: $SYSTEMD_UNIT"
     echo "pid: $systemd_pid"
     ps -p "$systemd_pid" -o pid=,ppid=,user=,lstart=,command=
@@ -159,6 +256,7 @@ show_status() {
   fi
 
   echo "feishu connector is running"
+  echo "config: $CONFIG_PATH"
   echo "pid: $pid"
   echo "log: $LOG_PATH"
   ps -p "$pid" -o pid=,ppid=,user=,lstart=,command=
@@ -167,6 +265,8 @@ show_status() {
 show_logs() {
   tail -n 80 "$LOG_PATH"
 }
+
+validate_pid_file
 
 case "$ACTION" in
   start)
@@ -192,7 +292,7 @@ case "$ACTION" in
     show_logs
     ;;
   *)
-    echo "usage: $0 {start|stop|restart|status|logs}" >&2
+    echo "usage: $0 {start|stop|restart|status|logs} [--config PATH] [--systemd-unit UNIT]" >&2
     exit 1
     ;;
 esac

@@ -1188,7 +1188,7 @@ async function enrichSummaryWithChatMetadata(runtime, summary) {
     return summary;
   }
 
-  const hasTopicMode = trimString(summary.groupMessageType) || trimString(summary.chatMode) || trimString(summary.chatName);
+  const hasTopicMode = trimString(summary.groupMessageType) || trimString(summary.chatMode);
   if (hasTopicMode) {
     return summary;
   }
