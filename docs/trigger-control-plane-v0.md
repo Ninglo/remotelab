@@ -1,6 +1,6 @@
 # Trigger Control Plane v0
 
-RemoteLab now has a first server-owned trigger control plane for narrow deferred wake-ups.
+RemoteLab has a server-owned trigger control plane for deferred and recurring AI work.
 
 This is intentionally small.
 The goal is not to ship a general workflow engine or scheduler DSL.
@@ -8,12 +8,14 @@ The goal is to stop hiding automation policy inside prompts and standalone scrip
 
 ## Scope
 
-v0 supports exactly one trigger shape:
+The base trigger still has one execution shape:
 
 - trigger type: `at_time`
 - action type: `session_message`
 - target: an existing RemoteLab session
-- delivery: inject one canonical message into that session through the normal session/run pipeline
+- delivery: inject one canonical message into that session through an isolated session/run path
+
+Recurring schedules materialize that same trigger shape from a five-field cron expression. Source-aware triggers and schedules may also persist a `sourceDelivery` snapshot so the generated result returns to the same Feishu group or Topic.
 
 The system stays session-first:
 
@@ -57,6 +59,8 @@ Current fields:
 - `deliveryAttempts`, `claimedAt`, `lastAttemptAt`, `nextAttemptAt`
 - `deliveredAt`, `runId`, `deliveryMode`
 - `lastError`, `lastErrorAt`
+- `scheduleId`, `occurrenceId` when materialized by a recurring schedule
+- `sourceDelivery` when the result must return to its connector source
 
 ## Delivery semantics
 
@@ -76,8 +80,24 @@ If delivery fails:
 - permanent failures end as `failed`
 - stale in-progress claims can be retried after timeout
 
-If the target session is busy, delivery can still be accepted through the existing follow-up queue path.
-In that case the trigger is considered delivered to the session system and records `deliveryMode = queued`.
+If the target session is busy, the trigger remains pending and retries after the session becomes idle. Trigger work never enters the normal follow-up queue, so it cannot be merged into a `queued_batch`. Each trigger therefore has its own request ID, model run, reply publication, and source-delivery record.
+
+## Recurring schedules
+
+Recurring schedules are stored in `chat-recurring-schedules.json` and exposed through owner-only `/api/schedules` routes plus the `remotelab schedule` CLI. They support:
+
+- five-field cron with IANA timezone, defaulting to `Asia/Shanghai`
+- restart catch-up policy `latest_once`
+- separate queued occurrences with a bounded open-occurrence backlog
+- cancellation of future and pending occurrences; `--include-active` also requests cancellation of the active run
+
+Each due occurrence becomes a normal durable Trigger. The schedule advances independently, while its source-delivery snapshot stays unchanged across all occurrences.
+
+## Source delivery outbox
+
+Source deliveries are stored in `chat-source-deliveries.json`. Run finalization writes one idempotent outbox record per trigger response. The matching Feishu connector claims records for its `sourceRouteId`, sends them to the recorded group or Topic anchor, and acknowledges completion. Leases, retry backoff, and stable response IDs make the handoff restart-safe.
+
+Completed runs send their visible text. Failed runs send a short failure notice, empty results send a short no-content notice, and cancelled runs send nothing. The first implementation deliberately supports Feishu post/text results only; generated artifacts remain in RemoteLab.
 
 ## HTTP API
 
@@ -89,6 +109,11 @@ Owner-only routes:
 - `GET /api/triggers/:id`
 - `PATCH /api/triggers/:id`
 - `DELETE /api/triggers/:id`
+- `GET|POST /api/schedules`
+- `GET|PATCH|DELETE /api/schedules/:id`
+- `GET /api/source-deliveries`
+- `POST /api/source-deliveries/claim`
+- `POST /api/source-deliveries/:id/complete|fail`
 
 ## CLI convenience
 
@@ -103,6 +128,7 @@ The command:
 - auto-auths through local owner credentials
 - defaults to `REMOTELAB_SESSION_ID` for the target session
 - defaults to `REMOTELAB_CHAT_BASE_URL` for the local control plane
+- captures the current request/session source by default; pass `--no-source-delivery` to keep output local
 
 Fallback when `remotelab` is not on `PATH`:
 
@@ -132,7 +158,13 @@ Optional runtime overrides:
 }
 ```
 
-## Known limitation
+Recurring example:
+
+```bash
+remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "Prepare the weekday brief" --json
+```
+
+## Known limitations
 
 `session_message` is correct for deferred AI work.
 It is the wrong primitive for deterministic outbound delivery where the payload is already known.
@@ -144,9 +176,9 @@ Example of the wrong pattern:
 - wait for an assistant reply
 - expect that reply to automatically flow back into WeChat
 
-That pattern can produce visible RemoteLab activity without any connector-side delivery.
+That deterministic-reminder pattern still spends a model run and is not the preferred mechanism. Source delivery is intended for fresh AI-generated results.
 
-The correct V2 expansion is a second action type:
+Deterministic outbound delivery should still use a future second action type:
 
 - `connector_action`
 
@@ -160,22 +192,21 @@ That future shape should carry:
 
 and execute through the same connector activation path used by live tool calls.
 
-## Explicit non-goals for v0
+## Explicit non-goals
 
 Not in scope yet:
 
-- recurring schedules
 - arbitrary condition graphs
 - multi-step workflow DAGs
 - trigger-created new sessions
 - UI surface for trigger authoring
-- model-native trigger tools / permissions
+- dedicated UI authoring and model-native permission controls
 
 Those can come later, but only after this narrow wake-up primitive proves stable.
 
 ## Intended next expansions
 
-If this v0 works well, the next steps should likely be:
+Likely next steps:
 
 1. session-scoped trigger listing in the UI
 2. agent-facing trigger creation tools built on the same HTTP/control surface

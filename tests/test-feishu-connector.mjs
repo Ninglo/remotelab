@@ -41,6 +41,7 @@ const {
   buildSessionSourceContext,
   resolveFeishuTopicForkParentSessionId,
   sendFeishuText,
+  processSourceDeliveryOnce,
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
@@ -630,6 +631,15 @@ assert.equal(feishuReplyPayload?.data?.msg_type, 'post');
 assert.match(feishuReplyPayload?.data?.content || '', /topic answer/);
 assert.equal(feishuCreatePayload, null, 'topic-group replies should not fall back to chat-level create sends');
 
+feishuReplyPayload = null;
+await sendFeishuText(fakeSendRuntime, {
+  chatId: 'chat_topic_1',
+  messageId: 'msg_topic_anchor_only',
+  topicId: 'topic_explicit_1',
+}, 'explicit topic answer', 'uuid-topic-explicit');
+assert.equal(feishuReplyPayload?.path?.message_id, 'msg_topic_anchor_only');
+assert.equal(feishuReplyPayload?.data?.reply_in_thread, true);
+
 feishuCreatePayload = null;
 feishuReplyPayload = null;
 await sendFeishuText(
@@ -657,6 +667,49 @@ assert.equal(feishuCreatePayload?.params?.receive_id_type, 'chat_id');
 assert.equal(feishuCreatePayload?.data?.receive_id, 'chat_regular_1');
 assert.equal(feishuCreatePayload?.data?.msg_type, 'post');
 assert.equal(feishuCreatePayload?.data?.uuid, 'uuid-regular-1');
+
+const sourceDeliveryRequests = [];
+const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceRouteId: 'bot-alpha' } }, {
+  requestRemoteLab: async (path, options = {}) => {
+    sourceDeliveryRequests.push({ path, options });
+    if (path === '/api/source-deliveries/claim') {
+      return {
+        response: { ok: true },
+        json: {
+          claim: {
+            leaseId: 'lease_123',
+            delivery: {
+              id: 'srcd_000000000000000000000001',
+              responseId: 'trigger:trg_1',
+              kind: 'content',
+              text: '今天日期：2026-07-27',
+              target: {
+                chatId: 'chat_topic_1',
+                messageId: 'msg_topic_reply_1',
+                topicId: 'thread_topic_1',
+                threadId: 'thread_topic_1',
+              },
+            },
+          },
+        },
+      };
+    }
+    return {
+      response: { ok: true },
+      json: { delivery: { id: 'srcd_000000000000000000000001', state: 'delivered' } },
+    };
+  },
+  deliverFeishuVisibleReply: async (_runtime, target, message) => {
+    assert.equal(target.messageId, 'msg_topic_reply_1');
+    assert.equal(target.threadId, 'thread_topic_1');
+    assert.equal(message.responseId, 'trigger:trg_1');
+    return { message_id: 'om_source_delivery_out' };
+  },
+});
+assert.equal(sourceDeliveryResult.state, 'delivered');
+assert.equal(sourceDeliveryRequests[0].options.body.sourceRouteId, 'bot-alpha');
+assert.equal(sourceDeliveryRequests[1].path, '/api/source-deliveries/srcd_000000000000000000000001/complete');
+assert.equal(sourceDeliveryRequests[1].options.body.externalId, 'om_source_delivery_out');
 
 sendCalls = 0;
 handled.length = 0;
@@ -814,9 +867,11 @@ await writeFile(tempConfigPath, `${JSON.stringify({
   appSecret: 'secret_test',
   region: 'feishu-cn',
   chatBaseUrl: 'http://127.0.0.1:7690',
+  botId: 'bot-alpha',
 }, null, 2)}\n`, 'utf8');
 
 const loadedConfig = await loadConfig(tempConfigPath);
+assert.equal(loadedConfig.sourceRouteId, 'bot-alpha');
 assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backend-owned source prompt logic');
 assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
 assert.deepEqual(loadedConfig.processingReaction, {

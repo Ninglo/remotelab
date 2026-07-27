@@ -418,6 +418,9 @@ export function buildFeishuTopicId(summary) {
   const threadId = trimString(summary?.threadId);
   if (threadId) return threadId;
 
+  const topicId = trimString(summary?.topicId);
+  if (topicId) return topicId;
+
   const rootId = trimString(summary?.rootId);
   if (rootId) return rootId;
 
@@ -543,6 +546,8 @@ export function buildSessionSourceContext(summary) {
     chatType: trimString(summary?.chatType),
     chatId: trimString(summary?.chatId),
   };
+  const sourceRouteId = trimString(summary?.sourceRouteId);
+  if (sourceRouteId) context.sourceRouteId = sourceRouteId;
   const chatName = trimString(summary?.chatName);
   if (chatName) context.chatName = chatName;
   const groupMessageType = trimString(summary?.groupMessageType);
@@ -566,6 +571,8 @@ export function buildMessageSourceContext(summary) {
     chatType: trimString(summary?.chatType),
     conversationKind: buildFeishuConversationKind(summary),
   };
+  const sourceRouteId = trimString(summary?.sourceRouteId);
+  if (sourceRouteId) context.sourceRouteId = sourceRouteId;
   if (topicId) context.topicId = topicId;
   const threadId = trimString(summary?.threadId);
   if (threadId) context.threadId = threadId;

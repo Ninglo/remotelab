@@ -21,7 +21,22 @@ import {
   getTrigger,
   listTriggers,
   updateTrigger,
+  cancelScheduleTriggers,
 } from './triggers.mjs';
+import {
+  createRecurringSchedule,
+  deleteRecurringSchedule,
+  getRecurringSchedule,
+  listRecurringSchedules,
+  updateRecurringSchedule,
+} from './recurring-schedules.mjs';
+import {
+  buildSourceDeliveryPlan,
+  claimSourceDelivery,
+  completeSourceDelivery,
+  failSourceDelivery,
+  listSourceDeliveries,
+} from './source-deliveries.mjs';
 import {
   buildAttachmentContentDisposition,
   buildFileAssetDirectUrl,
@@ -55,6 +70,7 @@ import {
   forkSession,
   getHistory,
   getSession,
+  getSessionSourceContext,
   renameSession,
   saveSessionAsTemplate,
   setSessionArchived,
@@ -120,6 +136,8 @@ export async function handleControlRoutes({
   pathname,
   authSession,
   triggerId,
+  scheduleId,
+  sourceDeliveryRoute,
   fileAssetRoute,
   buildHeaders,
   isDirectoryPath,
@@ -278,6 +296,128 @@ export async function handleControlRoutes({
       return true;
     }
     writeJson(res, 200, { ok: true, trigger });
+    return true;
+  }
+
+  if (pathname === '/api/schedules' && req.method === 'GET') {
+    const sessionId = typeof parsedUrl?.query?.sessionId === 'string' ? parsedUrl.query.sessionId : '';
+    writeJson(res, 200, { schedules: await listRecurringSchedules({ sessionId }) });
+    return true;
+  }
+
+  if (pathname === '/api/schedules' && req.method === 'POST') {
+    let payload = {};
+    try {
+      const body = await readBody(req, 32768);
+      payload = body ? JSON.parse(body) : {};
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    try {
+      const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
+      const session = sessionId ? await getSession(sessionId) : null;
+      if (!session) throw new Error('Session not found');
+      if (session.archived) throw new Error('Session is archived');
+      let sourceDelivery = payload.sourceDelivery;
+      if (!sourceDelivery && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
+        sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sessionId, {
+          requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
+        }));
+      }
+      const schedule = await createRecurringSchedule({ ...payload, sessionId, sourceDelivery });
+      writeJson(res, 201, { schedule });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to create schedule' });
+    }
+    return true;
+  }
+
+  if (scheduleId && req.method === 'GET') {
+    const schedule = await getRecurringSchedule(scheduleId);
+    if (!schedule) writeJson(res, 404, { error: 'Schedule not found' });
+    else writeJson(res, 200, { schedule });
+    return true;
+  }
+
+  if (scheduleId && req.method === 'PATCH') {
+    let payload = {};
+    try {
+      const body = await readBody(req, 32768);
+      payload = body ? JSON.parse(body) : {};
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    try {
+      if (Object.prototype.hasOwnProperty.call(payload, 'sessionId')) {
+        const targetSession = typeof payload.sessionId === 'string' ? await getSession(payload.sessionId.trim()) : null;
+        if (!targetSession) throw new Error('Session not found');
+        if (targetSession.archived) throw new Error('Session is archived');
+      }
+      const schedule = await updateRecurringSchedule(scheduleId, payload);
+      if (!schedule) {
+        writeJson(res, 404, { error: 'Schedule not found' });
+        return true;
+      }
+      let cancellation = null;
+      if (payload.enabled === false) {
+        cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: payload.includeActive === true });
+      }
+      writeJson(res, 200, { schedule, cancellation });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to update schedule' });
+    }
+    return true;
+  }
+
+  if (scheduleId && req.method === 'DELETE') {
+    const schedule = await deleteRecurringSchedule(scheduleId);
+    if (!schedule) {
+      writeJson(res, 404, { error: 'Schedule not found' });
+      return true;
+    }
+    const cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: false });
+    writeJson(res, 200, { ok: true, schedule, cancellation });
+    return true;
+  }
+
+  if (pathname === '/api/source-deliveries' && req.method === 'GET') {
+    writeJson(res, 200, { deliveries: await listSourceDeliveries({
+      connector: typeof parsedUrl?.query?.connector === 'string' ? parsedUrl.query.connector : '',
+      sourceRouteId: typeof parsedUrl?.query?.sourceRouteId === 'string' ? parsedUrl.query.sourceRouteId : '',
+      state: typeof parsedUrl?.query?.state === 'string' ? parsedUrl.query.state : '',
+      sessionId: typeof parsedUrl?.query?.sessionId === 'string' ? parsedUrl.query.sessionId : '',
+    }) });
+    return true;
+  }
+
+  if (pathname === '/api/source-deliveries/claim' && req.method === 'POST') {
+    let payload = {};
+    try {
+      const body = await readBody(req, 32768);
+      payload = body ? JSON.parse(body) : {};
+      const claim = await claimSourceDelivery(payload);
+      writeJson(res, 200, { claim });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to claim source delivery' });
+    }
+    return true;
+  }
+
+  if (sourceDeliveryRoute && req.method === 'POST') {
+    let payload = {};
+    try {
+      const body = await readBody(req, 32768);
+      payload = body ? JSON.parse(body) : {};
+      const delivery = sourceDeliveryRoute.action === 'complete'
+        ? await completeSourceDelivery(sourceDeliveryRoute.deliveryId, payload.leaseId, payload)
+        : await failSourceDelivery(sourceDeliveryRoute.deliveryId, payload.leaseId, payload.error || 'Delivery failed');
+      if (!delivery) writeJson(res, 404, { error: 'Source delivery not found' });
+      else writeJson(res, 200, { delivery });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to update source delivery' });
+    }
     return true;
   }
 

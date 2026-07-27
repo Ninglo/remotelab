@@ -1,0 +1,2 @@
+[2026-07-27 00:00] Started RecurringSchedule and Feishu sourceDelivery implementation with isolated trigger runs and restart-safe delivery.
+[2026-07-27 18:20] Implemented the scheduler, isolated trigger execution, durable source-delivery outbox, Feishu route polling, API/CLI controls, and regression coverage. Focused tests and the full npm test suite pass; live restart/integration remains.

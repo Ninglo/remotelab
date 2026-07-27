@@ -10,6 +10,7 @@ const [
   ws,
   sessionManager,
   triggers,
+  recurringSchedules,
   tools,
   { ensureDir },
   embeddedMailWorker,
@@ -22,6 +23,7 @@ const [
   import('./chat/ws.mjs'),
   import('./chat/session-manager.mjs'),
   import('./chat/triggers.mjs'),
+  import('./chat/recurring-schedules.mjs'),
   import('./lib/tools.mjs'),
   import('./chat/fs-utils.mjs'),
   import('./lib/embedded-mail-worker.mjs'),
@@ -50,6 +52,11 @@ const server = http.createServer((req, res) => {
 
 ws.attachWebSocket(server);
 triggers.startTriggerScheduler();
+recurringSchedules.startRecurringScheduleScheduler({
+  createScheduledTrigger: triggers.createScheduledTrigger,
+  countOpenScheduleTriggers: triggers.countOpenScheduleTriggers,
+  onMaterialized: () => triggers.processDueTriggersNow(),
+});
 void (async () => {
   try {
     await sessionManager.startDetachedRunObservers();
@@ -70,6 +77,7 @@ async function shutdown() {
   await apiRequestLog.closeApiRequestLog();
   await usageLedger.closeUsageLedger();
   triggers.stopTriggerScheduler();
+  recurringSchedules.stopRecurringScheduleScheduler();
   sessionManager.killAll();
   process.exit(0);
 }

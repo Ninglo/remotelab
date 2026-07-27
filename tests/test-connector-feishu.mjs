@@ -73,6 +73,7 @@ const topicSummary = {
   rootId: 'om_topic_root_1',
   threadId: 'thread_1',
   imageKeys: ['img_1'],
+  sourceRouteId: 'bot-alpha',
 };
 
 assert.equal(buildExternalTriggerId(topicSummary), 'feishu:topic:oc_chat_1:thread_1');
@@ -87,12 +88,14 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
   conversationKind: 'topic',
   chatType: 'topic',
   chatId: 'oc_chat_1',
+  sourceRouteId: 'bot-alpha',
   groupMessageType: 'thread',
   topicId: 'thread_1',
   threadId: 'thread_1',
   rootId: 'om_topic_root_1',
 });
 assert.deepEqual(buildMessageSourceContext(topicSummary).attachments, { imageCount: 1 });
+assert.equal(buildMessageSourceContext(topicSummary).sourceRouteId, 'bot-alpha');
 assert.deepEqual(
   collectFeishuTopicParentMessageCandidates({
     ...topicSummary,

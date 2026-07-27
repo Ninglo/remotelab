@@ -166,6 +166,7 @@ import {
   runIncludesResponseId,
 } from './reply-publication.mjs';
 import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
+import { enqueueSourceDelivery, normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
 import { extractTaggedBlock } from './session-text-parsing.mjs';
 import { buildTurnContextHook } from './turn-context-hook.mjs';
@@ -2706,6 +2707,7 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
 
   if (shouldAutoCompactRun(finalizedRun)) {
     await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
+    await queueTriggerSourceDelivery(sessionId, finalizedRun, manifest);
     latestSession = await getSession(sessionId) || latestSession;
     scheduleDetachedRunMemoryWriteback(sessionId, latestSession, finalizedRun, manifest);
     return;
@@ -2726,7 +2728,42 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
 
   latestSession = await getSession(sessionId) || latestSession;
   await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
+  await queueTriggerSourceDelivery(sessionId, finalizedRun, manifest);
   scheduleDetachedRunMemoryWriteback(sessionId, latestSession, finalizedRun, manifest);
+}
+
+async function queueTriggerSourceDelivery(sessionId, finalizedRun, manifest) {
+  if (trimString(manifest?.internalOperation) !== 'trigger_delivery') return null;
+  const sourceDelivery = normalizeSourceDeliveryPlan(manifest?.sourceDelivery);
+  if (!sourceDelivery || finalizedRun?.state === 'cancelled') return null;
+
+  let kind = 'content';
+  let text = '';
+  if (finalizedRun?.state === 'failed') {
+    kind = 'summary';
+    text = `定时任务执行失败：${trimString(finalizedRun?.failureReason) || '模型运行失败'}`;
+  } else if (finalizedRun?.state === 'completed') {
+    const latestRun = await getRun(finalizedRun.id) || finalizedRun;
+    const history = await loadHistory(sessionId, { includeBodies: true });
+    const payloadHistory = collectReplyPublicationHistory(history, latestRun);
+    const payload = buildReplyPublicationPayload(payloadHistory, latestRun);
+    text = trimString(payload.text) || '本次定时任务未生成可发送内容。';
+    if (!trimString(payload.text)) kind = 'summary';
+  } else {
+    return null;
+  }
+
+  return enqueueSourceDelivery({
+    responseId: trimString(manifest?.responseId || finalizedRun?.responseId || finalizedRun?.requestId),
+    runId: trimString(finalizedRun?.id),
+    sessionId,
+    triggerId: trimString(manifest?.triggerId),
+    scheduleId: trimString(manifest?.scheduleId),
+    occurrenceId: trimString(manifest?.occurrenceId),
+    sourceDelivery,
+    kind,
+    text,
+  });
 }
 
 function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
@@ -2811,7 +2848,22 @@ export async function startDetachedRunObservers() {
     }
   }
   await resumePendingCompletionTargets();
+  await resumePendingTriggerSourceDeliveries();
   schedulePendingSessionLabelResume();
+}
+
+async function resumePendingTriggerSourceDeliveries() {
+  for (const runId of await listRunIds()) {
+    const run = await getRun(runId);
+    if (!run || !isTerminalRunState(run.state)) continue;
+    const manifest = await getRunManifest(runId);
+    if (trimString(manifest?.internalOperation) !== 'trigger_delivery' || !manifest?.sourceDelivery) continue;
+    try {
+      await queueTriggerSourceDelivery(run.sessionId, run, manifest);
+    } catch (error) {
+      console.error(`[source-delivery] failed to recover ${runId}: ${error?.message || error}`);
+    }
+  }
 }
 
 export async function listSessions({
@@ -4041,6 +4093,15 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     }
   }
 
+  if (
+    options.requireIdle === true
+    && (hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0 || getPendingContinuationQueue(sessionMeta).length > 0)
+  ) {
+    const error = new Error('Session is busy');
+    error.code = 'SESSION_BUSY';
+    throw error;
+  }
+
   if ((hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
     const queuedImages = options.preSavedAttachments?.length > 0
       ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
@@ -4198,6 +4259,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       internalOperation: options.internalOperation || null,
       ...(replyPublicationRootRunId ? { replyPublicationRootRunId } : {}),
       ...(publicationResponseIds.length > 0 ? { replyPublicationResponseIds: publicationResponseIds } : {}),
+      ...(normalizeSourceDeliveryPlan(options.sourceDelivery)
+        ? { sourceDelivery: normalizeSourceDeliveryPlan(options.sourceDelivery) }
+        : {}),
+      ...(trimString(options.triggerId) ? { triggerId: trimString(options.triggerId) } : {}),
+      ...(trimString(options.scheduleId) ? { scheduleId: trimString(options.scheduleId) } : {}),
+      ...(trimString(options.occurrenceId) ? { occurrenceId: trimString(options.occurrenceId) } : {}),
       ...(typeof options.compactionTargetSessionId === 'string' && options.compactionTargetSessionId
         ? { compactionTargetSessionId: options.compactionTargetSessionId }
         : {}),

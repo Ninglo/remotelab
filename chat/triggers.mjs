@@ -4,7 +4,9 @@ import { CHAT_TRIGGERS_FILE } from '../lib/config.mjs';
 import { appendEvent } from './history.mjs';
 import { statusEvent } from './normalizer.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
-import { getSession, submitHttpMessage } from './session-manager.mjs';
+import { getSession, getSessionSourceContext, submitHttpMessage } from './session-manager.mjs';
+import { buildSourceDeliveryPlan, normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
+import { getRun, isTerminalRunState, requestRunCancel } from './runs.mjs';
 
 const DEFAULT_TRIGGER_POLL_MS = 15000;
 const MIN_TRIGGER_POLL_MS = 250;
@@ -141,6 +143,9 @@ function normalizeStoredTrigger(value) {
     deliveryAttempts: Math.max(0, parsePositiveInteger(raw.deliveryAttempts, 0)),
     runId: trimString(raw.runId),
     deliveryMode: trimString(raw.deliveryMode),
+    scheduleId: trimString(raw.scheduleId),
+    occurrenceId: trimString(raw.occurrenceId),
+    sourceDelivery: normalizeSourceDeliveryPlan(raw.sourceDelivery),
   };
 }
 
@@ -305,6 +310,13 @@ export async function createTrigger(input = {}) {
   const id = createTriggerId();
   const createdAt = nowIso();
   const enabled = normalizeBoolean(input.enabled, true);
+  let sourceDelivery = normalizeSourceDeliveryPlan(input.sourceDelivery);
+  if (!sourceDelivery && trimString(input.deliverTo).toLowerCase() === 'session_source') {
+    const sourceContext = await getSessionSourceContext(session.id, {
+      requestId: trimString(input.sourceRequestId),
+    });
+    sourceDelivery = buildSourceDeliveryPlan(sourceContext);
+  }
   const trigger = {
     id,
     triggerType: TRIGGER_TYPE_AT_TIME,
@@ -323,13 +335,72 @@ export async function createTrigger(input = {}) {
     createdAt,
     updatedAt: createdAt,
     deliveryAttempts: 0,
+    scheduleId: trimString(input.scheduleId),
+    occurrenceId: trimString(input.occurrenceId),
+    sourceDelivery,
   };
 
+  let createdTrigger = trigger;
   await withTriggerMutation(async (triggers, saveTriggers) => {
+    if (trigger.occurrenceId) {
+      const existing = triggers.find((entry) => entry.occurrenceId === trigger.occurrenceId);
+      if (existing) {
+        createdTrigger = existing;
+        return;
+      }
+    }
     triggers.push(trigger);
     await saveTriggers(triggers);
   });
-  return cloneTrigger(trigger);
+  return cloneTrigger(createdTrigger);
+}
+
+export async function createScheduledTrigger(input = {}) {
+  return createTrigger(input);
+}
+
+export async function countOpenScheduleTriggers(scheduleId) {
+  const normalizedScheduleId = trimString(scheduleId);
+  if (!normalizedScheduleId) return 0;
+  const triggers = await loadTriggers();
+  return triggers.filter((trigger) => (
+    trigger.scheduleId === normalizedScheduleId
+    && !isTriggerTerminal(trigger)
+  )).length;
+}
+
+export async function cancelScheduleTriggers(scheduleId, options = {}) {
+  const normalizedScheduleId = trimString(scheduleId);
+  if (!normalizedScheduleId) return { cancelledPending: 0, cancelledActive: 0 };
+  let cancelledPending = 0;
+  let activeRunIds = [];
+  await withTriggerMutation(async (triggers, saveTriggers) => {
+    const updatedAt = nowIso();
+    activeRunIds = triggers
+      .filter((trigger) => trigger.scheduleId === normalizedScheduleId && trimString(trigger.runId))
+      .map((trigger) => trigger.runId);
+    for (const trigger of triggers) {
+      if (trigger.scheduleId !== normalizedScheduleId) continue;
+      if (![TRIGGER_STATUS_PENDING, TRIGGER_STATUS_DELIVERING].includes(trigger.status)) continue;
+      trigger.status = TRIGGER_STATUS_CANCELLED;
+      trigger.enabled = false;
+      trigger.claimedAt = '';
+      trigger.nextAttemptAt = '';
+      trigger.updatedAt = updatedAt;
+      cancelledPending += 1;
+    }
+    if (cancelledPending > 0) await saveTriggers(triggers);
+  });
+
+  let cancelledActive = 0;
+  if (options.includeActive === true) {
+    for (const runId of new Set(activeRunIds)) {
+      const run = await getRun(runId);
+      if (!run || isTerminalRunState(run.state)) continue;
+      if (await requestRunCancel(runId)) cancelledActive += 1;
+    }
+  }
+  return { cancelledPending, cancelledActive };
 }
 
 export async function updateTrigger(triggerId, patch = {}) {
@@ -577,6 +648,32 @@ async function markTriggerDeliveryFailure(triggerId, error, attemptCount = 1) {
   return updatedTrigger;
 }
 
+async function releaseTriggerForBusy(triggerId) {
+  const normalizedTriggerId = trimString(triggerId);
+  if (!normalizedTriggerId) return null;
+  const releasedAt = nowIso();
+  let updatedTrigger = null;
+  await withTriggerMutation(async (triggers, saveTriggers) => {
+    const index = triggers.findIndex((trigger) => trigger.id === normalizedTriggerId);
+    if (index === -1) return;
+    const current = triggers[index];
+    const next = {
+      ...current,
+      status: TRIGGER_STATUS_PENDING,
+      claimedAt: '',
+      lastAttemptAt: '',
+      nextAttemptAt: new Date(Date.now() + 1000).toISOString(),
+      deliveryAttempts: Math.max(0, Number(current.deliveryAttempts) || 0) - 1,
+      deliveryMode: 'waiting_for_session',
+      updatedAt: releasedAt,
+    };
+    triggers[index] = next;
+    await saveTriggers(triggers);
+    updatedTrigger = cloneTrigger(next);
+  });
+  return updatedTrigger;
+}
+
 async function appendTriggerStatusEvent(trigger, outcome) {
   try {
     const event = statusEvent(buildTriggerStatusText(trigger, { queued: outcome?.queued === true }));
@@ -599,6 +696,13 @@ async function deliverTrigger(trigger) {
     effort: trigger.effort || undefined,
     thinking: trigger.thinking === true,
     internalOperation: 'trigger_delivery',
+    queueIfBusy: false,
+    requireIdle: true,
+    skipDispatch: true,
+    sourceDelivery: trigger.sourceDelivery || undefined,
+    triggerId: trigger.id,
+    scheduleId: trigger.scheduleId || undefined,
+    occurrenceId: trigger.occurrenceId || undefined,
   });
 
   if (!outcome.duplicate) {
@@ -622,6 +726,10 @@ async function attemptTriggerDelivery(triggerId) {
     await deliverTrigger(trigger);
     return await getTrigger(trigger.id);
   } catch (error) {
+    if (error?.code === 'SESSION_BUSY') {
+      await releaseTriggerForBusy(trigger.id);
+      return await getTrigger(trigger.id);
+    }
     await markTriggerDeliveryFailure(trigger.id, error, trigger.deliveryAttempts || 1);
     console.error(`[triggers] failed to deliver ${trigger.id}: ${error.message}`);
     return await getTrigger(trigger.id);

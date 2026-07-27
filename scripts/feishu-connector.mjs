@@ -2,7 +2,7 @@
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
-import { dirname, join, resolve } from 'path';
+import { basename, dirname, join, resolve } from 'path';
 import { setTimeout as delay } from 'timers/promises';
 import { pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
@@ -62,12 +62,14 @@ import {
   resolveFeishuTopicForkParentSessionId,
 } from '../connectors/feishu/session-flow.mjs';
 
+const CANONICAL_DEFAULT_CONFIG_PATH = join(CONFIG_DIR, 'feishu-connector', 'config.json');
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
-  : join(CONFIG_DIR, 'feishu-connector', 'config.json');
+  : CANONICAL_DEFAULT_CONFIG_PATH;
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_ACCESS_STATE_FILENAME = 'access-state.json';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
+const DEFAULT_SOURCE_DELIVERY_POLL_MS = 1000;
 const DEFAULT_SESSION_TOOL = 'codex';
 const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const RUN_POLL_INTERVAL_MS = 1500;
@@ -430,6 +432,11 @@ async function loadConfig(pathname) {
   if (!appSecret) throw new Error(`Missing appSecret in ${pathname}`);
   const configDir = dirname(pathname);
   const storageDir = trimString(parsed?.storageDir) || configDir;
+  const explicitBotId = sanitizeIdPart(parsed?.botId);
+  const sourceRouteId = explicitBotId
+    || (resolve(pathname) === resolve(CANONICAL_DEFAULT_CONFIG_PATH)
+      ? 'default'
+      : (sanitizeIdPart(basename(configDir)) || 'default'));
   return {
     appId,
     appSecret,
@@ -452,6 +459,7 @@ async function loadConfig(pathname) {
     systemPrompt: normalizeSystemPrompt(parsed?.systemPrompt),
     processingReaction: normalizeProcessingReactionConfig(parsed?.processingReaction),
     silentConfirmationText: normalizeReplyText(parsed?.silentConfirmationText),
+    sourceRouteId,
   };
 }
 
@@ -1464,7 +1472,10 @@ async function resolveFeishuRuntimeSelection(runtime) {
 }
 
 async function generateRemoteLabReply(runtime, summary) {
-  const effectiveSummary = await enrichSummaryWithChatMetadata(runtime, summary);
+  const effectiveSummary = {
+    ...await enrichSummaryWithChatMetadata(runtime, summary),
+    sourceRouteId: runtime.config.sourceRouteId,
+  };
   const runtimeSelection = await resolveFeishuRuntimeSelection(runtime);
   const attachmentResolution = await resolveFeishuMessageAttachments(runtime, effectiveSummary);
   const messageSummary = attachmentResolution.failures.length > 0
@@ -1653,6 +1664,83 @@ async function deliverFeishuVisibleReply(runtime, summary, {
   return {
     message_id: delivery.record.externalId || '',
   };
+}
+
+async function processSourceDeliveryOnce(runtime, helpers = {}) {
+  const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
+  const deliver = helpers.deliverFeishuVisibleReply || deliverFeishuVisibleReply;
+  const claimResult = await request('/api/source-deliveries/claim', {
+    method: 'POST',
+    body: {
+      connector: FEISHU_CONNECTOR_ID,
+      sourceRouteId: runtime.config.sourceRouteId || 'default',
+    },
+  });
+  if (!claimResult.response.ok) {
+    throw new Error(claimResult.json?.error || claimResult.text || 'Failed to claim source delivery');
+  }
+  const claim = claimResult.json?.claim;
+  if (!claim?.delivery?.id || !claim?.leaseId) return null;
+
+  const delivery = claim.delivery;
+  try {
+    const result = await deliver(runtime, {
+      ...delivery.target,
+      mentions: [],
+    }, {
+      responseId: delivery.responseId,
+      kind: delivery.kind || 'content',
+      text: delivery.text,
+    });
+    const completed = await request(`/api/source-deliveries/${encodeURIComponent(delivery.id)}/complete`, {
+      method: 'POST',
+      body: {
+        leaseId: claim.leaseId,
+        externalId: trimString(result?.message_id),
+      },
+    });
+    if (!completed.response.ok) {
+      throw new Error(completed.json?.error || completed.text || 'Failed to complete source delivery');
+    }
+    return completed.json?.delivery || delivery;
+  } catch (error) {
+    const failed = await request(`/api/source-deliveries/${encodeURIComponent(delivery.id)}/fail`, {
+      method: 'POST',
+      body: {
+        leaseId: claim.leaseId,
+        error: error?.message || String(error),
+      },
+    }).catch(() => null);
+    if (failed && !failed.response.ok) {
+      console.error(`[feishu-connector] failed to persist source delivery failure ${delivery.id}: ${failed.json?.error || failed.text}`);
+    }
+    throw error;
+  }
+}
+
+function startSourceDeliveryPoller(runtime, options = {}) {
+  if (runtime.sourceDeliveryTimer) return runtime.sourceDeliveryTimer;
+  const pollMs = Math.max(250, Number.parseInt(options.pollMs, 10) || DEFAULT_SOURCE_DELIVERY_POLL_MS);
+  const tick = () => {
+    if (runtime.sourceDeliveryPollPromise) return;
+    runtime.sourceDeliveryPollPromise = processSourceDeliveryOnce(runtime)
+      .catch((error) => {
+        console.error(`[feishu-connector] source delivery poll failed: ${error?.message || error}`);
+      })
+      .finally(() => {
+        runtime.sourceDeliveryPollPromise = null;
+      });
+  };
+  runtime.sourceDeliveryTimer = setInterval(tick, pollMs);
+  tick();
+  return runtime.sourceDeliveryTimer;
+}
+
+function stopSourceDeliveryPoller(runtime) {
+  if (!runtime?.sourceDeliveryTimer) return false;
+  clearInterval(runtime.sourceDeliveryTimer);
+  runtime.sourceDeliveryTimer = null;
+  return true;
 }
 
 function isProcessableMessage(summary) {
@@ -2009,6 +2097,9 @@ export {
   resolveFeishuTopicForkParentSessionId,
   resolveFeishuMessageAttachments,
   sendFeishuText,
+  processSourceDeliveryOnce,
+  startSourceDeliveryPoller,
+  stopSourceDeliveryPoller,
   snapshotAccessState,
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,
@@ -2048,6 +2139,7 @@ async function main() {
   const closeConnection = (reason) => {
     if (closed) return;
     closed = true;
+    stopSourceDeliveryPoller(runtime);
     console.log(`[feishu-connector] closing connection (${reason})`);
     wsClient.close();
   };
@@ -2090,6 +2182,7 @@ async function main() {
   });
 
   await wsClient.start({ eventDispatcher });
+  startSourceDeliveryPoller(runtime);
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] intake policy: ${config.intakePolicy.mode}`);
   console.log(`[feishu-connector] access state file: ${config.intakePolicy.accessStatePath}`);

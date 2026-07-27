@@ -140,6 +140,12 @@ async function cleanEnv(toolId, manifest = {}, options = {}) {
   if (typeof manifest?.sessionId === 'string' && manifest.sessionId.trim()) {
     env.REMOTELAB_SESSION_ID = manifest.sessionId.trim();
   }
+  if (typeof manifest?.requestId === 'string' && manifest.requestId.trim()) {
+    env.REMOTELAB_REQUEST_ID = manifest.requestId.trim();
+  }
+  if (typeof manifest?.responseId === 'string' && manifest.responseId.trim()) {
+    env.REMOTELAB_RESPONSE_ID = manifest.responseId.trim();
+  }
   if (runId) {
     env.REMOTELAB_RUN_ID = runId;
   }
