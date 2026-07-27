@@ -19,6 +19,7 @@ const {
 const plan = buildSourceDeliveryPlan({
   session: {
     connector: 'feishu',
+    sourceRouteId: 'unknown',
     chatId: 'oc_group',
     chatType: 'group',
     conversationKind: 'group',

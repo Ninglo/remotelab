@@ -20,6 +20,11 @@ function clone(value) {
   return value ? JSON.parse(JSON.stringify(value)) : null;
 }
 
+function normalizeSourceRouteId(value) {
+  const normalized = trimString(value);
+  return !normalized || normalized === 'unknown' ? 'default' : normalized;
+}
+
 function nowIso(value = Date.now()) {
   const parsed = typeof value === 'string' ? Date.parse(value) : Number(value);
   return new Date(Number.isFinite(parsed) ? parsed : Date.now()).toISOString();
@@ -66,7 +71,7 @@ export function normalizeSourceDeliveryPlan(value) {
   if (!target.chatId) return null;
   return {
     connector,
-    sourceRouteId: trimString(value.sourceRouteId) || 'default',
+    sourceRouteId: normalizeSourceRouteId(value.sourceRouteId),
     target,
   };
 }
@@ -85,7 +90,7 @@ export function buildSourceDeliveryPlan(sourceContext) {
   if (!target.chatId) return null;
   return {
     connector,
-    sourceRouteId: trimString(message.sourceRouteId || session.sourceRouteId) || 'default',
+    sourceRouteId: normalizeSourceRouteId(message.sourceRouteId || session.sourceRouteId),
     target,
   };
 }

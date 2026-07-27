@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 import http from 'http';
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Readable } from 'stream';
@@ -872,6 +872,16 @@ await writeFile(tempConfigPath, `${JSON.stringify({
 
 const loadedConfig = await loadConfig(tempConfigPath);
 assert.equal(loadedConfig.sourceRouteId, 'bot-alpha');
+const derivedRouteDir = join(tempConfigDir, 'connector-beta');
+const derivedRouteConfigPath = join(derivedRouteDir, 'config.json');
+await mkdir(derivedRouteDir, { recursive: true });
+await writeFile(derivedRouteConfigPath, `${JSON.stringify({
+  appId: 'cli_test',
+  appSecret: 'secret_test',
+  region: 'feishu-cn',
+  chatBaseUrl: 'http://127.0.0.1:7690',
+}, null, 2)}\n`, 'utf8');
+assert.equal((await loadConfig(derivedRouteConfigPath)).sourceRouteId, 'connector-beta');
 assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backend-owned source prompt logic');
 assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
 assert.deepEqual(loadedConfig.processingReaction, {

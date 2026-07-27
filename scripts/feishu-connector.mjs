@@ -432,7 +432,7 @@ async function loadConfig(pathname) {
   if (!appSecret) throw new Error(`Missing appSecret in ${pathname}`);
   const configDir = dirname(pathname);
   const storageDir = trimString(parsed?.storageDir) || configDir;
-  const explicitBotId = sanitizeIdPart(parsed?.botId);
+  const explicitBotId = trimString(parsed?.botId) ? sanitizeIdPart(parsed.botId) : '';
   const sourceRouteId = explicitBotId
     || (resolve(pathname) === resolve(CANONICAL_DEFAULT_CONFIG_PATH)
       ? 'default'
