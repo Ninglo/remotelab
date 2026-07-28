@@ -47,6 +47,7 @@ Usage:
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
   remotelab trigger                  Manage durable session triggers
+  remotelab schedule                 Manage recurring cron schedules
   remotelab usage-summary            Summarize local Codex token usage
   remotelab session-spawn            Spawn a focused parallel session from a source session
   remotelab generate-token           Generate a new access token
@@ -198,6 +199,18 @@ switch (command) {
     const { runTriggerCommand } = await import(scriptPath('lib/trigger-command.mjs'));
     try {
       process.exitCode = await runTriggerCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'schedule':
+  case 'schedules': {
+    const { runScheduleCommand } = await import(scriptPath('lib/schedule-command.mjs'));
+    try {
+      process.exitCode = await runScheduleCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

@@ -1,0 +1,7 @@
+[
+  {
+    "id": "recurring-schedule-source-delivery",
+    "description": "Add recurring schedules whose isolated trigger runs publish one traceable result to the originating Feishu group or topic.",
+    "pass": true
+  }
+]

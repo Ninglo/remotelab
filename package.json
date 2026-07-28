@@ -92,6 +92,7 @@
     "test:shared-tools:raw": "node tests/test-shared-tools-directory.mjs && node tests/test-shared-tool-env-overrides.mjs",
     "test:integration": "node scripts/run-with-clean-instance-env.mjs npm run test:integration:raw",
     "test:integration:raw": "node tests/test-http-session-templates.mjs && node tests/test-http-session-media-upload.mjs && node tests/test-http-file-assets.mjs && node tests/test-http-result-file-assets.mjs && node tests/test-http-voice-cleanup.mjs",
+    "test:triggers": "node tests/test-trigger-command.mjs && node tests/test-schedule-command.mjs && node tests/test-recurring-schedules.mjs && node tests/test-source-deliveries.mjs && node tests/test-http-triggers.mjs",
     "test:live:agenda-agent": "node tests/test-agenda-agent-live-smoke.mjs",
     "stop": "./stop.sh",
     "setup": "./setup.sh",

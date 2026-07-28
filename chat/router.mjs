@@ -1326,6 +1326,11 @@ function isOwnerOnlyRoute(pathname, method) {
   if (pathname.startsWith('/api/codex-auth') && ['GET', 'POST'].includes(method)) return true;
   if (pathname === '/api/triggers' && (method === 'GET' || method === 'POST')) return true;
   if (pathname.startsWith('/api/triggers/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
+  if (pathname === '/api/schedules' && ['GET', 'POST'].includes(method)) return true;
+  if (pathname.startsWith('/api/schedules/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
+  if (pathname === '/api/source-deliveries' && method === 'GET') return true;
+  if (pathname === '/api/source-deliveries/claim' && method === 'POST') return true;
+  if (pathname.startsWith('/api/source-deliveries/') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/fork') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/delegate') && method === 'POST') return true;
@@ -1348,6 +1353,16 @@ function parseSharePayloadRoute(pathname) {
 function parseTriggerRoute(pathname) {
   const match = /^\/api\/triggers\/(trg_[a-f0-9]{24})$/.exec(pathname || '');
   return match ? match[1] : null;
+}
+
+function parseScheduleRoute(pathname) {
+  const match = /^\/api\/schedules\/(sch_[a-f0-9]{24})$/.exec(pathname || '');
+  return match ? match[1] : null;
+}
+
+function parseSourceDeliveryRoute(pathname) {
+  const match = /^\/api\/source-deliveries\/(srcd_[a-f0-9]{24})\/(complete|fail)$/.exec(pathname || '');
+  return match ? { deliveryId: match[1], action: match[2] } : null;
 }
 
 function parseFileAssetRoute(pathname) {
@@ -1585,6 +1600,8 @@ export async function handleRequest(req, res) {
 
   const sessionGetRoute = req.method === 'GET' ? parseSessionGetRoute(pathname) : null;
   const triggerId = parseTriggerRoute(pathname);
+  const scheduleId = parseScheduleRoute(pathname);
+  const sourceDeliveryRoute = parseSourceDeliveryRoute(pathname);
   const fileAssetRoute = parseFileAssetRoute(pathname);
 
   if (await handleSessionMainRoutes({
@@ -1638,6 +1655,8 @@ export async function handleRequest(req, res) {
     pathname,
     authSession,
     triggerId,
+    scheduleId,
+    sourceDeliveryRoute,
     fileAssetRoute,
     buildHeaders,
     isDirectoryPath,

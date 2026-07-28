@@ -65,11 +65,14 @@ function buildSessionSpawnSection({ currentSessionId, chatPort }) {
 - For scheduled follow-ups or deferred wake-ups in the current session, prefer the trigger CLI over hand-written HTTP requests.
 - Preferred command:
   - remotelab trigger create --in 2h --text "Follow up on this later" --json
+- For recurring AI work, use the five-field cron schedule command. It defaults to Asia/Shanghai and keeps each occurrence as an isolated trigger/run:
+  - remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "Prepare the morning brief" --json
 - Use trigger-created session wake-ups only when the future work genuinely requires AI reasoning, drafting, or conversation continuation.
 - Do not use a trigger-created wake-up just because the user said "remind me". A simple time-based reminder such as "remind me tomorrow at 3pm" should usually become a direct calendar/schedule update or other deterministic delivery.
 - For deterministic external delivery such as reminders, notifications, or simple outbound pushes, prefer a direct connector action when one is available instead of waking a session just to restate the message.
 - Reserve trigger-created session wake-ups for recurring or open-ended future AI work such as daily feedback, scheduled reviews, or "check the calendar and brief me" style tasks.
 - The trigger command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --session explicitly.
+- Trigger and schedule commands capture the current session source when available so generated results can return to the same connector conversation. Use --no-source-delivery only when the result should remain inside RemoteLab.
 - If the remotelab command is unavailable in PATH, use:
   - node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
 - If you generate a local file the user needs, do not rely on host paths as the user-facing handoff.

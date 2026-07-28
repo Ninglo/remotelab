@@ -96,13 +96,20 @@ function setupTempHome() {
     join(localBin, 'fake-codex'),
     `#!/usr/bin/env node
 const delay = Number(process.env.FAKE_CODEX_DELAY_MS || '300');
+const prompt = process.argv.join(' ');
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-trigger-test' }));
 console.log(JSON.stringify({ type: 'turn.started' }));
 setTimeout(() => {
+  if (prompt.includes('FAIL_TRIGGER')) {
+    console.error('synthetic trigger failure');
+    process.exit(2);
+  }
+  if (!prompt.includes('EMPTY_TRIGGER')) {
   console.log(JSON.stringify({
     type: 'item.completed',
     item: { type: 'agent_message', text: 'trigger run finished' }
   }));
+  }
   console.log(JSON.stringify({
     type: 'turn.completed',
     usage: { input_tokens: 1, output_tokens: 1 }
@@ -157,13 +164,19 @@ async function stopServer(server) {
   await waitFor(() => server.child.exitCode !== null, 'server shutdown');
 }
 
-async function createSession(port, { name = 'Trigger Test', group = 'Tests', description = 'Trigger delivery session' } = {}) {
+async function createSession(port, {
+  name = 'Trigger Test',
+  group = 'Tests',
+  description = 'Trigger delivery session',
+  sourceContext = null,
+} = {}) {
   const res = await request(port, 'POST', '/api/sessions', {
     folder: repoRoot,
     tool: 'fake-codex',
     name,
     group,
     description,
+    ...(sourceContext ? { sourceContext } : {}),
   });
   assert.equal(res.status, 201, 'create session should succeed');
   return res.json.session;
@@ -260,6 +273,112 @@ async function main() {
 
     const afterDeleteRes = await request(port, 'GET', `/api/triggers/${futureTrigger.id}`);
     assert.equal(afterDeleteRes.status, 404, 'deleted trigger should not be found');
+
+    const sourceSession = await createSession(port, {
+      name: 'Feishu Source Delivery',
+      sourceContext: {
+        connector: 'feishu',
+        sourceRouteId: 'default',
+        conversationKind: 'group',
+        chatType: 'group',
+        chatId: 'oc_source_test',
+      },
+    });
+    const isolatedTriggers = [];
+    for (const title of ['Isolated A', 'Isolated B']) {
+      const res = await request(port, 'POST', '/api/triggers', {
+        sessionId: sourceSession.id,
+        title,
+        scheduledAt: new Date(Date.now() + 100).toISOString(),
+        text: `Run ${title}`,
+        tool: 'fake-codex',
+        deliverTo: 'session_source',
+      });
+      assert.equal(res.status, 201);
+      assert.equal(res.json.trigger.sourceDelivery.target.chatId, 'oc_source_test');
+      isolatedTriggers.push(res.json.trigger);
+    }
+
+    const deliveredIsolated = [];
+    for (const isolated of isolatedTriggers) {
+      deliveredIsolated.push(await waitFor(async () => {
+        const res = await request(port, 'GET', `/api/triggers/${isolated.id}`);
+        return res.status === 200 && res.json.trigger.status === 'delivered'
+          ? res.json.trigger
+          : false;
+      }, `${isolated.title} delivery`));
+    }
+    assert.notEqual(deliveredIsolated[0].runId, deliveredIsolated[1].runId, 'each trigger must get its own model run');
+    assert.deepEqual(deliveredIsolated.map((entry) => entry.deliveryMode), ['run', 'run']);
+    await Promise.all(deliveredIsolated.map((entry) => waitForRunTerminal(port, entry.runId)));
+
+    const deliveryClaim = await waitFor(async () => {
+      const res = await request(port, 'POST', '/api/source-deliveries/claim', {
+        connector: 'feishu',
+        sourceRouteId: 'default',
+      });
+      return res.status === 200 && res.json.claim?.delivery ? res.json.claim : false;
+    }, 'source delivery outbox job');
+    assert.equal(deliveryClaim.delivery.target.chatId, 'oc_source_test');
+    assert.equal(deliveryClaim.delivery.text, 'trigger run finished');
+    assert.ok(
+      isolatedTriggers.some((entry) => entry.id === deliveryClaim.delivery.triggerId),
+      'source delivery must remain traceable to one trigger',
+    );
+    const completeDelivery = await request(
+      port,
+      'POST',
+      `/api/source-deliveries/${deliveryClaim.delivery.id}/complete`,
+      { leaseId: deliveryClaim.leaseId, externalId: 'om_source_out' },
+    );
+    assert.equal(completeDelivery.status, 200);
+    assert.equal(completeDelivery.json.delivery.state, 'delivered');
+
+    for (const testCase of [
+      { marker: 'FAIL_TRIGGER', expectedState: 'failed', expectedText: /定时任务执行失败/ },
+      { marker: 'EMPTY_TRIGGER', expectedState: 'completed', expectedText: /未生成可发送内容/ },
+    ]) {
+      const created = await request(port, 'POST', '/api/triggers', {
+        sessionId: sourceSession.id,
+        title: testCase.marker,
+        scheduledAt: new Date(Date.now() + 50).toISOString(),
+        text: testCase.marker,
+        tool: 'fake-codex',
+        deliverTo: 'session_source',
+      });
+      assert.equal(created.status, 201);
+      const delivered = await waitFor(async () => {
+        const res = await request(port, 'GET', `/api/triggers/${created.json.trigger.id}`);
+        return res.status === 200 && res.json.trigger.runId ? res.json.trigger : false;
+      }, `${testCase.marker} trigger run`);
+      const terminal = await waitForRunTerminal(port, delivered.runId);
+      assert.equal(terminal.state, testCase.expectedState);
+      const outbound = await waitFor(async () => {
+        const res = await request(port, 'GET', `/api/source-deliveries?sessionId=${encodeURIComponent(sourceSession.id)}`);
+        return res.status === 200
+          ? res.json.deliveries.find((entry) => entry.triggerId === created.json.trigger.id) || false
+          : false;
+      }, `${testCase.marker} source delivery`);
+      assert.match(outbound.text, testCase.expectedText);
+    }
+
+    const scheduleRes = await request(port, 'POST', '/api/schedules', {
+      sessionId: sourceSession.id,
+      title: 'Weekday date',
+      cron: '0 9 * * 1-5',
+      timezone: 'Asia/Shanghai',
+      text: 'Send the date',
+      tool: 'fake-codex',
+      deliverTo: 'session_source',
+    });
+    assert.equal(scheduleRes.status, 201, 'recurring schedule should be created');
+    assert.equal(scheduleRes.json.schedule.sourceDelivery.target.chatId, 'oc_source_test');
+    const scheduleId = scheduleRes.json.schedule.id;
+    const cancelSchedule = await request(port, 'PATCH', `/api/schedules/${scheduleId}`, {
+      enabled: false,
+    });
+    assert.equal(cancelSchedule.status, 200);
+    assert.equal(cancelSchedule.json.schedule.status, 'cancelled');
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });
