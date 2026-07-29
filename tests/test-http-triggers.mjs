@@ -336,7 +336,6 @@ async function main() {
 
     for (const testCase of [
       { marker: 'FAIL_TRIGGER', expectedState: 'failed', expectedText: /定时任务执行失败/ },
-      { marker: 'EMPTY_TRIGGER', expectedState: 'completed', expectedText: /未生成可发送内容/ },
     ]) {
       const created = await request(port, 'POST', '/api/triggers', {
         sessionId: sourceSession.id,
@@ -361,6 +360,36 @@ async function main() {
       }, `${testCase.marker} source delivery`);
       assert.match(outbound.text, testCase.expectedText);
     }
+
+    const emptyTrigger = await request(port, 'POST', '/api/triggers', {
+      sessionId: sourceSession.id,
+      title: 'EMPTY_TRIGGER',
+      scheduledAt: new Date(Date.now() + 50).toISOString(),
+      text: 'EMPTY_TRIGGER',
+      tool: 'fake-codex',
+      deliverTo: 'session_source',
+    });
+    assert.equal(emptyTrigger.status, 201);
+    const deliveredEmpty = await waitFor(async () => {
+      const res = await request(port, 'GET', `/api/triggers/${emptyTrigger.json.trigger.id}`);
+      return res.status === 200 && res.json.trigger.runId ? res.json.trigger : false;
+    }, 'EMPTY_TRIGGER run');
+    const emptyTerminal = await waitForRunTerminal(port, deliveredEmpty.runId);
+    assert.equal(emptyTerminal.state, 'completed');
+    await sleep(200);
+    const emptyDeliveries = await request(
+      port,
+      'GET',
+      `/api/source-deliveries?sessionId=${encodeURIComponent(sourceSession.id)}`,
+    );
+    assert.equal(emptyDeliveries.status, 200);
+    assert.equal(
+      emptyDeliveries.json.deliveries.find(
+        (entry) => entry.triggerId === emptyTrigger.json.trigger.id,
+      ),
+      undefined,
+      'a completed trigger with no assistant content should remain silent',
+    );
 
     const scheduleRes = await request(port, 'POST', '/api/schedules', {
       sessionId: sourceSession.id,

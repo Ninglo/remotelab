@@ -1,5 +1,10 @@
 [
   {
+    "id": "silent-empty-trigger-source-delivery",
+    "description": "Do not enqueue a Feishu source delivery when a completed trigger produces no assistant content, while preserving failed-run summaries.",
+    "pass": true
+  },
+  {
     "id": "runtime-cli-service-alignment",
     "description": "Make setup and restart idempotently align the effective RemoteLab CLI with the active source tree and reject service/source directory drift.",
     "pass": true

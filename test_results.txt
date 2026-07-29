@@ -43,3 +43,41 @@ exit 0
 Known baseline outside this change
 - npm run test:restart-gate reaches the pre-existing test-static-asset-routing assertion that expects an absolute /chat/icons.js URL while the checked-in template renders chat/icons.js under <base href="/">.
 - The new runtime-alignment test runs and passes before that unrelated baseline assertion.
+
+Silent empty trigger source delivery verification
+Date: 2026-07-29 UTC
+
+Requirement
+- A completed trigger with no assistant content must not create a Feishu source delivery.
+- Failed triggers must continue to publish a failure summary.
+- Non-empty trigger replies must continue to publish normally.
+
+TDD reproduction before implementation
+$ node tests/test-http-triggers.mjs
+AssertionError [ERR_ASSERTION]: a completed trigger with no assistant content should remain silent
+actual.text: 本次定时任务未生成可发送内容。
+
+Focused verification after implementation
+$ node tests/test-http-triggers.mjs
+test-http-triggers: ok
+
+$ npm run test:triggers
+test-trigger-command: ok
+test-schedule-command: ok
+RecurringSchedule model tests passed.
+SourceDelivery outbox tests passed.
+test-http-triggers: ok
+
+Syntax and diff checks
+$ node --check chat/session-manager.mjs
+exit 0
+$ git diff --check
+exit 0
+
+Full suite
+$ npm test
+exit 0
+
+File-size report
+$ npm run lint:filesize
+exit 0; reports the existing oversized-file baseline, with no new file or line-count growth from this change.
