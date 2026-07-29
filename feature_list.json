@@ -1,5 +1,10 @@
 [
   {
+    "id": "runtime-cli-service-alignment",
+    "description": "Make setup and restart idempotently align the effective RemoteLab CLI with the active source tree and reject service/source directory drift.",
+    "pass": true
+  },
+  {
     "id": "recurring-schedule-source-delivery",
     "description": "Add recurring schedules whose isolated trigger runs publish one traceable result to the originating Feishu group or topic.",
     "pass": true
