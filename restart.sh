@@ -9,6 +9,7 @@
 set -e
 
 SERVICE="${1:-all}"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Detect OS
 if [[ "$(uname)" == "Darwin" ]]; then
@@ -49,6 +50,10 @@ restart_launchd() {
 }
 
 restart_all_chat_launchd() {
+  node "$SCRIPT_DIR/scripts/ensure-runtime-alignment.mjs" \
+    --mode restart \
+    --service-scope none
+
   local launch_agents_dir="$HOME/Library/LaunchAgents"
   local labels=()
   local plist
@@ -128,6 +133,10 @@ restart_linux_chat_surfaces() {
 
   local owner_scope="${owner%%:*}"
   local owner_unit="${owner#*:}"
+  node "$SCRIPT_DIR/scripts/ensure-runtime-alignment.mjs" \
+    --mode restart \
+    --service-scope "$owner_scope" \
+    --service-unit "${owner_unit}.service"
   restart_linux_unit "$owner_scope" "$owner_unit" "chat-server"
 
   if [[ "$owner_scope" == "system" ]]; then

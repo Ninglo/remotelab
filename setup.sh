@@ -274,8 +274,7 @@ print_header "Step 5: Creating Configuration Files"
 
 mkdir -p "$HOME/.local/bin"
 chmod +x "$SCRIPT_DIR/cli.js"
-ln -sf "$SCRIPT_DIR/cli.js" "$HOME/.local/bin/remotelab"
-print_success "Installed local CLI shim: ~/.local/bin/remotelab"
+print_info "CLI alignment will be verified after service configuration"
 
 if [[ "$USE_CLOUDFLARE" == true ]]; then
     mkdir -p "$HOME/.cloudflared"
@@ -587,6 +586,19 @@ STOPEOF
     chmod +x "$SCRIPT_DIR/stop.sh"
     print_success "Created: stop.sh"
 fi
+
+print_info "Verifying CLI and service source alignment..."
+if [[ "$OS_TYPE" == "linux" ]]; then
+    node "$SCRIPT_DIR/scripts/ensure-runtime-alignment.mjs" \
+        --mode setup \
+        --service-scope system \
+        --service-unit remotelab.service
+else
+    node "$SCRIPT_DIR/scripts/ensure-runtime-alignment.mjs" \
+        --mode setup \
+        --service-scope none
+fi
+print_success "CLI and service source alignment verified"
 
 # Create credentials file
 print_info "Creating credentials.txt..."

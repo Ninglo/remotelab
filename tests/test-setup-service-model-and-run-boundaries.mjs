@@ -12,6 +12,7 @@ function read(relativePath) {
 
 const setup = read('setup.sh');
 assert.match(setup, /Created: \/etc\/systemd\/system\/remotelab\.service/, 'Linux setup should install the owner system service');
+assert.match(setup, /ensure-runtime-alignment\.mjs/, 'setup should converge CLI and service source alignment');
 assert.match(setup, /sudo systemctl start remotelab\.service/, 'Linux setup should start the owner system service');
 assert.match(setup, /sudo systemctl enable remotelab\.service/, 'Linux setup should enable the owner system service');
 assert.doesNotMatch(setup, /Created: ~\/\.config\/systemd\/user\/remotelab-chat\.service/, 'Linux setup should not install the legacy owner user service');
@@ -22,6 +23,9 @@ assert.match(startScript, /sudo systemctl start remotelab\.service/, '`remotelab
 
 const stopScript = read('stop.sh');
 assert.match(stopScript, /sudo systemctl stop remotelab\.service/, '`remotelab stop` should target the owner system service on Linux');
+
+const restartScript = read('restart.sh');
+assert.match(restartScript, /ensure-runtime-alignment\.mjs/, 'restart should verify CLI and service source alignment before restarting');
 
 const readme = read('README.md');
 assert.match(readme, /journalctl -u remotelab\.service -n 50/, 'README troubleshooting should point Linux users at the owner system service logs');

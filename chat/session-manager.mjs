@@ -2747,8 +2747,8 @@ async function queueTriggerSourceDelivery(sessionId, finalizedRun, manifest) {
     const history = await loadHistory(sessionId, { includeBodies: true });
     const payloadHistory = collectReplyPublicationHistory(history, latestRun);
     const payload = buildReplyPublicationPayload(payloadHistory, latestRun);
-    text = trimString(payload.text) || '本次定时任务未生成可发送内容。';
-    if (!trimString(payload.text)) kind = 'summary';
+    text = trimString(payload.text);
+    if (!text) return null;
   } else {
     return null;
   }
