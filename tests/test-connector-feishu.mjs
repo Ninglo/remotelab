@@ -162,28 +162,31 @@ assert.equal(buildExternalTriggerId(legacySummary), 'feishu:chat:oc_legacy_1');
 const normalizedReply = normalizeReplyText('<hide>internal</hide>\n\n已收到 [委屈] 👍');
 assert.equal(normalizedReply, '已收到');
 
-const postContent = JSON.parse(buildFeishuPostContent('**处理完成**\n@Alex 请看', [
+const postContent = JSON.parse(await buildFeishuPostContent('**处理完成**\n@Alex 请看', [
   { key: '@_alex', name: 'Alex', openId: 'ou_alex_1' },
 ]));
 assert.equal(postContent.zh_cn.content[0][0].tag, 'md');
 assert.equal(postContent.zh_cn.content[1][0].tag, 'at');
 assert.equal(postContent.zh_cn.content[1][0].user_id, 'ou_alex_1');
 
-const inlineMathPostContent = JSON.parse(buildFeishuPostContent('结论：$x_i = y^2$，请看 @Alex', [
+const inlineMathPostContent = JSON.parse(await buildFeishuPostContent('结论：$x_i = y^2$，请看 @Alex', [
   { key: '@_alex', name: 'Alex', openId: 'ou_alex_1' },
 ]));
 assert.deepEqual(inlineMathPostContent.zh_cn.content[0], [
-  { tag: 'md', text: '结论：' },
-  { tag: 'text', text: 'xᵢ = y²' },
-  { tag: 'md', text: '，请看 ' },
+  { tag: 'md', text: '结论：xᵢ = y²，请看 ' },
   { tag: 'at', user_id: 'ou_alex_1', user_name: 'Alex' },
 ]);
 
-const displayMathPostContent = JSON.parse(buildFeishuPostContent('公式如下：\n$$\n\\frac{a_b}{c^2}\n$$\n完成'));
+const displayMathPostContent = JSON.parse(await buildFeishuPostContent(
+  '公式如下：\n$$\n\\frac{a_b}{c^2}\n$$\n完成',
+  [],
+  {
+    resolveFormulaImage: async () => 'img_formula_test_1',
+  },
+));
 assert.deepEqual(displayMathPostContent.zh_cn.content, [
   [{ tag: 'md', text: '公式如下：' }],
-  [{ tag: 'text', text: '公式：' }],
-  [{ tag: 'text', text: '(a_b)/(c²)' }],
+  [{ tag: 'img', image_key: 'img_formula_test_1' }],
   [{ tag: 'md', text: '完成' }],
 ]);
 

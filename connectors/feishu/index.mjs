@@ -9,6 +9,7 @@
 import { createHash } from 'crypto';
 
 import { stripHiddenBlocks } from '../../lib/reply-selection.mjs';
+import { buildFeishuMathDocument } from './math-renderer.mjs';
 
 export const FEISHU_CONNECTOR_ID = 'feishu';
 export const FEISHU_CONNECTOR_NAME = 'Feishu';
@@ -746,170 +747,6 @@ function findNextMentionMatch(line, mentionEntries, startIndex) {
   return best;
 }
 
-function isEscapedAt(value, index) {
-  let backslashCount = 0;
-  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor -= 1) backslashCount += 1;
-  return backslashCount % 2 === 1;
-}
-
-function looksLikeMathSource(value) {
-  const text = String(value || '').trim();
-  return Boolean(text) && /(?:\\[a-zA-Z]+|[_^=+\-*/<>]|[{}]|\d)/.test(text);
-}
-
-const FEISHU_SUPERSCRIPT_CHARS = {
-  0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹',
-  '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', n: 'ⁿ', i: 'ⁱ',
-};
-
-const FEISHU_SUBSCRIPT_CHARS = {
-  0: '₀', 1: '₁', 2: '₂', 3: '₃', 4: '₄', 5: '₅', 6: '₆', 7: '₇', 8: '₈', 9: '₉',
-  '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎', a: 'ₐ', e: 'ₑ', h: 'ₕ', i: 'ᵢ', j: 'ⱼ',
-  k: 'ₖ', l: 'ₗ', m: 'ₘ', n: 'ₙ', o: 'ₒ', p: 'ₚ', r: 'ᵣ', s: 'ₛ', t: 'ₜ', u: 'ᵤ', v: 'ᵥ', x: 'ₓ',
-};
-
-const FEISHU_LATEX_COMMAND_TEXT = {
-  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', theta: 'θ', lambda: 'λ', mu: 'μ',
-  pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', phi: 'φ', omega: 'ω', Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ',
-  Lambda: 'Λ', Pi: 'Π', Sigma: 'Σ', Phi: 'Φ', Omega: 'Ω', cdot: '·', times: '×', div: '÷', leq: '≤',
-  geq: '≥', neq: '≠', approx: '≈', pm: '±', infty: '∞', to: '→', rightarrow: '→', leftarrow: '←',
-  sum: '∑', prod: '∏', int: '∫',
-};
-
-function readLatexBalancedGroup(text, startIndex) {
-  let cursor = startIndex;
-  while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
-  if (text[cursor] !== '{') return null;
-  let depth = 0;
-  for (let index = cursor; index < text.length; index += 1) {
-    const char = text[index];
-    if (char === '\\') {
-      index += 1;
-      continue;
-    }
-    if (char === '{') depth += 1;
-    if (char === '}') {
-      depth -= 1;
-      if (depth === 0) return { text: text.slice(cursor + 1, index), end: index + 1 };
-    }
-  }
-  return null;
-}
-
-function replaceLatexFractionsForText(text) {
-  let output = '';
-  let cursor = 0;
-  while (cursor < text.length) {
-    const index = text.indexOf('\\frac', cursor);
-    if (index < 0) {
-      output += text.slice(cursor);
-      break;
-    }
-    const numerator = readLatexBalancedGroup(text, index + 5);
-    if (!numerator) {
-      output += text.slice(cursor, index + 5);
-      cursor = index + 5;
-      continue;
-    }
-    const denominator = readLatexBalancedGroup(text, numerator.end);
-    if (!denominator) {
-      output += text.slice(cursor, numerator.end);
-      cursor = numerator.end;
-      continue;
-    }
-    output += `${text.slice(cursor, index)}(${renderFeishuMathText(numerator.text)})/(${renderFeishuMathText(denominator.text)})`;
-    cursor = denominator.end;
-  }
-  return output;
-}
-
-function convertLatexScriptsForText(text, marker, map) {
-  let output = '';
-  let cursor = 0;
-  while (cursor < text.length) {
-    const index = text.indexOf(marker, cursor);
-    if (index < 0) {
-      output += text.slice(cursor);
-      break;
-    }
-    output += text.slice(cursor, index);
-    const group = readLatexBalancedGroup(text, index + 1);
-    if (group) {
-      output += Array.from(renderFeishuMathText(group.text)).map((char) => map[char] || char).join('');
-      cursor = group.end;
-      continue;
-    }
-    const next = text[index + 1] || '';
-    if (map[next]) {
-      output += map[next];
-      cursor = index + 2;
-      continue;
-    }
-    output += marker;
-    cursor = index + 1;
-  }
-  return output;
-}
-
-function renderFeishuMathText(value) {
-  let text = String(value || '').trim();
-  if (!text) return '';
-  text = replaceLatexFractionsForText(text);
-  text = text.replace(/\\sqrt\s*\{([^{}]+)\}/g, (_match, radicand) => `√(${renderFeishuMathText(radicand)})`);
-  text = text.replace(/\\([a-zA-Z]+)/g, (match, command) => FEISHU_LATEX_COMMAND_TEXT[command] || match);
-  text = convertLatexScriptsForText(text, '^', FEISHU_SUPERSCRIPT_CHARS);
-  text = convertLatexScriptsForText(text, '_', FEISHU_SUBSCRIPT_CHARS);
-  return text.replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function findClosingDollar(value, startIndex) {
-  for (let cursor = startIndex; cursor < value.length; cursor += 1) {
-    if (value[cursor] === '$' && !isEscapedAt(value, cursor) && value[cursor + 1] !== '$') return cursor;
-  }
-  return -1;
-}
-
-function findNextInlineMathStart(value, startIndex) {
-  for (let cursor = startIndex; cursor < value.length; cursor += 1) {
-    if (value[cursor] === '$' && value[cursor + 1] !== '$' && !isEscapedAt(value, cursor)) {
-      return { index: cursor, marker: '$', closeMarker: '$', contentStart: cursor + 1 };
-    }
-    if (value[cursor] === '\\' && value[cursor + 1] === '(' && !isEscapedAt(value, cursor)) {
-      return { index: cursor, marker: '\\(', closeMarker: '\\)', contentStart: cursor + 2 };
-    }
-  }
-  return null;
-}
-
-function splitFeishuInlineMathSegments(line) {
-  const segments = [];
-  let cursor = 0;
-  while (cursor < line.length) {
-    const start = findNextInlineMathStart(line, cursor);
-    if (!start) {
-      segments.push({ type: 'text', text: line.slice(cursor) });
-      break;
-    }
-    const closeIndex = start.marker === '$'
-      ? findClosingDollar(line, start.contentStart)
-      : line.indexOf(start.closeMarker, start.contentStart);
-    if (closeIndex < 0) {
-      segments.push({ type: 'text', text: line.slice(cursor) });
-      break;
-    }
-    const formula = line.slice(start.contentStart, closeIndex);
-    if (!looksLikeMathSource(formula)) {
-      segments.push({ type: 'text', text: line.slice(cursor, closeIndex + start.closeMarker.length) });
-      cursor = closeIndex + start.closeMarker.length;
-      continue;
-    }
-    if (start.index > cursor) segments.push({ type: 'text', text: line.slice(cursor, start.index) });
-    segments.push({ type: 'math', text: formula.trim() });
-    cursor = closeIndex + start.closeMarker.length;
-  }
-  return segments.filter((segment) => segment.text !== '');
-}
-
 function appendFeishuMarkdownElements(elements, line, mentionEntries) {
   let cursor = 0;
   while (cursor < line.length) {
@@ -931,79 +768,60 @@ function appendFeishuMarkdownElements(elements, line, mentionEntries) {
   return elements;
 }
 
-function renderFeishuMarkdownLineElements(line, mentionEntries) {
-  const elements = [];
-  for (const segment of splitFeishuInlineMathSegments(line)) {
-    if (segment.type === 'math') {
-      elements.push({ tag: 'text', text: renderFeishuMathText(segment.text) || segment.text });
-      continue;
-    }
-    appendFeishuMarkdownElements(elements, segment.text, mentionEntries);
-  }
-  return elements.filter((element) => element.text !== '');
-}
-
 function buildFeishuTextRow(text) {
   return [{ tag: 'text', text: text || '\u200B' }];
 }
 
-function parseSingleLineDisplayMath(line) {
-  const trimmed = String(line || '').trim();
-  if (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4) return trimmed.slice(2, -2).trim();
-  if (trimmed.startsWith('\\[') && trimmed.endsWith('\\]') && trimmed.length > 4) return trimmed.slice(2, -2).trim();
-  return null;
+function pushFeishuMarkdownRow(content, text, mentionEntries) {
+  const elements = [];
+  appendFeishuMarkdownElements(elements, text, mentionEntries);
+  content.push(elements.length > 0 ? elements : buildFeishuTextRow('\u200B'));
 }
 
-function pushFeishuFormulaRow(content, line) {
-  const text = String(line || '').trimEnd();
-  if (text) content.push(buildFeishuTextRow(renderFeishuMathText(text) || text));
+function pushFeishuDocumentLine(content, block, mentionEntries) {
+  let markdown = '';
+  const flushMarkdown = () => {
+    pushFeishuMarkdownRow(content, markdown, mentionEntries);
+    markdown = '';
+  };
+  let pushed = false;
+  for (const segment of block.segments) {
+    if (segment.type === 'text' || segment.type === 'inline_math') {
+      markdown += segment.text;
+      continue;
+    }
+    if (markdown) {
+      flushMarkdown();
+      pushed = true;
+    }
+    if (segment.type === 'formula_image' && segment.imageKey) {
+      content.push([{ tag: 'img', image_key: segment.imageKey }]);
+      pushed = true;
+    }
+  }
+  if (markdown || !pushed) {
+    flushMarkdown();
+  }
 }
 
-export function buildFeishuPostContent(text, mentions) {
+export async function buildFeishuPostContent(text, mentions, options = {}) {
   const normalized = normalizeReplyText(text);
   const mentionEntries = normalizeMentionEntries(mentions)
     .sort((left, right) => Math.max(right.token.length, right.displayName.length) - Math.max(left.token.length, left.displayName.length));
+  const document = await buildFeishuMathDocument(normalized, options);
   const content = [];
-  let displayMathEndMarker = '';
-  for (const line of normalized.split('\n')) {
-    const trimmed = line.trim();
-    if (displayMathEndMarker) {
-      if (trimmed === displayMathEndMarker) {
-        displayMathEndMarker = '';
-        continue;
-      }
-      if (trimmed.endsWith(displayMathEndMarker)) {
-        pushFeishuFormulaRow(content, line.slice(0, line.lastIndexOf(displayMathEndMarker)));
-        displayMathEndMarker = '';
-        continue;
-      }
-      pushFeishuFormulaRow(content, line);
+  for (const block of document.blocks) {
+    if (block.type === 'line') {
+      pushFeishuDocumentLine(content, block, mentionEntries);
       continue;
     }
-    const singleLineFormula = parseSingleLineDisplayMath(line);
-    if (singleLineFormula !== null) {
-      content.push(buildFeishuTextRow(`公式：${renderFeishuMathText(singleLineFormula) || singleLineFormula}`));
+    if (block.type === 'formula_image' && block.imageKey) {
+      content.push([{ tag: 'img', image_key: block.imageKey }]);
       continue;
     }
-    if (trimmed === '$$' || trimmed === '\\[') {
-      content.push(buildFeishuTextRow('公式：'));
-      displayMathEndMarker = trimmed === '$$' ? '$$' : '\\]';
-      continue;
+    if (block.type === 'formula_fallback') {
+      content.push(buildFeishuTextRow(block.text));
     }
-    if (trimmed.startsWith('$$') || trimmed.startsWith('\\[')) {
-      const isDollar = trimmed.startsWith('$$');
-      const startMarker = isDollar ? '$$' : '\\[';
-      content.push(buildFeishuTextRow('公式：'));
-      pushFeishuFormulaRow(content, trimmed.slice(startMarker.length));
-      displayMathEndMarker = isDollar ? '$$' : '\\]';
-      continue;
-    }
-    if (!line.trim()) {
-      content.push(buildFeishuTextRow('\u200B'));
-      continue;
-    }
-    const elements = renderFeishuMarkdownLineElements(line, mentionEntries);
-    content.push(elements.length > 0 ? elements : buildFeishuTextRow('\u200B'));
   }
   return JSON.stringify({ zh_cn: { content } });
 }

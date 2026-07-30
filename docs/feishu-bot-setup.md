@@ -185,6 +185,18 @@ Notes:
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `allow_all` is the simplest V0 mode; move to `whitelist` after the first validation if needed
 
+### Formula rendering
+
+Feishu replies support standard LaTeX delimiters: `\(...\)` or `$...$` for
+inline math, and `\[...\]` or `$$...$$` for display math. The connector
+validates formulas with MathJax. Compact inline expressions are emitted as
+Unicode inside one Markdown element; complex inline expressions and display
+formulas are rendered to PNG, uploaded through Feishu's message-image API, and
+inserted into the rich-text reply. Identical formulas reuse an in-process
+content-hash cache. If parsing, rendering, or upload fails, the complete LaTeX
+source is preserved as readable text instead of sending a partially converted
+formula.
+
 ## Success state
 
 - the connector log contains `persistent connection ready`

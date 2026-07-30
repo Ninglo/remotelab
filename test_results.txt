@@ -1,83 +1,51 @@
-Runtime CLI and service alignment verification
-Date: 2026-07-29 UTC
+Feishu standard LaTeX rendering verification
+Date: 2026-07-30 UTC
 
-Requirement
-- Setup and restart must keep the effective remotelab CLI aligned with the active source tree.
-- Restart must stop before booting a systemd service configured for a different checkout.
-- Repeating the check must make no further changes.
+Focused command:
+node tests/test-feishu-math-renderer.mjs
 
-Focused tests
-$ node tests/test-runtime-alignment.mjs
-test-runtime-alignment: ok
+Actual output:
+ok - Feishu formulas use standard parsing, image rendering, cache reuse, and safe fallback
 
-$ node tests/test-setup-service-model-and-run-boundaries.mjs
-test-setup-service-model-and-run-boundaries: ok
+Focused connector commands:
+node tests/test-connector-feishu.mjs
+node tests/test-feishu-connector.mjs
+node tests/test-source-runtime-prompts.mjs
 
-$ node tests/test-cli-release-removed.mjs
-test-cli-release-removed: ok
+Actual terminal summaries:
+ok - feishu connector helpers
+ok - empty assistant replies stay silent
+ok - processing reactions bracket delayed Feishu replies
+ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments
+ok - mention tokens are rendered inbound and compiled outbound
+ok - topic metadata from chat metadata fallback enables topic-scoped sessions
+ok - generated Feishu sessions use the feishu app scope
+ok - queued Feishu follow-ups wait for the eventual assistant reply
+test-source-runtime-prompts: ok
 
-$ node tests/test-cli-legacy-command-removed.mjs
-test-cli-legacy-command-removed: ok
+Full command:
+env -i HOME=/home/ubuntu PATH=/home/ubuntu/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 npm_config_cache=/home/ubuntu/.npm npm test
 
-Syntax and diff checks
-$ node --check lib/runtime-alignment.mjs
-exit 0
-$ node --check scripts/ensure-runtime-alignment.mjs
-exit 0
-$ bash -n setup.sh restart.sh
-exit 0
-$ git diff --check
-exit 0
+Result:
+Process exited with code 0.
 
-Live idempotence probe
-$ node scripts/ensure-runtime-alignment.mjs --mode check --service-scope system --service-unit remotelab.service
-Runtime alignment (check): corrected /home/ubuntu/.local/bin/remotelab; service=remotelab.service:/home/ubuntu/.remotelab/workspace/remotelab-feishu-v2-merge
+Relevant actual output:
+ok - Feishu formulas use standard parsing, image rendering, cache reuse, and safe fallback
+ok - feishu connector helpers
+test-source-runtime-prompts: ok
+test-shared-tools-directory: ok
+test-shared-tool-env-overrides: ok
+test-runtime-policy: ok
+test-system-prompt: ok
+test-connector-gmail: ok
 
-$ node scripts/ensure-runtime-alignment.mjs --mode check --service-scope system --service-unit remotelab.service
-Runtime alignment (check): already aligned; service=remotelab.service:/home/ubuntu/.remotelab/workspace/remotelab-feishu-v2-merge
+Dependency audit:
+npm audit --omit=dev
 
-Full suite
-$ npm test
-exit 0
+Actual output:
+found 0 vulnerabilities
 
-Known baseline outside this change
-- npm run test:restart-gate reaches the pre-existing test-static-asset-routing assertion that expects an absolute /chat/icons.js URL while the checked-in template renders chat/icons.js under <base href="/">.
-- The new runtime-alignment test runs and passes before that unrelated baseline assertion.
-
-Silent empty trigger source delivery verification
-Date: 2026-07-29 UTC
-
-Requirement
-- A completed trigger with no assistant content must not create a Feishu source delivery.
-- Failed triggers must continue to publish a failure summary.
-- Non-empty trigger replies must continue to publish normally.
-
-TDD reproduction before implementation
-$ node tests/test-http-triggers.mjs
-AssertionError [ERR_ASSERTION]: a completed trigger with no assistant content should remain silent
-actual.text: 本次定时任务未生成可发送内容。
-
-Focused verification after implementation
-$ node tests/test-http-triggers.mjs
-test-http-triggers: ok
-
-$ npm run test:triggers
-test-trigger-command: ok
-test-schedule-command: ok
-RecurringSchedule model tests passed.
-SourceDelivery outbox tests passed.
-test-http-triggers: ok
-
-Syntax and diff checks
-$ node --check chat/session-manager.mjs
-exit 0
-$ git diff --check
-exit 0
-
-Full suite
-$ npm test
-exit 0
-
-File-size report
-$ npm run lint:filesize
-exit 0; reports the existing oversized-file baseline, with no new file or line-count growth from this change.
+Live checks:
+- The second Feishu connector restarted successfully and logged "persistent connection ready (feishu-cn)".
+- The production Feishu app accepted a MathJax/resvg-generated formula PNG through the message-image API.
+- Resolving the same formula twice reused the content-hash cache.

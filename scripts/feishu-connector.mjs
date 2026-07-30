@@ -47,6 +47,7 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
   summarizeFeishuLegacyMessageEvent as summarizeLegacyMessageEvent,
 } from '../connectors/feishu/index.mjs';
+import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { ConnectorDriver } from '../lib/connector-driver.mjs';
 import { createFeishuConnectorTransport } from '../lib/connector-driver-transports.mjs';
 import {
@@ -1601,7 +1602,14 @@ async function removeProcessingReaction(runtime, summary, reaction) {
 }
 
 async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
-  const content = buildFeishuPostContent(text, mentions);
+  const content = await buildFeishuPostContent(text, mentions, {
+    resolveFormulaImage: (formula) => resolveFeishuFormulaImage(runtime, formula),
+    onFormulaError: (error, formula) => {
+      console.warn(
+        `[feishu-connector] ${formula?.display ? 'display' : 'inline'} formula fallback: ${error?.message || error}`,
+      );
+    },
+  });
   const replyUuid = buildFeishuApiUuid(uuid, summary);
   if (buildFeishuTopicId(summary)) {
     const response = await runtime.appClient.im.v1.message.reply({

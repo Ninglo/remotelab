@@ -11,6 +11,7 @@ assert.doesNotMatch(voicePrompt, /Siri\/Shortcuts connector/, 'voice source id s
 
 const feishuPrompt = buildSourceRuntimePrompt({ sourceId: 'feishu', sourceName: 'Feishu' });
 assert.match(feishuPrompt, /markdown will be rendered as Feishu\/Lark rich text/i, 'feishu runtime prompt should allow markdown replies');
+assert.match(feishuPrompt, /standard LaTeX/i, 'feishu runtime prompt should request standard formula delimiters');
 
 const wechatPrompt = buildSourceRuntimePrompt({ sourceId: 'wechat', sourceName: 'WeChat' });
 assert.match(wechatPrompt, /WeChat/, 'wechat source id should map to the WeChat runtime prompt');

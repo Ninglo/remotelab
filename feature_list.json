@@ -1,5 +1,10 @@
 [
   {
+    "id": "feishu-standard-latex-rendering",
+    "description": "Replace partial handwritten Feishu LaTeX conversion with standard parsing, PNG rendering and upload for complex formulas, compact Unicode for simple inline formulas, cache reuse, and complete-source fallback.",
+    "pass": true
+  },
+  {
     "id": "silent-empty-trigger-source-delivery",
     "description": "Do not enqueue a Feishu source delivery when a completed trigger produces no assistant content, while preserving failed-run summaries.",
     "pass": true

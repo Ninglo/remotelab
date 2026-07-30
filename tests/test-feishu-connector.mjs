@@ -604,10 +604,17 @@ assert.equal(normalizeReplyText('好的😺，我来处理。'), '好的，我�
 
 let feishuCreatePayload = null;
 let feishuReplyPayload = null;
+let feishuImagePayload = null;
 const fakeSendRuntime = {
   appClient: {
     im: {
       v1: {
+        image: {
+          create: async (payload) => {
+            feishuImagePayload = payload;
+            return { image_key: 'img_formula_uploaded_1' };
+          },
+        },
         message: {
           create: async (payload) => {
             feishuCreatePayload = payload;
@@ -667,6 +674,21 @@ assert.equal(feishuCreatePayload?.params?.receive_id_type, 'chat_id');
 assert.equal(feishuCreatePayload?.data?.receive_id, 'chat_regular_1');
 assert.equal(feishuCreatePayload?.data?.msg_type, 'post');
 assert.equal(feishuCreatePayload?.data?.uuid, 'uuid-regular-1');
+
+feishuCreatePayload = null;
+feishuImagePayload = null;
+await sendFeishuText(
+  fakeSendRuntime,
+  { chatType: 'group', chatId: 'chat_regular_1', messageId: 'msg_regular_formula_1' },
+  '$$\\frac{a_b}{c^2}$$',
+  'uuid-regular-formula-1',
+);
+assert.equal(feishuImagePayload?.data?.image_type, 'message');
+assert.ok(Buffer.isBuffer(feishuImagePayload?.data?.image));
+assert.deepEqual(
+  JSON.parse(feishuCreatePayload?.data?.content || '{}').zh_cn.content,
+  [[{ tag: 'img', image_key: 'img_formula_uploaded_1' }]],
+);
 
 const sourceDeliveryRequests = [];
 const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceRouteId: 'bot-alpha' } }, {
@@ -937,7 +959,7 @@ assert.equal(
   'outbound emoji and sticker aliases should be stripped before mention compilation',
 );
 
-const markdownPostContent = JSON.parse(buildFeishuPostContent('**重点**\n\n- 第一项\n- 第二项'));
+const markdownPostContent = JSON.parse(await buildFeishuPostContent('**重点**\n\n- 第一项\n- 第二项'));
 assert.deepEqual(markdownPostContent.zh_cn.content, [
   [{ tag: 'md', text: '**重点**' }],
   [{ tag: 'text', text: '\u200B' }],
@@ -945,7 +967,7 @@ assert.deepEqual(markdownPostContent.zh_cn.content, [
   [{ tag: 'md', text: '- 第二项' }],
 ]);
 
-const mentionPostContent = JSON.parse(buildFeishuPostContent('@_user_1 请看 **这段**', mentionSummary.mentions));
+const mentionPostContent = JSON.parse(await buildFeishuPostContent('@_user_1 请看 **这段**', mentionSummary.mentions));
 assert.deepEqual(mentionPostContent.zh_cn.content[0], [
   { tag: 'at', user_id: 'ou_mention_1', user_name: '江虹' },
   { tag: 'md', text: ' 请看 **这段**' },
