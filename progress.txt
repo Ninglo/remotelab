@@ -9,3 +9,5 @@
 [2026-07-29 07:15] Completed silent-empty-trigger-source-delivery; completed empty replies now skip the outbox, while failure summaries and non-empty replies remain covered by trigger regression tests.
 [2026-08-01 15:56] Started feishu-document-read-connector; decision: keep bot credentials inside the Feishu connector, expose a read-only instance capability through the connector skill registry and RemoteLab CLI, and declare it conditionally to agents.
 [2026-08-01 16:42] Completed feishu-document-read-connector implementation and regression verification; focused connector/SDK/CLI/prompt integration tests, full smoke and merge-safety suite, and the HTTP integration suite pass.
+[2026-08-01 16:55] Started feishu-document-multi-bot-routing; decision: reuse existing Feishu sourceRouteId and keep the Agent command stable while routing capability calls to the originating Bot.
+[2026-08-01 17:34] Completed feishu-document-multi-bot-routing; dual-Bot credential isolation, session-derived routing, targeted deregistration, cross-process registry locking, full smoke/merge-safety, HTTP integration, static checks, and dependency audit pass.

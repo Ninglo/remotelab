@@ -242,7 +242,7 @@ Do not use the host machine's local Calendar.app or any GUI calendar application
     await initSkillRegistry(CONFIG_DIR);
     if (await isConnectorSkillReady('feishu:document_get')) {
       connectorSections.push(`### Feishu Documents
-This instance has a read-only Feishu document capability backed by the active connector bot identity. When the user provides a Feishu Docx URL or document token and asks about its contents, call \`remotelab connector call feishu:document_get --document-token "<token-or-url>" --json\`. If the \`remotelab\` command is unavailable in PATH, use \`node "$REMOTELAB_PROJECT_ROOT/cli.js" connector call feishu:document_get --document-token "<token-or-url>" --json\`.
+This instance has a read-only Feishu document capability backed by the connector bot identity that originated the current session. When the user provides a Feishu Docx URL or document token and asks about its contents, call \`remotelab connector call feishu:document_get --document-token "<token-or-url>" --json\`. The command automatically selects the current session's Feishu Bot route. If the \`remotelab\` command is unavailable in PATH, use \`node "$REMOTELAB_PROJECT_ROOT/cli.js" connector call feishu:document_get --document-token "<token-or-url>" --json\`.
 
 The bot can read only documents that the Feishu app is authorized to access. Treat \`missing_scope\` and \`document_permission_denied\` as explicit authorization failures; do not fall back to host-level \`lark-cli\` credentials or personal Feishu sessions.`);
     }

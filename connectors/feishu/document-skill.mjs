@@ -143,6 +143,7 @@ export async function startFeishuDocumentCapability(runtime, options = {}) {
   try {
     await initSkillRegistry(configDir);
     await registerConnectorSkills(FEISHU_CONNECTOR_ID, {
+      sourceRouteId: runtime.config.sourceRouteId,
       callback: { skillUrl: server.skillUrl, token: callbackToken },
       skills,
     });
@@ -158,7 +159,10 @@ export async function startFeishuDocumentCapability(runtime, options = {}) {
       if (stopped) return;
       stopped = true;
       await initSkillRegistry(configDir);
-      await deregisterConnectorSkills(FEISHU_CONNECTOR_ID, { skillUrl: server.skillUrl });
+      await deregisterConnectorSkills(FEISHU_CONNECTOR_ID, {
+        sourceRouteId: runtime.config.sourceRouteId,
+        skillUrl: server.skillUrl,
+      });
       await server.stop();
     },
   };

@@ -23,5 +23,10 @@
     "id": "feishu-document-read-connector",
     "description": "Expose a read-only, instance-scoped Feishu document content capability backed by the connector bot identity, with agent CLI discovery, rich-text token preservation, structured errors, and integration coverage.",
     "pass": true
+  },
+  {
+    "id": "feishu-document-multi-bot-routing",
+    "description": "Scope Feishu document capability registrations and invocations to the originating sourceRouteId so multiple Bots cannot overwrite or use each other's credentials.",
+    "pass": true
   }
 ]

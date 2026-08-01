@@ -86,3 +86,52 @@ Static checks:
 git diff --check exited with code 0.
 npm run lint:filesize exited with code 0 and reported the repository's known
 oversized-file baseline.
+
+Feishu multi-Bot document routing verification
+Date: 2026-08-01 UTC
+
+RED reproduction:
+node tests/test-connector-multi-route-skill.mjs
+
+Actual failure before the fix:
+AssertionError: bot A calls must retain bot A credentials
+'bot-b' !== 'bot-a'
+
+GREEN focused commands:
+node tests/test-connector-multi-route-skill.mjs
+node tests/test-connector-skill-registry.mjs
+node tests/test-feishu-document-skill.mjs
+node tests/test-session-source-context.mjs
+node tests/test-connector-feishu.mjs
+node tests/test-feishu-bot-registry.mjs
+node tests/test-feishu-connector.mjs
+node tests/test-system-prompt.mjs
+node tests/test-source-runtime-prompts.mjs
+
+Actual focused result:
+All commands exited with code 0. The dual-Bot test confirmed Bot A and Bot B
+retain separate credentials, missing routes fail closed, session context selects
+the originating Bot, an explicit route cannot override that session identity,
+and stopping Bot B leaves Bot A registered.
+
+Full regression command:
+env -i HOME=/home/ubuntu PATH=/home/ubuntu/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 npm_config_cache=/home/ubuntu/.npm npm test
+
+Result:
+Process exited with code 0. Smoke, merge-safety, shared-tools, system-prompt,
+connector registry, Feishu connector, and the new multi-route test all passed.
+
+HTTP integration command:
+env -i HOME=/home/ubuntu PATH=/home/ubuntu/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 npm_config_cache=/home/ubuntu/.npm npm run test:integration
+
+Actual output:
+test-http-session-templates: ok
+test-http-session-media-upload: ok
+test-http-file-assets: ok
+test-http-result-file-assets: ok
+test-http-voice-cleanup: ok
+
+Static and dependency checks:
+git diff --check exited with code 0.
+npm run lint:filesize exited with code 0 and reported only the known baseline.
+npm audit --omit=dev reported 0 vulnerabilities.
