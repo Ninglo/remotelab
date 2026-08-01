@@ -2,6 +2,7 @@ import { homedir } from 'os';
 import { basename, join } from 'path';
 import {
   CHAT_PORT,
+  CONFIG_DIR,
   INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED,
   INSTANCE_ROOT,
   MANAGED_WORK_ROOT_DIR,
@@ -12,6 +13,10 @@ import {
   buildCalendarSubscribeHelperPath,
   getFeedInfo,
 } from '../lib/connector-calendar-feed.mjs';
+import {
+  initSkillRegistry,
+  isConnectorSkillReady,
+} from '../lib/connector-skill-registry.mjs';
 import { pathExists } from './fs-utils.mjs';
 import { renderPromptAsset } from './prompt-asset-loader.mjs';
 import {
@@ -230,6 +235,16 @@ Events in feed: ${feedInfo.eventCount}
 If the user has not yet subscribed, send a markdown link such as \`[点击订阅日历](${buildCalendarSubscribeHelperPath()})\` directly in the conversation. Use \`${buildCalendarSubscribeHelperPath({ format: 'https' })}\` only as the manual fallback when the client does not handle the default subscription helper. Keep the message brief: describe what the subscription does, then provide the link. No separate setup page needed.
 
 Do not use the host machine's local Calendar.app or any GUI calendar application.`);
+    }
+  } catch {}
+
+  try {
+    await initSkillRegistry(CONFIG_DIR);
+    if (await isConnectorSkillReady('feishu:document_get')) {
+      connectorSections.push(`### Feishu Documents
+This instance has a read-only Feishu document capability backed by the active connector bot identity. When the user provides a Feishu Docx URL or document token and asks about its contents, call \`remotelab connector call feishu:document_get --document-token "<token-or-url>" --json\`. If the \`remotelab\` command is unavailable in PATH, use \`node "$REMOTELAB_PROJECT_ROOT/cli.js" connector call feishu:document_get --document-token "<token-or-url>" --json\`.
+
+The bot can read only documents that the Feishu app is authorized to access. Treat \`missing_scope\` and \`document_permission_denied\` as explicit authorization failures; do not fall back to host-level \`lark-cli\` credentials or personal Feishu sessions.`);
     }
   } catch {}
 

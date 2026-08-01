@@ -47,6 +47,11 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
   summarizeFeishuLegacyMessageEvent as summarizeLegacyMessageEvent,
 } from '../connectors/feishu/index.mjs';
+import {
+  readFeishuDocument,
+  startFeishuDocumentCapability,
+} from '../connectors/feishu/document-skill.mjs';
+import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { ConnectorDriver } from '../lib/connector-driver.mjs';
 import { createFeishuConnectorTransport } from '../lib/connector-driver-transports.mjs';
 import {
@@ -1601,7 +1606,14 @@ async function removeProcessingReaction(runtime, summary, reaction) {
 }
 
 async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
-  const content = buildFeishuPostContent(text, mentions);
+  const content = await buildFeishuPostContent(text, mentions, {
+    resolveFormulaImage: (formula) => resolveFeishuFormulaImage(runtime, formula),
+    onFormulaError: (error, formula) => {
+      console.warn(
+        `[feishu-connector] ${formula?.display ? 'display' : 'inline'} formula fallback: ${error?.message || error}`,
+      );
+    },
+  });
   const replyUuid = buildFeishuApiUuid(uuid, summary);
   if (buildFeishuTopicId(summary)) {
     const response = await runtime.appClient.im.v1.message.reply({
@@ -2096,9 +2108,11 @@ export {
   removeProcessingReaction,
   resolveFeishuTopicForkParentSessionId,
   resolveFeishuMessageAttachments,
+  readFeishuDocument,
   sendFeishuText,
   processSourceDeliveryOnce,
   startSourceDeliveryPoller,
+  startFeishuDocumentCapability,
   stopSourceDeliveryPoller,
   snapshotAccessState,
   summarizeChatMemberUserAddedEvent,
@@ -2136,6 +2150,7 @@ async function main() {
   });
 
   let closed = false;
+  let documentCapability = null;
   const closeConnection = (reason) => {
     if (closed) return;
     closed = true;
@@ -2145,6 +2160,9 @@ async function main() {
   };
   const shutdownAndExit = async (reason, code = 0) => {
     closeConnection(reason);
+    await documentCapability?.stop?.().catch((error) => {
+      console.warn(`[feishu-connector] failed to stop document capability: ${error?.message || error}`);
+    });
     await delay(250);
     await releasePidLock();
     process.exit(code);
@@ -2182,6 +2200,14 @@ async function main() {
   });
 
   await wsClient.start({ eventDispatcher });
+  try {
+    documentCapability = await startFeishuDocumentCapability(runtime, {
+      configDir: await resolveTargetConfigDir(config.chatBaseUrl) || CONFIG_DIR,
+    });
+    console.log(`[feishu-connector] document capability ready (${documentCapability.skillUrl})`);
+  } catch (error) {
+    console.warn(`[feishu-connector] document capability unavailable: ${error?.message || error}`);
+  }
   startSourceDeliveryPoller(runtime);
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] intake policy: ${config.intakePolicy.mode}`);
@@ -2206,6 +2232,7 @@ async function main() {
     await handleMessage(runtime, summary, 'replay-last');
     if (options.durationMs === 0) {
       closeConnection('replay complete');
+      await documentCapability?.stop?.();
       await delay(250);
       await releasePidLock();
       process.off('beforeExit', releasePidLockOnBeforeExit);
@@ -2216,6 +2243,7 @@ async function main() {
   if (options.durationMs > 0) {
     await delay(options.durationMs);
     closeConnection(`duration ${options.durationMs}ms elapsed`);
+    await documentCapability?.stop?.();
     await delay(250);
     await releasePidLock();
     process.off('beforeExit', releasePidLockOnBeforeExit);

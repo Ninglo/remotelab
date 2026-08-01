@@ -1,5 +1,10 @@
 [
   {
+    "id": "feishu-standard-latex-rendering",
+    "description": "Replace partial handwritten Feishu LaTeX conversion with standard parsing, PNG rendering and upload for complex formulas, compact Unicode for simple inline formulas, cache reuse, and complete-source fallback.",
+    "pass": true
+  },
+  {
     "id": "silent-empty-trigger-source-delivery",
     "description": "Do not enqueue a Feishu source delivery when a completed trigger produces no assistant content, while preserving failed-run summaries.",
     "pass": true
@@ -12,6 +17,11 @@
   {
     "id": "recurring-schedule-source-delivery",
     "description": "Add recurring schedules whose isolated trigger runs publish one traceable result to the originating Feishu group or topic.",
+    "pass": true
+  },
+  {
+    "id": "feishu-document-read-connector",
+    "description": "Expose a read-only, instance-scoped Feishu document content capability backed by the connector bot identity, with agent CLI discovery, rich-text token preservation, structured errors, and integration coverage.",
     "pass": true
   }
 ]

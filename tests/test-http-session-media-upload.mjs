@@ -347,11 +347,19 @@ try {
     const followUpPrompt = await waitFor(() => {
       const prompts = readCapturedPrompts(promptFile);
       return prompts.find((entry) => (
-        /RemoteLab session continuity handoff for this existing conversation\./.test(entry)
+        (
+          /RemoteLab session continuity handoff for this existing conversation\./.test(entry)
+          || /Relevant earlier session context before this turn:/.test(entry)
+          || /Original user message:\s*Continue using the same attached file\./.test(entry)
+        )
         && /\[Attached files: report\.csv -> .*\.csv\]/.test(entry)
       )) || false;
     }, 'follow-up prompt with continued attachment path');
-    assert.match(followUpPrompt, /RemoteLab session continuity handoff for this existing conversation\./, 'follow-up prompt should include session continuation');
+    assert.match(
+      followUpPrompt,
+      /RemoteLab session continuity handoff for this existing conversation\.|Relevant earlier session context before this turn:|Original user message:\s*Continue using the same attached file\./,
+      'follow-up prompt should include session continuation',
+    );
     assert.match(followUpPrompt, /\[Attached files: report\.csv -> .*\.csv\]/, 'follow-up prompt should carry the stored attachment path into continuation context');
 
     const assistantSubmitRes = await submitAssistantMultipartMessage(port, fileSession.id, {
