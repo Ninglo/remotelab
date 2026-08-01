@@ -26,6 +26,7 @@ By the end of this flow you should have:
 - one local `feishu-connector` using persistent connection
 - one working private-chat validation path
 - RemoteLab sessions created or reused behind the bot
+- one optional, read-only Docx capability when the app has document read access
 
 This rollout stays intentionally narrow at first:
 
@@ -106,6 +107,29 @@ Notes:
 - `restart` refreshes the Bot registry, uses the exact recorded systemd unit when present, and otherwise passes the selected config to the local instance helper
 - `backfill` creates a fresh reply session and drafts a catch-up reply for recent silent text messages; add `--dry-run` to inspect the target and prompt without sending
 - if `backfill` fails with `Bot/User can NOT be out of the chat`, the bot is no longer in that chat, so the draft exists but Feishu will refuse delivery until the bot is added back
+
+### Read-only Feishu document capability
+
+The active Feishu connector exposes `feishu:document_get` to RemoteLab only
+while its local capability endpoint is healthy. The connector keeps the App ID
+and App Secret; agents receive only the instance-scoped command contract and do
+not receive Feishu credentials.
+
+The app must have the Docx read permissions required by Feishu's document
+metadata and raw-content APIs, and the target document must be accessible to the
+app's bot identity. A human user's access to a document does not by itself grant
+the bot access.
+
+```bash
+remotelab connector list --json
+remotelab connector call feishu:document_get --document-token <docx-url-or-token> --json
+```
+
+The capability accepts a Docx URL or document token and returns title, revision,
+plain-text content, content length, and truncation state. It does not search the
+knowledge base, read PDFs, use a user's OAuth identity, or write to documents.
+`missing_scope` means the app version lacks the required API scope;
+`document_permission_denied` means the bot identity cannot access that document.
 
 ### Multiple Bot discovery and targeted maintenance
 

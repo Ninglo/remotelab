@@ -7,3 +7,5 @@
 [2026-07-29 04:32] Added shared runtime alignment checks to setup/restart, covered stale CLI repair, repeat-run idempotence, and service checkout drift. The focused tests, syntax checks, live two-pass alignment probe, and full npm test suite pass.
 [2026-07-29 07:13] Started silent-empty-trigger-source-delivery; reproduced that completed empty trigger replies are replaced with a fallback summary and enqueued to Feishu.
 [2026-07-29 07:15] Completed silent-empty-trigger-source-delivery; completed empty replies now skip the outbox, while failure summaries and non-empty replies remain covered by trigger regression tests.
+[2026-08-01 15:56] Started feishu-document-read-connector; decision: keep bot credentials inside the Feishu connector, expose a read-only instance capability through the connector skill registry and RemoteLab CLI, and declare it conditionally to agents.
+[2026-08-01 16:42] Completed feishu-document-read-connector implementation and regression verification; focused connector/SDK/CLI/prompt integration tests, full smoke and merge-safety suite, and the HTTP integration suite pass.

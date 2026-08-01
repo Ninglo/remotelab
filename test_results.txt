@@ -49,3 +49,40 @@ Live checks:
 - The second Feishu connector restarted successfully and logged "persistent connection ready (feishu-cn)".
 - The production Feishu app accepted a MathJax/resvg-generated formula PNG through the message-image API.
 - Resolving the same formula twice reused the content-hash cache.
+
+Feishu document read capability verification
+Date: 2026-08-01 UTC
+
+Focused integration commands:
+node tests/test-feishu-document-skill.mjs
+node tests/test-connector-skill-registry.mjs
+node tests/test-connector-feishu.mjs
+node tests/test-feishu-connector.mjs
+
+Actual terminal summaries:
+test-feishu-document-skill: ok
+All connector skill registry tests passed
+ok - feishu connector helpers
+ok - queued Feishu follow-ups wait for the eventual assistant reply
+
+Full regression command:
+npm test
+
+Result:
+Process exited with code 0. The smoke, merge-safety, shared-tools, system-prompt,
+Feishu connector, connector registry, and connector Gmail tests all passed.
+
+HTTP integration command:
+npm run test:integration
+
+Actual output:
+test-http-session-templates: ok
+test-http-session-media-upload: ok
+test-http-file-assets: ok
+test-http-result-file-assets: ok
+test-http-voice-cleanup: ok
+
+Static checks:
+git diff --check exited with code 0.
+npm run lint:filesize exited with code 0 and reported the repository's known
+oversized-file baseline.

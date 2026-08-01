@@ -46,6 +46,14 @@ export const FEISHU_SKILLS = [
       replyInThread: { type: 'boolean', description: 'Whether to reply inside a topic/thread when replyToMessageId is set' },
     },
   },
+  {
+    name: 'document_get',
+    description: 'Read the plain-text content of a Feishu Docx document using the connector bot identity.',
+    schema: {
+      documentToken: { type: 'string', required: true, description: 'Feishu Docx URL or document token' },
+      maxChars: { type: 'number', description: 'Maximum content characters to return' },
+    },
+  },
 ];
 
 const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;
@@ -145,7 +153,13 @@ function renderPostElementText(element) {
     const userId = trimString(element.user_id);
     return name ? `@${name.replace(/^@+/, '')}` : (userId ? `@${userId.replace(/^@+/, '')}` : '');
   }
-  if (['text', 'md', 'a'].includes(tag)) {
+  if (tag === 'a') {
+    const text = typeof element.text === 'string' ? element.text : '';
+    const href = trimString(element.href || element.url);
+    if (!href) return text;
+    return text && text !== href ? `${text} (${href})` : href;
+  }
+  if (['text', 'md'].includes(tag)) {
     return typeof element.text === 'string' ? element.text : '';
   }
   if (tag === 'img' || tag === 'image') return '[image]';
@@ -155,6 +169,16 @@ function renderPostElementText(element) {
     return fileName ? `[file: ${fileName}]` : '[file]';
   }
   return typeof element.text === 'string' ? element.text : '';
+}
+
+export function extractFeishuDocumentToken(value) {
+  const normalized = trimString(value);
+  if (!normalized) return '';
+  const urlMatch = normalized.match(/https?:\/\/[^\s)\]}>'"]+\/docx\/([A-Za-z0-9_-]{8,})/i);
+  if (urlMatch?.[1]) return urlMatch[1];
+  const pathMatch = normalized.match(/(?:^|[\s(\[{])\/docx\/([A-Za-z0-9_-]{8,})(?=$|[\s)\]}?#])/i);
+  if (pathMatch?.[1]) return pathMatch[1];
+  return /^[A-Za-z0-9_-]{8,}$/.test(normalized) ? normalized : '';
 }
 
 export function extractPostMessageText(parsedContent) {

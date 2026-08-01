@@ -46,9 +46,9 @@ function createMockSkillServer(handler) {
 
 // 1. Init and register
 {
-  initSkillRegistry(tmpDir)
+  await initSkillRegistry(tmpDir)
 
-  const tools = registerConnectorSkills('email', {
+  const tools = await registerConnectorSkills('email', {
     callback: {
       replyUrl: 'http://localhost:1234/reply',
       skillUrl: 'http://localhost:1234/skill',
@@ -71,7 +71,7 @@ function createMockSkillServer(handler) {
 
 // 2. Register a second channel
 {
-  registerConnectorSkills('feishu', {
+  await registerConnectorSkills('feishu', {
     callback: {
       replyUrl: 'http://localhost:5678/reply',
       skillUrl: 'http://localhost:5678/skill',
@@ -83,29 +83,29 @@ function createMockSkillServer(handler) {
     ],
   })
 
-  const channels = getRegisteredChannels()
+  const channels = await getRegisteredChannels()
   assert.deepEqual(channels.sort(), ['email', 'feishu'])
   console.log('  ✓ Multiple channels register independently')
 }
 
 // 3. getToolDefinitions for specific channel
 {
-  const emailTools = getToolDefinitions('email')
+  const emailTools = await getToolDefinitions('email')
   assert.equal(emailTools.length, 2)
   assert.equal(emailTools[0].name, 'email:send')
 
-  const feishuTools = getToolDefinitions('feishu')
+  const feishuTools = await getToolDefinitions('feishu')
   assert.equal(feishuTools.length, 2)
   assert.equal(feishuTools[1].name, 'feishu:create_group')
 
-  const noTools = getToolDefinitions('slack')
+  const noTools = await getToolDefinitions('slack')
   assert.equal(noTools.length, 0)
   console.log('  ✓ getToolDefinitions returns correct tools per channel')
 }
 
 // 4. getAllToolDefinitions
 {
-  const all = getAllToolDefinitions()
+  const all = await getAllToolDefinitions()
   assert.equal(all.length, 4)
   const names = all.map(t => t.name).sort()
   assert.deepEqual(names, ['email:send', 'email:send_bulk', 'feishu:create_group', 'feishu:send'])
@@ -114,32 +114,32 @@ function createMockSkillServer(handler) {
 
 // 5. Persistence: re-init and verify
 {
-  initSkillRegistry(tmpDir) // re-read from disk
-  const all = getAllToolDefinitions()
+  await initSkillRegistry(tmpDir) // re-read from disk
+  const all = await getAllToolDefinitions()
   assert.equal(all.length, 4, 'Should persist across re-init')
   console.log('  ✓ Skill registry persists to disk and reloads')
 }
 
 // 6. Deregister a channel
 {
-  const removed = deregisterConnectorSkills('feishu')
+  const removed = await deregisterConnectorSkills('feishu')
   assert.equal(removed, true)
-  assert.equal(getAllToolDefinitions().length, 2)
-  assert.deepEqual(getRegisteredChannels(), ['email'])
+  assert.equal((await getAllToolDefinitions()).length, 2)
+  assert.deepEqual(await getRegisteredChannels(), ['email'])
 
-  const removedAgain = deregisterConnectorSkills('feishu')
+  const removedAgain = await deregisterConnectorSkills('feishu')
   assert.equal(removedAgain, false)
   console.log('  ✓ deregisterConnectorSkills removes channel and is idempotent')
 }
 
 // 7. Register with empty skills removes stale entry
 {
-  registerConnectorSkills('email', {
+  await registerConnectorSkills('email', {
     callback: { replyUrl: '', skillUrl: '', token: '' },
     skills: [],
   })
-  assert.equal(getAllToolDefinitions().length, 0)
-  assert.deepEqual(getRegisteredChannels(), [])
+  assert.equal((await getAllToolDefinitions()).length, 0)
+  assert.deepEqual(await getRegisteredChannels(), [])
   console.log('  ✓ Register with empty skills clears the channel entry')
 }
 
@@ -153,7 +153,7 @@ function createMockSkillServer(handler) {
   })
   const port = mockServer.address().port
 
-  registerConnectorSkills('email', {
+  await registerConnectorSkills('email', {
     callback: { skillUrl: `http://127.0.0.1:${port}/skill`, token: 'mock-token' },
     skills: [{ name: 'send', description: 'Send', schema: { to: {} } }],
   })
@@ -191,8 +191,8 @@ function createMockSkillServer(handler) {
 
 // 12. executeConnectorSkill — network error
 {
-  deregisterConnectorSkills('email')
-  registerConnectorSkills('email', {
+  await deregisterConnectorSkills('email')
+  await registerConnectorSkills('email', {
     callback: { skillUrl: 'http://127.0.0.1:59999/skill', token: 'tok' },
     skills: [{ name: 'send', description: 'Send', schema: {} }],
   })
@@ -211,8 +211,8 @@ function createMockSkillServer(handler) {
   }))
   const port = errServer.address().port
 
-  deregisterConnectorSkills('email')
-  registerConnectorSkills('email', {
+  await deregisterConnectorSkills('email')
+  await registerConnectorSkills('email', {
     callback: { skillUrl: `http://127.0.0.1:${port}/skill`, token: 'tok' },
     skills: [{ name: 'send', description: 'Send', schema: {} }],
   })
