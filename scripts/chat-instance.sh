@@ -18,6 +18,7 @@ NAME=""
 LOG_PATH=""
 NODE_BIN="${NODE_BIN:-$(command -v node)}"
 INSTANCE_HOME="$HOME"
+INSTANCE_HOME_EXPLICIT=0
 INSTANCE_ROOT=""
 INSTANCE_CONFIG_DIR=""
 INSTANCE_MEMORY_DIR=""
@@ -37,7 +38,8 @@ Options:
   --name <name>    Optional label used for pid/log filenames
   --home <path>    HOME to use for the instance runtime
   --instance-root <path>
-                    Isolated RemoteLab data root (uses <root>/config and <root>/memory)
+                    Isolated RemoteLab data root (uses <root>/config and <root>/memory);
+                    also becomes HOME unless --home is provided
   --config-dir <path>
                     Explicit RemoteLab config dir override for the instance runtime
   --memory-dir <path>
@@ -76,6 +78,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --home)
       INSTANCE_HOME="$2"
+      INSTANCE_HOME_EXPLICIT=1
       shift 2
       ;;
     --instance-root)
@@ -182,6 +185,9 @@ resolve_instance_storage() {
 
   if [[ -n "$INSTANCE_ROOT" ]]; then
     instance_root="$(canonical_target_dir "$INSTANCE_ROOT")"
+    if [[ "$INSTANCE_HOME_EXPLICIT" != "1" ]]; then
+      INSTANCE_HOME="$instance_root"
+    fi
   fi
   if [[ -n "$INSTANCE_CONFIG_DIR" ]]; then
     config_dir="$(canonical_target_dir "$INSTANCE_CONFIG_DIR")"
@@ -219,18 +225,17 @@ mirror_directory() {
   cp -R "$source_path" "$target_path"
 }
 
-mirror_file() {
+mirror_file_if_present() {
   local source_path target_path
   source_path="$1"
   target_path="$2"
   if [[ "$source_path" == "$target_path" ]]; then
     return 0
   fi
-  mkdir -p "$(dirname "$target_path")"
   if [[ ! -f "$source_path" ]]; then
-    rm -f "$target_path"
     return 0
   fi
+  mkdir -p "$(dirname "$target_path")"
   cp -f "$source_path" "$target_path"
 }
 
@@ -259,7 +264,7 @@ sync_instance_home() {
     if [[ -n "$RESOLVED_INSTANCE_MEMORY_DIR" ]]; then
       mirror_directory "$source_home/.remotelab/memory" "$RESOLVED_INSTANCE_MEMORY_DIR"
     fi
-    mirror_file "$source_home/.codex/auth.json" "$target_home/.codex/auth.json"
+    mirror_file_if_present "$source_home/.codex/auth.json" "$target_home/.codex/auth.json"
 
     echo "synced data: $source_home -> ${RESOLVED_INSTANCE_ROOT:-custom dirs}"
     if [[ -n "$RESOLVED_INSTANCE_CONFIG_DIR" ]]; then
@@ -281,7 +286,7 @@ sync_instance_home() {
 
   mirror_directory "$source_home/.config/remotelab" "$target_home/.config/remotelab"
   mirror_directory "$source_home/.remotelab/memory" "$target_home/.remotelab/memory"
-  mirror_file "$source_home/.codex/auth.json" "$target_home/.codex/auth.json"
+  mirror_file_if_present "$source_home/.codex/auth.json" "$target_home/.codex/auth.json"
 
   echo "synced data: $source_home -> $target_home"
   if [[ -f "$target_home/.codex/auth.json" ]]; then

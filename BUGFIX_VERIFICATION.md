@@ -179,3 +179,109 @@ test-feishu-document-skill: ok
 
 **Fixed by:** Harness Agent
 **Date:** 2026-08-01
+
+---
+
+## Bug Description
+
+`scripts/chat-instance.sh sync --instance-root ...` left `INSTANCE_HOME` at the
+operator's real HOME unless `--home` was also supplied. When the sync source did
+not contain `.codex/auth.json`, `mirror_file` then deleted the operator's real
+Codex auth file. The smoke test exercised this path while still reporting
+success.
+
+## Step 1: RED - Reproduce Bug
+
+- [x] Regression test updated at: `tests/test-chat-instance-sync.mjs`
+- [x] Test uses a disposable operator HOME
+- [x] Test failed before the production fix
+
+Command:
+
+```text
+node tests/test-chat-instance-sync.mjs
+```
+
+Evidence of failure:
+
+```text
+Error: ENOENT: no such file or directory, open '/tmp/remotelab-chat-instance-sync-DUJBIy/operator-home/.codex/auth.json'
+    at readFileSync (node:fs:441:20)
+    at file:///home/ubuntu/.remotelab/workspace/remotelab-feishu-v2-merge/tests/test-chat-instance-sync.mjs:71:5
+  code: 'ENOENT'
+```
+
+The exact RED output is also preserved in `BUG_EVIDENCE.md`.
+
+## Step 2: GREEN - Fix Applied
+
+- [x] Code fixed at: `scripts/chat-instance.sh`
+- [x] `--instance-root` now becomes the runtime HOME unless `--home` is explicit
+- [x] A missing source auth file is now a non-destructive no-op
+- [x] Isolated auth still copies into `<instance-root>/.codex/auth.json`
+- [x] Focused test now passes
+
+Evidence of success:
+
+```text
+$ node tests/test-chat-instance-sync.mjs
+test-chat-instance-sync: ok
+```
+
+## Step 3: REFACTOR - Clean Up
+
+- [x] Renamed the helper to `mirror_file_if_present` so its safety contract is explicit
+- [x] Updated command help for the `--instance-root` HOME behavior
+- [x] `bash -n scripts/chat-instance.sh` passed
+- [x] `git diff --check` passed
+- [x] `npm run lint:filesize` exited 0 with the repository's existing oversized-file report
+- [x] `npm audit --omit=dev` reported 0 vulnerabilities
+
+## Full Regression
+
+```text
+$ npm test
+...
+test-chat-instance-sync: ok
+...
+test-user-shell-env: ok
+test-usage-summary-command: ok
+test-connector-gmail: ok
+FULL_TEST_EXIT=0
+```
+
+```text
+$ npm run test:integration
+test-http-session-templates: ok
+test-http-session-media-upload: ok
+test-http-file-assets: ok
+test-http-result-file-assets: ok
+test-http-voice-cleanup: ok
+```
+
+## Live Auth Safety Check
+
+After the focused test and repeated full regression runs:
+
+```text
+Logged in using ChatGPT
+inode=553773 size=4447 mode=600 mtime=2026-08-02 06:59:37.861944662 +0000
+auth_path_audit_records=2
+lost 0
+```
+
+The auth inode and mtime remained unchanged. The two exact-path audit records
+are the original pre-fix deletion and the subsequent login recreation; the
+post-fix test runs added no auth write or delete event.
+
+## Final Verification
+
+- [x] Regression test proves the destructive behavior existed
+- [x] Focused and full tests pass
+- [x] Static checks pass
+- [x] Real Codex login remains intact
+- [x] Unrelated pre-existing worktree changes were preserved and excluded from this fix
+
+**Fixed by:** Harness Agent
+
+**Date:** 2026-08-02
