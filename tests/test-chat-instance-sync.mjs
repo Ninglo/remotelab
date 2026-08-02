@@ -9,10 +9,14 @@ import { spawnSync } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 
-function runScript(args) {
+function runScript(args, envOverrides = {}) {
   return spawnSync('bash', ['scripts/chat-instance.sh', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...envOverrides,
+    },
   });
 }
 
@@ -20,10 +24,15 @@ const sandboxRoot = mkdtempSync(join(tmpdir(), 'remotelab-chat-instance-sync-'))
 const sourceHome = join(sandboxRoot, 'source-home');
 const targetHome = join(sandboxRoot, 'target-home');
 const instanceRoot = join(sandboxRoot, 'instance-root');
+const operatorHome = join(sandboxRoot, 'operator-home');
 
 try {
   mkdirSync(join(sourceHome, '.config', 'remotelab'), { recursive: true });
   writeFileSync(join(sourceHome, '.config', 'remotelab', 'auth.json'), JSON.stringify({ token: 'fresh-token' }, null, 2));
+
+  mkdirSync(join(operatorHome, '.codex'), { recursive: true });
+  const operatorCodexAuth = JSON.stringify({ tokens: { marker: 'operator-auth' } }, null, 2);
+  writeFileSync(join(operatorHome, '.codex', 'auth.json'), operatorCodexAuth);
 
   mkdirSync(join(targetHome, '.config', 'remotelab'), { recursive: true });
   mkdirSync(join(targetHome, '.remotelab', 'memory'), { recursive: true });
@@ -53,8 +62,16 @@ try {
   writeFileSync(join(instanceRoot, 'config', 'stale.txt'), 'stale');
   writeFileSync(join(instanceRoot, 'memory', 'stale.md'), 'stale');
 
-  const rootedSyncResult = runScript(['sync', '--instance-root', instanceRoot, '--sync-from-home', sourceHome]);
+  const rootedSyncResult = runScript(
+    ['sync', '--instance-root', instanceRoot, '--sync-from-home', sourceHome],
+    { HOME: operatorHome },
+  );
   assert.equal(rootedSyncResult.status, 0, `rooted sync should succeed without --port: ${rootedSyncResult.stderr}`);
+  assert.equal(
+    readFileSync(join(operatorHome, '.codex', 'auth.json'), 'utf8'),
+    operatorCodexAuth,
+    'instance-root sync must not modify the operator HOME Codex auth',
+  );
   assert.equal(
     JSON.parse(readFileSync(join(instanceRoot, 'config', 'auth.json'), 'utf8')).token,
     'fresh-token',
@@ -69,6 +86,26 @@ try {
     existsSync(join(instanceRoot, 'memory')),
     false,
     'sync should remove mirrored memory from the instance root when the source home has none',
+  );
+
+  mkdirSync(join(sourceHome, '.codex'), { recursive: true });
+  const sourceCodexAuth = JSON.stringify({ tokens: { marker: 'source-auth' } }, null, 2);
+  writeFileSync(join(sourceHome, '.codex', 'auth.json'), sourceCodexAuth);
+
+  const rootedCodexSyncResult = runScript(
+    ['sync', '--instance-root', instanceRoot, '--sync-from-home', sourceHome],
+    { HOME: operatorHome },
+  );
+  assert.equal(rootedCodexSyncResult.status, 0, `rooted Codex auth sync should succeed: ${rootedCodexSyncResult.stderr}`);
+  assert.equal(
+    readFileSync(join(instanceRoot, '.codex', 'auth.json'), 'utf8'),
+    sourceCodexAuth,
+    'instance-root sync should mirror Codex auth into the isolated instance home',
+  );
+  assert.equal(
+    readFileSync(join(operatorHome, '.codex', 'auth.json'), 'utf8'),
+    operatorCodexAuth,
+    'instance-root Codex auth sync must leave the operator HOME unchanged',
   );
 
   const selfSyncResult = runScript(['sync', '--home', sourceHome, '--sync-from-home', sourceHome]);
