@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { join } from 'node:path';
 
 import {
   deregisterConnectorSkills,
@@ -11,9 +12,7 @@ import {
   FEISHU_SKILLS,
   extractFeishuDocumentToken,
 } from './index.mjs';
-
-const DEFAULT_FEISHU_DOCUMENT_MAX_CHARS = 120_000;
-const MAX_FEISHU_DOCUMENT_MAX_CHARS = 200_000;
+import { createLarkCliDocumentProvider } from './lark-cli-document-provider.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -67,20 +66,6 @@ function normalizeFeishuDocumentError(error) {
   );
 }
 
-function ensureFeishuDocumentApiSuccess(response) {
-  const code = Number(response?.code ?? 0);
-  if (!Number.isFinite(code) || code === 0) return;
-  const error = new Error(trimString(response?.msg) || `Feishu API returned code ${code}`);
-  error.response = { status: code === 91403 ? 403 : 502, data: response };
-  throw error;
-}
-
-function normalizeDocumentMaxChars(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_FEISHU_DOCUMENT_MAX_CHARS;
-  return Math.min(Math.floor(parsed), MAX_FEISHU_DOCUMENT_MAX_CHARS);
-}
-
 export async function readFeishuDocument(runtime, parameters = {}) {
   const documentToken = extractFeishuDocumentToken(parameters?.documentToken || parameters?.documentUrl);
   if (!documentToken) {
@@ -90,35 +75,16 @@ export async function readFeishuDocument(runtime, parameters = {}) {
       400,
     );
   }
-  const documentApi = runtime?.appClient?.docx?.v1?.document;
-  if (!documentApi?.get || !documentApi?.rawContent) {
+  const documentProvider = runtime?.documentProvider;
+  if (!documentProvider?.fetch) {
     throw createFeishuDocumentError(
       'connector_unavailable',
-      'The active Feishu connector does not provide the Docx read API.',
+      'The active Feishu connector does not provide the lark-cli document backend.',
       503,
     );
   }
   try {
-    const [metadataResponse, contentResponse] = await Promise.all([
-      documentApi.get({ path: { document_id: documentToken } }),
-      documentApi.rawContent({ path: { document_id: documentToken } }),
-    ]);
-    ensureFeishuDocumentApiSuccess(metadataResponse);
-    ensureFeishuDocumentApiSuccess(contentResponse);
-    const metadata = metadataResponse?.data?.document || {};
-    const content = typeof contentResponse?.data?.content === 'string'
-      ? contentResponse.data.content
-      : '';
-    const maxChars = normalizeDocumentMaxChars(parameters?.maxChars);
-    return {
-      documentToken,
-      title: trimString(metadata?.title),
-      revisionId: Number.isFinite(Number(metadata?.revision_id)) ? Number(metadata.revision_id) : null,
-      content: content.slice(0, maxChars),
-      contentLength: content.length,
-      truncated: content.length > maxChars,
-      identity: 'bot',
-    };
+    return await documentProvider.fetch({ ...parameters, documentToken: parameters.documentToken || documentToken });
   } catch (error) {
     throw normalizeFeishuDocumentError(error);
   }
@@ -127,6 +93,20 @@ export async function readFeishuDocument(runtime, parameters = {}) {
 export async function startFeishuDocumentCapability(runtime, options = {}) {
   const configDir = trimString(options?.configDir);
   if (!configDir) throw new Error('Feishu document capability requires an instance config directory');
+  const storageDir = trimString(runtime?.config?.storageDir) || configDir;
+  const sourceRouteId = trimString(runtime?.config?.sourceRouteId) || 'default';
+  const documentProvider = options.documentProvider || createLarkCliDocumentProvider({
+    appId: runtime?.config?.appId,
+    appSecret: runtime?.config?.appSecret,
+    brand: runtime?.config?.region === 'lark-global' ? 'lark' : 'feishu',
+    sourceRouteId,
+    configDir: trimString(options.larkCliConfigDir) || join(storageDir, 'lark-cli', sourceRouteId),
+    snapshotDir: trimString(options.snapshotDir) || join(storageDir, 'document-snapshots', sourceRouteId),
+    larkCliPath: options.larkCliPath,
+    runCommand: options.runCommand,
+  });
+  await documentProvider.initialize();
+  const capabilityRuntime = { ...runtime, documentProvider };
   const skills = FEISHU_SKILLS.filter((skill) => skill.name === 'document_get');
   const callbackToken = randomBytes(32).toString('hex');
   const server = await startConnectorSkillServer({
@@ -137,12 +117,13 @@ export async function startFeishuDocumentCapability(runtime, options = {}) {
       if (skillName !== 'document_get') {
         throw createFeishuDocumentError('skill_not_found', `Unsupported Feishu skill: ${skillName}`, 404);
       }
-      return await readFeishuDocument(runtime, body?.parameters || {});
+      return await readFeishuDocument(capabilityRuntime, body?.parameters || {});
     },
   });
   try {
     await initSkillRegistry(configDir);
     await registerConnectorSkills(FEISHU_CONNECTOR_ID, {
+      sourceRouteId: runtime.config.sourceRouteId,
       callback: { skillUrl: server.skillUrl, token: callbackToken },
       skills,
     });
@@ -154,11 +135,15 @@ export async function startFeishuDocumentCapability(runtime, options = {}) {
   return {
     ...server,
     configDir,
+    documentProvider,
     async stop() {
       if (stopped) return;
       stopped = true;
       await initSkillRegistry(configDir);
-      await deregisterConnectorSkills(FEISHU_CONNECTOR_ID, { skillUrl: server.skillUrl });
+      await deregisterConnectorSkills(FEISHU_CONNECTOR_ID, {
+        sourceRouteId: runtime.config.sourceRouteId,
+        skillUrl: server.skillUrl,
+      });
       await server.stop();
     },
   };

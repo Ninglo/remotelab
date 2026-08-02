@@ -131,6 +131,14 @@ knowledge base, read PDFs, use a user's OAuth identity, or write to documents.
 `missing_scope` means the app version lacks the required API scope;
 `document_permission_denied` means the bot identity cannot access that document.
 
+With multiple Bots, each capability registration is isolated by the Bot's
+`sourceRouteId`. Calls made by an agent inside a Feishu-backed session resolve
+that route from the session source context, so one Bot never borrows another
+Bot's credentials. Stopping one Bot removes only its own registration. A manual
+call outside a connector-backed session remains backward compatible when only
+one Bot is registered; with multiple Bots it must include
+`--source-route-id <bot-id>` or it fails closed.
+
 ### Multiple Bot discovery and targeted maintenance
 
 Keep each Bot in its own config and state directory. The legacy default remains:
