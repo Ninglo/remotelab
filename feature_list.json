@@ -28,5 +28,10 @@
     "id": "feishu-document-multi-bot-routing",
     "description": "Scope Feishu document capability registrations and invocations to the originating sourceRouteId so multiple Bots cannot overwrite or use each other's credentials.",
     "pass": true
+  },
+  {
+    "id": "feishu-document-lark-cli-backend",
+    "description": "Keep the stable Feishu document connector capability and multi-Bot routing while delegating structured, scoped and media-aware document reads to a pinned lark-cli dependency with isolated Bot profiles.",
+    "pass": false
   }
 ]

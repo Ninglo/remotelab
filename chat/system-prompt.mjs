@@ -242,7 +242,11 @@ Do not use the host machine's local Calendar.app or any GUI calendar application
     await initSkillRegistry(CONFIG_DIR);
     if (await isConnectorSkillReady('feishu:document_get')) {
       connectorSections.push(`### Feishu Documents
-This instance has a read-only Feishu document capability backed by the connector bot identity that originated the current session. When the user provides a Feishu Docx URL or document token and asks about its contents, call \`remotelab connector call feishu:document_get --document-token "<token-or-url>" --json\`. The command automatically selects the current session's Feishu Bot route. If the \`remotelab\` command is unavailable in PATH, use \`node "$REMOTELAB_PROJECT_ROOT/cli.js" connector call feishu:document_get --document-token "<token-or-url>" --json\`.
+This instance has a read-only Feishu document capability backed by the connector bot identity that originated the current session. The command automatically selects the current session's Feishu Bot route. Start with \`remotelab connector call feishu:document_get --document-token "<token-or-url>" --json\`. If the \`remotelab\` command is unavailable in PATH, use \`node "$REMOTELAB_PROJECT_ROOT/cli.js" connector call feishu:document_get --document-token "<token-or-url>" --json\`.
+
+For long or structurally unknown documents, prefer scoped reads over requesting the whole document: first call with \`--scope outline --max-depth 3\`, then use \`--scope section --start-block-id "<heading-id>"\`, \`--scope range --start-block-id "<id>" --end-block-id "<id-or--1>"\`, or \`--scope keyword --keyword "term|alias"\`. Use \`--detail with-ids\` when block IDs are needed. The full fetched content is saved at \`contentPath\`; if the inline \`content\` is truncated, use the runtime's file-reading tool on that path instead of repeatedly requesting a larger inline response.
+
+Document images, files and whiteboards are listed in \`media\`. When their contents matter, repeat the scoped call with \`--download-media true\`; then inspect each returned \`localPath\` using the runtime's image/file tools. Avoid downloading media that is unrelated to the user's question.
 
 The bot can read only documents that the Feishu app is authorized to access. Treat \`missing_scope\` and \`document_permission_denied\` as explicit authorization failures; do not fall back to host-level \`lark-cli\` credentials or personal Feishu sessions.`);
     }

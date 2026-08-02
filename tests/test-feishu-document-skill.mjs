@@ -17,15 +17,11 @@ const {
 } = await import('../connectors/feishu/index.mjs');
 const {
   readFeishuDocument,
+  startFeishuDocumentCapability,
 } = await import('../connectors/feishu/document-skill.mjs');
 const {
   initSkillRegistry,
-  registerConnectorSkills,
-  deregisterConnectorSkills,
 } = await import('../lib/connector-skill-registry.mjs');
-const {
-  startConnectorSkillServer,
-} = await import('../lib/connector-skill-server.mjs');
 const {
   runConnectorCommand,
 } = await import('../lib/connector-command.mjs');
@@ -36,6 +32,10 @@ const {
 const documentSkill = FEISHU_SKILLS.find((skill) => skill.name === 'document_get');
 assert.ok(documentSkill, 'Feishu should declare a read-only document_get capability');
 assert.equal(documentSkill.schema.documentToken.required, true);
+assert.equal(documentSkill.schema.scope.type, 'string');
+assert.equal(documentSkill.schema.startBlockId.type, 'string');
+assert.equal(documentSkill.schema.keyword.type, 'string');
+assert.equal(documentSkill.schema.downloadMedia.type, 'boolean');
 
 const documentUrl = 'https://example.feishu.cn/docx/DOCtoken123456789';
 assert.equal(extractFeishuDocumentToken(documentUrl), 'DOCtoken123456789');
@@ -62,30 +62,39 @@ const postSummary = summarizeFeishuEvent({
 assert.equal(postSummary.messageText, `请分析：表征实验 (${documentUrl})`);
 
 const calls = [];
+let providerInitializations = 0;
 const runtime = {
-  appClient: {
-    docx: {
-      v1: {
-        document: {
-          async get(payload) {
-            calls.push(['get', payload.path.document_id]);
-            return {
-              code: 0,
-              data: {
-                document: {
-                  document_id: payload.path.document_id,
-                  revision_id: 42,
-                  title: '表征实验',
-                },
-              },
-            };
-          },
-          async rawContent(payload) {
-            calls.push(['rawContent', payload.path.document_id]);
-            return { code: 0, data: { content: '第一段\n第二段\n第三段' } };
-          },
-        },
-      },
+  config: {
+    appId: 'test-app-id',
+    appSecret: 'test-app-secret',
+    region: 'feishu-cn',
+    sourceRouteId: 'default',
+    storageDir: tempRoot,
+  },
+  documentProvider: {
+    async initialize() {
+      providerInitializations += 1;
+    },
+    async fetch(parameters) {
+      calls.push(parameters);
+      const fullContent = '第一段\n第二段\n第三段';
+      const maxChars = Number(parameters.maxChars) || 120_000;
+      return {
+        documentToken: 'DOCtoken123456789',
+        documentId: 'DOCtoken123456789',
+        title: '表征实验',
+        revisionId: 42,
+        content: fullContent.slice(0, maxChars),
+        contentLength: fullContent.length,
+        truncated: fullContent.length > maxChars,
+        identity: 'bot',
+        scope: parameters.scope || 'full',
+        detail: parameters.detail || 'simple',
+        docFormat: parameters.docFormat || 'xml',
+        contentPath: join(tempRoot, 'document.xml'),
+        manifestPath: join(tempRoot, 'manifest.json'),
+        media: [],
+      };
     },
   },
 };
@@ -101,27 +110,18 @@ assert.equal(document.content, '第一段\n第二');
 assert.equal(document.contentLength, 11);
 assert.equal(document.truncated, true);
 assert.equal(document.identity, 'bot');
-assert.deepEqual(calls.sort(), [
-  ['get', 'DOCtoken123456789'],
-  ['rawContent', 'DOCtoken123456789'],
-].sort());
+assert.equal(calls.length, 1);
+assert.equal(calls[0].documentToken, documentUrl);
+assert.equal(calls[0].maxChars, 6);
 
 await assert.rejects(
   () => readFeishuDocument({
-    appClient: {
-      docx: {
-        v1: {
-          document: {
-            async get() {
-              const error = new Error('forbidden');
-              error.response = { status: 403, data: { code: 91403, msg: 'Forbidden' } };
-              throw error;
-            },
-            async rawContent() {
-              return { code: 0, data: { content: '' } };
-            },
-          },
-        },
+    documentProvider: {
+      async fetch() {
+        const error = new Error('forbidden');
+        error.code = 'document_permission_denied';
+        error.statusCode = 403;
+        throw error;
       },
     },
   }, { documentToken: 'DOCtoken123456789' }),
@@ -129,32 +129,19 @@ await assert.rejects(
 );
 
 await initSkillRegistry(process.env.REMOTELAB_CONFIG_DIR);
-const callbackToken = 'test-connector-callback-token';
-const skillServer = await startConnectorSkillServer({
-  channel: 'feishu',
-  token: callbackToken,
-  skills: [documentSkill],
-  onSkill: async (skillName, body) => {
-    assert.equal(skillName, 'document_get');
-    return await readFeishuDocument(runtime, body.parameters);
-  },
+const documentCapability = await startFeishuDocumentCapability(runtime, {
+  configDir: process.env.REMOTELAB_CONFIG_DIR,
+  documentProvider: runtime.documentProvider,
 });
 
 try {
-  const unauthorized = await fetch(`${skillServer.skillUrl}/document_get`, {
+  assert.equal(providerInitializations, 1);
+  const unauthorized = await fetch(`${documentCapability.skillUrl}/document_get`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ parameters: { documentToken: documentUrl } }),
   });
   assert.equal(unauthorized.status, 401);
-
-  await registerConnectorSkills('feishu', {
-    callback: {
-      skillUrl: skillServer.skillUrl,
-      token: callbackToken,
-    },
-    skills: [documentSkill],
-  });
 
   let stdout = '';
   const exitCode = await runConnectorCommand([
@@ -176,9 +163,11 @@ try {
   assert.match(systemContext, /### Feishu Documents/);
   assert.match(systemContext, /remotelab connector call feishu:document_get/);
   assert.match(systemContext, /bot identity/);
+  assert.match(systemContext, /--scope outline/);
+  assert.match(systemContext, /contentPath/);
+  assert.match(systemContext, /download-media/);
 } finally {
-  await deregisterConnectorSkills('feishu');
-  await skillServer.stop();
+  await documentCapability.stop();
   await rm(tempRoot, { recursive: true, force: true });
 }
 

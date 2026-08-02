@@ -11,3 +11,4 @@
 [2026-08-01 16:42] Completed feishu-document-read-connector implementation and regression verification; focused connector/SDK/CLI/prompt integration tests, full smoke and merge-safety suite, and the HTTP integration suite pass.
 [2026-08-01 16:55] Started feishu-document-multi-bot-routing; decision: reuse existing Feishu sourceRouteId and keep the Agent command stable while routing capability calls to the originating Bot.
 [2026-08-01 17:34] Completed feishu-document-multi-bot-routing; dual-Bot credential isolation, session-derived routing, targeted deregistration, cross-process registry locking, full smoke/merge-safety, HTTP integration, static checks, and dependency audit pass.
+[2026-08-02 06:32] Started feishu-document-lark-cli-backend; decision: preserve feishu:document_get and sourceRouteId routing, pin lark-cli as a formal dependency, isolate one Bot profile per connector, and reuse Agent file/image tools for large snapshots and downloaded media.
