@@ -2060,6 +2060,7 @@ async function prepareForkContextSnapshot(sessionId, snapshot, contextHead) {
     const recentEvents = preparedThroughSeq > activeFromSeq
       ? await loadHistory(sessionId, {
           fromSeq: Math.max(1, activeFromSeq + 1),
+          toSeq: preparedThroughSeq,
           includeBodies: true,
         })
       : [];
@@ -2080,7 +2081,10 @@ async function prepareForkContextSnapshot(sessionId, snapshot, contextHead) {
     return null;
   }
 
-  const priorHistory = await loadHistory(sessionId, { includeBodies: true });
+  const priorHistory = await loadHistory(sessionId, {
+    toSeq: preparedThroughSeq,
+    includeBodies: true,
+  });
   const continuationBody = prepareSessionContinuationBody(priorHistory);
   if (!continuationBody) {
     return null;
@@ -3830,7 +3834,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     };
   }
 
-  const snapshot = await getHistorySnapshot(sessionId);
+  const [snapshot, forkContextHead] = await Promise.all([
+    getHistorySnapshot(sessionId),
+    getContextHead(sessionId),
+  ]);
   const hasPriorUserMessage = (snapshot.userMessageCount || 0) > 0;
 
   if (hasPriorUserMessage && shouldRunDispatch(session, options) && shouldPrepareContinuationCheck(session, normalizedText)) {
@@ -3938,6 +3945,8 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       folder: session.folder,
       tool: effectiveTool,
       ...(effectiveRuntimeFamily ? { runtimeFamily: effectiveRuntimeFamily } : {}),
+      forkBaseSeq: snapshot.latestSeq,
+      forkContextHead: forkContextHead || null,
       prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options),
       internalOperation: options.internalOperation || null,
       ...(replyPublicationRootRunId ? { replyPublicationRootRunId } : {}),
@@ -4095,14 +4104,34 @@ export async function forkSession(sessionId, options = {}) {
   const source = await getSession(sessionId);
   if (!source) return null;
   if (source.visitorId) return null;
-  if (isSessionRunning(source)) return null;
 
-  const [history, contextHead, snapshot] = await Promise.all([
-    loadHistory(sessionId, { includeBodies: true }),
-    getContextHead(sessionId),
-    getHistorySnapshot(sessionId),
-  ]);
-  const forkContext = await getOrPrepareForkContext(sessionId, snapshot, contextHead);
+  const running = isSessionRunning(source);
+  let forkThroughSeq;
+  let contextHead;
+
+  if (running) {
+    const runId = getSessionRunId(source);
+    const manifest = runId ? await getRunManifest(runId) : null;
+    if (!Number.isInteger(manifest?.forkBaseSeq) || manifest.forkBaseSeq < 0) return null;
+    forkThroughSeq = manifest.forkBaseSeq;
+    contextHead = manifest.forkContextHead || null;
+  } else {
+    const [snapshot, currentContextHead] = await Promise.all([
+      getHistorySnapshot(sessionId),
+      getContextHead(sessionId),
+    ]);
+    forkThroughSeq = snapshot.latestSeq;
+    contextHead = currentContextHead;
+  }
+
+  const history = await loadHistory(sessionId, {
+    toSeq: forkThroughSeq,
+    includeBodies: true,
+  });
+  const forkSnapshot = { latestSeq: forkThroughSeq };
+  const forkContext = running
+    ? await prepareForkContextSnapshot(sessionId, forkSnapshot, contextHead)
+    : await getOrPrepareForkContext(sessionId, forkSnapshot, contextHead);
 
   const hasSourceContextOverride = Object.prototype.hasOwnProperty.call(options, 'sourceContext');
   const child = await createSession(source.folder, source.tool, typeof options.name === 'string' && options.name.trim() ? options.name.trim() : buildForkSessionName(source), {
@@ -4119,7 +4148,7 @@ export async function forkSession(sessionId, options = {}) {
     externalTriggerId: requestedExternalTriggerId,
     ...(hasSourceContextOverride ? { sourceContext: options.sourceContext } : {}),
     forkedFromSessionId: source.id,
-    forkedFromSeq: source.latestSeq || 0,
+    forkedFromSeq: forkThroughSeq,
     rootSessionId: source.rootSessionId || source.id,
     forkedAt: nowIso(),
   });

@@ -1,0 +1,57 @@
+Running-session pre-run fork verification (2026-08-04)
+
+$ node tests/test-http-runtime-phase1.mjs phase11
+phase11-fork-session: ok
+exit: 0
+
+$ node tests/test-session-forking.mjs
+test-session-forking: ok
+exit: 0
+
+$ node tests/test-http-runtime-phase1.mjs
+phase1-contract: ok
+phase2-http-canonical: ok
+phase2b-legacy-http-compat: ok
+phase3-storage: ok
+phase4-runner-thin: ok
+phase5-restart-survival: ok
+phase6-ws-invalidation-only: ok
+phase7-etag-revalidation: ok
+phase8-cancel-recovery: ok
+phase9-stale-result-reconciliation: ok
+phase10-event-index-contract: ok
+phase11-fork-session: ok
+phase12-queued-message-route-contract: ok
+phase13-delegate-session: ok
+phase14-session-spawn-cli: ok
+phase14b-session-spawn-cli-internal-final-only: ok
+phase15-no-duplicate-during-read-hammer: ok
+phase16-stale-missing-runner-reconciliation: ok
+phase17-sidecar-pre-spawn-failure-persists-root-cause: ok
+phase18-finalization-metrics-failure-does-not-mask-success: ok
+phase19-codex-missing-rollout-clears-resume-id: ok
+exit: 0
+
+$ npm test
+test:smoke: ok
+test:merge-safety: ok
+exit: 0
+
+$ node --check chat/history.mjs
+$ node --check chat/session-manager.mjs
+$ node --check tests/test-session-forking.mjs
+$ node --check tests/test-http-runtime-phase1.mjs
+exit: 0
+
+$ npm run lint:filesize
+exit: 0 (existing oversized-file warnings remain)
+
+$ npm run test:integration
+test-http-session-templates: ok
+test-http-session-media-upload: timed out waiting for the pre-existing attachment continuation assertion
+exit: 1
+
+The same media-upload timeout reproduces on untouched commit 914acc8 in a clean detached worktree, so it is not a regression from this feature.
+
+Independent verification worker:
+PASS - no blocking semantic or concurrency issue found; target tests, HTTP phases 1-19, auto-compaction, history index, syntax, and diff checks pass.

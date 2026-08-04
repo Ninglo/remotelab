@@ -1,0 +1,8 @@
+[
+  {
+    "id": "running-session-pre-run-fork",
+    "priority": 1,
+    "description": "Allow connector topic sessions to fork from the parent history captured before its active run started.",
+    "pass": true
+  }
+]

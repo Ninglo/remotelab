@@ -7,6 +7,10 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import { spawn } from 'child_process';
 import WebSocket from 'ws';
+import {
+  createConnectorSession,
+  submitConnectorMessage,
+} from '../lib/connector-turn-flow.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -798,12 +802,83 @@ async function phase11ForkSession() {
       'forked history should strip request ids',
     );
 
-    const running = await createSession(port, { name: 'Fork busy', group: 'Tests', description: 'Fork rejection while running' });
-    const runningSubmit = await submitMessage(port, running.id, 'req-fork-busy', 'slow run for rejection');
+    const running = await createSession(port, { name: 'Fork busy', group: 'Tests', description: 'Fork from the pre-run boundary' });
+    const completedSubmit = await submitMessage(port, running.id, 'req-fork-completed', 'completed turn before the active run');
+    await waitForRunTerminal(port, completedSubmit.json.run.id);
+    const completedEvents = await getEvents(port, running.id, 'all');
+    const completedThroughSeq = completedEvents.events.at(-1)?.seq || 0;
+
+    const runningSubmit = await submitMessage(port, running.id, 'req-fork-busy', 'active turn excluded from fork');
     await waitForSessionBusy(port, running.id);
-    const reject = await request(port, 'POST', `/api/sessions/${running.id}/fork`);
-    assert.equal(reject.status, 409, 'fork should reject running sessions');
-    assert.equal(reject.json.error, 'Session is running');
+    let fallbackCreateCalls = 0;
+    const connectorRequester = async (path, options = {}) => {
+      if (path === '/api/sessions' && (options.method || 'GET') === 'POST') {
+        fallbackCreateCalls += 1;
+      }
+      const result = await request(port, options.method || 'GET', path, options.body || null);
+      return {
+        response: {
+          ok: result.status >= 200 && result.status < 300,
+          status: result.status,
+        },
+        json: result.json,
+        text: result.text,
+      };
+    };
+    const runningForkSession = await createConnectorSession(connectorRequester, {
+      folder: repoRoot,
+      tool: 'fake-codex',
+      name: 'Inbound Feishu topic thread',
+      sourceId: 'feishu',
+      sourceName: 'Feishu',
+      externalTriggerId: 'feishu:topic:chat_running_fork:thread_running_fork',
+      sourceContext: {
+        connector: 'feishu',
+        conversationKind: 'topic',
+        chatId: 'chat_running_fork',
+        topicId: 'thread_running_fork',
+      },
+    }, {
+      forkFromSessionId: running.id,
+      fallbackCreateOnForkFailure: true,
+    });
+    assert.equal(fallbackCreateCalls, 0, 'connector should not fall back to a blank session when the parent is running');
+    assert.equal(runningForkSession.forkedFromSeq, completedThroughSeq, 'fork should record the stable pre-run sequence boundary');
+    assert.equal(runningForkSession.forkedFromSessionId, running.id, 'connector child should preserve parent lineage');
+
+    const runningForkEvents = await getEvents(port, runningForkSession.id, 'all');
+    assert.deepEqual(
+      runningForkEvents.events.map((event) => [event.type, event.role || '', event.content || '']),
+      completedEvents.events.map((event) => [event.type, event.role || '', event.content || '']),
+      'running-session fork should copy only the history completed before the active run started',
+    );
+    assert.equal(
+      runningForkEvents.events.some((event) => event.content === 'active turn excluded from fork'),
+      false,
+      'running-session fork should exclude the active turn user message',
+    );
+
+    const topicSubmit = await submitConnectorMessage(connectorRequester, runningForkSession.id, {
+      requestId: 'req-running-topic-follow-up',
+      text: 'continue inside the forked Feishu topic',
+      tool: 'fake-codex',
+      model: 'fake-model',
+      effort: 'low',
+    });
+    const topicRun = topicSubmit.runId
+      ? { id: topicSubmit.runId }
+      : await waitForAcceptedRun(port, runningForkSession.id, 'req-running-topic-follow-up');
+    assert.ok(topicRun?.id, 'connector should start the first child turn after the fork');
+    await waitForRunTerminal(port, topicRun.id);
+    const completedTopicEvents = await getEvents(port, runningForkSession.id, 'all');
+    assert.ok(
+      completedTopicEvents.events.some((event) => event.role === 'user' && event.content === 'continue inside the forked Feishu topic'),
+      'forked topic should accept the connector follow-up message',
+    );
+    assert.ok(
+      completedTopicEvents.events.some((event) => event.role === 'assistant' && event.content === 'finished from fake codex'),
+      'forked topic should complete its own assistant turn',
+    );
 
     console.log('phase11-fork-session: ok');
   } finally {

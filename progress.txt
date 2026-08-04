@@ -1,0 +1,9 @@
+Feature: Fork a running session from the stable pre-run boundary
+Status: complete
+Current step: Complete and ready for remote handoff.
+TDD evidence: tests/test-http-runtime-phase1.mjs phase11 fails with 409 instead of the expected 201.
+Hypothesis: forkSession rejects every running source before reading its active run manifest, so it cannot use a stable pre-run history boundary.
+Reflexion: implementation reached 201; the next assertion compared forkedFromSeq against the visible-event projection, which omits one stored event. The boundary assertion must use the raw all-event sequence.
+Reflexion: the connector integration assertion used the HTTP response shape (`run.id`) instead of submitConnectorMessage's normalized `runId`; continuation dispatch may also defer run creation, so the test must resolve the accepted run by request id when needed.
+Regression note: npm run test:integration repeatedly times out in the pre-existing media-upload continuation assertion. The failing path is outside the changed fork/history code; verify it against an untouched HEAD worktree before classifying it as a feature regression.
+Verification: targeted unit and connector/HTTP closed-loop tests pass; npm test passes; independent review passes. The unrelated media-upload integration timeout reproduces on untouched HEAD.
