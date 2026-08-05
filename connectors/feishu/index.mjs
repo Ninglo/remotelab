@@ -48,9 +48,9 @@ export const FEISHU_SKILLS = [
   },
   {
     name: 'document_get',
-    description: 'Read structured Feishu Docx content with scoped retrieval and optional local media downloads using the originating connector bot identity.',
+    description: 'Read structured Feishu Docx or Wiki-backed document content with scoped retrieval and optional local media downloads using the originating connector bot identity.',
     schema: {
-      documentToken: { type: 'string', required: true, description: 'Feishu Docx URL or document token' },
+      documentToken: { type: 'string', required: true, description: 'Feishu Docx/Wiki URL or document token' },
       scope: { type: 'string', description: 'Read scope: full, outline, section, range, or keyword' },
       detail: { type: 'string', description: 'Detail level: simple, with-ids, or full' },
       docFormat: { type: 'string', description: 'Content format: xml, markdown, or im-markdown' },
@@ -186,9 +186,9 @@ function renderPostElementText(element) {
 export function extractFeishuDocumentToken(value) {
   const normalized = trimString(value);
   if (!normalized) return '';
-  const urlMatch = normalized.match(/https?:\/\/[^\s)\]}>'"]+\/docx\/([A-Za-z0-9_-]{8,})/i);
+  const urlMatch = normalized.match(/https?:\/\/[^\s)\]}>'"]+\/(?:docx|wiki)\/([A-Za-z0-9_-]{8,})/i);
   if (urlMatch?.[1]) return urlMatch[1];
-  const pathMatch = normalized.match(/(?:^|[\s(\[{])\/docx\/([A-Za-z0-9_-]{8,})(?=$|[\s)\]}?#])/i);
+  const pathMatch = normalized.match(/(?:^|[\s(\[{])\/(?:docx|wiki)\/([A-Za-z0-9_-]{8,})(?=$|[\s)\]}?#])/i);
   if (pathMatch?.[1]) return pathMatch[1];
   return /^[A-Za-z0-9_-]{8,}$/.test(normalized) ? normalized : '';
 }

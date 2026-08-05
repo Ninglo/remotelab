@@ -12,3 +12,5 @@
 [2026-08-01 16:55] Started feishu-document-multi-bot-routing; decision: reuse existing Feishu sourceRouteId and keep the Agent command stable while routing capability calls to the originating Bot.
 [2026-08-01 17:34] Completed feishu-document-multi-bot-routing; dual-Bot credential isolation, session-derived routing, targeted deregistration, cross-process registry locking, full smoke/merge-safety, HTTP integration, static checks, and dependency audit pass.
 [2026-08-02 06:32] Started feishu-document-lark-cli-backend; decision: preserve feishu:document_get and sourceRouteId routing, pin lark-cli as a formal dependency, isolate one Bot profile per connector, and reuse Agent file/image tools for large snapshots and downloaded media.
+[2026-08-05 19:15] Continued feishu-document-lark-cli-backend for Wiki-backed documents; reproduced that RemoteLab rejects /wiki/ URLs before the pinned lark-cli resolver can unwrap them.
+[2026-08-05 19:26] Completed Wiki-backed document support; Docx/Wiki URLs preserve their resolvable reference through lark-cli, focused tests and the full smoke/merge-safety suite pass, and bot-2 successfully read both requested Wiki documents.

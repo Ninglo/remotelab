@@ -154,6 +154,12 @@ try {
   const rangeCall = calls.filter((call) => call.args[1] === '+fetch').at(-1);
   assert.equal(rangeCall.args[rangeCall.args.indexOf('--end-block-id') + 1], '-1');
 
+  const wikiUrl = 'https://example.feishu.cn/wiki/WIKItoken123456789';
+  const wikiResult = await provider.fetch({ documentToken: wikiUrl, scope: 'outline' });
+  assert.equal(wikiResult.documentToken, 'WIKItoken123456789');
+  const wikiCall = calls.filter((call) => call.args[1] === '+fetch').at(-1);
+  assert.equal(wikiCall.args[wikiCall.args.indexOf('--doc') + 1], wikiUrl);
+
   await assert.rejects(
     () => provider.fetch({ documentToken: 'DOCtoken123456789', scope: 'section' }),
     (error) => error?.code === 'document_parameters_invalid' && error?.statusCode === 400,

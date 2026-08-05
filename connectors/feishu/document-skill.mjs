@@ -71,7 +71,7 @@ export async function readFeishuDocument(runtime, parameters = {}) {
   if (!documentToken) {
     throw createFeishuDocumentError(
       'document_token_invalid',
-      'A valid Feishu Docx URL or document token is required.',
+      'A valid Feishu Docx/Wiki URL or document token is required.',
       400,
     );
   }
