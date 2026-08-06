@@ -26,6 +26,7 @@ By the end of this flow you should have:
 - one local `feishu-connector` using persistent connection
 - one working private-chat validation path
 - RemoteLab sessions created or reused behind the bot
+- AI-generated RemoteLab attachments delivered back to the originating Feishu conversation
 - one optional, read-only Docx capability when the app has document read access
 
 This rollout stays intentionally narrow at first:
@@ -34,7 +35,7 @@ This rollout stays intentionally narrow at first:
 - same-tenant rollout first, not cross-tenant distribution
 - private chat first, group support later
 - persistent connection / long connection, not public webhook mode
-- V0 reply handling is text-first; non-text Feishu payloads such as images, files, and rich posts are logged and marked handled, but ignored without reply
+- reply handling supports text, inbound images/rich posts, and outbound AI-generated file/image attachments
 
 ## One-round input handoff
 
@@ -51,7 +52,7 @@ If the app does not exist yet, the AI should tell the human in one pass which co
 
 1. Create a self-built Feishu app.
 2. Enable the app's bot capability.
-3. Open the minimum IM read and send permissions needed for private chat.
+3. Open the minimum IM read and send permissions needed for private chat, plus `im:resource` (获取与上传图片或文件资源).
 4. Subscribe only `im.message.receive_v1` under Tenant Token-Based Subscription.
 5. Choose persistent connection / long connection as the inbound mode.
 6. Add the first tester to app availability scope and publish or apply the current version.
@@ -77,6 +78,7 @@ Prefer one Feishu-console visit that covers app creation, permissions, event sub
 - Start with same-tenant private chat; do not start with cross-tenant distribution.
 - If the console warns `No connection detected`, let the AI bring the connector online first, then return and save persistent connection mode again.
 - If outbound later fails with Feishu error `99991672`, enable the exact IM send permission named in the error message.
+- Reply images must be no larger than 10 MB; other reply files must be no larger than 30 MB. Larger images are sent as ordinary files when they fit the 30 MB file limit.
 - If you want the bot to add a quick “I’m looking” reaction before the real reply lands, also enable `发送、删除消息表情回复 (im:message.reactions:write_only)`.
 
 ## AI execution contract
@@ -236,6 +238,7 @@ formula.
 - an inbound message reaches RemoteLab
 - RemoteLab creates or reuses the matching session
 - the bot sends a reply back into Feishu
+- AI-generated Attached files arrive as native Feishu image/file messages in the same private chat, group, or topic thread
 
 ## After V0
 
