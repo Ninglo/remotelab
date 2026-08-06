@@ -217,6 +217,19 @@ try {
       'after unpinning, normal recency ordering should resume',
     );
 
+    const staleModelPatch = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
+      tool: 'codex',
+      model: 'gpt-5.4',
+      effort: 'xhigh',
+    });
+    assert.equal(staleModelPatch.status, 200, 'PATCH should accept stale Codex models by upgrading them');
+    assert.equal(
+      staleModelPatch.json.session?.model,
+      'gpt-5.6-sol',
+      'stale Codex session preferences should upgrade to the product default model',
+    );
+    assert.equal(staleModelPatch.json.session?.effort, 'xhigh', 'model upgrade should preserve the requested effort');
+
     console.log('test-http-session-patch-runtime-preferences: ok');
   } finally {
     await stopServer(server);

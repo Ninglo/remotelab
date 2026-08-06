@@ -609,8 +609,8 @@ assert.equal(
 );
 assert.equal(
   plannedCodexFallbackDefaults.selection.selectedModel,
-  'gpt-5.5',
-  'Codex fallback should still adopt the detected owner model',
+  'gpt-5.6-sol',
+  'Codex fallback should upgrade stale detected owner models to the product default',
 );
 assert.equal(
   plannedCodexFallbackDefaults.selection.selectedEffort,

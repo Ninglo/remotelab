@@ -21,6 +21,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-08-05 — default model upgrades must actively move stale user preferences
+
+- Source: direct owner feedback after noticing RemoteLab kept using an older Codex GPT model even though newer product-default models were available.
+- User slice: mobile-first owner/operator who expects RemoteLab to absorb model-choice maintenance instead of requiring manual picker audits.
+- Observed friction or ask: updating the product default model was not enough because browser/local runtime selections and recent-model detection could continue pinning older GPT versions such as 5.4.
+- Signal strength: concrete product trust issue in the runtime-selection layer.
+- Product implication: runtime defaults should treat stale Codex model selections as upgradeable preferences, not durable user intent, unless a session is explicitly pinned for continuity. Browser localStorage, instance runtime-selection files, connector inheritance, guest defaults, and model-list default resolution should all converge to the current product default while retaining old models only as optional catalog entries.
+- Promote to: runtime-selection defaults, connector inheritance tests, model catalog fallback tests.
+
 ### 2026-06-15 — remote SSH Codex workers should become a first-class execution target
 
 - Source: direct owner architecture request while discussing RemoteLab as the control surface for distributed Codex work.
@@ -30,6 +39,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: the current local-CLI run model should grow a worker/host execution abstraction. Remote host administration and guest-instance lifecycle are useful foundations, but they are not yet a complete remote Codex worker pool; the clean direction is a coordinator that dispatches bounded sessions/runs to registered worker hosts, tracks health/capabilities/load, and aggregates results through RemoteLab's normal session/run history rather than ad hoc SSH transcripts.
 - Promote to: provider/runtime architecture, instance-factory/fleet admin roadmap, session dispatch design.
 - Follow-up: define an MVP contract for one remote host first, then generalize to host registry, per-worker auth, workspace/artifact transfer, usage/compaction telemetry, and fan-out aggregation.
+
+### 2026-08-05 — transcript scrolling must be one cross-device state machine
+
+- Source: repeated direct owner feedback after mobile and desktop scroll fixes regressed each other.
+- User slice: mobile-first owner reading and steering long, actively updating sessions from both phone and desktop.
+- Observed friction or ask: the conversation repeatedly jumped back to older text while streaming or refreshing; device-specific patches made one surface better while destabilizing the other.
+- Signal strength: recurring product-trust failure after several attempted fixes.
+- Product implication: transcript position must have one shared owner with explicit user-intent modes: follow the bottom while already following, preserve the same visible event while reading older content, restore an anchor across full timeline redraws, and never use page-level scroll corrections for keyboard movement. Browser native scroll anchoring and scattered direct `scrollTop` writes must not compete with that owner.
+- Promote to: chat viewport controller, session-redraw regression tests, mobile/desktop layout tests.
 
 ### 2026-06-15 — reply self-check must count visible file delivery as turn completion
 

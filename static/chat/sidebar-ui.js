@@ -189,81 +189,90 @@ function getComposerAttachmentUploadMeta(attachment) {
 }
 
 function renderImagePreviews() {
-  const pendingImages = currentSessionId && typeof getComposerAttachmentsState === "function"
-    ? getComposerAttachmentsState(currentSessionId)
-    : [];
-  imgPreviewStrip.innerHTML = "";
-  if (pendingImages.length === 0) {
-    imgPreviewStrip.classList.remove("has-images");
+  const preserveBottomPin = window.RemoteLabLayout?.preserveBottomPinnedMessageViewport;
+  const applyPreviewRender = () => {
+    const pendingImages = currentSessionId && typeof getComposerAttachmentsState === "function"
+      ? getComposerAttachmentsState(currentSessionId)
+      : [];
+    imgPreviewStrip.innerHTML = "";
+    if (pendingImages.length === 0) {
+      imgPreviewStrip.classList.remove("has-images");
+      if (typeof requestLayoutPass === "function") {
+        requestLayoutPass("composer-images");
+      } else if (typeof syncInputHeightForLayout === "function") {
+        syncInputHeightForLayout();
+      }
+      return;
+    }
+    imgPreviewStrip.classList.add("has-images");
+    const attachmentsLocked = typeof hasPendingComposerSend === "function" && hasPendingComposerSend();
+    pendingImages.forEach((img, i) => {
+      const item = document.createElement("div");
+      item.className = "img-preview-item";
+      const previewNode = createComposerAttachmentPreviewNode(img);
+      const uploadMeta = getComposerAttachmentUploadMeta(img);
+      if (uploadMeta?.badgeClassName) {
+        item.classList.add(uploadMeta.badgeClassName);
+      }
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-img";
+      removeBtn.type = "button";
+      removeBtn.title = t("action.removeAttachment");
+      removeBtn.setAttribute("aria-label", t("action.removeAttachment"));
+      removeBtn.innerHTML = renderUiIcon("close");
+      removeBtn.disabled = attachmentsLocked;
+      removeBtn.onclick = () => {
+        if (attachmentsLocked) return;
+        if (typeof cancelComposerAttachmentUpload === "function" && img?.localId) {
+          cancelComposerAttachmentUpload(currentSessionId, img.localId);
+        }
+        if (img?.objectUrl) {
+          URL.revokeObjectURL(img.objectUrl);
+        }
+        if (typeof removeComposerAttachmentState === "function") {
+          removeComposerAttachmentState(i, { sessionId: currentSessionId });
+        }
+        renderImagePreviews();
+      };
+      if (previewNode) {
+        item.appendChild(previewNode);
+      }
+      if (uploadMeta) {
+        const statusBadge = document.createElement("div");
+        statusBadge.className = `attachment-upload-badge ${uploadMeta.badgeClassName}`;
+        statusBadge.textContent = uploadMeta.label;
+        if (uploadMeta.title) {
+          statusBadge.title = uploadMeta.title;
+        }
+        item.appendChild(statusBadge);
+      }
+      if (!attachmentsLocked && img?.uploadState === "failed" && img?.localId && typeof retryComposerAttachmentUpload === "function") {
+        const retryBtn = document.createElement("button");
+        retryBtn.className = "retry-img-upload";
+        retryBtn.type = "button";
+        retryBtn.textContent = "↻";
+        retryBtn.title = t("action.retryUpload");
+        retryBtn.setAttribute("aria-label", t("action.retryUpload"));
+        retryBtn.onclick = () => {
+          void retryComposerAttachmentUpload(currentSessionId, img.localId).catch(() => {});
+        };
+        item.appendChild(retryBtn);
+      }
+      item.appendChild(removeBtn);
+      imgPreviewStrip.appendChild(item);
+    });
     if (typeof requestLayoutPass === "function") {
       requestLayoutPass("composer-images");
     } else if (typeof syncInputHeightForLayout === "function") {
       syncInputHeightForLayout();
     }
+  };
+
+  if (typeof preserveBottomPin === "function") {
+    preserveBottomPin(applyPreviewRender, { reason: "composer-images" });
     return;
   }
-  imgPreviewStrip.classList.add("has-images");
-  const attachmentsLocked = typeof hasPendingComposerSend === "function" && hasPendingComposerSend();
-  pendingImages.forEach((img, i) => {
-    const item = document.createElement("div");
-    item.className = "img-preview-item";
-    const previewNode = createComposerAttachmentPreviewNode(img);
-    const uploadMeta = getComposerAttachmentUploadMeta(img);
-    if (uploadMeta?.badgeClassName) {
-      item.classList.add(uploadMeta.badgeClassName);
-    }
-    const removeBtn = document.createElement("button");
-    removeBtn.className = "remove-img";
-    removeBtn.type = "button";
-    removeBtn.title = t("action.removeAttachment");
-    removeBtn.setAttribute("aria-label", t("action.removeAttachment"));
-    removeBtn.innerHTML = renderUiIcon("close");
-    removeBtn.disabled = attachmentsLocked;
-    removeBtn.onclick = () => {
-      if (attachmentsLocked) return;
-      if (typeof cancelComposerAttachmentUpload === "function" && img?.localId) {
-        cancelComposerAttachmentUpload(currentSessionId, img.localId);
-      }
-      if (img?.objectUrl) {
-        URL.revokeObjectURL(img.objectUrl);
-      }
-      if (typeof removeComposerAttachmentState === "function") {
-        removeComposerAttachmentState(i, { sessionId: currentSessionId });
-      }
-      renderImagePreviews();
-    };
-    if (previewNode) {
-      item.appendChild(previewNode);
-    }
-    if (uploadMeta) {
-      const statusBadge = document.createElement("div");
-      statusBadge.className = `attachment-upload-badge ${uploadMeta.badgeClassName}`;
-      statusBadge.textContent = uploadMeta.label;
-      if (uploadMeta.title) {
-        statusBadge.title = uploadMeta.title;
-      }
-      item.appendChild(statusBadge);
-    }
-    if (!attachmentsLocked && img?.uploadState === "failed" && img?.localId && typeof retryComposerAttachmentUpload === "function") {
-      const retryBtn = document.createElement("button");
-      retryBtn.className = "retry-img-upload";
-      retryBtn.type = "button";
-      retryBtn.textContent = "↻";
-      retryBtn.title = t("action.retryUpload");
-      retryBtn.setAttribute("aria-label", t("action.retryUpload"));
-      retryBtn.onclick = () => {
-        void retryComposerAttachmentUpload(currentSessionId, img.localId).catch(() => {});
-      };
-      item.appendChild(retryBtn);
-    }
-    item.appendChild(removeBtn);
-    imgPreviewStrip.appendChild(item);
-  });
-  if (typeof requestLayoutPass === "function") {
-    requestLayoutPass("composer-images");
-  } else if (typeof syncInputHeightForLayout === "function") {
-    syncInputHeightForLayout();
-  }
+  applyPreviewRender();
 }
 
 function isAttachmentPickerBlocked() {

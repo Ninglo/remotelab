@@ -14,6 +14,9 @@ try {
     loadUiRuntimeSelection,
     saveUiRuntimeSelection,
   } = await import(pathToFileURL(join(repoRoot, 'lib', 'runtime-selection.mjs')).href);
+  const {
+    resolveExternalRuntimeSelection,
+  } = await import(pathToFileURL(join(repoRoot, 'lib', 'external-runtime-selection.mjs')).href);
 
   assert.equal(await loadUiRuntimeSelection(), null);
 
@@ -55,6 +58,32 @@ try {
   assert.equal(loadedSecond?.selectedEffort, 'high');
   assert.equal(loadedSecond?.thinkingEnabled, true);
   assert.equal(loadedSecond?.reasoningKind, 'enum');
+
+  const staleCodex = await saveUiRuntimeSelection({
+    selectedTool: 'codex',
+    selectedModel: 'gpt-5.4',
+    selectedEffort: 'xhigh',
+    reasoningKind: 'enum',
+  });
+  assert.equal(
+    staleCodex.selectedModel,
+    'gpt-5.6-sol',
+    'stale Codex UI runtime selections should upgrade to the product default model',
+  );
+  assert.equal(staleCodex.selectedEffort, 'xhigh');
+
+  assert.equal(
+    resolveExternalRuntimeSelection({
+      uiSelection: {
+        selectedTool: 'codex',
+        selectedModel: 'gpt-5.4',
+        selectedEffort: 'high',
+        reasoningKind: 'enum',
+      },
+    }).model,
+    'gpt-5.6-sol',
+    'external connectors should not inherit stale Codex UI models',
+  );
 
   await assert.rejects(() => saveUiRuntimeSelection({ reasoningKind: 'toggle' }), /selectedTool is required/);
 } finally {

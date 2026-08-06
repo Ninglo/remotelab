@@ -215,8 +215,10 @@ import {
 import {
   isLegacyMicroAgentToolId,
   normalizeLegacyToolId,
+  normalizeCodexModelId,
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
+  PRODUCT_DEFAULT_TOOL_ID,
 } from '../lib/legacy-micro-agent.mjs';
 
 const VISITOR_TURN_GUARDRAIL = [
@@ -261,9 +263,12 @@ function normalizeLegacyRuntimeRequest({
   thinking = false,
 } = {}) {
   if (!isLegacyMicroAgentToolId(tool)) {
+    const normalizedTool = normalizeLegacyToolId(tool);
     return {
-      tool: normalizeLegacyToolId(tool),
-      model,
+      tool: normalizedTool,
+      model: normalizedTool === PRODUCT_DEFAULT_TOOL_ID
+        ? normalizeCodexModelId(model)
+        : model,
       effort,
       thinking,
     };

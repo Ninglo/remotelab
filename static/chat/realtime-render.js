@@ -36,6 +36,11 @@ function showEmpty() {
 }
 
 function scrollToBottom() {
+  const viewportController = window.RemoteLabTranscriptViewport;
+  if (typeof viewportController?.scrollToBottom === "function") {
+    viewportController.scrollToBottom({ reason: "realtime-bottom" });
+    return;
+  }
   requestAnimationFrame(() => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
@@ -43,6 +48,14 @@ function scrollToBottom() {
 
 function scrollNodeToTop(node, { margin = 10 } = {}) {
   if (!node) return;
+  const viewportController = window.RemoteLabTranscriptViewport;
+  if (typeof viewportController?.scrollNodeToTop === "function") {
+    viewportController.scrollNodeToTop(node, {
+      margin,
+      reason: "realtime-node-top",
+    });
+    return;
+  }
   requestAnimationFrame(() => {
     const containerRect = messagesEl.getBoundingClientRect();
     const nodeRect = node.getBoundingClientRect();
@@ -50,6 +63,13 @@ function scrollNodeToTop(node, { margin = 10 } = {}) {
       messagesEl.scrollTop + (nodeRect.top - containerRect.top) - margin;
     messagesEl.scrollTop = Math.max(0, nextTop);
   });
+}
+
+function getTranscriptEventKey(evt) {
+  const seq = Number.isInteger(evt?.seq) ? evt.seq : 0;
+  const rawType = typeof evt?.type === "string" ? evt.type : "unknown";
+  const type = rawType === "collapsed_block" ? "thinking_block" : rawType;
+  return `${seq}:${type}`;
 }
 
 function parseMessageTimestamp(stamp) {
@@ -80,6 +100,14 @@ function queueHydrateLazyNodes(root) {
 
 function renderEvent(evt, autoScroll) {
   let rendered = false;
+  const previousTopLevelChildCount = messagesInner.children.length;
+  const viewportController = window.RemoteLabTranscriptViewport;
+  const shouldAutoFollow = Boolean(
+    autoScroll
+    && (typeof viewportController?.isFollowingBottom === "function"
+      ? viewportController.isFollowingBottom()
+      : messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120),
+  );
 
   switch (evt.type) {
     case "message":
@@ -131,17 +159,25 @@ function renderEvent(evt, autoScroll) {
 
   if (!rendered) return;
 
+  const transcriptKey = getTranscriptEventKey(evt);
+  for (
+    let index = previousTopLevelChildCount;
+    index < messagesInner.children.length;
+    index += 1
+  ) {
+    const node = messagesInner.children[index];
+    if (!node?.dataset) continue;
+    node.dataset.transcriptKey = index === previousTopLevelChildCount
+      ? transcriptKey
+      : `${transcriptKey}:${index - previousTopLevelChildCount}`;
+  }
+
   if (emptyState.parentNode === messagesInner) emptyState.remove();
   if (typeof syncComposerPendingTurnFeedback === "function") {
     syncComposerPendingTurnFeedback();
   }
 
-  const shouldScroll =
-    autoScroll &&
-    messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <
-      120;
-
-  if (shouldScroll) scrollToBottom();
+  if (shouldAutoFollow) scrollToBottom();
 }
 
 function applyFinishedTurnCollapseState() {

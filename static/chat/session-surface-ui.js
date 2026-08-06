@@ -286,5 +286,9 @@ function createActiveSessionItem(session) {
     dispatchAction({ action: "archive", sessionId: session.id });
   });
 
+  if (typeof renderActiveSessionRenameEditor === "function") {
+    renderActiveSessionRenameEditor(div, session);
+  }
+
   return div;
 }

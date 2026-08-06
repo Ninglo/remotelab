@@ -14,6 +14,9 @@ const INBOX_BANDS = [
   { band: 6, key: "inbox:done", label: "Done" },
 ];
 
+let activeSessionRename = null;
+let sessionListRenderDepth = 0;
+
 function getInboxBandForSession(session) {
   if (typeof window.RemoteLabSessionStateModel?.getSessionAttentionBand === "function") {
     return window.RemoteLabSessionStateModel.getSessionAttentionBand(session);
@@ -157,74 +160,82 @@ function renderSessionSpaceSwitcher() {
 }
 
 function renderSessionList() {
-  sessionList.innerHTML = "";
-  renderSessionSpaceSwitcher();
-  const pinnedSessions = getVisiblePinnedSessions();
-  const visibleSessions = getVisibleActiveSessions();
+  sessionListRenderDepth += 1;
+  try {
+    sessionList.innerHTML = "";
+    renderSessionSpaceSwitcher();
+    const pinnedSessions = getVisiblePinnedSessions();
+    const visibleSessions = getVisibleActiveSessions();
 
-  // Pinned section — shown in both views
-  if (pinnedSessions.length > 0) {
-    const section = document.createElement("div");
-    section.className = "pinned-section";
+    // Pinned section — shown in both views
+    if (pinnedSessions.length > 0) {
+      const section = document.createElement("div");
+      section.className = "pinned-section";
 
-    const header = document.createElement("div");
-    header.className = "pinned-section-header";
-    header.innerHTML = `<span class="pinned-label">${esc(t("sidebar.pinned"))}</span><span class="folder-count">${pinnedSessions.length}</span>`;
+      const header = document.createElement("div");
+      header.className = "pinned-section-header";
+      header.innerHTML = `<span class="pinned-label">${esc(t("sidebar.pinned"))}</span><span class="folder-count">${pinnedSessions.length}</span>`;
 
-    const items = document.createElement("div");
-    items.className = "pinned-items";
-    for (const session of pinnedSessions) {
-      items.appendChild(createActiveSessionItem(session));
+      const items = document.createElement("div");
+      items.className = "pinned-items";
+      for (const session of pinnedSessions) {
+        items.appendChild(createActiveSessionItem(session));
+      }
+
+      section.appendChild(header);
+      section.appendChild(items);
+      sessionList.appendChild(section);
     }
 
-    section.appendChild(header);
-    section.appendChild(items);
-    sessionList.appendChild(section);
-  }
+    if (sessionViewMode === "inbox") {
+      renderInboxView(visibleSessions);
+    } else {
+      renderProjectsView(visibleSessions);
+    }
 
-  if (sessionViewMode === "inbox") {
-    renderInboxView(visibleSessions);
-  } else {
-    renderProjectsView(visibleSessions);
-  }
+    if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "session-filter-empty";
+      const emptyText = document.createElement("div");
+      emptyText.textContent = getFilteredSessionEmptyText();
+      empty.appendChild(emptyText);
 
-  if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "session-filter-empty";
-    const emptyText = document.createElement("div");
-    emptyText.textContent = getFilteredSessionEmptyText();
-    empty.appendChild(emptyText);
-
-    const canRestoreStarterSessions = !visitorMode
-      && activeSourceFilter === FILTER_ALL_VALUE
-      && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
-      && typeof restoreOwnerBootstrapSessions === "function";
-    if (canRestoreStarterSessions) {
-      const restoreButton = document.createElement("button");
-      restoreButton.type = "button";
-      restoreButton.className = "new-session-btn secondary";
-      restoreButton.textContent = t("sidebar.restoreStarterSessions");
-      restoreButton.addEventListener("click", async () => {
-        if (restoreButton.disabled) return;
-        restoreButton.disabled = true;
-        restoreButton.textContent = t("sidebar.restoringStarterSessions");
-        try {
-          await restoreOwnerBootstrapSessions();
-        } catch (error) {
-          console.warn("[sessions] Failed to restore starter sessions:", error?.message || error);
+      const canRestoreStarterSessions = !visitorMode
+        && activeSourceFilter === FILTER_ALL_VALUE
+        && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
+        && typeof restoreOwnerBootstrapSessions === "function";
+      if (canRestoreStarterSessions) {
+        const restoreButton = document.createElement("button");
+        restoreButton.type = "button";
+        restoreButton.className = "new-session-btn secondary";
+        restoreButton.textContent = t("sidebar.restoreStarterSessions");
+        restoreButton.addEventListener("click", async () => {
+          if (restoreButton.disabled) return;
+          restoreButton.disabled = true;
+          restoreButton.textContent = t("sidebar.restoringStarterSessions");
+          try {
+            await restoreOwnerBootstrapSessions();
+          } catch (error) {
+            console.warn("[sessions] Failed to restore starter sessions:", error?.message || error);
+            restoreButton.textContent = t("sidebar.restoreStarterSessions");
+            restoreButton.disabled = false;
+            return;
+          }
           restoreButton.textContent = t("sidebar.restoreStarterSessions");
           restoreButton.disabled = false;
-          return;
-        }
-        restoreButton.textContent = t("sidebar.restoreStarterSessions");
-        restoreButton.disabled = false;
-      });
-      empty.appendChild(restoreButton);
+        });
+        empty.appendChild(restoreButton);
+      }
+      sessionList.appendChild(empty);
     }
-    sessionList.appendChild(empty);
-  }
 
-  renderArchivedSection();
+    renderArchivedSection();
+  } finally {
+    sessionListRenderDepth = Math.max(0, sessionListRenderDepth - 1);
+    if (sessionListRenderDepth === 0) {
+      refocusActiveSessionRenameInput();
+    }
+  }
 }
 
 function renderInboxView(visibleSessions) {
@@ -407,36 +418,109 @@ function renderArchivedSection() {
   sessionList.appendChild(section);
 }
 
-function startRename(itemEl, session) {
+function getSessionRenameBaseName(session) {
+  return session.name || session.tool || "";
+}
+
+function clearActiveSessionRename(sessionId) {
+  if (activeSessionRename?.sessionId === sessionId) {
+    activeSessionRename = null;
+  }
+}
+
+function isSessionListRendering() {
+  return sessionListRenderDepth > 0;
+}
+
+function focusSessionRenameInput(input, shouldSelect = false) {
+  try {
+    input.focus({ preventScroll: true });
+  } catch {
+    input.focus();
+  }
+  if (shouldSelect) input.select();
+}
+
+function refocusActiveSessionRenameInput() {
+  if (!activeSessionRename || !sessionList || typeof sessionList.querySelector !== "function") return;
+  const input = sessionList.querySelector(".session-rename-input");
+  if (!input) return;
+  focusSessionRenameInput(input, false);
+}
+
+function renderActiveSessionRenameEditor(itemEl, session, options = {}) {
+  if (!itemEl || !session?.id || activeSessionRename?.sessionId !== session.id) {
+    return false;
+  }
   const nameEl = itemEl.querySelector(".session-item-name");
-  const current = session.name || session.tool || "";
+  if (!nameEl) return false;
+
   const input = document.createElement("input");
   input.className = "session-rename-input";
-  input.value = current;
+  input.value = activeSessionRename.draftName ?? getSessionRenameBaseName(session);
   nameEl.replaceWith(input);
-  input.focus();
-  input.select();
+
+  let completed = false;
+  let isComposing = false;
+  const originalName = activeSessionRename.originalName ?? getSessionRenameBaseName(session);
 
   function commit() {
+    if (completed) return;
+    completed = true;
     const newName = input.value.trim();
-    if (newName && newName !== current) {
+    clearActiveSessionRename(session.id);
+    if (newName && newName !== originalName) {
       dispatchAction({ action: "rename", sessionId: session.id, name: newName });
     } else {
       renderSessionList(); // revert
     }
   }
 
-  input.addEventListener("blur", commit);
+  input.addEventListener("input", () => {
+    if (activeSessionRename?.sessionId === session.id) {
+      activeSessionRename.draftName = input.value;
+    }
+  });
+  input.addEventListener("compositionstart", () => {
+    isComposing = true;
+  });
+  input.addEventListener("compositionend", () => {
+    isComposing = false;
+    if (activeSessionRename?.sessionId === session.id) {
+      activeSessionRename.draftName = input.value;
+    }
+  });
+  input.addEventListener("blur", () => {
+    if (isSessionListRendering()) return;
+    commit();
+  });
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
+      if (isComposing || e.isComposing) return;
       e.preventDefault();
-      input.blur();
+      commit();
     }
     if (e.key === "Escape") {
-      input.removeEventListener("blur", commit);
+      completed = true;
+      clearActiveSessionRename(session.id);
       renderSessionList();
     }
   });
+
+  if (options.focus === true) {
+    focusSessionRenameInput(input, options.select === true);
+  }
+  return true;
+}
+
+function startRename(itemEl, session) {
+  const current = getSessionRenameBaseName(session);
+  activeSessionRename = {
+    sessionId: session.id,
+    originalName: current,
+    draftName: current,
+  };
+  renderActiveSessionRenameEditor(itemEl, session, { focus: true, select: true });
 }
 
 function attachSession(id, session, { forceComposerFocus = false } = {}) {

@@ -1451,16 +1451,58 @@ async function fetchSessionState(sessionId, { forceFresh = false } = {}) {
   return normalized;
 }
 
+function captureSessionMessageViewport(reason = "session-render") {
+  const viewportController = window.RemoteLabTranscriptViewport;
+  if (typeof viewportController?.capture === "function") {
+    return viewportController.capture({ reason });
+  }
+  const hadRenderedMessages =
+    messagesInner.children.length > 0 && emptyState.parentNode !== messagesInner;
+  return {
+    followBottom:
+      !hadRenderedMessages
+      || messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120,
+    scrollTop: messagesEl.scrollTop || 0,
+    anchor: null,
+  };
+}
+
+function restoreSessionMessageViewport(snapshot, reason = "session-render") {
+  if (!snapshot) return;
+  const viewportController = window.RemoteLabTranscriptViewport;
+  if (typeof viewportController?.restore === "function") {
+    viewportController.restore(snapshot, { reason });
+    return;
+  }
+  if (snapshot.followBottom) {
+    scrollToBottom();
+    return;
+  }
+  messagesEl.scrollTop = Math.max(0, Number(snapshot.scrollTop) || 0);
+}
+
+function applySessionViewportAfterRender({
+  sessionId,
+  viewportIntent,
+  snapshot,
+  reason,
+} = {}) {
+  if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent })) {
+    scrollCurrentSessionViewportToTop();
+    return;
+  }
+  if (normalizeSessionViewportIntent(viewportIntent) === "session_entry") {
+    scrollToBottom();
+    return;
+  }
+  restoreSessionMessageViewport(snapshot, reason);
+}
+
 async function fetchSessionEvents(
   sessionId,
   { runState = "idle", viewportIntent = "preserve", forceFresh = false } = {},
 ) {
   const normalizedViewportIntent = normalizeSessionViewportIntent(viewportIntent);
-  const hadRenderedMessages =
-    messagesInner.children.length > 0 && emptyState.parentNode !== messagesInner;
-  const shouldStickToBottom =
-    !hadRenderedMessages ||
-    messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
   const data = isShareSnapshotReadOnlyMode()
     ? { events: getShareSnapshotDisplayEvents() }
     : await fetchJsonOrRedirect(
@@ -1470,6 +1512,9 @@ async function fetchSessionEvents(
   const events = data.events || [];
   if (currentSessionId !== sessionId) return events;
   const renderPlan = getEventRenderPlan(sessionId, events);
+  const viewportSnapshot = captureSessionMessageViewport(
+    `session-render:${renderPlan.mode}`,
+  );
 
   if (renderPlan.mode === "refresh_running_block") {
     const [runningEvent] = renderPlan.events;
@@ -1501,17 +1546,12 @@ async function fetchSessionEvents(
       showEmpty();
     }
     updateRenderedEventState(sessionId, events, { runState });
-    const latestTurnStart = applyFinishedTurnCollapseState();
-    if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent: normalizedViewportIntent })) {
-      scrollCurrentSessionViewportToTop();
-    } else if (
-      normalizedViewportIntent === "session_entry"
-      && shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)
-    ) {
-      scrollNodeToTop(latestTurnStart);
-    } else if (events.length > 0 && shouldStickToBottom) {
-      scrollToBottom();
-    }
+    applySessionViewportAfterRender({
+      sessionId,
+      viewportIntent: normalizedViewportIntent,
+      snapshot: viewportSnapshot,
+      reason: "session-render:reset",
+    });
     return events;
   }
 
@@ -1521,30 +1561,16 @@ async function fetchSessionEvents(
       renderEvent(event, false);
     }
     updateRenderedEventState(sessionId, events, { runState });
-    const latestTurnStart = applyFinishedTurnCollapseState();
-    if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent: normalizedViewportIntent })) {
-      scrollCurrentSessionViewportToTop();
-    } else if (
-      normalizedViewportIntent === "session_entry"
-      && shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)
-    ) {
-      scrollNodeToTop(latestTurnStart);
-    } else if (renderPlan.events.length > 0 && shouldStickToBottom) {
-      scrollToBottom();
-    }
+    applySessionViewportAfterRender({
+      sessionId,
+      viewportIntent: normalizedViewportIntent,
+      snapshot: viewportSnapshot,
+      reason: "session-render:append",
+    });
     return renderPlan.events;
   }
 
   updateRenderedEventState(sessionId, events, { runState });
-  const latestTurnStart = applyFinishedTurnCollapseState();
-  if (shouldOpenCurrentSessionFromTop({ sessionId, viewportIntent: normalizedViewportIntent })) {
-    scrollCurrentSessionViewportToTop();
-  } else if (
-    normalizedViewportIntent === "session_entry"
-    && shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestTurnStart)
-  ) {
-    scrollNodeToTop(latestTurnStart);
-  }
   return events;
 }
 

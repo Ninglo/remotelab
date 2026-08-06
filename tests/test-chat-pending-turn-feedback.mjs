@@ -45,6 +45,12 @@ assert.match(
 
 assert.match(
   uiSource,
+  /preserveBottomPinnedMessageViewport[\s\S]*composer-pending-turn-feedback/,
+  'pending-turn feedback should preserve a bottom-pinned message viewport while mutating inline status rows',
+);
+
+assert.match(
+  uiSource,
   /msg-user-local-echo/,
   'ui should render a local echo wrapper for just-sent user turns',
 );

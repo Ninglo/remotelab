@@ -1065,9 +1065,10 @@ let currentTokens = 0;
 const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
-const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.5";
-const PRODUCT_DEFAULT_CODEX_EFFORT = "xhigh";
-const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "xhigh-v1";
+const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+const PRODUCT_DEFAULT_CODEX_EFFORT = "medium";
+const RETIRED_CODEX_MODEL_IDS = new Set([]);
+const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "medium-v1";
 
 function normalizeStoredToolId(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -1082,6 +1083,35 @@ function normalizeStoredAgentTemplateName(value) {
   return typeof value === "string"
     ? value.trim().replace(/\s+/g, " ")
     : "";
+}
+
+function parseVersionedGptModelId(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  const match = normalized.match(/^gpt-(\d+)\.(\d+)(?:-|$)/);
+  if (!match) return null;
+  return {
+    major: Number.parseInt(match[1], 10),
+    minor: Number.parseInt(match[2], 10),
+  };
+}
+
+function isStaleCodexModelId(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized || normalized === PRODUCT_DEFAULT_CODEX_MODEL) return false;
+  if (RETIRED_CODEX_MODEL_IDS.has(normalized)) return true;
+  const modelVersion = parseVersionedGptModelId(normalized);
+  const defaultVersion = parseVersionedGptModelId(PRODUCT_DEFAULT_CODEX_MODEL);
+  if (!modelVersion || !defaultVersion) return false;
+  if (modelVersion.major !== defaultVersion.major) {
+    return modelVersion.major < defaultVersion.major;
+  }
+  return modelVersion.minor < defaultVersion.minor;
+}
+
+function normalizeStoredCodexModelId(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized) return "";
+  return isStaleCodexModelId(normalized) ? PRODUCT_DEFAULT_CODEX_MODEL : normalized;
 }
 
 function derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool) {
@@ -1117,7 +1147,18 @@ function migrateLegacyMicroAgentLocalStorage() {
   }
 }
 
+function migrateRetiredCodexModelLocalStorage() {
+  const storageKey = `selectedModel_${DEFAULT_TOOL_ID}`;
+  const storedModel = typeof localStorage.getItem(storageKey) === "string"
+    ? localStorage.getItem(storageKey).trim()
+    : "";
+  const normalizedModel = normalizeStoredCodexModelId(storedModel);
+  if (!normalizedModel || normalizedModel === storedModel) return;
+  localStorage.setItem(storageKey, normalizedModel);
+}
+
 migrateLegacyMicroAgentLocalStorage();
+migrateRetiredCodexModelLocalStorage();
 
 function migrateCodexEffortDefaultLocalStorage() {
   const migrationKey = "codexEffortDefaultMigration";

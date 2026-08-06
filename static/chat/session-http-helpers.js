@@ -132,6 +132,11 @@ function shouldOpenCurrentSessionFromTop({
 
 function scrollCurrentSessionViewportToTop() {
   if (!messagesEl) return;
+  const viewportController = window.RemoteLabTranscriptViewport;
+  if (typeof viewportController?.scrollToTop === "function") {
+    viewportController.scrollToTop({ reason: "session-read-entry" });
+    return;
+  }
   messagesEl.scrollTop = 0;
 }
 

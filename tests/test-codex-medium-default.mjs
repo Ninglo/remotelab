@@ -6,18 +6,18 @@ const bootstrap = await readFile(new URL('../static/chat/bootstrap.js', import.m
 
 assert.match(
   bootstrap,
-  /const PRODUCT_DEFAULT_CODEX_EFFORT = "xhigh";/,
-  'new Codex sessions should default to xhigh',
+  /const PRODUCT_DEFAULT_CODEX_EFFORT = "medium";/,
+  'new Codex sessions should default to medium',
 );
 assert.match(
   bootstrap,
-  /CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "xhigh-v1"/,
-  'existing browsers should receive the one-time xhigh preference migration',
+  /CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "medium-v1"/,
+  'existing browsers should receive the one-time medium preference migration',
 );
 assert.match(
   bootstrap,
   /localStorage\.setItem\(`selectedEffort_\$\{DEFAULT_TOOL_ID\}`, PRODUCT_DEFAULT_CODEX_EFFORT\)/,
-  'the migration should persist xhigh for Codex',
+  'the migration should persist medium for Codex',
 );
 
-console.log('test-codex-xhigh-default: ok');
+console.log('test-codex-medium-default: ok');

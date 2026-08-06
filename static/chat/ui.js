@@ -635,56 +635,67 @@ function createUserMessageNode(evt, {
 
 function syncComposerPendingTurnFeedback() {
   if (!messagesInner) return;
-  const pendingSend = typeof getComposerPendingSendSnapshot === "function"
-    ? getComposerPendingSendSnapshot()
-    : null;
-  const activePending = pendingSend && pendingSend.sessionId === currentSessionId
-    ? pendingSend
-    : null;
+  const preserveBottomPin = window.RemoteLabLayout?.preserveBottomPinnedMessageViewport;
+  const applyPendingTurnFeedback = () => {
+    const pendingSend = typeof getComposerPendingSendSnapshot === "function"
+      ? getComposerPendingSendSnapshot()
+      : null;
+    const activePending = pendingSend && pendingSend.sessionId === currentSessionId
+      ? pendingSend
+      : null;
 
-  if (!activePending?.requestId) {
-    removeComposerPendingUserStatuses();
+    if (!activePending?.requestId) {
+      removeComposerPendingUserStatuses();
+      return;
+    }
+
+    const requestId = activePending.requestId;
+    const statusText = getComposerPendingInlineStatusText(activePending.stage);
+    removeComposerPendingUserStatuses({ keepRequestId: requestId });
+
+    const committedNode = findCommittedUserMessageNode(requestId);
+    const localEchoNode = findLocalEchoUserMessageNode(requestId);
+    if (committedNode) {
+      if (localEchoNode) {
+        localEchoNode.remove();
+      }
+      committedNode.classList.remove("msg-user-local-echo");
+      setUserMessageStatus(committedNode, statusText, activePending.stage);
+      committedNode.querySelector(".msg-user-bubble")?.classList?.remove("msg-pending");
+      return;
+    }
+
+    const target = localEchoNode || createUserMessageNode({
+      requestId,
+      content: activePending.text || "",
+      attachments: activePending.images || [],
+      timestamp: Date.now(),
+    }, {
+      pending: true,
+      localEcho: true,
+      statusText,
+      statusStage: activePending.stage,
+    });
+
+    setUserMessageStatus(target, statusText, activePending.stage);
+    if (!localEchoNode) {
+      messagesInner.appendChild(target);
+      if (emptyState.parentNode === messagesInner) {
+        emptyState.remove();
+      }
+      if (typeof scrollToBottom === "function") {
+        scrollToBottom();
+      }
+    }
+  };
+
+  if (typeof preserveBottomPin === "function") {
+    preserveBottomPin(applyPendingTurnFeedback, {
+      reason: "composer-pending-turn-feedback",
+    });
     return;
   }
-
-  const requestId = activePending.requestId;
-  const statusText = getComposerPendingInlineStatusText(activePending.stage);
-  removeComposerPendingUserStatuses({ keepRequestId: requestId });
-
-  const committedNode = findCommittedUserMessageNode(requestId);
-  const localEchoNode = findLocalEchoUserMessageNode(requestId);
-  if (committedNode) {
-    if (localEchoNode) {
-      localEchoNode.remove();
-    }
-    committedNode.classList.remove("msg-user-local-echo");
-    setUserMessageStatus(committedNode, statusText, activePending.stage);
-    committedNode.querySelector(".msg-user-bubble")?.classList?.remove("msg-pending");
-    return;
-  }
-
-  const target = localEchoNode || createUserMessageNode({
-    requestId,
-    content: activePending.text || "",
-    attachments: activePending.images || [],
-    timestamp: Date.now(),
-  }, {
-    pending: true,
-    localEcho: true,
-    statusText,
-    statusStage: activePending.stage,
-  });
-
-  setUserMessageStatus(target, statusText, activePending.stage);
-  if (!localEchoNode) {
-    messagesInner.appendChild(target);
-    if (emptyState.parentNode === messagesInner) {
-      emptyState.remove();
-    }
-    if (typeof scrollToBottom === "function") {
-      scrollToBottom();
-    }
-  }
+  applyPendingTurnFeedback();
 }
 
 // ---- Render functions ----

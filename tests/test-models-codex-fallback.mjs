@@ -57,11 +57,15 @@ try {
     'gpt-5.3-codex-spark',
   ];
 
-  assert.equal(result.defaultModel, 'gpt-5.3-codex');
+  assert.equal(
+    result.defaultModel,
+    'gpt-5.6-sol',
+    'stale configured/recent Codex models should not override the product default',
+  );
   assert.deepEqual(
-    result.models.slice(0, 3).map((model) => model.id),
-    ['gpt-5.3-codex', 'gpt-5.4', 'gpt-5.2-codex'],
-    'Codex should prioritize configured + recent session models',
+    result.models.slice(0, 4).map((model) => model.id),
+    ['gpt-5.6-sol', 'gpt-5.3-codex', 'gpt-5.4', 'gpt-5.2-codex'],
+    'Codex should put the product default first while retaining configured + recent session models',
   );
   assert.deepEqual(
     hardcodedModelIds.every((modelId) => result.models.some((model) => model.id === modelId)),
