@@ -238,3 +238,12 @@ Static and dependency checks:
 git diff --check exited with code 0.
 npm run lint:filesize exited with code 0 and reported the known oversized-file baseline.
 npm audit --omit=dev reported 0 vulnerabilities.
+
+Live three-instance deployment:
+Remote commit dfb70b4 was applied to /opt/remotelab. Remote syntax checks and
+the manager, route/UI, and static-asset tests exited with code 0 before restart.
+After restarting all three RemoteLab instance services, muka1 and muka2 kept
+their authenticated state, muka-hr remained independently signed out, and all
+three served settingsCodexAuthSwitchBtn plus /api/codex-auth/logout. The three
+RemoteLab services, three Feishu connectors, and Cloudflare tunnel were active;
+all three public HTTPS endpoints returned HTTP 200.

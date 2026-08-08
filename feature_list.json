@@ -37,6 +37,6 @@
   {
     "id": "codex-switch-account-button",
     "description": "Let an owner clear only the current instance's Codex authentication and immediately start a fresh device login from the web settings UI.",
-    "pass": false
+    "pass": true
   }
 ]
