@@ -33,5 +33,10 @@
     "id": "feishu-document-lark-cli-backend",
     "description": "Keep the stable Feishu document connector capability and multi-Bot routing while delegating structured, scoped and media-aware document reads to a pinned lark-cli dependency with isolated Bot profiles.",
     "pass": false
+  },
+  {
+    "id": "codex-switch-account-button",
+    "description": "Let an owner clear only the current instance's Codex authentication and immediately start a fresh device login from the web settings UI.",
+    "pass": false
   }
 ]

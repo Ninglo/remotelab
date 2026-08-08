@@ -246,8 +246,37 @@ export function createCodexAuthManager({
     return getStatus();
   }
 
+  async function logout() {
+    stopActiveLogin();
+    const runtime = await resolveRuntime();
+    if (!runtime) {
+      state = { ...state, phase: 'unavailable', error: 'Codex is not installed' };
+      return createPublicState(state, { available: false, loggedIn: false });
+    }
+
+    const result = await waitForProcess(runtime.command, ['logout'], {
+      env: runtime.env,
+      spawnProcess,
+    });
+    if (result.error || result.code !== 0) {
+      throw new Error(result.error?.message || 'Failed to log out of Codex');
+    }
+
+    state = {
+      phase: 'idle',
+      verificationUri: '',
+      userCode: '',
+      expiresAt: 0,
+      error: '',
+    };
+    const status = await getStatus();
+    if (status.loggedIn) throw new Error('Codex is still logged in after logout');
+    return status;
+  }
+
   return {
     getStatus,
+    logout,
     startDeviceLogin,
     stopActiveLogin,
   };

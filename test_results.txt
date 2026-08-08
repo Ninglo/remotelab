@@ -197,3 +197,44 @@ Known unrelated gate:
 npm run test:restart-gate reaches test-static-asset-routing and fails because
 HEAD already has a relative chat/icons.js template URL while the existing test
 expects an absolute /chat/icons.js URL. Neither file is changed by this feature.
+
+Codex switch-account button verification
+Date: 2026-08-08 UTC
+
+RED reproductions:
+node tests/test-codex-auth-manager.mjs
+TypeError: manager.logout is not a function
+
+node tests/test-codex-auth-switch-account.mjs
+AssertionError: POST /api/codex-auth/logout returned 404 instead of 200.
+After the route fix, the same test failed because settingsCodexAuthSwitchBtn
+was absent from the settings UI.
+
+GREEN focused commands:
+node --check chat/codex-auth.mjs
+node --check chat/router-codex-auth-routes.mjs
+node --check static/chat/settings-ui.js
+node tests/test-codex-auth-manager.mjs
+node tests/test-codex-auth-switch-account.mjs
+node tests/test-chat-static-assets.mjs
+
+Actual focused output:
+Codex auth manager tests passed
+test-codex-auth-switch-account: ok
+All focused commands exited with code 0.
+
+Full regression command:
+env -i PATH="$PATH" USER=ubuntu LOGNAME=ubuntu SHELL=/bin/bash LANG=C.UTF-8 LC_ALL=C.UTF-8 CI=1 npm test
+
+Result:
+Process exited with code 0. Smoke, merge-safety, shared-tools, the new manager
+logout test, and the owner-only route/UI switch-account test all passed.
+
+Runtime CLI probe:
+Codex logout against a disposable empty CODEX_HOME exited with code 0 and left
+no auth.json file, confirming the installed CLI supports the logout command.
+
+Static and dependency checks:
+git diff --check exited with code 0.
+npm run lint:filesize exited with code 0 and reported the known oversized-file baseline.
+npm audit --omit=dev reported 0 vulnerabilities.

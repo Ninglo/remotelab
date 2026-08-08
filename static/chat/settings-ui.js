@@ -43,6 +43,10 @@ function getCodexAuthCopy() {
     open: "打开登录页",
     copy: "复制验证码",
     copied: "已复制",
+    switchAccount: "更换账号",
+    switching: "正在退出…",
+    switchConfirm: "将清除当前实例的 Codex 登录，并立即生成新的登录码。确定继续吗？",
+    logoutFailed: "Codex 退出失败",
   } : {
     title: "Codex login",
     checking: "Checking…",
@@ -57,6 +61,10 @@ function getCodexAuthCopy() {
     open: "Open login page",
     copy: "Copy code",
     copied: "Copied",
+    switchAccount: "Switch account",
+    switching: "Signing out…",
+    switchConfirm: "This clears the Codex login for this instance and immediately generates a new login code. Continue?",
+    logoutFailed: "Codex logout failed",
   };
 }
 
@@ -75,6 +83,7 @@ function ensureCodexAuthSection() {
     <div class="settings-app-actions">
       <button class="settings-app-btn" id="settingsCodexAuthCheckBtn" type="button"></button>
       <button class="settings-app-btn" id="settingsCodexAuthLoginBtn" type="button"></button>
+      <button class="settings-app-btn" id="settingsCodexAuthSwitchBtn" type="button" hidden></button>
     </div>
     <div class="settings-app-card" id="settingsCodexAuthDevice" hidden>
       <div class="settings-app-name" id="settingsCodexAuthCode"></div>
@@ -91,6 +100,9 @@ function ensureCodexAuthSection() {
   });
   document.getElementById("settingsCodexAuthLoginBtn")?.addEventListener("click", () => {
     void startCodexDeviceLogin();
+  });
+  document.getElementById("settingsCodexAuthSwitchBtn")?.addEventListener("click", () => {
+    void switchCodexAccount();
   });
   document.getElementById("settingsCodexAuthCopyBtn")?.addEventListener("click", async (event) => {
     const code = String(codexAuthState?.userCode || "");
@@ -123,6 +135,7 @@ function renderCodexAuthPanel({ checking = false } = {}) {
   const pill = document.getElementById("settingsCodexAuthPill");
   const checkBtn = document.getElementById("settingsCodexAuthCheckBtn");
   const loginBtn = document.getElementById("settingsCodexAuthLoginBtn");
+  const switchBtn = document.getElementById("settingsCodexAuthSwitchBtn");
   const device = document.getElementById("settingsCodexAuthDevice");
   const code = document.getElementById("settingsCodexAuthCode");
   const link = document.getElementById("settingsCodexAuthLink");
@@ -135,6 +148,9 @@ function renderCodexAuthPanel({ checking = false } = {}) {
   loginBtn.textContent = awaiting ? copy.retry : copy.start;
   loginBtn.hidden = state.loggedIn === true;
   loginBtn.disabled = checking || state.available === false;
+  switchBtn.textContent = copy.switchAccount;
+  switchBtn.hidden = state.loggedIn !== true;
+  switchBtn.disabled = checking || state.available === false;
   checkBtn.disabled = checking;
 
   let statusLabel = copy.loggedOut;
@@ -190,6 +206,28 @@ async function startCodexDeviceLogin() {
     codexAuthState = { phase: "failed", error: error?.message || "Codex login failed" };
   }
   renderCodexAuthPanel();
+}
+
+async function switchCodexAccount() {
+  const copy = getCodexAuthCopy();
+  if (!window.confirm(copy.switchConfirm)) return;
+  const switchBtn = document.getElementById("settingsCodexAuthSwitchBtn");
+  if (switchBtn) {
+    switchBtn.disabled = true;
+    switchBtn.textContent = copy.switching;
+  }
+  try {
+    const data = await fetchJsonOrRedirect("/api/codex-auth/logout", {
+      method: "POST",
+      revalidate: false,
+    });
+    codexAuthState = data?.codexAuth || {};
+    renderCodexAuthPanel();
+    await startCodexDeviceLogin();
+  } catch (error) {
+    codexAuthState = { phase: "failed", error: error?.message || copy.logoutFailed };
+    renderCodexAuthPanel();
+  }
 }
 
 function canManageAgentsFromUi() {
