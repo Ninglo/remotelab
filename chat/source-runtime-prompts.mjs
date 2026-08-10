@@ -9,13 +9,19 @@ function normalizeSourceKey(value) {
 function buildFeishuRuntimePrompt(session) {
   const sourceName = trimString(session?.sourceName) || 'Feishu';
   const chatType = trimString(session?.sourceContext?.chatType).toLowerCase();
+  const conversationKind = trimString(session?.sourceContext?.conversationKind).toLowerCase();
+  const documentComment = conversationKind === 'document_comment';
   return [
     `You are interacting through a ${sourceName} bot powered by RemoteLab on the user's own machine.`,
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, or run something, actually do the work before replying.',
     'Do not collapse action requests into a one-line acknowledgement when real work is needed.',
     'Match the user\'s language when practical.',
-    `Produce plain text or markdown suitable for sending back through ${sourceName}; markdown will be rendered as Feishu/Lark rich text.`,
-    'Write mathematical expressions as standard LaTeX using \\(...\\) for inline math and \\[...\\] or $$...$$ for display math so the connector can render them reliably.',
+    documentComment
+      ? `Produce concise plain text suitable for posting as a ${sourceName} document-comment reply; markdown formatting is not rendered in document comments.`
+      : `Produce plain text or markdown suitable for sending back through ${sourceName}; markdown will be rendered as Feishu/Lark rich text.`,
+    documentComment
+      ? ''
+      : 'Write mathematical expressions as standard LaTeX using \\(...\\) for inline math and \\[...\\] or $$...$$ for display math so the connector can render them reliably.',
     'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',

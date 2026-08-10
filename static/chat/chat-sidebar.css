@@ -458,19 +458,6 @@
   letter-spacing: 0.01em;
 }
 
-/* Attention count badge in project group headers */
-.folder-attention-count {
-  font-size: 10px;
-  color: var(--bg);
-  background: var(--warning);
-  padding: 0 5px;
-  border-radius: 10px;
-  font-weight: 600;
-  min-width: 14px;
-  text-align: center;
-  line-height: 16px;
-}
-
 .session-item-actions { display: flex; align-items: center; gap: 1px; flex: 0 0 auto; }
 .session-action-btn {
   background: none; border: none; color: var(--text-muted); cursor: pointer;

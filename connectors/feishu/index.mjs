@@ -75,6 +75,15 @@ export function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+export function isFeishuDocumentCommentSummary(summary) {
+  return trimString(summary?.sourceKind) === 'document_comment'
+    || (
+      trimString(summary?.messageType) === 'comment'
+      && Boolean(trimString(summary?.fileToken))
+      && Boolean(trimString(summary?.commentId))
+    );
+}
+
 export function parseTextPreview(rawContent) {
   const content = trimString(rawContent);
   if (!content) return '';
@@ -341,6 +350,12 @@ export function summarizeFeishuEventForLog(summary) {
     mentionCount: Array.isArray(summary?.mentions) ? summary.mentions.length : 0,
     textPreview: truncateLogPreview(summary?.textPreview),
     contentSummary: truncateLogPreview(summary?.contentSummary),
+    sourceKind: summary?.sourceKind || '',
+    fileType: summary?.fileType || '',
+    fileToken: summary?.fileToken || '',
+    commentId: summary?.commentId || '',
+    replyId: summary?.replyId || '',
+    mentionedBot: summary?.mentionedBot === true,
   };
 }
 
@@ -473,10 +488,14 @@ export function isFeishuTopicSummary(summary) {
 }
 
 export function buildFeishuConversationKind(summary) {
+  if (isFeishuDocumentCommentSummary(summary)) return 'document_comment';
   return buildFeishuTopicId(summary) ? 'topic' : sanitizeIdPart(summary?.chatType || 'chat');
 }
 
 export function buildExternalTriggerId(summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return `feishu:document_comment:${sanitizeIdPart(summary?.fileType || 'file')}:${sanitizeIdPart(summary?.fileToken)}:${sanitizeIdPart(summary?.commentId)}`;
+  }
   const chatId = sanitizeIdPart(summary?.chatId || 'unknown_chat');
   const topicId = buildFeishuTopicId(summary);
   if (topicId) {
@@ -514,6 +533,9 @@ export function buildFeishuApiUuid(value, summary) {
 }
 
 export function buildSessionDescription(summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return 'Inbound Feishu document comment';
+  }
   if (buildFeishuTopicId(summary)) {
     return 'Inbound Feishu topic thread';
   }
@@ -550,6 +572,9 @@ export function getSummaryFeishuImageKeys(summary) {
 }
 
 export function isSupportedRemoteLabInboundMessage(summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return Boolean(trimString(summary?.messageText || summary?.textPreview));
+  }
   const messageType = trimString(summary?.messageType).toLowerCase();
   if (!messageType || messageType === 'text') return true;
   if (messageType === 'image') return getSummaryFeishuImageKeys(summary).length > 0;
@@ -561,6 +586,24 @@ export function isSupportedRemoteLabInboundMessage(summary) {
 }
 
 export function buildRemoteLabMessage(summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    const current = trimString(summary?.messageText) || trimString(summary?.textPreview) || '[空评论]';
+    const quote = trimString(summary?.commentQuote);
+    const thread = (Array.isArray(summary?.commentThread) ? summary.commentThread : [])
+      .map((entry) => ({
+        text: trimString(entry?.text) || '[空评论]',
+        isCurrent: entry?.isCurrent === true,
+      }));
+    const lines = [];
+    if (quote) {
+      lines.push(`文档中被评论的内容：\n${quote}`);
+    }
+    if (thread.length > 1) {
+      lines.push(`文档评论线程：\n${thread.map((entry) => `${entry.isCurrent ? '→' : '-'} ${entry.text}`).join('\n')}`);
+    }
+    lines.push(`当前 @ 你的评论：\n${current}`);
+    return lines.join('\n\n');
+  }
   const rawMessage = trimString(summary?.messageText) || trimString(summary?.textPreview);
   const renderedMessage = renderMentionPreview(rawMessage, summary?.mentions);
   const displayMessage = renderedMessage || rawMessage || trimString(summary?.contentSummary) || '[non-text or empty message]';
@@ -576,6 +619,18 @@ export function buildRemoteLabMessage(summary) {
 }
 
 export function buildSessionSourceContext(summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    const context = {
+      connector: FEISHU_CONNECTOR_ID,
+      conversationKind: 'document_comment',
+      fileType: trimString(summary?.fileType),
+      fileToken: trimString(summary?.fileToken),
+      commentId: trimString(summary?.commentId),
+    };
+    const sourceRouteId = trimString(summary?.sourceRouteId);
+    if (sourceRouteId) context.sourceRouteId = sourceRouteId;
+    return context;
+  }
   const topicId = buildFeishuTopicId(summary);
   const context = {
     connector: FEISHU_CONNECTOR_ID,
@@ -600,6 +655,23 @@ export function buildSessionSourceContext(summary) {
 }
 
 export function buildMessageSourceContext(summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    const context = {
+      connector: FEISHU_CONNECTOR_ID,
+      conversationKind: 'document_comment',
+      messageId: trimString(summary?.messageId),
+      fileType: trimString(summary?.fileType),
+      fileToken: trimString(summary?.fileToken),
+      commentId: trimString(summary?.commentId),
+    };
+    const sourceRouteId = trimString(summary?.sourceRouteId);
+    if (sourceRouteId) context.sourceRouteId = sourceRouteId;
+    const replyId = trimString(summary?.replyId);
+    if (replyId) context.replyId = replyId;
+    const contentSummary = trimString(summary?.contentSummary);
+    if (contentSummary) context.contentSummary = contentSummary;
+    return context;
+  }
   const topicId = buildFeishuTopicId(summary);
   const imageKeys = getSummaryFeishuImageKeys(summary);
   const context = {

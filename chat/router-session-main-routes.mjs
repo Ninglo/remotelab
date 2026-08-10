@@ -24,6 +24,7 @@ import {
   submitHttpMessage,
 } from './session-manager.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
+import { isTeamSessionViewMember } from './team-session-view.mjs';
 
 function createClientSessionDetail(session) {
   return createSessionDetail(session);
@@ -379,6 +380,10 @@ export async function handleSessionMainRoutes({
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
       };
+      if (isTeamSessionViewMember(authSession)) {
+        createOptions.userId = authSession.accountId;
+        createOptions.userName = authSession.accountName || authSession.accountUsername || authSession.accountId;
+      }
       if (requestedStarterPreset) {
         createOptions.starterPreset = requestedStarterPreset;
       }

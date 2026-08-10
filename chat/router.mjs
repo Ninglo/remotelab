@@ -10,7 +10,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_ENABLED, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import {
-  getAuthSession, refreshAuthSession,
+  auth, getAuthSession, refreshAuthSession,
 } from '../lib/auth.mjs';
 import { normalizeInstallHandoffToken } from '../lib/install-handoffs.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
@@ -83,6 +83,10 @@ import {
 } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { getBootstrapInstanceSettings } from './instance-settings.mjs';
+import {
+  buildTeamSessionViewBootstrap,
+  getAuthSessionViewAccount,
+} from './team-session-view.mjs';
 import {
   resolveAuthSessionAgentId,
   resolveAuthSessionPrincipalId,
@@ -731,6 +735,13 @@ function buildAuthInfo(authSession) {
   if (typeof authSession.preferredLanguage === 'string' && authSession.preferredLanguage.trim()) {
     info.preferredLanguage = authSession.preferredLanguage.trim();
   }
+  if (info.role === 'owner') {
+    const account = getAuthSessionViewAccount(authSession, { ownerName: auth.username });
+    info.accountId = account.id;
+    info.accountName = account.name;
+    info.accountUsername = account.username;
+    info.accountKind = account.kind;
+  }
   if (info.role === 'visitor') {
     const agentId = getAuthScopeAgentId(authSession);
     const principalId = getAuthPrincipalId(authSession);
@@ -756,11 +767,18 @@ function buildAuthInfo(authSession) {
 }
 
 async function buildChatPageBootstrap(authSession) {
+  const [settings, teamSessionView] = await Promise.all([
+    getBootstrapInstanceSettings(authSession),
+    authSession?.role === 'owner'
+      ? buildTeamSessionViewBootstrap(authSession, { ownerName: auth.username })
+      : Promise.resolve({ enabled: false, currentAccount: null, canManage: false }),
+  ]);
   return {
     auth: buildAuthInfo(authSession),
     assetUploads: getFileAssetBootstrapConfig(),
     defaultSessionFolder: MANAGED_WORK_ROOT_DIR,
-    settings: await getBootstrapInstanceSettings(authSession),
+    settings,
+    teamSessionView,
   };
 }
 
@@ -1770,7 +1788,12 @@ export async function handleRequest(req, res) {
       res.end(JSON.stringify({ error: 'Not authenticated' }));
       return;
     }
-    const info = buildAuthInfo(authSession);
+    const info = {
+      ...buildAuthInfo(authSession),
+      teamSessionView: authSession?.role === 'owner'
+        ? await buildTeamSessionViewBootstrap(authSession, { ownerName: auth.username })
+        : { enabled: false, currentAccount: null, canManage: false },
+    };
     const refreshedCookie = await refreshAuthSession(req);
     writeJsonCached(req, res, info, {
       headers: refreshedCookie ? { 'Set-Cookie': refreshedCookie } : undefined,

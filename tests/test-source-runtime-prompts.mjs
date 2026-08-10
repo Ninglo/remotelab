@@ -13,6 +13,15 @@ const feishuPrompt = buildSourceRuntimePrompt({ sourceId: 'feishu', sourceName: 
 assert.match(feishuPrompt, /markdown will be rendered as Feishu\/Lark rich text/i, 'feishu runtime prompt should allow markdown replies');
 assert.match(feishuPrompt, /standard LaTeX/i, 'feishu runtime prompt should request standard formula delimiters');
 
+const feishuCommentPrompt = buildSourceRuntimePrompt({
+  sourceId: 'feishu',
+  sourceName: 'Feishu',
+  sourceContext: { conversationKind: 'document_comment' },
+});
+assert.match(feishuCommentPrompt, /document-comment reply/i);
+assert.match(feishuCommentPrompt, /markdown formatting is not rendered/i);
+assert.doesNotMatch(feishuCommentPrompt, /standard LaTeX/i);
+
 const wechatPrompt = buildSourceRuntimePrompt({ sourceId: 'wechat', sourceName: 'WeChat' });
 assert.match(wechatPrompt, /WeChat/, 'wechat source id should map to the WeChat runtime prompt');
 assert.match(wechatPrompt, /plain text suitable for sending back through WeChat/i, 'wechat runtime prompt should stay reply-surface aware');

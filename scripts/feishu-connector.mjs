@@ -40,6 +40,7 @@ import {
   compileFeishuReplyText,
   getSummaryFeishuImageKeys,
   isSupportedRemoteLabInboundMessage,
+  isFeishuDocumentCommentSummary,
   normalizeFeishuMode,
   normalizeReplyText,
   sanitizeIdPart,
@@ -47,6 +48,11 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
   summarizeFeishuLegacyMessageEvent as summarizeLegacyMessageEvent,
 } from '../connectors/feishu/index.mjs';
+import {
+  hydrateFeishuDocumentCommentSummary,
+  sendFeishuCommentReply,
+  summarizeFeishuDocumentCommentEvent,
+} from '../connectors/feishu/comment-flow.mjs';
 import {
   loadRemoteLabReplyAttachment as loadRemoteLabReplyAttachmentImpl,
   resolveFeishuOutboundFileType,
@@ -1571,6 +1577,9 @@ function isProcessingReactionEnabled(runtime) {
 }
 
 async function addProcessingReaction(runtime, summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return null;
+  }
   if (!isProcessingReactionEnabled(runtime)) {
     return null;
   }
@@ -1599,6 +1608,9 @@ async function addProcessingReaction(runtime, summary) {
 }
 
 async function removeProcessingReaction(runtime, summary, reaction) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return false;
+  }
   if (runtime?.config?.processingReaction?.removeOnCompletion === false) {
     return false;
   }
@@ -1620,6 +1632,9 @@ async function removeProcessingReaction(runtime, summary, reaction) {
 }
 
 async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return sendFeishuCommentReply(runtime, summary, text);
+  }
   const content = await buildFeishuPostContent(text, mentions, {
     resolveFormulaImage: (formula) => resolveFeishuFormulaImage(runtime, formula),
     onFormulaError: (error, formula) => {
@@ -1787,7 +1802,13 @@ function stopSourceDeliveryPoller(runtime) {
 }
 
 function isProcessableMessage(summary) {
-  if (!summary?.messageId || !summary?.chatId) return false;
+  if (!summary?.messageId) return false;
+  if (isFeishuDocumentCommentSummary(summary)) {
+    if (!summary?.fileToken || !summary?.fileType || !summary?.commentId) return false;
+    if (summary?.mentionedBot !== true) return false;
+  } else if (!summary?.chatId) {
+    return false;
+  }
   const senderType = trimString(summary?.sender?.senderType).toLowerCase();
   if (senderType && senderType !== 'user') return false;
   return true;
@@ -1980,6 +2001,9 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   runtime.processingMessageIds.add(summary.messageId);
   let processingReaction = null;
   try {
+    if (typeof helpers.hydrateSummary === 'function') {
+      summary = await helpers.hydrateSummary(runtime, summary);
+    }
     const messageType = trimString(summary.messageType).toLowerCase();
     if (messageType && !isSupportedRemoteLabInboundMessage(summary)) {
       await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
@@ -2163,6 +2187,9 @@ export {
   stopSourceDeliveryPoller,
   snapshotAccessState,
   summarizeChatMemberUserAddedEvent,
+  summarizeFeishuDocumentCommentEvent,
+  hydrateFeishuDocumentCommentSummary,
+  sendFeishuCommentReply,
   summarizeEvent,
   upsertApprovedChat,
 };
@@ -2234,6 +2261,23 @@ async function main() {
     'im.chat.member.user.added_v1': async (data) => {
       const summary = summarizeChatMemberUserAddedEvent(data);
       enqueueByConversation(runtime, { chatId: summary.chatId, messageId: summary.eventId }, () => handleChatMemberUserAdded(runtime, summary, data, 'im.chat.member.user.added_v1'));
+      return {};
+    },
+    'drive.notice.comment_add_v1': async (data) => {
+      const summary = summarizeFeishuDocumentCommentEvent(data);
+      const allowed = await recordInboundEvent(runtime, summary, data, 'drive.notice.comment_add_v1');
+      if (!summary.mentionedBot) {
+        console.log(`[feishu-connector] no reply sent for ${summary.messageId} (document comment did not mention bot)`);
+        return {};
+      }
+      if (allowed) {
+        enqueueByConversation(runtime, summary, () => handleMessage(
+          runtime,
+          summary,
+          'drive.notice.comment_add_v1',
+          { hydrateSummary: hydrateFeishuDocumentCommentSummary },
+        ));
+      }
       return {};
     },
     message: async (data) => {

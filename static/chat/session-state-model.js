@@ -369,11 +369,14 @@
     const busy = isSessionBusy(session);
     const unread = hasSessionUnreadUpdate(session);
 
+    // Live execution is the current truth. Durable workflow labels describe
+    // what the session was waiting on after its previous completed turn and
+    // may briefly remain present while a new user turn is being accepted.
+    if (busy) return 4;
     if (unread && workflowState === "waiting_user") return 0;
     if (unread) return 1;
     if (workflowState === "waiting_user") return 2;
-    if (!busy && workflowState !== "done" && workflowState !== "parked") return 3;
-    if (busy) return 4;
+    if (workflowState !== "done" && workflowState !== "parked") return 3;
     if (workflowState === "parked") return 5;
     if (workflowState === "done") return 6;
     return 3;

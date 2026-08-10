@@ -1118,9 +1118,13 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
           ? getArchivedSessions()
           : sessions.filter((session) => session?.archived === true);
       }
-      const archivedSessionsPayload = data.sessions || [];
-      const nextArchivedSessions = applyArchivedSessionListState(data.sessions || [], {
-        archivedCount: typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
+      const archivedSessionsPayload = typeof filterSessionsForTeamSessionView === "function"
+        ? filterSessionsForTeamSessionView(data.sessions || [])
+        : (data.sessions || []);
+      const nextArchivedSessions = applyArchivedSessionListState(archivedSessionsPayload, {
+        archivedCount: typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView()
+          ? archivedSessionsPayload.length
+          : (typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
           ? adjustArchivedCountForSessionArchiveOptimisticMutations(
             Number.isInteger(data.archivedCount)
               ? data.archivedCount
@@ -1130,7 +1134,7 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
           )
           : (Number.isInteger(data.archivedCount)
             ? data.archivedCount
-            : (Array.isArray(data.sessions) ? data.sessions.length : 0)),
+            : (Array.isArray(data.sessions) ? data.sessions.length : 0))),
       });
       lastArchivedSessionsRefreshAt = Date.now();
       return nextArchivedSessions;
@@ -1713,7 +1717,11 @@ async function refreshRealtimeViews({
 }
 
 function startParallelCurrentSessionBootstrap() {
-  if (visitorMode || !currentSessionId) return;
+  if (
+    visitorMode
+    || !currentSessionId
+    || (typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView())
+  ) return;
   refreshCurrentSession({ viewportIntent: "session_entry" }).catch((error) => {
     if (error?.message === "Session not found") return;
     console.warn(
@@ -1738,6 +1746,9 @@ async function bootstrapViaHttp({ deferOwnerRestore = false } = {}) {
     startParallelCurrentSessionBootstrap();
   }
   await fetchSessionsList();
+  if (typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView()) {
+    await fetchArchivedSessions();
+  }
   if (!deferOwnerRestore) {
     restoreOwnerSessionSelection();
   }

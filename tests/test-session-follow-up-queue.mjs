@@ -112,6 +112,8 @@ try {
   const session = await createSession(home, 'fake-codex', 'Follow-up queue test', {
     group: 'Tests',
     description: 'Verifies busy-session follow-up queue flushing',
+    workflowState: 'waiting_user',
+    workflowPriority: 'high',
   });
 
   const initialOutcome = await submitHttpMessage(session.id, 'First run', [], {
@@ -122,6 +124,16 @@ try {
   });
 
   assert.ok(initialOutcome.run?.id, 'initial run should start immediately');
+  assert.equal(
+    initialOutcome.session?.workflowState,
+    undefined,
+    'accepted user input should clear a stale waiting-on-user workflow state immediately',
+  );
+  assert.equal(
+    initialOutcome.session?.workflowPriority,
+    undefined,
+    'accepted user input should clear the stale workflow priority with its state',
+  );
 
   await waitFor(
     async () => (await getSession(session.id))?.activity?.run?.state === 'running',

@@ -201,6 +201,7 @@ function renderSessionList() {
       empty.appendChild(emptyText);
 
       const canRestoreStarterSessions = !visitorMode
+        && !(typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView())
         && activeSourceFilter === FILTER_ALL_VALUE
         && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
         && typeof restoreOwnerBootstrapSessions === "function";
@@ -304,18 +305,9 @@ function renderProjectsView(visibleSessions) {
       "folder-group-header" +
       (collapsedFolders[groupKey] ? " collapsed" : "");
 
-    // Count sessions needing attention in this group
-    const attentionCount = folderSessions.filter((s) => {
-      const band = getInboxBandForSession(s);
-      return band <= 2; // unread-waiting, unread, or waiting
-    }).length;
-    const attentionBadge = attentionCount > 0
-      ? `<span class="folder-attention-count">${attentionCount}</span>`
-      : "";
-
     header.innerHTML = `<span class="folder-chevron">${renderUiIcon("chevron-down")}</span>
       <span class="folder-name" title="${esc(groupEntry.title)}">${esc(groupEntry.label)}</span>
-      ${attentionBadge}<span class="folder-count">${folderSessions.length}</span>`;
+      <span class="folder-count">${folderSessions.length}</span>`;
     header.addEventListener("click", (e) => {
       header.classList.toggle("collapsed");
       collapsedFolders[groupKey] = header.classList.contains("collapsed");

@@ -5,7 +5,8 @@ import {
   sessions,
   saveAuthSessionsAsync,
   verifyTokenAsync,
-  verifyPasswordAsync,
+  authenticatePasswordAsync,
+  getAdminAuthSessionFields,
   generateToken,
   parseCookies,
   getAuthSession,
@@ -91,6 +92,7 @@ async function mintOwnerSessionFromInstallHandoff(handoffToken) {
   sessions.set(sessionToken, {
     expiry: Date.now() + SESSION_EXPIRY,
     role: 'owner',
+    ...getAdminAuthSessionFields(),
     ...(handoffSession.preferredLanguage ? { preferredLanguage: handoffSession.preferredLanguage } : {}),
   });
   await saveAuthSessionsAsync();
@@ -271,7 +273,11 @@ if (queryToken) {
   if (await verifyTokenAsync(queryToken)) {
     clearFailedAttempts(ip);
     const sessionToken = generateToken();
-    sessions.set(sessionToken, { expiry: Date.now() + SESSION_EXPIRY, role: 'owner' });
+    sessions.set(sessionToken, {
+      expiry: Date.now() + SESSION_EXPIRY,
+      role: 'owner',
+      ...getAdminAuthSessionFields(),
+    });
     await saveAuthSessionsAsync();
     const redirectParams = new URLSearchParams();
     for (const [key, value] of Object.entries(parsedUrl.query || {})) {
@@ -304,16 +310,25 @@ if (pathname === '/login' && req.method === 'POST') {
   try { body = await readBody(req, 4096); } catch { body = ''; }
   const params = new URLSearchParams(body);
   const type = params.get('type');
-  let valid = false;
+  let account = null;
   if (type === 'token') {
-    valid = await verifyTokenAsync(params.get('token') || '');
+    if (await verifyTokenAsync(params.get('token') || '')) {
+      account = getAdminAuthSessionFields();
+    }
   } else if (type === 'password') {
-    valid = await verifyPasswordAsync(params.get('username') || '', params.get('password') || '');
+    account = await authenticatePasswordAsync(
+      params.get('username') || '',
+      params.get('password') || '',
+    );
   }
-  if (valid) {
+  if (account) {
     clearFailedAttempts(ip);
     const sessionToken = generateToken();
-    sessions.set(sessionToken, { expiry: Date.now() + SESSION_EXPIRY, role: 'owner' });
+    sessions.set(sessionToken, {
+      expiry: Date.now() + SESSION_EXPIRY,
+      role: 'owner',
+      ...account,
+    });
     await saveAuthSessionsAsync();
     res.writeHead(302, { 'Location': '/', 'Set-Cookie': setCookie(sessionToken) });
   } else {
