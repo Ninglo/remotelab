@@ -202,6 +202,7 @@ function renderSessionList() {
 
       const canRestoreStarterSessions = !visitorMode
         && !(typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView())
+        && activeAccountFilter === FILTER_ALL_VALUE
         && activeSourceFilter === FILTER_ALL_VALUE
         && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
         && typeof restoreOwnerBootstrapSessions === "function";

@@ -437,6 +437,7 @@ const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
 const tabAgents = document.getElementById("tabAgents");
 const tabSettings = document.getElementById("tabSettings");
+const accountFilterSelect = document.getElementById("accountFilterSelect");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const agentsPanel = document.getElementById("agentsPanel");
 const settingsPanel = document.getElementById("settingsPanel");
@@ -486,11 +487,13 @@ const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
 const LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeAppFilter";
 const ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeSourceFilter";
+const ACTIVE_ACCOUNT_FILTER_STORAGE_KEY = "activeAccountFilter";
 const LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY = "sessionSendFailures";
 const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
 const UI_THEME_STORAGE_KEY = "remotelab.theme";
 const FILTER_ALL_VALUE = "__all__";
+const ACCOUNT_FILTER_ADMIN_VALUE = "__admin__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
 const SOURCE_FILTER_FEISHU_VALUE = "feishu";
 const SOURCE_FILTER_EMAIL_VALUE = "email";
@@ -723,6 +726,7 @@ window.addEventListener("storage", (event) => {
 
 window.addEventListener("remotelab:localechange", () => {
   applyThemeTextOverrides(currentThemePreference);
+  if (typeof refreshAppCatalog === "function") refreshAppCatalog();
 });
 
 function normalizeSidebarTab(tab) {
@@ -1040,6 +1044,7 @@ function isAgentScopedMode() {
 
 function applyTeamSessionViewState(raw) {
   teamSessionView = normalizeTeamSessionView(raw);
+  if (typeof refreshAppCatalog === "function") refreshAppCatalog();
   return teamSessionView;
 }
 
