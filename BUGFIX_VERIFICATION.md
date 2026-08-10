@@ -285,3 +285,36 @@ post-fix test runs added no auth write or delete event.
 **Fixed by:** Harness Agent
 
 **Date:** 2026-08-02
+
+---
+
+## GitHub Actions detached-runner timeout
+
+### Bug description
+
+GitHub-hosted runners are placed in a system service cgroup, so RemoteLab's
+runtime detection selected `systemd-run`. The runner account cannot create a
+transient system service, and the fallback path made the auto-compaction
+integration test exceed its 20-second deadline.
+
+### RED evidence
+
+- GitHub Actions run `31424285984` failed in `tests/test-auto-compaction.mjs`.
+- The log reported `Failed to start transient service unit: Interactive
+  authentication required`, followed by `Timed out: overflow session should
+  auto-compact after exceeding the context window`.
+
+### Fix
+
+The CI job sets `REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER=1`, selecting the
+existing unprivileged detached-process launch mode. Production launch-mode
+detection remains unchanged.
+
+### GREEN evidence
+
+- [x] `test-auto-compaction` passes on the detached-process path.
+- [x] `test-session-follow-up-queue` passes on the detached-process path.
+- [x] Full local `npm test` suite passes.
+- [ ] GitHub Actions passes for the pushed commit.
+- [x] `git diff --check` and file-size lint pass; the report contains only the
+  repository's existing oversized-file baseline.

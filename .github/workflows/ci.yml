@@ -18,6 +18,11 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # GitHub-hosted runners appear inside a system service cgroup but cannot
+      # create transient systemd services. Keep integration tests on the
+      # supported unprivileged detached-process path.
+      REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER: '1'
 
     steps:
       - name: Check out repository
