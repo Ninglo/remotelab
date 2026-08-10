@@ -279,7 +279,11 @@ async function handleOutboundSend(request: Request, env: Env): Promise<Response>
 
   let payload: OutboundSendPayload = {};
   try {
-    payload = await request.json() as OutboundSendPayload;
+    const parsed = await request.json();
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return jsonResponse({ error: 'Invalid payload: expected a JSON object' }, 400);
+    }
+    payload = parsed as OutboundSendPayload;
   } catch {
     return jsonResponse({ error: 'Invalid JSON payload' }, 400);
   }
