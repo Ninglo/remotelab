@@ -315,6 +315,6 @@ detection remains unchanged.
 - [x] `test-auto-compaction` passes on the detached-process path.
 - [x] `test-session-follow-up-queue` passes on the detached-process path.
 - [x] Full local `npm test` suite passes.
-- [ ] GitHub Actions passes for the pushed commit.
+- [x] GitHub Actions run `31424937617` passes for commit `f98414b`.
 - [x] `git diff --check` and file-size lint pass; the report contains only the
   repository's existing oversized-file baseline.
