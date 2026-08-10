@@ -71,6 +71,12 @@ try {
   const rawProviderSession = join(home, '.codex', 'sessions', '2026', '01', 'old.jsonl');
   writeOldFile(rawProviderSession, '{"session":"old"}\n');
 
+  const oldFileAssetCache = join(home, '.config', 'remotelab', 'file-assets-cache', 'old.pdf');
+  writeOldFile(oldFileAssetCache, 'localized attachment');
+
+  const oldApiLog = join(home, '.config', 'remotelab', 'api-logs', '2026-01-01.jsonl');
+  writeOldFile(oldApiLog, '{"request":"old"}\n');
+
   const oldTemp = join(instanceRoot, 'owner', 'tmp', 'old-work');
   writeOldFile(join(oldTemp, 'cache.bin'), 'temporary');
   mkdirSync(join(instanceRoot, 'owner', 'config'), { recursive: true });
@@ -88,12 +94,16 @@ try {
   const dryRun = run([
     '--run-retention-days', '30',
     '--provider-session-retention-days', '30',
+    '--file-asset-cache-retention-days', '30',
+    '--api-log-retention-days', '30',
     '--temp-retention-days', '30',
     '--public-staging-retention-days', '30',
   ]);
   assert.equal(dryRun.mode, 'dry-run');
   assert.equal(dryRun.summary.categories['terminal-chat-run']?.paths, 1);
   assert.equal(dryRun.summary.categories['raw-provider-session']?.paths, 1);
+  assert.equal(dryRun.summary.categories['file-asset-cache']?.paths, 1);
+  assert.equal(dryRun.summary.categories['api-log']?.paths, 1);
   assert.equal(dryRun.summary.categories['instance-temp']?.paths, 1);
   assert.equal(dryRun.summary.categories['published-staging']?.paths, 1);
   assert.ok(existsSync(oldRun), 'dry-run should preserve terminal run data');
@@ -102,6 +112,8 @@ try {
     '--apply',
     '--run-retention-days', '30',
     '--provider-session-retention-days', '30',
+    '--file-asset-cache-retention-days', '30',
+    '--api-log-retention-days', '30',
     '--temp-retention-days', '30',
     '--public-staging-retention-days', '30',
   ]);
@@ -109,6 +121,8 @@ try {
   assert.equal(applied.failures.length, 0);
   assert.equal(existsSync(oldRun), false, 'old terminal runs should be removed');
   assert.equal(existsSync(rawProviderSession), false, 'old raw provider transcripts should be removed');
+  assert.equal(existsSync(oldFileAssetCache), false, 'old localized attachment cache should be removed');
+  assert.equal(existsSync(oldApiLog), false, 'old API request logs should be removed');
   assert.equal(existsSync(oldTemp), false, 'old instance temp data should be removed');
   assert.equal(existsSync(publicTmp), false, 'old published temporary data should be removed');
   assert.equal(existsSync(publicArtifacts), true, 'published artifacts must be preserved');

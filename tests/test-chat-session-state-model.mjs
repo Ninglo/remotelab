@@ -131,6 +131,19 @@ const runningStatus = model.getSessionStatusSummary(runningSession);
 assert.equal(runningStatus.primary.key, 'running');
 assert.equal(model.isSessionBusy(runningSession), true);
 
+const runningWithStaleWaitingSession = makeSession({
+  workflowState: 'waiting_user',
+  workflowPriority: 'high',
+  activity: makeActivity({
+    run: { state: 'running', phase: 'running', runId: 'run-stale-waiting' },
+  }),
+});
+assert.equal(
+  model.getSessionAttentionBand(runningWithStaleWaitingSession),
+  4,
+  'live running activity should override a stale waiting-on-user workflow label',
+);
+
 const queuedSession = makeSession({
   activity: makeActivity({
     queue: { state: 'queued', count: 2 },

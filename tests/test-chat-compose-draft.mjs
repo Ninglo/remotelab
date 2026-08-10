@@ -128,6 +128,7 @@ function createContext({
   const windowResizeListeners = [];
   const visualViewportResizeListeners = [];
   const layoutSubscribers = [];
+  const bottomPinReasons = [];
   const windowTarget = {
     innerHeight: windowInnerHeight,
     addEventListener(type, listener) {
@@ -154,6 +155,10 @@ function createContext({
       layoutSubscribers.push(listener);
       return () => {};
     },
+    preserveBottomPinnedMessageViewport(mutator, options = {}) {
+      bottomPinReasons.push(options?.reason || null);
+      return typeof mutator === 'function' ? mutator() : undefined;
+    },
   };
   windowTarget.RemoteLabLayout = remoteLabLayout;
   const context = {
@@ -164,6 +169,7 @@ function createContext({
     focusComposerCalls,
     pendingTurnFeedbackSyncs: 0,
     layoutSubscribers,
+    bottomPinReasons,
     windowResizeListeners,
     visualViewportResizeListeners,
     currentSessionId: 'session-a',
@@ -258,6 +264,10 @@ assert.equal(context.msgInput.style.height, '72px', 'composer should default to 
 assert.equal(context.layoutSubscribers.length, 1, 'composer should subscribe to the shared layout controller');
 assert.equal(context.windowResizeListeners.length, 0, 'composer should not attach its own window resize listener when the shared layout controller exists');
 assert.equal(context.visualViewportResizeListeners.length, 0, 'composer should not attach its own visual viewport resize listener when the shared layout controller exists');
+assert.ok(
+  context.bottomPinReasons.includes('composer-auto-resize'),
+  'shared layout helpers should preserve a bottom-pinned message viewport during initial composer auto sizing',
+);
 
 context.msgInput.value = 'draft for A';
 context.saveDraft();
@@ -323,6 +333,28 @@ failedSendFocusContext.restoreFailedSendState('session-a', 'retry me', []);
 assert.equal(failedSendFocusContext.focusComposerCalls.length, 1, 'failed-send recovery should invoke the shared focus helper once');
 assert.equal(failedSendFocusContext.focusComposerCalls[0]?.force, true, 'failed-send recovery should force composer focus when rehydrating the draft');
 assert.equal(failedSendFocusContext.focusComposerCalls[0]?.preventScroll, true, 'failed-send recovery should keep the viewport from jumping during draft recovery');
+
+const pendingUiContext = createContext();
+loadComposeContext(pendingUiContext);
+const pendingUiBottomPinCount = pendingUiContext.bottomPinReasons.length;
+pendingUiContext.setComposerPendingSendState({
+  sessionId: 'session-a',
+  requestId: 'req_pending',
+  text: 'queued draft',
+  images: [],
+  stage: 'sending',
+});
+pendingUiContext.syncComposerPendingUi();
+assert.equal(
+  pendingUiContext.bottomPinReasons.at(-1),
+  'composer-pending-ui',
+  'composer pending state updates should preserve a bottom-pinned message viewport',
+);
+assert.equal(
+  pendingUiContext.bottomPinReasons.length,
+  pendingUiBottomPinCount + 1,
+  'pending-state sync should invoke the shared bottom-pinning helper exactly once per update',
+);
 
 const canonicalSendContext = createContext();
 const canonicalSendCalls = [];

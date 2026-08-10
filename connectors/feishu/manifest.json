@@ -4,7 +4,7 @@
   "name": "Feishu / Lark Bot",
   "version": "1.0.0",
   "entry": "./index.mjs",
-  "capabilities": ["inbound", "outbound", "reply", "actions"],
+  "capabilities": ["inbound", "outbound", "reply", "attachments", "actions"],
   "hostStrategies": ["local", "gateway"],
-  "description": "Feishu/Lark app-bot inbound, threaded replies, and outbound message actions."
+  "description": "Feishu/Lark app-bot inbound, threaded replies, reply attachments, and outbound message actions."
 }

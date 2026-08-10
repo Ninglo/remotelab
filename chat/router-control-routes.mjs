@@ -6,6 +6,7 @@ import { listAgents, getAgent, createAgent, updateAgent, deleteAgent } from './a
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
+import { auth, hashPasswordAsync } from '../lib/auth.mjs';
 import { getModelsForTool } from './models.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
 import { backfillOwnerBootstrapSessions } from './bootstrap-sessions.mjs';
@@ -61,6 +62,15 @@ import {
   updateInstanceSettings,
 } from './instance-settings.mjs';
 import { broadcastAll } from './ws-clients.mjs';
+import {
+  buildTeamSessionViewBootstrap,
+  createTeamSessionAccount,
+  deleteTeamSessionAccount,
+  isTeamSessionViewAdmin,
+  loadTeamSessionView,
+  setTeamSessionViewEnabled,
+  updateTeamSessionAccount,
+} from './team-session-view.mjs';
 import {
   applyTemplateToSession,
   appendAssistantMessage,
@@ -129,6 +139,25 @@ function getGrantedCapability(authSession, capability, fallback = false) {
     : fallback;
 }
 
+function trimString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isOwnerUsername(username) {
+  const ownerUsername = trimString(auth?.username).toLowerCase();
+  return !!ownerUsername && trimString(username).toLowerCase() === ownerUsername;
+}
+
+function parseTeamSessionAccountId(pathname) {
+  const match = String(pathname || '').match(/^\/api\/team-session-view\/accounts\/([^/]+)$/);
+  if (!match) return '';
+  try {
+    return decodeURIComponent(match[1]).trim();
+  } catch {
+    return '';
+  }
+}
+
 export async function handleControlRoutes({
   req,
   res,
@@ -149,6 +178,153 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  const teamSessionAccountId = parseTeamSessionAccountId(pathname);
+
+  if (pathname === '/api/team-session-view' && req.method === 'GET') {
+    try {
+      const bootstrap = await buildTeamSessionViewBootstrap(authSession, { ownerName: auth.username });
+      const stored = isTeamSessionViewAdmin(authSession)
+        ? await loadTeamSessionView()
+        : null;
+      writeJson(res, 200, {
+        teamSessionView: {
+          ...bootstrap,
+          accounts: stored?.accounts || [],
+        },
+      });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to load team session view' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/team-session-view' && req.method === 'PATCH') {
+    if (!isTeamSessionViewAdmin(authSession)) {
+      writeJson(res, 403, { error: 'Admin account required' });
+      return true;
+    }
+    let payload = {};
+    try {
+      payload = JSON.parse(await readBody(req, 8192) || '{}');
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    if (typeof payload.enabled !== 'boolean') {
+      writeJson(res, 400, { error: 'enabled must be a boolean' });
+      return true;
+    }
+    try {
+      await setTeamSessionViewEnabled(payload.enabled);
+      const teamSessionView = await buildTeamSessionViewBootstrap(authSession, { ownerName: auth.username });
+      writeJson(res, 200, { teamSessionView });
+      broadcastAll({ type: 'team_session_view_updated', enabled: teamSessionView.enabled });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to update team session view' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/team-session-view/accounts' && req.method === 'POST') {
+    if (!isTeamSessionViewAdmin(authSession)) {
+      writeJson(res, 403, { error: 'Admin account required' });
+      return true;
+    }
+    let payload = {};
+    try {
+      payload = JSON.parse(await readBody(req, 16384) || '{}');
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    const username = trimString(payload.username);
+    const password = trimString(payload.password);
+    if (Object.prototype.hasOwnProperty.call(payload, 'enabled') && typeof payload.enabled !== 'boolean') {
+      writeJson(res, 400, { error: 'enabled must be a boolean' });
+      return true;
+    }
+    if (isOwnerUsername(username)) {
+      writeJson(res, 400, { error: 'username already exists' });
+      return true;
+    }
+    if (!password) {
+      writeJson(res, 400, { error: 'password is required' });
+      return true;
+    }
+    try {
+      const account = await createTeamSessionAccount({
+        username,
+        name: trimString(payload.name),
+        passwordHash: await hashPasswordAsync(password),
+        enabled: payload.enabled !== false,
+      });
+      writeJson(res, 201, { account });
+      broadcastAll({ type: 'team_session_view_updated' });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to create account' });
+    }
+    return true;
+  }
+
+  if (teamSessionAccountId && req.method === 'PATCH') {
+    if (!isTeamSessionViewAdmin(authSession)) {
+      writeJson(res, 403, { error: 'Admin account required' });
+      return true;
+    }
+    let payload = {};
+    try {
+      payload = JSON.parse(await readBody(req, 16384) || '{}');
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'username') && isOwnerUsername(payload.username)) {
+      writeJson(res, 400, { error: 'username already exists' });
+      return true;
+    }
+    if (Object.prototype.hasOwnProperty.call(payload, 'enabled') && typeof payload.enabled !== 'boolean') {
+      writeJson(res, 400, { error: 'enabled must be a boolean' });
+      return true;
+    }
+    try {
+      const updates = {};
+      if (Object.prototype.hasOwnProperty.call(payload, 'username')) updates.username = payload.username;
+      if (Object.prototype.hasOwnProperty.call(payload, 'name')) updates.name = payload.name;
+      if (Object.prototype.hasOwnProperty.call(payload, 'enabled')) updates.enabled = payload.enabled === true;
+      if (trimString(payload.password)) {
+        updates.passwordHash = await hashPasswordAsync(trimString(payload.password));
+      }
+      const account = await updateTeamSessionAccount(teamSessionAccountId, updates);
+      if (!account) {
+        writeJson(res, 404, { error: 'Account not found' });
+        return true;
+      }
+      writeJson(res, 200, { account });
+      broadcastAll({ type: 'team_session_view_updated' });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to update account' });
+    }
+    return true;
+  }
+
+  if (teamSessionAccountId && req.method === 'DELETE') {
+    if (!isTeamSessionViewAdmin(authSession)) {
+      writeJson(res, 403, { error: 'Admin account required' });
+      return true;
+    }
+    try {
+      if (!await deleteTeamSessionAccount(teamSessionAccountId)) {
+        writeJson(res, 404, { error: 'Account not found' });
+        return true;
+      }
+      writeJson(res, 200, { ok: true });
+      broadcastAll({ type: 'team_session_view_updated' });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to delete account' });
+    }
+    return true;
+  }
+
   if (pathname === '/api/bootstrap/owner-sessions/restore' && req.method === 'POST') {
     if (authSession?.role !== 'owner') {
       writeJson(res, 403, { error: 'Owner access required' });

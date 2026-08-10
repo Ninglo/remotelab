@@ -47,6 +47,22 @@ function extractFunctionSource(source, functionName) {
 const createComposerAttachmentLocalIdSource = extractFunctionSource(sidebarUiSource, 'createComposerAttachmentLocalId');
 const buildPendingAttachmentSource = extractFunctionSource(sidebarUiSource, 'buildPendingAttachment');
 const addAttachmentFilesSource = extractFunctionSource(sidebarUiSource, 'addAttachmentFiles');
+const renderImagePreviewsSource = extractFunctionSource(sidebarUiSource, 'renderImagePreviews');
+
+function makeClassList(initial = []) {
+  const values = new Set(initial);
+  return {
+    add(...tokens) {
+      tokens.forEach((token) => values.add(token));
+    },
+    remove(...tokens) {
+      tokens.forEach((token) => values.delete(token));
+    },
+    contains(token) {
+      return values.has(token);
+    },
+  };
+}
 
 function createHarness({ locked = false, directUpload = false } = {}) {
   const state = {
@@ -133,5 +149,79 @@ await directUploadHarness.context.addAttachmentFiles([{ name: 'video.mov', type:
 assert.equal(directUploadHarness.context.getComposerAttachmentsState('session-a')[0]?.uploadState, 'queued', 'direct-upload attachments should enter the queued state immediately');
 assert.equal(directUploadHarness.state.eagerUploadCalls.length, 1, 'direct-upload mode should start the background upload immediately');
 assert.equal(directUploadHarness.state.eagerUploadCalls[0]?.localIds?.length, 1, 'background upload kickoff should target the queued attachment local id');
+
+const previewState = {
+  helperReasons: [],
+  layoutPassReasons: [],
+};
+const previewStrip = {
+  innerHTML: '',
+  classList: makeClassList(),
+  appendChild() {},
+};
+const previewContext = {
+  console,
+  currentSessionId: 'session-a',
+  imgPreviewStrip: previewStrip,
+  window: {
+    RemoteLabLayout: {
+      preserveBottomPinnedMessageViewport(mutator, options = {}) {
+        previewState.helperReasons.push(options?.reason || null);
+        return typeof mutator === 'function' ? mutator() : undefined;
+      },
+    },
+  },
+  getComposerAttachmentsState() {
+    return [];
+  },
+  requestLayoutPass(reason) {
+    previewState.layoutPassReasons.push(reason);
+  },
+  syncInputHeightForLayout() {
+    previewState.layoutPassReasons.push('fallback-sync');
+  },
+  document: {
+    createElement() {
+      return {
+        className: '',
+        classList: makeClassList(),
+        appendChild() {},
+        setAttribute() {},
+      };
+    },
+  },
+  createComposerAttachmentPreviewNode() {
+    return null;
+  },
+  getComposerAttachmentUploadMeta() {
+    return null;
+  },
+  renderUiIcon() {
+    return '';
+  },
+  t(key) {
+    return key;
+  },
+  hasPendingComposerSend() {
+    return false;
+  },
+};
+previewContext.globalThis = previewContext;
+vm.runInNewContext(
+  `${renderImagePreviewsSource}\nglobalThis.renderImagePreviews = renderImagePreviews;`,
+  previewContext,
+  { filename: 'static/chat/sidebar-ui.js' },
+);
+previewContext.renderImagePreviews();
+assert.deepEqual(
+  previewState.helperReasons,
+  ['composer-images'],
+  'image preview rerenders should preserve a bottom-pinned message viewport before mutating the composer stack',
+);
+assert.deepEqual(
+  previewState.layoutPassReasons,
+  ['composer-images'],
+  'image preview rerenders should still request a follow-up layout pass after the preview strip changes',
+);
 
 console.log('test-chat-sidebar-attachments: ok');

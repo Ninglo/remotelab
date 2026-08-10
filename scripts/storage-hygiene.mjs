@@ -27,6 +27,8 @@ function parseOptions(argv = process.argv.slice(2)) {
     nowMs: Date.now(),
     runRetentionDays: 60,
     providerSessionRetentionDays: 60,
+    fileAssetCacheRetentionDays: 14,
+    apiLogRetentionDays: 30,
     tempRetentionDays: 7,
     publicStagingRetentionDays: 3,
   };
@@ -42,6 +44,16 @@ function parseOptions(argv = process.argv.slice(2)) {
       options.providerSessionRetentionDays = parseNonNegativeNumber(
         argv[index += 1],
         options.providerSessionRetentionDays,
+      );
+    } else if (arg === '--file-asset-cache-retention-days') {
+      options.fileAssetCacheRetentionDays = parseNonNegativeNumber(
+        argv[index += 1],
+        options.fileAssetCacheRetentionDays,
+      );
+    } else if (arg === '--api-log-retention-days') {
+      options.apiLogRetentionDays = parseNonNegativeNumber(
+        argv[index += 1],
+        options.apiLogRetentionDays,
       );
     } else if (arg === '--temp-retention-days') {
       options.tempRetentionDays = parseNonNegativeNumber(argv[index += 1], options.tempRetentionDays);
@@ -72,6 +84,9 @@ Options:
   --run-retention-days <days>          Terminal chat-run retention (default: 60)
   --provider-session-retention-days <days>
                                        Raw provider transcript retention (default: 60)
+  --file-asset-cache-retention-days <days>
+                                       Regenerable localized attachment cache retention (default: 14)
+  --api-log-retention-days <days>      Daily API request log retention (default: 30)
   --temp-retention-days <days>         Instance temp retention (default: 7)
   --public-staging-retention-days <days>
                                        Published temporary-dir retention (default: 3)
@@ -298,6 +313,22 @@ async function run(options) {
       options,
     );
   }
+  for (const configRoot of roots.configRoots) {
+    await collectOldFiles(
+      candidates,
+      join(configRoot, 'file-assets-cache'),
+      'file-asset-cache',
+      options.fileAssetCacheRetentionDays,
+      options,
+    );
+    await collectOldFiles(
+      candidates,
+      join(configRoot, 'api-logs'),
+      'api-log',
+      options.apiLogRetentionDays,
+      options,
+    );
+  }
   await collectTempCandidates(candidates, roots.tempRoots, options);
   await collectPublishedStagingCandidates(candidates, roots.publicPagesRoot, options);
 
@@ -318,6 +349,8 @@ async function run(options) {
     retentionDays: {
       terminalChatRuns: options.runRetentionDays,
       rawProviderSessions: options.providerSessionRetentionDays,
+      fileAssetCache: options.fileAssetCacheRetentionDays,
+      apiLogs: options.apiLogRetentionDays,
       instanceTemp: options.tempRetentionDays,
       publishedStaging: options.publicStagingRetentionDays,
     },

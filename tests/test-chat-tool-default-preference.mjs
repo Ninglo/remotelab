@@ -10,6 +10,12 @@ const repoRoot = dirname(__dirname);
 const bootstrapSource = readFileSync(join(repoRoot, 'static', 'chat', 'bootstrap.js'), 'utf8');
 const layoutToolingSource = readFileSync(join(repoRoot, 'static', 'chat', 'layout-tooling.js'), 'utf8');
 
+assert.match(
+  bootstrapSource,
+  /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5\.6-sol";/,
+  'the browser default should stay aligned with the GPT-5.6-Sol product default',
+);
+
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
   const start = source.indexOf(marker);
@@ -49,12 +55,34 @@ const prioritizeToolOptionsSource = extractFunctionSource(layoutToolingSource, '
 const resolvePreferredToolIdSource = extractFunctionSource(layoutToolingSource, 'resolvePreferredToolId');
 const normalizeStoredToolIdSource = extractFunctionSource(bootstrapSource, 'normalizeStoredToolId');
 const derivePreferredToolIdSource = extractFunctionSource(bootstrapSource, 'derivePreferredToolId');
+const parseVersionedGptModelIdSource = extractFunctionSource(bootstrapSource, 'parseVersionedGptModelId');
+const isStaleCodexModelIdSource = extractFunctionSource(bootstrapSource, 'isStaleCodexModelId');
+const normalizeStoredCodexModelIdSource = extractFunctionSource(bootstrapSource, 'normalizeStoredCodexModelId');
+const migrateRetiredCodexModelLocalStorageSource = extractFunctionSource(
+  bootstrapSource,
+  'migrateRetiredCodexModelLocalStorage',
+);
+
+const localStorageValues = new Map([
+  ['selectedModel_codex', 'gpt-5.4'],
+  ['selectedEffort_codex', 'xhigh'],
+]);
 
 const context = {
   console,
   DEFAULT_TOOL_ID: 'codex',
+  PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-5.6-sol',
+  RETIRED_CODEX_MODEL_IDS: new Set([]),
   LEGACY_AUTO_PREFERRED_TOOL_IDS: new Set(['codex', 'micro-agent']),
   LEGACY_REMOVED_TOOL_IDS: new Set(['micro-agent']),
+  localStorage: {
+    getItem(key) {
+      return localStorageValues.has(key) ? localStorageValues.get(key) : null;
+    },
+    setItem(key, value) {
+      localStorageValues.set(key, String(value));
+    },
+  },
 };
 context.globalThis = context;
 
@@ -66,10 +94,15 @@ vm.runInNewContext(
     resolvePreferredToolIdSource,
     normalizeStoredToolIdSource,
     derivePreferredToolIdSource,
+    parseVersionedGptModelIdSource,
+    isStaleCodexModelIdSource,
+    normalizeStoredCodexModelIdSource,
+    migrateRetiredCodexModelLocalStorageSource,
     'globalThis.filterPrimaryToolOptions = filterPrimaryToolOptions;',
     'globalThis.prioritizeToolOptions = prioritizeToolOptions;',
     'globalThis.resolvePreferredToolId = resolvePreferredToolId;',
     'globalThis.derivePreferredToolId = derivePreferredToolId;',
+    'globalThis.migrateRetiredCodexModelLocalStorage = migrateRetiredCodexModelLocalStorage;',
   ].join('\n\n'),
   context,
   { filename: 'static/chat/layout-tooling.js' },
@@ -132,6 +165,18 @@ assert.equal(
   context.derivePreferredToolId('', 'claude'),
   'claude',
   'legacy Claude selections should still hydrate once Claude is visible again',
+);
+
+context.migrateRetiredCodexModelLocalStorage();
+assert.equal(
+  localStorageValues.get('selectedModel_codex'),
+  'gpt-5.6-sol',
+  'stale GPT-5.4 browser preferences should migrate to GPT-5.6-Sol',
+);
+assert.equal(
+  localStorageValues.get('selectedEffort_codex'),
+  'xhigh',
+  'model migration should preserve an existing compatible effort preference',
 );
 
 const allVisible = context.filterPrimaryToolOptions([

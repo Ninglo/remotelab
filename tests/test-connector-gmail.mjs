@@ -105,6 +105,30 @@ try {
     'Gmail MIME must preserve the required blank line between headers and the body',
   );
 
+  const companyMessage = {
+    id: 'company-message',
+    from: '<operator@company.example>',
+    to: '<creator@gmail.com>',
+    messageIdHeader: '<company-message@example.com>',
+  };
+  const creatorMessage = {
+    id: 'creator-message',
+    from: 'creator@gmail.com',
+    to: '<operator@company.example>',
+    messageIdHeader: '<creator-message@example.com>',
+  };
+  assert.equal(
+    __testing.replySourceMessage({ latestMessage: creatorMessage }, companyMessage),
+    companyMessage,
+    'an explicit --message-id must be the reply source even when a newer self-authored message exists',
+  );
+  assert.equal(__testing.replyRecipient(companyMessage, 'creator@gmail.com'), '<operator@company.example>');
+  assert.equal(
+    __testing.replyRecipient(creatorMessage, 'creator@gmail.com'),
+    'operator@company.example',
+    'replying from a thread whose latest message is self-authored must target the original recipient',
+  );
+
   console.log('test-connector-gmail: ok');
 } finally {
   rmSync(tempHome, { recursive: true, force: true });

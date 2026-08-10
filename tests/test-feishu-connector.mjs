@@ -31,15 +31,18 @@ const {
   isAllowedByPolicy,
   loadConfig,
   loadPersistedAccessState,
+  loadRemoteLabReplyAttachment,
   normalizeReplyText,
   normalizeProcessingReactionConfig,
   releaseConnectorPidLock,
   resolveFeishuMessageAttachments,
+  resolveFeishuOutboundFileType,
   buildFeishuPostContent,
   buildExternalTriggerId,
   buildMessageSourceContext,
   buildSessionSourceContext,
   resolveFeishuTopicForkParentSessionId,
+  sendFeishuAttachment,
   sendFeishuText,
   processSourceDeliveryOnce,
   summarizeChatMemberUserAddedEvent,
@@ -108,6 +111,42 @@ assert.equal(handled[0].metadata.status, 'silent_no_reply');
 assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
 assert.equal(handled[0].metadata.sessionId, 'session_test_1');
 assert.equal(runtime.processingMessageIds.size, 0, 'message processing state should always be cleaned up');
+
+const attachmentOnlySends = [];
+handled.length = 0;
+runtime.config = { silentConfirmationText: '' };
+await handleMessage(runtime, { ...summary, messageId: 'msg_test_attachment_only_1' }, 'test', {
+  wasMessageHandled: async () => false,
+  generateRemoteLabReply: async () => ({
+    sessionId: 'session_attachment_only_test_1',
+    runId: 'run_attachment_only_test_1',
+    requestId: 'request_attachment_only_test_1',
+    responseId: 'response_attachment_only_test_1',
+    duplicate: false,
+    replyText: '',
+    replyAttachments: [{
+      assetId: 'fasset_attachment_only_1',
+      originalName: 'attachment-only.txt',
+      mimeType: 'text/plain',
+    }],
+  }),
+  sendFeishuText: async () => {
+    throw new Error('attachment-only replies must not send an empty text message');
+  },
+  sendFeishuAttachment: async (_runtime, _summary, attachment, uuid) => {
+    attachmentOnlySends.push({ attachment, uuid });
+    return { message_id: 'out_attachment_only_test_1' };
+  },
+  markMessageHandled: async (_pathname, messageId, metadata) => {
+    handled.push({ messageId, metadata });
+  },
+});
+assert.equal(attachmentOnlySends.length, 1);
+assert.equal(attachmentOnlySends[0].attachment.originalName, 'attachment-only.txt');
+assert.match(attachmentOnlySends[0].uuid, /:attachment:0$/);
+assert.equal(handled[0].metadata.status, 'sent');
+assert.equal(handled[0].metadata.attachmentCount, 1);
+assert.equal(handled[0].metadata.responseMessageId, 'out_attachment_only_test_1');
 
 const confirmationTexts = [];
 sendCalls = 0;
@@ -596,6 +635,40 @@ assert.equal(
 assert.equal(authRefreshRuntime.authToken, 'fresh-token');
 assert.equal(authRefreshRuntime.authCookie, 'session_token=fresh-token');
 
+let attachmentDownloadCookie = '';
+const attachmentDownloadServer = http.createServer((req, res) => {
+  attachmentDownloadCookie = String(req.headers.cookie || '');
+  if (req.url === '/api/assets/fasset_download_test_1/download?download=1') {
+    res.writeHead(200, {
+      'Content-Type': 'text/csv',
+      'Content-Length': Buffer.byteLength('name,value\ntest,1\n'),
+    });
+    res.end('name,value\ntest,1\n');
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+await new Promise((resolve) => attachmentDownloadServer.listen(0, '127.0.0.1', resolve));
+try {
+  const address = attachmentDownloadServer.address();
+  const downloadedAttachment = await loadRemoteLabReplyAttachment({
+    authCookie: 'session_token=asset-cookie',
+    config: { chatBaseUrl: `http://127.0.0.1:${address.port}` },
+  }, {
+    assetId: 'fasset_download_test_1',
+    originalName: 'download.csv',
+    mimeType: 'text/csv',
+    sizeBytes: 18,
+  });
+  assert.equal(downloadedAttachment.buffer.toString('utf8'), 'name,value\ntest,1\n');
+  assert.equal(downloadedAttachment.filename, 'download.csv');
+  assert.equal(downloadedAttachment.mimeType, 'text/csv');
+  assert.equal(attachmentDownloadCookie, 'session_token=asset-cookie');
+} finally {
+  await new Promise((resolve) => attachmentDownloadServer.close(resolve));
+}
+
 assert.equal(normalizeReplyText('  \n\n  '), '');
 assert.equal(normalizeReplyText('  hello\r\n'), 'hello');
 assert.equal(normalizeReplyText(' <private>internal only</private> '), '');
@@ -605,6 +678,7 @@ assert.equal(normalizeReplyText('好的😺，我来处理。'), '好的，我�
 let feishuCreatePayload = null;
 let feishuReplyPayload = null;
 let feishuImagePayload = null;
+let feishuFilePayload = null;
 const fakeSendRuntime = {
   appClient: {
     im: {
@@ -613,6 +687,12 @@ const fakeSendRuntime = {
           create: async (payload) => {
             feishuImagePayload = payload;
             return { image_key: 'img_formula_uploaded_1' };
+          },
+        },
+        file: {
+          create: async (payload) => {
+            feishuFilePayload = payload;
+            return { file_key: 'file_uploaded_1' };
           },
         },
         message: {
@@ -689,6 +769,53 @@ assert.deepEqual(
   JSON.parse(feishuCreatePayload?.data?.content || '{}').zh_cn.content,
   [[{ tag: 'img', image_key: 'img_formula_uploaded_1' }]],
 );
+
+assert.equal(resolveFeishuOutboundFileType({ originalName: 'report.xlsx' }), 'xls');
+assert.equal(resolveFeishuOutboundFileType({ mimeType: 'application/pdf' }), 'pdf');
+assert.equal(resolveFeishuOutboundFileType({ originalName: 'archive.zip' }), 'stream');
+
+feishuCreatePayload = null;
+feishuImagePayload = null;
+await sendFeishuAttachment(
+  fakeSendRuntime,
+  { chatType: 'group', chatId: 'chat_regular_1', messageId: 'msg_image_reply_1' },
+  {
+    originalName: 'preview.png',
+    mimeType: 'image/png',
+    data: Buffer.from('small-png').toString('base64'),
+  },
+  'uuid-image-attachment-1',
+);
+assert.equal(feishuImagePayload?.data?.image_type, 'message');
+assert.ok(Buffer.isBuffer(feishuImagePayload?.data?.image));
+assert.equal(feishuCreatePayload?.data?.msg_type, 'image');
+assert.equal(feishuCreatePayload?.data?.uuid, 'uuid-image-attachment-1');
+assert.deepEqual(JSON.parse(feishuCreatePayload?.data?.content || '{}'), {
+  image_key: 'img_formula_uploaded_1',
+});
+
+feishuReplyPayload = null;
+feishuFilePayload = null;
+await sendFeishuAttachment(
+  fakeSendRuntime,
+  topicSummary,
+  {
+    originalName: 'report.pdf',
+    mimeType: 'application/pdf',
+    data: Buffer.from('%PDF-test').toString('base64'),
+  },
+  'uuid-file-attachment-1',
+);
+assert.equal(feishuFilePayload?.data?.file_type, 'pdf');
+assert.equal(feishuFilePayload?.data?.file_name, 'report.pdf');
+assert.ok(Buffer.isBuffer(feishuFilePayload?.data?.file));
+assert.equal(feishuReplyPayload?.path?.message_id, topicSummary.messageId);
+assert.equal(feishuReplyPayload?.data?.msg_type, 'file');
+assert.equal(feishuReplyPayload?.data?.reply_in_thread, true);
+assert.equal(feishuReplyPayload?.data?.uuid, 'uuid-file-attachment-1');
+assert.deepEqual(JSON.parse(feishuReplyPayload?.data?.content || '{}'), {
+  file_key: 'file_uploaded_1',
+});
 
 const sourceDeliveryRequests = [];
 const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceRouteId: 'bot-alpha' } }, {
@@ -1208,7 +1335,29 @@ const server = http.createServer(async (req, res) => {
         finalRunId: 'run_feishu_1',
         continuationRunIds: [],
         payload: {
-          text: 'Feishu reply ready.',
+          text: 'Feishu reply ready.\n\nAttached file: report.csv',
+          displayEvents: [{
+            seq: 1,
+            type: 'message',
+            role: 'assistant',
+            content: 'Feishu reply ready.',
+          }, {
+            seq: 2,
+            type: 'attachment_delivery',
+            role: 'assistant',
+            attachments: [{
+              assetId: 'fasset_111111111111111111111111',
+              originalName: 'report.csv',
+              mimeType: 'text/csv',
+              sizeBytes: 12,
+            }],
+          }],
+          attachments: [{
+            assetId: 'fasset_111111111111111111111111',
+            originalName: 'report.csv',
+            mimeType: 'text/csv',
+            sizeBytes: 12,
+          }],
         },
       },
     }));
@@ -1311,9 +1460,10 @@ try {
   assert.equal(reply.runId, 'run_feishu_1');
   assert.equal(reply.attachmentCount, 1);
   assert.equal(reply.replyText, 'Feishu reply ready.');
+  assert.equal(reply.replyAttachments.length, 1);
+  assert.equal(reply.replyAttachments[0].originalName, 'report.csv');
 } finally {
   await new Promise((resolve) => server.close(resolve));
-  await rm(tempHome, { recursive: true, force: true });
 }
 
 let planningSubmittedPayload = null;
@@ -1423,6 +1573,11 @@ try {
   );
 
   assert.equal(planningSubmittedPayload?.requestId, 'feishu:msg_planning_scope');
+  assert.equal(
+    planningSubmittedPayload?.model,
+    'gpt-5.6-sol',
+    'Feishu should upgrade stale inherited Codex UI models before submitting a message',
+  );
   assert.equal(reply.sessionId, 'sess_feishu_planning_1');
   assert.equal(reply.runId, 'run_feishu_planning_1');
   assert.equal(reply.queued, false);
@@ -2007,3 +2162,5 @@ console.log('ok - same-group content fallback can reuse nearest recent chat sess
 console.log('ok - generated Feishu sessions use the feishu app scope');
 console.log('ok - planning-phase Feishu replies wait for publication readiness');
 console.log('ok - queued Feishu follow-ups wait for the eventual assistant reply');
+
+await rm(tempHome, { recursive: true, force: true });

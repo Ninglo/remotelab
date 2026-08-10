@@ -2,6 +2,11 @@ import { readFile, readdir, stat } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
+import {
+  PRODUCT_DEFAULT_CODEX_EFFORT,
+  PRODUCT_DEFAULT_CODEX_MODEL,
+  isStaleCodexModelId,
+} from '../lib/legacy-micro-agent.mjs';
 
 // Claude Code has no model cache file — hardcode the known aliases.
 // These alias names are stable; the full model IDs behind them update automatically.
@@ -22,7 +27,7 @@ const HARDCODED_CODEX_MODELS = Object.freeze([
     id: 'gpt-5.6-sol',
     label: 'GPT-5.6-Sol',
     effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultEffort: 'low',
+    defaultEffort: PRODUCT_DEFAULT_CODEX_EFFORT,
   },
   {
     id: 'gpt-5.6-terra',
@@ -265,6 +270,16 @@ function buildCodexResponse(models = [], preferredDefaultModel = '', preferredDe
   };
 }
 
+function resolveCodexDefaultModel(configuredModel = '', recentModels = []) {
+  for (const candidate of [configuredModel, ...(Array.isArray(recentModels) ? recentModels : [])]) {
+    const normalized = trimString(candidate);
+    if (normalized && !isStaleCodexModelId(normalized)) {
+      return normalized;
+    }
+  }
+  return PRODUCT_DEFAULT_CODEX_MODEL;
+}
+
 async function readCodexConfiguredSettings(homeDir) {
   try {
     const raw = await readFile(join(homeDir, '.codex', 'config.toml'), 'utf-8');
@@ -401,6 +416,7 @@ async function getCodexModels() {
   const configuredSettings = await readCodexConfiguredSettings(homeDir);
   const configuredModel = configuredSettings.model;
   const recentModels = await readCodexRecentModels(homeDir);
+  const defaultModel = resolveCodexDefaultModel(configuredModel, recentModels);
   const modelMap = createBaseCodexModelMap();
 
   try {
@@ -423,7 +439,7 @@ async function getCodexModels() {
   }
 
   const prioritizedModelIds = [...new Set(
-    [configuredModel, ...recentModels, ...HARDCODED_CODEX_MODEL_IDS]
+    [defaultModel, configuredModel, ...recentModels, ...HARDCODED_CODEX_MODEL_IDS]
       .map((modelId) => trimString(modelId))
       .filter(Boolean),
   )];
@@ -435,8 +451,8 @@ async function getCodexModels() {
   ];
   codexModelsCache = buildCodexResponse(
     orderedModels,
-    configuredModel || recentModels[0] || HARDCODED_CODEX_MODEL_IDS[0] || '',
-    configuredSettings.effort,
+    defaultModel || HARDCODED_CODEX_MODEL_IDS[0] || '',
+    configuredSettings.effort || PRODUCT_DEFAULT_CODEX_EFFORT,
   );
   return codexModelsCache;
 }

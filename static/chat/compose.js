@@ -492,6 +492,8 @@ function getComposerPendingBaselineEventSeq(sessionId = currentSessionId) {
 }
 
 function syncComposerPendingUi() {
+  const preserveBottomPin = window.RemoteLabLayout?.preserveBottomPinnedMessageViewport;
+  const applyPendingUi = () => {
   const pendingForCurrentSession = isComposerPendingForCurrentSession();
   const pendingSend = getComposerPendingSendSnapshot();
   const blockingPendingForCurrentSession = isComposerBlockingForSession(currentSessionId);
@@ -522,6 +524,13 @@ function syncComposerPendingUi() {
       : t("compose.pending.sending");
   }
   composerPendingState.classList.add("visible");
+  };
+
+  if (typeof preserveBottomPin === "function") {
+    preserveBottomPin(applyPendingUi, { reason: "composer-pending-ui" });
+    return;
+  }
+  applyPendingUi();
 }
 
 function clearComposerAcceptedSendArtifacts(completedSend) {
@@ -973,9 +982,17 @@ function setManualInputHeight(height, { persist = true } = {}) {
 
 function autoResizeInput() {
   if (isManualInputHeightActive()) return;
-  msgInput.style.height = "auto";
-  const newH = clampInputHeight(msgInput.scrollHeight);
-  msgInput.style.height = newH + "px";
+  const preserveBottomPin = window.RemoteLabLayout?.preserveBottomPinnedMessageViewport;
+  const applyResize = () => {
+    msgInput.style.height = "auto";
+    const newH = clampInputHeight(msgInput.scrollHeight);
+    msgInput.style.height = newH + "px";
+  };
+  if (typeof preserveBottomPin === "function") {
+    preserveBottomPin(applyResize, { reason: "composer-auto-resize" });
+    return;
+  }
+  applyResize();
 }
 
 function restoreSavedInputHeight() {

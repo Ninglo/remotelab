@@ -42,6 +42,19 @@ assert.deepEqual(confirmationReply, {
   reason: 'empty_assistant_reply',
 });
 
+const attachmentOnlyReply = decideConnectorUserVisibleReply({
+  replyText: '',
+  hasAttachments: true,
+  duplicate: false,
+  silentConfirmationText: '已收到。',
+});
+assert.deepEqual(attachmentOnlyReply, {
+  action: 'send_reply',
+  text: '',
+  status: 'sent',
+  reason: '',
+});
+
 assert.equal(
   buildConnectorFailureReply({ textPreview: '帮我看看这个问题' }, ''),
   '我收到了你的消息，但这次生成回复失败了。你可以稍后再发一次。',

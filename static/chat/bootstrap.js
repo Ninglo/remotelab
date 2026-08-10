@@ -103,6 +103,10 @@ function normalizeBootstrapAuthInfo(raw) {
       principalKind: normalizeBootstrapText(raw.principalKind) || "owner",
       surfaceMode: "owner",
       capabilities: normalizeBootstrapCapabilities(raw.capabilities, "owner"),
+      accountId: normalizeBootstrapText(raw.accountId) || "owner",
+      accountName: normalizeBootstrapText(raw.accountName) || "Owner",
+      accountUsername: normalizeBootstrapText(raw.accountUsername),
+      accountKind: normalizeBootstrapText(raw.accountKind) === "member" ? "member" : "admin",
     };
     if (preferredLanguage) info.preferredLanguage = preferredLanguage;
     return info;
@@ -135,6 +139,31 @@ function normalizeBootstrapAuthInfo(raw) {
 }
 
 const bootstrapAuthInfo = normalizeBootstrapAuthInfo(pageBootstrap.auth);
+
+function normalizeTeamSessionViewAccount(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = normalizeBootstrapText(raw.id);
+  if (!id) return null;
+  return {
+    id,
+    name: normalizeBootstrapText(raw.name) || id,
+    username: normalizeBootstrapText(raw.username),
+    kind: normalizeBootstrapText(raw.kind) === "member" ? "member" : "admin",
+  };
+}
+
+function normalizeTeamSessionView(raw) {
+  if (!raw || typeof raw !== "object") {
+    return { enabled: false, currentAccount: null, canManage: false };
+  }
+  return {
+    enabled: raw.enabled === true,
+    currentAccount: normalizeTeamSessionViewAccount(raw.currentAccount),
+    canManage: raw.canManage === true,
+  };
+}
+
+const bootstrapTeamSessionView = normalizeTeamSessionView(pageBootstrap.teamSessionView);
 
 function normalizeBootstrapAssetUploads(raw) {
   if (!raw || typeof raw !== "object") {
@@ -229,6 +258,12 @@ function getBootstrapAuthInfo() {
     currentAgent: bootstrapAuthInfo.currentAgent
       ? { ...bootstrapAuthInfo.currentAgent }
       : undefined,
+    teamSessionView: {
+      ...bootstrapTeamSessionView,
+      currentAccount: bootstrapTeamSessionView.currentAccount
+        ? { ...bootstrapTeamSessionView.currentAccount }
+        : null,
+    },
   };
 }
 
@@ -402,6 +437,7 @@ const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
 const tabAgents = document.getElementById("tabAgents");
 const tabSettings = document.getElementById("tabSettings");
+const accountFilterSelect = document.getElementById("accountFilterSelect");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const agentsPanel = document.getElementById("agentsPanel");
 const settingsPanel = document.getElementById("settingsPanel");
@@ -451,11 +487,13 @@ const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
 const LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeAppFilter";
 const ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeSourceFilter";
+const ACTIVE_ACCOUNT_FILTER_STORAGE_KEY = "activeAccountFilter";
 const LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY = "sessionSendFailures";
 const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
 const UI_THEME_STORAGE_KEY = "remotelab.theme";
 const FILTER_ALL_VALUE = "__all__";
+const ACCOUNT_FILTER_ADMIN_VALUE = "__admin__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
 const SOURCE_FILTER_FEISHU_VALUE = "feishu";
 const SOURCE_FILTER_EMAIL_VALUE = "email";
@@ -688,6 +726,7 @@ window.addEventListener("storage", (event) => {
 
 window.addEventListener("remotelab:localechange", () => {
   applyThemeTextOverrides(currentThemePreference);
+  if (typeof refreshAppCatalog === "function") refreshAppCatalog();
 });
 
 function normalizeSidebarTab(tab) {
@@ -743,6 +782,7 @@ let archivedSessionsLoaded = false;
 let archivedSessionsLoading = false;
 let archivedSessionsRefreshPromise = null;
 let visitorMode = false;
+let teamSessionView = { ...bootstrapTeamSessionView };
 let surfaceMode = bootstrapAuthInfo?.surfaceMode || "owner";
 let principalKind = bootstrapAuthInfo?.principalKind
   || (bootstrapAuthInfo?.role === "visitor" ? "visitor" : "owner");
@@ -1002,6 +1042,31 @@ function isAgentScopedMode() {
   return surfaceMode === "agent_scoped";
 }
 
+function applyTeamSessionViewState(raw) {
+  teamSessionView = normalizeTeamSessionView(raw);
+  if (typeof refreshAppCatalog === "function") refreshAppCatalog();
+  return teamSessionView;
+}
+
+function isTeamMemberSessionView() {
+  return teamSessionView?.enabled === true
+    && teamSessionView?.currentAccount?.kind === "member"
+    && !!teamSessionView.currentAccount.id;
+}
+
+function canManageTeamSessionView() {
+  return !visitorMode && teamSessionView?.canManage === true;
+}
+
+function matchesTeamSessionView(session) {
+  if (!isTeamMemberSessionView()) return true;
+  return normalizeBootstrapText(session?.userId) === teamSessionView.currentAccount.id;
+}
+
+function filterSessionsForTeamSessionView(entries) {
+  return (Array.isArray(entries) ? entries : []).filter(matchesTeamSessionView);
+}
+
 function getActiveAuthCapabilities() {
   return authCapabilities
     ? { ...authCapabilities }
@@ -1065,9 +1130,10 @@ let currentTokens = 0;
 const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
-const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.5";
-const PRODUCT_DEFAULT_CODEX_EFFORT = "xhigh";
-const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "xhigh-v1";
+const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+const PRODUCT_DEFAULT_CODEX_EFFORT = "medium";
+const RETIRED_CODEX_MODEL_IDS = new Set([]);
+const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "medium-v1";
 
 function normalizeStoredToolId(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -1082,6 +1148,35 @@ function normalizeStoredAgentTemplateName(value) {
   return typeof value === "string"
     ? value.trim().replace(/\s+/g, " ")
     : "";
+}
+
+function parseVersionedGptModelId(value) {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  const match = normalized.match(/^gpt-(\d+)\.(\d+)(?:-|$)/);
+  if (!match) return null;
+  return {
+    major: Number.parseInt(match[1], 10),
+    minor: Number.parseInt(match[2], 10),
+  };
+}
+
+function isStaleCodexModelId(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized || normalized === PRODUCT_DEFAULT_CODEX_MODEL) return false;
+  if (RETIRED_CODEX_MODEL_IDS.has(normalized)) return true;
+  const modelVersion = parseVersionedGptModelId(normalized);
+  const defaultVersion = parseVersionedGptModelId(PRODUCT_DEFAULT_CODEX_MODEL);
+  if (!modelVersion || !defaultVersion) return false;
+  if (modelVersion.major !== defaultVersion.major) {
+    return modelVersion.major < defaultVersion.major;
+  }
+  return modelVersion.minor < defaultVersion.minor;
+}
+
+function normalizeStoredCodexModelId(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized) return "";
+  return isStaleCodexModelId(normalized) ? PRODUCT_DEFAULT_CODEX_MODEL : normalized;
 }
 
 function derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool) {
@@ -1117,7 +1212,18 @@ function migrateLegacyMicroAgentLocalStorage() {
   }
 }
 
+function migrateRetiredCodexModelLocalStorage() {
+  const storageKey = `selectedModel_${DEFAULT_TOOL_ID}`;
+  const storedModel = typeof localStorage.getItem(storageKey) === "string"
+    ? localStorage.getItem(storageKey).trim()
+    : "";
+  const normalizedModel = normalizeStoredCodexModelId(storedModel);
+  if (!normalizedModel || normalizedModel === storedModel) return;
+  localStorage.setItem(storageKey, normalizedModel);
+}
+
 migrateLegacyMicroAgentLocalStorage();
+migrateRetiredCodexModelLocalStorage();
 
 function migrateCodexEffortDefaultLocalStorage() {
   const migrationKey = "codexEffortDefaultMigration";

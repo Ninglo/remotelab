@@ -265,10 +265,91 @@ function createEvent(type, fields = {}) {
   assert.equal(result.externalId, 'feishu_msg_1');
   assert.equal(requests.length, 1);
   assert.equal(requests[0].summary.chatId, 'oc_chat_1');
-  assert.equal(requests[0].uuid, 'resp_feishu_1:feishu:0:content');
+  assert.equal(requests[0].uuid, 'resp_feishu_1:feishu:0:content:text');
   assert.match(requests[0].text, /处理中。/);
   assert.match(requests[0].text, /\/chat\/sess_feishu_1/);
   assert.equal(requests[0].mentions.length, 1);
+}
+
+{
+  const partCalls = [];
+  let secondAttachmentAttempts = 0;
+  const transport = createFeishuConnectorTransport({
+    runtime: { appClient: {} },
+    summary: { chatId: 'oc_chat_attachments_1', mentions: [] },
+    sendFeishuTextImpl: async (_runtime, _summary, text, uuid) => {
+      partCalls.push({ kind: 'text', text, uuid });
+      return { message_id: 'feishu_text_attachments_1' };
+    },
+    sendFeishuAttachmentImpl: async (_runtime, _summary, attachment, uuid) => {
+      partCalls.push({ kind: 'attachment', name: attachment.originalName, uuid });
+      if (attachment.originalName === 'second.csv') {
+        secondAttachmentAttempts += 1;
+        if (secondAttachmentAttempts === 1) {
+          throw new Error('temporary attachment send failure');
+        }
+      }
+      return { message_id: `feishu_${attachment.originalName}` };
+    },
+  });
+  const driver = new ConnectorDriver({
+    targetId: 'feishu:chat_attachments_1',
+    transport,
+    sleep: async () => {},
+  });
+
+  const result = await driver.dispatchMessage({
+    responseId: 'resp_feishu_attachments_1',
+    kind: 'content',
+    text: '文件已经生成。',
+    attachments: [
+      { assetId: 'fasset_first', originalName: 'first.pdf' },
+      { assetId: 'fasset_second', originalName: 'second.csv' },
+    ],
+    order: 0,
+  });
+
+  assert.equal(result.record.state, 'delivered');
+  assert.equal(result.record.attempts, 2);
+  assert.deepEqual(partCalls.map((call) => call.kind), [
+    'text',
+    'attachment',
+    'attachment',
+    'attachment',
+  ]);
+  assert.equal(partCalls.filter((call) => call.kind === 'text').length, 1, 'transport retries must not duplicate the text part');
+  assert.equal(partCalls.filter((call) => call.name === 'first.pdf').length, 1, 'transport retries must not duplicate delivered files');
+  assert.equal(partCalls.filter((call) => call.name === 'second.csv').length, 2, 'only the failed file should be retried');
+  assert.match(partCalls[0].uuid, /:text$/);
+  assert.match(partCalls[1].uuid, /:attachment:0$/);
+  assert.match(partCalls[2].uuid, /:attachment:1$/);
+}
+
+{
+  const attachmentCalls = [];
+  const transport = createFeishuConnectorTransport({
+    runtime: { appClient: {} },
+    summary: { chatId: 'oc_chat_attachment_only_1' },
+    sendFeishuTextImpl: async () => {
+      throw new Error('attachment-only delivery must not send an empty text message');
+    },
+    sendFeishuAttachmentImpl: async (_runtime, _summary, attachment) => {
+      attachmentCalls.push(attachment.originalName);
+      return { message_id: 'feishu_attachment_only_1' };
+    },
+  });
+
+  const result = await transport.send({
+    messageId: 'msg_feishu_attachment_only_1',
+    responseId: 'resp_feishu_attachment_only_1',
+    kind: 'content',
+    text: '',
+    attachments: [{ originalName: 'only.txt' }],
+    order: 0,
+    idempotencyKey: 'resp_feishu_attachment_only_1:feishu:0:content',
+  });
+  assert.equal(result.state, 'delivered');
+  assert.deepEqual(attachmentCalls, ['only.txt']);
 }
 
 {

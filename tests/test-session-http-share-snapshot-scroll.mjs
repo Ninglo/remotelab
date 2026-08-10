@@ -170,6 +170,7 @@ function createContext({ shareSnapshotMode = false, entryMode = 'resume' } = {})
     renderSessionList() {},
     clearMessages() {
       messagesInner.children = [];
+      context.messagesEl.scrollTop = 0;
     },
     showEmpty() {},
     scrollToBottom() {
@@ -258,8 +259,8 @@ await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
   viewportIntent: 'session_entry',
 });
 
-assert.equal(regularContext.__metrics.scrollNodeToTopCalls, 1, 'regular sessions should keep focusing the latest user turn');
-assert.equal(regularContext.messagesEl.scrollTop, 680, 'regular sessions should not be forced back to the top');
+assert.equal(regularContext.__metrics.scrollNodeToTopCalls, 0, 'regular sessions should not jump back to the latest user prompt');
+assert.equal(regularContext.__metrics.scrollToBottomCalls, 1, 'regular sessions should open on the latest available content');
 
 const readContext = createContext({ shareSnapshotMode: false, entryMode: 'read' });
 vm.runInNewContext(sessionHttpSource, readContext, { filename: 'static/chat/session-http.js' });
@@ -286,9 +287,9 @@ await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
 });
 
 assert.equal(
-  regularContext.__metrics.scrollNodeToTopCalls,
+  regularContext.__metrics.scrollToBottomCalls,
   1,
-  'regular sessions should only focus the latest user turn once while that session stays open',
+  'a duplicate refresh for the already-rendered session should not issue another scroll command',
 );
 
 regularContext.currentSessionId = 'session_other';
@@ -298,13 +299,14 @@ await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
 });
 
 assert.equal(
-  regularContext.__metrics.scrollNodeToTopCalls,
+  regularContext.__metrics.scrollToBottomCalls,
   2,
-  'switching to another session should allow the one-time latest-turn focus again',
+  'switching sessions should open the selected session on its latest available content',
 );
 
 const reconnectContext = createContext({ shareSnapshotMode: false });
 vm.runInNewContext(sessionHttpSource, reconnectContext, { filename: 'static/chat/session-http.js' });
+reconnectContext.messagesInner.children = [{ id: 'rendered-before-refresh' }];
 
 await reconnectContext.fetchSessionEvents(reconnectContext.currentSessionId, { runState: 'idle' });
 

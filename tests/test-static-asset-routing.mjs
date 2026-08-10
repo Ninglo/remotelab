@@ -118,7 +118,11 @@ async function main() {
   try {
     const page = await request(port, '/');
     assert.equal(page.status, 200, 'chat page should render');
-    assert.match(page.text, /<script src="\/chat\/icons\.js(?:\?v=[^"]+)?"/);
+    assert.match(
+      page.text,
+      /<script src="\/?chat\/icons\.js(?:\?v=[^"]+)?"/,
+      'the icon loader may be root-relative or relative to the rendered base path',
+    );
 
     const probe = await request(port, `/chat/${probeName}`);
     assert.equal(probe.status, 200, 'new static asset should load without router filename changes');

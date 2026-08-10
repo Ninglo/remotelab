@@ -255,7 +255,7 @@ function buildProxyRequestHeaders(req, { mountPath = '', nonce = '' } = {}) {
   const headers = {};
   for (const [rawKey, rawValue] of Object.entries(req.headers || {})) {
     const key = trimString(rawKey).toLowerCase();
-    if (!key || ['host', 'cookie', 'content-length'].includes(key)) continue;
+    if (!key || ['host', 'cookie', 'content-length', 'transfer-encoding'].includes(key)) continue;
     if (rawValue === undefined) continue;
     headers[key] = Array.isArray(rawValue) ? rawValue.join(', ') : String(rawValue);
   }

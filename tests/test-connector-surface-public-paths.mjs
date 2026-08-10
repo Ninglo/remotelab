@@ -4,6 +4,7 @@ import http from 'http';
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { Readable } from 'stream';
 import { pathToFileURL } from 'url';
 
 const repoRoot = process.cwd();
@@ -50,12 +51,18 @@ function writeJson(res, statusCode, payload) {
 }
 
 const upstream = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
-    ok: true,
-    path: req.url,
-    forwardedPrefix: req.headers['x-forwarded-prefix'] || '',
-  }));
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+  req.on('end', () => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      ok: true,
+      path: req.url,
+      forwardedPrefix: req.headers['x-forwarded-prefix'] || '',
+      transferEncoding: req.headers['transfer-encoding'] || '',
+      body: Buffer.concat(chunks).toString('utf8'),
+    }));
+  });
 });
 
 await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
@@ -99,6 +106,37 @@ try {
     ok: true,
     path: '/webhook?ping=1',
     forwardedPrefix: '/connectors/public-demo',
+    transferEncoding: '',
+    body: '',
+  });
+
+  const chunkedPostReq = Object.assign(Readable.from(['{"ping":true}']), {
+    method: 'POST',
+    url: '/connectors/public-demo/webhook',
+    headers: {
+      'content-type': 'application/json',
+      'transfer-encoding': 'chunked',
+    },
+    socket: {},
+  });
+  const chunkedPostRes = createMockResponse();
+  const chunkedPostHandled = await handleConnectorSurfaceRoutes({
+    req: chunkedPostReq,
+    res: chunkedPostRes,
+    pathname: '/connectors/public-demo/webhook',
+    authSession: null,
+    writeJson,
+    buildHeaders: (headers) => headers,
+    nonce: 'nonce',
+  });
+  assert.equal(chunkedPostHandled, true, 'chunked public connector POST should be proxied');
+  assert.equal(chunkedPostRes.statusCode, 200);
+  assert.deepEqual(JSON.parse(chunkedPostRes.body.toString('utf8')), {
+    ok: true,
+    path: '/webhook',
+    forwardedPrefix: '/connectors/public-demo',
+    transferEncoding: '',
+    body: '{"ping":true}',
   });
 
   const privateReq = {

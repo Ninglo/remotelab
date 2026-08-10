@@ -21,6 +21,33 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-08-10 — shared instances need optional account-based session-list filtering, not RBAC
+
+- Source: direct owner request for company teams sharing one RemoteLab process.
+- User slice: an administrator plus several named coworkers using the same underlying runtime, files, tools, and connectors.
+- Observed friction or ask: a shared session list becomes too large to scan; the administrator should see everything while each normal login sees only sessions tagged to that account.
+- Signal strength: concrete product request with an intentionally narrow implementation boundary.
+- Product implication: reuse the normal login route, add a default-off team session view and lightweight member accounts, stamp member-created sessions with a stable account ID/name, and filter the frontend catalog consistently across active sessions, search, source counts, and archives. Keep direct URLs and APIs shared; this feature is explicitly a display convenience, not authorization, tenancy, or data-security isolation.
+- Promote to: login identity metadata, Settings account controls, session creation ownership, and frontend session-catalog tests.
+
+### 2026-08-07 — live execution must override stale workflow labels
+
+- Source: direct owner feedback after a session kept appearing under `Waiting on you` even though it had accepted the owner's reply and was actively running.
+- User slice: mobile-first owner scanning the session inbox to understand whether work is progressing or needs intervention.
+- Observed friction or ask: the sidebar exposed a stale post-turn `waiting_user` label ahead of current run activity, so the user saw a request for attention without any actual input request in the conversation.
+- Signal strength: concrete product-trust failure reproduced in live session metadata as `workflowState=waiting_user` plus `activity.run.state=running`.
+- Product implication: accepting new user input must immediately clear prior workflow classification, and the inbox projection must always let live busy activity override durable waiting, parked, or completed labels. Reclassify only after the new turn finishes.
+- Promote to: session submission state transitions, inbox attention-band ordering, and regression coverage for stale workflow labels.
+
+### 2026-08-05 — default model upgrades must actively move stale user preferences
+
+- Source: direct owner feedback after noticing RemoteLab kept using an older Codex GPT model even though newer product-default models were available.
+- User slice: mobile-first owner/operator who expects RemoteLab to absorb model-choice maintenance instead of requiring manual picker audits.
+- Observed friction or ask: updating the product default model was not enough because browser/local runtime selections and recent-model detection could continue pinning older GPT versions such as 5.4.
+- Signal strength: concrete product trust issue in the runtime-selection layer.
+- Product implication: runtime defaults should treat stale Codex model selections as upgradeable preferences, not durable user intent, unless a session is explicitly pinned for continuity. Browser localStorage, instance runtime-selection files, connector inheritance, guest defaults, and model-list default resolution should all converge to the current product default while retaining old models only as optional catalog entries.
+- Promote to: runtime-selection defaults, connector inheritance tests, model catalog fallback tests.
+
 ### 2026-06-15 — remote SSH Codex workers should become a first-class execution target
 
 - Source: direct owner architecture request while discussing RemoteLab as the control surface for distributed Codex work.
@@ -30,6 +57,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: the current local-CLI run model should grow a worker/host execution abstraction. Remote host administration and guest-instance lifecycle are useful foundations, but they are not yet a complete remote Codex worker pool; the clean direction is a coordinator that dispatches bounded sessions/runs to registered worker hosts, tracks health/capabilities/load, and aggregates results through RemoteLab's normal session/run history rather than ad hoc SSH transcripts.
 - Promote to: provider/runtime architecture, instance-factory/fleet admin roadmap, session dispatch design.
 - Follow-up: define an MVP contract for one remote host first, then generalize to host registry, per-worker auth, workspace/artifact transfer, usage/compaction telemetry, and fan-out aggregation.
+
+### 2026-08-05 — transcript scrolling must be one cross-device state machine
+
+- Source: repeated direct owner feedback after mobile and desktop scroll fixes regressed each other.
+- User slice: mobile-first owner reading and steering long, actively updating sessions from both phone and desktop.
+- Observed friction or ask: the conversation repeatedly jumped back to older text while streaming or refreshing; device-specific patches made one surface better while destabilizing the other.
+- Signal strength: recurring product-trust failure after several attempted fixes.
+- Product implication: transcript position must have one shared owner with explicit user-intent modes: follow the bottom while already following, preserve the same visible event while reading older content, restore an anchor across full timeline redraws, and never use page-level scroll corrections for keyboard movement. Browser native scroll anchoring and scattered direct `scrollTop` writes must not compete with that owner.
+- Promote to: chat viewport controller, session-redraw regression tests, mobile/desktop layout tests.
 
 ### 2026-06-15 — reply self-check must count visible file delivery as turn completion
 
@@ -318,6 +354,25 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: keep session rows compact and mostly monochrome; retain dots only for running and completed-unread states; use an AI-managed Space switcher above Project groups with no manual classification controls
 - Promote to: session naming/grouping metadata, sidebar information architecture, automatic project maintenance
 - Follow-up: backfill existing Chat UI sessions into a small set of Spaces, then tune Space labels and cardinality from real use rather than fixed rules
+
+### 2026-08-06 — connector replies should carry AI-generated files back to the source conversation
+
+- Source: direct owner request followed by a live Feishu private-chat validation
+- User slice: owner using Feishu as the intake and delivery surface for RemoteLab work
+- Observed friction or ask: files listed under RemoteLab `Attached files` stayed available only in the web session; the corresponding Feishu conversation should receive those files through the platform API without requiring the agent to improvise a second sending workflow
+- Signal strength: end-to-end validation succeeded with one generated text attachment, one body message, one native Feishu file message, and explicit user confirmation that the result looked correct
+- Product implication: reply-publication attachments should remain the canonical cross-surface artifact contract, while each Connector transport owns native upload, rendering, limits, and idempotent multipart delivery
+- Promote to: external message protocol, Connector capability contract, future media-capable Connector implementations
+- Follow-up: validate group/topic and multi-file delivery during normal use; reuse the same publication-to-transport pattern for other Connectors instead of adding source-specific artifact logic to agents
+
+### 2026-08-06 — project headers should avoid overlapping count badges
+
+- Source: direct owner review of the live mobile Projects sidebar
+- User slice: mobile-first owner scanning grouped sessions in a narrow sidebar
+- Observed friction or ask: showing both a highlighted attention count and the project session total creates redundant visual weight; the extra highlighted number does not add enough value to justify another badge
+- Signal strength: direct screenshot-based review of the shipped surface
+- Product implication: keep project headers to one neutral total count; attention may still influence project ordering, but should not add a second numeric badge unless later evidence shows a clear decision-making need
+- Promote to: sidebar information density and status-display defaults
 
 ## Entry template
 

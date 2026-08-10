@@ -558,6 +558,12 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Keep event reads side-effect free. Do not wait until `/events` display time to publish assets or rewrite local paths into download URLs.
 - Favor recall over over-filtering here: if the assistant explicitly names a local file path, it is usually better to publish it than to miss a deliverable the user needed.
 
+### Public Prototypes Must Use Non-Identifying Fixtures (2026-07-25)
+- Removing an original photo or its background does not de-identify the person: transparent face/head cutouts, debug crops, thumbnails, masks, and derived previews remain identifying assets.
+- Before public static publication, inspect the complete output tree recursively, including hidden/debug folders and JSON manifests that reference copied assets. A clean top-level page is not enough.
+- Public prototypes should use synthetic or explicitly non-identifying fixtures. Keep real-person review assets behind an authenticated surface or deliver them privately as controlled attachments.
+- When depublishing sensitive assets, remove the exact origin files from the public root and verify unauthenticated responses for both the page and direct asset URLs; preserving a restricted recovery copy is compatible with immediate access removal.
+
 ### Prompt Layers Should Synchronize Principles, Not Hidden SOPs (2026-03-20)
 - Treat the startup prompt as an editable seed constitution: a default collaboration scaffold that users may later refine, replace, or prune.
 - Keep continuity/handoff separate from scope and task. Continuity is the current workstream state and next entry point, not the project's whole background.

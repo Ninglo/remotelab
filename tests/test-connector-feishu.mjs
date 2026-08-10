@@ -32,6 +32,7 @@ assert.equal(manifest.channel, FEISHU_CONNECTOR_ID);
 assert.equal(manifest.entry, './index.mjs');
 assert.ok(manifest.capabilities.includes('inbound'));
 assert.ok(manifest.capabilities.includes('reply'));
+assert.ok(manifest.capabilities.includes('attachments'));
 assert.ok(FEISHU_SKILLS.some((skill) => skill.name === 'send_message'));
 assert.match(DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT, /Feishu or Lark bot/);
 

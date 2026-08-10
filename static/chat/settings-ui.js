@@ -26,6 +26,285 @@ let connectorSurfacesLoaded = false;
 let expandedConnectorSurfaceId = "";
 let codexAuthState = null;
 let codexAuthPollTimer = null;
+let teamSessionViewSettingsCache = null;
+
+function getTeamSessionViewCopy() {
+  return {
+    title: t("settings.teamSessionView.title"),
+    note: t("settings.teamSessionView.note"),
+    enabled: t("settings.teamSessionView.enabled"),
+    disabled: t("settings.teamSessionView.disabled"),
+    currentAccount: t("settings.teamSessionView.currentAccount"),
+    memberNote: t("settings.teamSessionView.memberNote"),
+    loading: t("settings.teamSessionView.loading"),
+    loadFailed: t("settings.teamSessionView.loadFailed"),
+    namePlaceholder: t("settings.teamSessionView.namePlaceholder"),
+    usernamePlaceholder: t("settings.teamSessionView.usernamePlaceholder"),
+    passwordPlaceholder: t("settings.teamSessionView.passwordPlaceholder"),
+    newPasswordPlaceholder: t("settings.teamSessionView.newPasswordPlaceholder"),
+    create: t("settings.teamSessionView.create"),
+    save: t("settings.teamSessionView.save"),
+    delete: t("settings.teamSessionView.delete"),
+    active: t("settings.teamSessionView.active"),
+    inactive: t("settings.teamSessionView.inactive"),
+    noAccounts: t("settings.teamSessionView.noAccounts"),
+    saved: t("settings.teamSessionView.saved"),
+    saveFailed: t("settings.teamSessionView.saveFailed"),
+    deleteConfirm: t("settings.teamSessionView.deleteConfirm"),
+  };
+}
+
+function ensureTeamSessionViewSection() {
+  if (!settingsPanel || visitorMode) return null;
+  let section = document.getElementById("settingsTeamSessionViewSection");
+  if (section) return section;
+  section = document.createElement("div");
+  section.className = "settings-section";
+  section.id = "settingsTeamSessionViewSection";
+  section.innerHTML = `
+    <div class="settings-section-title" id="settingsTeamSessionViewTitle"></div>
+    <div class="settings-section-note" id="settingsTeamSessionViewNote"></div>
+    <div class="settings-connector-status" id="settingsTeamSessionViewCurrent"></div>
+    <div class="settings-inline-form" id="settingsTeamSessionViewAdmin" hidden>
+      <select class="settings-inline-select" id="settingsTeamSessionViewToggle"></select>
+      <div class="settings-inline-row">
+        <input class="settings-inline-input" id="settingsTeamSessionViewName" type="text" autocomplete="off">
+        <input class="settings-inline-input" id="settingsTeamSessionViewUsername" type="text" autocomplete="off">
+        <input class="settings-inline-input" id="settingsTeamSessionViewPassword" type="password" autocomplete="new-password">
+        <button class="settings-app-btn settings-inline-primary" id="settingsTeamSessionViewCreate" type="button"></button>
+      </div>
+      <div class="settings-apps-list" id="settingsTeamSessionViewAccounts"></div>
+    </div>
+    <div class="settings-app-empty inline-status" id="settingsTeamSessionViewStatus"></div>
+  `;
+  settingsPanel.prepend(section);
+  document.getElementById("settingsTeamSessionViewToggle")?.addEventListener("change", (event) => {
+    void updateTeamSessionViewEnabled(event.currentTarget.value === "enabled");
+  });
+  document.getElementById("settingsTeamSessionViewCreate")?.addEventListener("click", () => {
+    void createTeamSessionViewAccountFromForm();
+  });
+  return section;
+}
+
+function setTeamSessionViewSettingsStatus(message = "") {
+  const status = document.getElementById("settingsTeamSessionViewStatus");
+  if (!status) return;
+  status.hidden = !message;
+  status.textContent = message;
+}
+
+async function requestTeamSessionView(url, options = {}) {
+  return fetchJsonOrRedirect(url, {
+    cache: "no-store",
+    revalidate: false,
+    ...options,
+  });
+}
+
+async function updateTeamSessionViewEnabled(enabled) {
+  const copy = getTeamSessionViewCopy();
+  const toggle = document.getElementById("settingsTeamSessionViewToggle");
+  if (toggle) toggle.disabled = true;
+  setTeamSessionViewSettingsStatus("");
+  try {
+    const data = await requestTeamSessionView("/api/team-session-view", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    teamSessionViewSettingsCache = {
+      ...(teamSessionViewSettingsCache || {}),
+      ...(data?.teamSessionView || {}),
+      accounts: teamSessionViewSettingsCache?.accounts || [],
+    };
+    if (typeof applyTeamSessionViewState === "function") {
+      applyTeamSessionViewState(teamSessionViewSettingsCache);
+    }
+    renderTeamSessionViewSettingsPanel();
+    renderSessionList();
+    setTeamSessionViewSettingsStatus(copy.saved);
+  } catch (error) {
+    setTeamSessionViewSettingsStatus(error?.message || copy.saveFailed);
+    renderTeamSessionViewSettingsPanel();
+  } finally {
+    if (toggle) toggle.disabled = false;
+  }
+}
+
+async function createTeamSessionViewAccountFromForm() {
+  const copy = getTeamSessionViewCopy();
+  const nameInput = document.getElementById("settingsTeamSessionViewName");
+  const usernameInput = document.getElementById("settingsTeamSessionViewUsername");
+  const passwordInput = document.getElementById("settingsTeamSessionViewPassword");
+  const button = document.getElementById("settingsTeamSessionViewCreate");
+  if (button) button.disabled = true;
+  setTeamSessionViewSettingsStatus("");
+  try {
+    await requestTeamSessionView("/api/team-session-view/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: nameInput?.value || "",
+        username: usernameInput?.value || "",
+        password: passwordInput?.value || "",
+      }),
+    });
+    if (nameInput) nameInput.value = "";
+    if (usernameInput) usernameInput.value = "";
+    if (passwordInput) passwordInput.value = "";
+    await renderTeamSessionViewSettingsPanel({ force: true });
+    setTeamSessionViewSettingsStatus(copy.saved);
+  } catch (error) {
+    setTeamSessionViewSettingsStatus(error?.message || copy.saveFailed);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function buildTeamSessionViewAccountCard(account) {
+  const copy = getTeamSessionViewCopy();
+  const card = document.createElement("div");
+  card.className = "settings-app-card";
+
+  const header = document.createElement("div");
+  header.className = "settings-app-card-header";
+  const title = document.createElement("div");
+  title.className = "settings-app-name";
+  title.textContent = account.name || account.username;
+  const state = document.createElement("div");
+  state.className = "settings-app-kind";
+  state.textContent = account.enabled === false ? copy.inactive : copy.active;
+  header.append(title, state);
+  card.appendChild(header);
+
+  const editor = document.createElement("div");
+  editor.className = "settings-app-editor";
+  const nameInput = document.createElement("input");
+  nameInput.className = "settings-inline-input";
+  nameInput.value = account.name || "";
+  nameInput.placeholder = copy.namePlaceholder;
+  const usernameInput = document.createElement("input");
+  usernameInput.className = "settings-inline-input";
+  usernameInput.value = account.username || "";
+  usernameInput.placeholder = copy.usernamePlaceholder;
+  usernameInput.autocomplete = "off";
+  const passwordInput = document.createElement("input");
+  passwordInput.className = "settings-inline-input";
+  passwordInput.type = "password";
+  passwordInput.autocomplete = "new-password";
+  passwordInput.placeholder = copy.newPasswordPlaceholder;
+  const enabledSelect = document.createElement("select");
+  enabledSelect.className = "settings-inline-select";
+  enabledSelect.append(
+    new Option(copy.active, "enabled"),
+    new Option(copy.inactive, "disabled"),
+  );
+  enabledSelect.value = account.enabled === false ? "disabled" : "enabled";
+  editor.append(nameInput, usernameInput, passwordInput, enabledSelect);
+
+  const actions = document.createElement("div");
+  actions.className = "settings-app-actions";
+  const saveButton = document.createElement("button");
+  saveButton.type = "button";
+  saveButton.className = "settings-app-btn";
+  saveButton.textContent = copy.save;
+  saveButton.addEventListener("click", async () => {
+    saveButton.disabled = true;
+    setTeamSessionViewSettingsStatus("");
+    try {
+      await requestTeamSessionView(`/api/team-session-view/accounts/${encodeURIComponent(account.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: nameInput.value,
+          username: usernameInput.value,
+          password: passwordInput.value,
+          enabled: enabledSelect.value === "enabled",
+        }),
+      });
+      await renderTeamSessionViewSettingsPanel({ force: true });
+      setTeamSessionViewSettingsStatus(copy.saved);
+    } catch (error) {
+      setTeamSessionViewSettingsStatus(error?.message || copy.saveFailed);
+      saveButton.disabled = false;
+    }
+  });
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "settings-app-btn";
+  deleteButton.textContent = copy.delete;
+  deleteButton.addEventListener("click", async () => {
+    if (!window.confirm(copy.deleteConfirm)) return;
+    deleteButton.disabled = true;
+    try {
+      await requestTeamSessionView(`/api/team-session-view/accounts/${encodeURIComponent(account.id)}`, {
+        method: "DELETE",
+      });
+      await renderTeamSessionViewSettingsPanel({ force: true });
+    } catch (error) {
+      setTeamSessionViewSettingsStatus(error?.message || copy.saveFailed);
+      deleteButton.disabled = false;
+    }
+  });
+  actions.append(saveButton, deleteButton);
+  editor.appendChild(actions);
+  card.appendChild(editor);
+  return card;
+}
+
+async function renderTeamSessionViewSettingsPanel({ force = false } = {}) {
+  if (!ensureTeamSessionViewSection()) return;
+  const copy = getTeamSessionViewCopy();
+  const title = document.getElementById("settingsTeamSessionViewTitle");
+  const note = document.getElementById("settingsTeamSessionViewNote");
+  const current = document.getElementById("settingsTeamSessionViewCurrent");
+  const admin = document.getElementById("settingsTeamSessionViewAdmin");
+  const toggle = document.getElementById("settingsTeamSessionViewToggle");
+  const accounts = document.getElementById("settingsTeamSessionViewAccounts");
+  const nameInput = document.getElementById("settingsTeamSessionViewName");
+  const usernameInput = document.getElementById("settingsTeamSessionViewUsername");
+  const passwordInput = document.getElementById("settingsTeamSessionViewPassword");
+  const createButton = document.getElementById("settingsTeamSessionViewCreate");
+  title.textContent = copy.title;
+  note.textContent = copy.note;
+  if (force || !teamSessionViewSettingsCache) {
+    setTeamSessionViewSettingsStatus(copy.loading);
+    try {
+      const data = await requestTeamSessionView("/api/team-session-view");
+      teamSessionViewSettingsCache = data?.teamSessionView || null;
+      if (typeof applyTeamSessionViewState === "function") {
+        applyTeamSessionViewState(teamSessionViewSettingsCache);
+      }
+      setTeamSessionViewSettingsStatus("");
+    } catch (error) {
+      setTeamSessionViewSettingsStatus(error?.message || copy.loadFailed);
+      return;
+    }
+  }
+  const view = teamSessionViewSettingsCache || {};
+  const currentAccount = view.currentAccount || {};
+  current.textContent = `${copy.currentAccount}: ${currentAccount.name || currentAccount.username || "—"}`;
+  admin.hidden = view.canManage !== true;
+  if (view.canManage !== true) {
+    setTeamSessionViewSettingsStatus(copy.memberNote);
+    return;
+  }
+  toggle.innerHTML = "";
+  toggle.append(new Option(copy.enabled, "enabled"), new Option(copy.disabled, "disabled"));
+  toggle.value = view.enabled === true ? "enabled" : "disabled";
+  nameInput.placeholder = copy.namePlaceholder;
+  usernameInput.placeholder = copy.usernamePlaceholder;
+  passwordInput.placeholder = copy.passwordPlaceholder;
+  createButton.textContent = copy.create;
+  accounts.innerHTML = "";
+  const items = Array.isArray(view.accounts) ? view.accounts : [];
+  if (items.length === 0) {
+    accounts.innerHTML = `<div class="settings-app-empty">${copy.noAccounts}</div>`;
+  } else {
+    for (const account of items) accounts.appendChild(buildTeamSessionViewAccountCard(account));
+  }
+}
 
 function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
@@ -1399,6 +1678,8 @@ function renderSettingsSessionPresentationPanel() {
 }
 
 initUiLanguageSettings();
+ensureTeamSessionViewSection();
+void renderTeamSessionViewSettingsPanel();
 ensureCodexAuthSection();
 void refreshCodexAuthStatus();
 initThemeSettings();
@@ -1429,6 +1710,7 @@ if (tabAgents && tabAgents.dataset.appsBound !== "true") {
 
 if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
   tabSettings.addEventListener("click", () => {
+    void renderTeamSessionViewSettingsPanel({ force: true });
     void refreshCodexAuthStatus({ force: true });
     void renderSettingsConnectorsPanel({ force: true });
   });
@@ -1436,6 +1718,7 @@ if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
 }
 
 window.addEventListener("remotelab:localechange", () => {
+  void renderTeamSessionViewSettingsPanel();
   renderCodexAuthPanel();
   if (uiLanguageSelect) {
     syncUiLanguageSelect();

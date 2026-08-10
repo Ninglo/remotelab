@@ -40,6 +40,7 @@ import {
   compileFeishuReplyText,
   getSummaryFeishuImageKeys,
   isSupportedRemoteLabInboundMessage,
+  isFeishuDocumentCommentSummary,
   normalizeFeishuMode,
   normalizeReplyText,
   sanitizeIdPart,
@@ -47,6 +48,16 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
   summarizeFeishuLegacyMessageEvent as summarizeLegacyMessageEvent,
 } from '../connectors/feishu/index.mjs';
+import {
+  hydrateFeishuDocumentCommentSummary,
+  sendFeishuCommentReply,
+  summarizeFeishuDocumentCommentEvent,
+} from '../connectors/feishu/comment-flow.mjs';
+import {
+  loadRemoteLabReplyAttachment as loadRemoteLabReplyAttachmentImpl,
+  resolveFeishuOutboundFileType,
+  sendFeishuAttachment as sendFeishuAttachmentImpl,
+} from '../connectors/feishu/reply-attachments.mjs';
 import {
   readFeishuDocument,
   startFeishuDocumentCapability,
@@ -57,6 +68,7 @@ import { createFeishuConnectorTransport } from '../lib/connector-driver-transpor
 import {
   createConnectorSession,
   loadConnectorAssistantReply,
+  normalizeConnectorPublicationAttachments,
   normalizeConnectorPublicationText,
   submitConnectorMessage,
   waitForConnectorPublication,
@@ -1248,6 +1260,10 @@ async function requestRemoteLab(runtime, path, options = {}) {
   return result;
 }
 
+async function loadRemoteLabReplyAttachment(runtime, attachment) {
+  return loadRemoteLabReplyAttachmentImpl(runtime, attachment, { ensureAuthCookie });
+}
+
 async function loadRemoteLabSession(runtime, sessionId) {
   const result = await requestRemoteLab(runtime, `/api/sessions/${sessionId}`);
   if (!result.response.ok || !result.json?.session) {
@@ -1529,9 +1545,12 @@ async function generateRemoteLabReply(runtime, summary) {
   if (publication.state !== 'ready') {
     throw new Error(`reply publication ${publication.state || 'failed'}`);
   }
-  let replyText = normalizeReplyText(normalizeConnectorPublicationText(publication));
+  const replyAttachments = normalizeConnectorPublicationAttachments(publication);
+  let replyText = normalizeReplyText(normalizeConnectorPublicationText(publication, {
+    includeAttachmentFallback: replyAttachments.length === 0,
+  }));
   const finalizedRunId = trimString(publication.finalRunId) || runId || '';
-  if (!replyText) {
+  if (!replyText && replyAttachments.length === 0) {
     const replyEvent = await loadConnectorAssistantReply(requester, session.id, {
       runId: finalizedRunId,
       requestId: submission.requestId,
@@ -1548,7 +1567,8 @@ async function generateRemoteLabReply(runtime, summary) {
     attachmentCount: attachmentResolution.attachments.length,
     attachmentDownloadFailureCount: attachmentResolution.failures.length,
     replyText,
-    silent: !replyText,
+    replyAttachments,
+    silent: !replyText && replyAttachments.length === 0,
   };
 }
 
@@ -1557,6 +1577,9 @@ function isProcessingReactionEnabled(runtime) {
 }
 
 async function addProcessingReaction(runtime, summary) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return null;
+  }
   if (!isProcessingReactionEnabled(runtime)) {
     return null;
   }
@@ -1585,6 +1608,9 @@ async function addProcessingReaction(runtime, summary) {
 }
 
 async function removeProcessingReaction(runtime, summary, reaction) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return false;
+  }
   if (runtime?.config?.processingReaction?.removeOnCompletion === false) {
     return false;
   }
@@ -1606,6 +1632,9 @@ async function removeProcessingReaction(runtime, summary, reaction) {
 }
 
 async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
+  if (isFeishuDocumentCommentSummary(summary)) {
+    return sendFeishuCommentReply(runtime, summary, text);
+  }
   const content = await buildFeishuPostContent(text, mentions, {
     resolveFormulaImage: (formula) => resolveFeishuFormulaImage(runtime, formula),
     onFormulaError: (error, formula) => {
@@ -1650,15 +1679,21 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
   return response.data;
 }
 
+async function sendFeishuAttachment(runtime, summary, attachment, uuid = '') {
+  return sendFeishuAttachmentImpl(runtime, summary, attachment, uuid, { ensureAuthCookie });
+}
+
 async function deliverFeishuVisibleReply(runtime, summary, {
   responseId = '',
   kind = 'content',
   text = '',
-}, sendFeishuTextImpl = sendFeishuText) {
+  attachments = [],
+}, sendFeishuTextImpl = sendFeishuText, sendFeishuAttachmentImpl = sendFeishuAttachment) {
   const transport = createFeishuConnectorTransport({
     runtime,
     summary,
     sendFeishuTextImpl,
+    sendFeishuAttachmentImpl,
   });
   const driver = new ConnectorDriver({
     targetId: buildExternalTriggerId(summary),
@@ -1668,13 +1703,24 @@ async function deliverFeishuVisibleReply(runtime, summary, {
     responseId: trimString(responseId) || buildRequestId(summary),
     kind,
     text,
+    attachments,
     order: 0,
   });
   if (delivery.record.state !== 'delivered') {
     throw new Error(delivery.record.lastError || 'Failed to deliver Feishu reply');
   }
+  const messageIds = (Array.isArray(delivery.record.metadata?.responses)
+    ? delivery.record.metadata.responses
+    : [])
+    .map((result) => trimString(result?.message_id || result?.messageId))
+    .filter(Boolean);
+  const fallbackMessageId = trimString(delivery.record.externalId);
+  if (messageIds.length === 0 && fallbackMessageId) {
+    messageIds.push(fallbackMessageId);
+  }
   return {
-    message_id: delivery.record.externalId || '',
+    message_id: messageIds.at(-1) || fallbackMessageId,
+    message_ids: Array.from(new Set(messageIds)),
   };
 }
 
@@ -1756,7 +1802,13 @@ function stopSourceDeliveryPoller(runtime) {
 }
 
 function isProcessableMessage(summary) {
-  if (!summary?.messageId || !summary?.chatId) return false;
+  if (!summary?.messageId) return false;
+  if (isFeishuDocumentCommentSummary(summary)) {
+    if (!summary?.fileToken || !summary?.fileType || !summary?.commentId) return false;
+    if (summary?.mentionedBot !== true) return false;
+  } else if (!summary?.chatId) {
+    return false;
+  }
   const senderType = trimString(summary?.sender?.senderType).toLowerCase();
   if (senderType && senderType !== 'user') return false;
   return true;
@@ -1932,6 +1984,7 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   const markHandled = helpers.markMessageHandled || markMessageHandled;
   const generateReply = helpers.generateRemoteLabReply || generateRemoteLabReply;
   const sendText = helpers.sendFeishuText || sendFeishuText;
+  const sendAttachment = helpers.sendFeishuAttachment || sendFeishuAttachment;
   const addReaction = helpers.addProcessingReaction || addProcessingReaction;
   const removeReaction = helpers.removeProcessingReaction || removeProcessingReaction;
 
@@ -1948,6 +2001,9 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   runtime.processingMessageIds.add(summary.messageId);
   let processingReaction = null;
   try {
+    if (typeof helpers.hydrateSummary === 'function') {
+      summary = await helpers.hydrateSummary(runtime, summary);
+    }
     const messageType = trimString(summary.messageType).toLowerCase();
     if (messageType && !isSupportedRemoteLabInboundMessage(summary)) {
       await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
@@ -1994,8 +2050,12 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       console.warn(`[feishu-connector] failed to update message index for ${summary.messageId}: ${indexError?.message || indexError}`);
     }
     const replyText = normalizeReplyText(generated.replyText);
+    const replyAttachments = Array.isArray(generated.replyAttachments)
+      ? generated.replyAttachments.filter((attachment) => attachment && typeof attachment === 'object')
+      : [];
     const finalReply = decideConnectorUserVisibleReply({
       replyText,
+      hasAttachments: replyAttachments.length > 0,
       duplicate: generated.duplicate,
       silentConfirmationText: normalizeReplyText(runtime?.config?.silentConfirmationText),
     });
@@ -2018,9 +2078,15 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       responseId: generated.responseId || generated.requestId,
       kind: finalReply.action === 'send_confirmation' ? 'summary' : 'content',
       text: finalReply.text,
-    }, sendText);
+      attachments: finalReply.action === 'send_confirmation' ? [] : replyAttachments,
+    }, sendText, sendAttachment);
     try {
-      await recordFeishuOutboundMessageSession(runtime, summary, generated.sessionId, reply.message_id);
+      const outboundMessageIds = Array.isArray(reply.message_ids) && reply.message_ids.length > 0
+        ? reply.message_ids
+        : [reply.message_id].filter(Boolean);
+      for (const outboundMessageId of outboundMessageIds) {
+        await recordFeishuOutboundMessageSession(runtime, summary, generated.sessionId, outboundMessageId);
+      }
     } catch (indexError) {
       console.warn(`[feishu-connector] failed to update outbound message index for ${reply.message_id || summary.messageId}: ${indexError?.message || indexError}`);
     }
@@ -2032,9 +2098,11 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
       runId: generated.runId,
       requestId: generated.requestId,
       duplicate: generated.duplicate,
+      attachmentCount: replyAttachments.length,
       ...(finalReply.reason ? { reason: finalReply.reason } : {}),
       ...(finalReply.action === 'send_confirmation' ? { confirmationText: finalReply.text } : {}),
       responseMessageId: reply.message_id || '',
+      ...(Array.isArray(reply.message_ids) && reply.message_ids.length > 1 ? { responseMessageIds: reply.message_ids } : {}),
       repliedAt: nowIso(),
     });
     if (finalReply.action === 'send_confirmation') {
@@ -2108,7 +2176,10 @@ export {
   removeProcessingReaction,
   resolveFeishuTopicForkParentSessionId,
   resolveFeishuMessageAttachments,
+  resolveFeishuOutboundFileType,
   readFeishuDocument,
+  loadRemoteLabReplyAttachment,
+  sendFeishuAttachment,
   sendFeishuText,
   processSourceDeliveryOnce,
   startSourceDeliveryPoller,
@@ -2116,6 +2187,9 @@ export {
   stopSourceDeliveryPoller,
   snapshotAccessState,
   summarizeChatMemberUserAddedEvent,
+  summarizeFeishuDocumentCommentEvent,
+  hydrateFeishuDocumentCommentSummary,
+  sendFeishuCommentReply,
   summarizeEvent,
   upsertApprovedChat,
 };
@@ -2187,6 +2261,23 @@ async function main() {
     'im.chat.member.user.added_v1': async (data) => {
       const summary = summarizeChatMemberUserAddedEvent(data);
       enqueueByConversation(runtime, { chatId: summary.chatId, messageId: summary.eventId }, () => handleChatMemberUserAdded(runtime, summary, data, 'im.chat.member.user.added_v1'));
+      return {};
+    },
+    'drive.notice.comment_add_v1': async (data) => {
+      const summary = summarizeFeishuDocumentCommentEvent(data);
+      const allowed = await recordInboundEvent(runtime, summary, data, 'drive.notice.comment_add_v1');
+      if (!summary.mentionedBot) {
+        console.log(`[feishu-connector] no reply sent for ${summary.messageId} (document comment did not mention bot)`);
+        return {};
+      }
+      if (allowed) {
+        enqueueByConversation(runtime, summary, () => handleMessage(
+          runtime,
+          summary,
+          'drive.notice.comment_add_v1',
+          { hydrateSummary: hydrateFeishuDocumentCommentSummary },
+        ));
+      }
       return {};
     },
     message: async (data) => {

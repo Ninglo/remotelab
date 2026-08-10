@@ -1027,7 +1027,13 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       inlineModelSelect.appendChild(opt);
     }
     // Restore saved model for this tool
-    const savedModel = localStorage.getItem(`selectedModel_${toolId}`) || "";
+    const rawSavedModel = localStorage.getItem(`selectedModel_${toolId}`) || "";
+    const savedModel = toolId === "codex" && typeof normalizeStoredCodexModelId === "function"
+      ? normalizeStoredCodexModelId(rawSavedModel)
+      : rawSavedModel;
+    if (savedModel !== rawSavedModel) {
+      localStorage.setItem(`selectedModel_${toolId}`, savedModel);
+    }
     const defaultModel = data.defaultModel || "";
     selectedModel = sessionPreferences?.hasModel ? sessionPreferences.model : savedModel;
     if (selectedModel && currentToolModels.some((m) => m.id === selectedModel)) {
