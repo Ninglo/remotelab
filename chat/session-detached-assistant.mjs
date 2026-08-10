@@ -75,6 +75,7 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
       cwd: resolvedFolder,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: false,
     });
     proc.stdin.end();
 
