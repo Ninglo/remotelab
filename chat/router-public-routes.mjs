@@ -27,7 +27,7 @@ import {
   normalizeInstallHandoffToken,
   redeemInstallHandoff,
 } from '../lib/install-handoffs.mjs';
-import { readBody } from '../lib/utils.mjs';
+import { escapeHtml, readBody } from '../lib/utils.mjs';
 import { buildAttachmentContentDisposition } from './file-assets.mjs';
 import { getShareAsset, getShareSnapshot } from './shares.mjs';
 import {
@@ -61,6 +61,14 @@ export async function handlePublicRoutes({
 }) {
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function safeLoginNextPath(value) {
+  const path = trimString(value);
+  if (!path || path.length > 2048 || !path.startsWith('/') || path.startsWith('//') || /[\\\u0000-\u001f\u007f]/.test(path)) {
+    return '/';
+  }
+  return path;
 }
 
 function normalizeForwardedPrefix(value) {
@@ -310,6 +318,7 @@ if (pathname === '/login' && req.method === 'POST') {
   try { body = await readBody(req, 4096); } catch { body = ''; }
   const params = new URLSearchParams(body);
   const type = params.get('type');
+  const nextPath = safeLoginNextPath(params.get('next'));
   let account = null;
   if (type === 'token') {
     if (await verifyTokenAsync(params.get('token') || '')) {
@@ -330,11 +339,12 @@ if (pathname === '/login' && req.method === 'POST') {
       ...account,
     });
     await saveAuthSessionsAsync();
-    res.writeHead(302, { 'Location': '/', 'Set-Cookie': setCookie(sessionToken) });
+    res.writeHead(302, { 'Location': nextPath, 'Set-Cookie': setCookie(sessionToken) });
   } else {
     recordFailedAttempt(ip);
     const mode = type === 'password' ? 'pw' : 'token';
-    res.writeHead(302, { 'Location': `/login?error=1&mode=${mode}` });
+    const nextParam = nextPath === '/' ? '' : `&next=${encodeURIComponent(nextPath)}`;
+    res.writeHead(302, { 'Location': `/login?error=1&mode=${mode}${nextParam}` });
   }
   res.end();
   return true;
@@ -345,6 +355,7 @@ if (pathname === '/login') {
   const requestStartMs = performance.now();
   const hasError = parsedUrl.query.error === '1';
   const mode = parsedUrl.query.mode === 'token' ? 'token' : 'pw';
+  const nextPath = safeLoginNextPath(parsedUrl.query.next);
   let loginHtml;
   const buildStartMs = performance.now();
   const pageBuildInfo = await getPageBuildInfo();
@@ -357,6 +368,7 @@ if (pathname === '/login') {
     ...buildTemplateReplacements(pageBuildInfo, getRequestProductBasePath(req)),
     ERROR_CLASS: hasError ? '' : 'hidden',
     MODE: mode,
+    NEXT_PATH: escapeHtml(nextPath),
   });
   const renderMs = performance.now() - renderStartMs;
   const totalMs = performance.now() - requestStartMs;

@@ -878,6 +878,51 @@ async function main() {
     assert.match(page.text, /id="settingsInstallStatus"/, 'settings page should expose install status copy');
     assert.match(page.text, /class="voice-btn-meter"/, 'voice button should expose a live meter surface');
 
+    const loginWithNextPage = await request(port, 'GET', '/login?next=%2Foutreach', null, { Cookie: '' });
+    assert.equal(loginWithNextPage.status, 200, 'login page should accept a local return path');
+    assert.equal(
+      (loginWithNextPage.text.match(/name="next" value="\/outreach"/g) || []).length,
+      2,
+      'both login modes should preserve the return path',
+    );
+
+    const loginWithNext = await fetch(`http://127.0.0.1:${port}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        type: 'token',
+        token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        next: '/outreach',
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(loginWithNext.status, 302, 'successful login should redirect to the requested local path');
+    assert.equal(loginWithNext.headers.get('location'), '/outreach');
+
+    const rejectedExternalNext = await fetch(`http://127.0.0.1:${port}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        type: 'token',
+        token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        next: '//evil.example',
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(rejectedExternalNext.headers.get('location'), '/', 'login must reject protocol-relative redirects');
+
+    const rejectedBackslashNext = await fetch(`http://127.0.0.1:${port}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        type: 'token',
+        token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        next: '/\\evil.example',
+      }),
+      redirect: 'manual',
+    });
+    assert.equal(rejectedBackslashNext.headers.get('location'), '/', 'login must reject backslash redirects');
+
     const tokenLogin = await request(
       port,
       'GET',

@@ -195,6 +195,7 @@
     <!-- Password form -->
     <form id="pw-form" method="POST" action="login">
       <input type="hidden" name="type" value="password">
+      <input type="hidden" name="next" value="{{NEXT_PATH}}">
       <label for="username-input" data-i18n="login.username">Username</label>
       <input type="text" id="username-input" name="username"
              placeholder="Enter username" data-i18n-placeholder="login.usernamePlaceholder"
@@ -209,6 +210,7 @@
     <!-- Token form -->
     <form id="token-form" class="hidden" method="POST" action="login">
       <input type="hidden" name="type" value="token">
+      <input type="hidden" name="next" value="{{NEXT_PATH}}">
       <label for="token-input" data-i18n="login.accessToken">Access Token</label>
       <input type="text" id="token-input" name="token" class="mono"
              placeholder="Paste your token" data-i18n-placeholder="login.tokenPlaceholder"
