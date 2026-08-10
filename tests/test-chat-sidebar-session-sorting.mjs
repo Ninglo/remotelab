@@ -59,6 +59,7 @@ const getProjectGroupLatestActivityTimeSource = extractFunctionSource(sessionLis
 const getProjectGroupOrganizerOrderSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupOrganizerOrder');
 const compareProjectGroupsByLatestActivitySource = extractFunctionSource(sessionListUiSource, 'compareProjectGroupsByLatestActivity');
 const sortProjectGroupsByLatestActivitySource = extractFunctionSource(sessionListUiSource, 'sortProjectGroupsByLatestActivity');
+const renderProjectsViewSource = extractFunctionSource(sessionListUiSource, 'renderProjectsView');
 
 const context = {
   console,
@@ -157,6 +158,7 @@ vm.runInNewContext(
     getProjectGroupOrganizerOrderSource,
     compareProjectGroupsByLatestActivitySource,
     sortProjectGroupsByLatestActivitySource,
+    renderProjectsViewSource,
   ].join('\n'),
   context,
   { filename: 'static/chat/session-list-ui.js' },
@@ -249,5 +251,34 @@ assert.deepEqual(
   ['needs-attention', 'organized-first'],
   'Projects view should raise groups needing attention before organized order',
 );
+
+function createElement() {
+  return {
+    className: '',
+    innerHTML: '',
+    children: [],
+    addEventListener() {},
+    appendChild(child) {
+      this.children.push(child);
+    },
+  };
+}
+
+context.document = { createElement };
+context.collapsedFolders = {};
+context.localStorage = { setItem() {} };
+context.renderUiIcon = () => '';
+context.esc = (value) => String(value);
+context.getSessionGroupInfo = () => ({ key: 'content', label: 'Content', title: 'Content' });
+context.createActiveSessionItem = (session) => ({ session });
+context.sessionList = createElement();
+context.renderProjectsView([
+  { id: 'needs-attention', attentionBand: 1 },
+  { id: 'active', attentionBand: 3 },
+]);
+
+const projectHeader = context.sessionList.children[0]?.children[0];
+assert.match(projectHeader?.innerHTML || '', /class="folder-count">2<\/span>/, 'Projects view should keep the group total');
+assert.doesNotMatch(projectHeader?.innerHTML || '', /folder-attention-count/, 'Projects view should not render an extra attention count badge');
 
 console.log('test-chat-sidebar-session-sorting: ok');

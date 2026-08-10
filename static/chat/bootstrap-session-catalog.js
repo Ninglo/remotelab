@@ -345,7 +345,8 @@ function matchesSessionSpace(session, spaceFilter = activeSessionSpace) {
 }
 
 function matchesCurrentFilters(session) {
-  return matchesSourceFilter(session, activeSourceFilter)
+  return matchesTeamSessionView(session)
+    && matchesSourceFilter(session, activeSourceFilter)
     && matchesSessionSpace(session, activeSessionSpace)
     && matchesSearchQuery(session);
 }
@@ -538,7 +539,7 @@ function getActiveSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && !session.archived && !session.internalRole);
+    .filter((session) => session && !session.archived && !session.internalRole && matchesTeamSessionView(session));
 }
 
 function getArchivedSessions() {
@@ -548,7 +549,7 @@ function getArchivedSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && session.archived && !session.internalRole)
+    .filter((session) => session && session.archived && !session.internalRole && matchesTeamSessionView(session))
     .slice()
     .sort((a, b) => getArchivedSessionSortTime(b) - getArchivedSessionSortTime(a));
 }

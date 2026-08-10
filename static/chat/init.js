@@ -487,6 +487,9 @@ async function initApp() {
   }
 
   const authInfo = await resolveInitialAuthInfo();
+  if (authInfo?.teamSessionView && typeof applyTeamSessionViewState === "function") {
+    applyTeamSessionViewState(authInfo.teamSessionView);
+  }
 
   const url = new URL(window.location.href);
   if (url.searchParams.has("visitor")) {

@@ -4107,6 +4107,24 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     throw error;
   }
 
+  const acceptsNewUserInput = !options.internalOperation && options.recordUserMessage !== false;
+  if (
+    acceptsNewUserInput
+    && (
+      normalizeSessionWorkflowState(sessionMeta?.workflowState || '')
+      || normalizeSessionWorkflowPriority(sessionMeta?.workflowPriority || '')
+    )
+  ) {
+    const clearedWorkflow = await updateSessionWorkflowClassification(sessionId, {
+      workflowState: '',
+      workflowPriority: '',
+    });
+    if (clearedWorkflow) {
+      session = clearedWorkflow;
+      sessionMeta = await findSessionMeta(sessionId) || sessionMeta;
+    }
+  }
+
   if ((hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
     const queuedImages = options.preSavedAttachments?.length > 0
       ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)

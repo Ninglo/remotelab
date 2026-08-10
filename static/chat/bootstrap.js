@@ -103,6 +103,10 @@ function normalizeBootstrapAuthInfo(raw) {
       principalKind: normalizeBootstrapText(raw.principalKind) || "owner",
       surfaceMode: "owner",
       capabilities: normalizeBootstrapCapabilities(raw.capabilities, "owner"),
+      accountId: normalizeBootstrapText(raw.accountId) || "owner",
+      accountName: normalizeBootstrapText(raw.accountName) || "Owner",
+      accountUsername: normalizeBootstrapText(raw.accountUsername),
+      accountKind: normalizeBootstrapText(raw.accountKind) === "member" ? "member" : "admin",
     };
     if (preferredLanguage) info.preferredLanguage = preferredLanguage;
     return info;
@@ -135,6 +139,31 @@ function normalizeBootstrapAuthInfo(raw) {
 }
 
 const bootstrapAuthInfo = normalizeBootstrapAuthInfo(pageBootstrap.auth);
+
+function normalizeTeamSessionViewAccount(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = normalizeBootstrapText(raw.id);
+  if (!id) return null;
+  return {
+    id,
+    name: normalizeBootstrapText(raw.name) || id,
+    username: normalizeBootstrapText(raw.username),
+    kind: normalizeBootstrapText(raw.kind) === "member" ? "member" : "admin",
+  };
+}
+
+function normalizeTeamSessionView(raw) {
+  if (!raw || typeof raw !== "object") {
+    return { enabled: false, currentAccount: null, canManage: false };
+  }
+  return {
+    enabled: raw.enabled === true,
+    currentAccount: normalizeTeamSessionViewAccount(raw.currentAccount),
+    canManage: raw.canManage === true,
+  };
+}
+
+const bootstrapTeamSessionView = normalizeTeamSessionView(pageBootstrap.teamSessionView);
 
 function normalizeBootstrapAssetUploads(raw) {
   if (!raw || typeof raw !== "object") {
@@ -229,6 +258,12 @@ function getBootstrapAuthInfo() {
     currentAgent: bootstrapAuthInfo.currentAgent
       ? { ...bootstrapAuthInfo.currentAgent }
       : undefined,
+    teamSessionView: {
+      ...bootstrapTeamSessionView,
+      currentAccount: bootstrapTeamSessionView.currentAccount
+        ? { ...bootstrapTeamSessionView.currentAccount }
+        : null,
+    },
   };
 }
 
@@ -743,6 +778,7 @@ let archivedSessionsLoaded = false;
 let archivedSessionsLoading = false;
 let archivedSessionsRefreshPromise = null;
 let visitorMode = false;
+let teamSessionView = { ...bootstrapTeamSessionView };
 let surfaceMode = bootstrapAuthInfo?.surfaceMode || "owner";
 let principalKind = bootstrapAuthInfo?.principalKind
   || (bootstrapAuthInfo?.role === "visitor" ? "visitor" : "owner");
@@ -1000,6 +1036,30 @@ function shouldUseVisitorRequests() {
 
 function isAgentScopedMode() {
   return surfaceMode === "agent_scoped";
+}
+
+function applyTeamSessionViewState(raw) {
+  teamSessionView = normalizeTeamSessionView(raw);
+  return teamSessionView;
+}
+
+function isTeamMemberSessionView() {
+  return teamSessionView?.enabled === true
+    && teamSessionView?.currentAccount?.kind === "member"
+    && !!teamSessionView.currentAccount.id;
+}
+
+function canManageTeamSessionView() {
+  return !visitorMode && teamSessionView?.canManage === true;
+}
+
+function matchesTeamSessionView(session) {
+  if (!isTeamMemberSessionView()) return true;
+  return normalizeBootstrapText(session?.userId) === teamSessionView.currentAccount.id;
+}
+
+function filterSessionsForTeamSessionView(entries) {
+  return (Array.isArray(entries) ? entries : []).filter(matchesTeamSessionView);
 }
 
 function getActiveAuthCapabilities() {
