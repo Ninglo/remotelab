@@ -149,6 +149,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
       cwd: resolvedFolder,
       env: subEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: false,
     });
     proc.stdin.end();
 
