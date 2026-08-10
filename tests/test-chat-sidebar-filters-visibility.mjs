@@ -65,6 +65,7 @@ function createHarness({ activeTab = 'sessions', visitorMode = false } = {}) {
     console,
     activeTab,
     visitorMode,
+    accountFilterSelect: createFilterControl('none'),
     sourceFilterSelect: createFilterControl(''),
     sidebarFilters: {
       classList: {
@@ -114,6 +115,16 @@ assert.deepEqual(
   hiddenSourceHarness.state.toggles,
   [{ className: 'hidden', force: true }],
   'sessions tab should hide the sidebar filters container when the only filter control is hidden',
+);
+
+const visibleAccountHarness = createHarness({ activeTab: 'sessions' });
+visibleAccountHarness.context.sourceFilterSelect.style.display = 'none';
+visibleAccountHarness.context.accountFilterSelect.style.display = '';
+visibleAccountHarness.context.syncSidebarFiltersVisibility();
+assert.deepEqual(
+  visibleAccountHarness.state.toggles,
+  [{ className: 'hidden', force: false }],
+  'sessions tab should keep the filter container visible when the account filter is visible',
 );
 
 console.log('test-chat-sidebar-filters-visibility: ok');
