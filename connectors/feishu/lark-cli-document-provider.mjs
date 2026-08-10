@@ -69,14 +69,18 @@ function normalizeEnum(value, allowed, fallback, name) {
 }
 
 function normalizeFetchParameters(parameters = {}) {
-  const documentToken = extractFeishuDocumentToken(parameters.documentToken || parameters.documentUrl);
+  const rawDocumentReference = trimString(parameters.documentToken || parameters.documentUrl);
+  const documentToken = extractFeishuDocumentToken(rawDocumentReference);
   if (!documentToken) {
     throw createProviderError(
       'document_token_invalid',
-      'A valid Feishu Docx URL or document token is required.',
+      'A valid Feishu Docx/Wiki URL or document token is required.',
       400,
     );
   }
+  const documentUrl = rawDocumentReference.match(
+    /https?:\/\/[^\s)\]}>'"]+\/(?:docx|wiki)\/[A-Za-z0-9_-]{8,}(?:[^\s)\]}>'"]*)?/i,
+  )?.[0] || '';
   const scope = normalizeEnum(parameters.scope, VALID_SCOPES, 'full', 'scope');
   const detail = normalizeEnum(parameters.detail, VALID_DETAILS, 'simple', 'detail');
   const docFormat = normalizeEnum(parameters.docFormat, VALID_DOC_FORMATS, 'xml', 'docFormat');
@@ -106,6 +110,7 @@ function normalizeFetchParameters(parameters = {}) {
   }
   return {
     documentToken,
+    documentReference: documentUrl || documentToken,
     scope,
     detail,
     docFormat,
@@ -130,7 +135,7 @@ function appendOptionalArg(args, name, value) {
 function buildFetchArgs(parameters) {
   const args = [
     'docs', '+fetch',
-    '--doc', parameters.documentToken,
+    '--doc', parameters.documentReference,
     '--as', 'bot',
     '--format', 'json',
     '--doc-format', parameters.docFormat,
