@@ -318,3 +318,30 @@ detection remains unchanged.
 - [x] GitHub Actions run `31424937617` passes for commit `f98414b`.
 - [x] `git diff --check` and file-size lint pass; the report contains only the
   repository's existing oversized-file baseline.
+
+---
+
+## Numeric Feishu Wiki space ID CLI coercion
+
+### Bug description
+
+The generic connector CLI coerced every digits-only option to a JavaScript
+number. Real Feishu Wiki space IDs are digits-only string identifiers, so
+`--space-id 7650536094013852860` lost both its string type and integer precision;
+the Wiki skill then rejected it as missing.
+
+### RED evidence
+
+- The deployed `wiki_node_get` resolved the target Wiki successfully.
+- The following formal connector call failed with `wiki_parameters_invalid` and
+  `spaceId is required`: `wiki_children_list --space-id 7650536094013852860`.
+- The regression case in `tests/test-feishu-wiki-skill.mjs` failed with exit
+  code `1` before the fix.
+
+### Fix and GREEN evidence
+
+- Connector CLI values are now coerced according to each registered skill's
+  parameter schema; string identifiers stay strings while numeric and boolean
+  parameters retain their declared types.
+- The regression uses the real numeric-looking Wiki space ID and passes.
+- Focused connector/Wiki tests and the full local `npm test` suite pass.

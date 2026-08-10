@@ -115,7 +115,7 @@ try {
   const exitCode = await runConnectorCommand([
     'call',
     'feishu:wiki_children_list',
-    '--space-id', 'space-1',
+    '--space-id', '7650536094013852860',
     '--parent-node-token', 'wikcnRoot123',
     '--page-size', '25',
     '--page-token', 'cursor-1',
@@ -127,7 +127,7 @@ try {
   const result = JSON.parse(stdout);
   assert.equal(result.success, true);
   assert.deepEqual(calls.at(-1), ['children', {
-    spaceId: 'space-1',
+    spaceId: '7650536094013852860',
     parentNodeToken: 'wikcnRoot123',
     pageSize: 25,
     pageToken: 'cursor-1',
