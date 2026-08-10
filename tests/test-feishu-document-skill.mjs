@@ -172,6 +172,7 @@ try {
   assert.match(systemContext, /--scope outline/);
   assert.match(systemContext, /contentPath/);
   assert.match(systemContext, /download-media/);
+  assert.doesNotMatch(systemContext, /### Feishu Wiki/, 'unimplemented provider methods must not be advertised');
 } finally {
   await documentCapability.stop();
   await rm(tempRoot, { recursive: true, force: true });

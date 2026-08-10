@@ -250,6 +250,14 @@ Document images, files and whiteboards are listed in \`media\`. When their conte
 
 The bot can read only documents that the Feishu app is authorized to access. Treat \`missing_scope\` and \`document_permission_denied\` as explicit authorization failures; do not fall back to host-level \`lark-cli\` credentials or personal Feishu sessions.`);
     }
+    if (await isConnectorSkillReady('feishu:wiki_node_get')) {
+      connectorSections.push(`### Feishu Wiki
+This instance has read-only Feishu Wiki metadata tools backed by the connector bot identity that originated the current session. Use \`remotelab connector call feishu:wiki_node_get --node-token "<token-or-url>" --json\` for one node, and \`remotelab connector call feishu:wiki_children_list --space-id "<space-id>" --parent-node-token "<optional-parent>" --page-size 50 --json\` for one explicit page. This capability inspects Wiki structure only and does not fetch document bodies.
+
+Use \`remotelab connector call feishu:wiki_tree_list --space-id "<space-id>" --max-depth 4 --max-nodes 500 --json\` only when a bounded breadth-first tree view is useful. Always inspect \`complete\`, \`truncated\`, and \`stop_reason\`, plus the \`visited\`, \`returned\`, and \`failed\` counts. An incomplete result includes \`continuation\` information; resume with \`--continuation-token "<token>"\` and adjust the relevant bound when needed. The full result for the call is saved at \`contentPath\` when inline nodes are limited.
+
+The bot can read only Wiki nodes authorized to the app. Treat \`missing_scope\` and \`wiki_permission_denied\` as explicit authorization failures; a partial tree result summarizes failed branches without discarding accessible siblings.`);
+    }
   } catch {}
 
   connectorSections.push(`### Gmail

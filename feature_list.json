@@ -38,5 +38,15 @@
     "id": "codex-switch-account-button",
     "description": "Let an owner clear only the current instance's Codex authentication and immediately start a fresh device login from the web settings UI.",
     "pass": true
+  },
+  {
+    "id": "feishu-wiki-tree-tools",
+    "name": "Bounded Feishu Wiki tree reads",
+    "description": "Expose bot-scoped Wiki node, children, and bounded BFS tree read tools with explicit truncation, permission-failure, continuation, and snapshot contracts.",
+    "verification_plan": "Run focused Wiki manifest/runtime/provider tests covering pagination, validation, depth and node limits, partial permission failures, continuation, and snapshot persistence; then run the repository smoke and merge-safety suites.",
+    "status": "completed",
+    "pass": true,
+    "started_at": "2026-08-10",
+    "completed_at": "2026-08-10"
   }
 ]

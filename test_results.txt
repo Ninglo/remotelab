@@ -247,3 +247,39 @@ their authenticated state, muka-hr remained independently signed out, and all
 three served settingsCodexAuthSwitchBtn plus /api/codex-auth/logout. The three
 RemoteLab services, three Feishu connectors, and Cloudflare tunnel were active;
 all three public HTTPS endpoints returned HTTP 200.
+
+Verification date: 2026-08-10 UTC
+
+Focused Wiki and Feishu connector regression command:
+  node tests/test-feishu-wiki-skill.mjs && node tests/test-feishu-lark-cli-wiki-provider.mjs && node tests/test-feishu-document-skill.mjs && node tests/test-feishu-lark-cli-document-provider.mjs && node tests/test-feishu-lark-cli-contract.mjs && node tests/test-connector-multi-route-skill.mjs && node tests/test-connector-feishu.mjs
+
+Focused output:
+  test-feishu-wiki-skill: ok
+  test-feishu-lark-cli-wiki-provider: ok
+  test-feishu-document-skill: ok
+  test-feishu-lark-cli-document-provider: ok
+  test-feishu-lark-cli-contract: ok
+  test-connector-multi-route-skill: ok
+  ok - feishu connector helpers
+
+Full repository command:
+  npm test
+
+Full repository result:
+  exit code: 0
+  test-shared-tools-directory: ok
+  test-shared-tool-env-overrides: ok
+  test-runtime-policy: ok
+  test-system-prompt: ok
+  test-system-prompt-gmail: ok
+  test-chat-nontechnical-copy: ok
+  test-chat-thinking-block-display-preference: ok
+  test-structured-runtime-auth-failure: ok
+  test-user-shell-env: ok
+  test-usage-summary-command: ok
+  test-connector-gmail: ok
+
+Static checks:
+  node --check on changed runtime modules: passed
+  git diff --check: passed
+  npm run lint:filesize: passed; the new Wiki provider is below the warning threshold

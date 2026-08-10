@@ -13,6 +13,11 @@ import {
   extractFeishuDocumentToken,
 } from './index.mjs';
 import { createLarkCliDocumentProvider } from './lark-cli-document-provider.mjs';
+import {
+  getFeishuWikiNode,
+  listFeishuWikiChildren,
+  listFeishuWikiTree,
+} from './wiki-skill.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -107,17 +112,32 @@ export async function startFeishuDocumentCapability(runtime, options = {}) {
   });
   await documentProvider.initialize();
   const capabilityRuntime = { ...runtime, documentProvider };
-  const skills = FEISHU_SKILLS.filter((skill) => skill.name === 'document_get');
+  const supportedSkills = new Set([
+    ...(typeof documentProvider.fetch === 'function' ? ['document_get'] : []),
+    ...(typeof documentProvider.getWikiNode === 'function' ? ['wiki_node_get'] : []),
+    ...(typeof documentProvider.listWikiChildren === 'function' ? ['wiki_children_list'] : []),
+    ...(typeof documentProvider.listWikiTree === 'function' ? ['wiki_tree_list'] : []),
+  ]);
+  const skills = FEISHU_SKILLS.filter((skill) => supportedSkills.has(skill.name));
   const callbackToken = randomBytes(32).toString('hex');
   const server = await startConnectorSkillServer({
     channel: FEISHU_CONNECTOR_ID,
     token: callbackToken,
     skills,
     onSkill: async (skillName, body) => {
-      if (skillName !== 'document_get') {
-        throw createFeishuDocumentError('skill_not_found', `Unsupported Feishu skill: ${skillName}`, 404);
+      const parameters = body?.parameters || {};
+      switch (skillName) {
+        case 'document_get':
+          return await readFeishuDocument(capabilityRuntime, parameters);
+        case 'wiki_node_get':
+          return await getFeishuWikiNode(capabilityRuntime, parameters);
+        case 'wiki_children_list':
+          return await listFeishuWikiChildren(capabilityRuntime, parameters);
+        case 'wiki_tree_list':
+          return await listFeishuWikiTree(capabilityRuntime, parameters);
+        default:
+          throw createFeishuDocumentError('skill_not_found', `Unsupported Feishu skill: ${skillName}`, 404);
       }
-      return await readFeishuDocument(capabilityRuntime, body?.parameters || {});
     },
   });
   try {
