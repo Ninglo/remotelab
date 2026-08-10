@@ -5,6 +5,7 @@ import { messageEvent } from '../chat/normalizer.mjs';
 import {
   buildReplySelfCheckPrompt,
   buildReplySelfRepairPrompt,
+  extractReplySelfCheckCheckpointPolicy,
   loadReplySelfCheckTurnContext,
 } from '../chat/session-reply-self-check.mjs';
 
@@ -97,6 +98,33 @@ assert.match(
   /Displayed attachment delivery: proof\.csv/,
   'review prompt should carry current-turn generated file delivery context',
 );
+assert.match(
+  reviewPrompt,
+  /A concrete review gate is also a real user checkpoint/,
+  'review prompt should distinguish concrete approval gates from generic permission requests',
+);
+assert.match(
+  reviewPrompt,
+  /The confirmation round trip may itself be the behavior being tested/,
+  'review prompt should preserve interaction-flow tests instead of optimizing away their gates',
+);
+
+const checkpointPolicyText = extractReplySelfCheckCheckpointPolicy([
+  'S1: inspect the provided brief.',
+  'GATE A — BRIEF_CONFIRM: present the proposed search contract and wait for explicit user confirmation.',
+  'After confirmation, run the sample search.',
+  'Unrelated implementation detail.',
+].join('\n'));
+assert.match(checkpointPolicyText, /GATE A — BRIEF_CONFIRM/);
+assert.match(checkpointPolicyText, /After confirmation/);
+assert.doesNotMatch(checkpointPolicyText, /Unrelated implementation detail/);
+
+const checkpointReviewPrompt = buildReplySelfCheckPrompt({
+  ...context,
+  checkpointPolicyText,
+});
+assert.match(checkpointReviewPrompt, /Applied Agent review-gate policy:/);
+assert.match(checkpointReviewPrompt, /GATE A — BRIEF_CONFIRM/);
 
 const repairPrompt = buildReplySelfRepairPrompt({
   ...context,

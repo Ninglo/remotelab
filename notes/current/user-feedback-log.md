@@ -21,6 +21,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-08-10 — shared Agent validation must start clean and preserve real review gates
+
+- Source: direct owner review of a newly opened KOL workflow Agent.
+- User slice: operator turning a proven internal workflow into a reusable Agent that other people can invoke independently.
+- Observed friction or ask: the new Agent technically completed useful work, but it silently reused historical campaign assets and the automatic reply-completion review advanced past an explicit search-contract confirmation. This tested access to existing data rather than the intended end-to-end onboarding and decision flow.
+- Signal strength: concrete live-session failure reproduced in tool history and the reply self-check timeline.
+- Product implication: every new custom Agent session should default to an independent invocation. Stable instructions, skills, connector availability, and deliberately bundled template context may carry; prior sessions, task memory, historical business records, and local artifacts require explicit user scope. Named review gates are binding and must not be optimized away by automatic continuation. Agent creation should finish with a clean-room dry-run that receives only an explicit test packet and stops at the first real user checkpoint.
+- Promote to: Agent prompt construction, reply self-check policy, Create Agent starter flow, shared-Agent regression tests.
+
 ### 2026-08-10 — shared instances need optional account-based session-list filtering, not RBAC
 
 - Source: direct owner request for company teams sharing one RemoteLab process.

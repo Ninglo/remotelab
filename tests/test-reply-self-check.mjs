@@ -28,6 +28,8 @@ const flagsAnalysisWithoutExecution = prompt.includes('stopping after analysis w
 const hasBranchFirstRule = prompt.includes('real logical fork or forced human checkpoint');
 const prefersDoingWork = prompt.includes('Prefer doing the work over describing what you would do.');
 const hasOpenOfferHardRule = prompt.includes('A reply that ends with an open offer or permission request');
+const hasConcreteReviewGateRule = prompt.includes('A concrete review gate is also a real user checkpoint');
+const preservesInteractionTest = prompt.includes('The confirmation round trip may itself be the behavior being tested');
 const replacesOpenOfferWithResult = prompt.includes('Replace any prior open offer or permission request with the actual next action or result now.');
 const avoidsFakeChoiceRepair = prompt.includes('Do not turn a single-track task into a menu of options');
 const isDelayedReviewScenario = prompt.includes('延迟复核场景');
@@ -54,6 +56,13 @@ if (prompt.includes('伪分叉场景')) {
   items = [{ type: 'agent_message', text: '我先停一下，这里好像有几个方向，你选一个我再继续。' }];
 }
 
+if (prompt.includes('真实审核关口场景')) {
+  items = [{
+    type: 'agent_message',
+    text: '搜索口径草案：巴西 80%、葡萄牙 20%，先审核 12 位样本，再扩展到 50 位。请确认或修改这三个具体条件；收到你的确认后我才进入样本搜索。',
+  }];
+}
+
 if (isWorkflowPrompt) {
   threadId = 'workflow-thread';
   items = [{
@@ -68,6 +77,7 @@ if (isWorkflowPrompt) {
     || prompt.includes('延迟附件复核场景');
   const isOpenOfferScenario = prompt.includes('如果你愿意我现在就把最终结论直接发出来');
   const isPseudoForkScenario = prompt.includes('你选一个我再继续');
+  const isConcreteReviewGateScenario = prompt.includes('搜索口径草案：巴西 80%');
   const hasVisibleAnswer = prompt.includes('真正有效答复：把缺的结论直接补齐。');
   const hasDisplayedChecklist = prompt.includes('[ ] todo checklist');
   const hasDisplayedPureFileDelivery = prompt.includes('[Displayed attachment delivery: pure-delivery-output.csv]');
@@ -118,6 +128,14 @@ if (isWorkflowPrompt) {
         continuationPrompt: hasBranchFirstRule
           ? '不要让用户选方向，直接给出先判断真实分叉、没有就继续的原则。'
           : '',
+      }
+      : isConcreteReviewGateScenario
+      ? {
+        action: hasConcreteReviewGateRule && preservesInteractionTest && prompt.includes('GATE A — BRIEF_CONFIRM')
+          ? 'accept'
+          : 'continue',
+        reason: '这是 Agent 明确定义的搜索口径确认关口，必须等待用户确认。',
+        continuationPrompt: '',
       }
       : {
         action: prefersContinuationWithoutExplicitBlocker && flagsAnalysisWithoutExecution ? 'continue' : 'accept',
@@ -464,6 +482,36 @@ try {
     pseudoForkAssistantTexts.some((text) => text.includes('这里有几个方向，你先选一个我再继续。')),
     false,
     'repair continuation should not repeat the fake choice prompt',
+  );
+
+  const concreteGateSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Concrete Gate', {
+    group: 'RemoteLab',
+    description: 'Verify a concrete Agent review gate waits for the user instead of auto-continuing.',
+    systemPrompt: 'GATE A — BRIEF_CONFIRM: present the proposed search contract and wait for explicit user confirmation before searching.',
+  });
+
+  await sendMessage(concreteGateSession.id, '真实审核关口场景：先给我搜索口径，等我确认后再开始搜索。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+
+  await waitFor(
+    async () => {
+      const concreteGateHistory = await getHistory(concreteGateSession.id);
+      return concreteGateHistory.some((event) => event.type === 'status' && event.content === 'Assistant self-check: kept the latest reply as-is.');
+    },
+    'concrete Agent review gate should be kept as a real user checkpoint',
+  );
+
+  const concreteGateHistory = await getHistory(concreteGateSession.id);
+  const concreteGateAssistantTexts = concreteGateHistory
+    .filter((event) => event.type === 'message' && event.role === 'assistant')
+    .map((event) => event.content || '');
+  assert.deepEqual(
+    concreteGateAssistantTexts,
+    ['搜索口径草案：巴西 80%、葡萄牙 20%，先审核 12 位样本，再扩展到 50 位。请确认或修改这三个具体条件；收到你的确认后我才进入样本搜索。'],
+    'concrete review gate should not receive an automatic continuation reply',
   );
 
   const delayedReviewSession = await createSession(tempHome, 'fake-codex', 'Reply Self Check Delayed Review State', {

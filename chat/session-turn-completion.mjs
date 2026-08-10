@@ -28,6 +28,7 @@ export function createSessionTurnCompletionHelpers(services) {
     getSessionQueueCount,
     getTaskCardFollowupServices,
     getToolDefinitionAsync,
+    extractReplySelfCheckCheckpointPolicy,
     isInternalSession,
     isReplySelfRepairOperation,
     isSessionAutoRenamePending,
@@ -273,6 +274,7 @@ export function createSessionTurnCompletionHelpers(services) {
       priorContextText,
       userMessage,
       assistantTurnText,
+      checkpointPolicyText: extractReplySelfCheckCheckpointPolicy(latestSession.systemPrompt || ''),
     };
   }
 
@@ -281,7 +283,12 @@ export function createSessionTurnCompletionHelpers(services) {
       return { attempted: false, continued: false };
     }
 
-    const { userMessage, assistantTurnText, priorContextText } = preparedCheck;
+    const {
+      userMessage,
+      assistantTurnText,
+      priorContextText,
+      checkpointPolicyText,
+    } = preparedCheck;
     const effectiveSession = preparedCheck.session || session;
 
     let reviewText = '';
@@ -293,7 +300,12 @@ export function createSessionTurnCompletionHelpers(services) {
         model: run.model || undefined,
         effort: run.effort || undefined,
         thinking: false,
-      }, buildReplySelfCheckPrompt({ userMessage, assistantTurnText, priorContextText }), {
+      }, buildReplySelfCheckPrompt({
+        userMessage,
+        assistantTurnText,
+        priorContextText,
+        checkpointPolicyText,
+      }), {
         usageTracking: {
           operation: 'reply_self_check_review',
         },

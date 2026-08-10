@@ -101,6 +101,8 @@ The intended user flow is:
 4. Let the builder session synthesize the reusable Agent definition.
 5. Reuse that Agent for later sessions.
 
+The creation flow must also perform one clean-room dry-run before the Agent is treated as ready. That test starts a new Agent session and reconstructs the workflow only from an explicit test packet. It must not inherit the builder conversation, a source task card, or unrelated project history.
+
 The builder should gather only the minimum missing information and then create or update the saved Agent record.
 
 The user should not need to manage raw fields such as:
@@ -127,11 +129,28 @@ The important boundary is:
 - it does not grant owner access
 - it does not expose other sessions outside the visitor-scoped session created from that Agent
 
+## Independent invocation boundary
+
+Opening an Agent starts an independent invocation by default. The new session may use:
+
+- the Agent's stable behavior instructions
+- its reusable skills and configured connectors
+- template context deliberately bundled into the Agent definition
+- messages, attachments, links, and references supplied in the new session
+
+It must not silently use prior chat transcripts, task cards, project memory, historical campaigns, old tables, or local task artifacts merely because they are available on the same machine.
+
+History reuse is an explicit interaction. The user must name or link the old material, ask to continue or migrate it, or confirm the Agent's proposal to reuse a clearly described historical scope. Capability discovery is not context authorization: an Agent may check that a connector or script exists without treating old business data as input.
+
+Review gates are equally explicit. When an Agent presents concrete scope, sample direction, selection rules, budget, output standards, or an external action for approval, it waits for the user's response. The automatic completion reviewer must not optimize that round trip away.
+
 ## Design constraints
 
 When designing or refining Agents, keep these constraints:
 
 - do not rely on generic chat history alone to preserve identity
+- keep every new invocation independent unless history reuse is explicitly requested or bundled as template context
+- validate new Agents with a clean-room dry-run that stops at the first real review gate
 - keep stable agent behavior in reusable saved fields, not only in transient conversation
 - do not mix source/channel logic into the Agent definition
 - do not bury Agent management inside Settings

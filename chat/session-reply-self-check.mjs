@@ -114,7 +114,23 @@ export function summarizeReplySelfCheckReason(value, fallback = 'the latest repl
   return `${text.slice(0, 157).trimEnd()}…`;
 }
 
-export function buildReplySelfCheckPrompt({ userMessage, assistantTurnText, priorContextText }) {
+export function extractReplySelfCheckCheckpointPolicy(systemPrompt) {
+  const text = normalizeReplySelfCheckText(systemPrompt);
+  if (!text) return '';
+  const segments = text
+    .split(/\n+|(?<=[.!?。！？；;])\s+/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+    .filter((segment) => /\bgate\b|checkpoint|review gate|approval|approve|confirm|确认|审批|审核|关口/i.test(segment));
+  return clipReplySelfCheckText([...new Set(segments)].join('\n'), 4000);
+}
+
+export function buildReplySelfCheckPrompt({
+  userMessage,
+  assistantTurnText,
+  priorContextText,
+  checkpointPolicyText = '',
+}) {
   return [
     'You are RemoteLab\'s hidden end-of-turn completion reviewer.',
     'Judge only whether the latest assistant reply stopped too early for the current user turn.',
@@ -122,9 +138,12 @@ export function buildReplySelfCheckPrompt({ userMessage, assistantTurnText, prio
     'Judge branch-first: the question is not "should the assistant continue?" but "does a real logical fork or forced human checkpoint require the user right now?"',
     'When uncertain between "accept" and "continue", choose "continue".',
     'If there is no explicit user-side blocker, assume the assistant should continue with the obvious next step.',
-    'Single-track work with an obvious next step must be marked "continue" even if the reply asked for permission or framed the pause as a choice.',
+    'Single-track work with an obvious next step must be marked "continue" when the reply only asks generic permission to proceed or frames a fake choice.',
     'Accept only when the reply already reaches a meaningful stopping point for this turn or it clearly states the exact blocker that truly requires the user.',
     'Real blockers are explicit user-side dependencies such as missing required input, genuine ambiguity that prevents safe progress, a real branch whose choice depends on user preference, missing access / credentials / files, or destructive / irreversible actions that need confirmation.',
+    'A concrete review gate is also a real user checkpoint: for example, the assistant presents a proposed scope, contract, sample direction, selection criteria, budget, output standard, or external action and asks the user to confirm or change those terms before the next phase.',
+    'If the applied Agent instructions define a named confirmation or review gate and the latest reply has reached that gate, choose "accept". Never override that interaction contract merely because a reasonable default exists.',
+    'The confirmation round trip may itself be the behavior being tested. Do not skip it in the name of speed or autonomy.',
     'Do not treat a fabricated menu of options or a vague "pick a direction" pause as a real branch when the task still has a natural default continuation.',
     'Do not treat optional clarification, extra polish, or the assistant\'s own caution as blockers.',
     'A reply that ends with an open offer or permission request such as "if you want I can...", "I can do that next", or "let me know and I\'ll continue" is never a meaningful stopping point by itself and must be marked "continue" unless the same reply clearly states a real blocker.',
@@ -141,6 +160,9 @@ export function buildReplySelfCheckPrompt({ userMessage, assistantTurnText, prio
     priorContextText ? 'Relevant earlier session context before this turn:' : '',
     priorContextText ? clipReplySelfCheckText(priorContextText, 6000) : '',
     priorContextText ? '' : '',
+    checkpointPolicyText ? 'Applied Agent review-gate policy:' : '',
+    checkpointPolicyText ? clipReplySelfCheckText(checkpointPolicyText, 4000) : '',
+    checkpointPolicyText ? '' : '',
     'Current user message:',
     clipReplySelfCheckText(userMessage?.content || '', 3000) || '[none]',
     '',

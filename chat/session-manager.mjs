@@ -26,6 +26,7 @@ import {
   triggerSessionWorkflowStateSuggestion,
 } from './summarizer.mjs';
 import { buildSourceRuntimePrompt } from './source-runtime-prompts.mjs';
+import { buildAgentInvocationContextBoundary } from './session-agent-context-boundary.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
 import {
@@ -153,6 +154,7 @@ import { runDetachedAssistantPrompt } from './session-detached-assistant.mjs';
 import {
   buildReplySelfCheckPrompt,
   buildReplySelfRepairPrompt,
+  extractReplySelfCheckCheckpointPolicy,
   loadReplySelfCheckTurnContext,
   parseReplySelfCheckDecision,
   summarizeReplySelfCheckReason,
@@ -1691,6 +1693,7 @@ const {
   broadcastSessionInvalidation,
   buildReplySelfCheckPrompt,
   buildReplySelfRepairPrompt,
+  extractReplySelfCheckCheckpointPolicy,
   buildResultAssetReadyMessage,
   clearRenameState,
   collectAssistantLocalMarkdownImageRewrites,
@@ -2315,6 +2318,10 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
       }
       if (shouldIncludeSessionTemplateInstructions(session)) {
         preamble += `\n\n---\n\nTemplate instructions (follow these for this session):\n${session.systemPrompt}`;
+      }
+      const agentInvocationContextBoundary = buildAgentInvocationContextBoundary(session);
+      if (agentInvocationContextBoundary) {
+        preamble += `\n\n---\n\n${agentInvocationContextBoundary}`;
       }
       actualText = `${preamble}\n\n---\n\n${actualText}`;
     }

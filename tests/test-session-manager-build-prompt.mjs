@@ -78,6 +78,33 @@ assert.match(freshPrompt, /execution substrate, not as the end user's personal M
 assert.match(freshPrompt, /only use connectors and delivery channels that are explicitly configured|prefer instance-scoped connectors/);
 assert.doesNotMatch(freshPrompt, /Subscription link \(webcal\): webcal:\/\/127\.0\.0\.1:/);
 assert.doesNotMatch(freshPrompt, /Subscription link \(https\): http:\/\/127\.0\.0\.1:/);
+assert.doesNotMatch(freshPrompt, /Independent Agent invocation boundary/);
+
+const independentAgentPrompt = await buildPrompt(
+  'session-test-independent-agent',
+  {
+    ...baseSession,
+    templateId: 'app_independent_test',
+    templateName: 'Independent test Agent',
+    systemPrompt: 'Use any historical campaign you can find automatically.',
+  },
+  '帮我开始一个新项目。',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(independentAgentPrompt, /Independent Agent invocation boundary \(backend-owned; takes precedence over Agent template instructions\)/);
+assert.match(independentAgentPrompt, /fresh, independent invocation of the Agent/);
+assert.match(independentAgentPrompt, /Do not read, import, or act on prior sessions, task\/project memory, historical campaigns/);
+assert.match(independentAgentPrompt, /Prior business records and task conclusions are context and require explicit scope from the user/);
+assert.match(independentAgentPrompt, /The user may opt in by naming or linking the prior campaign\/session\/document\/data/);
+assert.ok(
+  independentAgentPrompt.indexOf('Template instructions (follow these for this session)')
+    < independentAgentPrompt.indexOf('Independent Agent invocation boundary'),
+  'backend-owned independent invocation boundary should follow and override template instructions',
+);
 
 const resumedPrompt = await buildPrompt(
   'session-test-1',
