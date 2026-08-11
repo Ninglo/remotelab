@@ -1,9 +1,22 @@
 #!/usr/bin/env node
-// Regression guard: spawn() calls must never be invoked with shell:true.
-// Node's spawn() already defaults to shell:false, so this test documents the
-// contract rather than blocking an active vulnerability. It would fail if
-// shell:true were ever introduced, because the shell metacharacters in the
-// prompt would be expanded instead of passed as a literal argument.
+// Regression guard: every spawn() call site in the three production chat modules
+// must carry an explicit shell:false option.
+//
+// WHY EXPLICIT RATHER THAN RELYING ON THE DEFAULT
+// Node's spawn() already defaults to shell:false, so the current codebase is
+// not actively exploitable via shell-metacharacter injection.  The explicit
+// option is defence-in-depth: it ensures that a future refactor, copy-paste, or
+// accidental introduction of shell:true will be caught by this test before it
+// can ship.  The static assertions below encode that contract directly on the
+// source files.
+//
+// WHAT THE RUNTIME TESTS SHOW
+// The runtime sections exercise two of the three call sites with a prompt that
+// contains shell metacharacters ($(touch ...)).  They confirm that the argument
+// arrives literally at the child process and that the proof file is NOT created.
+// Because shell:false is already the default, these tests pass on both the old
+// and new source; their value is documentation and early detection if the option
+// is ever flipped.
 import assert from 'assert/strict';
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -26,6 +39,32 @@ mkdirSync(tempMemory, { recursive: true });
 // Remove any leftover proof file from a previous failed run.
 if (existsSync(shellProofPath)) rmSync(shellProofPath);
 
+// ─── Static source-file assertions ──────────────────────────────────────────
+// These are the first assertions executed.  They verify that the explicit
+// shell:false guard is present in every production spawn() call site and that
+// no spawn() call accidentally uses shell:true.  A test failure here means a
+// production file was modified in a way that removes the explicit hardening.
+const productionFiles = [
+  join(repoRoot, 'chat', 'session-detached-assistant.mjs'),
+  join(repoRoot, 'chat', 'summarizer.mjs'),
+  join(repoRoot, 'chat', 'runner-sidecar.mjs'),
+];
+
+for (const filePath of productionFiles) {
+  const src = readFileSync(filePath, 'utf8');
+  assert.ok(
+    src.includes('shell: false'),
+    `Expected explicit "shell: false" in ${filePath} — the hardening guard has been removed`,
+  );
+  assert.ok(
+    !src.includes('shell: true'),
+    `Unexpected "shell: true" found in ${filePath} — this would enable shell-metacharacter injection`,
+  );
+}
+
+console.log('static source assertions: ok (shell: false present, shell: true absent in all 3 files)');
+
+// ─── Runtime test setup ──────────────────────────────────────────────────────
 const fakeBinPath = join(tempBin, 'fake-shell-false-tool');
 writeFileSync(
   fakeBinPath,
@@ -100,6 +139,8 @@ assert.ok(
   'metacharacter prompt should arrive as a literal argument, not be expanded',
 );
 
+console.log('runtime test 1 (session-detached-assistant): ok');
+
 // --- Test 2: summarizer.mjs via triggerSessionLabelSuggestion ---
 const sessionManager = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
 const history = await import(pathToFileURL(join(repoRoot, 'chat', 'history.mjs')).href);
@@ -132,6 +173,8 @@ await triggerSessionLabelSuggestion(
 );
 
 assert.ok(!existsSync(shellProofPath), 'summarizer spawn must not invoke a shell');
+
+console.log('runtime test 2 (summarizer): ok');
 
 killAll();
 rmSync(tempHome, { recursive: true, force: true });
