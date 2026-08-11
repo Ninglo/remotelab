@@ -6,6 +6,7 @@ import { join } from 'path';
 
 const home = mkdtempSync(join(tmpdir(), 'remotelab-session-fork-'));
 process.env.HOME = home;
+process.env.REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER = '1';
 
 const workspace = join(home, 'workspace');
 mkdirSync(workspace, { recursive: true });
@@ -246,6 +247,8 @@ try {
   });
   const manifest = await getRunManifest(promptOutcome.run.id);
   assert.match(manifest?.prompt || '', /SENTINEL FORK CONTEXT/, 'first child turn should reuse the prepared fork context');
+  assert.equal(manifest?.forkBaseSeq, promptChild.latestSeq, 'run manifest should preserve the pre-run history boundary');
+  assert.deepEqual(manifest?.forkContextHead || null, await getContextHead(promptChild.id), 'run manifest should preserve the pre-run context head');
 
   console.log('test-session-forking: ok');
 } finally {

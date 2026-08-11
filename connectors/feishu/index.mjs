@@ -66,6 +66,39 @@ export const FEISHU_SKILLS = [
       maxMedia: { type: 'number', description: 'Maximum indexed media items to download' },
     },
   },
+  {
+    name: 'wiki_node_get',
+    description: 'Read one Feishu Wiki node metadata record using the originating connector bot identity without fetching its document body.',
+    schema: {
+      nodeToken: { type: 'string', required: true, description: 'Wiki node token, object token, or Feishu/Lark document URL' },
+      objType: { type: 'string', description: 'Object type for a raw object token: doc, docx, sheet, bitable, mindnote, slides, or file' },
+      spaceId: { type: 'string', description: 'Optional Wiki space ID assertion' },
+    },
+  },
+  {
+    name: 'wiki_children_list',
+    description: 'Read one page of root or child nodes in a Feishu Wiki space using the originating connector bot identity.',
+    schema: {
+      spaceId: { type: 'string', required: true, description: 'Wiki space ID; the Bot-only connector does not support my_library' },
+      parentNodeToken: { type: 'string', description: 'Optional parent Wiki node token; omit for space roots' },
+      pageSize: { type: 'number', description: 'Single-page size from 1 to 50' },
+      pageToken: { type: 'string', description: 'Optional upstream page cursor to continue the same child listing' },
+    },
+  },
+  {
+    name: 'wiki_tree_list',
+    description: 'Run a bounded breadth-first Wiki metadata traversal with explicit completion, truncation, permission-failure, continuation, and snapshot results.',
+    schema: {
+      spaceId: { type: 'string', required: true, description: 'Wiki space ID; the Bot-only connector does not support my_library' },
+      rootNodeToken: { type: 'string', description: 'Optional root node whose descendants should be traversed; omit for space roots' },
+      pageSize: { type: 'number', description: 'Per-parent page size from 1 to 50' },
+      maxDepth: { type: 'number', description: 'Maximum relative result depth from 0 to 20' },
+      maxNodes: { type: 'number', description: 'Maximum nodes returned in this traversal call from 1 to 5000' },
+      maxPages: { type: 'number', description: 'Maximum child-list requests in this traversal call from 1 to 1000' },
+      maxInlineNodes: { type: 'number', description: 'Maximum nodes returned inline; the complete call snapshot remains at contentPath' },
+      continuationToken: { type: 'string', description: 'Opaque token returned by an incomplete traversal to resume pending branches' },
+    },
+  },
 ];
 
 const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;

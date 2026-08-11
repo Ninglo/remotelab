@@ -1170,10 +1170,6 @@ export async function handleControlRoutes({
         writeJson(res, 409, { error: 'Visitor sessions cannot be forked' });
         return true;
       }
-      if (source.activity?.run?.state === 'running') {
-        writeJson(res, 409, { error: 'Session is running' });
-        return true;
-      }
       const session = await forkSession(sessionId, payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {});
       if (!session) {
         writeJson(res, 409, { error: 'Unable to fork session' });
