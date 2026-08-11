@@ -335,7 +335,7 @@ async function main() {
     args,
     runtimeFamily,
   );
-  const proc = spawn(lockedInvocation.command, lockedInvocation.args, {
+  const proc = spawn(await resolveCommand(lockedInvocation.command), lockedInvocation.args, {
     cwd: resolvedFolder.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: spawnEnv,

@@ -29,15 +29,12 @@ const tempBin = join(tempHome, 'bin');
 const tempConfig = join(tempHome, 'config');
 const tempMemory = join(tempHome, 'memory');
 const argvCapturePath = join(tempHome, 'captured-argv.json');
-const shellProofPath = '/tmp/remotelab-shell-injection-test';
+const shellProofPath = join(tempHome, 'shell-injection-proof');
 const fakeToolId = 'fake-shell-false-tool';
 
 mkdirSync(tempBin, { recursive: true });
 mkdirSync(tempConfig, { recursive: true });
 mkdirSync(tempMemory, { recursive: true });
-
-// Remove any leftover proof file from a previous failed run.
-if (existsSync(shellProofPath)) rmSync(shellProofPath);
 
 // ─── Static source-file assertions ──────────────────────────────────────────
 // These are the first assertions executed.  They verify that the explicit
@@ -52,9 +49,12 @@ const productionFiles = [
 
 for (const filePath of productionFiles) {
   const src = readFileSync(filePath, 'utf8');
-  assert.ok(
-    src.includes('shell: false'),
-    `Expected explicit "shell: false" in ${filePath} — the hardening guard has been removed`,
+  const spawnCalls = (src.match(/\bspawn\(/g) || []).length;
+  const shellFalseGuards = (src.match(/shell\s*:\s*false/g) || []).length;
+  assert.equal(
+    shellFalseGuards,
+    spawnCalls,
+    `${filePath}: spawn() count (${spawnCalls}) !== shell:false count (${shellFalseGuards}) — every spawn() must carry shell:false`,
   );
   assert.ok(
     !src.includes('shell: true'),
@@ -62,7 +62,7 @@ for (const filePath of productionFiles) {
   );
 }
 
-console.log('static source assertions: ok (shell: false present, shell: true absent in all 3 files)');
+console.log('static source assertions: ok (shell:false count matches spawn() count, shell:true absent in all 3 files)');
 
 // ─── Runtime test setup ──────────────────────────────────────────────────────
 const fakeBinPath = join(tempBin, 'fake-shell-false-tool');
@@ -147,7 +147,7 @@ const history = await import(pathToFileURL(join(repoRoot, 'chat', 'history.mjs')
 const normalizer = await import(pathToFileURL(join(repoRoot, 'chat', 'normalizer.mjs')).href);
 const summarizer = await import(pathToFileURL(join(repoRoot, 'chat', 'summarizer.mjs')).href);
 
-const { createSession, getSession, killAll, renameSession } = sessionManager;
+const { createSession, killAll, renameSession } = sessionManager;
 const { appendEvent } = history;
 const { messageEvent } = normalizer;
 const { triggerSessionLabelSuggestion } = summarizer;
