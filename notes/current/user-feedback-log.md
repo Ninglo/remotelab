@@ -21,6 +21,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-08-11 — mailbox access must come from WebUI user OAuth, never a host CLI identity
+
+- Source: direct owner correction after a Feishu mailbox-access query was answered from the machine's pinned `lark-cli` profile.
+- User slice: a RemoteLab user connecting their own Feishu account and asking which mailboxes the current identity can access.
+- Observed friction or ask: the product treated a host-configured CLI identity as though it were the current WebUI user's authorization. Mail access should instead require an explicit user SSO/OAuth flow exposed in WebUI.
+- Signal strength: concrete identity-boundary and privacy failure in a live task.
+- Product implication: add an instance-scoped Feishu Mail connector surface with authorize, callback, status, reauthorize, and revoke controls. Store and refresh user tokens inside that binding; enumerate accessible mailboxes only through the bound user token. If no binding exists, report authorization required and never fall back to a machine-global `lark-cli` identity. Shared/guest instances must not inherit the owner's Feishu mailbox token.
+- Promote to: connector binding contract, Settings connector UI, Feishu Mail capability routing, system prompt capability declaration, and regression tests for missing-binding and cross-instance isolation.
+
 ### 2026-08-10 — shared Agent validation must start clean and preserve real review gates
 
 - Source: direct owner review of a newly opened KOL workflow Agent.
