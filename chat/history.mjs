@@ -422,8 +422,11 @@ export async function loadHistory(sessionId, options = {}) {
   const meta = await loadMeta(sessionId);
   const includeBodies = options.includeBodies !== false;
   const fromSeq = Number.isInteger(options.fromSeq) && options.fromSeq > 0 ? options.fromSeq : 1;
+  const toSeq = Number.isInteger(options.toSeq) && options.toSeq >= 0
+    ? Math.min(meta.latestSeq, options.toSeq)
+    : meta.latestSeq;
   const events = [];
-  for (let seq = fromSeq; seq <= meta.latestSeq; seq += 1) {
+  for (let seq = fromSeq; seq <= toSeq; seq += 1) {
     const stored = await loadStoredEvent(sessionId, seq);
     if (!stored) continue;
     events.push(includeBodies ? await hydrateEvent(sessionId, stored) : stored);

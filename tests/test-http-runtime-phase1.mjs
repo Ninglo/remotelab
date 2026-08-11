@@ -798,12 +798,26 @@ async function phase11ForkSession() {
       'forked history should strip request ids',
     );
 
-    const running = await createSession(port, { name: 'Fork busy', group: 'Tests', description: 'Fork rejection while running' });
-    const runningSubmit = await submitMessage(port, running.id, 'req-fork-busy', 'slow run for rejection');
+    const running = await createSession(port, { name: 'Fork busy', group: 'Tests', description: 'Fork from stable boundary while running' });
+    const completedSubmit = await submitMessage(port, running.id, 'req-fork-completed', 'completed turn before active work');
+    await waitForRunTerminal(port, completedSubmit.json.run.id);
+    const completedEvents = await getEvents(port, running.id, 'all');
+    const completedThroughSeq = completedEvents.events.at(-1)?.seq || 0;
+
+    const runningSubmit = await submitMessage(port, running.id, 'req-fork-busy', 'active turn must not leak into fork');
     await waitForSessionBusy(port, running.id);
-    const reject = await request(port, 'POST', `/api/sessions/${running.id}/fork`);
-    assert.equal(reject.status, 409, 'fork should reject running sessions');
-    assert.equal(reject.json.error, 'Session is running');
+    const runningFork = await request(port, 'POST', `/api/sessions/${running.id}/fork`);
+    assert.equal(runningFork.status, 201, 'fork should use the stable pre-run boundary while the parent is running');
+    assert.equal(runningFork.json.session?.forkedFromSessionId, running.id, 'running fork should preserve parent lineage');
+    assert.equal(runningFork.json.session?.forkedFromSeq, completedThroughSeq, 'running fork should stop before the active turn');
+    const runningChildEvents = await getEvents(port, runningFork.json.session.id, 'all');
+    assert.equal(runningChildEvents.events.length, completedEvents.events.length, 'running fork should copy only completed history');
+    assert.equal(
+      runningChildEvents.events.some((event) => event.content === 'active turn must not leak into fork'),
+      false,
+      'running fork should exclude the active user message',
+    );
+    await waitForRunTerminal(port, runningSubmit.json.run.id);
 
     console.log('phase11-fork-session: ok');
   } finally {
