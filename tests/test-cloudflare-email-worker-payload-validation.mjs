@@ -1,61 +1,6 @@
 #!/usr/bin/env node
-/**
- * Tests for the validateOutboundPayload runtime type guard in
- * cloudflare/email-worker/src/index.ts.
- *
- * The TypeScript worker cannot be imported directly into Node.js (it uses
- * cloudflare:email which does not exist in Node.js). The validation logic is
- * therefore duplicated here as plain JS. When updating validateOutboundPayload
- * in index.ts, update this function to match.
- */
 import assert from 'assert/strict';
-
-function validateOutboundPayload(payload) {
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    return { error: 'Invalid payload: expected a JSON object' };
-  }
-
-  for (const field of ['from', 'subject', 'text', 'inReplyTo', 'references']) {
-    if (field in payload && typeof payload[field] !== 'string') {
-      return { error: `Invalid payload: "${field}" must be a string` };
-    }
-  }
-
-  if ('to' in payload) {
-    const to = payload['to'];
-    if (typeof to === 'string') {
-      // valid
-    } else if (Array.isArray(to)) {
-      for (let i = 0; i < to.length; i++) {
-        if (typeof to[i] !== 'string') {
-          return { error: `Invalid payload: "to[${i}]" must be a string` };
-        }
-      }
-    } else {
-      return { error: 'Invalid payload: "to" must be a string or array of strings' };
-    }
-  }
-
-  if ('attachments' in payload) {
-    const attachments = payload['attachments'];
-    if (!Array.isArray(attachments)) {
-      return { error: 'Invalid payload: "attachments" must be an array' };
-    }
-    for (let i = 0; i < attachments.length; i++) {
-      const entry = attachments[i];
-      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-        return { error: `Invalid payload: "attachments[${i}]" must be an object` };
-      }
-      for (const field of ['filename', 'contentType', 'contentBase64']) {
-        if (field in entry && typeof entry[field] !== 'string') {
-          return { error: `Invalid payload: "attachments[${i}].${field}" must be a string` };
-        }
-      }
-    }
-  }
-
-  return null;
-}
+import { validateOutboundPayload } from '../cloudflare/email-worker/src/validate.mjs';
 
 function assertRejects(payload, expectedFragment) {
   const result = validateOutboundPayload(payload);
@@ -110,7 +55,9 @@ assertRejects(
   '"attachments[1].filename" must be a string',
 );
 
-// valid inputs — validation passes, business-logic checks come later
+// valid inputs — validateOutboundPayload returns null; handleOutboundSend then
+// applies business-logic checks (sender required, recipient required, etc.)
+// and ultimately calls EMAIL.send only for fully valid payloads.
 assertAccepts({});
 assertAccepts({ to: 'alice@example.com' });
 assertAccepts({ to: ['alice@example.com', 'bob@example.com'] });
