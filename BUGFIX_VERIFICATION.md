@@ -345,3 +345,43 @@ the Wiki skill then rejected it as missing.
   parameters retain their declared types.
 - The regression uses the real numeric-looking Wiki space ID and passes.
 - Focused connector/Wiki tests and the full local `npm test` suite pass.
+
+---
+
+## Fork a topic while the parent session is running
+
+### Bug description
+
+When a Feishu topic arrived while its parent group session still had an active
+run, the formal `POST /api/sessions/:id/fork` route rejected the request with
+HTTP 409. The connector then followed its explicit fresh-session fallback, so
+the topic session lost its parent lineage and completed history.
+
+### RED evidence
+
+- `tests/test-session-forking.mjs` failed because the run manifest had no
+  stable pre-run boundary: `undefined !== 2` for `forkBaseSeq`.
+- After adding the core boundary logic, the HTTP regression still failed with
+  `409 !== 201`, proving the formal connector route retained a second running
+  session guard that the earlier implementation had missed.
+
+### Fix
+
+- Each run manifest now records the history sequence and context head captured
+  before the active user turn begins.
+- History and prepared fork context can be bounded to that recorded sequence.
+- A running parent forks from this immutable boundary, excluding the active
+  user message and all in-flight output while preserving completed history.
+- The HTTP fork route now delegates this decision to `forkSession` instead of
+  rejecting all running parents before the stable-boundary logic can run.
+
+### GREEN evidence
+
+- [x] `node tests/test-session-forking.mjs`
+- [x] `REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER=1 node tests/test-http-runtime-phase1.mjs all`
+- [x] Connector, Feishu topic-fork, and Feishu connector focused tests
+- [x] Full `REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER=1 npm test` suite
+- [x] `npm run test:integration`
+- [x] `npm run lint:filesize` and `git diff --check`
+
+**Date:** 2026-08-11
