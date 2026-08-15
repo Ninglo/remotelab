@@ -77,9 +77,10 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Fix: persist `claudeSessionId`/`codexThreadId` in the session metadata JSON, rehydrate into memory when the session is first used after restart.
 - **Rehydration ordering trap**: WebSocket `subscribe`/`attach` creates a bare `live` entry in the in-memory Map BEFORE `sendMessage` runs. If rehydration is gated on `!live`, it gets skipped. Rehydration must check the live entry's fields, not its existence.
 
-### Testing Strategy for Self-Hosted Services (2026-03-06)
-- Never restart the server you're running on to test restart-survival features. Spin up a separate instance on a different port (e.g., 7694) and run the full test cycle there.
-- Use node WebSocket client for API testing — match the actual protocol (`action` field, attach-before-send flow).
+### Restart Validation for Self-Hosted Services (revised 2026-08-16)
+- When the shipped architecture is restart-safe and backed by durable run/session state, a clean restart of the active service is a valid normal test. Verify listener recovery, HTTP state, durable run reconciliation, and the affected public path afterward; do not treat socket continuity as the success criterion.
+- Use a separate ad-hoc instance or port only when the test is destructive, needs isolation, or the active user workflow cannot tolerate interruption. Do not turn that temporary validation surface into a permanent second control plane by default.
+- Protocol tests should still match the current transport contract and canonical state flow rather than probing an obsolete WebSocket action sequence.
 
 ### Similar UI Totals Often Have Separate Code Paths (2026-03-11)
 - In RemoteLab, session row counts, folder counts, archive counts, and app-filter totals can look like one product concept while still coming from different frontend functions.
@@ -325,9 +326,10 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Startup memory and scope routing should treat non-repo domains like email, scheduling, documents, forms, and media work as first-class scopes so ordinary users are not forced through developer abstractions.
 - Internal implementation labels such as `systemPrompt`, `welcomeMessage`, memory filenames, or API payload keys may still exist in product state, but default user-facing language should translate them into plain concepts like opening message, behavior instructions, background context, result, and next step.
 
-### Existing RemoteLab Push State Can Power One-Off Reminders (2026-03-06)
-- If a deployment already has active web-push subscriptions, you can send ad hoc reminders without touching app code by reading `~/.config/remotelab/vapid-keys.json` and `~/.config/remotelab/push-subscriptions.json` from a local script and using the repo's `web-push` dependency directly.
-- This is useful for operator-scheduled reminders or out-of-band alerts, but it still depends on the host machine being awake and online at send time; pair it with a local fallback notification and, when appropriate, temporary `caffeinate`.
+### Reminder Delivery Must Use Declared Connectors (revised 2026-08-16)
+- Treat reminder intent, durable schedule state, and delivery channel as separate concerns. Ordinary time-based reminders should use the instance's explicitly configured agenda/feed or bound calendar/notification connector.
+- Do not discover and invoke ambient host push keys, GUI calendar state, local notification scripts, or unrelated credentials as an undeclared fallback. If the required delivery connector is absent, expose that capability gap instead.
+- Use a future AI trigger only when the future action needs fresh reasoning or tool work; deterministic reminders should remain deterministic connector writes.
 
 ### Public Snapshot Shares Should Be Static + Sandboxed (2026-03-06)
 - For one-link public transcript sharing, generate an immutable snapshot from the current session history instead of attaching visitors to any live session or auth state.
