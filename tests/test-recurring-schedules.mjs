@@ -73,4 +73,42 @@ const cancelled = await updateRecurringSchedule(schedule.id, { enabled: false })
 assert.equal(cancelled.status, 'cancelled');
 assert.equal(cancelled.enabled, false);
 
+const freshSchedule = await createRecurringSchedule({
+  executionMode: 'fresh_session',
+  sessionTemplate: {
+    folder: '/tmp',
+    tool: 'codex',
+    name: 'Fresh execution',
+    internalRole: 'scheduled_execution',
+  },
+  title: 'Fresh daily task',
+  text: 'Run in isolation',
+  cron: '0 20 * * *',
+  timezone: 'Asia/Shanghai',
+}, { now: '2026-07-27T00:00:15.000Z' });
+assert.equal(freshSchedule.sessionId, '');
+assert.equal(freshSchedule.executionMode, 'fresh_session');
+assert.equal(freshSchedule.sessionTemplate.internalRole, 'scheduled_execution');
+
+const badSchedule = await createRecurringSchedule({
+  sessionId: 'archived-session', text: 'bad', cron: '* * * * *', timezone: 'Asia/Shanghai',
+}, { now: '2026-07-27T00:10:15.000Z' });
+const healthySchedule = await createRecurringSchedule({
+  executionMode: 'fresh_session',
+  sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Healthy execution' },
+  text: 'healthy', cron: '* * * * *', timezone: 'Asia/Shanghai',
+}, { now: '2026-07-27T00:10:15.000Z' });
+const isolated = await materializeDueRecurringSchedulesNow({
+  now: '2026-07-27T00:11:20.000Z',
+  countOpenScheduleTriggers: async () => 0,
+  createScheduledTrigger: async (input) => {
+    if (input.sessionId === 'archived-session') throw new Error('Session is archived');
+    return { id: 'trg_healthy', ...input };
+  },
+});
+assert.equal(isolated.failed, 1, 'one broken schedule should be reported');
+assert.equal(isolated.materialized, 1, 'one broken schedule must not block healthy schedules');
+await updateRecurringSchedule(badSchedule.id, { enabled: false });
+await updateRecurringSchedule(healthySchedule.id, { enabled: false });
+
 console.log('RecurringSchedule model tests passed.');

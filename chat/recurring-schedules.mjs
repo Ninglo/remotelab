@@ -7,6 +7,8 @@ import { normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
 const DEFAULT_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_POLL_MS = 15000;
 const DEFAULT_MAX_OPEN_OCCURRENCES = 10;
+const EXECUTION_MODE_EXISTING_SESSION = 'existing_session';
+const EXECUTION_MODE_FRESH_SESSION = 'fresh_session';
 const MAX_CRON_SEARCH_MINUTES = 5 * 366 * 24 * 60;
 
 let schedulesCache = null;
@@ -31,6 +33,26 @@ function nowIso(value = Date.now()) {
 function normalizeTimestamp(value) {
   const parsed = Date.parse(trimString(value));
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
+}
+
+function normalizeExecutionMode(value) {
+  return trimString(value) === EXECUTION_MODE_FRESH_SESSION
+    ? EXECUTION_MODE_FRESH_SESSION
+    : EXECUTION_MODE_EXISTING_SESSION;
+}
+
+function normalizeSessionTemplate(value, fallbackTool = '') {
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const template = {
+    folder: trimString(raw.folder),
+    tool: trimString(raw.tool) || trimString(fallbackTool),
+    name: trimString(raw.name),
+    group: trimString(raw.group),
+    description: trimString(raw.description),
+    systemPrompt: trimString(raw.systemPrompt),
+    internalRole: trimString(raw.internalRole) || 'scheduled_execution',
+  };
+  return template.folder && template.tool ? template : null;
 }
 
 function createScheduleId() {
@@ -185,9 +207,12 @@ function getLatestCronOccurrenceAtOrBefore(expression, timezone, at) {
 
 function normalizeStoredSchedule(value) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const executionMode = normalizeExecutionMode(raw.executionMode);
   const sessionId = trimString(raw.sessionId);
   const text = trimString(raw.text);
-  if (!sessionId || !text) return null;
+  const sessionTemplate = normalizeSessionTemplate(raw.sessionTemplate, raw.tool);
+  if (!text || (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId)
+    || (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate)) return null;
   const cron = parseCronExpression(raw.cron).expression;
   const timezone = validateTimezone(raw.timezone);
   const createdAt = normalizeTimestamp(raw.createdAt) || nowIso();
@@ -196,7 +221,9 @@ function normalizeStoredSchedule(value) {
     id: /^sch_[a-f0-9]{24}$/.test(trimString(raw.id)) ? trimString(raw.id) : createScheduleId(),
     status: enabled ? 'active' : 'cancelled',
     enabled,
+    executionMode,
     sessionId,
+    sessionTemplate,
     title: trimString(raw.title),
     text,
     cron,
@@ -213,6 +240,8 @@ function normalizeStoredSchedule(value) {
     lastScheduledAt: normalizeTimestamp(raw.lastScheduledAt),
     missedCount: Math.max(0, Number.parseInt(raw.missedCount, 10) || 0),
     skippedCount: Math.max(0, Number.parseInt(raw.skippedCount, 10) || 0),
+    lastError: trimString(raw.lastError),
+    lastErrorAt: normalizeTimestamp(raw.lastErrorAt),
     createdAt,
     updatedAt: normalizeTimestamp(raw.updatedAt) || createdAt,
     cancelledAt: normalizeTimestamp(raw.cancelledAt),
@@ -275,9 +304,14 @@ export async function getRecurringSchedule(scheduleId) {
 }
 
 export async function createRecurringSchedule(input = {}, options = {}) {
+  const executionMode = normalizeExecutionMode(input.executionMode);
   const sessionId = trimString(input.sessionId);
   const text = trimString(input.text);
-  if (!sessionId) throw new Error('sessionId is required');
+  const sessionTemplate = normalizeSessionTemplate(input.sessionTemplate, input.tool);
+  if (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId) throw new Error('sessionId is required');
+  if (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate) {
+    throw new Error('sessionTemplate with folder and tool is required for fresh_session schedules');
+  }
   if (!text) throw new Error('text is required');
   const cron = parseCronExpression(input.cron).expression;
   const timezone = validateTimezone(input.timezone);
@@ -286,7 +320,9 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     id: createScheduleId(),
     status: input.enabled === false ? 'cancelled' : 'active',
     enabled: input.enabled !== false,
+    executionMode,
     sessionId,
+    sessionTemplate,
     title: input.title,
     text,
     cron,
@@ -322,7 +358,16 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     const text = Object.prototype.hasOwnProperty.call(patch, 'text')
       ? trimString(patch.text)
       : current.text;
-    if (!sessionId) throw new Error('sessionId is required');
+    const executionMode = Object.prototype.hasOwnProperty.call(patch, 'executionMode')
+      ? normalizeExecutionMode(patch.executionMode)
+      : current.executionMode;
+    const sessionTemplate = Object.prototype.hasOwnProperty.call(patch, 'sessionTemplate')
+      ? normalizeSessionTemplate(patch.sessionTemplate, patch.tool || current.tool)
+      : current.sessionTemplate;
+    if (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId) throw new Error('sessionId is required');
+    if (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate) {
+      throw new Error('sessionTemplate with folder and tool is required for fresh_session schedules');
+    }
     if (sessionId !== current.sessionId) throw new Error('sessionId cannot be changed; create a new schedule instead');
     if (!text) throw new Error('text is required');
     if (Object.prototype.hasOwnProperty.call(patch, 'thinking') && typeof patch.thinking !== 'boolean') {
@@ -344,6 +389,8 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
       ...current,
       ...patch,
       sessionId,
+      executionMode,
+      sessionTemplate,
       text,
       cron,
       timezone,
@@ -397,47 +444,65 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
   if (typeof createScheduledTrigger !== 'function') throw new Error('createScheduledTrigger is required');
   let materialized = 0;
   let skipped = 0;
+  let failed = 0;
   const candidates = (await listRecurringSchedules()).filter((entry) => (
     entry.enabled && entry.nextRunAt && Date.parse(entry.nextRunAt) <= nowMs
   ));
   for (const candidate of candidates) {
-    await withScheduleMutation(async (schedules, save) => {
-      const index = schedules.findIndex((entry) => entry.id === candidate.id);
-      if (index === -1) return;
-      const current = schedules[index];
-      if (!current.enabled || !current.nextRunAt || Date.parse(current.nextRunAt) > nowMs) return;
-      const occurrences = collectDueOccurrences(current, nowMs);
-      if (occurrences.due.length === 0) return;
-      const latestAt = occurrences.due.at(-1);
-      const openCount = await countOpenScheduleTriggers(current.id);
-      if (openCount >= current.maxOpenOccurrences) {
-        current.skippedCount += 1;
-        skipped += 1;
-      } else {
-        await createScheduledTrigger({
-          sessionId: current.sessionId,
-          title: current.title,
-          text: current.text,
-          scheduledAt: latestAt,
-          tool: current.tool,
-          model: current.model,
-          effort: current.effort,
-          thinking: current.thinking,
-          scheduleId: current.id,
-          occurrenceId: `${current.id}:${latestAt}`,
-          sourceDelivery: current.sourceDelivery,
-        });
-        current.lastScheduledAt = latestAt;
-        materialized += 1;
-      }
-      current.missedCount += Math.max(0, occurrences.due.length - 1);
-      current.nextRunAt = occurrences.nextRunAt;
-      current.updatedAt = now;
-      schedules[index] = normalizeStoredSchedule(current);
-      await save(schedules);
-    });
+    try {
+      await withScheduleMutation(async (schedules, save) => {
+        const index = schedules.findIndex((entry) => entry.id === candidate.id);
+        if (index === -1) return;
+        const current = schedules[index];
+        if (!current.enabled || !current.nextRunAt || Date.parse(current.nextRunAt) > nowMs) return;
+        const occurrences = collectDueOccurrences(current, nowMs);
+        if (occurrences.due.length === 0) return;
+        const latestAt = occurrences.due.at(-1);
+        const openCount = await countOpenScheduleTriggers(current.id);
+        if (openCount >= current.maxOpenOccurrences) {
+          current.skippedCount += 1;
+          skipped += 1;
+        } else {
+          await createScheduledTrigger({
+            executionMode: current.executionMode,
+            sessionId: current.sessionId,
+            sessionTemplate: current.sessionTemplate,
+            title: current.title,
+            text: current.text,
+            scheduledAt: latestAt,
+            tool: current.tool,
+            model: current.model,
+            effort: current.effort,
+            thinking: current.thinking,
+            scheduleId: current.id,
+            occurrenceId: `${current.id}:${latestAt}`,
+            sourceDelivery: current.sourceDelivery,
+          });
+          current.lastScheduledAt = latestAt;
+          materialized += 1;
+        }
+        current.missedCount += Math.max(0, occurrences.due.length - 1);
+        current.nextRunAt = occurrences.nextRunAt;
+        current.lastError = '';
+        current.lastErrorAt = '';
+        current.updatedAt = now;
+        schedules[index] = normalizeStoredSchedule(current);
+        await save(schedules);
+      });
+    } catch (error) {
+      failed += 1;
+      await withScheduleMutation(async (schedules, save) => {
+        const current = schedules.find((entry) => entry.id === candidate.id);
+        if (!current) return;
+        current.lastError = error.message || 'Failed to materialize schedule';
+        current.lastErrorAt = now;
+        current.updatedAt = now;
+        await save(schedules);
+      });
+      console.error(`[recurring-schedules] failed to materialize ${candidate.id}: ${error.message}`);
+    }
   }
-  return { due: candidates.length, materialized, skipped };
+  return { due: candidates.length, materialized, skipped, failed };
 }
 
 export function startRecurringScheduleScheduler(options = {}) {

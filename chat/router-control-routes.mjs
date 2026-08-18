@@ -394,7 +394,10 @@ export async function handleControlRoutes({
     const sessionId = typeof parsedUrl?.query?.sessionId === 'string'
       ? parsedUrl.query.sessionId
       : '';
-    const triggers = await listTriggers({ sessionId });
+    const scheduleIdFilter = typeof parsedUrl?.query?.scheduleId === 'string'
+      ? parsedUrl.query.scheduleId
+      : '';
+    const triggers = await listTriggers({ sessionId, scheduleId: scheduleIdFilter });
     writeJson(res, 200, { triggers });
     return true;
   }
@@ -491,17 +494,20 @@ export async function handleControlRoutes({
       return true;
     }
     try {
+      const executionMode = String(payload.executionMode || '').trim() === 'fresh_session'
+        ? 'fresh_session'
+        : 'existing_session';
       const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
-      const session = sessionId ? await getSession(sessionId) : null;
-      if (!session) throw new Error('Session not found');
-      if (session.archived) throw new Error('Session is archived');
+      const session = executionMode === 'existing_session' && sessionId ? await getSession(sessionId) : null;
+      if (executionMode === 'existing_session' && !session) throw new Error('Session not found');
+      if (session?.archived) throw new Error('Session is archived');
       let sourceDelivery = payload.sourceDelivery;
-      if (!sourceDelivery && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
+      if (!sourceDelivery && session && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
         sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sessionId, {
           requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
         }));
       }
-      const schedule = await createRecurringSchedule({ ...payload, sessionId, sourceDelivery });
+      const schedule = await createRecurringSchedule({ ...payload, executionMode, sessionId, sourceDelivery });
       writeJson(res, 201, { schedule });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create schedule' });
@@ -526,7 +532,8 @@ export async function handleControlRoutes({
       return true;
     }
     try {
-      if (Object.prototype.hasOwnProperty.call(payload, 'sessionId')) {
+      const freshSessionPatch = String(payload.executionMode || '').trim() === 'fresh_session';
+      if (Object.prototype.hasOwnProperty.call(payload, 'sessionId') && !freshSessionPatch) {
         const targetSession = typeof payload.sessionId === 'string' ? await getSession(payload.sessionId.trim()) : null;
         if (!targetSession) throw new Error('Session not found');
         if (targetSession.archived) throw new Error('Session is archived');

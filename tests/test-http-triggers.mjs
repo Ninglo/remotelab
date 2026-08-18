@@ -250,6 +250,34 @@ async function main() {
       'trigger requestId should only enter the session once',
     );
 
+    const freshTriggerRes = await request(port, 'POST', '/api/triggers', {
+      executionMode: 'fresh_session',
+      sessionTemplate: {
+        folder: repoRoot,
+        tool: 'fake-codex',
+        name: 'Fresh scheduled execution',
+        group: 'Scheduled tests',
+        internalRole: 'scheduled_execution',
+      },
+      title: 'Fresh run',
+      scheduledAt: new Date(Date.now() + 100).toISOString(),
+      text: 'Run in a fresh session.',
+      tool: 'fake-codex',
+      model: 'fake-model',
+      effort: 'low',
+    });
+    assert.equal(freshTriggerRes.status, 201, 'fresh trigger should not require a target session');
+    const deliveredFresh = await waitFor(async () => {
+      const res = await request(port, 'GET', `/api/triggers/${freshTriggerRes.json.trigger.id}`);
+      return res.status === 200 && res.json.trigger.status === 'delivered' ? res.json.trigger : false;
+    }, 'fresh trigger delivery');
+    assert.ok(deliveredFresh.executionSessionId, 'fresh trigger should retain its execution session');
+    assert.notEqual(deliveredFresh.executionSessionId, session.id, 'fresh trigger must not reuse an existing session');
+    const freshSessionRes = await request(port, 'GET', `/api/sessions/${deliveredFresh.executionSessionId}`);
+    assert.equal(freshSessionRes.status, 200);
+    assert.equal(freshSessionRes.json.session.internalRole, 'scheduled_execution');
+    await waitForRunTerminal(port, deliveredFresh.runId);
+
     const futureTriggerRes = await request(port, 'POST', '/api/triggers', {
       sessionId: session.id,
       title: 'Later follow-up',
