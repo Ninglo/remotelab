@@ -403,10 +403,14 @@ export async function countOpenScheduleTriggers(scheduleId) {
   const normalizedScheduleId = trimString(scheduleId);
   if (!normalizedScheduleId) return 0;
   const triggers = await loadTriggers();
-  return triggers.filter((trigger) => (
-    trigger.scheduleId === normalizedScheduleId
-    && !isTriggerTerminal(trigger)
-  )).length;
+  const candidates = triggers.filter((trigger) => trigger.scheduleId === normalizedScheduleId);
+  let open = candidates.filter((trigger) => !isTriggerTerminal(trigger)).length;
+  for (const trigger of candidates) {
+    if (trigger.status !== TRIGGER_STATUS_DELIVERED || !trimString(trigger.runId)) continue;
+    const run = await getRun(trigger.runId);
+    if (run && !isTerminalRunState(run.state)) open += 1;
+  }
+  return open;
 }
 
 export async function cancelScheduleTriggers(scheduleId, options = {}) {
