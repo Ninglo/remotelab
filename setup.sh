@@ -125,10 +125,12 @@ if command -v claude &> /dev/null; then
     print_success "Claude CLI found: $(which claude)"
 elif command -v codex &> /dev/null; then
     print_success "Codex CLI found: $(which codex)"
+elif command -v pi &> /dev/null; then
+    print_success "Pi CLI found: $(which pi)"
 elif command -v cline &> /dev/null; then
     print_success "Cline CLI found: $(which cline)"
 else
-    print_warning "No AI CLI tool found (claude / codex / cline). Install at least one before using RemoteLab."
+    print_warning "No AI CLI tool found (claude / codex / pi / cline). Install at least one before using RemoteLab."
 fi
 
 # Check cloudflared (only needed in Cloudflare mode)

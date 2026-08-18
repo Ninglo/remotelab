@@ -384,6 +384,9 @@ export async function getModelsForTool(toolId) {
   if (toolId === 'codex') {
     return getCodexModels();
   }
+  if (toolId === 'pi') {
+    return getCodexModels();
+  }
 
   const tool = await getToolDefinitionAsync(toolId);
   if (tool?.runtimeFamily) {

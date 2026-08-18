@@ -288,6 +288,7 @@ async function main() {
     dangerouslySkipPermissions: true,
     claudeSessionId: manifest.options?.claudeSessionId,
     codexThreadId: manifest.options?.codexThreadId,
+    piSessionId: manifest.sessionId,
     thinking: manifest.options?.thinking,
     model: manifest.options?.model,
     effort: manifest.options?.effort,

@@ -1,5 +1,6 @@
 import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
+import { createPiAdapter, buildPiArgs } from './adapters/pi.mjs';
 import { expandSessionFolder } from './session-folder.mjs';
 import {
   buildToolProcessEnvOverrides,
@@ -63,6 +64,13 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       developerInstructions: options.developerInstructions,
       systemPrefix: options.systemPrefix,
     });
+  } else if (normalizedRuntimeFamily === 'pi-json') {
+    adapter = createPiAdapter();
+    args = buildPiArgs(prompt, {
+      sessionId: options.piSessionId,
+      model: options.model,
+      thinking: options.effort,
+    });
   } else {
     throw new Error(`Tool "${toolId}" uses unsupported runtimeFamily "${normalizedRuntimeFamily}"`);
   }
@@ -72,6 +80,7 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
     args,
     isClaudeFamily: normalizedRuntimeFamily === 'claude-stream-json',
     isCodexFamily: normalizedRuntimeFamily === 'codex-json',
+    isPiFamily: normalizedRuntimeFamily === 'pi-json',
     runtimeFamily: normalizedRuntimeFamily,
   };
 }
@@ -82,7 +91,11 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
   const envOverrides = buildToolProcessEnvOverrides(tool || { id: toolId });
   const runtimeFamily = (typeof options.runtimeFamily === 'string' && options.runtimeFamily.trim())
     || tool?.runtimeFamily
-    || (toolId === 'claude' ? 'claude-stream-json' : toolId === 'codex' ? 'codex-json' : null);
+    || (toolId === 'claude'
+      ? 'claude-stream-json'
+      : toolId === 'codex'
+        ? 'codex-json'
+        : toolId === 'pi' ? 'pi-json' : null);
   const runtimeInvocation = buildRuntimeInvocation(runtimeFamily, prompt, options, toolId);
 
   return {
