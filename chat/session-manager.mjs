@@ -1476,7 +1476,9 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     sessionChanged = await persistResumeIds(sessionId, run.claudeSessionId, run.codexThreadId) || sessionChanged;
   }
 
-  const isStructuredRuntime = projection.runtimeInvocation.isClaudeFamily || projection.runtimeInvocation.isCodexFamily;
+  const isStructuredRuntime = projection.runtimeInvocation.isClaudeFamily
+    || projection.runtimeInvocation.isCodexFamily
+    || projection.runtimeInvocation.isPiFamily;
   let result = await getRunResult(runId);
   if (!result && !isTerminalRunState(run.state)) {
     const reconciled = await synthesizeDetachedRunTermination(runId, run);
@@ -2272,14 +2274,20 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
     ? 'bare-user'
     : 'default';
   const flattenPrompt = toolDefinition?.flattenPrompt === true;
-  const { hasResume } = resolveResumeState(effectiveTool, session, options, toolDefinition?.runtimeFamily || '');
+  const currentSnapshot = snapshot || await getHistorySnapshot(sessionId);
+  const resumeState = resolveResumeState(effectiveTool, session, options, toolDefinition?.runtimeFamily || '');
+  const hasResume = toolDefinition?.runtimeFamily === 'pi-json'
+    ? options.freshThread !== true
+      && previousTool === effectiveTool
+      && (currentSnapshot.userMessageCount || 0) > 0
+    : resumeState.hasResume;
   let continuationContext = '';
 
   if (!hasResume && options.skipSessionContinuation !== true) {
     const contextHead = await getContextHead(sessionId);
     const prepared = await getOrPrepareForkContext(
       sessionId,
-      snapshot || await getHistorySnapshot(sessionId),
+      currentSnapshot,
       contextHead,
     );
     const workState = buildSessionWorkState(session, {
@@ -4249,7 +4257,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }
   const effectiveToolDefinition = await getToolDefinitionAsync(effectiveTool);
   const effectiveRuntimeFamily = (typeof effectiveToolDefinition?.runtimeFamily === 'string' && effectiveToolDefinition.runtimeFamily.trim())
-    || (effectiveTool === 'claude' ? 'claude-stream-json' : effectiveTool === 'codex' ? 'codex-json' : null);
+    || (effectiveTool === 'claude'
+      ? 'claude-stream-json'
+      : effectiveTool === 'codex'
+        ? 'codex-json'
+        : effectiveTool === 'pi' ? 'pi-json' : null);
 
   const {
     claudeSessionId: persistedClaudeSessionId,
