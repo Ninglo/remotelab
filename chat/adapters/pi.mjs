@@ -57,6 +57,7 @@ function parseAssistantMessage(message) {
 }
 
 export function createPiAdapter() {
+  let lastAssistantFailed = false;
   return {
     parseLine(line) {
       const trimmed = String(line || '').trim();
@@ -74,6 +75,10 @@ export function createPiAdapter() {
         case 'turn_start':
           return [statusEvent('thinking')];
         case 'message_end':
+          if (event.message?.role === 'assistant') {
+            lastAssistantFailed = event.message.stopReason === 'error'
+              || event.message.stopReason === 'aborted';
+          }
           return parseAssistantMessage(event.message);
         case 'tool_execution_start':
           return [toolUseEvent(event.toolName || 'tool', serializeToolValue(event.args))];
@@ -83,8 +88,8 @@ export function createPiAdapter() {
             serializeToolValue(event.result),
             event.isError ? 1 : 0,
           )];
-        case 'agent_end':
-          return [statusEvent('completed')];
+        case 'agent_settled':
+          return lastAssistantFailed ? [] : [statusEvent('completed')];
         default:
           return [];
       }
