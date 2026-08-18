@@ -55,4 +55,35 @@ assert.deepEqual(toolEvents.map((event) => event.type), ['tool_use', 'tool_resul
 assert.equal(toolEvents[1].output, '/tmp');
 assert.equal(adapter.parseLine('{bad json').length, 0);
 
+const retryingAdapter = createPiAdapter();
+retryingAdapter.parseLine(JSON.stringify({
+  type: 'message_end',
+  message: {
+    role: 'assistant',
+    content: [],
+    stopReason: 'error',
+    errorMessage: 'temporary failure',
+  },
+}));
+assert.equal(
+  retryingAdapter.parseLine(JSON.stringify({ type: 'agent_end', willRetry: true })).length,
+  0,
+  'agent_end may precede an automatic retry and must not complete the run',
+);
+assert.equal(
+  retryingAdapter.parseLine(JSON.stringify({ type: 'agent_settled' })).length,
+  0,
+  'a settled failed turn should rely on the process exit code',
+);
+
+const settledAdapter = createPiAdapter();
+settledAdapter.parseLine(JSON.stringify({
+  type: 'message_end',
+  message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], stopReason: 'stop' },
+}));
+assert.equal(
+  settledAdapter.parseLine(JSON.stringify({ type: 'agent_settled' }))[0]?.content,
+  'completed',
+);
+
 console.log('test-pi-adapter: ok');
