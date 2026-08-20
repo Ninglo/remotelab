@@ -506,6 +506,7 @@ function buildSessionListOrganizerTask(input) {
     "Organize only the scoped non-archived RemoteLab sessions included in the provided metadata snapshot.",
     `Create or reuse roughly ${targetSpaceCount} broad Spaces for ${totalSessions} scoped sessions; this is a soft upper budget, not a target to fill.`,
     "Spaces are durable context boundaries. Projects are concrete workstreams inside a Space. Assign genuinely temporary or ambiguous sessions to the reserved `Loose` Space rather than inventing a weak category.",
+    "Use the dominant language of the session titles and current catalog for user-visible Space and Project names; when that language is Chinese, use concise natural Chinese labels.",
     "Choose clearer Projects groups and a better sidebar ordering based on actual workstream similarity, current user consumption, and the target project budget.",
     `Target roughly ${targetProjectCount} Projects groups for ${totalSessions} scoped sessions; this is a soft budget, not an exact quota.`,
     targetSessionsPerProject > 0

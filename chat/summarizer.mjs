@@ -359,6 +359,7 @@ async function runSessionLabelSuggestion(sessionMeta, onRename, options = {}) {
     'If the fit is plausible but not perfect, prefer the closest existing workstream group and let the title/description carry the concrete subtask.',
     'The title should name the concrete work happening inside that group.',
     'The latest turn may be underspecified. Use earlier session context, scope-router hints, and existing session metadata to infer the right workstream before naming.',
+    'Write user-visible labels in the language used by the user. When the user writes in Chinese, use concise natural Chinese for space, group, and title; reuse a fitting existing label even if the latest turn is brief.',
     '',
     `Session folder: ${folder}`,
     `Current session name: ${name || '(unnamed)'}`,
