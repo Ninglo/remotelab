@@ -38,9 +38,12 @@ assert.equal(documentSkill.schema.keyword.type, 'string');
 assert.equal(documentSkill.schema.downloadMedia.type, 'boolean');
 
 const documentUrl = 'https://example.feishu.cn/docx/DOCtoken123456789';
+const wikiUrl = 'https://example.feishu.cn/wiki/WIKItoken123456789';
 assert.equal(extractFeishuDocumentToken(documentUrl), 'DOCtoken123456789');
+assert.equal(extractFeishuDocumentToken(wikiUrl), 'WIKItoken123456789');
 assert.equal(extractFeishuDocumentToken('DOCtoken123456789'), 'DOCtoken123456789');
 assert.equal(extractFeishuDocumentToken(`请读取 ${documentUrl} 的结论`), 'DOCtoken123456789');
+assert.equal(extractFeishuDocumentToken(`请读取 ${wikiUrl} 的结论`), 'WIKItoken123456789');
 assert.equal(extractFeishuDocumentToken('ordinary message'), '');
 
 const postSummary = summarizeFeishuEvent({
@@ -114,6 +117,9 @@ assert.equal(calls.length, 1);
 assert.equal(calls[0].documentToken, documentUrl);
 assert.equal(calls[0].maxChars, 6);
 
+await readFeishuDocument(runtime, { documentToken: wikiUrl });
+assert.equal(calls[1].documentToken, wikiUrl);
+
 await assert.rejects(
   () => readFeishuDocument({
     documentProvider: {
@@ -166,6 +172,7 @@ try {
   assert.match(systemContext, /--scope outline/);
   assert.match(systemContext, /contentPath/);
   assert.match(systemContext, /download-media/);
+  assert.doesNotMatch(systemContext, /### Feishu Wiki/, 'unimplemented provider methods must not be advertised');
 } finally {
   await documentCapability.stop();
   await rm(tempRoot, { recursive: true, force: true });

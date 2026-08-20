@@ -1,5 +1,5 @@
 import assert from 'assert/strict';
-import { chmod, mkdtemp, readFile, writeFile } from 'fs/promises';
+import { access, chmod, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -26,6 +26,11 @@ if [ "$1" = "login" ] && [ "$2" = "--device-auth" ]; then
   echo "Successfully logged in"
   exit 0
 fi
+if [ "$1" = "logout" ]; then
+  rm -f "$CODEX_HOME/auth.json"
+  echo "Successfully logged out"
+  exit 0
+fi
 exit 2
 `);
 await chmod(fakeCodex, 0o755);
@@ -50,5 +55,10 @@ const completed = await manager.getStatus();
 assert.equal(completed.loggedIn, true);
 assert.equal(completed.phase, 'authenticated');
 assert.equal(JSON.parse(await readFile(join(codexHome, 'auth.json'), 'utf8')).tokens != null, true);
+
+const loggedOut = await manager.logout();
+assert.equal(loggedOut.loggedIn, false);
+assert.equal(loggedOut.phase, 'idle');
+await assert.rejects(access(join(codexHome, 'auth.json')));
 
 console.log('Codex auth manager tests passed');

@@ -48,9 +48,9 @@ export const FEISHU_SKILLS = [
   },
   {
     name: 'document_get',
-    description: 'Read structured Feishu Docx content with scoped retrieval and optional local media downloads using the originating connector bot identity.',
+    description: 'Read structured Feishu Docx or Wiki-backed document content with scoped retrieval and optional local media downloads using the originating connector bot identity.',
     schema: {
-      documentToken: { type: 'string', required: true, description: 'Feishu Docx URL or document token' },
+      documentToken: { type: 'string', required: true, description: 'Feishu Docx/Wiki URL or document token' },
       scope: { type: 'string', description: 'Read scope: full, outline, section, range, or keyword' },
       detail: { type: 'string', description: 'Detail level: simple, with-ids, or full' },
       docFormat: { type: 'string', description: 'Content format: xml, markdown, or im-markdown' },
@@ -64,6 +64,39 @@ export const FEISHU_SKILLS = [
       maxChars: { type: 'number', description: 'Maximum inline content characters; full content is saved at contentPath' },
       downloadMedia: { type: 'boolean', description: 'Download indexed images/files/whiteboards into the local snapshot' },
       maxMedia: { type: 'number', description: 'Maximum indexed media items to download' },
+    },
+  },
+  {
+    name: 'wiki_node_get',
+    description: 'Read one Feishu Wiki node metadata record using the originating connector bot identity without fetching its document body.',
+    schema: {
+      nodeToken: { type: 'string', required: true, description: 'Wiki node token, object token, or Feishu/Lark document URL' },
+      objType: { type: 'string', description: 'Object type for a raw object token: doc, docx, sheet, bitable, mindnote, slides, or file' },
+      spaceId: { type: 'string', description: 'Optional Wiki space ID assertion' },
+    },
+  },
+  {
+    name: 'wiki_children_list',
+    description: 'Read one page of root or child nodes in a Feishu Wiki space using the originating connector bot identity.',
+    schema: {
+      spaceId: { type: 'string', required: true, description: 'Wiki space ID; the Bot-only connector does not support my_library' },
+      parentNodeToken: { type: 'string', description: 'Optional parent Wiki node token; omit for space roots' },
+      pageSize: { type: 'number', description: 'Single-page size from 1 to 50' },
+      pageToken: { type: 'string', description: 'Optional upstream page cursor to continue the same child listing' },
+    },
+  },
+  {
+    name: 'wiki_tree_list',
+    description: 'Run a bounded breadth-first Wiki metadata traversal with explicit completion, truncation, permission-failure, continuation, and snapshot results.',
+    schema: {
+      spaceId: { type: 'string', required: true, description: 'Wiki space ID; the Bot-only connector does not support my_library' },
+      rootNodeToken: { type: 'string', description: 'Optional root node whose descendants should be traversed; omit for space roots' },
+      pageSize: { type: 'number', description: 'Per-parent page size from 1 to 50' },
+      maxDepth: { type: 'number', description: 'Maximum relative result depth from 0 to 20' },
+      maxNodes: { type: 'number', description: 'Maximum nodes returned in this traversal call from 1 to 5000' },
+      maxPages: { type: 'number', description: 'Maximum child-list requests in this traversal call from 1 to 1000' },
+      maxInlineNodes: { type: 'number', description: 'Maximum nodes returned inline; the complete call snapshot remains at contentPath' },
+      continuationToken: { type: 'string', description: 'Opaque token returned by an incomplete traversal to resume pending branches' },
     },
   },
 ];
@@ -195,9 +228,9 @@ function renderPostElementText(element) {
 export function extractFeishuDocumentToken(value) {
   const normalized = trimString(value);
   if (!normalized) return '';
-  const urlMatch = normalized.match(/https?:\/\/[^\s)\]}>'"]+\/docx\/([A-Za-z0-9_-]{8,})/i);
+  const urlMatch = normalized.match(/https?:\/\/[^\s)\]}>'"]+\/(?:docx|wiki)\/([A-Za-z0-9_-]{8,})/i);
   if (urlMatch?.[1]) return urlMatch[1];
-  const pathMatch = normalized.match(/(?:^|[\s(\[{])\/docx\/([A-Za-z0-9_-]{8,})(?=$|[\s)\]}?#])/i);
+  const pathMatch = normalized.match(/(?:^|[\s(\[{])\/(?:docx|wiki)\/([A-Za-z0-9_-]{8,})(?=$|[\s)\]}?#])/i);
   if (pathMatch?.[1]) return pathMatch[1];
   return /^[A-Za-z0-9_-]{8,}$/.test(normalized) ? normalized : '';
 }

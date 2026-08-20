@@ -5,6 +5,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { extractFeishuDocumentToken } from './index.mjs';
+import { createLarkCliWikiProvider } from './lark-cli-wiki-provider.mjs';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_LARK_CLI_PATH = resolve(MODULE_DIR, '../../node_modules/.bin/lark-cli');
@@ -69,14 +70,18 @@ function normalizeEnum(value, allowed, fallback, name) {
 }
 
 function normalizeFetchParameters(parameters = {}) {
-  const documentToken = extractFeishuDocumentToken(parameters.documentToken || parameters.documentUrl);
+  const rawDocumentReference = trimString(parameters.documentToken || parameters.documentUrl);
+  const documentToken = extractFeishuDocumentToken(rawDocumentReference);
   if (!documentToken) {
     throw createProviderError(
       'document_token_invalid',
-      'A valid Feishu Docx URL or document token is required.',
+      'A valid Feishu Docx/Wiki URL or document token is required.',
       400,
     );
   }
+  const documentUrl = rawDocumentReference.match(
+    /https?:\/\/[^\s)\]}>'"]+\/(?:docx|wiki)\/[A-Za-z0-9_-]{8,}(?:[^\s)\]}>'"]*)?/i,
+  )?.[0] || '';
   const scope = normalizeEnum(parameters.scope, VALID_SCOPES, 'full', 'scope');
   const detail = normalizeEnum(parameters.detail, VALID_DETAILS, 'simple', 'detail');
   const docFormat = normalizeEnum(parameters.docFormat, VALID_DOC_FORMATS, 'xml', 'docFormat');
@@ -106,6 +111,7 @@ function normalizeFetchParameters(parameters = {}) {
   }
   return {
     documentToken,
+    documentReference: documentUrl || documentToken,
     scope,
     detail,
     docFormat,
@@ -130,7 +136,7 @@ function appendOptionalArg(args, name, value) {
 function buildFetchArgs(parameters) {
   const args = [
     'docs', '+fetch',
-    '--doc', parameters.documentToken,
+    '--doc', parameters.documentReference,
     '--as', 'bot',
     '--format', 'json',
     '--doc-format', parameters.docFormat,
@@ -218,8 +224,8 @@ function findNestedString(value, keys, depth = 0) {
   return '';
 }
 
-function normalizeLarkCliFailure(error) {
-  if (error?.code && String(error.code).startsWith('document_')) return error;
+function normalizeLarkCliFailure(error, domain = 'document') {
+  if (error?.code && String(error.code).startsWith(`${domain}_`)) return error;
   if (error?.code === 'missing_scope' || error?.code === 'connector_unavailable') return error;
   const stderrPayload = parseJsonObject(error?.stderr);
   const stdoutPayload = parseJsonObject(error?.stdout);
@@ -234,30 +240,39 @@ function normalizeLarkCliFailure(error) {
   if (/99991672|99991679|missing[_\s-]*scope|scope.*required|token_scope_insufficient/i.test(searchable)) {
     return createProviderError(
       'missing_scope',
-      'The Feishu app is missing the required document read scope.',
+      domain === 'wiki'
+        ? 'The Feishu app is missing the required Wiki node read scope.'
+        : 'The Feishu app is missing the required document read scope.',
       403,
       details,
     );
   }
   if (/91403|forbidden|permission[_\s-]*denied|access[_\s-]*denied/i.test(searchable)) {
     return createProviderError(
-      'document_permission_denied',
-      'The Feishu bot app does not have permission to read this document.',
+      domain === 'wiki' ? 'wiki_permission_denied' : 'document_permission_denied',
+      domain === 'wiki'
+        ? 'The Feishu bot app does not have permission to read this Wiki node.'
+        : 'The Feishu bot app does not have permission to read this document.',
       403,
       details,
     );
   }
   if (/404|not[_\s-]*found/i.test(searchable)) {
-    return createProviderError('document_not_found', 'The Feishu document was not found.', 404, details);
+    return createProviderError(
+      domain === 'wiki' ? 'wiki_node_not_found' : 'document_not_found',
+      domain === 'wiki' ? 'The Feishu Wiki node was not found.' : 'The Feishu document was not found.',
+      404,
+      details,
+    );
   }
-  return createProviderError('document_read_failed', message, 502, details);
+  return createProviderError(domain === 'wiki' ? 'wiki_read_failed' : 'document_read_failed', message, 502, details);
 }
 
-function parseLarkCliEnvelope(result) {
+function parseLarkCliEnvelope(result, domain = 'document') {
   const payload = parseJsonObject(result?.stdout);
   if (!payload) {
     throw createProviderError(
-      'document_read_failed',
+      domain === 'wiki' ? 'wiki_read_failed' : 'document_read_failed',
       'lark-cli returned an invalid JSON response.',
       502,
     );
@@ -265,13 +280,13 @@ function parseLarkCliEnvelope(result) {
   if (payload.ok === false) {
     const error = new Error(findNestedString(payload, ['message', 'msg', 'hint']) || 'lark-cli request failed');
     error.stdout = JSON.stringify(payload);
-    throw normalizeLarkCliFailure(error);
+    throw normalizeLarkCliFailure(error, domain);
   }
   const identity = trimString(payload.identity).toLowerCase();
   if (identity && identity !== 'bot') {
     throw createProviderError(
-      'document_identity_mismatch',
-      `lark-cli returned ${identity} identity for a Bot-only document request.`,
+      domain === 'wiki' ? 'wiki_identity_mismatch' : 'document_identity_mismatch',
+      `lark-cli returned ${identity} identity for a Bot-only ${domain} request.`,
       502,
     );
   }
@@ -426,6 +441,7 @@ export function createLarkCliDocumentProvider(options = {}) {
   }
 
   async function runJson(args, requestOptions = {}) {
+    const domain = requestOptions.domain === 'wiki' ? 'wiki' : 'document';
     try {
       const result = await runCommand({
         command: larkCliPath,
@@ -435,9 +451,9 @@ export function createLarkCliDocumentProvider(options = {}) {
         timeoutMs: requestOptions.timeoutMs || LARK_CLI_TIMEOUT_MS,
         maxBuffer: requestOptions.maxBuffer || LARK_CLI_MAX_BUFFER,
       });
-      return parseLarkCliEnvelope(result);
+      return parseLarkCliEnvelope(result, domain);
     } catch (error) {
-      throw normalizeLarkCliFailure(error);
+      throw normalizeLarkCliFailure(error, domain);
     }
   }
 
@@ -532,11 +548,19 @@ export function createLarkCliDocumentProvider(options = {}) {
     return result;
   }
 
+  const wikiProvider = createLarkCliWikiProvider({
+    sourceRouteId,
+    snapshotDir,
+    initialize,
+    runJson: async (args) => await runJson(args, { domain: 'wiki' }),
+  });
+
   return {
     configDir,
     snapshotDir,
     sourceRouteId,
     initialize,
     fetch,
+    ...wikiProvider,
   };
 }

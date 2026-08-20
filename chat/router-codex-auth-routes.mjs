@@ -7,6 +7,7 @@ export async function handleCodexAuthRoutes({
   pathname,
   authSession,
   writeJson,
+  authManager = codexAuthManager,
 }) {
   if (!pathname.startsWith('/api/codex-auth')) return false;
   if (authSession?.role !== 'owner') {
@@ -16,9 +17,18 @@ export async function handleCodexAuthRoutes({
 
   if (pathname === '/api/codex-auth/status' && req.method === 'GET') {
     try {
-      writeJson(res, 200, { codexAuth: await codexAuthManager.getStatus() });
+      writeJson(res, 200, { codexAuth: await authManager.getStatus() });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to check Codex login' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/codex-auth/logout' && req.method === 'POST') {
+    try {
+      writeJson(res, 200, { codexAuth: await authManager.logout() });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to log out of Codex' });
     }
     return true;
   }
@@ -33,7 +43,7 @@ export async function handleCodexAuthRoutes({
       return true;
     }
     try {
-      const codexAuth = await codexAuthManager.startDeviceLogin({
+      const codexAuth = await authManager.startDeviceLogin({
         restart: payload?.restart === true,
       });
       writeJson(res, 200, { codexAuth });
