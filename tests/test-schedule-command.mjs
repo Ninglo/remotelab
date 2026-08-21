@@ -62,9 +62,13 @@ async function run(args) {
 
 const created = await run(['create', '--cron', '0 9 * * 1-5', '--text', 'Send date']);
 assert.equal(created.schedule.id, schedule.id);
+assert.equal(requests.at(-1).body.executionMode, 'fresh_session');
 assert.equal(requests.at(-1).body.deliverTo, 'session_source');
 assert.equal(requests.at(-1).body.sourceRequestId, 'feishu:om_current');
 assert.equal(requests.at(-1).body.timezone, 'Asia/Shanghai');
+
+await run(['create', '--cron', '0 10 * * *', '--text', 'Reuse context', '--reuse-session']);
+assert.equal(requests.at(-1).body.executionMode, 'existing_session');
 
 const listed = await run(['list']);
 assert.equal(listed.schedules.length, 1);

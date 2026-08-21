@@ -494,20 +494,42 @@ export async function handleControlRoutes({
       return true;
     }
     try {
-      const executionMode = String(payload.executionMode || '').trim() === 'fresh_session'
-        ? 'fresh_session'
-        : 'existing_session';
+      const requestedExecutionMode = String(payload.executionMode || '').trim();
+      if (requestedExecutionMode && !new Set(['fresh_session', 'existing_session']).has(requestedExecutionMode)) {
+        throw new Error('executionMode must be fresh_session or existing_session');
+      }
+      const executionMode = requestedExecutionMode === 'existing_session'
+        ? 'existing_session'
+        : 'fresh_session';
       const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
-      const session = executionMode === 'existing_session' && sessionId ? await getSession(sessionId) : null;
+      const session = sessionId ? await getSession(sessionId) : null;
       if (executionMode === 'existing_session' && !session) throw new Error('Session not found');
+      if (sessionId && !session) throw new Error('Session not found');
       if (session?.archived) throw new Error('Session is archived');
+      const sessionTemplate = executionMode === 'fresh_session' && !payload.sessionTemplate && session
+        ? {
+            folder: session.folder,
+            tool: String(payload.tool || session.tool || '').trim(),
+            name: String(payload.title || session.name || 'Scheduled task').trim(),
+            group: String(session.group || 'Scheduled executions').trim(),
+            description: `Isolated occurrence for ${String(payload.title || session.name || 'scheduled task').trim()}`,
+            systemPrompt: String(session.systemPrompt || '').trim(),
+            internalRole: 'scheduled_execution',
+          }
+        : payload.sessionTemplate;
       let sourceDelivery = payload.sourceDelivery;
       if (!sourceDelivery && session && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
         sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sessionId, {
           requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
         }));
       }
-      const schedule = await createRecurringSchedule({ ...payload, executionMode, sessionId, sourceDelivery });
+      const schedule = await createRecurringSchedule({
+        ...payload,
+        executionMode,
+        sessionId,
+        sessionTemplate,
+        sourceDelivery,
+      });
       writeJson(res, 201, { schedule });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create schedule' });

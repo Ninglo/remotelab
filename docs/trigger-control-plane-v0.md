@@ -93,6 +93,8 @@ Recurring schedules are stored in `chat-recurring-schedules.json` and exposed th
 
 Each due occurrence becomes a normal durable Trigger. The schedule advances independently, while its source-delivery snapshot stays unchanged across all occurrences.
 
+Recurring schedules default to `fresh_session`: every occurrence gets an isolated execution session seeded from the source session's folder, runtime, and system prompt. This avoids lifecycle coupling to an interactive session and prevents recurring context growth. Reusing one session is a deliberate continuity mode and must be requested explicitly with `executionMode: existing_session` or CLI `--reuse-session`.
+
 ## Source delivery outbox
 
 Source deliveries are stored in `chat-source-deliveries.json`. Run finalization writes one idempotent outbox record per trigger response. The matching Feishu connector claims records for its `sourceRouteId`, sends them to the recorded group or Topic anchor, and acknowledges completion. Leases, retry backoff, and stable response IDs make the handoff restart-safe.
@@ -198,7 +200,6 @@ Not in scope yet:
 
 - arbitrary condition graphs
 - multi-step workflow DAGs
-- trigger-created new sessions
 - UI surface for trigger authoring
 - dedicated UI authoring and model-native permission controls
 

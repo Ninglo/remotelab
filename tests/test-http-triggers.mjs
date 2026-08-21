@@ -429,7 +429,18 @@ async function main() {
       deliverTo: 'session_source',
     });
     assert.equal(scheduleRes.status, 201, 'recurring schedule should be created');
+    assert.equal(scheduleRes.json.schedule.executionMode, 'fresh_session');
+    assert.equal(scheduleRes.json.schedule.sessionTemplate.folder, sourceSession.folder);
+    assert.equal(scheduleRes.json.schedule.sessionTemplate.tool, 'fake-codex');
+    assert.equal(scheduleRes.json.schedule.sessionTemplate.internalRole, 'scheduled_execution');
     assert.equal(scheduleRes.json.schedule.sourceDelivery.target.chatId, 'oc_source_test');
+    const invalidScheduleMode = await request(port, 'POST', '/api/schedules', {
+      sessionId: sourceSession.id,
+      executionMode: 'shared_forever',
+      cron: '0 9 * * *',
+      text: 'Invalid mode',
+    });
+    assert.equal(invalidScheduleMode.status, 400, 'unknown schedule execution modes should be rejected');
     const scheduleId = scheduleRes.json.schedule.id;
     const cancelSchedule = await request(port, 'PATCH', `/api/schedules/${scheduleId}`, {
       enabled: false,
