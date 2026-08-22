@@ -548,6 +548,9 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - This is a heuristic/default, not a hard rule. Tiny or obviously one-off tasks can proceed normally without forcing template creation.
 - Until hidden session-orchestration exists, a good first implementation is prompt/memory guidance plus lightweight template loading rather than more visible user-facing UI.
 
+### Pi Agent Completion Must Wait For Settled State (2026-08-22)
+- Treat `agent_settled` as the terminal completion signal. An `agent_end` event may occur before an automatic retry, so using it to finish a run can publish a premature terminal state.
+
 ### IM Connectors Should Ack Fast And Finish In Background (2026-03-10)
 - Chat-platform event subscriptions often require handlers to finish within a few seconds and may retry on timeout, so do not hold the provider callback open while waiting for a full agent run.
 - For local-first agent products, a provider's long-connection / SDK event mode can be the fastest connector path because it avoids public webhook setup, signature verification, and payload decryption.
