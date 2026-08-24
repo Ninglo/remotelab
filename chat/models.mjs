@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
+import { discoverPiModels } from './pi-models.mjs';
 import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
@@ -385,7 +386,20 @@ export async function getModelsForTool(toolId) {
     return getCodexModels();
   }
   if (toolId === 'pi') {
-    return getCodexModels();
+    try {
+      return await discoverPiModels();
+    } catch (error) {
+      console.warn(`[models] Failed to discover Pi models: ${error.message}`);
+      const codex = await getCodexModels();
+      return {
+        ...codex,
+        models: codex.models.map((model) => ({
+          ...model,
+          id: `openai-codex/${model.id}`,
+        })),
+        defaultModel: codex.defaultModel ? `openai-codex/${codex.defaultModel}` : null,
+      };
+    }
   }
 
   const tool = await getToolDefinitionAsync(toolId);

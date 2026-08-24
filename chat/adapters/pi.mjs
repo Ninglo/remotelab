@@ -102,7 +102,8 @@ export function createPiAdapter() {
 }
 
 export function buildPiArgs(prompt, options = {}) {
-  const args = ['--mode', 'json', '--provider', 'openai-codex', '--approve'];
+  const provider = String(options.provider || 'openai-codex').trim() || 'openai-codex';
+  const args = ['--mode', 'json', '--provider', provider, '--approve'];
   if (options.sessionId) {
     args.push('--session-id', String(options.sessionId));
   } else {

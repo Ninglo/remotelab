@@ -68,6 +68,24 @@ try {
   assert.equal(customCodexEnv.FOO, 'baz', 'custom Codex runtime should preserve unrelated env values');
   assert.equal(customCodexEnv.CODEX_HOME, managedHome, 'custom Codex runtimes should also use the manager-owned CODEX_HOME');
 
+  const piCodexEnv = await applyManagedRuntimeEnv('pi', { FOO: 'pi-codex' }, {
+    runtimeFamily: 'pi-json',
+    provider: 'openai-codex',
+    codexHomeDir: managedHome,
+    codexAuthSource: join(personalCodexHome, 'auth.json'),
+    codexHomeMode: 'managed',
+  });
+  assert.equal(piCodexEnv.CODEX_HOME, managedHome, 'Pi GPT routes should receive the Codex login runtime home');
+
+  const piDeepseekEnv = await applyManagedRuntimeEnv('pi', { FOO: 'pi-deepseek' }, {
+    runtimeFamily: 'pi-json',
+    provider: 'deepseek',
+    codexHomeDir: managedHome,
+    codexAuthSource: join(personalCodexHome, 'auth.json'),
+    codexHomeMode: 'managed',
+  });
+  assert.equal(piDeepseekEnv.CODEX_HOME, undefined, 'Pi third-party routes should not inherit Codex auth state');
+
   const defaultCodexEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/default' });
   assert.equal(defaultCodexEnv.CODEX_HOME, personalCodexHome, 'default Codex mode should use the machine command-line Codex home');
   const legacySharedEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/shared' }, {

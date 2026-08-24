@@ -151,6 +151,7 @@ async function cleanEnv(toolId, manifest = {}, options = {}) {
   }
   return applyManagedRuntimeEnv(toolId, env, {
     runtimeFamily: typeof options.runtimeFamily === 'string' ? options.runtimeFamily : '',
+    provider: typeof options.provider === 'string' ? options.provider : '',
   });
 }
 
@@ -284,7 +285,7 @@ async function main() {
   }
 
   const prompt = prependAttachmentPaths(manifest.prompt || '', materializedImages);
-  const { command, args, runtimeFamily, envOverrides } = await createToolInvocation(manifest.tool, prompt, {
+  const { command, args, runtimeFamily, provider, envOverrides } = await createToolInvocation(manifest.tool, prompt, {
     dangerouslySkipPermissions: true,
     claudeSessionId: manifest.options?.claudeSessionId,
     codexThreadId: manifest.options?.codexThreadId,
@@ -294,7 +295,7 @@ async function main() {
     effort: manifest.options?.effort,
   });
 
-  const spawnEnv = await cleanEnv(manifest.tool, manifest, { runtimeFamily, envOverrides });
+  const spawnEnv = await cleanEnv(manifest.tool, manifest, { runtimeFamily, provider, envOverrides });
 
   const attachmentPaths = [];
   for (const img of materializedImages) {

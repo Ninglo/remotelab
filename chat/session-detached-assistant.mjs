@@ -66,6 +66,7 @@ export async function runDetachedAssistantPrompt(sessionMeta, prompt, options = 
   delete env.CLAUDE_CODE_ENTRYPOINT;
   env = await applyManagedRuntimeEnv(tool, env, {
     runtimeFamily: invocation.runtimeFamily,
+    provider: invocation.provider,
     codexHomeMode: options.codexHomeMode || process.env.REMOTELAB_CODEX_HOME_MODE || 'managed',
   });
 
