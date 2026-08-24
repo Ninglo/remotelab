@@ -135,7 +135,10 @@ export async function applyManagedRuntimeEnv(toolId, baseEnv = {}, options = {})
   const runtimeFamily = typeof options.runtimeFamily === 'string'
     ? options.runtimeFamily.trim()
     : '';
-  const isCodexRuntime = toolId === 'codex' || runtimeFamily === 'codex-json';
+  const provider = trimString(options.provider);
+  const isCodexRuntime = toolId === 'codex'
+    || runtimeFamily === 'codex-json'
+    || (runtimeFamily === 'pi-json' && provider === 'openai-codex');
   if (!isCodexRuntime) {
     return env;
   }

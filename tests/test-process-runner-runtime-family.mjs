@@ -35,8 +35,19 @@ const piInvocation = buildRuntimeInvocation('pi-json', 'Ping', {
 assert.equal(piInvocation.isPiFamily, true);
 assert.equal(piInvocation.isCodexFamily, false);
 assert.equal(piInvocation.runtimeFamily, 'pi-json');
+assert.equal(piInvocation.provider, 'openai-codex');
 assert.deepEqual(piInvocation.args.slice(0, 5), ['--mode', 'json', '--provider', 'openai-codex', '--approve']);
 assert.ok(piInvocation.args.includes('remote-session-1'));
+
+const thirdPartyPiInvocation = buildRuntimeInvocation('pi-json', 'Ping', {
+  model: 'deepseek/deepseek-chat',
+  effort: 'high',
+}, 'pi');
+assert.equal(thirdPartyPiInvocation.provider, 'deepseek');
+assert.deepEqual(
+  thirdPartyPiInvocation.args.slice(0, 8),
+  ['--mode', 'json', '--provider', 'deepseek', '--approve', '--no-session', '--model', 'deepseek-chat'],
+);
 
 const manifestFallbackInvocation = await createToolInvocation('missing-runtime', 'Ping', {
   runtimeFamily: 'codex-json',

@@ -122,7 +122,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     throw new Error('Session label suggestion requires an explicit tool');
   }
 
-  const { command, adapter, args, envOverrides, runtimeFamily } = await createToolInvocation(tool, prompt, {
+  const { command, adapter, args, envOverrides, runtimeFamily, provider } = await createToolInvocation(tool, prompt, {
     dangerouslySkipPermissions: true,
     model,
     effort,
@@ -141,6 +141,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
   delete subEnv.CLAUDE_CODE_ENTRYPOINT;
   subEnv = await applyManagedRuntimeEnv(tool, subEnv, {
     runtimeFamily,
+    provider,
     codexHomeMode: process.env.REMOTELAB_CODEX_HOME_MODE || 'managed',
   });
 

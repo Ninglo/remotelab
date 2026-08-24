@@ -1,6 +1,7 @@
 import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
 import { createPiAdapter, buildPiArgs } from './adapters/pi.mjs';
+import { resolvePiModelRoute } from './pi-models.mjs';
 import { expandSessionFolder } from './session-folder.mjs';
 import {
   buildToolProcessEnvOverrides,
@@ -65,12 +66,23 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       systemPrefix: options.systemPrefix,
     });
   } else if (normalizedRuntimeFamily === 'pi-json') {
+    const route = resolvePiModelRoute(options.model);
     adapter = createPiAdapter();
     args = buildPiArgs(prompt, {
       sessionId: options.piSessionId,
-      model: options.model,
+      provider: route.provider,
+      model: route.model,
       thinking: options.effort,
     });
+    return {
+      adapter,
+      args,
+      provider: route.provider,
+      isClaudeFamily: false,
+      isCodexFamily: false,
+      isPiFamily: true,
+      runtimeFamily: normalizedRuntimeFamily,
+    };
   } else {
     throw new Error(`Tool "${toolId}" uses unsupported runtimeFamily "${normalizedRuntimeFamily}"`);
   }
