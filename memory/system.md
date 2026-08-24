@@ -586,3 +586,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 ### Reply Publication Reads Should Reconcile Terminal Runs (2026-07-10)
 - A reply-publication query may encounter a continuation run that is already terminal but has not completed post-finalization effects yet.
 - Reconcile and finalize terminal root/continuation candidates before returning publication state, and wait for their post-finalization work so callers do not remain stuck on `continuing` after the underlying run completed.
+
+### Quantity Targets Must Never Become Quality Overrides (2026-08-24)
+- In evidence-backed search, matching, review, or recommendation workflows, interpret a requested count as a target number of qualified outputs, not as an acceptance quota or guaranteed promise.
+- Use a bounded pilot to estimate qualified yield and label the target feasible, at risk, or infeasible under the frozen quality contract before scaling production.
+- Deterministic hard gates are invariants: a semantic judgment cannot bypass failed recency, format, market, scale, performance, identity, or other required evidence. Correct the fact with new evidence and rerun the gate.
+- Require semantic recommendations to cite evidence and connect it to the intended audience/use case and a credible execution scenario; generic fit language is not evidence.
+- Keep platform-native evidence separate. Missing data for one requested platform must remain visible as a gap, never be filled from another platform's metrics.
+- When quality-preserving supply falls short after reasonable expansion, deliver the valid partial result with open slots and surface the real tradeoff promptly. Do not silently relax constraints, pad the list, or search indefinitely without involving the user in the material decision.
