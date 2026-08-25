@@ -718,6 +718,8 @@ export function createSessionTurnCompletionHelpers(services) {
           group: session.group || '',
           description: session.description || '',
           sourceName: session.sourceName || '',
+          userId: session.userId || '',
+          userName: session.userName || '',
           autoRenamePending: session.autoRenamePending,
           tool: finalizedRun.tool || session.tool,
           model: finalizedRun.model || undefined,

@@ -123,6 +123,9 @@ const sessionManager = await import(
 const history = await import(
   pathToFileURL(join(repoRoot, 'chat', 'history.mjs')).href
 );
+const labelContext = await import(
+  pathToFileURL(join(repoRoot, 'chat', 'session-label-context.mjs')).href
+);
 
 const {
   createSession,
@@ -131,6 +134,25 @@ const {
   killAll,
 } = sessionManager;
 const { setContextHead } = history;
+const { buildActiveSessionCatalogPrompt, loadSessionLabelPromptContext } = labelContext;
+
+const memberCatalog = buildActiveSessionCatalogPrompt(
+  [
+    { id: 'owner-a', name: 'Owner Project', space: 'Owner', group: 'Private' },
+    { id: 'member-a-1', userId: 'member-a', name: 'Member A Project', space: 'A', group: 'A Project' },
+    { id: 'member-b-1', userId: 'member-b', name: 'Member B Project', space: 'B', group: 'B Project' },
+  ],
+  { id: 'member-a-target', userId: 'member-a' },
+);
+assert.match(memberCatalog, /Member A Project/);
+assert.doesNotMatch(memberCatalog, /Owner Project/);
+assert.doesNotMatch(memberCatalog, /Member B Project/);
+
+const memberPromptContext = await loadSessionLabelPromptContext(
+  { id: 'member-a-target', userId: 'member-a', name: 'Member target' },
+  'Keep my own projects grouped.',
+);
+assert.equal(memberPromptContext.scopeRouter, '', 'member labels should not import owner project-memory taxonomy');
 
 async function waitFor(predicate, description, timeoutMs = 4000) {
   const start = Date.now();

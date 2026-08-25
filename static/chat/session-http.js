@@ -255,7 +255,8 @@ let sessionListOrganizerLabelResetTimer = null;
 
 const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   "You are RemoteLab's hidden session-list organizer.",
-  "Your job is to improve the owner's scoped non-archived session sidebar structure using the provided metadata snapshot.",
+  "Your job is to improve one account's scoped non-archived session sidebar structure using the provided metadata snapshot.",
+  "Account boundaries are strict: never infer, copy, merge, or normalize Space, Project, or sidebar order across different accounts.",
   "Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.",
   "Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.",
   "Use `remotelab api GET /api/sessions` if you need to double-check current state.",
@@ -274,7 +275,7 @@ const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   "Avoid excessive singleton groups when `totalSessions` is greater than `targetProjectCount`.",
   "Treat existing group assignments as provisional; this is a full scoped rebalance, so you may merge, split, or rewrite groups across the entire snapshot.",
   "Project compression is allowed: when several existing groups are fragments of the same workstream, choose a clearer shared Project name and patch every affected session to that new `group`.",
-  "Do not only classify the newest session; improve older scoped sessions when the global list has drifted.",
+  "Do not only classify the newest session; improve older scoped sessions when this account's list has drifted.",
   "Do not create one Project per session unless the session is genuinely standalone, newly emerging but likely to recur, or high-priority active work that needs its own entry.",
   "If metadata is insufficient for an important merge/split decision, inspect a small number of ambiguous sessions with the API instead of inventing narrowly isolated groups.",
   "If semantic purity conflicts with scanability, prefer the grouping that keeps the Projects view easier to consume.",
@@ -422,16 +423,85 @@ function getSessionListOrganizerTargetSpaceCount(totalSessions) {
   return 6;
 }
 
+function getSessionListOrganizerAccountScope() {
+  const currentAccount = teamSessionView?.currentAccount && typeof teamSessionView.currentAccount === "object"
+    ? teamSessionView.currentAccount
+    : {};
+  const currentAccountId = typeof currentAccount.id === "string" && currentAccount.id.trim()
+    ? currentAccount.id.trim()
+    : "owner";
+  const currentAccountName = typeof currentAccount.name === "string" && currentAccount.name.trim()
+    ? currentAccount.name.trim()
+    : (currentAccountId === "owner" ? "Owner" : currentAccountId);
+
+  if (typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView()) {
+    return {
+      mode: "account",
+      accountId: currentAccountId,
+      accountLabel: currentAccountName,
+      defaultedToCurrentAccount: false,
+    };
+  }
+
+  if (typeof isAdminAccountFilterAvailable === "function" && isAdminAccountFilterAvailable()) {
+    const selectedAccountFilter = typeof activeAccountFilter !== "undefined"
+      ? normalizeAccountFilter(activeAccountFilter)
+      : FILTER_ALL_VALUE;
+    if (
+      selectedAccountFilter !== FILTER_ALL_VALUE
+      && selectedAccountFilter !== ACCOUNT_FILTER_ADMIN_VALUE
+    ) {
+      const accountDefinition = typeof getAccountFilterDefinitions === "function"
+        ? getAccountFilterDefinitions().find((entry) => entry.value === selectedAccountFilter)
+        : null;
+      return {
+        mode: "account",
+        accountId: selectedAccountFilter,
+        accountLabel: accountDefinition?.name || selectedAccountFilter,
+        defaultedToCurrentAccount: false,
+      };
+    }
+    return {
+      mode: "owner",
+      accountId: currentAccountId,
+      accountLabel: currentAccountName,
+      defaultedToCurrentAccount: selectedAccountFilter === FILTER_ALL_VALUE,
+    };
+  }
+
+  return {
+    mode: "owner",
+    accountId: currentAccountId,
+    accountLabel: currentAccountName,
+    defaultedToCurrentAccount: false,
+  };
+}
+
+function matchesSessionListOrganizerAccountScope(session, accountScope) {
+  if (!accountScope || accountScope.mode === "all") return true;
+  const sessionAccountId = typeof getSessionAccountId === "function"
+    ? getSessionAccountId(session)
+    : (typeof session?.userId === "string" ? session.userId.trim() : "");
+  if (accountScope.mode === "owner") {
+    return !sessionAccountId || sessionAccountId === accountScope.accountId;
+  }
+  return sessionAccountId === accountScope.accountId;
+}
+
 function getSessionListOrganizerScope() {
   const currentSourceFilter = typeof getActiveSourceFilterValue === "function"
     ? normalizeSourceFilter(getActiveSourceFilterValue())
     : normalizeSourceFilter(activeSourceFilter);
   const defaultedToChatUi = currentSourceFilter === FILTER_ALL_VALUE;
   const organizerSourceFilter = defaultedToChatUi ? SESSION_HTTP_SOURCE_FILTER_CHAT_VALUE : currentSourceFilter;
+  const accountScope = getSessionListOrganizerAccountScope();
   const scopedSessions = getActiveSessions().filter((session) => (
-    typeof matchesSourceFilter === "function"
-      ? matchesSourceFilter(session, organizerSourceFilter)
-      : organizerSourceFilter === FILTER_ALL_VALUE
+    matchesSessionListOrganizerAccountScope(session, accountScope)
+    && (
+      typeof matchesSourceFilter === "function"
+        ? matchesSourceFilter(session, organizerSourceFilter)
+        : organizerSourceFilter === FILTER_ALL_VALUE
+    )
   ));
   const targetProjectCount = getSessionListOrganizerTargetProjectCount(scopedSessions.length);
   const targetSpaceCount = getSessionListOrganizerTargetSpaceCount(scopedSessions.length);
@@ -439,6 +509,9 @@ function getSessionListOrganizerScope() {
     currentSourceFilter,
     organizerSourceFilter,
     defaultedToChatUi,
+    accountId: accountScope.accountId,
+    accountLabel: accountScope.accountLabel,
+    defaultedToCurrentAccount: accountScope.defaultedToCurrentAccount,
     sourceLabel: getSessionListOrganizerSourceLabel(organizerSourceFilter),
     targetSpaceCount,
     targetProjectCount,
@@ -463,6 +536,9 @@ function buildSessionListOrganizerPayload() {
       organizerSourceFilter: scope.organizerSourceFilter,
       sourceLabel: scope.sourceLabel,
       defaultedToChatUi: scope.defaultedToChatUi,
+      accountId: scope.accountId,
+      accountLabel: scope.accountLabel,
+      defaultedToCurrentAccount: scope.defaultedToCurrentAccount,
       targetProjectCount: scope.targetProjectCount,
       targetSessionsPerProject: scope.targetSessionsPerProject,
     },
@@ -504,6 +580,7 @@ function buildSessionListOrganizerTask(input) {
   };
   return [
     "Organize only the scoped non-archived RemoteLab sessions included in the provided metadata snapshot.",
+    `The snapshot belongs only to account ${scope.accountLabel || scope.accountId || "Owner"}. Treat Space, Project, and sidebar order as account-local metadata and do not inspect or patch another account's sessions.`,
     `Create or reuse roughly ${targetSpaceCount} broad Spaces for ${totalSessions} scoped sessions; this is a soft upper budget, not a target to fill.`,
     "Spaces are durable context boundaries. Projects are concrete workstreams inside a Space. Assign genuinely temporary or ambiguous sessions to the reserved `Loose` Space rather than inventing a weak category.",
     "Use the dominant language of the session titles and current catalog for user-visible Space and Project names; when that language is Chinese, use concise natural Chinese labels.",
@@ -1244,7 +1321,9 @@ async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
     return false;
   }
 
-  const sortScopeLabel = payload?.scope?.sourceLabel || "sessions";
+  const sortScopeLabel = [payload?.scope?.sourceLabel, payload?.scope?.accountLabel]
+    .filter(Boolean)
+    .join(" · ") || "sessions";
   if (sessionListOrganizerLabelResetTimer) {
     window.clearTimeout(sessionListOrganizerLabelResetTimer);
     sessionListOrganizerLabelResetTimer = null;

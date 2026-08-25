@@ -11,6 +11,10 @@ const source = readFileSync(
   join(repoRoot, 'static', 'chat', 'bootstrap-session-catalog.js'),
   'utf8',
 );
+const sessionListSource = readFileSync(
+  join(repoRoot, 'static', 'chat', 'session-list-ui.js'),
+  'utf8',
+);
 
 function extractFunctionSource(functionName) {
   const marker = `function ${functionName}`;
@@ -46,6 +50,7 @@ function extractFunctionSource(functionName) {
 const functionSources = [
   'normalizeAccountFilter',
   'getSessionAccountId',
+  'getSessionSpaceValue',
   'isAdminAccountFilterAvailable',
   'isAdminOwnedSession',
   'matchesAccountFilter',
@@ -55,6 +60,37 @@ const functionSources = [
   'syncSidebarFiltersVisibility',
   'renderAccountFilterOptions',
 ].map(extractFunctionSource).join('\n\n');
+const sessionSpaceFunctionSource = (() => {
+  const originalSource = source;
+  const targetSource = sessionListSource;
+  const marker = 'function getSessionSpaceEntries';
+  const start = targetSource.indexOf(marker);
+  assert.notEqual(start, -1, 'getSessionSpaceEntries should exist');
+  const paramsStart = targetSource.indexOf('(', start);
+  let paramsDepth = 0;
+  let braceStart = -1;
+  for (let index = paramsStart; index < targetSource.length; index += 1) {
+    const char = targetSource[index];
+    if (char === '(') paramsDepth += 1;
+    if (char === ')') {
+      paramsDepth -= 1;
+      if (paramsDepth === 0) {
+        braceStart = targetSource.indexOf('{', index);
+        break;
+      }
+    }
+  }
+  let depth = 0;
+  for (let index = braceStart; index < targetSource.length; index += 1) {
+    const char = targetSource[index];
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return targetSource.slice(start, index + 1);
+    }
+  }
+  assert.fail(`Unable to extract getSessionSpaceEntries from ${originalSource.length} bytes of catalog context`);
+})();
 
 function createSelect(display = '') {
   let innerHTML = '';
@@ -84,10 +120,10 @@ function createSelect(display = '') {
 function createHarness({ enabled = true, canManage = true } = {}) {
   const state = { persisted: [], toggles: [] };
   const sessions = [
-    { id: 'admin-legacy', name: 'Legacy', archived: false },
-    { id: 'admin-owned', name: 'Owner', userId: 'owner', userName: 'Owner', archived: false },
-    { id: 'member-a-1', userId: 'member-a', userName: '视频团队', archived: false },
-    { id: 'member-a-2', userId: 'member-a', userName: '视频团队', archived: false },
+    { id: 'admin-legacy', name: 'Legacy', space: 'Owner Space', archived: false },
+    { id: 'admin-owned', name: 'Owner', space: 'Owner Space', userId: 'owner', userName: 'Owner', archived: false },
+    { id: 'member-a-1', space: 'Member Space', userId: 'member-a', userName: '视频团队', archived: false },
+    { id: 'member-a-2', space: 'Member Space', userId: 'member-a', userName: '视频团队', archived: false },
     { id: 'member-b-archive', userId: 'member-b', userName: '内容团队', archived: true },
     { id: 'internal', userId: 'internal', userName: 'Internal', internalRole: 'summary', archived: false },
   ];
@@ -95,6 +131,7 @@ function createHarness({ enabled = true, canManage = true } = {}) {
     console,
     FILTER_ALL_VALUE: '__all__',
     ACCOUNT_FILTER_ADMIN_VALUE: '__admin__',
+    SESSION_SPACE_LOOSE_VALUE: '__loose__',
     activeAccountFilter: '__all__',
     activeTab: 'sessions',
     visitorMode: false,
@@ -110,6 +147,16 @@ function createHarness({ enabled = true, canManage = true } = {}) {
     getActiveSessions() {
       return sessions.filter((session) => !session.archived && !session.internalRole);
     },
+    matchesSourceFilter() {
+      return true;
+    },
+    matchesSearchQuery() {
+      return true;
+    },
+    sortProjectGroupsByLatestActivity(entries) {
+      return entries;
+    },
+    activeSourceFilter: '__all__',
     accountFilterSelect: createSelect(''),
     sourceFilterSelect: createSelect('none'),
     sidebarFilters: {
@@ -136,7 +183,7 @@ function createHarness({ enabled = true, canManage = true } = {}) {
   };
   context.globalThis = context;
   vm.runInNewContext(
-    `${functionSources}\nObject.assign(globalThis, { matchesAccountFilter, getAccountFilterDefinitions, getSessionCountForAccountFilter, renderAccountFilterOptions });`,
+    `${functionSources}\n${sessionSpaceFunctionSource}\nObject.assign(globalThis, { matchesAccountFilter, getAccountFilterDefinitions, getSessionCountForAccountFilter, renderAccountFilterOptions, getSessionSpaceEntries });`,
     context,
     { filename: 'static/chat/bootstrap-session-catalog.js' },
   );
@@ -173,6 +220,19 @@ function createHarness({ enabled = true, canManage = true } = {}) {
   assert.deepEqual(
     context.accountFilterSelect.children.map((option) => option.textContent),
     ['全部账号 (4)', '我的会话 (2)', '内容团队 (0)', '视频团队 (2)'],
+  );
+
+  context.activeAccountFilter = 'member-a';
+  assert.deepEqual(
+    Array.from(context.getSessionSpaceEntries(), (entry) => entry.key),
+    ['Member Space'],
+    'Space switcher entries should come only from the selected account',
+  );
+  context.activeAccountFilter = '__admin__';
+  assert.deepEqual(
+    Array.from(context.getSessionSpaceEntries(), (entry) => entry.key),
+    ['Owner Space'],
+    'owner Space entries should not be contaminated by member sessions',
   );
 }
 

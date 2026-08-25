@@ -424,6 +424,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - If real folder selection is removed but users still want visual hierarchy, the cheapest migration path is to extend the existing auto-title/summarizer step so it also emits a one-level `group` and a hidden `description`.
 - Persist `group` and `description` on session metadata, but keep the grouping purely presentational; do not reintroduce filesystem semantics or make the display group part of the actual cwd model.
 - For compatibility, let old sessions fall back to folder-based grouping, and let “new session inside group” carry the display group forward as a hint rather than as a hard path constraint.
+- When sessions are tagged to different human accounts, treat Space, group, and sidebar order as account-local metadata. Filter model catalogs, UI Space lists, and organizer snapshots to one account before inferring or patching; never use an administrator's all-account view as a rebalance scope.
 
 ### Session Naming Prompts Need Layered Scope Hints (2026-03-10)
 - Auto-title/group prompts work best when they see three compact layers together: the latest turn, the current session's continuity summary, and a bounded sample of non-archived session metadata (`name`, `group`, `description`).

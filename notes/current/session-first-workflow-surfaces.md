@@ -122,6 +122,15 @@ So the right current reading is:
 group = a session facet, not a new object
 ```
 
+In a shared instance with account-tagged sessions, that facet is account-local:
+
+```text
+visible project identity = account + space + group
+sidebar order = relative order inside one account scope
+```
+
+Two people may use different Space and Project taxonomies for similar work. Sidebar rendering, session-label catalogs, manual Sort List, and autonomous Project maintenance must filter to one account before deriving spaces, groups, counts, or ordering. An administrator's all-account view is an observation surface, never a valid scope for a cross-account rebalance.
+
 ## Projects List Grouping Strategy
 
 The owner-facing Projects list should optimize for work recovery, not taxonomy purity.
@@ -147,6 +156,7 @@ Rebalancing should use the whole scoped snapshot:
 - the current group count versus the target budget
 - singleton ratio and obvious near-duplicate groups
 - source scope, so Chat UI sorting does not get polluted by Feishu/Bot/Automation audit sessions unless that source filter was explicitly selected
+- exactly one account scope, so one person's taxonomy and ordering never rewrite or train against another person's sessions
 
 If the metadata is insufficient for an important merge/split decision, the organizer may inspect a small number of ambiguous session details. It should not do broad archaeology before every sort; the normal path is global metadata first, targeted detail reads only for high-impact ambiguity.
 

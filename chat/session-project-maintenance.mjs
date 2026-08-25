@@ -7,7 +7,8 @@ const MAX_TEXT_CHARS = 240;
 
 const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   'You are RemoteLab\'s hidden session-list organizer.',
-  'Your job is to improve the owner\'s scoped non-archived Chat UI Projects sidebar structure using the provided metadata snapshot.',
+  'Your job is to improve one account\'s scoped non-archived Chat UI Projects sidebar structure using the provided metadata snapshot.',
+  'Account boundaries are strict: never infer, copy, merge, or normalize Space, Project, or sidebar order across different accounts.',
   'Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.',
   'Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.',
   'Use `remotelab api GET /api/sessions` if you need to double-check current state.',
@@ -26,7 +27,7 @@ const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   'Avoid excessive singleton groups when `totalSessions` is greater than `targetProjectCount`.',
   'Treat existing group assignments as provisional; this is a full scoped rebalance, so you may merge, split, or rewrite groups across the entire snapshot.',
   'Project compression is allowed: when several existing groups are fragments of the same workstream, choose a clearer shared Project name and patch every affected session to that new `group`.',
-  'Do not only classify the newest session; improve older scoped sessions when the global list has drifted.',
+  'Do not only classify the newest session; improve older scoped sessions when this account\'s list has drifted.',
   'Do not create one Project per session unless the session is genuinely standalone, newly emerging but likely to recur, or high-priority active work that needs its own entry.',
   'If metadata is insufficient for an important merge/split decision, inspect a small number of ambiguous sessions with the API instead of inventing narrowly isolated groups.',
   'If semantic purity conflicts with scanability, prefer the grouping that keeps the Projects view easier to consume.',
@@ -68,6 +69,14 @@ function resolveSessionSourceId(session) {
 export function isProjectMaintenanceScopedSession(session) {
   if (!session || session.archived === true || session.internalRole || session.visitorId) return false;
   return resolveSessionSourceId(session).toLowerCase() === 'chat';
+}
+
+export function getProjectMaintenanceAccountId(session) {
+  return trimString(session?.userId) || 'owner';
+}
+
+export function isProjectMaintenanceAccountMatch(session, triggerSession = null) {
+  return getProjectMaintenanceAccountId(session) === getProjectMaintenanceAccountId(triggerSession);
 }
 
 export function getSessionListOrganizerTargetProjectCount(totalSessions) {
@@ -164,8 +173,11 @@ export function buildProjectMaintenanceGroupSummary(sessionPayloads, targetProje
 }
 
 export function buildProjectMaintenancePayload(sessions, triggerSession = null) {
+  const accountId = getProjectMaintenanceAccountId(triggerSession);
+  const accountName = trimString(triggerSession?.userName) || (accountId === 'owner' ? 'Owner' : accountId);
   const scopedSessions = (Array.isArray(sessions) ? sessions : [])
     .filter(isProjectMaintenanceScopedSession)
+    .filter((session) => isProjectMaintenanceAccountMatch(session, triggerSession))
     .sort((a, b) => getSessionSortTime(b) - getSessionSortTime(a));
   const targetProjectCount = getSessionListOrganizerTargetProjectCount(scopedSessions.length);
   const targetSpaceCount = getSessionListOrganizerTargetSpaceCount(scopedSessions.length);
@@ -186,6 +198,8 @@ export function buildProjectMaintenancePayload(sessions, triggerSession = null) 
       organizerSourceFilter: 'chat',
       sourceLabel: 'Chat UI',
       defaultedToChatUi: true,
+      accountId,
+      accountName,
       triggerSessionId: trimString(triggerSession?.id),
     },
     groupSummary,
@@ -267,6 +281,7 @@ export function buildProjectMaintenanceTask(input) {
   return [
     'Organize only the scoped non-archived RemoteLab Chat UI sessions included in the provided metadata snapshot.',
     'This run was triggered automatically after a session state change. Keep the result stable and conservative, but fix obvious drift.',
+    `The snapshot belongs only to account ${payload?.scope?.accountName || payload?.scope?.accountId || 'Owner'}. Treat Space, Project, and sidebar order as account-local metadata and do not inspect or patch another account's sessions.`,
     `Create or reuse roughly ${targetSpaceCount} broad Spaces for ${totalSessions} scoped sessions; this is a soft upper budget, not a target to fill.`,
     'Spaces are durable context boundaries. Projects are concrete workstreams inside a Space. Assign genuinely temporary or ambiguous sessions to the reserved `Loose` Space rather than inventing a weak category.',
     'Use the dominant language of the session titles and current catalog for user-visible Space and Project names; when that language is Chinese, use concise natural Chinese labels.',
@@ -336,6 +351,8 @@ export function createSessionProjectMaintenanceScheduler(services = {}) {
         {
           systemPrompt: SESSION_LIST_ORGANIZER_SYSTEM_PROMPT,
           internalRole: SESSION_LIST_ORGANIZER_INTERNAL_ROLE,
+          ...(trimString(triggerSession?.userId) ? { userId: trimString(triggerSession.userId) } : {}),
+          ...(trimString(triggerSession?.userName) ? { userName: trimString(triggerSession.userName) } : {}),
         },
       );
       if (!organizerSession?.id) {
@@ -358,6 +375,7 @@ export function createSessionProjectMaintenanceScheduler(services = {}) {
 
       logger?.log?.(
         `[project-maintenance] queued organizer for ${health.payload.totalSessions} Chat UI sessions`
+        + ` in account ${health.payload.scope?.accountId || 'owner'}`
         + ` (${health.payload.health?.reasons?.join(', ') || 'health'})`,
       );
       return true;

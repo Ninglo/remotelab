@@ -598,7 +598,13 @@ async function loadExecutionRelatedSessionPromptContext(sessionMeta, turnText, s
   const sessions = await loadSessionsMeta();
   const routingTerms = buildExecutionRoutingTerms(sessionMeta, turnText);
   const candidates = sessions
-    .filter((meta) => meta && meta.id !== sessionMeta.id && meta.archived !== true && !meta.internalRole)
+    .filter((meta) => (
+      meta
+      && meta.id !== sessionMeta.id
+      && meta.archived !== true
+      && !meta.internalRole
+      && matchesSessionAccountScope(meta, sessionMeta)
+    ))
     .map((meta) => {
       const scored = scoreScopeRouterRelatedSessionCandidate(meta, sessionMeta, selectedEntries, routingTerms);
       return {
@@ -651,11 +657,26 @@ function sortSessionsByRecency(a, b) {
   return bTime - aTime;
 }
 
-function buildActiveSessionCatalogPrompt(sessions, currentSessionId) {
+export function getSessionAccountScopeId(session) {
+  return normalizeInlineText(session?.userId) || 'owner';
+}
+
+export function matchesSessionAccountScope(session, currentSession) {
+  return getSessionAccountScopeId(session) === getSessionAccountScopeId(currentSession);
+}
+
+export function buildActiveSessionCatalogPrompt(sessions, currentSession) {
   if (!Array.isArray(sessions)) return '';
+  const currentSessionId = currentSession?.id || '';
 
   const relevant = sessions
-    .filter((session) => session && session.id !== currentSessionId && session.archived !== true && !session.internalRole)
+    .filter((session) => (
+      session
+      && session.id !== currentSessionId
+      && session.archived !== true
+      && !session.internalRole
+      && matchesSessionAccountScope(session, currentSession)
+    ))
     .map((session) => ({
       id: session.id,
       space: normalizeSessionSpace(session.space || ''),
@@ -701,10 +722,11 @@ async function readOptionalText(path) {
 
 export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
   const sessionId = sessionMeta?.id || '';
+  const allowOwnerProjectMemory = getSessionAccountScopeId(sessionMeta) === 'owner';
   const [contextHead, sessions, projectsMarkdown] = await Promise.all([
     sessionId ? getContextHead(sessionId) : null,
     readJson(CHAT_SESSIONS_FILE, []),
-    readOptionalText(PROJECTS_MD),
+    allowOwnerProjectMemory ? readOptionalText(PROJECTS_MD) : Promise.resolve(''),
   ]);
 
   const contextSummary = clipText(contextHead?.summary || '', MAX_CONTEXT_SUMMARY_CHARS);
@@ -717,7 +739,7 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
     turnText,
     contextSummary,
   });
-  const existingSessions = buildActiveSessionCatalogPrompt(sessions, sessionId);
+  const existingSessions = buildActiveSessionCatalogPrompt(sessions, sessionMeta);
 
   return {
     contextSummary,
@@ -727,7 +749,9 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
 }
 
 export async function loadExecutionMemoryPromptContext(sessionMeta, turnText) {
-  const projectsMarkdown = await readOptionalText(PROJECTS_MD);
+  const projectsMarkdown = getSessionAccountScopeId(sessionMeta) === 'owner'
+    ? await readOptionalText(PROJECTS_MD)
+    : '';
   const selected = selectExecutionScopeRouterEntries(projectsMarkdown, {
     folder: sessionMeta?.folder || '',
     name: sessionMeta?.name || '',

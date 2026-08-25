@@ -101,7 +101,11 @@ function sortProjectGroupsByLatestActivity(groupEntries) {
 function getSessionSpaceEntries() {
   const spaces = new Map();
   for (const session of getActiveSessions()) {
-    if (!matchesSourceFilter(session, activeSourceFilter) || !matchesSearchQuery(session)) continue;
+    if (
+      !matchesAccountFilter(session, activeAccountFilter)
+      || !matchesSourceFilter(session, activeSourceFilter)
+      || !matchesSearchQuery(session)
+    ) continue;
     const value = getSessionSpaceValue(session);
     const label = value === SESSION_SPACE_LOOSE_VALUE
       ? t("sidebar.space.loose")

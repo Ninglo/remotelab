@@ -392,6 +392,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: keep project headers to one neutral total count; attention may still influence project ordering, but should not add a second numeric badge unless later evidence shows a clear decision-making need
 - Promote to: sidebar information density and status-display defaults
 
+### 2026-08-25 — Space and Project classification must be account-local
+
+- Source: direct owner correction after reviewing a live multi-account session-list rebalance
+- User slice: administrator of a shared RemoteLab instance where each account represents a different person and work view
+- Observed friction or ask: a global organizer treated every account as if it should share one Space/Project taxonomy, overwriting classifications that belong to other people
+- Signal strength: direct correction backed by live session metadata showing several distinct account-owned catalogs
+- Product implication: namespace visible grouping and sidebar order by account; filter Space lists, label catalogs, manual sorting, and automatic maintenance to exactly one account before deriving or patching metadata; an all-account admin view must never become a cross-account rebalance scope
+- Promote to: `notes/current/session-first-workflow-surfaces.md`, session organizer and label-context tests
+- Follow-up: keep broader account authorization/security changes separate; this correction establishes classification and model-context isolation regardless of the current access-control model
+
 ## Entry template
 
 ### 2026-05-25 — large audio attachment send should not be tied to message submission

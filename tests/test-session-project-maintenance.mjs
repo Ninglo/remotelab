@@ -3,11 +3,14 @@ import assert from 'assert/strict';
 import {
   PROJECT_MAINTENANCE_INTERNAL_OPERATION,
   SESSION_LIST_ORGANIZER_INTERNAL_ROLE,
+  buildProjectMaintenanceTask,
   buildProjectMaintenancePayload,
   createSessionProjectMaintenanceScheduler,
   evaluateProjectMaintenanceHealth,
+  getProjectMaintenanceAccountId,
   getSessionListOrganizerTargetProjectCount,
   getSessionListOrganizerTargetSpaceCount,
+  isProjectMaintenanceAccountMatch,
   isProjectMaintenanceScopedSession,
 } from '../chat/session-project-maintenance.mjs';
 
@@ -36,6 +39,22 @@ assert.equal(isProjectMaintenanceScopedSession(makeSession('chat', 'RemoteLab'))
 assert.equal(isProjectMaintenanceScopedSession(makeSession('mail', 'Mail', { sourceId: 'gmail' })), false);
 assert.equal(isProjectMaintenanceScopedSession(makeSession('internal', 'RemoteLab', { internalRole: 'session_list_organizer' })), false);
 assert.equal(isProjectMaintenanceScopedSession(makeSession('archived', 'RemoteLab', { archived: true })), false);
+assert.equal(getProjectMaintenanceAccountId(makeSession('owner', 'RemoteLab')), 'owner');
+assert.equal(getProjectMaintenanceAccountId(makeSession('member', 'RemoteLab', { userId: 'member-a' })), 'member-a');
+assert.equal(
+  isProjectMaintenanceAccountMatch(
+    makeSession('member-a-1', 'RemoteLab', { userId: 'member-a' }),
+    makeSession('member-a-trigger', 'RemoteLab', { userId: 'member-a' }),
+  ),
+  true,
+);
+assert.equal(
+  isProjectMaintenanceAccountMatch(
+    makeSession('member-b-1', 'RemoteLab', { userId: 'member-b' }),
+    makeSession('member-a-trigger', 'RemoteLab', { userId: 'member-a' }),
+  ),
+  false,
+);
 
 const unhealthySessions = [
   makeSession('kol-ai', 'KOL AI 评级'),
@@ -53,6 +72,24 @@ assert.equal(unhealthyPayload.targetProjectCount, 4, 'payload should include a d
 assert.equal(unhealthyPayload.targetSpaceCount, 2, 'payload should include a compact Space-count budget');
 assert.equal(unhealthyPayload.sessions[0].existingSpace, 'Work', 'payload should expose current Space as read-only context');
 assert.equal(unhealthyPayload.groupSummary.singletonGroups, 4, 'payload should expose singleton project count');
+
+const memberSessions = [
+  makeSession('member-a-1', 'Member A one', { userId: 'member-a', userName: 'Member A' }),
+  makeSession('member-a-2', 'Member A two', { userId: 'member-a', userName: 'Member A' }),
+  makeSession('member-b-1', 'Member B one', { userId: 'member-b', userName: 'Member B' }),
+];
+const memberPayload = buildProjectMaintenancePayload(
+  [...unhealthySessions, ...memberSessions],
+  memberSessions[0],
+);
+assert.equal(memberPayload.totalSessions, 2, 'maintenance should include only the triggering account');
+assert.deepEqual(memberPayload.sessions.map((session) => session.id).sort(), ['member-a-1', 'member-a-2']);
+assert.equal(memberPayload.scope.accountId, 'member-a');
+assert.equal(memberPayload.scope.accountName, 'Member A');
+const memberTask = buildProjectMaintenanceTask(memberPayload);
+assert.match(memberTask, /belongs only to account Member A/);
+assert.doesNotMatch(memberTask, /member-b-1/);
+assert.doesNotMatch(memberTask, /kol-ai/);
 
 const unhealthy = evaluateProjectMaintenanceHealth(unhealthySessions, unhealthySessions[0]);
 assert.equal(unhealthy.shouldRun, true, 'over-split Chat UI sessions should trigger maintenance');
