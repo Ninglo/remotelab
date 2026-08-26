@@ -12,3 +12,10 @@ Before publishing the repository:
 ## Candidates
 
 <!-- Automatically proposed candidates may be appended below. -->
+
+- Static artifact delivery verification must check the final URL and expected artifact marker/title, not only an eventual HTTP 200 and `text/html`: an authentication redirect can end on a login page that returns 200. Treat a login redirect or unexpected page as an incomplete user handoff.
+
+## Learnings
+
+- RemoteLab 的邮箱连接必须由 WebUI 用户通过 SSO/OAuth 明确授权，查询只能使用与当前实例和用户绑定的令牌；未授权时应提示授权，不得回退到机器预置的 CLI 身份。
+- Space、Group、排序及自动命名必须按账号隔离；所有整理操作只能读取和修改同一账号的 Sessions，管理员全账号视图仅用于查看，不得跨账号重排。
