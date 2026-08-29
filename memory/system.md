@@ -12,6 +12,13 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 
 ## Learnings
 
+### Proactive Alerts Must Be Decision-Ready Action Packages
+- A raw error, anomaly count, or open-ended “what should I do?” transfers investigation and orchestration back to the human. It is not a complete proactive workflow.
+- Before escalating, investigate and reproduce the issue, establish scope and impact, distinguish facts from inference, attempt safe reversible remediation, and identify the smallest irreducible human judgment.
+- Deliver the alert with the recommended plan, meaningful alternatives and their consequences, actions already completed, verification criteria, the no-response safety default, and the exact automatic continuation after the user answers.
+- Treat this as a reasoning frame rather than a rigid message template. Routine resolved issues should be fixed and reported; only genuine business forks, new authority, or irreversible/high-impact choices should become questions.
+- Apply the principle across scheduled jobs, consistency audits, monitoring, incident alerts, connector failures, and long-lived project work. Do not scope it only to one skill or one task type.
+
 ### Auto-Compaction Silent Failure on Claude-Backed Sessions (2026-04-06)
 
 **Root cause**: The Claude adapter (`adapters/claude.mjs`) never emits `contextWindowTokens` in its usage events. Claude CLI's `--output-format stream-json` JSONL output includes `input_tokens`, `output_tokens`, `cache_*` fields, but NOT the model's context window size. When `contextWindowTokens` is null, `getAutoCompactContextTokens()` in `session-auto-compaction.mjs` returns `POSITIVE_INFINITY`, so the compaction threshold is never exceeded.
