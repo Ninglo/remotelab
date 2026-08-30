@@ -104,6 +104,27 @@ try {
     /Content-Transfer-Encoding: 8bit\r\n\r\nFirst line\n\nSecond paragraph$/,
     'Gmail MIME must preserve the required blank line between headers and the body',
   );
+  assert.match(mime, /Subject: Re: Contract test\r\n/);
+
+  const unicodeSubject = 'RemoteLab AI 邮件监控与模型更新提醒';
+  const unicodeMime = __testing.buildMimeMessage({
+    from: 'creator@example.com',
+    to: ['operator@example.com'],
+    subject: unicodeSubject,
+    text: '中文正文',
+  });
+  const encodedWords = [...unicodeMime.matchAll(/=\?UTF-8\?B\?([^?]+)\?=/gi)];
+  assert.ok(encodedWords.length > 0, 'non-ASCII Gmail subjects must use RFC 2047 encoded words');
+  assert.equal(
+    encodedWords.map((match) => Buffer.from(match[1], 'base64').toString('utf8')).join(''),
+    unicodeSubject,
+  );
+  assert.doesNotMatch(unicodeMime.split('\r\n\r\n')[0], /邮件监控/);
+  assert.ok(
+    encodedWords.every((match) => match[0].length <= 75),
+    'each RFC 2047 encoded word must stay within the 75-character limit',
+  );
+  assert.equal(__testing.encodeMimeHeader('Status\r\nBcc: injected@example.com'), 'Status Bcc: injected@example.com');
 
   const companyMessage = {
     id: 'company-message',

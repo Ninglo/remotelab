@@ -13,6 +13,7 @@ import {
   buildCalendarSubscribeHelperPath,
   getFeedInfo,
 } from '../lib/connector-calendar-feed.mjs';
+import { resolveEmailConnectorBinding } from '../lib/connector-bindings.mjs';
 import {
   getAllToolDefinitions,
   initSkillRegistry,
@@ -288,14 +289,35 @@ Do not use the host machine's local Calendar.app or any GUI calendar application
     connectorSections.push(genericConnectorActions);
   }
 
+  try {
+    const agentMailbox = await resolveEmailConnectorBinding();
+    const mailboxAddress = typeof agentMailbox?.identity?.address === 'string'
+      ? agentMailbox.identity.address.trim()
+      : '';
+    const mailboxName = typeof agentMailbox?.identity?.name === 'string'
+      ? agentMailbox.identity.name.trim()
+      : '';
+    if (agentMailbox?.capabilityState === 'ready' && mailboxAddress) {
+      const mailboxIdentity = mailboxName ? `${mailboxName} <${mailboxAddress}>` : mailboxAddress;
+      connectorSections.push(`### Agent Mailbox
+This instance has its own ready outbound mailbox identity: \`${mailboxIdentity}\`. Use \`remotelab mail send --to "<recipient>" --subject "<subject>" --text "<body>" --json\` for a new message sent in the assistant's own identity. Use \`remotelab mail --help\` for longer bodies and other supported options.
+
+Identity policy:
+- Agent-originated messages such as monitoring alerts, reminders, reports, status updates, and proactive follow-ups must use this Agent Mailbox by default.
+- The bound Gmail account belongs to the user; it is not the assistant's default sender or a generic notification transport.
+- Use Gmail to reply or send as the user only when the user explicitly asks to operate their mailbox or the task clearly requires the user's identity.
+- Never switch from the Agent Mailbox to the user's Gmail merely because delivery from the Agent Mailbox fails. Report the delivery/configuration failure instead.`);
+    }
+  } catch {}
+
   connectorSections.push(`### Gmail
-This workspace can connect one Gmail account for mailbox automation. After Gmail is connected, prefer the \`remotelab gmail\` CLI for mailbox actions instead of asking the user to paste raw message bodies or forward email manually.
+This workspace can connect one user-owned Gmail account for mailbox automation. Treat it as authority to operate the user's mailbox, not as the assistant's own sending identity.
 
-If the user mentions Gmail, email, inbox, mailbox, latest mail, recent mail, or asks you to find/read/search messages, first run \`remotelab gmail status --json\`. Do not claim Gmail is unavailable, ask for IMAP credentials, or say there is no access until you have checked the live Gmail status for this workspace.
+If the user mentions Gmail, inbox, latest mail, recent mail, or asks you to find, read, organize, or reply to messages in their mailbox, first run \`remotelab gmail status --json\`. Do not claim Gmail is unavailable, ask for IMAP credentials, or say there is no access until you have checked the live Gmail status for this workspace.
 
-If Gmail status is \`ready\`, use the Gmail CLI for the mailbox task. Use \`remotelab gmail --help\` for the available actions. Prefer \`--json\` when calling Gmail commands from the shell.
+If Gmail status is \`ready\`, use the Gmail CLI for that user-mailbox task. Use \`remotelab gmail --help\` for the available actions. Prefer \`--json\` when calling Gmail commands from the shell.
 
-Supported Gmail operations include search, read, archive, mark-read, label changes, reply, and send through the bound Gmail account.
+Supported Gmail operations include search, read, archive, mark-read, label changes, reply, and user-authorized send. A new alert, reminder, report, status update, or proactive follow-up from the assistant must use the ready Agent Mailbox above instead of Gmail. Sending a new message through Gmail is appropriate only when the user explicitly asks to send as them or the task clearly depends on their identity.
 
 If the user asks to connect Gmail or Gmail is not ready yet, direct them to the Gmail connector in Settings or to \`/connectors/gmail\`. Do not use host browser cookies or ambient local Gmail sessions as a fallback.`);
 
