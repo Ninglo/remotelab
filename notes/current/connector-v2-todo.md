@@ -91,8 +91,8 @@ These are not open questions; they are the current baseline problems.
 
 - trigger delivery is still hard-coded to `session_message`
 - trigger execution still routes through session submission rather than connector invocation
-- WeChat direct send exists at the transport layer but is not exposed as a first-class activation-derived action
-- connector skill registry / capability exposure is not yet the single clean path used by all connectors
+- WeChat direct send is now exposed as the manifest-declared, binding-scoped `wechat:send_text` action for immediate calls; deferred trigger dispatch still needs the same action contract
+- connector skill registry / capability exposure now has a generic health-derived prompt projection for registered actions, but activation-derived exposure is not yet the single clean path used by all connectors
 - current system guidance has historically over-taught trigger wake-ups and under-exposed direct connector delivery
 
 ---
@@ -241,10 +241,10 @@ Goal:
 
 Main work:
 
-- expose `wechat:send_text` as a first-class connector action
-- define target semantics for the bound WeChat thread / session
-- route reminder delivery through connector action dispatch, not session wake-up
-- keep any old script entry only as a thin launcher if still needed
+- `[x]` expose `wechat:send_text` as a first-class connector action
+- `[x]` define target semantics for the bound WeChat user / session
+- `[ ]` route scheduled reminder delivery through connector action dispatch, not session wake-up
+- `[x]` keep the old script entry as a thin process/transport launcher while capability truth lives in the WeChat connector package
 
 Acceptance:
 
@@ -259,9 +259,9 @@ Goal:
 
 Main work:
 
-- finish activation-derived tool exposure
-- remove manual one-off skill wiring for connector actions
-- ensure direct-send connector actions are visible enough that the model chooses them
+- `[ ]` finish activation-derived tool exposure
+- `[x]` remove one-off system-prompt wiring for model-callable direct-send actions by projecting the health-checked registry generically
+- `[x]` ensure direct-send connector actions are visible enough that the model chooses them
 
 Acceptance:
 

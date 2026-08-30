@@ -1,0 +1,60 @@
+{
+  "id": "wechat",
+  "name": "WeChat",
+  "version": "2.0.0",
+  "description": "Instance-local WeChat bot ingress, replies, and bound-user text delivery.",
+  "supports": {
+    "inbound": true,
+    "reply": true,
+    "actions": true
+  },
+  "hostStrategies": [
+    {
+      "kind": "local",
+      "default": true
+    }
+  ],
+  "bindingSchema": {
+    "kind": "wechat_bot_user",
+    "cardinality": "one_bot_per_wechat_user",
+    "required": [
+      "accountId",
+      "userId"
+    ],
+    "properties": {
+      "accountId": {
+        "type": "string"
+      },
+      "userId": {
+        "type": "string"
+      }
+    }
+  },
+  "actions": [
+    {
+      "id": "send_text",
+      "title": "Send WeChat text",
+      "description": "Send plain text through this instance's bound WeChat bot. By default the target is the WeChat user who bound the bot; optionally target an existing WeChat-backed RemoteLab session.",
+      "toolName": "wechat:send_text",
+      "targetKind": "bound_user_or_session",
+      "requiresBinding": true,
+      "availability": "model",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Plain-text message body"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Optional RemoteLab session ID already bound to a WeChat conversation"
+          }
+        }
+      }
+    }
+  ]
+}

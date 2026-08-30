@@ -14,6 +14,7 @@ import {
   getFeedInfo,
 } from '../lib/connector-calendar-feed.mjs';
 import {
+  getAllToolDefinitions,
   initSkillRegistry,
   isConnectorSkillReady,
 } from '../lib/connector-skill-registry.mjs';
@@ -205,6 +206,54 @@ This session is running inside the instance-scoped environment \`${scopedInstanc
   return context;
 }
 
+function connectorParameterFlag(name) {
+  return String(name || '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+}
+
+function renderConnectorActionCommand(tool) {
+  const parameters = tool?.parameters && typeof tool.parameters === 'object' ? tool.parameters : {};
+  const requiredFlags = Object.entries(parameters)
+    .filter(([, schema]) => schema?.required === true)
+    .map(([name]) => ` --${connectorParameterFlag(name)} "<${name}>"`)
+    .join('');
+  return `remotelab connector call ${tool.name}${requiredFlags} --json`;
+}
+
+async function buildGenericConnectorActionsSection() {
+  try {
+    await initSkillRegistry(CONFIG_DIR);
+    const definitions = await getAllToolDefinitions();
+    const ready = (await Promise.all(definitions.map(async (tool) => ({
+      ...tool,
+      ready: await isConnectorSkillReady(tool.name),
+    }))))
+      .filter((tool) => tool.ready && tool.name !== 'feishu:document_get');
+    if (ready.length === 0) return '';
+
+    const lines = ready.map((tool) => {
+      const parameters = tool?.parameters && typeof tool.parameters === 'object' ? tool.parameters : {};
+      const required = Object.entries(parameters)
+        .filter(([, schema]) => schema?.required === true)
+        .map(([name]) => name);
+      const optional = Object.keys(parameters).filter((name) => !required.includes(name));
+      const parameterSummary = [
+        required.length > 0 ? `required: ${required.join(', ')}` : '',
+        optional.length > 0 ? `optional: ${optional.join(', ')}` : '',
+      ].filter(Boolean).join('; ');
+      return `- \`${tool.name}\` — ${tool.description || 'Connector action'}${parameterSummary ? ` (${parameterSummary})` : ''}\n  - Example: \`${renderConnectorActionCommand(tool)}\``;
+    });
+
+    return `### Connector Actions
+This instance currently exposes the following health-checked, binding-scoped connector actions. Use them for deterministic external delivery instead of waking a new AI session merely to restate known text. Provider credentials remain inside the connector process.
+
+${lines.join('\n')}
+
+Use \`remotelab connector list --json\` to refresh the active catalog. If the \`remotelab\` command is unavailable in PATH, replace it with \`node "$REMOTELAB_PROJECT_ROOT/cli.js"\`.`;
+  } catch {
+    return '';
+  }
+}
+
 async function buildConnectorCapabilitiesSection() {
   const connectorSections = [];
   const agendaCommand = 'remotelab agenda add --title "Title" --start "ISO8601" --duration 60';
@@ -259,6 +308,11 @@ Use \`remotelab connector call feishu:wiki_tree_list --space-id "<space-id>" --m
 The bot can read only Wiki nodes authorized to the app. Treat \`missing_scope\` and \`wiki_permission_denied\` as explicit authorization failures; a partial tree result summarizes failed branches without discarding accessible siblings.`);
     }
   } catch {}
+
+  const genericConnectorActions = await buildGenericConnectorActionsSection();
+  if (genericConnectorActions) {
+    connectorSections.push(genericConnectorActions);
+  }
 
   connectorSections.push(`### Gmail
 This workspace can connect one Gmail account for mailbox automation. After Gmail is connected, prefer the \`remotelab gmail\` CLI for mailbox actions instead of asking the user to paste raw message bodies or forward email manually.

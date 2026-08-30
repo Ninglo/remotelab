@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'fs';
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { randomBytes, randomUUID } from 'crypto';
 import { homedir } from 'os';
@@ -39,6 +38,7 @@ import {
   submitConnectorMessage,
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
+import { createWeChatCapabilityController } from '../connectors/wechat/index.mjs';
 
 const DEFAULT_STORAGE_DIR = join(CONFIG_DIR, 'wechat-connector');
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_WECHAT_CONFIG_PATH
@@ -81,7 +81,7 @@ const DEFAULT_SESSION_SYSTEM_PROMPT = [
 ].join('\n');
 const WECHAT_LOGIN_QR_BASE_URL = 'https://ilinkai.weixin.qq.com';
 const ILINK_APP_ID = 'bot';
-const PACKAGE_VERSION = loadPackageVersion();
+const PACKAGE_VERSION = await loadPackageVersion();
 const ILINK_APP_CLIENT_VERSION = buildIlinkClientVersion(PACKAGE_VERSION);
 const WECHAT_MESSAGE_TYPE = Object.freeze({
   USER: 1,
@@ -100,9 +100,9 @@ const WECHAT_ITEM_TYPE = Object.freeze({
   VIDEO: 5,
 });
 
-function loadPackageVersion() {
+async function loadPackageVersion() {
   try {
-    const raw = readFileSync(new URL('../package.json', import.meta.url), 'utf8');
+    const raw = await readFile(new URL('../package.json', import.meta.url), 'utf8');
     const parsed = JSON.parse(raw);
     return trimString(parsed?.version) || '0.0.0';
   } catch {
@@ -2101,9 +2101,28 @@ function resolveSendAccountId(runtime, preferredAccountId = '') {
     || Object.keys(accounts)[0]
     || '';
   if (!resolved || !accounts[resolved]) {
-    throw new Error('No linked WeChat account is available for direct send');
+    const error = new Error('No linked WeChat account is available for direct send');
+    error.code = 'binding_required';
+    error.statusCode = 409;
+    throw error;
   }
   return resolved;
+}
+
+async function resolveDefaultWeChatTarget(runtime, preferredAccountId = '') {
+  await reloadRuntimeState(runtime, {
+    accounts: true,
+    contextTokens: true,
+  });
+  const accountId = resolveSendAccountId(runtime, preferredAccountId);
+  const peerUserId = trimString(runtime.accountsDoc.accounts?.[accountId]?.userId);
+  if (!peerUserId) {
+    const error = new Error('The linked WeChat binding does not include a target user ID');
+    error.code = 'target_required';
+    error.statusCode = 409;
+    throw error;
+  }
+  return { accountId, peerUserId };
 }
 
 function getRemoteLabSessionQueueCount(session) {
@@ -2430,7 +2449,20 @@ async function sendDirectWeChatText(runtime, {
     responseMessageId: result?.message_id || '',
     textChars: normalizedText.length,
   });
-  return result;
+  return {
+    ...result,
+    accountId: resolvedAccountId,
+    peerUserId: normalizedPeerUserId,
+    sessionId: trimString(sessionId),
+  };
+}
+
+async function sendDirectWeChatTextToDefaultBinding(runtime, text) {
+  const target = await resolveDefaultWeChatTarget(runtime);
+  return await sendDirectWeChatText(runtime, {
+    ...target,
+    text,
+  });
 }
 
 async function sendDirectWeChatTextForSession(runtime, sessionId, text) {
@@ -2444,12 +2476,20 @@ async function sendDirectWeChatTextForSession(runtime, sessionId, text) {
     throw new Error(`Session ${normalizedSessionId} is not bound to WeChat`);
   }
 
-  return sendDirectWeChatText(runtime, {
+  return await sendDirectWeChatText(runtime, {
     accountId: trimString(sourceContext?.session?.accountId || sourceContext?.message?.accountId),
     peerUserId: trimString(sourceContext?.session?.peerUserId || sourceContext?.message?.peerUserId),
     text,
     sessionId: normalizedSessionId,
   });
+}
+
+async function executeWeChatSendTextAction(runtime, parameters = {}) {
+  const sessionId = trimString(parameters.sessionId);
+  if (sessionId) {
+    return await sendDirectWeChatTextForSession(runtime, sessionId, parameters.text);
+  }
+  return await sendDirectWeChatTextToDefaultBinding(runtime, parameters.text);
 }
 
 async function recordInboundEvent(runtime, summary, rawMessage, sourceLabel = 'getupdates') {
@@ -3026,6 +3066,23 @@ async function runPollLoop(runtime, options = {}) {
   let stopped = false;
   let waitingForAccounts = initialAccounts.length === 0;
   let replayedAccountsKey = '';
+  let notifiedAccountsKey = null;
+
+  const notifyActiveAccountsChanged = async (accounts = []) => {
+    if (typeof options.onActiveAccountsChanged !== 'function') return;
+    const nextKey = (Array.isArray(accounts) ? accounts : [])
+      .map((account) => trimString(account?.accountId))
+      .filter(Boolean)
+      .sort()
+      .join(',');
+    if (nextKey === notifiedAccountsKey) return;
+    try {
+      await options.onActiveAccountsChanged(accounts);
+      notifiedAccountsKey = nextKey;
+    } catch (error) {
+      console.error('[wechat-connector] capability reconciliation failed:', error?.stack || error);
+    }
+  };
 
   const stop = (signal) => {
     if (stopped) return;
@@ -3064,6 +3121,7 @@ async function runPollLoop(runtime, options = {}) {
     }
   }
 
+  await notifyActiveAccountsChanged(initialAccounts);
   await maybeReplayStoredMessages(initialAccounts);
 
   while (!stopped) {
@@ -3073,6 +3131,7 @@ async function runPollLoop(runtime, options = {}) {
       contextTokens: true,
     });
     const activeAccounts = buildPollAccountList(runtime, options.accountId, options.force);
+    await notifyActiveAccountsChanged(activeAccounts);
     if (activeAccounts.length === 0) {
       if (!waitingForAccounts) {
         console.log('[wechat-connector] no pollable accounts remain; waiting for re-login');
@@ -3128,9 +3187,11 @@ export {
   replayUnhandledMessages,
   runPollLoop,
   releaseConnectorPidLock,
+  resolveDefaultWeChatTarget,
   resolveRedirectBaseUrl,
   sendDirectWeChatText,
   sendDirectWeChatTextForSession,
+  sendDirectWeChatTextToDefaultBinding,
   saveAccountsDocument,
   saveContextTokensDocument,
   saveSyncStateDocument,
@@ -3198,9 +3259,26 @@ async function main() {
     if (surfaceServer?.baseUrl) {
       console.log(`[wechat-connector] surface ready at ${surfaceServer.baseUrl}${runtime.config.surface.entryPath}`);
     }
+    const capabilityController = createWeChatCapabilityController(runtime, {
+      configDir: CONFIG_DIR,
+      sendText: async ({ text, sessionId }) => await executeWeChatSendTextAction(runtime, { text, sessionId }),
+    });
     try {
-      await runPollLoop(runtime, options);
+      await runPollLoop(runtime, {
+        ...options,
+        onActiveAccountsChanged: async (activeAccounts) => {
+          const state = await capabilityController.reconcile(activeAccounts);
+          if (state.changed) {
+            console.log(
+              state.ready
+                ? `[wechat-connector] send_text capability ready (${state.skillUrl})`
+                : '[wechat-connector] send_text capability unavailable (binding required)',
+            );
+          }
+        },
+      });
     } finally {
+      await capabilityController.stop();
       await surfaceServer?.stop?.();
     }
   } finally {
