@@ -826,6 +826,8 @@ async function main() {
     assert.match(toolingAsset.text, /async function fetchModelResponse\(/);
     assert.match(toolingAsset.text, /function getPiProviderCatalog\(/, 'Pi model picker should derive a compact provider list');
     assert.match(toolingAsset.text, /inlineProviderSelect\.addEventListener\("change"/, 'provider changes should drive the filtered model picker');
+    assert.match(toolingAsset.text, /providerModels\.find\(\(model\) => model\.providerDefault\)/, 'provider switches should prefer the recommended SOTA model');
+    assert.match(toolingAsset.text, /selectedEffort_\$\{selectedTool\}_\$\{selectedModel\}/, 'thinking preferences should stay scoped to each selected model');
 
     const realtimeRenderAsset = await request(port, 'GET', '/chat/realtime-render.js');
     assert.equal(realtimeRenderAsset.status, 200, 'realtime render asset should load');

@@ -152,9 +152,12 @@ function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurre
       effortSelect.appendChild(opt);
     }
 
-    const storedEffort = selectedTool
-      ? (localStorage.getItem(`selectedEffort_${selectedTool}`) || "")
+    const storedModelEffort = selectedTool && modelData?.id
+      ? (localStorage.getItem(`selectedEffort_${selectedTool}_${modelData.id}`) || "")
       : "";
+    const storedEffort = storedModelEffort || (selectedTool
+      ? (localStorage.getItem(`selectedEffort_${selectedTool}`) || "")
+      : "");
     const preferredEffort = sessionPreferences?.hasEffort
       ? sessionPreferences.effort
       : preserveCurrentSelection
@@ -240,6 +243,9 @@ thinkingToggle.addEventListener("click", () => {
 effortSelect.addEventListener("change", () => {
   selectedEffort = effortSelect.value;
   if (selectedTool) localStorage.setItem(`selectedEffort_${selectedTool}`, selectedEffort);
+  if (selectedTool && selectedModel) {
+    localStorage.setItem(`selectedEffort_${selectedTool}_${selectedModel}`, selectedEffort);
+  }
   queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });
@@ -1089,7 +1095,8 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       localStorage.setItem(`selectedModel_${toolId}`, savedModel);
     }
     const defaultModel = data.defaultModel || "";
-    const requestedModel = sessionPreferences?.hasModel ? sessionPreferences.model : savedModel;
+    const attachedModel = sessionPreferences?.hasModel ? sessionPreferences.model : "";
+    const requestedModel = attachedModel || savedModel;
 
     if (toolId === "pi") {
       const providers = getPiProviderCatalog();
@@ -1107,7 +1114,8 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       const providerSavedModel = localStorage.getItem(
         `selectedModel_${toolId}_${selectedModelProvider}`,
       ) || "";
-      selectedModel = [requestedModel, providerSavedModel, defaultModel]
+      const providerDefaultModel = providerModels.find((model) => model.providerDefault)?.id || "";
+      selectedModel = [attachedModel, providerDefaultModel, providerSavedModel, defaultModel, savedModel]
         .find((candidate) => providerModels.some((model) => model.id === candidate))
         || providerModels[0]?.id
         || "";
@@ -1145,12 +1153,8 @@ inlineProviderSelect.addEventListener("change", () => {
   selectedModelProvider = inlineProviderSelect.value || "";
   localStorage.setItem(`selectedProvider_${selectedTool}`, selectedModelProvider);
   const providerModels = getPiModelsForProvider(selectedModelProvider);
-  const storedModel = localStorage.getItem(
-    `selectedModel_${selectedTool}_${selectedModelProvider}`,
-  ) || "";
-  selectedModel = providerModels.some((model) => model.id === storedModel)
-    ? storedModel
-    : providerModels[0]?.id || "";
+  const providerDefaultModel = providerModels.find((model) => model.providerDefault)?.id || "";
+  selectedModel = providerDefaultModel || providerModels[0]?.id || "";
   renderInlineModelOptions(providerModels, {
     includeDefault: false,
     selectedValue: selectedModel,
@@ -1159,7 +1163,7 @@ inlineProviderSelect.addEventListener("change", () => {
   if (selectedModel) {
     localStorage.setItem(`selectedModel_${selectedTool}_${selectedModelProvider}`, selectedModel);
   }
-  applyCurrentModelReasoningUi({ preserveCurrentSelection: true });
+  applyCurrentModelReasoningUi({ preserveCurrentSelection: false });
   queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });
@@ -1171,7 +1175,7 @@ inlineModelSelect.addEventListener("change", () => {
     localStorage.setItem(`selectedProvider_${selectedTool}`, selectedModelProvider);
     localStorage.setItem(`selectedModel_${selectedTool}_${selectedModelProvider}`, selectedModel);
   }
-  applyCurrentModelReasoningUi({ preserveCurrentSelection: true });
+  applyCurrentModelReasoningUi({ preserveCurrentSelection: false });
   queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });

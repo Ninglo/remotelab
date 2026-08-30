@@ -15,6 +15,11 @@ const PI_PROVIDER_LABELS = Object.freeze({
   zai: 'Z.AI',
   'zai-coding-cn': 'GLM Coding',
 });
+const PI_PROVIDER_RECOMMENDATIONS = Object.freeze({
+  'openai-codex': Object.freeze({ modelId: 'gpt-5.6-sol', effort: 'xhigh' }),
+  'glm-api': Object.freeze({ modelId: 'glm-5.3', effort: 'medium' }),
+  moonshotai: Object.freeze({ modelId: 'kimi-k3', effort: 'max' }),
+});
 
 let cachedCatalog = null;
 let cachedAt = 0;
@@ -158,16 +163,27 @@ function buildPiModelRecord(model) {
   const id = buildPiModelRouteId(provider, modelId);
   if (!id) return null;
   const reasoning = buildPiReasoning(model);
+  const recommendation = PI_PROVIDER_RECOMMENDATIONS[provider];
+  const providerDefault = recommendation?.modelId === modelId;
+  const recommendedEffort = providerDefault
+    && reasoning.kind === 'enum'
+    && reasoning.levels.includes(recommendation.effort)
+    ? recommendation.effort
+    : reasoning.default;
+  const resolvedReasoning = recommendedEffort && recommendedEffort !== reasoning.default
+    ? { ...reasoning, default: recommendedEffort }
+    : reasoning;
   return {
     id,
     label: modelId,
     provider,
     providerLabel: getPiProviderLabel(provider),
-    reasoning,
-    ...(reasoning.kind === 'enum'
+    ...(providerDefault ? { providerDefault: true } : {}),
+    reasoning: resolvedReasoning,
+    ...(resolvedReasoning.kind === 'enum'
       ? {
-        defaultEffort: reasoning.default,
-        effortLevels: [...reasoning.levels],
+        defaultEffort: resolvedReasoning.default,
+        effortLevels: [...resolvedReasoning.levels],
       }
       : {}),
   };
