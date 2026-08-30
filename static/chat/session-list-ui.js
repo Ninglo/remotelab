@@ -3,21 +3,10 @@ function t(key, vars) {
   return window.remotelabT ? window.remotelabT(key, vars) : key;
 }
 
-// Inbox view: attention-band labels
-const INBOX_BANDS = [
-  { band: 0, key: "inbox:unread-waiting", label: "Needs your attention" },
-  { band: 1, key: "inbox:unread", label: "New updates" },
-  { band: 2, key: "inbox:waiting", label: "Waiting on you" },
-  { band: 3, key: "inbox:active", label: "Active" },
-  { band: 4, key: "inbox:running", label: "Running" },
-  { band: 5, key: "inbox:parked", label: "Parked" },
-  { band: 6, key: "inbox:done", label: "Done" },
-];
-
 let activeSessionRename = null;
 let sessionListRenderDepth = 0;
 
-function getInboxBandForSession(session) {
+function getSessionAttentionRank(session) {
   if (typeof window.RemoteLabSessionStateModel?.getSessionAttentionBand === "function") {
     return window.RemoteLabSessionStateModel.getSessionAttentionBand(session);
   }
@@ -45,10 +34,10 @@ function getProjectGroupAttentionRank(groupEntry) {
   const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
   if (groupSessions.length === 0) return 6;
   return groupSessions.reduce((bestRank, session) => {
-    const band = typeof getInboxBandForSession === "function"
-      ? getInboxBandForSession(session)
+    const attentionRank = typeof getSessionAttentionRank === "function"
+      ? getSessionAttentionRank(session)
       : 3;
-    return Math.min(bestRank, band);
+    return Math.min(bestRank, attentionRank);
   }, 6);
 }
 
@@ -191,11 +180,7 @@ function renderSessionList() {
       sessionList.appendChild(section);
     }
 
-    if (sessionViewMode === "inbox") {
-      renderInboxView(visibleSessions);
-    } else {
-      renderProjectsView(visibleSessions);
-    }
+    renderProjectsView(visibleSessions);
 
     if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
       const empty = document.createElement("div");
@@ -241,51 +226,6 @@ function renderSessionList() {
     if (sessionListRenderDepth === 0) {
       refocusActiveSessionRenameInput();
     }
-  }
-}
-
-function renderInboxView(visibleSessions) {
-  // Group sessions by attention band
-  const bandMap = new Map();
-  for (const s of visibleSessions) {
-    const band = getInboxBandForSession(s);
-    if (!bandMap.has(band)) bandMap.set(band, []);
-    bandMap.get(band).push(s);
-  }
-
-  for (const bandSpec of INBOX_BANDS) {
-    const sessions = bandMap.get(bandSpec.band);
-    if (!sessions || sessions.length === 0) continue;
-
-    const group = document.createElement("div");
-    group.className = "folder-group inbox-band";
-
-    const header = document.createElement("div");
-    const isCollapsed = collapsedFolders[bandSpec.key] === true;
-    header.className = "folder-group-header" + (isCollapsed ? " collapsed" : "");
-
-    const bandLabel = t(`sidebar.inbox.${bandSpec.key.split(":")[1]}`) !== `sidebar.inbox.${bandSpec.key.split(":")[1]}`
-      ? t(`sidebar.inbox.${bandSpec.key.split(":")[1]}`)
-      : bandSpec.label;
-
-    header.innerHTML = `<span class="folder-chevron">${renderUiIcon("chevron-down")}</span>
-      <span class="folder-name" title="${esc(bandLabel)}">${esc(bandLabel)}</span>
-      <span class="folder-count">${sessions.length}</span>`;
-    header.addEventListener("click", () => {
-      header.classList.toggle("collapsed");
-      collapsedFolders[bandSpec.key] = header.classList.contains("collapsed");
-      localStorage.setItem(COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(collapsedFolders));
-    });
-
-    const items = document.createElement("div");
-    items.className = "folder-group-items";
-    for (const s of sessions) {
-      items.appendChild(createActiveSessionItem(s));
-    }
-
-    group.appendChild(header);
-    group.appendChild(items);
-    sessionList.appendChild(group);
   }
 }
 

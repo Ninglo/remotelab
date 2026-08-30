@@ -377,10 +377,7 @@ const shareSnapshotBtn = document.getElementById("shareSnapshotBtn");
 const sidebarFilters = document.getElementById("sidebarFilters");
 const sidebarSearch = document.getElementById("sidebarSearch");
 const sessionSearchInput = document.getElementById("sessionSearchInput");
-const sidebarViewSwitcher = document.getElementById("sidebarViewSwitcher");
 const sidebarSpaceSwitcher = document.getElementById("sidebarSpaceSwitcher");
-const viewInboxBtn = document.getElementById("viewInbox");
-const viewProjectsBtn = document.getElementById("viewProjects");
 const sessionList = document.getElementById("sessionList");
 const sessionListFooter = document.getElementById("sessionListFooter");
 const settingsSessionPresentationList = document.getElementById("settingsSessionPresentationList");
@@ -1261,7 +1258,6 @@ let toolsList = [];
 let isDesktop = window.matchMedia("(min-width: 768px)").matches;
 const ADD_MORE_TOOL_VALUE = "__add_more__";
 const COLLAPSED_GROUPS_STORAGE_KEY = "collapsedSessionGroups";
-const SESSION_VIEW_MODE_STORAGE_KEY = "sessionViewMode";
 const ACTIVE_SESSION_SPACE_STORAGE_KEY = "activeSessionSpace";
 const SESSION_SPACE_ALL_VALUE = "__all_spaces__";
 const SESSION_SPACE_LOOSE_VALUE = "__loose_space__";
@@ -1272,7 +1268,6 @@ let collapsedFolders = JSON.parse(
     "{}",
 );
 let sessionSearchQuery = "";
-let sessionViewMode = localStorage.getItem(SESSION_VIEW_MODE_STORAGE_KEY) || "inbox";
 let activeSessionSpace = localStorage.getItem(ACTIVE_SESSION_SPACE_STORAGE_KEY) || SESSION_SPACE_ALL_VALUE;
 
 function setPreferredAgentTemplate(value, { name = "", persist = true } = {}) {

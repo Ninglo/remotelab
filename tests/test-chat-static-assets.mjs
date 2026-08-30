@@ -337,6 +337,9 @@ async function main() {
     assert.match(page.text, /id="accountFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
     assert.match(page.text, /id="sidebarSpaceSwitcher"/);
+    assert.doesNotMatch(page.text, /id="sidebarViewSwitcher"/, 'sidebar should use the Space → Project hierarchy without a redundant view switcher');
+    assert.doesNotMatch(page.text, /id="viewInbox"/);
+    assert.doesNotMatch(page.text, /id="viewProjects"/);
     assert.doesNotMatch(page.text, /id="sessionAppFilterSelect"/);
     assert.doesNotMatch(page.text, /id="userFilterSelect"/);
     assert.doesNotMatch(page.text, /id="sortSessionListBtn"/);
@@ -427,6 +430,7 @@ async function main() {
     assert.match(combinedChatStyles, /\.messages-inner\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/, 'message column should stay bound to the available chat width');
     assert.match(combinedChatStyles, /\.input-resize-handle\s*\{[\s\S]*?margin:\s*0 calc\(var\(--chat-gutter\) \* -1\) 8px;/, 'resize handle should mirror the current chat gutter so it does not create horizontal overflow on mobile');
     assert.match(combinedChatStyles, /\.quick-entry-focus-btn\s*\{[\s\S]*?width:\s*100%;/, 'chat styles should expose a full-width quick-entry focus fallback button');
+    assert.doesNotMatch(combinedChatStyles, /\.sidebar-view-switcher|\.view-switch-btn/, 'removed Inbox/Projects sub-tabs should not leave dead styling behind');
     assert.match(combinedChatStyles, /\.queued-panel-details\s*\{[\s\S]*?max-height:\s*min\(36vh, 320px\);[\s\S]*?overflow-y:\s*auto;/, 'expanded queue details should stay scroll-bounded instead of covering the chat surface');
     assert.match(combinedChatStyles, /\.queued-panel-details\[hidden\]\s*\{[\s\S]*?display:\s*none;/, 'queue details should support a collapsed summary-only state');
     assert.doesNotMatch(combinedChatStyles, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
@@ -833,6 +837,8 @@ async function main() {
     const sessionListUiAsset = await request(port, 'GET', '/chat/session-list-ui.js');
     assert.equal(sessionListUiAsset.status, 200, 'session list ui asset should load');
     assert.match(sessionListUiAsset.text, /function renderSessionList\(/);
+    assert.match(sessionListUiAsset.text, /renderProjectsView\(visibleSessions\);/, 'session list should always render the Project grouping within the active Space');
+    assert.doesNotMatch(sessionListUiAsset.text, /renderInboxView|sessionViewMode/, 'session list should not retain the removed Inbox projection');
     assert.match(sessionListUiAsset.text, /function attachSession\(/);
     assert.match(sessionListUiAsset.text, /focusComposer\(\{ force: forceComposerFocus === true, preventScroll: true \}\)/);
 
@@ -840,6 +846,7 @@ async function main() {
     assert.equal(sidebarUiAsset.status, 200, 'sidebar ui asset should load');
     assert.match(sidebarUiAsset.text, /function openSidebar\(/);
     assert.match(sidebarUiAsset.text, /menuBtn\.addEventListener\("click", openSessionsSidebar\);/, 'header session button should always open the sessions tab');
+    assert.doesNotMatch(sidebarUiAsset.text, /setSessionViewMode|viewInboxBtn|viewProjectsBtn/, 'sidebar controller should not retain the removed Inbox/Projects toggle');
     assert.match(sidebarUiAsset.text, /function createNewSessionShortcut\(/);
     assert.match(sidebarUiAsset.text, /requestLayoutPass\("composer-images"\)/);
 
