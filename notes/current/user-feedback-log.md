@@ -39,6 +39,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: every new custom Agent session should default to an independent invocation. Stable instructions, skills, connector availability, and deliberately bundled template context may carry; prior sessions, task memory, historical business records, and local artifacts require explicit user scope. Named review gates are binding and must not be optimized away by automatic continuation. Agent creation should finish with a clean-room dry-run that receives only an explicit test packet and stops at the first real user checkpoint.
 - Promote to: Agent prompt construction, reply self-check policy, Create Agent starter flow, shared-Agent regression tests.
 
+### 2026-08-30 — queued follow-ups should default to a count-only summary
+
+- Source: direct owner review of the live chat queue surface.
+- User slice: mobile-first owner steering a session while a prior run is still active.
+- Observed friction or ask: queued message bodies can be long enough to cover the useful chat and composer area; most of the time the user only needs to know how many follow-ups are waiting.
+- Signal strength: concrete UI-density issue with an immediate implementation path.
+- Product implication: show queued work as a collapsed count-only row by default, let the user expand it on demand, preserve an explicit expansion during same-session refreshes, and keep expanded details scroll-bounded so they cannot take over the surface.
+- Promote to: chat queue presentation defaults and frontend regression coverage.
+- Follow-up: validate the collapsed row on narrow mobile screens and revisit whether individual queued items later need edit/remove controls.
+
 ### 2026-08-10 — shared instances need optional account-based session-list filtering, not RBAC
 
 - Source: direct owner request for company teams sharing one RemoteLab process.
@@ -282,15 +292,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: transcript UI defaults, internal-vs-user-facing disclosure guidelines
 - Follow-up: watch whether other internal housekeeping states should use the same collapsed pattern or remain explicit
 
-### 2026-03-27 — mobile session entry must be visually primary, not hint-dependent
+### 2026-03-27 — mobile session entry must stay persistent, not hint-dependent
 
-- Source: direct product feedback during phone-first chat-shell review
-- User slice: mobile-first owner using RemoteLab without product-specific habits yet
-- Observed friction or ask: the left header entry for sessions/sidebar is too easy to miss; if users skip or forget a hint, they may not understand how to switch sessions. `Fork` adds clutter while `Share` can stay only as a lighter secondary action.
-- Signal: important mobile navigation cannot depend on onboarding hints or hidden gestures; the persistent UI itself must make the session entry feel obviously tappable and primary.
-- Product implication: make the left header sessions control visually heavy, remove `Fork` from the top bar, and keep `Share` as a lighter secondary button that still reinforces icon clickability.
-- Promote to: mobile header defaults, session navigation UX review
-- Follow-up: watch whether stronger primary navigation reduces missed-sidebar confusion without requiring extra coaching copy
+- Source: direct product feedback during phone-first chat-shell review, refined by a later live-header review on 2026-08-30.
+- User slice: mobile-first owner using RemoteLab without product-specific habits yet.
+- Observed friction or ask: the left header entry for sessions/sidebar was initially too easy to miss, but once the standard three-line menu icon was persistent, the added `Sessions` label and heavy accent treatment became redundant. `Fork` adds clutter; the standard Share icon also does not need a visible text label. Run state remains useful and reads more naturally immediately before Share.
+- Signal: important mobile navigation cannot depend on onboarding hints or hidden gestures, but familiar persistent shell icons should not carry explanatory text merely to look discoverable.
+- Product implication: keep the menu entry always visible as an icon-only accessible button, remove `Fork` from the top bar, keep Share icon-only with an accessible label, and place the current running/idle state directly before Share.
+- Promote to: mobile header defaults, session navigation UX review.
+- Follow-up: validate that the lighter icon-only treatment remains discoverable for first-time users without reintroducing permanent explanatory copy.
 
 ### 2026-03-26 — shrink product concepts before refactoring deeper
 
