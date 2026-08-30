@@ -16,6 +16,7 @@ import {
   buildGuestSafeOutboundConfig,
   buildBridgeBaseUrl,
   buildConvergedLaunchAgentSpec,
+  detectLaunchAgentConvergence,
   buildGuestWeChatConnectorConfig,
   formatGuestInstance,
   formatGuestInstanceLinks,
@@ -117,6 +118,21 @@ const convergedRuntimeCell = buildConvergedLaunchAgentSpec({
 assert.equal(convergedRuntimeCell.REMOTELAB_MACHINE_CODEX_HOME, '/var/lib/remotelab-guests/muka2/.codex');
 assert.equal(convergedRuntimeCell.LARKSUITE_CLI_CONFIG_DIR, '/var/lib/remotelab-guests/muka2/config/lark-cli');
 assert.equal(convergedRuntimeCell.REMOTELAB_PROJECT_ROOT, repoRoot);
+const missingRuntimeCellDrift = detectLaunchAgentConvergence({
+  name: 'muka2',
+  port: 7697,
+  instanceRoot: '/var/lib/remotelab-guests/muka2',
+  chatServerPath: join(repoRoot, 'chat-server.mjs'),
+  workingDirectory: repoRoot,
+  nodePath: process.execPath,
+  environmentVariables: {
+    ...convergedRuntimeCell,
+    REMOTELAB_PROJECT_ROOT: '',
+    LARKSUITE_CLI_CONFIG_DIR: '',
+  },
+});
+assert.equal(missingRuntimeCellDrift.changed, true);
+assert.equal(missingRuntimeCellDrift.instanceRuntimeEnvironmentChanged, true);
 assert.equal(
   buildGuestPathValue({
     homeDir: '/var/lib/remotelab-guests/trial78',

@@ -121,3 +121,9 @@ GREEN focused commands:
 All focused commands exited with code 0. A disposable real lark-cli smoke test
 also initialized a config, set global strict mode to Bot, selected Bot as the
 default identity, and showed the resulting profile without exposing its secret.
+
+Deployment dry-run regression:
+- Initial fleet convergence reported `changed: false` for guests missing the
+  new lark-cli env because drift detection did not compare runtime-cell fields.
+- `detectLaunchAgentConvergence` now compares the complete runtime-cell env.
+- `node tests/test-guest-instance-command.mjs` passes with the new regression.

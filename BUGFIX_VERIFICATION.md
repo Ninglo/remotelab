@@ -332,6 +332,7 @@ to require another RemoteLab wrapper.
 
 - [x] Runtime-cell, shell-env, Feishu surface, connector, and guest convergence tests pass.
 - [x] Disposable real lark-cli config/strict/default-identity smoke test passes.
+- [x] Fleet dry-run detects missing runtime-cell variables before restart.
 - [x] `git diff --check` passes.
 
 **Date:** 2026-08-30
