@@ -5,6 +5,7 @@ import { buildPiArgs } from '../chat/adapters/pi.mjs';
 import {
   buildPiModelRouteId,
   parsePiModelList,
+  parsePiRpcModels,
   resolvePiModelRoute,
 } from '../chat/pi-models.mjs';
 
@@ -26,6 +27,85 @@ assert.deepEqual(
   'Pi should hide provider details in labels, dedupe GPT API routes, and retain non-OpenAI models',
 );
 assert.equal(buildPiModelRouteId('deepseek', 'deepseek-chat'), 'deepseek/deepseek-chat');
+assert.equal(catalog[1].provider, 'deepseek');
+assert.equal(catalog[1].providerLabel, 'DeepSeek');
+
+const rpcCatalog = parsePiRpcModels([
+  {
+    provider: 'openai-codex',
+    id: 'gpt-5.6-sol',
+    reasoning: true,
+    thinkingLevelMap: { minimal: 'low', xhigh: 'xhigh', max: 'max' },
+  },
+  {
+    provider: 'moonshotai',
+    id: 'kimi-k3',
+    reasoning: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: null,
+      high: 'high',
+      xhigh: null,
+      max: 'max',
+    },
+    compat: { supportsReasoningEffort: true },
+  },
+  {
+    provider: 'glm-api',
+    id: 'glm-5.3-flash',
+    reasoning: true,
+    compat: { supportsReasoningEffort: false, thinkingFormat: 'zai' },
+  },
+  {
+    provider: 'moonshotai',
+    id: 'kimi-k2.7-code',
+    reasoning: true,
+    thinkingLevelMap: { off: null },
+    compat: { supportsReasoningEffort: false },
+  },
+]);
+assert.deepEqual(
+  rpcCatalog.map((model) => ({
+    id: model.id,
+    provider: model.provider,
+    levels: model.reasoning.levels || [],
+    control: model.reasoning.control || '',
+    kind: model.reasoning.kind,
+  })),
+  [
+    {
+      id: 'openai-codex/gpt-5.6-sol',
+      provider: 'openai-codex',
+      levels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      control: '',
+      kind: 'enum',
+    },
+    {
+      id: 'moonshotai/kimi-k3',
+      provider: 'moonshotai',
+      levels: ['low', 'high', 'max'],
+      control: '',
+      kind: 'enum',
+    },
+    {
+      id: 'glm-api/glm-5.3-flash',
+      provider: 'glm-api',
+      levels: ['off', 'medium'],
+      control: 'binary',
+      kind: 'enum',
+    },
+    {
+      id: 'moonshotai/kimi-k2.7-code',
+      provider: 'moonshotai',
+      levels: [],
+      control: '',
+      kind: 'none',
+    },
+  ],
+  'Pi RPC metadata should expose provider grouping and each model’s real thinking control shape',
+);
 assert.deepEqual(
   resolvePiModelRoute('kimi-for-coding/kimi-k2'),
   { provider: 'kimi-for-coding', model: 'kimi-k2' },

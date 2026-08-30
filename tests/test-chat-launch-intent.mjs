@@ -160,6 +160,7 @@ function createHarness({ href, search, isStandalone = true, userAgent = 'Android
     newSessionBtn: createElement(),
     inlineAgentSelect: createElement(),
     inlineToolSelect: createElement(),
+    inlineProviderSelect: createElement(),
     inlineModelSelect: createElement(),
     effortSelect: createElement(),
     thinkingToggle: createElement(),

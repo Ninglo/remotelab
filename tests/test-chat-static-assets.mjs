@@ -373,6 +373,7 @@ async function main() {
     assert.match(page.text, /class="header-status"[\s\S]*id="statusText"[\s\S]*id="shareSnapshotBtn"/, 'run status should sit immediately before the share action');
     assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"[\s\S]*class="header-action-label sr-only"/, 'share should render as an icon-only action with an accessible label');
     assert.match(page.text, /class="input-config-row"[\s\S]*class="input-wrapper"/, 'composer should keep tooling controls above the dedicated input shell');
+    assert.match(page.text, /id="inlineToolSelect"[\s\S]*id="inlineProviderSelect"[\s\S]*id="inlineModelSelect"/, 'Pi controls should split provider and model into adjacent pickers');
     assert.match(page.text, /id="msgInput"[\s\S]*class="input-actions-row"[\s\S]*id="imgBtn"[\s\S]*id="voiceBtn"[\s\S]*id="sendBtn"/, 'composer should stack textarea above the action row so buttons no longer squeeze the text width');
     assert.match(page.text, /id="quickEntryFocusPrompt" hidden/, 'chat page should include the quick-entry focus recovery prompt shell');
     assert.match(page.text, /id="voiceInputStatus"/);
@@ -420,6 +421,8 @@ async function main() {
     ].join('\n');
     assert.match(combinedChatStyles, /\.header-btn,\s*\.sidebar-tab,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'sidebar interactions should suppress the mobile tap highlight flash');
     assert.match(combinedChatStyles, /--app-height:\s*100dvh/);
+    assert.match(combinedChatStyles, /\.input-config-row\s*\{[\s\S]*overflow-x:\s*auto;[\s\S]*touch-action:\s*pan-x;/, 'runtime controls should remain horizontally scrollable on mobile');
+    assert.match(combinedChatStyles, /\.tool-select,\s*\.provider-select,\s*\.model-select,\s*\.effort-select\s*\{[\s\S]*field-sizing:\s*content;/, 'runtime pickers should size from the selected text when supported');
     assert.match(combinedChatStyles, /--keyboard-inset-height:\s*0px/);
     assert.match(combinedChatStyles, /--sidebar-width-expanded:\s*min\(80vw, calc\(100vw - 240px\)\);/);
     assert.match(combinedChatStyles, /\.app-shell\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);/, 'app shell should reserve a fixed header row and a flexible body row');
@@ -817,6 +820,8 @@ async function main() {
     assert.equal(toolingAsset.status, 200, 'tooling asset should load');
     assert.match(toolingAsset.text, /const modelResponseCache = new Map\(\);/);
     assert.match(toolingAsset.text, /async function fetchModelResponse\(/);
+    assert.match(toolingAsset.text, /function getPiProviderCatalog\(/, 'Pi model picker should derive a compact provider list');
+    assert.match(toolingAsset.text, /inlineProviderSelect\.addEventListener\("change"/, 'provider changes should drive the filtered model picker');
 
     const realtimeRenderAsset = await request(port, 'GET', '/chat/realtime-render.js');
     assert.equal(realtimeRenderAsset.status, 200, 'realtime render asset should load');

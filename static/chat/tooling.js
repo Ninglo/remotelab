@@ -95,6 +95,7 @@ function cloneReasoningState(reasoning, fallbackLabel = t("tooling.thinking")) {
       label,
       levels,
       default: levels.includes(defaultValue) ? defaultValue : levels[0],
+      ...(reasoning.control === "binary" ? { control: "binary" } : {}),
     };
   }
   if (kind === "toggle" || kind === "none") {
@@ -145,7 +146,9 @@ function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurre
     for (const level of currentToolEffortLevels) {
       const opt = document.createElement("option");
       opt.value = level;
-      opt.textContent = level;
+      opt.textContent = reasoning.control === "binary"
+        ? (level === "off" ? t("tooling.off") : t("tooling.on"))
+        : level;
       effortSelect.appendChild(opt);
     }
 
@@ -966,36 +969,100 @@ window.addEventListener("remotelab:localechange", () => {
   void refreshInlineAgentPicker();
 });
 
-// ---- Model select ----
+// ---- Provider / model select ----
+function getModelProviderId(model) {
+  const explicitProvider = String(model?.provider || "").trim();
+  if (explicitProvider) return explicitProvider;
+  const id = String(model?.id || "").trim();
+  const separator = id.indexOf("/");
+  return separator > 0 ? id.slice(0, separator) : "";
+}
+
+function getModelProviderLabel(model, providerId) {
+  const explicitLabel = String(model?.providerLabel || "").trim();
+  if (explicitLabel) return explicitLabel;
+  return String(providerId || "")
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getPiProviderCatalog() {
+  const providers = [];
+  const seen = new Set();
+  for (const model of currentToolModels) {
+    const id = getModelProviderId(model);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    providers.push({ id, label: getModelProviderLabel(model, id) || id });
+  }
+  return providers;
+}
+
+function getPiModelsForProvider(providerId) {
+  return currentToolModels.filter((model) => getModelProviderId(model) === providerId);
+}
+
+function renderInlineProviderOptions(providers, selectedValue) {
+  inlineProviderSelect.innerHTML = "";
+  for (const provider of providers) {
+    const option = document.createElement("option");
+    option.value = provider.id;
+    option.textContent = provider.label;
+    inlineProviderSelect.appendChild(option);
+  }
+  inlineProviderSelect.value = providers.some((provider) => provider.id === selectedValue)
+    ? selectedValue
+    : providers[0]?.id || "";
+  inlineProviderSelect.style.display = providers.length > 1 ? "" : "none";
+}
+
+function renderInlineModelOptions(models, { includeDefault = true, selectedValue = "" } = {}) {
+  inlineModelSelect.innerHTML = "";
+  if (includeDefault) {
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = t("tooling.defaultModel");
+    inlineModelSelect.appendChild(defaultOption);
+  }
+  for (const model of models) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = model.label;
+    inlineModelSelect.appendChild(option);
+  }
+  inlineModelSelect.value = models.some((model) => model.id === selectedValue)
+    ? selectedValue
+    : (includeDefault ? "" : models[0]?.id || "");
+}
+
+function resetCurrentModelPickerUi() {
+  currentToolModels = [];
+  currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
+  currentToolEffortLevels = null;
+  currentToolReasoningKind = "none";
+  currentToolReasoningLabel = t("tooling.thinking");
+  currentToolReasoningDefault = null;
+  selectedModelProvider = "";
+  selectedEffort = null;
+  inlineProviderSelect.innerHTML = "";
+  inlineProviderSelect.style.display = "none";
+  inlineModelSelect.innerHTML = "";
+  inlineModelSelect.style.display = "none";
+  thinkingToggle.style.display = "none";
+  effortSelect.style.display = "none";
+}
+
 async function loadModelsForCurrentTool({ refresh = false } = {}) {
   if (!canChangeRuntimeSelectionFromUi()) {
-    currentToolModels = [];
-    currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
-    currentToolEffortLevels = null;
-    currentToolReasoningKind = "none";
-    currentToolReasoningLabel = t("tooling.thinking");
-    currentToolReasoningDefault = null;
-    selectedEffort = null;
-    inlineModelSelect.innerHTML = "";
-    inlineModelSelect.style.display = "none";
-    thinkingToggle.style.display = "none";
-    effortSelect.style.display = "none";
+    resetCurrentModelPickerUi();
     return;
   }
   const toolId = selectedTool;
-  if (!selectedTool) {
-    currentToolModels = [];
-    currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
-    currentToolEffortLevels = null;
-    currentToolReasoningKind = "none";
-    currentToolReasoningLabel = t("tooling.thinking");
-    currentToolReasoningDefault = null;
+  if (!toolId) {
     selectedModel = null;
-    selectedEffort = null;
-    inlineModelSelect.innerHTML = "";
-    inlineModelSelect.style.display = "none";
-    thinkingToggle.style.display = "none";
-    effortSelect.style.display = "none";
+    resetCurrentModelPickerUi();
     return;
   }
   try {
@@ -1014,19 +1081,6 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
         }
         : { kind: "none", label: t("tooling.thinking") });
 
-    // Populate model dropdown
-    inlineModelSelect.innerHTML = "";
-    const defaultOpt = document.createElement("option");
-    defaultOpt.value = "";
-    defaultOpt.textContent = t("tooling.defaultModel");
-    inlineModelSelect.appendChild(defaultOpt);
-    for (const m of currentToolModels) {
-      const opt = document.createElement("option");
-      opt.value = m.id;
-      opt.textContent = m.label;
-      inlineModelSelect.appendChild(opt);
-    }
-    // Restore saved model for this tool
     const rawSavedModel = localStorage.getItem(`selectedModel_${toolId}`) || "";
     const savedModel = toolId === "codex" && typeof normalizeStoredCodexModelId === "function"
       ? normalizeStoredCodexModelId(rawSavedModel)
@@ -1035,36 +1089,95 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       localStorage.setItem(`selectedModel_${toolId}`, savedModel);
     }
     const defaultModel = data.defaultModel || "";
-    selectedModel = sessionPreferences?.hasModel ? sessionPreferences.model : savedModel;
-    if (selectedModel && currentToolModels.some((m) => m.id === selectedModel)) {
-      inlineModelSelect.value = selectedModel;
-    } else if (defaultModel && currentToolModels.some((m) => m.id === defaultModel)) {
-      inlineModelSelect.value = defaultModel;
-      selectedModel = defaultModel;
+    const requestedModel = sessionPreferences?.hasModel ? sessionPreferences.model : savedModel;
+
+    if (toolId === "pi") {
+      const providers = getPiProviderCatalog();
+      const requestedRecord = currentToolModels.find((model) => model.id === requestedModel);
+      const defaultRecord = currentToolModels.find((model) => model.id === defaultModel);
+      const storedProvider = localStorage.getItem(`selectedProvider_${toolId}`) || "";
+      selectedModelProvider = getModelProviderId(requestedRecord)
+        || (providers.some((provider) => provider.id === storedProvider) ? storedProvider : "")
+        || getModelProviderId(defaultRecord)
+        || providers[0]?.id
+        || "";
+      renderInlineProviderOptions(providers, selectedModelProvider);
+
+      const providerModels = getPiModelsForProvider(selectedModelProvider);
+      const providerSavedModel = localStorage.getItem(
+        `selectedModel_${toolId}_${selectedModelProvider}`,
+      ) || "";
+      selectedModel = [requestedModel, providerSavedModel, defaultModel]
+        .find((candidate) => providerModels.some((model) => model.id === candidate))
+        || providerModels[0]?.id
+        || "";
+      renderInlineModelOptions(providerModels, {
+        includeDefault: false,
+        selectedValue: selectedModel,
+      });
     } else {
-      inlineModelSelect.value = "";
-      selectedModel = "";
+      selectedModelProvider = "";
+      inlineProviderSelect.innerHTML = "";
+      inlineProviderSelect.style.display = "none";
+      selectedModel = requestedModel;
+      if (!selectedModel || !currentToolModels.some((model) => model.id === selectedModel)) {
+        selectedModel = currentToolModels.some((model) => model.id === defaultModel)
+          ? defaultModel
+          : "";
+      }
+      renderInlineModelOptions(currentToolModels, {
+        includeDefault: true,
+        selectedValue: selectedModel,
+      });
     }
+
     inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
     applyCurrentModelReasoningUi({ sessionPreferences });
     queueRuntimeSelectionSync();
-  } catch {
-    currentToolModels = [];
-    currentToolBaseReasoning = { kind: "none", label: t("tooling.thinking") };
-    currentToolEffortLevels = null;
-    currentToolReasoningKind = "none";
-    inlineModelSelect.style.display = "none";
-    thinkingToggle.style.display = "none";
-    effortSelect.style.display = "none";
+  } catch (error) {
+    console.warn("[models] Failed to load model picker:", error?.message || error);
+    resetCurrentModelPickerUi();
   }
 }
+
+inlineProviderSelect.addEventListener("change", () => {
+  if (selectedTool !== "pi") return;
+  selectedModelProvider = inlineProviderSelect.value || "";
+  localStorage.setItem(`selectedProvider_${selectedTool}`, selectedModelProvider);
+  const providerModels = getPiModelsForProvider(selectedModelProvider);
+  const storedModel = localStorage.getItem(
+    `selectedModel_${selectedTool}_${selectedModelProvider}`,
+  ) || "";
+  selectedModel = providerModels.some((model) => model.id === storedModel)
+    ? storedModel
+    : providerModels[0]?.id || "";
+  renderInlineModelOptions(providerModels, {
+    includeDefault: false,
+    selectedValue: selectedModel,
+  });
+  localStorage.setItem(`selectedModel_${selectedTool}`, selectedModel);
+  if (selectedModel) {
+    localStorage.setItem(`selectedModel_${selectedTool}_${selectedModelProvider}`, selectedModel);
+  }
+  applyCurrentModelReasoningUi({ preserveCurrentSelection: true });
+  queueRuntimeSelectionSync();
+  persistCurrentSessionToolPreferences();
+});
 
 inlineModelSelect.addEventListener("change", () => {
   selectedModel = inlineModelSelect.value;
   if (selectedTool) localStorage.setItem(`selectedModel_${selectedTool}`, selectedModel);
+  if (selectedTool === "pi" && selectedModelProvider && selectedModel) {
+    localStorage.setItem(`selectedProvider_${selectedTool}`, selectedModelProvider);
+    localStorage.setItem(`selectedModel_${selectedTool}_${selectedModelProvider}`, selectedModel);
+  }
   applyCurrentModelReasoningUi({ preserveCurrentSelection: true });
   queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
+});
+
+window.addEventListener("remotelab:localechange", () => {
+  applyCurrentModelReasoningUi({ preserveCurrentSelection: true });
 });
 
 addToolNameInput.addEventListener("input", () => {

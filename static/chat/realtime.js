@@ -545,6 +545,7 @@ function updateStatus(connState, session = getCurrentSession()) {
     cancelBtn.style.display = "none";
     setAttachmentPickerDisabled(true);
     inlineToolSelect.disabled = true;
+    inlineProviderSelect.disabled = true;
     inlineModelSelect.disabled = true;
     thinkingToggle.disabled = true;
     effortSelect.disabled = true;
@@ -616,6 +617,7 @@ function updateStatus(connState, session = getCurrentSession()) {
   cancelBtn.style.display = runIsActive && hasSession ? "flex" : "none";
   setAttachmentPickerDisabled(!hasSession || archived);
   inlineToolSelect.disabled = visitorMode || archived;
+  inlineProviderSelect.disabled = !hasSession || archived;
   inlineModelSelect.disabled = !hasSession || archived;
   thinkingToggle.disabled = !hasSession || archived;
   effortSelect.disabled = !hasSession || archived;
