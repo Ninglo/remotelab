@@ -85,6 +85,14 @@ function getSupportedPiThinkingLevels(model) {
   });
 }
 
+function getPreferredPiThinkingLevel(model) {
+  if (model?.provider === 'moonshotai' && model?.id === 'kimi-k3') {
+    // Kimi's API reference defines max as K3's native default.
+    return 'max';
+  }
+  return 'medium';
+}
+
 function resolveDefaultPiThinkingLevel(levels, preferred = 'medium') {
   if (levels.includes(preferred)) return preferred;
   const preferredIndex = PI_THINKING_LEVELS.indexOf(preferred);
@@ -119,6 +127,7 @@ function buildPiReasoning(model) {
     }
     const enabledLevel = resolveDefaultPiThinkingLevel(
       levels.filter((level) => level !== 'off'),
+      getPreferredPiThinkingLevel(model),
     );
     if (!enabledLevel) return { kind: 'none', label: 'Thinking' };
     return {
@@ -130,7 +139,10 @@ function buildPiReasoning(model) {
     };
   }
 
-  const defaultLevel = resolveDefaultPiThinkingLevel(levels);
+  const defaultLevel = resolveDefaultPiThinkingLevel(
+    levels,
+    getPreferredPiThinkingLevel(model),
+  );
   return {
     kind: 'enum',
     label: 'Thinking',
