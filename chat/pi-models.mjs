@@ -85,6 +85,18 @@ function getSupportedPiThinkingLevels(model) {
   });
 }
 
+function resolveDefaultPiThinkingLevel(levels, preferred = 'medium') {
+  if (levels.includes(preferred)) return preferred;
+  const preferredIndex = PI_THINKING_LEVELS.indexOf(preferred);
+  for (let index = preferredIndex + 1; index < PI_THINKING_LEVELS.length; index += 1) {
+    if (levels.includes(PI_THINKING_LEVELS[index])) return PI_THINKING_LEVELS[index];
+  }
+  for (let index = preferredIndex - 1; index >= 0; index -= 1) {
+    if (levels.includes(PI_THINKING_LEVELS[index])) return PI_THINKING_LEVELS[index];
+  }
+  return levels[0];
+}
+
 function buildPiReasoning(model) {
   const levels = getSupportedPiThinkingLevels(model);
   if (model?.reasoning !== true || levels.length === 1 && levels[0] === 'off') {
@@ -105,9 +117,9 @@ function buildPiReasoning(model) {
       // The model always reasons and exposes no meaningful effort choice.
       return { kind: 'none', label: 'Thinking' };
     }
-    const enabledLevel = levels.includes('medium')
-      ? 'medium'
-      : levels.find((level) => level !== 'off');
+    const enabledLevel = resolveDefaultPiThinkingLevel(
+      levels.filter((level) => level !== 'off'),
+    );
     if (!enabledLevel) return { kind: 'none', label: 'Thinking' };
     return {
       kind: 'enum',
@@ -118,9 +130,7 @@ function buildPiReasoning(model) {
     };
   }
 
-  const defaultLevel = levels.includes('medium')
-    ? 'medium'
-    : levels.find((level) => level !== 'off') || levels[0];
+  const defaultLevel = resolveDefaultPiThinkingLevel(levels);
   return {
     kind: 'enum',
     label: 'Thinking',
