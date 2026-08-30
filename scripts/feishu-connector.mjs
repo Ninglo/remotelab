@@ -4,7 +4,7 @@ import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises'
 import { homedir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 import { setTimeout as delay } from 'timers/promises';
-import { pathToFileURL } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
@@ -13,6 +13,10 @@ import {
   resolveExternalRuntimeSelection,
 } from '../lib/external-runtime-selection.mjs';
 import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
+import {
+  buildInstanceRuntimeCellEnvironment,
+  ensureInstanceLarkCliBotProfile,
+} from '../lib/instance-runtime-cell.mjs';
 import {
   selectAssistantReplyEvent,
 } from '../lib/reply-selection.mjs';
@@ -76,6 +80,7 @@ import {
 } from '../connectors/feishu/session-flow.mjs';
 
 const CANONICAL_DEFAULT_CONFIG_PATH = join(CONFIG_DIR, 'feishu-connector', 'config.json');
+const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
   : CANONICAL_DEFAULT_CONFIG_PATH;
@@ -474,6 +479,31 @@ async function loadConfig(pathname) {
     silentConfirmationText: normalizeReplyText(parsed?.silentConfirmationText),
     sourceRouteId,
   };
+}
+
+async function initializeFeishuInstanceRuntime(config, options = {}) {
+  const instanceRoot = trimString(process.env.REMOTELAB_INSTANCE_ROOT)
+    || trimString(config?.sessionFolder)
+    || homedir();
+  const runtimeCellEnvironment = buildInstanceRuntimeCellEnvironment({
+    instanceRoot,
+    projectRoot: PROJECT_ROOT,
+  });
+  const ensureProfile = typeof options.ensureProfile === 'function'
+    ? options.ensureProfile
+    : ensureInstanceLarkCliBotProfile;
+  return ensureProfile({
+    appId: config?.appId,
+    appSecret: config?.appSecret,
+    brand: config?.region === 'lark-global' ? 'lark' : 'feishu',
+    configDir: trimString(process.env.LARKSUITE_CLI_CONFIG_DIR)
+      || runtimeCellEnvironment.LARKSUITE_CLI_CONFIG_DIR,
+    cliPath: join(PROJECT_ROOT, 'node_modules', '.bin', 'lark-cli'),
+    baseEnv: {
+      ...process.env,
+      ...runtimeCellEnvironment,
+    },
+  });
 }
 
 function parsePid(value) {
@@ -2162,6 +2192,7 @@ export {
   handleChatMemberUserAdded,
   handleMessage,
   isAllowedByPolicy,
+  initializeFeishuInstanceRuntime,
   loadPersistedAccessState,
   loadConfig,
   normalizeAllowedSenders,
@@ -2191,6 +2222,8 @@ export {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = await loadConfig(options.configPath);
+  const larkCliRuntime = await initializeFeishuInstanceRuntime(config);
+  console.log(`[feishu-connector] instance lark-cli Bot profile ready (${larkCliRuntime.configDir})`);
   const connectorPidLock = await claimConnectorPidLock(config.storageDir);
   let pidLockReleased = false;
   const releasePidLock = async () => {

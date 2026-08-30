@@ -99,3 +99,25 @@ their authenticated state, muka-hr remained independently signed out, and all
 three served settingsCodexAuthSwitchBtn plus /api/codex-auth/logout. The three
 RemoteLab services, three Feishu connectors, and Cloudflare tunnel were active;
 all three public HTTPS endpoints returned HTTP 200.
+
+Unified Bot runtime cell verification
+Date: 2026-08-30 UTC
+
+RED reproductions:
+- `node tests/test-instance-runtime-cell.mjs` failed with ERR_MODULE_NOT_FOUND
+  because no shared runtime-cell contract existed.
+- `node tests/test-guest-instance-command.mjs` failed because convergence still
+  projected `/root/.codex` and no instance lark-cli config directory.
+- `node tests/test-feishu-connector.mjs` failed because connector startup did
+  not initialize a profile for harness use.
+
+GREEN focused commands:
+- `node tests/test-instance-runtime-cell.mjs`
+- `node tests/test-user-shell-env.mjs`
+- `node tests/test-connector-feishu.mjs`
+- `node tests/test-feishu-connector.mjs`
+- `node tests/test-guest-instance-command.mjs`
+
+All focused commands exited with code 0. A disposable real lark-cli smoke test
+also initialized a config, set global strict mode to Bot, selected Bot as the
+default identity, and showed the resulting profile without exposing its secret.

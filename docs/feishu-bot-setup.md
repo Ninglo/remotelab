@@ -116,35 +116,27 @@ former commands (`document_get`, `wiki_node_get`, `wiki_children_list`, and
 `wiki_tree_list`) and their local capability server are not part of the product
 surface.
 
-The harness can still use the package-provided `lark-cli` directly through its
-normal shell tools. Authentication, named-profile selection, and document
-access are owned by `lark-cli` and Feishu rather than by RemoteLab. Configure
-the required CLI profiles separately; do not put an App Secret in a RemoteLab
-prompt or assume the connector's transport credentials are copied into a CLI
-profile.
+The harness uses the package-provided `lark-cli` directly through normal shell
+tools. RemoteLab, the Feishu connector, and every harness launched for the Bot
+run inside the same instance runtime cell: one OS user, one home directory, one
+environment contract, and one instance-owned lark-cli config directory. The
+connector initializes that config from its existing Bot credentials at startup;
+the App Secret is never copied into a prompt.
 
-Use the Bot's `systemPrompt` to activate the intended CLI profile as context,
-for example:
-
-```json
-{
-  "systemPrompt": "You are the operations Bot. For authorized Feishu work, use lark-cli --profile operations. Do not switch CLI profiles unless the user explicitly asks."
-}
-```
-
-The harness can then inspect the selected identity and follow the CLI's
-version-matched workflow before reading a link:
+The instance profile is pinned to Bot identity. The harness can inspect it and
+follow the CLI's version-matched workflow before using any Feishu capability:
 
 ```bash
-lark-cli --profile operations whoami
-lark-cli --profile operations skills read lark-doc
-lark-cli --profile operations docs +fetch --doc <docx-or-wiki-url>
+lark-cli config show
+lark-cli skills read lark-doc
+lark-cli docs +fetch --doc <docx-or-wiki-url>
 ```
 
-This profile hint is an attention boundary, not a security boundary. Actual
-access is decided by the selected CLI identity and Feishu permissions. RemoteLab
-does not select credentials, proxy the request, or prevent a local harness from
-using another locally available profile.
+This is not an API proxy or a handwritten permission bridge. `lark-cli` talks
+to Feishu directly with the Bot app's complete published scope, so adding Base,
+Doc write, Sheets, Drive, or another supported capability does not require a
+new RemoteLab connector tool. The real security boundary is the instance's OS
+user and filesystem sandbox; sibling Bot instances do not share profiles.
 
 ### Multiple Bot discovery and targeted maintenance
 
@@ -200,7 +192,7 @@ explicit selector.
   "loggerLevel": "info",
   "chatBaseUrl": "http://127.0.0.1:7690",
   "sessionTool": "codex",
-  "systemPrompt": "You are the operations Bot. Prioritize operations context and workflows relevant to this Bot. For authorized Feishu work, use lark-cli --profile operations.",
+  "systemPrompt": "You are the operations Bot. Prioritize operations context and workflows relevant to this Bot.",
   "processingReaction": {
     "enabled": true,
     "emojiType": "THINKING",
@@ -221,12 +213,11 @@ Notes:
 - `systemPrompt` is the Bot's lightweight profile. The matching Session stores
   it and passes it into the harness when the Session context is initialized;
   use it to name the Bot's role, activate relevant context, and guide behavior
-- a Bot profile is an attention/context boundary, not a host security boundary.
-  Do not add connector-specific file or knowledge access checks solely to keep
-  two local Bot personas conceptually separate
-- `lark-cli` profiles are managed by the CLI. RemoteLab only makes its packaged
-  binary available to harness processes and passes the Bot's `systemPrompt`;
-  it does not bind, switch, or enforce a CLI profile
+- a Bot prompt is an attention/context boundary; the instance runtime cell is
+  the host security and capability boundary
+- the connector initializes the instance-owned `lark-cli` profile in Bot-only
+  mode, while RemoteLab makes the packaged binary and that same profile visible
+  to harness processes
 - `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
   deferred results return through the Bot that owns the originating conversation
 - `processingReaction` lets the bot add a quick reaction on the user's message before the real reply lands; by default it uses `THINKING` and keeps it attached as a lightweight ack marker

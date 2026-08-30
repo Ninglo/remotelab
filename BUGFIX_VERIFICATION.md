@@ -296,3 +296,42 @@ the topic session lost its parent lineage and completed history.
 - [x] `npm run lint:filesize` and `git diff --check`
 
 **Date:** 2026-08-11
+
+---
+
+## Harness and connector capability mismatch
+
+### Bug description
+
+Guest chat and Feishu connector services already ran as the same isolated Linux
+user, but the deployment contract did not project one shared tool environment.
+The packaged lark-cli was not guaranteed on the harness PATH, the connector's
+Bot profile lived in connector-private storage, and convergence could point the
+executor home back at `/root/.codex`. Adding a Feishu domain therefore tended
+to require another RemoteLab wrapper.
+
+### RED evidence
+
+- The new runtime-cell test initially failed because the shared contract module
+  did not exist.
+- The guest convergence regression exposed `/root/.codex` and no canonical
+  instance lark-cli config.
+- The connector test exposed no startup step that made its Bot identity
+  available to harness commands.
+
+### Fix
+
+- Treat each Bot instance as one runtime cell with a dedicated OS user, home,
+  executor state, project CLI path, and instance-owned tool configs.
+- Initialize `config/lark-cli` from the connector's existing app credentials at
+  startup and pin it to Bot identity.
+- Let harnesses invoke lark-cli directly; connector tools remain transport-only.
+- Seed a small direct-CLI workflow into each guest's platform skill index.
+
+### GREEN evidence
+
+- [x] Runtime-cell, shell-env, Feishu surface, connector, and guest convergence tests pass.
+- [x] Disposable real lark-cli config/strict/default-identity smoke test passes.
+- [x] `git diff --check` passes.
+
+**Date:** 2026-08-30
