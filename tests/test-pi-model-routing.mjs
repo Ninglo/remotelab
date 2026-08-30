@@ -89,7 +89,7 @@ assert.deepEqual(
       provider: 'moonshotai',
       levels: ['low', 'high', 'max'],
       control: '',
-      default: 'high',
+      default: 'max',
       kind: 'enum',
     },
     {
@@ -119,6 +119,23 @@ assert.deepEqual(
   resolvePiModelRoute('gpt-5.6-sol'),
   { provider: 'openai-codex', model: 'gpt-5.6-sol' },
   'legacy unqualified Pi model selections should stay on the Codex login path',
+);
+assert.deepEqual(
+  buildPiArgs('Ping', {
+    provider: 'moonshotai',
+    model: 'kimi-k3',
+    thinking: 'max',
+  }),
+  [
+    '--mode', 'json',
+    '--provider', 'moonshotai',
+    '--approve',
+    '--no-session',
+    '--model', 'kimi-k3',
+    '--thinking', 'max',
+    'Ping',
+  ],
+  'Kimi K3 should keep its provider route, model id, and native max reasoning effort',
 );
 assert.deepEqual(
   buildPiArgs('Ping', {
