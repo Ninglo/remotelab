@@ -82,6 +82,8 @@
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-x;
   scrollbar-width: none;
 }
 .input-config-row::-webkit-scrollbar {
@@ -97,16 +99,18 @@
 .input-config-group.right {
   margin-left: auto;
 }
-.tool-select, .model-select, .effort-select {
+.tool-select, .provider-select, .model-select, .effort-select {
+  width: auto; field-sizing: content; min-width: 0; flex: 0 0 auto;
   padding: 4px 8px; background: transparent; border: 1px solid var(--border);
   border-radius: 6px; color: var(--text-secondary); font-size: 12px; outline: none;
   cursor: pointer; font-family: inherit;
   transition: border-color 0.15s ease, color 0.15s ease;
 }
-.tool-select { max-width: 100px; }
-.model-select { max-width: 120px; }
-.effort-select { max-width: 80px; }
-.tool-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
+.tool-select { max-width: 112px; }
+.provider-select { max-width: 124px; }
+.model-select { max-width: 210px; }
+.effort-select { max-width: 92px; }
+.tool-select:focus, .provider-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
 .thinking-toggle {
   padding: 4px 10px; background: transparent; border: 1px solid var(--border);
   border-radius: 6px; color: var(--text-muted); font-size: 12px;

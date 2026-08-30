@@ -34,6 +34,7 @@ function applyVisitorMode(authInfo = null) {
   }
   selectedTool = null;
   selectedModel = null;
+  selectedModelProvider = "";
   selectedEffort = null;
   document.body.classList.add("visitor-mode");
   // Hide sidebar toggle, new session button, and management UI
@@ -43,6 +44,7 @@ function applyVisitorMode(authInfo = null) {
   // Hide tool/model selectors and context management (visitors use defaults)
   if (inlineAgentSelect) inlineAgentSelect.style.display = "none";
   if (inlineToolSelect) inlineToolSelect.style.display = "none";
+  if (inlineProviderSelect) inlineProviderSelect.style.display = "none";
   if (inlineModelSelect) inlineModelSelect.style.display = "none";
   if (effortSelect) effortSelect.style.display = "none";
   if (thinkingToggle) thinkingToggle.style.display = "none";
@@ -106,6 +108,7 @@ function applyAgentScopedMode(authInfo = null) {
   if (agentsPanel) agentsPanel.style.display = "none";
   if (inlineAgentSelect) inlineAgentSelect.style.display = canSwitchAgents() ? "" : "none";
   if (inlineToolSelect) inlineToolSelect.style.display = canChangeRuntimeSelection() ? "" : "none";
+  if (inlineProviderSelect) inlineProviderSelect.style.display = canChangeRuntimeSelection() ? inlineProviderSelect.style.display : "none";
   if (inlineModelSelect) inlineModelSelect.style.display = canChangeRuntimeSelection() ? inlineModelSelect.style.display : "none";
   if (effortSelect) effortSelect.style.display = canChangeRuntimeSelection() ? effortSelect.style.display : "none";
   if (thinkingToggle) thinkingToggle.style.display = canChangeRuntimeSelection() ? thinkingToggle.style.display : "none";

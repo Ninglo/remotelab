@@ -402,6 +402,7 @@ const imgFileInput = document.getElementById("imgFileInput");
 const imgPreviewStrip = document.getElementById("imgPreviewStrip");
 const inlineAgentSelect = document.getElementById("inlineAgentSelect");
 const inlineToolSelect = document.getElementById("inlineToolSelect");
+const inlineProviderSelect = document.getElementById("inlineProviderSelect");
 const inlineModelSelect = document.getElementById("inlineModelSelect");
 const effortSelect = document.getElementById("effortSelect");
 const thinkingToggle = document.getElementById("thinkingToggle");
@@ -1246,6 +1247,7 @@ let preferredAgentTemplateName = normalizeStoredAgentTemplateName(
 let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
 // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
 let selectedModel = null;
+let selectedModelProvider = "";
 let selectedEffort = null;
 let currentToolModels = []; // model list for current tool
 let currentToolBaseReasoning = { kind: "none", label: "Reasoning" };
