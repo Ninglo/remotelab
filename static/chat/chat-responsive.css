@@ -51,12 +51,8 @@
     padding-right: 10px;
   }
 
-  .header-btn--sessions {
-    padding: 0 11px;
-  }
-
-  .header-share-btn {
-    padding: 0 9px;
+  .header-status {
+    max-width: 86px;
   }
 
   #statusText {

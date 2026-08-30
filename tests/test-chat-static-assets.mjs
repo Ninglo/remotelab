@@ -364,10 +364,11 @@ async function main() {
     assert.doesNotMatch(page.text, /id="voiceInputBtn"/);
     assert.doesNotMatch(page.text, /id="voiceFileInput"/);
     assert.doesNotMatch(page.text, /id="voiceCleanupToggle"/);
-    assert.match(page.text, /class="header-btn header-btn--sessions" id="menuBtn"/, 'mobile header should promote the session entry as a primary button');
-    assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label" data-i18n="nav\.sessions">Sessions</, 'session button should include an explicit text label');
+    assert.match(page.text, /class="header-btn header-btn--sessions" id="menuBtn"/, 'mobile header should expose an icon-only session-list entry');
+    assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label sr-only" data-i18n="nav\.sessions">Sessions</, 'session button should keep its localized label available to assistive technology only');
     assert.doesNotMatch(page.text, /id="forkSessionBtn"/, 'fork should no longer occupy the top header');
-    assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"/, 'share should render as a lighter icon-led secondary action');
+    assert.match(page.text, /class="header-status"[\s\S]*id="statusText"[\s\S]*id="shareSnapshotBtn"/, 'run status should sit immediately before the share action');
+    assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"[\s\S]*class="header-action-label sr-only"/, 'share should render as an icon-only action with an accessible label');
     assert.match(page.text, /class="input-config-row"[\s\S]*class="input-wrapper"/, 'composer should keep tooling controls above the dedicated input shell');
     assert.match(page.text, /id="msgInput"[\s\S]*class="input-actions-row"[\s\S]*id="imgBtn"[\s\S]*id="voiceBtn"[\s\S]*id="sendBtn"/, 'composer should stack textarea above the action row so buttons no longer squeeze the text width');
     assert.match(page.text, /id="quickEntryFocusPrompt" hidden/, 'chat page should include the quick-entry focus recovery prompt shell');
@@ -426,6 +427,8 @@ async function main() {
     assert.match(combinedChatStyles, /\.messages-inner\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/, 'message column should stay bound to the available chat width');
     assert.match(combinedChatStyles, /\.input-resize-handle\s*\{[\s\S]*?margin:\s*0 calc\(var\(--chat-gutter\) \* -1\) 8px;/, 'resize handle should mirror the current chat gutter so it does not create horizontal overflow on mobile');
     assert.match(combinedChatStyles, /\.quick-entry-focus-btn\s*\{[\s\S]*?width:\s*100%;/, 'chat styles should expose a full-width quick-entry focus fallback button');
+    assert.match(combinedChatStyles, /\.queued-panel-details\s*\{[\s\S]*?max-height:\s*min\(36vh, 320px\);[\s\S]*?overflow-y:\s*auto;/, 'expanded queue details should stay scroll-bounded instead of covering the chat surface');
+    assert.match(combinedChatStyles, /\.queued-panel-details\[hidden\]\s*\{[\s\S]*?display:\s*none;/, 'queue details should support a collapsed summary-only state');
     assert.doesNotMatch(combinedChatStyles, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
     assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'desktop modals should offset against the fixed-width sidebar');
     assert.match(combinedChatStyles, /body\.keyboard-open \.messages/);
@@ -824,6 +827,8 @@ async function main() {
     assert.equal(sessionSurfaceUiAsset.status, 200, 'session surface ui asset should load');
     assert.match(sessionSurfaceUiAsset.text, /function createActiveSessionItem\(/);
     assert.match(sessionSurfaceUiAsset.text, /function buildSessionMetaParts\(/);
+    assert.match(sessionSurfaceUiAsset.text, /header\.setAttribute\("aria-expanded", String\(expanded\)\)/, 'queue summary should expose its expanded state');
+    assert.match(sessionSurfaceUiAsset.text, /setExpanded\(preserveExpanded\)/, 'queue details should start collapsed and preserve an explicit expansion during same-session refreshes');
 
     const sessionListUiAsset = await request(port, 'GET', '/chat/session-list-ui.js');
     assert.equal(sessionListUiAsset.status, 200, 'session list ui asset should load');
