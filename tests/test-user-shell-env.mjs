@@ -9,13 +9,17 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-user-shell-env-'));
 const shellBin = join(tempHome, 'shell-bin');
 const processBin = join(tempHome, 'process-bin');
+const projectRoot = join(tempHome, 'remotelab-project');
+const projectPackageBin = join(projectRoot, 'node_modules', '.bin');
 
 mkdirSync(shellBin, { recursive: true });
 mkdirSync(processBin, { recursive: true });
+mkdirSync(projectPackageBin, { recursive: true });
 
 for (const target of [
   join(shellBin, 'shell-path-order-tool'),
   join(processBin, 'shell-path-order-tool'),
+  join(projectPackageBin, 'harness-package-tool'),
 ]) {
   writeFileSync(target, '#!/bin/sh\nexit 0\n', 'utf8');
   chmodSync(target, 0o755);
@@ -35,12 +39,14 @@ const originalEnv = {
   PATH: process.env.PATH,
   SHELL: process.env.SHELL,
   REMOTELAB_USER_SHELL_ENV_B64: process.env.REMOTELAB_USER_SHELL_ENV_B64,
+  REMOTELAB_PROJECT_ROOT: process.env.REMOTELAB_PROJECT_ROOT,
   IS_SANDBOX: process.env.IS_SANDBOX,
 };
 
 process.env.HOME = tempHome;
 process.env.SHELL = '/bin/bash';
 process.env.PATH = `${processBin}:${process.env.PATH || ''}`;
+process.env.REMOTELAB_PROJECT_ROOT = projectRoot;
 delete process.env.REMOTELAB_USER_SHELL_ENV_B64;
 
 try {
@@ -60,6 +66,10 @@ try {
 
   const env = buildToolProcessEnv();
   assert.equal(env.REMOTELAB_SHELL_TEST_FLAG, 'from-shell-profile', 'tool env should inherit shell-exported variables');
+  assert.ok(
+    env.PATH.split(':').includes(projectPackageBin),
+    'harnesses should receive package-provided CLIs such as lark-cli on PATH',
+  );
 
   process.env.IS_SANDBOX = '';
   const envDefault = buildToolProcessEnv();
@@ -83,6 +93,8 @@ try {
 
   if (originalEnv.REMOTELAB_USER_SHELL_ENV_B64 === undefined) delete process.env.REMOTELAB_USER_SHELL_ENV_B64;
   else process.env.REMOTELAB_USER_SHELL_ENV_B64 = originalEnv.REMOTELAB_USER_SHELL_ENV_B64;
+  if (originalEnv.REMOTELAB_PROJECT_ROOT === undefined) delete process.env.REMOTELAB_PROJECT_ROOT;
+  else process.env.REMOTELAB_PROJECT_ROOT = originalEnv.REMOTELAB_PROJECT_ROOT;
   if (originalEnv.IS_SANDBOX === undefined) delete process.env.IS_SANDBOX;
   else process.env.IS_SANDBOX = originalEnv.IS_SANDBOX;
 

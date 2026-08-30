@@ -109,6 +109,43 @@ Notes:
 - `backfill` creates a fresh reply session and drafts a catch-up reply for recent silent text messages; add `--dry-run` to inspect the target and prompt without sending
 - if `backfill` fails with `Bot/User can NOT be out of the chat`, the bot is no longer in that chat, so the draft exists but Feishu will refuse delivery until the bot is added back
 
+### Harness-side Feishu CLI access
+
+RemoteLab does not expose document or Wiki reads as connector tools. The four
+former commands (`document_get`, `wiki_node_get`, `wiki_children_list`, and
+`wiki_tree_list`) and their local capability server are not part of the product
+surface.
+
+The harness can still use the package-provided `lark-cli` directly through its
+normal shell tools. Authentication, named-profile selection, and document
+access are owned by `lark-cli` and Feishu rather than by RemoteLab. Configure
+the required CLI profiles separately; do not put an App Secret in a RemoteLab
+prompt or assume the connector's transport credentials are copied into a CLI
+profile.
+
+Use the Bot's `systemPrompt` to activate the intended CLI profile as context,
+for example:
+
+```json
+{
+  "systemPrompt": "You are the operations Bot. For authorized Feishu work, use lark-cli --profile operations. Do not switch CLI profiles unless the user explicitly asks."
+}
+```
+
+The harness can then inspect the selected identity and follow the CLI's
+version-matched workflow before reading a link:
+
+```bash
+lark-cli --profile operations whoami
+lark-cli --profile operations skills read lark-doc
+lark-cli --profile operations docs +fetch --doc <docx-or-wiki-url>
+```
+
+This profile hint is an attention boundary, not a security boundary. Actual
+access is decided by the selected CLI identity and Feishu permissions. RemoteLab
+does not select credentials, proxy the request, or prevent a local harness from
+using another locally available profile.
+
 ### Multiple Bot discovery and targeted maintenance
 
 Keep each Bot in its own config and state directory. The legacy default remains:
@@ -163,7 +200,7 @@ explicit selector.
   "loggerLevel": "info",
   "chatBaseUrl": "http://127.0.0.1:7690",
   "sessionTool": "codex",
-  "systemPrompt": "You are the operations Bot. Prioritize operations context and workflows relevant to this Bot.",
+  "systemPrompt": "You are the operations Bot. Prioritize operations context and workflows relevant to this Bot. For authorized Feishu work, use lark-cli --profile operations.",
   "processingReaction": {
     "enabled": true,
     "emojiType": "THINKING",
@@ -187,6 +224,9 @@ Notes:
 - a Bot profile is an attention/context boundary, not a host security boundary.
   Do not add connector-specific file or knowledge access checks solely to keep
   two local Bot personas conceptually separate
+- `lark-cli` profiles are managed by the CLI. RemoteLab only makes its packaged
+  binary available to harness processes and passes the Bot's `systemPrompt`;
+  it does not bind, switch, or enforce a CLI profile
 - `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
   deferred results return through the Bot that owns the originating conversation
 - `processingReaction` lets the bot add a quick reaction on the user's message before the real reply lands; by default it uses `THINKING` and keeps it attached as a lightweight ack marker

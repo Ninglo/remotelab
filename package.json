@@ -101,6 +101,7 @@
     "prepublishOnly": "chmod +x cli.js setup.sh start.sh stop.sh"
   },
   "dependencies": {
+    "@larksuite/cli": "1.0.61",
     "@larksuiteoapi/node-sdk": "^1.59.0",
     "@resvg/resvg-js": "^2.6.2",
     "google-auth-library": "^10.6.2",
@@ -109,5 +110,10 @@
     "qrcode": "^1.5.4",
     "web-push": "^3.6.7",
     "ws": "^8.19.0"
+  },
+  "overrides": {
+    "@larksuite/cli": {
+      "@clack/prompts": "1.2.0"
+    }
   }
 }
