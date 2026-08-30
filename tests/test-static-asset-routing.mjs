@@ -2,7 +2,7 @@
 import assert from 'assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
 import { spawn } from 'child_process';
@@ -112,7 +112,15 @@ async function main() {
   const port = randomPort();
   const probeName = `__static_probe_${Date.now().toString(36)}.js`;
   const probePath = join(repoRoot, 'static', 'chat', probeName);
+  const publicProbeDir = join(repoRoot, 'static', 'public-pages', `__static_probe_${Date.now().toString(36)}`);
+  const publicHtmlPath = join(publicProbeDir, 'index.html');
+  const publicHtmlAliasPath = join(publicProbeDir, 'index.page.css');
+  const publicAudioPath = join(publicProbeDir, 'sample.mp3');
   writeFileSync(probePath, 'window.__REMOTELAB_STATIC_PROBE__ = true;\n', 'utf8');
+  mkdirSync(publicProbeDir, { recursive: true });
+  writeFileSync(publicHtmlPath, '<!doctype html><title>Public probe</title>\n', 'utf8');
+  writeFileSync(publicHtmlAliasPath, '<!doctype html><title>Cached public probe</title>\n', 'utf8');
+  writeFileSync(publicAudioPath, Buffer.from('ID3'));
 
   const server = await startServer({ home, port });
   try {
@@ -147,6 +155,51 @@ async function main() {
       'versioned static assets should be long-lived immutable cache hits',
     );
 
+    const publicHtml = await request(port, `/public-pages/${basename(publicProbeDir)}/index.html`);
+    assert.equal(publicHtml.status, 200, 'public page HTML should load');
+    assert.equal(
+      publicHtml.headers['cache-control'],
+      'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
+      'public page HTML should be edge-cacheable while remaining reasonably fresh',
+    );
+
+    const publicAudio = await request(port, `/public-pages/${basename(publicProbeDir)}/sample.mp3`);
+    assert.equal(publicAudio.status, 200, 'public page audio should load');
+    assert.equal(publicAudio.headers['content-type'], 'audio/mpeg', 'MP3 should use the browser audio MIME type');
+    assert.equal(
+      publicAudio.headers['cache-control'],
+      'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800',
+      'public page media should be cached at the edge',
+    );
+    assert.equal(publicAudio.headers['accept-ranges'], 'bytes', 'MP3 should advertise seekable byte ranges');
+    assert.equal(publicAudio.headers['content-length'], '3', 'MP3 should expose its complete byte length');
+
+    const publicAudioRange = await request(
+      port,
+      `/public-pages/${basename(publicProbeDir)}/sample.mp3`,
+      { Range: 'bytes=0-1' },
+    );
+    assert.equal(publicAudioRange.status, 206, 'MP3 byte-range requests should return partial content');
+    assert.equal(publicAudioRange.headers['content-range'], 'bytes 0-1/3');
+    assert.equal(publicAudioRange.headers['content-length'], '2');
+    assert.equal(publicAudioRange.text, 'ID');
+
+    const publicHtmlAlias = await request(
+      port,
+      `/public-pages/${basename(publicProbeDir)}/index.page.css?v=test-build`,
+    );
+    assert.equal(publicHtmlAlias.status, 200, 'cacheable public HTML alias should load');
+    assert.equal(
+      publicHtmlAlias.headers['content-type'],
+      'text/html; charset=utf-8',
+      'cacheable public HTML alias should render as HTML despite its CDN-cacheable suffix',
+    );
+    assert.equal(
+      publicHtmlAlias.headers['cache-control'],
+      'public, max-age=31536000, immutable',
+      'versioned cacheable public HTML aliases should remain immutable',
+    );
+
     const probe304 = await request(port, `/chat/${probeName}`, {
       'If-None-Match': probe.headers.etag,
     });
@@ -167,6 +220,7 @@ async function main() {
   } finally {
     await stopServer(server);
     rmSync(probePath, { force: true });
+    rmSync(publicProbeDir, { recursive: true, force: true });
   }
 }
 

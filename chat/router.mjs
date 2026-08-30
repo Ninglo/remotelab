@@ -189,6 +189,7 @@ const staticMimeTypesByExtension = {
   '.js': 'application/javascript',
   '.json': 'application/json',
   '.map': 'application/json',
+  '.mp3': 'audio/mpeg',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.txt': 'text/plain; charset=utf-8',
@@ -1003,7 +1004,11 @@ async function resolveStaticAsset(pathname, query = {}) {
 
   const filename = basename(filepath).toLowerCase();
   const extension = extname(filename);
-  const contentType = filename === 'manifest.json'
+  const isPublicPageAsset = staticName.startsWith('public-pages/');
+  const isCacheablePublicHtmlAlias = isPublicPageAsset && filename.endsWith('.page.css');
+  const contentType = isCacheablePublicHtmlAlias
+    ? 'text/html; charset=utf-8'
+    : filename === 'manifest.json'
     ? 'application/manifest+json'
     : staticMimeTypesByExtension[extension] || 'application/octet-stream';
 
@@ -1013,7 +1018,11 @@ async function resolveStaticAsset(pathname, query = {}) {
       ? 'no-store, max-age=0, must-revalidate'
       : hasVersionedAssetTag(query)
         ? 'public, max-age=31536000, immutable'
-        : 'public, no-cache, max-age=0, must-revalidate',
+        : isPublicPageAsset && extension === '.html'
+          ? 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400'
+          : isPublicPageAsset
+            ? 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800'
+            : 'public, no-cache, max-age=0, must-revalidate',
     contentType,
   };
 }
@@ -1157,6 +1166,65 @@ function writeFileCached(req, res, contentType, body, {
     vary,
     headers,
   });
+}
+
+function writeRangedStaticResponse(req, res, staticAsset, body) {
+  const size = body.length;
+  const etag = createEtag(body);
+  const headers = {
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': staticAsset.cacheControl,
+    'Content-Type': staticAsset.contentType,
+    ETag: etag,
+    'X-RemoteLab-Build': BUILD_INFO.title,
+  };
+
+  const rangeHeader = String(req.headers.range || '').trim();
+  if (!rangeHeader && requestHasFreshEtag(req, etag)) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
+
+  if (!rangeHeader) {
+    headers['Content-Length'] = String(size);
+    res.writeHead(200, headers);
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return;
+  }
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+  let start;
+  let end;
+  if (match) {
+    if (match[1]) {
+      start = Number.parseInt(match[1], 10);
+      end = match[2] ? Number.parseInt(match[2], 10) : size - 1;
+    } else if (match[2]) {
+      const suffixLength = Number.parseInt(match[2], 10);
+      start = Math.max(0, size - suffixLength);
+      end = size - 1;
+    }
+  }
+
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= size || end < start) {
+    res.writeHead(416, buildHeaders({
+      ...headers,
+      'Content-Range': `bytes */${size}`,
+      'Content-Length': '0',
+    }));
+    res.end();
+    return;
+  }
+
+  end = Math.min(end, size - 1);
+  const chunk = body.subarray(start, end + 1);
+  res.writeHead(206, buildHeaders({
+    ...headers,
+    'Content-Range': `bytes ${start}-${end}/${size}`,
+    'Content-Length': String(chunk.length),
+  }));
+  res.end(req.method === 'HEAD' ? undefined : chunk);
 }
 
 const IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL = 'private, max-age=1296000, immutable';
@@ -1499,6 +1567,10 @@ export async function handleRequest(req, res) {
         await readFile(staticAsset.filepath),
         staticAsset.contentType.startsWith('text/css') ? versionTag : '',
       );
+      if (staticAsset.contentType.startsWith('audio/')) {
+        writeRangedStaticResponse(req, res, staticAsset, content);
+        return;
+      }
       writeFileCached(req, res, staticAsset.contentType, content, {
         cacheControl: staticAsset.cacheControl,
       });
