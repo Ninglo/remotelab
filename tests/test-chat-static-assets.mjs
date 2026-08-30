@@ -664,6 +664,7 @@ async function main() {
     const sessionHttpHelpersAsset = await request(port, 'GET', '/chat/session-http-helpers.js');
     assert.equal(sessionHttpHelpersAsset.status, 200, 'session http helpers asset should load');
     assert.match(sessionHttpHelpersAsset.text, /function enhanceRenderedContentLinks\(/);
+    assert.match(sessionHttpHelpersAsset.text, /function shouldFocusLatestTurnStartOnSessionEntry\(/);
     assert.match(sessionHttpHelpersAsset.text, /const SESSION_LIST_URL = "\/api\/sessions";/);
 
     const sessionHttpListStateAsset = await request(port, 'GET', '/chat/session-http-list-state.js');
@@ -673,6 +674,7 @@ async function main() {
 
     const sessionHttpAsset = await request(port, 'GET', '/chat/session-http.js');
     assert.equal(sessionHttpAsset.status, 200, 'session http asset should load');
+    assert.match(sessionHttpAsset.text, /findLatestUserTurnStart\(\)/, 'session entry should anchor after the latest user turn has rendered');
     assert.match(sessionHttpAsset.text, /requestMutationEpoch !== sessionListMutationEpoch/, 'stale list reads should not detach a just-created session');
     const sessionStoreAsset = await request(port, 'GET', '/chat/session-store.js');
     assert.equal(sessionStoreAsset.status, 200, 'session store asset should load');
@@ -828,6 +830,7 @@ async function main() {
     const realtimeRenderAsset = await request(port, 'GET', '/chat/realtime-render.js');
     assert.equal(realtimeRenderAsset.status, 200, 'realtime render asset should load');
     assert.match(realtimeRenderAsset.text, /function renderEvent\(/);
+    assert.match(realtimeRenderAsset.text, /function findLatestUserTurnStart\(/);
     assert.match(realtimeRenderAsset.text, /async function hydrateLazyNodes\(/);
 
     const uiAsset = await request(port, 'GET', '/chat/ui.js');

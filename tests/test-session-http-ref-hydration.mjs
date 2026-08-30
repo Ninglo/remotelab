@@ -220,11 +220,8 @@ function createContext() {
     clearMessages() {},
     showEmpty() {},
     scrollToBottom() {},
-    applyFinishedTurnCollapseState() {
+    findLatestUserTurnStart() {
       return null;
-    },
-    shouldFocusLatestTurnStart() {
-      return false;
     },
     scrollNodeToTop() {},
     checkPendingMessage() {},

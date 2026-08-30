@@ -180,7 +180,7 @@ function renderEvent(evt, autoScroll) {
   if (shouldAutoFollow) scrollToBottom();
 }
 
-function applyFinishedTurnCollapseState() {
+function findLatestUserTurnStart() {
   let latestTurnStart = null;
   for (const node of messagesInner.children) {
     if (node === emptyState) continue;
@@ -190,10 +190,6 @@ function applyFinishedTurnCollapseState() {
   }
 
   return latestTurnStart;
-}
-
-function shouldFocusLatestTurnStart(node) {
-  return !!node && sessionStatus !== "running" && !inThinkingBlock;
 }
 
 // ---- Thinking block helpers ----
