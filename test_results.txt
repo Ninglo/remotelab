@@ -127,3 +127,17 @@ Deployment dry-run regression:
   new lark-cli env because drift detection did not compare runtime-cell fields.
 - `detectLaunchAgentConvergence` now compares the complete runtime-cell env.
 - `node tests/test-guest-instance-command.mjs` passes with the new regression.
+
+Full and production verification:
+- `REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER=1 npm test` exited 0.
+- `npm audit --omit=dev` reported 0 vulnerabilities.
+- Remote focused tests passed before restart.
+- All four chat services and all four Feishu connectors are active.
+- All four connectors log both canonical lark-cli profile readiness and Feishu
+  persistent connection readiness.
+- All four lark-cli profiles report effective identity `bot`, strict mode `bot`,
+  and default identity `bot`.
+- A real Harness run in muka3 executed `lark-cli whoami` and replied
+  `identity=bot`.
+- All four public named-tunnel build-info endpoints returned HTTP 200 at the
+  deployed service asset version.
