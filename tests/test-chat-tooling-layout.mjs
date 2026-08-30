@@ -102,7 +102,20 @@ function createContext({
       }
     },
   };
-  const messagesInner = { children: [] };
+  let messageInnerPaddingBottom = 0;
+  const messagesInner = {
+    children: [],
+    style: {
+      get paddingBottom() {
+        return messageInnerPaddingBottom > 0 ? `${messageInnerPaddingBottom}px` : '';
+      },
+      set paddingBottom(value) {
+        const nextPadding = Math.max(0, Number.parseFloat(value) || 0);
+        messagesEl.scrollHeight += nextPadding - messageInnerPaddingBottom;
+        messageInnerPaddingBottom = nextPadding;
+      },
+    },
+  };
   const msgInput = {
     focus(options) {
       focusCalls.push(options ?? null);
@@ -470,6 +483,78 @@ assert.equal(
 assert.ok(
   streamingFollowHarness.context.window.RemoteLabTranscriptViewport.getDebugState().trace.length > 0,
   'the viewport controller should retain a bounded reason trace for future device-specific diagnosis',
+);
+
+const sessionEntryAnchorHarness = createContext({
+  isDesktop: false,
+  innerHeight: 812,
+  visualHeight: 812,
+});
+vm.runInNewContext(responsiveSource, sessionEntryAnchorHarness.context, { filename: 'static/chat/layout-tooling.js' });
+sessionEntryAnchorHarness.context.initResponsiveLayout();
+sessionEntryAnchorHarness.flushAllAnimationFrames();
+sessionEntryAnchorHarness.setMessageViewport({
+  scrollHeight: 2000,
+  clientHeight: 600,
+  scrollTop: 1400,
+});
+const latestUserNode = {
+  dataset: { transcriptKey: '9:message' },
+  getBoundingClientRect() {
+    const top = 1700 - sessionEntryAnchorHarness.messagesEl.scrollTop;
+    return { top, bottom: top + 80 };
+  },
+};
+sessionEntryAnchorHarness.messagesInner.children = [latestUserNode];
+sessionEntryAnchorHarness.context.window.RemoteLabTranscriptViewport.scrollNodeToTop(latestUserNode, {
+  margin: 10,
+  reason: 'session-entry-regression',
+});
+sessionEntryAnchorHarness.dispatchMessageScroll();
+sessionEntryAnchorHarness.dispatchMessageMutation();
+sessionEntryAnchorHarness.dispatchMessageResize();
+sessionEntryAnchorHarness.flushAllAnimationFrames();
+const sessionEntryDebugState = sessionEntryAnchorHarness.context.window.RemoteLabTranscriptViewport.getDebugState();
+assert.equal(
+  sessionEntryAnchorHarness.messagesEl.scrollTop,
+  1690,
+  'session entry should keep the latest user message at the requested top offset',
+);
+assert.equal(
+  latestUserNode.getBoundingClientRect().top,
+  10,
+  'the latest user message should remain top-aligned after observer callbacks and animation frames',
+);
+assert.equal(
+  sessionEntryDebugState.entryTailPadding,
+  290,
+  'short historical answers should receive enough temporary tail room for a true top alignment',
+);
+assert.equal(sessionEntryDebugState.entryAnchorActive, true);
+assert.equal(
+  sessionEntryDebugState.followBottom,
+  false,
+  'entry stabilization must not be reclassified as bottom-following just because the anchor is near the physical end',
+);
+sessionEntryAnchorHarness.setMessageViewport({ scrollHeight: 2490 });
+sessionEntryAnchorHarness.dispatchMessageMutation();
+assert.equal(
+  sessionEntryAnchorHarness.context.window.RemoteLabTranscriptViewport.getDebugState().entryTailPadding,
+  90,
+  'tail room should shrink as a live answer grows without moving the reading anchor',
+);
+sessionEntryAnchorHarness.context.window.RemoteLabTranscriptViewport.scrollToBottom({
+  reason: 'session-entry-explicit-bottom',
+});
+sessionEntryAnchorHarness.flushAllAnimationFrames();
+assert.equal(
+  sessionEntryAnchorHarness.context.window.RemoteLabTranscriptViewport.getDebugState().entryTailPadding,
+  0,
+  'an explicit live-follow action should remove temporary entry tail room',
+);
+assert.equal(
+  sessionEntryAnchorHarness.context.window.RemoteLabTranscriptViewport.getDebugState().entryAnchorActive,
+  false,
 );
 
 const redrawAnchorHarness = createContext({

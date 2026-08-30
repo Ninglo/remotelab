@@ -11,6 +11,11 @@ let messageViewportRestoreGeneration = 0;
 let messageViewportControllerInitialized = false;
 let messageViewportResizeObserver = null;
 let messageViewportMutationObserver = null;
+let messageViewportEntryAnchorActive = false;
+let messageViewportEntryAnchorNode = null;
+let messageViewportEntryAnchorMargin = 10;
+let messageViewportEntryAnchorTargetScrollTop = null;
+let messageViewportEntryTailPadding = 0;
 const messageViewportTrace = [];
 
 function scheduleAnimationFrame(callback) {
@@ -84,6 +89,33 @@ function setMessageViewportScrollTop(nextScrollTop, reason) {
   recordMessageViewportTrace(reason, { action: "write" });
 }
 
+function setMessageViewportEntryTailPadding(nextPadding, reason = "entry-tail") {
+  const normalizedPadding = Math.max(0, Math.ceil(Number(nextPadding) || 0));
+  if (normalizedPadding === messageViewportEntryTailPadding) return;
+  messageViewportEntryTailPadding = normalizedPadding;
+  if (messagesInner?.style) {
+    messagesInner.style.paddingBottom = normalizedPadding > 0
+      ? `${normalizedPadding}px`
+      : "";
+  }
+  recordMessageViewportTrace(reason, {
+    action: "entry-tail",
+    entryTailPadding: normalizedPadding,
+  });
+}
+
+function resetMessageViewportEntryAnchor({
+  clearTail = true,
+  reason = "entry-anchor-reset",
+} = {}) {
+  messageViewportEntryAnchorActive = false;
+  messageViewportEntryAnchorNode = null;
+  messageViewportEntryAnchorTargetScrollTop = null;
+  if (clearTail) {
+    setMessageViewportEntryTailPadding(0, reason);
+  }
+}
+
 function getMessageViewportChildren() {
   if (typeof messagesInner === "undefined" || !messagesInner?.children) return [];
   return Array.from(messagesInner.children);
@@ -115,9 +147,11 @@ function captureMessageViewport({
 } = {}) {
   if (!messagesEl) return null;
   const nearBottom = isMessageViewportNearBottom(threshold);
-  const followBottom = messageViewportControllerInitialized
-    ? (messageViewportFollowBottom || nearBottom)
-    : nearBottom;
+  const followBottom = messageViewportEntryAnchorActive
+    ? false
+    : (messageViewportControllerInitialized
+      ? (messageViewportFollowBottom || nearBottom)
+      : nearBottom);
   const snapshot = {
     followBottom,
     scrollTop: messagesEl.scrollTop || 0,
@@ -185,6 +219,7 @@ function restoreMessageViewport(snapshot, { reason = "restore" } = {}) {
 
 function scrollMessageViewportToBottom({ reason = "bottom" } = {}) {
   if (!messagesEl) return;
+  resetMessageViewportEntryAnchor({ reason: `${reason}:bottom` });
   messageViewportFollowBottom = true;
   restoreMessageViewport({
     followBottom: true,
@@ -196,21 +231,86 @@ function scrollMessageViewportToBottom({ reason = "bottom" } = {}) {
 
 function scrollMessageViewportToTop({ reason = "top" } = {}) {
   if (!messagesEl) return;
+  resetMessageViewportEntryAnchor({ reason: `${reason}:top` });
   messageViewportRestoreGeneration += 1;
   messageViewportFollowBottom = false;
   setMessageViewportScrollTop(0, reason);
 }
 
+function applyMessageViewportEntryAnchor(reason = "entry-anchor") {
+  const node = messageViewportEntryAnchorNode;
+  if (
+    !messageViewportEntryAnchorActive
+    || !messagesEl?.getBoundingClientRect
+    || !node?.getBoundingClientRect
+  ) {
+    return false;
+  }
+  if (!getMessageViewportChildren().includes(node)) {
+    resetMessageViewportEntryAnchor({ clearTail: false, reason: `${reason}:detached` });
+    return false;
+  }
+
+  messageViewportFollowBottom = false;
+  const containerRect = messagesEl.getBoundingClientRect();
+  const nodeRect = node.getBoundingClientRect();
+  const nextTop = Math.max(
+    0,
+    messagesEl.scrollTop
+      + (nodeRect.top - containerRect.top)
+      - messageViewportEntryAnchorMargin,
+  );
+  messageViewportEntryAnchorTargetScrollTop = nextTop;
+  const contentScrollHeight = Math.max(
+    0,
+    messagesEl.scrollHeight - messageViewportEntryTailPadding,
+  );
+  const requiredTailPadding = Math.max(
+    0,
+    nextTop + messagesEl.clientHeight - contentScrollHeight,
+  );
+  setMessageViewportEntryTailPadding(requiredTailPadding, `${reason}:room`);
+  setMessageViewportScrollTop(nextTop, reason);
+  return true;
+}
+
+function refreshMessageViewportEntryTail(reason = "entry-tail-refresh") {
+  if (
+    !messageViewportEntryAnchorActive
+    || !Number.isFinite(messageViewportEntryAnchorTargetScrollTop)
+  ) {
+    return;
+  }
+  const contentScrollHeight = Math.max(
+    0,
+    messagesEl.scrollHeight - messageViewportEntryTailPadding,
+  );
+  const requiredTailPadding = Math.max(
+    0,
+    messageViewportEntryAnchorTargetScrollTop
+      + messagesEl.clientHeight
+      - contentScrollHeight,
+  );
+  setMessageViewportEntryTailPadding(requiredTailPadding, reason);
+}
+
 function scrollMessageNodeToTop(node, { margin = 10, reason = "node-top" } = {}) {
   if (!messagesEl || !node) return;
-  messageViewportRestoreGeneration += 1;
+  const restoreGeneration = ++messageViewportRestoreGeneration;
+  resetMessageViewportEntryAnchor({ reason: `${reason}:new-anchor` });
+  messageViewportEntryAnchorActive = true;
+  messageViewportEntryAnchorNode = node;
+  messageViewportEntryAnchorMargin = Math.max(0, Number(margin) || 0);
   messageViewportFollowBottom = false;
+
+  const applyIfCurrent = (phase) => {
+    if (restoreGeneration !== messageViewportRestoreGeneration) return;
+    applyMessageViewportEntryAnchor(`${reason}:${phase}`);
+  };
+  applyIfCurrent("now");
   scheduleAnimationFrame(() => {
-    if (!messagesEl?.getBoundingClientRect || !node?.getBoundingClientRect) return;
-    const containerRect = messagesEl.getBoundingClientRect();
-    const nodeRect = node.getBoundingClientRect();
-    const nextTop = messagesEl.scrollTop + (nodeRect.top - containerRect.top) - margin;
-    setMessageViewportScrollTop(nextTop, reason);
+    applyIfCurrent("frame-1");
+    scheduleAnimationFrame(() => applyIfCurrent("frame-2"));
   });
 }
 
@@ -221,9 +321,11 @@ function preserveBottomPinnedMessageViewport(mutator, {
   if (typeof mutator !== "function") {
     return undefined;
   }
-  const shouldPin = messageViewportControllerInitialized
-    ? (messageViewportFollowBottom || isMessageViewportNearBottom(threshold))
-    : isMessageViewportNearBottom(threshold);
+  const shouldPin = messageViewportEntryAnchorActive
+    ? false
+    : (messageViewportControllerInitialized
+      ? (messageViewportFollowBottom || isMessageViewportNearBottom(threshold))
+      : isMessageViewportNearBottom(threshold));
   if (!shouldPin) {
     messageViewportRestoreGeneration += 1;
   }
@@ -235,17 +337,26 @@ function preserveBottomPinnedMessageViewport(mutator, {
 }
 
 function handleMessageViewportScroll() {
-  messageViewportFollowBottom = isMessageViewportNearBottom();
+  messageViewportFollowBottom = messageViewportEntryAnchorActive
+    ? false
+    : isMessageViewportNearBottom();
   recordMessageViewportTrace("scroll", { action: "observe" });
 }
 
 function handleMessageViewportUserIntent() {
   messageViewportRestoreGeneration += 1;
+  messageViewportEntryAnchorActive = false;
+  messageViewportEntryAnchorNode = null;
+  messageViewportEntryAnchorTargetScrollTop = null;
   recordMessageViewportTrace("user-scroll-intent", { action: "observe" });
 }
 
 function handleMessageViewportResize() {
   recordMessageViewportTrace("resize", { action: "observe" });
+  if (messageViewportEntryAnchorActive) {
+    applyMessageViewportEntryAnchor("resize-entry-anchor");
+    return;
+  }
   if (messageViewportFollowBottom) {
     scrollMessageViewportToBottom({ reason: "resize-follow" });
   }
@@ -253,6 +364,10 @@ function handleMessageViewportResize() {
 
 function handleMessageViewportMutation() {
   recordMessageViewportTrace("mutation", { action: "observe" });
+  if (messageViewportEntryAnchorActive) {
+    refreshMessageViewportEntryTail("mutation-entry-tail");
+    return;
+  }
   if (messageViewportFollowBottom) {
     scrollMessageViewportToBottom({ reason: "mutation-follow" });
   }
@@ -436,9 +551,12 @@ window.RemoteLabTranscriptViewport = {
   scrollToBottom: scrollMessageViewportToBottom,
   scrollToTop: scrollMessageViewportToTop,
   scrollNodeToTop: scrollMessageNodeToTop,
+  resetEntryAnchor: resetMessageViewportEntryAnchor,
   isFollowingBottom: () => messageViewportFollowBottom,
   getDebugState: () => ({
     followBottom: messageViewportFollowBottom,
+    entryAnchorActive: messageViewportEntryAnchorActive,
+    entryTailPadding: messageViewportEntryTailPadding,
     trace: messageViewportTrace.map((entry) => ({ ...entry })),
   }),
 };

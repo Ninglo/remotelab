@@ -106,7 +106,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Signal strength: recurring product-trust failure after several attempted fixes.
 - Product implication: transcript position must have one shared owner with explicit user-intent modes: on session entry, wait for the canonical event render and anchor the top of the latest user message so the answer can be read downward; follow the bottom only while already following a live turn; preserve the same visible event while reading older content; restore an anchor across full timeline redraws; and never use page-level scroll corrections for keyboard movement. Browser native scroll anchoring and scattered direct `scrollTop` writes must not compete with that owner.
 - Promote to: chat viewport controller, session-entry/redraw regression tests, mobile/desktop layout tests.
-- Follow-up: keep full-transcript top entry for read-mode welcome/examples, and preserve the current viewport on background refreshes rather than reapplying the latest-turn anchor.
+- Follow-up: keep full-transcript top entry for read-mode welcome/examples, and preserve the current viewport on background refreshes rather than reapplying the latest-turn anchor. A true top alignment near the end of a short historical transcript requires temporary trailing scroll room; the entry anchor must also remain authoritative through the first layout, resize, and mutation observer passes so they cannot immediately reclassify it as bottom-following.
 
 ### 2026-06-15 — reply self-check must count visible file delivery as turn completion
 

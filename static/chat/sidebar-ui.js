@@ -126,6 +126,9 @@ function createNewSessionShortcut({
   if (typeof showEmpty === "function") {
     showEmpty();
   }
+  window.RemoteLabTranscriptViewport?.resetEntryAnchor?.({
+    reason: "new-session-draft",
+  });
   if (typeof renderHeaderSessionTitle === "function") {
     renderHeaderSessionTitle(t("session.newDraftName"));
   }
