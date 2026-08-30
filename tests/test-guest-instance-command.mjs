@@ -643,10 +643,11 @@ try {
 
   const firstSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
   assert.equal(firstSync.changed, true);
-  assert.deepEqual(firstSync.seededSkillIds, ['calendar-write', 'session-debug', 'guest-port-expose']);
-  assert.deepEqual(firstSync.skillIds, ['calendar-write', 'session-debug', 'guest-port-expose']);
+  assert.deepEqual(firstSync.seededSkillIds, ['calendar-write', 'session-debug', 'stable-static-publish', 'guest-port-expose']);
+  assert.deepEqual(firstSync.skillIds, ['calendar-write', 'session-debug', 'stable-static-publish', 'guest-port-expose']);
   assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
   assert.match(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), /Session Debug/);
+  assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /Stable Static Publish/);
   assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Guest Port Expose/);
   assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Do not fall back to a Quick Tunnel/);
 
@@ -656,6 +657,7 @@ try {
   assert.match(syncedIndex, /网页预览/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/calendar-write\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/session-debug\.md/);
+  assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/stable-static-publish\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/guest-port-expose\.md/);
 
   const secondSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
