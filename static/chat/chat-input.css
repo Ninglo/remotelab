@@ -465,18 +465,58 @@
 .queued-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.queued-panel-header:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 .queued-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
   font-weight: 600;
   color: var(--text);
 }
+.queued-panel-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+.queued-panel-chevron .rl-icon {
+  width: 12px;
+  height: 12px;
+}
+.queued-panel.expanded .queued-panel-chevron {
+  transform: rotate(0);
+}
+.queued-panel-details {
+  max-height: min(36vh, 320px);
+  padding-top: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.queued-panel-details[hidden] {
+  display: none;
+}
 .queued-panel-note {
+  margin-bottom: 8px;
   color: var(--text-muted);
+  font-size: 12px;
 }
 .queued-list {
   display: flex;

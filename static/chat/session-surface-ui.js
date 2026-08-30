@@ -33,21 +33,43 @@ function renderQueuedMessagePanel(session) {
   const items = Array.isArray(session?.queuedMessages) ? session.queuedMessages : [];
   if (!session?.id || session.id !== currentSessionId || items.length === 0) {
     queuedPanel.innerHTML = "";
-    queuedPanel.classList.remove("visible");
+    queuedPanel.classList.remove("visible", "expanded");
+    delete queuedPanel.dataset.sessionId;
     return;
   }
 
+  const preserveExpanded = queuedPanel.dataset.sessionId === session.id
+    && queuedPanel.classList.contains("expanded");
   queuedPanel.innerHTML = "";
+  queuedPanel.dataset.sessionId = session.id;
   queuedPanel.classList.add("visible");
 
-  const header = document.createElement("div");
+  const header = document.createElement("button");
+  header.type = "button";
   header.className = "queued-panel-header";
+  header.setAttribute("aria-controls", "queuedPanelDetails");
 
-  const title = document.createElement("div");
+  const title = document.createElement("span");
   title.className = "queued-panel-title";
-  title.textContent = items.length === 1
+
+  const chevron = document.createElement("span");
+  chevron.className = "queued-panel-chevron";
+  chevron.setAttribute("aria-hidden", "true");
+  chevron.innerHTML = renderUiIcon("chevron-down");
+
+  const titleText = document.createElement("span");
+  titleText.textContent = items.length === 1
     ? t("queue.single")
     : t("queue.multiple", { count: items.length });
+
+  title.appendChild(chevron);
+  title.appendChild(titleText);
+  header.appendChild(title);
+  queuedPanel.appendChild(header);
+
+  const details = document.createElement("div");
+  details.id = "queuedPanelDetails";
+  details.className = "queued-panel-details";
 
   const note = document.createElement("div");
   note.className = "queued-panel-note";
@@ -55,10 +77,7 @@ function renderQueuedMessagePanel(session) {
   note.textContent = activity.run.state === "running" || activity.compact.state === "pending"
     ? t("queue.note.afterRun")
     : t("queue.note.preparing");
-
-  header.appendChild(title);
-  header.appendChild(note);
-  queuedPanel.appendChild(header);
+  details.appendChild(note);
 
   const list = document.createElement("div");
   list.className = "queued-list";
@@ -92,7 +111,7 @@ function renderQueuedMessagePanel(session) {
     list.appendChild(row);
   }
 
-  queuedPanel.appendChild(list);
+  details.appendChild(list);
 
   if (items.length > visibleItems.length) {
     const more = document.createElement("div");
@@ -100,8 +119,23 @@ function renderQueuedMessagePanel(session) {
     more.textContent = items.length - visibleItems.length === 1
       ? t("queue.olderHidden.one")
       : t("queue.olderHidden.multiple", { count: items.length - visibleItems.length });
-    queuedPanel.appendChild(more);
+    details.appendChild(more);
   }
+
+  queuedPanel.appendChild(details);
+
+  const setExpanded = (expanded) => {
+    queuedPanel.classList.toggle("expanded", expanded);
+    details.hidden = !expanded;
+    header.setAttribute("aria-expanded", String(expanded));
+    const actionLabel = expanded ? t("queue.collapse") : t("queue.expand");
+    header.title = actionLabel;
+    header.setAttribute("aria-label", `${titleText.textContent}. ${actionLabel}`);
+  };
+  header.addEventListener("click", () => {
+    setExpanded(!queuedPanel.classList.contains("expanded"));
+  });
+  setExpanded(preserveExpanded);
 }
 
 function renderSessionMessageCount(session) {
