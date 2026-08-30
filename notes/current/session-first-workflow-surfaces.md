@@ -97,6 +97,16 @@ Not:
 A workflow view = separate task system that happens to link to sessions
 ```
 
+### One Sidebar Hierarchy
+
+The owner sidebar uses one organization path:
+
+```text
+Space → Project group → Session
+```
+
+There is no parallel Inbox/Projects mode switch. Space already provides the broad context boundary, while Project groups provide workstream recovery inside it. Attention signals still matter, but they should influence Project ordering and lightweight row status rather than creating a second grouping hierarchy that asks the owner to choose how to view the same sessions.
+
 ---
 
 ## How To Think About `group`

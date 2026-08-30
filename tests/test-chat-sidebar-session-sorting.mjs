@@ -81,8 +81,11 @@ const context = {
       },
     };
   },
-  getInboxBandForSession(session) {
+  getSessionAttentionRank(session) {
     return Number.isInteger(session?.attentionBand) ? session.attentionBand : 3;
+  },
+  matchesTeamSessionView() {
+    return true;
   },
   SESSION_SPACE_ALL_VALUE: '__all_spaces__',
   SESSION_SPACE_LOOSE_VALUE: '__loose_space__',

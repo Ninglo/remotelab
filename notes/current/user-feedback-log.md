@@ -31,6 +31,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: chat queue presentation defaults and frontend regression coverage.
 - Follow-up: validate the collapsed row on narrow mobile screens and revisit whether individual queued items later need edit/remove controls.
 
+### 2026-08-30 — Space and Project should be the only session-list hierarchy
+
+- Source: direct owner review immediately after simplifying the live chat header and queue surface.
+- User slice: mobile-first owner navigating many sessions across several durable contexts.
+- Observed friction or ask: the Inbox/Projects sub-tabs add another choice without improving recovery; Space already separates broad contexts, and Projects already clusters the workstreams inside each Space.
+- Signal strength: concrete information-architecture decision against a shipped surface.
+- Product implication: remove the Inbox projection and its mode switch entirely. Always render the active Space as Project groups, while retaining attention signals only for ordering and compact status cues rather than as a competing hierarchy.
+- Promote to: `notes/current/session-first-workflow-surfaces.md`, sidebar rendering defaults, and static frontend regression coverage.
+- Follow-up: watch whether Project ordering alone surfaces waiting/running/unread work clearly enough without reintroducing a separate attention view.
+
 ### 2026-08-10 — shared instances need optional account-based session-list filtering, not RBAC
 
 - Source: direct owner request for company teams sharing one RemoteLab process.

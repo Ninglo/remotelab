@@ -80,24 +80,6 @@ if (sessionSearchInput) {
   });
 }
 
-// ---- View mode switcher ----
-function setSessionViewMode(mode) {
-  sessionViewMode = mode === "projects" ? "projects" : "inbox";
-  localStorage.setItem(SESSION_VIEW_MODE_STORAGE_KEY, sessionViewMode);
-  if (viewInboxBtn) viewInboxBtn.classList.toggle("active", sessionViewMode === "inbox");
-  if (viewProjectsBtn) viewProjectsBtn.classList.toggle("active", sessionViewMode === "projects");
-  renderSessionList();
-}
-
-if (viewInboxBtn) {
-  viewInboxBtn.classList.toggle("active", sessionViewMode === "inbox");
-  viewInboxBtn.addEventListener("click", () => setSessionViewMode("inbox"));
-}
-if (viewProjectsBtn) {
-  viewProjectsBtn.classList.toggle("active", sessionViewMode === "projects");
-  viewProjectsBtn.addEventListener("click", () => setSessionViewMode("projects"));
-}
-
 // ---- Session list actions ----
 if (sortSessionListBtn) {
   sortSessionListBtn.addEventListener("click", () => {
