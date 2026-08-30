@@ -72,6 +72,7 @@ assert.deepEqual(
     provider: model.provider,
     levels: model.reasoning.levels || [],
     control: model.reasoning.control || '',
+    default: model.reasoning.default || '',
     kind: model.reasoning.kind,
   })),
   [
@@ -80,6 +81,7 @@ assert.deepEqual(
       provider: 'openai-codex',
       levels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
       control: '',
+      default: 'medium',
       kind: 'enum',
     },
     {
@@ -87,6 +89,7 @@ assert.deepEqual(
       provider: 'moonshotai',
       levels: ['low', 'high', 'max'],
       control: '',
+      default: 'high',
       kind: 'enum',
     },
     {
@@ -94,6 +97,7 @@ assert.deepEqual(
       provider: 'glm-api',
       levels: ['off', 'medium'],
       control: 'binary',
+      default: 'medium',
       kind: 'enum',
     },
     {
@@ -101,6 +105,7 @@ assert.deepEqual(
       provider: 'moonshotai',
       levels: [],
       control: '',
+      default: '',
       kind: 'none',
     },
   ],
