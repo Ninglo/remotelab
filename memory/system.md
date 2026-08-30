@@ -549,6 +549,14 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - This is a heuristic/default, not a hard rule. Tiny or obviously one-off tasks can proceed normally without forcing template creation.
 - Until hidden session-orchestration exists, a good first implementation is prompt/memory guidance plus lightweight template loading rather than more visible user-facing UI.
 
+### Session Status Must Prefer Current Execution State Over Historical Waiting State (2026-08-08)
+- Use distinct meanings: `Running` means work is executing or queued; `Waiting on you` means required user input is blocking progress; `Active` means the session is open but idle and unblocked; `Done` means the current task has been delivered, not that the session is permanently closed.
+- When a new user message is accepted, clear stale waiting state immediately. Show `Running` throughout execution, then classify the terminal state only after the run ends. `Done` should be inferred from task completion rather than inactivity; unread completed replies may still surface separately as `New updates`.
+
+### Provider-Routing Wrappers Must Receive The Selected Provider Runtime Home (2026-08-08)
+- A wrapper tool may advertise a non-Codex runtime family while dispatching to `codex` for one model. If runtime-home injection keys only on the outer tool ID or runtime family, the nested Codex process can miss `CODEX_HOME` and appear unauthenticated even though the machine login is valid.
+- Runtime policy should resolve the selected inner provider before launch and inject that provider's managed home. Until that is implemented, use the direct provider tool for unattended automations that need dependable authentication.
+
 ### Pi Agent Completion Must Wait For Settled State (2026-08-22)
 - Treat `agent_settled` as the terminal completion signal. An `agent_end` event may occur before an automatic retry, so using it to finish a run can publish a premature terminal state.
 
@@ -563,6 +571,11 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - For compatibility and recall, the backend may also scan assistant markdown links and backticked local file paths, plus command output / output flags, but publication should still happen in one backend-owned completion pass.
 - Keep event reads side-effect free. Do not wait until `/events` display time to publish assets or rewrite local paths into download URLs.
 - Favor recall over over-filtering here: if the assistant explicitly names a local file path, it is usually better to publish it than to miss a deliverable the user needed.
+
+### Static-Publish Verification Must Reject Auth Redirects (2026-08-30)
+- A static publisher must not treat a followed `302 -> /login -> 200` chain as successful public delivery. Verify the first response without redirect following, require the intended final path, and confirm an expected page marker or title instead of checking status code alone.
+- An owner-instance `/public-pages/...` URL may be authenticated even when the same static tree is anonymously readable from the active guest instance. For in-chat delivery, prefer a same-origin relative `/public-pages/...` link that stays on the user's current RemoteLab instance; provide a self-contained attachment fallback when the external host is uncertain.
+- Machine-side publication is not complete until an unauthenticated or user-equivalent browser path opens the intended artifact rather than a login surface.
 
 ### Public Prototypes Must Use Non-Identifying Fixtures (2026-07-25)
 - Removing an original photo or its background does not de-identify the person: transparent face/head cutouts, debug crops, thumbnails, masks, and derived previews remain identifying assets.
