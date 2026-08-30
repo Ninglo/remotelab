@@ -28,5 +28,10 @@
     "id": "unified-bot-runtime-cell",
     "description": "Give each Bot instance one OS-user/runtime-cell boundary whose RemoteLab service, connectors, and harnesses share the same executor home, packaged CLIs, and instance-owned lark-cli Bot profile.",
     "pass": true
+  },
+  {
+    "id": "feishu-lossless-inbound-assets",
+    "description": "Route Feishu inbound files through RemoteLab's canonical session asset pipeline, represent complex messages as bounded source references, and never silently drop an unparsed message type.",
+    "pass": true
   }
 ]

@@ -9,7 +9,22 @@
 import { createHash } from 'crypto';
 
 import { stripHiddenBlocks } from '../../lib/reply-selection.mjs';
+import {
+  buildFeishuIngestionState,
+  buildFeishuSourceReference,
+  extractFeishuImageKeysFromContent,
+  extractFeishuResourcesFromContent,
+  getSummaryFeishuImageKeys,
+  getSummaryFeishuResources,
+} from './inbound-envelope.mjs';
 import { buildFeishuMathDocument } from './math-renderer.mjs';
+
+export {
+  extractFeishuImageKeysFromContent,
+  extractFeishuResourcesFromContent,
+  getSummaryFeishuImageKeys,
+  getSummaryFeishuResources,
+};
 
 export const FEISHU_CONNECTOR_ID = 'feishu';
 export const FEISHU_CONNECTOR_NAME = 'Feishu';
@@ -197,49 +212,13 @@ export function contentKeyPreview(parsedContent) {
   return Object.keys(parsedContent).filter(Boolean).slice(0, 6);
 }
 
-function addFeishuImageKey(keys, seen, value) {
-  const key = trimString(value);
-  if (!key || seen.has(key)) return;
-  seen.add(key);
-  keys.push(key);
-}
-
-function collectFeishuImageKeys(value, keys, seen, depth = 0) {
-  if (depth > 8 || value === null || value === undefined) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectFeishuImageKeys(item, keys, seen, depth + 1);
-    }
-    return;
-  }
-  if (typeof value !== 'object') {
-    return;
-  }
-
-  addFeishuImageKey(keys, seen, value.image_key);
-  addFeishuImageKey(keys, seen, value.imageKey);
-  const tag = trimString(value.tag).toLowerCase();
-  if (tag === 'img' || tag === 'image') {
-    addFeishuImageKey(keys, seen, value.file_key);
-    addFeishuImageKey(keys, seen, value.fileKey);
-  }
-  for (const child of Object.values(value)) {
-    collectFeishuImageKeys(child, keys, seen, depth + 1);
-  }
-}
-
-export function extractFeishuImageKeysFromContent(parsedContent) {
-  const keys = [];
-  collectFeishuImageKeys(parsedContent, keys, new Set());
-  return keys;
-}
-
 export function summarizeMessageContent(messageType, rawContent) {
   const normalizedType = trimString(messageType).toLowerCase();
   const parsedContent = parseMessageContent(rawContent);
-  const imageKeys = extractFeishuImageKeysFromContent(parsedContent);
+  const resources = extractFeishuResourcesFromContent(parsedContent, normalizedType);
+  const imageKeys = resources
+    .filter((resource) => resource.resourceType === 'image')
+    .map((resource) => resource.fileKey);
   let messageText = '';
   let textPreview = '';
 
@@ -258,6 +237,8 @@ export function summarizeMessageContent(messageType, rawContent) {
   } else if (normalizedType === 'location') {
     textPreview = trimString(parsedContent?.name || parsedContent?.title || parsedContent?.address);
   } else if (normalizedType === 'interactive') {
+    textPreview = extractStructuredTextPreview(parsedContent);
+  } else if (!['image', 'audio', 'media', 'sticker'].includes(normalizedType)) {
     textPreview = extractStructuredTextPreview(parsedContent);
   }
 
@@ -289,8 +270,8 @@ export function summarizeMessageContent(messageType, rawContent) {
         const typeLabel = normalizedType || 'unknown';
         const keys = contentKeyPreview(parsedContent);
         return keys.length
-          ? `Unsupported message (${typeLabel}; keys=${keys.join(',')})`
-          : `Unsupported message (${typeLabel})`;
+          ? `Feishu ${typeLabel} message reference (keys=${keys.join(',')})`
+          : `Feishu ${typeLabel} message reference`;
       }
     }
   })();
@@ -300,6 +281,7 @@ export function summarizeMessageContent(messageType, rawContent) {
     textPreview,
     contentSummary,
     contentKeys: contentKeyPreview(parsedContent),
+    resources,
     imageKeys,
   };
 }
@@ -370,6 +352,7 @@ export function summarizeFeishuEvent(data) {
     textPreview: normalizedContent.textPreview,
     contentSummary: normalizedContent.contentSummary,
     contentKeys: normalizedContent.contentKeys,
+    resources: normalizedContent.resources,
     imageKeys: normalizedContent.imageKeys,
     rawContent,
   };
@@ -408,6 +391,7 @@ export function summarizeFeishuLegacyMessageEvent(data) {
     textPreview: typeof data?.text_without_at_bot === 'string' ? data.text_without_at_bot : normalizedContent.textPreview,
     contentSummary: normalizedContent.contentSummary,
     contentKeys: normalizedContent.contentKeys,
+    resources: normalizedContent.resources,
     imageKeys: normalizedContent.imageKeys,
     rawContent,
   };
@@ -531,28 +515,12 @@ export function renderMentionPreview(text, mentions) {
   return rendered;
 }
 
-export function getSummaryFeishuImageKeys(summary) {
-  const explicitKeys = Array.isArray(summary?.imageKeys)
-    ? summary.imageKeys.map((key) => trimString(key)).filter(Boolean)
-    : [];
-  if (explicitKeys.length > 0) {
-    return Array.from(new Set(explicitKeys));
-  }
-  return extractFeishuImageKeysFromContent(parseMessageContent(summary?.rawContent));
-}
-
 export function isSupportedRemoteLabInboundMessage(summary) {
-  if (isFeishuDocumentCommentSummary(summary)) {
-    return Boolean(trimString(summary?.messageText || summary?.textPreview));
-  }
-  const messageType = trimString(summary?.messageType).toLowerCase();
-  if (!messageType || messageType === 'text') return true;
-  if (messageType === 'image') return getSummaryFeishuImageKeys(summary).length > 0;
-  if (messageType === 'post') {
-    return Boolean(trimString(summary?.messageText || summary?.textPreview))
-      || getSummaryFeishuImageKeys(summary).length > 0;
-  }
-  return false;
+  return Boolean(
+    trimString(summary?.messageId)
+    || trimString(summary?.messageType)
+    || trimString(summary?.messageText || summary?.textPreview || summary?.contentSummary),
+  );
 }
 
 export function buildRemoteLabMessage(summary) {
@@ -583,9 +551,15 @@ export function buildRemoteLabMessage(summary) {
     ? summary.attachmentDownloadFailures
     : [];
   const failureText = downloadFailures.length > 0
-    ? `\n\n[Feishu attachment download failed for ${downloadFailures.length} image(s).]`
+    ? `\n\n[Feishu attachment ingestion is partial: ${downloadFailures.length} resource(s) failed.]`
     : '';
-  return `${senderPrefix}${displayMessage}${failureText}`;
+  const ingestion = buildFeishuIngestionState(summary);
+  const sourceReference = buildFeishuSourceReference(summary);
+  const topicId = buildFeishuTopicId(summary);
+  const referenceText = sourceReference && (ingestion.status !== 'complete' || topicId)
+    ? `\n\n[Feishu source reference: message_id=${sourceReference.messageId}, message_type=${sourceReference.messageType}${topicId ? `, thread_id=${topicId}` : ''}]`
+    : '';
+  return `${senderPrefix}${displayMessage}${failureText}${referenceText}`;
 }
 
 export function buildSessionSourceContext(summary) {
@@ -643,13 +617,19 @@ export function buildMessageSourceContext(summary) {
     return context;
   }
   const topicId = buildFeishuTopicId(summary);
-  const imageKeys = getSummaryFeishuImageKeys(summary);
+  const resources = getSummaryFeishuResources(summary);
+  const imageCount = resources.filter((resource) => resource.resourceType === 'image').length;
+  const fileCount = resources.filter((resource) => resource.resourceType === 'file').length;
+  const sourceReference = buildFeishuSourceReference(summary);
   const context = {
     connector: FEISHU_CONNECTOR_ID,
     messageId: trimString(summary?.messageId),
+    messageType: trimString(summary?.messageType).toLowerCase(),
     chatType: trimString(summary?.chatType),
     conversationKind: buildFeishuConversationKind(summary),
+    ingestion: buildFeishuIngestionState(summary),
   };
+  if (sourceReference) context.sourceReference = sourceReference;
   const sourceRouteId = trimString(summary?.sourceRouteId);
   if (sourceRouteId) context.sourceRouteId = sourceRouteId;
   if (topicId) context.topicId = topicId;
@@ -685,9 +665,10 @@ export function buildMessageSourceContext(summary) {
   if (contentSummary) {
     context.contentSummary = contentSummary;
   }
-  if (imageKeys.length > 0) {
+  if (resources.length > 0) {
     context.attachments = {
-      imageCount: imageKeys.length,
+      ...(imageCount > 0 ? { imageCount } : {}),
+      ...(fileCount > 0 ? { fileCount } : {}),
     };
   }
   return context;

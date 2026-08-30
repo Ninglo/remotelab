@@ -141,3 +141,52 @@ Full and production verification:
   `identity=bot`.
 - All four public named-tunnel build-info endpoints returned HTTP 200 at the
   deployed service asset version.
+
+Feishu lossless inbound asset verification
+Date: 2026-08-30 UTC
+
+RED reproductions:
+node tests/test-connector-feishu.mjs
+Initial failure: the Feishu normalizer did not export a general resource
+descriptor for file and media structures.
+
+node tests/test-feishu-connector.mjs
+Initial failure: inbound Feishu attachments had no assetId and were still
+represented as inline data.
+
+GREEN focused commands:
+node tests/test-connector-feishu.mjs
+node tests/test-feishu-connector.mjs
+node tests/test-http-file-assets.mjs
+
+Actual focused result:
+All commands exited with code 0. Coverage includes file and media resource
+normalization, future unknown structures reaching RemoteLab, bounded source
+references, exact upload-intent/upload/finalize calls, streamed file bytes,
+assetId-only session attachments, isolated per-resource failures, and the
+absence of inline base64 data.
+
+Full regression command:
+npm test
+
+Result:
+Process exited with code 0. The smoke, merge-safety, and shared-tools suites all
+passed.
+
+HTTP integration command:
+npm run test:integration
+
+Actual output:
+HTTP team session view tests passed
+test-http-session-templates: ok
+test-http-session-media-upload: ok
+test-http-file-assets: ok
+test-http-result-file-assets: ok
+test-http-voice-cleanup: ok
+
+Static and dependency checks:
+node --check passed for the Feishu envelope, resource service, connector
+definition, and connector launcher.
+git diff --check exited with code 0.
+npm run lint:filesize exited with code 0 and reported only the known baseline.
+npm audit --omit=dev reported 0 vulnerabilities.

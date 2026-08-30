@@ -42,8 +42,6 @@ import {
   buildSessionDescription,
   buildSessionSourceContext,
   compileFeishuReplyText,
-  getSummaryFeishuImageKeys,
-  isSupportedRemoteLabInboundMessage,
   isFeishuDocumentCommentSummary,
   normalizeFeishuMode,
   normalizeReplyText,
@@ -57,6 +55,7 @@ import {
   sendFeishuCommentReply,
   summarizeFeishuDocumentCommentEvent,
 } from '../connectors/feishu/comment-flow.mjs';
+import { createFeishuInboundResourceService } from '../connectors/feishu/inbound-resources.mjs';
 import {
   loadRemoteLabReplyAttachment as loadRemoteLabReplyAttachmentImpl,
   resolveFeishuOutboundFileType,
@@ -92,7 +91,6 @@ const DEFAULT_SESSION_TOOL = 'codex';
 const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 0;
-const MAX_FEISHU_RESOURCE_BYTES = 100 * 1024 * 1024;
 const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
 const CONNECTOR_PID_FILENAME = 'connector.pid';
 const APPROVE_CURRENT_CHAT_COMMANDS = new Set([
@@ -867,171 +865,6 @@ function buildSessionName() {
   return '';
 }
 
-function normalizeHeaderValue(headers, name) {
-  if (!headers || !name) return '';
-  if (typeof headers.get === 'function') {
-    return trimString(headers.get(name));
-  }
-  const lowerName = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
-    if (String(key).toLowerCase() === lowerName) {
-      return Array.isArray(value) ? trimString(value[0]) : trimString(value);
-    }
-  }
-  return '';
-}
-
-function normalizeContentType(value) {
-  return trimString(value).split(';', 1)[0].toLowerCase();
-}
-
-function detectImageMimeType(buffer) {
-  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return '';
-  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-    return 'image/png';
-  }
-  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return 'image/jpeg';
-  }
-  if (buffer.subarray(0, 3).toString('ascii') === 'GIF') {
-    return 'image/gif';
-  }
-  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
-    return 'image/webp';
-  }
-  return '';
-}
-
-function normalizeFeishuAttachmentMimeType(headers, buffer, fallbackType = 'image') {
-  const headerMimeType = normalizeContentType(normalizeHeaderValue(headers, 'content-type'));
-  if (headerMimeType && headerMimeType !== 'application/octet-stream') {
-    return headerMimeType;
-  }
-  return detectImageMimeType(buffer) || (fallbackType === 'image' ? 'image/png' : (headerMimeType || 'application/octet-stream'));
-}
-
-function extensionForAttachmentMimeType(mimeType) {
-  switch (normalizeContentType(mimeType)) {
-    case 'image/jpeg':
-      return '.jpg';
-    case 'image/png':
-      return '.png';
-    case 'image/gif':
-      return '.gif';
-    case 'image/webp':
-      return '.webp';
-    default:
-      return '.bin';
-  }
-}
-
-function parseContentDispositionFilename(value) {
-  const header = trimString(value);
-  if (!header) return '';
-  const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
-  if (encoded?.[1]) {
-    try {
-      return decodeURIComponent(encoded[1]);
-    } catch {
-      return encoded[1];
-    }
-  }
-  const quoted = header.match(/filename="([^"]+)"/i);
-  if (quoted?.[1]) return quoted[1];
-  const plain = header.match(/filename=([^;]+)/i);
-  return plain?.[1] ? plain[1].trim() : '';
-}
-
-function sanitizeFeishuAttachmentOriginalName(value) {
-  const normalized = trimString(value).replace(/\\/g, '/');
-  return (normalized.split('/').filter(Boolean).pop() || '').replace(/\s+/g, ' ').slice(0, 255);
-}
-
-function buildFeishuAttachmentOriginalName(headers, fileKey, mimeType, index) {
-  const fromHeader = sanitizeFeishuAttachmentOriginalName(
-    parseContentDispositionFilename(normalizeHeaderValue(headers, 'content-disposition')),
-  );
-  if (fromHeader) return fromHeader;
-  const safeKey = sanitizeIdPart(fileKey).slice(0, 80) || `image_${index + 1}`;
-  return `${safeKey}${extensionForAttachmentMimeType(mimeType)}`;
-}
-
-async function readStreamBuffer(readable, options = {}) {
-  if (!readable || typeof readable[Symbol.asyncIterator] !== 'function') {
-    throw new Error('Feishu resource response is not a readable stream');
-  }
-  const maxBytes = Number.isInteger(options.maxBytes) && options.maxBytes > 0
-    ? options.maxBytes
-    : MAX_FEISHU_RESOURCE_BYTES;
-  const chunks = [];
-  let total = 0;
-  for await (const chunk of readable) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    total += buffer.length;
-    if (total > maxBytes) {
-      throw new Error(`Feishu resource exceeds ${maxBytes} bytes`);
-    }
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks, total);
-}
-
-async function downloadFeishuMessageResource(runtime, { messageId, fileKey, type = 'image', index = 0 } = {}) {
-  const normalizedMessageId = trimString(messageId);
-  const normalizedFileKey = trimString(fileKey);
-  const normalizedType = trimString(type) || 'image';
-  if (!normalizedMessageId || !normalizedFileKey) {
-    throw new Error('Feishu resource message_id and file_key are required');
-  }
-  if (!runtime?.appClient?.im?.v1?.messageResource?.get) {
-    throw new Error('Feishu message resource download API is unavailable');
-  }
-  const resource = await runtime.appClient.im.v1.messageResource.get({
-    params: {
-      type: normalizedType,
-    },
-    path: {
-      message_id: normalizedMessageId,
-      file_key: normalizedFileKey,
-    },
-  });
-  const buffer = await readStreamBuffer(resource.getReadableStream(), {
-    maxBytes: MAX_FEISHU_RESOURCE_BYTES,
-  });
-  const mimeType = normalizeFeishuAttachmentMimeType(resource.headers, buffer, normalizedType);
-  return {
-    data: buffer.toString('base64'),
-    mimeType,
-    originalName: buildFeishuAttachmentOriginalName(resource.headers, normalizedFileKey, mimeType, index),
-    sizeBytes: buffer.length,
-  };
-}
-
-async function resolveFeishuMessageAttachments(runtime, summary) {
-  const messageId = trimString(summary?.messageId);
-  const imageKeys = getSummaryFeishuImageKeys(summary);
-  const attachments = [];
-  const failures = [];
-  for (const [index, imageKey] of imageKeys.entries()) {
-    try {
-      attachments.push(await downloadFeishuMessageResource(runtime, {
-        messageId,
-        fileKey: imageKey,
-        type: 'image',
-        index,
-      }));
-    } catch (error) {
-      failures.push({
-        type: 'image',
-        fileKey: imageKey,
-        error: error?.message || String(error),
-      });
-      console.warn(`[feishu-connector] failed to download image resource for ${messageId}: ${error?.message || error}`);
-    }
-  }
-  return { attachments, failures };
-}
-
 async function readOwnerToken() {
   const auth = JSON.parse(await readFile(AUTH_FILE, 'utf8'));
   const token = trimString(auth?.token);
@@ -1286,6 +1119,19 @@ async function requestRemoteLab(runtime, path, options = {}) {
   return result;
 }
 
+const inboundResourceService = createFeishuInboundResourceService({
+  requestRemoteLab,
+  ensureAuthCookie,
+});
+
+async function downloadFeishuMessageResource(runtime, options = {}) {
+  return await inboundResourceService.download(runtime, options);
+}
+
+async function resolveFeishuMessageAttachments(runtime, summary, options = {}) {
+  return await inboundResourceService.resolve(runtime, summary, options);
+}
+
 async function loadRemoteLabReplyAttachment(runtime, attachment) {
   return loadRemoteLabReplyAttachmentImpl(runtime, attachment, { ensureAuthCookie });
 }
@@ -1428,7 +1274,7 @@ async function createOrReuseSession(runtime, summary, runtimeSelection) {
 }
 
 async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelection) {
-  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, summary);
+  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, summary, { sessionId });
   const messageSummary = attachmentResolution.failures.length > 0
     ? { ...summary, attachmentDownloadFailures: attachmentResolution.failures }
     : summary;
@@ -1524,10 +1370,6 @@ async function generateRemoteLabReply(runtime, summary) {
     sourceRouteId: runtime.config.sourceRouteId,
   };
   const runtimeSelection = await resolveFeishuRuntimeSelection(runtime);
-  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, effectiveSummary);
-  const messageSummary = attachmentResolution.failures.length > 0
-    ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
-    : effectiveSummary;
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   const sessionPayload = {
     folder: runtime.config.sessionFolder,
@@ -1548,6 +1390,12 @@ async function generateRemoteLabReply(runtime, summary) {
     forkFromSessionId,
     fallbackCreateOnForkFailure: true,
   });
+  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, effectiveSummary, {
+    sessionId: session.id,
+  });
+  const messageSummary = attachmentResolution.failures.length > 0
+    ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
+    : effectiveSummary;
   const submission = await submitConnectorMessage(requester, session.id, {
     requestId: buildRequestId(effectiveSummary),
     text: buildRemoteLabMessage(messageSummary),
@@ -2030,21 +1878,6 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
     if (typeof helpers.hydrateSummary === 'function') {
       summary = await helpers.hydrateSummary(runtime, summary);
     }
-    const messageType = trimString(summary.messageType).toLowerCase();
-    if (messageType && !isSupportedRemoteLabInboundMessage(summary)) {
-      await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-        status: 'silent_no_reply',
-        sourceLabel,
-        chatId: summary.chatId,
-        requestId: buildRequestId(summary),
-        reason: 'unsupported_message_type',
-        messageType,
-        contentSummary: summary.contentSummary || '',
-      });
-      console.log(`[feishu-connector] no reply sent for ${summary.messageId} (unsupported message type: ${messageType})`);
-      return;
-    }
-
     const localCommand = extractLocalCommand(summary);
     if (localCommand) {
       const localResult = await handleLocalCommand(runtime, summary, localCommand, sendText);
