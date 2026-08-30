@@ -648,10 +648,12 @@ try {
   assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
   assert.match(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), /Session Debug/);
   assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Guest Port Expose/);
+  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Do not fall back to a Quick Tunnel/);
 
   const syncedIndex = readFileSync(join(memoryDir, 'skills.md'), 'utf8');
   assert.match(syncedIndex, /## Local Skills/);
   assert.match(syncedIndex, /## Shared Platform Skills/);
+  assert.match(syncedIndex, /网页预览/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/calendar-write\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/session-debug\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/guest-port-expose\.md/);
@@ -662,6 +664,24 @@ try {
   assert.equal(syncedIndexAgain, syncedIndex);
 } finally {
   rmSync(platformSkillSyncHome, { recursive: true, force: true });
+}
+
+const inferredGuestHome = mkdtempSync(join(tmpdir(), 'remotelab-platform-skills-inferred-'));
+try {
+  const memoryDir = join(inferredGuestHome, 'memory');
+  mkdirSync(memoryDir, { recursive: true });
+  const sync = await syncGuestPlatformSkills(memoryDir);
+  assert.equal(sync.changed, true);
+  assert.match(
+    readFileSync(join(inferredGuestHome, '.remotelab', 'platform', 'skills', 'guest-port-expose.md'), 'utf8'),
+    /Guest Port Expose/,
+  );
+  assert.match(
+    readFileSync(join(memoryDir, 'skills.md'), 'utf8'),
+    /guest-port-expose\.md/,
+  );
+} finally {
+  rmSync(inferredGuestHome, { recursive: true, force: true });
 }
 
 // ---- Multi-model micro-agent router (non-codex runtimeFamily) ----
