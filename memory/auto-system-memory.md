@@ -12,3 +12,7 @@ Before publishing the repository:
 ## Candidates
 
 <!-- Automatically proposed candidates may be appended below. -->
+
+## Learnings
+
+- RemoteLab 新建会话采用前端空白草稿：只有首次发送消息或附件时才创建后端 Session，避免遗留空会话。
