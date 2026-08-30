@@ -263,7 +263,7 @@ function createContext({ fetchImpl, pendingNavigationState = null } = {}) {
     },
     scrollToBottom() {},
     renderEvent() {},
-    applyFinishedTurnCollapseState() {
+    findLatestUserTurnStart() {
       return null;
     },
     scrollNodeToTop() {},

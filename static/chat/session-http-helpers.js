@@ -151,7 +151,7 @@ function getSessionEntryViewportState() {
 }
 
 function shouldFocusLatestTurnStartOnSessionEntry(sessionId, node) {
-  if (!shouldFocusLatestTurnStart(node)) return false;
+  if (!node) return false;
   const state = getSessionEntryViewportState();
   if (state.latestTurnFocusSessionId !== sessionId) {
     state.latestTurnFocusSessionId = sessionId;

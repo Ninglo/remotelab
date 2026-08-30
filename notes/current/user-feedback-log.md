@@ -91,11 +91,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 ### 2026-08-07 — live execution must override stale workflow labels
 
 - Source: direct owner feedback after a session kept appearing under `Waiting on you` even though it had accepted the owner's reply and was actively running.
-- User slice: mobile-first owner scanning the session inbox to understand whether work is progressing or needs intervention.
+- User slice: mobile-first owner scanning the Project list to understand whether work is progressing or needs intervention.
 - Observed friction or ask: the sidebar exposed a stale post-turn `waiting_user` label ahead of current run activity, so the user saw a request for attention without any actual input request in the conversation.
 - Signal strength: concrete product-trust failure reproduced in live session metadata as `workflowState=waiting_user` plus `activity.run.state=running`.
-- Product implication: accepting new user input must immediately clear prior workflow classification, and the inbox projection must always let live busy activity override durable waiting, parked, or completed labels. Reclassify only after the new turn finishes.
-- Promote to: session submission state transitions, inbox attention-band ordering, and regression coverage for stale workflow labels.
+- Product implication: accepting new user input must immediately clear prior workflow classification, and Project ordering/status cues must always let live busy activity override durable waiting, parked, or completed labels. Reclassify only after the new turn finishes.
+- Promote to: session submission state transitions, Project attention ordering, and regression coverage for stale workflow labels.
 
 ### 2026-08-05 — default model upgrades must actively move stale user preferences
 
@@ -120,10 +120,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Source: repeated direct owner feedback after mobile and desktop scroll fixes regressed each other.
 - User slice: mobile-first owner reading and steering long, actively updating sessions from both phone and desktop.
-- Observed friction or ask: the conversation repeatedly jumped back to older text while streaming or refreshing; device-specific patches made one surface better while destabilizing the other.
+- Observed friction or ask: the conversation repeatedly jumped back to older text while streaming or refreshing; device-specific patches made one surface better while destabilizing the other. A later review also found that opening a normal session at the absolute bottom skips the beginning of the latest AI answer the user still needs to read.
 - Signal strength: recurring product-trust failure after several attempted fixes.
-- Product implication: transcript position must have one shared owner with explicit user-intent modes: follow the bottom while already following, preserve the same visible event while reading older content, restore an anchor across full timeline redraws, and never use page-level scroll corrections for keyboard movement. Browser native scroll anchoring and scattered direct `scrollTop` writes must not compete with that owner.
-- Promote to: chat viewport controller, session-redraw regression tests, mobile/desktop layout tests.
+- Product implication: transcript position must have one shared owner with explicit user-intent modes: on session entry, wait for the canonical event render and anchor the top of the latest user message so the answer can be read downward; follow the bottom only while already following a live turn; preserve the same visible event while reading older content; restore an anchor across full timeline redraws; and never use page-level scroll corrections for keyboard movement. Browser native scroll anchoring and scattered direct `scrollTop` writes must not compete with that owner.
+- Promote to: chat viewport controller, session-entry/redraw regression tests, mobile/desktop layout tests.
+- Follow-up: keep full-transcript top entry for read-mode welcome/examples, and preserve the current viewport on background refreshes rather than reapplying the latest-turn anchor.
 
 ### 2026-06-15 — reply self-check must count visible file delivery as turn completion
 

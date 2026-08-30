@@ -176,11 +176,8 @@ function createContext({ shareSnapshotMode = false, entryMode = 'resume' } = {})
     scrollToBottom() {
       metrics.scrollToBottomCalls += 1;
     },
-    applyFinishedTurnCollapseState() {
+    findLatestUserTurnStart() {
       return { id: 'latest-user-turn' };
-    },
-    shouldFocusLatestTurnStart() {
-      return true;
     },
     scrollNodeToTop() {
       metrics.scrollNodeToTopCalls += 1;
@@ -259,8 +256,8 @@ await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
   viewportIntent: 'session_entry',
 });
 
-assert.equal(regularContext.__metrics.scrollNodeToTopCalls, 0, 'regular sessions should not jump back to the latest user prompt');
-assert.equal(regularContext.__metrics.scrollToBottomCalls, 1, 'regular sessions should open on the latest available content');
+assert.equal(regularContext.__metrics.scrollNodeToTopCalls, 1, 'regular sessions should open at the top of the latest user turn');
+assert.equal(regularContext.__metrics.scrollToBottomCalls, 0, 'regular sessions should not skip straight to the bottom of the latest answer');
 
 const readContext = createContext({ shareSnapshotMode: false, entryMode: 'read' });
 vm.runInNewContext(sessionHttpSource, readContext, { filename: 'static/chat/session-http.js' });
@@ -287,9 +284,9 @@ await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
 });
 
 assert.equal(
-  regularContext.__metrics.scrollToBottomCalls,
+  regularContext.__metrics.scrollNodeToTopCalls,
   1,
-  'a duplicate refresh for the already-rendered session should not issue another scroll command',
+  'a duplicate entry refresh for the already-rendered session should not issue another anchor command',
 );
 
 regularContext.currentSessionId = 'session_other';
@@ -299,10 +296,11 @@ await regularContext.fetchSessionEvents(regularContext.currentSessionId, {
 });
 
 assert.equal(
-  regularContext.__metrics.scrollToBottomCalls,
+  regularContext.__metrics.scrollNodeToTopCalls,
   2,
-  'switching sessions should open the selected session on its latest available content',
+  'switching sessions should open the selected session at its latest user turn',
 );
+assert.equal(regularContext.__metrics.scrollToBottomCalls, 0);
 
 const reconnectContext = createContext({ shareSnapshotMode: false });
 vm.runInNewContext(sessionHttpSource, reconnectContext, { filename: 'static/chat/session-http.js' });

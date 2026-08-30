@@ -1598,7 +1598,16 @@ function applySessionViewportAfterRender({
     return;
   }
   if (normalizeSessionViewportIntent(viewportIntent) === "session_entry") {
-    scrollToBottom();
+    const latestUserTurnStart = typeof findLatestUserTurnStart === "function"
+      ? findLatestUserTurnStart()
+      : null;
+    if (latestUserTurnStart) {
+      if (shouldFocusLatestTurnStartOnSessionEntry(sessionId, latestUserTurnStart)) {
+        scrollNodeToTop(latestUserTurnStart, { margin: 10 });
+      }
+      return;
+    }
+    scrollCurrentSessionViewportToTop();
     return;
   }
   restoreSessionMessageViewport(snapshot, reason);
