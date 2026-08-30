@@ -15,6 +15,14 @@ const result = spawnSync(process.execPath, ['cli.js', 'solution-provider'], {
 assert.equal(result.status, 1, 'solution-provider should exit non-zero');
 assert.match(result.stderr, /Unknown command/i, 'solution-provider should be rejected as unknown');
 
+const connectorResult = spawnSync(process.execPath, ['cli.js', 'connector'], {
+  cwd: repoRoot,
+  encoding: 'utf8',
+});
+
+assert.equal(connectorResult.status, 1, 'retired connector capability CLI should exit non-zero');
+assert.match(connectorResult.stderr, /Unknown command/i, 'retired connector capability CLI should be rejected as unknown');
+
 const helpResult = spawnSync(process.execPath, ['cli.js', '--help'], {
   cwd: repoRoot,
   encoding: 'utf8',
@@ -22,5 +30,6 @@ const helpResult = spawnSync(process.execPath, ['cli.js', '--help'], {
 
 assert.equal(helpResult.status, 0, 'help should succeed');
 assert.doesNotMatch(helpResult.stdout, /solution-provider/i, 'help should not mention removed solution-provider command');
+assert.doesNotMatch(helpResult.stdout, /remotelab connector\b/i, 'help should not mention the retired connector capability CLI');
 
 console.log('test-cli-legacy-command-removed: ok');

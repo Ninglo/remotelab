@@ -20,21 +20,6 @@
     "pass": true
   },
   {
-    "id": "feishu-document-read-connector",
-    "description": "Expose a read-only, instance-scoped Feishu document content capability backed by the connector bot identity, with agent CLI discovery, rich-text token preservation, structured errors, and integration coverage.",
-    "pass": true
-  },
-  {
-    "id": "feishu-document-multi-bot-routing",
-    "description": "Scope Feishu document capability registrations and invocations to the originating sourceRouteId so multiple Bots cannot overwrite or use each other's credentials.",
-    "pass": true
-  },
-  {
-    "id": "feishu-document-lark-cli-backend",
-    "description": "Keep the stable Feishu document connector capability and multi-Bot routing while delegating structured, scoped and media-aware document reads to a pinned lark-cli dependency with isolated Bot profiles.",
-    "pass": false
-  },
-  {
     "id": "codex-switch-account-button",
     "description": "Let an owner clear only the current instance's Codex authentication and immediately start a fresh device login from the web settings UI.",
     "pass": true

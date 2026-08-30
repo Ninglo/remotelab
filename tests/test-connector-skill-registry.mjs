@@ -225,6 +225,29 @@ function createMockSkillServer(handler) {
   console.log('  ✓ executeConnectorSkill surfaces connector error responses')
 }
 
+// 14. Bot/account routing stays connector-owned
+{
+  await deregisterConnectorSkills('email')
+  await registerConnectorSkills('feishu', {
+    sourceRouteId: 'bot-a',
+    callback: { skillUrl: 'http://127.0.0.1:41001/skill', token: 'bot-a-token' },
+    skills: [{ name: 'bot_a_only', description: 'Bot A', schema: {} }],
+  })
+  await registerConnectorSkills('feishu', {
+    sourceRouteId: 'bot-b',
+    callback: { skillUrl: 'http://127.0.0.1:41002/skill', token: 'bot-b-token' },
+    skills: [{ name: 'bot_b_only', description: 'Bot B', schema: {} }],
+  })
+
+  assert.deepEqual(
+    (await getToolDefinitions('feishu')).map(tool => tool.name),
+    ['feishu:bot_b_only'],
+    'the registry should keep one channel registration instead of enforcing Bot profiles',
+  )
+  await deregisterConnectorSkills('feishu')
+  console.log('  ✓ Bot/account routing remains connector-owned')
+}
+
 // Cleanup
 rmSync(tmpDir, { recursive: true, force: true })
 

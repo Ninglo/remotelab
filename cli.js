@@ -43,7 +43,6 @@ Usage:
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab mail                     Manage agent mailbox and send outbound email
   remotelab gmail                    Manage the bound Gmail mailbox connector
-  remotelab connector                Invoke instance-scoped connector capabilities
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
@@ -154,18 +153,6 @@ switch (command) {
     const { runGmailCommand } = await import(scriptPath('lib/gmail-command.mjs'));
     try {
       process.exitCode = await runGmailCommand(args);
-    } catch (error) {
-      console.error(error.message || String(error));
-      process.exit(1);
-    }
-    break;
-  }
-
-  case 'connector':
-  case 'connectors': {
-    const { runConnectorCommand } = await import(scriptPath('lib/connector-command.mjs'));
-    try {
-      process.exitCode = await runConnectorCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

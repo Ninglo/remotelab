@@ -33,8 +33,12 @@ assert.equal(manifest.entry, './index.mjs');
 assert.ok(manifest.capabilities.includes('inbound'));
 assert.ok(manifest.capabilities.includes('reply'));
 assert.ok(manifest.capabilities.includes('attachments'));
-assert.match(manifest.description, /read-only document\/Wiki tools/);
 assert.ok(FEISHU_SKILLS.some((skill) => skill.name === 'send_message'));
+assert.deepEqual(
+  FEISHU_SKILLS.map((skill) => skill.name),
+  ['send_message'],
+  'Feishu document and Wiki reads belong to the selected harness, not RemoteLab connector tools',
+);
 assert.match(DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT, /Feishu or Lark bot/);
 
 const textSummary = summarizeFeishuEvent({
