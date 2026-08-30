@@ -306,4 +306,20 @@ assert.equal(
   'identical attached session payloads should not rerender the sidebar',
 );
 
+let resolveStaleList;
+context.fetch = async () => new Promise((resolve) => {
+  resolveStaleList = resolve;
+});
+const staleListRequest = context.fetchSessionsList({ forceFresh: true });
+context.bumpSessionListMutationEpoch();
+resolveStaleList(createFetchResponse({ sessions: [], archivedCount: 0 }, {
+  url: 'http://127.0.0.1/api/sessions',
+}));
+await staleListRequest;
+assert.equal(
+  context.sessions.map((session) => session.id).join(','),
+  'current-session',
+  'a session-list response started before a local create mutation must not detach the newly selected session',
+);
+
 console.log('test-session-http-noop-refresh: ok');

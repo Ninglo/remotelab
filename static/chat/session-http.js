@@ -9,6 +9,15 @@ function restoreOwnerSessionSelection() {
     switchTab(requestedTab, { syncState: false });
   }
 
+  if (
+    typeof isNewSessionDraftActive === "function"
+    && isNewSessionDraftActive()
+    && !pendingNavigationState?.sessionId
+  ) {
+    syncBrowserState({ sessionId: null, tab: getActiveSidebarTabValue() });
+    return;
+  }
+
   const targetSession = resolveRestoreTargetSession();
   if (!targetSession) {
     if (currentSessionId && typeof settleAttachedSessionSidebarState === "function") {
@@ -99,6 +108,13 @@ let lastForegroundRefreshAt = 0;
 let lastSessionsListRefreshAt = 0;
 let lastArchivedSessionsRefreshAt = 0;
 let lastCurrentSessionRefreshAt = 0;
+let sessionsListRequestSequence = 0;
+let sessionListMutationEpoch = 0;
+
+function bumpSessionListMutationEpoch() {
+  sessionListMutationEpoch += 1;
+  return sessionListMutationEpoch;
+}
 let lastCurrentSessionRefreshSessionId = null;
 let pendingCurrentSessionRefreshOptions = null;
 
@@ -1178,6 +1194,8 @@ async function updateSessionRecord(sessionId, payload = {}) {
 
 async function fetchSessionsList({ forceFresh = false } = {}) {
   if (visitorMode) return [];
+  const requestSequence = ++sessionsListRequestSequence;
+  const requestMutationEpoch = sessionListMutationEpoch;
   const archiveMutationEpoch = typeof getSessionArchiveMutationEpoch === "function"
     ? getSessionArchiveMutationEpoch()
     : 0;
@@ -1186,8 +1204,12 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
     buildSessionRefreshRequestOptions(forceFresh),
   );
   if (
-    typeof isSessionArchiveMutationEpochCurrent === "function"
-    && !isSessionArchiveMutationEpochCurrent(archiveMutationEpoch)
+    requestSequence !== sessionsListRequestSequence
+    || requestMutationEpoch !== sessionListMutationEpoch
+    || (
+      typeof isSessionArchiveMutationEpochCurrent === "function"
+      && !isSessionArchiveMutationEpochCurrent(archiveMutationEpoch)
+    )
   ) {
     return sessions;
   }

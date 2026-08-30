@@ -226,6 +226,7 @@ function createContext({
     selectedEffort: null,
     thinkingEnabled: true,
     renderImagePreviews() {},
+    setAttachmentPickerDisabled() {},
     fetchJsonOrRedirect() {
       throw new Error('Unexpected fetchJsonOrRedirect call');
     },
@@ -296,6 +297,38 @@ context.currentSessionId = null;
 context.msgInput.value = 'orphaned text';
 context.restoreDraft();
 assert.equal(context.msgInput.value, '', 'no attached session should present an empty composer');
+
+const detachedComposerContext = createContext();
+const detachedComposerCreates = [];
+const detachedComposerSends = [];
+detachedComposerContext.currentSessionId = null;
+detachedComposerContext.getActiveComposerSessionId = () => (
+  detachedComposerContext.currentSessionId || '__new_session_draft__'
+);
+detachedComposerContext.materializeNewSessionShortcut = async () => {
+  detachedComposerCreates.push(true);
+  detachedComposerContext.currentSessionId = 'session-created-from-composer';
+  return true;
+};
+detachedComposerContext.dispatchAction = async (payload) => {
+  detachedComposerSends.push(payload);
+  return true;
+};
+loadComposeContext(detachedComposerContext);
+detachedComposerContext.replaceComposerAttachmentsState([{
+  localId: 'detached-attachment',
+  file: { name: 'sample.csv', type: 'text/csv', size: 12 },
+  originalName: 'sample.csv',
+  mimeType: 'text/csv',
+}], { sessionId: '__new_session_draft__' });
+detachedComposerContext.msgInput.value = 'start from this draft';
+detachedComposerContext.sendMessage();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(detachedComposerCreates.length, 1, 'sending without an attached session should materialize one session');
+assert.equal(detachedComposerSends.length, 1, 'the detached draft should be sent after session creation');
+assert.equal(detachedComposerSends[0]?.sessionId, 'session-created-from-composer');
+assert.equal(detachedComposerSends[0]?.text, 'start from this draft');
+assert.equal(detachedComposerSends[0]?.images?.[0]?.originalName, 'sample.csv', 'detached attachments should move onto the created session before sending');
 
 const manualContext = createContext();
 loadComposeContext(manualContext);

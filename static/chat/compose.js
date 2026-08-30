@@ -25,24 +25,35 @@ function getComposerPendingSendSnapshot() {
     : null;
 }
 
-function getComposerAttachmentsSnapshot(sessionId = currentSessionId) {
-  if (!sessionId) return [];
+function resolveActiveComposerSessionId(sessionId = "") {
+  if (typeof sessionId === "string" && sessionId) return sessionId;
+  if (typeof getActiveComposerSessionId === "function") {
+    return getActiveComposerSessionId();
+  }
+  return currentSessionId || "";
+}
+
+function getComposerAttachmentsSnapshot(sessionId = "") {
+  const resolvedSessionId = resolveActiveComposerSessionId(sessionId);
+  if (!resolvedSessionId) return [];
   return typeof getComposerAttachmentsState === "function"
-    ? getComposerAttachmentsState(sessionId)
+    ? getComposerAttachmentsState(resolvedSessionId)
     : [];
 }
 
-function syncComposerDraftState(sessionId = currentSessionId, text = "") {
-  if (!sessionId) return;
+function syncComposerDraftState(sessionId = "", text = "") {
+  const resolvedSessionId = resolveActiveComposerSessionId(sessionId);
+  if (!resolvedSessionId) return;
   if (typeof setComposerDraftTextState === "function") {
-    setComposerDraftTextState(text, { sessionId });
+    setComposerDraftTextState(text, { sessionId: resolvedSessionId });
   }
 }
 
-function replaceComposerAttachmentsSnapshot(sessionId = currentSessionId, attachments = []) {
-  if (!sessionId) return;
+function replaceComposerAttachmentsSnapshot(sessionId = "", attachments = []) {
+  const resolvedSessionId = resolveActiveComposerSessionId(sessionId);
+  if (!resolvedSessionId) return;
   if (typeof replaceComposerAttachmentsState === "function") {
-    replaceComposerAttachmentsState(attachments, { sessionId });
+    replaceComposerAttachmentsState(attachments, { sessionId: resolvedSessionId });
   }
 }
 
@@ -108,8 +119,8 @@ function normalizeComposerAttachmentUploadState(value) {
   }
 }
 
-function refreshComposerAttachmentUi(sessionId = currentSessionId) {
-  if (!sessionId || sessionId !== currentSessionId) {
+function refreshComposerAttachmentUi(sessionId = resolveActiveComposerSessionId()) {
+  if (!sessionId || sessionId !== resolveActiveComposerSessionId()) {
     return;
   }
   if (typeof renderImagePreviews === "function") {
@@ -462,19 +473,20 @@ function isComposerPendingBlocking(pendingSend = getComposerPendingSendSnapshot(
   return !!pendingSend && pendingSend.stage !== "processing" && pendingSend.stage !== "checking";
 }
 
-function isComposerPendingForSession(sessionId = currentSessionId, { includeProcessing = true } = {}) {
+function isComposerPendingForSession(sessionId = resolveActiveComposerSessionId(), { includeProcessing = true } = {}) {
   const pendingSend = getComposerPendingSendSnapshot();
-  if (!(pendingSend && sessionId && pendingSend.sessionId === sessionId)) {
+  const resolvedSessionId = resolveActiveComposerSessionId(sessionId);
+  if (!(pendingSend && resolvedSessionId && pendingSend.sessionId === resolvedSessionId)) {
     return false;
   }
   return includeProcessing ? true : isComposerPendingBlocking(pendingSend);
 }
 
 function isComposerPendingForCurrentSession() {
-  return isComposerPendingForSession(currentSessionId);
+  return isComposerPendingForSession(resolveActiveComposerSessionId());
 }
 
-function isComposerBlockingForSession(sessionId = currentSessionId) {
+function isComposerBlockingForSession(sessionId = resolveActiveComposerSessionId()) {
   return isComposerPendingForSession(sessionId, { includeProcessing: false });
 }
 
@@ -496,7 +508,7 @@ function syncComposerPendingUi() {
   const applyPendingUi = () => {
   const pendingForCurrentSession = isComposerPendingForCurrentSession();
   const pendingSend = getComposerPendingSendSnapshot();
-  const blockingPendingForCurrentSession = isComposerBlockingForSession(currentSessionId);
+  const blockingPendingForCurrentSession = isComposerBlockingForSession(resolveActiveComposerSessionId());
   inputArea.classList.toggle("is-pending-send", blockingPendingForCurrentSession);
   msgInput.readOnly = blockingPendingForCurrentSession;
 
@@ -733,20 +745,22 @@ function reconcileComposerPendingSendWithEvent(event) {
   return acknowledgeComposerPendingSend(event.requestId);
 }
 
-function getDraftStorageKey(sessionId = currentSessionId) {
-  if (!sessionId) return "";
-  return `draft_${sessionId}`;
+function getDraftStorageKey(sessionId = resolveActiveComposerSessionId()) {
+  const resolvedSessionId = resolveActiveComposerSessionId(sessionId);
+  if (!resolvedSessionId) return "";
+  return `draft_${resolvedSessionId}`;
 }
 
-function readStoredDraft(sessionId = currentSessionId) {
+function readStoredDraft(sessionId = resolveActiveComposerSessionId()) {
   const key = getDraftStorageKey(sessionId);
   if (!key) return "";
   return localStorage.getItem(key) || "";
 }
 
-function writeStoredDraft(sessionId = currentSessionId, text = "") {
-  const key = getDraftStorageKey(sessionId);
-  syncComposerDraftState(sessionId, text);
+function writeStoredDraft(sessionId = resolveActiveComposerSessionId(), text = "") {
+  const resolvedSessionId = resolveActiveComposerSessionId(sessionId);
+  const key = getDraftStorageKey(resolvedSessionId);
+  syncComposerDraftState(resolvedSessionId, text);
   if (!key) return;
   if (text) {
     localStorage.setItem(key, text);
@@ -755,14 +769,15 @@ function writeStoredDraft(sessionId = currentSessionId, text = "") {
   localStorage.removeItem(key);
 }
 
-function getComposerDraftText(sessionId = currentSessionId) {
-  if (!sessionId) return "";
-  if (isComposerBlockingForSession(sessionId)) {
+function getComposerDraftText(sessionId = resolveActiveComposerSessionId()) {
+  const resolvedSessionId = resolveActiveComposerSessionId(sessionId);
+  if (!resolvedSessionId) return "";
+  if (isComposerBlockingForSession(resolvedSessionId)) {
     return getComposerPendingSendSnapshot()?.text || "";
   }
   return typeof getComposerDraftTextState === "function"
-    ? getComposerDraftTextState(sessionId)
-    : readStoredDraft(sessionId);
+    ? getComposerDraftTextState(resolvedSessionId)
+    : readStoredDraft(resolvedSessionId);
 }
 
 function resolveComposerRequestId(existingRequestId) {
@@ -775,13 +790,90 @@ function resolveComposerRequestId(existingRequestId) {
   return createRequestId();
 }
 
+let detachedComposerSessionCreatePromise = null;
+
+function createSessionAndSendDetachedComposer(text, existingRequestId) {
+  if (detachedComposerSessionCreatePromise) {
+    return detachedComposerSessionCreatePromise;
+  }
+  const detachedSessionId = resolveActiveComposerSessionId();
+  const draftText = typeof text === "string" ? text.trim() : "";
+  const draftAttachments = getComposerAttachmentsSnapshot(detachedSessionId);
+  if (!draftText && draftAttachments.length === 0) return Promise.resolve(false);
+  const requestId = resolveComposerRequestId(existingRequestId);
+  msgInput.readOnly = true;
+  sendBtn.disabled = true;
+  setAttachmentPickerDisabled(true);
+
+  const request = (async () => {
+    const created = typeof materializeNewSessionShortcut === "function"
+      ? await materializeNewSessionShortcut()
+      : false;
+    if (!created || !currentSessionId) {
+      throw new Error("Unable to create a new session");
+    }
+    const createdSessionId = currentSessionId;
+    writeStoredDraft(createdSessionId, draftText);
+    replaceComposerAttachmentsSnapshot(createdSessionId, draftAttachments);
+    if (detachedSessionId && detachedSessionId !== createdSessionId) {
+      if (typeof clearComposerSessionState === "function") {
+        clearComposerSessionState(detachedSessionId, {
+          clearDraft: true,
+          clearAttachments: true,
+          clearPendingSend: false,
+        });
+      }
+      localStorage.removeItem(`draft_${detachedSessionId}`);
+    }
+    if (typeof setComposerActiveSession === "function") {
+      setComposerActiveSession(createdSessionId);
+    }
+    msgInput.value = draftText;
+    autoResizeInput();
+    if (typeof renderImagePreviews === "function") {
+      renderImagePreviews();
+    }
+    sendMessage(requestId);
+    return true;
+  })()
+    .catch((error) => {
+      console.warn("[composer] Failed to create a session for the draft:", error?.message || error);
+      msgInput.value = draftText;
+      autoResizeInput();
+      return false;
+    })
+    .finally(() => {
+      detachedComposerSessionCreatePromise = null;
+      if (typeof updateStatus === "function") {
+        updateStatus("connected", getCurrentSession());
+      }
+      syncComposerPendingUi();
+      if (!isComposerPendingForCurrentSession()) {
+        if (typeof focusComposer === "function") {
+          focusComposer({ force: true, preventScroll: true });
+        } else {
+          msgInput.focus();
+        }
+      }
+    });
+
+  detachedComposerSessionCreatePromise = request;
+  return request;
+}
+
 function sendMessage(existingRequestId) {
   if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) return;
   const text = msgInput.value.trim();
   const currentSession = getCurrentSession();
-  const queuedImages = getComposerAttachmentsSnapshot(currentSessionId);
+  const composerSessionId = resolveActiveComposerSessionId();
+  const queuedImages = getComposerAttachmentsSnapshot(composerSessionId);
   if (hasPendingComposerSend()) return;
-  if ((!text && queuedImages.length === 0) || !currentSessionId || currentSession?.archived) return;
+  if (!text && queuedImages.length === 0) return;
+  if (!currentSessionId) {
+    void createSessionAndSendDetachedComposer(text, existingRequestId);
+    return;
+  }
+  if (currentSession?.archived) return;
 
   const requestId = resolveComposerRequestId(existingRequestId);
   const sessionId = currentSessionId;
@@ -1093,12 +1185,13 @@ if (window.RemoteLabLayout?.subscribe) {
 let restoredDraftSessionId = "";
 
 function saveDraft() {
-  if (!currentSessionId || isComposerBlockingForSession(currentSessionId)) return;
-  writeStoredDraft(currentSessionId, msgInput.value);
+  const sessionId = resolveActiveComposerSessionId();
+  if (!sessionId || isComposerBlockingForSession(sessionId)) return;
+  writeStoredDraft(sessionId, msgInput.value);
 }
 
 function restoreDraft() {
-  const sessionId = currentSessionId;
+  const sessionId = resolveActiveComposerSessionId();
   if (typeof setComposerActiveSession === "function") {
     setComposerActiveSession(sessionId);
   }
@@ -1120,7 +1213,7 @@ function restoreDraft() {
   syncComposerPendingUi();
 }
 
-function clearDraft(sessionId = currentSessionId) {
+function clearDraft(sessionId = resolveActiveComposerSessionId()) {
   writeStoredDraft(sessionId, "");
 }
 
@@ -1147,7 +1240,7 @@ function restoreFailedSendState(sessionId, text, images, requestId = "") {
   writeStoredDraft(sessionId, text || "");
   replaceComposerAttachmentsSnapshot(sessionId, images);
   syncComposerPendingUi();
-  if (sessionId !== currentSessionId) {
+  if (sessionId !== resolveActiveComposerSessionId()) {
     return;
   }
 
