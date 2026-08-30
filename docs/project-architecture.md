@@ -133,6 +133,7 @@ Implementation consequence:
 - Gateway-capable connectors belong in a routing-aware ingress layer and need target-instance resolution.
 - Instance-only connectors belong to the instance lifecycle itself: bind state, sync cursors, and long-running workers live with that instance.
 - For guest instances, WeChat follows the instance-local model and is seeded/autostarted when the instance is created so later account binding is fast and local to that instance.
+- A ready instance-local WeChat binding exposes the manifest-declared `wechat:send_text` action through the shared connector capability registry. The default target is the WeChat user who bound that instance's bot; an explicit WeChat-backed RemoteLab session may be used as the target instead. The action disappears from the health-checked capability catalog when the binding is unavailable.
 
 ---
 

@@ -22,8 +22,11 @@ const {
   persistLinkedAccount,
   pollAccountOnce,
   replayUnhandledMessages,
+  resolveDefaultWeChatTarget,
   resolveRedirectBaseUrl,
   runPollLoop,
+  saveAccountsDocument,
+  sendDirectWeChatTextToDefaultBinding,
   sendWeChatText,
   startWeChatLogin,
   waitForWeChatLogin,
@@ -508,6 +511,21 @@ try {
   assert.equal(sentIlinkHeaders?.authorization, 'Bearer bot_token_test_1');
   assert.ok(sentIlinkHeaders?.['x-wechat-uin'], 'sendMessage should include X-WECHAT-UIN');
 
+  const defaultTarget = await resolveDefaultWeChatTarget(sendRuntime);
+  assert.deepEqual(defaultTarget, {
+    accountId: 'bot_account_1',
+    peerUserId: 'wx_user_owner_1',
+  });
+  const defaultSendResult = await sendDirectWeChatTextToDefaultBinding(
+    sendRuntime,
+    'Default bound user delivery.',
+  );
+  assert.match(defaultSendResult.message_id, /^remotelab-wechat-/);
+  assert.equal(defaultSendResult.accountId, 'bot_account_1');
+  assert.equal(defaultSendResult.peerUserId, 'wx_user_owner_1');
+  assert.equal(sentIlinkPayload?.msg?.to_user_id, 'wx_user_owner_1');
+  assert.equal(sentIlinkPayload?.msg?.item_list?.[0]?.text_item?.text, 'Default bound user delivery.');
+
   let unsupportedHandled = null;
   await handleWeChatMessage({
     config,
@@ -665,6 +683,10 @@ try {
     },
   }, null, 2)}\n`, 'utf8');
   const idleConfig = await loadConfig(tempConfigPath);
+  await saveAccountsDocument(idleConfig.storagePaths.accountsPath, {
+    defaultAccountId: '',
+    accounts: {},
+  });
   const idleRuntime = createRuntimeContext(idleConfig, {
     accountsDoc: { defaultAccountId: '', accounts: {} },
     syncStateDoc: { accounts: {} },
@@ -672,7 +694,13 @@ try {
   });
   idleRuntime.authCookie = 'session_token=test-cookie';
 
-  const idleLoop = runPollLoop(idleRuntime, { durationMs: 140 });
+  const activeAccountTransitions = [];
+  const idleLoop = runPollLoop(idleRuntime, {
+    durationMs: 140,
+    onActiveAccountsChanged: async (accounts) => {
+      activeAccountTransitions.push(accounts.map((account) => account.accountId));
+    },
+  });
   await new Promise((resolve) => setTimeout(resolve, 20));
   await persistLinkedAccount(idleConfig, {
     connected: true,
@@ -685,6 +713,8 @@ try {
   await Promise.all([...idleRuntime.chatQueues.values()]);
 
   assert.ok(getUpdatesCalls >= 1, 'idle poller should pick up linked accounts written after startup');
+  assert.deepEqual(activeAccountTransitions[0], []);
+  assert.deepEqual(activeAccountTransitions.at(-1), ['bot_account_1']);
   assert.equal(idleRuntime.accountsDoc.defaultAccountId, 'bot_account_1');
   assert.equal(createPayload?.sourceId, 'wechat');
   assert.equal(submitPayload?.requestId, 'wechat:bot_account_1:7448678501208393000');
