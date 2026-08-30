@@ -73,6 +73,9 @@ function createHarness({ locked = false, directUpload = false } = {}) {
   const context = {
     console,
     currentSessionId: 'session-a',
+    getActiveComposerSessionId() {
+      return 'session-a';
+    },
     crypto: {
       randomUUID() {
         return `uuid-${state.objectUrls.length + 1}`;
@@ -162,6 +165,9 @@ const previewStrip = {
 const previewContext = {
   console,
   currentSessionId: 'session-a',
+  getActiveComposerSessionId() {
+    return 'session-a';
+  },
   imgPreviewStrip: previewStrip,
   window: {
     RemoteLabLayout: {

@@ -640,7 +640,10 @@ function syncComposerPendingTurnFeedback() {
     const pendingSend = typeof getComposerPendingSendSnapshot === "function"
       ? getComposerPendingSendSnapshot()
       : null;
-    const activePending = pendingSend && pendingSend.sessionId === currentSessionId
+    const activeComposerSessionId = typeof getActiveComposerSessionId === "function"
+      ? getActiveComposerSessionId()
+      : currentSessionId;
+    const activePending = pendingSend && pendingSend.sessionId === activeComposerSessionId
       ? pendingSend
       : null;
 

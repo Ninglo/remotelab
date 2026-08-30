@@ -120,11 +120,17 @@ async function dispatchAction(msg) {
           body: JSON.stringify(createPayload),
         });
         if (data.session) {
+          if (typeof bumpSessionListMutationEpoch === "function") {
+            bumpSessionListMutationEpoch();
+          }
           const session = upsertSession(data.session) || data.session;
           renderSessionList();
           attachSession(session.id, session, {
             forceComposerFocus: msg.forceComposerFocus === true,
           });
+          if (!visitorMode && typeof fetchSessionsList === "function") {
+            void fetchSessionsList({ forceFresh: true }).catch(() => {});
+          }
         } else {
           await fetchSessionsList();
         }
@@ -532,6 +538,14 @@ function handleWsMessage(msg) {
 }
 
 // ---- Status ----
+function canStartSessionFromDetachedComposer() {
+  return !currentSessionId
+    && !visitorMode
+    && (typeof hasAuthCapability === "function"
+      ? hasAuthCapability("createSession")
+      : true);
+}
+
 function updateStatus(connState, session = getCurrentSession()) {
   if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) {
     statusDot.className = "status-dot";
@@ -566,12 +580,19 @@ function updateStatus(connState, session = getCurrentSession()) {
   if (connState === "disconnected") {
     statusDot.className = "status-dot";
     statusText.textContent = t("status.reconnecting");
-    msgInput.disabled = !currentSessionId || archived;
-    msgInput.placeholder = archived ? t("input.placeholder.archived") : t("input.placeholder.message");
+    const composerEnabled = Boolean(currentSessionId) || canStartSessionFromDetachedComposer();
+    msgInput.disabled = !composerEnabled || archived;
+    msgInput.placeholder = archived
+      ? t("input.placeholder.archived")
+      : canStartSessionFromDetachedComposer()
+        ? t("input.placeholder.newSession")
+        : t("input.placeholder.message");
     sendBtn.style.display = "";
-    sendBtn.disabled = !currentSessionId || archived;
-    sendBtn.title = t("action.send");
-    setAttachmentPickerDisabled(!currentSessionId || archived);
+    sendBtn.disabled = !composerEnabled || archived;
+    sendBtn.title = canStartSessionFromDetachedComposer()
+      ? t("action.startNewSession")
+      : t("action.send");
+    setAttachmentPickerDisabled(!composerEnabled || archived);
     if (typeof syncComposerVoiceCleanupToggle === "function") {
       syncComposerVoiceCleanupToggle();
     }
@@ -605,22 +626,31 @@ function updateStatus(connState, session = getCurrentSession()) {
     statusText.textContent = currentSessionId ? t("status.idle") : t("status.connected");
   }
   const hasSession = !!currentSessionId;
-  msgInput.disabled = !hasSession || archived;
+  const canStartSessionFromComposer = canStartSessionFromDetachedComposer();
+  const composerEnabled = hasSession || canStartSessionFromComposer;
+  msgInput.disabled = !composerEnabled || archived;
   msgInput.placeholder = archived
     ? t("input.placeholder.archived")
-    : inputBusy
-      ? t("input.placeholder.queueFollowUp")
-      : t("input.placeholder.message");
+    : canStartSessionFromComposer
+      ? t("input.placeholder.newSession")
+      : inputBusy
+        ? t("input.placeholder.queueFollowUp")
+        : t("input.placeholder.message");
   sendBtn.style.display = "";
-  sendBtn.disabled = !hasSession || archived;
-  sendBtn.title = inputBusy ? t("action.queueFollowUp") : t("action.send");
+  sendBtn.disabled = !composerEnabled || archived;
+  sendBtn.title = canStartSessionFromComposer
+    ? t("action.startNewSession")
+    : inputBusy
+      ? t("action.queueFollowUp")
+      : t("action.send");
+  sendBtn.setAttribute("aria-label", sendBtn.title);
   cancelBtn.style.display = runIsActive && hasSession ? "flex" : "none";
-  setAttachmentPickerDisabled(!hasSession || archived);
+  setAttachmentPickerDisabled(!composerEnabled || archived);
   inlineToolSelect.disabled = visitorMode || archived;
-  inlineProviderSelect.disabled = !hasSession || archived;
-  inlineModelSelect.disabled = !hasSession || archived;
-  thinkingToggle.disabled = !hasSession || archived;
-  effortSelect.disabled = !hasSession || archived;
+  inlineProviderSelect.disabled = !composerEnabled || archived;
+  inlineModelSelect.disabled = !composerEnabled || archived;
+  thinkingToggle.disabled = !composerEnabled || archived;
+  effortSelect.disabled = !composerEnabled || archived;
   if (typeof syncSessionTemplateControls === "function") {
     syncSessionTemplateControls();
   }

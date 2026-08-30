@@ -18,24 +18,32 @@ function openSessionsSidebar() {
   return true;
 }
 
-function createNewSessionShortcut({
-  closeSidebar = true,
-  forceComposerFocus = false,
-  sourceContext = null,
-} = {}) {
-  if (closeSidebar && !isDesktop) closeSidebarFn();
-  const tool = preferredTool || selectedTool || toolsList[0]?.id;
-  if (!tool) return false;
+const DETACHED_COMPOSER_SESSION_ID = "__new_session_draft__";
+let pendingNewSessionCreateOptions = null;
+
+function getActiveComposerSessionId() {
+  if (currentSessionId) return currentSessionId;
+  const canCreateSession = !visitorMode
+    && (typeof hasAuthCapability === "function"
+      ? hasAuthCapability("createSession")
+      : true);
+  return canCreateSession ? DETACHED_COMPOSER_SESSION_ID : "";
+}
+
+function isNewSessionDraftActive() {
+  return !currentSessionId && pendingNewSessionCreateOptions !== null;
+}
+
+function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions || {}) {
+  const tool = selectedTool || preferredTool || toolsList[0]?.id;
+  if (!tool) return null;
   const preferredAgentId = typeof getPreferredAgentTemplateId === "function"
     ? getPreferredAgentTemplateId()
     : "";
   const preferredAgentName = typeof getPreferredAgentTemplateName === "function"
     ? getPreferredAgentTemplateName()
     : "";
-  if (typeof switchTab === "function") {
-    switchTab("sessions");
-  }
-  return dispatchAction({
+  return {
     action: "create",
     folder: typeof window.remotelabGetDefaultSessionFolder === "function"
       ? window.remotelabGetDefaultSessionFolder()
@@ -45,9 +53,97 @@ function createNewSessionShortcut({
     sourceName: DEFAULT_WEB_SOURCE_NAME,
     templateId: preferredAgentId,
     templateName: preferredAgentName,
-    ...(forceComposerFocus ? { forceComposerFocus: true } : {}),
+    forceComposerFocus: true,
+    ...(options?.sourceContext && typeof options.sourceContext === "object"
+      ? { sourceContext: options.sourceContext }
+      : {}),
+  };
+}
+
+async function materializeNewSessionShortcut() {
+  const action = buildNewSessionCreateAction();
+  if (!action) return false;
+  const created = await dispatchAction(action);
+  if (created && currentSessionId) {
+    pendingNewSessionCreateOptions = null;
+  }
+  return created;
+}
+
+function createNewSessionShortcut({
+  closeSidebar = true,
+  forceComposerFocus = true,
+  sourceContext = null,
+} = {}) {
+  if (closeSidebar && !isDesktop) closeSidebarFn();
+  if (!buildNewSessionCreateAction({ sourceContext })) return false;
+  if (typeof switchTab === "function") {
+    switchTab("sessions");
+  }
+
+  const previousSessionId = currentSessionId;
+  if (previousSessionId && typeof settleAttachedSessionSidebarState === "function") {
+    Promise.resolve(settleAttachedSessionSidebarState({
+      sessionId: previousSessionId,
+      sync: true,
+      render: false,
+    })).catch(() => {});
+  }
+  if (typeof setChatCurrentSession === "function") {
+    setChatCurrentSession(null, { hasAttachedSession: false });
+  } else {
+    currentSessionId = null;
+    hasAttachedSession = false;
+  }
+  pendingNewSessionCreateOptions = {
     ...(sourceContext && typeof sourceContext === "object" ? { sourceContext } : {}),
-  });
+  };
+
+  const detachedAttachments = typeof getComposerAttachmentsState === "function"
+    ? getComposerAttachmentsState(DETACHED_COMPOSER_SESSION_ID)
+    : [];
+  if (typeof releaseImageObjectUrls === "function") {
+    releaseImageObjectUrls(detachedAttachments);
+  }
+  if (typeof clearComposerSessionState === "function") {
+    clearComposerSessionState(DETACHED_COMPOSER_SESSION_ID, {
+      clearDraft: true,
+      clearAttachments: true,
+      clearPendingSend: true,
+    });
+  }
+  localStorage.removeItem(`draft_${DETACHED_COMPOSER_SESSION_ID}`);
+
+  if (typeof resetAttachedSessionRenderState === "function") {
+    resetAttachedSessionRenderState();
+  }
+  if (typeof persistActiveSessionId === "function") {
+    persistActiveSessionId(null);
+  }
+  if (typeof syncBrowserState === "function") {
+    syncBrowserState({ sessionId: null, tab: "sessions" });
+  }
+  if (typeof showEmpty === "function") {
+    showEmpty();
+  }
+  if (typeof renderHeaderSessionTitle === "function") {
+    renderHeaderSessionTitle(t("session.newDraftName"));
+  }
+  if (typeof restoreDraft === "function") {
+    restoreDraft();
+  } else {
+    msgInput.value = "";
+  }
+  if (typeof updateStatus === "function") {
+    updateStatus("connected", null);
+  }
+  renderSessionList();
+  if (typeof focusComposer === "function") {
+    focusComposer({ force: forceComposerFocus === true, preventScroll: true });
+  } else if (forceComposerFocus) {
+    msgInput.focus();
+  }
+  return true;
 }
 
 function createSortSessionListShortcut() {
@@ -87,8 +183,11 @@ if (sortSessionListBtn) {
   });
 }
 
-newSessionBtn.addEventListener("click", () => {
-  createNewSessionShortcut();
+newSessionBtn.addEventListener("click", async () => {
+  const created = await createNewSessionShortcut();
+  if (created && typeof beginQuickEntryFocusRecovery === "function") {
+    beginQuickEntryFocusRecovery();
+  }
 });
 
 // ---- Attachment handling ----
@@ -120,14 +219,20 @@ async function addAttachmentFiles(files) {
   if (typeof hasPendingComposerSend === "function" && hasPendingComposerSend()) {
     return;
   }
-  if (!currentSessionId) {
+  const composerSessionId = getActiveComposerSessionId();
+  if (!composerSessionId) {
     return;
   }
   const pendingAttachments = Array.from(files || [], (file) => buildPendingAttachment(file));
+  if (!currentSessionId) {
+    for (const attachment of pendingAttachments) {
+      delete attachment.uploadState;
+    }
+  }
   if (typeof addComposerAttachmentsState === "function") {
     addComposerAttachmentsState(
       pendingAttachments,
-      { sessionId: currentSessionId },
+      { sessionId: composerSessionId },
     );
   }
   renderImagePreviews();
@@ -135,7 +240,7 @@ async function addAttachmentFiles(files) {
     .filter((attachment) => attachment?.uploadState === "queued")
     .map((attachment) => attachment?.localId)
     .filter((localId) => typeof localId === "string" && localId);
-  if (typeof ensureComposerAttachmentUploads === "function" && eagerUploadLocalIds.length > 0) {
+  if (currentSessionId && typeof ensureComposerAttachmentUploads === "function" && eagerUploadLocalIds.length > 0) {
     void ensureComposerAttachmentUploads(currentSessionId, {
       localIds: eagerUploadLocalIds,
     }).catch(() => {});
@@ -173,8 +278,9 @@ function getComposerAttachmentUploadMeta(attachment) {
 function renderImagePreviews() {
   const preserveBottomPin = window.RemoteLabLayout?.preserveBottomPinnedMessageViewport;
   const applyPreviewRender = () => {
-    const pendingImages = currentSessionId && typeof getComposerAttachmentsState === "function"
-      ? getComposerAttachmentsState(currentSessionId)
+    const composerSessionId = getActiveComposerSessionId();
+    const pendingImages = composerSessionId && typeof getComposerAttachmentsState === "function"
+      ? getComposerAttachmentsState(composerSessionId)
       : [];
     imgPreviewStrip.innerHTML = "";
     if (pendingImages.length === 0) {
@@ -205,14 +311,14 @@ function renderImagePreviews() {
       removeBtn.disabled = attachmentsLocked;
       removeBtn.onclick = () => {
         if (attachmentsLocked) return;
-        if (typeof cancelComposerAttachmentUpload === "function" && img?.localId) {
+        if (currentSessionId && typeof cancelComposerAttachmentUpload === "function" && img?.localId) {
           cancelComposerAttachmentUpload(currentSessionId, img.localId);
         }
         if (img?.objectUrl) {
           URL.revokeObjectURL(img.objectUrl);
         }
         if (typeof removeComposerAttachmentState === "function") {
-          removeComposerAttachmentState(i, { sessionId: currentSessionId });
+          removeComposerAttachmentState(i, { sessionId: composerSessionId });
         }
         renderImagePreviews();
       };
@@ -236,6 +342,7 @@ function renderImagePreviews() {
         retryBtn.title = t("action.retryUpload");
         retryBtn.setAttribute("aria-label", t("action.retryUpload"));
         retryBtn.onclick = () => {
+          if (!currentSessionId) return;
           void retryComposerAttachmentUpload(currentSessionId, img.localId).catch(() => {});
         };
         item.appendChild(retryBtn);
@@ -261,7 +368,7 @@ function isAttachmentPickerBlocked() {
   if (typeof hasPendingComposerSend === "function" && hasPendingComposerSend()) {
     return true;
   }
-  return !currentSessionId || imgFileInput?.disabled === true;
+  return !getActiveComposerSessionId() || imgFileInput?.disabled === true;
 }
 
 imgBtn.addEventListener("click", (event) => {

@@ -49,6 +49,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: Pi model discovery, composer runtime controls, and mobile/static regression coverage.
 - Follow-up: validate touch scrolling and native select sizing on iPhone; only replace native selects with custom popovers if real-device behavior still feels cramped.
 
+### 2026-08-30 — New Session should remain local until the first send
+
+- Source: direct owner review of the normal New Session flow.
+- User slice: mobile-first owner opening a fresh work thread, then sometimes leaving before writing anything.
+- Observed friction or ask: clicking New Session immediately persisted an empty backend session. If the user abandoned that blank surface, the durable object had no useful destination except later archival.
+- Signal strength: concrete product-model mismatch with a clear lifecycle boundary.
+- Product implication: New Session should first open a local draft surface. Persist the session only when the first text or attachment is actually sent, while keeping runtime/Agent selection, shared-content drafts, and file attachments usable before materialization.
+- Promote to: session lifecycle, composer send contract, and zero-session/new-session regression coverage.
+- Follow-up: validate the local-draft-to-session transition on mobile and during reconnects so duplicate taps cannot materialize more than one session.
+
 ### 2026-08-30 — queued follow-ups should default to a count-only summary
 
 - Source: direct owner review of the live chat queue surface.

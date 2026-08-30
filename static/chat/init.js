@@ -626,11 +626,14 @@ async function handleShareTargetData() {
     // Create a new session for the shared content
     await createNewSessionShortcut({ closeSidebar: true });
 
-    // Persist shared text as a stored draft so restoreDraft() preserves it
-    // (attachSession calls restoreDraft asynchronously which would clear direct DOM writes)
-    if (text && currentSessionId) {
-      if (typeof writeStoredDraft === "function") {
-        writeStoredDraft(currentSessionId, text);
+    // Keep shared content in the local new-session composer. The backend session
+    // is materialized only if the user actually sends it.
+    if (text) {
+      const composerSessionId = typeof getActiveComposerSessionId === "function"
+        ? getActiveComposerSessionId()
+        : currentSessionId;
+      if (composerSessionId && typeof writeStoredDraft === "function") {
+        writeStoredDraft(composerSessionId, text);
       }
       if (typeof msgInput !== "undefined" && msgInput) {
         msgInput.value = text;

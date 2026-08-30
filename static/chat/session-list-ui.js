@@ -461,6 +461,9 @@ function startRename(itemEl, session) {
 }
 
 function attachSession(id, session, { forceComposerFocus = false } = {}) {
+  if (typeof pendingNewSessionCreateOptions !== "undefined") {
+    pendingNewSessionCreateOptions = null;
+  }
   const shouldReattach = !hasAttachedSession || currentSessionId !== id;
   const previousSessionId = currentSessionId;
   if (

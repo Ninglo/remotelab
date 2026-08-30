@@ -376,6 +376,7 @@ async function main() {
     assert.match(page.text, /id="inlineToolSelect"[\s\S]*id="inlineProviderSelect"[\s\S]*id="inlineModelSelect"/, 'Pi controls should split provider and model into adjacent pickers');
     assert.match(page.text, /id="msgInput"[\s\S]*class="input-actions-row"[\s\S]*id="imgBtn"[\s\S]*id="voiceBtn"[\s\S]*id="sendBtn"/, 'composer should stack textarea above the action row so buttons no longer squeeze the text width');
     assert.match(page.text, /id="quickEntryFocusPrompt" hidden/, 'chat page should include the quick-entry focus recovery prompt shell');
+    assert.match(page.text, /It will appear in the sidebar only after you send/, 'the empty state should explain that abandoned drafts do not create sessions');
     assert.match(page.text, /id="voiceInputStatus"/);
     assert.match(page.text, /id="tabSettings"/);
     assert.doesNotMatch(page.text, /id="collapseBtn"/, 'desktop sidebar should no longer expose a collapse control');
@@ -672,6 +673,7 @@ async function main() {
 
     const sessionHttpAsset = await request(port, 'GET', '/chat/session-http.js');
     assert.equal(sessionHttpAsset.status, 200, 'session http asset should load');
+    assert.match(sessionHttpAsset.text, /requestMutationEpoch !== sessionListMutationEpoch/, 'stale list reads should not detach a just-created session');
     const sessionStoreAsset = await request(port, 'GET', '/chat/session-store.js');
     assert.equal(sessionStoreAsset.status, 200, 'session store asset should load');
     assert.match(sessionStoreAsset.text, /RemoteLabChatStore/);
@@ -852,7 +854,9 @@ async function main() {
     assert.match(sidebarUiAsset.text, /function openSidebar\(/);
     assert.match(sidebarUiAsset.text, /menuBtn\.addEventListener\("click", openSessionsSidebar\);/, 'header session button should always open the sessions tab');
     assert.doesNotMatch(sidebarUiAsset.text, /setSessionViewMode|viewInboxBtn|viewProjectsBtn/, 'sidebar controller should not retain the removed Inbox/Projects toggle');
-    assert.match(sidebarUiAsset.text, /function createNewSessionShortcut\(/);
+    assert.match(sidebarUiAsset.text, /function createNewSessionShortcut\([\s\S]*?forceComposerFocus = true/, 'new-session drafts should reclaim composer focus by default');
+    assert.match(sidebarUiAsset.text, /function materializeNewSessionShortcut\(\)/, 'the first send should have an explicit session-materialization path');
+    assert.match(sidebarUiAsset.text, /beginQuickEntryFocusRecovery\(\)/, 'new-session clicks should recover mobile focus when the keyboard does not open');
     assert.match(sidebarUiAsset.text, /requestLayoutPass\("composer-images"\)/);
 
     const settingsUiAsset = await request(port, 'GET', '/chat/settings-ui.js');
@@ -870,6 +874,7 @@ async function main() {
 
     const composeAsset = await request(port, 'GET', '/chat/compose.js');
     assert.equal(composeAsset.status, 200, 'compose asset should load');
+    assert.match(composeAsset.text, /function createSessionAndSendDetachedComposer\(/, 'sending from the empty state should create and attach a session first');
     assert.match(composeAsset.text, /focusComposer\(\{ force: true, preventScroll: true \}\)/);
     assert.match(composeAsset.text, /window\.RemoteLabLayout\?\.subscribe/);
     assert.doesNotMatch(composeAsset.text, /voice-transcriptions/);

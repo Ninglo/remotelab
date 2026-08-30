@@ -286,7 +286,7 @@ assert.equal(
   null,
   'quick-entry launch should clear the pending navigation restore target before bootstrap',
 );
-assert.equal(quickEntryHarness.createCalls.length, 1, 'quick-entry launch should create a fresh session once');
+assert.equal(quickEntryHarness.createCalls.length, 1, 'quick-entry launch should open one local new-session surface');
 assert.equal(quickEntryHarness.createCalls[0]?.forceComposerFocus, true, 'quick-entry launch should request forced composer focus');
 assert.equal(
   quickEntryHarness.createCalls[0]?.sourceContext?.shortcutId,
