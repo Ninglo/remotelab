@@ -29,7 +29,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Signal strength: concrete production delivery failure with both a MIME correctness bug and an identity-routing policy gap; a ready instance-owned mailbox already exists.
 - Product implication: encode non-ASCII MIME headers according to RFC 2047, expose the ready Agent Mailbox in runtime connector context, default proactive/agent-originated mail to that identity, and never silently fall back to user Gmail when agent-mail delivery fails.
 - Promote to: connector capability prompts, Gmail/raw-MIME tests, and sender-identity semantics for future outbound connectors.
-- Follow-up: validate one real Chinese-subject message through the agent-owned sender and make outbound delivery audit metadata clearly identify the binding/account that acted.
+- Follow-up: real Chinese-subject delivery was validated through the agent-owned sender as `rowan@…`; next, make outbound delivery audit metadata clearly identify the binding/account that acted across every connector path.
 
 ### 2026-08-30 — multi-provider model controls need provider grouping and model-native reasoning choices
 
