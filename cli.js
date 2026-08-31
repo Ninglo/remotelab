@@ -43,7 +43,7 @@ Usage:
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab mail                     Manage agent mailbox and send outbound email
   remotelab gmail                    Manage the bound Gmail mailbox connector
-  remotelab connector                Invoke instance-scoped connector capabilities
+  remotelab connector                Invoke Connector capabilities (owner may target a managed guest)
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
