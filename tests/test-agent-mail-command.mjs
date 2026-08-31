@@ -198,6 +198,8 @@ try {
   });
   assert.equal(cliHelpResult.status, 0, cliHelpResult.stderr);
   assert.match(cliHelpResult.stdout, /remotelab mail send/);
+  assert.match(cliHelpResult.stdout, /--text is literal and intended for single-line bodies/);
+  assert.match(cliHelpResult.stdout, /instead of typing \\n escape sequences/);
 } finally {
   for (const socket of sockets) {
     socket.destroy();
