@@ -21,6 +21,10 @@ import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { applyManagedRuntimeEnv, applySharedCodexLock } from './runtime-policy.mjs';
 import { isCodexMissingRolloutFailure } from './provider-runtime-errors.mjs';
+import {
+  acquireProviderRuntimeLease,
+  resolveProviderRuntimeQueueKey,
+} from './provider-runtime-queue.mjs';
 
 const runId = process.argv[2];
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -413,6 +417,8 @@ async function main() {
     });
   };
 
+  let providerRuntimeLease = null;
+
   const runToolAttempt = async (invocation) => {
     const resolvedCommand = await resolveCommand(invocation.command);
     const lockedInvocation = applySharedCodexLock(
@@ -429,6 +435,7 @@ async function main() {
     activeProc = proc;
     lastOutputAt = Date.now();
 
+    await providerRuntimeLease?.setToolProcessId(proc.pid);
     await updateRun(runId, (current) => ({
       ...current,
       toolProcessId: proc.pid,
@@ -480,33 +487,96 @@ async function main() {
     });
   };
 
-  let attempt = await runToolAttempt(initialInvocation);
+  const providerQueueKey = resolveProviderRuntimeQueueKey(initialInvocation);
+  let attempt;
   let current = await getRun(runId) || run;
-  const canRecoverMissingCodexRollout = (
-    initialInvocation.runtimeFamily === 'codex-json'
-    && !!manifest.options?.codexThreadId
-    && !attempt.error
-    && attempt.code !== 0
-    && current.cancelRequested !== true
-    && isCodexMissingRolloutFailure(attempt.stderrText)
-  );
+  try {
+    if (providerQueueKey) {
+      providerRuntimeLease = await acquireProviderRuntimeLease({
+        queueKey: providerQueueKey,
+        runId,
+        isCancelled: async () => (await getRun(runId))?.cancelRequested === true,
+        onWait: async () => {
+          await updateRun(runId, (draft) => ({
+            ...draft,
+            providerRuntimeQueue: {
+              key: providerQueueKey,
+              state: 'waiting',
+              queuedAt: draft?.providerRuntimeQueue?.queuedAt || nowIso(),
+            },
+          }));
+          await logSidecarDiagnostic(runId, 'Waiting for serialized provider runtime capacity', {
+            providerQueueKey,
+          });
+        },
+      });
+      await updateRun(runId, (draft) => ({
+        ...draft,
+        providerRuntimeQueue: {
+          key: providerQueueKey,
+          state: 'active',
+          queuedAt: draft?.providerRuntimeQueue?.queuedAt || null,
+          acquiredAt: nowIso(),
+          waited: providerRuntimeLease?.waited === true,
+        },
+      }));
+    }
 
-  if (canRecoverMissingCodexRollout) {
-    console.warn(`[sidecar] Codex resume state expired for run ${runId}; retrying once with a fresh thread`);
-    await updateRun(runId, (draft) => ({
-      ...draft,
-      resumeRecovery: {
-        provider: 'codex',
-        reason: 'missing_rollout',
-        attemptedAt: nowIso(),
-      },
-    }));
-    const freshInvocation = await createToolInvocation(manifest.tool, prompt, {
-      ...invocationOptions,
-      codexThreadId: null,
-    });
-    attempt = await runToolAttempt(freshInvocation);
-    current = await getRun(runId) || current;
+    attempt = await runToolAttempt(initialInvocation);
+    current = await getRun(runId) || run;
+    const canRecoverMissingCodexRollout = (
+      initialInvocation.runtimeFamily === 'codex-json'
+      && !!manifest.options?.codexThreadId
+      && !attempt.error
+      && attempt.code !== 0
+      && current.cancelRequested !== true
+      && isCodexMissingRolloutFailure(attempt.stderrText)
+    );
+
+    if (canRecoverMissingCodexRollout) {
+      console.warn(`[sidecar] Codex resume state expired for run ${runId}; retrying once with a fresh thread`);
+      await updateRun(runId, (draft) => ({
+        ...draft,
+        resumeRecovery: {
+          provider: 'codex',
+          reason: 'missing_rollout',
+          attemptedAt: nowIso(),
+        },
+      }));
+      const freshInvocation = await createToolInvocation(manifest.tool, prompt, {
+        ...invocationOptions,
+        codexThreadId: null,
+      });
+      attempt = await runToolAttempt(freshInvocation);
+      current = await getRun(runId) || current;
+    }
+  } finally {
+    if (providerRuntimeLease) {
+      try {
+        await providerRuntimeLease.release();
+      } catch (error) {
+        await logSidecarDiagnostic(runId, 'Failed to release serialized provider runtime capacity', {
+          providerQueueKey,
+          error: normalizeErrorMessage(error),
+        });
+      }
+      try {
+        await updateRun(runId, (draft) => ({
+          ...draft,
+          providerRuntimeQueue: {
+            ...(draft?.providerRuntimeQueue || {}),
+            state: 'released',
+            releasedAt: nowIso(),
+          },
+        }));
+      } catch (error) {
+        await logSidecarDiagnostic(runId, 'Failed to persist serialized provider runtime release', {
+          providerQueueKey,
+          error: normalizeErrorMessage(error),
+        });
+      }
+      providerRuntimeLease = null;
+    }
   }
 
   clearInterval(cancelTimer);

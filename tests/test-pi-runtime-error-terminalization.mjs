@@ -23,10 +23,37 @@ const failed = {
   stopReason: 'error',
   errorMessage: '429: synthetic quota failure',
 };
+const recovering = process.argv.join(' ').includes('Recover after transient failure');
 console.log(JSON.stringify({ type: 'agent_start' }));
 console.log(JSON.stringify({ type: 'turn_start' }));
 console.log(JSON.stringify({ type: 'message_end', message: failed }));
-console.log(JSON.stringify({ type: 'agent_settled' }));
+if (recovering) {
+  console.log(JSON.stringify({ type: 'agent_end', messages: [failed], willRetry: true }));
+  console.log(JSON.stringify({
+    type: 'auto_retry_start',
+    attempt: 1,
+    maxAttempts: 3,
+    delayMs: 1200,
+    errorMessage: failed.errorMessage,
+  }));
+  setTimeout(() => {
+    const recovered = {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'recovered' }],
+      provider: 'moonshotai',
+      model: 'kimi-k3',
+      usage: { input: 1, output: 1, totalTokens: 2, cost: { total: 0 } },
+      stopReason: 'stop',
+    };
+    console.log(JSON.stringify({ type: 'agent_start' }));
+    console.log(JSON.stringify({ type: 'turn_start' }));
+    console.log(JSON.stringify({ type: 'message_end', message: recovered }));
+    console.log(JSON.stringify({ type: 'auto_retry_end', success: true, attempt: 1 }));
+    console.log(JSON.stringify({ type: 'agent_settled' }));
+  }, 1200);
+} else {
+  console.log(JSON.stringify({ type: 'agent_settled' }));
+}
 `, 'utf8');
 chmodSync(fakePi, 0o755);
 
@@ -54,7 +81,7 @@ const {
   sendMessage,
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
 
-async function waitFor(predicate, description, timeoutMs = 6000) {
+async function waitFor(predicate, description, timeoutMs = 12_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const result = await predicate();
@@ -93,6 +120,49 @@ try {
   }, 'failed reply publication');
   assert.equal(publication.ready, false);
   assert.equal(publication.payload, null);
+
+  const recoveringSession = await createSession(home, 'fake-pi', 'Pi retry recovery', {
+    space: 'Tests',
+    group: 'Runtime',
+    description: 'Transient Pi provider attempts must stay non-terminal until retry settlement.',
+  });
+  const recoveringOutcome = await sendMessage(
+    recoveringSession.id,
+    'Recover after transient failure.',
+    [],
+    {
+      tool: 'fake-pi',
+      model: 'moonshotai/kimi-k3',
+      effort: 'low',
+    },
+  );
+  const recoveringRunId = recoveringOutcome.run?.id;
+  const recoveringResponseId = recoveringOutcome.response?.id;
+  assert.ok(recoveringRunId);
+  assert.ok(recoveringResponseId);
+
+  const retryingRun = await waitFor(async () => {
+    const current = await getRunState(recoveringRunId);
+    return (current?.normalizedEventCount || 0) > 0 ? current : null;
+  }, 'transient Pi attempt to be observed before retry settlement');
+  assert.equal(
+    ['accepted', 'running'].includes(retryingRun.state),
+    true,
+    'the first retryable provider error must not release the session or fail its publication',
+  );
+
+  const recoveredRun = await waitFor(async () => {
+    const current = await getRunState(recoveringRunId);
+    return current?.state === 'completed' ? current : null;
+  }, 'Pi retry to recover');
+  assert.equal(recoveredRun.state, 'completed');
+
+  const recoveredPublication = await waitFor(async () => {
+    const current = await getSessionReplyPublication(recoveringSession.id, recoveringResponseId);
+    return current?.state === 'ready' ? current : null;
+  }, 'recovered reply publication');
+  assert.equal(recoveredPublication.ready, true);
+  assert.equal(recoveredPublication.payload?.text, 'recovered');
 } finally {
   killAll();
   rmSync(home, { recursive: true, force: true });

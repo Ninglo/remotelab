@@ -56,7 +56,7 @@ assert.equal(toolEvents[1].output, '/tmp');
 assert.equal(adapter.parseLine('{bad json').length, 0);
 
 const retryingAdapter = createPiAdapter();
-retryingAdapter.parseLine(JSON.stringify({
+const transientFailureEvents = retryingAdapter.parseLine(JSON.stringify({
   type: 'message_end',
   message: {
     role: 'assistant',
@@ -66,14 +66,39 @@ retryingAdapter.parseLine(JSON.stringify({
   },
 }));
 assert.equal(
+  transientFailureEvents.some((event) => event.type === 'status' && /^error:/i.test(event.content)),
+  false,
+  'a failed provider attempt must not terminalize RemoteLab while Pi is still retrying',
+);
+assert.equal(
   retryingAdapter.parseLine(JSON.stringify({ type: 'agent_end', willRetry: true })).length,
   0,
   'agent_end may precede an automatic retry and must not complete the run',
 );
+retryingAdapter.parseLine(JSON.stringify({
+  type: 'message_end',
+  message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], stopReason: 'stop' },
+}));
 assert.equal(
-  retryingAdapter.parseLine(JSON.stringify({ type: 'agent_settled' })).length,
-  0,
-  'a settled failed turn should rely on the process exit code',
+  retryingAdapter.parseLine(JSON.stringify({ type: 'agent_settled' }))[0]?.content,
+  'completed',
+  'a successful retry should publish one completed terminal status',
+);
+
+const failedAdapter = createPiAdapter();
+failedAdapter.parseLine(JSON.stringify({
+  type: 'message_end',
+  message: {
+    role: 'assistant',
+    content: [],
+    stopReason: 'error',
+    errorMessage: 'final provider failure',
+  },
+}));
+assert.equal(
+  failedAdapter.parseLine(JSON.stringify({ type: 'agent_settled' }))[0]?.content,
+  'error: final provider failure',
+  'only the settled final provider failure should terminalize the run',
 );
 
 const settledAdapter = createPiAdapter();

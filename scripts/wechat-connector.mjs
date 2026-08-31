@@ -2035,14 +2035,6 @@ async function requestRemoteLab(runtime, path, options = {}) {
   return result;
 }
 
-async function loadRemoteLabSession(runtime, sessionId) {
-  const result = await requestRemoteLab(runtime, `/api/sessions/${sessionId}`);
-  if (!result.response.ok || !result.json?.session) {
-    throw new Error(result.json?.error || result.text || `Failed to load session ${sessionId}`);
-  }
-  return result.json.session;
-}
-
 async function loadRemoteLabSourceContext(runtime, sessionId) {
   const result = await requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(sessionId)}/source-context`);
   if (!result.response.ok || !result.json?.sourceContext) {
@@ -2081,94 +2073,6 @@ async function resolveDefaultWeChatTarget(runtime, preferredAccountId = '') {
     throw error;
   }
   return { accountId, peerUserId };
-}
-
-function getRemoteLabSessionQueueCount(session) {
-  return Number.isInteger(session?.activity?.queue?.count) ? session.activity.queue.count : 0;
-}
-
-function isRemoteLabSessionBusy(session) {
-  return trimString(session?.activity?.run?.state).toLowerCase() === 'running'
-    || trimString(session?.activity?.compact?.state).toLowerCase() === 'pending'
-    || getRemoteLabSessionQueueCount(session) > 0;
-}
-
-async function waitForSessionReady(runtime, sessionId, initialSession = null) {
-  const deadline = Date.now() + RUN_POLL_TIMEOUT_MS;
-  let session = initialSession
-    && initialSession.id === sessionId
-    && initialSession.activity
-    ? initialSession
-    : null;
-  while (Date.now() < deadline) {
-    if (!session) {
-      session = await loadRemoteLabSession(runtime, sessionId);
-    }
-    if (!isRemoteLabSessionBusy(session)) {
-      return session;
-    }
-    await delay(RUN_POLL_INTERVAL_MS);
-    session = null;
-  }
-  throw new Error(`session ${sessionId} remained busy after ${RUN_POLL_TIMEOUT_MS}ms`);
-}
-
-async function createOrReuseSession(runtime, summary, runtimeSelection) {
-  const payload = {
-    folder: runtime.config.sessionFolder,
-    tool: runtimeSelection.tool,
-    name: buildSessionName(summary),
-    sourceId: REMOTELAB_SESSION_APP_ID,
-    sourceName: runtime.config.sourceName,
-    group: runtime.config.group,
-    description: buildSessionDescription(summary),
-    systemPrompt: runtime.config.systemPrompt,
-    externalTriggerId: buildExternalTriggerId(summary),
-    sourceContext: buildSessionSourceContext(summary),
-  };
-  const result = await requestRemoteLab(runtime, '/api/sessions', {
-    method: 'POST',
-    body: payload,
-  });
-  if (!result.response.ok || !result.json?.session?.id) {
-    throw new Error(result.json?.error || result.text || `Failed to create session (${result.response.status})`);
-  }
-  return result.json.session;
-}
-
-async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelection) {
-  const payload = {
-    requestId: buildRequestId(summary),
-    text: buildRemoteLabMessage(summary),
-    tool: runtimeSelection.tool,
-    sourceContext: buildMessageSourceContext(summary),
-  };
-  if (runtimeSelection.thinking) payload.thinking = true;
-  if (runtimeSelection.model) payload.model = runtimeSelection.model;
-  if (runtimeSelection.effort) payload.effort = runtimeSelection.effort;
-
-  const result = await requestRemoteLab(runtime, `/api/sessions/${sessionId}/messages`, {
-    method: 'POST',
-    body: payload,
-  });
-  const duplicate = result.json?.duplicate === true;
-  const runId = trimString(result.json?.run?.id);
-  const queued = result.json?.queued === true;
-  const responseId = trimString(result.json?.response?.id) || payload.requestId;
-  if (queued && !runId && !duplicate) {
-    throw new Error('RemoteLab queued the WeChat request; expected an immediate run');
-  }
-  if (![200, 202].includes(result.response.status)) {
-    throw new Error(result.json?.error || result.text || `Failed to submit session message (${result.response.status})`);
-  }
-
-  return {
-    requestId: payload.requestId,
-    responseId,
-    runId: runId || null,
-    duplicate,
-    queued,
-  };
 }
 
 async function resolveWeChatRuntimeSelection(runtime) {
@@ -2211,8 +2115,7 @@ async function generateRemoteLabReply(runtime, summary) {
     externalTriggerId: buildExternalTriggerId(summary),
     sourceContext: buildSessionSourceContext(summary),
   });
-  const readySession = await waitForSessionReady(runtime, session.id, session);
-  const baselineSeq = Number.isInteger(readySession?.latestSeq) ? readySession.latestSeq : 0;
+  const baselineSeq = Number.isInteger(session?.latestSeq) ? session.latestSeq : 0;
   const sessionMs = elapsedMs(sessionStartedAt);
   logConnectorStage('session ready', {
     messageId: summary.messageId,
@@ -2241,10 +2144,6 @@ async function generateRemoteLabReply(runtime, summary) {
     queued: submission.queued === true,
     submitMs,
   });
-  if (submission.queued && !submission.runId && !submission.duplicate) {
-    throw new Error('RemoteLab queued the WeChat request; expected an immediate run');
-  }
-
   const runId = submission.runId;
   const responseId = submission.responseId;
   const publicationStartedAt = Date.now();

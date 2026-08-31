@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-08-31 — connector failure notices must follow exhausted retry and capacity queues, not the first transient provider error
+
+- Source: direct owner report after a WeChat bot repeatedly returned “reply generation failed” during ordinary conversation.
+- User slice: mobile-first user treating WeChat as a primary conversational surface while the selected model account allows only one concurrent request.
+- Observed friction or ask: accepted messages should wait for available capacity and recover from temporary provider overload; a generic failure notice should be a true last resort, not a frequent visible state. In the observed incident, Pi was still performing automatic retries, but RemoteLab terminalized the run on the first failed attempt, released the session early, sent the connector fallback within seconds, and allowed the next message to collide with the still-running retry loop.
+- Signal strength: repeated production failures with a concrete lifecycle mismatch across connector queueing, runtime retry events, and provider-account concurrency.
+- Product implication: treat provider attempts as non-terminal until the runtime emits its settled result, let thin connectors accept durable busy-session queue responses and wait on canonical reply publication, serialize known concurrency-one provider runtimes at the capacity boundary, and reserve failure copy for exhausted retryable recovery. A connector-local inbound queue alone cannot solve account-level contention across sessions.
+- Promote to: structured-runtime adapter contract, provider runtime capacity management, connector reply publication tests.
+- Follow-up: monitor post-fix WeChat failure rates and distinguish retryable capacity/overload failures from terminal configuration or billing failures.
+
 ### 2026-08-30 — assistant-owned mail and user-owned Gmail need distinct sender semantics
 
 - Source: direct owner review after an automated status email arrived from the user's connected Gmail account with a mojibake subject.

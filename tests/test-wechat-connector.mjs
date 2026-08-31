@@ -414,23 +414,25 @@ try {
   );
 
   forceQueuedSubmit = true;
-  await assert.rejects(
-    generateRemoteLabReply(replyRuntime, {
-      accountId: 'bot_account_1',
-      accountUserId: 'wx_user_owner_1',
-      peerUserId: 'wx_user_peer_1',
-      messageId: 'msg_queued_scope',
-      messageTypeNumeric: 1,
-      messageType: 'user',
-      messageStateNumeric: 2,
-      messageState: 'finish',
-      textPreview: 'This should not get queued.',
-      contentSummary: 'This should not get queued.',
-    }),
-    /expected an immediate run/i,
-    'wechat connector should fail fast instead of trying to recover queued busy-session submits',
-  );
+  const queuedReply = await generateRemoteLabReply(replyRuntime, {
+    accountId: 'bot_account_1',
+    accountUserId: 'wx_user_owner_1',
+    peerUserId: 'wx_user_peer_1',
+    messageId: 'msg_queued_scope',
+    messageTypeNumeric: 1,
+    messageType: 'user',
+    messageStateNumeric: 2,
+    messageState: 'finish',
+    textPreview: 'This should wait in the durable queue.',
+    contentSummary: 'This should wait in the durable queue.',
+  });
   forceQueuedSubmit = false;
+  assert.equal(
+    queuedReply.replyText,
+    '已处理。',
+    'wechat connector should wait for queued busy-session submissions instead of sending a failure fallback',
+  );
+  assert.equal(queuedReply.runId, 'run_wechat_1');
 
   const sendRuntime = createRuntimeContext(config, {
     accountsDoc,

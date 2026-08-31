@@ -26,7 +26,7 @@ function serializeToolValue(value) {
   }
 }
 
-function parseAssistantMessage(message) {
+function parseAssistantMessage(message, { includeFailureStatus = true } = {}) {
   if (message?.role !== 'assistant') return [];
   const events = [];
   for (const item of Array.isArray(message.content) ? message.content : []) {
@@ -50,14 +50,18 @@ function parseAssistantMessage(message) {
       costSource: 'pi',
     }));
   }
-  if (message.stopReason === 'error' || message.stopReason === 'aborted') {
+  if (
+    includeFailureStatus
+    && (message.stopReason === 'error' || message.stopReason === 'aborted')
+  ) {
     events.push(statusEvent(`error: ${message.errorMessage || message.stopReason}`));
   }
   return events;
 }
 
 export function createPiAdapter() {
-  let lastAssistantFailed = false;
+  let lastAssistantStopReason = '';
+  let lastAssistantFailureReason = '';
   return {
     parseLine(line) {
       const trimmed = String(line || '').trim();
@@ -76,10 +80,22 @@ export function createPiAdapter() {
           return [statusEvent('thinking')];
         case 'message_end':
           if (event.message?.role === 'assistant') {
-            lastAssistantFailed = event.message.stopReason === 'error'
-              || event.message.stopReason === 'aborted';
+            lastAssistantStopReason = typeof event.message.stopReason === 'string'
+              ? event.message.stopReason
+              : '';
+            lastAssistantFailureReason = (
+              lastAssistantStopReason === 'error'
+              || lastAssistantStopReason === 'aborted'
+            )
+              ? (event.message.errorMessage || lastAssistantStopReason)
+              : '';
           }
-          return parseAssistantMessage(event.message);
+          return parseAssistantMessage(event.message, {
+            // Pi emits message_end for every failed provider attempt before its
+            // automatic retry loop settles. Publishing an error here makes
+            // RemoteLab finalize the run while Pi is still retrying.
+            includeFailureStatus: false,
+          });
         case 'tool_execution_start':
           return [toolUseEvent(event.toolName || 'tool', serializeToolValue(event.args))];
         case 'tool_execution_end':
@@ -89,7 +105,14 @@ export function createPiAdapter() {
             event.isError ? 1 : 0,
           )];
         case 'agent_settled':
-          return lastAssistantFailed ? [] : [statusEvent('completed')];
+          if (lastAssistantStopReason === 'error') {
+            return [statusEvent(`error: ${lastAssistantFailureReason || 'provider request failed'}`)];
+          }
+          if (lastAssistantStopReason === 'aborted') {
+            // The detached runner owns cancellation terminalization.
+            return [];
+          }
+          return [statusEvent('completed')];
         default:
           return [];
       }
