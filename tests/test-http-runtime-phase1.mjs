@@ -125,7 +125,10 @@ process.on('SIGTERM', () => {
   cancelled = true;
   setTimeout(() => process.exit(143), 20);
 });
-console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-test' }));
+const freshThreadId = failOnResumeFile && !args.includes('resume')
+  ? 'thread-recovered'
+  : 'thread-test';
+console.log(JSON.stringify({ type: 'thread.started', thread_id: freshThreadId }));
 console.log(JSON.stringify({ type: 'turn.started' }));
 setTimeout(() => {
   if (cancelled) return;
@@ -1270,7 +1273,7 @@ async function phase18FinalizationMetricsFailureDoesNotMaskSuccess() {
   }
 }
 
-async function phase19CodexMissingRolloutClearsResumeId() {
+async function phase19CodexMissingRolloutRecoversSameTurn() {
   const { home, configDir } = setupTempHome();
   const port = randomPort();
   const server = await startServer({ home, port });
@@ -1278,7 +1281,7 @@ async function phase19CodexMissingRolloutClearsResumeId() {
     const session = await createSession(port, {
       name: 'Codex missing rollout',
       group: 'Tests',
-      description: 'missing provider rollout should clear stale resume state',
+      description: 'missing provider rollout should recover in the same turn',
     });
 
     const first = await submitMessage(port, session.id, 'req-missing-rollout-first');
@@ -1298,38 +1301,63 @@ async function phase19CodexMissingRolloutClearsResumeId() {
       return sessionRecord?.codexThreadId === 'thread-test';
     }, 'successful Codex run should persist the resume thread');
 
-    writeFileSync(join(configDir, 'fake-fail-on-resume'), '1', 'utf8');
+    const failMarkerPath = join(configDir, 'fake-fail-on-resume');
+    writeFileSync(failMarkerPath, '1', 'utf8');
     const stale = await submitMessage(port, session.id, 'req-missing-rollout-stale', 'resume after provider rollout disappeared');
     assert.ok(stale.status === 202 || stale.status === 200, 'submit stale Codex message should succeed');
     if (!stale.json?.run?.id) {
       stale.json.run = await waitForAcceptedRun(port, session.id, 'req-missing-rollout-stale');
     }
     const staleRun = await waitForRunTerminal(port, stale.json.run.id);
-    assert.equal(staleRun.state, 'failed', 'missing rollout should fail the affected run');
-    assert.match(
-      staleRun.failureReason || '',
-      /Saved Codex resume thread is no longer available/,
-      'run failure should explain the stale resume state',
-    );
+    assert.equal(staleRun.state, 'completed', 'missing rollout should retry on a fresh thread in the same run');
+    assert.equal(staleRun.resumeRecovery?.reason, 'missing_rollout', 'run should record deterministic resume recovery');
+    let publication;
+    try {
+      publication = await waitFor(async () => {
+        const result = await request(
+          port,
+          'GET',
+          `/api/sessions/${session.id}/responses/${encodeURIComponent(stale.json?.response?.id || 'req-missing-rollout-stale')}`,
+        );
+        return result.json?.replyPublication?.state === 'ready'
+          ? result.json.replyPublication
+          : false;
+      }, 'recovered run should publish its normal reply');
+    } catch (error) {
+      throw new Error(`${error.message}\nserver stdout:\n${server.getStdout()}\nserver stderr:\n${server.getStderr()}`);
+    }
+    assert.equal(publication.state, 'ready', 'recovered run should publish its normal reply');
 
     const events = await getEvents(port, session.id, 'all');
+    assert.equal(
+      events.events.some((event) => (
+        event.runId === staleRun.id
+        && event.type === 'status'
+        && /^error:/i.test(event.content || '')
+      )),
+      false,
+      'recoverable missing-rollout errors should not be exposed in session history',
+    );
     assert.ok(
-      events.events.some((event) => event.type === 'status' && /Saved Codex resume thread/.test(event.content || '')),
-      'session history should surface the provider resume failure',
+      events.events.some((event) => event.runId === staleRun.id && event.type === 'message' && event.role === 'assistant'),
+      'same-turn recovery should retain the assistant reply',
     );
 
-    sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
-    sessionRecord = sessions.find((entry) => entry.id === session.id);
-    assert.equal(sessionRecord?.codexThreadId, undefined, 'stale Codex resume id should be cleared');
+    await waitFor(() => {
+      sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
+      sessionRecord = sessions.find((entry) => entry.id === session.id);
+      return sessionRecord?.codexThreadId === 'thread-recovered';
+    }, 'same-turn recovery should persist the replacement Codex thread');
 
-    const recovered = await submitMessage(port, session.id, 'req-missing-rollout-recovered', 'run after resume id was cleared');
-    assert.ok(recovered.status === 202 || recovered.status === 200, 'submit recovered Codex message should succeed');
-    if (!recovered.json?.run?.id) {
-      recovered.json.run = await waitForAcceptedRun(port, session.id, 'req-missing-rollout-recovered');
+    rmSync(failMarkerPath, { force: true });
+    const next = await submitMessage(port, session.id, 'req-missing-rollout-next', 'continue on replacement thread');
+    assert.ok(next.status === 202 || next.status === 200, 'submit after same-turn recovery should succeed');
+    if (!next.json?.run?.id) {
+      next.json.run = await waitForAcceptedRun(port, session.id, 'req-missing-rollout-next');
     }
-    const recoveredRun = await waitForRunTerminal(port, recovered.json.run.id);
-    assert.equal(recoveredRun.state, 'completed', 'next run should start a fresh Codex thread after clearing stale resume state');
-    console.log('phase19-codex-missing-rollout-clears-resume-id: ok');
+    const nextRun = await waitForRunTerminal(port, next.json.run.id);
+    assert.equal(nextRun.state, 'completed', 'later turns should resume the replacement Codex thread');
+    console.log('phase19-codex-missing-rollout-recovers-same-turn: ok');
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });
@@ -1358,7 +1386,7 @@ const phases = {
   phase16: phase16StaleMissingRunnerReconciliation,
   phase17: phase17SidecarPreSpawnFailurePersistsRootCause,
   phase18: phase18FinalizationMetricsFailureDoesNotMaskSuccess,
-  phase19: phase19CodexMissingRolloutClearsResumeId,
+  phase19: phase19CodexMissingRolloutRecoversSameTurn,
 };
 
 if (phase === 'all') {
