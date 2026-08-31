@@ -77,6 +77,13 @@ import {
   recordFeishuOutboundMessageSession,
   resolveFeishuTopicForkParentSessionId,
 } from '../connectors/feishu/session-flow.mjs';
+import {
+  DEFAULT_FEISHU_GROUP_REPLY_POLICY_MODE as DEFAULT_GROUP_REPLY_POLICY_MODE,
+  applyFeishuBotIdentity,
+  normalizeFeishuGroupReplyPolicy as normalizeGroupReplyPolicy,
+  resolveFeishuBotIdentity,
+  shouldRouteFeishuMessageToRemoteLab as shouldRouteMessageToRemoteLab,
+} from '../connectors/feishu/group-routing.mjs';
 
 const CANONICAL_DEFAULT_CONFIG_PATH = join(CONFIG_DIR, 'feishu-connector', 'config.json');
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -184,6 +191,9 @@ Config shape:
       "removeOnCompletion": false
     },
     "silentConfirmationText": "",
+    "groupReplyPolicy": {
+      "mode": "${DEFAULT_GROUP_REPLY_POLICY_MODE}"
+    },
     "intakePolicy": {
       "mode": "allow_all",
       "accessStatePath": "~/.config/remotelab/feishu-connector/${DEFAULT_ACCESS_STATE_FILENAME}",
@@ -459,6 +469,7 @@ async function loadConfig(pathname) {
     region: normalizeRegion(parsed?.region),
     loggerLevel: trimString(parsed?.loggerLevel || 'info'),
     storageDir,
+    groupReplyPolicy: normalizeGroupReplyPolicy(parsed?.groupReplyPolicy),
     intakePolicy: normalizeIntakePolicy(parsed?.intakePolicy, {
       baseDir: configDir,
       defaultAccessStatePath: join(configDir, DEFAULT_ACCESS_STATE_FILENAME),
@@ -1002,6 +1013,7 @@ function createRuntimeContext(config, storagePaths, accessState) {
     processingMessageIds: new Set(),
     chatQueues: new Map(),
     chatMetadataCache: new Map(),
+    botIdentity: null,
     authToken: '',
     authCookie: '',
   };
@@ -2002,6 +2014,7 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 }
 
 export {
+  applyFeishuBotIdentity,
   DEFAULT_SESSION_SYSTEM_PROMPT,
   buildApprovedChatReply,
   buildChatAccessStatusReply,
@@ -2029,12 +2042,14 @@ export {
   loadPersistedAccessState,
   loadConfig,
   normalizeAllowedSenders,
+  normalizeGroupReplyPolicy,
   normalizeProcessingReactionConfig,
   normalizeReplyText,
   queueAccessStateFlush,
   releaseConnectorPidLock,
   removeProcessingReaction,
   resolveFeishuTopicForkParentSessionId,
+  resolveFeishuBotIdentity,
   resolveFeishuMessageAttachments,
   resolveFeishuOutboundFileType,
   loadRemoteLabReplyAttachment,
@@ -2044,6 +2059,7 @@ export {
   startSourceDeliveryPoller,
   stopSourceDeliveryPoller,
   snapshotAccessState,
+  shouldRouteMessageToRemoteLab,
   summarizeChatMemberUserAddedEvent,
   summarizeFeishuDocumentCommentEvent,
   hydrateFeishuDocumentCommentSummary,
@@ -2082,6 +2098,9 @@ async function main() {
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths, accessState);
+  if (config.groupReplyPolicy.mode !== 'all') {
+    runtime.botIdentity = await resolveFeishuBotIdentity(runtime);
+  }
   const wsClient = new Lark.WSClient({
     appId: config.appId,
     appSecret: config.appSecret,
@@ -2113,10 +2132,13 @@ async function main() {
 
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': async (data) => {
-      const summary = summarizeEvent(data);
+      const summary = applyFeishuBotIdentity(summarizeEvent(data), runtime.botIdentity);
       const allowed = await recordInboundEvent(runtime, summary, data, 'im.message.receive_v1');
-      if (allowed) {
+      const routed = allowed && await shouldRouteMessageToRemoteLab(runtime, summary);
+      if (routed) {
         enqueueByConversation(runtime, summary, () => handleMessage(runtime, summary, 'im.message.receive_v1'));
+      } else if (allowed) {
+        console.log(`[feishu-connector] no reply sent for ${summary.messageId} (group message did not mention this Bot or continue a Bot conversation)`);
       }
       return {};
     },
@@ -2143,10 +2165,13 @@ async function main() {
       return {};
     },
     message: async (data) => {
-      const summary = summarizeLegacyMessageEvent(data);
+      const summary = applyFeishuBotIdentity(summarizeLegacyMessageEvent(data), runtime.botIdentity);
       const allowed = await recordInboundEvent(runtime, summary, data, 'message');
-      if (allowed) {
+      const routed = allowed && await shouldRouteMessageToRemoteLab(runtime, summary);
+      if (routed) {
         enqueueByConversation(runtime, summary, () => handleMessage(runtime, summary, 'message'));
+      } else if (allowed) {
+        console.log(`[feishu-connector] no reply sent for ${summary.messageId} (group message did not mention this Bot or continue a Bot conversation)`);
       }
       return {};
     },
@@ -2156,6 +2181,10 @@ async function main() {
   startSourceDeliveryPoller(runtime);
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] intake policy: ${config.intakePolicy.mode}`);
+  console.log(`[feishu-connector] group reply policy: ${config.groupReplyPolicy.mode}`);
+  if (runtime.botIdentity) {
+    console.log(`[feishu-connector] Bot identity ready: ${runtime.botIdentity.name || '(unnamed)'}`);
+  }
   console.log(`[feishu-connector] access state file: ${config.intakePolicy.accessStatePath}`);
   console.log(`[feishu-connector] whitelist mirror: ${config.intakePolicy.allowedSendersPath}`);
   console.log(`[feishu-connector] event log: ${storagePaths.eventsLogPath}`);
