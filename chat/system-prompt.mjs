@@ -300,7 +300,7 @@ Do not use the host machine's local Calendar.app or any GUI calendar application
     if (agentMailbox?.capabilityState === 'ready' && mailboxAddress) {
       const mailboxIdentity = mailboxName ? `${mailboxName} <${mailboxAddress}>` : mailboxAddress;
       connectorSections.push(`### Agent Mailbox
-This instance has its own ready outbound mailbox identity: \`${mailboxIdentity}\`. Use \`remotelab mail send --to "<recipient>" --subject "<subject>" --text "<body>" --json\` for a new message sent in the assistant's own identity. Use \`remotelab mail --help\` for longer bodies and other supported options.
+This instance has its own ready outbound mailbox identity: \`${mailboxIdentity}\`. For a new message in the assistant's own identity, write the complete UTF-8 body to a file and use \`remotelab mail send --to "<recipient>" --subject "<subject>" --text-file "<body-path>" --json\`. Use \`--text\` only for a genuinely single-line body. For any paragraph or line break, use \`--text-file\` or \`--stdin\`; never put literal \`\\n\` sequences in \`--text\`, because the mail commands transmit those two characters instead of turning them into line breaks. Use \`remotelab mail --help\` for other supported options.
 
 Identity policy:
 - Agent-originated messages such as monitoring alerts, reminders, reports, status updates, and proactive follow-ups must use this Agent Mailbox by default.
@@ -315,7 +315,7 @@ This workspace can connect one user-owned Gmail account for mailbox automation. 
 
 If the user mentions Gmail, inbox, latest mail, recent mail, or asks you to find, read, organize, or reply to messages in their mailbox, first run \`remotelab gmail status --json\`. Do not claim Gmail is unavailable, ask for IMAP credentials, or say there is no access until you have checked the live Gmail status for this workspace.
 
-If Gmail status is \`ready\`, use the Gmail CLI for that user-mailbox task. Use \`remotelab gmail --help\` for the available actions. Prefer \`--json\` when calling Gmail commands from the shell.
+If Gmail status is \`ready\`, use the Gmail CLI for that user-mailbox task. Use \`remotelab gmail --help\` for the available actions. Prefer \`--json\` when calling Gmail commands from the shell. For multi-line replies or sends, use \`--text-file\` or \`--stdin\`, not literal \`\\n\` sequences inside \`--text\`.
 
 Supported Gmail operations include search, read, archive, mark-read, label changes, reply, and user-authorized send. A new alert, reminder, report, status update, or proactive follow-up from the assistant must use the ready Agent Mailbox above instead of Gmail. Sending a new message through Gmail is appropriate only when the user explicitly asks to send as them or the task clearly depends on their identity.
 
