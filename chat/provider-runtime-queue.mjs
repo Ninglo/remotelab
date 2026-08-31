@@ -131,6 +131,7 @@ export async function acquireProviderRuntimeLease({
   const ownsLease = async () => (await readOwner(ownerPath))?.leaseId === leaseId;
   return {
     queueKey: trimString(queueKey),
+    acquiredAt: owner.acquiredAt,
     waited: waitNotified,
     async setToolProcessId(toolProcessId) {
       if (!await ownsLease()) return false;

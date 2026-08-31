@@ -37,6 +37,7 @@ try {
     pollIntervalMs: 10,
   });
   assert.ok(first);
+  assert.match(first.acquiredAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(first.waited, false);
 
   let secondAcquired = false;

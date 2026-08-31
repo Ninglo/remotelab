@@ -565,7 +565,12 @@ async function main() {
           ...draft,
           providerRuntimeQueue: {
             ...(draft?.providerRuntimeQueue || {}),
+            key: providerQueueKey,
             state: 'released',
+            acquiredAt: draft?.providerRuntimeQueue?.acquiredAt
+              || providerRuntimeLease.acquiredAt,
+            waited: draft?.providerRuntimeQueue?.waited === true
+              || providerRuntimeLease.waited === true,
             releasedAt: nowIso(),
           },
         }));
