@@ -35,8 +35,24 @@ const {
   parseGmailWebUrl,
   resolveGmailCredentialsPath,
 } = await import(pathToFileURL(join(repoRoot, 'lib', 'connector-gmail.mjs')).href);
+const { runGmailCommand } = await import(pathToFileURL(join(repoRoot, 'lib', 'gmail-command.mjs')).href);
 
 try {
+  const helpChunks = [];
+  assert.equal(await runGmailCommand(['help'], {
+    stdout: { write: (chunk) => helpChunks.push(String(chunk)) },
+  }), 0);
+  assert.match(helpChunks.join(''), /gmail send --as-user/);
+  await assert.rejects(
+    runGmailCommand([
+      'send',
+      '--to', 'owner@example.com',
+      '--subject', 'Status update',
+      '--text', 'Done',
+    ]),
+    /gmail send requires --as-user because it sends from the connected user identity/,
+  );
+
   const binding = await ensureGmailConnectorBinding({
     provider: 'google',
     title: 'Gmail',

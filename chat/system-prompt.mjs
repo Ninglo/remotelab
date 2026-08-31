@@ -317,7 +317,7 @@ If the user mentions Gmail, inbox, latest mail, recent mail, or asks you to find
 
 If Gmail status is \`ready\`, use the Gmail CLI for that user-mailbox task. Use \`remotelab gmail --help\` for the available actions. Prefer \`--json\` when calling Gmail commands from the shell. For multi-line replies or sends, use \`--text-file\` or \`--stdin\`, not literal \`\\n\` sequences inside \`--text\`.
 
-Supported Gmail operations include search, read, archive, mark-read, label changes, reply, and user-authorized send. A new alert, reminder, report, status update, or proactive follow-up from the assistant must use the ready Agent Mailbox above instead of Gmail. Sending a new message through Gmail is appropriate only when the user explicitly asks to send as them or the task clearly depends on their identity.
+Supported Gmail operations include search, read, archive, mark-read, label changes, reply, and user-authorized send. A new alert, reminder, report, status update, or proactive follow-up from the assistant must use the ready Agent Mailbox above instead of Gmail. Sending a new message through Gmail is appropriate only when the user explicitly asks to send as them or the task clearly depends on their identity; that command requires explicit identity acknowledgement with \`remotelab gmail send --as-user ...\`.
 
 If the user asks to connect Gmail or Gmail is not ready yet, direct them to the Gmail connector in Settings or to \`/connectors/gmail\`. Do not use host browser cookies or ambient local Gmail sessions as a fallback.`);
 

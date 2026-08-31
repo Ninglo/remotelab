@@ -60,5 +60,6 @@ assert.match(context, /\/connectors\/gmail/);
 assert.match(context, /Do not claim Gmail is unavailable, ask for IMAP credentials, or say there is no access until you have checked the live Gmail status/);
 assert.match(context, /If Gmail status is `ready`, use the Gmail CLI for that user-mailbox task/);
 assert.match(context, /A new alert, reminder, report, status update, or proactive follow-up from the assistant must use the ready Agent Mailbox above instead of Gmail/);
+assert.match(context, /remotelab gmail send --as-user/);
 
 console.log('test-system-prompt-gmail: ok');
