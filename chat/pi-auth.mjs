@@ -256,14 +256,6 @@ export function createPiAuthManager({
         loggedIn: false,
       });
     }
-    if (activeChild || state.phase === 'synchronizing') {
-      return createPublicState(state, {
-        available: true,
-        loggedIn: false,
-        checkedAt: new Date(now()).toISOString(),
-      });
-    }
-
     const result = await waitForProcess(
       runtime.piCommand,
       ['auth', 'check', '--provider', OPENAI_CODEX_PROVIDER, '--json', '--no-refresh'],
@@ -278,8 +270,22 @@ export function createPiAuthManager({
       && !!trimString(credential.refresh)
       && credentialExpiresAt > now();
     const loggedIn = authStatus?.status === 'ready' && credentialIsCurrent;
-    if (loggedIn && !activeChild && state.phase !== 'awaiting' && state.phase !== 'synchronizing') {
-      state = { ...state, phase: 'authenticated', error: '' };
+    if (loggedIn) {
+      if (activeChild) stopActiveLogin();
+      state = {
+        ...state,
+        phase: 'authenticated',
+        verificationUri: '',
+        userCode: '',
+        expiresAt: 0,
+        error: '',
+      };
+    } else if (activeChild || state.phase === 'synchronizing') {
+      return createPublicState(state, {
+        available: true,
+        loggedIn: false,
+        checkedAt: new Date(now()).toISOString(),
+      });
     } else if (!loggedIn && !activeChild && state.phase === 'authenticated') {
       state = { ...state, phase: 'idle', error: '' };
     }

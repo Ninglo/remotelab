@@ -68,13 +68,18 @@ assert.deepEqual(stored['openai-codex'], {
   expires: expirySeconds * 1000,
   accountId: 'account-test',
 });
+await access(join(loginHome, 'auth.json'));
+
+const redundantLogin = await manager.startDeviceLogin({ restart: true });
+assert.equal(redundantLogin.loggedIn, true);
+assert.equal(redundantLogin.phase, 'authenticated');
+assert.equal(redundantLogin.deviceLoginActive, false);
 
 const loggedOut = await manager.logout();
 assert.equal(loggedOut.loggedIn, false);
 assert.equal(loggedOut.phase, 'idle');
 const afterLogout = JSON.parse(await readFile(join(piAgentDir, 'auth.json'), 'utf8'));
 assert.equal(afterLogout['openai-codex'], undefined);
-await access(join(loginHome, 'auth.json'));
 
 function createResponseCapture() {
   const capture = { status: 0, payload: null };
