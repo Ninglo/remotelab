@@ -1,7 +1,12 @@
 import { copyFile, lstat, readlink, symlink, unlink } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
-import { CODEX_MANAGED_HOME_DIR, IS_GUEST_INSTANCE, IS_INSTANCE_SCOPED } from '../lib/config.mjs';
+import {
+  CODEX_MANAGED_HOME_DIR,
+  IS_GUEST_INSTANCE,
+  IS_INSTANCE_SCOPED,
+  PI_AGENT_DIR,
+} from '../lib/config.mjs';
 import { writeGuestCodexAuthFile } from '../lib/codex-auth-redaction.mjs';
 import {
   createSerialTaskQueue,
@@ -135,10 +140,14 @@ export async function applyManagedRuntimeEnv(toolId, baseEnv = {}, options = {})
   const runtimeFamily = typeof options.runtimeFamily === 'string'
     ? options.runtimeFamily.trim()
     : '';
-  const provider = trimString(options.provider);
+  if (toolId === 'pi' || runtimeFamily === 'pi-json') {
+    env.PI_CODING_AGENT_DIR = trimString(process.env.REMOTELAB_MACHINE_PI_AGENT_DIR)
+      || trimString(process.env.PI_CODING_AGENT_DIR)
+      || PI_AGENT_DIR;
+    return env;
+  }
   const isCodexRuntime = toolId === 'codex'
-    || runtimeFamily === 'codex-json'
-    || (runtimeFamily === 'pi-json' && provider === 'openai-codex');
+    || runtimeFamily === 'codex-json';
   if (!isCodexRuntime) {
     return env;
   }

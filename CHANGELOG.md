@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Adds a first-class Pi OpenAI/Codex login panel with device authorization, status checks, account switching, and instance-scoped Pi credential storage.
 - Adds Feishu Bot discovery and a secret-free registry, with config-bound `status` and `restart` operations that target the exact process, systemd unit, or macOS LaunchAgent while preserving single-Bot default selection.
 - Keeps the shipped owner flow centered on sessions and settings after retiring the unused planning surface.
 - Removes the last hidden web voice-cleanup path so the composer now sends text directly.

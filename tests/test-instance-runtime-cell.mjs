@@ -20,6 +20,7 @@ assert.equal(runtimeEnv.HOME, instanceRoot);
 assert.equal(runtimeEnv.REMOTELAB_INSTANCE_ROOT, instanceRoot);
 assert.equal(runtimeEnv.REMOTELAB_PROJECT_ROOT, projectRoot);
 assert.equal(runtimeEnv.REMOTELAB_MACHINE_CODEX_HOME, join(instanceRoot, '.codex'));
+assert.equal(runtimeEnv.REMOTELAB_MACHINE_PI_AGENT_DIR, join(instanceRoot, '.pi', 'agent'));
 assert.equal(runtimeEnv.LARKSUITE_CLI_CONFIG_DIR, join(instanceRoot, 'config', 'lark-cli'));
 assert.equal(runtimeEnv.LARKSUITE_CLI_NO_UPDATE_NOTIFIER, '1');
 assert.equal(runtimeEnv.LARKSUITE_CLI_NO_SKILLS_NOTIFIER, '1');

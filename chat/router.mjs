@@ -75,6 +75,7 @@ import { broadcastAll } from './ws-clients.mjs';
 import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
+import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
 import { handleLocalBridgeOwnerRoutes, handleLocalBridgePublicRoutes } from './router-local-bridge-routes.mjs';
 import {
   handleCalendarFeedRoute,
@@ -1729,6 +1730,16 @@ export async function handleRequest(req, res) {
   }
 
   if (await handleCodexAuthRoutes({
+    req,
+    res,
+    pathname,
+    authSession,
+    writeJson,
+  })) {
+    return;
+  }
+
+  if (await handlePiAuthRoutes({
     req,
     res,
     pathname,

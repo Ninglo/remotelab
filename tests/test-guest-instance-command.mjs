@@ -116,6 +116,7 @@ const convergedRuntimeCell = buildConvergedLaunchAgentSpec({
   },
 }).environmentVariables;
 assert.equal(convergedRuntimeCell.REMOTELAB_MACHINE_CODEX_HOME, '/var/lib/remotelab-guests/muka2/.codex');
+assert.equal(convergedRuntimeCell.REMOTELAB_MACHINE_PI_AGENT_DIR, '/var/lib/remotelab-guests/muka2/.pi/agent');
 assert.equal(convergedRuntimeCell.LARKSUITE_CLI_CONFIG_DIR, '/var/lib/remotelab-guests/muka2/config/lark-cli');
 assert.equal(convergedRuntimeCell.REMOTELAB_PROJECT_ROOT, repoRoot);
 const missingRuntimeCellDrift = detectLaunchAgentConvergence({

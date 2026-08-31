@@ -75,7 +75,8 @@ try {
     codexAuthSource: join(personalCodexHome, 'auth.json'),
     codexHomeMode: 'managed',
   });
-  assert.equal(piCodexEnv.CODEX_HOME, managedHome, 'Pi GPT routes should receive the Codex login runtime home');
+  assert.equal(piCodexEnv.CODEX_HOME, undefined, 'Pi GPT routes should not receive the unrelated Codex CLI home');
+  assert.equal(piCodexEnv.PI_CODING_AGENT_DIR, join(home, '.pi', 'agent'), 'Pi GPT routes should receive Pi credential storage');
 
   const piDeepseekEnv = await applyManagedRuntimeEnv('pi', { FOO: 'pi-deepseek' }, {
     runtimeFamily: 'pi-json',
@@ -85,6 +86,7 @@ try {
     codexHomeMode: 'managed',
   });
   assert.equal(piDeepseekEnv.CODEX_HOME, undefined, 'Pi third-party routes should not inherit Codex auth state');
+  assert.equal(piDeepseekEnv.PI_CODING_AGENT_DIR, join(home, '.pi', 'agent'), 'all Pi providers should share the instance-scoped Pi credential store');
 
   const defaultCodexEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/default' });
   assert.equal(defaultCodexEnv.CODEX_HOME, personalCodexHome, 'default Codex mode should use the machine command-line Codex home');
