@@ -99,6 +99,14 @@ A binding answers:
 
 Bindings are never host-global truth and never implied by ambient owner machine state.
 
+A host owner may operate a managed local instance through an explicit admin delegation. That delegation must execute inside the target instance's Connector registry, must not copy binding credentials into the owner registry, must be rejected when initiated by another guest, and must append an owner-side audit event. The lightweight CLI form is:
+
+```text
+remotelab connector call <connector:action> --instance <managed-guest> ...
+```
+
+This is an owner administration path over an instance-scoped binding, not a host-global binding or a guest-to-guest capability.
+
 ### 2.4 Activation
 
 The resolved runtime relationship between:
