@@ -536,7 +536,7 @@ The good news:
 
 The important nuance:
 
-- the summarizer pipeline now exists only to suggest canonical session metadata such as title/group/description
+- the session-state classifier suggests canonical session metadata such as title/group/description without restoring the retired summarizer pipeline
 - the empty Progress tab is a reserved shell, not a data surface
 
 The remaining architectural distinction is simply between:
@@ -633,7 +633,7 @@ Current session/run reads still sometimes trigger reconciliation work.
 ### 7. Sidebar logic still touches canonical presentation metadata
 
 The contract demotes sidebar/progress to derived UI.
-Current summarizer logic still participates in canonical rename/group/description updates.
+Current session-state classifier logic still participates in canonical rename/group/description updates.
 
 ---
 

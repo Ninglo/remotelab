@@ -101,7 +101,7 @@ function appendSummarizerUsage(sessionMeta, usageEvent, usageTracking = {}, stat
     if (!record) return false;
     return appendUsageLedgerRecord(record);
   } catch (error) {
-    console.error(`[usage-ledger] Failed to append summarizer usage for ${sessionMeta?.id?.slice?.(0, 8) || 'unknown'}: ${error.message}`);
+    console.error(`[usage-ledger] Failed to append session-state classifier usage for ${sessionMeta?.id?.slice?.(0, 8) || 'unknown'}: ${error.message}`);
     return false;
   }
 }
