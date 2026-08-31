@@ -1764,7 +1764,7 @@ async function enrichSummaryWithChatMetadata(runtime, summary) {
     return summary;
   }
 
-  const hasTopicMode = trimString(summary.groupMessageType) || trimString(summary.chatMode) || trimString(summary.chatName);
+  const hasTopicMode = trimString(summary.groupMessageType) || trimString(summary.chatMode);
   if (hasTopicMode) {
     return summary;
   }
@@ -1781,6 +1781,139 @@ async function enrichSummaryWithChatMetadata(runtime, summary) {
     chatMode: trimString(summary.chatMode) || metadata.chatMode,
     chatType: trimString(summary.chatType) || metadata.chatType,
   };
+}
+
+function parseFeishuHandledFallbackUpdatedAt(record) {
+  const updatedAt = Date.parse(trimString(record?.updatedAt) || '');
+  if (Number.isFinite(updatedAt)) return updatedAt;
+  const repliedAt = Date.parse(trimString(record?.repliedAt) || '');
+  if (Number.isFinite(repliedAt)) return repliedAt;
+  const handledAt = Date.parse(trimString(record?.handledAt) || '');
+  if (Number.isFinite(handledAt)) return handledAt;
+  return 0;
+}
+
+async function collectFeishuHandledTopicFallbackCandidates(runtime, summary) {
+  const handledPath = trimString(runtime?.storagePaths?.handledMessagesPath);
+  if (!handledPath) return [];
+
+  const state = await loadHandledMessages(handledPath);
+  const messages = state?.messages && typeof state.messages === 'object' && !Array.isArray(state.messages)
+    ? state.messages
+    : {};
+  const chatId = trimString(summary?.chatId);
+
+  return Object.entries(messages)
+    .filter(([sourceMessageId, metadata]) => {
+      if (!metadata || typeof metadata !== 'object') return false;
+      if (!['sent', 'confirmation_sent'].includes(trimString(metadata.status))) return false;
+      if (!trimString(metadata?.sessionId)) return false;
+      const metadataChatId = trimString(metadata.chatId);
+      if (chatId && metadataChatId && metadataChatId !== chatId) return false;
+      if (!trimString(metadata.responseMessageId) && sourceMessageId === trimString(summary?.messageId)) return false;
+      return true;
+    })
+    .map(([sourceMessageId, metadata]) => ({
+      sessionId: trimString(metadata.sessionId),
+      sourceMessageId: trimString(metadata.sourceMessageId) || trimString(sourceMessageId),
+      chatId: trimString(metadata.chatId),
+      updatedAt: parseFeishuHandledFallbackUpdatedAt(metadata),
+    }))
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+function parseFeishuSessionRecency(value) {
+  const time = Date.parse(trimString(value));
+  if (Number.isFinite(time)) return time;
+  return 0;
+}
+
+function getFeishuSessionRecency(session) {
+  const candidates = [
+    session?.updatedAt,
+    session?.updatedTime,
+    session?.createdAt,
+    session?.createdTime,
+    session?.startedAt,
+    session?.startedTime,
+    session?.latestEventAt,
+    session?.lastUpdatedAt,
+    session?.lastEventAt,
+  ];
+  for (const value of candidates) {
+    const parsed = parseFeishuSessionRecency(value);
+    if (parsed > 0) {
+      return parsed;
+    }
+  }
+  if (Number.isInteger(session?.latestSeq)) {
+    return session.latestSeq;
+  }
+  return 0;
+}
+
+async function findFeishuRecentTopicSessionCandidates(requester, summary) {
+  const result = await requester('/api/sessions?sourceId=feishu');
+  if (!result.response?.ok || !Array.isArray(result.json?.sessions)) return [];
+
+  const chatId = trimString(summary?.chatId);
+  const chatPrefix = sanitizeIdPart(chatId);
+  return result.json.sessions
+    .filter((session) => {
+      if (!session || typeof session !== 'object') return false;
+      if (trimString(session?.id) === '') return false;
+      if (trimString(session?.sourceId) !== 'feishu') return false;
+      if (session.archived === true) return false;
+      const sessionChatId = trimString(session?.sourceContext?.chatId);
+      if (chatId && sessionChatId && sessionChatId !== chatId) return false;
+      const trigger = trimString(session?.externalTriggerId);
+      const context = session?.sourceContext;
+      const contextConversationKind = trimString(context?.conversationKind).toLowerCase();
+      const contextChatMode = normalizeFeishuMode(context?.chatMode);
+      const contextGroupMessageType = normalizeFeishuMode(context?.groupMessageType);
+      if (!trigger && contextConversationKind !== 'topic') return false;
+      const matchesTopicTrigger = chatPrefix
+        ? trigger.startsWith(`feishu:topic:${chatPrefix}:`)
+        : trigger.startsWith('feishu:topic:');
+      const isTopicContext = (
+        contextConversationKind === 'topic'
+        || contextChatMode === 'topic'
+        || contextGroupMessageType === 'topic'
+      );
+      return matchesTopicTrigger || (isTopicContext && sessionChatId === chatId);
+    })
+    .map((session) => ({
+      id: trimString(session.id),
+      recency: getFeishuSessionRecency(session),
+    }))
+    .sort((left, right) => {
+      if (right.recency !== left.recency) return right.recency - left.recency;
+      return left.id.localeCompare(right.id);
+    });
+}
+
+async function findFeishuTopicFallbackParentSessionId(runtime, requester, summary) {
+  const recentTopicSessions = await findFeishuRecentTopicSessionCandidates(requester, summary);
+  if (recentTopicSessions.length === 0) return '';
+
+  const topicSessionIds = new Set(recentTopicSessions.map((entry) => entry.id).filter(Boolean));
+  const fallbackHandled = await collectFeishuHandledTopicFallbackCandidates(runtime, summary);
+  const chatScopedFallback = fallbackHandled.filter((record) => (
+    topicSessionIds.has(record.sessionId) && Boolean(record.sourceMessageId)
+  ));
+
+  for (const fallback of chatScopedFallback) {
+    if (await verifyFeishuSessionReferencesMessage(requester, fallback.sessionId, summary, fallback.sourceMessageId)) {
+      return fallback.sessionId;
+    }
+  }
+
+  const latestHandledSessionId = chatScopedFallback[0]?.sessionId;
+  if (latestHandledSessionId) {
+    return latestHandledSessionId;
+  }
+
+  return recentTopicSessions[0]?.id || '';
 }
 
 async function ensureAuthCookie(runtime, forceRefresh = false) {
@@ -2073,7 +2206,9 @@ function collectFeishuTopicParentMessageCandidates(summary) {
 async function resolveFeishuTopicForkParentSessionId(runtime, requester, summary) {
   if (!buildFeishuTopicId(summary)) return '';
   const parentMessageIds = collectFeishuTopicParentMessageCandidates(summary);
-  if (parentMessageIds.length === 0) return '';
+  if (parentMessageIds.length === 0) {
+    return await findFeishuTopicFallbackParentSessionId(runtime, requester, summary);
+  }
   const indexPath = trimString(runtime?.storagePaths?.messageIndexPath);
   for (const parentMessageId of parentMessageIds) {
     if (indexPath) {
@@ -2117,7 +2252,7 @@ async function resolveFeishuTopicForkParentSessionId(runtime, requester, summary
     if (handledMatch?.sessionId) return handledMatch.sessionId;
   }
   console.warn(`[feishu-connector] no verified topic fork parent session found for ${summary.messageId}; candidates=${parentMessageIds.join(',')}`);
-  return '';
+  return await findFeishuTopicFallbackParentSessionId(runtime, requester, summary);
 }
 
 async function createOrReuseSession(runtime, summary, runtimeSelection) {
@@ -2371,8 +2506,262 @@ function findNextMentionMatch(line, mentionEntries, startIndex) {
   return best;
 }
 
-function renderFeishuMarkdownLineElements(line, mentionEntries) {
-  const elements = [];
+function isEscapedAt(value, index) {
+  let backslashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === '\\'; cursor -= 1) {
+    backslashCount += 1;
+  }
+  return backslashCount % 2 === 1;
+}
+
+function looksLikeMathSource(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  return /(?:\\[a-zA-Z]+|[_^=+\-*/<>]|[{}]|\d)/.test(text);
+}
+
+const FEISHU_SUPERSCRIPT_CHARS = {
+  0: '⁰',
+  1: '¹',
+  2: '²',
+  3: '³',
+  4: '⁴',
+  5: '⁵',
+  6: '⁶',
+  7: '⁷',
+  8: '⁸',
+  9: '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  '=': '⁼',
+  '(': '⁽',
+  ')': '⁾',
+  n: 'ⁿ',
+  i: 'ⁱ',
+};
+
+const FEISHU_SUBSCRIPT_CHARS = {
+  0: '₀',
+  1: '₁',
+  2: '₂',
+  3: '₃',
+  4: '₄',
+  5: '₅',
+  6: '₆',
+  7: '₇',
+  8: '₈',
+  9: '₉',
+  '+': '₊',
+  '-': '₋',
+  '=': '₌',
+  '(': '₍',
+  ')': '₎',
+  a: 'ₐ',
+  e: 'ₑ',
+  h: 'ₕ',
+  i: 'ᵢ',
+  j: 'ⱼ',
+  k: 'ₖ',
+  l: 'ₗ',
+  m: 'ₘ',
+  n: 'ₙ',
+  o: 'ₒ',
+  p: 'ₚ',
+  r: 'ᵣ',
+  s: 'ₛ',
+  t: 'ₜ',
+  u: 'ᵤ',
+  v: 'ᵥ',
+  x: 'ₓ',
+};
+
+const FEISHU_LATEX_COMMAND_TEXT = {
+  alpha: 'α',
+  beta: 'β',
+  gamma: 'γ',
+  delta: 'δ',
+  epsilon: 'ε',
+  theta: 'θ',
+  lambda: 'λ',
+  mu: 'μ',
+  pi: 'π',
+  rho: 'ρ',
+  sigma: 'σ',
+  tau: 'τ',
+  phi: 'φ',
+  omega: 'ω',
+  Gamma: 'Γ',
+  Delta: 'Δ',
+  Theta: 'Θ',
+  Lambda: 'Λ',
+  Pi: 'Π',
+  Sigma: 'Σ',
+  Phi: 'Φ',
+  Omega: 'Ω',
+  cdot: '·',
+  times: '×',
+  div: '÷',
+  leq: '≤',
+  geq: '≥',
+  neq: '≠',
+  approx: '≈',
+  pm: '±',
+  infty: '∞',
+  to: '→',
+  rightarrow: '→',
+  leftarrow: '←',
+  sum: '∑',
+  prod: '∏',
+  int: '∫',
+};
+
+function readLatexBalancedGroup(text, startIndex) {
+  let cursor = startIndex;
+  while (cursor < text.length && /\s/.test(text[cursor])) cursor += 1;
+  if (text[cursor] !== '{') return null;
+  let depth = 0;
+  for (let index = cursor; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '\\') {
+      index += 1;
+      continue;
+    }
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return { text: text.slice(cursor + 1, index), end: index + 1 };
+      }
+    }
+  }
+  return null;
+}
+
+function replaceLatexFractionsForText(text) {
+  let output = '';
+  let cursor = 0;
+  while (cursor < text.length) {
+    const index = text.indexOf('\\frac', cursor);
+    if (index < 0) {
+      output += text.slice(cursor);
+      break;
+    }
+    const numerator = readLatexBalancedGroup(text, index + 5);
+    if (!numerator) {
+      output += text.slice(cursor, index + 5);
+      cursor = index + 5;
+      continue;
+    }
+    const denominator = readLatexBalancedGroup(text, numerator.end);
+    if (!denominator) {
+      output += text.slice(cursor, numerator.end);
+      cursor = numerator.end;
+      continue;
+    }
+    output += text.slice(cursor, index);
+    output += `(${renderFeishuMathText(numerator.text)})/(${renderFeishuMathText(denominator.text)})`;
+    cursor = denominator.end;
+  }
+  return output;
+}
+
+function convertLatexScriptsForText(text, marker, map) {
+  let output = '';
+  let cursor = 0;
+  while (cursor < text.length) {
+    const index = text.indexOf(marker, cursor);
+    if (index < 0) {
+      output += text.slice(cursor);
+      break;
+    }
+    output += text.slice(cursor, index);
+    const group = readLatexBalancedGroup(text, index + 1);
+    if (group) {
+      output += Array.from(renderFeishuMathText(group.text)).map((char) => map[char] || char).join('');
+      cursor = group.end;
+      continue;
+    }
+    const next = text[index + 1] || '';
+    if (map[next]) {
+      output += map[next];
+      cursor = index + 2;
+      continue;
+    }
+    output += marker;
+    cursor = index + 1;
+  }
+  return output;
+}
+
+function renderFeishuMathText(value) {
+  let text = String(value || '').trim();
+  if (!text) return '';
+  text = replaceLatexFractionsForText(text);
+  text = text.replace(/\\sqrt\s*\{([^{}]+)\}/g, (_match, radicand) => `√(${renderFeishuMathText(radicand)})`);
+  text = text.replace(/\\([a-zA-Z]+)/g, (match, command) => FEISHU_LATEX_COMMAND_TEXT[command] || match);
+  text = convertLatexScriptsForText(text, '^', FEISHU_SUPERSCRIPT_CHARS);
+  text = convertLatexScriptsForText(text, '_', FEISHU_SUBSCRIPT_CHARS);
+  text = text.replace(/[{}]/g, '');
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function findClosingDollar(value, startIndex) {
+  for (let cursor = startIndex; cursor < value.length; cursor += 1) {
+    if (value[cursor] !== '$') continue;
+    if (isEscapedAt(value, cursor)) continue;
+    if (value[cursor + 1] === '$') continue;
+    return cursor;
+  }
+  return -1;
+}
+
+function findNextInlineMathStart(value, startIndex) {
+  let best = null;
+  for (let cursor = startIndex; cursor < value.length; cursor += 1) {
+    if (value[cursor] === '$' && value[cursor + 1] !== '$' && !isEscapedAt(value, cursor)) {
+      best = { index: cursor, marker: '$', closeMarker: '$', contentStart: cursor + 1 };
+      break;
+    }
+    if (value[cursor] === '\\' && value[cursor + 1] === '(' && !isEscapedAt(value, cursor)) {
+      best = { index: cursor, marker: '\\(', closeMarker: '\\)', contentStart: cursor + 2 };
+      break;
+    }
+  }
+  return best;
+}
+
+function splitFeishuInlineMathSegments(line) {
+  const segments = [];
+  let cursor = 0;
+  while (cursor < line.length) {
+    const start = findNextInlineMathStart(line, cursor);
+    if (!start) {
+      segments.push({ type: 'text', text: line.slice(cursor) });
+      break;
+    }
+    const closeIndex = start.marker === '$'
+      ? findClosingDollar(line, start.contentStart)
+      : line.indexOf(start.closeMarker, start.contentStart);
+    if (closeIndex < 0) {
+      segments.push({ type: 'text', text: line.slice(cursor) });
+      break;
+    }
+    const formula = line.slice(start.contentStart, closeIndex);
+    if (!looksLikeMathSource(formula)) {
+      segments.push({ type: 'text', text: line.slice(cursor, closeIndex + start.closeMarker.length) });
+      cursor = closeIndex + start.closeMarker.length;
+      continue;
+    }
+    if (start.index > cursor) {
+      segments.push({ type: 'text', text: line.slice(cursor, start.index) });
+    }
+    segments.push({ type: 'math', text: formula.trim() });
+    cursor = closeIndex + start.closeMarker.length;
+  }
+  return segments.filter((segment) => segment.text !== '');
+}
+
+function appendFeishuMarkdownElements(elements, line, mentionEntries) {
   let cursor = 0;
   while (cursor < line.length) {
     const match = findNextMentionMatch(line, mentionEntries, cursor);
@@ -2390,20 +2779,87 @@ function renderFeishuMarkdownLineElements(line, mentionEntries) {
     });
     cursor = match.index + match.marker.length;
   }
+  return elements;
+}
+
+function renderFeishuMarkdownLineElements(line, mentionEntries) {
+  const elements = [];
+  for (const segment of splitFeishuInlineMathSegments(line)) {
+    if (segment.type === 'math') {
+      elements.push({ tag: 'text', text: renderFeishuMathText(segment.text) || segment.text });
+      continue;
+    }
+    appendFeishuMarkdownElements(elements, segment.text, mentionEntries);
+  }
   return elements.filter((element) => element.text !== '');
+}
+
+function buildFeishuTextRow(text) {
+  return [{ tag: 'text', text: text || '\u200B' }];
+}
+
+function parseSingleLineDisplayMath(line) {
+  const trimmed = String(line || '').trim();
+  if (trimmed.startsWith('$$') && trimmed.endsWith('$$') && trimmed.length > 4) {
+    return trimmed.slice(2, -2).trim();
+  }
+  if (trimmed.startsWith('\\[') && trimmed.endsWith('\\]') && trimmed.length > 4) {
+    return trimmed.slice(2, -2).trim();
+  }
+  return null;
+}
+
+function pushFeishuFormulaRow(content, line) {
+  const text = String(line || '').trimEnd();
+  if (text) content.push(buildFeishuTextRow(renderFeishuMathText(text) || text));
 }
 
 function buildFeishuPostContent(text, mentions) {
   const normalized = normalizeReplyText(text);
   const mentionEntries = normalizeMentionEntries(mentions)
     .sort((left, right) => Math.max(right.token.length, right.displayName.length) - Math.max(left.token.length, left.displayName.length));
-  const content = normalized.split('\n').map((line) => {
+  const content = [];
+  let displayMathEndMarker = '';
+  for (const line of normalized.split('\n')) {
+    const trimmed = line.trim();
+    if (displayMathEndMarker) {
+      if (trimmed === displayMathEndMarker) {
+        displayMathEndMarker = '';
+        continue;
+      }
+      if (trimmed.endsWith(displayMathEndMarker)) {
+        pushFeishuFormulaRow(content, line.slice(0, line.lastIndexOf(displayMathEndMarker)));
+        displayMathEndMarker = '';
+        continue;
+      }
+      pushFeishuFormulaRow(content, line);
+      continue;
+    }
+    const singleLineFormula = parseSingleLineDisplayMath(line);
+    if (singleLineFormula !== null) {
+      content.push(buildFeishuTextRow(`公式：${renderFeishuMathText(singleLineFormula) || singleLineFormula}`));
+      continue;
+    }
+    if (trimmed === '$$' || trimmed === '\\[') {
+      content.push(buildFeishuTextRow('公式：'));
+      displayMathEndMarker = trimmed === '$$' ? '$$' : '\\]';
+      continue;
+    }
+    if (trimmed.startsWith('$$') || trimmed.startsWith('\\[')) {
+      const isDollar = trimmed.startsWith('$$');
+      const startMarker = isDollar ? '$$' : '\\[';
+      content.push(buildFeishuTextRow('公式：'));
+      pushFeishuFormulaRow(content, trimmed.slice(startMarker.length));
+      displayMathEndMarker = isDollar ? '$$' : '\\]';
+      continue;
+    }
     if (!line.trim()) {
-      return [{ tag: 'text', text: '\u200B' }];
+      content.push(buildFeishuTextRow('\u200B'));
+      continue;
     }
     const elements = renderFeishuMarkdownLineElements(line, mentionEntries);
-    return elements.length > 0 ? elements : [{ tag: 'text', text: '\u200B' }];
-  });
+    content.push(elements.length > 0 ? elements : buildFeishuTextRow('\u200B'));
+  }
   return JSON.stringify({ zh_cn: { content } });
 }
 

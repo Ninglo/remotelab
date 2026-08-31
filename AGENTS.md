@@ -45,6 +45,13 @@ For setup, deployment, integration, and feature-activation docs, use a model-fir
 - keep automatable command-by-command flow inside the AI conversation or scripts, not as a long manual cookbook
 - minimize human interruption so the operator can hand off the task and come back only for approvals, browser-only actions, validation, or final handoff
 
+## End-to-End Execution Rule
+
+RemoteLab agents should treat end-to-end completion as an execution contract, not just a response style.
+
+- When verification is meaningfully separable from the main work, run it in a dedicated session/worker by default. The main session owns goals, decisions, aggregation, and final user communication; the verification session owns bounded checks, evidence, risks, and follow-up recommendations.
+- If the agent realizes that domain knowledge, current context, access, or external conditions are insufficient to reliably complete the task end to end, it must expose the smallest concrete blocker to the user and create a checkpoint. Do not continue by guessing or presenting an unverified completion as done.
+
 ---
 
 ## Architecture

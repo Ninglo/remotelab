@@ -942,6 +942,22 @@ assert.deepEqual(mentionPostContent.zh_cn.content[0], [
   { tag: 'md', text: ' 请看 **这段**' },
 ]);
 
+const inlineMathPostContent = JSON.parse(buildFeishuPostContent('结论：$x_i = y^2$，请看 @_user_1', mentionSummary.mentions));
+assert.deepEqual(inlineMathPostContent.zh_cn.content[0], [
+  { tag: 'md', text: '结论：' },
+  { tag: 'text', text: 'xᵢ = y²' },
+  { tag: 'md', text: '，请看 ' },
+  { tag: 'at', user_id: 'ou_mention_1', user_name: '江虹' },
+]);
+
+const displayMathPostContent = JSON.parse(buildFeishuPostContent('公式如下：\n$$\n\\frac{a_b}{c^2}\n$$\n完成'));
+assert.deepEqual(displayMathPostContent.zh_cn.content, [
+  [{ tag: 'md', text: '公式如下：' }],
+  [{ tag: 'text', text: '公式：' }],
+  [{ tag: 'text', text: '(a_b)/(c²)' }],
+  [{ tag: 'md', text: '完成' }],
+]);
+
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-whitelist-'));
 const whitelistPath = join(tempDir, 'allowed-senders.json');
 const whitelistPolicy = {
@@ -1542,6 +1558,283 @@ try {
 } finally {
   await new Promise((resolve) => topicForkServer.close(resolve));
   await rm(topicForkTempDir, { recursive: true, force: true });
+}
+
+const topicFallbackTempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-topic-fallback-'));
+const topicFallbackHandledPath = join(topicFallbackTempDir, 'handled-messages.json');
+await writeFile(topicFallbackHandledPath, JSON.stringify({
+  messages: {
+    msg_topic_fallback_older: {
+      status: 'sent',
+      chatId: 'chat_topic_fallback_1',
+      sessionId: 'sess_topic_fallback_older',
+      responseMessageId: 'msg_topic_fallback_reply_older',
+      updatedAt: '2026-07-24T17:00:00.000Z',
+    },
+    msg_topic_fallback_recent: {
+      status: 'sent',
+      chatId: 'chat_topic_fallback_1',
+      sessionId: 'sess_topic_fallback_recent',
+      responseMessageId: 'msg_topic_fallback_reply_recent',
+      updatedAt: '2026-07-24T20:00:00.000Z',
+    },
+  },
+}));
+
+let topicFallbackEndpointHits = { sessions: 0 };
+const topicFallbackServer = http.createServer(async (req, res) => {
+  let body = '';
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+  await new Promise((resolve) => req.on('end', resolve));
+
+  if (req.method === 'GET' && req.url === '/api/sessions?sourceId=feishu') {
+    topicFallbackEndpointHits.sessions += 1;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      sessions: [{
+        id: 'sess_topic_fallback_older',
+        sourceId: 'feishu',
+        externalTriggerId: 'feishu:topic:chat_topic_fallback_1:topic_old',
+        sourceContext: {
+          connector: 'feishu',
+          conversationKind: 'topic',
+          chatId: 'chat_topic_fallback_1',
+        },
+        updatedAt: '2026-07-24T17:30:00.000Z',
+      }, {
+        id: 'sess_topic_fallback_recent',
+        sourceId: 'feishu',
+        externalTriggerId: 'feishu:topic:chat_topic_fallback_1:topic_recent',
+        sourceContext: {
+          connector: 'feishu',
+          conversationKind: 'topic',
+          chatId: 'chat_topic_fallback_1',
+          chatMode: 'topic',
+        },
+        updatedAt: '2026-07-24T21:00:00.000Z',
+      }],
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_recent') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      session: {
+        id: 'sess_topic_fallback_recent',
+        sourceId: 'feishu',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_1',
+          conversationKind: 'topic',
+          chatMode: 'topic',
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_recent/events?filter=all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      events: [{
+        seq: 1,
+        type: 'message',
+        role: 'user',
+        sourceContext: {
+          connector: 'feishu',
+          messageId: 'msg_topic_fallback_recent',
+        },
+      }],
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_older') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      session: {
+        id: 'sess_topic_fallback_older',
+        sourceId: 'feishu',
+        sourceContext: {
+          connector: 'feishu',
+          chatId: 'chat_topic_fallback_1',
+          conversationKind: 'topic',
+          chatMode: 'topic',
+        },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_fallback_older/events?filter=all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      events: [{
+        seq: 1,
+        type: 'message',
+        role: 'user',
+        sourceContext: {
+          connector: 'feishu',
+          messageId: 'msg_topic_fallback_older',
+        },
+      }],
+    }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+await new Promise((resolve) => topicFallbackServer.listen(0, '127.0.0.1', resolve));
+
+try {
+  const address = topicFallbackServer.address();
+const fallbackParentSessionId = await resolveFeishuTopicForkParentSessionId(
+    {
+      storagePaths: {
+        handledMessagesPath: topicFallbackHandledPath,
+        messageIndexPath: join(topicFallbackTempDir, 'connector-message-index.json'),
+      },
+    },
+    async (path, options = {}) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method: options.method || 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
+      const text = await response.text();
+      return { response, text, json: text ? JSON.parse(text) : null };
+    },
+    {
+      tenantKey: 'tenant_topic_fallback',
+      chatType: 'group',
+      chatId: 'chat_topic_fallback_1',
+      chatMode: 'topic',
+      messageId: 'msg_topic_fallback_current',
+      textPreview: 'continue this topic from recent session',
+      sender: { openId: 'ou_topic_fallback', tenantKey: 'tenant_topic_fallback' },
+    },
+  );
+  assert.equal(topicFallbackEndpointHits.sessions, 1, 'fallback lookup should query all feishu sessions');
+  assert.equal(fallbackParentSessionId, 'sess_topic_fallback_recent', 'topic fallback should pick the most recent traceable topic session');
+} finally {
+  await new Promise((resolve) => topicFallbackServer.close(resolve));
+  await rm(topicFallbackTempDir, { recursive: true, force: true });
+}
+
+const topicMetadataTempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-topic-meta-'));
+let topicMetadataSessionPayload = null;
+let topicMetadataSubmittedPayload = null;
+const topicMetadataServer = http.createServer(async (req, res) => {
+  let body = '';
+  req.on('data', (chunk) => {
+    body += chunk.toString();
+  });
+  await new Promise((resolve) => req.on('end', resolve));
+
+  if (req.method === 'POST' && req.url === '/api/sessions') {
+    if (body) {
+      topicMetadataSessionPayload = JSON.parse(body);
+    }
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ session: { id: 'sess_topic_metadata_1' } }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/sessions/sess_topic_metadata_1/messages') {
+    topicMetadataSubmittedPayload = JSON.parse(body);
+    res.writeHead(202, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ run: { id: 'run_topic_metadata_1' } }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_metadata_1/responses/feishu%3Amsg_topic_metadata_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      replyPublication: {
+        id: 'feishu:msg_topic_metadata_1',
+        responseIds: ['feishu:msg_topic_metadata_1'],
+        state: 'ready',
+        ready: true,
+        finalRunId: 'run_topic_metadata_1',
+        payload: { text: 'ok' },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/sessions/sess_topic_metadata_1/events') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ events: [] }));
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/api/runs/run_topic_metadata_1') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ run: { id: 'run_topic_metadata_1', state: 'completed' } }));
+    return;
+  }
+
+  res.writeHead(404, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Not found' }));
+});
+
+await new Promise((resolve) => topicMetadataServer.listen(0, '127.0.0.1', resolve));
+
+try {
+  const address = topicMetadataServer.address();
+  await writeFile(join(topicMetadataTempDir, 'connector-message-index.json'), JSON.stringify({ messages: {} }));
+  const reply = await generateRemoteLabReply(
+    {
+      authCookie: 'session_token=test-cookie',
+      authToken: 'ignored',
+      storagePaths: {
+        messageIndexPath: join(topicMetadataTempDir, 'connector-message-index.json'),
+      },
+      config: {
+        chatBaseUrl: `http://127.0.0.1:${address.port}`,
+        sessionFolder: repoRoot,
+        sessionTool: 'codex',
+        systemPrompt: 'Reply with plain text only.',
+      },
+      appClient: {
+        im: {
+          v1: {
+            chat: {
+              get: async () => ({
+                data: {
+                  name: 'Topic Name',
+                  group_message_type: 'thread',
+                  chat_mode: 'topic',
+                  chat_type: 'group',
+                },
+                code: 0,
+              }),
+            },
+          },
+        },
+      },
+    },
+    {
+      chatType: 'group',
+      chatId: 'chat_topic_metadata_1',
+      chatName: 'Group Topic Name',
+      messageId: 'msg_topic_metadata_1',
+      textPreview: 'topic creation test',
+      sender: { openId: 'ou_topic_metadata_1' },
+    },
+  );
+  assert.equal(topicMetadataSessionPayload?.externalTriggerId, 'feishu:topic:chat_topic_metadata_1:msg_topic_metadata_1');
+  assert.equal(topicMetadataSessionPayload?.sourceContext?.conversationKind, 'topic');
+  assert.equal(topicMetadataSubmittedPayload?.sourceContext?.topicId, 'msg_topic_metadata_1');
+  assert.equal(reply.sessionId, 'sess_topic_metadata_1');
+} finally {
+  await new Promise((resolve) => topicMetadataServer.close(resolve));
+  await rm(topicMetadataTempDir, { recursive: true, force: true });
 }
 
 let planningSubmittedPayload = null;
