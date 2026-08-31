@@ -56,7 +56,16 @@ const rpcCatalog = parsePiRpcModels([
     provider: 'glm-api',
     id: 'glm-5.3',
     reasoning: true,
-    compat: { supportsReasoningEffort: false, thinkingFormat: 'zai' },
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: null,
+      high: 'high',
+      xhigh: null,
+      max: 'max',
+    },
+    compat: { supportsReasoningEffort: true, thinkingFormat: 'zai' },
   },
   {
     provider: 'moonshotai',
@@ -101,10 +110,10 @@ assert.deepEqual(
     {
       id: 'glm-api/glm-5.3',
       provider: 'glm-api',
-      levels: ['off', 'medium'],
-      control: 'binary',
-      default: 'medium',
-      defaultEffort: 'medium',
+      levels: ['low', 'high', 'max'],
+      control: '',
+      default: 'max',
+      defaultEffort: 'max',
       providerDefault: true,
       kind: 'enum',
     },
@@ -121,6 +130,31 @@ assert.deepEqual(
   ],
   'Pi RPC metadata should expose provider grouping and each model’s real thinking control shape',
 );
+const glmFlashCatalog = parsePiRpcModels([
+  {
+    provider: 'glm-api',
+    id: 'glm-5.3-flash',
+    reasoning: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: null,
+      high: 'high',
+      xhigh: null,
+      max: 'max',
+    },
+    compat: { supportsReasoningEffort: true, thinkingFormat: 'zai' },
+  },
+]);
+assert.deepEqual(
+  {
+    levels: glmFlashCatalog[0].reasoning.levels,
+    default: glmFlashCatalog[0].reasoning.default,
+  },
+  { levels: ['low', 'high', 'max'], default: 'max' },
+  'GLM-5.3-Flash should use its native always-on reasoning levels and max default',
+);
 assert.deepEqual(
   resolvePiModelRoute('kimi-for-coding/kimi-k2'),
   { provider: 'kimi-for-coding', model: 'kimi-k2' },
@@ -129,6 +163,23 @@ assert.deepEqual(
   resolvePiModelRoute('gpt-5.6-sol'),
   { provider: 'openai-codex', model: 'gpt-5.6-sol' },
   'legacy unqualified Pi model selections should stay on the Codex login path',
+);
+assert.deepEqual(
+  buildPiArgs('Ping', {
+    provider: 'glm-api',
+    model: 'glm-5.3',
+    thinking: 'max',
+  }),
+  [
+    '--mode', 'json',
+    '--provider', 'glm-api',
+    '--approve',
+    '--no-session',
+    '--model', 'glm-5.3',
+    '--thinking', 'max',
+    'Ping',
+  ],
+  'GLM-5.3 should keep its provider route and native max reasoning effort',
 );
 assert.deepEqual(
   buildPiArgs('Ping', {

@@ -17,7 +17,7 @@ const PI_PROVIDER_LABELS = Object.freeze({
 });
 const PI_PROVIDER_RECOMMENDATIONS = Object.freeze({
   'openai-codex': Object.freeze({ modelId: 'gpt-5.6-sol', effort: 'xhigh' }),
-  'glm-api': Object.freeze({ modelId: 'glm-5.3', effort: 'medium' }),
+  'glm-api': Object.freeze({ modelId: 'glm-5.3', effort: 'max' }),
   moonshotai: Object.freeze({ modelId: 'kimi-k3', effort: 'max' }),
 });
 
@@ -93,6 +93,10 @@ function getSupportedPiThinkingLevels(model) {
 function getPreferredPiThinkingLevel(model) {
   if (model?.provider === 'moonshotai' && model?.id === 'kimi-k3') {
     // Kimi's API reference defines max as K3's native default.
+    return 'max';
+  }
+  if (model?.provider === 'glm-api' && /^glm-5\.3(?:-|$)/.test(model?.id || '')) {
+    // GLM-5.3 and GLM-5.3-Flash always reason; official docs use max by default.
     return 'max';
   }
   return 'medium';
