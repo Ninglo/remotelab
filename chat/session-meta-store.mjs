@@ -20,8 +20,13 @@ import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { migrateLegacySessionRuntimeFields } from '../lib/legacy-micro-agent.mjs';
 
 let sessionsMetaCache = null;
-let sessionsMetaCacheMtimeMs = null;
+let sessionsMetaCacheFileVersion = null;
 const runSessionsMetaMutation = createSerialTaskQueue();
+
+function getSessionsMetaFileVersion(stats) {
+  if (!stats) return null;
+  return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
+}
 
 function normalizeStoredTimestamp(value) {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -320,19 +325,19 @@ async function saveSessionsMetaUnlocked(list) {
   await ensureDir(dir);
   await writeJsonAtomic(CHAT_SESSIONS_FILE, list);
   sessionsMetaCache = list;
-  sessionsMetaCacheMtimeMs = (await statOrNull(CHAT_SESSIONS_FILE))?.mtimeMs ?? null;
+  sessionsMetaCacheFileVersion = getSessionsMetaFileVersion(await statOrNull(CHAT_SESSIONS_FILE));
 }
 
 export async function loadSessionsMeta() {
   const stats = await statOrNull(CHAT_SESSIONS_FILE);
   if (!stats) {
     sessionsMetaCache = [];
-    sessionsMetaCacheMtimeMs = null;
+    sessionsMetaCacheFileVersion = null;
     return sessionsMetaCache;
   }
 
-  const mtimeMs = stats.mtimeMs;
-  if (sessionsMetaCache && sessionsMetaCacheMtimeMs === mtimeMs) {
+  const fileVersion = getSessionsMetaFileVersion(stats);
+  if (sessionsMetaCache && sessionsMetaCacheFileVersion === fileVersion) {
     return sessionsMetaCache;
   }
 
@@ -342,7 +347,7 @@ export async function loadSessionsMeta() {
   if (normalized.changed) {
     await saveSessionsMetaUnlocked(sessionsMetaCache);
   } else {
-    sessionsMetaCacheMtimeMs = mtimeMs;
+    sessionsMetaCacheFileVersion = fileVersion;
   }
   return sessionsMetaCache;
 }
