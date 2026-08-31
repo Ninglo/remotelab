@@ -25,9 +25,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Source: direct owner review after an automated status email arrived from the user's connected Gmail account with a mojibake subject.
 - User slice: owner delegating monitoring, reminders, and mailbox work while expecting the assistant to have a stable identity of its own.
-- Observed friction or ask: agent-originated alerts should not impersonate the user or use the user's mailbox as a generic transport; Gmail should be reserved for reading, organizing, replying, or explicitly sending on the user's behalf. Non-ASCII subject corruption makes even otherwise successful delivery unacceptable.
-- Signal strength: concrete production delivery failure with both a MIME correctness bug and an identity-routing policy gap; a ready instance-owned mailbox already exists.
-- Product implication: encode non-ASCII MIME headers according to RFC 2047, expose the ready Agent Mailbox in runtime connector context, default proactive/agent-originated mail to that identity, and never silently fall back to user Gmail when agent-mail delivery fails.
+- Observed friction or ask: agent-originated alerts should not impersonate the user or use the user's mailbox as a generic transport; Gmail should be reserved for reading, organizing, replying, or explicitly sending on the user's behalf. Non-ASCII subject corruption and visible `\n` escape text in place of body line breaks make even otherwise successful delivery unacceptable.
+- Signal strength: concrete production delivery failure with a MIME correctness bug, an identity-routing policy gap, and an unsafe multi-line command pattern; a ready instance-owned mailbox already exists.
+- Product implication: encode non-ASCII MIME headers according to RFC 2047, expose the ready Agent Mailbox in runtime connector context, default proactive/agent-originated mail to that identity, never silently fall back to user Gmail when agent-mail delivery fails, and require file/stdin body input whenever real line breaks are needed.
 - Promote to: connector capability prompts, Gmail/raw-MIME tests, and sender-identity semantics for future outbound connectors.
 - Follow-up: real Chinese-subject delivery was validated through the agent-owned sender as `rowan@…`; next, make outbound delivery audit metadata clearly identify the binding/account that acted across every connector path.
 

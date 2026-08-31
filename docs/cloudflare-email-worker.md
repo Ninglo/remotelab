@@ -124,7 +124,7 @@ New mailbox roots now default outbound delivery to `resend_api`. If `RESEND_API_
 remotelab mail send --to someone@example.com --subject "RemoteLab update" --text "Hello from RemoteLab"
 ```
 
-For longer bodies, use stdin or a file:
+For any body with line breaks, use stdin or a UTF-8 text file. `--text` is literal, so typing `\n` inside it sends the visible characters `\n` rather than a real line break.
 
 ```bash
 cat draft.txt | remotelab mail send --to someone@example.com --subject "Weekly update" --stdin
