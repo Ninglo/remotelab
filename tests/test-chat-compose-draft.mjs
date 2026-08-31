@@ -222,9 +222,8 @@ function createContext({
     isDesktop: true,
     selectedTool: null,
     selectedModel: null,
-    currentToolReasoningKind: 'toggle',
-    selectedEffort: null,
-    thinkingEnabled: true,
+    currentToolReasoningKind: 'enum',
+    selectedEffort: 'medium',
     renderImagePreviews() {},
     setAttachmentPickerDisabled() {},
     fetchJsonOrRedirect() {

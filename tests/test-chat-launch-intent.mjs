@@ -163,7 +163,6 @@ function createHarness({ href, search, isStandalone = true, userAgent = 'Android
     inlineProviderSelect: createElement(),
     inlineModelSelect: createElement(),
     effortSelect: createElement(),
-    thinkingToggle: createElement(),
     compactBtn: createElement(),
     dropToolsBtn: createElement(),
     contextTokens: createElement(),

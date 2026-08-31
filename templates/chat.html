@@ -157,7 +157,6 @@
             <select class="tool-select" id="inlineToolSelect" disabled></select>
             <select class="provider-select" id="inlineProviderSelect" disabled style="display:none" title="Choose model provider" aria-label="Choose model provider" data-i18n-title="tooling.providerTitle" data-i18n-aria-label="tooling.providerAriaLabel"></select>
             <select class="model-select" id="inlineModelSelect" disabled></select>
-            <button class="thinking-toggle" id="thinkingToggle" disabled data-i18n="tooling.thinking">Thinking</button>
             <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
           </div>
           <div class="input-config-group right">
@@ -267,7 +266,6 @@
           <div class="provider-helper-field">
             <label for="addToolReasoningKindSelect" data-i18n="modal.thinkingMode">Thinking mode</label>
             <select id="addToolReasoningKindSelect">
-              <option value="toggle" data-i18n="modal.thinking.toggle">Toggle</option>
               <option value="enum" data-i18n="modal.thinking.levels">Levels</option>
               <option value="none" data-i18n="modal.thinking.none">None</option>
             </select>
@@ -281,7 +279,7 @@
             <div class="provider-helper-note" data-i18n="modal.internalIdentityNote">Derived automatically from the command. No separate ID field in simple mode.</div>
           </div>
         </div>
-        <div class="provider-helper-note" data-i18n="modal.thinkingModeNote">Use `none` if the tool has no model-side reasoning control. For Claude-family tools, use `toggle`; for Codex-family tools, use `levels`. If the command needs different CLI flags, use the advanced path below.</div>
+        <div class="provider-helper-note" data-i18n="modal.thinkingModeNote">Use `levels` for model-side reasoning effort, including two-level off/on capabilities. Use `none` only when the tool has no reasoning control. If the command needs different CLI flags, use the advanced path below.</div>
         <div class="provider-helper-status" id="addToolStatus"></div>
       </div>
 

@@ -103,7 +103,7 @@ function setupTempHome() {
         promptMode: 'bare-user',
         flattenPrompt: true,
         models: [{ id: 'sonnet', label: 'Claude Sonnet' }],
-        reasoning: { kind: 'toggle', label: 'Thinking' },
+        reasoning: { kind: 'enum', label: 'Thinking', levels: ['none', 'low', 'medium', 'high'], default: 'medium' },
       },
     ], null, 2),
     'utf8',

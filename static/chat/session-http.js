@@ -546,7 +546,6 @@ function buildSessionListOrganizerPayload() {
     tool: selectedTool || preferredTool || "codex",
     ...(selectedModel ? { model: selectedModel } : {}),
     ...(selectedEffort ? { effort: selectedEffort } : {}),
-    thinking: thinkingEnabled === true,
     scope: {
       currentSourceFilter: scope.currentSourceFilter,
       organizerSourceFilter: scope.organizerSourceFilter,
@@ -653,7 +652,6 @@ async function createSessionListOrganizerRun(payload) {
       text: buildSessionListOrganizerTask(payload || {}),
       ...(payload?.model ? { model: payload.model } : {}),
       ...(payload?.effort ? { effort: payload.effort } : {}),
-      ...(payload?.thinking ? { thinking: true } : {}),
     }),
   });
 

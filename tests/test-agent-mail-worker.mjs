@@ -142,8 +142,8 @@ try {
   await saveUiRuntimeSelection({
     selectedTool: 'claude',
     selectedModel: 'claude-sonnet-4-5',
-    thinkingEnabled: true,
-    reasoningKind: 'toggle',
+    selectedEffort: 'high',
+    reasoningKind: 'enum',
   });
 
   const ingested = await ingestRawMessage(
@@ -213,8 +213,8 @@ try {
   assert.doesNotMatch(messageSubmissions[0].text, /Prefer completeness, careful troubleshooting/);
   assert.equal(messageSubmissions[0].tool, 'claude');
   assert.equal(messageSubmissions[0].model, 'claude-sonnet-4-5');
-  assert.equal(messageSubmissions[0].thinking, true);
-  assert.equal(messageSubmissions[0].effort, undefined);
+  assert.equal(messageSubmissions[0].effort, 'high');
+  assert.equal(messageSubmissions[0].thinking, undefined);
 
   const updated = (await findQueueItem(approved.id, mailboxRoot))?.item;
   assert.equal(updated?.status, 'processing_for_reply');

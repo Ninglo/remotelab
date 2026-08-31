@@ -69,6 +69,12 @@ const rpcCatalog = parsePiRpcModels([
   },
   {
     provider: 'moonshotai',
+    id: 'kimi-k2.5',
+    reasoning: true,
+    compat: { supportsReasoningEffort: false },
+  },
+  {
+    provider: 'moonshotai',
     id: 'kimi-k2.7-code',
     reasoning: true,
     thinkingLevelMap: { off: null },
@@ -115,6 +121,16 @@ assert.deepEqual(
       default: 'max',
       defaultEffort: 'max',
       providerDefault: true,
+      kind: 'enum',
+    },
+    {
+      id: 'moonshotai/kimi-k2.5',
+      provider: 'moonshotai',
+      levels: ['off', 'medium'],
+      control: '',
+      default: 'medium',
+      defaultEffort: 'medium',
+      providerDefault: false,
       kind: 'enum',
     },
     {

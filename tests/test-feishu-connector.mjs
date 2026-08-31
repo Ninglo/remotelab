@@ -1597,8 +1597,8 @@ try {
   await saveUiRuntimeSelection({
     selectedTool: 'claude',
     selectedModel: 'claude-sonnet-4-5',
-    thinkingEnabled: true,
-    reasoningKind: 'toggle',
+    selectedEffort: 'high',
+    reasoningKind: 'enum',
   });
   const reply = await generateRemoteLabReply(
     {
@@ -1649,8 +1649,8 @@ try {
   assert.equal(createdPayload?.sourceContext?.chatId, 'chat_for_scope');
   assert.equal(submittedPayload?.tool, 'claude');
   assert.equal(submittedPayload?.model, 'claude-sonnet-4-5');
-  assert.equal(submittedPayload?.thinking, true);
-  assert.equal(submittedPayload?.effort, undefined);
+  assert.equal(submittedPayload?.effort, 'high');
+  assert.equal(submittedPayload?.thinking, undefined);
   assert.equal(submittedPayload?.text, 'Please confirm the app scope.');
   assert.deepEqual(generatedReplyResourcePayload, {
     params: { type: 'image' },
@@ -1768,7 +1768,6 @@ try {
   await saveUiRuntimeSelection({
     selectedTool: 'codex',
     selectedModel: 'gpt-5.4',
-    thinkingEnabled: false,
   });
   const reply = await generateRemoteLabReply(
     {
@@ -1939,7 +1938,6 @@ try {
   await saveUiRuntimeSelection({
     selectedTool: 'codex',
     selectedModel: '',
-    thinkingEnabled: false,
   });
   const reply = await generateRemoteLabReply(
     {

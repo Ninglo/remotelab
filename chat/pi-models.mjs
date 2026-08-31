@@ -144,7 +144,6 @@ function buildPiReasoning(model) {
       label: 'Thinking',
       levels: ['off', enabledLevel],
       default: enabledLevel,
-      control: 'binary',
     };
   }
 

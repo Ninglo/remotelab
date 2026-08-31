@@ -160,7 +160,6 @@ async function dispatchAction(msg) {
         if (Object.prototype.hasOwnProperty.call(msg, "tool")) payload.tool = msg.tool || "";
         if (Object.prototype.hasOwnProperty.call(msg, "model")) payload.model = msg.model || "";
         if (Object.prototype.hasOwnProperty.call(msg, "effort")) payload.effort = msg.effort || "";
-        if (Object.prototype.hasOwnProperty.call(msg, "thinking")) payload.thinking = msg.thinking === true;
         const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(msg.sessionId)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -276,7 +275,6 @@ async function dispatchAction(msg) {
               if (msg.tool) formData.set("tool", msg.tool);
               if (msg.model) formData.set("model", msg.model);
               if (msg.effort) formData.set("effort", msg.effort);
-              if (msg.thinking) formData.set("thinking", "true");
               for (const image of attachments) {
                 if (image?.file) {
                   formData.append("attachments", image.file, image.originalName || image.file.name || "attachment");
@@ -319,7 +317,6 @@ async function dispatchAction(msg) {
                 ...(msg.tool ? { tool: msg.tool } : {}),
                 ...(msg.model ? { model: msg.model } : {}),
                 ...(msg.effort ? { effort: msg.effort } : {}),
-                ...(msg.thinking ? { thinking: true } : {}),
               }),
             });
         const acknowledgedRequestId = data.requestId || requestId;
@@ -555,7 +552,6 @@ function updateStatus(connState, session = getCurrentSession()) {
     inlineToolSelect.disabled = true;
     inlineProviderSelect.disabled = true;
     inlineModelSelect.disabled = true;
-    thinkingToggle.disabled = true;
     effortSelect.disabled = true;
     if (typeof syncSessionTemplateControls === "function") {
       syncSessionTemplateControls();
@@ -643,7 +639,6 @@ function updateStatus(connState, session = getCurrentSession()) {
   inlineToolSelect.disabled = visitorMode || archived;
   inlineProviderSelect.disabled = !composerEnabled || archived;
   inlineModelSelect.disabled = !composerEnabled || archived;
-  thinkingToggle.disabled = !composerEnabled || archived;
   effortSelect.disabled = !composerEnabled || archived;
   if (typeof syncSessionTemplateControls === "function") {
     syncSessionTemplateControls();

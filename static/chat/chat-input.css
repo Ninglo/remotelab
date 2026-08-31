@@ -111,15 +111,6 @@
 .model-select { max-width: 210px; }
 .effort-select { max-width: 92px; }
 .tool-select:focus, .provider-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
-.thinking-toggle {
-  padding: 4px 10px; background: transparent; border: 1px solid var(--border);
-  border-radius: 6px; color: var(--text-muted); font-size: 12px;
-  cursor: pointer; white-space: nowrap; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; font-family: inherit;
-}
-.thinking-toggle:hover { border-color: var(--border-strong); color: var(--text-secondary); }
-.thinking-toggle.active {
-  background: var(--bg-tertiary); border-color: var(--border-strong); color: var(--text);
-}
 #contextTokens {
   font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0;
   font-variant-numeric: tabular-nums;

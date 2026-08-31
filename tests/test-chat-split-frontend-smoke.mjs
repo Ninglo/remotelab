@@ -8,6 +8,10 @@ import vm from 'vm';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
+const chatTemplateSource = readFileSync(join(repoRoot, 'templates', 'chat.html'), 'utf8');
+
+assert.doesNotMatch(chatTemplateSource, /id="thinkingToggle"/, 'the composer should not expose a separate Thinking toggle');
+assert.doesNotMatch(chatTemplateSource, /value="toggle"/, 'custom tool reasoning should use levels or none only');
 
 const filesToParse = [
   join(repoRoot, 'static', 'chat.js'),

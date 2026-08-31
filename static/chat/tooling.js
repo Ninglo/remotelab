@@ -1,4 +1,4 @@
-// ---- Thinking toggle / effort select ----
+// ---- Thinking effort select ----
 function t(key, vars) {
   return window.remotelabT ? window.remotelabT(key, vars) : key;
 }
@@ -47,7 +47,6 @@ function buildRuntimeSelectionPayload() {
     selectedTool,
     selectedModel: selectedModel || '',
     selectedEffort: currentToolReasoningKind === 'enum' ? (selectedEffort || '') : '',
-    thinkingEnabled: currentToolReasoningKind === 'toggle' ? thinkingEnabled === true : false,
     reasoningKind: currentToolReasoningKind || 'none',
   };
 }
@@ -95,10 +94,9 @@ function cloneReasoningState(reasoning, fallbackLabel = t("tooling.thinking")) {
       label,
       levels,
       default: levels.includes(defaultValue) ? defaultValue : levels[0],
-      ...(reasoning.control === "binary" ? { control: "binary" } : {}),
     };
   }
-  if (kind === "toggle" || kind === "none") {
+  if (kind === "none") {
     return { kind, label };
   }
   return null;
@@ -137,18 +135,13 @@ function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurre
     currentToolReasoningKind === "enum"
       ? reasoning.levels || []
       : null;
-  thinkingToggle.textContent = currentToolReasoningLabel;
-
   if (currentToolReasoningKind === "enum") {
-    thinkingToggle.style.display = "none";
     effortSelect.style.display = "";
     effortSelect.innerHTML = "";
     for (const level of currentToolEffortLevels) {
       const opt = document.createElement("option");
       opt.value = level;
-      opt.textContent = reasoning.control === "binary"
-        ? (level === "off" ? t("tooling.off") : t("tooling.on"))
-        : level;
+      opt.textContent = level;
       effortSelect.appendChild(opt);
     }
 
@@ -188,23 +181,7 @@ function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurre
 
   selectedEffort = null;
   effortSelect.style.display = "none";
-
-  if (currentToolReasoningKind === "toggle") {
-    thinkingToggle.style.display = "";
-    if (sessionPreferences?.hasThinking) {
-      thinkingEnabled = sessionPreferences.thinking;
-    }
-    updateThinkingUI();
-    return;
-  }
-
-  thinkingToggle.style.display = "none";
 }
-
-function updateThinkingUI() {
-  thinkingToggle.classList.toggle("active", thinkingEnabled);
-}
-updateThinkingUI();
 
 function getAttachedSessionToolPreferences(toolId = selectedTool) {
   const session = getCurrentSession();
@@ -214,8 +191,6 @@ function getAttachedSessionToolPreferences(toolId = selectedTool) {
     model: typeof session.model === "string" ? session.model : "",
     hasEffort: Object.prototype.hasOwnProperty.call(session, "effort"),
     effort: typeof session.effort === "string" ? session.effort : "",
-    hasThinking: Object.prototype.hasOwnProperty.call(session, "thinking"),
-    thinking: session.thinking === true,
   };
 }
 
@@ -227,18 +202,9 @@ function persistCurrentSessionToolPreferences() {
     tool: selectedTool,
     model: selectedModel || "",
     effort: selectedEffort || "",
-    thinking: currentToolReasoningKind === "toggle" ? thinkingEnabled : false,
   };
   dispatchAction(payload);
 }
-
-thinkingToggle.addEventListener("click", () => {
-  thinkingEnabled = !thinkingEnabled;
-  localStorage.setItem("thinkingEnabled", thinkingEnabled);
-  updateThinkingUI();
-  queueRuntimeSelectionSync();
-  persistCurrentSessionToolPreferences();
-});
 
 effortSelect.addEventListener("change", () => {
   selectedEffort = effortSelect.value;
@@ -294,7 +260,7 @@ function setAddToolStatus(message = "", tone = "") {
 
 function syncQuickAddControls() {
   const family = addToolRuntimeFamilySelect?.value || "claude-stream-json";
-  const allowedKinds = family === "codex-json" ? ["enum", "none"] : ["toggle", "none"];
+  const allowedKinds = ["enum", "none"];
 
   for (const opt of addToolReasoningKindSelect.options) {
     const allowed = allowedKinds.includes(opt.value);
@@ -320,7 +286,7 @@ function getAddToolDraft() {
   const runtimeFamily =
     addToolRuntimeFamilySelect?.value || "claude-stream-json";
   const models = parseModelLines(addToolModelsInput?.value || "");
-  const reasoningKind = addToolReasoningKindSelect?.value || "toggle";
+  const reasoningKind = addToolReasoningKindSelect?.value || "enum";
   const reasoning = { kind: reasoningKind, label: t("tooling.thinking") };
   if (reasoningKind === "enum") {
     reasoning.levels = parseReasoningLevels(addToolReasoningLevelsInput?.value || "")
@@ -1056,7 +1022,6 @@ function resetCurrentModelPickerUi() {
   inlineProviderSelect.style.display = "none";
   inlineModelSelect.innerHTML = "";
   inlineModelSelect.style.display = "none";
-  thinkingToggle.style.display = "none";
   effortSelect.style.display = "none";
 }
 

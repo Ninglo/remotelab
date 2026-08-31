@@ -55,9 +55,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 - User slice: mobile-first owner switching between several model providers and reasoning-capability shapes from the composer.
 - Observed friction or ask: one provider-qualified model list becomes too long to scan, while a universal Thinking effort list falsely suggests every reasoning model supports the same levels. Adding more selectors can also crowd the narrow composer row.
 - Signal strength: concrete live-catalog density and correctness issue with a bounded frontend/runtime-metadata fix.
-- Product implication: split Pi selection into Provider then filtered Model, derive each model’s Thinking choices from provider metadata, collapse on/off-only reasoning into a binary control, hide meaningless controls for fixed-thinking models, size selects from selected text, and keep the full control strip horizontally scrollable on mobile.
+- Product implication: split Pi selection into Provider then filtered Model, derive each model’s Thinking choices from provider metadata, expose every adjustable reasoning capability through one levels dropdown, represent on/off-only models as a two-level dropdown instead of a separate toggle contract, hide meaningless controls for fixed-thinking models, size selects from selected text, and keep the full control strip horizontally scrollable on mobile.
 - Promote to: Pi model discovery, composer runtime controls, and mobile/static regression coverage.
-- Follow-up: validate touch scrolling and native select sizing on iPhone; only replace native selects with custom popovers if real-device behavior still feels cramped.
+- Follow-up: owner review on 2026-08-31 removed the separate toggle mode entirely; validate touch scrolling and native select sizing on iPhone, and only replace native selects with custom popovers if real-device behavior still feels cramped.
 
 ### 2026-08-30 — New Session should remain local until the first send
 

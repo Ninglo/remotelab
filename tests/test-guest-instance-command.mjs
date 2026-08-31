@@ -501,7 +501,6 @@ const ownerMicroSelection = {
   selectedTool: 'micro-agent',
   selectedModel: 'gpt-5.5',
   selectedEffort: 'xhigh',
-  thinkingEnabled: false,
   reasoningKind: 'enum',
 };
 const ownerTools = [
@@ -523,7 +522,6 @@ const plannedLegacyGuestDefaults = planGuestRuntimeDefaults({
     selectedTool: 'codex',
     selectedModel: '',
     selectedEffort: 'medium',
-    thinkingEnabled: false,
     reasoningKind: 'enum',
   },
   guestTools: [],
@@ -580,7 +578,6 @@ const plannedUpdatedGuestDefaults = planGuestRuntimeDefaults({
     selectedTool: 'micro-agent',
     selectedModel: 'gpt-5.2-codex',
     selectedEffort: 'medium',
-    thinkingEnabled: false,
     reasoningKind: 'enum',
   },
   guestTools: [{
@@ -782,7 +779,6 @@ const plannedRouterStaleGuest = planGuestRuntimeDefaults({
     selectedTool: 'micro-agent',
     selectedModel: 'gpt-5.5',
     selectedEffort: 'medium',
-    thinkingEnabled: false,
     reasoningKind: 'enum',
   },
   guestTools: [{

@@ -100,7 +100,7 @@ function cloneReasoning(reasoning, fallbackLabel = 'Thinking') {
       default: levels.includes(defaultValue) ? defaultValue : levels[0],
     };
   }
-  if (kind === 'toggle' || kind === 'none') {
+  if (kind === 'none') {
     return { kind, label };
   }
   return null;
@@ -124,9 +124,6 @@ function buildModelReasoning(model, fallbackReasoning = null) {
       levels,
       default: model.defaultReasoning || levels[0],
     }, fallbackLabel);
-  }
-  if (kind === 'toggle') {
-    return cloneReasoning({ kind: 'toggle', label: fallbackLabel }, fallbackLabel);
   }
   if (kind === 'none') {
     return cloneReasoning({ kind: 'none', label: fallbackLabel }, fallbackLabel);
@@ -359,7 +356,7 @@ async function readCodexRecentModels(homeDir) {
 /**
  * Returns { models, effortLevels } for a given tool.
  * - models: [{ id, label, defaultEffort?, effortLevels? }]
- * - effortLevels: string[] | null (null means tool uses a binary thinking toggle)
+ * - effortLevels: string[] | null (null means the tool has no reasoning control)
  */
 export async function getModelsForTool(toolId) {
   if (toolId === 'claude') {

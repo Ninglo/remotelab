@@ -282,7 +282,6 @@ try {
     selectedTool: 'codex',
     selectedModel: 'ui-model-test',
     selectedEffort: 'medium',
-    thinkingEnabled: false,
     reasoningKind: 'enum',
   }, null, 2)}\n`, 'utf8');
 

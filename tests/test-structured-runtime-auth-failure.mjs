@@ -87,7 +87,7 @@ function setupTempHome() {
         command: 'fake-catpaw',
         runtimeFamily: 'claude-stream-json',
         models: [{ id: 'sonnet', label: 'Claude Sonnet' }],
-        reasoning: { kind: 'toggle', label: 'Thinking' },
+        reasoning: { kind: 'enum', label: 'Thinking', levels: ['none', 'low', 'medium', 'high'], default: 'medium' },
       },
     ], null, 2),
     'utf8',
@@ -154,7 +154,7 @@ async function submitMessage(port, sessionId) {
     text: 'Hello from fake catpaw',
     tool: 'fake-catpaw',
     model: 'sonnet',
-    thinking: true,
+    effort: 'high',
   });
   assert.ok(res.status === 202 || res.status === 200, 'submit message should succeed');
   return res.json.run;

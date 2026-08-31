@@ -87,7 +87,7 @@ function setupTempHome() {
         command: 'fake-claude',
         runtimeFamily: 'claude-stream-json',
         models: [{ id: 'fake-sonnet', label: 'Fake Sonnet' }],
-        reasoning: { kind: 'toggle', label: 'Thinking' },
+        reasoning: { kind: 'enum', label: 'Thinking', levels: ['none', 'low', 'medium', 'high'], default: 'medium' },
       },
     ], null, 2),
     'utf8',

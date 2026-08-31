@@ -405,7 +405,6 @@ const inlineToolSelect = document.getElementById("inlineToolSelect");
 const inlineProviderSelect = document.getElementById("inlineProviderSelect");
 const inlineModelSelect = document.getElementById("inlineModelSelect");
 const effortSelect = document.getElementById("effortSelect");
-const thinkingToggle = document.getElementById("thinkingToggle");
 const cancelBtn = document.getElementById("cancelBtn");
 const contextTokens = document.getElementById("contextTokens");
 const compactBtn = document.getElementById("compactBtn");
@@ -1243,15 +1242,13 @@ let preferredAgentTemplateId = normalizeStoredAgentTemplateId(
 let preferredAgentTemplateName = normalizeStoredAgentTemplateName(
   localStorage.getItem(PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY),
 );
-// Default thinking to enabled; only disable if explicitly set to 'false'
-let thinkingEnabled = localStorage.getItem("thinkingEnabled") !== "false";
 // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
 let selectedModel = null;
 let selectedModelProvider = "";
 let selectedEffort = null;
 let currentToolModels = []; // model list for current tool
 let currentToolBaseReasoning = { kind: "none", label: "Reasoning" };
-let currentToolEffortLevels = null; // null = binary toggle, string[] = effort dropdown
+let currentToolEffortLevels = null; // null = no reasoning control, string[] = effort dropdown
 let currentToolReasoningKind = "none";
 let currentToolReasoningLabel = "Reasoning";
 let currentToolReasoningDefault = null;

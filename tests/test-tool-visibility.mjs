@@ -29,7 +29,7 @@ writeFileSync(
       command: 'public-helper',
       runtimeFamily: 'claude-stream-json',
       models: [{ id: 'public-helper-v1', label: 'Public Helper v1' }],
-      reasoning: { kind: 'toggle', label: 'Thinking' },
+      reasoning: { kind: 'enum', label: 'Thinking', levels: ['none', 'low', 'medium', 'high'], default: 'medium' },
     },
     {
       id: 'private-helper',
@@ -38,7 +38,7 @@ writeFileSync(
       visibility: 'private',
       runtimeFamily: 'claude-stream-json',
       models: [{ id: 'private-helper-v1', label: 'Private Helper v1' }],
-      reasoning: { kind: 'toggle', label: 'Thinking' },
+      reasoning: { kind: 'enum', label: 'Thinking', levels: ['none', 'low', 'medium', 'high'], default: 'medium' },
     },
   ], null, 2)}\n`,
   'utf8',
@@ -48,7 +48,7 @@ process.env.HOME = tempHome;
 process.env.PATH = `${fakeBin}:${process.env.PATH || ''}`;
 
 const toolsModule = await import(pathToFileURL(join(repoRoot, 'lib', 'tools.mjs')).href);
-const { getAvailableTools } = toolsModule;
+const { getAvailableTools, saveSimpleToolAsync } = toolsModule;
 
 try {
   const tools = await getAvailableTools();
@@ -64,6 +64,17 @@ try {
   assert.equal(publicTool?.visibility || '', '', 'public tools should not be forced private');
   assert.equal(privateTool?.visibility, 'private', 'private visibility should survive normalization');
   assert.equal(builtinClaude?.visibility || '', '', 'builtin Claude should be visible in normal pickers');
+  await assert.rejects(
+    saveSimpleToolAsync({
+      name: 'Removed Toggle Tool',
+      command: 'removed-toggle-tool',
+      runtimeFamily: 'claude-stream-json',
+      models: [{ id: 'removed-toggle-model', label: 'Removed Toggle Model' }],
+      reasoning: { kind: 'toggle', label: 'Thinking' },
+    }),
+    /Reasoning kind "toggle" is not supported/,
+    'simple tools should use enum levels rather than the removed toggle reasoning kind',
+  );
 } finally {
   rmSync(tempHome, { recursive: true, force: true });
 }

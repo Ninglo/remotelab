@@ -55,7 +55,6 @@ const context = {
   inlineToolSelect: element(),
   inlineProviderSelect: element(),
   inlineModelSelect: element(),
-  thinkingToggle: element(),
   effortSelect: element(),
   syncSessionTemplateControls() {},
   syncComposerVoiceCleanupToggle() {},

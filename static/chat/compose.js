@@ -840,7 +840,6 @@ function sendMessage(existingRequestId) {
   const sendModel = selectedModel;
   const sendReasoningKind = currentToolReasoningKind;
   const sendEffort = selectedEffort;
-  const sendThinking = thinkingEnabled === true;
 
   if (typeof setComposerPendingSendState === "function") {
     setComposerPendingSendState({
@@ -905,10 +904,8 @@ function sendMessage(existingRequestId) {
       if (!visitorMode) {
         if (sendTool) msg.tool = sendTool;
         if (sendModel) msg.model = sendModel;
-        if (sendReasoningKind === "enum") {
-          if (sendEffort) msg.effort = sendEffort;
-        } else if (sendReasoningKind === "toggle") {
-          msg.thinking = sendThinking;
+        if (sendReasoningKind === "enum" && sendEffort) {
+          msg.effort = sendEffort;
         }
       }
       if (outboundImages.length > 0) {
