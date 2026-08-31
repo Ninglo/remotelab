@@ -52,6 +52,37 @@ export const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
 
 const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;
 const UNICODE_EMOJI_PATTERN = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?)*)/gu;
+const FEISHU_CODE_BLOCK_LANGUAGES = new Set([
+  'BASH',
+  'C',
+  'CPP',
+  'GO',
+  'HTML',
+  'JAVA',
+  'JAVASCRIPT',
+  'JSON',
+  'KOTLIN',
+  'PHP',
+  'PYTHON',
+  'RUBY',
+  'RUST',
+  'SHELL',
+  'SQL',
+  'SWIFT',
+  'THRIFT',
+  'TYPESCRIPT',
+  'XML',
+  'YAML',
+]);
+const FEISHU_CODE_BLOCK_LANGUAGE_ALIASES = new Map([
+  ['C++', 'CPP'],
+  ['JS', 'JAVASCRIPT'],
+  ['PY', 'PYTHON'],
+  ['SH', 'SHELL'],
+  ['TS', 'TYPESCRIPT'],
+  ['YML', 'YAML'],
+  ['ZSH', 'SHELL'],
+]);
 
 export function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -707,18 +738,65 @@ export function collectFeishuTopicParentMessageCandidates(summary) {
   return candidates;
 }
 
+function parseMarkdownFenceStart(line) {
+  const match = String(line || '').match(/^\s{0,3}(`{3,}|~{3,})(.*)$/);
+  if (!match) return null;
+  const info = match[2].trim();
+  if (match[1][0] === '`' && info.includes('`')) return null;
+  return {
+    marker: match[1][0],
+    length: match[1].length,
+    info,
+  };
+}
+
+function isMarkdownFenceEnd(line, fence) {
+  if (!fence) return false;
+  const match = String(line || '').match(/^\s{0,3}(`+|~+)\s*$/);
+  return Boolean(
+    match
+    && match[1][0] === fence.marker
+    && match[1].length >= fence.length
+  );
+}
+
+function normalizeWhitespaceOutsideCodeFences(value) {
+  const output = [];
+  let fence = null;
+  for (const rawLine of String(value || '').split('\n')) {
+    if (fence) {
+      const closesFence = isMarkdownFenceEnd(rawLine, fence);
+      output.push(closesFence ? rawLine.trim() : rawLine);
+      if (closesFence) fence = null;
+      continue;
+    }
+    const opening = parseMarkdownFenceStart(rawLine);
+    if (opening) {
+      output.push(rawLine.trim());
+      fence = opening;
+      continue;
+    }
+    const line = rawLine
+      .replace(/[ \t]+([,.;:!?，。！？；：、])/g, '$1')
+      .replace(/([([{（【])[ \t]+/g, '$1')
+      .replace(/[ \t]+([)\]}）】])/g, '$1')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+    if (line) {
+      output.push(line);
+    } else if (output.length > 0 && output[output.length - 1] !== '') {
+      output.push('');
+    }
+  }
+  return output.join('\n');
+}
+
 export function stripOutboundEmojiArtifacts(text) {
-  return String(text || '')
+  const stripped = String(text || '')
     .replace(UNICODE_EMOJI_PATTERN, ' ')
     .replace(FEISHU_EMOJI_ALIAS_PATTERN, ' ')
-    .replace(/[\u200D\uFE0E\uFE0F]/g, '')
-    .replace(/\s+([,.;:!?，。！？；：、])/g, '$1')
-    .replace(/([([{（【])\s+/g, '$1')
-    .replace(/\s+([)\]}）】])/g, '$1')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n[ \t]+/g, '\n')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n');
+    .replace(/[\u200D\uFE0E\uFE0F]/g, '');
+  return normalizeWhitespaceOutsideCodeFences(stripped);
 }
 
 export function normalizeReplyText(text) {
@@ -850,14 +928,61 @@ function pushFeishuDocumentLine(content, block, mentionEntries) {
   }
 }
 
+function getFeishuDocumentLineText(block) {
+  if (block?.type !== 'line' || !Array.isArray(block.segments)) return null;
+  let text = '';
+  for (const segment of block.segments) {
+    if (segment.type !== 'text' && segment.type !== 'inline_math') return null;
+    text += segment.text;
+  }
+  return text;
+}
+
+function normalizeFeishuCodeBlockLanguage(info) {
+  const token = String(info || '').trim().split(/\s+/, 1)[0].toUpperCase();
+  const language = FEISHU_CODE_BLOCK_LANGUAGE_ALIASES.get(token) || token;
+  return FEISHU_CODE_BLOCK_LANGUAGES.has(language) ? language : '';
+}
+
+function consumeFeishuCodeBlock(blocks, startIndex) {
+  const openingLine = getFeishuDocumentLineText(blocks[startIndex]);
+  const fence = parseMarkdownFenceStart(openingLine);
+  if (!fence) return null;
+  const codeLines = [];
+  for (let index = startIndex + 1; index < blocks.length; index += 1) {
+    const line = getFeishuDocumentLineText(blocks[index]);
+    if (line === null) return null;
+    if (isMarkdownFenceEnd(line, fence)) {
+      return {
+        endIndex: index,
+        language: normalizeFeishuCodeBlockLanguage(fence.info),
+        text: codeLines.join('\n') || '\u200B',
+      };
+    }
+    codeLines.push(line);
+  }
+  return null;
+}
+
 export async function buildFeishuPostContent(text, mentions, options = {}) {
   const normalized = normalizeReplyText(text);
   const mentionEntries = normalizeMentionEntries(mentions)
     .sort((left, right) => Math.max(right.token.length, right.displayName.length) - Math.max(left.token.length, left.displayName.length));
   const document = await buildFeishuMathDocument(normalized, options);
   const content = [];
-  for (const block of document.blocks) {
+  for (let index = 0; index < document.blocks.length; index += 1) {
+    const block = document.blocks[index];
     if (block.type === 'line') {
+      const codeBlock = consumeFeishuCodeBlock(document.blocks, index);
+      if (codeBlock) {
+        content.push([{
+          tag: 'code_block',
+          ...(codeBlock.language ? { language: codeBlock.language } : {}),
+          text: codeBlock.text,
+        }]);
+        index = codeBlock.endIndex;
+        continue;
+      }
       pushFeishuDocumentLine(content, block, mentionEntries);
       continue;
     }

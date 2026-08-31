@@ -1223,6 +1223,11 @@ assert.equal(
   '<at user_id="ou_mention_1">江虹</at> 这是一条消息。',
   'outbound emoji and sticker aliases should be stripped before mention compilation',
 );
+assert.equal(
+  normalizeReplyText('前文  多余空格\n```json\n{\n  "nested": {\n    "value": 1\n  }\n}\n```\n后文  多余空格'),
+  '前文 多余空格\n```json\n{\n  "nested": {\n    "value": 1\n  }\n}\n```\n后文 多余空格',
+  'outbound normalization should preserve indentation inside fenced code blocks',
+);
 
 const markdownPostContent = JSON.parse(await buildFeishuPostContent('**重点**\n\n- 第一项\n- 第二项'));
 assert.deepEqual(markdownPostContent.zh_cn.content, [
@@ -1231,6 +1236,26 @@ assert.deepEqual(markdownPostContent.zh_cn.content, [
   [{ tag: 'md', text: '- 第一项' }],
   [{ tag: 'md', text: '- 第二项' }],
 ]);
+
+const fencedCodePostContent = JSON.parse(await buildFeishuPostContent(
+  '结果如下：\n```json\n{\n  "hello": "world",\n  "count": 2\n}\n```\n处理完成。',
+));
+assert.deepEqual(fencedCodePostContent.zh_cn.content, [
+  [{ tag: 'md', text: '结果如下：' }],
+  [{
+    tag: 'code_block',
+    language: 'JSON',
+    text: '{\n  "hello": "world",\n  "count": 2\n}',
+  }],
+  [{ tag: 'md', text: '处理完成。' }],
+]);
+
+const aliasedCodePostContent = JSON.parse(await buildFeishuPostContent('```ts\nconst answer = 42;\n```'));
+assert.deepEqual(aliasedCodePostContent.zh_cn.content, [[{
+  tag: 'code_block',
+  language: 'TYPESCRIPT',
+  text: 'const answer = 42;',
+}]]);
 
 const mentionPostContent = JSON.parse(await buildFeishuPostContent('@_user_1 请看 **这段**', mentionSummary.mentions));
 assert.deepEqual(mentionPostContent.zh_cn.content[0], [
