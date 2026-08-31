@@ -1062,6 +1062,14 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   const hasSpoolCompletion = normalizedEvents.some(
     (e) => e.type === 'status' && typeof e.content === 'string' && e.content.trim() === 'completed',
   );
+  const fatalStatusEvent = normalizedEvents.find(
+    (event) => event?.type === 'status'
+      && typeof event.content === 'string'
+      && /^error:\s*/i.test(event.content.trim()),
+  );
+  const fatalStatusReason = typeof fatalStatusEvent?.content === 'string'
+    ? fatalStatusEvent.content.trim().replace(/^error:\s*/i, '').trim()
+    : '';
 
   const currentNormalizedLineCount = Number.isInteger(run.normalizedLineCount) ? run.normalizedLineCount : 0;
   const currentNormalizedEventCount = Number.isInteger(run.normalizedEventCount) ? run.normalizedEventCount : 0;
@@ -1088,6 +1096,15 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     ...(Number.isInteger(contextWindowTokens) ? { contextWindowTokens } : {}),
     ...(hasSpoolCompletion && !current.spoolCompletionDetectedAt
       ? { spoolCompletionDetectedAt: nowIso() }
+      : {}),
+    ...(fatalStatusReason && current.state !== 'cancelled'
+      ? {
+          state: 'failed',
+          completedAt: current.completedAt || nowIso(),
+          failureReason: fatalStatusReason,
+          spoolFailureDetectedAt: current.spoolFailureDetectedAt || nowIso(),
+          spoolFailureReason: fatalStatusReason,
+        }
       : {}),
   })) || run;
 

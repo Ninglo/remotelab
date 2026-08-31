@@ -296,7 +296,9 @@ export function createSessionTurnCompletionHelpers(services) {
 
     if (allowCompletionEffects && !hasQueuedFollowUps) {
       await queueSessionCompletionTargets(session, finalizedRun, manifest);
-      scheduleSessionStateSuggestion(session, finalizedRun);
+      if (finalizedRun.state === 'completed') {
+        scheduleSessionStateSuggestion(session, finalizedRun);
+      }
     }
 
     const autoCompactionQueued = allowCompletionEffects && !hasQueuedFollowUps
