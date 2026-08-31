@@ -20,6 +20,7 @@ import {
 import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { applyManagedRuntimeEnv, applySharedCodexLock } from './runtime-policy.mjs';
+import { isCodexMissingRolloutFailure } from './provider-runtime-errors.mjs';
 
 const runId = process.argv[2];
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -293,7 +294,7 @@ async function main() {
   }
 
   const prompt = prependAttachmentPaths(manifest.prompt || '', materializedImages);
-  const { command, args, runtimeFamily, provider, envOverrides } = await createToolInvocation(manifest.tool, prompt, {
+  const invocationOptions = {
     dangerouslySkipPermissions: true,
     claudeSessionId: manifest.options?.claudeSessionId,
     codexThreadId: manifest.options?.codexThreadId,
@@ -301,9 +302,9 @@ async function main() {
     thinking: manifest.options?.thinking,
     model: manifest.options?.model,
     effort: manifest.options?.effort,
-  });
-
-  const spawnEnv = await cleanEnv(manifest.tool, manifest, { runtimeFamily, provider, envOverrides });
+  };
+  const initialInvocation = await createToolInvocation(manifest.tool, prompt, invocationOptions);
+  const spawnEnv = await cleanEnv(manifest.tool, manifest, initialInvocation);
 
   const attachmentPaths = [];
   for (const img of materializedImages) {
@@ -338,24 +339,7 @@ async function main() {
     });
   }
 
-  const resolvedCommand = await resolveCommand(command);
-  const lockedInvocation = applySharedCodexLock(
-    manifest.tool || '',
-    resolvedCommand,
-    args,
-    runtimeFamily,
-  );
-  const proc = spawn(await resolveCommand(lockedInvocation.command), lockedInvocation.args, {
-    cwd: resolvedFolder.cwd,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: spawnEnv,
-  });
-
-  await updateRun(runId, (current) => ({
-    ...current,
-    toolProcessId: proc.pid,
-  }));
-
+  let activeProc = null;
   let cancelSent = false;
   let lastOutputAt = Date.now();
   const idleTimeoutMs = Number.isFinite(Number(process.env.REMOTELAB_RUN_IDLE_TIMEOUT_MS))
@@ -369,17 +353,18 @@ async function main() {
       if (!current?.cancelRequested || cancelSent) return;
       cancelSent = true;
       try {
-        proc.kill('SIGTERM');
+        activeProc?.kill('SIGTERM');
       } catch {}
     })();
   }, 250);
 
   const idleTimer = setInterval(() => {
-    if (cancelSent) return;
+    if (cancelSent || !activeProc) return;
     const idleMs = Date.now() - lastOutputAt;
     if (idleMs >= idleTimeoutMs) {
       cancelSent = true;
       const idleMinutes = Math.round(idleMs / 60000);
+      const timedOutProc = activeProc;
       console.error(`[sidecar] Killing tool process for run ${runId} after ${idleMinutes}m idle (no output)`);
       void (async () => {
         await appendRunSpoolRecord(runId, {
@@ -388,9 +373,9 @@ async function main() {
           line: `Tool process killed after ${idleMinutes} minutes of inactivity`,
         });
       })();
-      try { proc.kill('SIGTERM'); } catch {}
+      try { timedOutProc.kill('SIGTERM'); } catch {}
       setTimeout(() => {
-        try { proc.kill('SIGKILL'); } catch {}
+        try { timedOutProc.kill('SIGKILL'); } catch {}
       }, 5000);
     }
   }, IDLE_CHECK_INTERVAL_MS);
@@ -417,69 +402,145 @@ async function main() {
     }
   };
 
-  const recordStderrText = async (text) => {
+  const recordStderrLine = async (line) => {
     lastOutputAt = Date.now();
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    for (const line of trimmed.split(/\r?\n/)) {
-      const clean = line.trim();
-      if (!clean) continue;
-      await appendRunSpoolRecord(runId, {
-        ts: nowIso(),
-        stream: 'stderr',
-        line: clean,
-      });
-    }
+    const clean = line.trim();
+    if (!clean) return;
+    await appendRunSpoolRecord(runId, {
+      ts: nowIso(),
+      stream: 'stderr',
+      line: clean,
+    });
   };
 
-  createInterface({ input: proc.stdout }).on('line', (line) => {
-    void recordStdoutLine(line);
-  });
-  proc.stderr.on('data', (chunk) => {
-    void recordStderrText(chunk.toString());
-  });
+  const runToolAttempt = async (invocation) => {
+    const resolvedCommand = await resolveCommand(invocation.command);
+    const lockedInvocation = applySharedCodexLock(
+      manifest.tool || '',
+      resolvedCommand,
+      invocation.args,
+      invocation.runtimeFamily,
+    );
+    const proc = spawn(await resolveCommand(lockedInvocation.command), lockedInvocation.args, {
+      cwd: resolvedFolder.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: spawnEnv,
+    });
+    activeProc = proc;
+    lastOutputAt = Date.now();
 
-  proc.on('error', (error) => {
-    void (async () => {
-      clearInterval(cancelTimer);
-      clearInterval(idleTimer);
-      const current = await getRun(runId) || run;
-      await persistRunFailure(runId, error, {
-        cancelled: current.cancelRequested === true,
-        logLabel: 'Detached tool process failed before completion',
-        details: {
-          phase: 'tool-process-error',
-        },
-      });
-      process.exit(1);
-    })();
-  });
+    await updateRun(runId, (current) => ({
+      ...current,
+      toolProcessId: proc.pid,
+    }));
 
-  proc.on('exit', (code, signal) => {
-    void (async () => {
-      clearInterval(cancelTimer);
-      clearInterval(idleTimer);
-      const current = await getRun(runId) || run;
-      const completedAt = nowIso();
-      await appendCodexContextMetricsSafely(runId);
-      const result = {
-        completedAt,
-        exitCode: code ?? 1,
-        signal: signal || null,
-        cancelled: current.cancelRequested === true,
+    return await new Promise((resolve) => {
+      const stderrLines = [];
+      let outputWriteChain = Promise.resolve();
+      let outputWriteError = null;
+      let settled = false;
+
+      const queueWrite = (write) => {
+        outputWriteChain = outputWriteChain.then(async () => {
+          try {
+            await write();
+          } catch (error) {
+            outputWriteError ||= error;
+          }
+        });
       };
-      await persistRunTerminalState(
-        runId,
-        result,
-        current.cancelRequested
-          ? 'cancelled'
-          : (code ?? 1) === 0
-            ? 'completed'
-            : 'failed',
-      );
-      process.exit(code ?? 1);
-    })();
-  });
+      const finish = async (result) => {
+        if (settled) return;
+        settled = true;
+        await outputWriteChain;
+        if (activeProc === proc) activeProc = null;
+        resolve({
+          ...result,
+          error: result.error || outputWriteError,
+          stderrText: stderrLines.join('\n'),
+        });
+      };
+
+      createInterface({ input: proc.stdout }).on('line', (line) => {
+        queueWrite(() => recordStdoutLine(line));
+      });
+      createInterface({ input: proc.stderr }).on('line', (line) => {
+        const clean = line.trim();
+        if (!clean) return;
+        stderrLines.push(clean);
+        queueWrite(() => recordStderrLine(clean));
+      });
+
+      proc.once('error', (error) => {
+        void finish({ code: 1, signal: null, error });
+      });
+      proc.once('close', (code, signal) => {
+        void finish({ code: code ?? 1, signal: signal || null, error: null });
+      });
+    });
+  };
+
+  let attempt = await runToolAttempt(initialInvocation);
+  let current = await getRun(runId) || run;
+  const canRecoverMissingCodexRollout = (
+    initialInvocation.runtimeFamily === 'codex-json'
+    && !!manifest.options?.codexThreadId
+    && !attempt.error
+    && attempt.code !== 0
+    && current.cancelRequested !== true
+    && isCodexMissingRolloutFailure(attempt.stderrText)
+  );
+
+  if (canRecoverMissingCodexRollout) {
+    console.warn(`[sidecar] Codex resume state expired for run ${runId}; retrying once with a fresh thread`);
+    await updateRun(runId, (draft) => ({
+      ...draft,
+      resumeRecovery: {
+        provider: 'codex',
+        reason: 'missing_rollout',
+        attemptedAt: nowIso(),
+      },
+    }));
+    const freshInvocation = await createToolInvocation(manifest.tool, prompt, {
+      ...invocationOptions,
+      codexThreadId: null,
+    });
+    attempt = await runToolAttempt(freshInvocation);
+    current = await getRun(runId) || current;
+  }
+
+  clearInterval(cancelTimer);
+  clearInterval(idleTimer);
+
+  if (attempt.error) {
+    await persistRunFailure(runId, attempt.error, {
+      cancelled: current.cancelRequested === true,
+      logLabel: 'Detached tool process failed before completion',
+      details: {
+        phase: 'tool-process-error',
+      },
+    });
+    process.exit(1);
+  }
+
+  const completedAt = nowIso();
+  await appendCodexContextMetricsSafely(runId);
+  const result = {
+    completedAt,
+    exitCode: attempt.code,
+    signal: attempt.signal,
+    cancelled: current.cancelRequested === true,
+  };
+  await persistRunTerminalState(
+    runId,
+    result,
+    current.cancelRequested
+      ? 'cancelled'
+      : attempt.code === 0
+        ? 'completed'
+        : 'failed',
+  );
+  process.exit(attempt.code);
 }
 
 main().catch((error) => {

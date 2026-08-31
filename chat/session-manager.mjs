@@ -5,6 +5,10 @@ import { IS_GUEST_INSTANCE, PUBLIC_BASE_URL } from '../lib/config.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
+  isCodexMissingRolloutFailure,
+  isCodexResumeUnavailableFailure,
+} from './provider-runtime-errors.mjs';
+import {
   appendEvent,
   appendEvents,
   clearContextHead,
@@ -357,18 +361,6 @@ function normalizeProviderFailurePreview(text, maxChars = 280) {
     .map((part) => part.trim())
     .filter((part) => part && !part.includes('remotelab.context_metrics'));
   return clipFailurePreview(parts.join(' | ') || clipped, maxChars);
-}
-
-function isCodexMissingRolloutFailure(text) {
-  const normalized = typeof text === 'string' ? text : '';
-  return /thread\/resume failed:\s*no rollout found for thread id/i.test(normalized)
-    || /\bno rollout found for thread id\b/i.test(normalized);
-}
-
-function isCodexResumeUnavailableFailure(text) {
-  const normalized = typeof text === 'string' ? text : '';
-  return isCodexMissingRolloutFailure(normalized)
-    || /Saved Codex resume thread is no longer available/i.test(normalized);
 }
 
 async function collectRunOutputPreview(runId, maxLines = 3) {
