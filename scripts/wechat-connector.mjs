@@ -21,6 +21,7 @@ import {
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import {
   buildConnectorFailureReply,
+  classifyConnectorFailureReason,
   decideConnectorUserVisibleReply,
 } from '../lib/connector-user-visible-reply.mjs';
 import { ConnectorDriver } from '../lib/connector-driver.mjs';
@@ -32,6 +33,7 @@ import {
 } from '../lib/connector-sdk/surface.mjs';
 import { getWeChatLoginQrUrl, getWeChatLoginSurface } from '../lib/wechat-connector-login.mjs';
 import {
+  assertConnectorPublicationReady,
   createConnectorSession,
   loadConnectorAssistantReply,
   normalizeConnectorPublicationText,
@@ -2164,9 +2166,7 @@ async function generateRemoteLabReply(runtime, summary) {
     state: publication.state,
     publicationMs,
   });
-  if (publication.state !== 'ready') {
-    throw new Error(`reply publication ${publication.state || 'failed'}`);
-  }
+  assertConnectorPublicationReady(publication);
 
   const replyLoadStartedAt = Date.now();
   const finalizedRunId = trimString(publication.finalRunId) || runId || '';
@@ -2669,7 +2669,9 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
     }
     console.error(`[wechat-connector] processing failed for ${summary.messageId}:`, error?.stack || error);
     try {
-      const fallback = buildFailureReply(summary, error?.message || '');
+      const failureReason = error?.message || String(error);
+      const failureCategory = classifyConnectorFailureReason(failureReason);
+      const fallback = buildFailureReply(summary, failureReason);
       const reply = await deliverWeChatVisibleReply(runtime, summary, {
         responseId: buildRequestId(summary),
         kind: 'summary',
@@ -2679,7 +2681,8 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
         status: 'failed_with_notice',
         accountId: summary.accountId,
         peerUserId: summary.peerUserId,
-        error: error?.message || String(error),
+        error: failureReason,
+        failureCategory,
         responseMessageId: reply.message_id || '',
         repliedAt: nowIso(),
         ...getProcessingAckMetadata(),

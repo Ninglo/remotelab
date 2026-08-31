@@ -2,6 +2,7 @@
 import assert from 'assert/strict';
 
 import {
+  assertConnectorPublicationReady,
   createConnectorSession,
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
@@ -57,6 +58,26 @@ assert.deepEqual(fallbackCalls.map((call) => call.path), [
 await assert.rejects(
   createConnectorSession(fallbackRequester, payload, { forkFromSessionId: 'busy-parent' }),
   /busy/,
+);
+
+const readyPublication = { state: 'ready', lastError: '' };
+assert.equal(assertConnectorPublicationReady(readyPublication), readyPublication);
+assert.throws(
+  () => assertConnectorPublicationReady({
+    state: 'failed',
+    lastError: '429 Organization concurrency limit exceeded',
+  }),
+  (error) => {
+    assert.equal(error.code, 'reply_publication_failed');
+    assert.equal(error.publicationState, 'failed');
+    assert.match(error.message, /Organization concurrency limit exceeded/);
+    return true;
+  },
+  'connector publication failures should preserve the final provider reason',
+);
+assert.throws(
+  () => assertConnectorPublicationReady({ state: 'cancelled' }),
+  (error) => error.code === 'reply_publication_cancelled' && error.publicationState === 'cancelled',
 );
 
 let resilientPollCalls = 0;
@@ -127,4 +148,5 @@ await assert.rejects(
 assert.ok(outagePollCalls > 1);
 
 console.log('ok - connector session flow supports fork and explicit fresh-create fallback');
+console.log('ok - connector publication failures preserve provider reasons');
 console.log('ok - connector publication polling survives transient service interruptions');

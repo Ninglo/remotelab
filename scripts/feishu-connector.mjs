@@ -23,6 +23,7 @@ import {
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import {
   buildConnectorFailureReply,
+  classifyConnectorFailureReason,
   decideConnectorUserVisibleReply,
 } from '../lib/connector-user-visible-reply.mjs';
 import {
@@ -65,6 +66,7 @@ import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mj
 import { ConnectorDriver } from '../lib/connector-driver.mjs';
 import { createFeishuConnectorTransport } from '../lib/connector-driver-transports.mjs';
 import {
+  assertConnectorPublicationReady,
   createConnectorSession,
   loadConnectorAssistantReply,
   normalizeConnectorPublicationAttachments,
@@ -1416,9 +1418,7 @@ async function generateRemoteLabReply(runtime, summary) {
       intervalMs: RUN_POLL_INTERVAL_MS,
     },
   );
-  if (publication.state !== 'ready') {
-    throw new Error(`reply publication ${publication.state || 'failed'}`);
-  }
+  assertConnectorPublicationReady(publication);
   const replyAttachments = normalizeConnectorPublicationAttachments(publication);
   let replyText = normalizeReplyText(normalizeConnectorPublicationText(publication, {
     includeAttachmentFallback: replyAttachments.length === 0,
@@ -1972,7 +1972,9 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   } catch (error) {
     console.error(`[feishu-connector] processing failed for ${summary.messageId}:`, error?.stack || error);
     try {
-      const fallback = buildFailureReply(summary, error?.message || '');
+      const failureReason = error?.message || String(error);
+      const failureCategory = classifyConnectorFailureReason(failureReason);
+      const fallback = buildFailureReply(summary, failureReason);
       const reply = await deliverFeishuVisibleReply(runtime, summary, {
         responseId: buildRequestId(summary),
         kind: 'summary',
@@ -1982,7 +1984,8 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
         status: 'failed_with_notice',
         sourceLabel,
         chatId: summary.chatId,
-        error: error?.message || String(error),
+        error: failureReason,
+        failureCategory,
         responseMessageId: reply.message_id || '',
         repliedAt: nowIso(),
       });

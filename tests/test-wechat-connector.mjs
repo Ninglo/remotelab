@@ -44,6 +44,7 @@ let getUpdatesCalls = 0;
 let forceQueuedSubmit = false;
 let forcePlanningSubmit = false;
 let forceDuplicateSubmitWithRunId = false;
+let forcePublicationFailureReason = '';
 
 function decodeResponseId(url, prefix) {
   return decodeURIComponent(String(url || '').slice(prefix.length));
@@ -167,17 +168,19 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url?.startsWith('/api/sessions/sess_wechat_1/responses/')) {
     const prefix = '/api/sessions/sess_wechat_1/responses/';
     const responseId = decodeResponseId(req.url, prefix);
+    const failed = Boolean(forcePublicationFailureReason);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       replyPublication: {
         id: responseId,
         responseIds: [responseId],
-        state: 'ready',
-        ready: true,
+        state: failed ? 'failed' : 'ready',
+        ready: !failed,
         rootRunId: 'run_wechat_1',
         finalRunId: 'run_wechat_1',
         continuationRunIds: [],
-        payload: {
+        lastError: failed ? forcePublicationFailureReason : null,
+        payload: failed ? null : {
           text: '<private>hidden</private> 已处理。',
         },
       },
@@ -370,6 +373,25 @@ try {
   assert.equal(reply.requestId, 'wechat:bot_account_1:msg_reply_scope');
   assert.equal(reply.replyText, '已处理。');
 
+  forcePublicationFailureReason = 'engine_overloaded_error: model engine overloaded after retries';
+  await assert.rejects(
+    generateRemoteLabReply(replyRuntime, {
+      accountId: 'bot_account_1',
+      accountUserId: 'wx_user_owner_1',
+      peerUserId: 'wx_user_peer_1',
+      messageId: 'msg_failed_scope',
+      messageTypeNumeric: 1,
+      messageType: 'user',
+      messageStateNumeric: 2,
+      messageState: 'finish',
+      textPreview: '请处理这条消息。',
+      contentSummary: '请处理这条消息。',
+    }),
+    /engine_overloaded_error/,
+    'wechat generation should preserve the settled provider failure reason for user-visible classification',
+  );
+  forcePublicationFailureReason = '';
+
   forcePlanningSubmit = true;
   const planningReply = await generateRemoteLabReply(replyRuntime, {
     accountId: 'bot_account_1',
@@ -555,6 +577,49 @@ try {
   assert.deepEqual(ackMessages, ['已收到，正在处理。', '最终回复。']);
   assert.equal(ackHandled?.processingAckMessageId, 'reply_1');
   assert.equal(ackHandled?.responseMessageId, 'reply_2');
+
+  const failureMessages = [];
+  let failureHandled = null;
+  await handleWeChatMessage({
+    config: {
+      ...config,
+      processingAckDelayMs: 60_000,
+    },
+    storagePaths: {
+      ...config.storagePaths,
+      handledMessagesPath: join(tempConfigDir, 'handled-known-failure.json'),
+    },
+    accountsDoc,
+    contextTokensDoc: contextDoc,
+    processingMessageIds: new Set(),
+  }, {
+    accountId: 'bot_account_1',
+    peerUserId: 'wx_user_peer_1',
+    messageId: 'msg_known_failure_1',
+    messageTypeNumeric: 1,
+    messageType: 'user',
+    messageStateNumeric: 2,
+    messageState: 'finish',
+    textPreview: '请再试一次。',
+    contentSummary: '请再试一次。',
+  }, {
+    wasMessageHandled: async () => false,
+    markMessageHandled: async (_pathname, _messageKey, metadata) => {
+      failureHandled = metadata;
+    },
+    generateRemoteLabReply: async () => {
+      throw new Error('429 Organization concurrency limit exceeded (maximum 1)');
+    },
+    sendWeChatText: async (_runtime, _summary, text) => {
+      failureMessages.push(text);
+      return { message_id: 'reply_known_failure_1' };
+    },
+  });
+  assert.deepEqual(failureMessages, [
+    '这次没有生成回复。原因：模型账户的并发额度已占满，目前仍没有可用容量，请稍后再试。',
+  ]);
+  assert.equal(failureHandled?.status, 'failed_with_notice');
+  assert.equal(failureHandled?.failureCategory, 'provider_concurrency');
 
   const replayEventsPath = join(tempConfigDir, 'replay-events.jsonl');
   const replayHandledPath = join(tempConfigDir, 'replay-handled.json');

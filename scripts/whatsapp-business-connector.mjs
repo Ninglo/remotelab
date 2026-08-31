@@ -13,9 +13,11 @@ import {
 } from '../lib/external-runtime-selection.mjs';
 import {
   buildConnectorFailureReply,
+  classifyConnectorFailureReason,
   decideConnectorUserVisibleReply,
 } from '../lib/connector-user-visible-reply.mjs';
 import {
+  assertConnectorPublicationReady,
   createConnectorSession,
   loadConnectorAssistantReply,
   normalizeConnectorPublicationText,
@@ -667,9 +669,7 @@ export async function generateRemoteLabReply(runtime, summary) {
     timeoutMs: runtime.config.runPollTimeoutMs,
     intervalMs: runtime.config.runPollIntervalMs,
   });
-  if (trimString(publication?.state).toLowerCase() !== 'ready') {
-    throw new Error(`reply publication ${trimString(publication?.state) || 'failed'}`);
-  }
+  assertConnectorPublicationReady(publication);
 
   const finalizedRunId = trimString(publication?.finalRunId) || trimString(submission.runId);
   let replyText = trimString(normalizeConnectorPublicationText(publication));
@@ -835,11 +835,13 @@ async function handleWhatsAppMessage(runtime, summary) {
   } catch (error) {
     runtime.lastError = trimString(error?.message || String(error));
     try {
+      const failureCategory = classifyConnectorFailureReason(runtime.lastError);
       const fallbackText = buildConnectorFailureReply(summary, runtime.lastError);
       const response = await sendWhatsAppText(runtime, summary, fallbackText);
       await markMessageHandled(runtime, summary.messageId, {
         status: 'failed_with_notice',
         error: runtime.lastError,
+        failureCategory,
         responseMessageId: trimString(response?.messages?.[0]?.id),
         repliedAt: nowIso(),
       });
