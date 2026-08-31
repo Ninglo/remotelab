@@ -70,20 +70,20 @@ const {
 const { startConnectorSkillServer } = await import('../lib/connector-skill-server.mjs');
 const { runConnectorCommand } = await import('../lib/connector-command.mjs');
 
-const documentSkill = {
-  name: 'document_get',
-  description: 'Read a document with the originating bot identity.',
-  schema: { documentToken: { type: 'string', required: true } },
+const transportSkill = {
+  name: 'send_message',
+  description: 'Send a message through the originating transport identity.',
+  schema: { text: { type: 'string', required: true } },
 };
 
 async function startBotSkillServer(botId, token) {
   return startConnectorSkillServer({
     channel: 'feishu',
     token,
-    skills: [documentSkill],
+    skills: [transportSkill],
     onSkill: async (_skillName, body) => ({
       botId,
-      documentToken: body?.parameters?.documentToken || '',
+      text: body?.parameters?.text || '',
     }),
   });
 }
@@ -96,33 +96,33 @@ try {
   await registerConnectorSkills('feishu', {
     sourceRouteId: 'bot-a',
     callback: { skillUrl: botAServer.skillUrl, token: 'token-a' },
-    skills: [documentSkill],
+    skills: [transportSkill],
   });
   await registerConnectorSkills('feishu', {
     sourceRouteId: 'bot-b',
     callback: { skillUrl: botBServer.skillUrl, token: 'token-b' },
-    skills: [documentSkill],
+    skills: [transportSkill],
   });
 
   const directA = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'feishu:send_message',
+    { text: 'Transport message' },
     { sourceRouteId: 'bot-a' },
   );
   assert.equal(directA.success, true);
   assert.equal(directA.result.botId, 'bot-a', 'bot A calls must retain bot A credentials');
 
   const directB = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'feishu:send_message',
+    { text: 'Transport message' },
     { sourceRouteId: 'bot-b' },
   );
   assert.equal(directB.success, true);
   assert.equal(directB.result.botId, 'bot-b', 'bot B calls must retain bot B credentials');
 
   const ambiguous = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'feishu:send_message',
+    { text: 'Transport message' },
     {},
   );
   assert.equal(ambiguous.success, false);
@@ -131,8 +131,8 @@ try {
   let stdout = '';
   const cliExitCode = await runConnectorCommand([
     'call',
-    'feishu:document_get',
-    '--document-token', 'DOCtoken123456789',
+    'feishu:send_message',
+    '--text', 'Transport message',
     '--json',
   ], {
     stdout: { write(chunk) { stdout += String(chunk); } },
@@ -143,8 +143,8 @@ try {
   stdout = '';
   const overrideExitCode = await runConnectorCommand([
     'call',
-    'feishu:document_get',
-    '--document-token', 'DOCtoken123456789',
+    'feishu:send_message',
+    '--text', 'Transport message',
     '--source-route-id', 'bot-b',
     '--json',
   ], {
@@ -163,8 +163,8 @@ try {
   }), true);
 
   const afterBotBStops = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'feishu:send_message',
+    { text: 'Transport message' },
     { sourceRouteId: 'bot-a' },
   );
   assert.equal(afterBotBStops.success, true);

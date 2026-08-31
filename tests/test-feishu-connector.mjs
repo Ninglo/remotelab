@@ -10,6 +10,8 @@ import { pathToFileURL } from 'url';
 const repoRoot = process.cwd();
 const tempHome = await mkdtemp(join(tmpdir(), 'remotelab-feishu-connector-'));
 process.env.HOME = tempHome;
+delete process.env.REMOTELAB_INSTANCE_ROOT;
+delete process.env.LARKSUITE_CLI_CONFIG_DIR;
 
 const { selectAssistantReplyEvent } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-selection.mjs')).href);
 const { waitForReplyPublication } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-publication-client.mjs')).href);
@@ -29,6 +31,7 @@ const {
   handleChatMemberUserAdded,
   handleMessage,
   isAllowedByPolicy,
+  initializeFeishuInstanceRuntime,
   loadConfig,
   loadPersistedAccessState,
   loadRemoteLabReplyAttachment,
@@ -48,6 +51,24 @@ const {
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
+
+let initializedRuntimeProfile = null;
+await initializeFeishuInstanceRuntime({
+  appId: 'cli_runtime_test',
+  appSecret: 'runtime_secret',
+  region: 'feishu-cn',
+  sessionFolder: tempHome,
+}, {
+  ensureProfile: async (options) => {
+    initializedRuntimeProfile = options;
+    return { configDir: options.configDir, identity: 'bot', strictMode: 'bot' };
+  },
+});
+assert.equal(initializedRuntimeProfile.configDir, join(tempHome, 'config', 'lark-cli'));
+assert.equal(initializedRuntimeProfile.appId, 'cli_runtime_test');
+assert.equal(initializedRuntimeProfile.appSecret, 'runtime_secret');
+assert.equal(initializedRuntimeProfile.brand, 'feishu');
+assert.equal(initializedRuntimeProfile.cliPath, join(repoRoot, 'node_modules', '.bin', 'lark-cli'));
 
 const runtime = {
   processingMessageIds: new Set(),

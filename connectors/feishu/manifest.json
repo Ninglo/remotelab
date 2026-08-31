@@ -6,5 +6,5 @@
   "entry": "./index.mjs",
   "capabilities": ["inbound", "outbound", "reply", "attachments", "actions"],
   "hostStrategies": ["local", "gateway"],
-  "description": "Feishu/Lark app-bot inbound, threaded replies, reply attachments, outbound message actions, and Bot-scoped read-only document/Wiki tools."
+  "description": "Feishu/Lark app-bot inbound, threaded replies, reply attachments, and outbound message actions."
 }

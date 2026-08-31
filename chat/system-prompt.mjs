@@ -227,7 +227,7 @@ async function buildGenericConnectorActionsSection() {
       ...tool,
       ready: await isConnectorSkillReady(tool.name),
     }))))
-      .filter((tool) => tool.ready && tool.name !== 'feishu:document_get');
+      .filter((tool) => tool.ready);
     if (ready.length === 0) return '';
 
     const lines = ready.map((tool) => {
@@ -284,28 +284,6 @@ Events in feed: ${feedInfo.eventCount}
 If the user has not yet subscribed, send a markdown link such as \`[点击订阅日历](${buildCalendarSubscribeHelperPath()})\` directly in the conversation. Use \`${buildCalendarSubscribeHelperPath({ format: 'https' })}\` only as the manual fallback when the client does not handle the default subscription helper. Keep the message brief: describe what the subscription does, then provide the link. No separate setup page needed.
 
 Do not use the host machine's local Calendar.app or any GUI calendar application.`);
-    }
-  } catch {}
-
-  try {
-    await initSkillRegistry(CONFIG_DIR);
-    if (await isConnectorSkillReady('feishu:document_get')) {
-      connectorSections.push(`### Feishu Documents
-This instance has a read-only Feishu document capability backed by the connector bot identity that originated the current session. It accepts Docx URLs, Wiki URLs, and document tokens. The command automatically selects the current session's Feishu Bot route. Start with \`remotelab connector call feishu:document_get --document-token "<token-or-url>" --json\`. If the \`remotelab\` command is unavailable in PATH, use \`node "$REMOTELAB_PROJECT_ROOT/cli.js" connector call feishu:document_get --document-token "<token-or-url>" --json\`.
-
-For long or structurally unknown documents, prefer scoped reads over requesting the whole document: first call with \`--scope outline --max-depth 3\`, then use \`--scope section --start-block-id "<heading-id>"\`, \`--scope range --start-block-id "<id>" --end-block-id "<id-or--1>"\`, or \`--scope keyword --keyword "term|alias"\`. Use \`--detail with-ids\` when block IDs are needed. The full fetched content is saved at \`contentPath\`; if the inline \`content\` is truncated, use the runtime's file-reading tool on that path instead of repeatedly requesting a larger inline response.
-
-Document images, files and whiteboards are listed in \`media\`. When their contents matter, repeat the scoped call with \`--download-media true\`; then inspect each returned \`localPath\` using the runtime's image/file tools. Avoid downloading media that is unrelated to the user's question.
-
-The bot can read only documents that the Feishu app is authorized to access. Treat \`missing_scope\` and \`document_permission_denied\` as explicit authorization failures; do not fall back to host-level \`lark-cli\` credentials or personal Feishu sessions.`);
-    }
-    if (await isConnectorSkillReady('feishu:wiki_node_get')) {
-      connectorSections.push(`### Feishu Wiki
-This instance has read-only Feishu Wiki metadata tools backed by the connector bot identity that originated the current session. Use \`remotelab connector call feishu:wiki_node_get --node-token "<token-or-url>" --json\` for one node, and \`remotelab connector call feishu:wiki_children_list --space-id "<space-id>" --parent-node-token "<optional-parent>" --page-size 50 --json\` for one explicit page. This capability inspects Wiki structure only and does not fetch document bodies.
-
-Use \`remotelab connector call feishu:wiki_tree_list --space-id "<space-id>" --max-depth 4 --max-nodes 500 --json\` only when a bounded breadth-first tree view is useful. Always inspect \`complete\`, \`truncated\`, and \`stop_reason\`, plus the \`visited\`, \`returned\`, and \`failed\` counts. An incomplete result includes \`continuation\` information; resume with \`--continuation-token "<token>"\` and adjust the relevant bound when needed. The full result for the call is saved at \`contentPath\` when inline nodes are limited.
-
-The bot can read only Wiki nodes authorized to the app. Treat \`missing_scope\` and \`wiki_permission_denied\` as explicit authorization failures; a partial tree result summarizes failed branches without discarding accessible siblings.`);
     }
   } catch {}
 

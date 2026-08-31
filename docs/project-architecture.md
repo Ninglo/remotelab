@@ -207,7 +207,33 @@ chat-server.mjs  (:7690)
    local CLI tool (`claude`, `codex`, or compatible wrapper)
 ```
 
-### 3.3 Development operating model
+### 3.3 Bot instance runtime cells
+
+A deployed Bot instance is treated as a VM-like runtime cell even when it is
+implemented with a Linux user plus systemd sandboxing rather than a literal VM.
+
+The cell owns:
+
+- one dedicated OS user and home directory
+- one instance root containing config, memory, workspace, temporary files, and
+  executor state
+- one environment contract shared by `chat-server`, connector services, and
+  every harness child process
+- instance-local tool credentials and profiles, including the canonical
+  `config/lark-cli` Bot profile
+
+Connectors provide transport. They do not broker general application API
+access. For Feishu, the connector initializes the instance's lark-cli Bot
+profile from the connector's existing app credentials, then the harness invokes
+`lark-cli` directly. Feishu decides the actual API scope from the published app
+permissions. This keeps new domains such as Base and Doc writes out of
+RemoteLab's connector surface.
+
+The isolation boundary is the runtime cell, not a prompt persona. Sibling Bot
+instances must not share homes, CLI profiles, executor state, connector secrets,
+or writable paths.
+
+### 3.4 Development operating model
 
 When developing RemoteLab itself, the intended workflow is:
 

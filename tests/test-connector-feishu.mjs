@@ -26,6 +26,7 @@ import {
 
 const repoRoot = process.cwd();
 const manifest = JSON.parse(await readFile(join(repoRoot, 'connectors', 'feishu', 'manifest.json'), 'utf8'));
+const packageManifest = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'));
 
 assert.equal(manifest.id, FEISHU_CONNECTOR_ID);
 assert.equal(manifest.channel, FEISHU_CONNECTOR_ID);
@@ -33,8 +34,17 @@ assert.equal(manifest.entry, './index.mjs');
 assert.ok(manifest.capabilities.includes('inbound'));
 assert.ok(manifest.capabilities.includes('reply'));
 assert.ok(manifest.capabilities.includes('attachments'));
-assert.match(manifest.description, /read-only document\/Wiki tools/);
 assert.ok(FEISHU_SKILLS.some((skill) => skill.name === 'send_message'));
+assert.deepEqual(
+  FEISHU_SKILLS.map((skill) => skill.name),
+  ['send_message'],
+  'Feishu document and Wiki reads belong to the selected harness, not RemoteLab connector tools',
+);
+assert.equal(
+  packageManifest.dependencies?.['@larksuite/cli'],
+  '1.0.61',
+  'lark-cli should remain available to harnesses without becoming a RemoteLab connector tool',
+);
 assert.match(DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT, /Feishu or Lark bot/);
 
 const textSummary = summarizeFeishuEvent({

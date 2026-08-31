@@ -27,7 +27,6 @@ By the end of this flow you should have:
 - one working private-chat validation path
 - RemoteLab sessions created or reused behind the bot
 - AI-generated RemoteLab attachments delivered back to the originating Feishu conversation
-- one optional, read-only Docx capability when the app has document read access
 
 This rollout stays intentionally narrow at first:
 
@@ -110,36 +109,34 @@ Notes:
 - `backfill` creates a fresh reply session and drafts a catch-up reply for recent silent text messages; add `--dry-run` to inspect the target and prompt without sending
 - if `backfill` fails with `Bot/User can NOT be out of the chat`, the bot is no longer in that chat, so the draft exists but Feishu will refuse delivery until the bot is added back
 
-### Read-only Feishu document capability
+### Harness-side Feishu CLI access
 
-The active Feishu connector exposes `feishu:document_get` to RemoteLab only
-while its local capability endpoint is healthy. The connector keeps the App ID
-and App Secret; agents receive only the instance-scoped command contract and do
-not receive Feishu credentials.
+RemoteLab does not expose document or Wiki reads as connector tools. The four
+former commands (`document_get`, `wiki_node_get`, `wiki_children_list`, and
+`wiki_tree_list`) and their local capability server are not part of the product
+surface.
 
-The app must have the Docx read permissions required by Feishu's document
-metadata and raw-content APIs, and the target document must be accessible to the
-app's bot identity. A human user's access to a document does not by itself grant
-the bot access.
+The harness uses the package-provided `lark-cli` directly through normal shell
+tools. RemoteLab, the Feishu connector, and every harness launched for the Bot
+run inside the same instance runtime cell: one OS user, one home directory, one
+environment contract, and one instance-owned lark-cli config directory. The
+connector initializes that config from its existing Bot credentials at startup;
+the App Secret is never copied into a prompt.
+
+The instance profile is pinned to Bot identity. The harness can inspect it and
+follow the CLI's version-matched workflow before using any Feishu capability:
 
 ```bash
-remotelab connector list --json
-remotelab connector call feishu:document_get --document-token <docx-url-or-token> --json
+lark-cli config show
+lark-cli skills read lark-doc
+lark-cli docs +fetch --doc <docx-or-wiki-url>
 ```
 
-The capability accepts a Docx URL or document token and returns title, revision,
-plain-text content, content length, and truncation state. It does not search the
-knowledge base, read PDFs, use a user's OAuth identity, or write to documents.
-`missing_scope` means the app version lacks the required API scope;
-`document_permission_denied` means the bot identity cannot access that document.
-
-With multiple Bots, each capability registration is isolated by the Bot's
-`sourceRouteId`. Calls made by an agent inside a Feishu-backed session resolve
-that route from the session source context, so one Bot never borrows another
-Bot's credentials. Stopping one Bot removes only its own registration. A manual
-call outside a connector-backed session remains backward compatible when only
-one Bot is registered; with multiple Bots it must include
-`--source-route-id <bot-id>` or it fails closed.
+This is not an API proxy or a handwritten permission bridge. `lark-cli` talks
+to Feishu directly with the Bot app's complete published scope, so adding Base,
+Doc write, Sheets, Drive, or another supported capability does not require a
+new RemoteLab connector tool. The real security boundary is the instance's OS
+user and filesystem sandbox; sibling Bot instances do not share profiles.
 
 ### Multiple Bot discovery and targeted maintenance
 
@@ -195,6 +192,7 @@ explicit selector.
   "loggerLevel": "info",
   "chatBaseUrl": "http://127.0.0.1:7690",
   "sessionTool": "codex",
+  "systemPrompt": "You are the operations Bot. Prioritize operations context and workflows relevant to this Bot.",
   "processingReaction": {
     "enabled": true,
     "emojiType": "THINKING",
@@ -212,6 +210,16 @@ Notes:
 - use `feishu-cn` for `open.feishu.cn`
 - use `lark-global` for `open.larksuite.com`
 - omit `sessionFolder` to use the operator's home directory by default
+- `systemPrompt` is the Bot's lightweight profile. The matching Session stores
+  it and passes it into the harness when the Session context is initialized;
+  use it to name the Bot's role, activate relevant context, and guide behavior
+- a Bot prompt is an attention/context boundary; the instance runtime cell is
+  the host security and capability boundary
+- the connector initializes the instance-owned `lark-cli` profile in Bot-only
+  mode, while RemoteLab makes the packaged binary and that same profile visible
+  to harness processes
+- `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
+  deferred results return through the Bot that owns the originating conversation
 - `processingReaction` lets the bot add a quick reaction on the user's message before the real reply lands; by default it uses `THINKING` and keeps it attached as a lightweight ack marker
 - `emojiType` must be one of Feishu's reaction emoji types such as `THINKING`, `WRONGED`, `FINGERHEART`, `GLANCE`, or `SMILE`; if you specifically want the built-in `委屈`-style reaction, use `WRONGED` rather than `HURT`
 - `silentConfirmationText` lets the connector send a tiny text acknowledgement when the assistant would otherwise stay silent; this is useful for Feishu-style emoticon tokens like `[委屈]`
