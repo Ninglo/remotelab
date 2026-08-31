@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from 'child_process';
+import { homedir } from 'os';
 import { promisify } from 'util';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -30,7 +31,7 @@ const serviceUnit = readOption('--service-unit', 'remotelab.service');
 try {
   const cli = await ensureCliAlignment({
     repoRoot,
-    homeDir: process.env.HOME,
+    homeDir: process.env.HOME || homedir(),
     pathValue: process.env.PATH,
   });
 
