@@ -3594,7 +3594,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     };
   }
 
-  const snapshot = await getHistorySnapshot(sessionId);
+  const [snapshot, forkContextHead] = await Promise.all([
+    getHistorySnapshot(sessionId),
+    getContextHead(sessionId),
+  ]);
 
   const previousTool = session.tool;
   const effectiveTool = options.tool || session.tool;
