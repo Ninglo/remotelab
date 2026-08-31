@@ -42,8 +42,8 @@ const sourceContextServer = http.createServer((req, res) => {
     res.end(JSON.stringify({
       sessionId: 'session-from-bot-a',
       sourceContext: {
-        session: { connector: 'feishu', sourceRouteId: 'bot-a' },
-        message: { connector: 'feishu', sourceRouteId: 'bot-a' },
+        session: { connector: 'messaging', sourceRouteId: 'bot-a' },
+        message: { connector: 'messaging', sourceRouteId: 'bot-a' },
         requestId: 'request-from-bot-a',
       },
     }));
@@ -70,20 +70,20 @@ const {
 const { startConnectorSkillServer } = await import('../lib/connector-skill-server.mjs');
 const { runConnectorCommand } = await import('../lib/connector-command.mjs');
 
-const documentSkill = {
-  name: 'document_get',
-  description: 'Read a document with the originating bot identity.',
-  schema: { documentToken: { type: 'string', required: true } },
+const transportSkill = {
+  name: 'send_message',
+  description: 'Send a message through the originating transport identity.',
+  schema: { text: { type: 'string', required: true } },
 };
 
 async function startBotSkillServer(botId, token) {
   return startConnectorSkillServer({
-    channel: 'feishu',
+    channel: 'messaging',
     token,
-    skills: [documentSkill],
+    skills: [transportSkill],
     onSkill: async (_skillName, body) => ({
       botId,
-      documentToken: body?.parameters?.documentToken || '',
+      text: body?.parameters?.text || '',
     }),
   });
 }
@@ -93,36 +93,36 @@ const botBServer = await startBotSkillServer('bot-b', 'token-b');
 
 try {
   await initSkillRegistry(configDir);
-  await registerConnectorSkills('feishu', {
+  await registerConnectorSkills('messaging', {
     sourceRouteId: 'bot-a',
     callback: { skillUrl: botAServer.skillUrl, token: 'token-a' },
-    skills: [documentSkill],
+    skills: [transportSkill],
   });
-  await registerConnectorSkills('feishu', {
+  await registerConnectorSkills('messaging', {
     sourceRouteId: 'bot-b',
     callback: { skillUrl: botBServer.skillUrl, token: 'token-b' },
-    skills: [documentSkill],
+    skills: [transportSkill],
   });
 
   const directA = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'messaging:send_message',
+    { text: 'Transport message' },
     { sourceRouteId: 'bot-a' },
   );
   assert.equal(directA.success, true);
   assert.equal(directA.result.botId, 'bot-a', 'bot A calls must retain bot A credentials');
 
   const directB = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'messaging:send_message',
+    { text: 'Transport message' },
     { sourceRouteId: 'bot-b' },
   );
   assert.equal(directB.success, true);
   assert.equal(directB.result.botId, 'bot-b', 'bot B calls must retain bot B credentials');
 
   const ambiguous = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'messaging:send_message',
+    { text: 'Transport message' },
     {},
   );
   assert.equal(ambiguous.success, false);
@@ -131,8 +131,8 @@ try {
   let stdout = '';
   const cliExitCode = await runConnectorCommand([
     'call',
-    'feishu:document_get',
-    '--document-token', 'DOCtoken123456789',
+    'messaging:send_message',
+    '--text', 'Transport message',
     '--json',
   ], {
     stdout: { write(chunk) { stdout += String(chunk); } },
@@ -143,8 +143,8 @@ try {
   stdout = '';
   const overrideExitCode = await runConnectorCommand([
     'call',
-    'feishu:document_get',
-    '--document-token', 'DOCtoken123456789',
+    'messaging:send_message',
+    '--text', 'Transport message',
     '--source-route-id', 'bot-b',
     '--json',
   ], {
@@ -154,17 +154,17 @@ try {
   assert.equal(
     JSON.parse(stdout).result.botId,
     'bot-a',
-    'an explicit route must not override the originating Feishu session Bot',
+    'an explicit route must not override the originating connector session route',
   );
 
-  assert.equal(await deregisterConnectorSkills('feishu', {
+  assert.equal(await deregisterConnectorSkills('messaging', {
     sourceRouteId: 'bot-b',
     skillUrl: botBServer.skillUrl,
   }), true);
 
   const afterBotBStops = await executeConnectorSkill(
-    'feishu:document_get',
-    { documentToken: 'DOCtoken123456789' },
+    'messaging:send_message',
+    { text: 'Transport message' },
     { sourceRouteId: 'bot-a' },
   );
   assert.equal(afterBotBStops.success, true);
@@ -172,7 +172,7 @@ try {
 
   console.log('test-connector-multi-route-skill: ok');
 } finally {
-  await deregisterConnectorSkills('feishu');
+  await deregisterConnectorSkills('messaging');
   await botAServer.stop();
   await botBServer.stop();
   for (const socket of sockets) socket.destroy();

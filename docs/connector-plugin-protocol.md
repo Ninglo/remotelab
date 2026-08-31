@@ -12,7 +12,9 @@
 
 - **Instance**: A RemoteLab runtime that runs AI sessions. It receives normalized messages from Connectors via its standard HTTP API. From the Instance's perspective, a Connector-delivered message is indistinguishable from a user typing in the web UI.
 
-- **Tool / Skill**: An in-session capability (create calendar event, query database, etc.). Tools do not create sessions — they are invoked by sessions. Tools are NOT Connectors.
+- **Tool / Skill**: An in-session capability (create calendar event, query database, read a document, etc.). Tools do not create sessions — they are invoked by sessions. Tools are NOT Connectors.
+
+- **Transport Action**: A narrowly scoped message-delivery operation such as sending known text through a bound channel. A Connector may expose transport actions, but must not grow provider application APIs such as document, Wiki, Base, Drive, or calendar access. Those belong to the Instance runtime and its native tools.
 
 - **Dispatch Table**: The Connector's internal routing table. Maps external addresses/identifiers to target Instances. Built automatically from Instance registrations.
 
@@ -25,8 +27,9 @@ External World
       │
       ▼
 Connector (independent service, one per channel)
-      │  Owns: external credentials, dispatch table, admission rules
+      │  Owns: external messaging credentials, dispatch table, admission rules
       │  Duties: receive → normalize → route → deliver → reply
+      │  Never: provider application APIs or AI task semantics
       │
       ├──→ Instance A ← standard HTTP API
       ├──→ Instance B ← standard HTTP API

@@ -6,7 +6,6 @@ import { join } from 'path';
 import {
   DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT,
   FEISHU_CONNECTOR_ID,
-  FEISHU_SKILLS,
   buildExternalTriggerId,
   buildFeishuConversationQueueKey,
   buildFeishuApiUuid,
@@ -18,7 +17,9 @@ import {
   buildRequestId,
   buildSessionSourceContext,
   collectFeishuTopicParentMessageCandidates,
+  getSummaryFeishuResources,
   feishuMatchFn,
+  isSupportedRemoteLabInboundMessage,
   normalizeReplyText,
   summarizeFeishuEvent,
   summarizeFeishuLegacyMessageEvent,
@@ -26,6 +27,7 @@ import {
 
 const repoRoot = process.cwd();
 const manifest = JSON.parse(await readFile(join(repoRoot, 'connectors', 'feishu', 'manifest.json'), 'utf8'));
+const packageManifest = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'));
 
 assert.equal(manifest.id, FEISHU_CONNECTOR_ID);
 assert.equal(manifest.channel, FEISHU_CONNECTOR_ID);
@@ -33,8 +35,16 @@ assert.equal(manifest.entry, './index.mjs');
 assert.ok(manifest.capabilities.includes('inbound'));
 assert.ok(manifest.capabilities.includes('reply'));
 assert.ok(manifest.capabilities.includes('attachments'));
-assert.match(manifest.description, /read-only document\/Wiki tools/);
-assert.ok(FEISHU_SKILLS.some((skill) => skill.name === 'send_message'));
+assert.equal(
+  manifest.capabilities.includes('actions'),
+  false,
+  'Feishu is a message transport, not an in-session application capability provider',
+);
+assert.equal(
+  packageManifest.dependencies?.['@larksuite/cli'],
+  '1.0.61',
+  'lark-cli should remain available to harnesses without becoming a RemoteLab connector tool',
+);
 assert.match(DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT, /Feishu or Lark bot/);
 
 const textSummary = summarizeFeishuEvent({
@@ -150,6 +160,91 @@ const postSummary = summarizeFeishuEvent({
 
 assert.equal(postSummary.messageText, '标题\n第一行\n@Alex 第二行');
 assert.match(postSummary.contentSummary, /Rich text post/);
+
+const fileSummary = summarizeFeishuEvent({
+  message: {
+    chat_id: 'oc_chat_file_1',
+    chat_type: 'p2p',
+    message_id: 'om_file_1',
+    message_type: 'file',
+    content: JSON.stringify({
+      file_key: 'file_report_1',
+      file_name: 'report.pdf',
+    }),
+  },
+});
+assert.deepEqual(getSummaryFeishuResources(fileSummary), [{
+  fileKey: 'file_report_1',
+  resourceType: 'file',
+  kind: 'file',
+  downloadType: 'file',
+  originalName: 'report.pdf',
+}]);
+assert.equal(isSupportedRemoteLabInboundMessage(fileSummary), true, 'file messages must enter RemoteLab');
+
+const audioSummary = summarizeFeishuEvent({
+  message: {
+    chat_id: 'oc_chat_audio_1',
+    chat_type: 'p2p',
+    message_id: 'om_audio_1',
+    message_type: 'audio',
+    content: JSON.stringify({ file_key: 'file_audio_1' }),
+  },
+});
+assert.deepEqual(getSummaryFeishuResources(audioSummary), [{
+  fileKey: 'file_audio_1',
+  resourceType: 'file',
+  kind: 'audio',
+  downloadType: 'audio',
+}]);
+
+const mediaSummary = summarizeFeishuEvent({
+  message: {
+    chat_id: 'oc_chat_media_1',
+    chat_type: 'p2p',
+    message_id: 'om_media_1',
+    message_type: 'media',
+    content: JSON.stringify({
+      file_key: 'file_video_1',
+      image_key: 'img_cover_1',
+      file_name: 'demo.mp4',
+    }),
+  },
+});
+assert.deepEqual(getSummaryFeishuResources(mediaSummary), [{
+  fileKey: 'file_video_1',
+  resourceType: 'file',
+  kind: 'media',
+  downloadType: 'media',
+  originalName: 'demo.mp4',
+}, {
+  fileKey: 'img_cover_1',
+  resourceType: 'image',
+  kind: 'image',
+  downloadType: 'image',
+}]);
+
+const unknownSummary = summarizeFeishuEvent({
+  message: {
+    chat_id: 'oc_chat_forward_1',
+    chat_type: 'group',
+    message_id: 'om_forward_1',
+    message_type: 'merge_forward',
+    content: JSON.stringify({
+      title: '项目讨论转发',
+      message_ids: ['om_nested_1', 'om_nested_2'],
+    }),
+  },
+});
+assert.equal(isSupportedRemoteLabInboundMessage(unknownSummary), true, 'unknown message structures must not be dropped');
+assert.equal(buildMessageSourceContext(unknownSummary).ingestion.status, 'unparsed');
+assert.deepEqual(buildMessageSourceContext(unknownSummary).sourceReference, {
+  kind: 'feishu_message',
+  messageId: 'om_forward_1',
+  messageType: 'merge_forward',
+});
+assert.match(buildRemoteLabMessage(unknownSummary), /Feishu source reference/);
+assert.match(buildRemoteLabMessage(unknownSummary), /message_id=om_forward_1/);
 
 const legacySummary = summarizeFeishuLegacyMessageEvent({
   open_chat_id: 'oc_legacy_1',

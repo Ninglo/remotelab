@@ -15,6 +15,8 @@ import {
   buildGuestSafeMailboxAutomation,
   buildGuestSafeOutboundConfig,
   buildBridgeBaseUrl,
+  buildConvergedLaunchAgentSpec,
+  detectLaunchAgentConvergence,
   buildGuestWeChatConnectorConfig,
   formatGuestInstance,
   formatGuestInstanceLinks,
@@ -101,6 +103,36 @@ assert.equal(
   '/usr/local/bin:/var/lib/remotelab-guests/trial67/.local/bin:/bin',
   'migrated isolated guests should rewrite legacy instance-root PATH entries into the new home',
 );
+const convergedRuntimeCell = buildConvergedLaunchAgentSpec({
+  name: 'muka2',
+  port: 7697,
+  instanceRoot: '/var/lib/remotelab-guests/muka2',
+  environmentVariables: {
+    CHAT_PORT: '7697',
+    HOME: '/var/lib/remotelab-guests/muka2',
+    PATH: '/usr/local/bin:/usr/bin:/bin',
+    REMOTELAB_INSTANCE_ROOT: '/var/lib/remotelab-guests/muka2',
+    REMOTELAB_MACHINE_CODEX_HOME: '/root/.codex',
+  },
+}).environmentVariables;
+assert.equal(convergedRuntimeCell.REMOTELAB_MACHINE_CODEX_HOME, '/var/lib/remotelab-guests/muka2/.codex');
+assert.equal(convergedRuntimeCell.LARKSUITE_CLI_CONFIG_DIR, '/var/lib/remotelab-guests/muka2/config/lark-cli');
+assert.equal(convergedRuntimeCell.REMOTELAB_PROJECT_ROOT, repoRoot);
+const missingRuntimeCellDrift = detectLaunchAgentConvergence({
+  name: 'muka2',
+  port: 7697,
+  instanceRoot: '/var/lib/remotelab-guests/muka2',
+  chatServerPath: join(repoRoot, 'chat-server.mjs'),
+  workingDirectory: repoRoot,
+  nodePath: process.execPath,
+  environmentVariables: {
+    ...convergedRuntimeCell,
+    REMOTELAB_PROJECT_ROOT: '',
+    LARKSUITE_CLI_CONFIG_DIR: '',
+  },
+});
+assert.equal(missingRuntimeCellDrift.changed, true);
+assert.equal(missingRuntimeCellDrift.instanceRuntimeEnvironmentChanged, true);
 assert.equal(
   buildGuestPathValue({
     homeDir: '/var/lib/remotelab-guests/trial78',
@@ -643,9 +675,22 @@ try {
 
   const firstSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
   assert.equal(firstSync.changed, true);
-  assert.deepEqual(firstSync.seededSkillIds, ['calendar-write', 'session-debug', 'stable-static-publish', 'guest-port-expose']);
-  assert.deepEqual(firstSync.skillIds, ['calendar-write', 'session-debug', 'stable-static-publish', 'guest-port-expose']);
+  assert.deepEqual(firstSync.seededSkillIds, [
+    'calendar-write',
+    'session-debug',
+    'stable-static-publish',
+    'guest-port-expose',
+    'feishu-cli',
+  ]);
+  assert.deepEqual(firstSync.skillIds, [
+    'calendar-write',
+    'session-debug',
+    'stable-static-publish',
+    'guest-port-expose',
+    'feishu-cli',
+  ]);
   assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
+  assert.match(readFileSync(join(platformSkillsDir, 'feishu-cli.md'), 'utf8'), /direct lark-cli access/i);
   assert.match(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), /Session Debug/);
   assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /Stable Static Publish/);
   assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Guest Port Expose/);
@@ -656,6 +701,7 @@ try {
   assert.match(syncedIndex, /## Shared Platform Skills/);
   assert.match(syncedIndex, /网页预览/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/calendar-write\.md/);
+  assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/feishu-cli\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/session-debug\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/stable-static-publish\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/guest-port-expose\.md/);
@@ -950,7 +996,11 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_SESSION_DISPATCH<\/key><string>off<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_CODEX_HOME_MODE<\/key><string>personal<\/string>/);
-  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_MACHINE_CODEX_HOME<\/key><string>\/root\/\.codex<\/string>/);
+  assert.match(
+    rewrittenGuestPlist,
+    new RegExp(`<key>REMOTELAB_MACHINE_CODEX_HOME<\\/key><string>${join(instanceRoot, '.codex').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`),
+  );
+  assert.match(rewrittenGuestPlist, /<key>LARKSUITE_CLI_CONFIG_DIR<\/key>/);
   assert.doesNotMatch(rewrittenGuestPlist, /REMOTELAB_SHARED_CODEX_HOME/);
   assert.match(rewrittenGuestPlist, new RegExp(`<key>HOME<\\/key><string>${instanceRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`));
   assert.match(rewrittenGuestPlist, new RegExp(`<key>TMPDIR<\\/key><string>${join(instanceRoot, 'tmp').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`));

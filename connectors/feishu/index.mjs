@@ -9,7 +9,22 @@
 import { createHash } from 'crypto';
 
 import { stripHiddenBlocks } from '../../lib/reply-selection.mjs';
+import {
+  buildFeishuIngestionState,
+  buildFeishuSourceReference,
+  extractFeishuImageKeysFromContent,
+  extractFeishuResourcesFromContent,
+  getSummaryFeishuImageKeys,
+  getSummaryFeishuResources,
+} from './inbound-envelope.mjs';
 import { buildFeishuMathDocument } from './math-renderer.mjs';
+
+export {
+  extractFeishuImageKeysFromContent,
+  extractFeishuResourcesFromContent,
+  getSummaryFeishuImageKeys,
+  getSummaryFeishuResources,
+};
 
 export const FEISHU_CONNECTOR_ID = 'feishu';
 export const FEISHU_CONNECTOR_NAME = 'Feishu';
@@ -34,72 +49,6 @@ export const DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT = [
 
 export const MAX_FEISHU_TEXT_LENGTH = 5000;
 export const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
-
-export const FEISHU_SKILLS = [
-  {
-    name: 'send_message',
-    description: 'Send a Feishu/Lark bot message to a chat.',
-    schema: {
-      chatId: { type: 'string', required: true, description: 'Target Feishu/Lark chat_id' },
-      text: { type: 'string', required: true, description: 'Plain text or markdown message body' },
-      replyToMessageId: { type: 'string', description: 'Optional message_id to reply to' },
-      replyInThread: { type: 'boolean', description: 'Whether to reply inside a topic/thread when replyToMessageId is set' },
-    },
-  },
-  {
-    name: 'document_get',
-    description: 'Read structured Feishu Docx or Wiki-backed document content with scoped retrieval and optional local media downloads using the originating connector bot identity.',
-    schema: {
-      documentToken: { type: 'string', required: true, description: 'Feishu Docx/Wiki URL or document token' },
-      scope: { type: 'string', description: 'Read scope: full, outline, section, range, or keyword' },
-      detail: { type: 'string', description: 'Detail level: simple, with-ids, or full' },
-      docFormat: { type: 'string', description: 'Content format: xml, markdown, or im-markdown' },
-      startBlockId: { type: 'string', description: 'Section/range start block ID' },
-      endBlockId: { type: 'string', description: 'Range end block ID; -1 reads through document end' },
-      keyword: { type: 'string', description: 'Keyword query; use | for OR branches' },
-      revisionId: { type: 'number', description: 'Document revision ID; -1 means latest' },
-      contextBefore: { type: 'number', description: 'Top-level sibling blocks before scoped matches' },
-      contextAfter: { type: 'number', description: 'Top-level sibling blocks after scoped matches' },
-      maxDepth: { type: 'number', description: 'Outline heading depth or scoped subtree depth' },
-      maxChars: { type: 'number', description: 'Maximum inline content characters; full content is saved at contentPath' },
-      downloadMedia: { type: 'boolean', description: 'Download indexed images/files/whiteboards into the local snapshot' },
-      maxMedia: { type: 'number', description: 'Maximum indexed media items to download' },
-    },
-  },
-  {
-    name: 'wiki_node_get',
-    description: 'Read one Feishu Wiki node metadata record using the originating connector bot identity without fetching its document body.',
-    schema: {
-      nodeToken: { type: 'string', required: true, description: 'Wiki node token, object token, or Feishu/Lark document URL' },
-      objType: { type: 'string', description: 'Object type for a raw object token: doc, docx, sheet, bitable, mindnote, slides, or file' },
-      spaceId: { type: 'string', description: 'Optional Wiki space ID assertion' },
-    },
-  },
-  {
-    name: 'wiki_children_list',
-    description: 'Read one page of root or child nodes in a Feishu Wiki space using the originating connector bot identity.',
-    schema: {
-      spaceId: { type: 'string', required: true, description: 'Wiki space ID; the Bot-only connector does not support my_library' },
-      parentNodeToken: { type: 'string', description: 'Optional parent Wiki node token; omit for space roots' },
-      pageSize: { type: 'number', description: 'Single-page size from 1 to 50' },
-      pageToken: { type: 'string', description: 'Optional upstream page cursor to continue the same child listing' },
-    },
-  },
-  {
-    name: 'wiki_tree_list',
-    description: 'Run a bounded breadth-first Wiki metadata traversal with explicit completion, truncation, permission-failure, continuation, and snapshot results.',
-    schema: {
-      spaceId: { type: 'string', required: true, description: 'Wiki space ID; the Bot-only connector does not support my_library' },
-      rootNodeToken: { type: 'string', description: 'Optional root node whose descendants should be traversed; omit for space roots' },
-      pageSize: { type: 'number', description: 'Per-parent page size from 1 to 50' },
-      maxDepth: { type: 'number', description: 'Maximum relative result depth from 0 to 20' },
-      maxNodes: { type: 'number', description: 'Maximum nodes returned in this traversal call from 1 to 5000' },
-      maxPages: { type: 'number', description: 'Maximum child-list requests in this traversal call from 1 to 1000' },
-      maxInlineNodes: { type: 'number', description: 'Maximum nodes returned inline; the complete call snapshot remains at contentPath' },
-      continuationToken: { type: 'string', description: 'Opaque token returned by an incomplete traversal to resume pending branches' },
-    },
-  },
-];
 
 const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;
 const UNICODE_EMOJI_PATTERN = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?)*)/gu;
@@ -225,16 +174,6 @@ function renderPostElementText(element) {
   return typeof element.text === 'string' ? element.text : '';
 }
 
-export function extractFeishuDocumentToken(value) {
-  const normalized = trimString(value);
-  if (!normalized) return '';
-  const urlMatch = normalized.match(/https?:\/\/[^\s)\]}>'"]+\/(?:docx|wiki)\/([A-Za-z0-9_-]{8,})/i);
-  if (urlMatch?.[1]) return urlMatch[1];
-  const pathMatch = normalized.match(/(?:^|[\s(\[{])\/(?:docx|wiki)\/([A-Za-z0-9_-]{8,})(?=$|[\s)\]}?#])/i);
-  if (pathMatch?.[1]) return pathMatch[1];
-  return /^[A-Za-z0-9_-]{8,}$/.test(normalized) ? normalized : '';
-}
-
 export function extractPostMessageText(parsedContent) {
   const variant = selectPostContentVariant(parsedContent);
   if (!variant) return extractStructuredTextPreview(parsedContent);
@@ -260,49 +199,13 @@ export function contentKeyPreview(parsedContent) {
   return Object.keys(parsedContent).filter(Boolean).slice(0, 6);
 }
 
-function addFeishuImageKey(keys, seen, value) {
-  const key = trimString(value);
-  if (!key || seen.has(key)) return;
-  seen.add(key);
-  keys.push(key);
-}
-
-function collectFeishuImageKeys(value, keys, seen, depth = 0) {
-  if (depth > 8 || value === null || value === undefined) {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectFeishuImageKeys(item, keys, seen, depth + 1);
-    }
-    return;
-  }
-  if (typeof value !== 'object') {
-    return;
-  }
-
-  addFeishuImageKey(keys, seen, value.image_key);
-  addFeishuImageKey(keys, seen, value.imageKey);
-  const tag = trimString(value.tag).toLowerCase();
-  if (tag === 'img' || tag === 'image') {
-    addFeishuImageKey(keys, seen, value.file_key);
-    addFeishuImageKey(keys, seen, value.fileKey);
-  }
-  for (const child of Object.values(value)) {
-    collectFeishuImageKeys(child, keys, seen, depth + 1);
-  }
-}
-
-export function extractFeishuImageKeysFromContent(parsedContent) {
-  const keys = [];
-  collectFeishuImageKeys(parsedContent, keys, new Set());
-  return keys;
-}
-
 export function summarizeMessageContent(messageType, rawContent) {
   const normalizedType = trimString(messageType).toLowerCase();
   const parsedContent = parseMessageContent(rawContent);
-  const imageKeys = extractFeishuImageKeysFromContent(parsedContent);
+  const resources = extractFeishuResourcesFromContent(parsedContent, normalizedType);
+  const imageKeys = resources
+    .filter((resource) => resource.resourceType === 'image')
+    .map((resource) => resource.fileKey);
   let messageText = '';
   let textPreview = '';
 
@@ -321,6 +224,8 @@ export function summarizeMessageContent(messageType, rawContent) {
   } else if (normalizedType === 'location') {
     textPreview = trimString(parsedContent?.name || parsedContent?.title || parsedContent?.address);
   } else if (normalizedType === 'interactive') {
+    textPreview = extractStructuredTextPreview(parsedContent);
+  } else if (!['image', 'audio', 'media', 'sticker'].includes(normalizedType)) {
     textPreview = extractStructuredTextPreview(parsedContent);
   }
 
@@ -352,8 +257,8 @@ export function summarizeMessageContent(messageType, rawContent) {
         const typeLabel = normalizedType || 'unknown';
         const keys = contentKeyPreview(parsedContent);
         return keys.length
-          ? `Unsupported message (${typeLabel}; keys=${keys.join(',')})`
-          : `Unsupported message (${typeLabel})`;
+          ? `Feishu ${typeLabel} message reference (keys=${keys.join(',')})`
+          : `Feishu ${typeLabel} message reference`;
       }
     }
   })();
@@ -363,6 +268,7 @@ export function summarizeMessageContent(messageType, rawContent) {
     textPreview,
     contentSummary,
     contentKeys: contentKeyPreview(parsedContent),
+    resources,
     imageKeys,
   };
 }
@@ -433,6 +339,7 @@ export function summarizeFeishuEvent(data) {
     textPreview: normalizedContent.textPreview,
     contentSummary: normalizedContent.contentSummary,
     contentKeys: normalizedContent.contentKeys,
+    resources: normalizedContent.resources,
     imageKeys: normalizedContent.imageKeys,
     rawContent,
   };
@@ -471,6 +378,7 @@ export function summarizeFeishuLegacyMessageEvent(data) {
     textPreview: typeof data?.text_without_at_bot === 'string' ? data.text_without_at_bot : normalizedContent.textPreview,
     contentSummary: normalizedContent.contentSummary,
     contentKeys: normalizedContent.contentKeys,
+    resources: normalizedContent.resources,
     imageKeys: normalizedContent.imageKeys,
     rawContent,
   };
@@ -594,28 +502,12 @@ export function renderMentionPreview(text, mentions) {
   return rendered;
 }
 
-export function getSummaryFeishuImageKeys(summary) {
-  const explicitKeys = Array.isArray(summary?.imageKeys)
-    ? summary.imageKeys.map((key) => trimString(key)).filter(Boolean)
-    : [];
-  if (explicitKeys.length > 0) {
-    return Array.from(new Set(explicitKeys));
-  }
-  return extractFeishuImageKeysFromContent(parseMessageContent(summary?.rawContent));
-}
-
 export function isSupportedRemoteLabInboundMessage(summary) {
-  if (isFeishuDocumentCommentSummary(summary)) {
-    return Boolean(trimString(summary?.messageText || summary?.textPreview));
-  }
-  const messageType = trimString(summary?.messageType).toLowerCase();
-  if (!messageType || messageType === 'text') return true;
-  if (messageType === 'image') return getSummaryFeishuImageKeys(summary).length > 0;
-  if (messageType === 'post') {
-    return Boolean(trimString(summary?.messageText || summary?.textPreview))
-      || getSummaryFeishuImageKeys(summary).length > 0;
-  }
-  return false;
+  return Boolean(
+    trimString(summary?.messageId)
+    || trimString(summary?.messageType)
+    || trimString(summary?.messageText || summary?.textPreview || summary?.contentSummary),
+  );
 }
 
 export function buildRemoteLabMessage(summary) {
@@ -646,9 +538,15 @@ export function buildRemoteLabMessage(summary) {
     ? summary.attachmentDownloadFailures
     : [];
   const failureText = downloadFailures.length > 0
-    ? `\n\n[Feishu attachment download failed for ${downloadFailures.length} image(s).]`
+    ? `\n\n[Feishu attachment ingestion is partial: ${downloadFailures.length} resource(s) failed.]`
     : '';
-  return `${senderPrefix}${displayMessage}${failureText}`;
+  const ingestion = buildFeishuIngestionState(summary);
+  const sourceReference = buildFeishuSourceReference(summary);
+  const topicId = buildFeishuTopicId(summary);
+  const referenceText = sourceReference && (ingestion.status !== 'complete' || topicId)
+    ? `\n\n[Feishu source reference: message_id=${sourceReference.messageId}, message_type=${sourceReference.messageType}${topicId ? `, thread_id=${topicId}` : ''}]`
+    : '';
+  return `${senderPrefix}${displayMessage}${failureText}${referenceText}`;
 }
 
 export function buildSessionSourceContext(summary) {
@@ -706,13 +604,19 @@ export function buildMessageSourceContext(summary) {
     return context;
   }
   const topicId = buildFeishuTopicId(summary);
-  const imageKeys = getSummaryFeishuImageKeys(summary);
+  const resources = getSummaryFeishuResources(summary);
+  const imageCount = resources.filter((resource) => resource.resourceType === 'image').length;
+  const fileCount = resources.filter((resource) => resource.resourceType === 'file').length;
+  const sourceReference = buildFeishuSourceReference(summary);
   const context = {
     connector: FEISHU_CONNECTOR_ID,
     messageId: trimString(summary?.messageId),
+    messageType: trimString(summary?.messageType).toLowerCase(),
     chatType: trimString(summary?.chatType),
     conversationKind: buildFeishuConversationKind(summary),
+    ingestion: buildFeishuIngestionState(summary),
   };
+  if (sourceReference) context.sourceReference = sourceReference;
   const sourceRouteId = trimString(summary?.sourceRouteId);
   if (sourceRouteId) context.sourceRouteId = sourceRouteId;
   if (topicId) context.topicId = topicId;
@@ -748,9 +652,10 @@ export function buildMessageSourceContext(summary) {
   if (contentSummary) {
     context.contentSummary = contentSummary;
   }
-  if (imageKeys.length > 0) {
+  if (resources.length > 0) {
     context.attachments = {
-      imageCount: imageKeys.length,
+      ...(imageCount > 0 ? { imageCount } : {}),
+      ...(fileCount > 0 ? { fileCount } : {}),
     };
   }
   return context;

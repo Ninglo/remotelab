@@ -10,6 +10,8 @@ import { pathToFileURL } from 'url';
 const repoRoot = process.cwd();
 const tempHome = await mkdtemp(join(tmpdir(), 'remotelab-feishu-connector-'));
 process.env.HOME = tempHome;
+delete process.env.REMOTELAB_INSTANCE_ROOT;
+delete process.env.LARKSUITE_CLI_CONFIG_DIR;
 
 const { selectAssistantReplyEvent } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-selection.mjs')).href);
 const { waitForReplyPublication } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-publication-client.mjs')).href);
@@ -29,6 +31,7 @@ const {
   handleChatMemberUserAdded,
   handleMessage,
   isAllowedByPolicy,
+  initializeFeishuInstanceRuntime,
   loadConfig,
   loadPersistedAccessState,
   loadRemoteLabReplyAttachment,
@@ -48,6 +51,31 @@ const {
   summarizeChatMemberUserAddedEvent,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
+
+const connectorLauncherSource = await readFile(join(repoRoot, 'scripts', 'feishu-connector.mjs'), 'utf8');
+assert.ok(
+  connectorLauncherSource.indexOf('await claimConnectorPidLock(config.storageDir)')
+    < connectorLauncherSource.indexOf('await initializeFeishuInstanceRuntime(config)'),
+  'connector startup must claim its single-process lock before writing the shared lark-cli profile',
+);
+
+let initializedRuntimeProfile = null;
+await initializeFeishuInstanceRuntime({
+  appId: 'cli_runtime_test',
+  appSecret: 'runtime_secret',
+  region: 'feishu-cn',
+  sessionFolder: tempHome,
+}, {
+  ensureProfile: async (options) => {
+    initializedRuntimeProfile = options;
+    return { configDir: options.configDir, identity: 'bot', strictMode: 'bot' };
+  },
+});
+assert.equal(initializedRuntimeProfile.configDir, join(tempHome, 'config', 'lark-cli'));
+assert.equal(initializedRuntimeProfile.appId, 'cli_runtime_test');
+assert.equal(initializedRuntimeProfile.appSecret, 'runtime_secret');
+assert.equal(initializedRuntimeProfile.brand, 'feishu');
+assert.equal(initializedRuntimeProfile.cliPath, join(repoRoot, 'node_modules', '.bin', 'lark-cli'));
 
 const runtime = {
   processingMessageIds: new Set(),
@@ -372,6 +400,20 @@ assert.deepEqual(imageSummary.imageKeys, ['img_v2_1']);
 let resourceDownloadPayload = null;
 const pngBuffer = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 const imageAttachments = await resolveFeishuMessageAttachments({
+  publishRemoteLabAsset: async ({ body, mimeType, originalName, sessionId }) => {
+    const chunks = [];
+    for await (const chunk of body) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    assert.equal(sessionId, 'session_image_asset_test');
+    assert.equal(mimeType, 'image/png');
+    assert.equal(originalName, 'drawing.png');
+    assert.deepEqual(Buffer.concat(chunks), pngBuffer);
+    return {
+      id: 'fasset_aaaaaaaaaaaaaaaaaaaaaaaa',
+      originalName,
+      mimeType,
+      sizeBytes: pngBuffer.length,
+    };
+  },
   appClient: {
     im: {
       v1: {
@@ -390,7 +432,7 @@ const imageAttachments = await resolveFeishuMessageAttachments({
       },
     },
   },
-}, imageSummary);
+}, imageSummary, { sessionId: 'session_image_asset_test' });
 
 assert.deepEqual(resourceDownloadPayload, {
   params: { type: 'image' },
@@ -400,7 +442,64 @@ assert.equal(imageAttachments.failures.length, 0, 'image resource downloads shou
 assert.equal(imageAttachments.attachments.length, 1);
 assert.equal(imageAttachments.attachments[0].mimeType, 'image/png', 'image MIME type should be detected from bytes when Feishu returns octet-stream');
 assert.equal(imageAttachments.attachments[0].originalName, 'drawing.png');
-assert.equal(imageAttachments.attachments[0].data, pngBuffer.toString('base64'));
+assert.equal(imageAttachments.attachments[0].assetId, 'fasset_aaaaaaaaaaaaaaaaaaaaaaaa');
+assert.equal('data' in imageAttachments.attachments[0], false, 'Feishu ingress must not inline base64 bytes into the session message');
+
+const mixedResourceSummary = summarizeEvent({
+  message: {
+    chat_id: 'chat_media_partial_1',
+    chat_type: 'p2p',
+    message_id: 'msg_media_partial_1',
+    message_type: 'media',
+    content: JSON.stringify({
+      file_key: 'file_media_failed_1',
+      image_key: 'img_media_cover_1',
+      file_name: 'clip.mp4',
+    }),
+  },
+});
+const mixedResourceDownloadTypes = [];
+const mixedResourceResolution = await resolveFeishuMessageAttachments({
+  publishRemoteLabAsset: async ({ body, mimeType }) => {
+    for await (const _chunk of body) { /* consume the bounded stream */ }
+    return {
+      id: 'fasset_media_cover_1',
+      originalName: 'cover.png',
+      mimeType,
+      sizeBytes: pngBuffer.length,
+    };
+  },
+  appClient: {
+    im: {
+      v1: {
+        messageResource: {
+          get: async ({ params, path }) => {
+            mixedResourceDownloadTypes.push({ fileKey: path.file_key, type: params.type });
+            if (path.file_key === 'file_media_failed_1') {
+              throw new Error('simulated media download failure');
+            }
+            return {
+              headers: { 'content-type': 'image/png' },
+              getReadableStream: () => Readable.from([pngBuffer]),
+            };
+          },
+        },
+      },
+    },
+  },
+}, mixedResourceSummary, { sessionId: 'session_media_partial_1' });
+assert.deepEqual(mixedResourceDownloadTypes, [
+  { fileKey: 'file_media_failed_1', type: 'media' },
+  { fileKey: 'img_media_cover_1', type: 'image' },
+]);
+assert.equal(mixedResourceResolution.attachments.length, 1, 'one failed resource must not discard successful siblings');
+assert.equal(mixedResourceResolution.failures.length, 1);
+const partialMixedResourceSummary = {
+  ...mixedResourceSummary,
+  attachmentDownloadFailures: mixedResourceResolution.failures,
+};
+assert.equal(buildMessageSourceContext(partialMixedResourceSummary).ingestion.status, 'partial');
+assert.match(buildRemoteLabMessage(partialMixedResourceSummary), /Feishu source reference/);
 
 const richPostSummary = summarizeEvent({
   event_id: 'evt_post_1',
@@ -612,6 +711,45 @@ assert.equal(handled[0].messageId, 'msg_image_1');
 assert.equal(handled[0].metadata.status, 'sent');
 assert.equal(handled[0].metadata.sessionId, 'session_test_image');
 assert.equal(runtime.processingMessageIds.size, 0, 'image payload processing state should always be cleaned up');
+
+sendCalls = 0;
+handled.length = 0;
+let unknownInvokedRemoteLab = false;
+
+await handleMessage(runtime, {
+  chatId: 'chat_unknown_1',
+  chatType: 'group',
+  messageId: 'msg_unknown_1',
+  messageType: 'future_feishu_structure',
+  contentSummary: 'Feishu future_feishu_structure message reference (keys=payload)',
+  contentKeys: ['payload'],
+  rawContent: JSON.stringify({ payload: { nested: true } }),
+  sender: { openId: 'ou_unknown_1' },
+}, 'test', {
+  wasMessageHandled: async () => false,
+  generateRemoteLabReply: async (_runtime, inboundSummary) => {
+    unknownInvokedRemoteLab = true;
+    assert.match(buildRemoteLabMessage(inboundSummary), /message_id=msg_unknown_1/);
+    return {
+      sessionId: 'session_test_unknown',
+      runId: 'run_test_unknown',
+      requestId: 'request_test_unknown',
+      duplicate: false,
+      replyText: '我收到了这条尚未完整解析的消息。',
+    };
+  },
+  sendFeishuText: async () => {
+    sendCalls += 1;
+    return { message_id: 'out_test_unknown' };
+  },
+  markMessageHandled: async (_pathname, messageId, metadata) => {
+    handled.push({ messageId, metadata });
+  },
+});
+
+assert.equal(unknownInvokedRemoteLab, true, 'unparsed inbound structures should still invoke RemoteLab');
+assert.equal(sendCalls, 1);
+assert.equal(handled[0].metadata.status, 'sent');
 
 const authRefreshRuntime = {
   authCookie: 'session_token=stale-cookie',
@@ -1279,13 +1417,18 @@ assert.equal(persistedAfterJoin.approvedChats.chat_group_approve_1.name, 'Family
 let createdPayload = null;
 let submittedPayload = null;
 let generatedReplyResourcePayload = null;
+let generatedReplyAssetIntentPayload = null;
+let generatedReplyUploadedBytes = null;
+let generatedReplyFinalizePayload = null;
 const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 const server = http.createServer(async (req, res) => {
-  let body = '';
+  const chunks = [];
   req.on('data', (chunk) => {
-    body += chunk.toString();
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   });
   await new Promise((resolve) => req.on('end', resolve));
+  const bodyBuffer = Buffer.concat(chunks);
+  const body = bodyBuffer.toString('utf8');
 
   if (req.method === 'POST' && req.url === '/api/sessions') {
     createdPayload = JSON.parse(body || '{}');
@@ -1305,6 +1448,45 @@ const server = http.createServer(async (req, res) => {
           queue: { count: 0 },
           compact: { state: 'idle' },
         },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/assets/upload-intents') {
+    generatedReplyAssetIntentPayload = JSON.parse(body || '{}');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      asset: {
+        id: 'fasset_bbbbbbbbbbbbbbbbbbbbbbbb',
+        originalName: 'img_scope_1.jpg',
+        mimeType: 'image/jpeg',
+      },
+      upload: {
+        method: 'PUT',
+        url: '/api/assets/fasset_bbbbbbbbbbbbbbbbbbbbbbbb/upload',
+        headers: { 'Content-Type': 'image/jpeg' },
+      },
+    }));
+    return;
+  }
+
+  if (req.method === 'PUT' && req.url === '/api/assets/fasset_bbbbbbbbbbbbbbbbbbbbbbbb/upload') {
+    generatedReplyUploadedBytes = bodyBuffer;
+    res.writeHead(200, { ETag: 'etag-feishu-asset' });
+    res.end();
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/assets/fasset_bbbbbbbbbbbbbbbbbbbbbbbb/finalize') {
+    generatedReplyFinalizePayload = JSON.parse(body || '{}');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      asset: {
+        id: 'fasset_bbbbbbbbbbbbbbbbbbbbbbbb',
+        originalName: 'img_scope_1.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: jpegBuffer.length,
       },
     }));
     return;
@@ -1449,10 +1631,21 @@ try {
     params: { type: 'image' },
     path: { message_id: 'msg_for_scope', file_key: 'img_scope_1' },
   });
+  assert.deepEqual(generatedReplyAssetIntentPayload, {
+    sessionId: 'sess_feishu_1',
+    originalName: 'img_scope_1.jpg',
+    mimeType: 'image/jpeg',
+  });
+  assert.deepEqual(generatedReplyUploadedBytes, jpegBuffer);
+  assert.deepEqual(generatedReplyFinalizePayload, {
+    sizeBytes: jpegBuffer.length,
+    etag: 'etag-feishu-asset',
+  });
   assert.equal(submittedPayload?.attachments?.length, 1);
   assert.equal(submittedPayload.attachments[0].mimeType, 'image/jpeg');
   assert.equal(submittedPayload.attachments[0].originalName, 'img_scope_1.jpg');
-  assert.equal(submittedPayload.attachments[0].data, jpegBuffer.toString('base64'));
+  assert.equal(submittedPayload.attachments[0].assetId, 'fasset_bbbbbbbbbbbbbbbbbbbbbbbb');
+  assert.equal('data' in submittedPayload.attachments[0], false);
   assert.equal(submittedPayload?.sourceContext?.messageId, 'msg_for_scope');
   assert.equal(submittedPayload?.sourceContext?.chatType, 'p2p');
   assert.deepEqual(submittedPayload?.sourceContext?.attachments, { imageCount: 1 });
