@@ -129,7 +129,6 @@ async function startServer({ home, port }) {
       HOME: home,
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
-      REMOTELAB_REPLY_SELF_CHECK: 'off',
       REMOTELAB_ASSET_STORAGE_BASE_URL: '',
       REMOTELAB_ASSET_STORAGE_PUBLIC_BASE_URL: '',
       REMOTELAB_ASSET_STORAGE_PROVIDER: '',

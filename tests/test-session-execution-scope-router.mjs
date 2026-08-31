@@ -139,7 +139,7 @@ try {
     externalTriggerId: 'email-thread:%3Cold-thread%40example.com%3E',
   });
   await mutateSessionMeta(previous.id, (draft) => {
-    draft.taskCard = {
+    draft.workSummary = {
       mode: 'project',
       summary: '沿用现有报账主表，不要新建文件。',
       memory: ['所有报账都要追加到同一个 Excel 主表。'],

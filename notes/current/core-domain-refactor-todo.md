@@ -849,7 +849,7 @@ The code should reflect that more clearly.
 
 **Primary files**
 
-- `chat/summarizer.mjs`
+- `chat/session-state-classifier.mjs`
 - `static/chat.js`
 - `templates/chat.html`
 - route/docs references that still assume Progress has backend state

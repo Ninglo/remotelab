@@ -14,7 +14,7 @@ This note ties those slices together under one stronger premise:
 
 The design goal is not “stronger control over the model.”
 
-The design goal is **better model sovereignty on top of a stable substrate**.
+The design goal is **better model sovereignty on top of a stable substrate**. The selected Harness owns task interpretation, planning, tool use, decomposition, and self-review; RemoteLab owns durable cross-Harness state, boundaries, recovery, and delivery.
 
 ---
 
@@ -347,7 +347,7 @@ The current implementation surface for this control architecture is mainly:
 - `chat/system-prompt.mjs` — startup seed and memory-activation scaffold
 - `chat/session-manager.mjs` — current prompt assembly chokepoint and session-side prompt injection
 - `chat/session-continuation.mjs` — active workstream continuity/handoff context
-- `chat/session-task-card.mjs` and related session metadata helpers — current work-summary carriers
+- `chat/session-work-summary.mjs` and related session metadata helpers — provider-neutral current work-state carrier shared across Harnesses
 
 Companion notes:
 

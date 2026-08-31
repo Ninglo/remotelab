@@ -19,7 +19,7 @@ const controlState = buildSessionControlState({
     '默认自然段表达。',
     '先统一对象边界，再讨论后续自动提升。',
   ],
-  taskCard: {
+  workSummary: {
     mode: 'project',
     summary: '先把 carrier 收到一层后端对象投影。',
     reusablePatterns: ['先收敛状态对象，再讨论自动提升与记忆。'],
@@ -57,8 +57,8 @@ assert.match(
 assert.equal(controlState.workState.workflow.entryMode, 'read');
 assert.equal(controlState.workState.workflow.state, 'waiting_user');
 assert.equal(controlState.workState.workflow.priority, 'high');
-assert.equal(controlState.workState.taskCard.summary, '先把 carrier 收到一层后端对象投影。');
-assert.deepEqual(controlState.workState.taskCard.reusablePatterns, ['先收敛状态对象，再讨论自动提升与记忆。']);
+assert.equal(controlState.workState.summary.summary, '先把 carrier 收到一层后端对象投影。');
+assert.deepEqual(controlState.workState.summary.reusablePatterns, ['先收敛状态对象，再讨论自动提升与记忆。']);
 
 const workState = buildSessionWorkState({}, {
   contextHead: {

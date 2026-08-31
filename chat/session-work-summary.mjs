@@ -1,7 +1,8 @@
-const TASK_CARD_TAG = 'task_card';
-const MAX_TASK_CARD_TEXT_CHARS = 360;
-const MAX_TASK_CARD_ITEM_CHARS = 180;
-const MAX_TASK_CARD_ITEMS = 5;
+const WORK_SUMMARY_TAG = 'work_summary';
+const LEGACY_TASK_CARD_TAG = 'task_card';
+const MAX_WORK_SUMMARY_TEXT_CHARS = 360;
+const MAX_WORK_SUMMARY_ITEM_CHARS = 180;
+const MAX_WORK_SUMMARY_ITEMS = 5;
 
 function clipText(value, maxChars) {
   const text = typeof value === 'string'
@@ -14,7 +15,7 @@ function clipText(value, maxChars) {
   return `${text.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
-function normalizeTaskCardMode(value) {
+function normalizeWorkSummaryMode(value) {
   if (value === true) return 'project';
   if (value === false) return 'task';
   const normalized = String(value || '').trim().toLowerCase();
@@ -28,13 +29,13 @@ function normalizeTaskCardMode(value) {
   return '';
 }
 
-function normalizeTaskCardList(value, options = {}) {
+function normalizeWorkSummaryList(value, options = {}) {
   const maxItems = Number.isInteger(options.maxItems) && options.maxItems > 0
     ? options.maxItems
-    : MAX_TASK_CARD_ITEMS;
+    : MAX_WORK_SUMMARY_ITEMS;
   const maxChars = Number.isInteger(options.maxChars) && options.maxChars > 0
     ? options.maxChars
-    : MAX_TASK_CARD_ITEM_CHARS;
+    : MAX_WORK_SUMMARY_ITEM_CHARS;
   const rawItems = Array.isArray(value)
     ? value
     : (typeof value === 'string' && value.trim()
@@ -77,7 +78,7 @@ function parseJsonObjectText(modelText) {
   }
 }
 
-function hasMeaningfulTaskCard(card) {
+function hasMeaningfulWorkSummary(card) {
   if (!card || typeof card !== 'object') return false;
   return Boolean(
     card.goal
@@ -93,26 +94,26 @@ function hasMeaningfulTaskCard(card) {
   );
 }
 
-export function normalizeSessionTaskCard(value) {
+export function normalizeSessionWorkSummary(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
 
-  const summary = clipText(value.summary || value.taskSummary || value.brief || '', MAX_TASK_CARD_TEXT_CHARS);
+  const summary = clipText(value.summary || value.taskSummary || value.brief || '', MAX_WORK_SUMMARY_TEXT_CHARS);
   const goal = clipText(value.goal || value.objective || '', 240);
-  const background = normalizeTaskCardList(value.background || value.context || value.backgroundNotes);
-  const rawMaterials = normalizeTaskCardList(value.rawMaterials || value.materials || value.sourceMaterials);
-  const assumptions = normalizeTaskCardList(value.assumptions);
-  const knownConclusions = normalizeTaskCardList(
+  const background = normalizeWorkSummaryList(value.background || value.context || value.backgroundNotes);
+  const rawMaterials = normalizeWorkSummaryList(value.rawMaterials || value.materials || value.sourceMaterials);
+  const assumptions = normalizeWorkSummaryList(value.assumptions);
+  const knownConclusions = normalizeWorkSummaryList(
     value.knownConclusions || value.conclusions || value.knownFindings || value.findings,
   );
-  const reusablePatterns = normalizeTaskCardList(
+  const reusablePatterns = normalizeWorkSummaryList(
     value.reusablePatterns || value.learnedPatterns || value.workingPatterns || value.heuristics || value.learnedStrategies,
   );
-  const nextSteps = normalizeTaskCardList(value.nextSteps || value.nextActions || value.plan);
-  const memory = normalizeTaskCardList(value.memory || value.userMemory || value.reusableContext || value.durableMemory);
-  const needsFromUser = normalizeTaskCardList(
+  const nextSteps = normalizeWorkSummaryList(value.nextSteps || value.nextActions || value.plan);
+  const memory = normalizeWorkSummaryList(value.memory || value.userMemory || value.reusableContext || value.durableMemory);
+  const needsFromUser = normalizeWorkSummaryList(
     value.needsFromUser || value.openQuestions || value.blockers || value.missingInputs,
   );
-  const mode = normalizeTaskCardMode(
+  const mode = normalizeWorkSummaryMode(
     value.mode
     || value.executionMode
     || value.projectState
@@ -140,41 +141,41 @@ export function normalizeSessionTaskCard(value) {
     needsFromUser,
   };
 
-  return hasMeaningfulTaskCard(normalized) ? normalized : null;
+  return hasMeaningfulWorkSummary(normalized) ? normalized : null;
 }
 
-function formatTaskCardList(label, items) {
+function formatWorkSummaryList(label, items) {
   if (!Array.isArray(items) || items.length === 0) return '';
   return `${label}:\n${items.map((item) => `- ${item}`).join('\n')}`;
 }
 
-export function buildTaskCardPromptBlock(taskCard) {
-  const normalized = normalizeSessionTaskCard(taskCard);
+export function buildWorkSummaryPromptBlock(workSummary) {
+  const normalized = normalizeSessionWorkSummary(workSummary);
   if (!normalized) return '';
 
   return [
-    'Current carried task card (backend-owned hidden session memory):',
+    'Current provider-neutral work summary (RemoteLab-managed cross-Harness continuity):',
     `Execution mode: ${normalized.mode}`,
     normalized.summary ? `Summary: ${normalized.summary}` : '',
     normalized.goal ? `Goal: ${normalized.goal}` : '',
-    formatTaskCardList('Background', normalized.background),
-    formatTaskCardList('Raw materials', normalized.rawMaterials),
-    formatTaskCardList('Assumptions', normalized.assumptions),
-    formatTaskCardList('Known conclusions', normalized.knownConclusions),
-    formatTaskCardList('Reusable patterns', normalized.reusablePatterns),
-    formatTaskCardList('Next steps', normalized.nextSteps),
-    formatTaskCardList('Durable user memory', normalized.memory),
-    formatTaskCardList('Needs from user', normalized.needsFromUser),
+    formatWorkSummaryList('Background', normalized.background),
+    formatWorkSummaryList('Raw materials', normalized.rawMaterials),
+    formatWorkSummaryList('Assumptions', normalized.assumptions),
+    formatWorkSummaryList('Known conclusions', normalized.knownConclusions),
+    formatWorkSummaryList('Reusable patterns', normalized.reusablePatterns),
+    formatWorkSummaryList('Next steps', normalized.nextSteps),
+    formatWorkSummaryList('Session-scoped reusable context', normalized.memory),
+    formatWorkSummaryList('Needs from user', normalized.needsFromUser),
     normalized.mode === 'project'
-      ? 'This card currently treats the work as project-shaped: multi-step, recurring, or material-heavy.'
-      : 'This card currently treats the work as a lightweight task rather than a larger project.',
+      ? 'This summary treats the work as project-shaped: multi-step, recurring, or material-heavy.'
+      : 'This summary treats the work as a lightweight task rather than a larger project.',
   ].filter(Boolean).join('\n\n');
 }
 
-export function parseTaskCardFromAssistantContent(content) {
-  const block = extractTaggedBlock(content, TASK_CARD_TAG);
+export function parseWorkSummaryFromAssistantContent(content) {
+  const block = extractTaggedBlock(content, WORK_SUMMARY_TAG) || extractTaggedBlock(content, LEGACY_TASK_CARD_TAG);
   if (!block) return null;
-  return normalizeSessionTaskCard(parseJsonObjectText(block));
+  return normalizeSessionWorkSummary(parseJsonObjectText(block));
 }
 
-export { TASK_CARD_TAG };
+export { WORK_SUMMARY_TAG };

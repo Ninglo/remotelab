@@ -43,7 +43,6 @@ let statusPollCalls = 0;
 let getUpdatesCalls = 0;
 let forceQueuedSubmit = false;
 let forcePlanningSubmit = false;
-let redirectReplyToOtherSession = false;
 let forceDuplicateSubmitWithRunId = false;
 
 function decodeResponseId(url, prefix) {
@@ -179,7 +178,7 @@ const server = http.createServer(async (req, res) => {
         finalRunId: 'run_wechat_1',
         continuationRunIds: [],
         payload: {
-          text: redirectReplyToOtherSession ? '' : '<private>hidden</private> 已处理。',
+          text: '<private>hidden</private> 已处理。',
         },
       },
     }));
@@ -188,28 +187,6 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && req.url === '/api/sessions/sess_wechat_1/events') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    if (redirectReplyToOtherSession) {
-      res.end(JSON.stringify({
-        events: [
-          {
-            seq: 1,
-            type: 'message',
-            role: 'user',
-            runId: 'run_wechat_1',
-            requestId: 'wechat:bot_account_1:msg_reply_scope',
-            content: 'Please confirm the WeChat app scope.',
-          },
-          {
-            seq: 2,
-            type: 'message',
-            role: 'assistant',
-            messageKind: 'session_continuation_notice',
-            content: 'A new session was created as [Redirected](/?session=sess_wechat_redirect_1&tab=sessions).',
-          },
-        ],
-      }));
-      return;
-    }
     res.end(JSON.stringify({
       events: [{
         seq: 1,
@@ -218,21 +195,6 @@ const server = http.createServer(async (req, res) => {
         runId: 'run_wechat_1',
         requestId: 'wechat:bot_account_1:msg_reply_scope',
         content: '<private>hidden</private> 已处理。',
-      }],
-    }));
-    return;
-  }
-
-  if (req.method === 'GET' && req.url === '/api/sessions/sess_wechat_redirect_1/events') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      events: [{
-        seq: 1,
-        type: 'message',
-        role: 'assistant',
-        runId: 'run_wechat_1',
-        requestId: 'wechat:bot_account_1:msg_reply_scope',
-        content: '分流后的回复。',
       }],
     }));
     return;
@@ -430,27 +392,6 @@ try {
     'wechat connector should accept planning replies that return a response id before a run id exists',
   );
   assert.equal(planningReply.runId, 'run_wechat_1');
-
-  redirectReplyToOtherSession = true;
-  const redirectedReply = await generateRemoteLabReply(replyRuntime, {
-    accountId: 'bot_account_1',
-    accountUserId: 'wx_user_owner_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_reply_scope',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: 'Please confirm the WeChat app scope.',
-    contentSummary: 'Please confirm the WeChat app scope.',
-  });
-  redirectReplyToOtherSession = false;
-
-  assert.equal(
-    redirectedReply.replyText,
-    '分流后的回复。',
-    'wechat connector should follow session dispatch notices to the redirected session reply',
-  );
 
   forceDuplicateSubmitWithRunId = true;
   const duplicateReply = await generateRemoteLabReply(replyRuntime, {

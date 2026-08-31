@@ -5,7 +5,7 @@ import { CHAT_SESSIONS_FILE, MEMORY_DIR } from '../lib/config.mjs';
 import { getContextHead } from './history.mjs';
 import { readJson } from './fs-utils.mjs';
 import { loadSessionsMeta } from './session-meta-store.mjs';
-import { normalizeSessionTaskCard } from './session-task-card.mjs';
+import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 import {
   DEFAULT_SESSION_NAME,
   normalizeSessionDescription,
@@ -377,8 +377,8 @@ function isUsefulSearchTerm(value) {
   return true;
 }
 
-function buildTaskCardSearchParts(taskCard) {
-  const normalized = normalizeSessionTaskCard(taskCard);
+function buildWorkSummarySearchParts(workSummary) {
+  const normalized = normalizeSessionWorkSummary(workSummary);
   if (!normalized) return [];
   return [
     normalized.summary,
@@ -405,7 +405,7 @@ function buildRelatedSessionHaystack(meta, contextHead = null) {
     meta?.externalTriggerId,
     contextHead?.summary || '',
     ...collectObjectTextValues(meta?.sourceContext, []),
-    ...buildTaskCardSearchParts(meta?.taskCard),
+    ...buildWorkSummarySearchParts(meta?.workSummary),
   ].filter(Boolean);
   return normalizeInlineText(parts.join(' ')).toLowerCase();
 }
@@ -502,7 +502,7 @@ function scoreScopeRouterRelatedSessionCandidate(
   if (clipText(contextHead?.summary || '', MAX_CONTEXT_SUMMARY_CHARS)) {
     score += 4;
   }
-  if (normalizeSessionTaskCard(meta?.taskCard)) {
+  if (normalizeSessionWorkSummary(meta?.workSummary)) {
     score += 2;
   }
 
@@ -514,7 +514,7 @@ function scoreScopeRouterRelatedSessionCandidate(
 
 function hasRelatedSessionMemory(meta, contextHead = null) {
   if (clipText(contextHead?.summary || '', MAX_CONTEXT_SUMMARY_CHARS)) return true;
-  return !!normalizeSessionTaskCard(meta?.taskCard);
+  return !!normalizeSessionWorkSummary(meta?.workSummary);
 }
 
 function formatRecencyDay(value) {
@@ -532,27 +532,27 @@ function buildRelatedSessionPromptContext(matches) {
   ];
 
   for (const match of matches) {
-    const taskCard = normalizeSessionTaskCard(match?.meta?.taskCard);
+    const workSummary = normalizeSessionWorkSummary(match?.meta?.workSummary);
     const label = match?.meta?.group
       ? `[${match.meta.group}] ${match.meta.name || '(unnamed)'}`
       : (match?.meta?.name || '(unnamed)');
     const updatedDay = formatRecencyDay(match?.meta?.updatedAt || match?.meta?.created);
     const contextSummary = clipText(match?.contextHead?.summary || '', 180);
-    const taskCardSummary = clipText(taskCard?.summary || '', 140);
+    const workSummarySummary = clipText(workSummary?.summary || '', 140);
     const durableMemory = clipText(
-      (taskCard?.memory || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      (workSummary?.memory || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
       120,
     );
     const reusablePatterns = clipText(
-      (taskCard?.reusablePatterns || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      (workSummary?.reusablePatterns || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
       120,
     );
     const knownConclusions = clipText(
-      (taskCard?.knownConclusions || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      (workSummary?.knownConclusions || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
       120,
     );
     const nextSteps = clipText(
-      (taskCard?.nextSteps || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
+      (workSummary?.nextSteps || []).slice(0, MAX_RELATED_SESSION_LIST_ITEMS).join('; '),
       120,
     );
 
@@ -564,8 +564,8 @@ function buildRelatedSessionPromptContext(matches) {
     if (contextSummary) {
       parts.push(`summary: ${contextSummary}`);
     }
-    if (taskCardSummary && taskCardSummary !== contextSummary) {
-      parts.push(`task card: ${taskCardSummary}`);
+    if (workSummarySummary && workSummarySummary !== contextSummary) {
+      parts.push(`work summary: ${workSummarySummary}`);
     }
     if (reusablePatterns) {
       parts.push(`reusable patterns: ${reusablePatterns}`);

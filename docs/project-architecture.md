@@ -156,7 +156,7 @@ Then branch by the change you need:
 - chat frontend state/render boundary → `docs/frontend-chat-architecture.md`
 - Agent/template compatibility layer, share metadata, and builder flow → `chat/apps.mjs`, `chat/router-control-routes.mjs`, `chat/session-manager.mjs`
 - source routing / source-specific behavior → `chat/session-source-resolution.mjs`, `chat/source-runtime-prompts.mjs`, `docs/external-message-protocol.md`
-- session labeling / rename / grouping → `chat/summarizer.mjs`, `chat/session-naming.mjs`
+- session labeling / rename / grouping → `chat/session-state-classifier.mjs`, `chat/session-naming.mjs`
 - memory activation / startup prompt → `chat/system-prompt.mjs`, `chat/shared-startup-defaults.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md`
 - manager / prompt / memory ownership model → `notes/current/model-sovereign-control-architecture.md`, `notes/current/prompt-layer-topology.md`, `notes/current/manager-policy-persistence.md`
 - manager/work-state projection → `chat/session-control-state.mjs`, `chat/history.mjs`, `notes/current/session-control-state-phase1.md`
@@ -249,7 +249,7 @@ Responsible for product semantics and long-lived business rules.
 - `chat/session-manager.mjs`
 - `chat/history.mjs`
 - `chat/runs.mjs`
-- `chat/summarizer.mjs`
+- `chat/session-state-classifier.mjs`
 - `chat/apps.mjs`
 - `chat/shares.mjs`
 - `chat/push.mjs`
@@ -307,7 +307,8 @@ remotelab/
 │   ├── run-projection.mjs          # raw spool -> normalized run events
 │   ├── run-reconciler.mjs          # run liveness + terminal reconciliation
 │   ├── runner-supervisor.mjs       # compatibility shim for older imports
-│   ├── summarizer.mjs              # async progress/title/group generation
+│   ├── session-state-classifier.mjs              # one post-turn Session-state classification call
+│   ├── session-work-summary.mjs    # provider-neutral current work state shared across Harnesses
 │   ├── apps.mjs                    # Agent template CRUD
 │   ├── shares.mjs                  # immutable read-only snapshot creation
 │   ├── settings.mjs                # user settings persistence
@@ -565,14 +566,16 @@ This is the most important flow in the current architecture.
 `submitHttpMessage()` does the following:
 
 1. dedupe by `(sessionId, requestId)` via `findRunByRequest()`
-2. reject archived sessions or concurrent live runs
+2. reject archived sessions and queue ordinary follow-ups when a run is already live
 3. persist uploaded images into `images/`
 4. build the effective prompt
 5. create a durable run record + manifest
 6. mark the session’s `activeRunId`
 7. append the normalized user message event
-8. optionally trigger draft-title / early rename logic
-9. spawn a detached runner
+8. apply a deterministic draft title for a new unnamed Session
+9. spawn a detached runner directly
+
+There is no pre-turn semantic dispatch gate or planner. After structural validation and busy-session queueing, the selected Harness receives the turn and owns task interpretation, planning, tool use, decomposition, and self-review.
 
 ### 8.4 Prompt construction
 
@@ -581,6 +584,7 @@ Prompt construction combines multiple layers:
 - pointer-first startup context from `chat/system-prompt.mjs` + `chat/prompt-assets/`
 - removable shared startup slice from `chat/shared-startup-defaults.mjs`
 - per-turn external context hook from `chat/turn-context-hook.mjs`
+- provider-neutral current work summary from `session.workSummary` / `workState.summary`
 - agent-level `systemPrompt` when the session came from an Agent
 - continuation context when resuming or switching tools
 - summary-head context from `context.json` after compaction
@@ -620,10 +624,11 @@ When a run becomes terminal:
 - resume IDs are persisted back to session metadata
 - completion targets may dispatch side effects such as email replies
 - web push may fire
-- summarizer may generate:
-  - final session title
-  - display group
-  - hidden description
+- one non-blocking Session-state classifier may refresh:
+  - final session title, Space, Project group, and hidden description
+  - workflow state and priority
+  - the provider-neutral current work summary shared across Harnesses
+- selective durable memory writeback may promote reusable cross-session knowledge
 - auto-compaction may run as a conservative fallback if current context exceeds the known model window (or an explicit token override)
 
 ### 8.8 Browser convergence
@@ -681,18 +686,17 @@ The flow is:
 
 The shared page is intentionally read-only and more tightly sandboxed than the main app.
 
-### 9.4 Session label suggestion flow
+### 9.4 Session-state classification flow
 
-After a turn completes, `chat/summarizer.mjs` makes a **separate one-shot tool call** using the same tool family/config when possible.
+After a normal turn completes, `chat/session-state-classifier.mjs` makes one non-blocking low-effort tool call using the same Harness family/config when possible.
 
-That call generates JSON describing canonical presentation metadata:
+That single call refreshes the Session's provider-neutral projection:
 
-- maybe `title`
-- maybe `group`
-- maybe `description`
+- `title`, `space`, `group`, and `description`
+- `workflowState` and `workflowPriority`
+- persisted `workSummary`, exposed as `workState.summary`
 
-The result is written back into canonical session metadata.
-The current workflow projection is intentionally session-first: session organization piggybacks on canonical metadata plus live activity instead of a separate task-style object.
+It replaces the former separate label, workstream, workflow, task-card, and global Project-organizer calls. It does not review or continue the user-facing answer and does not block reply publication.
 
 ### 9.5 Context compaction and “drop tools”
 
@@ -956,7 +960,7 @@ Use this as the practical code-finding guide.
 | tool execution details | `chat/process-runner.mjs`, `chat/adapters/*.mjs`, `lib/tools.mjs` |
 | restart recovery behavior | `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `notes/archive/http-runtime-phase1.md` |
 | event persistence / long-output handling | `chat/history.mjs`, `chat/runs.mjs`, `chat/fs-utils.mjs` |
-| session labeling / auto-rename / grouping | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
+| post-turn Session classification / work summary | `chat/session-state-classifier.mjs`, `chat/session-manager.mjs`, `chat/session-work-summary.mjs`, `chat/session-naming.mjs` |
 | Agent templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
 | share snapshots | `chat/shares.mjs`, `chat/router.mjs`, `templates/chat.html`, `static/chat/` |
 | push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
@@ -978,7 +982,9 @@ High-value clusters:
   - `tests/test-session-status-broadcast.mjs`
 - session behavior:
   - `tests/test-session-grouping.mjs`
-  - `tests/test-session-early-rename.mjs`
+  - `tests/test-session-state-labeling.mjs`
+  - `tests/test-session-state-classification.mjs`
+  - `tests/test-session-work-summary.mjs`
   - `tests/test-session-route-utils.mjs`
   - `tests/test-session-tool-reuse.mjs`
 - Codex integration and resume behavior:

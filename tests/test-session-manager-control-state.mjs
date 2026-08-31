@@ -22,7 +22,7 @@ try {
   });
 
   await mutateSessionMeta(created.id, (draft) => {
-    draft.taskCard = {
+    draft.workSummary = {
       mode: 'project',
       summary: '先把 manager/work-state 投影接起来。',
       nextSteps: ['补投影层', '补回归测试'],
@@ -51,7 +51,7 @@ try {
 
   const loaded = await getSession(created.id);
   assert.deepEqual(loaded.managerState.activeAgreements, ['默认自然段表达。']);
-  assert.equal(loaded.workState.taskCard.summary, '先把 manager/work-state 投影接起来。');
+  assert.equal(loaded.workState.summary.summary, '先把 manager/work-state 投影接起来。');
   assert.equal(loaded.workState.workflow.entryMode, 'resume');
   assert.equal(loaded.workState.workflow.state, 'waiting_user');
   assert.equal(loaded.workState.workflow.priority, 'medium');

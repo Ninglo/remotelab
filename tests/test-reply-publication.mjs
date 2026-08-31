@@ -9,106 +9,36 @@ const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-reply-publication-'));
 const tempBin = join(tempHome, 'bin');
 const configDir = join(tempHome, '.config', 'remotelab');
-
 mkdirSync(tempBin, { recursive: true });
 mkdirSync(configDir, { recursive: true });
 
 const fakeCodexPath = join(tempBin, 'fake-codex');
-writeFileSync(
-  fakeCodexPath,
-  `#!/usr/bin/env node
-const prompt = process.argv[process.argv.length - 1] || '';
-const isReplyReviewPrompt = prompt.includes("You are RemoteLab's hidden end-of-turn completion reviewer.");
-const isRepairPrompt = prompt.includes('You are continuing the same user-facing reply after a hidden self-check found an avoidable early stop.');
-const isDelayedContinuationScenario = prompt.includes('延迟续写场景');
-const isDelayedBlockerScenario = prompt.includes('延迟复核场景');
-const outputDelayMs = isReplyReviewPrompt && (isDelayedContinuationScenario || isDelayedBlockerScenario) ? 450 : 0;
-
-let items = [{ type: 'agent_message', text: '我已经分析了机制问题。下一条我可以直接给你那份极短执行守则。' }];
-
-if (isDelayedBlockerScenario && !isReplyReviewPrompt && !isRepairPrompt) {
-  items = [{ type: 'agent_message', text: '这一步会永久删除生产数据，需要你先明确确认，我才能继续执行。' }];
-}
-
-if (isReplyReviewPrompt) {
-  items = [{
-    type: 'agent_message',
-    text: '<hide>' + JSON.stringify(
-      isDelayedBlockerScenario
-        ? {
-            action: 'accept',
-            reason: '这是明确依赖用户确认的破坏性动作。',
-            continuationPrompt: '',
-          }
-        : {
-            action: 'continue',
-            reason: '上一条把本轮该直接交付的内容留到了后面。',
-            continuationPrompt: '直接把极短执行守则给出来，不要再征求许可。',
-          }
-    ) + '</hide>',
-  }];
-}
-
-if (isRepairPrompt) {
-  items = [{ type: 'agent_message', text: '极短执行守则：默认先做完再汇报；没有真实阻塞就不要停。' }];
-}
-
-function emitTurn() {
-  console.log(JSON.stringify({ type: 'thread.started', thread_id: 'reply-publication-thread' }));
-  console.log(JSON.stringify({ type: 'turn.started' }));
-  for (const item of items) {
-    console.log(JSON.stringify({ type: 'item.completed', item }));
-  }
-  console.log(JSON.stringify({
-    type: 'turn.completed',
-    usage: { input_tokens: 1, output_tokens: 1 },
-  }));
-  setTimeout(() => process.exit(0), 20);
-}
-
-if (outputDelayMs > 0) {
-  setTimeout(emitTurn, outputDelayMs);
-} else {
-  emitTurn();
-}
-`,
-  'utf8',
-);
+writeFileSync(fakeCodexPath, `#!/usr/bin/env node
+console.log(JSON.stringify({ type: 'thread.started', thread_id: 'reply-publication-thread' }));
+console.log(JSON.stringify({ type: 'turn.started' }));
+console.log(JSON.stringify({
+  type: 'item.completed',
+  item: { type: 'agent_message', text: '主 Harness 已经直接完成并交付结果。' },
+}));
+console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
+`, 'utf8');
 chmodSync(fakeCodexPath, 0o755);
 
-writeFileSync(
-  join(configDir, 'tools.json'),
-  JSON.stringify(
-    [
-      {
-        id: 'fake-codex',
-        name: 'Fake Codex',
-        command: 'fake-codex',
-        runtimeFamily: 'codex-json',
-        models: [{ id: 'fake-model', label: 'Fake model' }],
-        reasoning: {
-          kind: 'enum',
-          label: 'Reasoning',
-          levels: ['low'],
-          default: 'low',
-        },
-      },
-    ],
-    null,
-    2,
-  ),
-  'utf8',
-);
+writeFileSync(join(configDir, 'tools.json'), JSON.stringify([{
+  id: 'fake-codex',
+  name: 'Fake Codex',
+  command: 'fake-codex',
+  runtimeFamily: 'codex-json',
+  models: [{ id: 'fake-model', label: 'Fake model' }],
+  reasoning: { kind: 'enum', label: 'Reasoning', levels: ['low'], default: 'low' },
+}], null, 2), 'utf8');
 
 process.env.HOME = tempHome;
 process.env.REMOTELAB_CONFIG_DIR = configDir;
 process.env.REMOTELAB_WORK_ROOT_DIR = join(tempHome, 'workspace');
+process.env.REMOTELAB_MEMORY_WRITEBACK = 'off';
 delete process.env.REMOTELAB_INSTANCE_ROOT;
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
-
-const sessionManager = await import(
-  pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href
-);
 
 const {
   createSession,
@@ -116,16 +46,7 @@ const {
   getSessionReplyPublication,
   killAll,
   sendMessage,
-} = sessionManager;
-
-const {
-  appendRunSpoolRecord,
-  createRun,
-  updateRun,
-  writeRunResult,
-} = await import(
-  pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href
-);
+} = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -136,198 +57,47 @@ async function waitFor(predicate, description, timeoutMs = 6000) {
   throw new Error(`Timed out waiting for ${description}`);
 }
 
-function trimString(value) {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-async function waitForRootRunId(sessionId, responseId, description) {
-  let rootRunId = '';
-  await waitFor(async () => {
-    const publication = await getSessionReplyPublication(sessionId, responseId);
-    rootRunId = trimString(publication?.rootRunId);
-    return !!rootRunId;
-  }, description);
-  return rootRunId;
-}
-
 try {
-  const continuationSession = await createSession(tempHome, 'fake-codex', 'Reply Publication Continuation', {
+  const session = await createSession(tempHome, 'fake-codex', 'Direct Reply Publication', {
+    space: 'Product',
     group: 'RemoteLab',
+    description: 'Verify direct publication after the selected Harness completes.',
+  });
+  const outcome = await sendMessage(session.id, '直接完成这项工作。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
   });
 
-  const continuationOutcome = await sendMessage(
-    continuationSession.id,
-    '延迟续写场景：先分析问题，再把极短执行守则真的给出来。',
-    [],
-    { tool: 'fake-codex', model: 'fake-model', effort: 'low' },
-  );
-
-  const continuationResponseId = continuationOutcome.response?.id;
-  assert.ok(continuationResponseId, 'continuation scenario should return a response id');
-  const continuationRunId = continuationOutcome.run?.id
-    || await waitForRootRunId(
-      continuationSession.id,
-      continuationResponseId,
-      'continuation response to materialize a root run',
-    );
-  assert.ok(continuationRunId, 'continuation scenario should resolve a root run id');
+  const responseId = outcome.response?.id;
+  const runId = outcome.run?.id;
+  assert.ok(responseId);
+  assert.ok(runId);
 
   await waitFor(
-    async () => (await getRunState(continuationRunId))?.state === 'completed',
-    'continuation root run to complete',
+    async () => (await getRunState(runId))?.state === 'completed',
+    'main Harness run to complete',
   );
-
   await waitFor(
-    async () => {
-      const publication = await getSessionReplyPublication(continuationSession.id, continuationResponseId);
-      return ['reviewing', 'continuing'].includes(publication?.state || '');
-    },
-    'continuation publication to enter reviewing/continuing before the final reply is ready',
+    async () => (await getSessionReplyPublication(session.id, responseId))?.state === 'ready',
+    'reply publication to become ready directly',
   );
 
-  const continuationDuringReview = await getSessionReplyPublication(continuationSession.id, continuationResponseId);
-  assert.ok(
-    ['reviewing', 'continuing'].includes(continuationDuringReview?.state),
-    'continuation publication should stay in reviewing/continuing before the final reply is ready',
-  );
+  const publication = await getSessionReplyPublication(session.id, responseId);
+  assert.equal(publication?.resolution, 'accepted_as_is');
+  assert.equal(publication?.rootRunId, runId);
+  assert.equal(publication?.finalRunId, runId);
+  assert.deepEqual(publication?.continuationRunIds, []);
+  assert.equal(publication?.payload?.text, '主 Harness 已经直接完成并交付结果。');
 
-  await waitFor(
-    async () => (await getSessionReplyPublication(continuationSession.id, continuationResponseId))?.state === 'ready',
-    'continuation publication to become ready',
-  );
-
-  const continuationFinal = await getSessionReplyPublication(continuationSession.id, continuationResponseId);
-  assert.equal(continuationFinal?.resolution, 'auto_continued');
-  assert.notEqual(continuationFinal?.finalRunId, continuationRunId, 'continuation should finish on a repair run');
-  assert.match(String(continuationFinal?.payload?.text || ''), /极短执行守则：/, 'final payload should include the continued reply');
-  assert.match(String(continuationFinal?.payload?.text || ''), /我已经分析了机制问题/, 'final payload should preserve the visible original reply');
-
-  const lazyResponseId = continuationResponseId;
-  const lazyCompletedAt = new Date().toISOString();
-  const lazyRun = await createRun({
-    status: {
-      sessionId: continuationSession.id,
-      requestId: 'compat_lazy_reply_publication_test',
-      responseId: lazyResponseId,
-      state: 'completed',
-      tool: 'fake-codex',
-      model: 'fake-model',
-      effort: 'low',
-      completedAt: lazyCompletedAt,
-      result: { completedAt: lazyCompletedAt, exitCode: 0, signal: null },
-      replyPublicationRootRunId: continuationRunId,
-    },
-    manifest: {
-      sessionId: continuationSession.id,
-      requestId: 'compat_lazy_reply_publication_test',
-      responseId: lazyResponseId,
-      folder: tempHome,
-      tool: 'fake-codex',
-      runtimeFamily: 'codex-json',
-      prompt: 'lazy reply publication finalization test',
-      internalOperation: 'reply_self_repair',
-      replyPublicationRootRunId: continuationRunId,
-      replyPublicationResponseIds: [lazyResponseId],
-      options: { model: 'fake-model', effort: 'low', runtimeFamily: 'codex-json' },
-    },
+  const secondOutcome = await sendMessage(session.id, '继续当前会话。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
   });
-  await appendRunSpoolRecord(lazyRun.id, {
-    ts: lazyCompletedAt,
-    stream: 'stdout',
-    line: JSON.stringify({ type: 'thread.started', thread_id: 'reply-publication-thread' }),
-    json: { type: 'thread.started', thread_id: 'reply-publication-thread' },
-  });
-  await appendRunSpoolRecord(lazyRun.id, {
-    ts: lazyCompletedAt,
-    stream: 'stdout',
-    line: JSON.stringify({ type: 'turn.started' }),
-    json: { type: 'turn.started' },
-  });
-  await appendRunSpoolRecord(lazyRun.id, {
-    ts: lazyCompletedAt,
-    stream: 'stdout',
-    line: JSON.stringify({
-      type: 'item.completed',
-      item: { type: 'agent_message', text: '懒恢复最终回复：publication 查询应该触发 finalized。' },
-    }),
-    json: {
-      type: 'item.completed',
-      item: { type: 'agent_message', text: '懒恢复最终回复：publication 查询应该触发 finalized。' },
-    },
-  });
-  await appendRunSpoolRecord(lazyRun.id, {
-    ts: lazyCompletedAt,
-    stream: 'stdout',
-    line: JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }),
-    json: { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } },
-  });
-  await writeRunResult(lazyRun.id, { completedAt: lazyCompletedAt, exitCode: 0, signal: null });
-  await updateRun(continuationRunId, (current) => ({
-    ...current,
-    replyPublication: {
-      ...(current.replyPublication || {}),
-      responseIds: [lazyResponseId],
-      state: 'continuing',
-      resolution: '',
-      rootRunId: continuationRunId,
-      finalRunId: continuationRunId,
-      continuationRunIds: [lazyRun.id],
-      updatedAt: lazyCompletedAt,
-      readyAt: null,
-      failedAt: null,
-      lastError: null,
-    },
-  }));
-
-  const lazyFinal = await getSessionReplyPublication(continuationSession.id, lazyResponseId);
-  assert.equal(lazyFinal?.state, 'ready', 'publication lookup should finalize completed continuation runs lazily');
-  assert.equal(lazyFinal?.finalRunId, lazyRun.id);
-  assert.match(String(lazyFinal?.payload?.text || ''), /懒恢复最终回复/, 'lazy-finalized payload should include continuation text');
-
-  const blockerSession = await createSession(tempHome, 'fake-codex', 'Reply Publication Blocker', {
-    group: 'RemoteLab',
-  });
-
-  const blockerOutcome = await sendMessage(
-    blockerSession.id,
-    '延迟复核场景：这是明确依赖用户确认的破坏性动作，先停下来等我确认。',
-    [],
-    { tool: 'fake-codex', model: 'fake-model', effort: 'low' },
-  );
-
-  const blockerResponseId = blockerOutcome.response?.id;
-  assert.ok(blockerResponseId, 'blocker scenario should return a response id');
-  const blockerRunId = blockerOutcome.run?.id
-    || await waitForRootRunId(
-      blockerSession.id,
-      blockerResponseId,
-      'blocker response to materialize a root run',
-    );
-  assert.ok(blockerRunId, 'blocker scenario should resolve a root run id');
-
-  await waitFor(
-    async () => (await getRunState(blockerRunId))?.state === 'completed',
-    'blocker root run to complete',
-  );
-
-  await waitFor(
-    async () => (await getSessionReplyPublication(blockerSession.id, blockerResponseId))?.state === 'reviewing',
-    'blocker publication to enter reviewing',
-  );
-
-  await waitFor(
-    async () => (await getSessionReplyPublication(blockerSession.id, blockerResponseId))?.state === 'ready',
-    'blocker publication to become ready',
-  );
-
-  const blockerFinal = await getSessionReplyPublication(blockerSession.id, blockerResponseId);
-  assert.equal(blockerFinal?.resolution, 'accepted_as_is');
-  assert.equal(blockerFinal?.finalRunId, blockerRunId);
-  assert.equal(
-    blockerFinal?.payload?.text,
-    '这一步会永久删除生产数据，需要你先明确确认，我才能继续执行。',
-    'accepted publication should keep the original assistant reply as the final payload',
-  );
+  assert.ok(secondOutcome.run?.id, 'a later message should start a Harness run directly');
+  assert.equal(secondOutcome.queued, false);
+  assert.notEqual(secondOutcome.response?.state, 'checking');
 } finally {
   killAll();
   rmSync(tempHome, { recursive: true, force: true });

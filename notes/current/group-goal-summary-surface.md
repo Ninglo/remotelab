@@ -76,7 +76,7 @@ Minimum projection shape:
   "blockers": [
     {
       "title": "One session is waiting for user input",
-      "reason": "A task card or workflow state indicates the next step needs confirmation.",
+      "reason": "A work summary or workflow state indicates the next step needs confirmation.",
       "severity": "medium",
       "sourceSessionId": "..."
     }
@@ -95,7 +95,7 @@ Minimum projection shape:
   ],
   "evidence": [
     {
-      "label": "Task card from the latest session",
+      "label": "Work summary from the latest session",
       "sessionId": "..."
     }
   ]
@@ -118,7 +118,7 @@ Detail page modules:
 - goal / work item definition
 - full session list
 - status distribution
-- task cards and next steps
+- work summaries and next steps
 - blockers / needs from user
 - decisions and assumptions when available
 - output / artifact list
@@ -134,13 +134,13 @@ Session page integration:
 
 The first implementation should run as an isolated test service and read current RemoteLab data rather than mutate the shipped main flow.
 
-Use a deterministic projection engine first, backed by real session metadata and task cards. Keep the API schema model-ready so the deterministic engine can later be replaced or supplemented by an AI generator.
+Use a deterministic projection engine first, backed by real session metadata and work summaries. Keep the API schema model-ready so the deterministic engine can later be replaced or supplemented by an AI generator.
 
 The semantic summary itself should be AI-generated, not assembled mechanically from status counters. Deterministic code should provide the facts, candidate actions, source digest, cache invalidation, and rendering contract; the AI layer should synthesize the project brief, focus points, user-needed information, confidence note, and best next action.
 
 Recommended refresh timing:
 
-- after a session turn updates group-relevant metadata, task card, artifact, workflow state, or title
+- after a session turn updates group-relevant metadata, work summary, artifact, workflow state, or title
 - when the group source digest changes and the user opens the summary page
 - when the user manually refreshes the AI brief
 - after a selected action returns from the session page and the group projection is revisited
@@ -156,7 +156,7 @@ An isolated functional test service now exists outside the main `7690` RemoteLab
 This service is read-only. It reads the real `chat-sessions.json` and `file-assets` metadata, groups active sessions by existing `group`, and renders:
 
 - summary page as a concise text work brief with focus points, one primary action, a few related sessions, and collapsed evidence
-- detail page for all sessions, task-card content, and assets
+- detail page for all sessions, work-summary content, and assets
 - links from suggested actions back into the existing RemoteLab session page
 - cached AI project brief generation through Codex CLI, keyed by the group source digest
 

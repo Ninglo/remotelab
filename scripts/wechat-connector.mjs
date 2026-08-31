@@ -1899,40 +1899,6 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
 async function loadAssistantReply(requester, sessionId, runId, requestId) {
   const visitedSessionIds = new Set();
 
-  function findRequestEventSeq(events) {
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (!event || event.role !== 'user' || event.type !== 'message') {
-        continue;
-      }
-      if ((runId && event.runId === runId) || (requestId && event.requestId === requestId)) {
-        return Number.isInteger(event.seq) ? event.seq : -1;
-      }
-    }
-    return -1;
-  }
-
-  function findRedirectedSessionId(events, afterSeq) {
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (!event || event.role !== 'assistant' || event.type !== 'message') {
-        continue;
-      }
-      if (event.messageKind !== 'session_continuation_notice') {
-        continue;
-      }
-      if (Number.isInteger(afterSeq) && Number.isInteger(event.seq) && event.seq <= afterSeq) {
-        continue;
-      }
-      const match = trimString(event.content).match(/[?&]session=([a-z0-9_-]+)/i);
-      const redirectedSessionId = trimString(match?.[1]);
-      if (redirectedSessionId) {
-        return redirectedSessionId;
-      }
-    }
-    return '';
-  }
-
   async function loadReplyFromSession(targetSessionId) {
     if (!targetSessionId || visitedSessionIds.has(targetSessionId)) {
       return null;
@@ -1962,15 +1928,7 @@ async function loadAssistantReply(requester, sessionId, runId, requestId) {
         };
       },
     });
-    if (candidate) {
-      return candidate;
-    }
-
-    const redirectedSessionId = findRedirectedSessionId(events, findRequestEventSeq(events));
-    if (!redirectedSessionId) {
-      return null;
-    }
-    return loadReplyFromSession(redirectedSessionId);
+    return candidate || null;
   }
 
   return loadReplyFromSession(sessionId);

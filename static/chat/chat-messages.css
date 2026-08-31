@@ -549,34 +549,6 @@
   padding: 10px 12px 4px;
 }
 
-.reply-self-check-drawer {
-  margin: 6px auto 12px;
-  background: color-mix(in srgb, var(--bg-secondary) 78%, transparent);
-}
-
-.reply-self-check-drawer .turn-collapse-summary {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.reply-self-check-drawer .turn-collapse-body {
-  padding-top: 8px;
-}
-
-.reply-self-check-drawer .msg-system {
-  margin: 0 0 8px;
-  text-align: left;
-}
-
-.reply-self-check-drawer .context-operation {
-  margin: 8px 0 0;
-  max-width: 100%;
-}
-
-.reply-self-check-drawer .context-operation:first-child {
-  margin-top: 0;
-}
-
 /* Reasoning text inside thinking block */
 .reasoning {
   font-size: 12px; color: var(--text-secondary);

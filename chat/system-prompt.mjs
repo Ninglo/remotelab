@@ -42,19 +42,15 @@ function buildSessionSpawnSection({ currentSessionId, chatPort }) {
   const sessionIdSuffix = currentSessionId ? ` (current: ${currentSessionId})` : '';
   return `## Parallel Session Spawning
 
-- RemoteLab can spawn a fresh parallel session from the current session when work should split for context hygiene or parallel progress.
-- Multi-session routing is a core dispatch principle, not an optional trick.
-- This is not primarily a user-facing UI action; treat it as an internal capability you may invoke yourself when useful.
-- Two patterns are supported:
+- RemoteLab can create a separate persistent session when independent history, delivery, visibility, or long-running execution has real product value.
+- Treat this as an optional capability, not a mandatory routing layer around the selected Harness.
+- Prefer the Harness's own in-run planning or native subagents for temporary decomposition that does not need a durable RemoteLab session.
+- Two persistent-session patterns are supported:
   - Independent side session: create a new session and let it continue on its own.
-  - Waited subagent: create a new session, wait for its result, then summarize the result back in the current session.
-- If a user turn contains 2+ independently actionable goals, prefer splitting into child sessions.
-- Do not split a single bounded workflow just because the user expressed it as a numbered checklist, bug-triage rubric, or ordered step sequence.
-- If the user explicitly says to continue in the same session/workflow or not to create another child session, treat that as a strong no-split signal.
-- Do not keep multiple goals in one thread merely because they share a broad theme.
-- If they stay in one session, have a clear no-split reason.
-- A parent session may coordinate while each child session owns one goal.
-- Do not over-model durable hierarchy here: the spawned session can be treated as an independent worker that simply received bounded handoff context from this session.
+  - Waited worker session: create a new session, wait for its result, then summarize the result back in the current session.
+- Do not split merely because a request contains several steps or several independently actionable items; split only when the separate durable session itself is useful.
+- If the user explicitly says to continue in the same session/workflow or not to create another child session, keep the work here.
+- A spawned session is an independent worker that receives a bounded handoff, not a hidden replacement for the Harness's own control loop.
 - **Recursion termination**: if this session was itself spawned via delegation (indicated by a "Delegation handoff:" first message), you already have exactly one focused task. Complete it directly. Do not spawn further child sessions unless the delegated task genuinely contains multiple independent goals that cannot be handled sequentially in this session — a single task that happens to have several steps is NOT a reason to split.
 - Preferred command:
   - remotelab session-spawn --task "<focused task>" --json
