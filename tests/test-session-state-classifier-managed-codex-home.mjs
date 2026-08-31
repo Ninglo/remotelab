@@ -6,7 +6,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
-const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-summarizer-codex-home-'));
+const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-session-state-classifier-codex-home-'));
 const tempBin = join(tempHome, 'bin');
 const tempConfig = join(tempHome, 'config');
 const tempMemory = join(tempHome, 'memory');
@@ -39,8 +39,9 @@ console.log(JSON.stringify({
     type: 'agent_message',
     text: JSON.stringify({
       title: 'Managed Home Test',
-      group: 'Managed Home',
-      description: 'Verify summarizer background Codex runs inherit the managed runtime home.',
+      space: 'Product',
+      group: 'Runtime',
+      description: 'Verify session-state-classifier background Codex runs inherit the managed runtime home.',
     }),
   },
 }));
@@ -89,39 +90,34 @@ delete process.env.CODEX_HOME;
 const sessionManager = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
 const history = await import(pathToFileURL(join(repoRoot, 'chat', 'history.mjs')).href);
 const normalizer = await import(pathToFileURL(join(repoRoot, 'chat', 'normalizer.mjs')).href);
-const summarizer = await import(pathToFileURL(join(repoRoot, 'chat', 'summarizer.mjs')).href);
+const sessionStateClassifier = await import(pathToFileURL(join(repoRoot, 'chat', 'session-state-classifier.mjs')).href);
 
 const { appendEvent } = history;
 const { messageEvent } = normalizer;
-const { createSession, getSession, killAll, renameSession } = sessionManager;
-const { triggerSessionLabelSuggestion } = summarizer;
+const { createSession, killAll } = sessionManager;
+const { triggerSessionStateSuggestion } = sessionStateClassifier;
 
 const session = await createSession(tempHome, fakeToolId, '', {});
 await appendEvent(session.id, messageEvent('user', 'Please verify the background Codex environment is wired correctly.'));
 await appendEvent(session.id, messageEvent('assistant', 'I will verify the background Codex environment.'));
 
-const result = await triggerSessionLabelSuggestion(
-  {
-    id: session.id,
-    folder: session.folder,
-    name: session.name || '',
-    group: session.group || '',
-    description: session.description || '',
-    sourceName: session.sourceName || '',
-    autoRenamePending: session.autoRenamePending,
-    tool: fakeToolId,
-  },
-  async (newName) => renameSession(session.id, newName, { lockTitle: false }),
-);
+const result = await triggerSessionStateSuggestion({
+  id: session.id,
+  folder: session.folder,
+  name: session.name || '',
+  group: session.group || '',
+  description: session.description || '',
+  sourceName: session.sourceName || '',
+  autoRenamePending: session.autoRenamePending,
+  tool: fakeToolId,
+});
 
-const updated = await getSession(session.id);
 const capturedCodexHome = readFileSync(envCapturePath, 'utf8').trim();
 const expectedManagedHome = join(tempConfig, 'provider-runtime-homes', 'codex');
 
-assert.equal(result?.rename?.renamed, true, 'summarizer should be able to rename via Codex background run');
-assert.equal(updated?.name, result?.title, 'session title should match the summarizer-applied title');
-assert.equal(updated?.autoRenamePending, false);
-assert.equal(capturedCodexHome, expectedManagedHome, 'background summarizer codex run should receive managed CODEX_HOME');
+assert.equal(result?.ok, true, 'Session-state classifier should complete through the background Codex run');
+assert.equal(result?.title, 'Managed Home Test');
+assert.equal(capturedCodexHome, expectedManagedHome, 'background session-state-classifier codex run should receive managed CODEX_HOME');
 
 const machineCodexHome = join(tempHome, 'machine-codex-home');
 process.env.REMOTELAB_CODEX_HOME_MODE = 'personal';
@@ -132,27 +128,24 @@ const personalSession = await createSession(tempHome, fakeToolId, '', {});
 await appendEvent(personalSession.id, messageEvent('user', 'Please verify explicit personal Codex home selection.'));
 await appendEvent(personalSession.id, messageEvent('assistant', 'I will verify explicit personal Codex home selection.'));
 
-await triggerSessionLabelSuggestion(
-  {
-    id: personalSession.id,
-    folder: personalSession.folder,
-    name: personalSession.name || '',
-    group: personalSession.group || '',
-    description: personalSession.description || '',
-    sourceName: personalSession.sourceName || '',
-    autoRenamePending: personalSession.autoRenamePending,
-    tool: fakeToolId,
-  },
-  async (newName) => renameSession(personalSession.id, newName, { lockTitle: false }),
-);
+await triggerSessionStateSuggestion({
+  id: personalSession.id,
+  folder: personalSession.folder,
+  name: personalSession.name || '',
+  group: personalSession.group || '',
+  description: personalSession.description || '',
+  sourceName: personalSession.sourceName || '',
+  autoRenamePending: personalSession.autoRenamePending,
+  tool: fakeToolId,
+});
 
 assert.equal(
   readFileSync(envCapturePath, 'utf8').trim(),
   machineCodexHome,
-  'explicit personal mode should route summarizer codex runs to the configured machine Codex home',
+  'explicit personal mode should route session-state-classifier codex runs to the configured machine Codex home',
 );
 
 killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
-console.log('test-summarizer-managed-codex-home: ok');
+console.log('test-session-state-classifier-managed-codex-home: ok');

@@ -523,7 +523,7 @@ export async function queueContextCompaction(sessionId, session, run, { automati
 
 export async function maybeAutoCompact(sessionId, session, run, manifest, services = {}) {
   if (!session || !run) return false;
-  if (manifest?.internalOperation && manifest.internalOperation !== 'reply_self_repair') return false;
+  if (manifest?.internalOperation) return false;
   if (services.getSessionQueueCount(session) > 0) return false;
   let effectiveRun = run;
   let contextTokens = getRunCurrentContextTokens(run);

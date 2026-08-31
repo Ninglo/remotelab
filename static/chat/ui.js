@@ -30,8 +30,6 @@ function renderUiIcon(name, className = "") {
   return window.RemoteLabIcons?.render(name, { className }) || "";
 }
 
-const replySelfCheckDrawerByContainer = new WeakMap();
-
 function escapeMathHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -1258,57 +1256,7 @@ function renderReasoning(evt) {
   renderReasoningInto(container, evt);
 }
 
-function isReplySelfCheckStatusEvent(evt) {
-  return evt?.type === "status"
-    && typeof evt?.content === "string"
-    && evt.content.startsWith("Assistant self-check:");
-}
-
-function isReplySelfCheckOperationEvent(evt) {
-  return evt?.type === "context_operation"
-    && evt?.operation === "continue_turn"
-    && evt?.trigger === "automatic";
-}
-
-function getContainerLastElement(container) {
-  if (!container) return null;
-  if (container.lastElementChild) return container.lastElementChild;
-  if (Array.isArray(container.children) && container.children.length > 0) {
-    return container.children[container.children.length - 1] || null;
-  }
-  return null;
-}
-
-function getOrCreateReplySelfCheckDrawer(container) {
-  if (!container) return null;
-  const existing = replySelfCheckDrawerByContainer.get(container);
-  if (
-    existing?.drawer
-    && existing.drawer.parentNode === container
-    && getContainerLastElement(container) === existing.drawer
-  ) {
-    return existing;
-  }
-
-  const drawer = document.createElement("details");
-  drawer.className = "turn-collapse-drawer reply-self-check-drawer";
-
-  const summary = document.createElement("summary");
-  summary.className = "turn-collapse-summary";
-  summary.textContent = t("replySelfCheck.drawerSummary");
-  drawer.appendChild(summary);
-
-  const body = document.createElement("div");
-  body.className = "turn-collapse-body";
-  drawer.appendChild(body);
-
-  container.appendChild(drawer);
-  const created = { drawer, summary, body };
-  replySelfCheckDrawerByContainer.set(container, created);
-  return created;
-}
-
-function renderStatusInto(container, evt, { allowReplySelfCheckCollapse = true } = {}) {
+function renderStatusInto(container, evt) {
   if (!container) return null;
   if (
     !evt?.content
@@ -1316,13 +1264,6 @@ function renderStatusInto(container, evt, { allowReplySelfCheckCollapse = true }
     || evt.content === "thinking"
   ) {
     return null;
-  }
-  if (allowReplySelfCheckCollapse && isReplySelfCheckStatusEvent(evt)) {
-    const drawer = getOrCreateReplySelfCheckDrawer(container);
-    if (!drawer?.body) return null;
-    return renderStatusInto(drawer.body, evt, {
-      allowReplySelfCheckCollapse: false,
-    });
   }
   const div = document.createElement("div");
   div.className = "msg-system";
@@ -1359,15 +1300,8 @@ function humanizeContextOperationValue(value) {
   return String(value || "").trim().replace(/_/g, " ");
 }
 
-function renderContextOperationInto(container, evt, { allowReplySelfCheckCollapse = true } = {}) {
+function renderContextOperationInto(container, evt) {
   if (!container) return null;
-  if (allowReplySelfCheckCollapse && isReplySelfCheckOperationEvent(evt)) {
-    const drawer = getOrCreateReplySelfCheckDrawer(container);
-    if (!drawer?.body) return null;
-    return renderContextOperationInto(drawer.body, evt, {
-      allowReplySelfCheckCollapse: false,
-    });
-  }
   const card = document.createElement("div");
   card.className = "context-operation";
   if (evt?.phase) card.dataset.phase = evt.phase;

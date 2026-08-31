@@ -43,9 +43,7 @@ writeFileSync(
   `#!/usr/bin/env node
 const fs = require('fs');
 const prompt = process.argv[process.argv.length - 1] || '';
-const isLabelPrompt = prompt.includes('You are naming a developer session');
-const wantsTitle = prompt.includes('"title"');
-const wantsGrouping = prompt.includes('"space"') && prompt.includes('"group"') && prompt.includes('"description"');
+const isLabelPrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
 const delayMs = isLabelPrompt ? 50 : 220;
 
 if (isLabelPrompt && process.env.PROMPT_LOG_FILE) {
@@ -53,22 +51,20 @@ if (isLabelPrompt && process.env.PROMPT_LOG_FILE) {
 }
 
 const text = isLabelPrompt
-  ? JSON.stringify(
-      wantsTitle
-        ? {
-            title: 'RemoteLab Prompt Tuning',
-            space: 'Product',
-            group: 'RemoteLab',
-            description: 'Tune the auto-rename prompt using session history and scope hints.',
-          }
-        : wantsGrouping
-          ? {
-              space: 'Product',
-              group: 'RemoteLab',
-              description: 'Tune the auto-rename prompt using session history and scope hints.',
-            }
-          : {}
-    )
+  ? JSON.stringify({
+      title: 'RemoteLab Prompt Tuning',
+      space: 'Product',
+      group: 'RemoteLab',
+      description: 'Tune the auto-rename prompt using session history and scope hints.',
+      shouldSetWorkflowState: true,
+      workflowState: 'done',
+      workflowPriority: 'low',
+      workSummary: {
+        mode: 'task',
+        summary: 'Use session history and scope hints to keep labels stable.',
+        goal: 'Keep the current Session aligned without creating unnecessary groups.',
+      },
+    })
   : 'main task finished';
 
 console.log(JSON.stringify({ type: 'thread.started', thread_id: isLabelPrompt ? 'label-thread' : 'run-thread' }));
@@ -199,14 +195,14 @@ try {
         && current?.group === 'RemoteLab'
         && current?.description === 'Tune the auto-rename prompt using session history and scope hints.';
     },
-    'session should use enriched prompt context for early naming',
+    'post-turn Session classification should use enriched shared context',
     8000,
   );
 
   const promptLog = readFileSync(promptLogPath, 'utf8');
-  assert.match(promptLog, /RemoteLab has a two-level sidebar/);
-  assert.match(promptLog, /do not create a new group for every one-off feature slice/);
-  assert.match(promptLog, /prefer the closest existing workstream group/);
+  assert.match(promptLog, /single post-turn session-state classifier/);
+  assert.match(promptLog, /Reuse an existing Space and Project group/);
+  assert.match(promptLog, /provider-neutral work summary/);
   assert.match(promptLog, /Earlier session context:/);
   assert.match(promptLog, /Known scope router entries:/);
   assert.match(promptLog, /Current non-archived sessions:/);

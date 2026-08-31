@@ -107,8 +107,13 @@ try {
 
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
-    /RemoteLab owns the higher-level workflow, memory policy, and reply style/,
-    'default Codex developer instructions should reinforce manager ownership',
+    /RemoteLab supplies durable session\/run state, provider-neutral memory, access boundaries, capabilities, and user-visible delivery/,
+    'default Codex developer instructions should define the thin RemoteLab control-plane boundary',
+  );
+  assert.match(
+    DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
+    /Codex owns task interpretation, planning, tool use, in-run decomposition, and self-review/,
+    'default Codex developer instructions should leave semantic control inside the selected Harness',
   );
   assert.match(
     DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
@@ -282,7 +287,7 @@ try {
   );
   assert.match(
     MANAGER_TURN_POLICY_REMINDER,
-    /reinforce invariants and current state, not verbose step-by-step scripts/,
+    /carry shared context and reinforce invariants, not verbose step-by-step scripts or a second planning layer/,
     'turn-level policy reminder should stay principle-first rather than script every action',
   );
   assert.match(

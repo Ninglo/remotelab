@@ -19,7 +19,7 @@ RemoteLab already has most of the right substrate:
 - `memory-activation-architecture.md` separates storage from activation through `bootstrap.md`, `projects.md`, task memory, and selective writeback.
 - `model-sovereign-control-architecture.md` says prompt should be a projection of state and available context, not the primary place where state lives.
 - `session-control-state-phase1.md` introduced `managerState` and `workState` as backend projections over existing carriers.
-- `session-task-card.mjs` already gives each session a compact work-summary carrier.
+- `session-work-summary.mjs` already gives each session a compact work-summary carrier.
 - `session-memory-writeback.mjs` already performs selective durable learning promotion after a turn.
 - `group-goal-summary-surface.md` already explores derived group/work-item projections over existing sessions.
 
@@ -29,7 +29,7 @@ The new concept should fit into this object model.
 
 Add an **Active Work Radar** layer.
 
-It is not cold memory, and it is not the same as a task card.
+It is not cold memory, and it is not the same as a work summary.
 
 It is a small manager-owned projection of the owner's currently active work lanes:
 
@@ -57,7 +57,7 @@ The radar should not be buried as ordinary task memory. It must be cheap to acti
 
 ### Not Session Task Card
 
-A task card describes this session's current work. The radar describes nearby active work that this session may incidentally touch.
+A work summary describes this session's current work. The radar describes nearby active work that this session may incidentally touch.
 
 ### Best Fit
 
@@ -73,7 +73,7 @@ or, if the object model wants a clearer name:
 managerState.workAwareness.activeWorkRadar
 ```
 
-It should be projected into the turn prompt by `turn-context-hook.mjs`, next to active agreements and the carried task card, with tight length limits.
+It should be projected into the turn prompt by `turn-context-hook.mjs`, next to active agreements and the carried work summary, with tight length limits.
 
 ## Relationship To Existing Layers
 
@@ -81,12 +81,12 @@ It should be projected into the turn prompt by `turn-context-hook.mjs`, next to 
 |---|---|---|
 | `bootstrap.md` | tiny startup index | points to the radar capability, does not contain radar content |
 | `projects.md` | scope router catalog | supplies possible lanes and trigger terms |
-| session `taskCard` | current session state | may feed radar source evidence |
+| session `workSummary` | current session state | may feed radar source evidence |
 | `activeAgreements` | session-specific persistent agreements | separate; not for cross-work awareness |
 | `memoryActivation.scopeRouter` | likely matching scopes for current turn | radar is broader and more ambient |
 | `memoryActivation.relatedSessions` | specific related session imports | radar may decide which related sessions are worth importing |
 | memory writeback | durable fact promotion | radar/inbox should be reviewed before durable promotion |
-| group summary | user-facing projection | can consume radar + task cards to summarize a project/work item |
+| group summary | user-facing projection | can consume radar + work summaries to summarize a project/work item |
 
 ## Proposed Data Shape
 
@@ -144,7 +144,7 @@ This inbox belongs to work awareness / current project state, not durable memory
 Daily or periodic project maintenance can then decide:
 
 - merge into a lane's radar summary
-- update the relevant session task card or group projection
+- update the relevant session work summary or group projection
 - promote to project/task memory
 - discard as noise
 
@@ -153,7 +153,7 @@ Daily or periodic project maintenance can then decide:
 ### Before Prompt Projection
 
 1. Start with current `managerState` and `workState`.
-2. Use current message + session group + task card + scope router to select the relevant radar lanes.
+2. Use current message + session group + work summary + scope router to select the relevant radar lanes.
 3. Project only a tiny radar block into the turn context hook.
 4. Avoid importing deep related sessions unless the turn actually needs details.
 
@@ -171,7 +171,7 @@ Existing `maybeRunMemoryWriteback` should stay selective and durable.
 
 A separate work-awareness review should run before durable memory promotion:
 
-1. inspect user message + assistant final answer + task card changes
+1. inspect user message + assistant final answer + work summary changes
 2. identify cross-lane side signals
 3. write pending items to the context inbox
 4. only promote durable, stable conclusions through the existing memory writeback path
@@ -212,7 +212,7 @@ managerState.workAwareness.activeWorkRadar
 managerState.workAwareness.contextInboxDigest
 ```
 
-Source it from file-backed radar, selected session task cards, projects.md triggers, and group metadata.
+Source it from file-backed radar, selected session work summaries, projects.md triggers, and group metadata.
 
 Keep persistence separate from prompt text.
 
@@ -227,7 +227,7 @@ This can reuse the detached assistant infrastructure but must have a different p
 
 ### P3 — Group / Project Summary Integration
 
-Use radar + task cards + inbox status as inputs to the group-goal summary surface.
+Use radar + work summaries + inbox status as inputs to the group-goal summary surface.
 
 The group page can show:
 
@@ -254,7 +254,7 @@ This is not a feature for one named prototype.
 
 It is the memory/control substrate for AI employees in RemoteLab:
 
-- task card = what this session is doing
+- work summary = what this session is doing
 - active agreement = what this session agreed to keep doing
 - active work radar = what the broader owner/team is currently pushing
 - context inbox = cross-session signal waiting for review

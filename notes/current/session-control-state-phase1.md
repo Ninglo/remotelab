@@ -4,14 +4,14 @@
 
 `notes/current/model-sovereign-control-architecture.md` defines the target ownership model.
 
-This note records the first code landing that starts projecting today’s scattered carriers into one clearer backend view without changing user-facing behavior or rewriting storage.
+This note records the projection baseline and the later thin-control-plane migration that made the current work summary provider-neutral across Harnesses.
 
 ## Current carrier → target object mapping
 
 | Concern | Current carrier(s) | Current file(s) | Phase 1 target object |
 |---|---|---|---|
 | Active agreements | `session.activeAgreements` in session meta | `chat/session-meta-store.mjs`, `chat/session-manager.mjs`, `chat/session-agreements.mjs` | `managerState.activeAgreements` |
-| Task card / current work summary | `session.taskCard` in session meta | `chat/session-meta-store.mjs`, `chat/session-manager.mjs`, `chat/session-task-card.mjs` | `workState.taskCard` |
+| Provider-neutral current work summary | `session.workSummary` in session meta | `chat/session-meta-store.mjs`, `chat/session-manager.mjs`, `chat/session-work-summary.mjs` | `workState.summary` |
 | Workflow classification / review posture | `workflowState`, `workflowPriority`, `entryMode`, `lastReviewedAt` in session meta | `chat/session-meta-store.mjs`, `chat/session-manager.mjs`, `chat/session-entry-mode.mjs`, `chat/session-workflow-state.mjs` | `workState.workflow` |
 | Continuation head after compaction | `context.json` via `getContextHead` / `setContextHead` | `chat/history.mjs`, `chat/session-manager.mjs` | `workState.continuation.head` |
 | Prepared continuation for fork/resume | `fork-context.json` via `getForkContext` / `setForkContext` and `getOrPrepareForkContext(...)` | `chat/history.mjs`, `chat/session-manager.mjs` | `workState.continuation.prepared` |
@@ -39,13 +39,13 @@ Current implementation status:
 ## What this solves now
 
 - there is now one explicit backend vocabulary for manager/work-state projection
-- prompt construction has a clearer choke point for agreements, task card, continuation, and memory activation inputs
+- prompt construction has a clearer choke point for agreements, provider-neutral work summary, continuation, and memory activation inputs
 - session reads no longer have to infer the conceptual object model from multiple unrelated field names
 - derived state is explicitly kept out of durable session meta
 
 ## What still remains mixed
 
-- storage is still physically flat: `activeAgreements`, `taskCard`, workflow fields, `context.json`, and `fork-context.json` are not yet collapsed into one persisted work-state object
+- storage is still physically layered: `activeAgreements`, `workSummary`, workflow fields, `context.json`, and `fork-context.json` are projected together but not stored as one monolithic object
 - memory activation is still prompt-time selection, not yet a first-class durable activation record
 - manager turn policy still originates as policy text, not as a separately inspectable manager-state object
 - run state and delivery state are still modeled elsewhere and are not yet folded into the same control-state graph
@@ -55,7 +55,7 @@ Current implementation status:
 
 The next safe cut is to make `workState` itself the canonical home for “what is happening now” across:
 
-- task card
+- provider-neutral work summary
 - accepted decisions
 - blockers / needs from user
 - next step

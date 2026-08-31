@@ -308,11 +308,11 @@ async function main() {
       HOME: OWNER_INSTANCE_ROOT,
       CHAT_PORT: trimString(currentPlist.EnvironmentVariables?.CHAT_PORT) || DEFAULT_OWNER_PORT,
       REMOTELAB_INSTANCE_ROOT: OWNER_INSTANCE_ROOT,
-      REMOTELAB_SESSION_DISPATCH: 'off',
       TMPDIR: OWNER_TMP_DIR,
       REMOTELAB_USER_SHELL_ENV_B64: trimString(currentPlist.EnvironmentVariables?.REMOTELAB_USER_SHELL_ENV_B64)
         || serializeUserShellEnvSnapshot(),
     };
+    delete environmentVariables.REMOTELAB_SESSION_DISPATCH;
 
     const nextContent = buildLaunchAgentPlist({
       label: trimString(currentPlist.Label) || 'com.chatserver.claude',
@@ -339,8 +339,8 @@ async function main() {
     environmentVariables.PATH = trimString(environmentVariables.PATH) || trimString(process.env.PATH) || '/usr/local/bin:/usr/bin:/bin';
     environmentVariables.CHAT_PORT = trimString(environmentVariables.CHAT_PORT) || DEFAULT_OWNER_PORT;
     environmentVariables.REMOTELAB_INSTANCE_ROOT = OWNER_INSTANCE_ROOT;
-    environmentVariables.REMOTELAB_SESSION_DISPATCH = 'off';
     environmentVariables.TMPDIR = OWNER_TMP_DIR;
+    delete environmentVariables.REMOTELAB_SESSION_DISPATCH;
     const nextContent = serializeEnvFile(environmentVariables);
     envChanged = currentContent !== nextContent;
     if (!options.dryRun && envChanged) {

@@ -14,7 +14,7 @@ const hook = await buildTurnContextHook({
     '默认自然段表达。',
     '默认自然段表达。',
   ],
-  taskCard: {
+  workSummary: {
     mode: 'project',
     summary: '先消化用户给的材料，再推进下一步。',
     rawMaterials: ['sales.xlsx'],
@@ -29,7 +29,7 @@ assert.match(hook, /Bootstrap: ~\/\.remotelab\/memory\/bootstrap\.md/);
 assert.match(hook, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
 assert.match(hook, /Memory writeback targets config: ~\/\.remotelab\/memory\/writeback-targets\.json/);
 assert.match(hook, /Auto user memory: ~\/\.remotelab\/memory\/model-context\/auto-user-memory\.md/);
-assert.match(hook, /Auto system memory: \/opt\/remotelab\/memory\/auto-system-memory\.md/);
+assert.match(hook, /Auto system memory: .*\/memory\/auto-system-memory\.md/);
 assert.match(hook, /Model-managed writable context root:/);
 assert.match(hook, /~\/\.remotelab\/memory\/model-context/);
 assert.match(hook, /Prefer RemoteLab-side execution and the smallest necessary manual checkpoint/);
@@ -38,7 +38,7 @@ assert.match(hook, /split into child sessions or scratch notes when that reduces
 assert.match(hook, /did you use the best available path, is the result complete for the user/);
 assert.match(hook, /active working agreements/);
 assert.match(hook, /默认自然段表达。/);
-assert.match(hook, /Current carried task card/);
+assert.match(hook, /Current provider-neutral work summary/);
 assert.match(hook, /Reusable patterns/);
 assert.match(hook, /sales\.xlsx/);
 

@@ -1,7 +1,7 @@
 import { normalizeSessionAgreements } from './session-agreements.mjs';
 import { resolveSessionEntryMode } from './session-entry-mode.mjs';
 import { buildSessionContinuationContextFromBody } from './session-continuation.mjs';
-import { normalizeSessionTaskCard } from './session-task-card.mjs';
+import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 import {
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
@@ -37,7 +37,7 @@ export function buildManagerMemorySearchPolicy(promptContext = null) {
     return [
       'Memory/search policy for this turn:',
       '- Prefer carried context, matched scope-router hints, and imported related-session memory before filesystem discovery.',
-      '- Reuse the best-matching summary, task card, or referenced memory/doc packet before broad search.',
+      '- Reuse the best-matching continuation summary, current work summary, or referenced memory/doc packet before broad search.',
       '- If those sources do not reveal a concrete entry point, ask the user for a project, path, file, or link before widening search.',
       '- Use machine-wide search only after targeted context misses and a concrete lead exists.',
     ].join('\n');
@@ -115,7 +115,7 @@ export function buildSessionManagerState(session = {}, options = {}) {
 }
 
 export function buildSessionWorkState(session = {}, options = {}) {
-  const taskCard = normalizeSessionTaskCard(session?.taskCard);
+  const workSummary = normalizeSessionWorkSummary(session?.workSummary);
   const workflowState = normalizeSessionWorkflowState(session?.workflowState || '');
   const workflowPriority = normalizeSessionWorkflowPriority(session?.workflowPriority || '');
   const lastReviewedAt = normalizeIsoTimestamp(session?.lastReviewedAt);
@@ -131,8 +131,8 @@ export function buildSessionWorkState(session = {}, options = {}) {
     },
   };
 
-  if (taskCard) {
-    workState.taskCard = taskCard;
+  if (workSummary) {
+    workState.summary = workSummary;
   }
 
   if (contextHead || preparedContinuation) {

@@ -865,7 +865,7 @@ try {
   assert.equal(convergeOutput[0].nextWorkingDirectory, repoRoot);
   assert.equal(convergeOutput[0].drift.hasLegacyReleaseFlags, true);
   assert.equal(convergeOutput[0].drift.missingPublicBaseUrl, true);
-  assert.equal(convergeOutput[0].drift.sessionDispatchChanged, true);
+  assert.equal('sessionDispatchChanged' in convergeOutput[0].drift, false);
   assert.equal(convergeOutput[0].drift.fileAssetEnvironmentChanged, true);
   assert.equal(convergeOutput[0].drift.homeChanged, true);
   assert.equal(convergeOutput[0].drift.missingTmpDir, true);
@@ -994,7 +994,7 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_PROVIDER<\/key><string>tos<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
-  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_SESSION_DISPATCH<\/key><string>off<\/string>/);
+  assert.doesNotMatch(rewrittenGuestPlist, /REMOTELAB_SESSION_DISPATCH/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_CODEX_HOME_MODE<\/key><string>personal<\/string>/);
   assert.match(
     rewrittenGuestPlist,

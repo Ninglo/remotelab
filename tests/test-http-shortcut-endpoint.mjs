@@ -125,7 +125,6 @@ async function startServer({ home, port, delayMs = 800 }) {
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
       FAKE_CODEX_DELAY_MS: String(delayMs),
-      REMOTELAB_REPLY_SELF_CHECK: 'off',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

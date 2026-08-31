@@ -169,7 +169,6 @@ async function startServer({ home, port }) {
       HOME: home,
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
-      REMOTELAB_SESSION_DISPATCH: 'off',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

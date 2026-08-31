@@ -6,7 +6,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
-const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-early-rename-'));
+const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-state-labeling-'));
 const tempBin = join(tempHome, 'bin');
 const configDir = join(tempHome, '.config', 'remotelab');
 
@@ -18,23 +18,26 @@ writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
 const prompt = process.argv[process.argv.length - 1] || '';
-const isTitlePrompt = prompt.includes('You are naming a developer session');
-const wantsGrouping = prompt.includes('"space"') && prompt.includes('"group"') && prompt.includes('"description"');
-const delayMs = isTitlePrompt ? 50 : 220;
-const text = isTitlePrompt
-  ? JSON.stringify(
-      wantsGrouping
-        ? {
-            title: 'RemoteLab Rename Flow',
-            space: 'Product',
-            group: 'RemoteLab',
-            description: 'Refactor the naming flow before the first run finishes.',
-          }
-        : { title: 'RemoteLab Rename Flow' }
-    )
+const isSessionStatePrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
+const delayMs = isSessionStatePrompt ? 20 : 220;
+const text = isSessionStatePrompt
+  ? JSON.stringify({
+      title: 'RemoteLab Rename Flow',
+      space: 'Product',
+      group: 'RemoteLab',
+      description: 'Keep labels aligned with the latest completed turn.',
+      shouldSetWorkflowState: true,
+      workflowState: 'done',
+      workflowPriority: 'low',
+      workSummary: {
+        mode: 'task',
+        summary: '统一更新标题、分组、工作流与当前工作摘要。',
+        goal: '用一次持续分类保持会话状态正确。',
+      },
+    })
   : 'main task finished';
 
-console.log(JSON.stringify({ type: 'thread.started', thread_id: isTitlePrompt ? 'title-thread' : 'run-thread' }));
+console.log(JSON.stringify({ type: 'thread.started', thread_id: isSessionStatePrompt ? 'session-state-thread' : 'run-thread' }));
 console.log(JSON.stringify({ type: 'turn.started' }));
 setTimeout(() => {
   console.log(JSON.stringify({
@@ -102,7 +105,7 @@ async function waitFor(predicate, description, timeoutMs = 4000) {
 const session = await createSession(tempHome, 'fake-codex', '', {
 });
 
-await sendMessage(session.id, 'Refactor the naming flow so renaming starts immediately after the user sends a message.', [], {
+await sendMessage(session.id, 'Refactor the naming flow so one post-turn classifier keeps all session state aligned.', [], {
   tool: 'fake-codex',
   model: 'fake-model',
   effort: 'low',
@@ -113,22 +116,10 @@ await waitFor(
   'session should enter running state',
 );
 
-await waitFor(
-  async () => {
-    const current = await getSession(session.id);
-    return current?.name === 'Refactor the…'
-      && current?.group === 'RemoteLab'
-      && current?.description === 'Refactor the naming flow before the first run finishes.'
-      && current?.autoRenamePending === true;
-  },
-  'session should keep the temporary draft title while early grouping lands',
-);
-
-assert.equal(
-  (await getSession(session.id))?.activity?.run?.state,
-  'running',
-  'early grouping should land while the main task is still running',
-);
+const running = await getSession(session.id);
+assert.equal(running?.name, 'Refactor the…', 'the deterministic draft title should be available while the Harness runs');
+assert.equal(running?.autoRenamePending, true);
+assert.equal(running?.space || '', '', 'semantic classification should wait for the completed turn');
 
 await waitFor(
   async () => (await getSession(session.id))?.activity?.run?.state === 'idle',
@@ -140,23 +131,23 @@ await waitFor(
     const current = await getSession(session.id);
     return current?.name === 'Rename Flow'
       && current?.group === 'RemoteLab'
-      && current?.description === 'Refactor the naming flow before the first run finishes.'
+      && current?.description === 'Keep labels aligned with the latest completed turn.'
       && current?.autoRenamePending === false;
   },
-  'session should receive the final AI title after the first turn completes',
+  'one post-turn classifier should update all session state after the Harness completes',
 );
 
 const finished = await getSession(session.id);
 assert.equal(finished?.name, 'Rename Flow', 'finished session should adopt the final AI title after the first turn');
-assert.equal(finished?.group, 'RemoteLab', 'finished session should keep the early AI grouping');
+assert.equal(finished?.group, 'RemoteLab', 'finished session should receive the classified Project group');
 assert.equal(
   finished?.description,
-  'Refactor the naming flow before the first run finishes.',
-  'finished session should keep the AI description',
+  'Keep labels aligned with the latest completed turn.',
+  'finished session should keep the classified description',
 );
 assert.equal(finished?.autoRenamePending, false, 'post-turn rename should clear autoRenamePending');
 
 killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
-console.log('test-session-early-rename: ok');
+console.log('test-session-state-labeling: ok');
