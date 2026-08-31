@@ -403,6 +403,7 @@ export function summarizeFeishuLegacyMessageEvent(data) {
     threadId: '',
     messageType,
     mentions: [],
+    mentionedBot: typeof data?.text_without_at_bot === 'string',
     messageText: typeof data?.text_without_at_bot === 'string'
       ? data.text_without_at_bot
       : normalizedContent.messageText,

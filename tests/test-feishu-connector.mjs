@@ -1171,6 +1171,9 @@ await writeFile(derivedRouteConfigPath, `${JSON.stringify({
 assert.equal((await loadConfig(derivedRouteConfigPath)).sourceRouteId, 'connector-beta');
 assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backend-owned source prompt logic');
 assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
+assert.deepEqual(loadedConfig.groupReplyPolicy, {
+  mode: 'mention_or_reply',
+}, 'group replies should default to mention-or-reply routing independently from sender access');
 assert.deepEqual(loadedConfig.processingReaction, {
   enabled: false,
   emojiType: 'THINKING',

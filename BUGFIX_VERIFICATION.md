@@ -385,3 +385,41 @@ the topic session lost its parent lineage and completed history.
 - [x] `npm run lint:filesize` and `git diff --check`
 
 **Date:** 2026-08-11
+
+---
+
+## Feishu group routing is mention-first
+
+### Bug
+
+With `intakePolicy.mode=allow_all`, ordinary unmentioned group messages were routed into RemoteLab. Sender authorization and group conversation triggering were coupled, so the model had to decide whether to remain silent after work had already been started.
+
+### RED evidence
+
+Added `tests/test-feishu-group-routing.mjs` before the implementation. The first run failed with:
+
+```text
+TypeError: normalizeGroupReplyPolicy is not a function
+```
+
+The regression covers private messages, unmentioned group chatter, exact current-Bot mentions, direct replies to Bot output, Bot-participating topic continuations, legacy mention callbacks, and explicit legacy `all` mode.
+
+### GREEN evidence
+
+Implemented an independent `groupReplyPolicy` with default mode `mention_or_reply`, current-Bot identity resolution through `/open-apis/bot/v3/info`, and message-index-based continuation checks.
+
+```text
+ok - Feishu group routing is mention-first and keeps bot conversations alive
+```
+
+### Full verification
+
+- `node tests/test-feishu-group-routing.mjs`: passed
+- `node tests/test-feishu-connector.mjs`: passed
+- `npm test`: passed, including smoke and merge-safety suites
+- `npm run lint:filesize`: completed successfully
+- `git diff --check`: passed
+
+The working tree contains only the intended source, test, changelog, architecture-note, and verification-log changes.
+
+**Date:** 2026-08-31

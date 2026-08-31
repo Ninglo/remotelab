@@ -171,6 +171,7 @@ Connector-specific transport details may be attached under a namespaced metadata
 6. Deferred side effects and interactive tool calls must share the same Action Spec contract.
 7. Old script entry points may remain only as thin launchers, never as architecture truth.
 8. No permanent runtime compatibility layer is kept after the cutover.
+9. Sender authorization and conversation-trigger policy are separate decisions; an `allow_all` sender policy must not implicitly route every group message into a model.
 
 ---
 
