@@ -474,11 +474,9 @@ function getComposerPendingInlineStatusText(stage) {
   const key =
     stage === "uploading"
       ? "compose.inline.uploading"
-      : stage === "checking"
-        ? "compose.inline.checking"
-        : stage === "processing"
-          ? "compose.inline.processing"
-          : "compose.inline.sending";
+      : stage === "processing"
+        ? "compose.inline.processing"
+        : "compose.inline.sending";
   const translated = typeof t === "function" ? t(key) : key;
   if (translated && translated !== key) {
     return translated;
@@ -486,8 +484,6 @@ function getComposerPendingInlineStatusText(stage) {
   switch (stage) {
     case "uploading":
       return "Uploading attachment…";
-    case "checking":
-      return "Sent, checking what happens next…";
     case "processing":
       return "Received, processing…";
     default:
