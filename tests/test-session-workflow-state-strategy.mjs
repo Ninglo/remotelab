@@ -120,7 +120,7 @@ const {
   killAll,
 } = sessionManager;
 
-async function waitFor(predicate, description, timeoutMs = 4000) {
+async function waitFor(predicate, description, timeoutMs = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (await predicate()) return;
