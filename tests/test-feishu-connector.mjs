@@ -52,6 +52,13 @@ const {
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
 
+const connectorLauncherSource = await readFile(join(repoRoot, 'scripts', 'feishu-connector.mjs'), 'utf8');
+assert.ok(
+  connectorLauncherSource.indexOf('await claimConnectorPidLock(config.storageDir)')
+    < connectorLauncherSource.indexOf('await initializeFeishuInstanceRuntime(config)'),
+  'connector startup must claim its single-process lock before writing the shared lark-cli profile',
+);
+
 let initializedRuntimeProfile = null;
 await initializeFeishuInstanceRuntime({
   appId: 'cli_runtime_test',
@@ -451,6 +458,7 @@ const mixedResourceSummary = summarizeEvent({
     }),
   },
 });
+const mixedResourceDownloadTypes = [];
 const mixedResourceResolution = await resolveFeishuMessageAttachments({
   publishRemoteLabAsset: async ({ body, mimeType }) => {
     for await (const _chunk of body) { /* consume the bounded stream */ }
@@ -465,7 +473,8 @@ const mixedResourceResolution = await resolveFeishuMessageAttachments({
     im: {
       v1: {
         messageResource: {
-          get: async ({ path }) => {
+          get: async ({ params, path }) => {
+            mixedResourceDownloadTypes.push({ fileKey: path.file_key, type: params.type });
             if (path.file_key === 'file_media_failed_1') {
               throw new Error('simulated media download failure');
             }
@@ -479,6 +488,10 @@ const mixedResourceResolution = await resolveFeishuMessageAttachments({
     },
   },
 }, mixedResourceSummary, { sessionId: 'session_media_partial_1' });
+assert.deepEqual(mixedResourceDownloadTypes, [
+  { fileKey: 'file_media_failed_1', type: 'media' },
+  { fileKey: 'img_media_cover_1', type: 'image' },
+]);
 assert.equal(mixedResourceResolution.attachments.length, 1, 'one failed resource must not discard successful siblings');
 assert.equal(mixedResourceResolution.failures.length, 1);
 const partialMixedResourceSummary = {

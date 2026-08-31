@@ -31,10 +31,15 @@ function addFeishuResource(resources, resourceIndex, value) {
     }
     return;
   }
+  const kind = normalizeFeishuResourceKind(value?.kind);
+  const downloadType = kind === 'image'
+    ? 'image'
+    : (['audio', 'media', 'file'].includes(kind) ? kind : resourceType);
   const resource = {
     fileKey,
     resourceType,
-    kind: normalizeFeishuResourceKind(value?.kind),
+    kind,
+    downloadType,
     ...(originalName ? { originalName } : {}),
   };
   resourceIndex.set(dedupeKey, resources.length);

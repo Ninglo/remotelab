@@ -278,7 +278,7 @@ export function createFeishuInboundResourceService(options = {}) {
           sessionId,
           messageId,
           fileKey: resource.fileKey,
-          type: resource.resourceType,
+          type: resource.downloadType || resource.resourceType,
           kind: resource.kind,
           originalName: resource.originalName,
           index,

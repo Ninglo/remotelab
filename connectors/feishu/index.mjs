@@ -50,19 +50,6 @@ export const DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT = [
 export const MAX_FEISHU_TEXT_LENGTH = 5000;
 export const MAX_INBOUND_LOG_PREVIEW_LENGTH = 240;
 
-export const FEISHU_SKILLS = [
-  {
-    name: 'send_message',
-    description: 'Send a Feishu/Lark bot message to a chat.',
-    schema: {
-      chatId: { type: 'string', required: true, description: 'Target Feishu/Lark chat_id' },
-      text: { type: 'string', required: true, description: 'Plain text or markdown message body' },
-      replyToMessageId: { type: 'string', description: 'Optional message_id to reply to' },
-      replyInThread: { type: 'boolean', description: 'Whether to reply inside a topic/thread when replyToMessageId is set' },
-    },
-  },
-];
-
 const FEISHU_EMOJI_ALIAS_PATTERN = /\[(?:[\u3400-\u9FFF]{1,4})\]/gu;
 const UNICODE_EMOJI_PATTERN = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?(?:\u200D(?:\p{Extended_Pictographic}|\p{Emoji_Presentation})(?:\uFE0E|\uFE0F)?)*)/gu;
 

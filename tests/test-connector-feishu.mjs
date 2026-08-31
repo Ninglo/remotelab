@@ -6,7 +6,6 @@ import { join } from 'path';
 import {
   DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT,
   FEISHU_CONNECTOR_ID,
-  FEISHU_SKILLS,
   buildExternalTriggerId,
   buildFeishuConversationQueueKey,
   buildFeishuApiUuid,
@@ -36,11 +35,10 @@ assert.equal(manifest.entry, './index.mjs');
 assert.ok(manifest.capabilities.includes('inbound'));
 assert.ok(manifest.capabilities.includes('reply'));
 assert.ok(manifest.capabilities.includes('attachments'));
-assert.ok(FEISHU_SKILLS.some((skill) => skill.name === 'send_message'));
-assert.deepEqual(
-  FEISHU_SKILLS.map((skill) => skill.name),
-  ['send_message'],
-  'Feishu document and Wiki reads belong to the selected harness, not RemoteLab connector tools',
+assert.equal(
+  manifest.capabilities.includes('actions'),
+  false,
+  'Feishu is a message transport, not an in-session application capability provider',
 );
 assert.equal(
   packageManifest.dependencies?.['@larksuite/cli'],
@@ -179,9 +177,26 @@ assert.deepEqual(getSummaryFeishuResources(fileSummary), [{
   fileKey: 'file_report_1',
   resourceType: 'file',
   kind: 'file',
+  downloadType: 'file',
   originalName: 'report.pdf',
 }]);
 assert.equal(isSupportedRemoteLabInboundMessage(fileSummary), true, 'file messages must enter RemoteLab');
+
+const audioSummary = summarizeFeishuEvent({
+  message: {
+    chat_id: 'oc_chat_audio_1',
+    chat_type: 'p2p',
+    message_id: 'om_audio_1',
+    message_type: 'audio',
+    content: JSON.stringify({ file_key: 'file_audio_1' }),
+  },
+});
+assert.deepEqual(getSummaryFeishuResources(audioSummary), [{
+  fileKey: 'file_audio_1',
+  resourceType: 'file',
+  kind: 'audio',
+  downloadType: 'audio',
+}]);
 
 const mediaSummary = summarizeFeishuEvent({
   message: {
@@ -200,11 +215,13 @@ assert.deepEqual(getSummaryFeishuResources(mediaSummary), [{
   fileKey: 'file_video_1',
   resourceType: 'file',
   kind: 'media',
+  downloadType: 'media',
   originalName: 'demo.mp4',
 }, {
   fileKey: 'img_cover_1',
   resourceType: 'image',
   kind: 'image',
+  downloadType: 'image',
 }]);
 
 const unknownSummary = summarizeFeishuEvent({

@@ -2055,8 +2055,6 @@ export {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const config = await loadConfig(options.configPath);
-  const larkCliRuntime = await initializeFeishuInstanceRuntime(config);
-  console.log(`[feishu-connector] instance lark-cli Bot profile ready (${larkCliRuntime.configDir})`);
   const connectorPidLock = await claimConnectorPidLock(config.storageDir);
   let pidLockReleased = false;
   const releasePidLock = async () => {
@@ -2068,6 +2066,14 @@ async function main() {
     void releasePidLock();
   };
   process.once('beforeExit', releasePidLockOnBeforeExit);
+  try {
+    const larkCliRuntime = await initializeFeishuInstanceRuntime(config);
+    console.log(`[feishu-connector] instance lark-cli Bot profile ready (${larkCliRuntime.configDir})`);
+  } catch (error) {
+    process.off('beforeExit', releasePidLockOnBeforeExit);
+    await releasePidLock();
+    throw error;
+  }
   const accessState = await loadPersistedAccessState(config.intakePolicy);
   const storagePaths = {
     eventsLogPath: join(config.storageDir, 'events.jsonl'),

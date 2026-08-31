@@ -42,8 +42,8 @@ const sourceContextServer = http.createServer((req, res) => {
     res.end(JSON.stringify({
       sessionId: 'session-from-bot-a',
       sourceContext: {
-        session: { connector: 'feishu', sourceRouteId: 'bot-a' },
-        message: { connector: 'feishu', sourceRouteId: 'bot-a' },
+        session: { connector: 'messaging', sourceRouteId: 'bot-a' },
+        message: { connector: 'messaging', sourceRouteId: 'bot-a' },
         requestId: 'request-from-bot-a',
       },
     }));
@@ -78,7 +78,7 @@ const transportSkill = {
 
 async function startBotSkillServer(botId, token) {
   return startConnectorSkillServer({
-    channel: 'feishu',
+    channel: 'messaging',
     token,
     skills: [transportSkill],
     onSkill: async (_skillName, body) => ({
@@ -93,19 +93,19 @@ const botBServer = await startBotSkillServer('bot-b', 'token-b');
 
 try {
   await initSkillRegistry(configDir);
-  await registerConnectorSkills('feishu', {
+  await registerConnectorSkills('messaging', {
     sourceRouteId: 'bot-a',
     callback: { skillUrl: botAServer.skillUrl, token: 'token-a' },
     skills: [transportSkill],
   });
-  await registerConnectorSkills('feishu', {
+  await registerConnectorSkills('messaging', {
     sourceRouteId: 'bot-b',
     callback: { skillUrl: botBServer.skillUrl, token: 'token-b' },
     skills: [transportSkill],
   });
 
   const directA = await executeConnectorSkill(
-    'feishu:send_message',
+    'messaging:send_message',
     { text: 'Transport message' },
     { sourceRouteId: 'bot-a' },
   );
@@ -113,7 +113,7 @@ try {
   assert.equal(directA.result.botId, 'bot-a', 'bot A calls must retain bot A credentials');
 
   const directB = await executeConnectorSkill(
-    'feishu:send_message',
+    'messaging:send_message',
     { text: 'Transport message' },
     { sourceRouteId: 'bot-b' },
   );
@@ -121,7 +121,7 @@ try {
   assert.equal(directB.result.botId, 'bot-b', 'bot B calls must retain bot B credentials');
 
   const ambiguous = await executeConnectorSkill(
-    'feishu:send_message',
+    'messaging:send_message',
     { text: 'Transport message' },
     {},
   );
@@ -131,7 +131,7 @@ try {
   let stdout = '';
   const cliExitCode = await runConnectorCommand([
     'call',
-    'feishu:send_message',
+    'messaging:send_message',
     '--text', 'Transport message',
     '--json',
   ], {
@@ -143,7 +143,7 @@ try {
   stdout = '';
   const overrideExitCode = await runConnectorCommand([
     'call',
-    'feishu:send_message',
+    'messaging:send_message',
     '--text', 'Transport message',
     '--source-route-id', 'bot-b',
     '--json',
@@ -154,16 +154,16 @@ try {
   assert.equal(
     JSON.parse(stdout).result.botId,
     'bot-a',
-    'an explicit route must not override the originating Feishu session Bot',
+    'an explicit route must not override the originating connector session route',
   );
 
-  assert.equal(await deregisterConnectorSkills('feishu', {
+  assert.equal(await deregisterConnectorSkills('messaging', {
     sourceRouteId: 'bot-b',
     skillUrl: botBServer.skillUrl,
   }), true);
 
   const afterBotBStops = await executeConnectorSkill(
-    'feishu:send_message',
+    'messaging:send_message',
     { text: 'Transport message' },
     { sourceRouteId: 'bot-a' },
   );
@@ -172,7 +172,7 @@ try {
 
   console.log('test-connector-multi-route-skill: ok');
 } finally {
-  await deregisterConnectorSkills('feishu');
+  await deregisterConnectorSkills('messaging');
   await botAServer.stop();
   await botBServer.stop();
   for (const socket of sockets) socket.destroy();
