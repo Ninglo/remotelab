@@ -1215,10 +1215,10 @@ async function phase17SidecarPreSpawnFailurePersistsRootCause() {
     const submit = await submitMessage(port, session.id, 'req-sidecar-pre-spawn-failure');
     const failedRun = await waitForRunTerminal(port, submit.json.run.id);
     assert.equal(failedRun.state, 'failed', 'pre-spawn sidecar failure should mark the run failed');
-    assert.equal(
-      failedRun.failureReason,
-      'Synthetic sidecar failure before tool spawn',
-      'pre-spawn sidecar failure should preserve the original error',
+    assert.match(
+      failedRun.failureReason || '',
+      /Synthetic sidecar failure before tool spawn/,
+      'pre-spawn sidecar failure should preserve the original error even when provider diagnostics wrap it',
     );
     assert.equal(
       failedRun.result?.error,
@@ -1290,9 +1290,13 @@ async function phase19CodexMissingRolloutClearsResumeId() {
     assert.equal(firstRun.state, 'completed', 'initial non-resume run should complete');
 
     const sessionsPath = join(configDir, 'chat-sessions.json');
-    let sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
-    let sessionRecord = sessions.find((entry) => entry.id === session.id);
-    assert.equal(sessionRecord?.codexThreadId, 'thread-test', 'successful Codex run should persist the resume thread');
+    let sessions;
+    let sessionRecord;
+    await waitFor(() => {
+      sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
+      sessionRecord = sessions.find((entry) => entry.id === session.id);
+      return sessionRecord?.codexThreadId === 'thread-test';
+    }, 'successful Codex run should persist the resume thread');
 
     writeFileSync(join(configDir, 'fake-fail-on-resume'), '1', 'utf8');
     const stale = await submitMessage(port, session.id, 'req-missing-rollout-stale', 'resume after provider rollout disappeared');
