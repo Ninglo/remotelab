@@ -266,17 +266,29 @@ export function createPiAuthManager({
 
     const result = await waitForProcess(
       runtime.piCommand,
-      ['auth', 'check', '--provider', OPENAI_CODEX_PROVIDER, '--json'],
+      ['auth', 'check', '--provider', OPENAI_CODEX_PROVIDER, '--json', '--no-refresh'],
       { env: runtime.env, spawnProcess },
     );
     const authStatus = parseJsonLine(`${result.stdout}\n${result.stderr}`);
-    const loggedIn = authStatus?.status === 'ready';
+    const piAuth = await readJsonObject(join(runtime.agentDir, 'auth.json'), { missing: {} });
+    const credential = piAuth[OPENAI_CODEX_PROVIDER];
+    const credentialExpiresAt = Number(credential?.expires || 0);
+    const credentialIsCurrent = credential?.type === 'oauth'
+      && !!trimString(credential.access)
+      && !!trimString(credential.refresh)
+      && credentialExpiresAt > now();
+    const loggedIn = authStatus?.status === 'ready' && credentialIsCurrent;
     if (loggedIn && !activeChild && state.phase !== 'awaiting' && state.phase !== 'synchronizing') {
       state = { ...state, phase: 'authenticated', error: '' };
     } else if (!loggedIn && !activeChild && state.phase === 'authenticated') {
       state = { ...state, phase: 'idle', error: '' };
     }
-    if (!loggedIn && !activeChild && authStatus?.status === 'invalid' && state.phase !== 'failed') {
+    if (
+      !loggedIn
+      && !activeChild
+      && (authStatus?.status === 'invalid' || credential?.type === 'oauth')
+      && state.phase !== 'failed'
+    ) {
       state = { ...state, phase: 'failed', error: 'Pi OpenAI login expired or is invalid' };
     }
     return createPublicState(state, {
