@@ -240,10 +240,6 @@
   background: var(--text-secondary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-secondary) 14%, transparent);
 }
-.msg-user-status-checking .msg-user-status-dot {
-  background: #b66a00;
-  box-shadow: 0 0 0 3px rgba(182, 106, 0, 0.14);
-}
 .msg-user-status-processing .msg-user-status-dot {
   background: var(--accent);
 }

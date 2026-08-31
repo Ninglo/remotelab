@@ -102,11 +102,6 @@ function makeActivity(overrides = {}) {
       count: 0,
       ...overrides.queue,
     },
-    rename: {
-      state: 'idle',
-      error: null,
-      ...overrides.rename,
-    },
     compact: {
       state: 'idle',
       ...overrides.compact,
@@ -161,23 +156,6 @@ const compactingSession = makeSession({
 });
 assert.equal(model.getSessionStatusSummary(compactingSession).primary.key, 'compacting');
 assert.equal(model.isSessionBusy(compactingSession), true);
-
-const renamingSession = makeSession({
-  activity: makeActivity({
-    rename: { state: 'pending', error: null },
-  }),
-});
-assert.equal(model.getSessionStatusSummary(renamingSession).primary.key, 'renaming');
-assert.equal(model.isSessionBusy(renamingSession), false);
-
-const renameFailedSession = makeSession({
-  activity: makeActivity({
-    rename: { state: 'failed', error: 'rename crashed' },
-  }),
-});
-const renameFailedStatus = model.getSessionStatusSummary(renameFailedSession);
-assert.equal(renameFailedStatus.primary.key, 'rename-failed');
-assert.equal(renameFailedStatus.primary.title, 'rename crashed');
 
 assert.equal(model.normalizeSessionWorkflowPriority('P1'), 'high');
 assert.equal(model.normalizeSessionWorkflowPriority('normal'), 'medium');

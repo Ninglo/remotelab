@@ -18,11 +18,7 @@
     "workflow.status.parkedTitle": "Parked for later",
     "workflow.status.queued": "queued",
     "workflow.status.queuedTitle": "{count} follow-up{suffix} queued",
-    "workflow.status.checking": "reviewing",
     "workflow.status.compacting": "compacting",
-    "workflow.status.renaming": "renaming",
-    "workflow.status.renameFailed": "rename failed",
-    "workflow.status.renameFailedTitle": "Session rename failed",
     "workflow.status.unread": "new",
     "workflow.status.unreadTitle": "Updated since you last reviewed this session",
   };
@@ -208,17 +204,8 @@
     const queueState = raw?.queue?.state === "queued" && queueCount > 0
       ? "queued"
       : "idle";
-    const renameState = raw?.rename?.state === "pending" || raw?.rename?.state === "failed"
-      ? raw.rename.state
-      : "idle";
     const compactState = raw?.compact?.state === "pending"
       ? "pending"
-      : "idle";
-    const continuationCount = Number.isInteger(raw?.continuation?.count)
-      ? raw.continuation.count
-      : 0;
-    const continuationState = raw?.continuation?.state === "checking" && continuationCount > 0
-      ? "checking"
       : "idle";
 
     return {
@@ -233,17 +220,8 @@
         state: queueState,
         count: queueCount,
       },
-      rename: {
-        state: renameState,
-        error: typeof raw?.rename?.error === "string" ? raw.rename.error : "",
-      },
       compact: {
         state: compactState,
-      },
-      continuation: {
-        state: continuationState,
-        count: continuationCount,
-        requestId: typeof raw?.continuation?.requestId === "string" ? raw.continuation.requestId : null,
       },
     };
   }
@@ -252,7 +230,6 @@
     const activity = normalizeSessionActivity(session);
     return activity.run.state === "running"
       || activity.queue.state === "queued"
-      || activity.continuation.state === "checking"
       || activity.compact.state === "pending";
   }
 
@@ -289,27 +266,8 @@
       ));
     }
 
-    if (activity.continuation.state === "checking") {
-      indicators.push(createStatus("checking", t("workflow.status.checking"), "status-queued", "queued"));
-    }
-
     if (activity.compact.state === "pending") {
       indicators.push(createStatus("compacting", t("workflow.status.compacting"), "status-compacting", "compacting"));
-    }
-
-    if (activity.rename.state === "pending") {
-      indicators.push(createStatus("renaming", t("workflow.status.renaming"), "status-renaming", "renaming"));
-    }
-
-    if (activity.rename.state === "failed") {
-      indicators.push(createStatus(
-        "rename-failed",
-        t("workflow.status.renameFailed"),
-        "status-rename-failed",
-        "rename-failed",
-        "",
-        activity.rename.error || t("workflow.status.renameFailedTitle"),
-      ));
     }
 
     const primary = indicators[0] || (

@@ -66,8 +66,6 @@
       stage:
         rawPendingSend.stage === "uploading"
           ? "uploading"
-          : rawPendingSend.stage === "checking"
-            ? "checking"
           : rawPendingSend.stage === "processing"
             ? "processing"
             : "sending",
@@ -75,7 +73,7 @@
   }
 
   function isBlockingPendingSend(pendingSend) {
-    return !!pendingSend && pendingSend.stage !== "processing" && pendingSend.stage !== "checking";
+    return !!pendingSend && pendingSend.stage !== "processing";
   }
 
   function createState(state = {}) {
