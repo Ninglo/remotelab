@@ -85,15 +85,23 @@ async function persistRunTerminalState(runId, result, nextState, options = {}) {
   }
 
   try {
-    await updateRun(runId, (current) => ({
-      ...current,
-      state: nextState,
-      completedAt: result?.completedAt || nowIso(),
-      result,
-      ...(Object.prototype.hasOwnProperty.call(options, 'failureReason')
-        ? { failureReason: options.failureReason }
-        : {}),
-    }));
+    await updateRun(runId, (current) => {
+      const semanticFailureReason = typeof current?.spoolFailureReason === 'string'
+        ? current.spoolFailureReason.trim()
+        : '';
+      const effectiveState = semanticFailureReason && nextState === 'completed'
+        ? 'failed'
+        : nextState;
+      return {
+        ...current,
+        state: effectiveState,
+        completedAt: result?.completedAt || nowIso(),
+        result,
+        ...(Object.prototype.hasOwnProperty.call(options, 'failureReason')
+          ? { failureReason: options.failureReason }
+          : (semanticFailureReason ? { failureReason: semanticFailureReason } : {})),
+      };
+    });
   } catch (error) {
     await logSidecarDiagnostic(runId, 'Failed to persist detached runner status', {
       error: normalizeErrorMessage(error),

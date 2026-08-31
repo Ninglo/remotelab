@@ -138,4 +138,5 @@ Turn-level reminders still matter, but they should stay light. They should reinf
 - `chat/system-prompt.mjs` should describe the seed layer, context topology, routing posture, and selective memory activation.
 - `chat/session-continuation.mjs` should frame handoff as continuity for the active workstream.
 - `chat/session-manager.mjs` should keep turn activation compact and principle-first.
-- `chat/session-dispatch.mjs` plus `chat/session-dispatch-prompt.mjs` should keep continuation routing semantic, two-staged, and free of hardcoded bounded-work heuristics in the hot path.
+- Ordinary turns should enter the selected Harness directly. Persistent Session spawning stays an explicit capability; RemoteLab does not run a separate pre-turn semantic router.
+- Provider-neutral work summary, active agreements, continuation, and durable memory pointers should be projected consistently across Codex, Claude, Pi, and future Harnesses.

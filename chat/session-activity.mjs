@@ -36,15 +36,8 @@ export function getSessionRunId(session) {
 }
 
 export function buildSessionActivity(meta, runtimeState, { runState, run, queuedCount }) {
-  const renameState = runtimeState?.renameState === 'pending' || runtimeState?.renameState === 'failed'
-    ? runtimeState.renameState
-    : 'idle';
-  const renameError = typeof runtimeState?.renameError === 'string' ? runtimeState.renameError : '';
   const compactState = runtimeState?.pendingCompact === true ? 'pending' : 'idle';
   const queueCount = Number.isInteger(queuedCount) ? queuedCount : 0;
-  const continuationQueue = Array.isArray(meta?.pendingContinuationQueue) ? meta.pendingContinuationQueue : [];
-  const planningCount = continuationQueue.length;
-  const activePlanningEntry = planningCount > 0 ? continuationQueue[0] : null;
 
   return {
     run: {
@@ -66,19 +59,8 @@ export function buildSessionActivity(meta, runtimeState, { runState, run, queued
       state: queueCount > 0 ? 'queued' : 'idle',
       count: queueCount,
     },
-    rename: {
-      state: renameState,
-      error: renameError || null,
-    },
     compact: {
       state: compactState,
-    },
-    continuation: {
-      state: planningCount > 0 ? 'checking' : 'idle',
-      count: planningCount,
-      requestId: typeof activePlanningEntry?.requestId === 'string' && activePlanningEntry.requestId
-        ? activePlanningEntry.requestId
-        : null,
     },
   };
 }

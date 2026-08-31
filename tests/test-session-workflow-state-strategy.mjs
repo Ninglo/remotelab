@@ -18,7 +18,7 @@ writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
 const prompt = process.argv[process.argv.length - 1] || '';
-const isWorkflowPrompt = prompt.includes('You are updating RemoteLab workflow state for a developer session.');
+const isWorkflowPrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
 
 let text = '我先继续推进。';
 if (isWorkflowPrompt) {
@@ -31,7 +31,7 @@ if (isWorkflowPrompt) {
     });
   } else if (prompt.includes('OPTIONAL_FEEDBACK_CASE')) {
     const hasStrictOptionalFeedbackRule = prompt.includes('subjective feedback')
-      && prompt.includes('leave the workflow state unset');
+      && prompt.includes('Leave workflow state unset');
     text = hasStrictOptionalFeedbackRule
       ? JSON.stringify({
         shouldSetWorkflowState: false,

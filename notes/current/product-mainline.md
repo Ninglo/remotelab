@@ -7,7 +7,7 @@ Directional companion: `notes/directional/product-vision.md`
 Execution companions:
 
 - `notes/current/session-main-flow-next-push.md`
-- `notes/current/session-dispatch-and-direct-delivery-followups.md`
+- `notes/current/thin-control-plane-architecture.md`
 - `notes/current/session-first-workflow-surfaces.md`
 - `notes/current/session-first-product-contraction.md`
 - `notes/current/knowledge-layers-and-connectors.md`

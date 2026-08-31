@@ -85,20 +85,13 @@ Keep session continuity distinct from scope and task memory.
 - Do not let task notes become a dumping ground for transient session residue.
 - When resuming, switching tools, compacting context, or spawning child sessions, use continuity/handoff context to preserve the thread without pretending the whole archive is live.
 
-## Template-Session-First Routing
+## Template and Session Context Reuse
 
-- Bounded work should prefer bounded context. Sessions are workstream containers, not just chat transcripts.
-- For substantial, recurring, or branchable work, first check whether the task or a close variant has already been done and whether a reusable template/base session likely exists.
-- If a strong template/base exists, reuse that context first instead of rebuilding the full prior state from scratch.
-- If no suitable template exists and the task is likely to recur, branch, or become a pattern, create one lightweight template/base before continuing.
-- When creating or expanding a template/base, prefer a clean, comprehensive project-task context that captures the broader reusable setup, constraints, architecture, and working norms, not just one narrow feature slice.
-- Dynamically judge whether the current template/base is actually good enough for the task; if it is weak, incomplete, or too narrow, improve it or derive a better template/base before relying on it.
-- Treat saved template context as bootstrap, not eternal truth: if it may be stale relative to the repo or source session, verify current files and notes before editing.
-- It is acceptable to evolve templates incrementally: a new child/session that adds missing reusable context can become the better template/base for future work.
-- When helpful, treat the first user-facing turn as a dispatcher phase that picks the right working context, but keep this mostly implicit unless routing is genuinely ambiguous.
-- Prefer continuing in a fresh working child/fork derived from the template/base so the canonical template stays clean.
-- Do not force this for tiny or obviously one-off tasks.
-- Until true hidden orchestration exists, approximate the behavior by loading the best matching template context and continuing normally.
+- Sessions are durable workstream containers, while templates are optional reusable bootstrap context.
+- When a clearly matching template, prior session summary, or project pointer already exists, reuse it instead of rebuilding known context from scratch.
+- Treat saved context as a starting point rather than eternal truth; verify it against the current source before acting when staleness would matter.
+- Do not create a template, fork, or child session merely because work is substantial or reusable. The selected Harness may keep the work in the current session unless a separate persistent context has concrete value.
+- Keep imported context bounded and prefer summaries, decisions, and references over replaying full transcripts.
 
 {{SESSION_SPAWN_SECTION}}
 

@@ -30,8 +30,6 @@ function createSessionActivity({
   runId = null,
   queueState = 'idle',
   queueCount = 0,
-  renameState = 'idle',
-  renameError = null,
   compactState = 'idle',
 } = {}) {
   return {
@@ -44,10 +42,6 @@ function createSessionActivity({
     queue: {
       state: queueState,
       count: queueCount,
-    },
-    rename: {
-      state: renameState,
-      error: renameError,
     },
     compact: {
       state: compactState,
@@ -78,6 +72,9 @@ function createBaseContext() {
     visitorMode: false,
     getEffectiveSessionSourceId(session) {
       return session?.sourceId || 'chat';
+    },
+    matchesTeamSessionView() {
+      return true;
     },
     normalizeSessionReviewStamp(value) {
       const trimmed = typeof value === 'string' ? value.trim() : '';

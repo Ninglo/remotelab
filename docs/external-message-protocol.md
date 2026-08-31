@@ -273,8 +273,9 @@ Current `session.activity` shape:
 - `activity.run.state` — coarse run state: `running` or `idle`
 - `activity.run.phase` — underlying durable run phase such as `accepted`, `running`, `completed`, `failed`, or `cancelled` when available
 - `activity.queue.state` / `activity.queue.count` — follow-up backlog state
-- `activity.rename.state` — background rename state: `idle`, `pending`, or `failed`
 - `activity.compact.state` — background compaction state: `idle` or `pending`
+
+Title, Space, Project group, workflow state, and `workState.summary` are durable post-turn Session projections. They are refreshed asynchronously by one classifier and are not part of the live `session.activity` state machine.
 
 The `session.activity` object is the canonical backend activity contract.
 

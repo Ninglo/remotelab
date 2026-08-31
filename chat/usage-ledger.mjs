@@ -211,6 +211,14 @@ export function classifyUsageOperation(input, extra = {}) {
         category: 'context_management',
         background: true,
       };
+    case 'session_state_suggestion':
+      return {
+        key: operation,
+        label: 'Session state sync',
+        group: 'background',
+        category: 'session_management',
+        background: true,
+      };
     case 'session_label_suggestion':
       return {
         key: operation,

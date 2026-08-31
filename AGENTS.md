@@ -91,7 +91,8 @@ remotelab/
 │   ├── runner-supervisor.mjs # Compatibility shim re-exporting run-launcher
 │   ├── runner-sidecar.mjs   # Thin detached executor writing raw spool/status/result
 │   ├── ws.mjs               # WebSocket invalidation channel only
-│   ├── summarizer.mjs       # AI-driven session label suggestions (title/space/group/description)
+│   ├── session-state-classifier.mjs       # one non-blocking post-turn Session-state classifier
+│   ├── session-work-summary.mjs # provider-neutral current work state shared across Harnesses
 │   ├── apps.mjs             # Agent (template) CRUD & persistence (89 lines)
 │   ├── system-prompt.mjs    # Build system context injected into AI sessions (83 lines)
 │   ├── normalizer.mjs       # Convert tool output → standard event format (45 lines)
@@ -196,8 +197,8 @@ Reusable AI workflows shareable via link. Each Agent defines: name, systemPrompt
 - **Owner**: Full access. Logs in with token or password.
 - **Visitor**: Accesses only a specific Agent via share link. Sees chat-only UI (no sidebar). Each Visitor gets an independent Session. This is NOT multi-user — Visitors are scoped guests.
 
-### Session Labeling
-`summarizer.mjs` suggests canonical session presentation metadata — `title`, broad AI-managed `space`, workstream `group`, and hidden `description`. The sidebar renders Space as a context switcher above Project groups; `Loose` is the reserved Space for genuinely temporary or ambiguous work. Users are not expected to manually classify sessions.
+### Session State Classification
+After each completed normal turn, `session-state-classifier.mjs` makes one non-blocking low-effort classification call that refreshes `title`, broad AI-managed `space`, workstream `group`, hidden `description`, workflow state, and the provider-neutral current work summary. The sidebar renders Space as a context switcher above Project groups; `Loose` is the reserved Space for genuinely temporary or ambiguous work. This classifier keeps drifting Sessions organized but does not review, continue, or route the Harness answer.
 
 ### Memory System (Pointer-First)
 - **Storage tiers** still matter:
@@ -251,6 +252,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [x] Session-first owner flow baseline
 - [x] Baseline multi-session fan-out with bounded cross-session context carry
 - [x] Remove voice-input UI/backend and the leftover hidden transcript-cleanup send path
+- [x] Contract the semantic manager layer: remove pre-turn dispatch, reply self-check/repair, separate task/workflow classifiers, global Project organizer, and delegation reuse heuristics; keep one Session-state classifier plus cross-Harness memory/continuity
 
 ### P1 — Next Up
 - [ ] Guided intake / problem discovery — help users describe messy repetitive work, attach examples, and converge on a concrete automation brief without assuming expert prompting
@@ -285,7 +287,8 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Product Mainline + Feedback Loop | `notes/current/product-mainline.md` | Current operating plan for prioritization, user feedback, and mainstream automation framing |
 | Session Main Flow + Context Freshness Next Push | `notes/current/session-main-flow-next-push.md` | Concrete execution pack for the current session-first main flow, context carry, and multi-session fan-out slice |
 | Session-First Workflow Surfaces | `notes/current/session-first-workflow-surfaces.md` | Current workflow-organization contract for session list, grouping, and any future derived workflow projections |
-| Model Autonomy Control Loop | `notes/current/model-autonomy-control-loop.md` | Unified design for post-turn model autonomy, context operations, self-check, compaction, and manager/worker delegation |
+| Thin Control Plane Architecture | `notes/current/thin-control-plane-architecture.md` | Current Harness boundary: direct execution, one Session-state classifier, shared cross-Harness memory, and benchmark gate for future semantic orchestration |
+| Retired Model Autonomy Loop | `notes/current/model-autonomy-control-loop.md` | Retirement pointer to the former reply self-check / turn-close supervisor design |
 | Core Domain Contract | `notes/current/core-domain-contract.md` | Current domain/refactor baseline when deciding which product objects are canonical |
 | Product Surface Lifecycle | `notes/current/product-surface-lifecycle.md` | Current rule for keep/iterate/retire decisions on shipped feature surfaces |
 | External Message Protocol | `docs/external-message-protocol.md` | Canonical connector contract for email/GitHub/bot integrations using sessions, messages, runs, and events |

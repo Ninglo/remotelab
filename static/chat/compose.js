@@ -3,11 +3,9 @@ const fallbackStrings = {
   "compose.pending.uploading": "Uploading attachment\u2026",
   "compose.pending.sendingAttachment": "Sending attachment\u2026",
   "compose.pending.sending": "Sending\u2026",
-  "compose.pending.checking": "Sent, checking routing\u2026",
   "compose.pending.processing": "Received, processing\u2026",
   "compose.inline.uploading": "Uploading attachment\u2026",
   "compose.inline.sending": "Sending\u2026",
-  "compose.inline.checking": "Sent, checking what happens next\u2026",
   "compose.inline.processing": "Received, processing\u2026",
 };
 
@@ -470,7 +468,7 @@ function hasPendingComposerSend() {
 }
 
 function isComposerPendingBlocking(pendingSend = getComposerPendingSendSnapshot()) {
-  return !!pendingSend && pendingSend.stage !== "processing" && pendingSend.stage !== "checking";
+  return !!pendingSend && pendingSend.stage !== "processing";
 }
 
 function isComposerPendingForSession(sessionId = resolveActiveComposerSessionId(), { includeProcessing = true } = {}) {
@@ -565,11 +563,11 @@ function clearComposerAcceptedSendArtifacts(completedSend) {
   return true;
 }
 
-function acknowledgeComposerPendingSend(requestId, options = {}) {
+function acknowledgeComposerPendingSend(requestId) {
   const pendingSend = getComposerPendingSendSnapshot();
   if (!pendingSend) return false;
   if (requestId && pendingSend.requestId !== requestId) return false;
-  const nextStage = options?.nextStage === "checking" ? "checking" : "processing";
+  const nextStage = "processing";
   if (pendingSend.stage === nextStage) {
     syncComposerPendingUi();
     return true;
@@ -605,11 +603,6 @@ function createEmptyComposerActivitySnapshot() {
       state: "idle",
       count: 0,
     },
-    continuation: {
-      state: "idle",
-      count: 0,
-      requestId: null,
-    },
   };
 }
 
@@ -626,11 +619,6 @@ function getComposerSessionActivitySnapshot(session) {
       state: raw?.queue?.state === "queued" && queueCount > 0 ? "queued" : "idle",
       count: queueCount,
     },
-    continuation: {
-      state: raw?.continuation?.state === "checking" ? "checking" : "idle",
-      count: Number.isInteger(raw?.continuation?.count) ? raw.continuation.count : 0,
-      requestId: typeof raw?.continuation?.requestId === "string" ? raw.continuation.requestId : null,
-    },
   };
 }
 
@@ -646,13 +634,6 @@ function hasCanonicalComposerSendAcceptance(session) {
 
   const previousActivity = pendingSend.baselineActivity || createEmptyComposerActivitySnapshot();
   const nextActivity = getComposerSessionActivitySnapshot(session);
-
-  if (
-    nextActivity.continuation.state === "checking"
-    && (!nextActivity.continuation.requestId || nextActivity.continuation.requestId === pendingSend.requestId)
-  ) {
-    return true;
-  }
 
   if (
     nextActivity.queue.state === "queued"
@@ -683,10 +664,7 @@ function isComposerPendingSessionStillActive(session, pendingSend) {
   }
 
   const nextActivity = getComposerSessionActivitySnapshot(session);
-  return (
-    nextActivity.continuation.state === "checking"
-      && (!nextActivity.continuation.requestId || nextActivity.continuation.requestId === pendingSend.requestId)
-  ) || nextActivity.queue.state === "queued"
+  return nextActivity.queue.state === "queued"
     || nextActivity.run.state === "running"
     || nextActivity.run.phase === "accepted"
     || nextActivity.run.phase === "running";
@@ -703,25 +681,6 @@ function reconcileComposerPendingSendWithSession(session) {
   const pendingSend = getComposerPendingSendSnapshot();
   if (!pendingSend) return false;
   if (!session?.id || session.id !== pendingSend.sessionId) return false;
-  const nextActivity = getComposerSessionActivitySnapshot(session);
-  if (pendingSend.stage === "checking") {
-    if (
-      nextActivity.queue.state === "queued"
-      || nextActivity.run.state === "running"
-      || nextActivity.run.phase === "accepted"
-      || nextActivity.run.phase === "running"
-    ) {
-      return acknowledgeComposerPendingSend(pendingSend.requestId, { nextStage: "processing" });
-    }
-    if (
-      nextActivity.continuation.state === "checking"
-      && (!nextActivity.continuation.requestId || nextActivity.continuation.requestId === pendingSend.requestId)
-    ) {
-      syncComposerPendingUi();
-      return false;
-    }
-    return finalizeComposerPendingSend(pendingSend.requestId);
-  }
   if (pendingSend.stage === "processing") {
     if (isComposerPendingSessionStillActive(session, pendingSend)) {
       syncComposerPendingUi();

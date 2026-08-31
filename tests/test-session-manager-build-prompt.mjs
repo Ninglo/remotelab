@@ -226,11 +226,11 @@ const microAgentPrompt = await buildPrompt(
 
 assert.equal(microAgentPrompt, '看一下这个项目的背景。');
 
-const promptWithTaskCard = await buildPrompt(
+const promptWithWorkSummary = await buildPrompt(
   'session-test-7',
   {
     ...baseSession,
-    taskCard: {
+    workSummary: {
       mode: 'project',
       summary: '先吃透用户丢来的 Excel 和 PPT，再决定如何组织项目态。',
       rawMaterials: ['sales.xlsx', 'deck.pptx'],
@@ -246,11 +246,34 @@ const promptWithTaskCard = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(promptWithTaskCard, /Current carried task card/);
-assert.match(promptWithTaskCard, /Execution mode: project/);
-assert.match(promptWithTaskCard, /sales\.xlsx/);
-assert.match(promptWithTaskCard, /Reusable patterns/);
-assert.match(promptWithTaskCard, /Durable user memory/);
+assert.match(promptWithWorkSummary, /Current provider-neutral work summary/);
+assert.match(promptWithWorkSummary, /Execution mode: project/);
+assert.match(promptWithWorkSummary, /sales\.xlsx/);
+assert.match(promptWithWorkSummary, /Reusable patterns/);
+assert.match(promptWithWorkSummary, /Session-scoped reusable context/);
+
+const crossHarnessPrompt = await buildPrompt(
+  'session-test-7',
+  {
+    ...baseSession,
+    codexThreadId: 'codex-thread-only',
+    workSummary: {
+      mode: 'project',
+      summary: '这份状态必须从 Codex 传给 Claude。',
+      knownConclusions: ['Provider 原生线程不是跨 Harness 记忆真相。'],
+      nextSteps: ['由 Claude 从同一份 RemoteLab 工作状态继续'],
+    },
+  },
+  '切换到 Claude 继续。',
+  'codex',
+  'claude',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(crossHarnessPrompt, /这份状态必须从 Codex 传给 Claude/);
+assert.match(crossHarnessPrompt, /Provider 原生线程不是跨 Harness 记忆真相/);
+assert.match(crossHarnessPrompt, /切换到 Claude 继续/);
 
 const welcomePrompt = await buildPrompt(
   'session-test-8',

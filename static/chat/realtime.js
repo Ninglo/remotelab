@@ -323,14 +323,8 @@ async function dispatchAction(msg) {
               }),
             });
         const acknowledgedRequestId = data.requestId || requestId;
-        const nextPendingStage = data?.session?.activity?.continuation?.state === "checking"
-          && (!data?.session?.activity?.continuation?.requestId || data.session.activity.continuation.requestId === acknowledgedRequestId)
-          ? "checking"
-          : "processing";
         if (typeof acknowledgeComposerPendingSend === "function") {
-          acknowledgeComposerPendingSend(acknowledgedRequestId, {
-            nextStage: nextPendingStage,
-          });
+          acknowledgeComposerPendingSend(acknowledgedRequestId);
         } else if (typeof finalizeComposerPendingSend === "function") {
           finalizeComposerPendingSend(acknowledgedRequestId);
         }

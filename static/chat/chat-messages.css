@@ -240,10 +240,6 @@
   background: var(--text-secondary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-secondary) 14%, transparent);
 }
-.msg-user-status-checking .msg-user-status-dot {
-  background: #b66a00;
-  box-shadow: 0 0 0 3px rgba(182, 106, 0, 0.14);
-}
 .msg-user-status-processing .msg-user-status-dot {
   background: var(--accent);
 }
@@ -547,34 +543,6 @@
 }
 .turn-collapse-body {
   padding: 10px 12px 4px;
-}
-
-.reply-self-check-drawer {
-  margin: 6px auto 12px;
-  background: color-mix(in srgb, var(--bg-secondary) 78%, transparent);
-}
-
-.reply-self-check-drawer .turn-collapse-summary {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.reply-self-check-drawer .turn-collapse-body {
-  padding-top: 8px;
-}
-
-.reply-self-check-drawer .msg-system {
-  margin: 0 0 8px;
-  text-align: left;
-}
-
-.reply-self-check-drawer .context-operation {
-  margin: 8px 0 0;
-  max-width: 100%;
-}
-
-.reply-self-check-drawer .context-operation:first-child {
-  margin-top: 0;
 }
 
 /* Reasoning text inside thinking block */

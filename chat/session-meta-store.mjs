@@ -14,7 +14,7 @@ import {
 import { normalizeSessionAgreements } from './session-agreements.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import { normalizeStoredSessionFolder } from './session-folder.mjs';
-import { normalizeSessionTaskCard } from './session-task-card.mjs';
+import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 import { DEFAULT_APP_ID, getBuiltinApp, normalizeAppId } from './apps.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { migrateLegacySessionRuntimeFields } from '../lib/legacy-micro-agent.mjs';
@@ -135,41 +135,6 @@ function normalizeStoredStarterPreset(normalized) {
   return changed;
 }
 
-function normalizeStoredPendingContinuationQueue(normalized) {
-  let changed = false;
-
-  const hasContinuationQueue = Object.prototype.hasOwnProperty.call(normalized, 'pendingContinuationQueue');
-  const hasLegacyPlanningQueue = Object.prototype.hasOwnProperty.call(normalized, 'pendingPlanningQueue');
-  const continuationQueue = Array.isArray(normalized.pendingContinuationQueue)
-    ? normalized.pendingContinuationQueue
-    : [];
-  const legacyPlanningQueue = Array.isArray(normalized.pendingPlanningQueue)
-    ? normalized.pendingPlanningQueue
-    : [];
-
-  let nextQueue = continuationQueue;
-  if (nextQueue.length === 0 && legacyPlanningQueue.length > 0) {
-    nextQueue = legacyPlanningQueue;
-  }
-
-  if (nextQueue.length > 0) {
-    if (!hasContinuationQueue || normalized.pendingContinuationQueue !== nextQueue) {
-      normalized.pendingContinuationQueue = nextQueue;
-      changed = true;
-    }
-  } else if (hasContinuationQueue) {
-    delete normalized.pendingContinuationQueue;
-    changed = true;
-  }
-
-  if (hasLegacyPlanningQueue) {
-    delete normalized.pendingPlanningQueue;
-    changed = true;
-  }
-
-  return changed;
-}
-
 function normalizeStoredTitleLock(normalized) {
   if (normalized.titleLocked === true) {
     return false;
@@ -200,7 +165,7 @@ function normalizeStoredSessionMeta(meta) {
     changed = true;
   }
 
-  for (const legacyField of ['activeRun', 'status', 'queuedMessageCount', 'pendingCompact', 'renameState', 'renameError', 'recoverable']) {
+  for (const legacyField of ['activeRun', 'status', 'queuedMessageCount', 'pendingCompact', 'pendingContinuationQueue', 'pendingPlanningQueue', 'renameState', 'renameError', 'recoverable']) {
     if (Object.prototype.hasOwnProperty.call(normalized, legacyField)) {
       delete normalized[legacyField];
       changed = true;
@@ -224,7 +189,6 @@ function normalizeStoredSessionMeta(meta) {
   changed = normalizeStoredSessionSourceFields(normalized) || changed;
   changed = normalizeStoredSessionTemplateFields(normalized) || changed;
   changed = normalizeStoredStarterPreset(normalized) || changed;
-  changed = normalizeStoredPendingContinuationQueue(normalized) || changed;
   changed = normalizeStoredTitleLock(normalized) || changed;
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'folder')) {
@@ -313,14 +277,21 @@ function normalizeStoredSessionMeta(meta) {
     }
   }
 
-  if (Object.prototype.hasOwnProperty.call(normalized, 'taskCard')) {
-    const nextTaskCard = normalizeSessionTaskCard(normalized.taskCard);
-    if (nextTaskCard) {
-      if (JSON.stringify(normalized.taskCard) !== JSON.stringify(nextTaskCard)) {
-        normalized.taskCard = nextTaskCard;
+  if (
+    Object.prototype.hasOwnProperty.call(normalized, 'workSummary')
+    || Object.prototype.hasOwnProperty.call(normalized, 'taskCard')
+  ) {
+    const nextWorkSummary = normalizeSessionWorkSummary(normalized.workSummary || normalized.taskCard);
+    if (nextWorkSummary) {
+      if (JSON.stringify(normalized.workSummary) !== JSON.stringify(nextWorkSummary)) {
+        normalized.workSummary = nextWorkSummary;
         changed = true;
       }
-    } else {
+    } else if (Object.prototype.hasOwnProperty.call(normalized, 'workSummary')) {
+      delete normalized.workSummary;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(normalized, 'taskCard')) {
       delete normalized.taskCard;
       changed = true;
     }

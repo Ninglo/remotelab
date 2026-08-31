@@ -161,7 +161,6 @@ async function startServer({ home, port, delayMs = 700, envOverrides = {} }) {
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
       FAKE_CODEX_DELAY_MS: String(delayMs),
-      REMOTELAB_REPLY_SELF_CHECK: 'off',
       ...envOverrides,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -172,14 +171,19 @@ async function startServer({ home, port, delayMs = 700, envOverrides = {} }) {
   child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
   child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
-  await waitFor(async () => {
-    try {
-      const res = await request(port, 'GET', '/api/auth/me');
-      return res.status === 200;
-    } catch {
-      return false;
-    }
-  }, 'server startup');
+  try {
+    await waitFor(async () => {
+      try {
+        const res = await request(port, 'GET', '/api/auth/me');
+        return res.status === 200;
+      } catch {
+        return false;
+      }
+    }, 'server startup');
+  } catch (error) {
+    if (child.exitCode === null) child.kill('SIGTERM');
+    throw new Error(`${error.message}\nstdout:\n${stdout}\nstderr:\n${stderr}`);
+  }
 
   return {
     child,
@@ -259,11 +263,7 @@ async function submitLegacyMessage(port, sessionId, text = 'Run the fake tool') 
   });
   assert.equal(res.status, 202, 'legacy submit without requestId should succeed');
   if (!res.json?.run?.id && res.json?.queued !== true) {
-    const detail = await waitFor(() => request(port, 'GET', `/api/sessions/${sessionId}`), 'session detail after legacy submit');
-    const requestId = typeof detail?.json?.session?.activity?.continuation?.requestId === 'string'
-      ? detail.json.session.activity.continuation.requestId
-      : '';
-    const run = await waitForAcceptedRun(port, sessionId, requestId);
+    const run = await waitForAcceptedRun(port, sessionId);
     if (run) {
       res.json.run = run;
     }
@@ -929,26 +929,26 @@ async function phase13DelegateSession() {
     const duplicateDelegate = await request(port, 'POST', `/api/sessions/${session.id}/delegate`, {
       task: 'Figure out a lightweight child-session strategy for parallel work.',
     });
-    assert.equal(duplicateDelegate.status, 201, 'repeat delegate should still succeed');
-    assert.equal(
+    assert.equal(duplicateDelegate.status, 201, 'repeat explicit delegate should still succeed');
+    assert.notEqual(
       duplicateDelegate.json.session?.id,
       delegate.json.session.id,
-      'repeat delegate with the same task should reuse the existing child session',
+      'each explicit delegate should create a fresh persistent child instead of guessing reuse from task text',
     );
-    assert.equal(
+    assert.notEqual(
       duplicateDelegate.json.run?.id,
       delegate.json.run.id,
-      'repeat delegate with the same task should reuse the existing child run instead of starting a duplicate',
+      'each explicit delegate should start its own child run',
     );
 
-    const parentEventsAfterReuse = await getEvents(port, session.id);
-    const reuseOperations = parentEventsAfterReuse.events.filter(
+    const parentEventsAfterRepeat = await getEvents(port, session.id);
+    const repeatOperations = parentEventsAfterRepeat.events.filter(
       (event) => event.type === 'context_operation' && event.operation === 'delegate_session',
     );
     assert.equal(
-      reuseOperations.length,
-      1,
-      'repeat delegate reuse should not append another visible delegation operation to the parent session',
+      repeatOperations.length,
+      2,
+      'each explicit delegate should append its own visible delegation operation',
     );
 
     const distinctDelegate = await request(port, 'POST', `/api/sessions/${session.id}/delegate`, {
@@ -1215,10 +1215,10 @@ async function phase17SidecarPreSpawnFailurePersistsRootCause() {
     const submit = await submitMessage(port, session.id, 'req-sidecar-pre-spawn-failure');
     const failedRun = await waitForRunTerminal(port, submit.json.run.id);
     assert.equal(failedRun.state, 'failed', 'pre-spawn sidecar failure should mark the run failed');
-    assert.equal(
-      failedRun.failureReason,
-      'Synthetic sidecar failure before tool spawn',
-      'pre-spawn sidecar failure should preserve the original error',
+    assert.match(
+      failedRun.failureReason || '',
+      /Synthetic sidecar failure before tool spawn/,
+      'pre-spawn sidecar failure should preserve the original error even when provider diagnostics wrap it',
     );
     assert.equal(
       failedRun.result?.error,
@@ -1290,9 +1290,13 @@ async function phase19CodexMissingRolloutClearsResumeId() {
     assert.equal(firstRun.state, 'completed', 'initial non-resume run should complete');
 
     const sessionsPath = join(configDir, 'chat-sessions.json');
-    let sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
-    let sessionRecord = sessions.find((entry) => entry.id === session.id);
-    assert.equal(sessionRecord?.codexThreadId, 'thread-test', 'successful Codex run should persist the resume thread');
+    let sessions;
+    let sessionRecord;
+    await waitFor(() => {
+      sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
+      sessionRecord = sessions.find((entry) => entry.id === session.id);
+      return sessionRecord?.codexThreadId === 'thread-test';
+    }, 'successful Codex run should persist the resume thread');
 
     writeFileSync(join(configDir, 'fake-fail-on-resume'), '1', 'utf8');
     const stale = await submitMessage(port, session.id, 'req-missing-rollout-stale', 'resume after provider rollout disappeared');

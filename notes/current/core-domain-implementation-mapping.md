@@ -43,7 +43,7 @@ Short version:
 | `App` | `chat/apps.mjs`, `chat/router.mjs`, `chat/router-control-routes.mjs` | `apps.json` | `/api/agents*`, `/agent/:shareToken`, legacy `/app/:shareToken` redirect | Partial |
 | `Principal` | `lib/auth.mjs`, `chat/router.mjs` | `auth-sessions.json` cookie sessions | `/login`, `/logout`, `/api/auth/me` | Mismatch |
 | `ShareSnapshot` | `chat/shares.mjs`, `chat/router.mjs` | `shared-snapshots/<snapId>.json` | `POST /api/sessions/:id/share`, `GET /share/:id` | Partial |
-| session presentation metadata | `chat/summarizer.mjs`, `chat/session-manager.mjs`, `static/chat.js` | `chat-sessions.json` | session list, empty Progress tab shell | Partial |
+| session presentation metadata | `chat/session-state-classifier.mjs`, `chat/session-manager.mjs`, `static/chat.js` | `chat-sessions.json` | session list, empty Progress tab shell | Partial |
 
 ---
 
@@ -512,7 +512,7 @@ Treat the current share implementation as:
 
 ### Current code owners
 
-- `chat/summarizer.mjs`
+- `chat/session-state-classifier.mjs`
 - `static/chat.js`
 - `templates/chat.html`
 
@@ -536,7 +536,7 @@ The good news:
 
 The important nuance:
 
-- the summarizer pipeline now exists only to suggest canonical session metadata such as title/group/description
+- the session-state classifier suggests canonical session metadata such as title/group/description without restoring the retired summarizer pipeline
 - the empty Progress tab is a reserved shell, not a data surface
 
 The remaining architectural distinction is simply between:
@@ -633,7 +633,7 @@ Current session/run reads still sometimes trigger reconciliation work.
 ### 7. Sidebar logic still touches canonical presentation metadata
 
 The contract demotes sidebar/progress to derived UI.
-Current summarizer logic still participates in canonical rename/group/description updates.
+Current session-state classifier logic still participates in canonical rename/group/description updates.
 
 ---
 

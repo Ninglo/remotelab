@@ -95,7 +95,6 @@ async function startServer({ home, localBin, port }) {
       HOME: home,
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
-      REMOTELAB_REPLY_SELF_CHECK: 'off',
       PATH: `${localBin}:${process.env.PATH || ''}`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

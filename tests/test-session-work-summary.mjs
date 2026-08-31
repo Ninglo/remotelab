@@ -2,12 +2,12 @@
 import assert from 'assert/strict';
 
 import {
-  buildTaskCardPromptBlock,
-  normalizeSessionTaskCard,
-  parseTaskCardFromAssistantContent,
-} from '../chat/session-task-card.mjs';
+  buildWorkSummaryPromptBlock,
+  normalizeSessionWorkSummary,
+  parseWorkSummaryFromAssistantContent,
+} from '../chat/session-work-summary.mjs';
 
-const normalized = normalizeSessionTaskCard({
+const normalized = normalizeSessionWorkSummary({
   mode: 'project',
   summary: '整理销售周报的 Excel 和 PPT，并产出一版可复用流程。',
   goal: '把手工周报整理流程交给 RemoteLab 处理。',
@@ -25,17 +25,17 @@ assert.equal(normalized?.mode, 'project');
 assert.deepEqual(normalized?.rawMaterials, ['sales-weekly.xlsx', 'review-deck.pptx', '截图 2 张']);
 assert.deepEqual(normalized?.reusablePatterns, ['先吃透原始材料，再决定是否要把流程升格。']);
 
-const parsed = parseTaskCardFromAssistantContent([
+const parsed = parseWorkSummaryFromAssistantContent([
   '先看材料，我已经开始整理。',
   '<private>',
-  '<task_card>{',
+  '<work_summary>{',
   '  "mode": "task",',
   '  "summary": "先做一版轻量整理，再决定是否进入项目态。",',
   '  "rawMaterials": ["weekly.xlsx", "ops.pptx"],',
   '  "reusablePatterns": ["先接住材料，再决定是否抽象成长期流程"],',
   '  "nextSteps": ["检查字段", "给出样例输出"],',
   '  "memory": ["用户一般直接给原始材料，不喜欢先写长说明"]',
-  '}</task_card>',
+  '}</work_summary>',
   '</private>',
 ].join('\n'));
 
@@ -44,15 +44,15 @@ assert.equal(parsed?.summary, '先做一版轻量整理，再决定是否进入�
 assert.deepEqual(parsed?.nextSteps, ['检查字段', '给出样例输出']);
 assert.deepEqual(parsed?.reusablePatterns, ['先接住材料，再决定是否抽象成长期流程']);
 
-const promptBlock = buildTaskCardPromptBlock(parsed);
-assert.match(promptBlock, /Current carried task card/);
+const promptBlock = buildWorkSummaryPromptBlock(parsed);
+assert.match(promptBlock, /Current provider-neutral work summary/);
 assert.match(promptBlock, /Execution mode: task/);
 assert.match(promptBlock, /Raw materials:/);
 assert.match(promptBlock, /Reusable patterns:/);
 assert.match(promptBlock, /weekly\.xlsx/);
-assert.match(promptBlock, /Durable user memory:/);
+assert.match(promptBlock, /Session-scoped reusable context:/);
 
-const inferredProject = normalizeSessionTaskCard({
+const inferredProject = normalizeSessionWorkSummary({
   summary: '材料较多，需要拆步骤推进。',
   rawMaterials: ['a.xlsx', 'b.xlsx', 'c.pptx'],
   nextSteps: ['检查原始材料', '整理结构'],
@@ -60,4 +60,4 @@ const inferredProject = normalizeSessionTaskCard({
 
 assert.equal(inferredProject?.mode, 'project');
 
-console.log('test-session-task-card: ok');
+console.log('test-session-work-summary: ok');
