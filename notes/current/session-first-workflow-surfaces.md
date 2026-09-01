@@ -152,19 +152,20 @@ A Project group is the entry the owner would reasonably open next time to resume
 - stable enough to collect repeated sessions over time
 - small enough that the sessions inside share user intent, context, files, decisions, or next actions
 
-The failure mode to avoid is one session becoming one Project. In the current owner Chat UI sample on 2026-06-12, 20 active Chat UI sessions produced 17 groups, with 16 singleton groups. The current target budget for that density is roughly 6 Projects. That is a clear over-splitting signal, even though some individual labels are semantically accurate.
+The failure mode to avoid is one session becoming one Project. In the current owner Chat UI sample on 2026-06-12, 20 active Chat UI sessions produced 17 groups, with 16 singleton groups. That is a clear over-splitting signal even though some individual labels are semantically accurate; the organizer should not solve it by fitting the list to a numeric quota.
 
 Singleton Projects are acceptable only when the workstream is genuinely standalone, newly emerging but likely to recur, currently high-priority, or unrelated to every existing group. Otherwise, a narrow one-off session should be merged into the closest active Project group, with the session title and description carrying the specific subtask.
 
-Grouping should be allowed to rebalance previous choices. A per-session label generated at creation time is provisional because it sees incomplete global context. The session-list organizer is the canonical cleanup pass for the current sidebar: it receives the scoped active-session snapshot and may rewrite `group` and `sidebarOrder` across every session in that scope. It should not behave as append-only classification for one new row.
+Space is one level broader: it represents a durable working-context switch, not a decorative category above a Project. Build the hierarchy bottom-up (`Session → Project → Space`). A Space containing only one Project is normally redundant and should be folded into the nearest broader Space unless it is a deliberate durable boundary expected to grow into multiple Projects.
+
+Grouping should be allowed to rebalance previous choices. A per-session label generated at creation time is provisional because it sees incomplete global context. The session-list organizer is the canonical cleanup pass for the current sidebar: it receives the scoped active-session snapshot and may rewrite `space`, `group`, and `sidebarOrder` across every session in that scope. It should not behave as append-only classification for one new row.
 
 This also means Project compression is allowed without introducing a Project object. If several older groups become fragments of one better workstream topic, the organizer can choose a clearer shared Project name and patch every included session to that `group`. The durable data remains session metadata; the compression is a scoped maintenance pass over those sessions.
 
 Rebalancing should use the whole scoped snapshot:
 
-- title, description, current group, workflow state, priority, source, folder, and recency
-- the current group count versus the target budget
-- singleton ratio and obvious near-duplicate groups
+- title, description, current Space and Project, workflow state, priority, source, folder, and recency
+- the full current hierarchy and obvious near-duplicate or one-off fragments
 - source scope, so Chat UI sorting does not get polluted by Feishu/Bot/Automation audit sessions unless that source filter was explicitly selected
 - exactly one account scope, so one person's taxonomy and ordering never rewrite or train against another person's sessions
 
@@ -172,10 +173,12 @@ If the metadata is insufficient for an important merge/split decision, the organ
 
 Default granularity rules:
 
+- First cluster Sessions into Projects by shared goal, context, materials, decisions, and likely next actions.
 - Merge sessions when they are slices of the same user-facing workstream, even if their immediate titles mention different features.
 - Split sessions when they have different outcomes, lifecycles, owners, source/audit behavior, or would make the group harder to resume.
-- Keep high-priority active work separate when merging would hide the next action.
-- Prefer a readable sidebar over a perfectly semantic hierarchy, because RemoteLab currently has only one visible Projects level.
+- Only after Projects are coherent, cluster them into the smallest stable set of broad Spaces.
+- Reuse and merge before creating labels; preserve specificity in Session titles and descriptions.
+- Prefer a readable sidebar over a perfectly semantic hierarchy.
 
 Sorting should serve return-to-work. Running groups should rise first, groups needing owner attention should rise next, and then organized groups should follow the lowest `sidebarOrder` among their sessions. Latest activity remains the fallback for unorganized or newly created groups, so fresh work can still surface before the next Sort List rebalance. A true group-level pin/order object is only needed later if Projects become first-class objects.
 
@@ -186,12 +189,15 @@ Do not run a full Sort List rebalance after every new session. That would make t
 Use three levels instead:
 
 1. **Local repair** during single-session labeling.
-   - Prefer a plausible existing workstream group for the new session.
+   - Prefer a plausible existing Space and Project for the new session.
+   - Never create a new Space from one Session; use `Loose` if no existing Space clearly fits.
+   - Create a new Project only inside an existing Space when the workstream is clearly durable and no current Project fits.
    - Let the title and description carry subtask specificity.
    - Do not rewrite older sessions from this path.
 
 2. **Sort recommended** when deterministic health metrics show drift.
    - This can update the button, badge, or subtle status text.
+   - Metrics decide whether to invoke sorting; they are not semantic quotas passed to the organizer.
    - It should be driven by cheap `groupSummary` metrics, not by an LLM deciding to invoke itself.
    - Good first thresholds: at least 8 scoped sessions, actual group count above `targetProjectCount * 1.5`, at least 4 singleton groups, or singleton ratio at or above 0.45.
 
@@ -201,7 +207,7 @@ Use three levels instead:
    - Do not run more than once per source scope per day by default.
    - Require a severe signal such as group count above `targetProjectCount * 2`, at least 6 singleton groups, or singleton ratio at or above 0.6.
    - Run only after the current user-facing turn reaches a terminal state, not while the user is typing or while many foreground sessions are running.
-   - The run may patch only `group` and `sidebarOrder` on scoped non-archived sessions.
+   - The run may patch only `space`, `group`, and `sidebarOrder` on scoped non-archived sessions.
 
 The important separation is:
 

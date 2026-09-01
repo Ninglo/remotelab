@@ -271,32 +271,30 @@ let sessionListOrganizerLabelResetTimer = null;
 
 const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   "You are RemoteLab's hidden session-list organizer.",
-  "Your job is to improve one account's scoped non-archived session sidebar structure using the provided metadata snapshot.",
-  "Account boundaries are strict: never infer, copy, merge, or normalize Space, Project, or sidebar order across different accounts.",
-  "Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.",
-  "Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.",
-  "Use `remotelab api GET /api/sessions` if you need to double-check current state.",
-  "Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `space`, `group`, and `sidebarOrder`.",
-  "Only writable API fields for this task are `space`, `group`, and `sidebarOrder`.",
-  "Never send read-only snapshot keys such as `title`, `brief`, `existingSpace`, `existingGroup`, or `existingSidebarOrder` in PATCH bodies.",
-  "Example PATCH body: {\"space\":\"Product\",\"group\":\"RemoteLab\",\"sidebarOrder\":3}",
-  "If `remotelab` is unavailable in PATH, use `node \"$REMOTELAB_PROJECT_ROOT/cli.js\" api ...` instead.",
-  "`sidebarOrder` must be a positive integer; smaller numbers sort first.",
-  "Assign unique contiguous `sidebarOrder` values across only the scoped sessions included in the snapshot.",
-  "Do not patch sessions outside the snapshot; other source categories are intentionally left untouched for audit or automation review.",
-  "RemoteLab has two visible levels: a small set of broad Spaces, then concrete Projects groups inside each Space.",
-  "Use the provided `targetSpaceCount` as a soft upper budget. Reuse broad durable Spaces and do not create a Space for every Project.",
-  "Use the provided `targetProjectCount` as a soft budget: when there are few sessions, groups may be fine-grained; when there are many sessions, merge related workstreams into coarser projects.",
-  "Use the provided `groupSummary` to detect over-splitting; a high singleton count is a stronger signal than individually reasonable group labels.",
-  "Avoid excessive singleton groups when `totalSessions` is greater than `targetProjectCount`.",
-  "Treat existing group assignments as provisional; this is a full scoped rebalance, so you may merge, split, or rewrite groups across the entire snapshot.",
-  "Project compression is allowed: when several existing groups are fragments of the same workstream, choose a clearer shared Project name and patch every affected session to that new `group`.",
-  "Do not only classify the newest session; improve older scoped sessions when this account's list has drifted.",
-  "Do not create one Project per session unless the session is genuinely standalone, newly emerging but likely to recur, or high-priority active work that needs its own entry.",
-  "If metadata is insufficient for an important merge/split decision, inspect a small number of ambiguous sessions with the API instead of inventing narrowly isolated groups.",
-  "If semantic purity conflicts with scanability, prefer the grouping that keeps the Projects view easier to consume.",
-  "Keep genuinely unrelated or high-priority active work separate even if that creates a small group.",
-  "Return only a brief plain-text summary of the grouping strategy you applied.",
+  "Build the smallest stable hierarchy that helps one account resume related work from its scoped non-archived Sessions.",
+  "",
+  "Hierarchy:",
+  "- A Session is one concrete conversation.",
+  "- A Project is a durable workstream the user would reasonably return to across related Sessions.",
+  "- A Space is a broad working-context switch that normally contains multiple Projects.",
+  "",
+  "Method:",
+  "1. Cluster Sessions into Projects by shared goal, context, materials, decisions, and likely next actions.",
+  "2. Merge one-off steps and narrow feature slices into the nearest durable Project; let Session titles carry the specific subtask.",
+  "3. Only after Projects are coherent, cluster them into Spaces.",
+  "4. A Space containing only one Project is normally redundant. Fold it into the closest broader Space unless it is a deliberate durable boundary expected to hold multiple Projects.",
+  "Preserve coherent labels; otherwise reuse and merge before creating new ones. Use `Loose` for genuinely temporary or ambiguous work.",
+  "Prefer a compact, readable sidebar over taxonomic purity and use the dominant language of the scoped catalog.",
+  "Use `sidebarOrder` for stable hierarchy order; keep each Project's Sessions contiguous. The UI handles transient running and attention priority separately.",
+  "",
+  "Boundaries:",
+  "- Account scope is strict: never inspect, infer, or patch another account's taxonomy.",
+  "- Update only Sessions in the snapshot. Do not rename, archive, unarchive, pin, edit prompts, or ask follow-up questions.",
+  "- Only writable API fields for this task are `space`, `group`, and `sidebarOrder`. Use unique contiguous positive orders within the snapshot.",
+  "- Apply changes with `remotelab api PATCH /api/sessions/<sessionId> --body ...`; if unavailable, use `node \"$REMOTELAB_PROJECT_ROOT/cli.js\" api ...`.",
+  "- Never send read-only snapshot fields such as `title`, `brief`, or any `existing*` field in PATCH bodies.",
+  "If an important decision is unsupported, inspect only the ambiguous Sessions with `remotelab api GET /api/sessions` instead of doing broad archaeology.",
+  "Return only a brief plain-text summary after applying the changes.",
 ].join("\n");
 
 function sleep(ms) {
@@ -369,74 +367,8 @@ function buildSessionListOrganizerSessionMetadata(session) {
   };
 }
 
-function buildSessionListOrganizerGroupSummary(sessions, targetProjectCount = 0) {
-  const normalizedSessions = Array.isArray(sessions) ? sessions : [];
-  const groups = new Map();
-  for (const session of normalizedSessions) {
-    const rawGroup = typeof session?.existingGroup === "string" && session.existingGroup.trim()
-      ? session.existingGroup.trim()
-      : "(ungrouped)";
-    if (!groups.has(rawGroup)) {
-      groups.set(rawGroup, {
-        group: rawGroup,
-        count: 0,
-        examples: [],
-      });
-    }
-    const group = groups.get(rawGroup);
-    group.count += 1;
-    const title = clipSessionListOrganizerText(session?.title || "", 80);
-    if (title && group.examples.length < 3) {
-      group.examples.push(title);
-    }
-  }
-
-  const groupList = [...groups.values()].sort((a, b) => (
-    (b.count - a.count)
-    || a.group.localeCompare(b.group, undefined, { numeric: true, sensitivity: "base" })
-  ));
-  const singletonGroups = groupList.filter((group) => group.count === 1);
-  const totalGroups = groupList.length;
-  const parsedTarget = Number.isInteger(targetProjectCount) && targetProjectCount > 0
-    ? targetProjectCount
-    : 0;
-  const singletonRatio = totalGroups > 0
-    ? Number((singletonGroups.length / totalGroups).toFixed(2))
-    : 0;
-
-  return {
-    totalGroups,
-    targetProjectCount: parsedTarget,
-    overTarget: parsedTarget > 0 && totalGroups > parsedTarget,
-    singletonGroups: singletonGroups.length,
-    singletonRatio,
-    largestGroups: groupList.slice(0, 8),
-    singletonExamples: singletonGroups.slice(0, 12).map((group) => ({
-      group: group.group,
-      title: group.examples[0] || "",
-    })),
-  };
-}
-
 function getSessionListOrganizerSourceLabel(sourceFilter) {
   return SESSION_LIST_ORGANIZER_SOURCE_LABELS[sourceFilter] || SESSION_LIST_ORGANIZER_SOURCE_LABELS[FILTER_ALL_VALUE];
-}
-
-function getSessionListOrganizerTargetProjectCount(totalSessions) {
-  if (!Number.isInteger(totalSessions) || totalSessions <= 0) return 0;
-  if (totalSessions <= 5) return totalSessions;
-  if (totalSessions <= 18) return Math.min(totalSessions, Math.max(4, Math.min(6, Math.round(totalSessions / 3))));
-  if (totalSessions <= 40) return Math.min(totalSessions, Math.max(6, Math.min(8, Math.round(totalSessions / 5))));
-  return Math.min(totalSessions, Math.max(8, Math.min(10, Math.round(totalSessions / 8))));
-}
-
-function getSessionListOrganizerTargetSpaceCount(totalSessions) {
-  if (!Number.isInteger(totalSessions) || totalSessions <= 0) return 0;
-  if (totalSessions <= 12) return Math.min(2, totalSessions);
-  if (totalSessions <= 40) return 3;
-  if (totalSessions <= 120) return 4;
-  if (totalSessions <= 240) return 5;
-  return 6;
 }
 
 function getSessionListOrganizerAccountScope() {
@@ -519,8 +451,6 @@ function getSessionListOrganizerScope() {
         : organizerSourceFilter === FILTER_ALL_VALUE
     )
   ));
-  const targetProjectCount = getSessionListOrganizerTargetProjectCount(scopedSessions.length);
-  const targetSpaceCount = getSessionListOrganizerTargetSpaceCount(scopedSessions.length);
   return {
     currentSourceFilter,
     organizerSourceFilter,
@@ -529,11 +459,6 @@ function getSessionListOrganizerScope() {
     accountLabel: accountScope.accountLabel,
     defaultedToCurrentAccount: accountScope.defaultedToCurrentAccount,
     sourceLabel: getSessionListOrganizerSourceLabel(organizerSourceFilter),
-    targetSpaceCount,
-    targetProjectCount,
-    targetSessionsPerProject: targetProjectCount > 0
-      ? Math.ceil(scopedSessions.length / targetProjectCount)
-      : 0,
     sessions: scopedSessions,
   };
 }
@@ -541,7 +466,6 @@ function getSessionListOrganizerScope() {
 function buildSessionListOrganizerPayload() {
   const scope = getSessionListOrganizerScope();
   const sessions = scope.sessions.map(buildSessionListOrganizerSessionMetadata).filter((session) => session.id);
-  const groupSummary = buildSessionListOrganizerGroupSummary(sessions, scope.targetProjectCount);
   return {
     tool: selectedTool || preferredTool || "codex",
     ...(selectedModel ? { model: selectedModel } : {}),
@@ -554,10 +478,7 @@ function buildSessionListOrganizerPayload() {
       accountId: scope.accountId,
       accountLabel: scope.accountLabel,
       defaultedToCurrentAccount: scope.defaultedToCurrentAccount,
-      targetProjectCount: scope.targetProjectCount,
-      targetSessionsPerProject: scope.targetSessionsPerProject,
     },
-    groupSummary,
     sessions,
   };
 }
@@ -570,58 +491,26 @@ function buildSessionListOrganizerTask(input) {
   const scope = normalizedInput.scope && typeof normalizedInput.scope === "object"
     ? normalizedInput.scope
     : {};
-  const totalSessions = sessions.length;
-  const targetSpaceCount = Number.isInteger(scope.targetSpaceCount) && scope.targetSpaceCount > 0
-    ? scope.targetSpaceCount
-    : getSessionListOrganizerTargetSpaceCount(totalSessions);
-  const targetProjectCount = Number.isInteger(scope.targetProjectCount) && scope.targetProjectCount > 0
-    ? scope.targetProjectCount
-    : getSessionListOrganizerTargetProjectCount(totalSessions);
-  const targetSessionsPerProject = Number.isInteger(scope.targetSessionsPerProject) && scope.targetSessionsPerProject > 0
-    ? scope.targetSessionsPerProject
-    : (targetProjectCount > 0 ? Math.ceil(totalSessions / targetProjectCount) : 0);
-  const groupSummary = normalizedInput.groupSummary && typeof normalizedInput.groupSummary === "object"
-    ? normalizedInput.groupSummary
-    : buildSessionListOrganizerGroupSummary(sessions, targetProjectCount);
   const payload = {
     generatedAt: new Date().toISOString(),
-    totalSessions,
-    targetSpaceCount,
-    targetProjectCount,
-    targetSessionsPerProject,
+    totalSessions: sessions.length,
     scope,
-    groupSummary,
     sessions,
   };
   return [
-    "Organize only the scoped non-archived RemoteLab sessions included in the provided metadata snapshot.",
-    `The snapshot belongs only to account ${scope.accountLabel || scope.accountId || "Owner"}. Treat Space, Project, and sidebar order as account-local metadata and do not inspect or patch another account's sessions.`,
-    `Create or reuse roughly ${targetSpaceCount} broad Spaces for ${totalSessions} scoped sessions; this is a soft upper budget, not a target to fill.`,
-    "Spaces are durable context boundaries. Projects are concrete workstreams inside a Space. Assign genuinely temporary or ambiguous sessions to the reserved `Loose` Space rather than inventing a weak category.",
-    "Use the dominant language of the session titles and current catalog for user-visible Space and Project names; when that language is Chinese, use concise natural Chinese labels.",
-    "Choose clearer Projects groups and a better sidebar ordering based on actual workstream similarity, current user consumption, and the target project budget.",
-    `Target roughly ${targetProjectCount} Projects groups for ${totalSessions} scoped sessions; this is a soft budget, not an exact quota.`,
-    targetSessionsPerProject > 0
-      ? `Aim for about ${targetSessionsPerProject} sessions per Project when the workstreams are related enough to merge.`
-      : "",
-    `Current snapshot has ${groupSummary.totalGroups || 0} existing groups and ${groupSummary.singletonGroups || 0} singleton groups; use this as the main over-splitting signal.`,
-    groupSummary.overTarget || (groupSummary.singletonRatio || 0) >= 0.35
-      ? "The current grouping is likely over-split. Prioritize merging related singleton or near-duplicate groups before fine-tuning order."
-      : "",
-    "Treat this as a full scoped rebalance: previous groups are useful hints, not fixed truth, and singleton groups should be merged when they are just feature slices of the same workstream.",
-    "If several old groups now read as fragments of one better topic, compress them by assigning a clearer shared `group` name to every included session.",
+    "Organize the scoped non-archived Sessions in the snapshot using the hierarchy and write boundaries from the system prompt.",
+    `This snapshot belongs only to account ${scope.accountLabel || scope.accountId || "Owner"}.`,
     scope?.sourceLabel
-      ? `The organizer scope is ${scope.sourceLabel}${scope.defaultedToChatUi ? " because All origins is too broad for daily sorting." : "."}`
+      ? `Source scope: ${scope.sourceLabel}${scope.defaultedToChatUi ? " (All origins defaults to Chat UI for daily organization)." : "."}`
       : "",
-    "Apply changes by calling the RemoteLab API from this machine; do not merely suggest them.",
-    "Snapshot fields like `title`, `brief`, `existingSpace`, `existingGroup`, and `existingSidebarOrder` are read-only context.",
-    "Do not patch any session that is not present in the `sessions` array below.",
-    "When patching a session, send only `space`, `group`, and `sidebarOrder` in the API body.",
+    "Apply the organization now; do not merely propose it.",
+    "Patch only Sessions present in the snapshot and send only `space`, `group`, and `sidebarOrder`.",
+    "Treat `title`, `brief`, and every `existing*` field as read-only context.",
     "",
     "<session_list_organizer_input>",
     JSON.stringify(payload, null, 2),
     "</session_list_organizer_input>",
-  ].join("\n");
+  ].filter((line) => line !== "").join("\n");
 }
 
 async function createSessionListOrganizerRun(payload) {

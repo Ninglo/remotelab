@@ -13,58 +13,26 @@ const cookie = 'session_token=test-session';
 const SESSION_LIST_ORGANIZER_INTERNAL_ROLE = 'session_list_organizer';
 const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   'You are RemoteLab\'s hidden session-list organizer.',
-  'Your job is to improve the owner\'s scoped non-archived session sidebar structure using the provided metadata snapshot.',
+  'Build the smallest stable hierarchy that helps one account resume related work from its scoped non-archived Sessions.',
   'Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.',
   'Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.',
   'Use `remotelab api GET /api/sessions` if you need to double-check current state.',
-  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `group` and `sidebarOrder`.',
-  'Only writable API fields for this task are `group` and `sidebarOrder`.',
-  'Never send read-only snapshot keys such as `title`, `brief`, `existingGroup`, `existingSidebarOrder`, `currentGroup`, or `currentSidebarOrder` in PATCH bodies.',
-  'Example PATCH body: {"group":"RemoteLab","sidebarOrder":3}',
+  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `space`, `group`, and `sidebarOrder`.',
+  'Only writable API fields for this task are `space`, `group`, and `sidebarOrder`.',
+  'Never send read-only snapshot keys such as `title`, `brief`, `existingSpace`, `existingGroup`, or `existingSidebarOrder` in PATCH bodies.',
+  'Example PATCH body: {"space":"Product","group":"RemoteLab","sidebarOrder":3}',
   'If `remotelab` is unavailable in PATH, use `node "$REMOTELAB_PROJECT_ROOT/cli.js" api ...` instead.',
   '`sidebarOrder` must be a positive integer; smaller numbers sort first.',
   'Assign unique contiguous `sidebarOrder` values across only the scoped sessions included in the snapshot.',
   'Do not patch sessions outside the snapshot; other source categories are intentionally left untouched for audit or automation review.',
-  'RemoteLab only has one visible Projects level, so optimize groups as sidebar consumption units rather than a strict taxonomy.',
-  'Use the provided `targetProjectCount` as a soft budget: when there are few sessions, groups may be fine-grained; when there are many sessions, merge related workstreams into coarser projects.',
-  'Use the provided `groupSummary` to detect over-splitting; a high singleton count is a stronger signal than individually reasonable group labels.',
-  'Avoid excessive singleton groups when `totalSessions` is greater than `targetProjectCount`.',
-  'Treat existing group assignments as provisional; this is a full scoped rebalance, so you may merge, split, or rewrite groups across the entire snapshot.',
-  'Project compression is allowed: when several existing groups are fragments of the same workstream, choose a clearer shared Project name and patch every affected session to that new `group`.',
-  'Do not only classify the newest session; improve older scoped sessions when the global list has drifted.',
-  'Do not create one Project per session unless the session is genuinely standalone, newly emerging but likely to recur, or high-priority active work that needs its own entry.',
-  'If metadata is insufficient for an important merge/split decision, inspect a small number of ambiguous sessions with the API instead of inventing narrowly isolated groups.',
-  'If semantic purity conflicts with scanability, prefer the grouping that keeps the Projects view easier to consume.',
-  'Keep genuinely unrelated or high-priority active work separate even if that creates a small group.',
+  'A Session is one concrete conversation. A Project is a durable workstream. A Space is a broad working-context switch that normally contains multiple Projects.',
+  'Work bottom-up: first cluster Sessions into Projects, then cluster those Projects into Spaces.',
+  'Merge one-off steps into the nearest durable Project and let Session titles carry subtask specificity.',
+  'A Space containing only one Project is normally redundant unless it is a deliberate durable boundary expected to hold multiple Projects.',
+  'Preserve coherent labels; otherwise reuse and merge before creating new labels.',
+  'Use `Loose` for genuinely temporary or ambiguous work instead of inventing a weak category.',
   'Return only a brief plain-text summary of the grouping strategy you applied.',
 ].join('\n');
-
-function buildSessionListOrganizerGroupSummary(sessions, targetProjectCount = 0) {
-  const groups = new Map();
-  for (const session of Array.isArray(sessions) ? sessions : []) {
-    const groupName = typeof session?.existingGroup === 'string' && session.existingGroup.trim()
-      ? session.existingGroup.trim()
-      : '(ungrouped)';
-    const group = groups.get(groupName) || { group: groupName, count: 0, examples: [] };
-    group.count += 1;
-    if (session?.title && group.examples.length < 3) group.examples.push(session.title);
-    groups.set(groupName, group);
-  }
-  const groupList = [...groups.values()].sort((a, b) => (b.count - a.count) || a.group.localeCompare(b.group));
-  const singletonGroups = groupList.filter((group) => group.count === 1);
-  return {
-    totalGroups: groupList.length,
-    targetProjectCount,
-    overTarget: targetProjectCount > 0 && groupList.length > targetProjectCount,
-    singletonGroups: singletonGroups.length,
-    singletonRatio: groupList.length > 0 ? Number((singletonGroups.length / groupList.length).toFixed(2)) : 0,
-    largestGroups: groupList.slice(0, 8),
-    singletonExamples: singletonGroups.slice(0, 12).map((group) => ({
-      group: group.group,
-      title: group.examples[0] || '',
-    })),
-  };
-}
 
 function buildSessionListOrganizerTask(input = []) {
   const normalizedInput = Array.isArray(input) ? { sessions: input } : input;
@@ -72,42 +40,17 @@ function buildSessionListOrganizerTask(input = []) {
   const scope = normalizedInput.scope && typeof normalizedInput.scope === 'object'
     ? normalizedInput.scope
     : {};
-  const targetProjectCount = Number.isInteger(scope.targetProjectCount) && scope.targetProjectCount > 0
-    ? scope.targetProjectCount
-    : sessions.length;
-  const targetSessionsPerProject = Number.isInteger(scope.targetSessionsPerProject) && scope.targetSessionsPerProject > 0
-    ? scope.targetSessionsPerProject
-    : 1;
-  const groupSummary = normalizedInput.groupSummary && typeof normalizedInput.groupSummary === 'object'
-    ? normalizedInput.groupSummary
-    : buildSessionListOrganizerGroupSummary(sessions, targetProjectCount);
   return [
-    'Organize only the scoped non-archived RemoteLab sessions included in the provided metadata snapshot.',
-    'Choose clearer Projects groups and a better sidebar ordering based on actual workstream similarity, current user consumption, and the target project budget.',
-    `Target roughly ${targetProjectCount} Projects groups for ${sessions.length} scoped sessions; this is a soft budget, not an exact quota.`,
-    `Aim for about ${targetSessionsPerProject} sessions per Project when the workstreams are related enough to merge.`,
-    `Current snapshot has ${groupSummary.totalGroups || 0} existing groups and ${groupSummary.singletonGroups || 0} singleton groups; use this as the main over-splitting signal.`,
-    groupSummary.overTarget || (groupSummary.singletonRatio || 0) >= 0.35
-      ? 'The current grouping is likely over-split. Prioritize merging related singleton or near-duplicate groups before fine-tuning order.'
-      : '',
-    'Treat this as a full scoped rebalance: previous groups are useful hints, not fixed truth, and singleton groups should be merged when they are just feature slices of the same workstream.',
-    'If several old groups now read as fragments of one better topic, compress them by assigning a clearer shared `group` name to every included session.',
-    scope.sourceLabel
-      ? `The organizer scope is ${scope.sourceLabel}${scope.defaultedToChatUi ? ' because All origins is too broad for daily sorting.' : '.'}`
-      : '',
-    'Apply changes by calling the RemoteLab API from this machine; do not merely suggest them.',
-    'Snapshot fields like `title`, `brief`, `existingGroup`, and `existingSidebarOrder` are read-only context.',
-    'Do not patch any session that is not present in the `sessions` array below.',
-    'When patching a session, send only `group` and `sidebarOrder` in the API body.',
+    'Organize the scoped non-archived Sessions using the hierarchy and write boundaries from the system prompt.',
+    'Apply the organization now; do not merely propose it.',
+    'Patch only Sessions present in the snapshot and send only `space`, `group`, and `sidebarOrder`.',
+    'Treat `title`, `brief`, and every `existing*` field as read-only context.',
     '',
     '<session_list_organizer_input>',
     JSON.stringify({
       generatedAt: new Date().toISOString(),
       totalSessions: sessions.length,
-      targetProjectCount,
-      targetSessionsPerProject,
       scope,
-      groupSummary,
       sessions,
     }, null, 2),
     '</session_list_organizer_input>',
@@ -176,52 +119,31 @@ function buildFakeCodexScript() {
     '  void (async () => {',
     '    try {',
     '      if (organizerMatch) {',
-    '        if (!prompt.includes("Only writable API fields for this task are `group` and `sidebarOrder`.")) {',
+    '        if (!prompt.includes("Only writable API fields for this task are `space`, `group`, and `sidebarOrder`.")) {',
     '          throw new Error("organizer prompt missing writable field guidance");',
     '        }',
-    '        if (!prompt.includes("Use the provided `targetProjectCount` as a soft budget")) {',
-    '          throw new Error("organizer prompt missing dynamic project budget guidance");',
+    '        if (!prompt.includes("Work bottom-up: first cluster Sessions into Projects, then cluster those Projects into Spaces.")) {',
+    '          throw new Error("organizer prompt missing bottom-up hierarchy guidance");',
     '        }',
-    '        if (!prompt.includes("Use the provided `groupSummary` to detect over-splitting")) {',
-    '          throw new Error("organizer prompt missing group summary guidance");',
+    '        if (!prompt.includes("A Space containing only one Project is normally redundant")) {',
+    '          throw new Error("organizer prompt missing redundant Space guidance");',
     '        }',
-    '        if (!prompt.includes("Current snapshot has 2 existing groups and 2 singleton groups")) {',
-    '          throw new Error("organizer task missing group summary metrics");',
+    '        if (!prompt.includes("reuse and merge before creating new labels")) {',
+    '          throw new Error("organizer prompt missing merge-before-create guidance");',
     '        }',
-    '        if (!prompt.includes("Treat existing group assignments as provisional; this is a full scoped rebalance")) {',
-    '          throw new Error("organizer prompt missing full rebalance guidance");',
+    '        if (!prompt.includes("Patch only Sessions present in the snapshot")) {',
+    '          throw new Error("organizer task missing scoped snapshot guidance");',
     '        }',
-    '        if (!prompt.includes("Project compression is allowed: when several existing groups are fragments of the same workstream")) {',
-    '          throw new Error("organizer prompt missing project compression guidance");',
-    '        }',
-    '        if (!prompt.includes("Do not only classify the newest session; improve older scoped sessions when the global list has drifted.")) {',
-    '          throw new Error("organizer prompt missing historical update guidance");',
-    '        }',
-    '        if (!prompt.includes("compress them by assigning a clearer shared `group` name to every included session")) {',
-    '          throw new Error("organizer task missing compression application guidance");',
-    '        }',
-    '        if (!prompt.includes("Do not create one Project per session unless the session is genuinely standalone")) {',
-    '          throw new Error("organizer prompt missing singleton guardrail");',
-    '        }',
-    '        if (!prompt.includes("Treat this as a full scoped rebalance: previous groups are useful hints, not fixed truth")) {',
-    '          throw new Error("organizer task missing full rebalance guidance");',
-    '        }',
-    '        if (!prompt.includes("Do not patch sessions outside the snapshot")) {',
-    '          throw new Error("organizer prompt missing scoped snapshot guidance");',
-    '        }',
-    '        if (!prompt.includes("Never send read-only snapshot keys such as `title`, `brief`, `existingGroup`, `existingSidebarOrder`, `currentGroup`, or `currentSidebarOrder` in PATCH bodies.")) {',
-    '          throw new Error("organizer prompt missing read-only field guidance");',
-    '        }',
-    '        if (!prompt.includes("Snapshot fields like `title`, `brief`, `existingGroup`, and `existingSidebarOrder` are read-only context.")) {',
-    '          throw new Error("organizer task missing snapshot field guidance");',
-    '        }',
-    '        if (!prompt.includes("Do not patch any session that is not present in the `sessions` array below.")) {',
-    '          throw new Error("organizer task missing no-out-of-scope-patch guidance");',
+    '        if (!prompt.includes("Treat `title`, `brief`, and every `existing*` field as read-only context.")) {',
+    '          throw new Error("organizer task missing read-only field guidance");',
     '        }',
     '        const payload = JSON.parse(organizerMatch[1]);',
     '        const sessions = Array.isArray(payload.sessions) ? payload.sessions.slice() : [];',
     '        if (sessions.some((session) => Object.prototype.hasOwnProperty.call(session, "currentGroup") || Object.prototype.hasOwnProperty.call(session, "currentSidebarOrder"))) {',
     '          throw new Error("organizer payload should use existing* snapshot fields");',
+    '        }',
+    '        if (Object.prototype.hasOwnProperty.call(payload, "targetProjectCount") || Object.prototype.hasOwnProperty.call(payload, "targetSpaceCount") || Object.prototype.hasOwnProperty.call(payload, "groupSummary")) {',
+    '          throw new Error("organizer payload should not carry semantic quotas");',
     '        }',
     '        const projectRoot = process.env.REMOTELAB_PROJECT_ROOT || process.cwd();',
     '        const baseUrl = process.env.REMOTELAB_CHAT_BASE_URL || `http://127.0.0.1:${process.env.CHAT_PORT || "7690"}`;',
@@ -230,7 +152,9 @@ function buildFakeCodexScript() {
     '        for (let index = 0; index < sessions.length; index += 1) {',
     '          const session = sessions[index];',
     '          const title = String(session.title || "");',
-    '          const group = /quartz/i.test(title) ? "Quartz" : "RemoteLab";',
+    '          const isQuartz = /quartz/i.test(title);',
+    '          const space = isQuartz ? "Publishing" : "Product";',
+    '          const group = isQuartz ? "Quartz" : "RemoteLab";',
     '          await execFileAsync(process.execPath, [',
     '            cliPath,',
     '            "api",',
@@ -239,7 +163,7 @@ function buildFakeCodexScript() {
     '            "--base-url",',
     '            baseUrl,',
     '            "--body",',
-    '            JSON.stringify({ group, sidebarOrder: index + 1 }),',
+    '            JSON.stringify({ space, group, sidebarOrder: index + 1 }),',
     '          ], {',
     '            cwd: projectRoot,',
     '            env: { ...process.env, REMOTELAB_CONFIG_DIR: process.env.REMOTELAB_CONFIG_DIR || `${process.env.HOME}/.config/remotelab` },',
@@ -385,6 +309,7 @@ try {
         id: remoteLabSession.json.session.id,
         title: 'RemoteLab workflow cleanup',
         brief: 'Clean up the session grouping and structure.',
+        existingSpace: 'Old Product',
         existingGroup: 'RemoteLab Cleanup',
         existingSidebarOrder: null,
       },
@@ -392,6 +317,7 @@ try {
         id: quartzSession.json.session.id,
         title: 'Quartz publish flow',
         brief: 'Polish the publishing workflow and docs.',
+        existingSpace: 'Old Publishing',
         existingGroup: 'Quartz Publishing',
         existingSidebarOrder: null,
       },
@@ -410,8 +336,13 @@ try {
   );
   assert.match(
     organizerManifest.prompt,
-    /Only writable API fields for this task are `group` and `sidebarOrder`\./,
+    /Only writable API fields for this task are `space`, `group`, and `sidebarOrder`\./,
     'organizer prompt should spell out the writable session fields',
+  );
+  assert.match(
+    organizerManifest.prompt,
+    /"existingSpace": "Old Product"/,
+    'organizer task payload should expose existingSpace as read-only snapshot context',
   );
   assert.match(
     organizerManifest.prompt,
@@ -423,24 +354,14 @@ try {
     /"existingSidebarOrder": null/,
     'organizer task payload should expose existingSidebarOrder as read-only snapshot context',
   );
-  assert.match(
+  assert.doesNotMatch(
     organizerManifest.prompt,
-    /"targetProjectCount": 2/,
-    'organizer task payload should include the target Projects budget',
+    /"targetProjectCount"|"targetSpaceCount"|"targetSessionsPerProject"|"groupSummary"/,
+    'organizer task should not carry numeric semantic quotas',
   );
   assert.match(
     organizerManifest.prompt,
-    /"groupSummary": \{/,
-    'organizer task payload should include group summary metrics',
-  );
-  assert.match(
-    organizerManifest.prompt,
-    /"singletonGroups": 2/,
-    'organizer task payload should expose singleton group count',
-  );
-  assert.match(
-    organizerManifest.prompt,
-    /Do not patch any session that is not present in the `sessions` array below\./,
+    /Patch only Sessions present in the snapshot/,
     'organizer task should constrain writes to the scoped snapshot',
   );
   assert.doesNotMatch(
@@ -455,8 +376,10 @@ try {
 
   const remoteLabEntry = listed.json.sessions.find((entry) => entry.id === remoteLabSession.json.session.id);
   const quartzEntry = listed.json.sessions.find((entry) => entry.id === quartzSession.json.session.id);
+  assert.equal(remoteLabEntry?.space, 'Product', 'organizer should patch the RemoteLab Space');
   assert.equal(remoteLabEntry?.group, 'RemoteLab', 'organizer should patch the RemoteLab group');
   assert.equal(remoteLabEntry?.sidebarOrder, 2, 'organizer should patch the RemoteLab sidebar order');
+  assert.equal(quartzEntry?.space, 'Publishing', 'organizer should patch the Quartz Space');
   assert.equal(quartzEntry?.group, 'Quartz', 'organizer should patch the Quartz group');
   assert.equal(quartzEntry?.sidebarOrder, 1, 'organizer should patch the Quartz sidebar order');
 
@@ -465,7 +388,7 @@ try {
   assert.ok(hiddenOrganizer, 'organizer trigger should create a hidden internal session');
   assert.match(
     hiddenOrganizer.systemPrompt || '',
-    /Only writable API fields for this task are `group` and `sidebarOrder`\./,
+    /Only writable API fields for this task are `space`, `group`, and `sidebarOrder`\./,
     'hidden organizer session should persist the writable field guardrail',
   );
 

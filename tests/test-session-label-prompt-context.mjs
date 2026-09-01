@@ -201,15 +201,19 @@ try {
 
   const promptLog = readFileSync(promptLogPath, 'utf8');
   assert.match(promptLog, /single post-turn session-state classifier/);
-  assert.match(promptLog, /Reuse an existing Space and Project group/);
+  assert.match(promptLog, /conservative local maintenance/);
+  assert.match(promptLog, /Do not create a new Space from one Session/);
+  assert.match(promptLog, /Create a new Project only inside the chosen existing Space/);
   assert.match(promptLog, /provider-neutral work summary/);
   assert.match(promptLog, /Earlier session context:/);
   assert.match(promptLog, /Known scope router entries:/);
-  assert.match(promptLog, /Current non-archived sessions:/);
+  assert.match(promptLog, /Current active Space → Project hierarchy:/);
   assert.match(promptLog, /RemoteLab session grouping, rename prompts/);
   assert.match(promptLog, /- RemoteLab — code repo/);
-  assert.match(promptLog, /\[Product \/ RemoteLab\] Naming Flow — Refactor session naming and grouping\./);
-  assert.match(promptLog, /\[Content \/ Video Workflow\] Rough Cut Review — Review edit decisions for the current draft\./);
+  assert.match(promptLog, /- Product \(1 Projects, 1 Sessions\)/);
+  assert.match(promptLog, /↳ RemoteLab \(1\): Naming Flow — Refactor session naming and grouping\./);
+  assert.match(promptLog, /- Content \(1 Projects, 1 Sessions\)/);
+  assert.match(promptLog, /↳ Video Workflow \(1\): Rough Cut Review — Review edit decisions for the current draft\./);
 
   await waitFor(
     async () => (await getSession(target.id))?.activity?.run?.state === 'idle',

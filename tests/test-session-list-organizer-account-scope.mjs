@@ -8,6 +8,16 @@ import vm from 'vm';
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const source = readFileSync(join(repoRoot, 'static', 'chat', 'session-http.js'), 'utf8');
 
+assert.match(source, /Build the smallest stable hierarchy/);
+assert.match(source, /1\. Cluster Sessions into Projects/);
+assert.match(source, /A Space containing only one Project is normally redundant/);
+assert.match(source, /reuse and merge before creating new/);
+assert.doesNotMatch(
+  source,
+  /targetProjectCount|targetSpaceCount|targetSessionsPerProject|buildSessionListOrganizerGroupSummary/,
+  'organizer semantics should not be driven by numeric hierarchy quotas',
+);
+
 function extractFunctionSource(functionName) {
   const marker = `function ${functionName}`;
   const start = source.indexOf(marker);
@@ -39,8 +49,6 @@ function extractFunctionSource(functionName) {
 }
 
 const functionSources = [
-  'getSessionListOrganizerTargetProjectCount',
-  'getSessionListOrganizerTargetSpaceCount',
   'getSessionListOrganizerSourceLabel',
   'getSessionListOrganizerAccountScope',
   'matchesSessionListOrganizerAccountScope',

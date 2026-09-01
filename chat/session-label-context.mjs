@@ -679,16 +679,16 @@ export function buildActiveSessionCatalogPrompt(sessions, currentSession) {
     ))
     .map((session) => ({
       id: session.id,
-      space: normalizeSessionSpace(session.space || ''),
-      group: normalizeSessionGroup(session.group || ''),
+      space: normalizeSessionSpace(session.space || '') || 'Loose',
+      group: normalizeSessionGroup(session.group || '') || 'Ungrouped',
       name: normalizeSessionName(session.name || ''),
       description: normalizeSessionDescription(session.description || ''),
       updatedAt: session.updatedAt || session.created || '',
       created: session.created || '',
     }))
     .filter((session) => (
-      session.space
-      || session.group
+      session.space !== 'Loose'
+      || session.group !== 'Ungrouped'
       || session.description
       || (session.name && session.name !== DEFAULT_SESSION_NAME)
     ))
@@ -696,17 +696,63 @@ export function buildActiveSessionCatalogPrompt(sessions, currentSession) {
 
   if (relevant.length === 0) return '';
 
+  const spaces = new Map();
+  for (const session of relevant) {
+    if (!spaces.has(session.space)) {
+      spaces.set(session.space, {
+        label: session.space,
+        updatedAt: session.updatedAt || session.created || '',
+        sessionCount: 0,
+        projects: new Map(),
+      });
+    }
+    const space = spaces.get(session.space);
+    space.sessionCount += 1;
+    if (!space.projects.has(session.group)) {
+      space.projects.set(session.group, {
+        label: session.group,
+        updatedAt: session.updatedAt || session.created || '',
+        sessionCount: 0,
+        examples: [],
+      });
+    }
+    const project = space.projects.get(session.group);
+    project.sessionCount += 1;
+    if (project.examples.length < 2) {
+      const title = session.name && session.name !== DEFAULT_SESSION_NAME
+        ? session.name
+        : '(unnamed)';
+      const description = session.description ? ` — ${session.description}` : '';
+      project.examples.push(clipText(`${title}${description}`, 120));
+    }
+  }
+
+  const orderedSpaces = [...spaces.values()].sort((a, b) => (
+    sortSessionsByRecency(a, b)
+    || a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
+  ));
   const lines = [];
-  for (const session of relevant.slice(0, MAX_SESSION_CATALOG_ENTRIES)) {
-    const spaceLabel = session.space || 'No Space';
-    const groupLabel = session.group || 'Ungrouped';
-    const title = session.name || '(unnamed)';
-    const description = session.description ? ` — ${session.description}` : '';
-    const line = clipText(`- [${spaceLabel} / ${groupLabel}] ${title}${description}`, MAX_LINE_CHARS);
-    if (!line) continue;
-    const nextText = lines.length === 0 ? line : `${lines.join('\n')}\n${line}`;
-    if (nextText.length > MAX_SESSION_CATALOG_CHARS) break;
-    lines.push(line);
+  let projectCount = 0;
+  for (const space of orderedSpaces) {
+    const projectLines = [...space.projects.values()]
+      .sort((a, b) => (
+        sortSessionsByRecency(a, b)
+        || a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
+      ))
+      .slice(0, Math.max(0, MAX_SESSION_CATALOG_ENTRIES - projectCount))
+      .map((project) => clipText(
+        `↳ ${project.label} (${project.sessionCount})${project.examples.length > 0 ? `: ${project.examples.join('; ')}` : ''}`,
+        MAX_LINE_CHARS,
+      ))
+      .filter(Boolean);
+    if (projectLines.length === 0) continue;
+
+    const spaceLine = `- ${space.label} (${space.projects.size} Projects, ${space.sessionCount} Sessions)`;
+    const candidateLines = [...lines, spaceLine, ...projectLines];
+    if (candidateLines.join('\n').length > MAX_SESSION_CATALOG_CHARS) break;
+    lines.push(spaceLine, ...projectLines);
+    projectCount += projectLines.length;
+    if (projectCount >= MAX_SESSION_CATALOG_ENTRIES) break;
   }
 
   return lines.join('\n');
