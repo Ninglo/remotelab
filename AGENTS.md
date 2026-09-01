@@ -236,6 +236,7 @@ After each completed normal turn, `session-state-classifier.mjs` makes one non-b
 8. **ES Modules** — `"type": "module"`, all `.mjs` files
 9. **Template style** — `{{PLACEHOLDER}}` substitution, nonce-injected scripts
 10. **Zero sync I/O** — No `readFileSync`, `statSync`, `existsSync`, `readdirSync`, `writeFileSync`, `execFileSync`, `spawnSync`, or any other synchronous fs/child_process call in shipped code. Use `fs/promises` and `child_process.execFile` (with promise wrapper) exclusively. If converting sync to async would break something, that means the sync code was hiding a real ordering/concurrency problem — fix the root cause, don't keep the sync crutch. The only tolerated exception is test files (`tests/`).
+11. **Clean release boundary** — `origin/main` is the only standard-fleet release source. Never sweep machine-local commits into a release merely because they exist. Keep unrelated work on explicit branches; if later commits supersede an earlier implementation, rebuild or squash the final coherent change before it reaches `main`. A rollout is complete only when active standard instances report the same `origin/main` commit; product forks such as MigLab stay explicitly separate.
 
 ---
 
