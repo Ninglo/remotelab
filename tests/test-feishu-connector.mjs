@@ -247,7 +247,7 @@ assert.equal(
   '54321',
   'pid lock should persist the claimed pid',
 );
-releaseConnectorPidLock(claimedLock);
+await releaseConnectorPidLock(claimedLock);
 
 await writeFile(claimedLock.pidPath, `${process.pid}\n`);
 await assert.rejects(
@@ -263,7 +263,7 @@ assert.equal(
   '65432',
   'pid lock should recover stale lock files',
 );
-releaseConnectorPidLock(recoveredLock);
+await releaseConnectorPidLock(recoveredLock);
 
 sendCalls = 0;
 handled.length = 0;
