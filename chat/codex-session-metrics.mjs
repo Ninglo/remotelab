@@ -1,11 +1,10 @@
 import { createReadStream } from 'fs';
 import { open, readdir } from 'fs/promises';
-import { homedir } from 'os';
 import { join } from 'path';
 import readline from 'readline';
-import { statOrNull } from './fs-utils.mjs';
-import { resolveCodexHomeDir } from './runtime-policy.mjs';
+import { resolveCodexHomeDir } from '../lib/codex-home.mjs';
 import { estimateUsageCost, getPricingMetadataForModel } from '../lib/openai-pricing.mjs';
+import { statOrNull } from './fs-utils.mjs';
 
 const SESSION_LOG_CACHE = new Map();
 const TAIL_CHUNK_BYTES = 128 * 1024;
@@ -18,33 +17,13 @@ function resolveCodexPricingMetadata(model) {
     || getPricingMetadataForModel(FALLBACK_CODEX_PRICING_MODEL, { tool: 'codex' });
 }
 
-function buildUniqueRoots(paths = []) {
-  const seen = new Set();
-  const roots = [];
-  for (const value of paths) {
-    const normalized = typeof value === 'string' ? value.trim() : '';
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    roots.push(normalized);
-  }
-  return roots;
-}
-
 function getCodexSessionsRoots() {
-  const homeOverride = typeof process.env.HOME === 'string' ? process.env.HOME.trim() : '';
-  const homeDir = homeOverride || homedir();
-  const codeHomeOverride = typeof process.env.CODEX_HOME === 'string' ? process.env.CODEX_HOME.trim() : '';
-  const sessionsRoots = buildUniqueRoots([
-    codeHomeOverride ? join(codeHomeOverride, 'sessions') : '',
-    join(resolveCodexHomeDir(), 'sessions'),
-    join(homeDir, '.codex', 'sessions'),
-  ]);
-  const nextRootsKey = sessionsRoots.join('\n');
-  if (nextRootsKey !== cachedSessionsRootsKey) {
-    cachedSessionsRootsKey = nextRootsKey;
+  const sessionsRoot = join(resolveCodexHomeDir(), 'sessions');
+  if (sessionsRoot !== cachedSessionsRootsKey) {
+    cachedSessionsRootsKey = sessionsRoot;
     SESSION_LOG_CACHE.clear();
   }
-  return sessionsRoots;
+  return [sessionsRoot];
 }
 
 function pickNonNegativeInt(value) {

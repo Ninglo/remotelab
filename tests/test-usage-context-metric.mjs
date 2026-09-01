@@ -10,7 +10,7 @@ const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-usage-context-'));
 
 process.env.HOME = tempHome;
 process.env.REMOTELAB_CONFIG_DIR = join(tempHome, '.config', 'remotelab');
-process.env.CODEX_HOME = join(tempHome, '.config', 'remotelab', 'provider-runtime-homes', 'codex');
+process.env.REMOTELAB_MACHINE_CODEX_HOME = join(tempHome, '.codex');
 
 const { createClaudeAdapter } = await import(
   pathToFileURL(join(repoRoot, 'chat', 'adapters', 'claude.mjs')).href
@@ -171,10 +171,7 @@ try {
   const managedCodexThreadId = '019d6383-beec-7ae2-9b12-264f2fcf075b';
   const managedCodexSessionDir = join(
     tempHome,
-    '.config',
-    'remotelab',
-    'provider-runtime-homes',
-    'codex',
+    '.codex',
     'sessions',
     '2026',
     '04',
@@ -236,31 +233,31 @@ try {
     startedAt: '2026-04-08T13:26:40.349Z',
     completedAt: '2026-04-08T13:30:26.950Z',
   });
-  assert.ok(managedCodexMetrics, 'Codex session metrics should also be readable from the managed runtime home');
+  assert.ok(managedCodexMetrics, 'Codex session metrics should read every session from the one machine runtime home');
   assert.equal(
     managedCodexMetrics.sessionLogPath,
     join(managedCodexSessionDir, `rollout-2026-04-06T23-57-51-${managedCodexThreadId}.jsonl`),
-    'Codex metrics should resolve the managed runtime session log path',
+    'Codex metrics should resolve the machine runtime session log path',
   );
   assert.equal(
     managedCodexMetrics.contextTokens,
     181995,
-    'Managed-home Codex metrics should use last_token_usage.input_tokens',
+    'Machine-home Codex metrics should use last_token_usage.input_tokens',
   );
   assert.equal(
     managedCodexMetrics.inputTokens,
     76327,
-    'Managed-home Codex metrics should diff cumulative totals into per-run input tokens',
+    'Machine-home Codex metrics should diff cumulative totals into per-run input tokens',
   );
   assert.equal(
     managedCodexMetrics.cachedInputTokens,
     60016,
-    'Managed-home Codex metrics should diff cumulative totals into per-run cached input tokens',
+    'Machine-home Codex metrics should diff cumulative totals into per-run cached input tokens',
   );
   assert.equal(
     managedCodexMetrics.outputTokens,
     1640,
-    'Managed-home Codex metrics should diff cumulative totals into per-run output tokens',
+    'Machine-home Codex metrics should diff cumulative totals into per-run output tokens',
   );
 
   const codexUsageEvents = codex.parseLine(JSON.stringify(buildCodexContextMetricsPayload(codexMetrics)));
@@ -335,5 +332,6 @@ try {
 
   console.log('test-usage-context-metric: ok');
 } finally {
+  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   rmSync(tempHome, { recursive: true, force: true });
 }

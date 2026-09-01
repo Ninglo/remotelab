@@ -117,6 +117,7 @@ writeCodexMetrics('overflow-thread', 101, 100);
 writeCodexMetrics('exact-thread', 100, 100);
 
 process.env.HOME = tempHome;
+process.env.REMOTELAB_MACHINE_CODEX_HOME = join(tempHome, '.codex');
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
 delete process.env.REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS;
 
@@ -279,5 +280,6 @@ try {
   console.log('test-auto-compaction: ok');
 } finally {
   killAll();
+  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   await removeTempHomeWithRetries();
 }

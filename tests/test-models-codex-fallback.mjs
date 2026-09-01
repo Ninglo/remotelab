@@ -45,7 +45,7 @@ utimesSync(newerSessionPath, new Date('2026-04-20T11:00:00Z'), new Date('2026-04
 process.env.HOME = tempHome;
 process.env.REMOTELAB_CONFIG_DIR = join(tempHome, '.config', 'remotelab');
 delete process.env.REMOTELAB_INSTANCE_ROOT;
-delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
+process.env.REMOTELAB_MACHINE_CODEX_HOME = codexDir;
 
 try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
@@ -83,6 +83,7 @@ try {
     default: 'medium',
   });
 } finally {
+  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   rmSync(tempHome, { recursive: true, force: true });
 }
 

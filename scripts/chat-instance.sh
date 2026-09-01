@@ -45,7 +45,7 @@ Options:
   --memory-dir <path>
                     Explicit RemoteLab memory dir override for the instance runtime
   --sync-from-home <path>
-                    Mirror ~/.config/remotelab, ~/.remotelab/memory, and ~/.codex/auth.json from source HOME before start
+                    Mirror ~/.config/remotelab and ~/.remotelab/memory from source HOME before start
   --log <path>     Explicit log path override
   --node <path>    Explicit node binary override
   --secure-cookies <0|1>
@@ -225,20 +225,6 @@ mirror_directory() {
   cp -R "$source_path" "$target_path"
 }
 
-mirror_file_if_present() {
-  local source_path target_path
-  source_path="$1"
-  target_path="$2"
-  if [[ "$source_path" == "$target_path" ]]; then
-    return 0
-  fi
-  if [[ ! -f "$source_path" ]]; then
-    return 0
-  fi
-  mkdir -p "$(dirname "$target_path")"
-  cp -f "$source_path" "$target_path"
-}
-
 sync_instance_home() {
   local source_home target_home source_config_dir source_memory_dir
   source_home="$(canonical_existing_dir "$1")"
@@ -264,17 +250,12 @@ sync_instance_home() {
     if [[ -n "$RESOLVED_INSTANCE_MEMORY_DIR" ]]; then
       mirror_directory "$source_home/.remotelab/memory" "$RESOLVED_INSTANCE_MEMORY_DIR"
     fi
-    mirror_file_if_present "$source_home/.codex/auth.json" "$target_home/.codex/auth.json"
-
     echo "synced data: $source_home -> ${RESOLVED_INSTANCE_ROOT:-custom dirs}"
     if [[ -n "$RESOLVED_INSTANCE_CONFIG_DIR" ]]; then
       echo "config: $RESOLVED_INSTANCE_CONFIG_DIR"
     fi
     if [[ -n "$RESOLVED_INSTANCE_MEMORY_DIR" ]]; then
       echo "memory: $RESOLVED_INSTANCE_MEMORY_DIR"
-    fi
-    if [[ -f "$target_home/.codex/auth.json" ]]; then
-      echo "codex auth: $target_home/.codex/auth.json"
     fi
     return 0
   fi
@@ -286,12 +267,8 @@ sync_instance_home() {
 
   mirror_directory "$source_home/.config/remotelab" "$target_home/.config/remotelab"
   mirror_directory "$source_home/.remotelab/memory" "$target_home/.remotelab/memory"
-  mirror_file_if_present "$source_home/.codex/auth.json" "$target_home/.codex/auth.json"
 
   echo "synced data: $source_home -> $target_home"
-  if [[ -f "$target_home/.codex/auth.json" ]]; then
-    echo "codex auth: $target_home/.codex/auth.json"
-  fi
 }
 
 listener_pid() {

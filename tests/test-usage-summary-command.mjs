@@ -19,6 +19,7 @@ function writeSessionFile(rootDir, threadId, lines) {
 }
 
 process.env.HOME = tempHome;
+process.env.REMOTELAB_MACHINE_CODEX_HOME = join(tempHome, '.codex');
 
 const personalRoot = join(tempHome, '.codex', 'sessions');
 const managedRoot = join(tempHome, '.config', 'remotelab', 'provider-runtime-homes', 'codex', 'sessions');
@@ -198,23 +199,22 @@ try {
     nowMs: Date.parse('2026-03-19T12:00:00.000Z'),
   });
 
-  assert.equal(summary.sessionsScanned, 2, 'should scan both personal and managed trees');
-  assert.equal(summary.sessionsWithUsage, 2, 'both sessions should contribute usage');
-  assert.equal(summary.totalTokens, 315, 'summary should aggregate window deltas without counting duplicates');
-  assert.equal(summary.inputTokens, 260, 'input deltas should aggregate correctly');
-  assert.equal(summary.cachedInputTokens, 160, 'cached input deltas should aggregate correctly');
-  assert.equal(summary.outputTokens, 55, 'output deltas should aggregate correctly');
-  assert.equal(summary.reasoningTokens, 16, 'reasoning deltas should aggregate correctly');
-  assert.equal(summary.latestSecondaryUsedPercent, 25, 'latest weekly snapshot should come from the latest contributing event');
-  assert.equal(summary.bySource[0].key, 'personal (~/.codex)', 'personal source should dominate this fixture');
+  assert.equal(summary.sessionsScanned, 1, 'only the machine Codex session tree should be scanned');
+  assert.equal(summary.sessionsWithUsage, 1, 'the machine Codex session should contribute usage');
+  assert.equal(summary.totalTokens, 220, 'summary should aggregate window deltas without counting duplicates');
+  assert.equal(summary.inputTokens, 180, 'input deltas should aggregate correctly');
+  assert.equal(summary.cachedInputTokens, 120, 'cached input deltas should aggregate correctly');
+  assert.equal(summary.outputTokens, 40, 'output deltas should aggregate correctly');
+  assert.equal(summary.reasoningTokens, 11, 'reasoning deltas should aggregate correctly');
+  assert.equal(summary.latestSecondaryUsedPercent, 18, 'latest weekly snapshot should come from the machine Codex tree');
+  assert.equal(summary.bySource[0].key, 'machine (~/.codex)', 'usage should report the one machine Codex source');
   assert.equal(summary.byEffort[0].key, 'xhigh', 'xhigh should sort ahead when it has more usage');
   assert.equal(summary.byModel[0].key, 'gpt-5.4', 'model aggregation should be preserved');
   assert.equal(summary.byCwd[0].key, '/Users/test/repo-a', 'cwd aggregation should preserve the top directory');
   assert.equal(summary.topSessions[0].promptPreview, '再看看最近两天是不是都在 xhigh。', 'top session should retain the latest contributing user prompt');
-  assert.equal(summary.topSessions[1].promptPreview, 'RemoteLab 这边也看一下。', 'manager wrapper should be stripped from prompt previews');
 
   const rendered = renderCodexUsageSummary(summary);
-  assert.match(rendered, /Total tokens: 315/, 'text rendering should include total tokens');
+  assert.match(rendered, /Total tokens: 220/, 'text rendering should include total tokens');
   assert.match(rendered, /By effort:/, 'text rendering should include breakdown sections');
 
   let output = '';
@@ -225,10 +225,11 @@ try {
   );
   assert.equal(exitCode, 0, 'command should exit cleanly');
   const parsed = JSON.parse(output);
-  assert.equal(parsed.totalTokens, 315, 'json command output should expose the aggregated totals');
-  assert.equal(parsed.topSessions.length, 2, 'json command output should preserve top sessions');
+  assert.equal(parsed.totalTokens, 220, 'json command output should expose the aggregated totals');
+  assert.equal(parsed.topSessions.length, 1, 'json command output should preserve top sessions');
 
   console.log('test-usage-summary-command: ok');
 } finally {
+  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   rmSync(tempHome, { recursive: true, force: true });
 }

@@ -1,6 +1,8 @@
-import { homedir } from 'os';
-import { join } from 'path';
 import { PI_AGENT_DIR } from '../lib/config.mjs';
+import {
+  resolveCodexHomeDir,
+  resolveMachineAccountHomeDir,
+} from '../lib/codex-home.mjs';
 import { readPromptAsset } from './prompt-asset-loader.mjs';
 
 async function readInlinePromptAsset(relativePath) {
@@ -11,16 +13,11 @@ export const MANAGER_RUNTIME_BOUNDARY_SECTION = (await readPromptAsset('runtime/
 export const MANAGER_TURN_POLICY_REMINDER = await readInlinePromptAsset('runtime/manager-turn-reminder.txt');
 export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = await readInlinePromptAsset('runtime/codex-developer-instructions.txt');
 
-const PERSONAL_CODEX_HOME = join(homedir(), '.codex');
-
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export function resolveCodexHomeDir() {
-  return trimString(process.env.REMOTELAB_MACHINE_CODEX_HOME)
-    || PERSONAL_CODEX_HOME;
-}
+export { resolveCodexHomeDir, resolveMachineAccountHomeDir };
 
 export function applyProviderRuntimeEnv(toolId, baseEnv = {}, options = {}) {
   const env = { ...baseEnv };

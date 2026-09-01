@@ -96,16 +96,16 @@ try {
     ['sync', '--instance-root', instanceRoot, '--sync-from-home', sourceHome],
     { HOME: operatorHome },
   );
-  assert.equal(rootedCodexSyncResult.status, 0, `rooted Codex auth sync should succeed: ${rootedCodexSyncResult.stderr}`);
+  assert.equal(rootedCodexSyncResult.status, 0, `rooted data sync should succeed: ${rootedCodexSyncResult.stderr}`);
   assert.equal(
-    readFileSync(join(instanceRoot, '.codex', 'auth.json'), 'utf8'),
-    sourceCodexAuth,
-    'instance-root sync should mirror Codex auth into the isolated instance home',
+    existsSync(join(instanceRoot, '.codex', 'auth.json')),
+    false,
+    'instance data sync must not fork the machine Codex login into an instance home',
   );
   assert.equal(
     readFileSync(join(operatorHome, '.codex', 'auth.json'), 'utf8'),
     operatorCodexAuth,
-    'instance-root Codex auth sync must leave the operator HOME unchanged',
+    'instance data sync must leave the machine Codex login unchanged',
   );
 
   const selfSyncResult = runScript(['sync', '--home', sourceHome, '--sync-from-home', sourceHome]);

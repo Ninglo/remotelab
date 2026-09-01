@@ -97,7 +97,7 @@ const response = await runDetachedAssistantPrompt(
 
 const capturedCodexHome = readFileSync(envCapturePath, 'utf8').trim();
 assert.equal(response, 'Detached helper ok');
-assert.equal(capturedCodexHome, machineCodexHome, 'detached assistant Codex runs should use the instance Codex home');
+assert.equal(capturedCodexHome, machineCodexHome, 'detached assistant Codex runs should use the machine Codex home');
 
 rmSync(tempHome, { recursive: true, force: true });
 

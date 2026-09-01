@@ -12,6 +12,7 @@ const env = { ...process.env };
 delete env.REMOTELAB_INSTANCE_ROOT;
 delete env.REMOTELAB_CONFIG_DIR;
 delete env.REMOTELAB_MEMORY_DIR;
+delete env.REMOTELAB_MACHINE_CODEX_HOME;
 delete env.REMOTELAB_MACHINE_PI_AGENT_DIR;
 delete env.PI_CODING_AGENT_DIR;
 

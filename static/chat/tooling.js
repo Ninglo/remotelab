@@ -991,11 +991,7 @@ function renderInlineProviderOptions(providers, selectedValue) {
   inlineProviderSelect.style.display = providers.length > 1 ? "" : "none";
 }
 
-function renderInlineModelOptions(models, {
-  includeDefault = true,
-  selectedValue = "",
-  emptyLabel = "",
-} = {}) {
+function renderInlineModelOptions(models, { includeDefault = true, selectedValue = "" } = {}) {
   inlineModelSelect.innerHTML = "";
   if (includeDefault) {
     const defaultOption = document.createElement("option");
@@ -1008,12 +1004,6 @@ function renderInlineModelOptions(models, {
     option.value = model.id;
     option.textContent = model.label;
     inlineModelSelect.appendChild(option);
-  }
-  if (models.length === 0 && emptyLabel) {
-    const emptyOption = document.createElement("option");
-    emptyOption.value = "";
-    emptyOption.textContent = emptyLabel;
-    inlineModelSelect.appendChild(emptyOption);
   }
   inlineModelSelect.value = models.some((model) => model.id === selectedValue)
     ? selectedValue
@@ -1033,7 +1023,6 @@ function resetCurrentModelPickerUi() {
   inlineProviderSelect.style.display = "none";
   inlineModelSelect.innerHTML = "";
   inlineModelSelect.style.display = "none";
-  inlineModelSelect.title = "";
   effortSelect.style.display = "none";
 }
 
@@ -1099,9 +1088,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       renderInlineModelOptions(providerModels, {
         includeDefault: false,
         selectedValue: selectedModel,
-        emptyLabel: data.loginRequired === true ? t("tooling.piLoginRequired") : "",
       });
-      inlineModelSelect.title = data.loginRequired === true ? t("tooling.piLoginRequired") : "";
     } else {
       selectedModelProvider = "";
       inlineProviderSelect.innerHTML = "";
@@ -1116,14 +1103,9 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
         includeDefault: true,
         selectedValue: selectedModel,
       });
-      inlineModelSelect.title = "";
     }
 
-    inlineModelSelect.style.display = (
-      currentToolModels.length > 0
-      || toolId === "codex"
-      || (toolId === "pi" && data.loginRequired === true)
-    ) ? "" : "none";
+    inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
     applyCurrentModelReasoningUi({ sessionPreferences });
     queueRuntimeSelectionSync();
   } catch (error) {

@@ -42,7 +42,7 @@ console.log(JSON.stringify({
       title: 'Codex Home Test',
       space: 'Product',
       group: 'Runtime',
-      description: 'Verify session-state-classifier background Codex runs use the instance Codex home.',
+      description: 'Verify session-state-classifier background Codex runs use the machine Codex home.',
     }),
   },
 }));
@@ -115,7 +115,7 @@ const result = await triggerSessionStateSuggestion({
 const capturedCodexHome = readFileSync(envCapturePath, 'utf8').trim();
 assert.equal(result?.ok, true, 'Session-state classifier should complete through the background Codex run');
 assert.equal(result?.title, 'Codex Home Test');
-assert.equal(capturedCodexHome, machineCodexHome, 'background Codex runs should use the instance Codex home');
+assert.equal(capturedCodexHome, machineCodexHome, 'background Codex runs should use the machine Codex home');
 
 killAll();
 rmSync(tempHome, { recursive: true, force: true });

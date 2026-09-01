@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 import { mkdirSync, mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import { tmpdir, userInfo } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
@@ -21,7 +21,7 @@ try {
   process.env.HOME = tempHome;
   process.env.REMOTELAB_INSTANCE_ROOT = ownerRoot;
   delete process.env.REMOTELAB_CODEX_DISABLE_APPS;
-  process.env.REMOTELAB_MACHINE_CODEX_HOME = join(ownerRoot, '.codex');
+  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
 
   const ownerModuleUrl = pathToFileURL(join(repoRoot, 'chat', 'adapters', 'codex.mjs')).href;
   const { buildCodexArgs } = await import(`${ownerModuleUrl}?t=${Date.now()}`);
@@ -53,8 +53,8 @@ try {
   const ownerEnv = applyProviderRuntimeEnv('codex', {}, { runtimeFamily: 'codex-json' });
   assert.equal(
     ownerEnv.CODEX_HOME,
-    join(ownerRoot, '.codex'),
-    'instance-scoped owner runs should use the instance Codex home',
+    join(userInfo().homedir, '.codex'),
+    'instance-scoped owner runs should still use the machine account Codex home',
   );
 } finally {
   if (previousHome === undefined) delete process.env.HOME;

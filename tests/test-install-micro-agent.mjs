@@ -16,6 +16,7 @@ const result = spawnSync('node', ['scripts/install-micro-agent.mjs', '--tool-id'
   env: {
     ...process.env,
     HOME: homeDir,
+    REMOTELAB_MACHINE_CODEX_HOME: join(homeDir, '.codex'),
   },
   encoding: 'utf8',
 });

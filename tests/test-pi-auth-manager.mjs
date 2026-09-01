@@ -1,5 +1,5 @@
 import assert from 'assert/strict';
-import { access, chmod, mkdtemp, readFile, writeFile } from 'fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -8,9 +8,8 @@ import { handlePiAuthRoutes } from '../chat/router-pi-auth-routes.mjs';
 
 const tempRoot = await mkdtemp(join(tmpdir(), 'remotelab-pi-auth-'));
 const piAgentDir = join(tempRoot, 'pi-agent');
-const loginHome = join(tempRoot, 'pi-codex-login');
+const codexHome = join(tempRoot, '.codex');
 const fakePi = join(tempRoot, 'fake-pi');
-const fakeCodex = join(tempRoot, 'fake-codex');
 const expirySeconds = Math.floor(Date.now() / 1000) + 3600;
 const accessToken = `header.${Buffer.from(JSON.stringify({ exp: expirySeconds })).toString('base64url')}.signature`;
 
@@ -25,25 +24,12 @@ if [ "$1" = "auth" ] && [ "$2" = "check" ]; then
 fi
 exit 2
 `);
-await writeFile(fakeCodex, `#!/bin/sh
-if [ "$1" = "login" ] && [ "$2" = "--device-auth" ]; then
-  echo "Open https://auth.openai.com/codex/device"
-  echo "Enter code 8XYZ-2ABCD"
-  sleep 0.2
-  cat > "$CODEX_HOME/auth.json" <<'JSON'
-{"auth_mode":"chatgpt","tokens":{"access_token":"${accessToken}","refresh_token":"refresh-test","account_id":"account-test"}}
-JSON
-  exit 0
-fi
-exit 2
-`);
-await Promise.all([chmod(fakePi, 0o755), chmod(fakeCodex, 0o755)]);
+await chmod(fakePi, 0o755);
 
 const manager = createPiAuthManager({
   resolvePiCommand: async () => fakePi,
-  resolveCodexCommand: async () => fakeCodex,
   resolveAgentDir: () => piAgentDir,
-  resolveLoginHome: () => loginHome,
+  resolveCodexHome: () => codexHome,
   baseEnv: () => process.env,
 });
 
@@ -51,13 +37,21 @@ const initial = await manager.getStatus();
 assert.equal(initial.available, true);
 assert.equal(initial.loggedIn, false);
 
-const started = await manager.startDeviceLogin();
-assert.equal(started.deviceLoginActive, true);
-assert.equal(started.userCode, '8XYZ-2ABCD');
-assert.equal(started.verificationUri, 'https://auth.openai.com/codex/device');
+const missingCodexLogin = await manager.syncCodexLogin();
+assert.equal(missingCodexLogin.loggedIn, false);
+assert.equal(missingCodexLogin.phase, 'failed');
+assert.match(missingCodexLogin.error, /Sign in to Codex/);
 
-await new Promise((resolve) => setTimeout(resolve, 400));
-const completed = await manager.getStatus();
+await mkdir(codexHome, { recursive: true });
+await writeFile(join(codexHome, 'auth.json'), JSON.stringify({
+  auth_mode: 'chatgpt',
+  tokens: {
+    access_token: accessToken,
+    refresh_token: 'refresh-test',
+    account_id: 'account-test',
+  },
+}));
+const completed = await manager.syncCodexLogin();
 assert.equal(completed.loggedIn, true);
 assert.equal(completed.phase, 'authenticated');
 const stored = JSON.parse(await readFile(join(piAgentDir, 'auth.json'), 'utf8'));
@@ -68,9 +62,9 @@ assert.deepEqual(stored['openai-codex'], {
   expires: expirySeconds * 1000,
   accountId: 'account-test',
 });
-await access(join(loginHome, 'auth.json'));
+await access(join(codexHome, 'auth.json'));
 
-const redundantLogin = await manager.startDeviceLogin({ restart: true });
+const redundantLogin = await manager.syncCodexLogin();
 assert.equal(redundantLogin.loggedIn, true);
 assert.equal(redundantLogin.phase, 'authenticated');
 assert.equal(redundantLogin.deviceLoginActive, false);
@@ -92,6 +86,18 @@ function createResponseCapture() {
     },
   };
 }
+
+const syncResponse = createResponseCapture();
+await handlePiAuthRoutes({
+  req: { method: 'POST' },
+  res: syncResponse.res,
+  pathname: '/api/pi-auth/sync-codex',
+  authSession: { role: 'owner' },
+  writeJson: syncResponse.writeJson,
+  authManager: manager,
+});
+assert.equal(syncResponse.capture.status, 200);
+assert.equal(syncResponse.capture.payload?.piAuth?.loggedIn, true);
 
 const ownerResponse = createResponseCapture();
 await handlePiAuthRoutes({

@@ -1,8 +1,8 @@
 import { readFile, readdir, stat } from 'fs/promises';
 import { join } from 'path';
+import { resolveCodexHomeDir } from '../lib/codex-home.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { discoverPiModels } from './pi-models.mjs';
-import { resolveCodexHomeDir } from './runtime-policy.mjs';
 import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,

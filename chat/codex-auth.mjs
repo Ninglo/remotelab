@@ -1,9 +1,8 @@
 import { spawn } from 'child_process';
-import { homedir } from 'os';
 
+import { resolveCodexHomeDir, resolveMachineAccountHomeDir } from '../lib/codex-home.mjs';
 import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
 import { ensureDir } from './fs-utils.mjs';
-import { resolveCodexHomeDir } from './runtime-policy.mjs';
 
 const DEVICE_LOGIN_TTL_MS = 15 * 60 * 1000;
 const STATUS_TIMEOUT_MS = 10 * 1000;
@@ -121,7 +120,7 @@ export function createCodexAuthManager({
       command,
       env: {
         ...baseEnv(),
-        HOME: homedir(),
+        HOME: resolveMachineAccountHomeDir(),
         CODEX_HOME: codexHome,
       },
     };

@@ -1,4 +1,3 @@
-import { readBody } from '../lib/utils.mjs';
 import { piAuthManager } from './pi-auth.mjs';
 
 export async function handlePiAuthRoutes({
@@ -33,22 +32,11 @@ export async function handlePiAuthRoutes({
     return true;
   }
 
-  if (pathname === '/api/pi-auth/device-login' && req.method === 'POST') {
-    let payload = {};
+  if (pathname === '/api/pi-auth/sync-codex' && req.method === 'POST') {
     try {
-      const body = await readBody(req, 4096);
-      payload = body ? JSON.parse(body) : {};
-    } catch {
-      writeJson(res, 400, { error: 'Invalid request body' });
-      return true;
-    }
-    try {
-      const piAuth = await authManager.startDeviceLogin({
-        restart: payload?.restart === true,
-      });
-      writeJson(res, 200, { piAuth });
+      writeJson(res, 200, { piAuth: await authManager.syncCodexLogin() });
     } catch (error) {
-      writeJson(res, 500, { error: error.message || 'Failed to start Pi login' });
+      writeJson(res, 500, { error: error.message || 'Failed to sync the Codex login to Pi' });
     }
     return true;
   }

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import { tmpdir, userInfo } from 'os';
 import { join } from 'path';
 
 const home = mkdtempSync(join(tmpdir(), 'remotelab-runtime-policy-'));
-const personalCodexHome = join(home, '.codex');
+const machineCodexHome = join(home, '.codex');
+const previousMachineCodexHome = process.env.REMOTELAB_MACHINE_CODEX_HOME;
 
 process.env.HOME = home;
-process.env.REMOTELAB_MACHINE_CODEX_HOME = personalCodexHome;
+process.env.REMOTELAB_MACHINE_CODEX_HOME = machineCodexHome;
 
 const {
   DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS,
@@ -21,13 +22,13 @@ const {
 try {
   const codexEnv = applyProviderRuntimeEnv('codex', { FOO: 'bar', CODEX_HOME: '/tmp/elsewhere' });
   assert.equal(codexEnv.FOO, 'bar', 'unrelated env values should stay intact');
-  assert.equal(codexEnv.CODEX_HOME, personalCodexHome, 'Codex runs should use the instance Codex home');
+  assert.equal(codexEnv.CODEX_HOME, machineCodexHome, 'Codex runs should use the machine Codex home');
 
   const customCodexEnv = applyProviderRuntimeEnv('micro-agent', { FOO: 'baz' }, {
     runtimeFamily: 'codex-json',
   });
   assert.equal(customCodexEnv.FOO, 'baz', 'custom Codex runtime should preserve unrelated env values');
-  assert.equal(customCodexEnv.CODEX_HOME, personalCodexHome, 'custom Codex runtimes should use the same instance Codex home');
+  assert.equal(customCodexEnv.CODEX_HOME, machineCodexHome, 'custom Codex runtimes should use the same machine Codex home');
 
   const piCodexEnv = applyProviderRuntimeEnv('pi', { FOO: 'pi-codex' }, {
     runtimeFamily: 'pi-json',
@@ -44,8 +45,15 @@ try {
   assert.equal(
     resolveCodexHomeDir(),
     codexEnv.CODEX_HOME,
-    'login status and runs should resolve the same default Codex home',
+    'login status and runs should resolve the same configured Codex home',
   );
+  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
+  assert.equal(
+    resolveCodexHomeDir(),
+    join(userInfo().homedir, '.codex'),
+    'the default Codex home should belong to the operating-system account, not an instance HOME override',
+  );
+  process.env.REMOTELAB_MACHINE_CODEX_HOME = machineCodexHome;
 
   const nonCodexEnv = applyProviderRuntimeEnv('claude', { HOME: home });
   assert.equal(nonCodexEnv.CODEX_HOME, undefined, 'non-Codex runtimes should not get CODEX_HOME');
@@ -273,6 +281,7 @@ try {
 
   console.log('test-runtime-policy: ok');
 } finally {
-  delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
+  if (previousMachineCodexHome === undefined) delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
+  else process.env.REMOTELAB_MACHINE_CODEX_HOME = previousMachineCodexHome;
   rmSync(home, { recursive: true, force: true });
 }

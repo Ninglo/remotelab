@@ -115,7 +115,7 @@ const convergedRuntimeCell = buildConvergedLaunchAgentSpec({
     REMOTELAB_MACHINE_CODEX_HOME: '/root/.codex',
   },
 }).environmentVariables;
-assert.equal(convergedRuntimeCell.REMOTELAB_MACHINE_CODEX_HOME, '/var/lib/remotelab-guests/muka2/.codex');
+assert.equal(convergedRuntimeCell.REMOTELAB_MACHINE_CODEX_HOME, undefined);
 assert.equal(convergedRuntimeCell.REMOTELAB_MACHINE_PI_AGENT_DIR, '/var/lib/remotelab-guests/muka2/.pi/agent');
 assert.equal(convergedRuntimeCell.LARKSUITE_CLI_CONFIG_DIR, '/var/lib/remotelab-guests/muka2/config/lark-cli');
 assert.equal(convergedRuntimeCell.REMOTELAB_PROJECT_ROOT, repoRoot);
@@ -992,10 +992,7 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
   assert.doesNotMatch(rewrittenGuestPlist, /REMOTELAB_SESSION_DISPATCH/);
-  assert.match(
-    rewrittenGuestPlist,
-    new RegExp(`<key>REMOTELAB_MACHINE_CODEX_HOME<\\/key><string>${join(instanceRoot, '.codex').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`),
-  );
+  assert.doesNotMatch(rewrittenGuestPlist, /REMOTELAB_MACHINE_CODEX_HOME/);
   assert.match(rewrittenGuestPlist, /<key>LARKSUITE_CLI_CONFIG_DIR<\/key>/);
   assert.doesNotMatch(rewrittenGuestPlist, /REMOTELAB_SHARED_CODEX_HOME/);
   assert.match(rewrittenGuestPlist, new RegExp(`<key>HOME<\\/key><string>${instanceRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`));

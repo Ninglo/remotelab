@@ -1,13 +1,9 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmod, mkdtemp, rm, writeFile } from 'fs/promises';
-import { tmpdir } from 'os';
-import { join } from 'path';
 
 import { buildPiArgs } from '../chat/adapters/pi.mjs';
 import {
   buildPiModelRouteId,
-  discoverPiModels,
   parsePiModelList,
   parsePiRpcModels,
   resolvePiModelRoute,
@@ -235,29 +231,5 @@ assert.deepEqual(
   ],
   'Pi invocation should receive the internally resolved provider and provider-native model id',
 );
-
-const tempRoot = await mkdtemp(join(tmpdir(), 'remotelab-pi-model-routing-'));
-const fakePi = join(tempRoot, 'pi');
-try {
-  await writeFile(fakePi, `#!/bin/sh
-if [ "$1" = "--mode" ]; then
-  exit 1
-fi
-if [ "$1" = "--list-models" ]; then
-  exit 0
-fi
-exit 2
-`);
-  await chmod(fakePi, 0o755);
-  const signedOutCatalog = await discoverPiModels({ command: fakePi, refresh: true });
-  assert.equal(signedOutCatalog.models.length, 0);
-  assert.equal(
-    signedOutCatalog.loginRequired,
-    true,
-    'an empty authenticated Pi catalog should explicitly drive the login UI',
-  );
-} finally {
-  await rm(tempRoot, { recursive: true, force: true });
-}
 
 console.log('test-pi-model-routing: ok');

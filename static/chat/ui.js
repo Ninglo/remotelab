@@ -1379,15 +1379,6 @@ function formatContextPercent(percent, { precise = false } = {}) {
   return `${Math.round(percent)}%`;
 }
 
-function resetContextDisplay() {
-  currentTokens = 0;
-  contextTokens.textContent = "";
-  contextTokens.title = "";
-  contextTokens.style.display = "none";
-  compactBtn.style.display = "none";
-  dropToolsBtn.style.display = "none";
-}
-
 function updateContextDisplay(contextSize, contextWindowSize) {
   currentTokens = contextSize;
   if (contextSize > 0 && currentSessionId) {

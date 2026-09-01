@@ -330,7 +330,6 @@ function buildPiCatalog(models, preferredRoute = '') {
   const reasoning = preferredModel?.reasoning || { kind: 'none', label: 'Thinking' };
   return {
     models,
-    loginRequired: models.length === 0,
     effortLevels: reasoning.kind === 'enum' ? [...reasoning.levels] : null,
     defaultModel: preferredModel?.id || null,
     reasoning,
