@@ -21,6 +21,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-01 — Keep hosted fleet administration outside the personal open-source core
+
+- Source: direct owner review after discovering that the RemoteLab Admin dashboard and fleet commands now live in the main repository and are exposed under the main product route.
+- User slice: product owner evaluating RemoteLab as both a personal open-source project and a possible hosted commercial product.
+- Observed friction or ask: fleet users, trial instances, billing, host rollout, and instance lifecycle feel like a separate operator product; combining them with the personal workbench makes the open-source scope look overbuilt and suggests demand that ordinary single-owner users do not actually have.
+- Signal strength: direct product-boundary correction grounded in a shipped surface, not a request to remove the existing internal operational capability immediately.
+- Product implication: treat `/admin`, host/instance fleet control, trial allocation, and billing as an internal hosted-service plane rather than a headline RemoteLab feature. Keep the normal open-source install single-owner and lightweight; do not use admin infrastructure as evidence of end-user demand. Before further admin expansion, define a clear packaging boundary such as a default-off operator module, enterprise directory/package, or separate service/repository while preserving shared protocols where useful.
+- Follow-up: decide the distribution boundary separately from the source-repository boundary, then remove fleet-admin language and dependencies from the default personal installation path unless a real hosted operation requires them.
+
 ### 2026-09-01 — Keep harness presentation provider-neutral
 
 - Source: direct owner feedback after comparing Pi and Codex transcript behavior across two Pi progress-display experiments.
