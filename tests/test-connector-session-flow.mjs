@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 
-import { createConnectorSession } from '../lib/connector-turn-flow.mjs';
+import {
+  createConnectorSession,
+  waitForConnectorPublication,
+} from '../lib/connector-turn-flow.mjs';
 
 const calls = [];
 const requester = async (path, options = {}) => {
@@ -56,4 +59,72 @@ await assert.rejects(
   /busy/,
 );
 
+let resilientPollCalls = 0;
+const resilientPublication = await waitForConnectorPublication(async () => {
+  resilientPollCalls += 1;
+  if (resilientPollCalls === 1) {
+    return {
+      response: { ok: true, status: 200 },
+      json: { replyPublication: { state: 'pending' } },
+      text: '',
+    };
+  }
+  if (resilientPollCalls === 2) {
+    const error = new TypeError('fetch failed');
+    error.cause = { code: 'ECONNRESET' };
+    throw error;
+  }
+  if (resilientPollCalls === 3) {
+    return {
+      response: { ok: false, status: 503 },
+      json: { error: 'service restarting' },
+      text: '',
+    };
+  }
+  return {
+    response: { ok: true, status: 200 },
+    json: { replyPublication: { state: 'ready', payload: { text: 'recovered reply' } } },
+    text: '',
+  };
+}, 'restart-session', 'restart-response', {
+  timeoutMs: 100,
+  intervalMs: 1,
+});
+assert.equal(resilientPublication.state, 'ready');
+assert.equal(resilientPublication.payload.text, 'recovered reply');
+assert.equal(resilientPollCalls, 4, 'connector polling should survive transient transport and restart responses');
+
+let terminalPollCalls = 0;
+await assert.rejects(
+  waitForConnectorPublication(async () => {
+    terminalPollCalls += 1;
+    return {
+      response: { ok: false, status: 400 },
+      json: { error: 'invalid response id' },
+      text: '',
+    };
+  }, 'invalid-session', 'invalid-response', {
+    timeoutMs: 100,
+    intervalMs: 1,
+  }),
+  /invalid response id/,
+  'non-transient publication errors should still fail immediately',
+);
+assert.equal(terminalPollCalls, 1);
+
+let outagePollCalls = 0;
+await assert.rejects(
+  waitForConnectorPublication(async () => {
+    outagePollCalls += 1;
+    throw new TypeError('fetch failed');
+  }, 'outage-session', 'outage-response', {
+    timeoutMs: 10,
+    intervalMs: 1,
+  }),
+  /reply publication timed out after 10ms/,
+  'bounded waits should keep their overall deadline during a transport outage',
+);
+assert.ok(outagePollCalls > 1);
+
 console.log('ok - connector session flow supports fork and explicit fresh-create fallback');
+console.log('ok - connector publication polling survives transient service interruptions');

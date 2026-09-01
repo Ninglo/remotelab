@@ -301,7 +301,7 @@ Current run states converge around:
 - `failed`
 - `cancelled`
 
-This is the easiest path for non-interactive connectors.
+This is the easiest path for non-interactive connectors. Once a message has been accepted, a temporary polling transport error or restart response (`fetch failed`, connection reset/refused, HTTP 408/425/429/5xx) is not a terminal generation result: keep polling the same response publication until the service recovers or the connector's overall wait deadline expires. Only a canonical `failed` / `cancelled` publication or a non-retryable protocol/authentication error should enter failure delivery and message-handled state.
 
 ### Option B — WebSocket invalidation + HTTP fetch
 
