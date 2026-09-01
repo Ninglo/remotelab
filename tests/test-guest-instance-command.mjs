@@ -680,6 +680,7 @@ try {
     'guest-port-expose',
     'feishu-cli',
   ]);
+  assert.deepEqual(firstSync.updatedSkillIds, []);
   assert.deepEqual(firstSync.skillIds, [
     'calendar-write',
     'session-debug',
@@ -705,10 +706,17 @@ try {
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/stable-static-publish\.md/);
   assert.match(syncedIndex, /~\/\.remotelab\/platform\/skills\/guest-port-expose\.md/);
 
+  writeFileSync(join(platformSkillsDir, 'calendar-write.md'), '# stale projection\n', 'utf8');
   const secondSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
-  assert.equal(secondSync.changed, false);
+  assert.equal(secondSync.changed, true);
+  assert.deepEqual(secondSync.seededSkillIds, []);
+  assert.deepEqual(secondSync.updatedSkillIds, ['calendar-write']);
+  assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
   const syncedIndexAgain = readFileSync(join(memoryDir, 'skills.md'), 'utf8');
   assert.equal(syncedIndexAgain, syncedIndex);
+
+  const thirdSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
+  assert.equal(thirdSync.changed, false);
 } finally {
   rmSync(platformSkillSyncHome, { recursive: true, force: true });
 }
