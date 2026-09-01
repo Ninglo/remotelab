@@ -101,6 +101,24 @@ assert.equal(
   'only the settled final provider failure should terminalize the run',
 );
 
+const splitFailureAdapter = createPiAdapter();
+splitFailureAdapter.parseLine(JSON.stringify({
+  type: 'message_end',
+  message: {
+    role: 'assistant',
+    content: [],
+    stopReason: 'error',
+    errorMessage: 'split-delta provider failure',
+  },
+}));
+const resumedFailureAdapter = createPiAdapter();
+resumedFailureAdapter.restoreProjectionState(splitFailureAdapter.getProjectionState());
+assert.equal(
+  resumedFailureAdapter.parseLine(JSON.stringify({ type: 'agent_settled' }))[0]?.content,
+  'error: split-delta provider failure',
+  'incremental spool projection should preserve Pi attempt state across polling deltas',
+);
+
 const settledAdapter = createPiAdapter();
 settledAdapter.parseLine(JSON.stringify({
   type: 'message_end',

@@ -1,7 +1,8 @@
 import { randomBytes } from 'crypto';
-import { appendFile, open, readFile, readdir } from 'fs/promises';
+import { appendFile, mkdir, open, readFile, readdir, rm } from 'fs/promises';
 import { dirname, join } from 'path';
 import { StringDecoder } from 'string_decoder';
+import { setTimeout as delay } from 'timers/promises';
 import { CHAT_RUNS_DIR } from '../lib/config.mjs';
 import {
   createKeyedTaskQueue,
@@ -13,16 +14,58 @@ import {
 } from './fs-utils.mjs';
 
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
+const TERMINAL_STATE_PRIORITY = Object.freeze({ completed: 1, failed: 2, cancelled: 3 });
 const SPOOL_READ_CHUNK_BYTES = 1024 * 1024;
 const MAX_SPOOL_RECORD_CHARS = 2 * 1024 * 1024;
 const MAX_SPOOL_INLINE_CHARS = 16 * 1024;
 const MAX_SPOOL_PREVIEW_CHARS = 4096;
+const RUN_MUTATION_LOCK_RETRY_MS = 10;
+const RUN_MUTATION_LOCK_TIMEOUT_MS = 30_000;
+const RUN_MUTATION_LOCK_STALE_MS = 2 * 60_000;
 
 const runStatusCache = new Map();
 const runManifestCache = new Map();
 const runResultCache = new Map();
 const runArtifactCache = new Map();
-const runMutationQueue = createKeyedTaskQueue();
+const localRunMutationQueue = createKeyedTaskQueue();
+
+function runMutationLockPath(runId) {
+  return join(runDir(runId), '.mutation-lock');
+}
+
+async function acquireRunMutationLock(runId) {
+  await ensureDir(runDir(runId));
+  const lockPath = runMutationLockPath(runId);
+  const deadline = Date.now() + RUN_MUTATION_LOCK_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      await mkdir(lockPath);
+      return async () => {
+        await rm(lockPath, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      const lockStats = await statOrNull(lockPath);
+      if (lockStats && Date.now() - lockStats.mtimeMs >= RUN_MUTATION_LOCK_STALE_MS) {
+        await rm(lockPath, { recursive: true, force: true }).catch(() => {});
+        continue;
+      }
+      await delay(RUN_MUTATION_LOCK_RETRY_MS);
+    }
+  }
+  throw new Error(`Timed out waiting for run mutation lock: ${runId}`);
+}
+
+async function runMutationQueue(runId, operation) {
+  return localRunMutationQueue(runId, async () => {
+    const release = await acquireRunMutationLock(runId);
+    try {
+      return await operation();
+    } finally {
+      await release();
+    }
+  });
+}
 
 function clone(value) {
   if (value === null || value === undefined) return value;
@@ -104,6 +147,11 @@ export function isTerminalRunState(state) {
 }
 
 function pickRunState(currentState, nextState) {
+  if (isTerminalRunState(currentState) && isTerminalRunState(nextState)) {
+    return (TERMINAL_STATE_PRIORITY[nextState] || 0) > (TERMINAL_STATE_PRIORITY[currentState] || 0)
+      ? nextState
+      : currentState;
+  }
   if (isTerminalRunState(nextState)) return nextState;
   if (isTerminalRunState(currentState)) return currentState;
   if (nextState === 'running' || currentState === 'running') return 'running';

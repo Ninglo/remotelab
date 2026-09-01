@@ -38,6 +38,19 @@ export function createRunProjectionService({
       .join(' | ');
   }
 
+  function restoreAdapterProjectionState(adapter, state) {
+    if (typeof adapter?.restoreProjectionState !== 'function') return;
+    adapter.restoreProjectionState(
+      state && typeof state === 'object' && !Array.isArray(state) ? state : {},
+    );
+  }
+
+  function getAdapterProjectionState(adapter) {
+    if (typeof adapter?.getProjectionState !== 'function') return null;
+    const state = adapter.getProjectionState();
+    return state && typeof state === 'object' && !Array.isArray(state) ? state : null;
+  }
+
   async function maybeAppendProjectedCodexUsage(run, runtimeInvocation, normalizedEvents = [], lastRecordTimestamp = null) {
     if (!runtimeInvocation?.isCodexFamily || !run?.codexThreadId) {
       return normalizedEvents;
@@ -100,6 +113,7 @@ export function createRunProjectionService({
     return {
       normalizedEvents,
       preview: buildRunProjectionPreview(spoolRecords),
+      adapterProjectionState: getAdapterProjectionState(adapter),
     };
   }
 
@@ -117,6 +131,7 @@ export function createRunProjectionService({
 
   async function collectNormalizedRunEventDelta(run, manifest) {
     const runtimeInvocation = await createRunRuntimeInvocation(manifest);
+    restoreAdapterProjectionState(runtimeInvocation.adapter, run?.adapterProjectionState);
     const delta = await readRunSpoolDelta(run.id, {
       startOffset: Number.isInteger(run?.normalizedByteOffset) ? run.normalizedByteOffset : 0,
       skipLines: Number.isInteger(run?.normalizedLineCount) ? run.normalizedLineCount : 0,

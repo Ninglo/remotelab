@@ -1084,6 +1084,9 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     normalizedByteOffset: projection.nextOffset,
     normalizedEventCount: nextNormalizedEventCount,
     lastNormalizedAt: nowIso(),
+    ...(projection.adapterProjectionState
+      ? { adapterProjectionState: projection.adapterProjectionState }
+      : {}),
     ...(Number.isInteger(contextInputTokens) ? { contextInputTokens } : {}),
     ...(Number.isInteger(contextWindowTokens) ? { contextWindowTokens } : {}),
     ...(hasSpoolCompletion && !current.spoolCompletionDetectedAt
@@ -1155,6 +1158,14 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   const terminalContextWindowTokens = Number.isInteger(terminalLatestUsage?.contextWindowTokens)
     ? terminalLatestUsage.contextWindowTokens
     : contextWindowTokens;
+  const terminalFatalStatusEvent = terminalProjection?.normalizedEvents?.find(
+    (event) => event?.type === 'status'
+      && typeof event.content === 'string'
+      && /^error:\s*/i.test(event.content.trim()),
+  );
+  const terminalFatalStatusReason = typeof terminalFatalStatusEvent?.content === 'string'
+    ? terminalFatalStatusEvent.content.trim().replace(/^error:\s*/i, '').trim()
+    : '';
 
   if (terminalTailEvents.length > 0) {
     await appendEvents(sessionId, terminalTailEvents);
@@ -1163,8 +1174,27 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       ...current,
       normalizedEventCount: terminalNormalizedEventCount,
       lastNormalizedAt: nowIso(),
+      ...(terminalProjection?.adapterProjectionState
+        ? { adapterProjectionState: terminalProjection.adapterProjectionState }
+        : {}),
+      ...(terminalFatalStatusReason && current.state !== 'cancelled'
+        ? {
+            state: 'failed',
+            failureReason: terminalFatalStatusReason,
+            spoolFailureDetectedAt: current.spoolFailureDetectedAt || nowIso(),
+            spoolFailureReason: terminalFatalStatusReason,
+          }
+        : {}),
       ...(Number.isInteger(terminalContextInputTokens) ? { contextInputTokens: terminalContextInputTokens } : {}),
       ...(Number.isInteger(terminalContextWindowTokens) ? { contextWindowTokens: terminalContextWindowTokens } : {}),
+    })) || run;
+  } else if (terminalFatalStatusReason && run.state !== 'cancelled') {
+    run = await updateRun(runId, (current) => ({
+      ...current,
+      state: 'failed',
+      failureReason: terminalFatalStatusReason,
+      spoolFailureDetectedAt: current.spoolFailureDetectedAt || nowIso(),
+      spoolFailureReason: terminalFatalStatusReason,
     })) || run;
   }
   const zeroStructuredOutputReason = (

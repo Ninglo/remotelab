@@ -449,9 +449,19 @@ async function main() {
           }
         });
       };
+      const stdoutReader = createInterface({ input: proc.stdout });
+      const stderrReader = createInterface({ input: proc.stderr });
+      const streamsClosed = Promise.all([
+        new Promise((done) => stdoutReader.once('close', done)),
+        new Promise((done) => stderrReader.once('close', done)),
+      ]);
       const finish = async (result) => {
         if (settled) return;
         settled = true;
+        // The child-process close event can precede readline's final `line`
+        // callback. Drain both interfaces before snapshotting the write chain
+        // so terminal provider events cannot be dropped at process exit.
+        await streamsClosed;
         await outputWriteChain;
         if (activeProc === proc) activeProc = null;
         resolve({
@@ -461,10 +471,10 @@ async function main() {
         });
       };
 
-      createInterface({ input: proc.stdout }).on('line', (line) => {
+      stdoutReader.on('line', (line) => {
         queueWrite(() => recordStdoutLine(line));
       });
-      createInterface({ input: proc.stderr }).on('line', (line) => {
+      stderrReader.on('line', (line) => {
         const clean = line.trim();
         if (!clean) return;
         stderrLines.push(clean);

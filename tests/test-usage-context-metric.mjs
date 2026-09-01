@@ -65,6 +65,18 @@ try {
   assert.equal(claudeUsage.contextSource, 'provider_turn_usage', 'Claude usage should identify its context source');
   assert.equal(claudeUsage.costSource, 'provider_reported', 'Claude usage should label exact provider-reported cost');
 
+  const resumedClaude = createClaudeAdapter();
+  resumedClaude.restoreProjectionState(claude.getProjectionState());
+  const resumedClaudeUsage = resumedClaude.parseLine(JSON.stringify({
+    type: 'result',
+    usage: { input_tokens: 1200, output_tokens: 80 },
+  })).find((event) => event.type === 'usage');
+  assert.equal(
+    resumedClaudeUsage?.contextTokens,
+    1950,
+    'incremental spool projection should preserve Claude context accounting across polling deltas',
+  );
+
   const codex = createCodexAdapter();
   const codexRawUsageEvents = codex.parseLine(JSON.stringify({
     type: 'turn.completed',

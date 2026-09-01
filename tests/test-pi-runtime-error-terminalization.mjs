@@ -14,6 +14,8 @@ mkdirSync(configDir, { recursive: true });
 
 const fakePi = join(binDir, 'fake-pi');
 writeFileSync(fakePi, `#!/usr/bin/env node
+const { writeSync } = require('fs');
+const emit = (value) => writeSync(1, value + '\\n');
 const failed = {
   role: 'assistant',
   content: [],
@@ -24,12 +26,12 @@ const failed = {
   errorMessage: '429: synthetic quota failure',
 };
 const recovering = process.argv.join(' ').includes('Recover after transient failure');
-console.log(JSON.stringify({ type: 'agent_start' }));
-console.log(JSON.stringify({ type: 'turn_start' }));
-console.log(JSON.stringify({ type: 'message_end', message: failed }));
+emit(JSON.stringify({ type: 'agent_start' }));
+emit(JSON.stringify({ type: 'turn_start' }));
+emit(JSON.stringify({ type: 'message_end', message: failed }));
 if (recovering) {
-  console.log(JSON.stringify({ type: 'agent_end', messages: [failed], willRetry: true }));
-  console.log(JSON.stringify({
+  emit(JSON.stringify({ type: 'agent_end', messages: [failed], willRetry: true }));
+  emit(JSON.stringify({
     type: 'auto_retry_start',
     attempt: 1,
     maxAttempts: 3,
@@ -45,14 +47,14 @@ if (recovering) {
       usage: { input: 1, output: 1, totalTokens: 2, cost: { total: 0 } },
       stopReason: 'stop',
     };
-    console.log(JSON.stringify({ type: 'agent_start' }));
-    console.log(JSON.stringify({ type: 'turn_start' }));
-    console.log(JSON.stringify({ type: 'message_end', message: recovered }));
-    console.log(JSON.stringify({ type: 'auto_retry_end', success: true, attempt: 1 }));
-    console.log(JSON.stringify({ type: 'agent_settled' }));
+    emit(JSON.stringify({ type: 'agent_start' }));
+    emit(JSON.stringify({ type: 'turn_start' }));
+    emit(JSON.stringify({ type: 'message_end', message: recovered }));
+    emit(JSON.stringify({ type: 'auto_retry_end', success: true, attempt: 1 }));
+    emit(JSON.stringify({ type: 'agent_settled' }));
   }, 1200);
 } else {
-  console.log(JSON.stringify({ type: 'agent_settled' }));
+  emit(JSON.stringify({ type: 'agent_settled' }));
 }
 `, 'utf8');
 chmodSync(fakePi, 0o755);

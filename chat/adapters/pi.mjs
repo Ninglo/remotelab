@@ -118,6 +118,23 @@ export function createPiAdapter() {
       }
     },
 
+    restoreProjectionState(state = {}) {
+      lastAssistantStopReason = typeof state.lastAssistantStopReason === 'string'
+        ? state.lastAssistantStopReason
+        : '';
+      lastAssistantFailureReason = typeof state.lastAssistantFailureReason === 'string'
+        ? state.lastAssistantFailureReason
+        : '';
+    },
+
+    getProjectionState() {
+      return {
+        version: 1,
+        lastAssistantStopReason,
+        lastAssistantFailureReason,
+      };
+    },
+
     flush() {
       return [];
     },

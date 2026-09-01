@@ -156,6 +156,19 @@ export function createClaudeAdapter() {
       return events;
     },
 
+    restoreProjectionState(state = {}) {
+      lastTurnInputTokens = Number.isFinite(state.lastTurnInputTokens)
+        ? state.lastTurnInputTokens
+        : 0;
+    },
+
+    getProjectionState() {
+      return {
+        version: 1,
+        lastTurnInputTokens,
+      };
+    },
+
     flush() {
       return [];
     },
