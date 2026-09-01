@@ -237,6 +237,7 @@ try {
   encryptedImage = Buffer.concat([imageCipher.update(imagePlaintext), imageCipher.final()]);
   let publishedImage = null;
   const imageService = createWeChatInboundResourceService({
+    resolveHostname: async () => ['203.0.113.10'],
     fetch: async (url) => {
       assert.equal(url, 'https://wechat.example/image.enc');
       return new Response(encryptedImage, {
@@ -266,6 +267,59 @@ try {
   assert.equal(imageResolution.failures.length, 0);
   assert.equal(imageResolution.attachments[0]?.assetId, 'asset_wechat_image_1');
   assert.equal(imageResolution.attachments[0]?.mimeType, 'image/jpeg');
+
+  let blockedFetchCalls = 0;
+  const blockedImageService = createWeChatInboundResourceService({
+    fetch: async () => {
+      blockedFetchCalls += 1;
+      return new Response(encryptedImage);
+    },
+  });
+  await assert.rejects(
+    blockedImageService.download({}, {
+      sessionId: 'sess_blocked_image',
+      messageId: 'msg_blocked_image',
+      resource: { downloadUrl: 'https://127.0.0.1/image.enc', aesKey: imageKeyHex },
+    }),
+    /private network/,
+  );
+  assert.equal(blockedFetchCalls, 0, 'private image URLs must be rejected before fetching');
+
+  const redirectImageService = createWeChatInboundResourceService({
+    resolveHostname: async () => ['203.0.113.11'],
+    fetch: async () => new Response(null, {
+      status: 302,
+      headers: { location: 'http://127.0.0.1/private.enc' },
+    }),
+  });
+  await assert.rejects(
+    redirectImageService.download({}, {
+      sessionId: 'sess_redirect_image',
+      messageId: 'msg_redirect_image',
+      resource: { downloadUrl: 'https://wechat.example/redirect.enc', aesKey: imageKeyHex },
+    }),
+    /must use HTTPS/,
+  );
+
+  const oversizedImageService = createWeChatInboundResourceService({
+    maxBytes: 16,
+    resolveHostname: async () => ['203.0.113.12'],
+    fetch: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(12));
+        controller.enqueue(new Uint8Array(12));
+        controller.close();
+      },
+    })),
+  });
+  await assert.rejects(
+    oversizedImageService.download({}, {
+      sessionId: 'sess_oversized_image',
+      messageId: 'msg_oversized_image',
+      resource: { downloadUrl: 'https://wechat.example/oversized.enc', aesKey: imageKeyHex },
+    }),
+    /exceeds 16 bytes/,
+  );
 
   const imageSummary = summarizeWeChatMessage({
     message_id: 'msg_image_summary_1',
@@ -411,6 +465,7 @@ try {
   const replyRuntime = createRuntimeContext({
     ...config,
     chatBaseUrl: `http://127.0.0.1:${port}`,
+    wechatInboundResourceAllowPrivateNetwork: true,
   }, {
     accountsDoc,
     syncStateDoc: syncDoc,

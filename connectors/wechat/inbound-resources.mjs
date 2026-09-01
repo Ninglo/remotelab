@@ -1,7 +1,10 @@
 import { createDecipheriv } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 
 const DEFAULT_MAX_WECHAT_IMAGE_BYTES = 20 * 1024 * 1024;
 const DEFAULT_DOWNLOAD_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_REDIRECTS = 3;
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -9,6 +12,108 @@ function trimString(value) {
 
 function normalizeBaseUrl(value) {
   return trimString(value).replace(/\/+$/, '');
+}
+
+function normalizeIpAddress(value) {
+  const normalized = trimString(value).toLowerCase().replace(/^\[|\]$/g, '');
+  return normalized.startsWith('::ffff:') ? normalized.slice(7) : normalized;
+}
+
+export function isPrivateNetworkAddress(value) {
+  const address = normalizeIpAddress(value);
+  const version = isIP(address);
+  if (version === 4) {
+    const octets = address.split('.').map((part) => Number.parseInt(part, 10));
+    const [first, second] = octets;
+    return first === 0
+      || first === 10
+      || first === 127
+      || (first === 100 && second >= 64 && second <= 127)
+      || (first === 169 && second === 254)
+      || (first === 172 && second >= 16 && second <= 31)
+      || (first === 192 && second === 0)
+      || (first === 192 && second === 168)
+      || (first === 198 && (second === 18 || second === 19))
+      || first >= 224;
+  }
+  if (version === 6) {
+    return address === '::'
+      || address === '::1'
+      || address.startsWith('fc')
+      || address.startsWith('fd')
+      || /^fe[89ab]/.test(address)
+      || address.startsWith('ff');
+  }
+  return false;
+}
+
+async function resolvePublicDownloadUrl(rawUrl, {
+  allowPrivateNetwork = false,
+  resolveHostname,
+} = {}) {
+  let url;
+  try {
+    url = new URL(trimString(rawUrl));
+  } catch {
+    throw new Error('WeChat image download URL is invalid');
+  }
+  if (url.username || url.password) {
+    throw new Error('WeChat image download URL must not include credentials');
+  }
+  if (allowPrivateNetwork) {
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new Error('WeChat image download URL must use HTTP or HTTPS');
+    }
+    return url;
+  }
+  if (url.protocol !== 'https:') {
+    throw new Error('WeChat image download URL must use HTTPS');
+  }
+
+  const hostname = normalizeIpAddress(url.hostname);
+  if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) {
+    throw new Error('WeChat image download URL must use a public host');
+  }
+  const addresses = isIP(hostname)
+    ? [hostname]
+    : await resolveHostname(hostname);
+  if (!Array.isArray(addresses) || addresses.length === 0) {
+    throw new Error('WeChat image download host did not resolve');
+  }
+  if (addresses.some((address) => isPrivateNetworkAddress(address))) {
+    throw new Error('WeChat image download URL resolved to a private network');
+  }
+  return url;
+}
+
+async function readBodyWithLimit(response, maxBytes) {
+  const declaredLength = Number.parseInt(response.headers.get('content-length') || '', 10);
+  if (Number.isInteger(declaredLength) && declaredLength > maxBytes) {
+    throw new Error(`WeChat image exceeds ${maxBytes} bytes`);
+  }
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    throw new Error('WeChat image response did not expose a readable body');
+  }
+
+  const chunks = [];
+  let totalBytes = 0;
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`WeChat image exceeds ${maxBytes} bytes`);
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, totalBytes);
 }
 
 function detectImageMimeType(buffer) {
@@ -98,6 +203,41 @@ export function createWeChatInboundResourceService(options = {}) {
   const downloadTimeoutMs = Number.isInteger(options.downloadTimeoutMs) && options.downloadTimeoutMs > 0
     ? options.downloadTimeoutMs
     : DEFAULT_DOWNLOAD_TIMEOUT_MS;
+  const maxRedirects = Number.isInteger(options.maxRedirects) && options.maxRedirects >= 0
+    ? options.maxRedirects
+    : DEFAULT_MAX_REDIRECTS;
+  const resolveHostname = typeof options.resolveHostname === 'function'
+    ? options.resolveHostname
+    : async (hostname) => (await lookup(hostname, { all: true, verbatim: true }))
+      .map((entry) => trimString(entry?.address))
+      .filter(Boolean);
+
+  async function fetchDownload(runtime, rawUrl) {
+    const allowPrivateNetwork = options.allowPrivateNetwork === true
+      || runtime?.config?.wechatInboundResourceAllowPrivateNetwork === true;
+    let currentUrl = await resolvePublicDownloadUrl(rawUrl, {
+      allowPrivateNetwork,
+      resolveHostname,
+    });
+    for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+      const response = await fetchImpl(currentUrl.href, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(downloadTimeoutMs),
+      });
+      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+      const location = trimString(response.headers.get('location'));
+      if (!location) throw new Error('WeChat image redirect did not include a location');
+      if (redirectCount >= maxRedirects) {
+        throw new Error(`WeChat image exceeded ${maxRedirects} redirects`);
+      }
+      currentUrl = await resolvePublicDownloadUrl(new URL(location, currentUrl).href, {
+        allowPrivateNetwork,
+        resolveHostname,
+      });
+    }
+    throw new Error(`WeChat image exceeded ${maxRedirects} redirects`);
+  }
 
   async function publishRemoteLabAsset(runtime, { sessionId, body, originalName, mimeType }) {
     if (typeof runtime?.publishRemoteLabAsset === 'function') {
@@ -154,22 +294,11 @@ export function createWeChatInboundResourceService(options = {}) {
   async function download(runtime, { sessionId, messageId, resource, index = 0 } = {}) {
     const downloadUrl = trimString(resource?.downloadUrl);
     if (!downloadUrl) throw new Error('WeChat image download URL is missing');
-    const response = await fetchImpl(downloadUrl, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(downloadTimeoutMs),
-    });
+    const response = await fetchDownload(runtime, downloadUrl);
     if (!response.ok) {
       throw new Error(`Failed to download WeChat image (${response.status})`);
     }
-    const declaredLength = Number.parseInt(response.headers.get('content-length') || '', 10);
-    if (Number.isInteger(declaredLength) && declaredLength > maxBytes) {
-      throw new Error(`WeChat image exceeds ${maxBytes} bytes`);
-    }
-    const encrypted = Buffer.from(await response.arrayBuffer());
-    if (encrypted.length > maxBytes) {
-      throw new Error(`WeChat image exceeds ${maxBytes} bytes`);
-    }
+    const encrypted = await readBodyWithLimit(response, maxBytes);
     const body = decryptWeChatImage(encrypted, resource);
     const mimeType = detectImageMimeType(body);
     if (!mimeType) throw new Error('WeChat image decrypted to an unsupported format');
