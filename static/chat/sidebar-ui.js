@@ -126,6 +126,9 @@ function createNewSessionShortcut({
   if (typeof showEmpty === "function") {
     showEmpty();
   }
+  if (typeof resetContextDisplay === "function") {
+    resetContextDisplay();
+  }
   window.RemoteLabTranscriptViewport?.resetEntryAnchor?.({
     reason: "new-session-draft",
   });

@@ -667,6 +667,7 @@ function renderPiAuthPanel({ checking = false } = {}) {
 }
 
 async function refreshPiAuthStatus({ silent = false } = {}) {
+  const wasLoggedIn = piAuthState?.loggedIn === true;
   renderPiAuthPanel({ checking: !silent });
   try {
     const data = await fetchJsonOrRedirect("/api/pi-auth/status", {
@@ -678,6 +679,13 @@ async function refreshPiAuthStatus({ silent = false } = {}) {
     piAuthState = { phase: "failed", error: error?.message || "Pi status check failed" };
   }
   renderPiAuthPanel();
+  if (
+    wasLoggedIn !== (piAuthState?.loggedIn === true)
+    && selectedTool === "pi"
+    && typeof loadModelsForCurrentTool === "function"
+  ) {
+    await loadModelsForCurrentTool({ refresh: true });
+  }
 }
 
 async function startPiDeviceLogin() {

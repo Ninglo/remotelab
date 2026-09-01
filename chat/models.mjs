@@ -1,8 +1,8 @@
 import { readFile, readdir, stat } from 'fs/promises';
-import { homedir } from 'os';
 import { join } from 'path';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { discoverPiModels } from './pi-models.mjs';
+import { resolveCodexRuntimeHomeDir } from './runtime-policy.mjs';
 import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
@@ -278,9 +278,9 @@ function resolveCodexDefaultModel(configuredModel = '', recentModels = []) {
   return PRODUCT_DEFAULT_CODEX_MODEL;
 }
 
-async function readCodexConfiguredSettings(homeDir) {
+async function readCodexConfiguredSettings(codexHomeDir) {
   try {
-    const raw = await readFile(join(homeDir, '.codex', 'config.toml'), 'utf-8');
+    const raw = await readFile(join(codexHomeDir, 'config.toml'), 'utf-8');
     const modelMatch = raw.match(/^\s*model\s*=\s*["']([^"']+)["']/m);
     const effortMatch = raw.match(/^\s*model_reasoning_effort\s*=\s*["']([^"']+)["']/m);
     return {
@@ -317,8 +317,8 @@ async function collectRecentCodexSessionFiles(dirPath, files = []) {
   return files;
 }
 
-async function readCodexRecentModels(homeDir) {
-  const sessionFiles = await collectRecentCodexSessionFiles(join(homeDir, '.codex', 'sessions'));
+async function readCodexRecentModels(codexHomeDir) {
+  const sessionFiles = await collectRecentCodexSessionFiles(join(codexHomeDir, 'sessions'));
   sessionFiles.sort((left, right) => right.mtimeMs - left.mtimeMs);
 
   const models = [];
@@ -358,7 +358,7 @@ async function readCodexRecentModels(homeDir) {
  * - models: [{ id, label, defaultEffort?, effortLevels? }]
  * - effortLevels: string[] | null (null means the tool has no reasoning control)
  */
-export async function getModelsForTool(toolId) {
+export async function getModelsForTool(toolId, options = {}) {
   if (toolId === 'claude') {
     const levels = ['none', 'low', 'medium', 'high'];
     const defaultReasoning = {
@@ -384,7 +384,7 @@ export async function getModelsForTool(toolId) {
   }
   if (toolId === 'pi') {
     try {
-      return await discoverPiModels();
+      return await discoverPiModels({ refresh: options.refresh === true });
     } catch (error) {
       console.warn(`[models] Failed to discover Pi models: ${error.message}`);
       const codex = await getCodexModels();
@@ -426,15 +426,15 @@ async function getCodexModels() {
   if (codexModelsCache) {
     return codexModelsCache;
   }
-  const homeDir = homedir();
-  const configuredSettings = await readCodexConfiguredSettings(homeDir);
+  const codexHomeDir = resolveCodexRuntimeHomeDir();
+  const configuredSettings = await readCodexConfiguredSettings(codexHomeDir);
   const configuredModel = configuredSettings.model;
-  const recentModels = await readCodexRecentModels(homeDir);
+  const recentModels = await readCodexRecentModels(codexHomeDir);
   const defaultModel = resolveCodexDefaultModel(configuredModel, recentModels);
   const modelMap = createBaseCodexModelMap();
 
   try {
-    const raw = await readFile(join(homeDir, '.codex', 'models_cache.json'), 'utf-8');
+    const raw = await readFile(join(codexHomeDir, 'models_cache.json'), 'utf-8');
     const data = JSON.parse(raw);
     for (const cacheModel of (data.models || [])) {
       if (cacheModel?.visibility !== 'list') continue;

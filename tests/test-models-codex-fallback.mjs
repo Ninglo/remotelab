@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-models-codex-'));
-const codexDir = join(tempHome, '.codex');
+const codexDir = join(tempHome, '.config', 'remotelab', 'provider-runtime-homes', 'codex');
 const sessionsDir = join(codexDir, 'sessions', '2026', '04', '20');
 
 mkdirSync(sessionsDir, { recursive: true });
@@ -43,6 +43,10 @@ utimesSync(olderSessionPath, new Date('2026-04-20T10:00:00Z'), new Date('2026-04
 utimesSync(newerSessionPath, new Date('2026-04-20T11:00:00Z'), new Date('2026-04-20T11:00:00Z'));
 
 process.env.HOME = tempHome;
+process.env.REMOTELAB_CONFIG_DIR = join(tempHome, '.config', 'remotelab');
+delete process.env.REMOTELAB_INSTANCE_ROOT;
+delete process.env.REMOTELAB_CODEX_HOME_MODE;
+delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
 
 try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);

@@ -55,8 +55,8 @@ try {
   const ownerEnv = await applyManagedRuntimeEnv('codex', {}, { runtimeFamily: 'codex-json' });
   assert.equal(
     ownerEnv.CODEX_HOME,
-    '/root/.codex',
-    'instance-scoped owner runs should use the machine Codex auth home by default',
+    join(ownerRoot, 'config', 'provider-runtime-homes', 'codex'),
+    'instance-scoped owner runs should use the standard instance Codex home by default',
   );
 } finally {
   if (previousHome === undefined) delete process.env.HOME;

@@ -24,7 +24,7 @@ export const MANAGER_RUNTIME_BOUNDARY_SECTION = (await readPromptAsset('runtime/
 export const MANAGER_TURN_POLICY_REMINDER = await readInlinePromptAsset('runtime/manager-turn-reminder.txt');
 export const DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS = await readInlinePromptAsset('runtime/codex-developer-instructions.txt');
 
-const DEFAULT_CODEX_HOME_MODE = 'personal';
+const DEFAULT_CODEX_HOME_MODE = 'managed';
 const DEFAULT_MACHINE_CODEX_HOME_DIR = '/root/.codex';
 const MANAGED_CODEX_HOME_NOTES = [
   '# RemoteLab-managed Codex runtime home.',
@@ -64,6 +64,20 @@ function trimString(value) {
 export function resolveMachineCodexHomeDir() {
   return trimString(process.env.REMOTELAB_MACHINE_CODEX_HOME)
     || (IS_INSTANCE_SCOPED ? DEFAULT_MACHINE_CODEX_HOME_DIR : PERSONAL_CODEX_HOME);
+}
+
+export function resolveCodexRuntimeHomeDir(options = {}) {
+  const mode = normalizeCodexHomeMode(
+    options.codexHomeMode || process.env.REMOTELAB_CODEX_HOME_MODE,
+  );
+  if (mode === 'inherit') {
+    return trimString(options.inheritedCodexHome || process.env.CODEX_HOME)
+      || resolveMachineCodexHomeDir();
+  }
+  if (mode === 'personal') {
+    return resolveMachineCodexHomeDir();
+  }
+  return trimString(options.codexHomeDir) || CODEX_MANAGED_HOME_DIR;
 }
 
 export function isSharedCodexRuntime(toolId, runtimeFamily = '') {
@@ -121,15 +135,21 @@ export async function ensureManagedCodexHome(options = {}) {
     if (!syncAuth) {
       return homeDir;
     }
-    if (options.linkAuth === true) {
-      await ensureSymlinkOrCopy(authSource, join(homeDir, 'auth.json'));
-    } else if (IS_GUEST_INSTANCE) {
-      await writeGuestCodexAuthFile({
-        sourcePath: authSource,
-        targetPath: join(homeDir, 'auth.json'),
-      });
-    } else {
-      await ensureSymlinkOrCopy(authSource, join(homeDir, 'auth.json'));
+    const managedAuthFile = join(homeDir, 'auth.json');
+    // Import an existing machine login once for a smooth migration. After the
+    // instance has its own identity, the managed runtime home is canonical and
+    // must not be overwritten by an unrelated host-side Codex login.
+    if (!await pathExists(managedAuthFile)) {
+      if (options.linkAuth === true) {
+        await ensureSymlinkOrCopy(authSource, managedAuthFile);
+      } else if (IS_GUEST_INSTANCE) {
+        await writeGuestCodexAuthFile({
+          sourcePath: authSource,
+          targetPath: managedAuthFile,
+        });
+      } else {
+        await copyFile(authSource, managedAuthFile).catch(() => {});
+      }
     }
     return homeDir;
   });
@@ -159,7 +179,7 @@ export async function applyManagedRuntimeEnv(toolId, baseEnv = {}, options = {})
 
   if (mode === 'personal') {
     delete env.CODEX_HOME;
-    env.CODEX_HOME = resolveMachineCodexHomeDir();
+    env.CODEX_HOME = resolveCodexRuntimeHomeDir({ ...options, codexHomeMode: mode });
     return env;
   }
 
@@ -168,6 +188,10 @@ export async function applyManagedRuntimeEnv(toolId, baseEnv = {}, options = {})
     authSource: options.codexAuthSource,
   });
   delete env.CODEX_HOME;
-  env.CODEX_HOME = managedHome;
+  env.CODEX_HOME = resolveCodexRuntimeHomeDir({
+    ...options,
+    codexHomeMode: mode,
+    codexHomeDir: managedHome,
+  });
   return env;
 }

@@ -1318,7 +1318,8 @@ export async function handleControlRoutes({
 
   if (pathname === '/api/models' && req.method === 'GET') {
     const toolId = parsedUrl.query ? parsedUrl.query.tool || '' : '';
-    const result = await getModelsForTool(toolId);
+    const refresh = ['1', 'true'].includes(String(parsedUrl.query?.refresh || '').toLowerCase());
+    const result = await getModelsForTool(toolId, { refresh });
     writeJsonCached(req, res, result);
     return true;
   }

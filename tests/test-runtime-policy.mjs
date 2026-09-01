@@ -20,6 +20,7 @@ const {
   applySharedCodexLock,
   ensureManagedCodexHome,
   isSharedCodexRuntime,
+  resolveCodexRuntimeHomeDir,
 } = await import('../chat/runtime-policy.mjs');
 
 try {
@@ -35,7 +36,17 @@ try {
     'managed Codex home should carry a minimal manager-owned config',
   );
   const authStat = lstatSync(join(managedHome, 'auth.json'));
-  assert.ok(authStat.isSymbolicLink() || authStat.isFile(), 'managed Codex home should expose auth.json');
+  assert.ok(authStat.isFile(), 'the instance Codex home should import auth as its own canonical file');
+  writeFileSync(join(personalCodexHome, 'auth.json'), '{"token":"different-machine-login"}\n', 'utf8');
+  await ensureManagedCodexHome({
+    homeDir: managedHome,
+    authSource: join(personalCodexHome, 'auth.json'),
+  });
+  assert.equal(
+    readFileSync(join(managedHome, 'auth.json'), 'utf8'),
+    '{"token":"test"}\n',
+    'later host-side logins must not overwrite the canonical instance identity',
+  );
 
   const managedEnv = await applyManagedRuntimeEnv('codex', { FOO: 'bar', CODEX_HOME: '/tmp/elsewhere' }, {
     codexHomeDir: managedHome,
@@ -89,11 +100,24 @@ try {
   assert.equal(piDeepseekEnv.PI_CODING_AGENT_DIR, join(home, '.pi', 'agent'), 'all Pi providers should share the instance-scoped Pi credential store');
 
   const defaultCodexEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/default' });
-  assert.equal(defaultCodexEnv.CODEX_HOME, personalCodexHome, 'default Codex mode should use the machine command-line Codex home');
+  assert.equal(
+    defaultCodexEnv.CODEX_HOME,
+    join(home, '.config', 'remotelab', 'provider-runtime-homes', 'codex'),
+    'default Codex mode should use the standard instance runtime home',
+  );
+  assert.equal(
+    resolveCodexRuntimeHomeDir(),
+    defaultCodexEnv.CODEX_HOME,
+    'login status and runs should resolve the same default Codex home',
+  );
   const legacySharedEnv = await applyManagedRuntimeEnv('codex', { CODEX_HOME: '/tmp/shared' }, {
     codexHomeMode: 'shared',
   });
-  assert.equal(legacySharedEnv.CODEX_HOME, personalCodexHome, 'legacy shared mode should collapse to the machine command-line Codex home');
+  assert.equal(
+    legacySharedEnv.CODEX_HOME,
+    defaultCodexEnv.CODEX_HOME,
+    'legacy shared mode should collapse to the standard instance Codex home',
+  );
   assert.equal(isSharedCodexRuntime('codex', 'codex-json'), false, 'shared Codex runtime mode should be disabled');
   assert.deepEqual(
     applySharedCodexLock('codex', '/usr/bin/codex', ['exec', 'hello'], 'codex-json'),

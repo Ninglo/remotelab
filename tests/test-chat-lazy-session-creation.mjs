@@ -59,6 +59,7 @@ const calls = {
   titles: [],
   focus: [],
   empty: 0,
+  contextReset: 0,
 };
 const context = {
   console,
@@ -112,6 +113,9 @@ const context = {
   showEmpty() {
     calls.empty += 1;
   },
+  resetContextDisplay() {
+    calls.contextReset += 1;
+  },
   renderHeaderSessionTitle(title) {
     calls.titles.push(title);
   },
@@ -140,6 +144,7 @@ assert.equal(opened, true);
 assert.equal(calls.dispatch.length, 0, 'opening the new-session surface must not call the backend');
 assert.equal(context.currentSessionId, null, 'opening the surface should detach the persisted session');
 assert.equal(calls.empty, 1, 'opening the surface should render the local empty state');
+assert.equal(calls.contextReset, 1, 'opening the surface should clear context controls from the prior session');
 assert.deepEqual(calls.titles, ['New session']);
 assert.equal(calls.clearComposer[0]?.sessionId, '__new_session_draft__');
 assert.equal(calls.focus.length, 1, 'opening the surface should focus the composer');

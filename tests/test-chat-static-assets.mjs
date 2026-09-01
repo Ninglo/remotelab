@@ -827,6 +827,8 @@ async function main() {
     assert.match(toolingAsset.text, /function getPiProviderCatalog\(/, 'Pi model picker should derive a compact provider list');
     assert.match(toolingAsset.text, /inlineProviderSelect\.addEventListener\("change"/, 'provider changes should drive the filtered model picker');
     assert.match(toolingAsset.text, /providerModels\.find\(\(model\) => model\.providerDefault\)/, 'provider switches should prefer the recommended SOTA model');
+    assert.match(toolingAsset.text, /tooling\.piLoginRequired/, 'an empty Pi catalog should direct the user to the login flow instead of hiding the model control');
+    assert.match(toolingAsset.text, /refresh=1/, 'provider login changes should be able to refresh the server-side model catalog');
     assert.match(toolingAsset.text, /selectedEffort_\$\{selectedTool\}_\$\{selectedModel\}/, 'thinking preferences should stay scoped to each selected model');
 
     const realtimeRenderAsset = await request(port, 'GET', '/chat/realtime-render.js');
@@ -838,6 +840,7 @@ async function main() {
     const uiAsset = await request(port, 'GET', '/chat/ui.js');
     assert.equal(uiAsset.status, 200, 'ui asset should load');
     assert.match(uiAsset.text, /\/api\/media\//, 'ui asset should load persisted media attachments from the media route');
+    assert.match(uiAsset.text, /function resetContextDisplay\(/, 'detached new-session drafts should have an explicit context-control reset path');
 
     const sessionSurfaceUiAsset = await request(port, 'GET', '/chat/session-surface-ui.js');
     assert.equal(sessionSurfaceUiAsset.status, 200, 'session surface ui asset should load');

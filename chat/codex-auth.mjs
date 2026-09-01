@@ -3,7 +3,7 @@ import { homedir } from 'os';
 
 import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
 import { ensureDir } from './fs-utils.mjs';
-import { resolveMachineCodexHomeDir } from './runtime-policy.mjs';
+import { resolveCodexRuntimeHomeDir } from './runtime-policy.mjs';
 
 const DEVICE_LOGIN_TTL_MS = 15 * 60 * 1000;
 const STATUS_TIMEOUT_MS = 10 * 1000;
@@ -75,7 +75,7 @@ function waitForProcess(command, args, { env, timeoutMs = STATUS_TIMEOUT_MS, spa
 
 export function createCodexAuthManager({
   resolveCommand = () => resolveToolCommandPathAsync('codex'),
-  resolveHome = resolveMachineCodexHomeDir,
+  resolveHome = resolveCodexRuntimeHomeDir,
   spawnProcess = spawn,
   baseEnv = () => process.env,
   now = () => Date.now(),
