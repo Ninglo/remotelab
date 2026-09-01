@@ -36,7 +36,6 @@ const messageEvents = adapter.parseLine(JSON.stringify({
 }));
 assert.deepEqual(messageEvents.map((event) => event.type), ['reasoning', 'message', 'usage']);
 assert.equal(messageEvents[1].content, 'done');
-assert.equal(messageEvents[1].runtimeFamily, 'pi-json');
 assert.equal(messageEvents[2].contextTokens, 16);
 
 const streamingAdapter = createPiAdapter();
@@ -73,7 +72,6 @@ const streamedTextEvents = streamingAdapter.parseLine(JSON.stringify({
 }));
 assert.deepEqual(streamedTextEvents.map((event) => event.type), ['message']);
 assert.equal(streamedTextEvents[0].content, 'I found the issue.');
-assert.equal(streamedTextEvents[0].runtimeFamily, 'pi-json');
 
 const resumedStreamingAdapter = createPiAdapter();
 resumedStreamingAdapter.restoreProjectionState(streamingAdapter.getProjectionState());

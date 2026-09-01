@@ -432,7 +432,6 @@ async function main() {
     assert.match(combinedChatStyles, /\.chat-area > \*\s*\{[\s\S]*?min-width:\s*0;/, 'chat-area grid children should be allowed to shrink horizontally instead of expanding the column');
     assert.match(combinedChatStyles, /\.messages\s*\{[\s\S]*?min-height:\s*0;/);
     assert.match(combinedChatStyles, /\.messages-inner\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/, 'message column should stay bound to the available chat width');
-    assert.match(combinedChatStyles, /\.msg-assistant-progress\s*\{[\s\S]*?color:\s*var\(--text-secondary\);[\s\S]*?font-size:\s*14px;/, 'assistant progress should remain lightweight plain text rather than a new card surface');
     assert.match(combinedChatStyles, /\.input-resize-handle\s*\{[\s\S]*?margin:\s*0 calc\(var\(--chat-gutter\) \* -1\) 8px;/, 'resize handle should mirror the current chat gutter so it does not create horizontal overflow on mobile');
     assert.match(combinedChatStyles, /\.quick-entry-focus-btn\s*\{[\s\S]*?width:\s*100%;/, 'chat styles should expose a full-width quick-entry focus fallback button');
     assert.doesNotMatch(combinedChatStyles, /\.sidebar-view-switcher|\.view-switch-btn/, 'removed Inbox/Projects sub-tabs should not leave dead styling behind');
@@ -840,9 +839,6 @@ async function main() {
     const uiAsset = await request(port, 'GET', '/chat/ui.js');
     assert.equal(uiAsset.status, 200, 'ui asset should load');
     assert.match(uiAsset.text, /\/api\/media\//, 'ui asset should load persisted media attachments from the media route');
-    assert.match(uiAsset.text, /evt\.messageKind === "progress"/, 'assistant progress should reuse the plain message renderer');
-    assert.match(uiAsset.text, /if \(!isProgressMessage\)\s*\{\s*appendMessageTimestamp/, 'lightweight progress should not add repeated timestamp rows');
-    assert.match(uiAsset.text, /function filterVisibleThinkingBlockMessages\(/, 'expanded Thinking should not duplicate progress already shown outside it');
 
     const sessionSurfaceUiAsset = await request(port, 'GET', '/chat/session-surface-ui.js');
     assert.equal(sessionSurfaceUiAsset.status, 200, 'session surface ui asset should load');

@@ -288,15 +288,6 @@
 .msg-assistant-time {
   margin-top: 10px;
 }
-.msg-assistant-progress {
-  margin-bottom: 12px;
-  color: var(--text-secondary);
-  font-size: 14px;
-  line-height: 1.65;
-}
-.msg-assistant-progress + .msg-assistant-progress {
-  margin-top: -4px;
-}
 
 /* Markdown rendered content */
 .md-content { white-space: normal; }

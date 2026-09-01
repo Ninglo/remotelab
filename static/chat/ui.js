@@ -710,8 +710,7 @@ function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false
     return wrap;
   } else {
     const div = document.createElement("div");
-    const isProgressMessage = evt.messageKind === "progress";
-    div.className = `msg-assistant md-content${isProgressMessage ? " msg-assistant-progress" : ""}`;
+    div.className = "msg-assistant md-content";
     const assistantAttachments = Array.isArray(evt.attachments) && evt.attachments.length > 0
       ? evt.attachments
       : (Array.isArray(evt.images) ? evt.images : []);
@@ -766,9 +765,7 @@ function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false
     if (div.children.length === 0) {
       return null;
     }
-    if (!isProgressMessage) {
-      appendMessageTimestamp(div, evt.timestamp, "msg-assistant-time");
-    }
+    appendMessageTimestamp(div, evt.timestamp, "msg-assistant-time");
     container.appendChild(div);
     return div;
   }
@@ -989,19 +986,6 @@ function parseEventBlockSeq(value) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function filterVisibleThinkingBlockMessages(events, evt) {
-  const visibleMessageSeqs = new Set(
-    (Array.isArray(evt?.visibleMessageSeqs) ? evt.visibleMessageSeqs : [])
-      .filter((seq) => Number.isInteger(seq) && seq > 0),
-  );
-  if (visibleMessageSeqs.size === 0) return Array.isArray(events) ? events : [];
-  return (Array.isArray(events) ? events : []).filter((event) => !(
-    event?.type === "message"
-    && event.role === "assistant"
-    && visibleMessageSeqs.has(event.seq)
-  ));
-}
-
 function getRenderedEventBlockStartSeq(body) {
   if (!body) return 0;
   return parseEventBlockSeq(body.dataset.renderedBlockStartSeq);
@@ -1116,15 +1100,13 @@ async function ensureEventBlockLoaded(sessionId, body, evt) {
   try {
     const data = await fetchEventBlock(sessionId, evt.blockStartSeq, evt.blockEndSeq);
     if ((body.dataset.blockRange || "") !== rangeKey) return;
-    const rawHiddenEvents = Array.isArray(data?.events) ? data.events : [];
-    if (rawHiddenEvents.length === 0) return;
-    const hiddenEvents = filterVisibleThinkingBlockMessages(rawHiddenEvents, evt);
+    const hiddenEvents = Array.isArray(data?.events) ? data.events : [];
+    if (hiddenEvents.length === 0) return;
 
     if (appendMode) {
-      const appendedRawEvents = rawHiddenEvents.filter(
+      const appendedEvents = hiddenEvents.filter(
         (event) => Number.isInteger(event?.seq) && event.seq > previousRenderedEndSeq,
       );
-      const appendedEvents = filterVisibleThinkingBlockMessages(appendedRawEvents, evt);
       if (appendedEvents.length > 0) {
         renderHiddenBlockEventsInto(body, appendedEvents);
       } else if (
@@ -1137,11 +1119,11 @@ async function ensureEventBlockLoaded(sessionId, body, evt) {
       renderEventBlockBody(body, hiddenEvents);
     }
 
-    const updatedRenderedStartSeq = Number.isInteger(rawHiddenEvents[0]?.seq)
-      ? rawHiddenEvents[0].seq
+    const updatedRenderedStartSeq = Number.isInteger(hiddenEvents[0]?.seq)
+      ? hiddenEvents[0].seq
       : nextStartSeq;
-    const updatedRenderedEndSeq = Number.isInteger(rawHiddenEvents[rawHiddenEvents.length - 1]?.seq)
-      ? rawHiddenEvents[rawHiddenEvents.length - 1].seq
+    const updatedRenderedEndSeq = Number.isInteger(hiddenEvents[hiddenEvents.length - 1]?.seq)
+      ? hiddenEvents[hiddenEvents.length - 1].seq
       : nextEndSeq;
     setRenderedEventBlockRange(body, updatedRenderedStartSeq, updatedRenderedEndSeq);
   } catch (error) {

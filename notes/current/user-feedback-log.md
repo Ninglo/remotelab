@@ -21,17 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
-### 2026-09-01 — Pi progress text must preserve the single collapsed Thinking structure
+### 2026-09-01 — Keep harness presentation provider-neutral
 
-- Source: direct owner feedback on a Pi-backed detail-heavy session, followed by screenshot review of the first implementation.
-- User slice: owner following long work where intermediate explanation matters but the transcript still needs to remain visually calm.
-- Observed friction or ask: the original UI was too opaque because normal Pi text stayed inside one Thinking block, but directly segmenting every reasoning/tool/text boundary overcorrected: one turn became many scattered Thought rows, and per-turn usage summaries appeared as extra cards between them. The change broke the familiar default-collapsed flow and made a long session substantially harder to scan.
-- Signal strength: concrete before/after screenshots plus implementation-level confirmation that raw event segmentation had leaked into presentation structure.
-- Product implication: never map provider event boundaries one-to-one onto transcript components. Preserve one default-collapsed Thinking row per user turn/run, keep reasoning, tools, routine status, and intermediate usage inside that aggregate, and add only Pi's ordinary assistant narration as lightweight plain text with no new card type, label, or repeated Thinking container. Keep only the existing final usage summary and final answer treatment.
-- Promote to: Pi runtime adapter, running transcript projection, and live-event regression coverage.
-- Implementation: landed on 2026-09-01 after first restoring the prior interaction. Pi text blocks carry an explicit runtime marker; the display keeps one aggregate Thinking row, surfaces only Pi's intermediate ordinary text as compact muted paragraphs without timestamps, preserves one final usage summary, and omits those web-only progress paragraphs from connector publication. Expanded Thinking filters the already-visible paragraphs instead of duplicating them.
-- Validation: covered by adapter, display-projection, expanded-block, reply-publication, static-asset, running-refresh, thinking-preference, and restart-gate tests. Desktop and narrow mobile visual fixtures were rendered with the shipped CSS and reviewed before deployment.
-- Follow-up: use the next real action-heavy and explanation-heavy Pi sessions as the final live UX check; adjust only typography or spacing if needed, not the one-block structure.
+- Source: direct owner feedback after comparing Pi and Codex transcript behavior across two Pi progress-display experiments.
+- Finding: Pi's “Planning”, “Validating”, and similar action phrases are provider `thinking/reasoning` events, not a hidden conversational progress stream. Pi emits ordinary assistant text only when the model deliberately writes it. The visible difference from Codex primarily reflects provider output style rather than a missing RemoteLab presentation path.
+- Product implication: harness adapters should normalize native protocols into the shared event model; transcript projection should not branch on the originating harness. Keep reasoning, tools, routine status, intermediate assistant fragments, and intermediate usage in one default-collapsed Thinking row, followed by the final answer and one final usage summary.
+- Implementation: both Pi-specific presentation experiments were removed. The protocol-level Pi adapter fix remains: completed streamed text/thinking blocks are captured early and authoritative `message_end` content is deduplicated.
+- Follow-up: only revisit model-authored progress narration as an explicit cross-provider product feature, not as Pi-specific telemetry recovery.
 
 ### 2026-08-31 — connector failure notices must follow exhausted retry and capacity queues, not the first transient provider error
 

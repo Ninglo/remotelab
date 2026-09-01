@@ -40,7 +40,7 @@ function parseAssistantMessage(message, {
     if (item?.type === 'thinking' && item.thinking) {
       events.push(reasoningEvent(item.thinking));
     } else if (item?.type === 'text' && item.text) {
-      events.push(messageEvent('assistant', item.text, undefined, { runtimeFamily: 'pi-json' }));
+      events.push(messageEvent('assistant', item.text));
     }
   }
 
@@ -92,7 +92,7 @@ export function createPiAdapter() {
     if (!content) return [];
     emittedContentKeys.add(key);
     return type === 'text'
-      ? [messageEvent('assistant', content, undefined, { runtimeFamily: 'pi-json' })]
+      ? [messageEvent('assistant', content)]
       : [reasoningEvent(content)];
   }
 
