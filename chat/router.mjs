@@ -8,7 +8,12 @@ import { parse as parseUrl, fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { CHAT_IMAGES_DIR, FILE_ASSET_STORAGE_ENABLED, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
+import {
+  CHAT_IMAGES_DIR,
+  FILE_ASSET_STORAGE_ENABLED,
+  MANAGED_WORK_ROOT_DIR,
+  PUBLIC_PAGES_DIR,
+} from '../lib/config.mjs';
 import {
   auth, getAuthSession, refreshAuthSession,
 } from '../lib/auth.mjs';
@@ -202,6 +207,7 @@ const staticMimeTypesByExtension = {
 };
 
 const staticDirResolved = resolve(staticDir);
+const publicPagesDirResolved = resolve(PUBLIC_PAGES_DIR);
 const MESSAGE_SUBMISSION_MAX_BYTES = 256 * 1024 * 1024;
 const uploadedMediaMimeTypes = {
   csv: 'text/csv; charset=utf-8',
@@ -986,13 +992,16 @@ async function resolveStaticAsset(pathname, query = {}) {
   const staticName = pathname.slice(1);
   if (!staticName || staticName.endsWith('/')) return null;
 
-  const segments = staticName.split('/').filter(Boolean);
+  const isPublicPageAsset = staticName.startsWith('public-pages/');
+  const assetName = isPublicPageAsset ? staticName.slice('public-pages/'.length) : staticName;
+  const segments = assetName.split('/').filter(Boolean);
   if (segments.length === 0 || segments.some((segment) => segment.startsWith('.'))) {
     return null;
   }
 
-  const filepath = resolve(staticDirResolved, staticName);
-  const relativePath = relative(staticDirResolved, filepath);
+  const assetRoot = isPublicPageAsset ? publicPagesDirResolved : staticDirResolved;
+  const filepath = resolve(assetRoot, assetName);
+  const relativePath = relative(assetRoot, filepath);
   if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
     return null;
   }
@@ -1004,8 +1013,8 @@ async function resolveStaticAsset(pathname, query = {}) {
   if (!stat?.isFile()) return null;
 
   const filename = basename(filepath).toLowerCase();
+  if (isPublicPageAsset && filename === '_remote_publish.json') return null;
   const extension = extname(filename);
-  const isPublicPageAsset = staticName.startsWith('public-pages/');
   const isCacheablePublicHtmlAlias = isPublicPageAsset && filename.endsWith('.page.css');
   const contentType = isCacheablePublicHtmlAlias
     ? 'text/html; charset=utf-8'
@@ -1025,6 +1034,10 @@ async function resolveStaticAsset(pathname, query = {}) {
             ? 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800'
             : 'public, no-cache, max-age=0, must-revalidate',
     contentType,
+    responseHeaders: isPublicPageAsset ? {
+      'X-Content-Type-Options': 'nosniff',
+      'X-Robots-Tag': 'noindex, nofollow, noarchive',
+    } : {},
   };
 }
 
@@ -1178,6 +1191,7 @@ function writeRangedStaticResponse(req, res, staticAsset, body) {
     'Content-Type': staticAsset.contentType,
     ETag: etag,
     'X-RemoteLab-Build': BUILD_INFO.title,
+    ...staticAsset.responseHeaders,
   };
 
   const rangeHeader = String(req.headers.range || '').trim();
@@ -1574,6 +1588,7 @@ export async function handleRequest(req, res) {
       }
       writeFileCached(req, res, staticAsset.contentType, content, {
         cacheControl: staticAsset.cacheControl,
+        headers: staticAsset.responseHeaders,
       });
     } catch {
       res.writeHead(404, buildHeaders({ 'Content-Type': 'text/plain' }));

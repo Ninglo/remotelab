@@ -690,9 +690,10 @@ try {
   assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
   assert.match(readFileSync(join(platformSkillsDir, 'feishu-cli.md'), 'utf8'), /direct lark-cli access/i);
   assert.match(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), /Session Debug/);
-  assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /Stable Static Publish/);
-  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Guest Port Expose/);
-  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Do not fall back to a Quick Tunnel/);
+  assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /Static Page Publish/);
+  assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /never live in the RemoteLab Git checkout/);
+  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Service Port Forwarding/);
+  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Do not use a temporary Quick Tunnel/);
 
   const syncedIndex = readFileSync(join(memoryDir, 'skills.md'), 'utf8');
   assert.match(syncedIndex, /## Local Skills/);
@@ -720,7 +721,7 @@ try {
   assert.equal(sync.changed, true);
   assert.match(
     readFileSync(join(inferredGuestHome, '.remotelab', 'platform', 'skills', 'guest-port-expose.md'), 'utf8'),
-    /Guest Port Expose/,
+    /Service Port Forwarding/,
   );
   assert.match(
     readFileSync(join(memoryDir, 'skills.md'), 'utf8'),

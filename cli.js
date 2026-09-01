@@ -38,6 +38,7 @@ Usage:
   remotelab install-profile          Resolve modules from install env and render runtime plan
   remotelab validate-profile         Validate host + profile health and report degradation
   remotelab guest-instance           Create isolated guest instances on this machine
+  remotelab publish                  Publish and manage static pages from instance-local storage
   remotelab admin                    Manage fleet hosts and host -> instance admin views
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
@@ -101,6 +102,17 @@ switch (command) {
   case 'release': {
     console.error('`remotelab release` has been removed. RemoteLab now runs the current source tree after restart. Use `remotelab restart chat` for the owner surface.');
     process.exit(1);
+    break;
+  }
+
+  case 'publish': {
+    const { runStaticPublishCommand } = await import(scriptPath('lib/static-publish-command.mjs'));
+    try {
+      process.exitCode = await runStaticPublishCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
     break;
   }
 

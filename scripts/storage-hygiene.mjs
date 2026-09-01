@@ -158,10 +158,9 @@ async function discoverRoots() {
   const guestRoot = resolve(
     process.env.REMOTELAB_STORAGE_HYGIENE_GUEST_ROOT || '/var/lib/remotelab-guests',
   );
-  const publicPagesRoot = resolve(
-    process.env.REMOTELAB_STORAGE_HYGIENE_PUBLIC_PAGES_ROOT
-      || join(scriptDir, '..', 'static', 'public-pages'),
-  );
+  const explicitPublicPagesRoot = process.env.REMOTELAB_STORAGE_HYGIENE_PUBLIC_PAGES_ROOT
+    ? resolve(process.env.REMOTELAB_STORAGE_HYGIENE_PUBLIC_PAGES_ROOT)
+    : '';
   const instanceHomes = [
     ...(await listDirectories(instanceRoot)),
     ...(await listDirectories(guestRoot)),
@@ -187,7 +186,9 @@ async function discoverRoots() {
   return {
     configRoots: [...configRoots],
     providerSessionRoots: [...providerSessionRoots],
-    publicPagesRoot,
+    publicPagesRoots: explicitPublicPagesRoot
+      ? [explicitPublicPagesRoot]
+      : [...configRoots].map((configRoot) => join(configRoot, 'public-pages')),
     tempRoots: [...tempRoots],
   };
 }
@@ -330,7 +331,9 @@ async function run(options) {
     );
   }
   await collectTempCandidates(candidates, roots.tempRoots, options);
-  await collectPublishedStagingCandidates(candidates, roots.publicPagesRoot, options);
+  for (const publicPagesRoot of roots.publicPagesRoots) {
+    await collectPublishedStagingCandidates(candidates, publicPagesRoot, options);
+  }
 
   const before = summarize(candidates);
   const failures = [];

@@ -1,34 +1,43 @@
-# Stable Static Publish
+# Static Page Publish
 
-Use for 网页预览, 静态网页, demo 链接, Pages 部署, static site, or any user-openable delivery whose output is a directory of static files.
+Use for static HTML reports, review pages, dashboards, demos, or any other directory that can be served as files without a running application process.
 
-## Routing decision
+## Product boundary
 
-- Static build output: publish to an authenticated, fixed static-hosting project such as Cloudflare Pages. Reuse the same project and production branch so its `project.pages.dev` URL remains stable across deployments.
-- Dynamic or stateful service: supervise a loopback-only origin and use Guest Port Expose.
-- Never automatically use a Cloudflare Quick Tunnel. It is allowed only when the user explicitly asks for a one-off isolated experiment, and it is never a formal delivery URL.
+RemoteLab owns the static file server and publish lifecycle. Public ingress is separate:
 
-## Cloudflare Pages pattern
+- publishing copies files into the current instance's managed local data directory;
+- published files never live in the RemoteLab Git checkout;
+- the existing RemoteLab domain, Cloudflare Tunnel, or another configured reverse proxy makes the route externally reachable;
+- an ordinary publish does not call Cloudflare, Wrangler, or any provider API.
 
-Check authorization and existing projects first:
+Use Service Port Forwarding instead when the result needs a long-running process, API, database connection, WebSocket, or server-side state.
 
-```bash
-npx wrangler whoami
-npx wrangler pages project list
-```
-
-Create the fixed project only when it does not exist, then always deploy the production branch:
+## Publish
 
 ```bash
-npx wrangler pages project create <project> --production-branch main
-npx wrangler pages deploy dist --project-name <project> --branch main
+remotelab publish static --source ./dist --slug my-report --json
 ```
 
-Do not accept Wrangler temporary deployments as delivery. If authentication is unavailable, report that checkpoint instead of creating an unstable link.
+The source may be one HTML file or a directory containing `index.html`. Use `--replace` only when intentionally updating the same stable slug.
 
-## Delivery checks
+Management commands:
 
-- Build output contains the expected site marker.
-- The fixed public URL returns HTTP 200 in a fresh anonymous request without redirecting to login.
-- Two consecutive deployments report the same fixed project URL.
-- The public URL remains healthy after the local build or preview process stops.
+```bash
+remotelab publish list --json
+remotelab publish delete my-report --json
+```
+
+## Storage and delivery contract
+
+- Default storage is the instance-local `public-pages` directory under RemoteLab's configured data root.
+- Override the storage location with `REMOTELAB_PUBLIC_PAGES_DIR` when the host needs a dedicated volume.
+- Override the external URL base with `REMOTELAB_PUBLIC_PAGES_BASE_URL` when ingress does not use the main RemoteLab domain.
+- The command returns a public URL when public ingress is configured and a loopback URL otherwise.
+- Verify that the returned URL resolves directly to the intended page; a redirect to login is not successful delivery.
+
+## Safety
+
+- Publish only reviewed static output. Do not publish credentials, private source data, raw contact lists, or tokenized URLs.
+- The publisher skips hidden files, VCS data, `node_modules`, caches, and symbolic links.
+- Prefer a new slug for important snapshots. Use `--allow-large` only after inspecting the source tree.

@@ -304,6 +304,8 @@ Subdomain-style public hostnames are the primary external entrypoint. `create`, 
 
 When a guest instance needs one extra public URL for a preview app or report server, use `remotelab guest-instance expose <instance> --label <label> --port <port>`. This does not edit the Cloudflare tunnel config directly. Instead it writes a controlled guest-route registry that the host router reads behind the existing wildcard domain. v1 intentionally stays strict: the instance must be isolated, the target port must already be listening on loopback only, and the listener must belong to the same guest instance user.
 
+For static HTML/CSS/JS output, do not run another preview server. Use `remotelab publish static --source <file-or-directory> --slug <slug>`. RemoteLab copies the reviewed output into the current instance's managed `public-pages` data directory and serves it under `/public-pages/<slug>/`; generated pages never live in the Git checkout. `remotelab publish list` and `remotelab publish delete <slug>` manage the local publication set.
+
 If you want a second access path that still stays subdomain-style, store a template URL in `~/.config/remotelab/guest-instance-defaults.json`:
 
 ```json
@@ -342,6 +344,8 @@ RemoteLab now boots the current source tree directly after restart. Use `remotel
 | `SECURE_COOKIES` | `1` | Set `0` for Tailscale or local HTTP access (no HTTPS) |
 | `REMOTELAB_INSTANCE_ROOT` | unset | Optional isolated data root for an additional instance; defaults to `<root>/config` + `<root>/memory` when set |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, apps, push, and provider-managed homes |
+| `REMOTELAB_PUBLIC_PAGES_DIR` | `<config>/public-pages` | Optional local storage override for published static pages; never points into the Git checkout by default |
+| `REMOTELAB_PUBLIC_PAGES_BASE_URL` | `<public-base>/public-pages` | Optional external URL base override for static page links |
 | `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | Optional user-memory override for pointer-first startup files |
 | `REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS` | `window overflow` | Optional auto-compact override in current-context tokens; unset = compact only after current context exceeds 100% of a known context window, `Inf` = disable |
 
@@ -358,6 +362,7 @@ These are the default paths when no instance overrides are set.
 | `~/.config/remotelab/chat-runs/` | Durable run manifests, spool output, and final results |
 | `~/.config/remotelab/apps.json` | App template definitions |
 | `~/.config/remotelab/shared-snapshots/` | Immutable read-only session share snapshots |
+| `~/.config/remotelab/public-pages/` | Instance-local published static pages |
 | `~/.remotelab/memory/` | Private machine-specific memory used for pointer-first startup |
 | `~/Library/Logs/chat-server.log` | Chat server stdout **(macOS)** |
 | `~/Library/Logs/cloudflared.log` | Tunnel stdout **(macOS)** |

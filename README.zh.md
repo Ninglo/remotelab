@@ -306,6 +306,8 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 
 如果某个 guest instance 里还跑着一个预览页、报告页或临时 review 服务，需要额外给它一个公网地址，就用 `remotelab guest-instance expose <instance> --label <label> --port <port>`。这个命令不会再去直接改 Cloudflare tunnel 配置，而是把映射写进 host router 读取的受控 registry。v1 故意收得比较紧：实例必须已经隔离、目标端口必须先在 loopback 上监听、而且监听进程必须属于该实例自己的系统用户。
 
+如果结果只是 HTML/CSS/JS 静态文件，不要再启动一个预览服务。使用 `remotelab publish static --source <文件或目录> --slug <slug>`；RemoteLab 会把审阅过的产物复制到当前实例自己的 `public-pages` 数据目录，并通过 `/public-pages/<slug>/` 提供访问，生成页面不会进入 Git 工作区。使用 `remotelab publish list` 和 `remotelab publish delete <slug>` 管理本机发布内容。
+
 如果你需要第二套入口，但仍然坚持子域名模型，可以把模板地址写进 `~/.config/remotelab/guest-instance-defaults.json`：
 
 ```json
@@ -344,6 +346,8 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 | `SECURE_COOKIES` | `1` | Tailscale 或本地 HTTP 访问时设为 `0`（无 HTTPS） |
 | `REMOTELAB_INSTANCE_ROOT` | 未设置 | 可选的额外实例数据根目录；设置后默认使用 `<root>/config` + `<root>/memory` |
 | `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、apps、push、provider runtime home |
+| `REMOTELAB_PUBLIC_PAGES_DIR` | `<config>/public-pages` | 可选的静态页面本机存储目录覆盖；默认永远不指向 Git 工作区 |
+| `REMOTELAB_PUBLIC_PAGES_BASE_URL` | `<public-base>/public-pages` | 可选的静态页面公网 URL 前缀覆盖 |
 | `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | 可选的用户 memory 目录覆盖，供 pointer-first 启动使用 |
 
 ## 常用文件位置
@@ -359,6 +363,7 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 | `~/.config/remotelab/chat-runs/` | 持久化 run manifest、spool 输出和最终结果 |
 | `~/.config/remotelab/apps.json` | App 模板定义 |
 | `~/.config/remotelab/shared-snapshots/` | 不可变的只读会话分享快照 |
+| `~/.config/remotelab/public-pages/` | 当前实例发布的本机静态页面 |
 | `~/.remotelab/memory/` | pointer-first 启动时使用的机器私有 memory |
 | `~/Library/Logs/chat-server.log` | Chat server 标准输出 **(macOS)** |
 | `~/Library/Logs/cloudflared.log` | Tunnel 标准输出 **(macOS)** |

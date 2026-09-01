@@ -138,6 +138,7 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 | `auth.json` | Access token + password hash |
 | `chat-sessions.json` | All session metadata |
 | `chat-history/` | Per-session event store (`meta.json`, `context.json`, `events/*.json`, `bodies/*.txt`) |
+| `public-pages/` | Instance-local static publications served under `/public-pages/`; never generated inside the Git checkout |
 | `apps.json` | Agent definitions (templates) |
 
 ---

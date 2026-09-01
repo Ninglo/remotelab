@@ -83,6 +83,8 @@ async function startServer({ home, port }) {
     env: {
       ...process.env,
       HOME: home,
+      REMOTELAB_INSTANCE_ROOT: '',
+      REMOTELAB_CONFIG_DIR: join(home, '.config', 'remotelab'),
       CHAT_PORT: String(port),
       SECURE_COOKIES: '0',
     },
@@ -112,7 +114,7 @@ async function main() {
   const port = randomPort();
   const probeName = `__static_probe_${Date.now().toString(36)}.js`;
   const probePath = join(repoRoot, 'static', 'chat', probeName);
-  const publicProbeDir = join(repoRoot, 'static', 'public-pages', `__static_probe_${Date.now().toString(36)}`);
+  const publicProbeDir = join(home, '.config', 'remotelab', 'public-pages', `__static_probe_${Date.now().toString(36)}`);
   const publicHtmlPath = join(publicProbeDir, 'index.html');
   const publicHtmlAliasPath = join(publicProbeDir, 'index.page.css');
   const publicAudioPath = join(publicProbeDir, 'sample.mp3');
@@ -156,7 +158,9 @@ async function main() {
     );
 
     const publicHtml = await request(port, `/public-pages/${basename(publicProbeDir)}/index.html`);
-    assert.equal(publicHtml.status, 200, 'public page HTML should load');
+    assert.equal(publicHtml.status, 200, 'public page HTML should load from instance-local storage');
+    assert.equal(publicHtml.headers['x-robots-tag'], 'noindex, nofollow, noarchive');
+    assert.equal(publicHtml.headers['x-content-type-options'], 'nosniff');
     assert.equal(
       publicHtml.headers['cache-control'],
       'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
@@ -212,6 +216,13 @@ async function main() {
       'application/manifest+json',
       'manifest should keep its explicit content type',
     );
+
+    writeFileSync(join(publicProbeDir, '_remote_publish.json'), '{"slug":"private-metadata"}\n', 'utf8');
+    const publishMetadata = await request(
+      port,
+      `/public-pages/${basename(publicProbeDir)}/_remote_publish.json`,
+    );
+    assert.equal(publishMetadata.status, 404, 'static publication metadata should not be public');
 
     const hidden = await request(port, '/.hidden-probe');
     assert.equal(hidden.status, 404, 'hidden static files should not be exposed');
