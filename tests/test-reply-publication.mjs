@@ -47,6 +47,23 @@ const {
   killAll,
   sendMessage,
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
+const { buildReplyPublicationPayload } = await import(
+  pathToFileURL(join(repoRoot, 'chat', 'reply-publication.mjs')).href
+);
+
+const progressFilteredPayload = buildReplyPublicationPayload([
+  { seq: 1, type: 'message', role: 'user', content: 'Investigate this' },
+  { seq: 2, type: 'reasoning', role: 'assistant', content: 'Checking' },
+  { seq: 3, type: 'message', role: 'assistant', runtimeFamily: 'pi-json', content: 'I found the relevant module.' },
+  { seq: 4, type: 'tool_use', role: 'assistant', toolName: 'read', toolInput: 'module.js' },
+  { seq: 5, type: 'tool_result', role: 'system', toolName: 'read', output: 'source' },
+  { seq: 6, type: 'message', role: 'assistant', runtimeFamily: 'pi-json', content: 'Final answer.' },
+], { id: 'run_progress', responseId: 'response_progress' });
+assert.equal(
+  progressFilteredPayload.text,
+  'Final answer.',
+  'connector publication should omit web-only progress narration and keep the final answer',
+);
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();

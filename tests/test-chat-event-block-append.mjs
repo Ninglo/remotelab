@@ -47,6 +47,7 @@ function extractFunctionSource(source, functionName) {
 }
 
 const parseEventBlockSeqSource = extractFunctionSource(uiSource, 'parseEventBlockSeq');
+const filterVisibleThinkingBlockMessagesSource = extractFunctionSource(uiSource, 'filterVisibleThinkingBlockMessages');
 const getRenderedEventBlockStartSeqSource = extractFunctionSource(uiSource, 'getRenderedEventBlockStartSeq');
 const getRenderedEventBlockEndSeqSource = extractFunctionSource(uiSource, 'getRenderedEventBlockEndSeq');
 const setRenderedEventBlockRangeSource = extractFunctionSource(uiSource, 'setRenderedEventBlockRange');
@@ -135,6 +136,7 @@ context.globalThis = context;
 vm.runInNewContext(
   [
     parseEventBlockSeqSource,
+    filterVisibleThinkingBlockMessagesSource,
     getRenderedEventBlockStartSeqSource,
     getRenderedEventBlockEndSeqSource,
     setRenderedEventBlockRangeSource,
@@ -144,9 +146,20 @@ vm.runInNewContext(
     renderEventBlockBodySource,
     ensureEventBlockLoadedSource,
     'globalThis.ensureEventBlockLoaded = ensureEventBlockLoaded;',
+    'globalThis.filterVisibleThinkingBlockMessages = filterVisibleThinkingBlockMessages;',
   ].join('\n\n'),
   context,
   { filename: 'static/chat/ui.js' },
+);
+
+assert.deepEqual(
+  context.filterVisibleThinkingBlockMessages([
+    { seq: 2, type: 'reasoning', content: 'checking' },
+    { seq: 3, type: 'message', role: 'assistant', content: 'plain progress' },
+    { seq: 4, type: 'tool_use', toolName: 'bash' },
+  ], { visibleMessageSeqs: [3] }).map((event) => event.seq),
+  [2, 4],
+  'assistant progress rendered outside the aggregate Thinking row should not repeat when it is expanded',
 );
 
 const body = makeElement();

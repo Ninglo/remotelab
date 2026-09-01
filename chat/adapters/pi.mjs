@@ -26,14 +26,21 @@ function serializeToolValue(value) {
   }
 }
 
-function parseAssistantMessage(message, { includeFailureStatus = true } = {}) {
+function parseAssistantMessage(message, {
+  includeFailureStatus = true,
+  skipContentKeys = null,
+} = {}) {
   if (message?.role !== 'assistant') return [];
   const events = [];
-  for (const item of Array.isArray(message.content) ? message.content : []) {
+  const content = Array.isArray(message.content) ? message.content : [];
+  for (let index = 0; index < content.length; index += 1) {
+    const item = content[index];
+    const contentKey = `${item?.type || 'unknown'}:${index}`;
+    if (skipContentKeys?.has(contentKey)) continue;
     if (item?.type === 'thinking' && item.thinking) {
       events.push(reasoningEvent(item.thinking));
     } else if (item?.type === 'text' && item.text) {
-      events.push(messageEvent('assistant', item.text));
+      events.push(messageEvent('assistant', item.text, undefined, { runtimeFamily: 'pi-json' }));
     }
   }
 
@@ -62,6 +69,33 @@ function parseAssistantMessage(message, { includeFailureStatus = true } = {}) {
 export function createPiAdapter() {
   let lastAssistantStopReason = '';
   let lastAssistantFailureReason = '';
+  let emittedContentKeys = new Set();
+
+  function resetStreamingMessage() {
+    emittedContentKeys = new Set();
+  }
+
+  function getStreamingContentKey(type, contentIndex) {
+    const index = Number.isInteger(contentIndex) && contentIndex >= 0 ? contentIndex : 0;
+    return `${type}:${index}`;
+  }
+
+  function finishStreamingContent(type, update) {
+    const key = getStreamingContentKey(type, update?.contentIndex);
+    const content = typeof update?.content === 'string'
+      ? update.content
+      : type === 'text' && typeof update?.text === 'string'
+        ? update.text
+        : type === 'thinking' && typeof update?.thinking === 'string'
+          ? update.thinking
+          : '';
+    if (!content) return [];
+    emittedContentKeys.add(key);
+    return type === 'text'
+      ? [messageEvent('assistant', content, undefined, { runtimeFamily: 'pi-json' })]
+      : [reasoningEvent(content)];
+  }
+
   return {
     parseLine(line) {
       const trimmed = String(line || '').trim();
@@ -78,7 +112,29 @@ export function createPiAdapter() {
         case 'agent_start':
         case 'turn_start':
           return [statusEvent('thinking')];
-        case 'message_end':
+        case 'message_start':
+          if (event.message?.role === 'assistant') {
+            resetStreamingMessage();
+          }
+          return [];
+        case 'message_update': {
+          const update = event.assistantMessageEvent;
+          switch (update?.type) {
+            case 'text_start':
+            case 'text_delta':
+              return [];
+            case 'text_end':
+              return finishStreamingContent('text', update);
+            case 'thinking_start':
+            case 'thinking_delta':
+              return [];
+            case 'thinking_end':
+              return finishStreamingContent('thinking', update);
+            default:
+              return [];
+          }
+        }
+        case 'message_end': {
           if (event.message?.role === 'assistant') {
             lastAssistantStopReason = typeof event.message.stopReason === 'string'
               ? event.message.stopReason
@@ -90,12 +146,19 @@ export function createPiAdapter() {
               ? (event.message.errorMessage || lastAssistantStopReason)
               : '';
           }
-          return parseAssistantMessage(event.message, {
+          const parsedEvents = parseAssistantMessage(event.message, {
             // Pi emits message_end for every failed provider attempt before its
             // automatic retry loop settles. Publishing an error here makes
             // RemoteLab finalize the run while Pi is still retrying.
             includeFailureStatus: false,
+            // text_end/thinking_end are available before the authoritative
+            // message_end line. Keep their earlier live events and only use
+            // message_end for blocks that were not streamed by the provider.
+            skipContentKeys: emittedContentKeys,
           });
+          resetStreamingMessage();
+          return parsedEvents;
+        }
         case 'tool_execution_start':
           return [toolUseEvent(event.toolName || 'tool', serializeToolValue(event.args))];
         case 'tool_execution_end':
@@ -125,13 +188,19 @@ export function createPiAdapter() {
       lastAssistantFailureReason = typeof state.lastAssistantFailureReason === 'string'
         ? state.lastAssistantFailureReason
         : '';
+      emittedContentKeys = new Set(
+        Array.isArray(state.emittedContentKeys)
+          ? state.emittedContentKeys.filter((value) => typeof value === 'string')
+          : [],
+      );
     },
 
     getProjectionState() {
       return {
-        version: 1,
+        version: 2,
         lastAssistantStopReason,
         lastAssistantFailureReason,
+        emittedContentKeys: [...emittedContentKeys],
       };
     },
 

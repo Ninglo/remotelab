@@ -33,6 +33,41 @@ assert.deepEqual(
   'collapsed block payload should still expose the folded implementation events on demand',
 );
 
+const narratedProgressHistory = [
+  { seq: 1, type: 'message', role: 'user', content: 'Investigate this issue' },
+  { seq: 2, type: 'reasoning', role: 'assistant', content: 'Starting the investigation' },
+  { seq: 3, type: 'message', role: 'assistant', runtimeFamily: 'pi-json', content: 'I found the relevant module.' },
+  { seq: 4, type: 'usage', role: 'system', contextTokens: 1000, outputTokens: 20 },
+  { seq: 5, type: 'tool_use', role: 'assistant', toolName: 'read', toolInput: 'module.js' },
+  { seq: 6, type: 'tool_result', role: 'system', output: 'source', exitCode: 0 },
+  { seq: 7, type: 'message', role: 'assistant', runtimeFamily: 'pi-json', content: 'The issue is in the event projection.' },
+  { seq: 8, type: 'usage', role: 'system', contextTokens: 1200, outputTokens: 35 },
+];
+
+const narratedProgressDisplay = buildSessionDisplayEvents(narratedProgressHistory, { sessionRunning: false });
+assert.deepEqual(
+  narratedProgressDisplay.map((event) => event.type),
+  ['message', 'thinking_block', 'message', 'message', 'usage'],
+  'completed turns should keep one Thought row, plain progress text, the final answer, and one final usage summary',
+);
+assert.equal(narratedProgressDisplay.filter((event) => event.type === 'thinking_block').length, 1);
+assert.deepEqual(narratedProgressDisplay[1].visibleMessageSeqs, [3]);
+assert.equal(narratedProgressDisplay[2].messageKind, 'progress');
+assert.equal(narratedProgressDisplay[2].content, 'I found the relevant module.');
+assert.equal(narratedProgressDisplay[3].messageKind, undefined);
+assert.equal(narratedProgressDisplay[3].content, 'The issue is in the event projection.');
+assert.equal(narratedProgressDisplay.filter((event) => event.type === 'usage').length, 1);
+assert.equal(narratedProgressDisplay.at(-1).contextTokens, 1200);
+
+const nonPiNarratedHistory = narratedProgressHistory.map((event) => (
+  event.runtimeFamily === 'pi-json' ? { ...event, runtimeFamily: 'codex-json' } : event
+));
+assert.deepEqual(
+  buildSessionDisplayEvents(nonPiNarratedHistory, { sessionRunning: false }).map((event) => event.type),
+  ['message', 'thinking_block', 'message', 'usage'],
+  'the lightweight progress projection should stay scoped to Pi instead of changing every runtime UI',
+);
+
 const leadingVisibleStatusHistory = [
   { seq: 1, type: 'message', role: 'user', content: 'Do the thing' },
   { seq: 2, type: 'status', role: 'system', content: 'Preparing environment' },
@@ -64,18 +99,22 @@ const runningTurnHistory = [
   { seq: 3, type: 'reasoning', role: 'assistant', content: 'Inspecting files' },
   { seq: 4, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'rg TODO' },
   { seq: 5, type: 'tool_result', role: 'system', output: 'matches', exitCode: 0 },
-  { seq: 6, type: 'message', role: 'assistant', content: 'partial draft that should stay hidden while running' },
+  { seq: 6, type: 'message', role: 'assistant', runtimeFamily: 'pi-json', content: 'I found the relevant TODO and am checking its caller.' },
 ];
 
 const runningDisplay = buildSessionDisplayEvents(runningTurnHistory, { sessionRunning: true });
 assert.deepEqual(
   runningDisplay.map((event) => event.type),
-  ['message', 'thinking_block'],
-  'running turns should collapse into a single thinking block instead of streaming multiple visible intermediate fragments',
+  ['message', 'thinking_block', 'message'],
+  'running turns should retain one Thinking row and add only plain assistant progress text',
 );
+assert.equal(runningDisplay.filter((event) => event.type === 'thinking_block').length, 1);
 assert.equal(runningDisplay[1].label, 'Thinking · using bash', 'running turns should use the same thinking block label family as completed turns');
 assert.equal(runningDisplay[1].blockStartSeq, 2, 'running collapsed block should start with the first non-user event in the turn');
-assert.equal(runningDisplay[1].blockEndSeq, 6, 'running collapsed block should extend through the latest in-flight event');
+assert.equal(runningDisplay[1].blockEndSeq, 6, 'the single running block should continue to aggregate the full in-flight range');
+assert.deepEqual(runningDisplay[1].visibleMessageSeqs, [6]);
+assert.equal(runningDisplay[2].messageKind, 'progress');
+assert.equal(runningDisplay[2].content, 'I found the relevant TODO and am checking its caller.');
 
 const runningBlockEvents = buildEventBlockEvents(runningTurnHistory, 2, 6);
 assert.deepEqual(
@@ -92,6 +131,7 @@ const hiddenAttachmentHistory = [
     seq: 4,
     type: 'message',
     role: 'assistant',
+    runtimeFamily: 'pi-json',
     content: '文件已经生成。',
     attachments: [
       {
@@ -112,27 +152,30 @@ const hiddenAttachmentHistory = [
   },
   { seq: 5, type: 'tool_use', role: 'assistant', toolName: 'bash', toolInput: 'finalize-response' },
   { seq: 6, type: 'tool_result', role: 'system', output: 'done', exitCode: 0 },
-  { seq: 7, type: 'message', role: 'assistant', content: '都准备好了。' },
+  { seq: 7, type: 'message', role: 'assistant', runtimeFamily: 'pi-json', content: '都准备好了。' },
 ];
 
 const hiddenAttachmentDisplay = buildSessionDisplayEvents(hiddenAttachmentHistory, { sessionRunning: false });
 assert.deepEqual(
   hiddenAttachmentDisplay.map((event) => event.type),
-  ['message', 'thinking_block', 'message', 'attachment_delivery'],
-  'turns with hidden assistant attachments should append a visible attachment delivery event at the bottom of the turn',
+  ['message', 'thinking_block', 'message', 'message', 'attachment_delivery'],
+  'file turns should keep one Thought row, plain narrated progress, the final answer, and one delivery row',
 );
+assert.equal(hiddenAttachmentDisplay[2].messageKind, 'progress');
+assert.equal(hiddenAttachmentDisplay[2].content, '文件已经生成。');
+assert.equal(hiddenAttachmentDisplay[3].content, '都准备好了。');
 assert.equal(
-  hiddenAttachmentDisplay[3].attachments.length,
+  hiddenAttachmentDisplay[4].attachments.length,
   2,
   'the attachment delivery event should surface every hidden assistant attachment once',
 );
 assert.equal(
-  hiddenAttachmentDisplay[3].attachments[0].renderAs,
+  hiddenAttachmentDisplay[4].attachments[0].renderAs,
   'file',
   'bottom attachment deliveries should force file-card rendering for visibility',
 );
 assert.equal(
-  'savedPath' in hiddenAttachmentDisplay[3].attachments[0],
+  'savedPath' in hiddenAttachmentDisplay[4].attachments[0],
   false,
   'bottom attachment deliveries should not leak host-side saved paths',
 );

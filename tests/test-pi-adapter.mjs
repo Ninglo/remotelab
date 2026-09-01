@@ -36,7 +36,64 @@ const messageEvents = adapter.parseLine(JSON.stringify({
 }));
 assert.deepEqual(messageEvents.map((event) => event.type), ['reasoning', 'message', 'usage']);
 assert.equal(messageEvents[1].content, 'done');
+assert.equal(messageEvents[1].runtimeFamily, 'pi-json');
 assert.equal(messageEvents[2].contextTokens, 16);
+
+const streamingAdapter = createPiAdapter();
+streamingAdapter.parseLine(JSON.stringify({
+  type: 'message_start',
+  message: { role: 'assistant', content: [] },
+}));
+streamingAdapter.parseLine(JSON.stringify({
+  type: 'message_update',
+  assistantMessageEvent: { type: 'thinking_start', contentIndex: 0 },
+}));
+streamingAdapter.parseLine(JSON.stringify({
+  type: 'message_update',
+  assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: 'checking files' },
+}));
+const streamedThinkingEvents = streamingAdapter.parseLine(JSON.stringify({
+  type: 'message_update',
+  assistantMessageEvent: { type: 'thinking_end', contentIndex: 0, content: 'checking files' },
+}));
+assert.deepEqual(streamedThinkingEvents.map((event) => event.type), ['reasoning']);
+assert.equal(streamedThinkingEvents[0].content, 'checking files');
+
+streamingAdapter.parseLine(JSON.stringify({
+  type: 'message_update',
+  assistantMessageEvent: { type: 'text_start', contentIndex: 1 },
+}));
+streamingAdapter.parseLine(JSON.stringify({
+  type: 'message_update',
+  assistantMessageEvent: { type: 'text_delta', contentIndex: 1, delta: 'I found ' },
+}));
+const streamedTextEvents = streamingAdapter.parseLine(JSON.stringify({
+  type: 'message_update',
+  assistantMessageEvent: { type: 'text_end', contentIndex: 1, content: 'I found the issue.' },
+}));
+assert.deepEqual(streamedTextEvents.map((event) => event.type), ['message']);
+assert.equal(streamedTextEvents[0].content, 'I found the issue.');
+assert.equal(streamedTextEvents[0].runtimeFamily, 'pi-json');
+
+const resumedStreamingAdapter = createPiAdapter();
+resumedStreamingAdapter.restoreProjectionState(streamingAdapter.getProjectionState());
+const streamedMessageEndEvents = resumedStreamingAdapter.parseLine(JSON.stringify({
+  type: 'message_end',
+  message: {
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: 'checking files' },
+      { type: 'text', text: 'I found the issue.' },
+    ],
+    usage: { input: 5, output: 3, totalTokens: 8 },
+    stopReason: 'stop',
+  },
+}));
+assert.deepEqual(
+  streamedMessageEndEvents.map((event) => event.type),
+  ['usage'],
+  'authoritative message_end should not duplicate content already emitted at block end',
+);
 
 const toolEvents = [
   ...adapter.parseLine(JSON.stringify({

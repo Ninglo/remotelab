@@ -202,10 +202,12 @@ function buildThinkingBlockLabel(hiddenEvents, state = 'completed') {
   return 'Thought';
 }
 
-function buildThinkingBlockEvent(hiddenEvents, state = 'completed') {
+function buildThinkingBlockEvent(hiddenEvents, state = 'completed', { visibleMessageSeqs = [] } = {}) {
   const first = hiddenEvents[0] || null;
   const last = hiddenEvents[hiddenEvents.length - 1] || first;
   const toolNames = collectToolNames(hiddenEvents);
+  const normalizedVisibleMessageSeqs = (Array.isArray(visibleMessageSeqs) ? visibleMessageSeqs : [])
+    .filter((seq) => Number.isInteger(seq) && seq > 0);
   return {
     type: 'thinking_block',
     seq: Number.isInteger(first?.seq) ? first.seq : 0,
@@ -215,10 +217,15 @@ function buildThinkingBlockEvent(hiddenEvents, state = 'completed') {
     label: buildThinkingBlockLabel(hiddenEvents, state),
     hiddenEventCount: hiddenEvents.length,
     ...(toolNames.length > 0 ? { toolNames } : {}),
+    ...(normalizedVisibleMessageSeqs.length > 0 ? { visibleMessageSeqs: normalizedVisibleMessageSeqs } : {}),
   };
 }
 
-function pushVisibleEvent(target, event, { stripAttachments = false, localMarkdownImageRewriteMapBySeq = null } = {}) {
+function pushVisibleEvent(target, event, {
+  stripAttachments = false,
+  localMarkdownImageRewriteMapBySeq = null,
+  messageKind = '',
+} = {}) {
   if (!isVisibleEvent(event)) return;
   if (!hasVisibleMessagePayload(event, { includeAttachments: !stripAttachments })) return;
   const next = stripDeferredBodyFields(event, { localMarkdownImageRewriteMapBySeq });
@@ -226,7 +233,33 @@ function pushVisibleEvent(target, event, { stripAttachments = false, localMarkdo
     delete next.attachments;
     delete next.images;
   }
+  if (messageKind && next?.type === 'message' && next.role === 'assistant') {
+    next.messageKind = messageKind;
+  }
   target.push(next);
+}
+
+function collectVisiblePiProgressMessages(events, mirroredAttachmentSeqs = null) {
+  return (Array.isArray(events) ? events : []).filter((event) => {
+    if (!isAssistantMessageEvent(event) || event.runtimeFamily !== 'pi-json') return false;
+    const stripAttachments = shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs);
+    return hasVisibleMessagePayload(event, { includeAttachments: !stripAttachments });
+  });
+}
+
+function pushPiProgressMessages(target, events, {
+  mirroredAttachmentSeqs = null,
+  localMarkdownImageRewriteMapBySeq = null,
+} = {}) {
+  const messages = collectVisiblePiProgressMessages(events, mirroredAttachmentSeqs);
+  for (const event of messages) {
+    pushVisibleEvent(target, event, {
+      stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
+      localMarkdownImageRewriteMapBySeq,
+      messageKind: 'progress',
+    });
+  }
+  return messages;
 }
 
 function emitSegmentedTurnBody(target, bodyEvents, {
@@ -373,7 +406,14 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   });
 
   if (sessionRunning) {
-    target.push(buildThinkingBlockEvent(bodyEvents, 'running'));
+    const progressMessages = collectVisiblePiProgressMessages(bodyEvents, mirroredAttachmentSeqs);
+    target.push(buildThinkingBlockEvent(bodyEvents, 'running', {
+      visibleMessageSeqs: progressMessages.map((event) => event.seq),
+    }));
+    pushPiProgressMessages(target, progressMessages, {
+      mirroredAttachmentSeqs,
+      localMarkdownImageRewriteMapBySeq,
+    });
     if (deliveryEvent) {
       target.push(deliveryEvent);
     }
@@ -405,8 +445,11 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
 
   const visibleTail = bodyEvents.slice(lastHiddenIndex + 1).filter(isVisibleEvent);
   if (visibleTail.length === 0) {
-    emitSegmentedTurnBody(target, bodyEvents, {
-      sessionRunning,
+    const progressMessages = collectVisiblePiProgressMessages(bodyEvents, mirroredAttachmentSeqs);
+    target.push(buildThinkingBlockEvent(bodyEvents, 'completed', {
+      visibleMessageSeqs: progressMessages.map((event) => event.seq),
+    }));
+    pushPiProgressMessages(target, progressMessages, {
       mirroredAttachmentSeqs,
       localMarkdownImageRewriteMapBySeq,
     });
@@ -417,9 +460,16 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
   }
 
   const collapsedPrefix = bodyEvents.slice(0, lastHiddenIndex + 1);
+  const progressMessages = collectVisiblePiProgressMessages(collapsedPrefix, mirroredAttachmentSeqs);
   if (collapsedPrefix.length > 0) {
-    target.push(buildThinkingBlockEvent(collapsedPrefix, 'completed'));
+    target.push(buildThinkingBlockEvent(collapsedPrefix, 'completed', {
+      visibleMessageSeqs: progressMessages.map((event) => event.seq),
+    }));
   }
+  pushPiProgressMessages(target, progressMessages, {
+    mirroredAttachmentSeqs,
+    localMarkdownImageRewriteMapBySeq,
+  });
   for (const event of visibleTail) {
     pushVisibleEvent(target, event, {
       stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),

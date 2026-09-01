@@ -168,7 +168,8 @@ function buildPayloadText(displayEvents = []) {
 export function buildReplyPublicationPayload(history = [], rootRun = {}) {
   const displayEvents = buildSessionDisplayEvents(history, { sessionRunning: false })
     .filter((event) => event?.role === 'assistant')
-    .filter((event) => event.type === 'message' || event.type === 'attachment_delivery');
+    .filter((event) => event.type === 'message' || event.type === 'attachment_delivery')
+    .filter((event) => event.messageKind !== 'progress');
 
   return {
     responseIds: getRunResponseIds(rootRun),
