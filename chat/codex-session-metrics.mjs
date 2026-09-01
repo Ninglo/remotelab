@@ -4,7 +4,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 import readline from 'readline';
 import { statOrNull } from './fs-utils.mjs';
-import { CODEX_MANAGED_HOME_DIR } from '../lib/config.mjs';
+import { resolveCodexHomeDir } from './runtime-policy.mjs';
 import { estimateUsageCost, getPricingMetadataForModel } from '../lib/openai-pricing.mjs';
 
 const SESSION_LOG_CACHE = new Map();
@@ -36,7 +36,7 @@ function getCodexSessionsRoots() {
   const codeHomeOverride = typeof process.env.CODEX_HOME === 'string' ? process.env.CODEX_HOME.trim() : '';
   const sessionsRoots = buildUniqueRoots([
     codeHomeOverride ? join(codeHomeOverride, 'sessions') : '',
-    join(CODEX_MANAGED_HOME_DIR, 'sessions'),
+    join(resolveCodexHomeDir(), 'sessions'),
     join(homeDir, '.codex', 'sessions'),
   ]);
   const nextRootsKey = sessionsRoots.join('\n');

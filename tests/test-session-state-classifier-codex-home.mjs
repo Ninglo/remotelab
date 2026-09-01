@@ -11,7 +11,8 @@ const tempBin = join(tempHome, 'bin');
 const tempConfig = join(tempHome, 'config');
 const tempMemory = join(tempHome, 'memory');
 const envCapturePath = join(tempHome, 'captured-codex-home.txt');
-const fakeToolId = 'fake-codex-managed-home';
+const fakeToolId = 'fake-codex-home';
+const machineCodexHome = join(tempHome, '.codex');
 
 mkdirSync(tempBin, { recursive: true });
 mkdirSync(tempConfig, { recursive: true });
@@ -38,10 +39,10 @@ console.log(JSON.stringify({
   item: {
     type: 'agent_message',
     text: JSON.stringify({
-      title: 'Managed Home Test',
+      title: 'Codex Home Test',
       space: 'Product',
       group: 'Runtime',
-      description: 'Verify session-state-classifier background Codex runs inherit the managed runtime home.',
+      description: 'Verify session-state-classifier background Codex runs use the instance Codex home.',
     }),
   },
 }));
@@ -59,7 +60,7 @@ writeFileSync(
     [
       {
         id: fakeToolId,
-        name: 'Fake Codex Managed Home',
+        name: 'Fake Codex Home',
         command: fakeCodexPath,
         runtimeFamily: 'codex-json',
         models: [{ id: 'fake-model', label: 'Fake model' }],
@@ -83,8 +84,7 @@ process.env.REMOTELAB_CONFIG_DIR = tempConfig;
 process.env.REMOTELAB_MEMORY_DIR = tempMemory;
 process.env.REMOTELAB_TEST_CODEX_HOME_CAPTURE = envCapturePath;
 delete process.env.REMOTELAB_INSTANCE_ROOT;
-delete process.env.REMOTELAB_CODEX_HOME_MODE;
-delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
+process.env.REMOTELAB_MACHINE_CODEX_HOME = machineCodexHome;
 delete process.env.CODEX_HOME;
 
 const sessionManager = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
@@ -113,39 +113,11 @@ const result = await triggerSessionStateSuggestion({
 });
 
 const capturedCodexHome = readFileSync(envCapturePath, 'utf8').trim();
-const expectedManagedHome = join(tempConfig, 'provider-runtime-homes', 'codex');
-
 assert.equal(result?.ok, true, 'Session-state classifier should complete through the background Codex run');
-assert.equal(result?.title, 'Managed Home Test');
-assert.equal(capturedCodexHome, expectedManagedHome, 'background session-state-classifier codex run should receive managed CODEX_HOME');
-
-const machineCodexHome = join(tempHome, 'machine-codex-home');
-process.env.REMOTELAB_CODEX_HOME_MODE = 'personal';
-process.env.REMOTELAB_MACHINE_CODEX_HOME = machineCodexHome;
-writeFileSync(envCapturePath, '', 'utf8');
-
-const personalSession = await createSession(tempHome, fakeToolId, '', {});
-await appendEvent(personalSession.id, messageEvent('user', 'Please verify explicit personal Codex home selection.'));
-await appendEvent(personalSession.id, messageEvent('assistant', 'I will verify explicit personal Codex home selection.'));
-
-await triggerSessionStateSuggestion({
-  id: personalSession.id,
-  folder: personalSession.folder,
-  name: personalSession.name || '',
-  group: personalSession.group || '',
-  description: personalSession.description || '',
-  sourceName: personalSession.sourceName || '',
-  autoRenamePending: personalSession.autoRenamePending,
-  tool: fakeToolId,
-});
-
-assert.equal(
-  readFileSync(envCapturePath, 'utf8').trim(),
-  machineCodexHome,
-  'explicit personal mode should route session-state-classifier codex runs to the configured machine Codex home',
-);
+assert.equal(result?.title, 'Codex Home Test');
+assert.equal(capturedCodexHome, machineCodexHome, 'background Codex runs should use the instance Codex home');
 
 killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
-console.log('test-session-state-classifier-managed-codex-home: ok');
+console.log('test-session-state-classifier-codex-home: ok');

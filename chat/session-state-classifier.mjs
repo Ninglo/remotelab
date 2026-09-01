@@ -3,7 +3,7 @@ import { createInterface } from 'readline';
 import { readLastTurnEvents } from './history.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
 import { createToolInvocation, resolveCommand, resolveCwd } from './process-runner.mjs';
-import { applyManagedRuntimeEnv, applySharedCodexLock } from './runtime-policy.mjs';
+import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
 import {
   normalizeGeneratedSessionTitle,
   normalizeSessionDescription,
@@ -120,7 +120,7 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     throw new Error('Session label suggestion requires an explicit tool');
   }
 
-  const { command, adapter, args, envOverrides, runtimeFamily, provider } = await createToolInvocation(tool, prompt, {
+  const { command, adapter, args, envOverrides, runtimeFamily } = await createToolInvocation(tool, prompt, {
     dangerouslySkipPermissions: true,
     model,
     effort,
@@ -128,23 +128,20 @@ async function runToolJsonPrompt(sessionMeta, prompt, usageTracking = null) {
     systemPrefix: '',
   });
   const resolvedCmd = await resolveCommand(command);
-  const lockedInvocation = applySharedCodexLock(tool, resolvedCmd, args, runtimeFamily);
   const resolvedFolder = resolveCwd(folder);
   console.log(
-    `[session-state] Calling tool=${tool} cmd=${lockedInvocation.command} model=${model || 'default'} effort=${effort || 'default'} thinking=${!!thinking} for session ${sessionId.slice(0, 8)}`
+    `[session-state] Calling tool=${tool} cmd=${resolvedCmd} model=${model || 'default'} effort=${effort || 'default'} thinking=${!!thinking} for session ${sessionId.slice(0, 8)}`
   );
 
   let subEnv = buildToolProcessEnv(envOverrides || {});
   delete subEnv.CLAUDECODE;
   delete subEnv.CLAUDE_CODE_ENTRYPOINT;
-  subEnv = await applyManagedRuntimeEnv(tool, subEnv, {
+  subEnv = applyProviderRuntimeEnv(tool, subEnv, {
     runtimeFamily,
-    provider,
-    codexHomeMode: process.env.REMOTELAB_CODEX_HOME_MODE || 'managed',
   });
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(lockedInvocation.command, lockedInvocation.args, {
+    const proc = spawn(resolvedCmd, args, {
       cwd: resolvedFolder,
       env: subEnv,
       stdio: ['pipe', 'pipe', 'pipe'],

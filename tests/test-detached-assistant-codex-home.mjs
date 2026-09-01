@@ -12,6 +12,7 @@ const tempConfig = join(tempHome, 'config');
 const tempMemory = join(tempHome, 'memory');
 const envCapturePath = join(tempHome, 'captured-codex-home.txt');
 const fakeToolId = 'fake-detached-codex-home';
+const machineCodexHome = join(tempHome, '.codex');
 
 mkdirSync(tempBin, { recursive: true });
 mkdirSync(tempConfig, { recursive: true });
@@ -79,6 +80,7 @@ process.env.REMOTELAB_CONFIG_DIR = tempConfig;
 process.env.REMOTELAB_MEMORY_DIR = tempMemory;
 process.env.REMOTELAB_TEST_CODEX_HOME_CAPTURE = envCapturePath;
 delete process.env.REMOTELAB_INSTANCE_ROOT;
+process.env.REMOTELAB_MACHINE_CODEX_HOME = machineCodexHome;
 delete process.env.CODEX_HOME;
 
 const detached = await import(pathToFileURL(join(repoRoot, 'chat', 'session-detached-assistant.mjs')).href);
@@ -94,11 +96,9 @@ const response = await runDetachedAssistantPrompt(
 );
 
 const capturedCodexHome = readFileSync(envCapturePath, 'utf8').trim();
-const expectedManagedHome = join(tempConfig, 'provider-runtime-homes', 'codex');
-
 assert.equal(response, 'Detached helper ok');
-assert.equal(capturedCodexHome, expectedManagedHome, 'detached assistant codex run should receive managed CODEX_HOME');
+assert.equal(capturedCodexHome, machineCodexHome, 'detached assistant Codex runs should use the instance Codex home');
 
 rmSync(tempHome, { recursive: true, force: true });
 
-console.log('test-detached-assistant-managed-codex-home: ok');
+console.log('test-detached-assistant-codex-home: ok');

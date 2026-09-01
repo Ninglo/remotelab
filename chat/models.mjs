@@ -2,7 +2,7 @@ import { readFile, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { discoverPiModels } from './pi-models.mjs';
-import { resolveCodexRuntimeHomeDir } from './runtime-policy.mjs';
+import { resolveCodexHomeDir } from './runtime-policy.mjs';
 import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
@@ -426,7 +426,7 @@ async function getCodexModels() {
   if (codexModelsCache) {
     return codexModelsCache;
   }
-  const codexHomeDir = resolveCodexRuntimeHomeDir();
+  const codexHomeDir = resolveCodexHomeDir();
   const configuredSettings = await readCodexConfiguredSettings(codexHomeDir);
   const configuredModel = configuredSettings.model;
   const recentModels = await readCodexRecentModels(codexHomeDir);

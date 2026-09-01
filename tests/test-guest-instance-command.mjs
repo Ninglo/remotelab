@@ -992,7 +992,6 @@ try {
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_STORAGE_BASE_URL<\/key><string>https:\/\/assets\.example\.com<\/string>/);
   assert.match(rewrittenGuestPlist, /<key>REMOTELAB_ASSET_DIRECT_UPLOAD_ENABLED<\/key><string>0<\/string>/);
   assert.doesNotMatch(rewrittenGuestPlist, /REMOTELAB_SESSION_DISPATCH/);
-  assert.match(rewrittenGuestPlist, /<key>REMOTELAB_CODEX_HOME_MODE<\/key><string>personal<\/string>/);
   assert.match(
     rewrittenGuestPlist,
     new RegExp(`<key>REMOTELAB_MACHINE_CODEX_HOME<\\/key><string>${join(instanceRoot, '.codex').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<\\/string>`),

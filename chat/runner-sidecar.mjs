@@ -19,7 +19,7 @@ import {
 } from './runs.mjs';
 import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
-import { applyManagedRuntimeEnv, applySharedCodexLock } from './runtime-policy.mjs';
+import { applyProviderRuntimeEnv } from './runtime-policy.mjs';
 import { isCodexMissingRolloutFailure } from './provider-runtime-errors.mjs';
 import {
   acquireProviderRuntimeLease,
@@ -162,9 +162,8 @@ async function cleanEnv(toolId, manifest = {}, options = {}) {
   if (runId) {
     env.REMOTELAB_RUN_ID = runId;
   }
-  return applyManagedRuntimeEnv(toolId, env, {
+  return applyProviderRuntimeEnv(toolId, env, {
     runtimeFamily: typeof options.runtimeFamily === 'string' ? options.runtimeFamily : '',
-    provider: typeof options.provider === 'string' ? options.provider : '',
   });
 }
 
@@ -421,13 +420,7 @@ async function main() {
 
   const runToolAttempt = async (invocation) => {
     const resolvedCommand = await resolveCommand(invocation.command);
-    const lockedInvocation = applySharedCodexLock(
-      manifest.tool || '',
-      resolvedCommand,
-      invocation.args,
-      invocation.runtimeFamily,
-    );
-    const proc = spawn(await resolveCommand(lockedInvocation.command), lockedInvocation.args, {
+    const proc = spawn(resolvedCommand, invocation.args, {
       cwd: resolvedFolder.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: spawnEnv,

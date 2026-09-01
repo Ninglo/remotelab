@@ -117,7 +117,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - On the same setup, the documented top-level `instructions` and `model_instructions_file` controls did not materially change trivial `codex exec` outputs in smoke tests, even though the open-source code and schema suggest they should affect base instructions.
 - For manager-controlled style shaping in wrappers like RemoteLab, prefer passing `-c developer_instructions=...` on each Codex invocation over relying on prompt prefixes alone.
 - RemoteLab now benefits from a lightweight default Codex developer instruction that frames Codex as a runtime under manager-owned workflow/style policy, while still allowing explicit per-run override or opt-out for niche cases.
-- To keep manager policy canonical, RemoteLab-managed Codex runs should prefer a dedicated `CODEX_HOME` that shares auth but omits user-global `config.toml` personality/style settings and other local Codex-specific drift.
+- Apply RemoteLab's workflow and style policy per invocation; do not create a second Codex home just to isolate those settings. Login, status, model discovery, and every foreground/background run should use the instance's standard `.codex` directory.
 
 ### KYC / Account Registration Requests (2026-03-06)
 - If a user asks for a "public address" or advice on what address/location to enter for account opening, treat it as potential misrepresentation/compliance evasion.
@@ -184,7 +184,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 
 ### Background Model Tasks Must Reuse The Instance Runtime Home (2026-07-11)
 - Background model calls such as session title/group summarizers must resolve the same instance runtime home and provider-auth selection as foreground runs.
-- Hard-coding a managed Codex home can silently send background work to stale guest auth while foreground work still succeeds, producing misleading provider `401` failures only in auto-rename or other suggestion jobs.
+- Hard-coding a separate Codex home can silently send background work to stale auth while foreground work still succeeds, producing misleading provider `401` failures only in auto-rename or other suggestion jobs.
 - Keep runtime-home selection in one shared resolver and regression-test both foreground and background paths with a non-default instance home.
 
 ### Active Session Restore Should Share One Deep-Link Contract (2026-03-06)
