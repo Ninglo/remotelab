@@ -41,6 +41,10 @@ import {
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
 import { createWeChatCapabilityController } from '../connectors/wechat/index.mjs';
+import {
+  createWeChatInboundResourceService,
+  extractWeChatImageResources,
+} from '../connectors/wechat/inbound-resources.mjs';
 
 const DEFAULT_STORAGE_DIR = join(CONFIG_DIR, 'wechat-connector');
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_WECHAT_CONFIG_PATH
@@ -100,6 +104,10 @@ const WECHAT_ITEM_TYPE = Object.freeze({
   VOICE: 3,
   FILE: 4,
   VIDEO: 5,
+});
+const wechatInboundResourceService = createWeChatInboundResourceService({
+  requestRemoteLab: (runtime, path, options = {}) => requestRemoteLab(runtime, path, options),
+  ensureAuthCookie,
 });
 
 async function loadPackageVersion() {
@@ -1780,6 +1788,7 @@ function summarizeWeChatMessage(rawMessage, account = {}) {
         ? 'generating'
         : (messageStateNumeric === WECHAT_MESSAGE_STATE.NEW ? 'new' : 'unknown')),
     itemTypes: [...new Set(itemList.map((item) => itemTypeLabel(item?.type)).filter(Boolean))],
+    imageResources: extractWeChatImageResources(itemList),
     textPreview,
     contentSummary: textPreview || summarizeItemTypes(itemList),
     contextToken: trimString(rawMessage?.context_token),
@@ -2126,12 +2135,20 @@ async function generateRemoteLabReply(runtime, summary) {
     sessionMs,
   });
 
+  const attachmentResolution = await wechatInboundResourceService.resolve(runtime, summary, {
+    sessionId: session.id,
+  });
+  const messageSummary = attachmentResolution.failures.length > 0
+    ? { ...summary, attachmentDownloadFailures: attachmentResolution.failures }
+    : summary;
+
   const submitStartedAt = Date.now();
   const submission = await submitConnectorMessage(requester, session.id, {
     requestId: buildRequestId(summary),
-    text: buildRemoteLabMessage(summary),
+    text: buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
-    sourceContext: buildMessageSourceContext(summary),
+    sourceContext: buildMessageSourceContext(messageSummary),
+    ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
@@ -2565,7 +2582,8 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
     });
     await persistContextToken(runtime, summary);
 
-    if (!trimString(summary.textPreview)) {
+    const hasSupportedImage = Array.isArray(summary.imageResources) && summary.imageResources.length > 0;
+    if (!trimString(summary.textPreview) && !hasSupportedImage) {
       await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
         status: 'silent_no_reply',
         accountId: summary.accountId,

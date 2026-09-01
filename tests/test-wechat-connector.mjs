@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
+import { createCipheriv } from 'crypto';
 import http from 'http';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
@@ -29,8 +30,12 @@ const {
   sendDirectWeChatTextToDefaultBinding,
   sendWeChatText,
   startWeChatLogin,
+  summarizeWeChatMessage,
   waitForWeChatLogin,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'wechat-connector.mjs')).href);
+const {
+  createWeChatInboundResourceService,
+} = await import(pathToFileURL(join(repoRoot, 'connectors', 'wechat', 'inbound-resources.mjs')).href);
 
 const tempConfigDir = await mkdtemp(join(tmpdir(), 'remotelab-wechat-config-'));
 const tempConfigPath = join(tempConfigDir, 'config.json');
@@ -45,6 +50,7 @@ let forceQueuedSubmit = false;
 let forcePlanningSubmit = false;
 let forceDuplicateSubmitWithRunId = false;
 let forcePublicationFailureReason = '';
+let encryptedImage = Buffer.alloc(0);
 
 function decodeResponseId(url, prefix) {
   return decodeURIComponent(String(url || '').slice(prefix.length));
@@ -115,6 +121,15 @@ const server = http.createServer(async (req, res) => {
     sentIlinkPayload = JSON.parse(body || '{}');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end('{}');
+    return;
+  }
+
+  if (req.method === 'GET' && req.url === '/wechat-image.enc') {
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': encryptedImage.length,
+    });
+    res.end(encryptedImage);
     return;
   }
 
@@ -211,6 +226,66 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 
 try {
   const port = server.address().port;
+
+  const imageKeyHex = '00112233445566778899aabbccddeeff';
+  const imagePlaintext = Buffer.concat([
+    Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    Buffer.from('wechat image test'),
+    Buffer.from([0xff, 0xd9]),
+  ]);
+  const imageCipher = createCipheriv('aes-128-ecb', Buffer.from(imageKeyHex, 'hex'), null);
+  encryptedImage = Buffer.concat([imageCipher.update(imagePlaintext), imageCipher.final()]);
+  let publishedImage = null;
+  const imageService = createWeChatInboundResourceService({
+    fetch: async (url) => {
+      assert.equal(url, 'https://wechat.example/image.enc');
+      return new Response(encryptedImage, {
+        status: 200,
+        headers: { 'content-length': String(encryptedImage.length) },
+      });
+    },
+  });
+  const imageResolution = await imageService.resolve({
+    publishRemoteLabAsset: async (asset) => {
+      publishedImage = asset;
+      return {
+        id: 'asset_wechat_image_1',
+        mimeType: asset.mimeType,
+        originalName: asset.originalName,
+        sizeBytes: asset.body.length,
+      };
+    },
+  }, {
+    messageId: 'msg_image_1',
+    imageResources: [{
+      downloadUrl: 'https://wechat.example/image.enc',
+      aesKey: imageKeyHex,
+    }],
+  }, { sessionId: 'sess_wechat_image_1' });
+  assert.deepEqual(publishedImage?.body, imagePlaintext);
+  assert.equal(imageResolution.failures.length, 0);
+  assert.equal(imageResolution.attachments[0]?.assetId, 'asset_wechat_image_1');
+  assert.equal(imageResolution.attachments[0]?.mimeType, 'image/jpeg');
+
+  const imageSummary = summarizeWeChatMessage({
+    message_id: 'msg_image_summary_1',
+    from_user_id: 'wx_user_peer_1',
+    message_type: 1,
+    message_state: 2,
+    item_list: [{
+      type: 2,
+      image_item: {
+        aeskey: imageKeyHex,
+        media: {
+          full_url: 'https://wechat.example/image.enc',
+          aes_key: Buffer.from(imageKeyHex).toString('base64'),
+        },
+      },
+    }],
+  }, { accountId: 'bot_account_1' });
+  assert.equal(imageSummary.contentSummary, '[image message]');
+  assert.equal(imageSummary.imageResources.length, 1);
+  assert.equal(imageSummary.imageResources[0]?.downloadUrl, 'https://wechat.example/image.enc');
   await writeFile(tempConfigPath, `${JSON.stringify({
     storageDir: tempConfigDir,
     chatBaseUrl: `http://127.0.0.1:${port}`,
@@ -373,6 +448,37 @@ try {
   assert.equal(reply.requestId, 'wechat:bot_account_1:msg_reply_scope');
   assert.equal(reply.replyText, '已处理。');
 
+  let generatedImageAsset = null;
+  replyRuntime.publishRemoteLabAsset = async (asset) => {
+    generatedImageAsset = asset;
+    return {
+      id: 'asset_wechat_generated_1',
+      mimeType: asset.mimeType,
+      originalName: asset.originalName,
+      sizeBytes: asset.body.length,
+    };
+  };
+  await generateRemoteLabReply(replyRuntime, {
+    accountId: 'bot_account_1',
+    accountUserId: 'wx_user_owner_1',
+    peerUserId: 'wx_user_peer_1',
+    messageId: 'msg_image_generated_1',
+    messageTypeNumeric: 1,
+    messageType: 'user',
+    messageStateNumeric: 2,
+    messageState: 'finish',
+    textPreview: '',
+    contentSummary: '[image message]',
+    imageResources: [{
+      downloadUrl: `http://127.0.0.1:${port}/wechat-image.enc`,
+      aesKey: imageKeyHex,
+    }],
+  });
+  assert.deepEqual(generatedImageAsset?.body, imagePlaintext);
+  assert.equal(submitPayload?.text, '[image message]');
+  assert.equal(submitPayload?.attachments?.[0]?.assetId, 'asset_wechat_generated_1');
+  assert.equal(submitPayload?.attachments?.[0]?.mimeType, 'image/jpeg');
+
   forcePublicationFailureReason = 'engine_overloaded_error: model engine overloaded after retries';
   await assert.rejects(
     generateRemoteLabReply(replyRuntime, {
@@ -518,6 +624,49 @@ try {
   });
   assert.equal(unsupportedHandled?.status, 'silent_no_reply');
   assert.equal(unsupportedHandled?.reason, 'unsupported_message_type');
+
+  let imageOnlyHandled = null;
+  let imageOnlyGenerated = false;
+  await handleWeChatMessage({
+    config,
+    storagePaths: {
+      ...config.storagePaths,
+      handledMessagesPath: join(tempConfigDir, 'handled-image-only.json'),
+    },
+    accountsDoc,
+    contextTokensDoc: contextDoc,
+    processingMessageIds: new Set(),
+  }, {
+    accountId: 'bot_account_1',
+    peerUserId: 'wx_user_peer_1',
+    messageId: 'msg_image_only_1',
+    messageTypeNumeric: 1,
+    messageType: 'user',
+    messageStateNumeric: 2,
+    messageState: 'finish',
+    textPreview: '',
+    contentSummary: '[image message]',
+    imageResources: [{ downloadUrl: 'https://wechat.example/image.enc', aesKey: imageKeyHex }],
+  }, {
+    wasMessageHandled: async () => false,
+    markMessageHandled: async (_pathname, _messageKey, metadata) => {
+      imageOnlyHandled = metadata;
+    },
+    generateRemoteLabReply: async () => {
+      imageOnlyGenerated = true;
+      return {
+        sessionId: 'sess_wechat_1',
+        runId: 'run_wechat_1',
+        requestId: 'wechat:bot_account_1:msg_image_only_1',
+        duplicate: false,
+        queued: false,
+        replyText: '图片已收到。',
+      };
+    },
+    sendWeChatText: async () => ({ message_id: 'reply_image_only_1' }),
+  });
+  assert.equal(imageOnlyGenerated, true);
+  assert.equal(imageOnlyHandled?.status, 'sent');
 
   const ackMessages = [];
   let ackHandled = null;
@@ -736,6 +885,7 @@ console.log('ok - wechat qr login persists linked account state');
 console.log('ok - wechat polling persists sync cursor and context token');
 console.log('ok - generated WeChat sessions use the wechat app scope');
 console.log('ok - outbound WeChat replies reuse stored context tokens');
-console.log('ok - non-text WeChat payloads are ignored in the first text-only pass');
+console.log('ok - WeChat images are decrypted and submitted as RemoteLab attachments');
+console.log('ok - unsupported non-text WeChat payloads remain safely ignored');
 console.log('ok - slow WeChat turns send a processing acknowledgement before the final reply');
 console.log('ok - idle WeChat workers pick up newly linked accounts without restart');

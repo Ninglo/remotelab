@@ -2,11 +2,12 @@
   "id": "wechat",
   "name": "WeChat",
   "version": "2.0.0",
-  "description": "Instance-local WeChat bot ingress, replies, and bound-user text delivery.",
+  "description": "Instance-local WeChat bot text/image ingress, replies, and bound-user text delivery.",
   "supports": {
     "inbound": true,
     "reply": true,
-    "actions": true
+    "actions": true,
+    "attachments": true
   },
   "hostStrategies": [
     {
