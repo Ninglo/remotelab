@@ -159,7 +159,7 @@ When a new feature or behavior appears, classify it in this order:
 1. If losing it would break recovery, delivery, permission boundaries, or state truth, it belongs in system-held state.
 2. If it is stable background fact, history, or preference, it belongs in memory.
 3. If it matters across turns for this workstream but should not become long-lived memory, it belongs in current work state or active agreements.
-4. If it is a general collaboration principle or default posture, it belongs in the seed layer / manager policy.
+4. If it is a user preference or collaboration agreement, it belongs in user memory, an Agent template, or explicit session agreements rather than an always-on RemoteLab policy.
 5. If it is an available action, it belongs in the capability surface.
 6. If it is only the rendered presentation of one of the above, it belongs in prompt projection and should not become an extra state source.
 
@@ -319,10 +319,12 @@ The best first slice is:
 
 This is the highest-leverage cut because it reduces future corruption pressure instead of only patching one current symptom.
 
-The current codebase has now completed the first half of this cut:
+The current codebase has now completed this contraction:
 
 - canonical projection names now exist as `managerState` and `workState`
 - prompt assembly has started reading through that projection layer
+- startup and per-turn prompts now carry RemoteLab facts, capabilities, pointers, and explicit state instead of a global behavior constitution
+- Codex receives no RemoteLab-owned developer instructions by default
 - durable storage is still flat and should be collapsed only in later phases once the object contract stays stable
 
 ---
@@ -343,8 +345,8 @@ This refactor should not:
 
 The current implementation surface for this control architecture is mainly:
 
-- `chat/runtime-policy.mjs` — boundary and turn-level policy reminders
-- `chat/system-prompt.mjs` — startup seed and memory-activation scaffold
+- `chat/runtime-policy.mjs` — provider runtime environment projection only
+- `chat/system-prompt.mjs` — startup capability and memory-pointer projection
 - `chat/session-manager.mjs` — current prompt assembly chokepoint and session-side prompt injection
 - `chat/session-continuation.mjs` — active workstream continuity/handoff context
 - `chat/session-work-summary.mjs` and related session metadata helpers — provider-neutral current work-state carrier shared across Harnesses

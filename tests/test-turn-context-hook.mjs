@@ -23,23 +23,22 @@ const hook = await buildTurnContextHook({
   },
 });
 
-assert.match(hook, /lightweight external context hook/);
-assert.match(hook, /Stable context entry points:/);
-assert.match(hook, /Bootstrap: ~\/\.remotelab\/memory\/bootstrap\.md/);
-assert.match(hook, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
-assert.match(hook, /Memory writeback targets config: ~\/\.remotelab\/memory\/writeback-targets\.json/);
-assert.match(hook, /Auto user memory: ~\/\.remotelab\/memory\/model-context\/auto-user-memory\.md/);
-assert.match(hook, /Auto system memory: .*\/memory\/auto-system-memory\.md/);
-assert.match(hook, /Model-managed writable context root:/);
-assert.match(hook, /~\/\.remotelab\/memory\/model-context/);
-assert.match(hook, /Prefer RemoteLab-side execution and the smallest necessary manual checkpoint/);
-assert.match(hook, /local skill, wrapper, note, or prior pattern already fits/);
-assert.match(hook, /split into child sessions or scratch notes when that reduces noise/);
-assert.match(hook, /did you use the best available path, is the result complete for the user/);
+assert.match(hook, /RemoteLab context pointers/);
+assert.match(hook, /Bootstrap: .*\/memory\/bootstrap\.md/);
+assert.match(hook, /Projects: .*\/memory\/projects\.md/);
+assert.match(hook, /Memory writeback targets: .*\/memory\/writeback-targets\.json/);
+assert.match(hook, /Auto user memory: .*\/memory\/model-context\/auto-user-memory\.md/);
+assert.match(hook, /Auto system memory: (?:.*\/memory|\[platform-shared-memory\])\/auto-system-memory\.md/);
+assert.match(hook, /Model context root: .*\/memory\/model-context/);
 assert.match(hook, /active working agreements/);
 assert.match(hook, /默认自然段表达。/);
 assert.match(hook, /Current provider-neutral work summary/);
 assert.match(hook, /Reusable patterns/);
 assert.match(hook, /sales\.xlsx/);
+
+assert.doesNotMatch(hook, /standing authorization/);
+assert.doesNotMatch(hook, /Prefer RemoteLab-side execution/);
+assert.doesNotMatch(hook, /brief self-review/);
+assert.doesNotMatch(hook, /split into child sessions/);
 
 console.log('test-turn-context-hook: ok');

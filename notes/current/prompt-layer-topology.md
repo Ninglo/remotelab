@@ -1,142 +1,44 @@
-# Prompt Layer Topology
-
-## Why this exists
-
-RemoteLab's prompt stack had started to mix policy, routing, memory activation, continuity, and turn-level execution nudges into one increasingly prescriptive bundle.
-
-That shape is fragile. It makes the system read like a hidden SOP instead of a reusable cognitive scaffold, and it blurs several different questions:
-
-- what principles should always stay true
-- what context should load at startup
-- what belongs to the current workstream only
-- what should stay as a side resource or cold archive
-
-This note records the cleaner principle-first topology.
+# Prompt Projection Boundary
 
 ## Core stance
 
-RemoteLab should behave like an agent-native system.
+RemoteLab is a substrate above several capable Harnesses, not another semantic Harness.
 
-- Code owns capability primitives, state persistence, permissions, and hard invariants.
-- Prompts own principles, assembly rules, and default preferences.
-- The user may keep, edit, replace, or delete the initial scaffold as their own workflow matures.
+Its prompt projection exists to tell the selected Harness facts that only RemoteLab can supply. It must not recreate task interpretation, planning, safety policy, execution judgment, self-review, reply style, or permission heuristics already owned by the Harness and the current user context.
 
-The startup prompt is therefore a seed layer, not a permanent law.
+## What belongs in the projection
 
-## Recommended topology
+- runtime and source identity, including an authenticated owner or share-link visitor role
+- code-backed instance and authorization scope
+- available RemoteLab capabilities and their invocation syntax
+- connector identities and binding-scoped actions
+- user-reachable artifact and delivery protocols
+- memory/context pointers
+- provider-neutral work state, explicit session agreements, and continuation material
+- Agent template instructions explicitly chosen for the session
 
-### 1. Seed / Constitution
+These are projections of product state or capability. Prompt text is not their source of truth.
 
-This is the editable startup scaffold.
+## What does not belong
 
-It carries:
+- a RemoteLab persona or house reply style
+- generic instructions about when to continue, clarify, plan, split, or self-review
+- generic secret, credential, filesystem, or content-handling policy for owner sessions
+- copies of provider-native developer instructions or safety rules
+- a shared startup-defaults bundle of cross-user behavior preferences
+- per-turn manager reminders that repeat the same behavioral advice
 
-- core collaboration stance
-- manager/runtime boundary
-- reply-style defaults
-- memory activation defaults
-- capability hints and tool posture
+When a rule is an actual access invariant, code must enforce or structurally expose it. A short role/scope fact may still be projected so the Harness can reason with the boundary, but prose must not pretend to be the enforcement layer.
 
-It should stay small and principle-first.
+## Current projection layers
 
-### 2. Runtime Assembler / Router
+1. `chat/system-prompt.mjs` renders a small first-turn capability and context map.
+2. `chat/turn-context-hook.mjs` reprojects only stable pointers, explicit agreements, and current work state on later turns.
+3. `chat/session-manager.mjs` adds source, Agent, continuation, and visitor-role context when applicable.
+4. Provider adapters invoke the Harness without a RemoteLab-owned developer-instruction default. An explicit operator override remains available.
 
-This layer decides what to activate for the current turn.
+## Stability gate
 
-Its job is not to preload everything. Its job is to keep the current context small and correctly assembled.
+Every proposed always-on prompt line should answer: “What RemoteLab state or capability would the Harness otherwise be unable to know?”
 
-Typical responsibilities:
-
-- start from pointer-sized startup context
-- infer scope when obvious
-- ask only when ambiguity is real
-- load matching scope/task context on demand
-- decide whether template reuse or session fan-out is the better path
-
-### 3. Continuity / Handoff
-
-This is distinct from both scope and task notes.
-
-Continuity records where the current workstream stands right now:
-
-- accepted decisions
-- current execution state
-- tool / branch / runtime status
-- blockers and open loops
-- the next good entry point for the next worker turn
-
-Without this layer, task notes tend to become a dumping ground for session residue.
-
-### 4. Scope
-
-Scope is the relatively stable background for a project, repo, or recurring domain.
-
-It should answer questions like:
-
-- what system is this
-- what constraints matter here
-- what architecture or vocabulary is stable
-- what template/base session or deep docs should be checked next
-
-Scope should provide enough background for correct action, not grow into a full wiki by default.
-
-### 5. Task
-
-Task is the current delta inside a scope.
-
-It should capture:
-
-- what this session/branch is trying to do now
-- decisions specific to this round of work
-- current blockers
-- immediate next actions
-
-Task should stay narrower than scope.
-
-### 6. Side Resources
-
-Two important resources are side resources, not default live layers:
-
-- skills
-- shared learnings / system memory
-
-They are powerful, but they should load on demand instead of inflating every startup prompt.
-
-### 7. Archive
-
-Archive is cold storage.
-
-It should remain available for recovery, audit, and historical lookup, but it is not the normal source of live working context.
-
-## Routing principle
-
-Bounded work should prefer bounded context.
-
-A session is not only a chat transcript. It is a workstream container. When one user turn contains multiple independently completable goals, the system should seriously consider splitting them into separate sessions or child sessions.
-
-That keeps each context tighter and makes continuity cleaner.
-
-## Continuation gate
-
-The continuation decision should be branch-first, not permission-first.
-
-- do not frame the core question as "should the agent continue"
-- first decide whether a real logical fork or forced human checkpoint exists
-- if the work is still a single-track flow, treat the user's clear request as standing authorization and keep going
-- involve the user when branch choice materially changes execution, when destructive / irreversible action needs confirmation, or when required input / access is truly missing
-- do not invent a menu of options just to feel cautious when the task already has a natural default path
-
-## Prompt-writing rule
-
-Prompt layers should synchronize principles and invariants, not narrate every action as a hidden checklist.
-
-Turn-level reminders still matter, but they should stay light. They should reinforce judgment priorities rather than replace judgment with a script.
-
-## Current implementation implications
-
-- `chat/runtime-policy.mjs` should express boundary, ownership, and principle-first defaults.
-- `chat/system-prompt.mjs` should describe the seed layer, context topology, routing posture, and selective memory activation.
-- `chat/session-continuation.mjs` should frame handoff as continuity for the active workstream.
-- `chat/session-manager.mjs` should keep turn activation compact and principle-first.
-- Ordinary turns should enter the selected Harness directly. Persistent Session spawning stays an explicit capability; RemoteLab does not run a separate pre-turn semantic router.
-- Provider-neutral work summary, active agreements, continuation, and durable memory pointers should be projected consistently across Codex, Claude, Pi, and future Harnesses.
+If there is no concrete answer, the line belongs in user memory, an Agent template, repo-local instructions, an on-demand skill, or nowhere. Tests should assert both the facts that must remain and the behavioral policy blocks that must stay absent.

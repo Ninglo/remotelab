@@ -85,8 +85,8 @@ It should not be loaded wholesale for every new session.
 
 ## Implementation Surface
 
-- `chat/system-prompt.mjs`: define pointer-first startup behavior
-- `chat/shared-startup-defaults.mjs`: removable repo-shared startup defaults slice for a few universal cross-user behaviors
+- `chat/system-prompt.mjs`: project the pointer-first memory map and RemoteLab capabilities
+- `chat/turn-context-hook.mjs`: reproject stable pointers with explicit session agreements and work state
 - `chat/session-memory-writeback.mjs`: post-turn durable learning extraction and persistence
 - `chat/memory-writeback-targets.mjs`: writeback target catalog, config parsing, and safe routing
 - `~/.remotelab/memory/bootstrap.md`: tiny startup layer
@@ -96,13 +96,11 @@ It should not be loaded wholesale for every new session.
 - `memory/auto-system-memory.md`: mandatory system fallback sink for automatic cross-deployment learnings
 - `memory/system.md`: shared principles about activation, writeback, and pruning
 
-## Shared Startup Slice
+## Prompt Projection Boundary
 
-When a small set of cross-user defaults needs to ship quickly to every instance, keep that slice separate from personal memory and make it easy to remove.
+The startup prompt exposes memory locations and their roles. It does not prescribe a global retrieval workflow, reply style, planning policy, or writeback ritual. Those decisions belong to the selected Harness, explicit user/session agreements, and task-specific context.
 
-- Keep it tiny, universal, and clearly optional.
-- Do not let it turn into a catch-all for personal preferences, repo-local workflows, or domain-specific rules.
-- In code, RemoteLab keeps this slice in `chat/shared-startup-defaults.mjs` and gates it with `REMOTELAB_ENABLE_SHARED_STARTUP_DEFAULTS` so it can be disabled or revised with low coupling.
+Cross-user behavioral defaults must not be reintroduced as another always-on startup slice. Stable preferences belong in user memory; specialized behavior belongs in Agent templates, repo instructions, or on-demand skills.
 
 ## Important Non-Goal
 

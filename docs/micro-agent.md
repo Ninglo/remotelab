@@ -24,7 +24,7 @@ The installer writes one custom tool record into `~/.config/remotelab/tools.json
 The preset intentionally starts at `medium` thinking so cold-start turns land faster while still leaving higher effort available when the task needs it.
 
 So the UI treats it like a lightweight preset, while the actual runtime stays the normal Codex CLI.
-Unlike the earlier bare-user version, it now follows RemoteLab's normal session prompt/context chain so memory activation, manager policy, and continuation behavior stay aligned with the built-in `codex` tool.
+Unlike the earlier bare-user version, it now follows RemoteLab's normal session context chain so memory pointers, explicit session state, and continuation behavior stay aligned with the built-in `codex` tool.
 
 Guest instances keep their own config directories, so they do not read the owner's `tools.json` directly. The supported `guest-instance create` / `guest-instance converge` flows now sync safe Codex-backed presets like `micro-agent` into each instance config to keep tool availability aligned across instances.
 

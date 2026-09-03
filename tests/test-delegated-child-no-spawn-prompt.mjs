@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Integration test: delegated child sessions must NOT receive the
- * "Parallel Session Spawning" section in their system prompt.
+ * session-spawn capability section in their system prompt.
  *
  * This prevents recursive spawn explosions where a child session
  * inherits spawn instructions and keeps splitting indefinitely.
@@ -45,8 +45,8 @@ const normalPrompt = await buildPrompt(
 
 assert.match(
   normalPrompt,
-  /Parallel Session Spawning/,
-  'Normal session must include the Parallel Session Spawning section',
+  /RemoteLab Session and Scheduling Capabilities/,
+  'Normal session must include the session and scheduling capabilities section',
 );
 assert.match(
   normalPrompt,
@@ -67,8 +67,8 @@ const childPrompt = await buildPrompt(
 
 assert.doesNotMatch(
   childPrompt,
-  /## Parallel Session Spawning/,
-  'Delegated child must NOT include the Parallel Session Spawning heading',
+  /## RemoteLab Session and Scheduling Capabilities/,
+  'Delegated child must NOT include the session and scheduling capabilities heading',
 );
 assert.doesNotMatch(
   childPrompt,
@@ -89,7 +89,7 @@ const grandchildPrompt = await buildPrompt(
 
 assert.doesNotMatch(
   grandchildPrompt,
-  /## Parallel Session Spawning/,
+  /## RemoteLab Session and Scheduling Capabilities/,
   'Grandchild session must NOT include spawn section',
 );
 
@@ -106,7 +106,7 @@ const depthZeroPrompt = await buildPrompt(
 
 assert.match(
   depthZeroPrompt,
-  /Parallel Session Spawning/,
+  /RemoteLab Session and Scheduling Capabilities/,
   'Session with delegationDepth=0 should still include spawn section',
 );
 

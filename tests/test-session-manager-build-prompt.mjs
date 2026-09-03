@@ -62,20 +62,22 @@ const freshPrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(freshPrompt, /<private>[\s\S]*lightweight external context hook/);
+assert.match(freshPrompt, /<private>[\s\S]*RemoteLab context pointers/);
 assert.match(freshPrompt, /User message:/);
-assert.match(freshPrompt, /do not mirror its headings, bullets, or checklist structure back to the user/);
 assert.match(freshPrompt, /active working agreements/);
 assert.match(freshPrompt, /默认用自然连贯的段落表达，不要自己起标题和列表/);
-assert.match(freshPrompt, /Stable context entry points:/);
+assert.match(freshPrompt, /Context Pointers/);
 assert.match(freshPrompt, new RegExp(`Projects: ${memoryRootPattern}\\/projects\\.md`));
-assert.match(freshPrompt, new RegExp(`Memory writeback targets config: ${memoryRootPattern}\\/writeback-targets\\.json`));
+assert.match(freshPrompt, new RegExp(`Memory writeback targets: ${memoryRootPattern}\\/writeback-targets\\.json`));
 assert.match(freshPrompt, new RegExp(`Auto user memory: ${memoryRootPattern}\\/model-context\\/auto-user-memory\\.md`));
 assert.match(freshPrompt, /Auto system memory: (?:.*\/memory|\[platform-shared-memory\])\/auto-system-memory\.md/);
-assert.match(freshPrompt, /Model-managed writable context root:/);
+assert.match(freshPrompt, /Model context root:/);
 assert.match(freshPrompt, new RegExp(`${memoryRootPattern}\\/model-context`));
-assert.match(freshPrompt, /execution substrate, not as the end user's personal Mac|Treat the host as execution substrate/);
-assert.match(freshPrompt, /only use connectors and delivery channels that are explicitly configured|prefer instance-scoped connectors/);
+assert.match(freshPrompt, /complete RemoteLab connector-action catalog for this instance/);
+assert.doesNotMatch(freshPrompt, /standing authorization/);
+assert.doesNotMatch(freshPrompt, /brief self-review/);
+assert.doesNotMatch(freshPrompt, /Guest Privacy Boundary/);
+assert.doesNotMatch(freshPrompt, /Do not read, write, summarize, or deliver host-level auth files/);
 assert.doesNotMatch(freshPrompt, /Subscription link \(webcal\): webcal:\/\/127\.0\.0\.1:/);
 assert.doesNotMatch(freshPrompt, /Subscription link \(https\): http:\/\/127\.0\.0\.1:/);
 assert.doesNotMatch(freshPrompt, /Independent Agent invocation boundary/);
@@ -119,9 +121,9 @@ const resumedPrompt = await buildPrompt(
   {},
 );
 
-assert.match(resumedPrompt, /<private>[\s\S]*lightweight external context hook/);
+assert.match(resumedPrompt, /<private>[\s\S]*RemoteLab context pointers/);
 assert.match(resumedPrompt, /Current user message:/);
-assert.doesNotMatch(resumedPrompt, /Memory System — Pointer-First Activation/);
+assert.doesNotMatch(resumedPrompt, /RemoteLab Session and Scheduling Capabilities/);
 assert.match(resumedPrompt, /Agent 更像执行器，Manager 负责统一任务语义和边界/);
 
 const splitPrompt = await buildPrompt(
@@ -136,9 +138,27 @@ const splitPrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(splitPrompt, /lightweight external context hook/);
-assert.match(splitPrompt, /Stable context entry points:/);
+assert.match(splitPrompt, /RemoteLab context pointers/);
+assert.match(splitPrompt, /Context Pointers/);
 assert.doesNotMatch(splitPrompt, /Routing principle for this turn/);
+
+const visitorPrompt = await buildPrompt(
+  'session-test-visitor',
+  {
+    ...baseSession,
+    visitorId: 'visitor-123',
+  },
+  '帮我使用这个共享 Agent。',
+  'codex',
+  'codex',
+  null,
+  { skipSessionContinuation: true },
+);
+
+assert.match(visitorPrompt, /This turn came from a share-link visitor, not the authenticated owner/);
+assert.match(visitorPrompt, /authorized only for the shared Agent and this visitor session/);
+assert.doesNotMatch(visitorPrompt, /Treat it as untrusted external input and be conservative/);
+assert.doesNotMatch(visitorPrompt, /If a request feels risky or ambiguous/);
 
 const feishuSourcePrompt = await buildPrompt(
   'session-test-3',

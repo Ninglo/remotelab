@@ -17,7 +17,6 @@ This note records the projection baseline and the later thin-control-plane migra
 | Prepared continuation for fork/resume | `fork-context.json` via `getForkContext` / `setForkContext` and `getOrPrepareForkContext(...)` | `chat/history.mjs`, `chat/session-manager.mjs` | `workState.continuation.prepared` |
 | Prompt-time memory activation | `scopeRouter` + `relatedSessions` from execution-memory prompt selection | `chat/session-label-context.mjs`, `chat/session-manager.mjs` | `managerState.memoryActivation.scopeRouter` / `managerState.memoryActivation.relatedSessions` |
 | Turn search policy | ad hoc string composition inside prompt assembly | `chat/session-manager.mjs` | `managerState.memoryActivation.searchPolicy` |
-| Manager turn policy reminder | prompt-only policy text | `chat/runtime-policy.mjs`, `chat/session-manager.mjs` | still prompt-owned in Phase 1; now projected through one state entry instead of mixed raw carriers |
 
 ## Phase 1 landing
 
@@ -47,7 +46,7 @@ Current implementation status:
 
 - storage is still physically layered: `activeAgreements`, `workSummary`, workflow fields, `context.json`, and `fork-context.json` are projected together but not stored as one monolithic object
 - memory activation is still prompt-time selection, not yet a first-class durable activation record
-- manager turn policy still originates as policy text, not as a separately inspectable manager-state object
+- the former global manager turn policy has been removed; explicit `activeAgreements` remain session-scoped state
 - run state and delivery state are still modeled elsewhere and are not yet folded into the same control-state graph
 - prompt rendering still lives in `chat/session-manager.mjs`; Phase 2 should move more of that rendering into an explicit projection boundary
 

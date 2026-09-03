@@ -2,14 +2,11 @@ import {
   messageEvent, toolUseEvent, toolResultEvent,
   fileChangeEvent, reasoningEvent, statusEvent, usageEvent,
 } from '../normalizer.mjs';
-import { DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS } from '../runtime-policy.mjs';
 import {
   INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED,
   IS_GUEST_INSTANCE,
 } from '../../lib/config.mjs';
 import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
-
-export { DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS } from '../runtime-policy.mjs';
 
 /**
  * Codex CLI adapter.
@@ -202,9 +199,10 @@ function parseItem(item) {
  */
 const CODEX_SYSTEM_PREFIX = process.env.REMOTELAB_CODEX_SYSTEM_PREFIX || '';
 /**
- * Optional developer instructions passed through Codex's own supported
- * `developer_instructions` config key. This is stronger than a prompt prefix
- * when the manager needs to shape the agent's default reply style.
+ * Optional operator override passed through Codex's supported
+ * `developer_instructions` config key. RemoteLab intentionally has no default:
+ * the Harness keeps its native instruction stack unless an operator explicitly
+ * configures an override.
  */
 const CODEX_DEVELOPER_INSTRUCTIONS = process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS || '';
 const HAS_CODEX_DEVELOPER_INSTRUCTIONS_ENV = Object.prototype.hasOwnProperty.call(
@@ -225,7 +223,7 @@ function resolveDeveloperInstructions(options = {}) {
   if (HAS_CODEX_DEVELOPER_INSTRUCTIONS_ENV) {
     return CODEX_DEVELOPER_INSTRUCTIONS.trim();
   }
-  return DEFAULT_CODEX_DEVELOPER_INSTRUCTIONS;
+  return '';
 }
 
 function envFlagEnabled(value, fallback = false) {

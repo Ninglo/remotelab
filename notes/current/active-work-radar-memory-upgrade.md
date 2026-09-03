@@ -49,7 +49,7 @@ The radar gives every session a little "organizational awareness" without loadin
 
 ### Not Seed
 
-The radar should not live in the permanent seed/startup constitution. It changes too often and is user/project specific.
+The radar should not live in the permanent startup projection. It changes too often and is user/project specific.
 
 ### Not Cold Memory
 

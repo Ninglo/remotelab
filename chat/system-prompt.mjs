@@ -7,7 +7,6 @@ import {
   INSTANCE_ROOT,
   MANAGED_WORK_ROOT_DIR,
   PLATFORM_SKILLS_DIR,
-  SHARED_STARTUP_DEFAULTS_ENABLED,
 } from '../lib/config.mjs';
 import {
   buildCalendarSubscribeHelperPath,
@@ -29,69 +28,26 @@ import {
   buildPromptPathMap,
   displayPromptPath,
 } from './prompt-paths.mjs';
-import { MANAGER_RUNTIME_BOUNDARY_SECTION } from './runtime-policy.mjs';
-import { buildSharedStartupDefaultsSection } from './shared-startup-defaults.mjs';
 
 const SYSTEM_STARTUP_CONTEXT_ASSET = 'system/startup-context.md';
 
 /**
- * Build the "## Parallel Session Spawning" section for the system prompt.
+ * Build the RemoteLab session/scheduling capability section.
  * Returns the full section text with variables embedded, or '' if disabled.
  */
 function buildSessionSpawnSection({ currentSessionId, chatPort }) {
   const sessionIdSuffix = currentSessionId ? ` (current: ${currentSessionId})` : '';
-  return `## Parallel Session Spawning
+  return `## RemoteLab Session and Scheduling Capabilities
 
-- RemoteLab can create a separate persistent session when independent history, delivery, visibility, or long-running execution has real product value.
-- Treat this as an optional capability, not a mandatory routing layer around the selected Harness.
-- Prefer the Harness's own in-run planning or native subagents for temporary decomposition that does not need a durable RemoteLab session.
-- Two persistent-session patterns are supported:
-  - Independent side session: create a new session and let it continue on its own.
-  - Waited worker session: create a new session, wait for its result, then summarize the result back in the current session.
-- Do not split merely because a request contains several steps or several independently actionable items; split only when the separate durable session itself is useful.
-- If the user explicitly says to continue in the same session/workflow or not to create another child session, keep the work here.
-- A spawned session is an independent worker that receives a bounded handoff, not a hidden replacement for the Harness's own control loop.
-- **Recursion termination**: if this session was itself spawned via delegation (indicated by a "Delegation handoff:" first message), you already have exactly one focused task. Complete it directly. Do not spawn further child sessions unless the delegated task genuinely contains multiple independent goals that cannot be handled sequentially in this session — a single task that happens to have several steps is NOT a reason to split.
-- Preferred command:
-  - remotelab session-spawn --task "<focused task>" --json
-- Waited subagent variant:
-  - remotelab session-spawn --task "<focused task>" --wait --json
-- Hidden waited subagent variant for noisy exploration / context compression:
-  - remotelab session-spawn --task "<focused task>" --wait --internal --output-mode final-only --json
-- The hidden final-only variant suppresses the visible parent handoff note and returns only the child session's final reply to stdout.
-- Prefer the hidden final-only variant when repo-wide search, multi-hop investigation, or other exploratory work would otherwise flood the current session with noisy intermediate output.
-- Keep spawned-session handoff minimal. Usually the focused task plus the parent session id is enough.
-- Do not impose a heavy handoff template by default; let the child decide what to inspect or how to proceed.
-- If extra context is required, let the child fetch it from the parent session instead of pasting a long recap.
-- If the remotelab command is unavailable in PATH, use:
-  - node "$REMOTELAB_PROJECT_ROOT/cli.js" session-spawn --task "<focused task>" --json
-- For scheduled follow-ups or deferred wake-ups in the current session, prefer the trigger CLI over hand-written HTTP requests.
-- Preferred command:
-  - remotelab trigger create --in 2h --text "Follow up on this later" --json
-- For recurring AI work, use the five-field cron schedule command. It defaults to Asia/Shanghai and keeps each occurrence as an isolated trigger/run:
-  - remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "Prepare the morning brief" --json
-- Use trigger-created session wake-ups only when the future work genuinely requires AI reasoning, drafting, or conversation continuation.
-- Do not use a trigger-created wake-up just because the user said "remind me". A simple time-based reminder such as "remind me tomorrow at 3pm" should usually become a direct calendar/schedule update or other deterministic delivery.
-- For deterministic external delivery such as reminders, notifications, or simple outbound pushes, prefer a direct connector action when one is available instead of waking a session just to restate the message.
-- Reserve trigger-created session wake-ups for recurring or open-ended future AI work such as daily feedback, scheduled reviews, or "check the calendar and brief me" style tasks.
-- The trigger command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --session explicitly.
-- Trigger and schedule commands capture the current session source when available so generated results can return to the same connector conversation. Use --no-source-delivery only when the result should remain inside RemoteLab.
-- If the remotelab command is unavailable in PATH, use:
-  - node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
-- If you generate a local file the user needs, do not rely on host paths as the user-facing handoff.
-- Normal contract: mention the result in prose and include an explicit \`Artifacts:\` block in the final reply so RemoteLab can publish the files automatically.
-- Preferred format:
-  - Artifacts:
-  - - ./report.pdf
-  - - ./charts/summary.png
-- The \`Artifacts:\` block is for backend publication, not for telling the user to browse the machine.
-- The shell environment exposes:
-  - REMOTELAB_SESSION_ID — current source session id${sessionIdSuffix}
-  - REMOTELAB_CHAT_BASE_URL — local RemoteLab API base URL (usually http://127.0.0.1:${chatPort})
-  - REMOTELAB_PROJECT_ROOT — local RemoteLab project root for fallback commands
-- The spawn command defaults to REMOTELAB_SESSION_ID, so you usually do not need to pass --source-session explicitly.
-- RemoteLab may append a lightweight source-session note, but do not rely on heavy parent/child UI; normal session-list and sidebar surfaces are the primary way spawned sessions show up.
-- Use this capability judiciously: split work when it reduces context pressure or enables real parallelism, not for every trivial substep.`;
+- Create a persistent side session: \`remotelab session-spawn --task "<task>" --json\`
+- Create one and wait for its final result: add \`--wait\`.
+- Suppress intermediate worker output: add \`--internal --output-mode final-only\`.
+- Schedule a one-time AI turn: \`remotelab trigger create --in 2h --text "<task>" --json\`
+- Schedule recurring AI work: \`remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "<task>" --json\`
+- The equivalent fallback is \`node "$REMOTELAB_PROJECT_ROOT/cli.js" <command>\`.
+- \`REMOTELAB_SESSION_ID\` is the source session id${sessionIdSuffix}; spawn, trigger, and schedule commands use it by default.
+- \`REMOTELAB_CHAT_BASE_URL\` is the local API base URL, normally \`http://127.0.0.1:${chatPort}\`.
+- \`REMOTELAB_PROJECT_ROOT\` is the installed RemoteLab source root.`;
 }
 
 /**
@@ -116,14 +72,10 @@ export async function buildSystemContext(options = {}) {
     pathExists(SKILLS_MD),
   ]);
   const isFirstTime = !hasBootstrap && !hasGlobal;
-  const includeSharedStartupDefaults = typeof options?.includeSharedStartupDefaults === 'boolean'
-    ? options.includeSharedStartupDefaults
-    : SHARED_STARTUP_DEFAULTS_ENABLED;
   const includeSessionSpawn = options?.includeSessionSpawn !== false;
 
   let context = (await renderPromptAsset(SYSTEM_STARTUP_CONTEXT_ASSET, {
     ...buildPromptPathMap({ home }),
-    MANAGER_RUNTIME_BOUNDARY_SECTION,
     CURRENT_SESSION_ID_SUFFIX: currentSessionId ? ` (current: ${currentSessionId})` : '',
     CHAT_PORT: String(CHAT_PORT),
     SESSION_SPAWN_SECTION: includeSessionSpawn
@@ -131,49 +83,32 @@ export async function buildSystemContext(options = {}) {
       : '',
   })).trim();
 
-  if (includeSharedStartupDefaults) {
-    context += `\n\n${buildSharedStartupDefaultsSection()}`;
-  }
-
   if (!hasBootstrap && hasGlobal) {
     context += `
 
-## Legacy Memory Layout Detected
-This machine has ${globalPath} but no ${bootstrapPath} yet.
-- Do NOT treat global.md as mandatory startup context for every conversation.
-- At a natural breakpoint, backfill bootstrap.md with only the small startup index.
-- Create projects.md when recurring work areas, repos, or task families need a lightweight pointer catalog.`;
+## Memory Layout Status
+This machine has ${globalPath} but no ${bootstrapPath}. A small bootstrap index can be created when useful.`;
   }
 
   if (!hasProjects && (hasBootstrap || hasGlobal)) {
     context += `
 
-## Project Pointer Catalog Missing
-If this machine has recurring work areas, repos, or task families, create ${projectsPath} as a small routing layer instead of stuffing those pointers into startup context.`;
+## Memory Layout Status
+No project pointer index exists at ${projectsPath}.`;
   }
 
   if (!hasSkills) {
     context += `
 
-## Skills Index Missing
-If local reusable workflows exist, create ${skillsPath} as a minimal placeholder index instead of treating the absence as a hard failure.`;
+## Memory Layout Status
+No local skill index exists at ${skillsPath}.`;
   }
 
   if (isFirstTime) {
     context += `
 
-## FIRST-TIME SETUP REQUIRED
-This machine is missing both bootstrap.md and global.md. Before diving into detailed work:
-1. First check for explicit user-provided pointers, carried continuity, and obvious known work roots before doing any filesystem discovery.
-2. If a small amount of discovery is still necessary, inspect only a few safe top-level directories under ${home} to map key work areas, data folders, apps, and repos. Do not recurse into ~/Library, app containers, or other system-managed paths unless the task specifically requires macOS diagnostics.
-3. If even that does not produce a clear entry point, ask the user for the missing project/path pointer instead of widening into machine-wide search.
-4. Create ${bootstrapPath} with machine basics, collaboration defaults, key directories, and short project pointers.
-5. Create ${projectsPath} if there are recurring work areas, repos, or task families worth indexing.
-6. Create ${globalPath} only for deeper local notes that should NOT be startup context.
-7. Create ${skillsPath} if local reusable workflows exist.
-8. Show the user a brief bootstrap summary and confirm it is correct.
-
-Bootstrap only needs to be tiny. Detailed memory belongs in projects.md, tasks/, or global.md.`;
+## Memory Layout Status
+This machine has not initialized ${bootstrapPath} or ${globalPath}.`;
   }
 
   const scopedInstanceName = basename(INSTANCE_ROOT || '').trim().toLowerCase();
@@ -183,19 +118,14 @@ Bootstrap only needs to be tiny. Detailed memory belongs in projects.md, tasks/,
 
 ## Instance Isolation Boundary
 This session is running inside the instance-scoped environment \`${scopedInstanceName}\`.
-- Treat this instance as its own machine-scoped environment, not as a view into broader host storage.
-- The default user-visible file surface is ${displayPromptPath(MANAGED_WORK_ROOT_DIR, home)}. Keep routine work, imports, and exports there.
-- Paths outside ${displayPromptPath(INSTANCE_ROOT, home)} are host-level by default. Do not browse, read, summarize, attach, or persist them unless the task explicitly requires a minimal safe subset and that material has first been moved into this instance.
-- Even inside ${displayPromptPath(INSTANCE_ROOT, home)}, auth files, mailbox config, connector secrets, and runtime state are operational data rather than normal user content.
-- Never inspect sibling-instance roots, unrelated host-level dotfiles, or broader host storage just because they exist on disk.`
+- Filesystem access is confined to ${displayPromptPath(INSTANCE_ROOT, home)} by the runtime.
+- The instance workspace is ${displayPromptPath(MANAGED_WORK_ROOT_DIR, home)}.`
       : `
 
 ## Instance Local Access
 This session is running inside the instance-scoped environment \`${scopedInstanceName}\`.
-- The default user-visible file surface is ${displayPromptPath(MANAGED_WORK_ROOT_DIR, home)}. Keep routine work, imports, and exports there when possible.
-- Local filesystem access and localhost service calls are not hard-confined to ${displayPromptPath(INSTANCE_ROOT, home)}. If a compatibility scenario genuinely requires broader machine access, you may use it.
-- Treat broader host paths as exceptional rather than default. Avoid unrelated paths, sibling-instance state, auth files, mailbox config, connector secrets, and runtime state unless the task genuinely requires them.
-- This relaxed local access mode does not weaken RemoteLab authentication, share-link scoping, or the existing external network isolation boundaries.`;
+- The instance workspace is ${displayPromptPath(MANAGED_WORK_ROOT_DIR, home)}.
+- RemoteLab is not applying a filesystem confinement boundary to this Harness process.`;
   }
 
   context += await buildConnectorCapabilitiesSection();
@@ -325,7 +255,7 @@ If the user asks to connect Gmail or Gmail is not ready yet, direct them to the 
 
 ## Instance Connectors
 
-Only the connectors listed in this section are available for this instance. Do not discover, invoke, or fall back to host-level scripts, daemons, config files, or credentials found on disk that are not declared here.`;
+This section is the complete RemoteLab connector-action catalog for this instance. If an action is absent, no instance-bound RemoteLab connector is configured for it.`;
 
   if (connectorSections.length > 0) {
     section += '\n\n' + connectorSections.join('\n\n');

@@ -255,6 +255,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [x] Baseline multi-session fan-out with bounded cross-session context carry
 - [x] Remove voice-input UI/backend and the leftover hidden transcript-cleanup send path
 - [x] Contract the semantic manager layer: remove pre-turn dispatch, reply self-check/repair, separate task/workflow classifiers, global Project organizer, and delegation reuse heuristics; keep one Session-state classifier plus cross-Harness memory/continuity
+- [x] Contract prompt projection to RemoteLab-only facts and capabilities; remove the global behavior constitution, repeated manager reminder, shared startup defaults, and default Codex developer-instruction overlay
 
 ### P1 — Next Up
 - [ ] Guided intake / problem discovery — help users describe messy repetitive work, attach examples, and converge on a concrete automation brief without assuming expert prompting
@@ -263,7 +264,6 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [ ] `Welcome Agent` / guided onboarding — on first launch, seed a built-in guide Agent that explains capabilities in plain language, asks about the owner's background, repetitive-work pain point, current workflow, and sample inputs, then routes them into either a high-fit starter `Agent` or one concrete first automation `Session` instead of an empty session list
 - [ ] Keep runtime/tool wiring pragmatic and local-first — only generalize the current tool abstraction when a concrete local-runtime need appears; do not reintroduce third-party domain-provider or cloud skill distribution paths by default
 - [x] Produce a precise file-level concept→implementation guide so future sessions can route directly to the right files with less repo spelunking → `docs/implementation-recipes.md`
-- [ ] Review the removable shared startup-defaults slice after live use; prune, disable, or replace it quickly if it starts overfitting or duplicating personal memory
 
 ### P2 — Future
 - [ ] Context carry/cache confirmation — validate and tune compaction, prepared fork context, summary/refs reuse, and any cross-session handoff packet so continued or spawned work stays fast and bounded

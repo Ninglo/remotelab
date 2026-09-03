@@ -27,6 +27,8 @@ The selected Harness owns:
 
 RemoteLab must not wrap ordinary turns in a second hidden semantic gate, planner, or reply reviewer.
 
+The same boundary applies to prompt text. First-turn and per-turn projections carry RemoteLab-only facts and capabilities, not a global persona, reply style, execution bias, permission heuristic, generic content policy, or copied provider developer instructions. Code-backed access scope and connector bindings remain product responsibilities; prompts only describe the resulting state.
+
 ## Current message path
 
 1. Resolve or create a Session.
@@ -90,6 +92,8 @@ The active architecture removes:
 - separate workstream assessment before relabeling
 - automatic global Project-list organizer
 - semantic delegated-child reuse heuristics
+- global manager behavior prompt, repeated per-turn manager reminder, and default Codex developer-instruction overlay
+- removable shared startup-defaults behavior bundle
 
 Historical usage-ledger operation labels may remain readable for old records, but no active path emits those operations.
 

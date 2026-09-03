@@ -157,7 +157,7 @@ Then branch by the change you need:
 - Agent/template compatibility layer, share metadata, and builder flow → `chat/apps.mjs`, `chat/router-control-routes.mjs`, `chat/session-manager.mjs`
 - source routing / source-specific behavior → `chat/session-source-resolution.mjs`, `chat/source-runtime-prompts.mjs`, `docs/external-message-protocol.md`
 - session labeling / rename / grouping → `chat/session-state-classifier.mjs`, `chat/session-naming.mjs`
-- memory activation / startup prompt → `chat/system-prompt.mjs`, `chat/shared-startup-defaults.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md`
+- memory activation / startup prompt → `chat/system-prompt.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md`
 - manager / prompt / memory ownership model → `notes/current/model-sovereign-control-architecture.md`, `notes/current/prompt-layer-topology.md`, `notes/current/manager-policy-persistence.md`
 - manager/work-state projection → `chat/session-control-state.mjs`, `chat/history.mjs`, `notes/current/session-control-state-phase1.md`
 - provider/tool extensibility → `lib/tools.mjs`, `chat/models.mjs`, `notes/directional/provider-architecture.md`
@@ -342,7 +342,6 @@ remotelab/
 │   ├── ws.mjs / ws-clients.mjs     # invalidation-only realtime
 │   ├── system-prompt.mjs           # startup prompt assembly
 │   ├── turn-context-hook.mjs       # per-turn external context hook
-│   ├── shared-startup-defaults.mjs # removable shared startup defaults slice
 │   ├── prompt-assets/              # editable prompt text assets
 │   ├── session-continuation.mjs    # cross-turn / cross-tool handoff context
 │   ├── session-naming.mjs          # session title/group normalization helpers
@@ -607,14 +606,15 @@ There is no pre-turn semantic dispatch gate or planner. After structural validat
 
 Prompt construction combines multiple layers:
 
-- pointer-first startup context from `chat/system-prompt.mjs` + `chat/prompt-assets/`
-- removable shared startup slice from `chat/shared-startup-defaults.mjs`
-- per-turn external context hook from `chat/turn-context-hook.mjs`
+- first-turn RemoteLab capability and pointer projection from `chat/system-prompt.mjs` + `chat/prompt-assets/`
+- per-turn pointer projection from `chat/turn-context-hook.mjs`
 - provider-neutral current work summary from `session.workSummary` / `workState.summary`
 - agent-level `systemPrompt` when the session came from an Agent
 - continuation context when resuming or switching tools
 - summary-head context from `context.json` after compaction
 - visitor-specific guardrail block for shared Agent sessions
+
+RemoteLab does not inject a global behavior constitution or a default provider-specific developer-instruction overlay. Prompt layers describe RemoteLab state, scope, capabilities, and explicit session context; the selected Harness keeps its native task semantics and safety model.
 
 This is an important architectural decision: **session continuity is reconstructed from durable state, not from one immortal in-memory process**.
 
@@ -944,8 +944,7 @@ RemoteLab’s model behavior is shaped not only by chat history but also by the 
 
 Current implementation pieces:
 
-- `chat/system-prompt.mjs` prepends startup instructions for memory activation
-- `chat/shared-startup-defaults.mjs` carries a small removable cross-user startup slice that can be toggled without changing personal memory layout
+- `chat/system-prompt.mjs` prepends a small capability and memory-pointer map
 - `chat/turn-context-hook.mjs` injects a lightweight per-turn pointer block plus a stable writable context root
 - user-level memory lives under `~/.remotelab/memory/`
 - shared system memory lives in `memory/system.md`
@@ -991,7 +990,7 @@ Use this as the practical code-finding guide.
 | share snapshots | `chat/shares.mjs`, `chat/router.mjs`, `templates/chat.html`, `static/chat/` |
 | push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
 | model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat/` |
-| pointer-first memory startup | `chat/system-prompt.mjs`, `chat/shared-startup-defaults.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md` |
+| pointer-first memory startup | `chat/system-prompt.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md` |
 | inbound/outbound mail automation | `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-outbound.mjs`, `lib/agent-mail-completion-targets.mjs`, `scripts/agent-mail-*.mjs` |
 
 ---
