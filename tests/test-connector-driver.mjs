@@ -391,6 +391,35 @@ function createEvent(type, fields = {}) {
 }
 
 {
+  const transport = createFeishuConnectorTransport({
+    runtime: { appClient: {} },
+    summary: { chatId: 'oc_chat_timeout_1', mentions: [] },
+    sendTimeoutMs: 10,
+    sendFeishuTextImpl: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      return { message_id: 'feishu_too_late_1' };
+    },
+  });
+
+  const startedAt = Date.now();
+  const result = await transport.send({
+    messageId: 'msg_feishu_timeout_1',
+    responseId: 'resp_feishu_timeout_1',
+    kind: 'content',
+    text: '这条发送会永久卡住会话队列。',
+    attachments: [],
+    order: 0,
+    idempotencyKey: 'resp_feishu_timeout_1:feishu:0:content',
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.state, 'delivery_failed');
+  assert.equal(result.retryable, true);
+  assert.match(result.lastError, /Feishu text send timed out after 10ms/);
+  assert.ok(elapsedMs < 60, `timed-out send should release the queue promptly, took ${elapsedMs}ms`);
+}
+
+{
   const calls = [];
   const transport = createEmailConnectorTransport({
     defaults: {

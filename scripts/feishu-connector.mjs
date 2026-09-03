@@ -65,6 +65,7 @@ import {
 import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { ConnectorDriver } from '../lib/connector-driver.mjs';
 import { createFeishuConnectorTransport } from '../lib/connector-driver-transports.mjs';
+import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   assertConnectorPublicationReady,
   createConnectorSession,
@@ -117,6 +118,7 @@ function parseArgs(argv) {
     configPath: DEFAULT_CONFIG_PATH,
     durationMs: 0,
     replayLast: false,
+    replayMessageIds: [],
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -135,6 +137,15 @@ function parseArgs(argv) {
       options.replayLast = true;
       continue;
     }
+    if (arg === '--replay-message-id') {
+      const messageId = trimString(argv[index + 1]);
+      if (!messageId) {
+        throw new Error('Missing --replay-message-id value');
+      }
+      options.replayMessageIds.push(messageId);
+      index += 1;
+      continue;
+    }
     if (arg === '-h' || arg === '--help') {
       printUsage(0);
     }
@@ -143,6 +154,9 @@ function parseArgs(argv) {
 
   if (!options.configPath) {
     throw new Error('Missing config path');
+  }
+  if (options.replayLast && options.replayMessageIds.length > 0) {
+    throw new Error('--replay-last cannot be combined with --replay-message-id');
   }
 
   return options;
@@ -164,6 +178,7 @@ Options:
   --config <path>        Config file path (default: ${DEFAULT_CONFIG_PATH})
   --duration-ms <ms>     Optional smoke-test duration before exit
   --replay-last          Reprocess the latest stored inbound message once
+  --replay-message-id    Reprocess one stored inbound message by ID (repeatable)
   -h, --help             Show this help
 
 Config shape:
@@ -2171,13 +2186,28 @@ async function main() {
     `[feishu-connector] runtime selection: mode=${config.runtimeSelectionMode} fallbackTool=${config.sessionTool} fallbackModel=${config.model || '(default)'} fallbackEffort=${config.effort || '(default)'} fallbackThinking=${config.thinking ? 'on' : 'off'}`,
   );
 
-  if (options.replayLast) {
-    const summary = await loadLatestReplayableSummary(storagePaths.eventsLogPath);
-    if (!summary) {
-      throw new Error(`No replayable inbound message found in ${storagePaths.eventsLogPath}`);
+  if (options.replayLast || options.replayMessageIds.length > 0) {
+    let summaries = [];
+    if (options.replayLast) {
+      const summary = await loadLatestReplayableSummary(storagePaths.eventsLogPath);
+      if (!summary) {
+        throw new Error(`No replayable inbound message found in ${storagePaths.eventsLogPath}`);
+      }
+      summaries = [summary];
+    } else {
+      const replay = await loadReplayableSummariesByMessageIds(
+        storagePaths.eventsLogPath,
+        options.replayMessageIds,
+      );
+      if (replay.missingMessageIds.length > 0) {
+        throw new Error(`Stored inbound messages not found: ${replay.missingMessageIds.join(', ')}`);
+      }
+      summaries = replay.summaries;
     }
-    console.log(`[feishu-connector] replaying stored message ${summary.messageId}`);
-    await handleMessage(runtime, summary, 'replay-last');
+    for (const summary of summaries) {
+      console.log(`[feishu-connector] replaying stored message ${summary.messageId}`);
+      await handleMessage(runtime, summary, options.replayLast ? 'replay-last' : 'replay-message-id');
+    }
     if (options.durationMs === 0) {
       closeConnection('replay complete');
       await delay(250);
