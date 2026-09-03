@@ -64,7 +64,7 @@ import {
 } from '../connectors/feishu/reply-attachments.mjs';
 import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { ConnectorDriver } from '../lib/connector-driver.mjs';
-import { createFeishuConnectorTransport } from '../lib/connector-driver-transports.mjs';
+import { createFeishuConnectorTransport, withTimeout } from '../lib/connector-driver-transports.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   assertConnectorPublicationReady,
@@ -95,6 +95,7 @@ const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 0;
 const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
+const DEFAULT_PROCESSING_REACTION_TIMEOUT_MS = 10_000;
 const CONNECTOR_PID_FILENAME = 'connector.pid';
 const APPROVE_CURRENT_CHAT_COMMANDS = new Set([
   '授权本群',
@@ -198,7 +199,8 @@ Config shape:
     "processingReaction": {
       "enabled": false,
       "emojiType": "${DEFAULT_PROCESSING_REACTION_EMOJI_TYPE}",
-      "removeOnCompletion": false
+      "removeOnCompletion": false,
+      "timeoutMs": ${DEFAULT_PROCESSING_REACTION_TIMEOUT_MS}
     },
     "silentConfirmationText": "",
     "intakePolicy": {
@@ -419,12 +421,18 @@ function normalizeReactionEmojiType(value, fallback = DEFAULT_PROCESSING_REACTIO
   return normalized || fallback;
 }
 
+function normalizePositiveTimeout(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 function normalizeProcessingReactionConfig(value) {
   if (value === true) {
     return {
       enabled: true,
       emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
       removeOnCompletion: false,
+      timeoutMs: DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
     };
   }
   if (value === false) {
@@ -432,6 +440,7 @@ function normalizeProcessingReactionConfig(value) {
       enabled: false,
       emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
       removeOnCompletion: false,
+      timeoutMs: DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
     };
   }
   if (typeof value === 'string') {
@@ -439,12 +448,14 @@ function normalizeProcessingReactionConfig(value) {
       enabled: true,
       emojiType: normalizeReactionEmojiType(value),
       removeOnCompletion: false,
+      timeoutMs: DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
     };
   }
   return {
     enabled: normalizeBoolean(value?.enabled, false),
     emojiType: normalizeReactionEmojiType(value?.emojiType),
     removeOnCompletion: normalizeBoolean(value?.removeOnCompletion, false),
+    timeoutMs: normalizePositiveTimeout(value?.timeoutMs, DEFAULT_PROCESSING_REACTION_TIMEOUT_MS),
   };
 }
 
@@ -1477,16 +1488,24 @@ async function addProcessingReaction(runtime, summary) {
     return null;
   }
   const emojiType = normalizeReactionEmojiType(runtime?.config?.processingReaction?.emojiType);
-  const response = await runtime.appClient.im.v1.messageReaction.create({
-    path: {
-      message_id: messageId,
-    },
-    data: {
-      reaction_type: {
-        emoji_type: emojiType,
+  const timeoutMs = normalizePositiveTimeout(
+    runtime?.config?.processingReaction?.timeoutMs,
+    DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
+  );
+  const response = await withTimeout(
+    () => runtime.appClient.im.v1.messageReaction.create({
+      path: {
+        message_id: messageId,
       },
-    },
-  });
+      data: {
+        reaction_type: {
+          emoji_type: emojiType,
+        },
+      },
+    }),
+    timeoutMs,
+    'Feishu processing reaction',
+  );
   if ((response.code !== undefined && response.code !== 0) || !response.data?.reaction_id) {
     throw new Error(response.msg || 'Failed to add Feishu processing reaction');
   }
@@ -1508,12 +1527,20 @@ async function removeProcessingReaction(runtime, summary, reaction) {
   if (!messageId || !reactionId) {
     return false;
   }
-  const response = await runtime.appClient.im.v1.messageReaction.delete({
-    path: {
-      message_id: messageId,
-      reaction_id: reactionId,
-    },
-  });
+  const timeoutMs = normalizePositiveTimeout(
+    runtime?.config?.processingReaction?.timeoutMs,
+    DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
+  );
+  const response = await withTimeout(
+    () => runtime.appClient.im.v1.messageReaction.delete({
+      path: {
+        message_id: messageId,
+        reaction_id: reactionId,
+      },
+    }),
+    timeoutMs,
+    'Feishu processing reaction removal',
+  );
   if (response.code !== undefined && response.code !== 0) {
     throw new Error(response.msg || 'Failed to remove Feishu processing reaction');
   }

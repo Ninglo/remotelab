@@ -19,6 +19,7 @@ const { saveUiRuntimeSelection } = await import(pathToFileURL(join(repoRoot, 'li
 
 const {
   DEFAULT_SESSION_SYSTEM_PROMPT,
+  addProcessingReaction,
   buildSessionDescription,
   createRuntimeContext,
   buildRemoteLabMessage,
@@ -373,6 +374,29 @@ assert.deepEqual(reactionCalls, [
 assert.equal(sendCalls, 0, 'silent assistant replies should not send Feishu messages');
 assert.equal(handled.length, 1, 'silent reaction-backed replies should still be marked handled');
 assert.equal(handled[0].metadata.status, 'silent_no_reply');
+
+{
+  const startedAt = Date.now();
+  await assert.rejects(
+    addProcessingReaction({
+      config: { processingReaction: { enabled: true, timeoutMs: 10 } },
+      appClient: {
+        im: {
+          v1: {
+            messageReaction: {
+              create: async () => {
+                await new Promise((resolve) => setTimeout(resolve, 80));
+                return { code: 0, data: { reaction_id: 'too_late' } };
+              },
+            },
+          },
+        },
+      },
+    }, { messageId: 'msg_reaction_timeout_1' }),
+    /Feishu processing reaction timed out after 10ms/,
+  );
+  assert.ok(Date.now() - startedAt < 60, 'a stuck processing reaction must not block the chat queue');
+}
 
 const imageSummary = summarizeEvent({
   event_id: 'evt_image_1',
@@ -1218,6 +1242,7 @@ assert.deepEqual(loadedConfig.processingReaction, {
   enabled: false,
   emojiType: 'THINKING',
   removeOnCompletion: false,
+  timeoutMs: 10000,
 }, 'processing reactions should default to disabled');
 assert.equal(loadedConfig.silentConfirmationText, '', 'silent confirmations should default to disabled');
 
@@ -1225,30 +1250,36 @@ assert.deepEqual(normalizeProcessingReactionConfig(true), {
   enabled: true,
   emojiType: 'THINKING',
   removeOnCompletion: false,
+  timeoutMs: 10000,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('wronged'), {
   enabled: true,
   emojiType: 'WRONGED',
   removeOnCompletion: false,
+  timeoutMs: 10000,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('fingerheart'), {
   enabled: true,
   emojiType: 'FINGERHEART',
   removeOnCompletion: false,
+  timeoutMs: 10000,
 });
 assert.deepEqual(normalizeProcessingReactionConfig('thinking'), {
   enabled: true,
   emojiType: 'THINKING',
   removeOnCompletion: false,
+  timeoutMs: 10000,
 });
 assert.deepEqual(normalizeProcessingReactionConfig({
   enabled: true,
   emojiType: 'smart',
   removeOnCompletion: false,
+  timeoutMs: 15000,
 }), {
   enabled: true,
   emojiType: 'SMART',
   removeOnCompletion: false,
+  timeoutMs: 15000,
 });
 
 assert.equal(
