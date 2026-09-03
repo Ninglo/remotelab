@@ -94,6 +94,7 @@ const DEFAULT_SESSION_TOOL = 'codex';
 const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const RUN_POLL_INTERVAL_MS = 1500;
 const RUN_POLL_TIMEOUT_MS = 0;
+const DEFAULT_FEISHU_API_TIMEOUT_MS = 10_000;
 const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
 const DEFAULT_PROCESSING_REACTION_TIMEOUT_MS = 10_000;
 const CONNECTOR_PID_FILENAME = 'connector.pid';
@@ -189,6 +190,7 @@ Config shape:
     "region": "feishu-cn",
     "loggerLevel": "info",
     "chatBaseUrl": "${DEFAULT_CHAT_BASE_URL}",
+    "apiTimeoutMs": ${DEFAULT_FEISHU_API_TIMEOUT_MS},
     "sessionFolder": "${homedir()}",
     "runtimeSelectionMode": "${DEFAULT_RUNTIME_SELECTION_MODE}",
     "sessionTool": "${DEFAULT_SESSION_TOOL}",
@@ -486,6 +488,7 @@ async function loadConfig(pathname) {
     appSecret,
     region: normalizeRegion(parsed?.region),
     loggerLevel: trimString(parsed?.loggerLevel || 'info'),
+    apiTimeoutMs: normalizePositiveTimeout(parsed?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
     storageDir,
     intakePolicy: normalizeIntakePolicy(parsed?.intakePolicy, {
       baseDir: configDir,
@@ -1065,14 +1068,19 @@ async function loadFeishuChatMetadata(runtime, chatId) {
   }
 
   try {
-    const response = await runtime.appClient.im.v1.chat.get({
-      params: {
-        user_id_type: 'open_id',
-      },
-      path: {
-        chat_id: normalizedChatId,
-      },
-    });
+    const timeoutMs = normalizePositiveTimeout(runtime?.config?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS);
+    const response = await withTimeout(
+      () => runtime.appClient.im.v1.chat.get({
+        params: {
+          user_id_type: 'open_id',
+        },
+        path: {
+          chat_id: normalizedChatId,
+        },
+      }),
+      timeoutMs,
+      'Feishu chat metadata lookup',
+    );
     if (response.code !== undefined && response.code !== 0) {
       throw new Error(response.msg || `Failed to load Feishu chat metadata (${response.code})`);
     }

@@ -398,6 +398,51 @@ assert.equal(handled[0].metadata.status, 'silent_no_reply');
   assert.ok(Date.now() - startedAt < 60, 'a stuck processing reaction must not block the chat queue');
 }
 
+{
+  const metadataRuntime = {
+    processingMessageIds: new Set(),
+    chatMetadataCache: new Map(),
+    config: {
+      apiTimeoutMs: 10,
+      processingReaction: { enabled: false },
+    },
+    storagePaths: {
+      handledMessagesPath: '/tmp/remotelab-feishu-metadata-timeout-handled.json',
+    },
+    appClient: {
+      im: {
+        v1: {
+          chat: {
+            get: async () => {
+              await new Promise((resolve) => setTimeout(resolve, 80));
+              return { code: 0, data: { name: 'too late' } };
+            },
+          },
+        },
+      },
+    },
+  };
+  const startedAt = Date.now();
+  await handleMessage(metadataRuntime, {
+    ...summary,
+    messageId: 'msg_metadata_timeout_1',
+    chatType: 'group',
+  }, 'test', {
+    wasMessageHandled: async () => false,
+    generateRemoteLabReply: async () => ({
+      sessionId: 'session_metadata_timeout_1',
+      runId: 'run_metadata_timeout_1',
+      requestId: 'request_metadata_timeout_1',
+      responseId: 'response_metadata_timeout_1',
+      duplicate: false,
+      replyText: 'Metadata timeout fallback reply.',
+    }),
+    sendFeishuText: async () => ({ message_id: 'out_metadata_timeout_1' }),
+    markMessageHandled: async () => {},
+  });
+  assert.ok(Date.now() - startedAt < 60, 'a stuck chat metadata lookup must not block the chat queue');
+}
+
 const imageSummary = summarizeEvent({
   event_id: 'evt_image_1',
   event_type: 'im.message.receive_v1',
