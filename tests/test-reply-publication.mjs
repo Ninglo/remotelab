@@ -47,6 +47,7 @@ const {
   killAll,
   sendMessage,
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
+const { updateRun } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -89,6 +90,23 @@ try {
   assert.equal(publication?.finalRunId, runId);
   assert.deepEqual(publication?.continuationRunIds, []);
   assert.equal(publication?.payload?.text, '主 Harness 已经直接完成并交付结果。');
+
+  await updateRun(runId, (run) => ({
+    ...run,
+    replyPublication: {
+      ...run.replyPublication,
+      state: 'running',
+      resolution: '',
+      readyAt: null,
+    },
+  }));
+  const recoveredPublication = await getSessionReplyPublication(session.id, responseId);
+  assert.equal(
+    recoveredPublication?.state,
+    'ready',
+    'a terminal run must repair a stale non-terminal reply publication',
+  );
+  assert.equal(recoveredPublication?.resolution, 'accepted_as_is');
 
   const secondOutcome = await sendMessage(session.id, '继续当前会话。', [], {
     tool: 'fake-codex',

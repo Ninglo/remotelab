@@ -548,6 +548,10 @@ function deriveReplyPublicationStateFromRun(run = {}) {
   return 'running';
 }
 
+function isTerminalReplyPublicationState(state) {
+  return ['ready', 'failed', 'cancelled'].includes(trimString(state).toLowerCase());
+}
+
 export { resolveAttachmentMimeType } from './session-attachments.mjs';
 
 function sanitizeQueuedFollowUpAttachments(images) {
@@ -2432,6 +2436,48 @@ async function reconcileReplyPublicationRuns(sessionId, rootRun) {
       if (postFinalize) {
         await postFinalize;
       }
+    }
+  }
+
+  const latestRootRun = changed ? (await getRun(rootRun.id) || rootRun) : rootRun;
+  const latestPublication = latestRootRun.replyPublication && typeof latestRootRun.replyPublication === 'object'
+    ? latestRootRun.replyPublication
+    : null;
+  if (latestPublication && !isTerminalReplyPublicationState(latestPublication.state)) {
+    const latestCandidateRunIds = normalizeReplyPublicationResponseIds([
+      latestRootRun.id,
+      ...(Array.isArray(latestPublication.continuationRunIds) ? latestPublication.continuationRunIds : []),
+      trimString(latestPublication.finalRunId),
+    ]);
+    const latestCandidateRuns = [];
+    for (const candidateRunId of latestCandidateRunIds) {
+      const candidateRun = await getRun(candidateRunId);
+      if (candidateRun?.sessionId === sessionId) {
+        latestCandidateRuns.push(candidateRun);
+      }
+    }
+    const finalRunId = trimString(latestPublication.finalRunId) || latestRootRun.id;
+    const finalRun = latestCandidateRuns.find((candidateRun) => candidateRun.id === finalRunId) || null;
+    const allKnownRunsTerminal = latestCandidateRuns.length > 0
+      && latestCandidateRuns.every((candidateRun) => isTerminalRunState(candidateRun.state));
+    if (finalRun && allKnownRunsTerminal) {
+      const recoveredState = deriveReplyPublicationStateFromRun(finalRun);
+      await updateRunReplyPublication(latestRootRun.id, (current) => {
+        if (isTerminalReplyPublicationState(current.state)) {
+          return current;
+        }
+        const terminalAt = trimString(finalRun.completedAt) || nowIso();
+        return {
+          ...current,
+          state: recoveredState,
+          resolution: recoveredState === 'ready' ? 'accepted_as_is' : '',
+          finalRunId: finalRun.id,
+          readyAt: recoveredState === 'ready' ? (trimString(current.readyAt) || terminalAt) : null,
+          failedAt: recoveredState === 'ready' ? null : (trimString(current.failedAt) || terminalAt),
+          lastError: recoveredState === 'ready' ? null : trimString(finalRun.failureReason),
+        };
+      });
+      changed = true;
     }
   }
 
