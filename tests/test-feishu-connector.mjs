@@ -644,6 +644,8 @@ const topicSummary = summarizeEvent({
     group_message_type: 'thread',
     chat_mode: 'group',
     message_id: 'msg_topic_reply_1',
+    create_time: '1788451200000',
+    update_time: '1788451260000',
     root_id: 'msg_topic_root_1',
     parent_id: 'msg_topic_root_1',
     thread_id: 'thread_topic_1',
@@ -670,7 +672,48 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
   threadId: 'thread_topic_1',
   rootId: 'msg_topic_root_1',
 });
-assert.equal(buildMessageSourceContext(topicSummary).topicId, 'thread_topic_1');
+assert.deepEqual(buildMessageSourceContext(topicSummary), {
+  connector: 'feishu',
+  messageId: 'msg_topic_reply_1',
+  messageType: 'text',
+  chatType: 'group',
+  conversationKind: 'topic',
+  ingestion: {
+    status: 'complete',
+    resourceCount: 0,
+  },
+  eventId: 'evt_topic_1',
+  createTime: '1788451200000',
+  updateTime: '1788451260000',
+  messageRevision: '1788451260000',
+  sourceReference: {
+    kind: 'feishu_message',
+    messageId: 'msg_topic_reply_1',
+    messageType: 'text',
+  },
+  tenantKey: 'tenant_topic_1',
+  topicId: 'thread_topic_1',
+  threadId: 'thread_topic_1',
+  rootId: 'msg_topic_root_1',
+  parentId: 'msg_topic_root_1',
+  groupMessageType: 'thread',
+  chatMode: 'group',
+  sender: {
+    openId: 'ou_topic_1',
+    senderType: 'user',
+    tenantKey: 'tenant_topic_1',
+    isInternal: true,
+  },
+  contentSummary: 'Text message: topic scoped question',
+});
+assert.equal(
+  buildMessageSourceContext({
+    ...topicSummary,
+    sender: { ...topicSummary.sender, tenantKey: 'tenant_external_1' },
+  }).sender.isInternal,
+  false,
+  'source context should distinguish external-tenant senders before durable business writes',
+);
 assert.equal(
   buildExternalTriggerId({ chatType: 'group', chatId: 'chat_topic_1', messageId: 'msg_normal_group_1' }),
   'feishu:group:chat_topic_1',

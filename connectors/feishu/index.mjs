@@ -341,7 +341,8 @@ export function summarizeFeishuEvent(data) {
     eventType: data?.event_type || '',
     tenantKey: data?.tenant_key || '',
     appId: data?.app_id || '',
-    createTime: data?.create_time || '',
+    createTime: message.create_time || data?.create_time || '',
+    updateTime: message.update_time || data?.update_time || '',
     sender: {
       openId: senderId?.open_id || '',
       userId: senderId?.user_id || '',
@@ -647,6 +648,16 @@ export function buildMessageSourceContext(summary) {
     conversationKind: buildFeishuConversationKind(summary),
     ingestion: buildFeishuIngestionState(summary),
   };
+  const eventId = trimString(summary?.eventId);
+  if (eventId) context.eventId = eventId;
+  const createTime = trimString(summary?.createTime);
+  if (createTime) context.createTime = createTime;
+  const updateTime = trimString(summary?.updateTime);
+  if (updateTime) context.updateTime = updateTime;
+  const messageRevision = updateTime || createTime || eventId;
+  if (messageRevision) context.messageRevision = messageRevision;
+  const tenantKey = trimString(summary?.tenantKey);
+  if (tenantKey) context.tenantKey = tenantKey;
   if (sourceReference) context.sourceReference = sourceReference;
   const sourceRouteId = trimString(summary?.sourceRouteId);
   if (sourceRouteId) context.sourceRouteId = sourceRouteId;
@@ -662,8 +673,21 @@ export function buildMessageSourceContext(summary) {
   const chatMode = trimString(summary?.chatMode);
   if (chatMode) context.chatMode = chatMode;
   const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
-  if (senderName) {
-    context.sender = { name: senderName };
+  const senderOpenId = trimString(summary?.sender?.openId);
+  const senderUserId = trimString(summary?.sender?.userId);
+  const senderUnionId = trimString(summary?.sender?.unionId);
+  const senderType = trimString(summary?.sender?.senderType);
+  const senderTenantKey = trimString(summary?.sender?.tenantKey);
+  if (senderName || senderOpenId || senderUserId || senderUnionId || senderType || senderTenantKey) {
+    context.sender = {
+      ...(senderName ? { name: senderName } : {}),
+      ...(senderOpenId ? { openId: senderOpenId } : {}),
+      ...(senderUserId ? { userId: senderUserId } : {}),
+      ...(senderUnionId ? { unionId: senderUnionId } : {}),
+      ...(senderType ? { senderType } : {}),
+      ...(senderTenantKey ? { tenantKey: senderTenantKey } : {}),
+      ...(tenantKey && senderTenantKey ? { isInternal: tenantKey === senderTenantKey } : {}),
+    };
   }
   const mentions = (Array.isArray(summary?.mentions) ? summary.mentions : [])
     .map((mention) => {

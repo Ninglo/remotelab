@@ -480,6 +480,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: `notes/current/session-first-workflow-surfaces.md`, session organizer and label-context tests
 - Follow-up: keep broader account authorization/security changes separate; this correction establishes classification and model-context isolation regardless of the current access-control model
 
+### 2026-09-03 — inbound mentions should commit business changes without chat polling
+
+- Source: direct owner review of an active creator-supply Campaign update
+- User slice: internal teams that give an agent operational instructions from several Feishu conversations
+- Observed friction or ask: an explicit mention already wakes the agent, so chat-specific polling and group whitelists add machinery without improving discovery; the real gap is reliably attributing the sender and committing the resulting business delta
+- Signal strength: direct workflow correction backed by a prior weekly-target message that affected execution but left stale projections and incomplete audit state
+- Product implication: Connector source context should expose stable message revision and sender identity, including internal-tenant classification when verifiable; the domain workflow should own classification, idempotent authority writes, read-back, projection repair, and the source-thread receipt
+- Promote to: Feishu source-context contract and domain-specific Campaign change ledgers
+- Follow-up: validate the next naturally occurring edited message and durable Search Contract change end to end
+
 ## Entry template
 
 ### 2026-05-25 — large audio attachment send should not be tied to message submission
