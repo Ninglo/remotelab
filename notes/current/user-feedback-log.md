@@ -42,11 +42,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 ### 2026-09-04 — Retire the standalone fleet-admin plane
 
 - Source: direct owner review followed by a live dependency and usage audit of the only host still running the standalone Admin service.
-- User slice: product owner simplifying RemoteLab around one main workbench where connector conversations receive separate Sessions, while a small legacy guest-instance set remains online during transition.
+- User slice: product owner simplifying a host that runs multiple single-user RemoteLab chat instances; each user instance contains its own set of task Sessions.
 - Observed friction or ask: fleet users, trial allocation, billing, host rollout, and instance lifecycle had grown into a separate operator product inside the personal workbench repository. The dashboard had no runtime dependents, remote fleet records were stale, the current main instance had no team-account configuration, and no recent main-route Admin requests were present.
-- Signal strength: explicit retirement decision backed by live service, route, state, repository-reference, and guest-activity inspection.
-- Product implication: remove the standalone dashboard, `/admin` proxy, fleet-host CLI/registry surface, Admin-specific ingress routes, and active docs/tests. Preserve the local `guest-instance` primitive, guest registry, automatic inactivity parking, and active guest services until their users and isolated data can be migrated safely. Do not treat a separate Session as a tenant-security boundary.
-- Follow-up: separately review the unused team-session-view feature, and define a real principal/data isolation contract before routing unrelated external users into one shared owner runtime.
+- Signal strength: explicit retirement decision backed by live service, route, state, repository-reference, and guest-activity inspection, followed by an owner correction of the multi-user boundary.
+- Product implication: remove the standalone dashboard, `/admin` proxy, fleet-host CLI/registry surface, Admin-specific ingress routes, and active docs/tests. Preserve the local `guest-instance` primitive, guest registry, automatic inactivity parking, and active guest services because per-user chat-server instances—not Sessions—are the current multi-user isolation boundary. A Session isolates one work thread's conversational context inside an instance; it does not isolate users, files, memory, Connectors, or machine permissions.
+- Follow-up: remove or clearly retire the unused team-session-view feature so it cannot be mistaken for the current multi-user architecture. Keep necessary per-instance lifecycle operations as small deterministic host primitives rather than recreating a separate Admin product.
 
 ### 2026-09-01 — Keep harness presentation provider-neutral
 
