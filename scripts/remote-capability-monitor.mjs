@@ -33,7 +33,7 @@ const SIGNALS = [
     key: 'explicit-remote-control',
     score: 5,
     reason: 'explicit remote-control positioning',
-    proposal: 'Owner-first remote control cards with one-tap resume, approve, and nudge actions.',
+    proposal: 'Owner-first remote control cards with one-tap inspect, redirect, resume, and recover actions.',
     patterns: [
       /remote control/i,
       /puts? .* in your pocket/i,
@@ -70,7 +70,7 @@ const SIGNALS = [
     key: 'notifications',
     score: 2,
     reason: 'notification or alert mechanics',
-    proposal: 'Actionable notifications that let you approve, resume, summarize, or snooze from the alert itself.',
+    proposal: 'Actionable notifications that surface true blockers and let you resolve, resume, summarize, or snooze from the alert itself.',
     patterns: [
       /\bpush\b/i,
       /notification/i,
@@ -98,7 +98,7 @@ const SIGNALS = [
     key: 'approvals',
     score: 2,
     reason: 'approval, permission, or sandbox mechanics',
-    proposal: 'Batch permission inboxes with risk labels, one-tap approval policies, and checkpoint-aware guardrails.',
+    proposal: 'Risk-tiered autonomy that runs low-loss reversible actions automatically and surfaces only hard permission blockers with one-tap resolution and resume.',
     patterns: [
       /approval/i,
       /permission/i,

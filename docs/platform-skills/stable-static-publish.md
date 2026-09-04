@@ -38,6 +38,6 @@ remotelab publish delete my-report --json
 
 ## Safety
 
-- Publish only reviewed static output. Do not publish credentials, private source data, raw contact lists, or tokenized URLs.
+- Run an automatic recursive secret/private-data scan and publish when the output is clean, scoped, and reversible. Do not wait for optional human review. Pause only when unresolved personal data, credentials, raw contact lists, tokenized URLs, or material legal/brand risk remains, and make that blocker visible with a recovery path.
 - The publisher skips hidden files, VCS data, `node_modules`, caches, and symbolic links.
 - Prefer a new slug for important snapshots. Use `--allow-large` only after inspecting the source tree.

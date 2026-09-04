@@ -417,7 +417,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - In transcript-driven video rough-cut workflows, a "kept content" review draft becomes unreadable if every same-utterance stutter trim is rendered as an explicit join marker.
 - A better default is to merge same-utterance micro-cuts into continuous prose and reserve visible `→ ✂️ →` markers for larger semantic joins, such as skipped whole utterances or section-level jumps.
 - Keep the fully annotated raw transcript as the safety net; let the kept-content draft optimize for readability and flow judgment.
-- When a long-running transformation needs user approval first, surface the review draft inline in chat as well as on disk; file-only handoff creates slow feedback loops, especially for remote/mobile users.
+- When the user explicitly requests review-first, surface the review draft inline in chat as well as on disk; otherwise continue through reversible transformation and automatic validation. A file-only waiting state creates slow, often invisible feedback loops for remote/mobile users.
 
 ### Host-Machine Results Need User-Reachable Delivery (2026-03-25)
 - In RemoteLab, the agent may operate the host machine while the remote user only interacts through product surfaces such as chat, shared Apps, or other explicitly exposed UI.
@@ -603,6 +603,12 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - Promote only stable cross-deployment lessons into the curated system memory. Route user, machine, customer, project, deployment, and one-off incident details to local or scoped memory instead.
 - A clean secret scan is not enough: publication review must also reject private paths, hostnames, account identifiers, customer data, internal pricing, and raw operational residue.
 - After curation, leave the auto-promotion queue empty so a dirty diff remains a visible signal that review is still required.
+
+### Unattended Workflows Must Not Depend On Invisible Human Gates (2026-09-04)
+- For low-loss, reversible, auditable actions, execute by default, record the outcome, and retry or surface failure; do not insert approval, acceptance, preview-only, or waiting states merely because a human could theoretically review them.
+- A human checkpoint is justified only by hard authorization, an unavailable credential or real-world action, irreversible high loss, or material financial/legal/privacy/availability/third-party impact that was not already clearly scoped.
+- If human input is truly required, actively notify the responsible person, state the exact action and consequence, preserve resumable state, and retry or resume after the dependency clears. An invisible `waiting_user` or review queue is an operational failure, not a safety mechanism.
+- Automatic validation, canaries, idempotency keys, append-only audit events, bounded retries, and rollback are the preferred controls for ordinary Agent work.
 
 ### Scheduled Background Work Needs An Initialized Automation Session (2026-07-10)
 - Do not bind a time-based trigger to a newly created empty session: empty sessions may be auto-archived before the trigger fires, making later delivery fail because the target session is archived.

@@ -983,7 +983,7 @@ Use this as the practical code-finding guide.
 | session creation / rename / archive | `chat/router.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
 | message submission or run lifecycle | `static/chat/`, `chat/router.mjs`, `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs` |
 | tool execution details | `chat/process-runner.mjs`, `chat/adapters/*.mjs`, `lib/tools.mjs` |
-| restart recovery behavior | `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `notes/archive/http-runtime-phase1.md` |
+| restart recovery behavior | `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `notes/current/self-hosting-dev-restarts.md` |
 | event persistence / long-output handling | `chat/history.mjs`, `chat/runs.mjs`, `chat/fs-utils.mjs` |
 | post-turn Session classification / work summary | `chat/session-state-classifier.mjs`, `chat/session-manager.mjs`, `chat/session-work-summary.mjs`, `chat/session-naming.mjs` |
 | Agent templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
@@ -1061,7 +1061,6 @@ This repo already contains several design notes that point beyond the current co
 Use these notes when needed:
 
 - `notes/message-transport-architecture.md`
-- `notes/archive/http-runtime-phase1.md`
 - `notes/directional/provider-architecture.md`
 - `notes/directional/app-centric-architecture.md`
 - `notes/directional/ai-driven-interaction.md`

@@ -142,7 +142,7 @@ It must not silently use prior chat transcripts, task cards, project memory, his
 
 History reuse is an explicit interaction. The user must name or link the old material, ask to continue or migrate it, or confirm the Agent's proposal to reuse a clearly described historical scope. Capability discovery is not context authorization: an Agent may check that a connector or script exists without treating old business data as input.
 
-Review gates are equally explicit. When an Agent presents concrete scope, sample direction, selection rules, budget, output standards, or an external action for approval, it waits for the user's response. The automatic completion reviewer must not optimize that round trip away.
+Human checkpoints are exceptional, not a default workflow stage. Scope, sample direction, selection rules, and output standards should normally become recorded working assumptions while the Agent continues through reversible production and automatic validation. The Agent waits only when authorization is missing or the next action creates irreversible high loss or material financial, legal, privacy, availability, or third-party impact that the user has not already clearly scoped. Any retained checkpoint must actively notify the user, state the exact action needed, and preserve a resumable recovery path.
 
 ## Design constraints
 
@@ -150,7 +150,7 @@ When designing or refining Agents, keep these constraints:
 
 - do not rely on generic chat history alone to preserve identity
 - keep every new invocation independent unless history reuse is explicitly requested or bundled as template context
-- validate new Agents with a clean-room dry-run that stops at the first real review gate
+- validate new Agents with a clean-room dry-run that executes every low-loss, reversible step, including sandboxed or self-targeted delivery when available; if it reaches a true hard human dependency, verify that the dependency is visible, notified, and resumable rather than silently waiting
 - keep stable agent behavior in reusable saved fields, not only in transient conversation
 - do not mix source/channel logic into the Agent definition
 - do not bury Agent management inside Settings

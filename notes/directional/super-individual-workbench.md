@@ -169,7 +169,7 @@ RemoteLab 更合理的中期形态应该是：
 - capability boundary
 - memory scope
 - tool/model defaults
-- human checkpoints
+- rare hard human dependencies with active notification and resume
 
 这些高价值结构变成可复用的 App policy。
 
@@ -296,7 +296,7 @@ RemoteLab 需要的是一个稳定的抽象层和兼容层，而不是一个一�
 - capability scope
 - model/tool defaults
 - memory / context bootstrap
-- human checkpoint contract
+- hard human-dependency contract; reversible low-loss work executes without a review gate
 
 只有当 App 真正是 policy layer，它才值得被视作未来的 Agentic Native 应用单元。
 

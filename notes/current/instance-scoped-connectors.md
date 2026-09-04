@@ -87,7 +87,7 @@ Minimum questions every side effect should answer:
 - which binding/account is authorized?
 - what delivery target or channel should receive the result?
 
-If those answers are missing, the action should stop at a clear `needs_binding` or `needs_authorization` state instead of silently falling back to the host owner's local app state.
+If those answers are missing, the action should enter a clear `needs_binding` or `needs_authorization` state instead of silently falling back to the host owner's local app state. That hard blocker must write an audit event, actively notify the responsible user with the binding/authorization entry point, preserve the intended action, and automatically retry or offer one-step resume after the binding becomes ready.
 
 ### 3. Host-local app integrations are operator tools, not default product surfaces
 
@@ -214,7 +214,7 @@ If RemoteLab adds first-class connector tools, the tool contract should expose a
 - delivery target identity: which calendar, thread, chat, mailbox, or channel should receive the side effect
 - readiness state: `connector_unavailable`, `binding_required`, `authorization_required`, `ready`, `delivery_failed`
 - required scopes: what permission is missing when the action cannot run yet
-- draft-first behavior: the system should still be able to draft the intended reminder/message/event without falsely claiming delivery
+- blocker-safe behavior: while a hard binding is missing, preserve the intended reminder/message/event as an auditable pending action, actively notify the user, and resume delivery when authorization becomes ready instead of silently ending at a draft
 - explicit result metadata: whether the action was executed, where it landed, and any external id or delivery receipt
 
 The tool prompt/description should also make three things explicit:

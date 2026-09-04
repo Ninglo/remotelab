@@ -43,7 +43,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - the document should explicitly mark only the steps that truly require a human with `[HUMAN]`
 - a good doc includes the prompt, one-round input packet, target state, exact config artifacts or paths, and concise validation
 - avoid full command-by-command walkthroughs for steps the AI can execute or repair on its own
-- write for low-interruption handoff: the human should usually be able to answer once, walk away, and return only for approvals, browser-only actions, checks, or final handoff
+- write for low-interruption handoff: the human should usually be able to answer once, walk away, and return to a completed, automatically validated result; stop only for an inaccessible browser/credential step, hard authorization, or an irreversible high-impact action not already clearly scoped
 - in product-facing docs, lead with the user problem and payoff: helping ordinary people hand repetitive digital work to AI with low operational overhead; session/app/orchestration terms belong later unless the doc is explicitly about architecture
 
 ## What Lives In `docs/`

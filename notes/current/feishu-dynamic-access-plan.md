@@ -180,9 +180,10 @@ This is the simplest and safest first version.
 1. bot is added to a new group
 2. `im.chat.member.bot.added_v1` records `chatId`, `name`, `tenantKey`
 3. group stays **known but not trusted** by default
-4. operator flips it to approved later
+4. connector immediately notifies the owner through an already authorized owner channel and exposes a one-step approve/reject action
+5. approval persists the group and resumes eligible pending access work automatically
 
-This keeps discovery dynamic without auto-opening access.
+This keeps discovery dynamic without auto-opening access or leaving an invisible trust queue.
 
 ## What I would not do in V1
 

@@ -19,6 +19,7 @@ const {
   initializeMailbox,
   ingestRawMessage,
   approveMessage,
+  saveMailboxAutomation,
   saveOutboundConfig,
 } = await import(pathToFileURL(join(repoRoot, 'lib', 'agent-mailbox.mjs')).href);
 const { sendOutboundEmail } = await import(pathToFileURL(join(repoRoot, 'lib', 'agent-mail-outbound.mjs')).href);
@@ -54,6 +55,11 @@ try {
     localPart: 'rowan',
     domain: 'example.com',
     allowEmails: ['owner@example.com'],
+  });
+
+  // This suite exercises the optional manual-review path explicitly; production defaults auto-process allowlisted senders.
+  await saveMailboxAutomation(mailboxRoot, {
+    allowlistAutoApprove: false,
   });
 
   await saveOutboundConfig(mailboxRoot, {

@@ -624,7 +624,7 @@ function buildSessionSystemPrompt() {
     'Work directly in the local repo path provided in the user message.',
     'First inspect the workflow and reproduce the failure locally with the closest commands.',
     'If you can fix and validate confidently, do so and create a remote-backed checkpoint.',
-    'If the failure is flaky, infra-only, auth-related, or not reproducible, do not push guesses; leave a concise diagnosis and next action instead.',
+    'For flaky, infra-only, auth-related, or initially non-reproducible failures, use bounded retries and evidence collection first. If no code fix is justified, do not push a guess; finish with an explicit diagnosis, recovery condition, and visible blocked result instead of silently stopping.',
   ].join('\n');
 }
 
@@ -664,7 +664,7 @@ export function buildSessionMessage({ repo, sessionFolder, run, commit, failedJo
     '- Fix the root cause, not just the symptom.',
     '- Run targeted validation first, then broader validation that matches the touched area.',
     '- If local validation is green and the fix is solid, create a remote-backed checkpoint.',
-    '- If the failure looks flaky, infra-only, or not reproducible, do not push guesses; leave a concise diagnosis and next recommendation in the session instead.',
+    '- For flaky, infra-only, auth-related, or initially non-reproducible failures, retry and collect bounded evidence first. If no code fix is justified, do not push a guess; finish with an explicit diagnosis, recovery condition, and visible blocked result.',
   ];
   return lines.join('\n');
 }

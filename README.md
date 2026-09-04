@@ -41,8 +41,8 @@ Do not assume the repo is already cloned. If `~/code/remotelab` does not exist y
 Keep the workflow inside this chat.
 Before you start work, collect every missing piece of context in one message so I can answer once.
 Do every step you can automatically.
-After my reply, continue autonomously and only stop for real [HUMAN] steps, approvals, or final completion.
-When you stop, tell me exactly what I need to do and how you'll verify it after I reply.
+After my reply, continue autonomously through every low-loss, reversible, auditable step. Stop only for an inaccessible credential/browser action, hard authorization, or an unscoped irreversible high-impact action.
+If you must stop, actively tell me exactly what I need to do, preserve resumable state, and explain how you'll verify and continue after I reply.
 ```
 
 Need the longer version first? Jump to [Setup details](#setup-details) or open `docs/setup.md`.
@@ -67,7 +67,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - The first high-fit user slice is not literally everyone with a computer; it looks more like time-pressed middle managers / owner-operators in traditional industries who both coordinate others and still personally carry repetitive digital admin work.
 - The first screen cannot be a blank session list. New users need a built-in Welcome flow with concrete example transcripts and one clear first automation path, not an empty sidebar and a generic text box.
 - The best wedge is simple, fast-payback digital work: data cleanup, analysis, file processing, reports, notifications, and other repetitive scriptable tasks.
-- Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and review results or approvals from the most convenient device.
+- Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and inspect results or resolve the rare true blocker from the most convenient device.
 - `Session`, `Agent`, and reusable local workflow building blocks still matter, but they are enabling layers or later multipliers rather than the first headline.
 
 ### What RemoteLab is
@@ -184,8 +184,8 @@ Do not assume the repo is already cloned. If `~/code/remotelab` does not exist y
 Keep the workflow inside this chat.
 Before you start work, collect every missing piece of context in one message so I can answer once.
 Do every step you can automatically.
-After my reply, continue autonomously and only stop for real [HUMAN] steps, approvals, or final completion.
-When you stop, tell me exactly what I need to do and how you'll verify it after I reply.
+After my reply, continue autonomously through every low-loss, reversible, auditable step. Stop only for an inaccessible credential/browser action, hard authorization, or an unscoped irreversible high-impact action.
+If you must stop, actively tell me exactly what I need to do, preserve resumable state, and explain how you'll verify and continue after I reply.
 ```
 
 If you want the full setup contract and the human-only checkpoints, use `docs/setup.md`. If your main concern is mainland-friendly direct access, use `docs/cpolar-setup.md`.

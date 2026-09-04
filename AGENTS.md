@@ -40,10 +40,12 @@ For setup, deployment, integration, and feature-activation docs, use a model-fir
 
 - assume the operator is a human delegating to their own AI coding agent
 - have the AI collect all required context in one early handoff whenever possible, instead of drip-feeding questions across many turns
-- prefer one structured input packet from the human, then autonomous execution by the AI until completion or a true `[HUMAN]` checkpoint
-- lead with a copyable prompt, one-round input requirements, target state, and explicit `[HUMAN]` checkpoints
+- prefer one structured input packet from the human, then autonomous execution by the AI until completion or a true hard `[HUMAN]` dependency
+- lead with a copyable prompt, one-round input requirements, target state, and only unavoidable `[HUMAN]` dependencies
 - keep automatable command-by-command flow inside the AI conversation or scripts, not as a long manual cookbook
-- minimize human interruption so the operator can hand off the task and come back only for approvals, browser-only actions, validation, or final handoff
+- minimize human interruption so the operator can hand off the task and return to a completed result; request input only for inaccessible credentials/browser actions, hard authorization, or irreversible high-impact actions that were not already clearly scoped
+
+For unattended Agent workflows, low-loss, reversible, auditable actions execute by default. A review, acceptance, or confirmation state is not a safety boundary unless someone is actually notified and the action protects hard authorization, irreversible high loss, or material financial/legal/third-party impact. Otherwise execute, record, verify, and retry or surface failure with a recovery path.
 
 ---
 
@@ -302,7 +304,6 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | AI-Driven Interaction | `notes/directional/ai-driven-interaction.md` | Deferred triggers design, session metadata schema, future phases |
 | Autonomous Execution | `notes/directional/autonomous-execution.md` | P2 background execution vision |
 | Message Transport Architecture | `notes/message-transport-architecture.md` | Historical transport/runtime rationale after the HTTP-first architecture landed |
-| HTTP Runtime Phase 1 | `notes/archive/http-runtime-phase1.md` | Concrete implementation spec for the coordinated HTTP/control-plane + runner refactor |
 | Memory Activation Architecture | `notes/current/memory-activation-architecture.md` | Pointer-first memory loading, routing layers, pruning rules |
 | Creating Agents | `docs/creating-apps.md` | User-facing guide for Agent creation |
 | Setup Guide | `docs/setup.md` | Installation, service setup (LaunchAgent/systemd) |

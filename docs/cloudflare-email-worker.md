@@ -2,7 +2,7 @@
 
 This document is the operator contract for asking an AI agent to deploy the thin Cloudflare email edge while keeping RemoteLab's business logic local.
 
-The human should ideally provide one early packet of Cloudflare and mailbox context, let the AI do the rest, and only step back in for real browser-only or approval-only tasks.
+The human should ideally provide one early packet of Cloudflare and mailbox context, then return to a completed, automatically validated deployment. Human input is reserved for inaccessible browser/credential actions, hard authorization, or unscoped irreversible high-impact changes; any such blocker must be actively surfaced with a resume path.
 
 ## Copy this prompt
 

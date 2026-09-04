@@ -79,13 +79,13 @@ assert.match(atomItems[0].summary, /scheduled cron jobs/i);
 const releaseAnalysis = analyzeItem(atomItems[0], releaseSource);
 assert.equal(releaseAnalysis.interesting, true);
 assert.ok(releaseAnalysis.proposals.some((proposal) => /Detached run queues/i.test(proposal)));
-assert.ok(releaseAnalysis.proposals.some((proposal) => /Batch permission inboxes/i.test(proposal)));
+assert.ok(releaseAnalysis.proposals.some((proposal) => /Risk-tiered autonomy/i.test(proposal)));
 
 const happyAnalysis = analyzeItem(happyItem, happySource);
 assert.equal(happyAnalysis.interesting, true);
 assert.ok(happyAnalysis.reasons.some((reason) => /direct Happy signal/i.test(reason)));
 assert.ok(happyAnalysis.proposals.some((proposal) => /Actionable notifications/i.test(proposal)));
-assert.ok(happyAnalysis.proposals.some((proposal) => /Batch permission inboxes/i.test(proposal)));
+assert.ok(happyAnalysis.proposals.some((proposal) => /Risk-tiered autonomy/i.test(proposal)));
 
 const deduped = dedupeItems([newsAnalysis, { ...newsAnalysis, sourceId: 'duplicate-source', score: newsAnalysis.score - 1 }]);
 assert.equal(deduped.length, 1);

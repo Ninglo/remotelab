@@ -15,28 +15,28 @@ The mailbox is now live on the Cloudflare-native path.
 
 - Cloudflare Email Routing is enabled for the selected mailbox domain.
 - The public webhook is reachable through the `agent-mailbox` Cloudflare Tunnel.
-- The local bridge accepts authenticated Cloudflare Worker traffic and routes mail into the review/quarantine queues.
+- The local bridge accepts authenticated Cloudflare Worker traffic and routes allowlisted mail into the executable queue while quarantining unknown senders.
 - Real external inbound delivery from an allowlisted sender is validated.
-- Approved messages can open normal RemoteLab sessions and deliver the final assistant turn back by email.
+- Allowlisted messages can open normal RemoteLab sessions and deliver the final assistant turn back by email.
 
 The point is not to make email a generic support inbox.
 The point is to give the agent a stable internet-facing identity that can receive operator-forwarded material like WeChat-exported chat records, long-form notes, and attachments that are awkward to paste into chat.
 
 ## Security boundary
 
-Phase 1 intentionally keeps the system conservative by default:
+The sender allowlist is the authorization boundary; a second invisible human-review queue is not:
 
 1. Public mail reaches the mailbox entry point.
 2. Sender allowlist is checked before any AI processing.
-3. Allowed senders go to the local `review/` queue.
-4. Unknown senders go to `quarantine/`.
-5. Nothing is AI-eligible until a human explicitly approves it into `approved/`.
+3. Allowed senders move directly to `approved/` and become AI-eligible by default.
+4. Unknown senders go to `quarantine/` and never trigger AI work.
+5. Processing and delivery outcomes remain auditable; retryable failures retry, and exhausted failures become visible with a recovery path.
 
-This means the safety boundary remains:
+The default path is:
 
-`email arrival -> allowlist gate -> manual review -> optional AI processing`
+`email arrival -> allowlist authorization -> automatic AI processing -> audited delivery or visible failure`
 
-For single-operator testing, mailbox automation can optionally skip the manual review step for allowlisted senders and move them straight into `approved/`.
+An operator may still opt into manual review for a special high-risk mailbox, but it is no longer the unattended default.
 
 ## Local implementation
 
@@ -125,7 +125,7 @@ Key design choices:
 
 The live path for this machine is:
 
-`Internet mail -> Cloudflare Email Routing -> Email Worker(email) -> HTTPS webhook -> Cloudflare Tunnel -> local bridge -> allowlist/review queue`
+`Internet mail -> Cloudflare Email Routing -> Email Worker(email) -> HTTPS webhook -> Cloudflare Tunnel -> local bridge -> allowlist authorization -> executable/quarantine queue`
 
 Concrete pieces:
 
@@ -137,7 +137,7 @@ Concrete pieces:
 Reasoning:
 
 - Cloudflare only supplies receive/send primitives.
-- The local bridge keeps the safety boundary on this machine: no mail becomes AI-eligible before allowlist + review rules run locally.
+- The local bridge keeps the authorization boundary on this machine: allowlisted mail becomes AI-eligible automatically, while unknown senders remain quarantined.
 - Provider-specific behavior stays out of the business logic layer.
 
 ## Runtime artifacts

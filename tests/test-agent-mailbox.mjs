@@ -109,7 +109,7 @@ async function testCloudflareValidatedDelivery() {
   }
 }
 
-async function testAllowlistAutoApprove() {
+async function testAllowlistedSendersAutoApproveByDefault() {
   const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-auto-approve-'));
   try {
     await initializeMailbox({
@@ -118,10 +118,6 @@ async function testAllowlistAutoApprove() {
       localPart: 'rowan',
       domain: 'example.com',
       allowEmails: ['owner@example.com'],
-    });
-    await saveMailboxAutomation(rootDir, {
-      allowlistAutoApprove: true,
-      autoApproveReviewer: 'auto-test',
     });
 
     const ingested = await ingestRawMessage(
@@ -142,7 +138,7 @@ async function testAllowlistAutoApprove() {
     assert.equal(located?.queueName, 'approved');
     assert.equal(located?.item?.status, 'approved_for_ai');
     assert.equal(located?.item?.review?.status, 'auto_approved');
-    assert.equal(located?.item?.review?.reviewer, 'auto-test');
+    assert.equal(located?.item?.review?.reviewer, 'mailbox-auto-approve');
     assert.equal(located?.item?.security?.aiEligible, true);
     assert.equal(located?.item?.security?.manualReviewRequired, false);
   } finally {
@@ -547,7 +543,7 @@ async function testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled() {
 await testCloudflareWebhookHealthy();
 await testCloudflareQueueReady();
 await testCloudflareValidatedDelivery();
-await testAllowlistAutoApprove();
+await testAllowlistedSendersAutoApproveByDefault();
 await testStripsQuotedReplyContent();
 await testStripsUniformQuotedReplyContent();
 await testDecodesBase64BodyText();

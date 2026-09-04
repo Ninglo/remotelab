@@ -257,7 +257,7 @@ It is the memory/control substrate for AI employees in RemoteLab:
 - work summary = what this session is doing
 - active agreement = what this session agreed to keep doing
 - active work radar = what the broader owner/team is currently pushing
-- context inbox = cross-session signal waiting for review
+- context inbox = provisional cross-session signal awaiting periodic automated curation; promotion, merge, or deletion must not depend on an invisible human queue
 - project/group summary = user-facing recovery view
 - durable memory = stable facts and reusable decisions after promotion
 

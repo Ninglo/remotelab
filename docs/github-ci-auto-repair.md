@@ -10,13 +10,13 @@ For this machine, a **local poller** is the simplest reliable default:
 - it reuses the existing local `gh` auth and RemoteLab owner auth
 - it can enrich the repair prompt with local repo paths, workflow context, failed jobs, and log excerpts before the model starts working
 
-The monitor is intentionally conservative:
+The monitor is intentionally bounded and action-oriented:
 
 - it looks only at the **latest** matching run per branch/workflow group
 - it skips runs that are still in progress
 - it waits through a configurable settle window so quick reruns do not create session noise
 - it dedupes handled GitHub run ids in a local state file
-- it tells the repair session to checkpoint only after local validation, and to stop with diagnosis instead of pushing guesses for flaky or infra-only failures
+- it tells the repair session to reproduce, retry, repair, and checkpoint every validated low-risk fix; if the cause is genuinely external or non-reproducible, it records an explicit terminal diagnosis and recovery condition instead of silently stopping or pushing an unverified guess
 
 ## Typical usage
 
@@ -94,8 +94,8 @@ Recommended policy:
 1. Watch only the default branch CI first.
 2. Start a repair session only for the latest failed run.
 3. Let the session reproduce locally and validate before checkpointing.
-4. If the run smells flaky, infra-only, or provider-related, stop with diagnosis instead of auto-pushing.
-5. Add notifications later if you want “repair started / repair fixed / repair blocked” status pushed to phone.
+4. If the run appears flaky, infra-only, or provider-related, retry/reproduce with bounded evidence first. If no code fix is justified, finish with an explicit diagnosis, recovery condition, and visible blocked status instead of an unverified push.
+5. Treat “repair started / repair fixed / repair blocked” delivery as part of the production workflow whenever a notification channel is configured; a hidden repair session is not sufficient operational visibility.
 
 ## Future extensions
 

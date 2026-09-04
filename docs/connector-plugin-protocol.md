@@ -422,7 +422,7 @@ The dispatch table structure and target format are universal across all Connecto
 | Instance returns 4xx (not 429) | No retry, message enters dead letter queue |
 | Instance returns 429 | Retry with backoff per `Retry-After` header |
 | Repeated failures (>5 in 10 min) | Mark Instance as `degraded` |
-| Instance `degraded` for >5 min with no recovery | Mark as `stale`, stop routing |
+| Instance `degraded` for >5 min with no recovery | Mark as `stale`, stop new routing, alert the owner/admin, keep probing, and automatically resume routing after verified recovery |
 
 ### Reply failure (Instance → Connector)
 
@@ -448,7 +448,7 @@ Connector maintains a `dead_letter/` store for undeliverable messages:
 }
 ```
 
-Dead letters can be manually re-dispatched or discarded by the admin.
+Dead letters remain auditable and should retry automatically under a bounded policy when the target recovers. After retries are exhausted, alert the owner/admin with the exact failure and a one-step replay path; manual discard is reserved for confirmed poison or obsolete messages, not the normal recovery path.
 
 ---
 

@@ -30,6 +30,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: one-time triggers and recurring schedules both default to `fresh_session`, using the originating session only to seed folder/runtime/system-prompt context and any connector return route. Keep `--reuse-session` as an explicit legacy/continuity escape hatch, and regression-test that no trigger prompt or status event is appended to the source transcript.
 - Follow-up: deterministic connector reminders should ultimately use a first-class `connector_action` rather than spending a model turn, but any interim AI-backed reminder must still run in an isolated session.
 
+### 2026-09-04 — unattended Agents should execute reversible work instead of waiting at invisible review gates
+
+- Source: direct owner correction after repeated Agent workflow iteration.
+- User slice: owner delegating low-loss, reversible work to background or otherwise unattended Agents.
+- Observed friction or ask: broad approval, acceptance, and manual-review defaults do not create safety when nobody is watching the queue. They silently stop the workflow, hide defects, prevent retries, and leave no practical audit loop even though executing the action incorrectly would usually be nearly harmless.
+- Signal strength: repeated cross-workflow collaboration failure plus an explicit review of the current risk profile.
+- Product implication: default to `execute -> append audit evidence -> verify -> bounded retry or visible failure` for low-loss, reversible, auditable actions. Human checkpoints are reserved for hard authorization, unavailable credentials/real-world actions, irreversible high loss, or material financial/legal/privacy/availability/third-party impact not already scoped. Every retained checkpoint must actively notify a responsible person and preserve an exact resume path; an invisible `waiting_user`, approval queue, or preview-only state is an operational failure.
+- Promote to: Agent creation defaults, Session state classification, platform skills, connector recovery contracts, mailbox intake defaults, setup docs, and shared memory.
+
 ### 2026-09-01 — Keep hosted fleet administration outside the personal open-source core
 
 - Source: direct owner review after discovering that the RemoteLab Admin dashboard and fleet commands now live in the main repository and are exposed under the main product route.
@@ -76,14 +85,14 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: add an instance-scoped Feishu Mail connector surface with authorize, callback, status, reauthorize, and revoke controls. Store and refresh user tokens inside that binding; enumerate accessible mailboxes only through the bound user token. If no binding exists, report authorization required and never fall back to a machine-global `lark-cli` identity. Shared/guest instances must not inherit the owner's Feishu mailbox token.
 - Promote to: connector binding contract, Settings connector UI, Feishu Mail capability routing, system prompt capability declaration, and regression tests for missing-binding and cross-instance isolation.
 
-### 2026-08-10 — shared Agent validation must start clean and preserve real review gates
+### 2026-08-10 — shared Agent validation must start from an independent invocation
 
 - Source: direct owner review of a newly opened KOL workflow Agent.
 - User slice: operator turning a proven internal workflow into a reusable Agent that other people can invoke independently.
-- Observed friction or ask: the new Agent technically completed useful work, but it silently reused historical campaign assets and the automatic reply-completion review advanced past an explicit search-contract confirmation. This tested access to existing data rather than the intended end-to-end onboarding and decision flow.
+- Observed friction or ask: the new Agent technically completed useful work, but it silently reused historical campaign assets and the automatic reply-completion review advanced using context that was not part of the test packet. This tested access to existing data rather than the intended end-to-end onboarding flow.
 - Signal strength: concrete live-session failure reproduced in tool history and the reply self-check timeline.
-- Product implication: every new custom Agent session should default to an independent invocation. Stable instructions, skills, connector availability, and deliberately bundled template context may carry; prior sessions, task memory, historical business records, and local artifacts require explicit user scope. Named review gates are binding and must not be optimized away by automatic continuation. Agent creation should finish with a clean-room dry-run that receives only an explicit test packet and stops at the first real user checkpoint.
-- Promote to: Agent prompt construction, reply self-check policy, Create Agent starter flow, shared-Agent regression tests.
+- Product implication: every new custom Agent session should default to an independent invocation. Stable instructions, skills, connector availability, and deliberately bundled template context may carry; prior sessions, task memory, historical business records, and local artifacts require explicit user scope. Agent creation should finish with a clean-room dry-run that receives only an explicit test packet and executes every low-loss reversible step. The older conclusion that named review gates should bind the run is superseded by the 2026-09-04 risk-tiered execution rule above.
+- Promote to: Agent prompt construction, Create Agent starter flow, shared-Agent regression tests.
 
 ### 2026-08-30 — multi-provider model controls need provider grouping and model-native reasoning choices
 

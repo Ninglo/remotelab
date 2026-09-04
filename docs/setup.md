@@ -33,8 +33,8 @@ Do not assume the repo is already cloned. If `~/code/remotelab` does not exist y
 Keep the workflow inside this chat.
 Before doing work, collect every missing input in one message so I can answer once.
 Do every automatable step yourself.
-After my reply, continue autonomously until a true `[HUMAN]` step or final completion.
-When you stop, tell me the exact action I need to take and how you'll verify it after I reply.
+After my reply, continue autonomously through every low-loss, reversible, auditable step until final completion. Stop only for an inaccessible credential/browser action, hard authorization, or an unscoped irreversible high-impact action.
+If you must stop, actively tell me the exact action I need to take, preserve resumable state, and explain how you'll verify and continue after I reply.
 ```
 
 ## One-round input handoff
@@ -68,7 +68,7 @@ RemoteLab setup is the primary configuration UX.
 
 1. Cloudflare authentication via browser if `cloudflared tunnel login` requires it (Cloudflare mode only).
 2. cpolar account signup, plan upgrade, or dashboard-only reserved-subdomain actions when the user wants cpolar and those steps are not already done (cpolar mode only).
-3. Any OS, package-manager, or provider auth the AI cannot finish alone, such as a sudo password, Homebrew install approval, or external login.
+3. Any credential, OS prompt, provider authorization, or external login that the AI genuinely cannot access or complete itself.
 4. Opening the final RemoteLab URL on the phone and confirming the first successful login.
 
 The AI should minimize how often it interrupts the human for these checkpoints and should batch requests whenever one human visit can unblock multiple downstream steps.
@@ -133,4 +133,4 @@ The AI should do the rest inside the conversation:
 
 ## Repair rule
 
-If validation fails, the AI should stay in the conversation, inspect logs, and repair the machine. Keep manual instructions only for browser, approval, or external-auth steps the AI cannot do itself, and avoid restarting the whole questioning flow unless the missing context truly changed.
+If validation fails, the AI should stay in the conversation, inspect logs, retry or repair the machine, and make exhausted failures explicit. Keep manual instructions only for inaccessible browser/credential actions, hard authorization, or unscoped irreversible high-impact steps, and preserve a direct resume path instead of restarting the whole questioning flow.

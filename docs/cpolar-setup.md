@@ -48,8 +48,8 @@ Do not assume the repo is already cloned. If `~/code/remotelab` does not exist y
 Keep the workflow inside this chat.
 Before you start work, collect every missing piece of context in one message so I can answer once.
 Do every step you can automatically.
-After my reply, continue autonomously and only stop for real [HUMAN] steps, approvals, or final completion.
-When you stop, tell me exactly what I need to do and how you'll verify it after I reply.
+After my reply, continue autonomously through every low-loss, reversible, auditable step. Stop only for an inaccessible credential/browser action, hard authorization, or an unscoped irreversible high-impact action.
+If you must stop, actively tell me exactly what I need to do, preserve resumable state, and explain how you'll verify and continue after I reply.
 ```
 
 ## One-round input handoff
@@ -68,8 +68,9 @@ The AI should try to collect everything below in one early message:
 
 1. cpolar account signup or dashboard login if the user does not already have access.
 2. Any cpolar dashboard-only action the AI cannot complete alone, such as plan upgrade or reserving a fixed second-level subdomain.
-3. Any OS or package-manager approval the AI cannot finish alone.
-4. Opening the final RemoteLab URL on the phone and confirming that it works.
+3. Any credential or OS/provider authorization prompt the AI genuinely cannot access or complete itself.
+
+The AI must validate the final public URL itself. Opening it on the user's phone is optional experiential feedback, not a completion gate.
 
 ## AI execution contract
 
