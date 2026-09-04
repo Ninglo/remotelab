@@ -39,14 +39,14 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: default to `execute -> append audit evidence -> verify -> bounded retry or visible failure` for low-loss, reversible, auditable actions. Human checkpoints are reserved for hard authorization, unavailable credentials/real-world actions, irreversible high loss, or material financial/legal/privacy/availability/third-party impact not already scoped. Every retained checkpoint must actively notify a responsible person and preserve an exact resume path; an invisible `waiting_user`, approval queue, or preview-only state is an operational failure.
 - Promote to: Agent creation defaults, Session state classification, platform skills, connector recovery contracts, mailbox intake defaults, setup docs, and shared memory.
 
-### 2026-09-01 — Keep hosted fleet administration outside the personal open-source core
+### 2026-09-04 — Retire the standalone fleet-admin plane
 
-- Source: direct owner review after discovering that the RemoteLab Admin dashboard and fleet commands now live in the main repository and are exposed under the main product route.
-- User slice: product owner evaluating RemoteLab as both a personal open-source project and a possible hosted commercial product.
-- Observed friction or ask: fleet users, trial instances, billing, host rollout, and instance lifecycle feel like a separate operator product; combining them with the personal workbench makes the open-source scope look overbuilt and suggests demand that ordinary single-owner users do not actually have.
-- Signal strength: direct product-boundary correction grounded in a shipped surface, not a request to remove the existing internal operational capability immediately.
-- Product implication: treat `/admin`, host/instance fleet control, trial allocation, and billing as an internal hosted-service plane rather than a headline RemoteLab feature. Keep the normal open-source install single-owner and lightweight; do not use admin infrastructure as evidence of end-user demand. Before further admin expansion, define a clear packaging boundary such as a default-off operator module, enterprise directory/package, or separate service/repository while preserving shared protocols where useful.
-- Follow-up: decide the distribution boundary separately from the source-repository boundary, then remove fleet-admin language and dependencies from the default personal installation path unless a real hosted operation requires them.
+- Source: direct owner review followed by a live dependency and usage audit of the only host still running the standalone Admin service.
+- User slice: product owner simplifying RemoteLab around one main workbench where connector conversations receive separate Sessions, while a small legacy guest-instance set remains online during transition.
+- Observed friction or ask: fleet users, trial allocation, billing, host rollout, and instance lifecycle had grown into a separate operator product inside the personal workbench repository. The dashboard had no runtime dependents, remote fleet records were stale, the current main instance had no team-account configuration, and no recent main-route Admin requests were present.
+- Signal strength: explicit retirement decision backed by live service, route, state, repository-reference, and guest-activity inspection.
+- Product implication: remove the standalone dashboard, `/admin` proxy, fleet-host CLI/registry surface, Admin-specific ingress routes, and active docs/tests. Preserve the local `guest-instance` primitive, guest registry, automatic inactivity parking, and active guest services until their users and isolated data can be migrated safely. Do not treat a separate Session as a tenant-security boundary.
+- Follow-up: separately review the unused team-session-view feature, and define a real principal/data isolation contract before routing unrelated external users into one shared owner runtime.
 
 ### 2026-09-01 — Keep harness presentation provider-neutral
 

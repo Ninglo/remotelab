@@ -19,8 +19,6 @@ const OWNER_LABEL = normalizeLabel(process.env.HK_HOST_ROUTER_OWNER_LABEL || 'ow
 const OWNER_PORT = Number.parseInt(process.env.HK_HOST_ROUTER_OWNER_PORT, 10) || 7690;
 const HUB_LABEL = normalizeLabel(process.env.HK_HOST_ROUTER_HUB_LABEL || 'hub');
 const HUB_PORT = Number.parseInt(process.env.HK_HOST_ROUTER_HUB_PORT, 10) || 7699;
-const ADMIN_LABEL = normalizeLabel(process.env.HK_HOST_ROUTER_ADMIN_LABEL || 'admin');
-const ADMIN_PORT = Number.parseInt(process.env.HK_HOST_ROUTER_ADMIN_PORT, 10) || 7689;
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
 const GUEST_ROUTE_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instance-routes.json');
 
@@ -59,7 +57,6 @@ async function loadGuestRoutes() {
   const routes = new Map();
   routes.set(OWNER_LABEL, OWNER_PORT);
   routes.set(HUB_LABEL, HUB_PORT);
-  routes.set(ADMIN_LABEL, ADMIN_PORT);
 
   try {
     const parsed = JSON.parse(await readFile(GUEST_REGISTRY_FILE, 'utf8'));

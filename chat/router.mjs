@@ -1,6 +1,5 @@
 import { readFile, readdir } from 'fs/promises';
 import { createReadStream, watch } from 'fs';
-import { request as httpRequest } from 'http';
 import { homedir } from 'os';
 import { performance } from 'perf_hooks';
 import { join, resolve, dirname, basename, extname, relative, isAbsolute, sep } from 'path';
@@ -125,9 +124,6 @@ const serviceBuildRoots = [
 ];
 
 const serviceBuildStatusPaths = ['chat', 'lib', 'chat-server.mjs', 'package.json'];
-const ADMIN_PROXY_PREFIX = '/admin';
-const ADMIN_UPSTREAM_HOST = process.env.CHAT_ADMIN_UPSTREAM_HOST || '127.0.0.1';
-const ADMIN_UPSTREAM_PORT = Number.parseInt(process.env.CHAT_ADMIN_UPSTREAM_PORT || '7689', 10) || 7689;
 
 const execFileAsync = promisify(execFile);
 const BUILD_INFO = await loadBuildInfo();
@@ -1481,97 +1477,9 @@ function parseShareAssetRoute(pathname) {
   return { shareId: match[1], assetId: match[2] };
 }
 
-function isAdminProxyPath(pathname) {
-  return pathname === ADMIN_PROXY_PREFIX || pathname.startsWith(`${ADMIN_PROXY_PREFIX}/`);
-}
-
-function rewriteAdminLocationHeader(location) {
-  const value = String(location || '').trim();
-  if (!value) return value;
-  if (value.startsWith(ADMIN_PROXY_PREFIX)) return value;
-  if (value.startsWith('/')) return `${ADMIN_PROXY_PREFIX}${value}`;
-  return value;
-}
-
-function rewriteAdminSetCookieHeader(headerValue) {
-  const text = String(headerValue || '');
-  const firstSemicolon = text.indexOf(';');
-  const firstPart = firstSemicolon >= 0 ? text.slice(0, firstSemicolon) : text;
-  const suffix = firstSemicolon >= 0 ? text.slice(firstSemicolon + 1) : '';
-  const equalsIndex = firstPart.indexOf('=');
-  if (equalsIndex < 0) return text;
-
-  const originalName = firstPart.slice(0, equalsIndex).trim();
-  const originalValue = firstPart.slice(equalsIndex + 1);
-  const segments = suffix
-    ? suffix.split(';').map((segment) => segment.trim()).filter(Boolean)
-    : [];
-  const filteredSegments = segments.filter((segment) => !/^path=/i.test(segment));
-  filteredSegments.unshift(`Path=${ADMIN_PROXY_PREFIX}`);
-  return `${originalName}=${originalValue}; ${filteredSegments.join('; ')}`;
-}
-
-async function proxyAdminRequest(req, res, parsedUrl) {
-  const pathname = parsedUrl?.pathname || req.url || '/';
-  const strippedPath = pathname.slice(ADMIN_PROXY_PREFIX.length) || '/';
-  const upstreamPath = `${strippedPath}${parsedUrl?.search || ''}`;
-
-  await new Promise((resolveProxy, rejectProxy) => {
-    const upstreamReq = httpRequest({
-      host: ADMIN_UPSTREAM_HOST,
-      port: ADMIN_UPSTREAM_PORT,
-      method: req.method,
-      path: upstreamPath,
-      headers: {
-        ...req.headers,
-        host: `${ADMIN_UPSTREAM_HOST}:${ADMIN_UPSTREAM_PORT}`,
-        'accept-encoding': 'identity',
-        'x-forwarded-prefix': ADMIN_PROXY_PREFIX,
-      },
-    }, (upstreamRes) => {
-      const headers = { ...upstreamRes.headers };
-      if (headers.location) {
-        headers.location = rewriteAdminLocationHeader(headers.location);
-      }
-      if (headers['set-cookie']) {
-        const values = Array.isArray(headers['set-cookie']) ? headers['set-cookie'] : [headers['set-cookie']];
-        headers['set-cookie'] = values.map((value) => rewriteAdminSetCookieHeader(value));
-      }
-      res.writeHead(upstreamRes.statusCode || 502, headers);
-      upstreamRes.pipe(res);
-      upstreamRes.on('end', resolveProxy);
-      upstreamRes.on('error', rejectProxy);
-    });
-
-    upstreamReq.on('error', rejectProxy);
-    req.pipe(upstreamReq);
-  }).catch((error) => {
-    if (!res.headersSent) {
-      res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end(`Admin upstream unavailable: ${error?.message || error}`);
-    }
-  });
-}
-
 export async function handleRequest(req, res) {
   const parsedUrl = parseUrl(req.url, true);
   const pathname = parsedUrl.pathname;
-
-  if (isAdminProxyPath(pathname)) {
-    if (!await requireAuth(req, res)) return;
-    const authSession = getAuthSession(req);
-    if (authSession?.role !== 'owner') {
-      if (pathname === `${ADMIN_PROXY_PREFIX}/api` || pathname.startsWith(`${ADMIN_PROXY_PREFIX}/api/`)) {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return;
-      }
-      res.writeHead(403, buildHeaders({ 'Content-Type': 'text/plain; charset=utf-8' }));
-      res.end('Owner access required');
-      return;
-    }
-    await proxyAdminRequest(req, res, parsedUrl);
-    return;
-  }
 
   // Static assets (read from disk each time for hot-reload)
   const staticAsset = await resolveStaticAsset(pathname, parsedUrl.query);

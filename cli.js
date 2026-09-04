@@ -39,7 +39,6 @@ Usage:
   remotelab validate-profile         Validate host + profile health and report degradation
   remotelab guest-instance           Create isolated guest instances on this machine
   remotelab publish                  Publish and manage static pages from instance-local storage
-  remotelab admin                    Manage fleet hosts and host -> instance admin views
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab mail                     Manage agent mailbox and send outbound email
@@ -121,17 +120,6 @@ switch (command) {
     const { runGuestInstanceCommand } = await import(scriptPath('lib/guest-instance-command.mjs'));
     try {
       process.exitCode = await runGuestInstanceCommand(args);
-    } catch (error) {
-      console.error(error.message || String(error));
-      process.exit(1);
-    }
-    break;
-  }
-
-  case 'admin': {
-    const { runAdminCommand } = await import(scriptPath('lib/admin-command.mjs'));
-    try {
-      process.exitCode = await runAdminCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

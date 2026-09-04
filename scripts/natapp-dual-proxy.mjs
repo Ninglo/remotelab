@@ -16,7 +16,6 @@ const ROOT_MODE = normalizeRootMode(
 const BRIDGE_SERVICE_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_BRIDGE_SERVICE_PORT, 10) || 7690;
 const BRIDGE_SERVICE_NAME = normalizeRouteName(process.env.NATAPP_BRIDGE_SERVICE_NAME || 'owner', 'owner');
 const BRIDGE_SERVICE_PREFIX = `/${BRIDGE_SERVICE_NAME}`;
-const ADMIN_UPSTREAM_PORT = Number.parseInt(process.env.NATAPP_ADMIN_PORT, 10) || 7689;
 const GUEST_REGISTRY_FILE = join(homedir(), '.config', 'remotelab', 'guest-instances.json');
 const FALLBACK_PREFIXED_ROUTES = Object.freeze([
   Object.freeze({
@@ -136,15 +135,6 @@ function buildSpecialPrefixedRoutes() {
       upstreamPort: BRIDGE_SERVICE_UPSTREAM_PORT,
       cookiePrefix: `${BRIDGE_SERVICE_NAME}__`,
       routeType: 'bridge-service',
-    }));
-  }
-  if (isValidPort(ADMIN_UPSTREAM_PORT) && ADMIN_UPSTREAM_PORT !== LISTEN_PORT) {
-    routes.push(Object.freeze({
-      name: 'admin',
-      prefix: '/admin',
-      upstreamPort: ADMIN_UPSTREAM_PORT,
-      cookiePrefix: 'admin__',
-      routeType: 'admin',
     }));
   }
   return routes;

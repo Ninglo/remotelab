@@ -91,7 +91,6 @@ try {
       HK_HOST_ROUTER_LISTEN_PORT: String(routerPort),
       HK_HOST_ROUTER_OWNER_PORT: String(ownerPort),
       HK_HOST_ROUTER_HUB_PORT: String(ownerPort),
-      HK_HOST_ROUTER_ADMIN_PORT: String(ownerPort),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
