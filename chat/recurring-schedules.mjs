@@ -7,8 +7,6 @@ import { normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
 const DEFAULT_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_POLL_MS = 15000;
 const DEFAULT_MAX_OPEN_OCCURRENCES = 10;
-const EXECUTION_MODE_EXISTING_SESSION = 'existing_session';
-const EXECUTION_MODE_FRESH_SESSION = 'fresh_session';
 const MAX_CRON_SEARCH_MINUTES = 5 * 366 * 24 * 60;
 
 let schedulesCache = null;
@@ -33,12 +31,6 @@ function nowIso(value = Date.now()) {
 function normalizeTimestamp(value) {
   const parsed = Date.parse(trimString(value));
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
-}
-
-function normalizeExecutionMode(value) {
-  return trimString(value) === EXECUTION_MODE_FRESH_SESSION
-    ? EXECUTION_MODE_FRESH_SESSION
-    : EXECUTION_MODE_EXISTING_SESSION;
 }
 
 function normalizeSessionTemplate(value, fallbackTool = '') {
@@ -207,12 +199,10 @@ function getLatestCronOccurrenceAtOrBefore(expression, timezone, at) {
 
 function normalizeStoredSchedule(value) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const executionMode = normalizeExecutionMode(raw.executionMode);
-  const sessionId = trimString(raw.sessionId);
+  const sourceSessionId = trimString(raw.sourceSessionId) || trimString(raw.sessionId);
   const text = trimString(raw.text);
   const sessionTemplate = normalizeSessionTemplate(raw.sessionTemplate, raw.tool);
-  if (!text || (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId)
-    || (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate)) return null;
+  if (!text || !sourceSessionId || !sessionTemplate) return null;
   const cron = parseCronExpression(raw.cron).expression;
   const timezone = validateTimezone(raw.timezone);
   const createdAt = normalizeTimestamp(raw.createdAt) || nowIso();
@@ -221,8 +211,7 @@ function normalizeStoredSchedule(value) {
     id: /^sch_[a-f0-9]{24}$/.test(trimString(raw.id)) ? trimString(raw.id) : createScheduleId(),
     status: enabled ? 'active' : 'cancelled',
     enabled,
-    executionMode,
-    sessionId,
+    sourceSessionId,
     sessionTemplate,
     title: trimString(raw.title),
     text,
@@ -292,7 +281,7 @@ export async function listRecurringSchedules(options = {}) {
   const sessionId = trimString(options.sessionId);
   const schedules = await loadSchedules();
   return schedules
-    .filter((entry) => !sessionId || entry.sessionId === sessionId)
+    .filter((entry) => !sessionId || entry.sourceSessionId === sessionId)
     .sort((left, right) => (Date.parse(left.nextRunAt) || Infinity) - (Date.parse(right.nextRunAt) || Infinity))
     .map(clone);
 }
@@ -304,13 +293,12 @@ export async function getRecurringSchedule(scheduleId) {
 }
 
 export async function createRecurringSchedule(input = {}, options = {}) {
-  const executionMode = normalizeExecutionMode(input.executionMode);
-  const sessionId = trimString(input.sessionId);
+  const sourceSessionId = trimString(input.sourceSessionId);
   const text = trimString(input.text);
   const sessionTemplate = normalizeSessionTemplate(input.sessionTemplate, input.tool);
-  if (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId) throw new Error('sessionId is required');
-  if (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate) {
-    throw new Error('sessionTemplate with folder and tool is required for fresh_session schedules');
+  if (!sourceSessionId) throw new Error('sourceSessionId is required');
+  if (!sessionTemplate) {
+    throw new Error('sessionTemplate with folder and tool is required');
   }
   if (!text) throw new Error('text is required');
   const cron = parseCronExpression(input.cron).expression;
@@ -320,8 +308,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     id: createScheduleId(),
     status: input.enabled === false ? 'cancelled' : 'active',
     enabled: input.enabled !== false,
-    executionMode,
-    sessionId,
+    sourceSessionId,
     sessionTemplate,
     title: input.title,
     text,
@@ -352,23 +339,20 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     if (index === -1) return;
     const current = schedules[index];
     const updatedAt = nowIso();
-    const sessionId = Object.prototype.hasOwnProperty.call(patch, 'sessionId')
-      ? trimString(patch.sessionId)
-      : current.sessionId;
+    const sourceSessionId = Object.prototype.hasOwnProperty.call(patch, 'sourceSessionId')
+      ? trimString(patch.sourceSessionId)
+      : current.sourceSessionId;
     const text = Object.prototype.hasOwnProperty.call(patch, 'text')
       ? trimString(patch.text)
       : current.text;
-    const executionMode = Object.prototype.hasOwnProperty.call(patch, 'executionMode')
-      ? normalizeExecutionMode(patch.executionMode)
-      : current.executionMode;
     const sessionTemplate = Object.prototype.hasOwnProperty.call(patch, 'sessionTemplate')
       ? normalizeSessionTemplate(patch.sessionTemplate, patch.tool || current.tool)
       : current.sessionTemplate;
-    if (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId) throw new Error('sessionId is required');
-    if (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate) {
-      throw new Error('sessionTemplate with folder and tool is required for fresh_session schedules');
+    if (!sourceSessionId) throw new Error('sourceSessionId is required');
+    if (!sessionTemplate) throw new Error('sessionTemplate with folder and tool is required');
+    if (sourceSessionId !== current.sourceSessionId) {
+      throw new Error('sourceSessionId cannot be changed; create a new schedule instead');
     }
-    if (sessionId !== current.sessionId) throw new Error('sessionId cannot be changed; create a new schedule instead');
     if (!text) throw new Error('text is required');
     if (Object.prototype.hasOwnProperty.call(patch, 'thinking') && typeof patch.thinking !== 'boolean') {
       throw new Error('thinking must be a boolean');
@@ -388,8 +372,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     const next = normalizeStoredSchedule({
       ...current,
       ...patch,
-      sessionId,
-      executionMode,
+      sourceSessionId,
       sessionTemplate,
       text,
       cron,
@@ -464,8 +447,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
           skipped += 1;
         } else {
           await createScheduledTrigger({
-            executionMode: current.executionMode,
-            sessionId: current.sessionId,
+            sourceSessionId: current.sourceSessionId,
             sessionTemplate: current.sessionTemplate,
             title: current.title,
             text: current.text,

@@ -33,7 +33,8 @@ assert.equal(
 
 const createdTriggers = [];
 const schedule = await createRecurringSchedule({
-  sessionId: 'sess-recurring',
+  sourceSessionId: 'sess-recurring',
+  sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Daily execution' },
   title: 'Daily date',
   text: 'Send the date',
   cron: '* * * * *',
@@ -63,6 +64,7 @@ assert.equal(result.materialized, 1);
 assert.equal(createdTriggers.length, 1);
 assert.equal(createdTriggers[0].scheduledAt, '2026-07-27T00:05:00.000Z');
 assert.equal(createdTriggers[0].scheduleId, schedule.id);
+assert.equal(createdTriggers[0].sourceSessionId, 'sess-recurring');
 assert.equal(createdTriggers[0].sourceDelivery.target.chatId, 'oc_test');
 
 const [advanced] = await listRecurringSchedules({ sessionId: 'sess-recurring' });
@@ -73,28 +75,29 @@ const cancelled = await updateRecurringSchedule(schedule.id, { enabled: false })
 assert.equal(cancelled.status, 'cancelled');
 assert.equal(cancelled.enabled, false);
 
-const freshSchedule = await createRecurringSchedule({
-  executionMode: 'fresh_session',
+const isolatedSchedule = await createRecurringSchedule({
+  sourceSessionId: 'sess-isolated',
   sessionTemplate: {
     folder: '/tmp',
     tool: 'codex',
-    name: 'Fresh execution',
+    name: 'Isolated execution',
     internalRole: 'scheduled_execution',
   },
-  title: 'Fresh daily task',
+  title: 'Isolated daily task',
   text: 'Run in isolation',
   cron: '0 20 * * *',
   timezone: 'Asia/Shanghai',
 }, { now: '2026-07-27T00:00:15.000Z' });
-assert.equal(freshSchedule.sessionId, '');
-assert.equal(freshSchedule.executionMode, 'fresh_session');
-assert.equal(freshSchedule.sessionTemplate.internalRole, 'scheduled_execution');
+assert.equal(isolatedSchedule.sourceSessionId, 'sess-isolated');
+assert.equal(isolatedSchedule.sessionTemplate.internalRole, 'scheduled_execution');
 
 const badSchedule = await createRecurringSchedule({
-  sessionId: 'archived-session', text: 'bad', cron: '* * * * *', timezone: 'Asia/Shanghai',
+  sourceSessionId: 'archived-session',
+  sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Broken execution' },
+  text: 'bad', cron: '* * * * *', timezone: 'Asia/Shanghai',
 }, { now: '2026-07-27T00:10:15.000Z' });
 const healthySchedule = await createRecurringSchedule({
-  executionMode: 'fresh_session',
+  sourceSessionId: 'healthy-session',
   sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Healthy execution' },
   text: 'healthy', cron: '* * * * *', timezone: 'Asia/Shanghai',
 }, { now: '2026-07-27T00:10:15.000Z' });
@@ -102,7 +105,7 @@ const isolated = await materializeDueRecurringSchedulesNow({
   now: '2026-07-27T00:11:20.000Z',
   countOpenScheduleTriggers: async () => 0,
   createScheduledTrigger: async (input) => {
-    if (input.sessionId === 'archived-session') throw new Error('Session is archived');
+    if (input.sourceSessionId === 'archived-session') throw new Error('Session is archived');
     return { id: 'trg_healthy', ...input };
   },
 });

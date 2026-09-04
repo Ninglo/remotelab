@@ -38,8 +38,7 @@ assert.match(context, /add `--wait`/);
 assert.match(context, /--internal --output-mode final-only/);
 assert.match(context, /remotelab trigger create --in 2h --text "<task>" --json/);
 assert.match(context, /remotelab schedule create --cron/);
-assert.match(context, /create fresh sessions by default/);
-assert.match(context, /--reuse-session/);
+assert.match(context, /Every trigger and schedule execution creates a new session/);
 assert.match(context, /REMOTELAB_SESSION_ID/);
 assert.match(context, /session-test-123/);
 

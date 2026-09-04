@@ -25,10 +25,10 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Source: direct owner feedback after a one-time WeChat reminder trigger inserted its internal execution instruction as a visible user message in the conversation where the reminder was created.
 - User slice: mobile-first owner using long-lived conversations for ordinary work while also scheduling background tasks.
-- Observed friction or ask: the scheduled task interrupted the original conversation and polluted its context. Every automatic task should execute in a separate new conversation by default; an existing conversation may be reused only when explicit continuity is the actual request.
-- Signal strength: concrete production failure traced to `executionMode: existing_session` on a one-time trigger, compounded by CLI wording that described the source session as the target.
-- Product implication: one-time triggers and recurring schedules both default to `fresh_session`, using the originating session only to seed folder/runtime/system-prompt context and any connector return route. Keep `--reuse-session` as an explicit legacy/continuity escape hatch, and regression-test that no trigger prompt or status event is appended to the source transcript.
-- Follow-up: deterministic connector reminders should ultimately use a first-class `connector_action` rather than spending a model turn, but any interim AI-backed reminder must still run in an isolated session.
+- Observed friction or ask: the scheduled task interrupted the original conversation and polluted its context. Every automatic task should execute in a separate new conversation. This should be the only behavior, not a default plus a reuse exception.
+- Signal strength: concrete production failure traced to a one-time trigger treating the source conversation as its execution target, compounded by CLI wording that blurred source and target.
+- Product implication: do not model conversation reuse as a configurable mode. One-time triggers and recurring schedules have one execution rule: create a new session, using the originating session only to seed folder/runtime/system-prompt context and any connector return route. Remove the mode field, reuse flag, conditional runtime branches, and associated documentation; regression-test that no trigger prompt or status event is appended to the source transcript.
+- Follow-up: deterministic connector reminders should ultimately use a first-class `connector_action` rather than spending a model turn, but any interim AI-backed reminder must still run in its own session.
 
 ### 2026-09-04 — unattended Agents should execute reversible work instead of waiting at invisible review gates
 

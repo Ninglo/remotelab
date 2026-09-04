@@ -143,6 +143,21 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function buildScheduledSessionTemplate(payload, sourceSession) {
+  if (payload?.sessionTemplate) return payload.sessionTemplate;
+  if (!sourceSession) return null;
+  const name = String(payload?.title || sourceSession.name || 'Scheduled task').trim();
+  return {
+    folder: sourceSession.folder,
+    tool: String(payload?.tool || sourceSession.tool || '').trim(),
+    name,
+    group: String(sourceSession.group || 'Scheduled executions').trim(),
+    description: `Isolated execution for ${name}`,
+    systemPrompt: String(sourceSession.systemPrompt || '').trim(),
+    internalRole: 'scheduled_execution',
+  };
+}
+
 function isOwnerUsername(username) {
   const ownerUsername = trimString(auth?.username).toLowerCase();
   return !!ownerUsername && trimString(username).toLowerCase() === ownerUsername;
@@ -420,40 +435,22 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'enabled must be a boolean' });
         return true;
       }
-      const requestedExecutionMode = String(payload.executionMode || '').trim();
-      if (requestedExecutionMode && !new Set(['fresh_session', 'existing_session']).has(requestedExecutionMode)) {
-        throw new Error('executionMode must be fresh_session or existing_session');
-      }
-      const executionMode = requestedExecutionMode === 'existing_session'
-        ? 'existing_session'
-        : 'fresh_session';
-      const sourceSessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
+      const sourceSessionId = typeof payload.sessionId === 'string'
+        ? payload.sessionId.trim()
+        : String(payload.sourceSessionId || '').trim();
       const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
-      if (executionMode === 'existing_session' && !sourceSession) throw new Error('Session not found');
-      if (sourceSessionId && !sourceSession) throw new Error('Session not found');
-      if (sourceSession?.archived) throw new Error('Session is archived');
-      const sessionTemplate = executionMode === 'fresh_session' && !payload.sessionTemplate && sourceSession
-        ? {
-            folder: sourceSession.folder,
-            tool: String(payload.tool || sourceSession.tool || '').trim(),
-            name: String(payload.title || sourceSession.name || 'Scheduled task').trim(),
-            group: String(sourceSession.group || 'Scheduled executions').trim(),
-            description: `Isolated execution for ${String(payload.title || sourceSession.name || 'scheduled task').trim()}`,
-            systemPrompt: String(sourceSession.systemPrompt || '').trim(),
-            internalRole: 'scheduled_execution',
-          }
-        : payload.sessionTemplate;
+      if (!sourceSession) throw new Error('Source session not found');
+      if (sourceSession.archived) throw new Error('Source session is archived');
+      const sessionTemplate = buildScheduledSessionTemplate(payload, sourceSession);
       let sourceDelivery = payload.sourceDelivery;
-      if (!sourceDelivery && sourceSession && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
+      if (!sourceDelivery && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
         sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sourceSessionId, {
           requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
         }));
       }
       const trigger = await createTrigger({
         ...payload,
-        executionMode,
-        sessionId: sourceSessionId,
-        sourceSessionId: executionMode === 'fresh_session' ? sourceSessionId : '',
+        sourceSessionId,
         sessionTemplate,
         sourceDelivery,
       });
@@ -530,39 +527,22 @@ export async function handleControlRoutes({
       return true;
     }
     try {
-      const requestedExecutionMode = String(payload.executionMode || '').trim();
-      if (requestedExecutionMode && !new Set(['fresh_session', 'existing_session']).has(requestedExecutionMode)) {
-        throw new Error('executionMode must be fresh_session or existing_session');
-      }
-      const executionMode = requestedExecutionMode === 'existing_session'
-        ? 'existing_session'
-        : 'fresh_session';
-      const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
-      const session = sessionId ? await getSession(sessionId) : null;
-      if (executionMode === 'existing_session' && !session) throw new Error('Session not found');
-      if (sessionId && !session) throw new Error('Session not found');
-      if (session?.archived) throw new Error('Session is archived');
-      const sessionTemplate = executionMode === 'fresh_session' && !payload.sessionTemplate && session
-        ? {
-            folder: session.folder,
-            tool: String(payload.tool || session.tool || '').trim(),
-            name: String(payload.title || session.name || 'Scheduled task').trim(),
-            group: String(session.group || 'Scheduled executions').trim(),
-            description: `Isolated occurrence for ${String(payload.title || session.name || 'scheduled task').trim()}`,
-            systemPrompt: String(session.systemPrompt || '').trim(),
-            internalRole: 'scheduled_execution',
-          }
-        : payload.sessionTemplate;
+      const sourceSessionId = typeof payload.sessionId === 'string'
+        ? payload.sessionId.trim()
+        : String(payload.sourceSessionId || '').trim();
+      const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
+      if (!sourceSession) throw new Error('Source session not found');
+      if (sourceSession.archived) throw new Error('Source session is archived');
+      const sessionTemplate = buildScheduledSessionTemplate(payload, sourceSession);
       let sourceDelivery = payload.sourceDelivery;
-      if (!sourceDelivery && session && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
-        sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sessionId, {
+      if (!sourceDelivery && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
+        sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sourceSessionId, {
           requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
         }));
       }
       const schedule = await createRecurringSchedule({
         ...payload,
-        executionMode,
-        sessionId,
+        sourceSessionId,
         sessionTemplate,
         sourceDelivery,
       });
@@ -590,11 +570,8 @@ export async function handleControlRoutes({
       return true;
     }
     try {
-      const freshSessionPatch = String(payload.executionMode || '').trim() === 'fresh_session';
-      if (Object.prototype.hasOwnProperty.call(payload, 'sessionId') && !freshSessionPatch) {
-        const targetSession = typeof payload.sessionId === 'string' ? await getSession(payload.sessionId.trim()) : null;
-        if (!targetSession) throw new Error('Session not found');
-        if (targetSession.archived) throw new Error('Session is archived');
+      if (Object.prototype.hasOwnProperty.call(payload, 'sessionId')) {
+        throw new Error('The source session is immutable; create a new schedule instead');
       }
       const schedule = await updateRecurringSchedule(scheduleId, payload);
       if (!schedule) {

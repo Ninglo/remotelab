@@ -4,8 +4,8 @@ import { CHAT_TRIGGERS_FILE } from '../lib/config.mjs';
 import { appendEvent } from './history.mjs';
 import { statusEvent } from './normalizer.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
-import { createSession, getSession, getSessionSourceContext, submitHttpMessage } from './session-manager.mjs';
-import { buildSourceDeliveryPlan, normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
+import { createSession, getSession, submitHttpMessage } from './session-manager.mjs';
+import { normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
 import { getRun, isTerminalRunState, requestRunCancel } from './runs.mjs';
 
 const DEFAULT_TRIGGER_POLL_MS = 15000;
@@ -20,8 +20,6 @@ const TRIGGER_STATUS_FAILED = 'failed';
 const TRIGGER_STATUS_CANCELLED = 'cancelled';
 const TRIGGER_TYPE_AT_TIME = 'at_time';
 const TRIGGER_ACTION_SESSION_MESSAGE = 'session_message';
-const EXECUTION_MODE_EXISTING_SESSION = 'existing_session';
-const EXECUTION_MODE_FRESH_SESSION = 'fresh_session';
 
 let triggersCache = null;
 let triggersCacheMtimeMs = 0;
@@ -77,13 +75,6 @@ function requireTimestamp(value, fieldName) {
   return normalized;
 }
 
-function normalizeExecutionMode(value, fallback = EXECUTION_MODE_EXISTING_SESSION) {
-  const normalized = trimString(value);
-  if (normalized === EXECUTION_MODE_FRESH_SESSION) return EXECUTION_MODE_FRESH_SESSION;
-  if (normalized === EXECUTION_MODE_EXISTING_SESSION) return EXECUTION_MODE_EXISTING_SESSION;
-  return fallback;
-}
-
 function normalizeSessionTemplate(value, fallbackTool = '') {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const template = {
@@ -124,17 +115,22 @@ function resolveTriggerPollMs(value = process.env.REMOTELAB_TRIGGER_POLL_MS) {
 function normalizeStoredTrigger(value) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const scheduledAt = normalizeTimestamp(raw.scheduledAt);
-  const executionMode = normalizeExecutionMode(raw.executionMode);
-  const sessionId = trimString(raw.sessionId);
-  const sourceSessionId = trimString(raw.sourceSessionId);
+  const legacySessionId = trimString(raw.sessionId);
+  const sourceSessionId = trimString(raw.sourceSessionId)
+    || (!raw.sessionTemplate ? legacySessionId : '');
+  const executionSessionId = trimString(raw.executionSessionId)
+    || (raw.sessionTemplate ? legacySessionId : '');
   const sessionTemplate = normalizeSessionTemplate(raw.sessionTemplate, raw.tool);
   const text = trimString(raw.text);
-  if (!scheduledAt || !text || (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId)
-    || (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate)) {
+  const status = normalizeTriggerStatus(raw.status, TRIGGER_STATUS_PENDING);
+  if (!scheduledAt || !text || (!sessionTemplate && ![
+    TRIGGER_STATUS_DELIVERED,
+    TRIGGER_STATUS_FAILED,
+    TRIGGER_STATUS_CANCELLED,
+  ].includes(status))) {
     return null;
   }
 
-  const status = normalizeTriggerStatus(raw.status, TRIGGER_STATUS_PENDING);
   const enabled = normalizeBoolean(
     raw.enabled,
     status !== TRIGGER_STATUS_DELIVERED && status !== TRIGGER_STATUS_CANCELLED,
@@ -151,8 +147,6 @@ function normalizeStoredTrigger(value) {
     status,
     enabled,
     title: trimString(raw.title),
-    executionMode,
-    sessionId,
     sourceSessionId,
     sessionTemplate,
     scheduledAt,
@@ -175,7 +169,7 @@ function normalizeStoredTrigger(value) {
     deliveryMode: trimString(raw.deliveryMode),
     scheduleId: trimString(raw.scheduleId),
     occurrenceId: trimString(raw.occurrenceId),
-    executionSessionId: trimString(raw.executionSessionId),
+    executionSessionId,
     sourceDelivery: normalizeSourceDeliveryPlan(raw.sourceDelivery),
   };
 }
@@ -284,7 +278,7 @@ function isPermanentTriggerError(error) {
   return error?.code === 'SESSION_NOT_FOUND' || error?.code === 'SESSION_ARCHIVED';
 }
 
-async function assertWritableTargetSession(sessionId) {
+async function assertWritableExecutionSession(sessionId) {
   const normalizedSessionId = trimString(sessionId);
   if (!normalizedSessionId) {
     throw new Error('sessionId is required');
@@ -319,8 +313,7 @@ export async function listTriggers(options = {}) {
   const normalizedSessionId = trimString(options.sessionId);
   const normalizedScheduleId = trimString(options.scheduleId);
   const filtered = triggers.filter((trigger) => (
-    (!normalizedSessionId || trigger.sessionId === normalizedSessionId
-      || trigger.sourceSessionId === normalizedSessionId
+    (!normalizedSessionId || trigger.sourceSessionId === normalizedSessionId
       || trigger.executionSessionId === normalizedSessionId)
     && (!normalizedScheduleId || trigger.scheduleId === normalizedScheduleId)
   ));
@@ -335,17 +328,10 @@ export async function getTrigger(triggerId) {
 }
 
 export async function createTrigger(input = {}) {
-  const executionMode = normalizeExecutionMode(input.executionMode, EXECUTION_MODE_FRESH_SESSION);
-  const requestedSessionId = trimString(input.sessionId);
-  const session = executionMode === EXECUTION_MODE_EXISTING_SESSION
-    ? await assertWritableTargetSession(requestedSessionId)
-    : null;
-  const sourceSessionId = executionMode === EXECUTION_MODE_FRESH_SESSION
-    ? trimString(input.sourceSessionId) || requestedSessionId
-    : '';
+  const sourceSessionId = trimString(input.sourceSessionId);
   const sessionTemplate = normalizeSessionTemplate(input.sessionTemplate, input.tool);
-  if (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate) {
-    throw new Error('sessionTemplate with folder and tool is required for fresh_session triggers');
+  if (!sessionTemplate) {
+    throw new Error('sessionTemplate with folder and tool is required');
   }
   const scheduledAt = requireTimestamp(input.scheduledAt, 'scheduledAt');
   const text = trimString(input.text);
@@ -356,13 +342,7 @@ export async function createTrigger(input = {}) {
   const id = createTriggerId();
   const createdAt = nowIso();
   const enabled = normalizeBoolean(input.enabled, true);
-  let sourceDelivery = normalizeSourceDeliveryPlan(input.sourceDelivery);
-  if (!sourceDelivery && session && trimString(input.deliverTo).toLowerCase() === 'session_source') {
-    const sourceContext = await getSessionSourceContext(session.id, {
-      requestId: trimString(input.sourceRequestId),
-    });
-    sourceDelivery = buildSourceDeliveryPlan(sourceContext);
-  }
+  const sourceDelivery = normalizeSourceDeliveryPlan(input.sourceDelivery);
   const trigger = {
     id,
     triggerType: TRIGGER_TYPE_AT_TIME,
@@ -370,8 +350,6 @@ export async function createTrigger(input = {}) {
     status: enabled ? TRIGGER_STATUS_PENDING : TRIGGER_STATUS_CANCELLED,
     enabled,
     title: trimString(input.title),
-    executionMode,
-    sessionId: session?.id || '',
     sourceSessionId,
     sessionTemplate,
     scheduledAt,
@@ -461,11 +439,10 @@ export async function updateTrigger(triggerId, patch = {}) {
   const normalizedTriggerId = trimString(triggerId);
   if (!normalizedTriggerId) return null;
 
-  const nextSessionId = Object.prototype.hasOwnProperty.call(patch, 'sessionId')
-    ? trimString(patch.sessionId)
-    : '';
-  if (nextSessionId) {
-    await assertWritableTargetSession(nextSessionId);
+  for (const field of ['sessionId', 'sourceSessionId', 'sessionTemplate', 'executionSessionId']) {
+    if (Object.prototype.hasOwnProperty.call(patch, field)) {
+      throw new Error('Trigger execution routing is immutable; create a new trigger instead');
+    }
   }
 
   let updatedTrigger = null;
@@ -488,7 +465,6 @@ export async function updateTrigger(triggerId, patch = {}) {
       'model',
       'effort',
       'thinking',
-      'sessionId',
       'enabled',
     ].some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 
@@ -503,17 +479,6 @@ export async function updateTrigger(triggerId, patch = {}) {
       const title = trimString(patch.title);
       if (title !== current.title) {
         next.title = title;
-        changed = true;
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'sessionId')) {
-      const sessionId = nextSessionId;
-      if (!sessionId) {
-        throw new Error('sessionId is required');
-      }
-      if (sessionId !== current.sessionId) {
-        next.sessionId = sessionId;
         changed = true;
       }
     }
@@ -735,20 +700,20 @@ async function appendTriggerStatusEvent(trigger, outcome) {
     if (trimString(outcome?.runId)) {
       event.runId = trimString(outcome.runId);
     }
-    await appendEvent(trigger.sessionId, event);
+    await appendEvent(trigger.executionSessionId, event);
   } catch (error) {
     console.error(`[triggers] failed to append status event for ${trigger.id}: ${error.message}`);
   }
 }
 
-async function ensureFreshExecutionSession(trigger) {
-  const existingSessionId = trimString(trigger.executionSessionId || trigger.sessionId);
+async function ensureExecutionSession(trigger) {
+  const existingSessionId = trimString(trigger.executionSessionId);
   if (existingSessionId) {
-    const existing = await assertWritableTargetSession(existingSessionId);
+    const existing = await assertWritableExecutionSession(existingSessionId);
     return { trigger, session: existing };
   }
   const template = normalizeSessionTemplate(trigger.sessionTemplate, trigger.tool);
-  if (!template) throw new Error('Fresh execution session template is missing');
+  if (!template) throw new Error('Execution session template is missing');
   const scheduledLabel = trimString(trigger.scheduledAt).replace('T', ' ').replace('.000Z', 'Z');
   const session = await createSession(
     template.folder,
@@ -769,7 +734,6 @@ async function ensureFreshExecutionSession(trigger) {
   await withTriggerMutation(async (triggers, saveTriggers) => {
     const index = triggers.findIndex((entry) => entry.id === trigger.id);
     if (index === -1) throw new Error('Trigger disappeared while creating its execution session');
-    triggers[index].sessionId = session.id;
     triggers[index].executionSessionId = session.id;
     triggers[index].updatedAt = nowIso();
     attached = cloneTrigger(triggers[index]);
@@ -779,9 +743,7 @@ async function ensureFreshExecutionSession(trigger) {
 }
 
 async function deliverTrigger(trigger) {
-  const target = trigger.executionMode === EXECUTION_MODE_FRESH_SESSION
-    ? await ensureFreshExecutionSession(trigger)
-    : { trigger, session: await assertWritableTargetSession(trigger.sessionId) };
+  const target = await ensureExecutionSession(trigger);
   const activeTrigger = target.trigger;
   const outcome = await submitHttpMessage(target.session.id, activeTrigger.text, [], {
     requestId: activeTrigger.requestId,
