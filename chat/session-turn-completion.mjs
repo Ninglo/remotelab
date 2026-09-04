@@ -161,12 +161,14 @@ export function createSessionTurnCompletionHelpers(services) {
             originalName: file.originalName,
             mimeType: file.mimeType,
             createdBy: 'assistant',
+            allowInternalPath: file.allowInternalPath === true,
           });
           return {
             assetId: published.id,
             localPath: file.localPath,
             originalName: published.originalName || file.originalName,
             mimeType: published.mimeType || file.mimeType,
+            ...(file.inline === true ? { inline: true } : {}),
             ...(normalizeAttachmentSizeBytes(published.sizeBytes) ? { sizeBytes: normalizeAttachmentSizeBytes(published.sizeBytes) } : {}),
           };
         } catch (error) {

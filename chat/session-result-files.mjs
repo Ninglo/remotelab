@@ -640,6 +640,31 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
   const minimumMtimeMs = resolveRunResultMinimumMtimeMs(run);
 
   for (const event of normalizedEvents || []) {
+    if (event?.type === 'artifact') {
+      const localPath = trimString(event.localPath);
+      if (!localPath) continue;
+      const resolvedPath = resolve(localPath);
+      const allowInternalPath = event.allowInternalPath === true;
+      if (!allowInternalPath && !isUserVisiblePathAllowed(resolvedPath)) continue;
+      const stats = await statOrNull(resolvedPath);
+      if (!stats?.isFile() || !Number.isFinite(stats.size) || stats.size <= 0) continue;
+      if (minimumMtimeMs > 0 && Number.isFinite(stats.mtimeMs) && stats.mtimeMs < minimumMtimeMs) {
+        continue;
+      }
+      if (!filesByPath.has(resolvedPath)) {
+        const originalName = sanitizeOriginalAttachmentName(
+          event.originalName || basename(resolvedPath),
+        );
+        filesByPath.set(resolvedPath, {
+          localPath: resolvedPath,
+          originalName: originalName || basename(resolvedPath),
+          mimeType: resolveAttachmentMimeType(event.mimeType, originalName || basename(resolvedPath)),
+          allowInternalPath,
+          inline: event.disposition === 'inline',
+        });
+      }
+      continue;
+    }
     if (event?.type === 'tool_use' && event.toolName === 'bash') {
       activeCommand = trimString(event.toolInput);
       for (const root of collectResultFileSearchRoots(manifest, activeCommand)) {
@@ -807,13 +832,20 @@ export function normalizePublishedResultAssetAttachments(assets = []) {
         ...(originalName ? { originalName } : {}),
         mimeType: resolveAttachmentMimeType(asset?.mimeType, originalName),
         ...(sizeBytes ? { sizeBytes } : {}),
-        renderAs: 'file',
+        ...(asset?.inline === true ? {} : { renderAs: 'file' }),
       };
     })
     .filter(Boolean);
 }
 
 export function buildResultAssetReadyMessage(attachments = []) {
+  const inlineImages = attachments.length > 0 && attachments.every((attachment) => (
+    trimString(attachment?.mimeType).startsWith('image/')
+    && trimString(attachment?.renderAs) !== 'file'
+  ));
+  if (inlineImages) {
+    return attachments.length === 1 ? 'Generated image ready.' : 'Generated images ready.';
+  }
   return attachments.length === 1
     ? 'Generated file ready to download.'
     : 'Generated files ready to download.';

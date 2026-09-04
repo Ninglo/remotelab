@@ -30,6 +30,25 @@ export function toolResultEvent(toolName, output, exitCode) {
   return createEvent('tool_result', { role: 'system', toolName, output, exitCode });
 }
 
+export function artifactEvent({
+  localPath,
+  originalName,
+  mimeType,
+  disposition,
+  allowInternalPath = false,
+  source,
+} = {}) {
+  return createEvent('artifact', {
+    role: 'assistant',
+    localPath,
+    ...(originalName ? { originalName } : {}),
+    ...(mimeType ? { mimeType } : {}),
+    ...(disposition ? { disposition } : {}),
+    ...(allowInternalPath === true ? { allowInternalPath: true } : {}),
+    ...(source ? { source } : {}),
+  });
+}
+
 export function fileChangeEvent(filePath, changeType) {
   return createEvent('file_change', { role: 'system', filePath, changeType });
 }

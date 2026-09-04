@@ -1,7 +1,8 @@
 import {
-  messageEvent, toolUseEvent, toolResultEvent,
+  artifactEvent, messageEvent, toolUseEvent, toolResultEvent,
   fileChangeEvent, reasoningEvent, statusEvent, usageEvent,
 } from '../normalizer.mjs';
+import { readCodexSessionGeneratedArtifacts } from '../codex-session-artifacts.mjs';
 import {
   INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED,
   IS_GUEST_INSTANCE,
@@ -115,6 +116,15 @@ export function createCodexAdapter() {
 
     flush() {
       return [];
+    },
+
+    async collectArtifacts(run = {}) {
+      if (!run?.codexThreadId) return [];
+      const artifacts = await readCodexSessionGeneratedArtifacts(run.codexThreadId, {
+        startedAt: run.startedAt || run.createdAt || null,
+        completedAt: run.completedAt || run.spoolCompletionDetectedAt || run.finalizedAt || null,
+      });
+      return artifacts.map((artifact) => artifactEvent(artifact));
     },
   };
 }

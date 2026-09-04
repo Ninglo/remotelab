@@ -79,6 +79,18 @@ export function createRunProjectionService({
     return normalizedEvents;
   }
 
+  async function maybeAppendProjectedArtifacts(run, runtimeInvocation, normalizedEvents = []) {
+    if (typeof runtimeInvocation?.adapter?.collectArtifacts !== 'function') {
+      return normalizedEvents;
+    }
+
+    const artifactEvents = await runtimeInvocation.adapter.collectArtifacts(run);
+    if (Array.isArray(artifactEvents) && artifactEvents.length > 0) {
+      normalizedEvents.push(...normalizeRunEvents(run, artifactEvents));
+    }
+    return normalizedEvents;
+  }
+
   async function normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords = [], options = {}) {
     const { adapter } = runtimeInvocation;
     const normalizedEvents = [];
@@ -109,6 +121,9 @@ export function createRunProjectionService({
     if (options.includeCodexContextMetrics === true) {
       await maybeAppendProjectedCodexUsage(run, runtimeInvocation, normalizedEvents, lastRecordTimestamp);
     }
+    if (options.includeProviderArtifacts === true) {
+      await maybeAppendProjectedArtifacts(run, runtimeInvocation, normalizedEvents);
+    }
 
     return {
       normalizedEvents,
@@ -122,6 +137,7 @@ export function createRunProjectionService({
     const spoolRecords = await readRunSpoolRecords(run.id);
     const parsed = await normalizeRunSpoolRecords(run, runtimeInvocation, spoolRecords, {
       includeCodexContextMetrics: true,
+      includeProviderArtifacts: true,
     });
     return {
       runtimeInvocation,

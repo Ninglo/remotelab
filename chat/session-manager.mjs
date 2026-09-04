@@ -21,7 +21,12 @@ import {
   setForkContext,
   setContextHead,
 } from './history.mjs';
-import { contextOperationEvent, managerContextEvent, messageEvent, statusEvent } from './normalizer.mjs';
+import {
+  contextOperationEvent,
+  managerContextEvent,
+  messageEvent,
+  statusEvent,
+} from './normalizer.mjs';
 import { appendUsageLedgerRecord, buildUsageLedgerRecord } from './usage-ledger.mjs';
 import { triggerSessionStateSuggestion } from './session-state-classifier.mjs';
 import { buildSourceRuntimePrompt } from './source-runtime-prompts.mjs';
