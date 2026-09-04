@@ -30,6 +30,7 @@ credentials.txt
 /local-helper/remotelab-helper
 /local-helper/bin/
 /generated/
+/static/public-pages/
 
 # Claude Code session plan dumps
 [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.txt

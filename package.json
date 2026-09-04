@@ -51,6 +51,7 @@
     "chat/",
     "templates/",
     "static/",
+    "!static/public-pages/",
     "LICENSE",
     "README.md",
     "docs/"
