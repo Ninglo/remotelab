@@ -44,7 +44,6 @@ const architecture = read('docs/project-architecture.md');
 assert.match(architecture, /chat\/run-launcher\.mjs/, 'Architecture doc should describe the run launcher');
 assert.match(architecture, /chat\/run-projection\.mjs/, 'Architecture doc should describe the run projection layer');
 assert.match(architecture, /chat\/run-reconciler\.mjs/, 'Architecture doc should describe the run reconciler');
-assert.match(architecture, /runner-supervisor\.mjs` \(compatibility shim/i, 'Architecture doc should demote runner-supervisor to a compatibility shim');
 
 const implementationMapping = read('notes/current/core-domain-implementation-mapping.md');
 assert.match(implementationMapping, /chat\/run-launcher\.mjs/, 'Current implementation mapping should reference the run launcher');

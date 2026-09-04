@@ -90,7 +90,6 @@ remotelab/
 │   ├── run-launcher.mjs     # Detached run launch strategy (systemd / process fallback)
 │   ├── run-projection.mjs   # Raw spool -> normalized run-event projection
 │   ├── run-reconciler.mjs   # Run liveness + missing-result terminalization
-│   ├── runner-supervisor.mjs # Compatibility shim re-exporting run-launcher
 │   ├── runner-sidecar.mjs   # Thin detached executor writing raw spool/status/result
 │   ├── ws.mjs               # WebSocket invalidation channel only
 │   ├── session-state-classifier.mjs       # one non-blocking post-turn Session-state classifier

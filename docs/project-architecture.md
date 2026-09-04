@@ -294,7 +294,6 @@ Responsible for launching, executing, projecting, and reconciling run attempts w
 - `chat/runner-sidecar.mjs`
 - `chat/run-projection.mjs`
 - `chat/run-reconciler.mjs`
-- `chat/runner-supervisor.mjs` (compatibility shim re-exporting `run-launcher.mjs`)
 - `chat/adapters/claude.mjs`
 - `chat/adapters/codex.mjs`
 - `chat/models.mjs`
@@ -332,7 +331,6 @@ remotelab/
 │   ├── runner-sidecar.mjs          # raw execution sidecar
 │   ├── run-projection.mjs          # raw spool -> normalized run events
 │   ├── run-reconciler.mjs          # run liveness + terminal reconciliation
-│   ├── runner-supervisor.mjs       # compatibility shim for older imports
 │   ├── session-state-classifier.mjs              # one post-turn Session-state classification call
 │   ├── session-work-summary.mjs    # provider-neutral current work state shared across Harnesses
 │   ├── apps.mjs                    # Agent template CRUD

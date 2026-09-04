@@ -191,7 +191,6 @@ When mapping current code to the contract, treat:
 - `chat/runner-sidecar.mjs`
 - `chat/run-projection.mjs`
 - `chat/run-reconciler.mjs`
-- `chat/runner-supervisor.mjs` (compatibility shim)
 - `chat/adapters/*.mjs`
 
 ### Current storage
