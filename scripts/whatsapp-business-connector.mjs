@@ -24,7 +24,7 @@ import {
   submitConnectorMessage,
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
-import { startConnectorSurfaceServer } from '../lib/connector-sdk/surface.mjs';
+import { startConnectorSurfaceServer } from '../lib/connector-surface-server.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 
 const CONNECTOR_ID = 'whatsapp-business';

@@ -1,8 +1,0 @@
-{
-  "channel": "archery",
-  "name": "Archery Training Connector",
-  "version": "1.0.0",
-  "entry": "./index.mjs",
-  "capabilities": ["inbound", "reply-cache"],
-  "description": "Ingests structured archery training sessions and caches RemoteLab coaching replies for frontend polling."
-}

@@ -30,7 +30,7 @@ import {
   loadConnectorSurfaceTemplate,
   renderConnectorSurfaceTemplate,
   startConnectorSurfaceServer,
-} from '../lib/connector-sdk/surface.mjs';
+} from '../lib/connector-surface-server.mjs';
 import { getWeChatLoginQrUrl, getWeChatLoginSurface } from '../lib/wechat-connector-login.mjs';
 import {
   assertConnectorPublicationReady,

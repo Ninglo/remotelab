@@ -14,7 +14,7 @@ const {
   loadConnectorSurfaceTemplate,
   renderConnectorSurfaceTemplate,
   startConnectorSurfaceServer,
-} = await import('../lib/connector-sdk/surface.mjs')
+} = await import('../lib/connector-surface-server.mjs')
 const { getConnectorSurface } = await import('../lib/connector-surface-registry.mjs')
 
 let server
@@ -114,4 +114,4 @@ try {
   rmSync(home, { recursive: true, force: true })
 }
 
-console.log('\n✓ connector-sdk surface helper tests passed')
+console.log('\n✓ connector surface server helper tests passed')
