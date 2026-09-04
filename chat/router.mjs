@@ -134,8 +134,6 @@ const staticRootBuildAssets = [
   'manifest.json',
   'marked.min.js',
   'sw.js',
-  'voice-gateway-direct-poc.html',
-  'voice-gateway-direct-poc.js',
 ].map((name) => join(staticDir, name));
 const pageBuildRoots = [
   join(__dirname, '..', 'templates'),
