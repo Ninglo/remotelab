@@ -124,3 +124,4 @@ Recent status:
 
 - Do not use `session_message` triggers for WeChat reminders or other source-channel pushes.
 - For this machine, use the direct-send path for WeChat outbound messages and treat the current watchdog as a stopgap, not as final architecture.
+- If future-time orchestration still temporarily requires an AI-backed trigger, it must use a fresh execution session; never inject its control prompt into the conversation where the reminder was requested.

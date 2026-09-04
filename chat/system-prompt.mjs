@@ -44,8 +44,9 @@ function buildSessionSpawnSection({ currentSessionId, chatPort }) {
 - Suppress intermediate worker output: add \`--internal --output-mode final-only\`.
 - Schedule a one-time AI turn: \`remotelab trigger create --in 2h --text "<task>" --json\`
 - Schedule recurring AI work: \`remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "<task>" --json\`
+- Trigger and schedule executions create fresh sessions by default so automated work never appends to the source conversation. Use \`--reuse-session\` only when continuation in that exact conversation is explicitly required.
 - The equivalent fallback is \`node "$REMOTELAB_PROJECT_ROOT/cli.js" <command>\`.
-- \`REMOTELAB_SESSION_ID\` is the source session id${sessionIdSuffix}; spawn, trigger, and schedule commands use it by default.
+- \`REMOTELAB_SESSION_ID\` is the source session id${sessionIdSuffix}; spawn, trigger, and schedule commands use it as their context source by default.
 - \`REMOTELAB_CHAT_BASE_URL\` is the local API base URL, normally \`http://127.0.0.1:${chatPort}\`.
 - \`REMOTELAB_PROJECT_ROOT\` is the installed RemoteLab source root.`;
 }

@@ -207,6 +207,7 @@ async function main() {
 
     const createTriggerRes = await request(port, 'POST', '/api/triggers', {
       sessionId: session.id,
+      executionMode: 'existing_session',
       title: 'Morning check-in',
       scheduledAt: new Date(Date.now() + 200).toISOString(),
       text: 'Please give me a short morning check-in and one next step.',
@@ -219,6 +220,7 @@ async function main() {
     assert.equal(trigger.status, 'pending');
     assert.equal(trigger.triggerType, 'at_time');
     assert.equal(trigger.actionType, 'session_message');
+    assert.equal(trigger.executionMode, 'existing_session');
 
     const listRes = await request(port, 'GET', `/api/triggers?sessionId=${encodeURIComponent(session.id)}`);
     assert.equal(listRes.status, 200, 'list triggers should succeed');
@@ -251,14 +253,7 @@ async function main() {
     );
 
     const freshTriggerRes = await request(port, 'POST', '/api/triggers', {
-      executionMode: 'fresh_session',
-      sessionTemplate: {
-        folder: repoRoot,
-        tool: 'fake-codex',
-        name: 'Fresh scheduled execution',
-        group: 'Scheduled tests',
-        internalRole: 'scheduled_execution',
-      },
+      sessionId: session.id,
       title: 'Fresh run',
       scheduledAt: new Date(Date.now() + 100).toISOString(),
       text: 'Run in a fresh session.',
@@ -266,17 +261,46 @@ async function main() {
       model: 'fake-model',
       effort: 'low',
     });
-    assert.equal(freshTriggerRes.status, 201, 'fresh trigger should not require a target session');
+    assert.equal(freshTriggerRes.status, 201, 'trigger creation should default to an isolated session');
+    assert.equal(freshTriggerRes.json.trigger.executionMode, 'fresh_session');
+    assert.equal(freshTriggerRes.json.trigger.sourceSessionId, session.id);
+    assert.equal(freshTriggerRes.json.trigger.sessionTemplate.folder, session.folder);
+    assert.equal(freshTriggerRes.json.trigger.sessionTemplate.tool, 'fake-codex');
+    assert.equal(freshTriggerRes.json.trigger.sessionTemplate.internalRole, 'scheduled_execution');
+    const sourceFilteredTriggers = await request(
+      port,
+      'GET',
+      `/api/triggers?sessionId=${encodeURIComponent(session.id)}`,
+    );
+    assert.equal(sourceFilteredTriggers.status, 200);
+    assert.ok(
+      sourceFilteredTriggers.json.triggers.some((entry) => entry.id === freshTriggerRes.json.trigger.id),
+      'fresh triggers should remain discoverable from their source session',
+    );
     const deliveredFresh = await waitFor(async () => {
       const res = await request(port, 'GET', `/api/triggers/${freshTriggerRes.json.trigger.id}`);
       return res.status === 200 && res.json.trigger.status === 'delivered' ? res.json.trigger : false;
     }, 'fresh trigger delivery');
     assert.ok(deliveredFresh.executionSessionId, 'fresh trigger should retain its execution session');
     assert.notEqual(deliveredFresh.executionSessionId, session.id, 'fresh trigger must not reuse an existing session');
+    const originalEventsAfterFresh = await getEvents(port, session.id);
+    assert.equal(
+      originalEventsAfterFresh.filter((event) => event.requestId === freshTriggerRes.json.trigger.requestId).length,
+      0,
+      'a default one-time trigger must not append any event to its source conversation',
+    );
     const freshSessionRes = await request(port, 'GET', `/api/sessions/${deliveredFresh.executionSessionId}`);
     assert.equal(freshSessionRes.status, 200);
     assert.equal(freshSessionRes.json.session.internalRole, 'scheduled_execution');
     await waitForRunTerminal(port, deliveredFresh.runId);
+
+    const invalidTriggerMode = await request(port, 'POST', '/api/triggers', {
+      sessionId: session.id,
+      executionMode: 'shared_forever',
+      scheduledAt: new Date(Date.now() + 60_000).toISOString(),
+      text: 'Invalid mode',
+    });
+    assert.equal(invalidTriggerMode.status, 400, 'unknown trigger execution modes should be rejected');
 
     const futureTriggerRes = await request(port, 'POST', '/api/triggers', {
       sessionId: session.id,
@@ -337,6 +361,15 @@ async function main() {
       }, `${isolated.title} delivery`));
     }
     assert.notEqual(deliveredIsolated[0].runId, deliveredIsolated[1].runId, 'each trigger must get its own model run');
+    assert.notEqual(
+      deliveredIsolated[0].executionSessionId,
+      deliveredIsolated[1].executionSessionId,
+      'each one-time trigger must get its own execution session',
+    );
+    assert.ok(
+      deliveredIsolated.every((entry) => entry.executionSessionId !== sourceSession.id),
+      'one-time triggers must not append to the source conversation',
+    );
     assert.deepEqual(deliveredIsolated.map((entry) => entry.deliveryMode), ['run', 'run']);
     await Promise.all(deliveredIsolated.map((entry) => waitForRunTerminal(port, entry.runId)));
 
@@ -381,7 +414,7 @@ async function main() {
       const terminal = await waitForRunTerminal(port, delivered.runId);
       assert.equal(terminal.state, testCase.expectedState);
       const outbound = await waitFor(async () => {
-        const res = await request(port, 'GET', `/api/source-deliveries?sessionId=${encodeURIComponent(sourceSession.id)}`);
+        const res = await request(port, 'GET', '/api/source-deliveries');
         return res.status === 200
           ? res.json.deliveries.find((entry) => entry.triggerId === created.json.trigger.id) || false
           : false;
@@ -408,7 +441,7 @@ async function main() {
     const emptyDeliveries = await request(
       port,
       'GET',
-      `/api/source-deliveries?sessionId=${encodeURIComponent(sourceSession.id)}`,
+      '/api/source-deliveries',
     );
     assert.equal(emptyDeliveries.status, 200);
     assert.equal(

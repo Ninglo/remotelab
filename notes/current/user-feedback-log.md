@@ -21,6 +21,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-04 — Automated tasks must not append control prompts to an existing conversation
+
+- Source: direct owner feedback after a one-time WeChat reminder trigger inserted its internal execution instruction as a visible user message in the conversation where the reminder was created.
+- User slice: mobile-first owner using long-lived conversations for ordinary work while also scheduling background tasks.
+- Observed friction or ask: the scheduled task interrupted the original conversation and polluted its context. Every automatic task should execute in a separate new conversation by default; an existing conversation may be reused only when explicit continuity is the actual request.
+- Signal strength: concrete production failure traced to `executionMode: existing_session` on a one-time trigger, compounded by CLI wording that described the source session as the target.
+- Product implication: one-time triggers and recurring schedules both default to `fresh_session`, using the originating session only to seed folder/runtime/system-prompt context and any connector return route. Keep `--reuse-session` as an explicit legacy/continuity escape hatch, and regression-test that no trigger prompt or status event is appended to the source transcript.
+- Follow-up: deterministic connector reminders should ultimately use a first-class `connector_action` rather than spending a model turn, but any interim AI-backed reminder must still run in an isolated session.
+
 ### 2026-09-01 — Keep hosted fleet administration outside the personal open-source core
 
 - Source: direct owner review after discovering that the RemoteLab Admin dashboard and fleet commands now live in the main repository and are exposed under the main product route.

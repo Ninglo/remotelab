@@ -151,9 +151,20 @@ const created = JSON.parse((await runCli([
 assert.equal(created.trigger.sessionId, 'sess-current');
 assert.equal(created.trigger.title, 'Later');
 assert.equal(requests.at(-1)?.body?.sessionId, 'sess-current');
+assert.equal(requests.at(-1)?.body?.executionMode, 'fresh_session');
 assert.equal(requests.at(-1)?.body?.text, 'remind me later');
 assert.equal(requests.at(-1)?.body?.deliverTo, 'session_source');
 assert.ok(typeof requests.at(-1)?.body?.scheduledAt === 'string' && requests.at(-1).body.scheduledAt.includes('T'));
+
+await runCli([
+  'create',
+  '--in', '20m',
+  '--text', 'continue this conversation later',
+  '--reuse-session',
+  '--base-url', baseUrl,
+  '--json',
+]);
+assert.equal(requests.at(-1)?.body?.executionMode, 'existing_session');
 
 const listed = JSON.parse((await runCli(['list', '--session', 'sess-current', '--base-url', baseUrl, '--json'])).stdout);
 assert.equal(listed.triggers.length, 1);

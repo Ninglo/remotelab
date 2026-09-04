@@ -12,8 +12,9 @@ The base trigger still has one execution shape:
 
 - trigger type: `at_time`
 - action type: `session_message`
-- target: an existing RemoteLab session
-- delivery: inject one canonical message into that session through an isolated session/run path
+- target: a fresh RemoteLab execution session by default
+- delivery: create that session at fire time, then submit one canonical task message through the normal run path
+- continuity escape hatch: reuse the source session only when `executionMode: existing_session` is explicitly requested
 
 Recurring schedules materialize that same trigger shape from a five-field cron expression. Source-aware triggers and schedules may also persist a `sourceDelivery` snapshot so the generated result returns to the same Feishu group or Topic.
 
@@ -50,7 +51,10 @@ Current fields:
 - `status` → `pending | delivering | delivered | failed | cancelled`
 - `enabled`
 - `title`
-- `sessionId`
+- `executionMode` → `fresh_session | existing_session`
+- `sourceSessionId` — source/template session for isolated execution and list filtering
+- `sessionId` — execution session after a fresh trigger fires, or the explicit target in continuity mode
+- `sessionTemplate` — source-derived template used to create a fresh execution session
 - `scheduledAt`
 - `text`
 - `tool`, `model`, `effort`, `thinking`
@@ -69,10 +73,11 @@ The trigger scheduler runs inside `chat-server.mjs`.
 For each due trigger:
 
 1. claim it durably as `delivering`
-2. submit the configured message through `submitHttpMessage()`
-3. reuse stable `requestId = trigger:<triggerId>` for idempotency
-4. append a visible session `status` event when delivery is newly accepted
-5. mark the trigger as `delivered`
+2. for the default `fresh_session` mode, create an isolated execution session from the stored template
+3. submit the configured message to that execution session through `submitHttpMessage()`
+4. reuse stable `requestId = trigger:<triggerId>` for idempotency
+5. append a visible `status` event only in the execution session when delivery is newly accepted
+6. mark the trigger as `delivered`
 
 If delivery fails:
 
@@ -128,7 +133,8 @@ remotelab trigger create --in 2h --text "Follow up on this later" --json
 The command:
 
 - auto-auths through local owner credentials
-- defaults to `REMOTELAB_SESSION_ID` for the target session
+- defaults to `fresh_session`, using `REMOTELAB_SESSION_ID` only as the source for folder, runtime, system prompt, and optional connector return route
+- never appends its task prompt or status events to the source conversation unless `--reuse-session` is explicitly passed
 - defaults to `REMOTELAB_CHAT_BASE_URL` for the local control plane
 - captures the current request/session source by default; pass `--no-source-delivery` to keep output local
 
@@ -138,13 +144,24 @@ Fallback when `remotelab` is not on `PATH`:
 node "$REMOTELAB_PROJECT_ROOT/cli.js" trigger create --in 2h --text "Follow up on this later" --json
 ```
 
-Minimal create payload:
+Minimal create payload (the supplied session is a template source, not the execution target):
 
 ```json
 {
-  "sessionId": "<session-id>",
+  "sessionId": "<source-session-id>",
   "scheduledAt": "2026-03-20T12:00:00.000Z",
-  "text": "Wake this session with a short follow-up"
+  "text": "Run a short follow-up in a fresh session"
+}
+```
+
+Only explicit continuity work may target the existing conversation:
+
+```json
+{
+  "sessionId": "<target-session-id>",
+  "executionMode": "existing_session",
+  "scheduledAt": "2026-03-20T12:00:00.000Z",
+  "text": "Continue this exact conversation later"
 }
 ```
 
@@ -168,7 +185,7 @@ remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "
 
 ## Known limitations
 
-`session_message` is correct for deferred AI work.
+`session_message` in a fresh execution session is correct for deferred AI work.
 It is the wrong primitive for deterministic outbound delivery where the payload is already known.
 
 Example of the wrong pattern:

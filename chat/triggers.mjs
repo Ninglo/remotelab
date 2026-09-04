@@ -77,10 +77,11 @@ function requireTimestamp(value, fieldName) {
   return normalized;
 }
 
-function normalizeExecutionMode(value) {
-  return trimString(value) === EXECUTION_MODE_FRESH_SESSION
-    ? EXECUTION_MODE_FRESH_SESSION
-    : EXECUTION_MODE_EXISTING_SESSION;
+function normalizeExecutionMode(value, fallback = EXECUTION_MODE_EXISTING_SESSION) {
+  const normalized = trimString(value);
+  if (normalized === EXECUTION_MODE_FRESH_SESSION) return EXECUTION_MODE_FRESH_SESSION;
+  if (normalized === EXECUTION_MODE_EXISTING_SESSION) return EXECUTION_MODE_EXISTING_SESSION;
+  return fallback;
 }
 
 function normalizeSessionTemplate(value, fallbackTool = '') {
@@ -125,6 +126,7 @@ function normalizeStoredTrigger(value) {
   const scheduledAt = normalizeTimestamp(raw.scheduledAt);
   const executionMode = normalizeExecutionMode(raw.executionMode);
   const sessionId = trimString(raw.sessionId);
+  const sourceSessionId = trimString(raw.sourceSessionId);
   const sessionTemplate = normalizeSessionTemplate(raw.sessionTemplate, raw.tool);
   const text = trimString(raw.text);
   if (!scheduledAt || !text || (executionMode === EXECUTION_MODE_EXISTING_SESSION && !sessionId)
@@ -151,6 +153,7 @@ function normalizeStoredTrigger(value) {
     title: trimString(raw.title),
     executionMode,
     sessionId,
+    sourceSessionId,
     sessionTemplate,
     scheduledAt,
     text,
@@ -316,7 +319,9 @@ export async function listTriggers(options = {}) {
   const normalizedSessionId = trimString(options.sessionId);
   const normalizedScheduleId = trimString(options.scheduleId);
   const filtered = triggers.filter((trigger) => (
-    (!normalizedSessionId || trigger.sessionId === normalizedSessionId || trigger.executionSessionId === normalizedSessionId)
+    (!normalizedSessionId || trigger.sessionId === normalizedSessionId
+      || trigger.sourceSessionId === normalizedSessionId
+      || trigger.executionSessionId === normalizedSessionId)
     && (!normalizedScheduleId || trigger.scheduleId === normalizedScheduleId)
   ));
   return sortTriggers(filtered).map(cloneTrigger);
@@ -330,10 +335,14 @@ export async function getTrigger(triggerId) {
 }
 
 export async function createTrigger(input = {}) {
-  const executionMode = normalizeExecutionMode(input.executionMode);
+  const executionMode = normalizeExecutionMode(input.executionMode, EXECUTION_MODE_FRESH_SESSION);
+  const requestedSessionId = trimString(input.sessionId);
   const session = executionMode === EXECUTION_MODE_EXISTING_SESSION
-    ? await assertWritableTargetSession(input.sessionId)
+    ? await assertWritableTargetSession(requestedSessionId)
     : null;
+  const sourceSessionId = executionMode === EXECUTION_MODE_FRESH_SESSION
+    ? trimString(input.sourceSessionId) || requestedSessionId
+    : '';
   const sessionTemplate = normalizeSessionTemplate(input.sessionTemplate, input.tool);
   if (executionMode === EXECUTION_MODE_FRESH_SESSION && !sessionTemplate) {
     throw new Error('sessionTemplate with folder and tool is required for fresh_session triggers');
@@ -363,6 +372,7 @@ export async function createTrigger(input = {}) {
     title: trimString(input.title),
     executionMode,
     sessionId: session?.id || '',
+    sourceSessionId,
     sessionTemplate,
     scheduledAt,
     text,

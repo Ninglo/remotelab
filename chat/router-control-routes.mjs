@@ -420,7 +420,43 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'enabled must be a boolean' });
         return true;
       }
-      const trigger = await createTrigger(payload || {});
+      const requestedExecutionMode = String(payload.executionMode || '').trim();
+      if (requestedExecutionMode && !new Set(['fresh_session', 'existing_session']).has(requestedExecutionMode)) {
+        throw new Error('executionMode must be fresh_session or existing_session');
+      }
+      const executionMode = requestedExecutionMode === 'existing_session'
+        ? 'existing_session'
+        : 'fresh_session';
+      const sourceSessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : '';
+      const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
+      if (executionMode === 'existing_session' && !sourceSession) throw new Error('Session not found');
+      if (sourceSessionId && !sourceSession) throw new Error('Session not found');
+      if (sourceSession?.archived) throw new Error('Session is archived');
+      const sessionTemplate = executionMode === 'fresh_session' && !payload.sessionTemplate && sourceSession
+        ? {
+            folder: sourceSession.folder,
+            tool: String(payload.tool || sourceSession.tool || '').trim(),
+            name: String(payload.title || sourceSession.name || 'Scheduled task').trim(),
+            group: String(sourceSession.group || 'Scheduled executions').trim(),
+            description: `Isolated execution for ${String(payload.title || sourceSession.name || 'scheduled task').trim()}`,
+            systemPrompt: String(sourceSession.systemPrompt || '').trim(),
+            internalRole: 'scheduled_execution',
+          }
+        : payload.sessionTemplate;
+      let sourceDelivery = payload.sourceDelivery;
+      if (!sourceDelivery && sourceSession && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
+        sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sourceSessionId, {
+          requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
+        }));
+      }
+      const trigger = await createTrigger({
+        ...payload,
+        executionMode,
+        sessionId: sourceSessionId,
+        sourceSessionId: executionMode === 'fresh_session' ? sourceSessionId : '',
+        sessionTemplate,
+        sourceDelivery,
+      });
       writeJson(res, 201, { trigger });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create trigger' });
