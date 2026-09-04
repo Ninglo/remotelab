@@ -105,30 +105,14 @@ function ensureStream(now = new Date()) {
 }
 
 function resolvePrincipal(session = {}) {
-  const userId = trimString(session.userId);
-  const userName = trimString(session.userName);
   const visitorId = trimString(session.visitorId);
   const visitorName = trimString(session.visitorName);
-
-  if (userId) {
-    return {
-      principalType: 'user',
-      principalId: userId,
-      principalName: userName || userId,
-      userId,
-      userName,
-      visitorId,
-      visitorName,
-    };
-  }
 
   if (visitorId) {
     return {
       principalType: 'visitor',
       principalId: visitorId,
       principalName: visitorName || visitorId,
-      userId,
-      userName,
       visitorId,
       visitorName,
     };
@@ -137,9 +121,7 @@ function resolvePrincipal(session = {}) {
   return {
     principalType: 'owner',
     principalId: 'owner',
-    principalName: userName || 'Owner',
-    userId,
-    userName,
+    principalName: 'Owner',
     visitorId,
     visitorName,
   };
@@ -423,8 +405,6 @@ export function buildUsageLedgerRecord({
     principalType: principal.principalType,
     principalId: principal.principalId,
     principalName: principal.principalName,
-    ...(principal.userId ? { userId: principal.userId } : {}),
-    ...(principal.userName ? { userName: principal.userName } : {}),
     ...(principal.visitorId ? { visitorId: principal.visitorId } : {}),
     ...(principal.visitorName ? { visitorName: principal.visitorName } : {}),
     tool,
@@ -520,8 +500,6 @@ export function buildDetachedUsageLedgerRecord({
     principalType: principal.principalType,
     principalId: principal.principalId,
     principalName: principal.principalName,
-    ...(principal.userId ? { userId: principal.userId } : {}),
-    ...(principal.userName ? { userName: principal.userName } : {}),
     ...(principal.visitorId ? { visitorId: principal.visitorId } : {}),
     ...(principal.visitorName ? { visitorName: principal.visitorName } : {}),
     tool,
@@ -595,11 +573,15 @@ function normalizeLedgerRecord(record) {
     costSource: record.costSource,
   });
   const recordedAtMs = normalizeTimestampMs(record.recordedAt);
-  const principalType = ['owner', 'user', 'visitor'].includes(trimString(record.principalType))
+  const principalType = ['owner', 'visitor'].includes(trimString(record.principalType))
     ? trimString(record.principalType)
     : 'owner';
-  const principalId = trimString(record.principalId) || (principalType === 'owner' ? 'owner' : '');
-  const principalName = trimString(record.principalName) || (principalType === 'owner' ? 'Owner' : principalId || '(unknown)');
+  const principalId = principalType === 'owner'
+    ? 'owner'
+    : trimString(record.principalId);
+  const principalName = principalType === 'owner'
+    ? 'Owner'
+    : (trimString(record.principalName) || principalId || '(unknown)');
 
   return {
     type: 'run_usage',
@@ -617,8 +599,6 @@ function normalizeLedgerRecord(record) {
     principalType,
     principalId,
     principalName,
-    userId: trimString(record.userId),
-    userName: trimString(record.userName),
     visitorId: trimString(record.visitorId),
     visitorName: trimString(record.visitorName),
     tool,

@@ -87,13 +87,9 @@ try {
 
   appendBuiltRecord({
     session: {
-      id: 'sess_user',
-      name: 'User Session',
+      id: 'sess_owner_secondary',
+      name: 'Second Owner Session',
       tool: 'claude',
-      userId: 'user_1',
-      userName: 'Bob',
-      visitorId: 'visitor_shadow',
-      visitorName: 'Shadow',
     },
     run: {
       id: 'run_user',
@@ -249,11 +245,11 @@ try {
   await usageLedger.closeUsageLedger();
 
   const files = readdirSync(USAGE_LEDGER_DIR).sort();
-  const expectedFiles = [
+  const expectedFiles = [...new Set([
     formatLocalDay('2026-04-04T10:00:00.000Z'),
     formatLocalDay('2026-04-05T12:00:00.000Z'),
     formatLocalDay('2026-04-05T16:00:00.000Z'),
-  ].sort();
+  ])].sort();
   assert.deepEqual(files, expectedFiles, 'usage ledger should rotate by local day');
 
   const summary = await usageLedger.queryUsageLedger({
@@ -282,14 +278,14 @@ try {
 
   assert.equal(summary.byPrincipal[0].principalType, 'owner', 'principal buckets should sort by total usage after fallback-estimated owner traffic is included');
   assert.equal(summary.byPrincipal[0].principalId, 'owner');
-  assert.equal(summary.byPrincipal[0].totalTokens, 1775);
+  assert.equal(summary.byPrincipal[0].totalTokens, 2375);
 
   const visitorBucket = summary.byPrincipal.find((bucket) => bucket.principalId === 'visitor_1');
   assert.equal(visitorBucket?.totalTokens, 360, 'visitor bucket should reflect the deduped latest run');
   assert.equal(visitorBucket?.costUsd, 0.8, 'visitor cost should reflect the deduped latest run');
 
   const ownerBucket = summary.byPrincipal.find((bucket) => bucket.principalId === 'owner');
-  assert.equal(ownerBucket?.totalTokens, 1775, 'owner bucket should include direct, internal, detached, fallback-estimated, and unpriced owner runs');
+  assert.equal(ownerBucket?.totalTokens, 2375, 'owner bucket should include every non-visitor run, including direct, internal, detached, fallback-estimated, and unpriced traffic');
   assert.equal(ownerBucket?.estimatedCostUsd, 0.0295, 'owner bucket should preserve detached and fallback estimated cost separately');
 
   const replySelfCheckBucket = summary.byOperation.find((bucket) => bucket.key === 'reply_self_check');

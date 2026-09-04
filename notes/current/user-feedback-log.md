@@ -46,7 +46,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction or ask: fleet users, trial allocation, billing, host rollout, and instance lifecycle had grown into a separate operator product inside the personal workbench repository. The dashboard had no runtime dependents, remote fleet records were stale, the current main instance had no team-account configuration, and no recent main-route Admin requests were present.
 - Signal strength: explicit retirement decision backed by live service, route, state, repository-reference, and guest-activity inspection, followed by an owner correction of the multi-user boundary.
 - Product implication: remove the standalone dashboard, `/admin` proxy, fleet-host CLI/registry surface, Admin-specific ingress routes, and active docs/tests. Preserve the local `guest-instance` primitive, guest registry, automatic inactivity parking, and active guest services because per-user chat-server instances—not Sessions—are the current multi-user isolation boundary. A Session isolates one work thread's conversational context inside an instance; it does not isolate users, files, memory, Connectors, or machine permissions.
-- Follow-up: remove or clearly retire the unused team-session-view feature so it cannot be mistaken for the current multi-user architecture. Keep necessary per-instance lifecycle operations as small deterministic host primitives rather than recreating a separate Admin product.
+- Follow-up: completed in the same cleanup round—the unused team-session-view/member-account code, UI, metadata, tests, and active documentation were removed. Keep necessary per-instance lifecycle operations as small deterministic host primitives rather than recreating a separate Admin product.
 
 ### 2026-09-01 — Keep harness presentation provider-neutral
 
@@ -134,15 +134,6 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: `notes/current/session-first-workflow-surfaces.md`, sidebar rendering defaults, and static frontend regression coverage.
 - Follow-up: watch whether Project ordering alone surfaces waiting/running/unread work clearly enough without reintroducing a separate attention view.
 
-### 2026-08-10 — shared instances need optional account-based session-list filtering, not RBAC
-
-- Source: direct owner request for company teams sharing one RemoteLab process.
-- User slice: an administrator plus several named coworkers using the same underlying runtime, files, tools, and connectors.
-- Observed friction or ask: a shared session list becomes too large to scan; the administrator should see everything while each normal login sees only sessions tagged to that account.
-- Signal strength: concrete product request with an intentionally narrow implementation boundary.
-- Product implication: reuse the normal login route, add a default-off team session view and lightweight member accounts, stamp member-created sessions with a stable account ID/name, and filter the frontend catalog consistently across active sessions, search, source counts, and archives. Keep direct URLs and APIs shared; this feature is explicitly a display convenience, not authorization, tenancy, or data-security isolation.
-- Promote to: login identity metadata, Settings account controls, session creation ownership, and frontend session-catalog tests.
-
 ### 2026-08-07 — live execution must override stale workflow labels
 
 - Source: direct owner feedback after a session kept appearing under `Waiting on you` even though it had accepted the owner's reply and was actively running.
@@ -168,7 +159,7 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Observed friction or ask: the desired high-end shape is RemoteLab coordinating multiple SSH hosts, each running Codex workers for delegated tasks; the acceptable near-term shape is deploying RemoteLab on a single remote SSH host and letting it operate that host's local Codex.
 - Signal strength: concrete product/architecture direction tied to existing multi-session orchestration and token-aware task splitting needs.
 - Product implication: the current local-CLI run model should grow a worker/host execution abstraction. Remote host administration and guest-instance lifecycle are useful foundations, but they are not yet a complete remote Codex worker pool; the clean direction is a coordinator that dispatches bounded sessions/runs to registered worker hosts, tracks health/capabilities/load, and aggregates results through RemoteLab's normal session/run history rather than ad hoc SSH transcripts.
-- Promote to: provider/runtime architecture, instance-factory/fleet admin roadmap, session dispatch design.
+- Promote to: provider/runtime architecture, explicit worker-host execution contracts, and session dispatch design; do not revive the retired Fleet Admin product merely to support remote execution.
 - Follow-up: define an MVP contract for one remote host first, then generalize to host registry, per-worker auth, workspace/artifact transfer, usage/compaction telemetry, and fan-out aggregation.
 
 ### 2026-08-05 — transcript scrolling must be one cross-device state machine
@@ -487,16 +478,6 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Signal strength: direct screenshot-based review of the shipped surface
 - Product implication: keep project headers to one neutral total count; attention may still influence project ordering, but should not add a second numeric badge unless later evidence shows a clear decision-making need
 - Promote to: sidebar information density and status-display defaults
-
-### 2026-08-25 — Space and Project classification must be account-local
-
-- Source: direct owner correction after reviewing a live multi-account session-list rebalance
-- User slice: administrator of a shared RemoteLab instance where each account represents a different person and work view
-- Observed friction or ask: a global organizer treated every account as if it should share one Space/Project taxonomy, overwriting classifications that belong to other people
-- Signal strength: direct correction backed by live session metadata showing several distinct account-owned catalogs
-- Product implication: namespace visible grouping and sidebar order by account; filter Space lists, label catalogs, manual sorting, and automatic maintenance to exactly one account before deriving or patching metadata; an all-account admin view must never become a cross-account rebalance scope
-- Promote to: `notes/current/session-first-workflow-surfaces.md`, session organizer and label-context tests
-- Follow-up: keep broader account authorization/security changes separate; this correction establishes classification and model-context isolation regardless of the current access-control model
 
 ### 2026-09-03 — inbound mentions should commit business changes without chat polling
 

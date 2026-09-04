@@ -132,23 +132,15 @@ const {
 const { setContextHead } = history;
 const { buildActiveSessionCatalogPrompt, loadSessionLabelPromptContext } = labelContext;
 
-const memberCatalog = buildActiveSessionCatalogPrompt(
+const catalog = buildActiveSessionCatalogPrompt(
   [
-    { id: 'owner-a', name: 'Owner Project', space: 'Owner', group: 'Private' },
-    { id: 'member-a-1', userId: 'member-a', name: 'Member A Project', space: 'A', group: 'A Project' },
-    { id: 'member-b-1', userId: 'member-b', name: 'Member B Project', space: 'B', group: 'B Project' },
+    { id: 'project-a', name: 'Project A', space: 'Product', group: 'A' },
+    { id: 'project-b', name: 'Project B', space: 'Operations', group: 'B' },
   ],
-  { id: 'member-a-target', userId: 'member-a' },
+  { id: 'current-session' },
 );
-assert.match(memberCatalog, /Member A Project/);
-assert.doesNotMatch(memberCatalog, /Owner Project/);
-assert.doesNotMatch(memberCatalog, /Member B Project/);
-
-const memberPromptContext = await loadSessionLabelPromptContext(
-  { id: 'member-a-target', userId: 'member-a', name: 'Member target' },
-  'Keep my own projects grouped.',
-);
-assert.equal(memberPromptContext.scopeRouter, '', 'member labels should not import owner project-memory taxonomy');
+assert.match(catalog, /Project A/);
+assert.match(catalog, /Project B/);
 
 async function waitFor(predicate, description, timeoutMs = 4000) {
   const start = Date.now();

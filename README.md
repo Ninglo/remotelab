@@ -97,7 +97,8 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 
 The current product model is intentionally simple:
 
-- `Session` — the durable work thread
+- `Instance` — one user's isolated RemoteLab environment; a host may run several guest instances
+- `Session` — one durable work thread inside that user's instance
 - `Run` — one execution attempt inside a session
 - `Agent` — a reusable workflow / policy package for starting sessions
 - `Share snapshot` — an immutable read-only export of a session
@@ -107,7 +108,7 @@ The architectural assumptions behind that model:
 - HTTP is the canonical state path and WebSocket only hints that something changed
 - the browser is a control surface, not the system of record
 - runtime processes are disposable; durable state lives on disk
-- the product is single-owner first, with visitor access scoped through `Agents`
+- each instance is single-owner first; separate users use isolated guest instances, while visitor access inside one instance is scoped through `Agents`
 - the frontend stays framework-light and endpoint-flexible
 
 ### Why this boundary matters

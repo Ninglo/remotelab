@@ -498,30 +498,6 @@ function handleWsMessage(msg) {
       }
       break;
 
-    case "team_session_view_updated":
-      fetchJsonOrRedirect("/api/auth/me", { cache: "no-store", revalidate: false })
-        .then(async (authInfo) => {
-          if (typeof applyTeamSessionViewState === "function") {
-            applyTeamSessionViewState(authInfo?.teamSessionView);
-          }
-          await fetchSessionsList({ forceFresh: true });
-          if (
-            archivedSessionsLoaded
-            || (typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView())
-          ) {
-            await fetchArchivedSessions({ forceFresh: true });
-          }
-          restoreOwnerSessionSelection();
-          renderSessionList();
-          if (typeof renderTeamSessionViewSettingsPanel === "function") {
-            void renderTeamSessionViewSettingsPanel({ force: true });
-          }
-        })
-        .catch((error) => {
-          console.warn("[team_session_view_updated] failed to refresh:", error?.message || error);
-        });
-      break;
-
     case "error":
       console.error("WS error:", msg.message);
       break;

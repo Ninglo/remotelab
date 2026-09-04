@@ -371,93 +371,21 @@ function getSessionListOrganizerSourceLabel(sourceFilter) {
   return SESSION_LIST_ORGANIZER_SOURCE_LABELS[sourceFilter] || SESSION_LIST_ORGANIZER_SOURCE_LABELS[FILTER_ALL_VALUE];
 }
 
-function getSessionListOrganizerAccountScope() {
-  const currentAccount = teamSessionView?.currentAccount && typeof teamSessionView.currentAccount === "object"
-    ? teamSessionView.currentAccount
-    : {};
-  const currentAccountId = typeof currentAccount.id === "string" && currentAccount.id.trim()
-    ? currentAccount.id.trim()
-    : "owner";
-  const currentAccountName = typeof currentAccount.name === "string" && currentAccount.name.trim()
-    ? currentAccount.name.trim()
-    : (currentAccountId === "owner" ? "Owner" : currentAccountId);
-
-  if (typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView()) {
-    return {
-      mode: "account",
-      accountId: currentAccountId,
-      accountLabel: currentAccountName,
-      defaultedToCurrentAccount: false,
-    };
-  }
-
-  if (typeof isAdminAccountFilterAvailable === "function" && isAdminAccountFilterAvailable()) {
-    const selectedAccountFilter = typeof activeAccountFilter !== "undefined"
-      ? normalizeAccountFilter(activeAccountFilter)
-      : FILTER_ALL_VALUE;
-    if (
-      selectedAccountFilter !== FILTER_ALL_VALUE
-      && selectedAccountFilter !== ACCOUNT_FILTER_ADMIN_VALUE
-    ) {
-      const accountDefinition = typeof getAccountFilterDefinitions === "function"
-        ? getAccountFilterDefinitions().find((entry) => entry.value === selectedAccountFilter)
-        : null;
-      return {
-        mode: "account",
-        accountId: selectedAccountFilter,
-        accountLabel: accountDefinition?.name || selectedAccountFilter,
-        defaultedToCurrentAccount: false,
-      };
-    }
-    return {
-      mode: "owner",
-      accountId: currentAccountId,
-      accountLabel: currentAccountName,
-      defaultedToCurrentAccount: selectedAccountFilter === FILTER_ALL_VALUE,
-    };
-  }
-
-  return {
-    mode: "owner",
-    accountId: currentAccountId,
-    accountLabel: currentAccountName,
-    defaultedToCurrentAccount: false,
-  };
-}
-
-function matchesSessionListOrganizerAccountScope(session, accountScope) {
-  if (!accountScope || accountScope.mode === "all") return true;
-  const sessionAccountId = typeof getSessionAccountId === "function"
-    ? getSessionAccountId(session)
-    : (typeof session?.userId === "string" ? session.userId.trim() : "");
-  if (accountScope.mode === "owner") {
-    return !sessionAccountId || sessionAccountId === accountScope.accountId;
-  }
-  return sessionAccountId === accountScope.accountId;
-}
-
 function getSessionListOrganizerScope() {
   const currentSourceFilter = typeof getActiveSourceFilterValue === "function"
     ? normalizeSourceFilter(getActiveSourceFilterValue())
     : normalizeSourceFilter(activeSourceFilter);
   const defaultedToChatUi = currentSourceFilter === FILTER_ALL_VALUE;
   const organizerSourceFilter = defaultedToChatUi ? SESSION_HTTP_SOURCE_FILTER_CHAT_VALUE : currentSourceFilter;
-  const accountScope = getSessionListOrganizerAccountScope();
   const scopedSessions = getActiveSessions().filter((session) => (
-    matchesSessionListOrganizerAccountScope(session, accountScope)
-    && (
-      typeof matchesSourceFilter === "function"
-        ? matchesSourceFilter(session, organizerSourceFilter)
-        : organizerSourceFilter === FILTER_ALL_VALUE
-    )
+    typeof matchesSourceFilter === "function"
+      ? matchesSourceFilter(session, organizerSourceFilter)
+      : organizerSourceFilter === FILTER_ALL_VALUE
   ));
   return {
     currentSourceFilter,
     organizerSourceFilter,
     defaultedToChatUi,
-    accountId: accountScope.accountId,
-    accountLabel: accountScope.accountLabel,
-    defaultedToCurrentAccount: accountScope.defaultedToCurrentAccount,
     sourceLabel: getSessionListOrganizerSourceLabel(organizerSourceFilter),
     sessions: scopedSessions,
   };
@@ -475,9 +403,6 @@ function buildSessionListOrganizerPayload() {
       organizerSourceFilter: scope.organizerSourceFilter,
       sourceLabel: scope.sourceLabel,
       defaultedToChatUi: scope.defaultedToChatUi,
-      accountId: scope.accountId,
-      accountLabel: scope.accountLabel,
-      defaultedToCurrentAccount: scope.defaultedToCurrentAccount,
     },
     sessions,
   };
@@ -499,7 +424,6 @@ function buildSessionListOrganizerTask(input) {
   };
   return [
     "Organize the scoped non-archived Sessions in the snapshot using the hierarchy and write boundaries from the system prompt.",
-    `This snapshot belongs only to account ${scope.accountLabel || scope.accountId || "Owner"}.`,
     scope?.sourceLabel
       ? `Source scope: ${scope.sourceLabel}${scope.defaultedToChatUi ? " (All origins defaults to Chat UI for daily organization)." : "."}`
       : "",
@@ -1099,13 +1023,9 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
           ? getArchivedSessions()
           : sessions.filter((session) => session?.archived === true);
       }
-      const archivedSessionsPayload = typeof filterSessionsForTeamSessionView === "function"
-        ? filterSessionsForTeamSessionView(data.sessions || [])
-        : (data.sessions || []);
+      const archivedSessionsPayload = data.sessions || [];
       const nextArchivedSessions = applyArchivedSessionListState(archivedSessionsPayload, {
-        archivedCount: typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView()
-          ? archivedSessionsPayload.length
-          : (typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
+        archivedCount: typeof adjustArchivedCountForSessionArchiveOptimisticMutations === "function"
           ? adjustArchivedCountForSessionArchiveOptimisticMutations(
             Number.isInteger(data.archivedCount)
               ? data.archivedCount
@@ -1115,7 +1035,7 @@ async function fetchArchivedSessions({ forceFresh = false } = {}) {
           )
           : (Number.isInteger(data.archivedCount)
             ? data.archivedCount
-            : (Array.isArray(data.sessions) ? data.sessions.length : 0))),
+            : (Array.isArray(data.sessions) ? data.sessions.length : 0)),
       });
       lastArchivedSessionsRefreshAt = Date.now();
       return nextArchivedSessions;
@@ -1230,9 +1150,7 @@ async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
     return false;
   }
 
-  const sortScopeLabel = [payload?.scope?.sourceLabel, payload?.scope?.accountLabel]
-    .filter(Boolean)
-    .join(" · ") || "sessions";
+  const sortScopeLabel = payload?.scope?.sourceLabel || "sessions";
   if (sessionListOrganizerLabelResetTimer) {
     window.clearTimeout(sessionListOrganizerLabelResetTimer);
     sessionListOrganizerLabelResetTimer = null;
@@ -1715,11 +1633,7 @@ async function refreshRealtimeViews({
 }
 
 function startParallelCurrentSessionBootstrap() {
-  if (
-    visitorMode
-    || !currentSessionId
-    || (typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView())
-  ) return;
+  if (visitorMode || !currentSessionId) return;
   refreshCurrentSession({ viewportIntent: "session_entry" }).catch((error) => {
     if (error?.message === "Session not found") return;
     console.warn(
@@ -1744,9 +1658,6 @@ async function bootstrapViaHttp({ deferOwnerRestore = false } = {}) {
     startParallelCurrentSessionBootstrap();
   }
   await fetchSessionsList();
-  if (typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView()) {
-    await fetchArchivedSessions();
-  }
   if (!deferOwnerRestore) {
     restoreOwnerSessionSelection();
   }

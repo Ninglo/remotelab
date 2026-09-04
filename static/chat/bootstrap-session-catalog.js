@@ -59,11 +59,6 @@ if (typeof setChatActiveSourceFilter === "function") {
   });
 }
 
-let activeAccountFilter = normalizeAccountFilter(
-  localStorage.getItem(ACTIVE_ACCOUNT_FILTER_STORAGE_KEY)
-  || FILTER_ALL_VALUE,
-);
-
 function registerHiddenMarkdownExtensions() {
   const hiddenTagStart = /<(private|hide)\b/i;
   const hiddenBlockPattern = /^(?: {0,3})<(private|hide)\b[^>]*>[\s\S]*?<\/\1>(?:\n+|$)/i;
@@ -263,75 +258,6 @@ function persistActiveSourceFilter(value) {
   localStorage.setItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY, normalizeSourceFilter(value));
 }
 
-function normalizeAccountFilter(value) {
-  const normalized = typeof value === "string" ? value.trim() : "";
-  return normalized || FILTER_ALL_VALUE;
-}
-
-function persistActiveAccountFilter(value) {
-  if (!shouldPersistNavigationState()) return;
-  localStorage.setItem(ACTIVE_ACCOUNT_FILTER_STORAGE_KEY, normalizeAccountFilter(value));
-}
-
-function getSessionAccountId(session) {
-  return typeof session?.userId === "string" ? session.userId.trim() : "";
-}
-
-function isAdminAccountFilterAvailable() {
-  return !visitorMode
-    && teamSessionView?.enabled === true
-    && typeof canManageTeamSessionView === "function"
-    && canManageTeamSessionView();
-}
-
-function isAdminOwnedSession(session) {
-  const sessionAccountId = getSessionAccountId(session);
-  const adminAccountId = typeof teamSessionView?.currentAccount?.id === "string"
-    ? teamSessionView.currentAccount.id.trim()
-    : "owner";
-  return !sessionAccountId || sessionAccountId === adminAccountId;
-}
-
-function matchesAccountFilter(session, accountFilter = activeAccountFilter) {
-  if (!isAdminAccountFilterAvailable()) return true;
-  const normalized = normalizeAccountFilter(accountFilter);
-  if (normalized === FILTER_ALL_VALUE) return true;
-  if (normalized === ACCOUNT_FILTER_ADMIN_VALUE) return isAdminOwnedSession(session);
-  return getSessionAccountId(session) === normalized;
-}
-
-function getAccountFilterDefinitions() {
-  const adminAccountId = typeof teamSessionView?.currentAccount?.id === "string"
-    ? teamSessionView.currentAccount.id.trim()
-    : "owner";
-  const accounts = new Map();
-  for (const session of sessions) {
-    if (!session || session.internalRole) continue;
-    const accountId = getSessionAccountId(session);
-    if (!accountId || accountId === adminAccountId) continue;
-    const accountName = typeof session.userName === "string" && session.userName.trim()
-      ? session.userName.trim()
-      : accountId;
-    const current = accounts.get(accountId);
-    if (!current || current.name === accountId) {
-      accounts.set(accountId, { value: accountId, name: accountName });
-    }
-  }
-  return [...accounts.values()].sort((left, right) => (
-    left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" })
-  ));
-}
-
-function getSessionCountForAccountFilter(accountFilter) {
-  const activeSessions = getActiveSessions();
-  const normalized = normalizeAccountFilter(accountFilter);
-  if (normalized === FILTER_ALL_VALUE) return activeSessions.length;
-  if (normalized === ACCOUNT_FILTER_ADMIN_VALUE) {
-    return activeSessions.filter(isAdminOwnedSession).length;
-  }
-  return activeSessions.filter((session) => getSessionAccountId(session) === normalized).length;
-}
-
 function formatSourceNameFromId(sourceId) {
   const normalized = normalizeSourceId(sourceId);
   if (!normalized) return DEFAULT_APP_NAME;
@@ -383,14 +309,12 @@ function getSessionSourceCategory(session) {
 }
 
 function refreshAppCatalog() {
-  renderAccountFilterOptions();
   renderSourceFilterOptions();
 }
 
 function getFilteredActiveSessions({ ignoreSource = false } = {}) {
   return getActiveSessions().filter((session) => (
-    matchesAccountFilter(session, activeAccountFilter)
-    && (ignoreSource || matchesSourceFilter(session, activeSourceFilter))
+    ignoreSource || matchesSourceFilter(session, activeSourceFilter)
   ));
 }
 
@@ -421,9 +345,7 @@ function matchesSessionSpace(session, spaceFilter = activeSessionSpace) {
 }
 
 function matchesCurrentFilters(session) {
-  return matchesTeamSessionView(session)
-    && matchesAccountFilter(session, activeAccountFilter)
-    && matchesSourceFilter(session, activeSourceFilter)
+  return matchesSourceFilter(session, activeSourceFilter)
     && matchesSessionSpace(session, activeSessionSpace)
     && matchesSearchQuery(session);
 }
@@ -468,70 +390,12 @@ function syncSidebarFiltersVisibility(showingSessions = null) {
   const agentScopedMode = typeof isAgentScopedMode === "function"
     ? isAgentScopedMode()
     : false;
-  const controls = [accountFilterSelect, sourceFilterSelect].filter(Boolean);
+  const controls = [sourceFilterSelect].filter(Boolean);
   const hasVisibleControls = controls.length === 0
     ? true
     : controls.some((control) => isSidebarFilterControlVisible(control));
   const visible = resolvedShowingSessions && !visitorMode && !agentScopedMode && hasVisibleControls;
   sidebarFilters.classList.toggle("hidden", !visible);
-}
-
-function renderAccountFilterOptions() {
-  if (!accountFilterSelect || !isAdminAccountFilterAvailable()) {
-    if (accountFilterSelect) accountFilterSelect.style.display = "none";
-    syncSidebarFiltersVisibility();
-    return;
-  }
-
-  const accounts = getAccountFilterDefinitions();
-  if (
-    activeAccountFilter !== FILTER_ALL_VALUE
-    && activeAccountFilter !== ACCOUNT_FILTER_ADMIN_VALUE
-    && !accounts.some((account) => account.value === activeAccountFilter)
-  ) {
-    activeAccountFilter = FILTER_ALL_VALUE;
-    persistActiveAccountFilter(activeAccountFilter);
-  }
-
-  accountFilterSelect.style.display = "";
-  accountFilterSelect.innerHTML = "";
-
-  const allOption = document.createElement("option");
-  allOption.value = FILTER_ALL_VALUE;
-  allOption.textContent = t("sidebar.filter.allUsers", {
-    count: getSessionCountForAccountFilter(FILTER_ALL_VALUE),
-  });
-  accountFilterSelect.appendChild(allOption);
-
-  const mineOption = document.createElement("option");
-  mineOption.value = ACCOUNT_FILTER_ADMIN_VALUE;
-  mineOption.textContent = t("sidebar.filter.mine", {
-    count: getSessionCountForAccountFilter(ACCOUNT_FILTER_ADMIN_VALUE),
-  });
-  accountFilterSelect.appendChild(mineOption);
-
-  for (const account of accounts) {
-    const option = document.createElement("option");
-    option.value = account.value;
-    option.textContent = t("sidebar.filter.userCount", {
-      name: account.name,
-      count: getSessionCountForAccountFilter(account.value),
-    });
-    accountFilterSelect.appendChild(option);
-  }
-
-  accountFilterSelect.value = normalizeAccountFilter(activeAccountFilter);
-  syncSidebarFiltersVisibility();
-}
-
-if (accountFilterSelect) {
-  accountFilterSelect.addEventListener("change", () => {
-    activeAccountFilter = normalizeAccountFilter(accountFilterSelect.value);
-    persistActiveAccountFilter(activeAccountFilter);
-    renderAccountFilterOptions();
-    renderSourceFilterOptions();
-    renderSessionList();
-  });
 }
 
 function renderSourceFilterOptions() {
@@ -674,7 +538,7 @@ function getActiveSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && !session.archived && !session.internalRole && matchesTeamSessionView(session));
+    .filter((session) => session && !session.archived && !session.internalRole);
 }
 
 function getArchivedSessions() {
@@ -684,7 +548,7 @@ function getArchivedSessions() {
         ? (getSessionSidebarListSnapshot(session) || session)
         : session
     ))
-    .filter((session) => session && session.archived && !session.internalRole && matchesTeamSessionView(session))
+    .filter((session) => session && session.archived && !session.internalRole)
     .slice()
     .sort((a, b) => getArchivedSessionSortTime(b) - getArchivedSessionSortTime(a));
 }
@@ -718,12 +582,6 @@ function resolveRestoreTargetSession() {
   }
   const filteredSession = getLatestActiveSessionForCurrentFilters();
   if (filteredSession) return filteredSession;
-  if (
-    isAdminAccountFilterAvailable()
-    && activeAccountFilter !== FILTER_ALL_VALUE
-  ) {
-    return null;
-  }
   return getLatestActiveSession();
 }
 

@@ -334,7 +334,7 @@ async function main() {
     assert.equal(visitorBootstrap.settings?.googleOAuth?.configured, true, 'visitor bootstrap should still expose google oauth readiness');
     assert.match(page.text, /<script src="chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
-    assert.match(page.text, /id="accountFilterSelect"/);
+    assert.doesNotMatch(page.text, /id="accountFilterSelect"/);
     assert.match(page.text, /id="sourceFilterSelect"/);
     assert.match(page.text, /id="sidebarSpaceSwitcher"/);
     assert.doesNotMatch(page.text, /id="sidebarViewSwitcher"/, 'sidebar should use the Space → Project hierarchy without a redundant view switcher');

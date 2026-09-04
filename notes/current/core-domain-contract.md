@@ -149,10 +149,12 @@ It answers one question:
 
 > who is acting through this session right now, and with what server-enforced scope?
 
-Current practical shapes:
+Current practical shapes inside one single-user instance:
 
 - owner principal
 - app-scoped non-owner principal
+
+A human user's durable isolation boundary is a separate RemoteLab instance with its own config, memory, workspace, auth, Connector bindings, and runtime permissions. `Principal` scopes access to a surface inside that instance; it is not a lightweight replacement for instance isolation or a hidden multi-user account model.
 
 Why `Principal` matters:
 

@@ -123,7 +123,6 @@ function createHarness({
     visitorMode: false,
     activeTab: 'sessions',
     activeSourceFilter,
-    accountFilterSelect: createSelect('none'),
     sourceFilterSelect: createSelect(''),
     sidebarFilters: {
       classList: {

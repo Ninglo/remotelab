@@ -29,11 +29,6 @@ export function normalizeSessionVisitorName(value) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-export function normalizeSessionUserName(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim().replace(/\s+/g, ' ');
-}
-
 export function normalizeSessionPrincipalId(value) {
   if (typeof value !== 'string') return '';
   return value.trim();

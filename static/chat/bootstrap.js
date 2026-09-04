@@ -103,10 +103,6 @@ function normalizeBootstrapAuthInfo(raw) {
       principalKind: normalizeBootstrapText(raw.principalKind) || "owner",
       surfaceMode: "owner",
       capabilities: normalizeBootstrapCapabilities(raw.capabilities, "owner"),
-      accountId: normalizeBootstrapText(raw.accountId) || "owner",
-      accountName: normalizeBootstrapText(raw.accountName) || "Owner",
-      accountUsername: normalizeBootstrapText(raw.accountUsername),
-      accountKind: normalizeBootstrapText(raw.accountKind) === "member" ? "member" : "admin",
     };
     if (preferredLanguage) info.preferredLanguage = preferredLanguage;
     return info;
@@ -139,31 +135,6 @@ function normalizeBootstrapAuthInfo(raw) {
 }
 
 const bootstrapAuthInfo = normalizeBootstrapAuthInfo(pageBootstrap.auth);
-
-function normalizeTeamSessionViewAccount(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const id = normalizeBootstrapText(raw.id);
-  if (!id) return null;
-  return {
-    id,
-    name: normalizeBootstrapText(raw.name) || id,
-    username: normalizeBootstrapText(raw.username),
-    kind: normalizeBootstrapText(raw.kind) === "member" ? "member" : "admin",
-  };
-}
-
-function normalizeTeamSessionView(raw) {
-  if (!raw || typeof raw !== "object") {
-    return { enabled: false, currentAccount: null, canManage: false };
-  }
-  return {
-    enabled: raw.enabled === true,
-    currentAccount: normalizeTeamSessionViewAccount(raw.currentAccount),
-    canManage: raw.canManage === true,
-  };
-}
-
-const bootstrapTeamSessionView = normalizeTeamSessionView(pageBootstrap.teamSessionView);
 
 function normalizeBootstrapAssetUploads(raw) {
   if (!raw || typeof raw !== "object") {
@@ -258,12 +229,6 @@ function getBootstrapAuthInfo() {
     currentAgent: bootstrapAuthInfo.currentAgent
       ? { ...bootstrapAuthInfo.currentAgent }
       : undefined,
-    teamSessionView: {
-      ...bootstrapTeamSessionView,
-      currentAccount: bootstrapTeamSessionView.currentAccount
-        ? { ...bootstrapTeamSessionView.currentAccount }
-        : null,
-    },
   };
 }
 
@@ -434,7 +399,6 @@ const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
 const tabAgents = document.getElementById("tabAgents");
 const tabSettings = document.getElementById("tabSettings");
-const accountFilterSelect = document.getElementById("accountFilterSelect");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const agentsPanel = document.getElementById("agentsPanel");
 const settingsPanel = document.getElementById("settingsPanel");
@@ -484,13 +448,11 @@ const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
 const LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeAppFilter";
 const ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeSourceFilter";
-const ACTIVE_ACCOUNT_FILTER_STORAGE_KEY = "activeAccountFilter";
 const LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY = "sessionSendFailures";
 const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
 const UI_THEME_STORAGE_KEY = "remotelab.theme";
 const FILTER_ALL_VALUE = "__all__";
-const ACCOUNT_FILTER_ADMIN_VALUE = "__admin__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
 const SOURCE_FILTER_FEISHU_VALUE = "feishu";
 const SOURCE_FILTER_EMAIL_VALUE = "email";
@@ -779,7 +741,6 @@ let archivedSessionsLoaded = false;
 let archivedSessionsLoading = false;
 let archivedSessionsRefreshPromise = null;
 let visitorMode = false;
-let teamSessionView = { ...bootstrapTeamSessionView };
 let surfaceMode = bootstrapAuthInfo?.surfaceMode || "owner";
 let principalKind = bootstrapAuthInfo?.principalKind
   || (bootstrapAuthInfo?.role === "visitor" ? "visitor" : "owner");
@@ -1037,31 +998,6 @@ function shouldUseVisitorRequests() {
 
 function isAgentScopedMode() {
   return surfaceMode === "agent_scoped";
-}
-
-function applyTeamSessionViewState(raw) {
-  teamSessionView = normalizeTeamSessionView(raw);
-  if (typeof refreshAppCatalog === "function") refreshAppCatalog();
-  return teamSessionView;
-}
-
-function isTeamMemberSessionView() {
-  return teamSessionView?.enabled === true
-    && teamSessionView?.currentAccount?.kind === "member"
-    && !!teamSessionView.currentAccount.id;
-}
-
-function canManageTeamSessionView() {
-  return !visitorMode && teamSessionView?.canManage === true;
-}
-
-function matchesTeamSessionView(session) {
-  if (!isTeamMemberSessionView()) return true;
-  return normalizeBootstrapText(session?.userId) === teamSessionView.currentAccount.id;
-}
-
-function filterSessionsForTeamSessionView(entries) {
-  return (Array.isArray(entries) ? entries : []).filter(matchesTeamSessionView);
 }
 
 function getActiveAuthCapabilities() {

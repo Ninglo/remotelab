@@ -246,16 +246,6 @@ Why it wants that decision:
 
 - otherwise we risk doing the migration twice
 
-#### `R5` — Session List Filters For Owner/Admin
-
-Needed one-line decision:
-
-- “Owner filters should be `appId` + `principalId` query params.”
-
-Why it wants that decision:
-
-- the backend filter API should not be guessed casually
-
 #### `R6` — App Entry Flow Cleanup
 
 Needed one-line decision:
@@ -344,7 +334,6 @@ Why not ideal:
 ### Access and product-surface alignment
 
 - `R4` Session access helper refactor
-- `R5` Session list filters for owner/admin
 - `R6` App entry flow cleanup
 
 ### Domain storage/contract alignment
@@ -371,7 +360,6 @@ After that, several tracks can run separately.
 - `R2` Principal/auth-session normalization
 - `R3` Session ownership field
 - `R4` Session access helper refactor
-- `R5` Session list filters for owner/admin
 - `R6` App entry flow cleanup
 - `R7` ShareSnapshot contract upgrade
 - `R8` Run/session truth boundary cleanup
@@ -582,56 +570,6 @@ That is narrower and more ad hoc than the contract.
 - access rules for session and run reads/writes live in one clear helper layer
 - non-owner access is described in principal/app terms, not only visitor/session terms
 - tests cover forbidden and allowed cases across list/detail/run routes
-
----
-
-## R5 — Session List Filters For Owner/Admin
-
-**Goal**
-
-Add server-backed app/principal filtering for owner/admin views without changing non-owner scope.
-
-**Why it matters**
-
-This is the backend half of the product expression you described:
-owner can inspect by app and by user/principal; non-owner should not get a global browsing surface.
-
-**Depends on**
-
-- `R3`
-- `R4`
-
-**Dominant surface**
-
-- session list route and query handling
-
-**Primary files**
-
-- `chat/router.mjs`
-- `chat/session-manager.mjs`
-- tests for list filtering
-
-**Tasks**
-
-- Define supported owner-only list filters, likely:
-  - `appId`
-  - `principalId`
-  - maybe archive state if useful
-- Ensure owner filtering is explicit and server-side.
-- Ensure non-owner requests do not gain unauthorized global list access.
-- Decide whether ignored filters or `403` are better for non-owner requests.
-
-**Keep out of scope**
-
-- actual frontend controls
-- app entry flow changes
-- auth session model changes
-
-**Done means**
-
-- owner can retrieve filtered session lists by app/principal
-- non-owner list behavior remains safely scoped
-- route tests cover both filter behavior and denial behavior
 
 ---
 
@@ -887,7 +825,6 @@ This is the visible product expression of the contract and access model.
 **Depends on**
 
 - `R4`
-- `R5`
 - ideally `R6`
 
 **Dominant surface**
@@ -902,7 +839,6 @@ This is the visible product expression of the contract and access model.
 
 **Tasks**
 
-- Add owner-only app filter and principal filter controls if still desired.
 - Keep non-owner UI naturally scoped instead of showing global browsing controls.
 - Decide the unauthorized behavior for bad app/session navigation:
   - dedicated unauthorized page
@@ -1027,7 +963,6 @@ If future work is split across multiple conversations, these are good combinatio
 - `R1` alone
 - `R2` alone
 - `R3` alone
-- `R5` alone
 - `R7` alone
 - `R10` alone
 - `R12` alone
@@ -1035,7 +970,6 @@ If future work is split across multiple conversations, these are good combinatio
 ### Good paired slices when momentum is high
 
 - `R2` + `R3`
-- `R4` + `R5`
 - `R8` + `R9`
 - `R11` + `R12`
 

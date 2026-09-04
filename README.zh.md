@@ -99,7 +99,8 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 当前产品模型刻意保持简单：
 
-- `Session` —— 持久化的工作线程
+- `Instance` —— 一个用户的独立 RemoteLab 环境；同一宿主机可以运行多个 guest instance
+- `Session` —— 该用户实例内部的一条持久化工作线程
 - `Run` —— 会话内部的一次执行尝试
 - `Agent` —— 启动会话用的可复用 workflow / policy package
 - `Share snapshot` —— 不可变的只读会话导出
@@ -109,7 +110,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 - HTTP 是规范状态路径，WebSocket 只负责提示“有东西变了”
 - 浏览器是控制面，不是系统事实来源
 - 运行时进程可以丢，持久状态必须落在磁盘上
-- 产品默认单 owner，visitor 访问通过 `Agents` 进行 scope 控制
+- 每个实例默认单 owner；不同用户使用独立 guest instance，同一实例内的 visitor 访问通过 `Agents` 进行 scope 控制
 - 前端保持轻量、无框架，并兼容不同端的使用方式
 
 ### 为什么这个边界重要

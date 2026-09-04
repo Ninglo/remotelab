@@ -91,8 +91,7 @@ function getSessionSpaceEntries() {
   const spaces = new Map();
   for (const session of getActiveSessions()) {
     if (
-      !matchesAccountFilter(session, activeAccountFilter)
-      || !matchesSourceFilter(session, activeSourceFilter)
+      !matchesSourceFilter(session, activeSourceFilter)
       || !matchesSearchQuery(session)
     ) continue;
     const value = getSessionSpaceValue(session);
@@ -190,8 +189,6 @@ function renderSessionList() {
       empty.appendChild(emptyText);
 
       const canRestoreStarterSessions = !visitorMode
-        && !(typeof isTeamMemberSessionView === "function" && isTeamMemberSessionView())
-        && activeAccountFilter === FILTER_ALL_VALUE
         && activeSourceFilter === FILTER_ALL_VALUE
         && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
         && typeof restoreOwnerBootstrapSessions === "function";

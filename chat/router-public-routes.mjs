@@ -6,7 +6,6 @@ import {
   saveAuthSessionsAsync,
   verifyTokenAsync,
   authenticatePasswordAsync,
-  getAdminAuthSessionFields,
   generateToken,
   parseCookies,
   getAuthSession,
@@ -100,7 +99,6 @@ async function mintOwnerSessionFromInstallHandoff(handoffToken) {
   sessions.set(sessionToken, {
     expiry: Date.now() + SESSION_EXPIRY,
     role: 'owner',
-    ...getAdminAuthSessionFields(),
     ...(handoffSession.preferredLanguage ? { preferredLanguage: handoffSession.preferredLanguage } : {}),
   });
   await saveAuthSessionsAsync();
@@ -284,7 +282,6 @@ if (queryToken) {
     sessions.set(sessionToken, {
       expiry: Date.now() + SESSION_EXPIRY,
       role: 'owner',
-      ...getAdminAuthSessionFields(),
     });
     await saveAuthSessionsAsync();
     const redirectParams = new URLSearchParams();
@@ -319,24 +316,21 @@ if (pathname === '/login' && req.method === 'POST') {
   const params = new URLSearchParams(body);
   const type = params.get('type');
   const nextPath = safeLoginNextPath(params.get('next'));
-  let account = null;
+  let authenticated = false;
   if (type === 'token') {
-    if (await verifyTokenAsync(params.get('token') || '')) {
-      account = getAdminAuthSessionFields();
-    }
+    authenticated = await verifyTokenAsync(params.get('token') || '');
   } else if (type === 'password') {
-    account = await authenticatePasswordAsync(
+    authenticated = await authenticatePasswordAsync(
       params.get('username') || '',
       params.get('password') || '',
     );
   }
-  if (account) {
+  if (authenticated) {
     clearFailedAttempts(ip);
     const sessionToken = generateToken();
     sessions.set(sessionToken, {
       expiry: Date.now() + SESSION_EXPIRY,
       role: 'owner',
-      ...account,
     });
     await saveAuthSessionsAsync();
     res.writeHead(302, { 'Location': nextPath, 'Set-Cookie': setCookie(sessionToken) });

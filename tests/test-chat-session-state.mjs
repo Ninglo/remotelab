@@ -73,9 +73,6 @@ function createBaseContext() {
     getEffectiveSessionSourceId(session) {
       return session?.sourceId || 'chat';
     },
-    matchesTeamSessionView() {
-      return true;
-    },
     normalizeSessionReviewStamp(value) {
       const trimmed = typeof value === 'string' ? value.trim() : '';
       if (!trimmed) return '';

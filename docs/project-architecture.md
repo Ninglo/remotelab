@@ -59,8 +59,8 @@ RemoteLab is explicitly **not** trying to be:
 
 Important product assumptions that shape the code:
 
-- **Single owner** is the base model
-- **Session** is the main work object in the shipped UI
+- **Single owner per instance** is the base model; separate users run in isolated guest instances
+- **Session** is the main work object inside one user's instance, not a user-isolation boundary
 - **Source and Agent are orthogonal session dimensions**
 - **shareable-agent infrastructure still lives in the internal app/template layer**
 - **HTTP is the canonical state path**
@@ -965,8 +965,8 @@ These constraints are part of the architecture, not incidental implementation de
 - the shipped architecture no longer includes a built-in terminal fallback plane
 - RemoteLab stays framework-light: Node built-ins + `ws`
 - frontend remains vanilla JS without build tooling
-- single-owner model remains the default product assumption
-- owner/visitor is a scoped access model, not full multi-user infrastructure
+- single-owner-per-instance remains the default product assumption; host-level multi-user isolation uses separate guest instances
+- owner/visitor is a scoped access model inside one instance, not full multi-user infrastructure
 - chat plane should remain HTTP-canonical and restart-cheap
 - runtime layer should stay thinner than the control plane
 - new durable product semantics should prefer filesystem-first persistence

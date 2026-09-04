@@ -177,7 +177,6 @@ import {
   hasRequestedSessionSourceHint,
   normalizeSessionSourceName,
   normalizeSessionTemplateName,
-  normalizeSessionUserName,
   normalizeSessionVisitorName,
   parseTimestampMs,
   resolveAuthSessionAgentId,
@@ -2495,8 +2494,6 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedSourceName = resolveRequestedSessionSourceName(extra, requestedSourceId);
   const hasRequestedSourceHint = hasRequestedSessionSourceHint(extra);
   const requestedVisitorName = normalizeSessionVisitorName(extra.visitorName);
-  const requestedUserId = typeof extra.userId === 'string' ? extra.userId.trim() : '';
-  const requestedUserName = normalizeSessionUserName(extra.userName);
   const requestedSpace = normalizeSessionSpace(extra.space || '');
   const requestedGroup = normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
@@ -2615,16 +2612,6 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (requestedUserId && updated.userId !== requestedUserId) {
-          updated.userId = requestedUserId;
-          changed = true;
-        }
-
-        if (requestedUserName && updated.userName !== requestedUserName) {
-          updated.userName = requestedUserName;
-          changed = true;
-        }
-
         if (requestedStarterPreset && updated.starterPreset !== requestedStarterPreset) {
           updated.starterPreset = requestedStarterPreset;
           changed = true;
@@ -2723,8 +2710,6 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedCreatedByPrincipalId) session.createdByPrincipalId = requestedCreatedByPrincipalId;
     if (requestedVisitorId) session.visitorId = requestedVisitorId;
     if (requestedVisitorName) session.visitorName = requestedVisitorName;
-    if (requestedUserId) session.userId = requestedUserId;
-    if (requestedUserName) session.userName = requestedUserName;
     if (requestedStarterPreset) session.starterPreset = requestedStarterPreset;
     if (requestedSystemPrompt) session.systemPrompt = requestedSystemPrompt;
     if (requestedModel) session.model = requestedModel;
@@ -3869,8 +3854,6 @@ export async function forkSession(sessionId, options = {}) {
     templateName: typeof options.templateName === 'string' && options.templateName.trim() ? options.templateName.trim() : (source.templateName || ''),
     systemPrompt: Object.prototype.hasOwnProperty.call(options, 'systemPrompt') && typeof options.systemPrompt === 'string' ? options.systemPrompt : (source.systemPrompt || ''),
     activeAgreements: source.activeAgreements || [],
-    userId: source.userId || '',
-    userName: source.userName || '',
     externalTriggerId: requestedExternalTriggerId,
     ...(hasSourceContextOverride ? { sourceContext: options.sourceContext } : {}),
     forkedFromSessionId: source.id,
@@ -3951,8 +3934,6 @@ export async function delegateSession(sessionId, payload = {}) {
     model: inheritRuntimePreferences ? source.model || '' : '',
     effort: inheritRuntimePreferences ? source.effort || '' : '',
     thinking: inheritRuntimePreferences && source.thinking === true,
-    userId: source.userId || '',
-    userName: source.userName || '',
     delegatedFromSessionId: source.id,
     delegationDepth: sourceDepth + 1,
     ...(runInternally ? { internalRole: INTERNAL_SESSION_ROLE_AGENT_DELEGATE } : {}),

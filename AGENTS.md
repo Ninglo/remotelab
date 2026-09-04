@@ -13,7 +13,7 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 
 **Not** a terminal emulator, a traditional editor-first IDE, or a chatbot. It's an **AI workbench / control console for human-AI collaboration** — the user does not need a perfect spec up front; RemoteLab should help discover the right problem, propose a workable workflow, and keep execution plus context coherent.
 
-- Single owner, not multi-user
+- Single owner per instance; host-level multi-user isolation uses separate guest instances, never Session labels
 - First wedge: repetitive digital work that can be automated quickly
 - Phone + desktop are both first-class control surfaces
 - Node.js, no external frameworks (only `ws` for WebSocket)
@@ -190,8 +190,11 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 
 ## Key Product Concepts
 
+### Instances
+User isolation boundary. One host may run several single-owner guest instances; each instance owns separate config, memory, workspace, auth, Connectors, and runtime permissions.
+
 ### Sessions
-Unit of work = one chat conversation with one AI tool. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts.
+Unit of work inside one user's instance = one durable chat/task context with one AI tool. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts. Sessions do not isolate users.
 
 ### Agents
 Reusable AI workflows shareable via link. Each Agent defines: name, systemPrompt, skills, tool. When a Visitor clicks the share link → auto-creates a scoped Session with the Agent's system prompt injected.
@@ -234,7 +237,7 @@ After each completed normal turn, `session-state-classifier.mjs` makes one non-b
 3. **Restart-safe recovery** — prefer durable restart/reload recovery over maintaining a permanent second chat plane
 4. **Vanilla JS frontend** — no build tools, no framework
 5. **Every change = new commit** — never use `--amend`, only new commits
-6. **Single Owner** — no multi-user auth infrastructure
+6. **Single Owner Per Instance** — no in-process multi-user account infrastructure; use isolated guest instances for different users
 7. **Agent-driven first** — new features prefer conversation/Skill over dedicated UI
 8. **ES Modules** — `"type": "module"`, all `.mjs` files
 9. **Template style** — `{{PLACEHOLDER}}` substitution, nonce-injected scripts

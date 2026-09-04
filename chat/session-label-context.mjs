@@ -603,7 +603,6 @@ async function loadExecutionRelatedSessionPromptContext(sessionMeta, turnText, s
       && meta.id !== sessionMeta.id
       && meta.archived !== true
       && !meta.internalRole
-      && matchesSessionAccountScope(meta, sessionMeta)
     ))
     .map((meta) => {
       const scored = scoreScopeRouterRelatedSessionCandidate(meta, sessionMeta, selectedEntries, routingTerms);
@@ -657,14 +656,6 @@ function sortSessionsByRecency(a, b) {
   return bTime - aTime;
 }
 
-export function getSessionAccountScopeId(session) {
-  return normalizeInlineText(session?.userId) || 'owner';
-}
-
-export function matchesSessionAccountScope(session, currentSession) {
-  return getSessionAccountScopeId(session) === getSessionAccountScopeId(currentSession);
-}
-
 export function buildActiveSessionCatalogPrompt(sessions, currentSession) {
   if (!Array.isArray(sessions)) return '';
   const currentSessionId = currentSession?.id || '';
@@ -675,7 +666,6 @@ export function buildActiveSessionCatalogPrompt(sessions, currentSession) {
       && session.id !== currentSessionId
       && session.archived !== true
       && !session.internalRole
-      && matchesSessionAccountScope(session, currentSession)
     ))
     .map((session) => ({
       id: session.id,
@@ -768,11 +758,10 @@ async function readOptionalText(path) {
 
 export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
   const sessionId = sessionMeta?.id || '';
-  const allowOwnerProjectMemory = getSessionAccountScopeId(sessionMeta) === 'owner';
   const [contextHead, sessions, projectsMarkdown] = await Promise.all([
     sessionId ? getContextHead(sessionId) : null,
     readJson(CHAT_SESSIONS_FILE, []),
-    allowOwnerProjectMemory ? readOptionalText(PROJECTS_MD) : Promise.resolve(''),
+    readOptionalText(PROJECTS_MD),
   ]);
 
   const contextSummary = clipText(contextHead?.summary || '', MAX_CONTEXT_SUMMARY_CHARS);
@@ -795,9 +784,7 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
 }
 
 export async function loadExecutionMemoryPromptContext(sessionMeta, turnText) {
-  const projectsMarkdown = getSessionAccountScopeId(sessionMeta) === 'owner'
-    ? await readOptionalText(PROJECTS_MD)
-    : '';
+  const projectsMarkdown = await readOptionalText(PROJECTS_MD);
   const selected = selectExecutionScopeRouterEntries(projectsMarkdown, {
     folder: sessionMeta?.folder || '',
     name: sessionMeta?.name || '',
