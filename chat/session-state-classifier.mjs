@@ -18,6 +18,29 @@ import {
 } from './session-workflow-state.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 
+const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi']);
+export const SESSION_STATE_CLASSIFIER_RUNTIME = Object.freeze({
+  tool: 'codex',
+  model: 'gpt-5.6-luna',
+  effort: 'high',
+  thinking: false,
+});
+
+export function resolveSessionStateClassifierRuntime(sessionMeta = {}) {
+  const sourceTool = typeof sessionMeta?.tool === 'string' ? sessionMeta.tool.trim() : '';
+  if (DEDICATED_SESSION_STATE_SOURCE_TOOLS.has(sourceTool)) {
+    return { ...SESSION_STATE_CLASSIFIER_RUNTIME };
+  }
+  return {
+    tool: sourceTool,
+    model: typeof sessionMeta?.model === 'string' ? sessionMeta.model.trim() : '',
+    effort: typeof sessionMeta?.effort === 'string' && sessionMeta.effort.trim()
+      ? sessionMeta.effort.trim()
+      : 'low',
+    thinking: false,
+  };
+}
+
 function clipPromptText(value, maxChars) {
   const text = typeof value === 'string' ? value.trim() : '';
   if (!text || !Number.isInteger(maxChars) || maxChars <= 0 || text.length <= maxChars) {
@@ -232,6 +255,10 @@ export function triggerSessionStateSuggestion(sessionMeta, options = {}) {
 }
 
 async function runSessionStateSuggestion(sessionMeta, _options = {}) {
+  const classifierSessionMeta = {
+    ...sessionMeta,
+    ...resolveSessionStateClassifierRuntime(sessionMeta),
+  };
   const {
     id: sessionId,
     folder,
@@ -319,7 +346,7 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
     'Use arrays of short strings for every workSummary list. Use mode "project" for multi-step, recurring, or material-heavy work; otherwise "task".',
   ].filter((line) => line !== '').join('\n');
 
-  const modelText = await runToolJsonPrompt(sessionMeta, prompt, {
+  const modelText = await runToolJsonPrompt(classifierSessionMeta, prompt, {
     operation: 'session_state_suggestion',
   });
   const result = parseJsonObject(modelText);

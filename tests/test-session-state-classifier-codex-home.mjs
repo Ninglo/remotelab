@@ -95,7 +95,41 @@ const sessionStateClassifier = await import(pathToFileURL(join(repoRoot, 'chat',
 const { appendEvent } = history;
 const { messageEvent } = normalizer;
 const { createSession, killAll } = sessionManager;
-const { triggerSessionStateSuggestion } = sessionStateClassifier;
+const {
+  resolveSessionStateClassifierRuntime,
+  triggerSessionStateSuggestion,
+} = sessionStateClassifier;
+
+assert.deepEqual(
+  resolveSessionStateClassifierRuntime({
+    tool: 'pi',
+    model: 'openai-codex/gpt-5.6-sol',
+    effort: 'xhigh',
+    thinking: true,
+  }),
+  {
+    tool: 'codex',
+    model: 'gpt-5.6-luna',
+    effort: 'high',
+    thinking: false,
+  },
+  'built-in foreground Harnesses should use the dedicated Luna session-state route',
+);
+assert.deepEqual(
+  resolveSessionStateClassifierRuntime({
+    tool: fakeToolId,
+    model: 'fake-model',
+    effort: 'low',
+    thinking: true,
+  }),
+  {
+    tool: fakeToolId,
+    model: 'fake-model',
+    effort: 'low',
+    thinking: false,
+  },
+  'custom test/provider tools should retain their compatible model route',
+);
 
 const session = await createSession(tempHome, fakeToolId, '', {});
 await appendEvent(session.id, messageEvent('user', 'Please verify the background Codex environment is wired correctly.'));
