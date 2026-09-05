@@ -625,7 +625,7 @@ assert.equal(
   'the product default should use CodeX enum reasoning',
 );
 
-const plannedCodexFallbackDefaults = planGuestRuntimeDefaults({
+const plannedCurrentCodexFallbackDefaults = planGuestRuntimeDefaults({
   ownerSelection: null,
   ownerTools: [],
   guestSelection: null,
@@ -633,17 +633,35 @@ const plannedCodexFallbackDefaults = planGuestRuntimeDefaults({
   detectedModel: 'gpt-5.5',
 });
 assert.equal(
-  plannedCodexFallbackDefaults.selection.selectedTool,
+  plannedCurrentCodexFallbackDefaults.selection.selectedTool,
   'codex',
   'guests should still fall back to Codex when Micro Agent is unavailable',
 );
 assert.equal(
-  plannedCodexFallbackDefaults.selection.selectedModel,
+  plannedCurrentCodexFallbackDefaults.selection.selectedModel,
+  'gpt-5.5',
+  'Codex fallback should preserve detected models in the current catalog',
+);
+assert.equal(
+  plannedCurrentCodexFallbackDefaults.selection.selectedEffort,
+  'medium',
+  'Codex fallback should use the product-default effort level',
+);
+
+const plannedStaleCodexFallbackDefaults = planGuestRuntimeDefaults({
+  ownerSelection: null,
+  ownerTools: [],
+  guestSelection: null,
+  guestTools: [],
+  detectedModel: 'gpt-5.4',
+});
+assert.equal(
+  plannedStaleCodexFallbackDefaults.selection.selectedModel,
   'gpt-5.6-sol',
   'Codex fallback should upgrade stale detected owner models to the product default',
 );
 assert.equal(
-  plannedCodexFallbackDefaults.selection.selectedEffort,
+  plannedStaleCodexFallbackDefaults.selection.selectedEffort,
   'medium',
   'Codex fallback should use the product-default effort level',
 );
