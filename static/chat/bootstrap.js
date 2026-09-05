@@ -1065,6 +1065,14 @@ const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
 const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 const PRODUCT_DEFAULT_CODEX_EFFORT = "medium";
+const CURRENT_CODEX_MODEL_IDS = new Set([
+  "gpt-6-astra",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-5.5",
+  "gpt-5.2",
+]);
 const RETIRED_CODEX_MODEL_IDS = new Set([]);
 const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "medium-v1";
 
@@ -1096,6 +1104,7 @@ function parseVersionedGptModelId(value) {
 function isStaleCodexModelId(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
   if (!normalized || normalized === PRODUCT_DEFAULT_CODEX_MODEL) return false;
+  if (CURRENT_CODEX_MODEL_IDS.has(normalized)) return false;
   if (RETIRED_CODEX_MODEL_IDS.has(normalized)) return true;
   const modelVersion = parseVersionedGptModelId(normalized);
   const defaultVersion = parseVersionedGptModelId(PRODUCT_DEFAULT_CODEX_MODEL);

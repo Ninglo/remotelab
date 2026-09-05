@@ -25,10 +25,16 @@ const DEFAULT_CODEX_REASONING = Object.freeze({
 });
 const HARDCODED_CODEX_MODELS = Object.freeze([
   {
+    id: 'gpt-6-astra',
+    label: 'GPT-6-Astra',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultEffort: 'low',
+  },
+  {
     id: 'gpt-5.6-sol',
     label: 'GPT-5.6-Sol',
     effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultEffort: PRODUCT_DEFAULT_CODEX_EFFORT,
+    defaultEffort: 'low',
   },
   {
     id: 'gpt-5.6-terra',
@@ -49,22 +55,10 @@ const HARDCODED_CODEX_MODELS = Object.freeze([
     defaultEffort: 'medium',
   },
   {
-    id: 'gpt-5.4',
-    label: 'GPT-5.4',
+    id: 'gpt-5.2',
+    label: 'GPT-5.2',
     effortLevels: ['low', 'medium', 'high', 'xhigh'],
     defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.4-mini',
-    label: 'GPT-5.4-Mini',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.3-codex-spark',
-    label: 'GPT-5.3-Codex-Spark',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'high',
   },
 ]);
 const HARDCODED_CODEX_MODEL_IDS = HARDCODED_CODEX_MODELS.map((model) => model.id);

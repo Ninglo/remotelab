@@ -168,6 +168,18 @@ try {
   assert.equal(codex56Metrics.estimatedCostModel, 'gpt-5.6-sol', 'Codex metrics should annotate GPT-5.6-Sol pricing when selected');
   assert.equal(codex56Metrics.costSource, 'estimated_gpt_5_6_sol', 'Codex metrics should expose the GPT-5.6-Sol estimate source');
 
+  const codex6Metrics = await readLatestCodexSessionMetrics(codexThreadId, { model: 'gpt-6-astra' });
+  assert.ok(codex6Metrics, 'Codex session metrics should support GPT-6 Astra pricing when the run model is known');
+  assert.equal(codex6Metrics.estimatedCostUsd, 0.171032, 'Codex metrics should estimate GPT-6 Astra cost from input/cache/output tokens');
+  assert.equal(codex6Metrics.estimatedCostModel, 'gpt-6-astra', 'Codex metrics should annotate GPT-6 Astra pricing when selected');
+  assert.equal(codex6Metrics.costSource, 'estimated_gpt_6_astra', 'Codex metrics should expose the GPT-6 Astra estimate source');
+
+  const codex52Metrics = await readLatestCodexSessionMetrics(codexThreadId, { model: 'gpt-5.2' });
+  assert.ok(codex52Metrics, 'Codex session metrics should support GPT-5.2 pricing when the run model is known');
+  assert.equal(codex52Metrics.estimatedCostUsd, 0.032718, 'Codex metrics should estimate GPT-5.2 cost from input/cache/output tokens');
+  assert.equal(codex52Metrics.estimatedCostModel, 'gpt-5.2', 'Codex metrics should annotate GPT-5.2 pricing when selected');
+  assert.equal(codex52Metrics.costSource, 'estimated_gpt_5_2', 'Codex metrics should expose the GPT-5.2 estimate source');
+
   const managedCodexThreadId = '019d6383-beec-7ae2-9b12-264f2fcf075b';
   const managedCodexSessionDir = join(
     tempHome,

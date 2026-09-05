@@ -69,6 +69,18 @@ try {
   );
   assert.equal(staleCodex.selectedEffort, 'xhigh');
 
+  const currentOlderCodex = await saveUiRuntimeSelection({
+    selectedTool: 'codex',
+    selectedModel: 'gpt-5.2',
+    selectedEffort: 'medium',
+    reasoningKind: 'enum',
+  });
+  assert.equal(
+    currentOlderCodex.selectedModel,
+    'gpt-5.2',
+    'all models in the current Codex picker should remain selectable',
+  );
+
   assert.equal(
     resolveExternalRuntimeSelection({
       uiSelection: {
