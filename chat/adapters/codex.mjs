@@ -83,6 +83,7 @@ export function createCodexAdapter() {
           break;
 
         case 'turn.failed':
+          // turn.failed is Codex's authoritative terminal failure event.
           events.push(statusEvent(`error: ${obj.error?.message || 'unknown error'}`));
           break;
 
@@ -104,7 +105,12 @@ export function createCodexAdapter() {
           break;
 
         case 'error':
-          events.push(statusEvent(`error: ${obj.message || 'unknown error'}`));
+          // Top-level error events can describe a recoverable transport attempt.
+          // Codex may emit several of these, fall back from WebSockets to HTTPS,
+          // and then finish with turn.completed. Keep the notice visible without
+          // terminalizing RemoteLab; a final turn.failed or non-zero process exit
+          // remains authoritative for failure.
+          events.push(statusEvent(`Provider notice: ${obj.message || 'unknown error'}`));
           break;
 
         default:
@@ -190,7 +196,9 @@ function parseItem(item) {
       break;
 
     case 'error':
-      events.push(statusEvent(`error: ${item.message || 'unknown'}`));
+      // An item-level error is not a turn-level terminal signal. Codex can
+      // recover after reporting one and still emit turn.completed.
+      events.push(statusEvent(`Provider notice: ${item.message || 'unknown error'}`));
       break;
 
     default:
