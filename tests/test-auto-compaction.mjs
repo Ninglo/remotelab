@@ -4,6 +4,7 @@ import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-auto-compact-'));
@@ -116,7 +117,7 @@ function writeCodexMetrics(threadId, contextTokens, contextWindowTokens) {
 writeCodexMetrics('overflow-thread', 101, 100);
 writeCodexMetrics('exact-thread', 100, 100);
 
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 process.env.REMOTELAB_MACHINE_CODEX_HOME = join(tempHome, '.codex');
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
 delete process.env.REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS;

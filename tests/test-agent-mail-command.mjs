@@ -4,10 +4,11 @@ import http from 'http';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = process.cwd();
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-agent-mail-command-'));
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 
 const mailboxRoot = join(tempHome, '.config', 'remotelab', 'agent-mailbox');
 

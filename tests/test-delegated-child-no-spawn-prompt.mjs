@@ -10,9 +10,10 @@ import assert from 'assert/strict';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'remotelab-child-spawn-'));
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 process.env.REMOTELAB_PUBLIC_BASE_URL = '';
 
 await fs.mkdir(path.join(tempHome, '.config', 'remotelab'), { recursive: true });

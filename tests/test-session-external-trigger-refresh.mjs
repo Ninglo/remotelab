@@ -4,10 +4,11 @@ import { mkdirSync, mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-external-trigger-refresh-'));
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 
 const workspace = join(tempHome, 'workspace');
 mkdirSync(workspace, { recursive: true });

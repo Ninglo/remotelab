@@ -4,6 +4,7 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -60,7 +61,7 @@ writeFileSync(
   'utf8',
 );
 
-process.env.HOME = home;
+setIsolatedTestHome(home);
 process.env.PATH = `${binDir}:${process.env.PATH}`;
 process.env.FAKE_CODEX_DELAY_MS = '120';
 

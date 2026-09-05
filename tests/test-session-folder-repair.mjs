@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = process.cwd();
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-session-folder-'));
@@ -34,7 +35,7 @@ const previousHome = process.env.HOME;
 const previousConfigDir = process.env.REMOTELAB_CONFIG_DIR;
 
 try {
-  process.env.HOME = tempHome;
+  setIsolatedTestHome(tempHome);
   process.env.REMOTELAB_CONFIG_DIR = configDir;
 
   const cacheBust = `?t=${Date.now()}`;

@@ -3,9 +3,10 @@ import assert from 'assert/strict';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'remotelab-history-index-'));
-process.env.HOME = home;
+setIsolatedTestHome(home);
 
 const { appendEvents, readEventBody, readEventsAfter } = await import('./chat/history.mjs');
 

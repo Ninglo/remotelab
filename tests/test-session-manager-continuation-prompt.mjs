@@ -3,9 +3,10 @@ import assert from 'assert/strict';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'remotelab-continuation-prompt-'));
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 
 const workspace = path.join(tempHome, 'workspace');
 await fs.mkdir(workspace, { recursive: true });

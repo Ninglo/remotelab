@@ -6,10 +6,11 @@ import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = process.cwd();
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-agent-mail-worker-'));
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 
 const mailboxRoot = join(tempHome, '.config', 'remotelab', 'agent-mailbox');
 mkdirSync(join(tempHome, '.config', 'remotelab'), { recursive: true });

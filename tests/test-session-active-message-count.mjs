@@ -4,12 +4,13 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const home = mkdtempSync(join(tmpdir(), 'remotelab-active-message-count-'));
 
-process.env.HOME = home;
+setIsolatedTestHome(home);
 
 const sessionManager = await import(
   pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href

@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -50,7 +51,7 @@ writeFileSync(
 writeFileSync(join(localBin, 'fake-codex'), '#!/usr/bin/env bash\nexit 0\n', 'utf8');
 chmodSync(join(localBin, 'fake-codex'), 0o755);
 
-process.env.HOME = sandboxHome;
+setIsolatedTestHome(sandboxHome);
 process.env.REMOTELAB_INSTANCE_ROOT = instanceRoot;
 process.env.CHAT_PORT = '43123';
 process.env.REMOTELAB_BRIDGE_BASE_URL = '';

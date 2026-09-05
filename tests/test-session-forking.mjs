@@ -3,9 +3,10 @@ import assert from 'assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const home = mkdtempSync(join(tmpdir(), 'remotelab-session-fork-'));
-process.env.HOME = home;
+setIsolatedTestHome(home);
 process.env.REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER = '1';
 
 const workspace = join(home, 'workspace');

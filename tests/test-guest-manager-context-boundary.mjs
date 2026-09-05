@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -46,7 +47,7 @@ const previousHome = process.env.HOME;
 const previousInstanceRoot = process.env.REMOTELAB_INSTANCE_ROOT;
 const previousPath = process.env.PATH;
 
-process.env.HOME = sandboxHome;
+setIsolatedTestHome(sandboxHome);
 process.env.REMOTELAB_INSTANCE_ROOT = instanceRoot;
 process.env.PATH = `${localBin}:${process.env.PATH || ''}`;
 process.chdir(repoRoot);

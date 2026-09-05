@@ -4,6 +4,7 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-welcome-work-summary-'));
@@ -100,7 +101,7 @@ writeFileSync(
   'utf8',
 );
 
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 process.env.REMOTELAB_MEMORY_WRITEBACK = 'off';
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
 

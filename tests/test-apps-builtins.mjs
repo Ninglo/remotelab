@@ -4,6 +4,7 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-apps-builtins-'));
@@ -29,7 +30,7 @@ writeFileSync(
   ], null, 2),
   'utf8',
 );
-process.env.HOME = tempHome;
+setIsolatedTestHome(tempHome);
 process.env.CHAT_PORT = '7692';
 process.env.REMOTELAB_CONFIG_DIR = configDir;
 process.env.PATH = `${localBin}:${process.env.PATH || ''}`;
