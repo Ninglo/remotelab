@@ -428,13 +428,11 @@ async function main() {
     activeProc = proc;
     lastOutputAt = Date.now();
 
-    await providerRuntimeLease?.setToolProcessId(proc.pid);
-    await updateRun(runId, (current) => ({
-      ...current,
-      toolProcessId: proc.pid,
-    }));
-
-    return await new Promise((resolve) => {
+    // Register every process and stream listener before the first async write.
+    // A fast command can exit while setToolProcessId/updateRun is pending; if
+    // close fires before its listener exists, the sidecar otherwise waits until
+    // the idle timeout and leaves the run permanently non-terminal meanwhile.
+    const attemptDone = new Promise((resolve) => {
       const stderrLines = [];
       let outputWriteChain = Promise.resolve();
       let outputWriteError = null;
@@ -488,6 +486,14 @@ async function main() {
         void finish({ code: code ?? 1, signal: signal || null, error: null });
       });
     });
+
+    await providerRuntimeLease?.setToolProcessId(proc.pid);
+    await updateRun(runId, (current) => ({
+      ...current,
+      toolProcessId: proc.pid,
+    }));
+
+    return await attemptDone;
   };
 
   const providerQueueKey = resolveProviderRuntimeQueueKey(initialInvocation);
