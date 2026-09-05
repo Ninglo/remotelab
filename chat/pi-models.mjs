@@ -1,5 +1,8 @@
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
+import { PI_AGENT_DIR } from '../lib/config.mjs';
+import { getPiBaselineModels } from '../lib/codex-model-catalog.mjs';
+import { ensurePiModelBaseline } from './pi-model-baseline.mjs';
 
 const execFileAsync = promisify(execFile);
 const PI_MODEL_CACHE_TTL_MS = 30_000;
@@ -23,6 +26,7 @@ const PI_PROVIDER_RECOMMENDATIONS = Object.freeze({
 
 let cachedCatalog = null;
 let cachedAt = 0;
+let cachedKey = '';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -321,7 +325,20 @@ function readPiRpcModelCatalog(command, options = {}) {
   });
 }
 
-function buildPiCatalog(models, preferredRoute = '') {
+export function mergePiModelCatalog(discovered = []) {
+  const baseline = parsePiRpcModels(getPiBaselineModels());
+  const byId = new Map(discovered.map((model) => [model.id, model]));
+  const baselineIds = new Set(baseline.map((model) => model.id));
+  // Membership and order come from RemoteLab; discovered metadata reflects
+  // the actual runtime (including explicit user overrides). Extra routes stay.
+  return [
+    ...baseline.map((model) => byId.get(model.id) || model),
+    ...discovered.filter((model) => !baselineIds.has(model.id)),
+  ];
+}
+
+function buildPiCatalog(discovered, preferredRoute = '') {
+  const models = mergePiModelCatalog(discovered);
   const preferredModel = models.find((model) => model.id === preferredRoute)
     || models.find((model) => model.id === 'openai-codex/gpt-5.6-sol')
     || models.find((model) => model.id.startsWith('openai-codex/'))
@@ -338,25 +355,43 @@ function buildPiCatalog(models, preferredRoute = '') {
 
 export async function discoverPiModels(options = {}) {
   const refresh = options.refresh === true;
-  const now = Date.now();
-  if (!refresh && cachedCatalog && now - cachedAt < PI_MODEL_CACHE_TTL_MS) {
+  const command = trimString(options.command) || 'pi';
+  const env = { ...(options.env || process.env) };
+  env.PI_CODING_AGENT_DIR = trimString(env.REMOTELAB_MACHINE_PI_AGENT_DIR)
+    || trimString(env.PI_CODING_AGENT_DIR) || PI_AGENT_DIR;
+  const cacheKey = JSON.stringify([command, env.PI_CODING_AGENT_DIR]);
+  if (!refresh && cachedCatalog && cachedKey === cacheKey
+      && Date.now() - cachedAt < PI_MODEL_CACHE_TTL_MS) {
     return cachedCatalog;
   }
 
-  const command = trimString(options.command) || 'pi';
+  // Also register the baseline with Pi itself, not just the product picker.
+  // A broken local config is an explicit error, not a fabricated usable list.
+  await ensurePiModelBaseline(env.PI_CODING_AGENT_DIR);
+  let catalog;
   try {
-    const rpcCatalog = await readPiRpcModelCatalog(command, options);
-    cachedCatalog = buildPiCatalog(rpcCatalog.models, rpcCatalog.currentRoute);
+    const rpcCatalog = await readPiRpcModelCatalog(command, { ...options, env });
+    catalog = buildPiCatalog(rpcCatalog.models, rpcCatalog.currentRoute);
   } catch (rpcError) {
-    const { stdout } = await execFileAsync(command, ['--list-models'], {
-      env: options.env || process.env,
-      timeout: Number.isFinite(options.timeoutMs) ? options.timeoutMs : 20_000,
-      maxBuffer: 5 * 1024 * 1024,
-    });
-    const models = parsePiModelList(stdout);
-    cachedCatalog = buildPiCatalog(models);
-    console.warn(`[pi-models] RPC metadata unavailable; using list fallback: ${rpcError.message}`);
+    try {
+      const { stdout } = await execFileAsync(command, ['--list-models'], {
+        env,
+        timeout: Number.isFinite(options.timeoutMs) ? options.timeoutMs : 20_000,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+      // The text table cannot describe effort holes. Use the baseline's exact
+      // Pi controls for known models rather than advertising every level.
+      const baseline = new Map(parsePiRpcModels(getPiBaselineModels()).map((model) => [model.id, model]));
+      const models = parsePiModelList(stdout).map((model) => baseline.get(model.id) || model);
+      catalog = buildPiCatalog(models);
+      console.warn(`[pi-models] RPC metadata unavailable; using list supplement: ${rpcError.message}`);
+    } catch (error) {
+      catalog = { ...buildPiCatalog([]), discoveryError: error.message };
+      console.warn(`[pi-models] Native discovery unavailable; showing RemoteLab baseline: ${error.message}`);
+    }
   }
-  cachedAt = now;
-  return cachedCatalog;
+  cachedCatalog = catalog;
+  cachedKey = cacheKey;
+  cachedAt = Date.now();
+  return catalog;
 }

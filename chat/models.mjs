@@ -3,6 +3,7 @@ import { join } from 'path';
 import { resolveCodexHomeDir } from '../lib/codex-home.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { discoverPiModels } from './pi-models.mjs';
+import { CODEX_MODEL_CATALOG } from '../lib/codex-model-catalog.mjs';
 import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
@@ -23,44 +24,7 @@ const DEFAULT_CODEX_REASONING = Object.freeze({
   levels: DEFAULT_CODEX_REASONING_LEVELS,
   default: 'medium',
 });
-const HARDCODED_CODEX_MODELS = Object.freeze([
-  {
-    id: 'gpt-6-astra',
-    label: 'GPT-6-Astra',
-    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultEffort: 'low',
-  },
-  {
-    id: 'gpt-5.6-sol',
-    label: 'GPT-5.6-Sol',
-    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultEffort: 'low',
-  },
-  {
-    id: 'gpt-5.6-terra',
-    label: 'GPT-5.6-Terra',
-    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.6-luna',
-    label: 'GPT-5.6-Luna',
-    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.5',
-    label: 'GPT-5.5',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-  },
-  {
-    id: 'gpt-5.2',
-    label: 'GPT-5.2',
-    effortLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultEffort: 'medium',
-  },
-]);
+const HARDCODED_CODEX_MODELS = CODEX_MODEL_CATALOG;
 const HARDCODED_CODEX_MODEL_IDS = HARDCODED_CODEX_MODELS.map((model) => model.id);
 const MAX_CODEX_RECENT_SESSION_FILES = 24;
 const MAX_CODEX_RECENT_MODELS = 8;
@@ -377,20 +341,7 @@ export async function getModelsForTool(toolId, options = {}) {
     return getCodexModels();
   }
   if (toolId === 'pi') {
-    try {
-      return await discoverPiModels({ refresh: options.refresh === true });
-    } catch (error) {
-      console.warn(`[models] Failed to discover Pi models: ${error.message}`);
-      const codex = await getCodexModels();
-      return {
-        ...codex,
-        models: codex.models.map((model) => ({
-          ...model,
-          id: `openai-codex/${model.id}`,
-        })),
-        defaultModel: codex.defaultModel ? `openai-codex/${codex.defaultModel}` : null,
-      };
-    }
+    return discoverPiModels({ refresh: options.refresh === true });
   }
 
   const tool = await getToolDefinitionAsync(toolId);

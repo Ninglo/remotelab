@@ -219,6 +219,12 @@ if (toolId === 'gemini') {
 }
 ```
 
+For the existing Codex/Pi GPT baseline, edit `lib/codex-model-catalog.mjs` instead of adding another list. Pi's picker always starts with that baseline and appends native discoveries (`chat/pi-models.mjs`); native metadata wins for duplicates so explicit local overrides remain truthful. `chat/pi-model-baseline.mjs` registers missing baseline definitions in the instance's `models.json` before both discovery and execution, using an atomic write and a cross-process lease. Existing model definitions, provider settings, credentials, and non-GPT routes are preserved. Pi controls exclude Codex-only `ultra`; pricing uses RemoteLab's shared estimates. A listed model is not a grant of upstream access: the provider still needs valid credentials and model entitlement. Broken local JSON is surfaced, not overwritten. Native discovery failure retains the baseline and reports `discoveryError`.
+
+This baseline ships with RemoteLab, not the Pi binary or a machine-local cache. Updating RemoteLab propagates baseline membership automatically on the next picker load or Pi run. `pi update --models` independently refreshes Pi's supplemental catalog; upgrading Pi itself is a separate operation. Existing explicit model metadata is never silently replaced by baseline projection.
+
+Validation: `node tests/test-pi-model-baseline.mjs` covers stale/empty/failed discovery, supplemental routes, Pi-native effort levels, fresh-instance execution, preserved custom configuration, malformed JSON, and concurrent projection.
+
 ### Step 5 — Build CLI arguments
 
 Back in `process-runner.mjs`, construct the CLI args for your tool:

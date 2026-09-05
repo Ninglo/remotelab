@@ -2,6 +2,7 @@ import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
 import { createPiAdapter, buildPiArgs } from './adapters/pi.mjs';
 import { resolvePiModelRoute } from './pi-models.mjs';
+import { ensurePiModelBaseline } from './pi-model-baseline.mjs';
 import { expandSessionFolder } from './session-folder.mjs';
 import {
   buildToolProcessEnvOverrides,
@@ -109,6 +110,10 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
         ? 'codex-json'
         : toolId === 'pi' ? 'pi-json' : null);
   const runtimeInvocation = buildRuntimeInvocation(runtimeFamily, prompt, options, toolId);
+  if (runtimeInvocation.isPiFamily) {
+    // Direct / scheduled runs must work before anyone opens the model picker.
+    await ensurePiModelBaseline();
+  }
 
   return {
     command,
