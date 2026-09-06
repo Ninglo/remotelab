@@ -227,6 +227,20 @@ Notes:
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `allow_all` is the simplest V0 mode; move to `whitelist` after the first validation if needed
 
+### Markdown rendering
+
+The model can emit ordinary Markdown. The connector sends adjacent Markdown
+lines together in a single `post` / `md` element so GFM tables, numbered lists,
+task lists, and block quotes retain their structure. Thread replies and normal
+chat messages use the same renderer; no table-specific prompt or Skill is needed.
+Known mentions become Feishu's inline `<at user_id="...">...</at>` extension,
+including inside table cells. Native `at` elements must not share a paragraph
+with `md`. Fenced code and rendered formula images remain separate native blocks.
+
+See the [official message content contract](https://open.feishu.cn/document/server-docs/im-v1/message-content-description/create_json).
+Some Markdown styles require a recent Feishu client. Tables need blank lines
+around them, and Feishu does not support nested tables or images inside table cells.
+
 ### Formula rendering
 
 Feishu replies support standard LaTeX delimiters: `\(...\)` or `$...$` for

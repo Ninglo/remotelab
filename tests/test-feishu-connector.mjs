@@ -1350,10 +1350,7 @@ assert.equal(
 
 const markdownPostContent = JSON.parse(await buildFeishuPostContent('**重点**\n\n- 第一项\n- 第二项'));
 assert.deepEqual(markdownPostContent.zh_cn.content, [
-  [{ tag: 'md', text: '**重点**' }],
-  [{ tag: 'text', text: '\u200B' }],
-  [{ tag: 'md', text: '- 第一项' }],
-  [{ tag: 'md', text: '- 第二项' }],
+  [{ tag: 'md', text: '**重点**\n\n- 第一项\n- 第二项' }],
 ]);
 
 const fencedCodePostContent = JSON.parse(await buildFeishuPostContent(
@@ -1378,9 +1375,23 @@ assert.deepEqual(aliasedCodePostContent.zh_cn.content, [[{
 
 const mentionPostContent = JSON.parse(await buildFeishuPostContent('@_user_1 请看 **这段**', mentionSummary.mentions));
 assert.deepEqual(mentionPostContent.zh_cn.content[0], [
-  { tag: 'at', user_id: 'ou_mention_1', user_name: '江虹' },
-  { tag: 'md', text: ' 请看 **这段**' },
+  { tag: 'md', text: '<at user_id="ou_mention_1">江虹</at> 请看 **这段**' },
 ]);
+
+await import('./test-feishu-post-markdown.mjs');
+
+const transportTable = '| 项目 | 状态 |\n|---|---|\n| Wiki | 正常 |';
+await sendFeishuText(fakeSendRuntime, topicSummary, transportTable, 'uuid-topic-table');
+await sendFeishuText(fakeSendRuntime, {
+  chatType: 'group', chatId: 'chat_regular_1', messageId: 'msg_table_1',
+}, transportTable, 'uuid-regular-table');
+assert.equal(feishuReplyPayload.data.reply_in_thread, true);
+assert.equal(feishuReplyPayload.data.msg_type, 'post');
+assert.equal(feishuCreatePayload.data.msg_type, 'post');
+assert.equal(feishuReplyPayload.data.content, feishuCreatePayload.data.content,
+  'Thread and regular group replies must use the same Markdown payload');
+assert.deepEqual(JSON.parse(feishuReplyPayload.data.content).zh_cn.content,
+  [[{ tag: 'md', text: transportTable }]]);
 
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-whitelist-'));
 const whitelistPath = join(tempDir, 'allowed-senders.json');

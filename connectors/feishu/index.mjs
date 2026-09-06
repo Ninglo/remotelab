@@ -800,14 +800,16 @@ function normalizeWhitespaceOutsideCodeFences(value) {
       fence = opening;
       continue;
     }
+    const indentation = rawLine.match(/^[ \t]*/)[0];
+    const hardBreak = / {2,}$/.test(rawLine) ? '  ' : '';
     const line = rawLine
       .replace(/[ \t]+([,.;:!?，。！？；：、])/g, '$1')
-      .replace(/([([{（【])[ \t]+/g, '$1')
-      .replace(/[ \t]+([)\]}）】])/g, '$1')
+      .replace(/([(（【])[ \t]+/g, '$1')
+      .replace(/[ \t]+([)）】])/g, '$1')
       .replace(/[ \t]{2,}/g, ' ')
       .trim();
     if (line) {
-      output.push(line);
+      output.push(`${indentation}${line}${hardBreak}`);
     } else if (output.length > 0 && output[output.length - 1] !== '') {
       output.push('');
     }
@@ -895,25 +897,40 @@ function findNextMentionMatch(line, mentionEntries, startIndex) {
   return best;
 }
 
-function appendFeishuMarkdownElements(elements, line, mentionEntries) {
+function compileFeishuMarkdownMentions(line, mentionEntries) {
+  let text = '';
   let cursor = 0;
   while (cursor < line.length) {
     const match = findNextMentionMatch(line, mentionEntries, cursor);
     if (!match) {
-      elements.push({ tag: 'md', text: line.slice(cursor) });
+      text += line.slice(cursor);
       break;
     }
-    if (match.index > cursor) {
-      elements.push({ tag: 'md', text: line.slice(cursor, match.index) });
-    }
-    elements.push({
-      tag: 'at',
-      user_id: match.entry.targetId,
-      user_name: match.entry.displayName || match.entry.targetId,
-    });
+    text += line.slice(cursor, match.index);
+    const name = match.entry.displayName || match.entry.targetId;
+    text += `<at user_id="${escapeFeishuMentionValue(match.entry.targetId)}">${escapeFeishuMentionValue(name)}</at>`;
     cursor = match.index + match.marker.length;
   }
-  return elements;
+  return text;
+}
+
+function compileFeishuMarkdownLine(line, mentionEntries) {
+  // Code spans are literal, even when they contain a known @mention marker.
+  const runs = Array.from(line.matchAll(/`+/g));
+  let text = '';
+  let cursor = 0;
+  for (let index = 0; index < runs.length; index += 1) {
+    const opening = runs[index];
+    let closingIndex = index + 1;
+    while (closingIndex < runs.length && runs[closingIndex][0] !== opening[0]) closingIndex += 1;
+    if (closingIndex === runs.length) continue;
+    const end = runs[closingIndex].index + runs[closingIndex][0].length;
+    text += compileFeishuMarkdownMentions(line.slice(cursor, opening.index), mentionEntries);
+    text += line.slice(opening.index, end);
+    cursor = end;
+    index = closingIndex;
+  }
+  return text + compileFeishuMarkdownMentions(line.slice(cursor), mentionEntries);
 }
 
 function buildFeishuTextRow(text) {
@@ -921,9 +938,15 @@ function buildFeishuTextRow(text) {
 }
 
 function pushFeishuMarkdownRow(content, text, mentionEntries) {
-  const elements = [];
-  appendFeishuMarkdownElements(elements, text, mentionEntries);
-  content.push(elements.length > 0 ? elements : buildFeishuTextRow('\u200B'));
+  const markdown = compileFeishuMarkdownLine(text, mentionEntries);
+  const previous = content[content.length - 1];
+  // A post/md element is a Markdown document, not one source line. Keep
+  // tables, lists, and quotes together until a native code/image block.
+  if (previous?.length === 1 && previous[0].tag === 'md') {
+    previous[0].text += `\n${markdown}`;
+  } else {
+    content.push([{ tag: 'md', text: markdown }]);
+  }
 }
 
 function pushFeishuDocumentLine(content, block, mentionEntries) {
@@ -1018,7 +1041,12 @@ export async function buildFeishuPostContent(text, mentions, options = {}) {
       content.push(buildFeishuTextRow(block.text));
     }
   }
-  return JSON.stringify({ zh_cn: { content } });
+  const paragraphs = content.filter((row) => {
+    if (row.length !== 1 || row[0].tag !== 'md') return true;
+    row[0].text = row[0].text.replace(/^\n+|\n+$/g, '');
+    return Boolean(row[0].text);
+  });
+  return JSON.stringify({ zh_cn: { content: paragraphs.length ? paragraphs : [buildFeishuTextRow('')] } });
 }
 
 export function feishuMatchFn(pattern, message) {

@@ -262,16 +262,15 @@ assert.equal(normalizedReply, '已收到');
 const postContent = JSON.parse(await buildFeishuPostContent('**处理完成**\n@Alex 请看', [
   { key: '@_alex', name: 'Alex', openId: 'ou_alex_1' },
 ]));
-assert.equal(postContent.zh_cn.content[0][0].tag, 'md');
-assert.equal(postContent.zh_cn.content[1][0].tag, 'at');
-assert.equal(postContent.zh_cn.content[1][0].user_id, 'ou_alex_1');
+assert.deepEqual(postContent.zh_cn.content, [[{
+  tag: 'md', text: '**处理完成**\n<at user_id="ou_alex_1">Alex</at> 请看',
+}]]);
 
 const inlineMathPostContent = JSON.parse(await buildFeishuPostContent('结论：$x_i = y^2$，请看 @Alex', [
   { key: '@_alex', name: 'Alex', openId: 'ou_alex_1' },
 ]));
 assert.deepEqual(inlineMathPostContent.zh_cn.content[0], [
-  { tag: 'md', text: '结论：xᵢ = y²，请看 ' },
-  { tag: 'at', user_id: 'ou_alex_1', user_name: 'Alex' },
+  { tag: 'md', text: '结论：xᵢ = y²，请看 <at user_id="ou_alex_1">Alex</at>' },
 ]);
 
 const displayMathPostContent = JSON.parse(await buildFeishuPostContent(
