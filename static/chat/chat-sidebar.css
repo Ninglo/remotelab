@@ -416,10 +416,10 @@
 .session-row-status.status-unread {
   padding: 3px 5px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--notice) 12%, transparent);
-  color: var(--notice);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
 }
-.session-row-status.status-unread .session-status-dot { background: var(--notice); }
+.session-row-status.status-unread .session-status-dot { background: var(--warning); }
 
 /* Session description line */
 .session-item-description {

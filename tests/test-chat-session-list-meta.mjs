@@ -8,6 +8,7 @@ import vm from 'vm';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const sessionSurfaceUiSource = readFileSync(join(repoRoot, 'static', 'chat', 'session-surface-ui.js'), 'utf8');
+const sidebarCssSource = readFileSync(join(repoRoot, 'static', 'chat', 'chat-sidebar.css'), 'utf8');
 
 function extractFunctionSource(source, functionName) {
   const marker = `function ${functionName}`;
@@ -153,6 +154,17 @@ assert.equal(
   }),
   '<span class="session-row-status status-unread" title="New result"><span class="session-status-dot" aria-hidden="true"></span>review</span>',
   'sessions with unchecked results should pair the attention dot with a visible text label',
+);
+
+assert.match(
+  sidebarCssSource,
+  /\.session-row-status\.status-unread\s*\{[\s\S]*?var\(--warning\)[\s\S]*?\}/,
+  'the review badge should use the warning color so it stays distinct from green running state in the Amber theme',
+);
+assert.match(
+  sidebarCssSource,
+  /\.session-row-status\.status-unread \.session-status-dot\s*\{\s*background:\s*var\(--warning\)/,
+  'the review dot should use the same warning color as its label',
 );
 
 console.log('test-chat-session-list-meta: ok');
