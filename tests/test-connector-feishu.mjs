@@ -12,11 +12,13 @@ import {
   buildFeishuMessageIndexRecord,
   buildFeishuOutboundMessageIndexRecord,
   buildFeishuPostContent,
+  buildFeishuForkExternalTriggerId,
+  buildFeishuForkSourceContext,
+  buildFeishuTopicId,
   buildMessageSourceContext,
   buildRemoteLabMessage,
   buildRequestId,
   buildSessionSourceContext,
-  collectFeishuTopicParentMessageCandidates,
   getSummaryFeishuResources,
   feishuMatchFn,
   isSupportedRemoteLabInboundMessage,
@@ -77,6 +79,18 @@ assert.equal(buildRequestId(textSummary), 'feishu:om_msg_1');
 assert.equal(buildExternalTriggerId(textSummary), 'feishu:group:oc_chat_1');
 assert.equal(buildRemoteLabMessage(textSummary), '@Rowan 帮我看一下');
 
+const quotedReplySummary = {
+  ...textSummary,
+  messageId: 'om_quoted_reply_1',
+  rootId: 'om_quoted_message_1',
+  parentId: 'om_quoted_message_1',
+};
+assert.equal(
+  buildFeishuTopicId(quotedReplySummary),
+  '',
+  'root_id on an ordinary reply must not turn it into a Thread',
+);
+
 const topicSummary = {
   ...textSummary,
   chatType: 'topic',
@@ -108,16 +122,24 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
 });
 assert.deepEqual(buildMessageSourceContext(topicSummary).attachments, { imageCount: 1 });
 assert.equal(buildMessageSourceContext(topicSummary).sourceRouteId, 'bot-alpha');
-assert.deepEqual(
-  collectFeishuTopicParentMessageCandidates({
-    ...topicSummary,
-    rootId: 'independent_topic_root',
-    parentId: 'bot_reply_message',
-    threadId: 'thread_1',
-  }),
-  ['independent_topic_root', 'bot_reply_message', 'thread_1'],
-  'topic parent lookup should try root, parent, and thread identities independently',
+const forkSummary = {
+  ...topicSummary,
+  messageId: 'om_fork_command_1',
+  sourceRouteId: 'bot-alpha',
+};
+assert.equal(
+  buildFeishuForkExternalTriggerId(forkSummary),
+  'feishu:fork:bot-alpha:tenant_1:oc_chat_1:om_fork_command_1',
 );
+assert.deepEqual(buildFeishuForkSourceContext(forkSummary), {
+  connector: 'feishu',
+  sourceRouteId: 'bot-alpha',
+  chatType: 'topic',
+  chatId: 'oc_chat_1',
+  messageId: 'om_fork_command_1',
+  threadId: 'thread_1',
+  rootId: 'om_topic_root_1',
+});
 assert.deepEqual(buildFeishuMessageIndexRecord(topicSummary, 'session-1'), {
   connector: 'feishu',
   accountId: 'tenant_1',

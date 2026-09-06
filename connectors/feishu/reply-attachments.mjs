@@ -1,6 +1,6 @@
 import {
   buildFeishuApiUuid,
-  buildFeishuTopicId,
+  shouldReplyInFeishuThread,
 } from './index.mjs';
 
 export const MAX_FEISHU_OUTBOUND_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -186,7 +186,7 @@ export async function sendFeishuAttachment(runtime, summary, attachment, uuid = 
     content,
     uuid: buildFeishuApiUuid(uuid, summary),
   };
-  if (buildFeishuTopicId(summary)) {
+  if (shouldReplyInFeishuThread(summary)) {
     const response = await runtime.appClient.im.v1.message.reply({
       path: {
         message_id: summary.messageId,

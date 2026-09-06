@@ -446,14 +446,15 @@ export function buildFeishuTopicId(summary) {
   const topicId = trimString(summary?.topicId);
   if (topicId) return topicId;
 
-  const rootId = trimString(summary?.rootId);
-  if (rootId) return rootId;
-
   if (isFeishuTopicChat(summary)) {
-    return trimString(summary?.parentId) || trimString(summary?.messageId);
+    return trimString(summary?.rootId) || trimString(summary?.parentId) || trimString(summary?.messageId);
   }
 
   return '';
+}
+
+export function shouldReplyInFeishuThread(summary) {
+  return summary?.replyInThread === true || Boolean(buildFeishuTopicId(summary));
 }
 
 export function isFeishuTopicSummary(summary) {
@@ -475,6 +476,35 @@ export function buildExternalTriggerId(summary) {
     return `feishu:topic:${chatId}:${sanitizeIdPart(topicId)}`;
   }
   return `feishu:${sanitizeIdPart(summary?.chatType || 'chat')}:${chatId}`;
+}
+
+export function buildFeishuForkExternalTriggerId(summary) {
+  const sourceRouteId = sanitizeIdPart(summary?.sourceRouteId || 'default');
+  const tenantKey = sanitizeIdPart(summary?.tenantKey || summary?.sender?.tenantKey || 'unknown_tenant');
+  const chatId = sanitizeIdPart(summary?.chatId || 'unknown_chat');
+  const messageId = sanitizeIdPart(summary?.messageId || 'unknown_message');
+  return `feishu:fork:${sourceRouteId}:${tenantKey}:${chatId}:${messageId}`;
+}
+
+export function buildFeishuForkSourceContext(summary) {
+  const context = {
+    connector: FEISHU_CONNECTOR_ID,
+  };
+  const sourceRouteId = trimString(summary?.sourceRouteId);
+  if (sourceRouteId) context.sourceRouteId = sourceRouteId;
+  const chatType = trimString(summary?.chatType);
+  if (chatType) context.chatType = chatType;
+  const chatId = trimString(summary?.chatId);
+  if (chatId) context.chatId = chatId;
+  const messageId = trimString(summary?.messageId);
+  if (messageId) context.messageId = messageId;
+  const threadId = trimString(summary?.threadId);
+  if (threadId) context.threadId = threadId;
+  const rootId = trimString(summary?.rootId);
+  if (rootId) context.rootId = rootId;
+  const parentId = trimString(summary?.parentId);
+  if (parentId) context.parentId = parentId;
+  return context;
 }
 
 export function buildFeishuConversationQueueKey(summary) {
@@ -747,19 +777,6 @@ export function buildFeishuOutboundMessageIndexRecord(summary, sessionId, outbou
     sourceMessageId: trimString(summary?.messageId),
     direction: 'outbound',
   };
-}
-
-export function collectFeishuTopicParentMessageCandidates(summary) {
-  const currentMessageId = trimString(summary?.messageId);
-  const seen = new Set();
-  const candidates = [];
-  for (const value of [summary?.rootId, summary?.parentId, summary?.threadId]) {
-    const messageId = trimString(value);
-    if (!messageId || messageId === currentMessageId || seen.has(messageId)) continue;
-    seen.add(messageId);
-    candidates.push(messageId);
-  }
-  return candidates;
 }
 
 function parseMarkdownFenceStart(line) {
