@@ -413,7 +413,12 @@
 }
 .session-row-status.status-running { color: var(--success); }
 .session-row-status.status-running .session-status-dot { background: var(--success); animation: pulse 1.5s infinite; }
-.session-row-status.status-unread { color: var(--notice); }
+.session-row-status.status-unread {
+  padding: 3px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--notice) 12%, transparent);
+  color: var(--notice);
+}
 .session-row-status.status-unread .session-status-dot { background: var(--notice); }
 
 /* Session description line */

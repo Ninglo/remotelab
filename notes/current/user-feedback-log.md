@@ -25,9 +25,9 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Source: direct owner feedback while reading the live mobile Session list.
 - User slice: mobile-first owner monitoring work across active Sessions.
-- Observed friction or ask: the compact sidebar reduced running and completed-result state to small colored dots, making progress hard to understand and requiring users to remember color meanings.
+- Observed friction or ask: the compact sidebar reduced running and completed-result state to small colored dots, making progress hard to understand and requiring users to remember color meanings. Restoring `running` alone was insufficient: when a run ended, the result became visually indistinguishable from ordinary finished conversations because the review cue depended on delayed workflow classification.
 - Signal strength: concrete production usability failure after the compact status treatment shipped.
-- Product implication: keep the compact row, but pair the green running indicator with `running` and the completed-unread indicator with `finished`; color may reinforce state but must not carry the meaning alone.
+- Product implication: keep the compact row, pair the green running indicator with `running`, and show an explicit `review` badge as soon as an idle Session has an unseen assistant result. Do not gate this badge on the later workflow-state classifier; color may reinforce state but must not carry the meaning alone.
 - Promote to: Session-list accessibility and mobile status defaults.
 
 ### 2026-09-04 — Automated tasks must not append control prompts to an existing conversation

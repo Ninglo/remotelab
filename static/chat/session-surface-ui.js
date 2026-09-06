@@ -240,18 +240,11 @@ function renderSessionStatusIndicator(statusInfo) {
 function getSessionRowStatusInfo(session) {
   const liveStatus = getSessionStatusSummary(session).primary;
   if (liveStatus?.key === "running") return liveStatus;
-
-  const workflowState = typeof window !== "undefined"
-    && window.RemoteLabSessionStateModel
-    && typeof window.RemoteLabSessionStateModel.normalizeSessionWorkflowState === "function"
-    ? window.RemoteLabSessionStateModel.normalizeSessionWorkflowState(session?.workflowState || "")
-    : String(session?.workflowState || "").trim().toLowerCase();
-  if (workflowState !== "done") return null;
   const reviewStatus = getSessionReviewStatusInfo(session);
   if (!reviewStatus) return null;
   return {
     ...reviewStatus,
-    label: t("session.rowStatus.finished"),
+    label: t("session.rowStatus.review"),
   };
 }
 

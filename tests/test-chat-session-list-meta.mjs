@@ -54,7 +54,7 @@ const context = {
   t(key, vars = {}) {
     if (key === 'session.messagesTitle') return 'Messages in this session';
     if (key === 'session.messages') return `${vars.count} msg${vars.suffix || ''}`;
-    if (key === 'session.rowStatus.finished') return 'finished';
+    if (key === 'session.rowStatus.review') return 'review';
     return key;
   },
   esc(value) {
@@ -114,13 +114,18 @@ assert.equal(
 );
 assert.equal(
   JSON.stringify(context.getSessionRowStatusInfo({ workflowState: 'done', reviewStatus: unreadStatus })),
-  JSON.stringify({ ...unreadStatus, label: 'finished' }),
-  'completed unread work should render an explicit finished status',
+  JSON.stringify({ ...unreadStatus, label: 'review' }),
+  'completed unread work should render an explicit review status',
 );
 assert.equal(
-  context.getSessionRowStatusInfo({ workflowState: 'waiting_user', reviewStatus: unreadStatus }),
-  null,
-  'unread status should stay hidden unless the session is completed',
+  JSON.stringify(context.getSessionRowStatusInfo({ workflowState: 'waiting_user', reviewStatus: unreadStatus })),
+  JSON.stringify({ ...unreadStatus, label: 'review' }),
+  'new results should remain visible for review even when workflow classification is not done',
+);
+assert.equal(
+  JSON.stringify(context.getSessionRowStatusInfo({ workflowState: '', reviewStatus: unreadStatus })),
+  JSON.stringify({ ...unreadStatus, label: 'review' }),
+  'new results should become reviewable immediately before workflow classification completes',
 );
 assert.equal(
   context.getSessionRowStatusInfo({ workflowState: 'done' }),
@@ -142,12 +147,12 @@ assert.equal(
 assert.equal(
   context.renderSessionStatusIndicator({
     key: 'unread',
-    label: 'finished',
+    label: 'review',
     className: 'status-unread',
     title: 'New result',
   }),
-  '<span class="session-row-status status-unread" title="New result"><span class="session-status-dot" aria-hidden="true"></span>finished</span>',
-  'finished sessions should pair the attention dot with a visible text label',
+  '<span class="session-row-status status-unread" title="New result"><span class="session-status-dot" aria-hidden="true"></span>review</span>',
+  'sessions with unchecked results should pair the attention dot with a visible text label',
 );
 
 console.log('test-chat-session-list-meta: ok');
