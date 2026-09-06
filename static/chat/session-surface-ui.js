@@ -230,11 +230,11 @@ function renderSessionStatusHtml(statusInfo) {
   return `<span class="${statusInfo.className}"${title}>● ${esc(statusInfo.label)}</span>`;
 }
 
-function renderSessionStatusDot(statusInfo) {
+function renderSessionStatusIndicator(statusInfo) {
   if (!statusInfo?.label || statusInfo.key === "idle") return "";
   const statusClass = statusInfo.className ? ` ${statusInfo.className}` : "";
   const title = statusInfo.title || statusInfo.label;
-  return `<span class="session-status-dot${statusClass}" title="${esc(title)}" aria-label="${esc(statusInfo.label)}"></span>`;
+  return `<span class="session-row-status${statusClass}" title="${esc(title)}"><span class="session-status-dot" aria-hidden="true"></span>${esc(statusInfo.label)}</span>`;
 }
 
 function getSessionRowStatusInfo(session) {
@@ -247,7 +247,12 @@ function getSessionRowStatusInfo(session) {
     ? window.RemoteLabSessionStateModel.normalizeSessionWorkflowState(session?.workflowState || "")
     : String(session?.workflowState || "").trim().toLowerCase();
   if (workflowState !== "done") return null;
-  return getSessionReviewStatusInfo(session);
+  const reviewStatus = getSessionReviewStatusInfo(session);
+  if (!reviewStatus) return null;
+  return {
+    ...reviewStatus,
+    label: t("session.rowStatus.finished"),
+  };
 }
 
 function createActiveSessionItem(session) {
@@ -265,7 +270,7 @@ function createActiveSessionItem(session) {
   const displayName = getSessionDisplayName(session);
   const metaParts = buildSessionMetaParts(session);
   const countHtml = metaParts.join("");
-  const statusDotHtml = renderSessionStatusDot(displayStatusInfo);
+  const statusIndicatorHtml = renderSessionStatusIndicator(displayStatusInfo);
   const pinTitle = session.pinned ? t("action.unpin") : t("action.pin");
 
   const description = typeof session?.description === "string" ? session.description.trim() : "";
@@ -286,7 +291,7 @@ function createActiveSessionItem(session) {
   div.innerHTML = `
     <div class="session-item-info">
       <div class="session-item-title-row">
-        ${statusDotHtml}
+        ${statusIndicatorHtml}
         <div class="session-item-name">${esc(displayName)}</div>
         <div class="session-item-actions">
           <button class="session-action-btn rename" type="button" title="${esc(t("action.rename"))}" aria-label="${esc(t("action.rename"))}" data-id="${session.id}">${renderUiIcon("edit")}</button>

@@ -46,6 +46,7 @@ function extractFunctionSource(source, functionName) {
 const renderSessionMessageCountSource = extractFunctionSource(sessionSurfaceUiSource, 'renderSessionMessageCount');
 const buildSessionMetaPartsSource = extractFunctionSource(sessionSurfaceUiSource, 'buildSessionMetaParts');
 const getSessionRowStatusInfoSource = extractFunctionSource(sessionSurfaceUiSource, 'getSessionRowStatusInfo');
+const renderSessionStatusIndicatorSource = extractFunctionSource(sessionSurfaceUiSource, 'renderSessionStatusIndicator');
 
 const state = { scopeCalls: 0, statusCalls: 0 };
 const context = {
@@ -53,6 +54,7 @@ const context = {
   t(key, vars = {}) {
     if (key === 'session.messagesTitle') return 'Messages in this session';
     if (key === 'session.messages') return `${vars.count} msg${vars.suffix || ''}`;
+    if (key === 'session.rowStatus.finished') return 'finished';
     return key;
   },
   esc(value) {
@@ -76,7 +78,7 @@ const context = {
 };
 context.globalThis = context;
 vm.runInNewContext(
-  `${renderSessionMessageCountSource}\n${buildSessionMetaPartsSource}\n${getSessionRowStatusInfoSource}\nglobalThis.renderSessionMessageCount = renderSessionMessageCount;\nglobalThis.buildSessionMetaParts = buildSessionMetaParts;\nglobalThis.getSessionRowStatusInfo = getSessionRowStatusInfo;`,
+  `${renderSessionMessageCountSource}\n${buildSessionMetaPartsSource}\n${getSessionRowStatusInfoSource}\n${renderSessionStatusIndicatorSource}\nglobalThis.renderSessionMessageCount = renderSessionMessageCount;\nglobalThis.buildSessionMetaParts = buildSessionMetaParts;\nglobalThis.getSessionRowStatusInfo = getSessionRowStatusInfo;\nglobalThis.renderSessionStatusIndicator = renderSessionStatusIndicator;`,
   context,
   { filename: 'static/chat/session-surface-ui.js' },
 );
@@ -111,9 +113,9 @@ assert.equal(
   'queued and other transient states should not add decorative row dots',
 );
 assert.equal(
-  context.getSessionRowStatusInfo({ workflowState: 'done', reviewStatus: unreadStatus }),
-  unreadStatus,
-  'completed unread work should render one attention dot',
+  JSON.stringify(context.getSessionRowStatusInfo({ workflowState: 'done', reviewStatus: unreadStatus })),
+  JSON.stringify({ ...unreadStatus, label: 'finished' }),
+  'completed unread work should render an explicit finished status',
 );
 assert.equal(
   context.getSessionRowStatusInfo({ workflowState: 'waiting_user', reviewStatus: unreadStatus }),
@@ -124,6 +126,28 @@ assert.equal(
   context.getSessionRowStatusInfo({ workflowState: 'done' }),
   null,
   'reviewed completed work should not render a dot',
+);
+
+assert.equal(
+  context.renderSessionStatusIndicator({
+    key: 'running',
+    label: 'running',
+    className: 'status-running',
+    title: 'Currently running',
+  }),
+  '<span class="session-row-status status-running" title="Currently running"><span class="session-status-dot" aria-hidden="true"></span>running</span>',
+  'running sessions should pair the pulsing dot with a visible text label',
+);
+
+assert.equal(
+  context.renderSessionStatusIndicator({
+    key: 'unread',
+    label: 'finished',
+    className: 'status-unread',
+    title: 'New result',
+  }),
+  '<span class="session-row-status status-unread" title="New result"><span class="session-status-dot" aria-hidden="true"></span>finished</span>',
+  'finished sessions should pair the attention dot with a visible text label',
 );
 
 console.log('test-chat-session-list-meta: ok');

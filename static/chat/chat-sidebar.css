@@ -393,6 +393,17 @@
   text-overflow: ellipsis;
 }
 .session-item-count { font-variant-numeric: tabular-nums; }
+.session-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
 .session-status-dot {
   width: 7px;
   height: 7px;
@@ -400,8 +411,10 @@
   flex: 0 0 7px;
   background: var(--text-muted);
 }
-.session-status-dot.status-running { background: var(--success); animation: pulse 1.5s infinite; }
-.session-status-dot.status-unread { background: var(--notice); }
+.session-row-status.status-running { color: var(--success); }
+.session-row-status.status-running .session-status-dot { background: var(--success); animation: pulse 1.5s infinite; }
+.session-row-status.status-unread { color: var(--notice); }
+.session-row-status.status-unread .session-status-dot { background: var(--notice); }
 
 /* Session description line */
 .session-item-description {

@@ -21,6 +21,15 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-06 — Session execution state needs text, not color alone
+
+- Source: direct owner feedback while reading the live mobile Session list.
+- User slice: mobile-first owner monitoring work across active Sessions.
+- Observed friction or ask: the compact sidebar reduced running and completed-result state to small colored dots, making progress hard to understand and requiring users to remember color meanings.
+- Signal strength: concrete production usability failure after the compact status treatment shipped.
+- Product implication: keep the compact row, but pair the green running indicator with `running` and the completed-unread indicator with `finished`; color may reinforce state but must not carry the meaning alone.
+- Promote to: Session-list accessibility and mobile status defaults.
+
 ### 2026-09-04 — Automated tasks must not append control prompts to an existing conversation
 
 - Source: direct owner feedback after a one-time WeChat reminder trigger inserted its internal execution instruction as a visible user message in the conversation where the reminder was created.
