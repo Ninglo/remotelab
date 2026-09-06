@@ -19,7 +19,7 @@ const PI_PROVIDER_LABELS = Object.freeze({
   'zai-coding-cn': 'GLM Coding',
 });
 const PI_PROVIDER_RECOMMENDATIONS = Object.freeze({
-  'openai-codex': Object.freeze({ modelId: 'gpt-5.6-sol', effort: 'xhigh' }),
+  'openai-codex': Object.freeze({ modelId: 'gpt-6-astra', effort: 'max' }),
   'glm-api': Object.freeze({ modelId: 'glm-5.3', effort: 'max' }),
   moonshotai: Object.freeze({ modelId: 'kimi-k3', effort: 'max' }),
 });

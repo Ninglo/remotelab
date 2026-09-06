@@ -19,6 +19,39 @@ const { createToolInvocation } = await import('../chat/process-runner.mjs');
 const ids = CODEX_MODEL_CATALOG.map((model) => `openai-codex/${model.id}`);
 
 try {
+  const baselineCosts = Object.fromEntries(getPiBaselineModels().map((model) => [model.id, model.cost]));
+  assert.deepEqual(
+    baselineCosts['gpt-5.6-sol'],
+    {
+      input: 4,
+      output: 20,
+      cacheRead: 0.4,
+      cacheWrite: 5,
+      tiers: [{ inputTokensAbove: 272000, input: 8, output: 30, cacheRead: 0.8, cacheWrite: 10 }],
+    },
+    'GPT-5.6 Sol should expose current promotional Standard and long-context rates',
+  );
+  assert.deepEqual(
+    [baselineCosts['gpt-5.6-terra'], baselineCosts['gpt-5.6-luna']],
+    [
+      {
+        input: 2,
+        output: 12,
+        cacheRead: 0.2,
+        cacheWrite: 2.5,
+        tiers: [{ inputTokensAbove: 272000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5 }],
+      },
+      {
+        input: 0.2,
+        output: 1.2,
+        cacheRead: 0.02,
+        cacheWrite: 0.25,
+        tiers: [{ inputTokensAbove: 272000, input: 0.4, output: 1.8, cacheRead: 0.04, cacheWrite: 0.5 }],
+      },
+    ],
+    'GPT-5.6 Terra and Luna should expose current Standard and long-context rates',
+  );
+
   const local = {
     providers: {
       'openai-codex': {
@@ -97,13 +130,19 @@ if (process.argv.includes('--list-models')) {
   assert(found.models.some((model) => model.id === 'deepseek/deepseek-chat'));
   assert(!found.models.some((model) => model.provider === 'openai'));
   assert.equal(found.defaultModel, 'openai-codex/gpt-5.6-sol');
-  assert.equal(found.models[1].reasoning.default, 'xhigh');
+  assert.equal(found.models[0].id, 'openai-codex/gpt-6-astra');
+  assert.equal(found.models[0].providerDefault, true);
+  assert.equal(found.models[0].reasoning.default, 'max');
+  assert.equal(found.models[1].providerDefault, undefined);
+  assert.equal(found.models[1].reasoning.default, 'medium');
   assert(!found.models.some((model) => model.effortLevels?.includes('ultra')));
 
   for (const scenario of ['empty', 'text', 'failed']) {
     const result = await discoverPiModels({ command, env: { ...env, TEST_PI_SCENARIO: scenario }, refresh: true });
     assert.deepEqual(result.models.map((model) => model.id), ids, scenario);
     assert.deepEqual(result.models[0].effortLevels, ['low', 'medium', 'high', 'xhigh', 'max']);
+    assert.equal(result.models[0].reasoning.default, 'max');
+    assert.equal(result.models[0].providerDefault, true);
     assert(!result.models.some((model) => model.effortLevels?.includes('ultra')));
     assert.equal(Boolean(result.discoveryError), scenario === 'failed');
   }

@@ -164,7 +164,7 @@ try {
 
   const codex56Metrics = await readLatestCodexSessionMetrics(codexThreadId, { model: 'gpt-5.6-sol' });
   assert.ok(codex56Metrics, 'Codex session metrics should support GPT-5.6 pricing when the run model is known');
-  assert.equal(codex56Metrics.estimatedCostUsd, 0.088171, 'Codex metrics should estimate GPT-5.6-Sol cost from input/cache/output tokens');
+  assert.equal(codex56Metrics.estimatedCostUsd, 0.068413, 'Codex metrics should estimate GPT-5.6-Sol cost from current promotional input/cache/output rates');
   assert.equal(codex56Metrics.estimatedCostModel, 'gpt-5.6-sol', 'Codex metrics should annotate GPT-5.6-Sol pricing when selected');
   assert.equal(codex56Metrics.costSource, 'estimated_gpt_5_6_sol', 'Codex metrics should expose the GPT-5.6-Sol estimate source');
 

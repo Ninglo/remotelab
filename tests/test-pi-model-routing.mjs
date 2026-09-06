@@ -33,9 +33,31 @@ assert.equal(catalog[1].providerLabel, 'DeepSeek');
 const rpcCatalog = parsePiRpcModels([
   {
     provider: 'openai-codex',
+    id: 'gpt-6-astra',
+    reasoning: true,
+    thinkingLevelMap: {
+      off: null,
+      minimal: 'low',
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max',
+    },
+  },
+  {
+    provider: 'openai-codex',
     id: 'gpt-5.6-sol',
     reasoning: true,
-    thinkingLevelMap: { minimal: 'low', xhigh: 'xhigh', max: 'max' },
+    thinkingLevelMap: {
+      off: null,
+      minimal: null,
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max',
+    },
   },
   {
     provider: 'moonshotai',
@@ -94,13 +116,23 @@ assert.deepEqual(
   })),
   [
     {
+      id: 'openai-codex/gpt-6-astra',
+      provider: 'openai-codex',
+      levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      control: '',
+      default: 'max',
+      defaultEffort: 'max',
+      providerDefault: true,
+      kind: 'enum',
+    },
+    {
       id: 'openai-codex/gpt-5.6-sol',
       provider: 'openai-codex',
-      levels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      levels: ['low', 'medium', 'high', 'xhigh', 'max'],
       control: '',
-      default: 'xhigh',
-      defaultEffort: 'xhigh',
-      providerDefault: true,
+      default: 'medium',
+      defaultEffort: 'medium',
+      providerDefault: false,
       kind: 'enum',
     },
     {
@@ -179,6 +211,23 @@ assert.deepEqual(
   resolvePiModelRoute('gpt-5.6-sol'),
   { provider: 'openai-codex', model: 'gpt-5.6-sol' },
   'legacy unqualified Pi model selections should stay on the Codex login path',
+);
+assert.deepEqual(
+  buildPiArgs('Ping', {
+    provider: 'openai-codex',
+    model: 'gpt-6-astra',
+    thinking: 'max',
+  }),
+  [
+    '--mode', 'json',
+    '--provider', 'openai-codex',
+    '--approve',
+    '--no-session',
+    '--model', 'gpt-6-astra',
+    '--thinking', 'max',
+    'Ping',
+  ],
+  'GPT-6 Astra should keep the Codex subscription route and recommended max reasoning effort',
 );
 assert.deepEqual(
   buildPiArgs('Ping', {
