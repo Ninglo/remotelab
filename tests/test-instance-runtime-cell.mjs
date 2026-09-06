@@ -26,6 +26,7 @@ assert.equal(runtimeEnv.LARKSUITE_CLI_NO_UPDATE_NOTIFIER, '1');
 assert.equal(runtimeEnv.LARKSUITE_CLI_NO_SKILLS_NOTIFIER, '1');
 
 const calls = [];
+const cliPolicy = { strictMode: 'off', defaultAs: 'user' };
 const tempRoot = mkdtempSync(join(tmpdir(), 'remotelab-runtime-cell-'));
 const testConfigDir = join(tempRoot, 'config', 'lark-cli');
 try {
@@ -37,6 +38,8 @@ try {
     cliPath: join(projectRoot, 'node_modules', '.bin', 'lark-cli'),
     runCommand: async (request) => {
       calls.push(request);
+      if (request.args[1] === 'strict-mode') cliPolicy.strictMode = request.args[2];
+      if (request.args[1] === 'default-as') cliPolicy.defaultAs = request.args[2];
       return { stdout: '', stderr: '' };
     },
   });
@@ -44,14 +47,14 @@ try {
   rmSync(tempRoot, { recursive: true, force: true });
 }
 
+assert.deepEqual(cliPolicy, { strictMode: 'off', defaultAs: 'user' },
+  'connector startup must preserve the CLI identity policy and the owner-selected default');
 assert.deepEqual(
   calls.map((call) => call.args),
   [
     ['config', 'init', '--app-id', 'cli_test', '--app-secret-stdin', '--brand', 'feishu'],
-    ['config', 'strict-mode', 'bot', '--global'],
-    ['config', 'default-as', 'bot'],
   ],
-  'the instance profile should be initialized once and pinned to Bot identity for all in-cell tools',
+  'initialize the instance app credentials without pinning all CLI operations to Bot identity',
 );
 assert.equal(calls[0].stdin, 'secret_test\n');
 for (const call of calls) {

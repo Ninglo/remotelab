@@ -69,7 +69,7 @@ await initializeFeishuInstanceRuntime({
 }, {
   ensureProfile: async (options) => {
     initializedRuntimeProfile = options;
-    return { configDir: options.configDir, identity: 'bot', strictMode: 'bot' };
+    return { configDir: options.configDir, appId: options.appId };
   },
 });
 assert.equal(initializedRuntimeProfile.configDir, join(tempHome, 'config', 'lark-cli'));

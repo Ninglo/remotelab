@@ -123,20 +123,28 @@ environment contract, and one instance-owned lark-cli config directory. The
 connector initializes that config from its existing Bot credentials at startup;
 the App Secret is never copied into a prompt.
 
-The instance profile is pinned to Bot identity. The harness can inspect it and
-follow the CLI's version-matched workflow before using any Feishu capability:
+RemoteLab does not pin the CLI to Bot identity or reset the owner's default.
+The harness can inspect authorized identities and follow the CLI's
+version-matched workflow before using any Feishu capability:
 
 ```bash
-lark-cli config show
+lark-cli profile list
+lark-cli auth status --json --verify
 lark-cli skills read lark-doc
 lark-cli docs +fetch --doc <docx-or-wiki-url>
 ```
 
 This is not an API proxy or a handwritten permission bridge. `lark-cli` talks
-to Feishu directly with the Bot app's complete published scope, so adding Base,
+to Feishu directly with the selected Bot or user identity's actual authorization, so adding Base,
 Doc write, Sheets, Drive, or another supported capability does not require a
 new RemoteLab connector tool. The real security boundary is the instance's OS
 user and filesystem sandbox; sibling Bot instances do not share profiles.
+User access requires a user to authorize the app; receiving a message from that
+person does not supply their user token. A user login belongs to the instance,
+not automatically to each sender in a group. For legacy deployments explicitly
+authorized to remove the former Bot-only policy, use the CLI's
+`config strict-mode off --global` and `config default-as auto` in that instance.
+Connector startup preserves these choices rather than reapplying restrictions.
 
 ### Multiple Bot discovery and targeted maintenance
 
@@ -215,9 +223,9 @@ Notes:
   use it to name the Bot's role, activate relevant context, and guide behavior
 - a Bot prompt is an attention/context boundary; the instance runtime cell is
   the host security and capability boundary
-- the connector initializes the instance-owned `lark-cli` profile in Bot-only
-  mode, while RemoteLab makes the packaged binary and that same profile visible
-  to harness processes
+- the connector initializes the instance-owned `lark-cli` app credentials
+  without overriding identity policy or defaults; RemoteLab makes the packaged
+  binary and that same config visible to harness processes
 - `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
   deferred results return through the Bot that owns the originating conversation
 - `processingReaction` lets the bot add a quick reaction on the user's message before the real reply lands; by default it uses `THINKING` and keeps it attached as a lightweight ack marker
