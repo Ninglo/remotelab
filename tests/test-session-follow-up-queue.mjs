@@ -12,6 +12,7 @@ const home = mkdtempSync(join(tmpdir(), 'remotelab-follow-up-queue-'));
 const configDir = join(home, '.config', 'remotelab');
 const binDir = join(home, '.local', 'bin');
 const fakeCodexPath = join(binDir, 'fake-codex');
+const releasePath = join(home, 'release-fake-codex');
 
 mkdirSync(configDir, { recursive: true });
 mkdirSync(binDir, { recursive: true });
@@ -19,10 +20,15 @@ mkdirSync(binDir, { recursive: true });
 writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
-const delay = Number(process.env.FAKE_CODEX_DELAY_MS || '120');
+const { existsSync } = require('node:fs');
+const releasePath = ${JSON.stringify(releasePath)};
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'thread-test' }));
 console.log(JSON.stringify({ type: 'turn.started' }));
-setTimeout(() => {
+const timeout = setTimeout(() => process.exit(1), 15000);
+const poll = setInterval(() => {
+  if (!existsSync(releasePath)) return;
+  clearInterval(poll);
+  clearTimeout(timeout);
   console.log(JSON.stringify({
     type: 'item.completed',
     item: { type: 'agent_message', text: 'reply from fake codex' },
@@ -31,7 +37,7 @@ setTimeout(() => {
     type: 'turn.completed',
     usage: { input_tokens: 1, output_tokens: 1 },
   }));
-}, delay);
+}, 25);
 `,
   'utf8',
 );
@@ -63,7 +69,6 @@ writeFileSync(
 
 setIsolatedTestHome(home);
 process.env.PATH = `${binDir}:${process.env.PATH}`;
-process.env.FAKE_CODEX_DELAY_MS = '120';
 
 const sessionManager = await import(
   pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href
@@ -166,6 +171,7 @@ try {
   });
   assert.equal(queuedSecond.queued, true, 'multiple follow-ups should continue to queue');
 
+  // Keep execution blocked until every pending-queue assertion has finished.
   const queuedSession = await getSession(session.id, { includeQueuedMessages: true });
   assert.equal(queuedSession?.activity?.queue?.count, 2, 'session detail should expose queued follow-up count');
   assert.equal(queuedSession?.queuedMessages?.length, 2, 'session detail should expose queued follow-up bodies');
@@ -175,6 +181,8 @@ try {
     2,
     'session list should expose queued follow-up count',
   );
+
+  writeFileSync(releasePath, 'release');
 
   await waitFor(
     async () => {
