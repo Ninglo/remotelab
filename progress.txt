@@ -1,0 +1,1 @@
+2026-09-07: Completed the shared first-reply session entry link for connector-backed sessions. The link is projected outside model output, requires an absolute public URL, survives attachment-specific reply normalization, and is omitted from later turns.

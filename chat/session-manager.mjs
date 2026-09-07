@@ -1,7 +1,8 @@
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
-import { IS_GUEST_INSTANCE, PUBLIC_BASE_URL } from '../lib/config.mjs';
+import { IS_GUEST_INSTANCE } from '../lib/config.mjs';
+import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
@@ -401,14 +402,6 @@ function generateId() {
 function buildForkSessionName(session) {
   const sourceName = typeof session?.name === 'string' ? session.name.trim() : '';
   return `fork - ${sourceName || 'session'}`;
-}
-
-function buildSessionNavigationHref(sessionId) {
-  const normalized = typeof sessionId === 'string' ? sessionId.trim() : '';
-  const path = !normalized
-    ? '/?tab=sessions'
-    : `/?session=${encodeURIComponent(normalized)}&tab=sessions`;
-  return PUBLIC_BASE_URL ? `${PUBLIC_BASE_URL}${path}` : path;
 }
 
 function buildDelegationNoticeMessage(task, childSession) {
@@ -2154,9 +2147,13 @@ async function queueTriggerSourceDelivery(sessionId, finalizedRun, manifest) {
     text = `定时任务执行失败：${trimString(finalizedRun?.failureReason) || '模型运行失败'}`;
   } else if (finalizedRun?.state === 'completed') {
     const latestRun = await getRun(finalizedRun.id) || finalizedRun;
+    const latestSession = await getSession(sessionId);
     const history = await loadHistory(sessionId, { includeBodies: true });
     const payloadHistory = collectReplyPublicationHistory(history, latestRun);
-    const payload = buildReplyPublicationPayload(payloadHistory, latestRun);
+    const payload = buildReplyPublicationPayload(payloadHistory, latestRun, {
+      session: latestSession,
+      fullHistory: history,
+    });
     text = trimString(payload.text);
     if (!text) return null;
   } else {
@@ -2412,7 +2409,11 @@ async function buildReplyPublicationFromRun(sessionId, rootRun, responseId, hist
 
   if (summary.ready) {
     const payloadHistory = collectReplyPublicationHistory(loadedHistory, rootRun);
-    summary.payload = buildReplyPublicationPayload(payloadHistory, rootRun);
+    const session = await getSession(sessionId);
+    summary.payload = buildReplyPublicationPayload(payloadHistory, rootRun, {
+      session,
+      fullHistory: loadedHistory,
+    });
   }
 
   return summary;

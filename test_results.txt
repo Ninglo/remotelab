@@ -1,0 +1,17 @@
+2026-09-07 connector first-reply session link verification
+
+- Expected-failure gate:
+  - test-connector-session-flow failed because attachment-mode normalization dropped sessionEntry.
+  - test-reply-publication failed because connector publications had no sessionEntry.
+- Targeted verification:
+  - node scripts/run-with-clean-instance-env.mjs node tests/test-connector-session-flow.mjs: PASS
+  - node scripts/run-with-clean-instance-env.mjs node tests/test-reply-publication.mjs: PASS
+  - node scripts/run-with-clean-instance-env.mjs node tests/test-agent-mail-reply.mjs: PASS
+- Full verification:
+  - npm test: PASS
+  - smoke suite: PASS
+  - merge-safety suite: PASS
+  - shared-tools suite: PASS
+- Static checks:
+  - git diff --check: PASS
+  - node --check on all changed shipped modules: PASS

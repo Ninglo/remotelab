@@ -3,6 +3,10 @@ import {
   getAssistantReplyAttachments,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
+import {
+  appendSessionEntryFooter,
+  buildSessionEntry,
+} from '../lib/session-navigation.mjs';
 import { buildSessionDisplayEvents } from './session-display-events.mjs';
 
 function trimString(value) {
@@ -165,15 +169,50 @@ function buildPayloadText(displayEvents = []) {
   return parts.join('\n\n').trim();
 }
 
-export function buildReplyPublicationPayload(history = [], rootRun = {}) {
+function sameHistoryEvent(left, right) {
+  if (!left || !right) return false;
+  if (Number.isInteger(left.seq) && Number.isInteger(right.seq)) {
+    return left.seq === right.seq;
+  }
+  return left === right;
+}
+
+function isFirstUserTurnPublication(history, rootRun, fullHistory) {
+  const completeHistory = Array.isArray(fullHistory) ? fullHistory : history;
+  const firstUserEvent = completeHistory.find((event) => event?.type === 'message' && event.role === 'user');
+  if (!firstUserEvent) return false;
+
+  for (const responseId of getRunResponseIds(rootRun)) {
+    const publicationUserEvent = resolveReplyPublicationUserEvent(completeHistory, responseId);
+    if (sameHistoryEvent(firstUserEvent, publicationUserEvent)) return true;
+  }
+
+  const publicationUserEvent = history.find((event) => event?.type === 'message' && event.role === 'user');
+  return sameHistoryEvent(firstUserEvent, publicationUserEvent);
+}
+
+export function buildReplyPublicationPayload(history = [], rootRun = {}, {
+  session = null,
+  fullHistory = history,
+} = {}) {
   const displayEvents = buildSessionDisplayEvents(history, { sessionRunning: false })
     .filter((event) => event?.role === 'assistant')
     .filter((event) => event.type === 'message' || event.type === 'attachment_delivery');
 
-  return {
+  const payload = {
     responseIds: getRunResponseIds(rootRun),
     displayEvents,
     attachments: collectPayloadAttachments(displayEvents),
     text: buildPayloadText(displayEvents),
   };
+
+  if (isFirstUserTurnPublication(history, rootRun, fullHistory)) {
+    const sessionEntry = buildSessionEntry(session);
+    if (sessionEntry) {
+      payload.sessionEntry = sessionEntry;
+      payload.text = appendSessionEntryFooter(payload.text, sessionEntry);
+    }
+  }
+
+  return payload;
 }

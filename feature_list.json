@@ -1,0 +1,7 @@
+[
+  {
+    "id": "connector-first-reply-session-link",
+    "description": "Add the RemoteLab session URL to the first reply from a connector-created session only.",
+    "pass": true
+  }
+]

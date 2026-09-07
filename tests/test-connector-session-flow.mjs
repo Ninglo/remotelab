@@ -4,6 +4,7 @@ import assert from 'assert/strict';
 import {
   assertConnectorPublicationReady,
   createConnectorSession,
+  normalizeConnectorPublicationText,
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
 
@@ -146,6 +147,22 @@ await assert.rejects(
   'bounded waits should keep their overall deadline during a transport outage',
 );
 assert.ok(outagePollCalls > 1);
+
+const attachmentReplyText = normalizeConnectorPublicationText({
+  payload: {
+    text: '已完成\n\n查看会话详情和进度：https://remote.example.test/?session=session-1&tab=sessions',
+    displayEvents: [{ type: 'message', role: 'assistant', content: '已完成' }],
+    sessionEntry: {
+      url: 'https://remote.example.test/?session=session-1&tab=sessions',
+      label: '查看会话详情和进度',
+    },
+  },
+}, { includeAttachmentFallback: false });
+assert.equal(
+  attachmentReplyText,
+  '已完成\n\n查看会话详情和进度：https://remote.example.test/?session=session-1&tab=sessions',
+  'attachment-bearing connector replies should retain the shared session entry footer',
+);
 
 console.log('ok - connector session flow supports fork and explicit fresh-create fallback');
 console.log('ok - connector publication failures preserve provider reasons');

@@ -37,6 +37,7 @@ process.env.HOME = tempHome;
 process.env.REMOTELAB_CONFIG_DIR = configDir;
 process.env.REMOTELAB_WORK_ROOT_DIR = join(tempHome, 'workspace');
 process.env.REMOTELAB_MEMORY_WRITEBACK = 'off';
+process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://remote.example.test';
 delete process.env.REMOTELAB_INSTANCE_ROOT;
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
 
@@ -116,6 +117,45 @@ try {
   assert.ok(secondOutcome.run?.id, 'a later message should start a Harness run directly');
   assert.equal(secondOutcome.queued, false);
   assert.notEqual(secondOutcome.response?.state, 'checking');
+
+  const connectorSession = await createSession(tempHome, 'fake-codex', 'Feishu connector session', {
+    sourceId: 'feishu',
+    sourceName: 'Feishu',
+    externalTriggerId: 'feishu:topic:chat-1:thread-1',
+  });
+  const firstConnectorOutcome = await sendMessage(connectorSession.id, '首轮消息。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+  await waitFor(
+    async () => (await getSessionReplyPublication(connectorSession.id, firstConnectorOutcome.response?.id))?.state === 'ready',
+    'first connector reply publication to become ready',
+  );
+  const firstConnectorPublication = await getSessionReplyPublication(
+    connectorSession.id,
+    firstConnectorOutcome.response?.id,
+  );
+  const expectedSessionUrl = `https://remote.example.test/?session=${connectorSession.id}&tab=sessions`;
+  assert.equal(firstConnectorPublication?.payload?.sessionEntry?.url, expectedSessionUrl);
+  assert.match(firstConnectorPublication?.payload?.text || '', /\u67e5\u770b\u4f1a\u8bdd\u8be6\u60c5\u548c\u8fdb\u5ea6/);
+  assert.match(firstConnectorPublication?.payload?.text || '', new RegExp(connectorSession.id));
+
+  const laterConnectorOutcome = await sendMessage(connectorSession.id, '后续消息。', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+  });
+  await waitFor(
+    async () => (await getSessionReplyPublication(connectorSession.id, laterConnectorOutcome.response?.id))?.state === 'ready',
+    'later connector reply publication to become ready',
+  );
+  const laterConnectorPublication = await getSessionReplyPublication(
+    connectorSession.id,
+    laterConnectorOutcome.response?.id,
+  );
+  assert.equal(laterConnectorPublication?.payload?.sessionEntry, undefined);
+  assert.doesNotMatch(laterConnectorPublication?.payload?.text || '', new RegExp(connectorSession.id));
 } finally {
   killAll();
   rmSync(tempHome, { recursive: true, force: true });
