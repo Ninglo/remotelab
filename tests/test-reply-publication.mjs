@@ -14,6 +14,12 @@ mkdirSync(configDir, { recursive: true });
 
 const fakeCodexPath = join(tempBin, 'fake-codex');
 writeFileSync(fakeCodexPath, `#!/usr/bin/env node
+if (process.argv.join(' ').includes('hold-entry-notice')) {
+  const fs = require('node:fs');
+  while (!fs.existsSync(${JSON.stringify(join(tempHome, 'release-entry-test'))})) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+  }
+}
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'reply-publication-thread' }));
 console.log(JSON.stringify({ type: 'turn.started' }));
 console.log(JSON.stringify({
@@ -47,8 +53,12 @@ const {
   getSessionReplyPublication,
   killAll,
   sendMessage,
+  submitHttpMessage,
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
 const { getRun } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
+const { requests } = await import('../chat/requests.mjs');
+const { claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
+const { buildSessionEntryDeliveries } = await import('../chat/session-entry-notification.mjs');
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -115,11 +125,28 @@ try {
     sourceName: 'Feishu',
     externalTriggerId: 'feishu:topic:chat-1:thread-1',
   });
-  const firstConnectorOutcome = await sendMessage(connectorSession.id, '首轮消息。', [], {
+  const connectorOptions = {
+    requestId: 'connector-first',
     tool: 'fake-codex',
     model: 'fake-model',
     effort: 'low',
-  });
+    sourceDelivery: { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'test-chat', messageId: 'first-message', threadId: 'test-thread' } },
+  };
+  assert.deepEqual(buildSessionEntryDeliveries(connectorSession, { userMessageCount: 1 }, connectorOptions), [], 'pre-existing history never gets a retroactive notice');
+  assert.deepEqual(buildSessionEntryDeliveries(connectorSession, { userMessageCount: 0 }, { ...connectorOptions, internalOperation: 'trigger_delivery' }), []);
+  assert.deepEqual(buildSessionEntryDeliveries(connectorSession, { userMessageCount: 0 }, { ...connectorOptions, recordUserMessage: false }), []);
+  assert.deepEqual(buildSessionEntryDeliveries(session, { userMessageCount: 0 }, connectorOptions), [], 'browser sessions do not receive connector notices');
+  const firstConnectorOutcome = await submitHttpMessage(connectorSession.id, 'hold-entry-notice 首轮消息。', [], connectorOptions);
+  const expectedSessionUrl = `https://remote.example.test/?session=${connectorSession.id}&tab=sessions`;
+  const earlyClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' });
+  assert.equal(earlyClaim?.delivery?.kind, 'session_entry', 'entry can be sent while the first model response is still pending');
+  assert.ok(earlyClaim.delivery.text.includes(expectedSessionUrl));
+  assert.equal(earlyClaim.delivery.target.threadId, 'test-thread');
+  assert.equal((await requests.byResponse(connectorSession.id, firstConnectorOutcome.response.id)).result, null);
+  await completeSourceDelivery(earlyClaim.delivery.id, earlyClaim.leaseId, { externalId: 'early-entry-message' });
+  assert.equal((await submitHttpMessage(connectorSession.id, 'hold-entry-notice 首轮消息。', [], connectorOptions)).duplicate, true);
+  assert.equal(await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' }), null, 'replayed submission does not resend the link');
+  writeFileSync(join(tempHome, 'release-entry-test'), 'continue');
   await waitFor(
     async () => (await getSessionReplyPublication(connectorSession.id, firstConnectorOutcome.response?.id))?.state === 'ready',
     'first connector reply publication to become ready',
@@ -128,16 +155,15 @@ try {
     connectorSession.id,
     firstConnectorOutcome.response?.id,
   );
-  const expectedSessionUrl = `https://remote.example.test/?session=${connectorSession.id}&tab=sessions`;
-  assert.equal(firstConnectorPublication?.payload?.sessionEntry?.url, expectedSessionUrl);
-  assert.match(firstConnectorPublication?.payload?.text || '', /\u67e5\u770b\u4f1a\u8bdd\u8be6\u60c5\u548c\u8fdb\u5ea6/);
-  assert.match(firstConnectorPublication?.payload?.text || '', new RegExp(connectorSession.id));
+  assert.equal(firstConnectorPublication?.payload?.sessionEntry, undefined);
+  assert.equal(firstConnectorPublication?.payload?.text, '主 Harness 已经直接完成并交付结果。', 'final reply does not repeat the early entry');
+  const finalClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' });
+  assert.equal(finalClaim?.delivery?.kind, 'content');
+  assert.equal(finalClaim.delivery.text, firstConnectorPublication.payload.text);
+  await completeSourceDelivery(finalClaim.delivery.id, finalClaim.leaseId, { externalId: 'final-reply-message' });
 
-  const laterConnectorOutcome = await sendMessage(connectorSession.id, '后续消息。', [], {
-    tool: 'fake-codex',
-    model: 'fake-model',
-    effort: 'low',
-  });
+  const laterConnectorOutcome = await submitHttpMessage(connectorSession.id, '后续消息。', [], { ...connectorOptions, requestId: 'connector-later' });
+  assert.equal((await requests.byResponse(connectorSession.id, laterConnectorOutcome.response.id)).deliveries.length, 0);
   await waitFor(
     async () => (await getSessionReplyPublication(connectorSession.id, laterConnectorOutcome.response?.id))?.state === 'ready',
     'later connector reply publication to become ready',
@@ -148,6 +174,10 @@ try {
   );
   assert.equal(laterConnectorPublication?.payload?.sessionEntry, undefined);
   assert.doesNotMatch(laterConnectorPublication?.payload?.text || '', new RegExp(connectorSession.id));
+  const legacySession = await createSession(tempHome, 'fake-codex', 'Connector without outbox', { sourceId: 'wechat' });
+  const legacyOutcome = await sendMessage(legacySession.id, 'Normal reply.', [], { tool: 'fake-codex', model: 'fake-model' });
+  await waitFor(async () => (await getSessionReplyPublication(legacySession.id, legacyOutcome.response.id))?.state === 'ready', 'legacy connector response');
+  assert.ok((await getSessionReplyPublication(legacySession.id, legacyOutcome.response.id)).payload.sessionEntry?.url.includes(legacySession.id), 'adapters without the shared outbox retain their existing first-reply link');
   await waitFor(async () => (await getRunState(secondOutcome.run.id))?.finalizedAt, 'second request to finish');
 } finally {
   await killAll();

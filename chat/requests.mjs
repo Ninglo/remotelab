@@ -6,14 +6,21 @@ import { canonicalJson, createRecordStore, readRecord, serialQueue, writeDurable
 export const requestKey = (sessionId, requestId) => createHash('sha256')
   .update(JSON.stringify([sessionId, requestId])).digest('hex').slice(0, 24);
 
-function withResult(current, result, plans) {
+function appendDeliveries(current, plans) {
   const now = new Date().toISOString();
-  return { ...current, result, settledAt: now, postCompletionPending: !current.options.deliveryOnly && !current.options.internalOperation, deliveries: plans.map((plan, index) => ({
-    ...plan, id: `srcd_${current.key}_${index}`, responseId: current.responseId,
+  const existing = current.deliveries || [];
+  return [...existing, ...plans.map((plan, index) => ({
+    ...plan, id: `srcd_${current.key}_${existing.length + index}`, responseId: current.responseId,
     sessionId: current.sessionId, runId: current.runId,
     state: 'pending', attempts: 0, availableAt: now, createdAt: now,
     leaseId: '', claimedAt: '', externalId: '', lastError: '',
-  })) };
+  }))];
+}
+
+function withResult(current, result, plans) {
+  return { ...current, result, settledAt: new Date().toISOString(),
+    postCompletionPending: !current.options.deliveryOnly && !current.options.internalOperation,
+    deliveries: appendDeliveries(current, plans) };
 }
 
 export function createRequestStore(root) {
@@ -54,6 +61,14 @@ export function createRequestStore(root) {
     // A crash can leave an unused address, but cannot accept an unfindable request.
     await index('response', sessionId, initial.responseId, key);
     await index('run', '', initial.runId, key);
+    if (!options.deliveryOnly && !options.internalOperation && options.recordUserMessage !== false) {
+      // Reserve the first real input inside admission's queue, before either the
+      // accepted record or a runner is visible. The address survives archival.
+      const firstPath = indexPath('first-user-request', sessionId, 'first');
+      const first = await readRecord(firstPath);
+      if (!first) await index('first-user-request', sessionId, 'first', key);
+      if (!first || first.key === key) initial.deliveries = appendDeliveries(initial, input.initialDeliveries || []);
+    }
     const record = await records.mutate(key, () => input.result ? withResult(initial, input.result, input.plans || []) : initial);
     return { record, duplicate: false };
   });

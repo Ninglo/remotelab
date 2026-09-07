@@ -47,3 +47,31 @@ try {
   assert.equal((await store.byResponse('session', 'reply')).requestId, 'input', 'response lookup survives archive and restart');
   console.log('durable requests: response identity lookup survives archive');
 } finally { await rm(aliasesRoot, { recursive: true, force: true }); }
+
+const entryRoot = await mkdtemp(join(tmpdir(), 'remotelab-request-entry-'));
+try {
+  let store = createRequestStore(entryRoot);
+  const entry = { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'test-chat' }, kind: 'session_entry', text: 'Open session' };
+  const input = { sessionId: 'new-session', requestId: 'first', text: 'hello', initialDeliveries: [entry] };
+  const [first, second] = await Promise.all([
+    store.accept(input), store.accept({ ...input, requestId: 'second' }),
+  ]);
+  assert.equal(first.record.result, null);
+  assert.equal(first.record.deliveries.length, 1, 'entry is durable before execution or a result exists');
+  assert.equal(second.record.deliveries.length, 0, 'concurrent admission offers entry only once per session');
+  const deliveryId = first.record.deliveries[0].id;
+  await store.mutate(first.record.key, current => ({ ...current, deliveries: current.deliveries.map(d => ({ ...d, state: 'delivered', externalId: 'entry-receipt' })) }));
+  store = createRequestStore(entryRoot);
+  assert.equal((await store.accept(input)).duplicate, true);
+  await store.settle(first.record.key, { state: 'completed', payload: { text: 'answer' } }, [{ ...entry, kind: 'content', text: 'answer' }]);
+  const settled = await store.get(first.record.key);
+  assert.equal(settled.deliveries.length, 2);
+  assert.equal(settled.deliveries[0].id, deliveryId);
+  assert.equal(settled.deliveries[0].externalId, 'entry-receipt', 'settling retains the early receipt');
+  assert.notEqual(settled.deliveries[1].id, deliveryId);
+  await store.mutate(first.record.key, current => ({ ...current, releasedAt: 'now', postCompletionPending: false, deliveries: current.deliveries.map(d => ({ ...d, state: 'delivered' })) }));
+  await store.archiveFinished(first.record.key);
+  store = createRequestStore(entryRoot);
+  assert.equal((await store.accept({ ...input, requestId: 'third' })).record.deliveries.length, 0, 'archive and restart do not reset first-session delivery');
+  console.log('durable requests: early entry survives admission, concurrency, settlement, archive and restart');
+} finally { await rm(entryRoot, { recursive: true, force: true }); }

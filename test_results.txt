@@ -75,3 +75,24 @@ schedule materialization rejection. The gates above still exited 0.
 These checks verify isolated process recovery and mocked remote receipts;
 they do not establish host power-loss behavior or live Feishu delivery.
 See notes/current/connector-request-recovery.md for conversion/cutover limits.
+
+[2026-09-07 07:28] Early session entry notification
+Requirement: send the session URL before the first model result, once per session.
+Implementation: persist the notification with admission, keep its remote receipt
+when the completed reply is appended, and suppress that reply's old link footer.
+Expected failures before implementation:
+  AssertionError: entry is durable before execution or a result exists (0 !== 1)
+  AssertionError: entry can be sent while the first model response is still pending
+Verification command: npm test
+exit=0
+Relevant actual output:
+test-reply-publication: ok
+durable requests: early entry survives admission, concurrency, settlement, archive and restart
+delivery recovery: uncertainty, independent targets, lease fencing and partial attachment receipts passed
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+After integrating current main fe25fb3b:
+Feishu group routing tests passed
+git diff --check and node --check on changed shipped modules: exit=0
+Observability: the model is deliberately blocked until after the link has been
+claimed and acknowledged, and its persisted request result is asserted null.
+Live runtime: serviceCommit=91716eeb; requests/schema.json absent. Not restarted.

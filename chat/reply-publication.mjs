@@ -181,6 +181,7 @@ function isFirstUserTurnPublication(history, rootRun, fullHistory) {
 export function buildReplyPublicationPayload(history = [], rootRun = {}, {
   session = null,
   fullHistory = history,
+  includeSessionEntry = true,
 } = {}) {
   const displayEvents = buildSessionDisplayEvents(history, { sessionRunning: false })
     .filter((event) => event?.role === 'assistant')
@@ -193,7 +194,7 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
     text: buildPayloadText(displayEvents),
   };
 
-  if (isFirstUserTurnPublication(history, rootRun, fullHistory)) {
+  if (includeSessionEntry && isFirstUserTurnPublication(history, rootRun, fullHistory)) {
     const sessionEntry = buildSessionEntry(session);
     if (sessionEntry) {
       payload.sessionEntry = sessionEntry;

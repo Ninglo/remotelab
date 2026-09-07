@@ -1,5 +1,6 @@
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
+import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { requests } from './requests.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -1642,7 +1643,10 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   if (!record || record.result) return;
   if (run.state === 'completed') await maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents);
   const history = await loadHistory(sessionId, { includeBodies: true });
-  const payload = buildReplyPublicationPayload(collectReplyPublicationHistory(history, run), run, { session: await findSessionMeta(sessionId), fullHistory: history });
+  const payload = buildReplyPublicationPayload(collectReplyPublicationHistory(history, run), run, {
+    session: await findSessionMeta(sessionId), fullHistory: history,
+    includeSessionEntry: !record.deliveries.some(delivery => delivery.kind === 'session_entry'),
+  });
   const plan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
   const deliveryPayload = run.state === 'completed' ? payload : { text: run.state === 'cancelled' ? '任务已取消。' : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`, attachments: [] };
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null }, buildReplyDeliveries(plan, deliveryPayload).map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
@@ -3026,7 +3030,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (session.archived) throw Object.assign(new Error('Session is archived'), { code: 'SESSION_ARCHIVED' });
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
-  const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options });
+  const initialDeliveries = options.sourceDelivery
+    ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), options)
+    : [];
+  const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, initialDeliveries });
   const queued = !record.result && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
     const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';

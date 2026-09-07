@@ -1,5 +1,14 @@
 [
   {
+    "id": "connector-early-session-entry",
+    "name": "Early session entry notification",
+    "description": "Send a durable standalone session link at first request admission, before the model finishes; preserve receipts and omit the completed-reply footer.",
+    "verification_plan": "Block the fake model, claim and acknowledge the entry before its result exists, then verify no footer, duplicate/concurrent admission, archive/restart and full npm test.",
+    "status": "completed",
+    "pass": true,
+    "rollout": "Not deployed: production still uses the legacy runtime schema. Feishu uses the shared outbox; other adapters retain their existing first-reply footer."
+  },
+  {
     "id": "connector-first-reply-session-link",
     "description": "Add the RemoteLab session URL to the first reply from a connector-created session only.",
     "pass": true
