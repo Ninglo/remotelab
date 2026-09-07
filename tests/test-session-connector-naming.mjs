@@ -103,6 +103,6 @@ try {
 
   console.log('test-session-connector-naming: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

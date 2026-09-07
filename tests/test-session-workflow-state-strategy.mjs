@@ -224,6 +224,6 @@ try {
 
   console.log('test-session-workflow-state-strategy: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

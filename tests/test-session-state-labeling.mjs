@@ -148,7 +148,7 @@ assert.equal(
 );
 assert.equal(finished?.autoRenamePending, false, 'post-turn rename should clear autoRenamePending');
 
-killAll();
+await killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
 console.log('test-session-state-labeling: ok');

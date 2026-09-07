@@ -280,7 +280,7 @@ try {
 
   console.log('test-auto-compaction: ok');
 } finally {
-  killAll();
+  await killAll();
   delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   await removeTempHomeWithRetries();
 }

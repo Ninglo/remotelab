@@ -1406,7 +1406,7 @@ function isOwnerOnlyRoute(pathname, method) {
   if (pathname.startsWith('/api/triggers/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
   if (pathname === '/api/schedules' && ['GET', 'POST'].includes(method)) return true;
   if (pathname.startsWith('/api/schedules/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
-  if (pathname === '/api/source-deliveries' && method === 'GET') return true;
+  if (pathname === '/api/source-deliveries' && ['GET', 'POST'].includes(method)) return true;
   if (pathname === '/api/source-deliveries/claim' && method === 'POST') return true;
   if (pathname.startsWith('/api/source-deliveries/') && method === 'POST') return true;
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
@@ -1439,7 +1439,7 @@ function parseScheduleRoute(pathname) {
 }
 
 function parseSourceDeliveryRoute(pathname) {
-  const match = /^\/api\/source-deliveries\/(srcd_[a-f0-9]{24})\/(complete|fail)$/.exec(pathname || '');
+  const match = /^\/api\/source-deliveries\/(srcd_[a-f0-9]{24}_\d+)\/(complete|fail|resolve)$/.exec(pathname || '');
   return match ? { deliveryId: match[1], action: match[2] } : null;
 }
 

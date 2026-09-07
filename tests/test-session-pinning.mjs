@@ -77,7 +77,7 @@ assert.deepEqual(
 const repinnedAfterRestore = await setSessionPinned(older.id, true);
 assert.equal(repinnedAfterRestore?.pinned, true, 'restored sessions can be pinned again');
 
-killAll();
+await killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
 console.log('test-session-pinning: ok');

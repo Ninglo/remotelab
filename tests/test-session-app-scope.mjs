@@ -128,7 +128,7 @@ try {
     'source-scoped listing should isolate email sessions',
   );
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }
 

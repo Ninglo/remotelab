@@ -166,7 +166,7 @@ try {
   assert.equal(recoveredPublication.ready, true);
   assert.equal(recoveredPublication.payload?.text, 'recovered');
 } finally {
-  killAll();
+  await killAll();
   rmSync(home, { recursive: true, force: true });
 }
 

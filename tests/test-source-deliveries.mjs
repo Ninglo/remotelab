@@ -64,7 +64,7 @@ const duplicate = await enqueueSourceDelivery({
   sessionId: 'sess_test',
   triggerId: 'trg_test',
   sourceDelivery: plan,
-  text: 'ignored duplicate',
+  text: '今天日期：2026-07-27',
 });
 assert.equal(first.id, duplicate.id);
 assert.equal((await listSourceDeliveries()).length, 1);
@@ -76,6 +76,7 @@ assert.match(claim.leaseId, /^lease_[a-f0-9]{24}$/);
 const failed = await failSourceDelivery(first.id, claim.leaseId, new Error('temporary'), {
   now: '2026-07-27T00:00:00.000Z',
   retryDelayMs: 1,
+  safeToRetry: true,
 });
 assert.equal(failed.state, 'pending');
 assert.equal(failed.attempts, 1);

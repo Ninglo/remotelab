@@ -77,7 +77,7 @@ const cleared = await updateSessionGrouping(seeded.id, { group: '', description:
 assert.equal(cleared?.group, undefined, 'blank group updates should clear stored grouping');
 assert.equal(cleared?.description, undefined, 'blank description updates should clear stored description');
 
-killAll();
+await killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
 console.log('test-session-grouping: ok');

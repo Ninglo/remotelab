@@ -48,8 +48,8 @@ export function normalizeReplyPublicationResponseIds(values = [], fallback = '')
 
 export function getRunResponseIds(run = {}) {
   return normalizeReplyPublicationResponseIds(
-    run?.replyPublication?.responseIds,
-    trimString(run?.responseId),
+    [],
+    trimString(run?.responseId || run?.requestId),
   );
 }
 
@@ -103,21 +103,8 @@ export function resolveReplyPublicationUserEvent(history = [], responseId = '') 
   return null;
 }
 
-export function collectReplyPublicationRunIds(rootRun = {}) {
-  const runIds = [];
-  const seen = new Set();
-  for (const candidate of [
-    trimString(rootRun?.replyPublication?.rootRunId),
-    trimString(rootRun?.id),
-    ...(Array.isArray(rootRun?.replyPublication?.continuationRunIds) ? rootRun.replyPublication.continuationRunIds : []),
-    trimString(rootRun?.replyPublication?.finalRunId),
-  ]) {
-    const runId = trimString(candidate);
-    if (!runId || seen.has(runId)) continue;
-    seen.add(runId);
-    runIds.push(runId);
-  }
-  return runIds;
+export function collectReplyPublicationRunIds(run = {}) {
+  return trimString(run.id) ? [trimString(run.id)] : [];
 }
 
 export function collectReplyPublicationHistory(history = [], rootRun = {}) {

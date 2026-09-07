@@ -9,7 +9,7 @@ import {
   findFeishuThreadSessionBinding,
   recordFeishuThreadSessionBinding,
 } from '../connectors/feishu/session-flow.mjs';
-import { generateRemoteLabReply } from '../scripts/feishu-connector.mjs';
+import { submitRemoteLabRequest } from '../scripts/feishu-connector.mjs';
 
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-topic-fork-'));
 const runtime = {
@@ -153,7 +153,7 @@ try {
       storagePaths: runtime.storagePaths,
     };
 
-    const forkReply = await generateRemoteLabReply(connectorRuntime, commandSummary);
+    const forkReply = await submitRemoteLabRequest(connectorRuntime, commandSummary);
     assert.equal(forkReply.sessionId, 'fork-session-2');
     assert.equal(forkReply.externalTriggerId, 'feishu:fork:bot-1:tenant-1:chat-1:fork-command-message');
     assert.equal(createCount, 1);
@@ -176,7 +176,7 @@ try {
       threadId: 'created-thread-1',
       externalTriggerId: forkReply.externalTriggerId,
     });
-    const continuationReply = await generateRemoteLabReply(connectorRuntime, {
+    const continuationReply = await submitRemoteLabRequest(connectorRuntime, {
       tenantKey: 'tenant-1',
       chatType: 'group',
       chatId: 'chat-1',

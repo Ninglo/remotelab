@@ -84,7 +84,7 @@ try {
   assert.equal(third.id, first.id, 'same external trigger should keep reusing the existing session');
   assert.equal(third.systemPrompt || '', '', 'explicit empty systemPrompt should clear the previous connector override');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }
 

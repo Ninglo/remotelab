@@ -207,7 +207,7 @@ assert.equal(
   'visitor websocket should stay invalidation-only',
 );
 
-killAll();
+await killAll();
 setWss({ clients: new Set() });
 rmSync(tempHome, { recursive: true, force: true });
 

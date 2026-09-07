@@ -122,6 +122,6 @@ try {
 
   console.log('test-session-source-context: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(home, { recursive: true, force: true });
 }

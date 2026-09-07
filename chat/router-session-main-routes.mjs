@@ -254,6 +254,7 @@ export async function handleSessionMainRoutes({
           thinking: authSession?.role === 'visitor' ? false : !!payload.thinking,
           model: authSession?.role === 'visitor' ? undefined : payload.model || undefined,
           effort: authSession?.role === 'visitor' ? undefined : payload.effort || undefined,
+          sourceDelivery: authSession?.role === 'visitor' ? undefined : payload.sourceDelivery,
           sourceContext: authSession?.role === 'visitor' ? undefined : payload.sourceContext,
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         };

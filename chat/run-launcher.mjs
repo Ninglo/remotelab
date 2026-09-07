@@ -1,5 +1,5 @@
 import { execFile as execFileCallback, spawn as spawnProcess } from 'child_process';
-import { readFileSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
@@ -44,13 +44,13 @@ export function detectSystemdManagerScope(cgroupText) {
   return null;
 }
 
-export function getCurrentSystemdManagerScope({
+export async function getCurrentSystemdManagerScope({
   platform = process.platform,
-  readFileSyncImpl = readFileSync,
+  readFileImpl = readFile,
 } = {}) {
   if (platform !== 'linux') return null;
   try {
-    return detectSystemdManagerScope(readFileSyncImpl('/proc/self/cgroup', 'utf8'));
+    return detectSystemdManagerScope(await readFileImpl('/proc/self/cgroup', 'utf8'));
   } catch {
     return null;
   }
@@ -59,7 +59,7 @@ export function getCurrentSystemdManagerScope({
 export function shouldUseSystemdDetachedRunner({
   platform = process.platform,
   env = process.env,
-  scope = getCurrentSystemdManagerScope({ platform }),
+  scope = null,
 } = {}) {
   return platform === 'linux'
     && env?.REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER !== '1'
@@ -201,12 +201,12 @@ export function createDetachedRunnerSpawner({
   getScopeImpl = getCurrentSystemdManagerScope,
 } = {}) {
   return async function spawnDetachedRunner(runId) {
-    const scope = getScopeImpl();
+    const scope = await getScopeImpl();
     if (shouldUseSystemdDetachedRunner({ scope })) {
       try {
         return await launchDetachedRunnerViaSystemd(runId, { scope, execFileImpl });
       } catch (error) {
-        console.error(`[runs] Failed to launch detached runner ${runId} via systemd-run (${scope}): ${error?.message || String(error)}; falling back to plain detached process.`);
+        console.error(`[runs] Failed to launch detached runner ${runId} via systemd-run (${scope}): ${String(error?.stderr || error?.code || 'launch failed').trim()}; falling back to plain detached process.`);
       }
     }
     return spawnDetachedRunnerAsProcess(runId, { spawnImpl });

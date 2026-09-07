@@ -146,7 +146,7 @@ try {
   assert.equal(runState?.connectors?.actions?.[0]?.message, 'SMTP rejected the message');
   assert.equal(runState?.connectors?.actions?.[0]?.retryable, true);
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }
 

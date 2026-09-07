@@ -28,7 +28,7 @@ const {
   ensureAuthCookie,
   ensureAllowedSendersFile,
   extractLocalCommand,
-  generateRemoteLabReply,
+  submitRemoteLabRequest,
   handleChatMemberUserAdded,
   handleMessage,
   isAllowedByPolicy,
@@ -113,133 +113,14 @@ const summary = {
   },
 };
 
-let sendCalls = 0;
-const handled = [];
-
-await handleMessage(runtime, summary, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => ({
-    sessionId: 'session_test_1',
-    runId: 'run_test_1',
-    requestId: 'request_test_1',
-    duplicate: false,
-    replyText: '',
-  }),
-  sendFeishuText: async () => {
-    sendCalls += 1;
-    return { message_id: 'out_test_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
+const accepted = await handleMessage(runtime, summary, 'test', {
+  submitRemoteLabRequest: async () => ({ sessionId: 'session_test_1', runId: 'run_test_1', requestId: 'request_test_1' }),
+  sendFeishuText: async () => { throw new Error('admission must not send a reply'); },
 });
-
-assert.equal(sendCalls, 0, 'empty assistant replies should not be sent to Feishu');
-assert.equal(handled.length, 1, 'empty assistant replies should still be marked handled');
-assert.equal(handled[0].messageId, summary.messageId);
-assert.equal(handled[0].metadata.status, 'silent_no_reply');
-assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
-assert.equal(handled[0].metadata.sessionId, 'session_test_1');
-assert.equal(runtime.processingMessageIds.size, 0, 'message processing state should always be cleaned up');
-
-const attachmentOnlySends = [];
-handled.length = 0;
-runtime.config = { silentConfirmationText: '' };
-await handleMessage(runtime, { ...summary, messageId: 'msg_test_attachment_only_1' }, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => ({
-    sessionId: 'session_attachment_only_test_1',
-    runId: 'run_attachment_only_test_1',
-    requestId: 'request_attachment_only_test_1',
-    responseId: 'response_attachment_only_test_1',
-    duplicate: false,
-    replyText: '',
-    replyAttachments: [{
-      assetId: 'fasset_attachment_only_1',
-      originalName: 'attachment-only.txt',
-      mimeType: 'text/plain',
-    }],
-  }),
-  sendFeishuText: async () => {
-    throw new Error('attachment-only replies must not send an empty text message');
-  },
-  sendFeishuAttachment: async (_runtime, _summary, attachment, uuid) => {
-    attachmentOnlySends.push({ attachment, uuid });
-    return { message_id: 'out_attachment_only_test_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
-});
-assert.equal(attachmentOnlySends.length, 1);
-assert.equal(attachmentOnlySends[0].attachment.originalName, 'attachment-only.txt');
-assert.match(attachmentOnlySends[0].uuid, /:attachment:0$/);
-assert.equal(handled[0].metadata.status, 'sent');
-assert.equal(handled[0].metadata.attachmentCount, 1);
-assert.equal(handled[0].metadata.responseMessageId, 'out_attachment_only_test_1');
-
-const confirmationTexts = [];
-sendCalls = 0;
-handled.length = 0;
-runtime.config = { silentConfirmationText: '[委屈]' };
-
-await handleMessage(runtime, { ...summary, messageId: 'msg_test_confirmation_1' }, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => ({
-    sessionId: 'session_confirmation_test_1',
-    runId: 'run_confirmation_test_1',
-    requestId: 'request_confirmation_test_1',
-    duplicate: false,
-    replyText: '',
-  }),
-  sendFeishuText: async (_runtime, _summary, text) => {
-    sendCalls += 1;
-    confirmationTexts.push(text);
-    return { message_id: 'out_confirmation_test_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
-});
-
-assert.equal(sendCalls, 0, 'emoji-only confirmation text should be stripped before sending');
-assert.deepEqual(confirmationTexts, []);
-assert.equal(handled.length, 1, 'confirmation sends should still be marked handled');
-assert.equal(handled[0].messageId, 'msg_test_confirmation_1');
-assert.equal(handled[0].metadata.status, 'silent_no_reply');
-assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
-assert.equal(handled[0].metadata.responseMessageId, undefined);
-
-runtime.config = { silentConfirmationText: '已收到。' };
-sendCalls = 0;
-handled.length = 0;
-
-await handleMessage(runtime, { ...summary, messageId: 'msg_test_confirmation_plain_1' }, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => ({
-    sessionId: 'session_confirmation_plain_test_1',
-    runId: 'run_confirmation_plain_test_1',
-    requestId: 'request_confirmation_plain_test_1',
-    duplicate: false,
-    replyText: '',
-  }),
-  sendFeishuText: async (_runtime, _summary, text) => {
-    sendCalls += 1;
-    confirmationTexts.push(text);
-    return { message_id: 'out_confirmation_plain_test_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
-});
-
-assert.equal(sendCalls, 1, 'plain-text confirmations should still be sent');
-assert.equal(confirmationTexts.at(-1), '已收到。');
-assert.equal(handled.length, 1, 'plain-text confirmation sends should still be marked handled');
-assert.equal(handled[0].messageId, 'msg_test_confirmation_plain_1');
-assert.equal(handled[0].metadata.status, 'confirmation_sent');
-assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
-assert.equal(handled[0].metadata.responseMessageId, 'out_confirmation_plain_test_1');
+assert.equal(accepted.sessionId, 'session_test_1');
+await assert.rejects(handleMessage(runtime, summary, 'test', {
+  submitRemoteLabRequest: async () => { throw new Error('control plane offline'); },
+}), /offline/, 'Inbox must retain failed handoffs for recovery');
 
 const connectorLockDir = join(tempHome, 'connector-lock');
 const claimedLock = await claimConnectorPidLock(connectorLockDir, 54321);
@@ -267,182 +148,7 @@ assert.equal(
 );
 await releaseConnectorPidLock(recoveredLock);
 
-sendCalls = 0;
-handled.length = 0;
 
-await handleMessage(runtime, { ...summary, messageId: 'msg_test_duplicate_1' }, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => ({
-    sessionId: 'session_duplicate_test_1',
-    runId: '',
-    requestId: 'request_duplicate_test_1',
-    duplicate: true,
-    queued: false,
-    replyText: '',
-  }),
-  sendFeishuText: async () => {
-    sendCalls += 1;
-    return { message_id: 'out_duplicate_test_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
-});
-
-assert.equal(sendCalls, 0, 'duplicate no-reply paths should not send silent confirmations');
-assert.equal(handled.length, 1, 'duplicate no-reply paths should still be marked handled');
-assert.equal(handled[0].metadata.reason, 'duplicate_request');
-
-let reactionCalls = [];
-sendCalls = 0;
-handled.length = 0;
-runtime.config = { processingReaction: { removeOnCompletion: false } };
-
-await handleMessage(runtime, { ...summary, messageId: 'msg_test_processing_reaction' }, 'test', {
-  wasMessageHandled: async () => false,
-  addProcessingReaction: async (_runtime, reactionSummary) => {
-    reactionCalls.push(['add', reactionSummary.messageId]);
-    return { reactionId: 'react_test_1', emojiType: 'GLANCE' };
-  },
-  generateRemoteLabReply: async () => {
-    reactionCalls.push(['generate']);
-    return {
-      sessionId: 'session_reaction_test_1',
-      runId: 'run_reaction_test_1',
-      requestId: 'request_reaction_test_1',
-      duplicate: false,
-      replyText: 'Reaction-backed reply.',
-    };
-  },
-  sendFeishuText: async () => {
-    reactionCalls.push(['send']);
-    sendCalls += 1;
-    return { message_id: 'out_reaction_test_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
-});
-
-assert.deepEqual(reactionCalls, [
-  ['add', 'msg_test_processing_reaction'],
-  ['generate'],
-  ['send'],
-], 'processing reactions should stay attached by default after the long-running reply path');
-assert.equal(sendCalls, 1, 'non-empty assistant replies should still be sent');
-assert.equal(handled.length, 1, 'reaction-backed replies should still be marked handled');
-assert.equal(handled[0].metadata.status, 'sent');
-
-reactionCalls = [];
-sendCalls = 0;
-handled.length = 0;
-runtime.config = { processingReaction: { removeOnCompletion: true } };
-
-await handleMessage(runtime, { ...summary, messageId: 'msg_test_processing_reaction_silent' }, 'test', {
-  wasMessageHandled: async () => false,
-  addProcessingReaction: async (_runtime, reactionSummary) => {
-    reactionCalls.push(['add', reactionSummary.messageId]);
-    return { reactionId: 'react_test_2', emojiType: 'GLANCE' };
-  },
-  generateRemoteLabReply: async () => {
-    reactionCalls.push(['generate']);
-    return {
-      sessionId: 'session_reaction_test_2',
-      runId: 'run_reaction_test_2',
-      requestId: 'request_reaction_test_2',
-      duplicate: false,
-      replyText: '',
-    };
-  },
-  sendFeishuText: async () => {
-    sendCalls += 1;
-    return { message_id: 'out_reaction_test_2' };
-  },
-  removeProcessingReaction: async (_runtime, reactionSummary, reaction) => {
-    reactionCalls.push(['remove', reactionSummary.messageId, reaction.reactionId]);
-    return true;
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
-});
-
-assert.deepEqual(reactionCalls, [
-  ['add', 'msg_test_processing_reaction_silent'],
-  ['generate'],
-  ['remove', 'msg_test_processing_reaction_silent', 'react_test_2'],
-], 'processing reactions should still be removable when explicitly configured');
-assert.equal(sendCalls, 0, 'silent assistant replies should not send Feishu messages');
-assert.equal(handled.length, 1, 'silent reaction-backed replies should still be marked handled');
-assert.equal(handled[0].metadata.status, 'silent_no_reply');
-
-{
-  const startedAt = Date.now();
-  await assert.rejects(
-    addProcessingReaction({
-      config: { processingReaction: { enabled: true, timeoutMs: 10 } },
-      appClient: {
-        im: {
-          v1: {
-            messageReaction: {
-              create: async () => {
-                await new Promise((resolve) => setTimeout(resolve, 80));
-                return { code: 0, data: { reaction_id: 'too_late' } };
-              },
-            },
-          },
-        },
-      },
-    }, { messageId: 'msg_reaction_timeout_1' }),
-    /Feishu processing reaction timed out after 10ms/,
-  );
-  assert.ok(Date.now() - startedAt < 60, 'a stuck processing reaction must not block the chat queue');
-}
-
-{
-  const metadataRuntime = {
-    processingMessageIds: new Set(),
-    chatMetadataCache: new Map(),
-    config: {
-      apiTimeoutMs: 10,
-      processingReaction: { enabled: false },
-    },
-    storagePaths: {
-      handledMessagesPath: '/tmp/remotelab-feishu-metadata-timeout-handled.json',
-    },
-    appClient: {
-      im: {
-        v1: {
-          chat: {
-            get: async () => {
-              await new Promise((resolve) => setTimeout(resolve, 80));
-              return { code: 0, data: { name: 'too late' } };
-            },
-          },
-        },
-      },
-    },
-  };
-  const startedAt = Date.now();
-  await handleMessage(metadataRuntime, {
-    ...summary,
-    messageId: 'msg_metadata_timeout_1',
-    chatType: 'group',
-  }, 'test', {
-    wasMessageHandled: async () => false,
-    generateRemoteLabReply: async () => ({
-      sessionId: 'session_metadata_timeout_1',
-      runId: 'run_metadata_timeout_1',
-      requestId: 'request_metadata_timeout_1',
-      responseId: 'response_metadata_timeout_1',
-      duplicate: false,
-      replyText: 'Metadata timeout fallback reply.',
-    }),
-    sendFeishuText: async () => ({ message_id: 'out_metadata_timeout_1' }),
-    markMessageHandled: async () => {},
-  });
-  assert.ok(Date.now() - startedAt < 60, 'a stuck chat metadata lookup must not block the chat queue');
-}
 
 const imageSummary = summarizeEvent({
   event_id: 'evt_image_1',
@@ -599,37 +305,15 @@ assert.match(richPostSummary.contentSummary, /Rich text post/i);
 assert.match(richPostSummary.contentSummary, /Weekly update/i);
 assert.equal(richPostSummary.messageText, 'Weekly update\nAlpha milestoneBeta follow-up');
 
-sendCalls = 0;
-handled.length = 0;
 let richPostRemoteLabMessage = '';
-
 await handleMessage(runtime, richPostSummary, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async (_runtime, postSummary) => {
+  submitRemoteLabRequest: async (_runtime, postSummary) => {
     richPostRemoteLabMessage = buildRemoteLabMessage(postSummary);
-    return {
-      sessionId: 'session_test_post',
-      runId: 'run_test_post',
-      requestId: 'request_test_post',
-      duplicate: false,
-      replyText: '收到富文本。',
-    };
-  },
-  sendFeishuText: async () => {
-    sendCalls += 1;
-    return { message_id: 'out_test_post' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
+    return { sessionId: 'session_test_post' };
   },
 });
-
 assert.match(richPostRemoteLabMessage, /Weekly update/);
 assert.match(richPostRemoteLabMessage, /Alpha milestone/);
-assert.equal(sendCalls, 1, 'textual rich-post payloads should be sent through RemoteLab');
-assert.equal(handled.length, 1, 'textual rich-post payloads should be marked handled after reply');
-assert.equal(handled[0].messageId, 'msg_post_1');
-assert.equal(handled[0].metadata.status, 'sent');
 
 const richPostImageSummary = summarizeEvent({
   event_id: 'evt_post_image_1',
@@ -790,79 +474,29 @@ assert.equal(
   'ordinary group messages should keep the original group-level RemoteLab session key',
 );
 
-sendCalls = 0;
-handled.length = 0;
 let imageInvokedRemoteLab = false;
-
 await handleMessage(runtime, imageSummary, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async (_runtime, inboundSummary) => {
+  submitRemoteLabRequest: async (_runtime, inboundSummary) => {
     imageInvokedRemoteLab = true;
     assert.deepEqual(inboundSummary.imageKeys, ['img_v2_1']);
     assert.equal(buildRemoteLabMessage(inboundSummary), 'Image attachment');
-    return {
-      sessionId: 'session_test_image',
-      runId: 'run_test_image',
-      requestId: 'request_test_image',
-      duplicate: false,
-      replyText: '我看到了这张图。',
-    };
-  },
-  sendFeishuText: async () => {
-    sendCalls += 1;
-    return { message_id: 'out_test_image' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
+    return { sessionId: 'session_test_image' };
   },
 });
-
-assert.equal(imageInvokedRemoteLab, true, 'image payloads should be submitted to RemoteLab instead of stopping as unsupported');
-assert.equal(sendCalls, 1, 'image payloads with assistant replies should send Feishu replies');
-assert.equal(handled.length, 1, 'image payloads should be marked handled after reply');
-assert.equal(handled[0].messageId, 'msg_image_1');
-assert.equal(handled[0].metadata.status, 'sent');
-assert.equal(handled[0].metadata.sessionId, 'session_test_image');
-assert.equal(runtime.processingMessageIds.size, 0, 'image payload processing state should always be cleaned up');
-
-sendCalls = 0;
-handled.length = 0;
+assert.equal(imageInvokedRemoteLab, true);
 let unknownInvokedRemoteLab = false;
-
 await handleMessage(runtime, {
-  chatId: 'chat_unknown_1',
-  chatType: 'group',
-  messageId: 'msg_unknown_1',
-  messageType: 'future_feishu_structure',
-  contentSummary: 'Feishu future_feishu_structure message reference (keys=payload)',
-  contentKeys: ['payload'],
-  rawContent: JSON.stringify({ payload: { nested: true } }),
-  sender: { openId: 'ou_unknown_1' },
+  chatId: 'chat_unknown_1', chatType: 'group', messageId: 'msg_unknown_1',
+  messageType: 'future_feishu_structure', contentSummary: 'Feishu message reference',
+  contentKeys: ['payload'], rawContent: JSON.stringify({ payload: { nested: true } }), sender: { openId: 'ou_unknown_1' },
 }, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async (_runtime, inboundSummary) => {
+  submitRemoteLabRequest: async (_runtime, inboundSummary) => {
     unknownInvokedRemoteLab = true;
     assert.match(buildRemoteLabMessage(inboundSummary), /message_id=msg_unknown_1/);
-    return {
-      sessionId: 'session_test_unknown',
-      runId: 'run_test_unknown',
-      requestId: 'request_test_unknown',
-      duplicate: false,
-      replyText: '我收到了这条尚未完整解析的消息。',
-    };
-  },
-  sendFeishuText: async () => {
-    sendCalls += 1;
-    return { message_id: 'out_test_unknown' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
+    return { sessionId: 'session_test_unknown' };
   },
 });
-
-assert.equal(unknownInvokedRemoteLab, true, 'unparsed inbound structures should still invoke RemoteLab');
-assert.equal(sendCalls, 1);
-assert.equal(handled[0].metadata.status, 'sent');
+assert.equal(unknownInvokedRemoteLab, true);
 
 const authRefreshRuntime = {
   authCookie: 'session_token=stale-cookie',
@@ -1069,7 +703,7 @@ assert.deepEqual(JSON.parse(feishuReplyPayload?.data?.content || '{}'), {
 });
 
 const sourceDeliveryRequests = [];
-const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceRouteId: 'bot-alpha' } }, {
+const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceRouteId: 'bot-alpha', storageDir: join(tempHome, 'delivery-worker') } }, {
   requestRemoteLab: async (path, options = {}) => {
     sourceDeliveryRequests.push({ path, options });
     if (path === '/api/source-deliveries/claim') {
@@ -1079,7 +713,7 @@ const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceR
           claim: {
             leaseId: 'lease_123',
             delivery: {
-              id: 'srcd_000000000000000000000001',
+              id: 'srcd_000000000000000000000001_0',
               responseId: 'trigger:trg_1',
               kind: 'content',
               text: '今天日期：2026-07-27',
@@ -1096,47 +730,23 @@ const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceR
     }
     return {
       response: { ok: true },
-      json: { delivery: { id: 'srcd_000000000000000000000001', state: 'delivered' } },
+      json: { delivery: { id: 'srcd_000000000000000000000001_0', state: 'delivered' } },
     };
   },
-  deliverFeishuVisibleReply: async (_runtime, target, message) => {
+  sendFeishuText: async (_runtime, target, text, deliveryId) => {
     assert.equal(target.messageId, 'msg_topic_reply_1');
     assert.equal(target.threadId, 'thread_topic_1');
-    assert.equal(message.responseId, 'trigger:trg_1');
+    assert.equal(text, '今天日期：2026-07-27');
+    assert.equal(deliveryId, 'srcd_000000000000000000000001_0');
     return { message_id: 'om_source_delivery_out' };
   },
 });
 assert.equal(sourceDeliveryResult.state, 'delivered');
 assert.equal(sourceDeliveryRequests[0].options.body.sourceRouteId, 'bot-alpha');
-assert.equal(sourceDeliveryRequests[1].path, '/api/source-deliveries/srcd_000000000000000000000001/complete');
+assert.equal(sourceDeliveryRequests[1].path, '/api/source-deliveries/srcd_000000000000000000000001_0/complete');
 assert.equal(sourceDeliveryRequests[1].options.body.externalId, 'om_source_delivery_out');
 
-sendCalls = 0;
-handled.length = 0;
 
-await handleMessage(runtime, { ...summary, messageId: 'msg_test_hidden_only' }, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => ({
-    sessionId: 'session_test_hidden',
-    runId: 'run_test_hidden',
-    requestId: 'request_test_hidden',
-    duplicate: false,
-    replyText: '  <private>internal only</private>  ',
-  }),
-  sendFeishuText: async () => {
-    sendCalls += 1;
-    return { message_id: 'out_test_hidden' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
-  },
-});
-
-assert.equal(sendCalls, 0, 'hidden-only assistant replies should not be sent to Feishu');
-assert.equal(handled.length, 1, 'hidden-only assistant replies should still be marked handled');
-assert.equal(handled[0].messageId, 'msg_test_hidden_only');
-assert.equal(handled[0].metadata.status, 'silent_no_reply');
-assert.equal(handled[0].metadata.reason, 'empty_assistant_reply');
 
 const explicitArtifactReply = await selectAssistantReplyEvent([
   {
@@ -1535,88 +1145,32 @@ assert.deepEqual(extractLocalCommand({
 });
 
 let localCommandReply = '';
-const localCommandHandled = [];
-
-await handleMessage(accessRuntime, approveSummary, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => {
-    throw new Error('local group approval should not invoke RemoteLab');
-  },
-  sendFeishuText: async (_runtime, _summary, text) => {
-    localCommandReply = text;
-    return { message_id: 'out_group_approve_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    localCommandHandled.push({ messageId, metadata });
-  },
+const localResult = await handleMessage(accessRuntime, approveSummary, 'test', {
+  submitRemoteLabRequest: async () => { throw new Error('local approval must not start AI'); },
+  queueFeishuReply: async (_runtime, _summary, text) => { localCommandReply = text; return { deliveryId: 'approval-delivery' }; },
 });
-
 assert.match(localCommandReply, /chat_id=chat_group_approve_1/);
-assert.equal(localCommandHandled.length, 1, 'local command should still mark the message handled');
-assert.equal(localCommandHandled[0].metadata.status, 'approved_chat');
-
-const forkSummary = {
-  ...approveSummary,
-  messageId: 'msg_group_fork_1',
+assert.equal(localResult.status, 'approved_chat');
+const forkSummary = { ...approveSummary, messageId: 'msg_group_fork_1',
   messageText: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈',
-  textPreview: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈',
-};
-let generatedForkSummary = null;
-const forkHandled = [];
-await handleMessage(accessRuntime, forkSummary, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async (_runtime, inboundSummary) => {
+  textPreview: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈' };
+let generatedForkSummary;
+const forkResult = await handleMessage(accessRuntime, forkSummary, 'test', {
+  submitRemoteLabRequest: async (_runtime, inboundSummary) => {
     generatedForkSummary = inboundSummary;
-    return {
-      sessionId: 'sess_fork_command_1',
-      runId: 'run_fork_command_1',
-      requestId: 'feishu:msg_group_fork_1',
-      responseId: 'feishu:msg_group_fork_1',
-      externalTriggerId: 'feishu:fork:bot-1:tenant_group_1:chat_group_approve_1:msg_group_fork_1',
-      duplicate: false,
-      replyText: 'Fork complete.',
-      replyAttachments: [],
-    };
-  },
-  sendFeishuText: async () => ({
-    message_id: 'out_group_fork_1',
-    thread_id: 'thread_group_fork_1',
-  }),
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    forkHandled.push({ messageId, metadata });
+    return { sessionId: 'sess_fork_command_1', runId: 'run_fork_command_1', requestId: 'feishu:msg_group_fork_1', externalTriggerId: 'feishu:fork:bot-1:tenant_group_1:chat_group_approve_1:msg_group_fork_1' };
   },
 });
-assert.equal(generatedForkSummary?.forkCommand, true);
-assert.equal(generatedForkSummary?.forkText, '调研这个问题\n并保留 @_user_2 的反馈');
-assert.equal(generatedForkSummary?.replyInThread, true);
-assert.equal(forkHandled[0]?.metadata.sessionId, 'sess_fork_command_1');
-assert.equal((await findFeishuThreadSessionBinding(accessRuntime, {
-  ...forkSummary,
-  threadId: 'thread_group_fork_1',
-}))?.sessionId, 'sess_fork_command_1');
-
-let emptyForkReply = '';
-const emptyForkHandled = [];
-await handleMessage(accessRuntime, {
-  ...approveSummary,
-  messageId: 'msg_group_empty_fork_1',
-  messageText: '@_user_1 /fork',
-  textPreview: '@_user_1 /fork',
-}, 'test', {
-  wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => {
-    throw new Error('empty /fork must not invoke RemoteLab');
-  },
-  sendFeishuText: async (_runtime, _summary, text) => {
-    emptyForkReply = text;
-    return { message_id: 'out_group_empty_fork_1' };
-  },
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    emptyForkHandled.push({ messageId, metadata });
-  },
+assert.equal(generatedForkSummary.forkCommand, true);
+assert.equal(generatedForkSummary.forkText, '调研这个问题\n并保留 @_user_2 的反馈');
+assert.equal(generatedForkSummary.replyInThread, true);
+assert.equal(forkResult.sessionId, 'sess_fork_command_1');
+let emptyForkReply;
+await handleMessage(accessRuntime, { ...approveSummary, messageId: 'empty-fork', messageText: '/fork', textPreview: '/fork' }, 'test', {
+  submitRemoteLabRequest: async () => { throw new Error('empty fork must not start AI'); },
+  queueFeishuReply: async (_runtime, _summary, text) => { emptyForkReply = text; return { deliveryId: 'usage-delivery' }; },
 });
 assert.equal(emptyForkReply, '用法：/fork <任务文本>');
-assert.equal(emptyForkHandled[0]?.metadata.status, 'fork_usage');
 
 const persistedApproval = JSON.parse(await readFile(accessStatePath, 'utf8'));
 assert.equal(persistedApproval.approvedChats.chat_group_approve_1.chatId, 'chat_group_approve_1');
@@ -1815,7 +1369,7 @@ try {
     selectedEffort: 'high',
     reasoningKind: 'enum',
   });
-  const reply = await generateRemoteLabReply(
+  const reply = await submitRemoteLabRequest(
     {
       authCookie: 'session_token=test-cookie',
       authToken: 'ignored',
@@ -1892,9 +1446,8 @@ try {
   assert.equal(reply.sessionId, 'sess_feishu_1');
   assert.equal(reply.runId, 'run_feishu_1');
   assert.equal(reply.attachmentCount, 1);
-  assert.equal(reply.replyText, 'Feishu reply ready.');
-  assert.equal(reply.replyAttachments.length, 1);
-  assert.equal(reply.replyAttachments[0].originalName, 'report.csv');
+  assert.equal(reply.replyText, undefined, 'handoff returns acceptance; Delivery owns the answer');
+  assert.equal(submittedPayload.sourceDelivery.connector, 'feishu');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }
@@ -1984,7 +1537,7 @@ try {
     selectedTool: 'codex',
     selectedModel: 'gpt-5.4',
   });
-  const reply = await generateRemoteLabReply(
+  const reply = await submitRemoteLabRequest(
     {
       authCookie: 'session_token=test-cookie',
       authToken: 'ignored',
@@ -2011,9 +1564,9 @@ try {
     'Feishu should upgrade stale inherited Codex UI models before submitting a message',
   );
   assert.equal(reply.sessionId, 'sess_feishu_planning_1');
-  assert.equal(reply.runId, 'run_feishu_planning_1');
+  assert.equal(reply.runId, null);
   assert.equal(reply.queued, false);
-  assert.equal(reply.replyText, 'Planning reply is ready now.');
+  assert.equal(reply.replyText, undefined);
 } finally {
   await new Promise((resolve) => planningServer.close(resolve));
 }
@@ -2154,7 +1707,7 @@ try {
     selectedTool: 'codex',
     selectedModel: '',
   });
-  const reply = await generateRemoteLabReply(
+  const reply = await submitRemoteLabRequest(
     {
       authCookie: 'session_token=test-cookie',
       authToken: 'ignored',
@@ -2176,9 +1729,9 @@ try {
 
   assert.equal(queuedSubmittedPayload?.requestId, 'feishu:msg_queued_scope');
   assert.equal(reply.sessionId, 'sess_feishu_queued_1');
-  assert.equal(reply.runId, 'run_feishu_queued_1');
+  assert.equal(reply.runId, null);
   assert.equal(reply.queued, true);
-  assert.equal(reply.replyText, 'Queued reply is ready now.');
+  assert.equal(reply.replyText, undefined);
 } finally {
   await new Promise((resolve) => queuedServer.close(resolve));
 }
@@ -2302,7 +1855,7 @@ await new Promise((resolve) => topicMetadataServer.listen(0, '127.0.0.1', resolv
 try {
   const address = topicMetadataServer.address();
   topicMetadataRuntime.config.chatBaseUrl = `http://127.0.0.1:${address.port}`;
-  const topicMetadataReply = await generateRemoteLabReply(topicMetadataRuntime, {
+  const topicMetadataReply = await submitRemoteLabRequest(topicMetadataRuntime, {
     chatType: 'group',
     chatId: 'chat_topic_metadata_1',
     messageId: 'msg_topic_metadata_test_1',
@@ -2318,14 +1871,13 @@ try {
   assert.equal(topicMetadataSessionPayload?.sourceContext?.topicId, 'msg_topic_metadata_test_1');
   assert.equal(topicMetadataSubmittedPayload?.sourceContext?.messageId, 'msg_topic_metadata_test_1');
   assert.equal(topicMetadataReply.sessionId, 'sess_topic_metadata_test_1');
-  assert.equal(topicMetadataReply.replyText, 'Metadata scope reply.');
+  assert.equal(topicMetadataReply.replyText, undefined);
 } finally {
   await new Promise((resolve) => topicMetadataServer.close(resolve));
 }
 
 
-console.log('ok - empty assistant replies stay silent');
-console.log('ok - processing reactions bracket delayed Feishu replies');
+console.log('ok - admission returns the durable receipt without waiting for AI or sending');
 console.log('ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments');
 console.log('ok - mention tokens are rendered inbound and compiled outbound');
 console.log('ok - topic metadata from chat metadata fallback enables topic-scoped sessions');
@@ -2334,7 +1886,7 @@ console.log('ok - local group approval commands persist approved chats');
 console.log('ok - approved chats auto-grant newly joined members');
 console.log('ok - /fork accepts task text and binds its reply Thread to the new Session');
 console.log('ok - generated Feishu sessions use the feishu app scope');
-console.log('ok - planning-phase Feishu replies wait for publication readiness');
-console.log('ok - queued Feishu follow-ups wait for the eventual assistant reply');
+console.log('ok - queued and preparing replies return acceptance immediately');
+console.log('ok - source delivery worker persists external receipts');
 
 await rm(tempHome, { recursive: true, force: true });

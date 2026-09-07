@@ -137,6 +137,6 @@ try {
 
   console.log('test-session-template-apps: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(home, { recursive: true, force: true });
 }
