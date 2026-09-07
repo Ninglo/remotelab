@@ -25,5 +25,10 @@
       "Document one-time conversion and land verified code on main"
     ],
     "rollout": "Not deployed. Offline state reconciliation and real Feishu acceptance remain required."
+  },
+  {
+    "id": "runner-restart-ownership",
+    "description": "Honor configured systemd runner manager and preserve detached execution across controller restart.",
+    "pass": true
   }
 ]

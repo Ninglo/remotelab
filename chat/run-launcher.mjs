@@ -46,9 +46,15 @@ export function detectSystemdManagerScope(cgroupText) {
 
 export async function getCurrentSystemdManagerScope({
   platform = process.platform,
+  env = process.env,
   readFileImpl = readFile,
 } = {}) {
   if (platform !== 'linux') return null;
+  const configured = String(env.REMOTELAB_RUNNER_SYSTEMD_SCOPE || '').trim();
+  if (configured) {
+    if (!['user', 'system'].includes(configured)) throw new Error('REMOTELAB_RUNNER_SYSTEMD_SCOPE must be user or system');
+    return configured;
+  }
   try {
     return detectSystemdManagerScope(await readFileImpl('/proc/self/cgroup', 'utf8'));
   } catch {
@@ -136,13 +142,14 @@ export async function readSystemdUnitMainPid(unitName, {
 }
 
 export async function launchDetachedRunnerViaSystemd(runId, {
-  scope = getCurrentSystemdManagerScope(),
+  scope = null,
   execFileImpl = execFileAsync,
   unitName = buildDetachedRunnerUnitName(runId),
   workingDirectory = process.cwd(),
   processExecPath = process.execPath,
   runnerScriptPath = runnerEntry,
 } = {}) {
+  scope ??= await getCurrentSystemdManagerScope();
   const launchMode = DETACHED_RUNNER_SYSTEMD_LAUNCH_MODE;
   const env = buildDetachedRunnerEnvironment({ launchMode, unitName, unitScope: scope });
   const args = [

@@ -96,3 +96,18 @@ git diff --check and node --check on changed shipped modules: exit=0
 Observability: the model is deliberately blocked until after the link has been
 claimed and acknowledged, and its persisted request result is asserted null.
 Live runtime: serviceCommit=91716eeb; requests/schema.json absent. Not restarted.
+
+2026-09-07 live connector/controller repair
+- HTTP sourceDelivery regression: PASS: JSON and multipart HTTP admission preserve
+  sourceDelivery through generated reply/outbox; no external sender invoked.
+- Runner manager RED: AssertionError: 'system' !== 'user'.
+- Runner manager GREEN: runner manager: configured user scope, async default and
+  matching PID lookup passed.
+- npm test: exit 0 (smoke, merge-safety, shared-tools, recovery).
+- Actual launcher probe: unitScope=user; launchMode=systemd-transient-service;
+  cgroup=/user.slice/user-1000.slice/user@1000.service/app.slice/remotelab-runner-manager-probe-20260907.service
+- Live controller restart: PID changed; sameProcessAlive=true for both runner
+  processes and both tool processes belonging to the two active sessions.
+- Post-restart API: auth/me=200; both active Run APIs=200 and state=running.
+- node --check, bash -n setup.sh, git diff --check: PASS.
+Evidence: ~/.remotelab/workspace/connector-live-repair-20260907/.

@@ -101,7 +101,7 @@
     "generate-token": "node generate-token.mjs",
     "prepublishOnly": "chmod +x cli.js setup.sh start.sh stop.sh",
     "test:connector-recovery": "node scripts/run-with-clean-instance-env.mjs npm run test:connector-recovery:raw",
-    "test:connector-recovery:raw": "node tests/test-durable-requests.mjs && node tests/test-connector-inbox.mjs && node tests/test-delivery-receipts.mjs && node tests/test-delivery-recovery.mjs && node tests/test-request-runtime.mjs && node tests/test-request-schema.mjs && node tests/test-request-conversion.mjs && node tests/test-process-identity.mjs && node tests/test-request-cancel-before-launch.mjs && node tests/test-request-process-recovery.mjs"
+    "test:connector-recovery:raw": "node tests/test-durable-requests.mjs && node tests/test-connector-inbox.mjs && node tests/test-delivery-receipts.mjs && node tests/test-delivery-recovery.mjs && node tests/test-request-runtime.mjs && node tests/test-request-schema.mjs && node tests/test-request-conversion.mjs && node tests/test-process-identity.mjs && node tests/test-runner-systemd-scope.mjs && node tests/test-request-cancel-before-launch.mjs && node tests/test-request-process-recovery.mjs"
   },
   "dependencies": {
     "@larksuite/cli": "1.0.61",

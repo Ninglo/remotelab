@@ -504,6 +504,8 @@ Environment=HOME=$USER_HOME
 Environment=USER=$CURRENT_USER
 EnvironmentFile=$OWNER_ENV_FILE
 ExecStart=$NODE_BIN $SCRIPT_DIR/chat-server.mjs
+# Detached runners retain execution ownership when the controller restarts.
+KillMode=process
 Restart=always
 RestartSec=5
 StandardOutput=append:$LOG_DIR/chat-server.log
