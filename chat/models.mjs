@@ -22,7 +22,7 @@ const DEFAULT_CODEX_REASONING = Object.freeze({
   kind: 'enum',
   label: 'Thinking',
   levels: DEFAULT_CODEX_REASONING_LEVELS,
-  default: 'medium',
+  default: PRODUCT_DEFAULT_CODEX_EFFORT,
 });
 const HARDCODED_CODEX_MODELS = CODEX_MODEL_CATALOG;
 const HARDCODED_CODEX_MODEL_IDS = HARDCODED_CODEX_MODELS.map((model) => model.id);
@@ -104,7 +104,7 @@ function buildResponseModel(model, fallbackReasoning = null) {
   };
 }
 
-function buildCodexReasoning(levels = DEFAULT_CODEX_REASONING_LEVELS, defaultValue = 'medium') {
+function buildCodexReasoning(levels = DEFAULT_CODEX_REASONING_LEVELS, defaultValue = PRODUCT_DEFAULT_CODEX_EFFORT) {
   const normalizedLevels = [...new Set(
     (Array.isArray(levels) ? levels : [])
       .map((level) => trimString(level))
@@ -131,7 +131,9 @@ function buildCodexCacheModel(rawModel) {
   if (!id) return null;
   const reasoning = buildCodexReasoning(
     (rawModel?.supported_reasoning_levels || []).map((level) => level?.effort),
-    rawModel?.default_reasoning_level || DEFAULT_CODEX_REASONING.default,
+    id === PRODUCT_DEFAULT_CODEX_MODEL
+      ? PRODUCT_DEFAULT_CODEX_EFFORT
+      : rawModel?.default_reasoning_level || DEFAULT_CODEX_REASONING.default,
   );
   return {
     id,

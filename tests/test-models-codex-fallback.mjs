@@ -19,6 +19,13 @@ writeFileSync(
   'utf8',
 );
 
+writeFileSync(join(codexDir, 'models_cache.json'), JSON.stringify({ models: [{
+  slug: 'gpt-6-astra',
+  visibility: 'list',
+  default_reasoning_level: 'medium',
+  supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(effort => ({ effort })),
+}] }));
+
 const olderSessionPath = join(sessionsDir, 'older.jsonl');
 writeFileSync(
   olderSessionPath,
@@ -74,6 +81,8 @@ try {
     true,
     'Codex should always expose the hardcoded baseline model catalog',
   );
+  assert.equal(result.models.find(model => model.id === 'gpt-6-astra').defaultEffort, 'low',
+    'provider cache defaults must not restore medium when switching to the product-default model');
   assert.deepEqual(result.effortLevels, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
   assert.deepEqual(result.reasoning, {
     kind: 'enum',
