@@ -12,8 +12,8 @@ const layoutToolingSource = readFileSync(join(repoRoot, 'static', 'chat', 'layou
 
 assert.match(
   bootstrapSource,
-  /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5\.6-sol";/,
-  'the browser default should stay aligned with the GPT-5.6-Sol product default',
+  /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-astra";/,
+  'the browser default should stay aligned with the GPT-6 Astra product default',
 );
 
 function extractFunctionSource(source, functionName) {
@@ -71,7 +71,7 @@ const localStorageValues = new Map([
 const context = {
   console,
   DEFAULT_TOOL_ID: 'codex',
-  PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-5.6-sol',
+  PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-6-astra',
   CURRENT_CODEX_MODEL_IDS: new Set([
     'gpt-6-astra',
     'gpt-5.6-sol',
@@ -178,8 +178,8 @@ assert.equal(
 context.migrateRetiredCodexModelLocalStorage();
 assert.equal(
   localStorageValues.get('selectedModel_codex'),
-  'gpt-5.6-sol',
-  'stale GPT-5.4 browser preferences should migrate to GPT-5.6-Sol',
+  'gpt-6-astra',
+  'stale GPT-5.4 browser preferences should migrate to GPT-6 Astra',
 );
 assert.equal(
   localStorageValues.get('selectedEffort_codex'),

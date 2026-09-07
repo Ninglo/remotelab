@@ -61,12 +61,12 @@ try {
 
   assert.equal(
     result.defaultModel,
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     'stale configured/recent Codex models should not override the product default',
   );
   assert.deepEqual(
     result.models.slice(0, 4).map((model) => model.id),
-    ['gpt-5.6-sol', 'gpt-5.3-codex', 'gpt-5.4', 'gpt-5.2-codex'],
+    ['gpt-6-astra', 'gpt-5.3-codex', 'gpt-5.4', 'gpt-5.2-codex'],
     'Codex should put the product default first while retaining configured + recent session models',
   );
   assert.deepEqual(
@@ -79,7 +79,7 @@ try {
     kind: 'enum',
     label: 'Thinking',
     levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-    default: 'medium',
+    default: 'low',
   });
 } finally {
   delete process.env.REMOTELAB_MACHINE_CODEX_HOME;

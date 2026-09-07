@@ -40,7 +40,7 @@ assert.deepEqual(record.models, [
     label: 'gpt-5.4-mini',
     reasoningKind: 'enum',
     supportedReasoningLevels: ['low', 'medium', 'high', 'xhigh'],
-    defaultReasoning: 'medium',
+    defaultReasoning: 'low',
   },
   {
     id: 'opus',

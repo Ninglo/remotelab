@@ -712,7 +712,7 @@ The shared page is intentionally read-only and more tightly sandboxed than the m
 
 ### 9.4 Session-state classification flow
 
-After a normal turn completes, `chat/session-state-classifier.mjs` makes one non-blocking call on the dedicated Codex `gpt-5.6-luna` / `high` route. Keeping this metadata route independent from the foreground Harness prevents a top-tier foreground selection from inflating routine synchronization cost; custom runtime adapters retain their compatible source route.
+After a normal turn completes, `chat/session-state-classifier.mjs` makes one non-blocking call on the dedicated Codex `gpt-6-astra` / `low` route. Keeping this metadata route independent from the foreground Harness prevents a high-effort foreground selection from inflating routine synchronization cost; custom runtime adapters retain their compatible source route.
 
 That single call refreshes the Session's provider-neutral projection:
 

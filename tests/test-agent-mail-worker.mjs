@@ -303,7 +303,7 @@ try {
   assert.doesNotMatch(messageSubmissions[1].text, /On Tue, Mar 10, 2026 at 9:56 PM <rowan@example\.com> wrote:/);
   assert.doesNotMatch(messageSubmissions[1].text, /^> please take a response to test!$/m);
   assert.equal(messageSubmissions[1].tool, 'codex');
-  assert.equal(messageSubmissions[1].model, 'gpt-5-codex');
+  assert.equal(messageSubmissions[1].model, 'gpt-6-astra', 'retired major-only GPT model preferences should normalize to the product default');
   assert.equal(messageSubmissions[1].effort, 'high');
   assert.equal(messageSubmissions[1].thinking, undefined);
 

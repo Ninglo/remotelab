@@ -1063,8 +1063,8 @@ let currentTokens = 0;
 const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
-const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
-const PRODUCT_DEFAULT_CODEX_EFFORT = "medium";
+const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-astra";
+const PRODUCT_DEFAULT_CODEX_EFFORT = "low";
 const CURRENT_CODEX_MODEL_IDS = new Set([
   "gpt-6-astra",
   "gpt-5.6-sol",
@@ -1074,7 +1074,7 @@ const CURRENT_CODEX_MODEL_IDS = new Set([
   "gpt-5.2",
 ]);
 const RETIRED_CODEX_MODEL_IDS = new Set([]);
-const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "medium-v1";
+const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "gpt6-low-v1";
 
 function normalizeStoredToolId(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -1093,11 +1093,11 @@ function normalizeStoredAgentTemplateName(value) {
 
 function parseVersionedGptModelId(value) {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-  const match = normalized.match(/^gpt-(\d+)\.(\d+)(?:-|$)/);
+  const match = normalized.match(/^gpt-(\d+)(?:\.(\d+))?(?:-|$)/);
   if (!match) return null;
   return {
     major: Number.parseInt(match[1], 10),
-    minor: Number.parseInt(match[2], 10),
+    minor: Number.parseInt(match[2] || "0", 10),
   };
 }
 
@@ -1170,7 +1170,21 @@ migrateRetiredCodexModelLocalStorage();
 function migrateCodexEffortDefaultLocalStorage() {
   const migrationKey = "codexEffortDefaultMigration";
   if (localStorage.getItem(migrationKey) === CODEX_EFFORT_DEFAULT_MIGRATION_VERSION) return;
+  // One-time preference migration, not a permanent ban on explicitly choosing an older model.
+  // Cover per-model/provider keys too, or a stale browser can overwrite the migrated server selection.
   localStorage.setItem(`selectedEffort_${DEFAULT_TOOL_ID}`, PRODUCT_DEFAULT_CODEX_EFFORT);
+  localStorage.setItem(`selectedEffort_${DEFAULT_TOOL_ID}_${PRODUCT_DEFAULT_CODEX_MODEL}`, PRODUCT_DEFAULT_CODEX_EFFORT);
+  localStorage.setItem(`selectedEffort_pi_openai-codex/${PRODUCT_DEFAULT_CODEX_MODEL}`, PRODUCT_DEFAULT_CODEX_EFFORT);
+  for (const key of ["selectedModel_codex", "selectedModel_pi", "selectedModel_pi_openai-codex"]) {
+    const model = (localStorage.getItem(key) || "").trim();
+    if (!/^(?:openai-codex\/)?(?:gpt-5(?:\.\d+)?(?:-[a-z0-9.-]+)?|gpt-6-astra)$/.test(model)) continue;
+    localStorage.setItem(key, key === "selectedModel_codex"
+      ? PRODUCT_DEFAULT_CODEX_MODEL
+      : `openai-codex/${PRODUCT_DEFAULT_CODEX_MODEL}`);
+    if (key === "selectedModel_pi") {
+      localStorage.setItem("selectedEffort_pi", PRODUCT_DEFAULT_CODEX_EFFORT);
+    }
+  }
   localStorage.setItem(migrationKey, CODEX_EFFORT_DEFAULT_MIGRATION_VERSION);
 }
 

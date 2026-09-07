@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import { PI_AGENT_DIR } from '../lib/config.mjs';
 import { getPiBaselineModels } from '../lib/codex-model-catalog.mjs';
 import { ensurePiModelBaseline } from './pi-model-baseline.mjs';
+import { PRODUCT_DEFAULT_CODEX_MODEL, PRODUCT_DEFAULT_CODEX_EFFORT } from '../lib/legacy-micro-agent.mjs';
 
 const execFileAsync = promisify(execFile);
 const PI_MODEL_CACHE_TTL_MS = 30_000;
@@ -19,7 +20,7 @@ const PI_PROVIDER_LABELS = Object.freeze({
   'zai-coding-cn': 'GLM Coding',
 });
 const PI_PROVIDER_RECOMMENDATIONS = Object.freeze({
-  'openai-codex': Object.freeze({ modelId: 'gpt-6-astra', effort: 'max' }),
+  'openai-codex': Object.freeze({ modelId: PRODUCT_DEFAULT_CODEX_MODEL, effort: PRODUCT_DEFAULT_CODEX_EFFORT }),
   'glm-api': Object.freeze({ modelId: 'glm-5.3', effort: 'max' }),
   moonshotai: Object.freeze({ modelId: 'kimi-k3', effort: 'max' }),
 });
@@ -340,7 +341,7 @@ export function mergePiModelCatalog(discovered = []) {
 function buildPiCatalog(discovered, preferredRoute = '') {
   const models = mergePiModelCatalog(discovered);
   const preferredModel = models.find((model) => model.id === preferredRoute)
-    || models.find((model) => model.id === 'openai-codex/gpt-5.6-sol')
+    || models.find((model) => model.id === `openai-codex/${PRODUCT_DEFAULT_CODEX_MODEL}`)
     || models.find((model) => model.id.startsWith('openai-codex/'))
     || models[0]
     || null;

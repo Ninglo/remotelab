@@ -552,7 +552,7 @@ assert.equal(
 );
 assert.equal(
   plannedFreshGuestDefaults.selection.selectedModel,
-  'gpt-5.6-sol',
+  'gpt-6-astra',
   'fresh guests should adopt the product-default CodeX model',
 );
 assert.equal(
@@ -567,7 +567,7 @@ assert.equal(
 );
 assert.equal(
   plannedFreshGuestDefaults.selection.selectedEffort,
-  'medium',
+  'low',
   'fresh guests should adopt the product-default CodeX effort',
 );
 
@@ -598,12 +598,12 @@ assert.equal(
 );
 assert.equal(
   plannedUpdatedGuestDefaults.selection.selectedModel,
-  'gpt-5.6-sol',
+  'gpt-6-astra',
   'stale guest model selections should be normalized to the product-default CodeX model',
 );
 assert.equal(
   plannedUpdatedGuestDefaults.selection.selectedEffort,
-  'medium',
+  'low',
   'stale guest effort selections should be normalized to the product-default CodeX effort',
 );
 
@@ -644,7 +644,7 @@ assert.equal(
 );
 assert.equal(
   plannedCurrentCodexFallbackDefaults.selection.selectedEffort,
-  'medium',
+  'low',
   'Codex fallback should use the product-default effort level',
 );
 
@@ -657,12 +657,12 @@ const plannedStaleCodexFallbackDefaults = planGuestRuntimeDefaults({
 });
 assert.equal(
   plannedStaleCodexFallbackDefaults.selection.selectedModel,
-  'gpt-5.6-sol',
+  'gpt-6-astra',
   'Codex fallback should upgrade stale detected owner models to the product default',
 );
 assert.equal(
   plannedStaleCodexFallbackDefaults.selection.selectedEffort,
-  'medium',
+  'low',
   'Codex fallback should use the product-default effort level',
 );
 
@@ -795,8 +795,8 @@ assert.equal(
   'codex',
   'fresh guest should migrate router-based micro-agent defaults to CodeX',
 );
-assert.equal(plannedRouterFreshGuest.selection.selectedModel, 'gpt-5.6-sol');
-assert.equal(plannedRouterFreshGuest.selection.selectedEffort, 'medium');
+assert.equal(plannedRouterFreshGuest.selection.selectedModel, 'gpt-6-astra');
+assert.equal(plannedRouterFreshGuest.selection.selectedEffort, 'low');
 assert.equal(plannedRouterFreshGuest.selection.reasoningKind, 'enum');
 
 const plannedRouterStaleGuest = planGuestRuntimeDefaults({
@@ -821,8 +821,8 @@ const plannedRouterStaleGuest = planGuestRuntimeDefaults({
 });
 assert.equal(plannedRouterStaleGuest.tools.length, 0);
 assert.equal(plannedRouterStaleGuest.selection.selectedTool, 'codex');
-assert.equal(plannedRouterStaleGuest.selection.selectedModel, 'gpt-5.6-sol');
-assert.equal(plannedRouterStaleGuest.selection.selectedEffort, 'medium');
+assert.equal(plannedRouterStaleGuest.selection.selectedModel, 'gpt-6-astra');
+assert.equal(plannedRouterStaleGuest.selection.selectedEffort, 'low');
 
 const sandboxHome = mkdtempSync(join(tmpdir(), 'remotelab-guest-instance-'));
 try {

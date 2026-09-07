@@ -203,7 +203,7 @@ Reusable AI workflows shareable via link. Each Agent defines: name, systemPrompt
 - **Visitor**: Accesses only a specific Agent via share link. Sees chat-only UI (no sidebar). Each Visitor gets an independent Session. This is NOT multi-user — Visitors are scoped guests.
 
 ### Session State Classification
-After each completed normal turn, `session-state-classifier.mjs` makes one non-blocking classification call on the dedicated Codex `gpt-5.6-luna` / `high` route that refreshes `title`, broad AI-managed `space`, workstream `group`, hidden `description`, workflow state, and the provider-neutral current work summary. The sidebar renders Space as a context switcher above Project groups; `Loose` is the reserved Space for genuinely temporary or ambiguous work. This classifier keeps drifting Sessions organized but does not review, continue, or route the Harness answer.
+After each completed normal turn, `session-state-classifier.mjs` makes one non-blocking classification call on the dedicated Codex `gpt-6-astra` / `low` route that refreshes `title`, broad AI-managed `space`, workstream `group`, hidden `description`, workflow state, and the provider-neutral current work summary. The sidebar renders Space as a context switcher above Project groups; `Loose` is the reserved Space for genuinely temporary or ambiguous work. This classifier keeps drifting Sessions organized but does not review, continue, or route the Harness answer.
 
 ### Memory System (Pointer-First)
 - **Storage tiers** still matter:

@@ -2195,8 +2195,12 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
           ...session,
           id: sessionId,
           tool: finalizedRun.tool || session.tool,
-          model: undefined,
-          effort: 'low',
+          model: (finalizedRun.tool || session.tool) === 'pi'
+            ? `openai-codex/${PRODUCT_DEFAULT_CODEX_MODEL}`
+            : (finalizedRun.tool || session.tool) === 'codex'
+              ? PRODUCT_DEFAULT_CODEX_MODEL
+              : undefined,
+          effort: PRODUCT_DEFAULT_CODEX_EFFORT,
           thinking: false,
         }, prompt, {
           usageTracking: {

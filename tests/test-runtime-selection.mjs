@@ -46,13 +46,13 @@ try {
     reasoningKind: 'enum',
   });
   assert.equal(second.selectedTool, 'codex');
-  assert.equal(second.selectedModel, 'gpt-5-codex');
+  assert.equal(second.selectedModel, 'gpt-6-astra');
   assert.equal(second.selectedEffort, 'high');
   assert.equal(second.reasoningKind, 'enum');
 
   const loadedSecond = await loadUiRuntimeSelection();
   assert.equal(loadedSecond?.selectedTool, 'codex');
-  assert.equal(loadedSecond?.selectedModel, 'gpt-5-codex');
+  assert.equal(loadedSecond?.selectedModel, 'gpt-6-astra');
   assert.equal(loadedSecond?.selectedEffort, 'high');
   assert.equal(loadedSecond?.reasoningKind, 'enum');
 
@@ -64,7 +64,7 @@ try {
   });
   assert.equal(
     staleCodex.selectedModel,
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     'stale Codex UI runtime selections should upgrade to the product default model',
   );
   assert.equal(staleCodex.selectedEffort, 'xhigh');
@@ -90,7 +90,7 @@ try {
         reasoningKind: 'enum',
       },
     }).model,
-    'gpt-5.6-sol',
+    'gpt-6-astra',
     'external connectors should not inherit stale Codex UI models',
   );
 

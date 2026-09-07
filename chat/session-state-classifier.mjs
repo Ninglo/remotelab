@@ -17,12 +17,13 @@ import {
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
+import { PRODUCT_DEFAULT_CODEX_MODEL, PRODUCT_DEFAULT_CODEX_EFFORT } from '../lib/legacy-micro-agent.mjs';
 
 const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi']);
 export const SESSION_STATE_CLASSIFIER_RUNTIME = Object.freeze({
   tool: 'codex',
-  model: 'gpt-5.6-luna',
-  effort: 'high',
+  model: PRODUCT_DEFAULT_CODEX_MODEL,
+  effort: PRODUCT_DEFAULT_CODEX_EFFORT,
   thinking: false,
 });
 

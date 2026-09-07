@@ -109,11 +109,11 @@ assert.deepEqual(
   }),
   {
     tool: 'codex',
-    model: 'gpt-5.6-luna',
-    effort: 'high',
+    model: 'gpt-6-astra',
+    effort: 'low',
     thinking: false,
   },
-  'built-in foreground Harnesses should use the dedicated Luna session-state route',
+  'built-in foreground Harnesses should use the dedicated GPT-6 low session-state route',
 );
 assert.deepEqual(
   resolveSessionStateClassifierRuntime({

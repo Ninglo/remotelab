@@ -5,9 +5,10 @@ import { randomUUID } from 'crypto';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { estimateUsageCost, getPricingMetadataForModel } from '../lib/openai-pricing.mjs';
+import { PRODUCT_DEFAULT_CODEX_MODEL } from '../lib/legacy-micro-agent.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CODEX_MODEL = 'gpt-5.6-sol';
+const DEFAULT_CODEX_MODEL = PRODUCT_DEFAULT_CODEX_MODEL;
 const DEFAULT_CLAUDE_MODEL = 'sonnet';
 const CLAUDE_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku']);
 const CLAUDE_MODEL_PREFIXES = ['claude-'];
