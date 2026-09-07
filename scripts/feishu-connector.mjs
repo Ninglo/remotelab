@@ -70,6 +70,11 @@ import { ConnectorDriver } from '../lib/connector-driver.mjs';
 import { createFeishuConnectorTransport, withTimeout } from '../lib/connector-driver-transports.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
+  normalizeFeishuGroupReplyPolicy,
+  resolveFeishuBotIdentity,
+  shouldRouteFeishuMessageToRemoteLab,
+} from '../connectors/feishu/group-routing.mjs';
+import {
   assertConnectorPublicationReady,
   createConnectorSession,
   loadConnectorAssistantReply,
@@ -209,6 +214,10 @@ Config shape:
       "timeoutMs": ${DEFAULT_PROCESSING_REACTION_TIMEOUT_MS}
     },
     "silentConfirmationText": "",
+    "groupReplyPolicy": {
+      "mode": "all",
+      "chatModes": { "oc_example": "mention_only" }
+    },
     "intakePolicy": {
       "mode": "allow_all",
       "accessStatePath": "~/.config/remotelab/feishu-connector/${DEFAULT_ACCESS_STATE_FILENAME}",
@@ -494,6 +503,7 @@ async function loadConfig(pathname) {
     loggerLevel: trimString(parsed?.loggerLevel || 'info'),
     apiTimeoutMs: normalizePositiveTimeout(parsed?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
     storageDir,
+    groupReplyPolicy: normalizeFeishuGroupReplyPolicy(parsed?.groupReplyPolicy),
     intakePolicy: normalizeIntakePolicy(parsed?.intakePolicy, {
       baseDir: configDir,
       defaultAccessStatePath: join(configDir, DEFAULT_ACCESS_STATE_FILENAME),
@@ -1037,6 +1047,7 @@ function createRuntimeContext(config, storagePaths, accessState) {
     processingMessageIds: new Set(),
     chatQueues: new Map(),
     chatMetadataCache: new Map(),
+    botIdentity: null,
     authToken: '',
     authCookie: '',
   };
@@ -1946,6 +1957,10 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   if (!isProcessableMessage(summary)) {
     return;
   }
+  if (!isFeishuDocumentCommentSummary(summary) && !shouldRouteFeishuMessageToRemoteLab(runtime, summary)) {
+    console.log(`[feishu-connector] skipped ${summary.messageId} (group reply policy requires a mention of this Bot)`);
+    return;
+  }
   if (runtime.processingMessageIds.has(summary.messageId)) {
     return;
   }
@@ -2199,6 +2214,11 @@ async function main() {
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths, accessState);
+  if ([config.groupReplyPolicy.mode, ...Object.values(config.groupReplyPolicy.chatModes)].includes('mention_only')) {
+    runtime.botIdentity = await withTimeout(
+      () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
+    );
+  }
   const wsClient = new Lark.WSClient({
     appId: config.appId,
     appSecret: config.appSecret,
@@ -2273,6 +2293,7 @@ async function main() {
   startSourceDeliveryPoller(runtime);
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] intake policy: ${config.intakePolicy.mode}`);
+  console.log(`[feishu-connector] group reply policy: ${JSON.stringify(config.groupReplyPolicy)}`);
   console.log(`[feishu-connector] access state file: ${config.intakePolicy.accessStatePath}`);
   console.log(`[feishu-connector] whitelist mirror: ${config.intakePolicy.allowedSendersPath}`);
   console.log(`[feishu-connector] event log: ${storagePaths.eventsLogPath}`);

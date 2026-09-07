@@ -235,6 +235,18 @@ Notes:
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `allow_all` is the simplest V0 mode; move to `whitelist` after the first validation if needed
 
+`intakePolicy` controls sender access. Group triggering is a separate transport
+filter, applied before commands, reactions, attachments or AI submission, including
+stored-message replay. Set `groupReplyPolicy.mode` to `mention_only` to require an
+explicit mention of this Bot in every group, or `all` to forward all group messages.
+For a single group, use
+`"groupReplyPolicy": { "mode": "all", "chatModes": { "oc_your_group": "mention_only" } }`.
+Unconfigured connectors retain `all` for compatibility. Private messages are
+unaffected. Mention matching uses this Bot's API identity, never its display name;
+mentioning another person or continuing an existing thread does not trigger
+`mention_only`. Bot identity must load successfully before a restricted connector
+starts accepting events. The broader conversation-continuation policy is deferred.
+
 ### Markdown rendering
 
 The model can emit ordinary Markdown. The connector sends adjacent Markdown
