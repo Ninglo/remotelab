@@ -59,6 +59,7 @@ import {
 } from '../connectors/feishu/reply-attachments.mjs';
 import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { withTimeout } from '../lib/connector-driver-transports.mjs';
+import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   normalizeFeishuGroupReplyPolicy,
@@ -966,7 +967,7 @@ function createRuntimeContext(config, storagePaths, accessState) {
       flushPromise: Promise.resolve(),
     },
     appClient: new Lark.Client({
-      httpInstance: { request: options => Lark.defaultHttpInstance.request({ ...options, timeout: 30000, signal: AbortSignal.timeout(30000) }) },
+      httpInstance: createFeishuHttpInstance(Lark.defaultHttpInstance),
       appId: config.appId,
       appSecret: config.appSecret,
       domain: resolveDomain(config.region),
