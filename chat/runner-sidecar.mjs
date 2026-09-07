@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readProcessIdentity } from '../lib/process-identity.mjs';
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
 import { dirname, join } from 'path';
@@ -10,12 +11,14 @@ import {
   readLatestCodexSessionMetrics,
 } from './codex-session-metrics.mjs';
 import { CHAT_PORT } from '../lib/config.mjs';
+import { claimOnce } from '../lib/durable-records.mjs';
 import {
   appendRunSpoolRecord,
   getRun,
   getRunManifest,
   updateRun,
   writeRunResult,
+  runDir,
 } from './runs.mjs';
 import { resolveRunnableSessionFolder } from './session-folder.mjs';
 import { buildToolProcessEnv } from '../lib/user-shell-env.mjs';
@@ -30,7 +33,7 @@ const runId = process.argv[2];
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
 
-const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const DEFAULT_IDLE_TIMEOUT_MS = 0; // Silence is not evidence that the executor is dead.
 const IDLE_CHECK_INTERVAL_MS = 30 * 1000; // check every 30 seconds
 let fatalSidecarTerminationInFlight = false;
 
@@ -266,6 +269,8 @@ async function main() {
     process.exit(1);
   }
 
+  if (!(await claimOnce(join(runDir(runId), 'launch.json'), { pid: process.pid, identity: await readProcessIdentity(process.pid), runId, startedAt: nowIso() }))) return;
+
   await updateRun(runId, (current) => ({
     ...current,
     state: 'running',
@@ -364,7 +369,7 @@ async function main() {
   const idleTimer = setInterval(() => {
     if (cancelSent || !activeProc) return;
     const idleMs = Date.now() - lastOutputAt;
-    if (idleMs >= idleTimeoutMs) {
+    if (idleTimeoutMs > 0 && idleMs >= idleTimeoutMs) {
       cancelSent = true;
       const idleMinutes = Math.round(idleMs / 60000);
       const timedOutProc = activeProc;
@@ -488,9 +493,10 @@ async function main() {
     });
 
     await providerRuntimeLease?.setToolProcessId(proc.pid);
+    const toolProcessIdentity = await readProcessIdentity(proc.pid);
     await updateRun(runId, (current) => ({
       ...current,
-      toolProcessId: proc.pid,
+      toolProcessId: proc.pid, toolProcessIdentity,
     }));
 
     return await attemptDone;

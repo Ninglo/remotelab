@@ -179,6 +179,6 @@ try {
 
   console.log('test-session-title-refresh-same-workstream: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

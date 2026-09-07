@@ -15,3 +15,63 @@
 - Static checks:
   - git diff --check: PASS
   - node --check on all changed shipped modules: PASS
+
+2026-09-07 durable connector recovery verification
+
+Environment: isolated checkout based on origin/main 91716eeb; Node v24.16.0.
+State-backed tests use scripts/run-with-clean-instance-env.mjs and temporary
+instance/provider homes. No production service was restarted or live reply sent.
+
+Successful gates (process exit code 0 observed):
+- npm test: PASS (smoke + merge-safety + shared-tools + connector-recovery).
+- npm run test:integration: PASS.
+- npm run test:triggers: PASS.
+- npm run test:restart-gate: PASS.
+- Isolated tests/test-request-process-recovery.mjs: PASS in 3 consecutive
+  fresh process runs, with SIGKILL after admission and during execution.
+- node --check on all changed/new JavaScript modules: PASS.
+- git diff --check HEAD: PASS.
+
+Final full-suite log: connector-smoke-verified-20260907.log.
+The integration/trigger/restart-gate logs are connector-<suite>-final-20260907.log;
+fault-injection repeats are in connector-recovery-stress-20260907.log.
+All complete logs are saved in /home/ubuntu/.remotelab/workspace on the test host.
+
+Selected actual recovery output:
+durable requests: admission, conflict, ordering, restart and atomic settlement passed
+durable requests: response identity lookup survives archive
+connector inbox: prepared handoff survives restart and completed input deduplicates
+delivery receipts: lost control-plane acknowledgement recovers without another external send
+delivery recovery: uncertainty, independent targets, lease fencing and partial attachment receipts passed
+request runtime: restart resumes post-completion responsibilities without replaying execution
+request schema: old runtime requires explicit conversion; new state initializes once
+process identity: live executor is distinguished from a recycled PID
+request cancellation: durable admission can be cancelled before any executor starts
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+
+Actual HTTP integration output:
+test-http-session-templates: ok
+test-http-session-media-upload: ok
+test-http-file-assets: ok
+test-http-result-file-assets: ok
+test-http-codex-generated-image: ok
+test-http-voice-cleanup: ok
+
+Actual consecutive fault-injection output:
+Crash recovery iteration 1
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+exit=0
+Crash recovery iteration 2
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+exit=0
+Crash recovery iteration 3
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+exit=0
+
+Expected fixture noise includes a missing fake classifier executable after
+fixture cleanup, a deliberate connector concurrency failure, and an archived
+schedule materialization rejection. The gates above still exited 0.
+
+These checks verify isolated process recovery and mocked remote receipts;
+they do not establish host power-loss behavior or live Feishu delivery.
+See notes/current/connector-request-recovery.md for conversion/cutover limits.

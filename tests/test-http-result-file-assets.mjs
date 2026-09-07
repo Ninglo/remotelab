@@ -56,6 +56,7 @@ function request(port, method, path, body = null, extraHeaders = {}) {
         resolve({ status: res.statusCode, headers: res.headers, json, text, buffer });
       });
     });
+    req.setTimeout(10000, () => req.destroy(new Error(`HTTP request stalled: ${method} ${path}`)));
     req.on('error', reject);
     if (body) {
       if (body instanceof Buffer) req.write(body);

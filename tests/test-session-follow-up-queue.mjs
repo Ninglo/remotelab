@@ -147,9 +147,9 @@ try {
     effort: 'low',
   });
   assert.equal(queuedFirst.queued, true, 'follow-up should queue while the current run is active');
-  assert.equal(queuedFirst.run, null, 'queued follow-up should not create a new run yet');
+  assert.ok(queuedFirst.run.id, 'queued request reserves a stable execution identity');
 
-  const duplicateWhileQueued = await submitHttpMessage(session.id, 'Duplicate follow-up one', [], {
+  const duplicateWhileQueued = await submitHttpMessage(session.id, 'Follow-up one', [], {
     requestId: 'req-follow-1',
     tool: 'fake-codex',
     model: 'fake-model',
@@ -191,17 +191,13 @@ try {
 
   const history = await getHistory(session.id);
   const userMessages = history.filter((event) => event.type === 'message' && event.role === 'user');
-  assert.equal(userMessages.length, 2, 'queued follow-ups should become one consolidated user turn');
-  assert.equal(userMessages[0].content, 'First run');
-  assert.match(userMessages[1].content, /Queued follow-up messages sent while RemoteLab was busy:/);
-  assert.match(userMessages[1].content, /Follow-up one/);
-  assert.match(userMessages[1].content, /Actually prioritize the second follow-up/);
+  assert.deepEqual(userMessages.map(x => x.content), ['First run', 'Follow-up one', 'Actually prioritize the second follow-up'], 'FIFO requests retain their own identity and input');
 
   const drainedSession = await getSession(session.id, { includeQueuedMessages: true });
   assert.equal(drainedSession?.activity?.queue?.count, 0, 'queue should clear after the next run is accepted');
   assert.deepEqual(drainedSession?.queuedMessages, [], 'drained session should expose an empty queue');
 
-  const duplicateAfterFlush = await submitHttpMessage(session.id, 'Late retry after flush', [], {
+  const duplicateAfterFlush = await submitHttpMessage(session.id, 'Follow-up one', [], {
     requestId: 'req-follow-1',
     tool: 'fake-codex',
     model: 'fake-model',
@@ -209,7 +205,7 @@ try {
   });
   assert.equal(duplicateAfterFlush.duplicate, true, 'recent flushed follow-up ids should still dedupe');
   assert.equal(duplicateAfterFlush.queued, false, 'post-flush duplicate should no longer be pending in the queue');
-  assert.equal(duplicateAfterFlush.run, null, 'duplicate retry should not create another run');
+  assert.equal(duplicateAfterFlush.run.id, queuedFirst.run.id, 'duplicate retry returns the original execution identity');
 
   await waitFor(
     () => getRunState(initialOutcome.run.id).then((run) => run && ['completed', 'failed', 'cancelled'].includes(run.state)),
@@ -218,7 +214,7 @@ try {
 
   console.log('test-session-follow-up-queue: ok');
 } finally {
-  killAll();
+  await killAll();
   await sleep(250);
   await safeRm(home);
 }

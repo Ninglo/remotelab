@@ -253,6 +253,6 @@ try {
 
   console.log('test-session-forking: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(home, { recursive: true, force: true });
 }

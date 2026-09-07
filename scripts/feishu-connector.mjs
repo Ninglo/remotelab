@@ -7,6 +7,8 @@ import { setTimeout as delay } from 'timers/promises';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
+import { createConnectorInbox } from '../lib/connector-inbox.mjs';
+import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
 import {
   normalizeExternalRuntimeSelectionMode,
@@ -17,15 +19,7 @@ import {
   buildInstanceRuntimeCellEnvironment,
   ensureInstanceLarkCliBotProfile,
 } from '../lib/instance-runtime-cell.mjs';
-import {
-  selectAssistantReplyEvent,
-} from '../lib/reply-selection.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
-import {
-  buildConnectorFailureReply,
-  classifyConnectorFailureReason,
-  decideConnectorUserVisibleReply,
-} from '../lib/connector-user-visible-reply.mjs';
 import {
   DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT as DEFAULT_SESSION_SYSTEM_PROMPT,
   FEISHU_CONNECTOR_ID,
@@ -33,7 +27,6 @@ import {
   LARK_CONNECTOR_NAME,
   LEGACY_DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT as LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
-  buildFeishuConversationQueueKey,
   buildFeishuApiUuid,
   buildFeishuForkExternalTriggerId,
   buildFeishuForkSourceContext,
@@ -52,7 +45,6 @@ import {
   shouldReplyInFeishuThread,
   summarizeFeishuEvent as summarizeEvent,
   summarizeFeishuEventForLog as summarizeEventForLog,
-  summarizeFeishuLegacyMessageEvent as summarizeLegacyMessageEvent,
 } from '../connectors/feishu/index.mjs';
 import {
   hydrateFeishuDocumentCommentSummary,
@@ -66,8 +58,7 @@ import {
   sendFeishuAttachment as sendFeishuAttachmentImpl,
 } from '../connectors/feishu/reply-attachments.mjs';
 import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
-import { ConnectorDriver } from '../lib/connector-driver.mjs';
-import { createFeishuConnectorTransport, withTimeout } from '../lib/connector-driver-transports.mjs';
+import { withTimeout } from '../lib/connector-driver-transports.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   normalizeFeishuGroupReplyPolicy,
@@ -75,13 +66,8 @@ import {
   shouldRouteFeishuMessageToRemoteLab,
 } from '../connectors/feishu/group-routing.mjs';
 import {
-  assertConnectorPublicationReady,
   createConnectorSession,
-  loadConnectorAssistantReply,
-  normalizeConnectorPublicationAttachments,
-  normalizeConnectorPublicationText,
   submitConnectorMessage,
-  waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
 import {
   findFeishuThreadSessionBinding,
@@ -101,8 +87,6 @@ const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
 const DEFAULT_SOURCE_DELIVERY_POLL_MS = 1000;
 const DEFAULT_SESSION_TOOL = 'codex';
 const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
-const RUN_POLL_INTERVAL_MS = 1500;
-const RUN_POLL_TIMEOUT_MS = 0;
 const DEFAULT_FEISHU_API_TIMEOUT_MS = 10_000;
 const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
 const DEFAULT_PROCESSING_REACTION_TIMEOUT_MS = 10_000;
@@ -242,14 +226,6 @@ function trimString(value) {
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function createPollDeadline(timeoutMs) {
-  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? Date.now() + timeoutMs : 0;
-}
-
-function pollDeadlineElapsed(deadline) {
-  return deadline > 0 && Date.now() >= deadline;
 }
 
 function normalizeRegion(value) {
@@ -922,6 +898,7 @@ async function readOwnerToken() {
 async function loginWithToken(baseUrl, token) {
   const response = await fetch(`${normalizeBaseUrl(baseUrl)}/?token=${encodeURIComponent(token)}`, {
     redirect: 'manual',
+    signal: AbortSignal.timeout(30000),
   });
   const setCookie = response.headers.get('set-cookie');
   if (response.status !== 302 || !setCookie) {
@@ -942,6 +919,7 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     redirect: 'manual',
+    signal: AbortSignal.timeout(30000),
   });
 
   const text = await response.text();
@@ -953,60 +931,9 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
   return { response, json, text };
 }
 
-async function loadAssistantReply(requester, sessionId, runId, requestId) {
-  const eventsResult = await requester(`/api/sessions/${sessionId}/events`);
-  if (!eventsResult.response.ok || !Array.isArray(eventsResult.json?.events)) {
-    throw new Error(eventsResult.json?.error || eventsResult.text || `Failed to load session events for ${sessionId}`);
-  }
-
-  const candidate = await selectAssistantReplyEvent(eventsResult.json.events, {
-    match: (event) => (
-      (runId && event.runId === runId)
-      || (requestId && event.requestId === requestId)
-    ),
-    hydrate: async (event) => {
-      const bodyResult = await requester(`/api/sessions/${sessionId}/events/${event.seq}/body`);
-      if (!bodyResult.response.ok || bodyResult.json?.body?.value === undefined) {
-        return event;
-      }
-      return {
-        ...event,
-        content: bodyResult.json.body.value,
-        bodyLoaded: true,
-      };
-    },
-  });
-  if (!candidate) return null;
-
-  return candidate;
-}
-
 function isMainModule() {
   if (!process.argv[1]) return false;
   return import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
-}
-
-function buildFailureReply(summary, reason = '') {
-  return buildConnectorFailureReply(summary, reason);
-}
-
-async function loadHandledMessages(pathname) {
-  return await readJson(pathname, { messages: {} });
-}
-
-async function wasMessageHandled(pathname, messageId) {
-  const state = await loadHandledMessages(pathname);
-  return Boolean(state?.messages?.[messageId]);
-}
-
-async function markMessageHandled(pathname, messageId, metadata) {
-  const state = await loadHandledMessages(pathname);
-  state.messages[messageId] = {
-    ...(state.messages[messageId] || {}),
-    ...metadata,
-    handledAt: metadata?.handledAt || nowIso(),
-  };
-  await writeJson(pathname, state);
 }
 
 async function loadLatestReplayableSummary(eventsLogPath) {
@@ -1039,13 +966,12 @@ function createRuntimeContext(config, storagePaths, accessState) {
       flushPromise: Promise.resolve(),
     },
     appClient: new Lark.Client({
+      httpInstance: { request: options => Lark.defaultHttpInstance.request({ ...options, timeout: 30000, signal: AbortSignal.timeout(30000) }) },
       appId: config.appId,
       appSecret: config.appSecret,
       domain: resolveDomain(config.region),
       loggerLevel: resolveLoggerLevel(config.loggerLevel),
     }),
-    processingMessageIds: new Set(),
-    chatQueues: new Map(),
     chatMetadataCache: new Map(),
     botIdentity: null,
     authToken: '',
@@ -1053,22 +979,6 @@ function createRuntimeContext(config, storagePaths, accessState) {
   };
 }
 
-function enqueueByConversation(runtime, summary, worker) {
-  const key = buildFeishuConversationQueueKey(summary);
-  const previous = runtime.chatQueues.get(key) || Promise.resolve();
-  const next = previous
-    .catch(() => {})
-    .then(worker)
-    .catch((error) => {
-      console.error(`[feishu-connector] queued processing failed for ${summary.messageId || key}:`, error?.stack || error);
-    });
-  runtime.chatQueues.set(key, next);
-  next.finally(() => {
-    if (runtime.chatQueues.get(key) === next) {
-      runtime.chatQueues.delete(key);
-    }
-  });
-}
 
 async function loadFeishuChatMetadata(runtime, chatId) {
   const normalizedChatId = trimString(chatId);
@@ -1187,199 +1097,6 @@ async function loadRemoteLabReplyAttachment(runtime, attachment) {
   return loadRemoteLabReplyAttachmentImpl(runtime, attachment, { ensureAuthCookie });
 }
 
-async function loadRemoteLabSession(runtime, sessionId) {
-  const result = await requestRemoteLab(runtime, `/api/sessions/${sessionId}`);
-  if (!result.response.ok || !result.json?.session) {
-    throw new Error(result.json?.error || result.text || `Failed to load session ${sessionId}`);
-  }
-  return result.json.session;
-}
-
-function getRemoteLabSessionQueueCount(session) {
-  return Number.isInteger(session?.activity?.queue?.count) ? session.activity.queue.count : 0;
-}
-
-function isRemoteLabSessionBusy(session) {
-  return trimString(session?.activity?.run?.state).toLowerCase() === 'running'
-    || trimString(session?.activity?.compact?.state).toLowerCase() === 'pending'
-    || getRemoteLabSessionQueueCount(session) > 0;
-}
-
-async function waitForSessionReady(runtime, sessionId, initialSession = null) {
-  const deadline = createPollDeadline(RUN_POLL_TIMEOUT_MS);
-  let session = initialSession
-    && initialSession.id === sessionId
-    && initialSession.activity
-    ? initialSession
-    : null;
-  while (!pollDeadlineElapsed(deadline)) {
-    if (!session) {
-      session = await loadRemoteLabSession(runtime, sessionId);
-    }
-    if (!isRemoteLabSessionBusy(session)) {
-      return session;
-    }
-    await delay(RUN_POLL_INTERVAL_MS);
-    session = null;
-  }
-  throw new Error(`session ${sessionId} remained busy after ${RUN_POLL_TIMEOUT_MS}ms`);
-}
-
-async function loadRemoteLabEvents(runtime, sessionId) {
-  const result = await requestRemoteLab(runtime, `/api/sessions/${sessionId}/events?filter=all`);
-  if (!result.response.ok || !Array.isArray(result.json?.events)) {
-    throw new Error(result.json?.error || result.text || `Failed to load session events for ${sessionId}`);
-  }
-  return result.json.events;
-}
-
-function sourceContextReferencesRequest(sourceContext, requestId, messageId) {
-  if (!sourceContext || typeof sourceContext !== 'object' || Array.isArray(sourceContext)) {
-    return false;
-  }
-
-  const normalizedRequestId = trimString(requestId);
-  const normalizedMessageId = trimString(messageId);
-  if (normalizedRequestId && trimString(sourceContext.requestId) === normalizedRequestId) {
-    return true;
-  }
-  if (normalizedMessageId && trimString(sourceContext.messageId) === normalizedMessageId) {
-    return true;
-  }
-
-  if (!Array.isArray(sourceContext.queuedMessages)) {
-    return false;
-  }
-
-  return sourceContext.queuedMessages.some((entry) => {
-    if (!entry || typeof entry !== 'object') return false;
-    if (normalizedRequestId && trimString(entry.requestId) === normalizedRequestId) {
-      return true;
-    }
-    return sourceContextReferencesRequest(entry.sourceContext, normalizedRequestId, normalizedMessageId);
-  });
-}
-
-function findQueuedRequestRunId(events, { requestId, messageId, sinceSeq = 0 } = {}) {
-  const normalizedRequestId = trimString(requestId);
-  const normalizedMessageId = trimString(messageId);
-
-  for (const event of Array.isArray(events) ? events : []) {
-    if (!event || event.type !== 'message' || event.role !== 'user') {
-      continue;
-    }
-    if (Number.isInteger(sinceSeq) && Number.isInteger(event.seq) && event.seq <= sinceSeq) {
-      continue;
-    }
-
-    const runId = trimString(event.runId);
-    if (!runId) {
-      continue;
-    }
-    if (normalizedRequestId && trimString(event.requestId) === normalizedRequestId) {
-      return runId;
-    }
-    if (sourceContextReferencesRequest(event.sourceContext, normalizedRequestId, normalizedMessageId)) {
-      return runId;
-    }
-  }
-
-  return '';
-}
-
-async function waitForQueuedRequestRun(runtime, sessionId, match = {}) {
-  const deadline = createPollDeadline(RUN_POLL_TIMEOUT_MS);
-  while (!pollDeadlineElapsed(deadline)) {
-    const events = await loadRemoteLabEvents(runtime, sessionId);
-    const runId = findQueuedRequestRunId(events, match);
-    if (runId) {
-      return runId;
-    }
-    await delay(RUN_POLL_INTERVAL_MS);
-  }
-  throw new Error(`queued request timed out after ${RUN_POLL_TIMEOUT_MS}ms`);
-}
-
-async function createOrReuseSession(runtime, summary, runtimeSelection) {
-  const sourceName = runtime.config.region === 'lark-global' ? 'Lark' : 'Feishu';
-  const payload = {
-    folder: runtime.config.sessionFolder,
-    tool: runtimeSelection.tool,
-    name: buildSessionName(summary),
-    sourceId: FEISHU_CONNECTOR_ID,
-    sourceName,
-    group: FEISHU_CONNECTOR_NAME,
-    description: buildSessionDescription(summary),
-    systemPrompt: runtime.config.systemPrompt,
-    externalTriggerId: buildExternalTriggerId(summary),
-    sourceContext: buildSessionSourceContext(summary),
-  };
-  const result = await requestRemoteLab(runtime, '/api/sessions', {
-    method: 'POST',
-    body: payload,
-  });
-  if (!result.response.ok || !result.json?.session?.id) {
-    throw new Error(result.json?.error || result.text || `Failed to create session (${result.response.status})`);
-  }
-  return result.json.session;
-}
-
-async function submitRemoteLabMessage(runtime, sessionId, summary, runtimeSelection) {
-  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, summary, { sessionId });
-  const messageSummary = attachmentResolution.failures.length > 0
-    ? { ...summary, attachmentDownloadFailures: attachmentResolution.failures }
-    : summary;
-  const payload = {
-    requestId: buildRequestId(summary),
-    text: buildRemoteLabMessage(messageSummary),
-    tool: runtimeSelection.tool,
-    sourceContext: buildMessageSourceContext(messageSummary),
-  };
-  if (attachmentResolution.attachments.length > 0) payload.attachments = attachmentResolution.attachments;
-  if (runtimeSelection.thinking) payload.thinking = true;
-  if (runtimeSelection.model) payload.model = runtimeSelection.model;
-  if (runtimeSelection.effort) payload.effort = runtimeSelection.effort;
-
-  const result = await requestRemoteLab(runtime, `/api/sessions/${sessionId}/messages`, {
-    method: 'POST',
-    body: payload,
-  });
-  const queued = result.json?.queued === true;
-  const duplicate = result.json?.duplicate === true;
-  const runId = trimString(result.json?.run?.id);
-  const responseId = trimString(result.json?.response?.id) || payload.requestId;
-  if (![200, 202].includes(result.response.status)) {
-    throw new Error(result.json?.error || result.text || `Failed to submit session message (${result.response.status})`);
-  }
-
-  return {
-    requestId: payload.requestId,
-    responseId,
-    runId: runId || null,
-    duplicate,
-    queued,
-  };
-}
-
-async function waitForRunCompletion(runtime, runId) {
-  const deadline = createPollDeadline(RUN_POLL_TIMEOUT_MS);
-  while (!pollDeadlineElapsed(deadline)) {
-    const result = await requestRemoteLab(runtime, `/api/runs/${runId}`);
-    if (!result.response.ok || !result.json?.run) {
-      throw new Error(result.json?.error || result.text || `Failed to load run ${runId}`);
-    }
-    const run = result.json.run;
-    if (run.state === 'completed') {
-      return run;
-    }
-    if (['failed', 'cancelled'].includes(run.state)) {
-      throw new Error(`run ${run.state}`);
-    }
-    await delay(RUN_POLL_INTERVAL_MS);
-  }
-  throw new Error(`run timed out after ${RUN_POLL_TIMEOUT_MS}ms`);
-}
-
 async function resolveTargetConfigDir(chatBaseUrl) {
   try {
     const normalized = chatBaseUrl?.replace(/\/+$/, '').toLowerCase();
@@ -1415,7 +1132,14 @@ async function resolveFeishuRuntimeSelection(runtime) {
   });
 }
 
-async function generateRemoteLabReply(runtime, summary) {
+async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveSubmission = async () => {} } = {}) {
+  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
+  if (prepared) {
+    const submission = await submitConnectorMessage(requester, prepared.sessionId, prepared.payload);
+    return { ...prepared.receipt, sessionId: prepared.sessionId, runId: submission.runId,
+      requestId: submission.requestId, responseId: submission.responseId,
+      duplicate: submission.duplicate, queued: submission.queued };
+  }
   const effectiveSummary = {
     ...await enrichSummaryWithChatMetadata(runtime, summary),
     sourceRouteId: runtime.config.sourceRouteId,
@@ -1425,7 +1149,6 @@ async function generateRemoteLabReply(runtime, summary) {
     ? buildFeishuForkExternalTriggerId(effectiveSummary)
     : buildExternalTriggerId(effectiveSummary);
   const runtimeSelection = await resolveFeishuRuntimeSelection(runtime);
-  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   const sessionPayload = {
     folder: runtime.config.sessionFolder,
     tool: runtimeSelection.tool,
@@ -1452,8 +1175,9 @@ async function generateRemoteLabReply(runtime, summary) {
   const messageSummary = attachmentResolution.failures.length > 0
     ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
     : effectiveSummary;
-  const submission = await submitConnectorMessage(requester, session.id, {
+  const payload = {
     requestId: buildRequestId(effectiveSummary),
+    sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: effectiveSummary },
     text: isForkCommand ? trimString(effectiveSummary.forkText) : buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
     sourceContext: isForkCommand
@@ -1463,44 +1187,13 @@ async function generateRemoteLabReply(runtime, summary) {
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
-  });
-  const runId = submission.runId;
-  const publication = await waitForConnectorPublication(
-    requester,
-    session.id,
-    submission.responseId,
-    {
-      timeoutMs: RUN_POLL_TIMEOUT_MS,
-      intervalMs: RUN_POLL_INTERVAL_MS,
-    },
-  );
-  assertConnectorPublicationReady(publication);
-  const replyAttachments = normalizeConnectorPublicationAttachments(publication);
-  let replyText = normalizeReplyText(normalizeConnectorPublicationText(publication, {
-    includeAttachmentFallback: replyAttachments.length === 0,
-  }));
-  const finalizedRunId = trimString(publication.finalRunId) || runId || '';
-  if (!replyText && replyAttachments.length === 0) {
-    const replyEvent = await loadConnectorAssistantReply(requester, session.id, {
-      runId: finalizedRunId,
-      requestId: submission.requestId,
-    });
-    replyText = normalizeReplyText(replyEvent?.normalizedContent || replyEvent?.content || '');
-  }
-  return {
-    sessionId: session.id,
-    runId: finalizedRunId,
-    requestId: submission.requestId,
-    responseId: submission.responseId,
-    duplicate: submission.duplicate,
-    queued: submission.queued,
-    attachmentCount: attachmentResolution.attachments.length,
-    attachmentDownloadFailureCount: attachmentResolution.failures.length,
-    externalTriggerId,
-    replyText,
-    replyAttachments,
-    silent: !replyText && replyAttachments.length === 0,
   };
+  const handoff = { sessionId: session.id, payload, receipt: {
+    externalTriggerId, attachmentCount: attachmentResolution.attachments.length,
+    attachmentDownloadFailureCount: attachmentResolution.failures.length,
+  } };
+  await saveSubmission(handoff);
+  return submitRemoteLabRequest(runtime, summary, { prepared: handoff });
 }
 
 function isProcessingReactionEnabled(runtime) {
@@ -1630,103 +1323,49 @@ async function sendFeishuAttachment(runtime, summary, attachment, uuid = '') {
   return sendFeishuAttachmentImpl(runtime, summary, attachment, uuid, { ensureAuthCookie });
 }
 
-async function deliverFeishuVisibleReply(runtime, summary, {
-  responseId = '',
-  kind = 'content',
-  text = '',
-  attachments = [],
-}, sendFeishuTextImpl = sendFeishuText, sendFeishuAttachmentImpl = sendFeishuAttachment) {
-  const transport = createFeishuConnectorTransport({
-    runtime,
-    summary,
-    sendFeishuTextImpl,
-    sendFeishuAttachmentImpl,
-  });
-  const driver = new ConnectorDriver({
-    targetId: buildExternalTriggerId(summary),
-    transport,
-  });
-  const delivery = await driver.dispatchMessage({
-    responseId: trimString(responseId) || buildRequestId(summary),
-    kind,
-    text,
-    attachments,
-    order: 0,
-  });
-  if (delivery.record.state !== 'delivered') {
-    throw new Error(delivery.record.lastError || 'Failed to deliver Feishu reply');
-  }
-  const messageIds = (Array.isArray(delivery.record.metadata?.responses)
-    ? delivery.record.metadata.responses
-    : [])
-    .map((result) => trimString(result?.message_id || result?.messageId))
-    .filter(Boolean);
-  const fallbackMessageId = trimString(delivery.record.externalId);
-  if (messageIds.length === 0 && fallbackMessageId) {
-    messageIds.push(fallbackMessageId);
-  }
-  const threadIds = (Array.isArray(delivery.record.metadata?.responses)
-    ? delivery.record.metadata.responses
-    : [])
-    .map((result) => trimString(result?.thread_id || result?.threadId))
-    .filter(Boolean);
-  return {
-    message_id: messageIds.at(-1) || fallbackMessageId,
-    message_ids: Array.from(new Set(messageIds)),
-    thread_id: threadIds.at(-1) || '',
-  };
-}
-
 async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
-  const deliver = helpers.deliverFeishuVisibleReply || deliverFeishuVisibleReply;
-  const claimResult = await request('/api/source-deliveries/claim', {
-    method: 'POST',
-    body: {
-      connector: FEISHU_CONNECTOR_ID,
-      sourceRouteId: runtime.config.sourceRouteId || 'default',
-    },
-  });
-  if (!claimResult.response.ok) {
-    throw new Error(claimResult.json?.error || claimResult.text || 'Failed to claim source delivery');
-  }
-  const claim = claimResult.json?.claim;
-  if (!claim?.delivery?.id || !claim?.leaseId) return null;
-
+  const receipts = runtime.deliveryReceipts ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-receipts'));
+  const acknowledge = async receipt => {
+    if (receipt.sessionId && receipt.messageId && runtime.storagePaths?.messageIndexPath) {
+      await recordFeishuOutboundMessageSession(runtime, receipt.target, receipt.sessionId, receipt.messageId);
+      await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
+    }
+    const completed = await request(`/api/source-deliveries/${receipt.deliveryId}/complete`, { method: 'POST', body: {
+      leaseId: receipt.leaseId, externalId: receipt.externalId,
+    } });
+    if (!completed.response.ok) throw new Error(completed.json?.error || 'Failed to record delivery receipt');
+    return completed.json.delivery;
+  };
+  await receipts.flush(acknowledge);
+  const { response, json } = await request('/api/source-deliveries/claim', { method: 'POST', body: {
+    connector: FEISHU_CONNECTOR_ID, sourceRouteId: runtime.config.sourceRouteId || 'default',
+  } });
+  if (!response.ok) throw new Error(json?.error || 'Failed to claim delivery');
+  const claim = json?.claim;
+  if (!claim) return null;
   const delivery = claim.delivery;
+  const summary = { ...delivery.target, mentions: [] };
+  let sent;
   try {
-    const result = await deliver(runtime, {
-      ...delivery.target,
-      mentions: [],
-    }, {
-      responseId: delivery.responseId,
-      kind: delivery.kind || 'content',
-      text: delivery.text,
-    });
-    const completed = await request(`/api/source-deliveries/${encodeURIComponent(delivery.id)}/complete`, {
-      method: 'POST',
-      body: {
-        leaseId: claim.leaseId,
-        externalId: trimString(result?.message_id),
-      },
-    });
-    if (!completed.response.ok) {
-      throw new Error(completed.json?.error || completed.text || 'Failed to complete source delivery');
-    }
-    return completed.json?.delivery || delivery;
+    sent = delivery.attachment
+      ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
+      : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
   } catch (error) {
-    const failed = await request(`/api/source-deliveries/${encodeURIComponent(delivery.id)}/fail`, {
-      method: 'POST',
-      body: {
-        leaseId: claim.leaseId,
-        error: error?.message || String(error),
-      },
-    }).catch(() => null);
-    if (failed && !failed.response.ok) {
-      console.error(`[feishu-connector] failed to persist source delivery failure ${delivery.id}: ${failed.json?.error || failed.text}`);
-    }
+    // A network timeout cannot tell whether Feishu executed the operation.
+    await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST', body: {
+      leaseId: claim.leaseId, error: error.message,
+      safeToRetry: error.response?.status === 429,
+      definiteFailure: error.definiteFailure === true,
+    } });
     throw error;
   }
+  await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
+    externalId: sent.message_id || sent.reply_id || '', messageId: sent.message_id || '',
+    threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary });
+  let completed;
+  await receipts.flush(async receipt => { completed = await acknowledge(receipt); });
+  return completed;
 }
 
 function startSourceDeliveryPoller(runtime, options = {}) {
@@ -1945,189 +1584,52 @@ async function handleChatMemberUserAdded(runtime, summary, raw, sourceLabel) {
   return { grantedCount, approved: true, changed };
 }
 
-async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
-  const wasHandled = helpers.wasMessageHandled || wasMessageHandled;
-  const markHandled = helpers.markMessageHandled || markMessageHandled;
-  const generateReply = helpers.generateRemoteLabReply || generateRemoteLabReply;
-  const sendText = helpers.sendFeishuText || sendFeishuText;
-  const sendAttachment = helpers.sendFeishuAttachment || sendFeishuAttachment;
-  const addReaction = helpers.addProcessingReaction || addProcessingReaction;
-  const removeReaction = helpers.removeProcessingReaction || removeProcessingReaction;
+async function queueFeishuReply(runtime, summary, text) {
+  const result = await requestRemoteLab(runtime, '/api/source-deliveries', { method: 'POST', body: {
+    responseId: buildRequestId(summary), text,
+    sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: summary },
+  } });
+  if (!result.response.ok) throw new Error(result.json?.error || 'Failed to enqueue reply');
+  return { message_id: '', deliveryId: result.json.delivery.id };
+}
 
-  if (!isProcessableMessage(summary)) {
-    return;
-  }
+async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
+  if (!isProcessableMessage(summary)) return { ignored: true };
   if (!isFeishuDocumentCommentSummary(summary) && !shouldRouteFeishuMessageToRemoteLab(runtime, summary)) {
     console.log(`[feishu-connector] skipped ${summary.messageId} (group reply policy requires a mention of this Bot)`);
-    return;
+    return { ignored: true, reason: 'group_reply_policy' };
   }
-  if (runtime.processingMessageIds.has(summary.messageId)) {
-    return;
+  if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
+  const command = extractLocalCommand(summary);
+  const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+  if (command?.type === 'fork' && !command.text) return enqueue(runtime, summary, '用法：/fork <任务文本>');
+  if (command?.type === 'fork') summary = { ...summary, forkCommand: true, forkText: command.text, replyInThread: true };
+  else if (command) {
+    const local = await handleLocalCommand(runtime, summary, command, enqueue);
+    if (local.handled) return local;
   }
-  if (await wasHandled(runtime.storagePaths.handledMessagesPath, summary.messageId)) {
-    return;
+  const receipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(runtime, summary);
+  if (runtime.storagePaths?.messageIndexPath) {
+    await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
+    await recordFeishuThreadSessionBinding(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
   }
+  return receipt;
+}
 
-  runtime.processingMessageIds.add(summary.messageId);
-  let processingReaction = null;
-  try {
-    if (typeof helpers.hydrateSummary === 'function') {
-      summary = await helpers.hydrateSummary(runtime, summary);
-    }
-    const localCommand = extractLocalCommand(summary);
-    if (localCommand?.type === 'fork' && !localCommand.text) {
-      const reply = await sendText(runtime, summary, '用法：/fork <任务文本>');
-      await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-        status: 'fork_usage',
-        sourceLabel,
-        chatId: summary.chatId,
-        localCommand: 'fork',
-        responseMessageId: reply.message_id || '',
-        repliedAt: nowIso(),
-      });
-      return;
-    }
-    if (localCommand?.type === 'fork') {
-      summary = {
-        ...summary,
-        forkCommand: true,
-        forkText: localCommand.text,
-        replyInThread: true,
-      };
-    } else if (localCommand) {
-      const localResult = await handleLocalCommand(runtime, summary, localCommand, sendText);
-      if (localResult?.handled) {
-        await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-          status: localResult.status,
-          sourceLabel,
-          chatId: summary.chatId,
-          localCommand: localResult.commandType,
-          responseMessageId: localResult.responseMessageId,
-          repliedAt: nowIso(),
-        });
-        return;
-      }
-    }
-
-    summary = await enrichSummaryWithChatMetadata(runtime, summary);
-
-    try {
-      processingReaction = await addReaction(runtime, summary);
-    } catch (reactionError) {
-      console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${reactionError?.message || reactionError}`);
-    }
-
-    const generated = await generateReply(runtime, summary);
-    try {
-      await recordFeishuMessageSession(runtime, summary, generated.sessionId, {
-        externalTriggerId: generated.externalTriggerId,
-      });
-      await recordFeishuThreadSessionBinding(runtime, summary, generated.sessionId, {
-        externalTriggerId: generated.externalTriggerId,
-      });
-    } catch (indexError) {
-      console.warn(`[feishu-connector] failed to update message index for ${summary.messageId}: ${indexError?.message || indexError}`);
-    }
-    const replyText = normalizeReplyText(generated.replyText);
-    const replyAttachments = Array.isArray(generated.replyAttachments)
-      ? generated.replyAttachments.filter((attachment) => attachment && typeof attachment === 'object')
-      : [];
-    const finalReply = decideConnectorUserVisibleReply({
-      replyText,
-      hasAttachments: replyAttachments.length > 0,
-      duplicate: generated.duplicate,
-      silentConfirmationText: normalizeReplyText(runtime?.config?.silentConfirmationText),
-    });
-    if (finalReply.action === 'silent') {
-      await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-        status: finalReply.status,
-        sourceLabel,
-        chatId: summary.chatId,
-        sessionId: generated.sessionId,
-        runId: generated.runId,
-        requestId: generated.requestId,
-        duplicate: generated.duplicate,
-        reason: finalReply.reason,
-      });
-      console.log(`[feishu-connector] no reply sent for ${summary.messageId} (${finalReply.reason})`);
-      return;
-    }
-
-    const reply = await deliverFeishuVisibleReply(runtime, summary, {
-      responseId: generated.responseId || generated.requestId,
-      kind: finalReply.action === 'send_confirmation' ? 'summary' : 'content',
-      text: finalReply.text,
-      attachments: finalReply.action === 'send_confirmation' ? [] : replyAttachments,
-    }, sendText, sendAttachment);
-    try {
-      const outboundMessageIds = Array.isArray(reply.message_ids) && reply.message_ids.length > 0
-        ? reply.message_ids
-        : [reply.message_id].filter(Boolean);
-      for (const outboundMessageId of outboundMessageIds) {
-        await recordFeishuOutboundMessageSession(runtime, summary, generated.sessionId, outboundMessageId, {
-          externalTriggerId: generated.externalTriggerId,
-        });
-      }
-      await recordFeishuThreadSessionBinding(runtime, summary, generated.sessionId, {
-        threadId: reply.thread_id,
-        externalTriggerId: generated.externalTriggerId,
-      });
-    } catch (indexError) {
-      console.warn(`[feishu-connector] failed to update outbound message index for ${reply.message_id || summary.messageId}: ${indexError?.message || indexError}`);
-    }
-    await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-      status: finalReply.status,
-      sourceLabel,
-      chatId: summary.chatId,
-      sessionId: generated.sessionId,
-      runId: generated.runId,
-      requestId: generated.requestId,
-      duplicate: generated.duplicate,
-      attachmentCount: replyAttachments.length,
-      ...(finalReply.reason ? { reason: finalReply.reason } : {}),
-      ...(finalReply.action === 'send_confirmation' ? { confirmationText: finalReply.text } : {}),
-      responseMessageId: reply.message_id || '',
-      ...(Array.isArray(reply.message_ids) && reply.message_ids.length > 1 ? { responseMessageIds: reply.message_ids } : {}),
-      repliedAt: nowIso(),
-    });
-    if (finalReply.action === 'send_confirmation') {
-      console.log(`[feishu-connector] sent confirmation for ${summary.messageId} with ${reply.message_id}`);
-      return;
-    }
-    console.log(`[feishu-connector] replied to ${summary.messageId} with ${reply.message_id}`);
-  } catch (error) {
-    console.error(`[feishu-connector] processing failed for ${summary.messageId}:`, error?.stack || error);
-    try {
-      const failureReason = error?.message || String(error);
-      const failureCategory = classifyConnectorFailureReason(failureReason);
-      const fallback = buildFailureReply(summary, failureReason);
-      const reply = await deliverFeishuVisibleReply(runtime, summary, {
-        responseId: buildRequestId(summary),
-        kind: 'summary',
-        text: fallback,
-      }, sendText);
-      await markHandled(runtime.storagePaths.handledMessagesPath, summary.messageId, {
-        status: 'failed_with_notice',
-        sourceLabel,
-        chatId: summary.chatId,
-        error: failureReason,
-        failureCategory,
-        responseMessageId: reply.message_id || '',
-        repliedAt: nowIso(),
-      });
-    } catch (sendError) {
-      console.error(`[feishu-connector] fallback send failed for ${summary.messageId}:`, sendError?.stack || sendError);
-    }
-  } finally {
-    if (processingReaction) {
-      try {
-        await removeReaction(runtime, summary, processingReaction);
-      } catch (reactionError) {
-        console.warn(`[feishu-connector] failed to remove processing reaction for ${summary.messageId}: ${reactionError?.message || reactionError}`);
-      }
-    }
-    runtime.processingMessageIds.delete(summary.messageId);
-  }
+function initializeInbox(runtime) {
+  return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
+    conversationKey: entry => entry.summary.chatId || entry.summary.fileToken,
+    process: async (entry, update) => {
+      if (entry.sourceLabel === 'im.chat.member.user.added_v1') return handleChatMemberUserAdded(runtime, entry.summary, entry.raw, entry.sourceLabel);
+      const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
+      return allowed ? handleMessage(runtime, entry.summary, entry.sourceLabel, {
+        submitRemoteLabRequest: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
+          prepared: entry.submission, saveSubmission: submission => update({ submission }),
+        }),
+      }) : { blocked: true };
+    },
+    onError: error => console.error(`[feishu-inbox] ${error.message}`),
+  });
 }
 
 export {
@@ -2152,7 +1654,7 @@ export {
   extractLocalCommand,
   findFeishuThreadSessionBinding,
   addProcessingReaction,
-  generateRemoteLabReply,
+  submitRemoteLabRequest,
   grantSenderAccess,
   handleChatMemberUserAdded,
   handleMessage,
@@ -2210,7 +1712,6 @@ async function main() {
   const storagePaths = {
     eventsLogPath: join(config.storageDir, 'events.jsonl'),
     knownSendersPath: join(config.storageDir, 'known-senders.json'),
-    handledMessagesPath: join(config.storageDir, 'handled-messages.json'),
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths, accessState);
@@ -2219,6 +1720,7 @@ async function main() {
       () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
     );
   }
+  const inbox = initializeInbox(runtime);
   const wsClient = new Lark.WSClient({
     appId: config.appId,
     appSecret: config.appSecret,
@@ -2231,12 +1733,15 @@ async function main() {
     if (closed) return;
     closed = true;
     stopSourceDeliveryPoller(runtime);
+    inbox.stop();
     console.log(`[feishu-connector] closing connection (${reason})`);
     wsClient.close();
   };
   const shutdownAndExit = async (reason, code = 0) => {
     closeConnection(reason);
-    await delay(250);
+    await inbox.idle();
+    await runtime.sourceDeliveryPollPromise;
+    await runtime.access.flushPromise;
     await releasePidLock();
     process.exit(code);
   };
@@ -2248,47 +1753,17 @@ async function main() {
     void shutdownAndExit('SIGTERM');
   });
 
+  const persist = (sourceLabel, summarize) => async raw => {
+    const summary = summarize(raw);
+    await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
+    return {};
+  };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
-    'im.message.receive_v1': async (data) => {
-      const summary = summarizeEvent(data);
-      const allowed = await recordInboundEvent(runtime, summary, data, 'im.message.receive_v1');
-      if (allowed) {
-        enqueueByConversation(runtime, summary, () => handleMessage(runtime, summary, 'im.message.receive_v1'));
-      }
-      return {};
-    },
-    'im.chat.member.user.added_v1': async (data) => {
-      const summary = summarizeChatMemberUserAddedEvent(data);
-      enqueueByConversation(runtime, { chatId: summary.chatId, messageId: summary.eventId }, () => handleChatMemberUserAdded(runtime, summary, data, 'im.chat.member.user.added_v1'));
-      return {};
-    },
-    'drive.notice.comment_add_v1': async (data) => {
-      const summary = summarizeFeishuDocumentCommentEvent(data);
-      const allowed = await recordInboundEvent(runtime, summary, data, 'drive.notice.comment_add_v1');
-      if (!summary.mentionedBot) {
-        console.log(`[feishu-connector] no reply sent for ${summary.messageId} (document comment did not mention bot)`);
-        return {};
-      }
-      if (allowed) {
-        enqueueByConversation(runtime, summary, () => handleMessage(
-          runtime,
-          summary,
-          'drive.notice.comment_add_v1',
-          { hydrateSummary: hydrateFeishuDocumentCommentSummary },
-        ));
-      }
-      return {};
-    },
-    message: async (data) => {
-      const summary = summarizeLegacyMessageEvent(data);
-      const allowed = await recordInboundEvent(runtime, summary, data, 'message');
-      if (allowed) {
-        enqueueByConversation(runtime, summary, () => handleMessage(runtime, summary, 'message'));
-      }
-      return {};
-    },
+    'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
+    'im.chat.member.user.added_v1': persist('im.chat.member.user.added_v1', summarizeChatMemberUserAddedEvent),
+    'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
-
+  inbox.start();
   await wsClient.start({ eventDispatcher });
   startSourceDeliveryPoller(runtime);
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
@@ -2298,7 +1773,6 @@ async function main() {
   console.log(`[feishu-connector] whitelist mirror: ${config.intakePolicy.allowedSendersPath}`);
   console.log(`[feishu-connector] event log: ${storagePaths.eventsLogPath}`);
   console.log(`[feishu-connector] known senders: ${storagePaths.knownSendersPath}`);
-  console.log(`[feishu-connector] handled messages: ${storagePaths.handledMessagesPath}`);
   console.log(`[feishu-connector] message index: ${storagePaths.messageIndexPath}`);
   console.log(`[feishu-connector] RemoteLab base URL: ${config.chatBaseUrl}`);
   console.log(`[feishu-connector] session folder: ${config.sessionFolder}`);
@@ -2326,7 +1800,9 @@ async function main() {
     }
     for (const summary of summaries) {
       console.log(`[feishu-connector] replaying stored message ${summary.messageId}`);
-      await handleMessage(runtime, summary, options.replayLast ? 'replay-last' : 'replay-message-id');
+      await inbox.accept(summary.messageId, { summary, raw: null, sourceLabel: 'replay' });
+      await inbox.tick();
+      await inbox.idle();
     }
     if (options.durationMs === 0) {
       closeConnection('replay complete');

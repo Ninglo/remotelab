@@ -15,6 +15,10 @@ delete env.REMOTELAB_MEMORY_DIR;
 delete env.REMOTELAB_MACHINE_CODEX_HOME;
 delete env.REMOTELAB_MACHINE_PI_AGENT_DIR;
 delete env.PI_CODING_AGENT_DIR;
+delete env.REMOTELAB_USER_SHELL_ENV_B64;
+delete env.REMOTELAB_PROJECT_ROOT;
+delete env.REMOTELAB_CHAT_BASE_URL;
+env.REMOTELAB_DISABLE_SYSTEMD_DETACHED_RUNNER = '1';
 
 const child = spawn(args[0], args.slice(1), {
   stdio: 'inherit',

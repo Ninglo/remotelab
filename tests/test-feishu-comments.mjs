@@ -222,40 +222,20 @@ assert.equal(
   'document comments should not call the chat-message reaction API',
 );
 
-const handled = [];
 let generatedPrompt = '';
-await handleMessage(runtime, summary, 'drive.notice.comment_add_v1', {
-  wasMessageHandled: async () => false,
+const handoff = await handleMessage(runtime, summary, 'drive.notice.comment_add_v1', {
   hydrateSummary: hydrateFeishuDocumentCommentSummary,
-  generateRemoteLabReply: async (_runtime, fullSummary) => {
+  submitRemoteLabRequest: async (_runtime, fullSummary) => {
     generatedPrompt = buildRemoteLabMessage(fullSummary);
-    return {
-      sessionId: 'session_comment_1',
-      runId: 'run_comment_1',
-      requestId: 'feishu:document-comment:docx_comment_1:comment_1:reply_current_1',
-      responseId: 'response_comment_1',
-      duplicate: false,
-      replyText: '建议补充预期结果和失败回滚条件。',
-      replyAttachments: [],
-    };
-  },
-  sendFeishuText,
-  markMessageHandled: async (_pathname, messageId, metadata) => {
-    handled.push({ messageId, metadata });
+    return { sessionId: 'session_comment_1', requestId: 'comment-request' };
   },
 });
-
 assert.match(generatedPrompt, /能结合全文给一个修改建议吗/);
-assert.equal(commentCreatePayloads.length, 2, 'the generated answer should be posted to the same comment thread');
-assert.equal(
-  commentCreatePayloads[1].data.content.elements[0].text_run.text,
-  '建议补充预期结果和失败回滚条件。',
-);
-assert.equal(handled.length, 1);
-assert.equal(handled[0].messageId, summary.messageId);
-assert.equal(handled[0].metadata.status, 'sent');
-assert.equal(handled[0].metadata.responseMessageId, 'reply_bot_1');
-assert.equal(runtime.processingMessageIds.size, 0);
+assert.equal(handoff.sessionId, 'session_comment_1');
+assert.equal(commentCreatePayloads.length, 1, 'admission must not publish the answer itself');
+await sendFeishuText(runtime, hydrated, '建议补充预期结果和失败回滚条件。');
+assert.equal(commentCreatePayloads.length, 2);
+assert.equal(commentCreatePayloads[1].data.content.elements[0].text_run.text, '建议补充预期结果和失败回滚条件。');
 
 const unmentioned = summarizeFeishuDocumentCommentEvent({
   ...rawEvent,
@@ -266,7 +246,7 @@ const unmentioned = summarizeFeishuDocumentCommentEvent({
 let unmentionedGenerated = false;
 await handleMessage(runtime, unmentioned, 'drive.notice.comment_add_v1', {
   wasMessageHandled: async () => false,
-  generateRemoteLabReply: async () => {
+  submitRemoteLabRequest: async () => {
     unmentionedGenerated = true;
     return {};
   },

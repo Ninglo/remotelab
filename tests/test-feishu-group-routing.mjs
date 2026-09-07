@@ -21,17 +21,14 @@ const runtime = {
   processingMessageIds: new Set(), storagePaths: {},
 };
 const helpers = {
-  wasMessageHandled: async () => { effects.push('dedupe'); return false; },
-  addProcessingReaction: async () => { effects.push('reaction'); return null; },
-  generateRemoteLabReply: async () => { effects.push('generate'); return { replyText: 'ok' }; },
-  sendFeishuText: async () => { effects.push('send'); return { message_id: 'reply-test' }; },
-  markMessageHandled: async () => { effects.push('mark'); },
+  submitRemoteLabRequest: async () => { effects.push('submit'); return { sessionId: 'test-session' }; },
+  queueFeishuReply: async () => { effects.push('queue-reply'); return { deliveryId: 'test-delivery' }; },
 };
 async function check(label, changes, expected, routePolicy = policy) {
   effects = [];
   runtime.config.groupReplyPolicy = routePolicy;
   await handleMessage(runtime, { ...base, ...changes }, 'test', helpers);
-  assert.equal(effects.includes('generate'), expected, label);
+  assert.equal(effects.includes('submit'), expected, label);
   if (!expected) assert.deepEqual(effects, [], `${label}: must stop before all processing side effects`);
 }
 try {
@@ -43,6 +40,7 @@ try {
   await check('existing thread is not permission to trigger', { threadId: 'old-thread', rootId: 'old-bot-reply', parentId: 'old-bot-reply' }, false);
   await check('topic groups obey mention policy', { chatType: 'topic', chatMode: 'topic', threadId: 'topic' }, false);
   await check('group commands require mention too', { messageText: '/fork some task' }, false);
+  await check('command usage replies require mention too', { messageText: '/fork' }, false);
   await check('stale replay mentionedBot flags cannot bypass identity matching', { mentionedBot: true }, false);
   await check('private chats continue normally', { chatType: 'p2p', chatMode: 'private' }, true);
   await check('other groups retain current behavior', { chatId: 'other-group' }, true);

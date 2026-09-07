@@ -151,7 +151,7 @@ assert.equal(result?.ok, true, 'Session-state classifier should complete through
 assert.equal(result?.title, 'Codex Home Test');
 assert.equal(capturedCodexHome, machineCodexHome, 'background Codex runs should use the machine Codex home');
 
-killAll();
+await killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
 console.log('test-session-state-classifier-codex-home: ok');

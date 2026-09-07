@@ -173,6 +173,6 @@ try {
 
   console.log('test-session-title-refresh: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

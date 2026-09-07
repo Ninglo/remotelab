@@ -194,6 +194,6 @@ try {
 
   console.log('test-session-execution-scope-router: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

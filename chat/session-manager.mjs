@@ -1,7 +1,13 @@
+import { ensureRequestSchema } from '../lib/request-schema.mjs';
+import { buildReplyDeliveries } from './source-deliveries.mjs';
+import { requests } from './requests.mjs';
+import { createRequestRuntime } from './request-runtime.mjs';
+import { readRecord } from '../lib/durable-records.mjs';
+import { join as joinRequestPath } from 'node:path';
 import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
-import { IS_GUEST_INSTANCE } from '../lib/config.mjs';
+import { IS_GUEST_INSTANCE, CONFIG_DIR } from '../lib/config.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
@@ -72,12 +78,10 @@ import {
 import {
   appendRunSpoolRecord,
   createRun,
-  findRunByRequest,
   getRun,
   getRunManifest,
   getRunResult,
   isTerminalRunState,
-  listRunIds,
   materializeRunSpoolLine,
   readRunSpoolDelta,
   readRunSpoolRecords,
@@ -146,10 +150,7 @@ import { loadCompletedTurnContext } from './session-turn-context.mjs';
 import {
   buildReplyPublicationPayload,
   collectReplyPublicationHistory,
-  getRunResponseIds,
   normalizeReplyPublicationResponseIds,
-  resolveReplyPublicationUserEvent,
-  runIncludesResponseId,
 } from './reply-publication.mjs';
 import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
 import { enqueueSourceDelivery, normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
@@ -216,8 +217,6 @@ const VISITOR_TURN_GUARDRAIL = [
 
 const INTERNAL_SESSION_ROLE_AGENT_DELEGATE = 'agent_delegate';
 
-const FOLLOW_UP_FLUSH_DELAY_MS = 1500;
-const MAX_RECENT_FOLLOW_UP_REQUEST_IDS = 100;
 const OBSERVED_RUN_POLL_INTERVAL_MS = 250;
 const DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS = 1500;
 
@@ -446,7 +445,7 @@ function buildDelegationContextOperation(task, childSession) {
 }
 
 function getFollowUpQueue(meta) {
-  return Array.isArray(meta?.followUpQueue) ? meta.followUpQueue : [];
+  return requestRuntime.active(meta?.id).slice(1).map(record => ({ ...record.options, requestId: record.requestId, responseId: record.responseId, text: record.text, queuedAt: record.acceptedAt, images: record.images }));
 }
 
 function getFollowUpQueueCount(meta) {
@@ -455,31 +454,6 @@ function getFollowUpQueueCount(meta) {
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
-}
-
-function resolveResponseId(requestId, options = {}) {
-  const explicit = trimString(options.responseId);
-  if (explicit) return explicit;
-  return trimString(requestId);
-}
-
-function buildInitialReplyPublication(run, responseIds = []) {
-  const normalizedResponseIds = normalizeReplyPublicationResponseIds(
-    responseIds,
-    trimString(run?.responseId || run?.requestId),
-  );
-  return {
-    responseIds: normalizedResponseIds,
-    state: 'running',
-    resolution: '',
-    rootRunId: trimString(run?.id),
-    finalRunId: trimString(run?.id),
-    continuationRunIds: [],
-    updatedAt: nowIso(),
-    readyAt: null,
-    failedAt: null,
-    lastError: null,
-  };
 }
 
 function buildReplyPublicationSummary(input = {}) {
@@ -507,47 +481,9 @@ function buildReplyPublicationSummary(input = {}) {
   };
 }
 
-async function updateRunReplyPublication(runId, updater) {
-  if (!trimString(runId) || typeof updater !== 'function') return null;
-  return updateRun(runId, (current) => {
-    const existing = current?.replyPublication && typeof current.replyPublication === 'object'
-      ? current.replyPublication
-      : buildInitialReplyPublication(current, getRunResponseIds(current));
-    const next = updater(existing, current);
-    if (!next || typeof next !== 'object') {
-      return current;
-    }
-    const normalizedResponseIds = normalizeReplyPublicationResponseIds(
-      next.responseIds,
-      trimString(current?.responseId || current?.requestId),
-    );
-    return {
-      ...current,
-      replyPublication: {
-        ...existing,
-        ...next,
-        responseIds: normalizedResponseIds,
-        updatedAt: trimString(next.updatedAt) || nowIso(),
-      },
-    };
-  });
-}
-
-function deriveReplyPublicationStateFromRun(run = {}) {
-  const state = trimString(run?.state).toLowerCase();
-  if (state === 'failed') return 'failed';
-  if (state === 'cancelled') return 'cancelled';
-  if (state === 'completed') return 'ready';
-  return 'running';
-}
-
-function isTerminalReplyPublicationState(state) {
-  return ['ready', 'failed', 'cancelled'].includes(trimString(state).toLowerCase());
-}
-
 export { resolveAttachmentMimeType } from './session-attachments.mjs';
 
-function sanitizeQueuedFollowUpAttachments(images) {
+function sanitizeRequestAttachments(images) {
   return (images || [])
     .map((image) => {
       const filename = typeof image?.filename === 'string' ? image.filename.trim() : '';
@@ -571,38 +507,6 @@ function sanitizeQueuedFollowUpAttachments(images) {
     .filter(Boolean);
 }
 
-function sanitizeQueuedFollowUpOptions(options = {}) {
-  const next = {};
-  if (typeof options.tool === 'string' && options.tool.trim()) next.tool = options.tool.trim();
-  if (typeof options.model === 'string' && options.model.trim()) next.model = options.model.trim();
-  if (typeof options.effort === 'string' && options.effort.trim()) next.effort = options.effort.trim();
-  if (options.thinking === true) next.thinking = true;
-  const sourceContext = normalizeSourceContext(options.sourceContext);
-  if (sourceContext) next.sourceContext = sourceContext;
-  return next;
-}
-
-function buildQueuedFollowUpSourceContext(queue = []) {
-  if (!Array.isArray(queue) || queue.length === 0) return null;
-  if (queue.length === 1) {
-    return normalizeSourceContext(queue[0]?.sourceContext);
-  }
-  const queuedMessages = queue
-    .map((entry) => {
-      const sourceContext = normalizeSourceContext(entry?.sourceContext);
-      if (!sourceContext) return null;
-      const requestId = typeof entry?.requestId === 'string' ? entry.requestId.trim() : '';
-      const responseId = typeof entry?.responseId === 'string' ? entry.responseId.trim() : '';
-      return {
-        ...(requestId ? { requestId } : {}),
-        ...(responseId ? { responseId } : {}),
-        sourceContext,
-      };
-    })
-    .filter(Boolean);
-  return queuedMessages.length > 0 ? { queuedMessages } : null;
-}
-
 function serializeQueuedFollowUp(entry) {
   const attachments = getMessageAttachments(entry).map((image) => ({
     ...(image?.filename ? { filename: image.filename } : {}),
@@ -621,220 +525,8 @@ function serializeQueuedFollowUp(entry) {
   };
 }
 
-function trimRecentFollowUpRequestIds(ids) {
-  if (!Array.isArray(ids)) return [];
-  const unique = [];
-  const seen = new Set();
-  for (const value of ids) {
-    const requestId = typeof value === 'string' ? value.trim() : '';
-    if (!requestId || seen.has(requestId)) continue;
-    seen.add(requestId);
-    unique.push(requestId);
-  }
-  return unique.slice(-MAX_RECENT_FOLLOW_UP_REQUEST_IDS);
-}
-
-function hasRecentFollowUpRequestId(meta, requestId) {
-  const normalized = typeof requestId === 'string' ? requestId.trim() : '';
-  if (!normalized) return false;
-  return trimRecentFollowUpRequestIds(meta?.recentFollowUpRequestIds).includes(normalized);
-}
-
-function findQueuedFollowUpByRequest(meta, requestId) {
-  const normalized = typeof requestId === 'string' ? requestId.trim() : '';
-  if (!normalized) return null;
-  return getFollowUpQueue(meta).find((entry) => entry.requestId === normalized) || null;
-}
-
-function findQueuedFollowUpByResponse(meta, responseId) {
-  const normalized = trimString(responseId);
-  if (!normalized) return null;
-  return getFollowUpQueue(meta).find((entry) => trimString(entry?.responseId || entry?.requestId) === normalized) || null;
-}
-
-function formatQueuedFollowUpTextEntry(entry, index) {
-  const lines = [];
-  if (index !== null) {
-    lines.push(`${index + 1}.`);
-  }
-  const text = typeof entry?.text === 'string' ? entry.text.trim() : '';
-  if (text) {
-    if (index !== null) {
-      lines[0] = `${lines[0]} ${text}`;
-    } else {
-      lines.push(text);
-    }
-  }
-  const attachmentLine = formatAttachmentContextLine(getMessageAttachments(entry));
-  if (attachmentLine) lines.push(attachmentLine);
-  return lines.join('\n');
-}
-
-function buildQueuedFollowUpTranscriptText(queue) {
-  if (!Array.isArray(queue) || queue.length === 0) return '';
-  if (queue.length === 1) {
-    return formatQueuedFollowUpTextEntry(queue[0], null);
-  }
-  return [
-    'Queued follow-up messages sent while RemoteLab was busy:',
-    '',
-    ...queue.map((entry, index) => formatQueuedFollowUpTextEntry(entry, index)),
-  ].join('\n\n');
-}
-
-function buildQueuedFollowUpDispatchText(queue) {
-  if (!Array.isArray(queue) || queue.length === 0) return '';
-  if (queue.length === 1) {
-    return buildQueuedFollowUpTranscriptText(queue);
-  }
-  return [
-    `The user sent ${queue.length} follow-up messages while you were busy.`,
-    'Treat the ordered items below as the next user turn.',
-    'If a later item corrects or overrides an earlier one, follow the latest correction.',
-    '',
-    ...queue.map((entry, index) => formatQueuedFollowUpTextEntry(entry, index)),
-  ].join('\n\n');
-}
-
-function resolveQueuedFollowUpDispatchOptions(queue, session) {
-  const resolved = {
-    tool: session?.tool || '',
-    model: undefined,
-    effort: undefined,
-    thinking: false,
-  };
-  for (const entry of queue || []) {
-    if (typeof entry?.tool === 'string' && entry.tool.trim()) {
-      resolved.tool = entry.tool.trim();
-    }
-    if (typeof entry?.model === 'string' && entry.model.trim()) {
-      resolved.model = entry.model.trim();
-    }
-    if (typeof entry?.effort === 'string' && entry.effort.trim()) {
-      resolved.effort = entry.effort.trim();
-    }
-    if (entry?.thinking === true) {
-      resolved.thinking = true;
-    }
-  }
-  if (!resolved.tool) {
-    resolved.tool = session?.tool || 'codex';
-  }
-  return resolved;
-}
-
-function clearFollowUpFlushTimer(sessionId) {
-  const runtimeState = sessionRuntimeStateById.get(sessionId);
-  if (!runtimeState?.followUpFlushTimer) return false;
-  clearTimeout(runtimeState.followUpFlushTimer);
-  delete runtimeState.followUpFlushTimer;
-  return true;
-}
-
-async function flushQueuedFollowUps(sessionId) {
-  const runtimeState = ensureSessionRuntimeState(sessionId);
-  if (runtimeState.followUpFlushPromise) {
-    return runtimeState.followUpFlushPromise;
-  }
-
-  let followUpRescheduleDelayMs = null;
-  const promise = (async () => {
-    clearFollowUpFlushTimer(sessionId);
-
-    const rawSession = await findSessionMeta(sessionId);
-    if (!rawSession || rawSession.archived) return false;
-
-    if (rawSession.activeRunId) {
-      const activeRun = await flushDetachedRunIfNeeded(sessionId, rawSession.activeRunId) || await getRun(rawSession.activeRunId);
-      if (activeRun && !isTerminalRunState(activeRun.state)) {
-        return false;
-      }
-    }
-
-    const queue = getFollowUpQueue(rawSession);
-    if (queue.length === 0) return false;
-
-    const requestIds = queue.map((entry) => entry.requestId).filter(Boolean);
-    const responseIds = queue
-      .map((entry) => trimString(entry?.responseId || entry?.requestId))
-      .filter(Boolean);
-    const dispatchText = buildQueuedFollowUpDispatchText(queue);
-    const transcriptText = buildQueuedFollowUpTranscriptText(queue);
-    const dispatchOptions = resolveQueuedFollowUpDispatchOptions(queue, rawSession);
-    const queuedSourceContext = buildQueuedFollowUpSourceContext(queue);
-
-    await submitHttpMessage(sessionId, dispatchText, [], {
-      requestId: createInternalRequestId('queued_batch'),
-      ...(responseIds[0] ? { responseId: responseIds[0] } : {}),
-      ...(responseIds.length > 0 ? { replyPublicationResponseIds: responseIds } : {}),
-      tool: dispatchOptions.tool,
-      model: dispatchOptions.model,
-      effort: dispatchOptions.effort,
-      thinking: dispatchOptions.thinking,
-      ...(queuedSourceContext ? { sourceContext: queuedSourceContext } : {}),
-      preSavedAttachments: queue.flatMap((entry) => sanitizeQueuedFollowUpAttachments(getMessageAttachments(entry))),
-      recordedUserText: transcriptText,
-      queueIfBusy: false,
-    });
-
-    const cleared = await mutateSessionMeta(sessionId, (session) => {
-      const currentQueue = getFollowUpQueue(session);
-      if (currentQueue.length === 0) return false;
-      const requestIdSet = new Set(requestIds);
-      const nextQueue = currentQueue.filter((entry) => !requestIdSet.has(entry.requestId));
-      if (nextQueue.length === currentQueue.length && requestIdSet.size > 0) {
-        return false;
-      }
-      if (nextQueue.length > 0) {
-        session.followUpQueue = nextQueue;
-      } else {
-        delete session.followUpQueue;
-      }
-      session.recentFollowUpRequestIds = trimRecentFollowUpRequestIds([
-        ...(session.recentFollowUpRequestIds || []),
-        ...requestIds,
-      ]);
-      session.updatedAt = nowIso();
-      return true;
-    });
-
-    if (cleared.changed) {
-      broadcastSessionInvalidation(sessionId);
-    }
-    return true;
-  })().catch((error) => {
-    console.error(`[follow-up-queue] failed to flush ${sessionId}: ${error.message}`);
-    followUpRescheduleDelayMs = FOLLOW_UP_FLUSH_DELAY_MS * 2;
-    return false;
-  }).finally(() => {
-    const current = sessionRuntimeStateById.get(sessionId);
-    if (current?.followUpFlushPromise === promise) {
-      delete current.followUpFlushPromise;
-      if (followUpRescheduleDelayMs !== null) {
-        scheduleQueuedFollowUpDispatch(sessionId, followUpRescheduleDelayMs);
-      }
-    }
-  });
-
-  runtimeState.followUpFlushPromise = promise;
-  return promise;
-}
-
-function scheduleQueuedFollowUpDispatch(sessionId, delayMs = FOLLOW_UP_FLUSH_DELAY_MS) {
-  const runtimeState = ensureSessionRuntimeState(sessionId);
-  if (runtimeState.followUpFlushPromise) return true;
-  clearFollowUpFlushTimer(sessionId);
-  runtimeState.followUpFlushTimer = setTimeout(() => {
-    const current = sessionRuntimeStateById.get(sessionId);
-    if (current?.followUpFlushTimer) {
-      delete current.followUpFlushTimer;
-    }
-    void flushQueuedFollowUps(sessionId);
-  }, delayMs);
-  if (typeof runtimeState.followUpFlushTimer.unref === 'function') {
-    runtimeState.followUpFlushTimer.unref();
-  }
-  return true;
+function scheduleQueuedFollowUpDispatch(sessionId) {
+  setImmediate(() => void requestRuntime.tick(sessionId));
 }
 
 function sanitizeForkedEvent(event) {
@@ -1253,7 +945,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
     }
   }
 
-  if (isTerminalRunState(run.state) && !run.finalizedAt) {
+  if (isTerminalRunState(run.state) && (!run.finalizedAt || (await requests.byRunId(runId))?.releasedAt === null)) {
     const finalized = await finalizeDetachedRun(sessionId, run, manifest, terminalProjection?.normalizedEvents || []);
     historyChanged = historyChanged || finalized.historyChanged;
     sessionChanged = sessionChanged || finalized.sessionChanged;
@@ -1272,7 +964,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
 export { resolveSavedAttachments, saveAttachments } from './session-attachments.mjs';
 
 export async function appendAssistantMessage(sessionId, text = '', images = [], options = {}) {
-  let session = await getSession(sessionId);
+  let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
   if (session.archived) {
     const error = new Error('Session is archived');
@@ -1282,7 +974,7 @@ export async function appendAssistantMessage(sessionId, text = '', images = [], 
 
   const normalizedText = typeof text === 'string' ? text.trim() : '';
   const savedImages = options.preSavedAttachments?.length > 0
-    ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
+    ? sanitizeRequestAttachments(options.preSavedAttachments)
     : await saveAttachments(images);
   if (!normalizedText && savedImages.length === 0) {
     const error = new Error('text or attachments are required');
@@ -1308,7 +1000,7 @@ export async function appendAssistantMessage(sessionId, text = '', images = [], 
   broadcastSessionInvalidation(sessionId);
   return {
     event: stripEventAttachmentSavedPaths(event),
-    session: await getSession(sessionId) || session,
+    session: await enrichSessionMeta(session),
   };
 }
 
@@ -1324,7 +1016,6 @@ const {
   maybePublishRunResultAssets,
   maybeSendSessionCompletionPush,
   queueSessionCompletionTargets,
-  resumePendingCompletionTargets,
   runSessionTurnCompletionEffects,
 } = createSessionTurnCompletionHelpers({
   allowsSessionTurnCompletionEffects,
@@ -1346,7 +1037,6 @@ const {
   isInternalSession,
   isSessionRunning,
   isTerminalRunState,
-  listRunIds,
   loadHistory,
   maybeApplyAssistantWorkSummary,
   maybeAutoCompact,
@@ -1417,7 +1107,8 @@ async function enrichSessionMeta(meta, _options = {}) {
   const runtimeState = sessionRuntimeStateById.get(meta.id);
   const snapshot = await getHistorySnapshot(meta.id);
   const queuedCount = getFollowUpQueueCount(meta);
-  const runActivity = await resolveSessionRunActivity(meta);
+  const activeRequest = requestRuntime.active(meta.id)[0];
+  const runActivity = activeRequest ? { state: 'running', run: await getRun(activeRequest.runId) || { id: activeRequest.runId, state: 'accepted' } } : await resolveSessionRunActivity(meta);
   const { managerState, workState } = buildSessionControlState(meta);
   const {
     followUpQueue,
@@ -1481,7 +1172,7 @@ async function flushDetachedRunIfNeeded(sessionId, runId) {
   if (!sessionId || !runId) return null;
   const run = await getRun(runId);
   if (!run) return null;
-  if (!run.finalizedAt || !isTerminalRunState(run.state)) {
+  if (!run.finalizedAt || !isTerminalRunState(run.state) || (await requests.byRunId(runId))?.releasedAt === null) {
     return await syncDetachedRun(sessionId, runId) || await getRun(runId);
   }
   return run;
@@ -1946,6 +1637,17 @@ function normalizeRunEvents(run, events) {
   }));
 }
 
+async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
+  const record = await requests.byRunId(run.id);
+  if (!record || record.result) return;
+  if (run.state === 'completed') await maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents);
+  const history = await loadHistory(sessionId, { includeBodies: true });
+  const payload = buildReplyPublicationPayload(collectReplyPublicationHistory(history, run), run, { session: await findSessionMeta(sessionId), fullHistory: history });
+  const plan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
+  const deliveryPayload = run.state === 'completed' ? payload : { text: run.state === 'cancelled' ? '任务已取消。' : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`, attachments: [] };
+  await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null }, buildReplyDeliveries(plan, deliveryPayload).map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
+}
+
 async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvents = []) {
   let historyChanged = false;
   let sessionChanged = false;
@@ -2020,6 +1722,8 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     }
   }
 
+  await commitRequestResult(sessionId, run, manifest, fullNormalizedEvents);
+
   const finalizedMeta = await mutateSessionMeta(sessionId, (session) => {
     let changed = false;
     if (session.activeRunId === run.id) {
@@ -2050,6 +1754,13 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
     finalizedAt: current.finalizedAt || nowIso(),
   })) || run;
 
+  const completedRequest = await requests.byRunId(run.id);
+  if (completedRequest) {
+    await requests.mutate(completedRequest.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso() }));
+    await requestRuntime.refresh(completedRequest.key);
+    await requests.archiveFinished(completedRequest.key);
+  }
+
   if (compacting) {
     if (workerCompaction && compactionTargetSessionId) {
       const targetSession = await getSession(compactionTargetSessionId);
@@ -2069,6 +1780,7 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
   }
 
   scheduleDetachedRunPostFinalization(sessionId, finalizedRun, manifest, fullNormalizedEvents);
+  scheduleQueuedFollowUpDispatch(sessionId);
 
   return { historyChanged, sessionChanged };
 }
@@ -2131,47 +1843,15 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
   await maybePublishRunResultAssets(sessionId, finalizedRun, manifest, fullNormalizedEvents);
 
   await runSessionTurnCompletionEffects(sessionId, latestSession, finalizedRun, manifest);
-  await queueTriggerSourceDelivery(sessionId, finalizedRun, manifest);
   scheduleDetachedRunMemoryWriteback(sessionId, latestSession, finalizedRun, manifest);
-}
-
-async function queueTriggerSourceDelivery(sessionId, finalizedRun, manifest) {
-  if (trimString(manifest?.internalOperation) !== 'trigger_delivery') return null;
-  const sourceDelivery = normalizeSourceDeliveryPlan(manifest?.sourceDelivery);
-  if (!sourceDelivery || finalizedRun?.state === 'cancelled') return null;
-
-  let kind = 'content';
-  let text = '';
-  if (finalizedRun?.state === 'failed') {
-    kind = 'summary';
-    text = `定时任务执行失败：${trimString(finalizedRun?.failureReason) || '模型运行失败'}`;
-  } else if (finalizedRun?.state === 'completed') {
-    const latestRun = await getRun(finalizedRun.id) || finalizedRun;
-    const latestSession = await getSession(sessionId);
-    const history = await loadHistory(sessionId, { includeBodies: true });
-    const payloadHistory = collectReplyPublicationHistory(history, latestRun);
-    const payload = buildReplyPublicationPayload(payloadHistory, latestRun, {
-      session: latestSession,
-      fullHistory: history,
-    });
-    text = trimString(payload.text);
-    if (!text) return null;
-  } else {
-    return null;
+  const record = await requests.byRunId(finalizedRun.id);
+  if (record) {
+    await requests.mutate(record.key, current => ({ ...current, postCompletionPending: false }));
+    await requestRuntime.refresh(record.key);
+    await requests.archiveFinished(record.key);
   }
-
-  return enqueueSourceDelivery({
-    responseId: trimString(manifest?.responseId || finalizedRun?.responseId || finalizedRun?.requestId),
-    runId: trimString(finalizedRun?.id),
-    sessionId,
-    triggerId: trimString(manifest?.triggerId),
-    scheduleId: trimString(manifest?.scheduleId),
-    occurrenceId: trimString(manifest?.occurrenceId),
-    sourceDelivery,
-    kind,
-    text,
-  });
 }
+
 
 function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
   if (manifest?.internalOperation || isInternalSession(session)) {
@@ -2242,34 +1922,8 @@ async function syncDetachedRun(sessionId, runId) {
 }
 
 export async function startDetachedRunObservers() {
-  for (const meta of await loadSessionsMeta()) {
-    if (meta?.activeRunId) {
-      const run = await syncDetachedRun(meta.id, meta.activeRunId) || await getRun(meta.activeRunId);
-      if (run && !isTerminalRunState(run.state)) {
-        observeDetachedRun(meta.id, meta.activeRunId);
-        continue;
-      }
-    }
-    if (getFollowUpQueueCount(meta) > 0) {
-      scheduleQueuedFollowUpDispatch(meta.id);
-    }
-  }
-  await resumePendingCompletionTargets();
-  await resumePendingTriggerSourceDeliveries();
-}
-
-async function resumePendingTriggerSourceDeliveries() {
-  for (const runId of await listRunIds()) {
-    const run = await getRun(runId);
-    if (!run || !isTerminalRunState(run.state)) continue;
-    const manifest = await getRunManifest(runId);
-    if (trimString(manifest?.internalOperation) !== 'trigger_delivery' || !manifest?.sourceDelivery) continue;
-    try {
-      await queueTriggerSourceDelivery(run.sessionId, run, manifest);
-    } catch (error) {
-      console.error(`[source-delivery] failed to recover ${runId}: ${error?.message || error}`);
-    }
-  }
+  await ensureRequestSchema(CONFIG_DIR);
+  await requestRuntime.recover();
 }
 
 export async function listSessions({
@@ -2350,189 +2004,29 @@ export async function getSessionSourceContext(sessionId, options = {}) {
   };
 }
 
-async function findReplyPublicationRunByResponseId(sessionId, responseId, history = null) {
-  const normalized = trimString(responseId);
-  if (!normalized) return null;
-  const loadedHistory = Array.isArray(history)
-    ? history
-    : await loadHistory(sessionId, { includeBodies: true });
-  const matchedUserEvent = resolveReplyPublicationUserEvent(loadedHistory, normalized);
-  if (matchedUserEvent?.runId) {
-    const run = await getRun(trimString(matchedUserEvent.runId));
-    if (run?.sessionId === sessionId) {
-      return { run, history: loadedHistory };
-    }
-  }
-
-  for (const runId of await listRunIds()) {
-    const run = await getRun(runId);
-    if (!run || run.sessionId !== sessionId) continue;
-    if (!runIncludesResponseId(run, normalized)) continue;
-    const rootRunId = trimString(run.replyPublicationRootRunId);
-    if (rootRunId && rootRunId !== run.id) {
-      const rootRun = await getRun(rootRunId);
-      if (rootRun?.sessionId === sessionId) {
-        return { run: rootRun, history: loadedHistory };
-      }
-    }
-    return { run, history: loadedHistory };
-  }
-
-  return { run: null, history: loadedHistory };
-}
-
-async function buildReplyPublicationFromRun(sessionId, rootRun, responseId, history = null) {
-  if (!rootRun?.id) return null;
-  const rootRunId = trimString(rootRun.replyPublicationRootRunId);
-  if (rootRunId && rootRunId !== rootRun.id) {
-    const resolvedRootRun = await getRun(rootRunId);
-    if (resolvedRootRun?.sessionId === sessionId) {
-      rootRun = resolvedRootRun;
-    }
-  }
-  const loadedHistory = Array.isArray(history)
-    ? history
-    : await loadHistory(sessionId, { includeBodies: true });
-  const publication = rootRun.replyPublication && typeof rootRun.replyPublication === 'object'
-    ? rootRun.replyPublication
-    : {
-        responseIds: getRunResponseIds(rootRun),
-        state: deriveReplyPublicationStateFromRun(rootRun),
-        rootRunId: rootRun.id,
-        finalRunId: rootRun.id,
-        continuationRunIds: [],
-      };
-  const summary = buildReplyPublicationSummary({
-    ...publication,
-    id: responseId,
-  });
-
-  if (summary.ready) {
-    const payloadHistory = collectReplyPublicationHistory(loadedHistory, rootRun);
-    const session = await getSession(sessionId);
-    summary.payload = buildReplyPublicationPayload(payloadHistory, rootRun, {
-      session,
-      fullHistory: loadedHistory,
-    });
-  }
-
-  return summary;
-}
-
-async function reconcileReplyPublicationRuns(sessionId, rootRun) {
-  if (!sessionId || !rootRun?.id) return rootRun;
-  const publication = rootRun.replyPublication && typeof rootRun.replyPublication === 'object'
-    ? rootRun.replyPublication
-    : null;
-  const candidateRunIds = normalizeReplyPublicationResponseIds([
-    rootRun.id,
-    ...(Array.isArray(publication?.continuationRunIds) ? publication.continuationRunIds : []),
-    trimString(publication?.finalRunId),
-  ]);
-
-  let changed = false;
-  for (const candidateRunId of candidateRunIds) {
-    const candidate = await getRun(candidateRunId);
-    if (!candidate || candidate.sessionId !== sessionId) continue;
-    if (!candidate.finalizedAt && isTerminalRunState(candidate.state)) {
-      const synced = await flushDetachedRunIfNeeded(sessionId, candidateRunId);
-      changed = changed || !!synced;
-      const postFinalize = runPostFinalizePromises.get(candidateRunId);
-      if (postFinalize) {
-        await postFinalize;
-      }
-    }
-  }
-
-  const latestRootRun = changed ? (await getRun(rootRun.id) || rootRun) : rootRun;
-  const latestPublication = latestRootRun.replyPublication && typeof latestRootRun.replyPublication === 'object'
-    ? latestRootRun.replyPublication
-    : null;
-  if (latestPublication && !isTerminalReplyPublicationState(latestPublication.state)) {
-    const latestCandidateRunIds = normalizeReplyPublicationResponseIds([
-      latestRootRun.id,
-      ...(Array.isArray(latestPublication.continuationRunIds) ? latestPublication.continuationRunIds : []),
-      trimString(latestPublication.finalRunId),
-    ]);
-    const latestCandidateRuns = [];
-    for (const candidateRunId of latestCandidateRunIds) {
-      const candidateRun = await getRun(candidateRunId);
-      if (candidateRun?.sessionId === sessionId) {
-        latestCandidateRuns.push(candidateRun);
-      }
-    }
-    const finalRunId = trimString(latestPublication.finalRunId) || latestRootRun.id;
-    const finalRun = latestCandidateRuns.find((candidateRun) => candidateRun.id === finalRunId) || null;
-    const allKnownRunsTerminal = latestCandidateRuns.length > 0
-      && latestCandidateRuns.every((candidateRun) => isTerminalRunState(candidateRun.state));
-    if (finalRun && allKnownRunsTerminal) {
-      const recoveredState = deriveReplyPublicationStateFromRun(finalRun);
-      await updateRunReplyPublication(latestRootRun.id, (current) => {
-        if (isTerminalReplyPublicationState(current.state)) {
-          return current;
-        }
-        const terminalAt = trimString(finalRun.completedAt) || nowIso();
-        return {
-          ...current,
-          state: recoveredState,
-          resolution: recoveredState === 'ready' ? 'accepted_as_is' : '',
-          finalRunId: finalRun.id,
-          readyAt: recoveredState === 'ready' ? (trimString(current.readyAt) || terminalAt) : null,
-          failedAt: recoveredState === 'ready' ? null : (trimString(current.failedAt) || terminalAt),
-          lastError: recoveredState === 'ready' ? null : trimString(finalRun.failureReason),
-        };
-      });
-      changed = true;
-    }
-  }
-
-  return changed ? (await getRun(rootRun.id) || rootRun) : rootRun;
-}
-
 export async function getSessionReplyPublication(sessionId, responseId) {
-  const normalized = trimString(responseId);
-  if (!normalized) return null;
-
-  const sessionMeta = await findSessionMeta(sessionId);
-  if (!sessionMeta) return null;
-
-  const queuedEntry = findQueuedFollowUpByResponse(sessionMeta, normalized);
-  const resolved = await findReplyPublicationRunByResponseId(sessionId, normalized);
-  let rootRun = resolved?.run || null;
-  if (!rootRun) {
-    if (queuedEntry) {
-      return buildReplyPublicationSummary({
-        id: normalized,
-        responseIds: [normalized],
-        state: 'queued',
-      });
-    }
-    return null;
-  }
-
-  const reconciledRootRun = await reconcileReplyPublicationRuns(sessionId, rootRun);
-  const publicationHistory = reconciledRootRun === rootRun ? (resolved?.history || null) : null;
-  return buildReplyPublicationFromRun(sessionId, reconciledRootRun, normalized, publicationHistory);
+  const record = await requests.byResponse(sessionId, responseId);
+  if (!record) return null;
+  const run = await getRun(record.runId);
+  const state = record.result ? (record.result.state === 'completed' ? 'ready' : record.result.state)
+    : !run ? 'queued' : isTerminalRunState(run.state) ? 'preparing' : 'running';
+  return buildReplyPublicationSummary({ id: responseId, responseIds: [record.responseId], state,
+    rootRunId: record.runId, finalRunId: record.runId, resolution: state === 'ready' ? 'accepted_as_is' : '',
+    payload: state === 'ready' ? record.result?.payload : null, lastError: record.result?.error,
+    readyAt: record.settledAt, updatedAt: record.settledAt || record.acceptedAt });
 }
 
 export async function getRunState(runId) {
   const run = await getRun(runId);
-  if (!run) return null;
-  const effectiveRun = await flushDetachedRunIfNeeded(run.sessionId, runId) || await getRun(runId);
-  if (!effectiveRun) return null;
+  if (!run) {
+    const record = await requests.byRunId(runId);
+    return record ? { id: runId, sessionId: record.sessionId, requestId: record.requestId, state: 'accepted' } : null;
+  }
+  const effectiveRun = await flushDetachedRunIfNeeded(run.sessionId, runId) || run;
   const session = await findSessionMeta(effectiveRun.sessionId);
   const connectors = await buildRunConnectorSurface(session, effectiveRun);
-  const primaryResponseId = trimString(effectiveRun.responseId || getRunResponseIds(effectiveRun)[0]);
-  const publication = primaryResponseId
-    ? (trimString(effectiveRun.replyPublicationRootRunId)
-      ? await getSessionReplyPublication(effectiveRun.sessionId, primaryResponseId)
-      : await buildReplyPublicationFromRun(effectiveRun.sessionId, effectiveRun, primaryResponseId, null))
-    : null;
-  return {
-    ...effectiveRun,
-    ...(publication ? { replyPublication: publication } : {}),
-    ...(connectors ? { connectors } : {}),
-  };
+  const publication = await getSessionReplyPublication(effectiveRun.sessionId, effectiveRun.requestId);
+  return { ...effectiveRun, ...(publication ? { replyPublication: publication } : {}), ...(connectors ? { connectors } : {}) };
 }
 
 export async function createSession(folder, tool, name, extra = {}) {
@@ -3514,146 +3008,80 @@ export async function applyTemplateToSession(sessionId, templateId, options = {}
 
   return getSession(sessionId);
 }
+const requestRuntime = createRequestRuntime({
+  store: requests, prepare: prepareRequestRun, observe: observeDetachedRun, reconcile: syncDetachedRun,
+  postCompletion: async record => {
+    const run = await getRun(record.runId);
+    const manifest = await getRunManifest(record.runId);
+    if (!run || !manifest) throw new Error(`Missing completed run ${record.runId}`);
+    await scheduleDetachedRunPostFinalization(record.sessionId, run, manifest);
+  },
+  onError: (error, sessionId) => console.error(`[requests] ${sessionId}: ${error.stack || error}`),
+});
+
 export async function submitHttpMessage(sessionId, text, images, options = {}) {
-  const requestId = typeof options.requestId === 'string' ? options.requestId.trim() : '';
-  if (!requestId) {
-    throw new Error('requestId is required');
-  }
-  const responseId = resolveResponseId(requestId, options);
-  if (!text || typeof text !== 'string' || !text.trim()) {
-    throw new Error('text is required');
-  }
-
-  const existingRun = await findRunByRequest(sessionId, requestId);
-  if (existingRun) {
-    return {
-      requestId,
-      duplicate: true,
-      queued: false,
-      run: await getRun(existingRun.id) || existingRun,
-      session: await getSession(sessionId),
-      response: await getSessionReplyPublication(sessionId, responseId),
-    };
-  }
-
-  let session = await getSession(sessionId);
-  let sessionMeta = await findSessionMeta(sessionId);
+  await ensureRequestSchema(CONFIG_DIR);
+  const session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
-  if (session.archived) {
-    const error = new Error('Session is archived');
-    error.code = 'SESSION_ARCHIVED';
-    throw error;
+  if (session.archived) throw Object.assign(new Error('Session is archived'), { code: 'SESSION_ARCHIVED' });
+  if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
+  const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
+  const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options });
+  const queued = !record.result && requestRuntime.active(sessionId)[0]?.key !== record.key;
+  if (!options.internalOperation && options.recordUserMessage !== false) {
+    const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';
+    await mutateSessionMeta(sessionId, draft => { delete draft.workflowState; delete draft.workflowPriority; if (draftName) draft.name = draftName; return true; });
+    if (draftName) session.name = draftName;
+    delete session.workflowState; delete session.workflowPriority;
   }
+  broadcastSessionInvalidation(sessionId);
+  return { requestId: record.requestId, duplicate, queued,
+    run: { id: record.runId, sessionId, requestId: record.requestId, state: record.result?.state || 'accepted' },
+    response: { id: record.responseId, state: record.result ? (record.result.state === 'completed' ? 'ready' : record.result.state) : 'queued' },
+    session: await enrichSessionMeta(session) };
+}
 
-  const existingQueuedFollowUp = findQueuedFollowUpByRequest(sessionMeta, requestId);
-  if (existingQueuedFollowUp || hasRecentFollowUpRequestId(sessionMeta, requestId)) {
-    return {
-      requestId,
-      duplicate: true,
-      queued: !!existingQueuedFollowUp,
-      run: null,
-      session: await getSession(sessionId, {
-        includeQueuedMessages: !!existingQueuedFollowUp,
-      }),
-      response: buildReplyPublicationSummary({
-        id: responseId,
-        responseIds: [responseId],
-        state: existingQueuedFollowUp ? 'queued' : 'ready',
-      }),
-    };
-  }
+async function ensureRequestInput(record, manifest) {
+  if (record.options.recordUserMessage === false) return;
+  const events = await readEventsAfter(record.sessionId, manifest.forkBaseSeq || 0);
+  if (events.some(event => event.type === 'message' && event.role === 'user' && event.requestId === record.requestId)) return;
+  await appendEvent(record.sessionId, messageEvent('user', record.options.recordedUserText || record.text, buildMessageAttachmentRefs(record.images), {
+    requestId: record.requestId, responseId: record.responseId, runId: record.runId,
+    ...(record.options.sourceContext ? { sourceContext: record.options.sourceContext } : {}),
+  }));
+}
 
-  const normalizedText = text.trim();
-
-  let activeRun = null;
-  let hasActiveRun = false;
-  const hasPendingCompact = sessionRuntimeStateById.get(sessionId)?.pendingCompact === true;
-  const activeRunId = typeof sessionMeta?.activeRunId === 'string' ? sessionMeta.activeRunId : null;
-
-  if (activeRunId) {
-    activeRun = await flushDetachedRunIfNeeded(sessionId, activeRunId) || await getRun(activeRunId);
-    if (activeRun && !isTerminalRunState(activeRun.state)) {
-      hasActiveRun = true;
-    }
-    const refreshedSession = await getSession(sessionId);
-    if (refreshedSession) {
-      session = refreshedSession;
-      sessionMeta = await findSessionMeta(sessionId) || sessionMeta;
-    }
-  }
-
-  if (
-    options.requireIdle === true
-    && (hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0)
-  ) {
-    const error = new Error('Session is busy');
-    error.code = 'SESSION_BUSY';
-    throw error;
-  }
-
-  const acceptsNewUserInput = !options.internalOperation && options.recordUserMessage !== false;
-  if (
-    acceptsNewUserInput
-    && (
-      normalizeSessionWorkflowState(sessionMeta?.workflowState || '')
-      || normalizeSessionWorkflowPriority(sessionMeta?.workflowPriority || '')
-    )
-  ) {
-    const clearedWorkflow = await updateSessionWorkflowClassification(sessionId, {
-      workflowState: '',
-      workflowPriority: '',
+async function prepareRequestRun(record) {
+  const { sessionId, requestId, responseId, images } = record;
+  const options = { ...record.options, preSavedAttachments: images };
+  const normalizedText = record.text;
+  let session = await getSession(sessionId);
+  if (!session) throw new Error('Accepted request has no session');
+  let existingRun = await getRun(record.runId);
+  const launchReceipt = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
+  if (record.cancelRequestedAt && !launchReceipt) {
+    if (!existingRun) existingRun = await createRun({
+      status: { id: record.runId, sessionId, requestId, responseId, state: 'accepted', tool: options.tool || session.tool },
+      manifest: { sessionId, requestId, responseId, folder: session.folder, tool: options.tool || session.tool, runtimeFamily: (await getToolDefinitionAsync(options.tool || session.tool))?.runtimeFamily, options: {} },
     });
-    if (clearedWorkflow) {
-      session = clearedWorkflow;
-      sessionMeta = await findSessionMeta(sessionId) || sessionMeta;
-    }
+    const result = { completedAt: nowIso(), cancelled: true, exitCode: null };
+    await writeRunResult(record.runId, result);
+    await updateRun(record.runId, current => ({ ...current, state: 'cancelled', cancelRequested: true, result }));
+    return;
   }
-
-  if ((hasActiveRun || hasPendingCompact || getFollowUpQueueCount(sessionMeta) > 0) && options.queueIfBusy !== false) {
-    const queuedImages = options.preSavedAttachments?.length > 0
-      ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
-      : sanitizeQueuedFollowUpAttachments(await saveAttachments(images));
-    const queuedOptions = sanitizeQueuedFollowUpOptions(options);
-    const queuedEntry = {
-      requestId,
-      responseId,
-      text: normalizedText,
-      queuedAt: nowIso(),
-      images: queuedImages,
-      ...queuedOptions,
-    };
-    const queuedMeta = await mutateSessionMeta(sessionId, (draft) => {
-      const queue = getFollowUpQueue(draft);
-      if (queue.some((entry) => entry.requestId === requestId)) {
-        return false;
-      }
-      draft.followUpQueue = [...queue, queuedEntry];
-      draft.updatedAt = nowIso();
-      return true;
-    });
-    const wasDuplicateQueueInsert = queuedMeta.changed === false;
-    if (!hasActiveRun && !hasPendingCompact) {
-      scheduleQueuedFollowUpDispatch(sessionId);
+  if (existingRun && await getRunManifest(record.runId)) {
+    await ensureRequestInput(record, await getRunManifest(record.runId));
+    if (!record.preparedAt) await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso() }));
+    await requestRuntime.refresh(record.key);
+    const launch = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
+    if (existingRun.state === 'accepted' && !launch) {
+      const spawned = await spawnDetachedRunner(record.runId);
+      await updateRun(record.runId, current => ({ ...current, runnerProcessId: spawned.pid, runnerUnitName: spawned.unitName, runnerUnitScope: spawned.unitScope, runnerLaunchMode: spawned.launchMode }));
+    } else if (launch && !existingRun.runnerProcessId) {
+      await updateRun(record.runId, current => ({ ...current, runnerProcessId: launch.pid }));
     }
-    broadcastSessionInvalidation(sessionId);
-    return {
-      requestId,
-      duplicate: wasDuplicateQueueInsert,
-      queued: true,
-      run: null,
-      session: await getSession(sessionId, {
-        includeQueuedMessages: true,
-      }) || (queuedMeta.meta ? await enrichSessionMetaForClient(queuedMeta.meta, {
-        includeQueuedMessages: true,
-      }) : session),
-      response: buildReplyPublicationSummary({
-        id: responseId,
-        responseIds: [responseId],
-        state: wasDuplicateQueueInsert ? 'queued' : 'queued',
-      }),
-    };
+    return;
   }
-
   const [snapshot, forkContextHead] = await Promise.all([
     getHistorySnapshot(sessionId),
     getContextHead(sessionId),
@@ -3665,7 +3093,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     ? options.recordedUserText.trim()
     : normalizedText;
   const savedImages = options.preSavedAttachments?.length > 0
-    ? sanitizeQueuedFollowUpAttachments(options.preSavedAttachments)
+    ? sanitizeRequestAttachments(options.preSavedAttachments)
     : await saveAttachments(images);
   const sourceContext = normalizeSourceContext(options.sourceContext);
   const imageRefs = buildMessageAttachmentRefs(savedImages);
@@ -3696,18 +3124,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     claudeSessionId: persistedClaudeSessionId,
     codexThreadId: persistedCodexThreadId,
   } = resolveResumeState(effectiveTool, session, options, effectiveRuntimeFamily);
-  const publicationResponseIds = normalizeReplyPublicationResponseIds(
-    options.replyPublicationResponseIds,
-    responseId,
-  );
-  const primaryResponseId = publicationResponseIds[0] || responseId;
-  const replyPublicationRootRunId = trimString(options.replyPublicationRootRunId);
 
   const run = await createRun({
     status: {
+      id: record.runId,
       sessionId,
       requestId,
-      responseId: primaryResponseId || null,
+      responseId: responseId || null,
       state: 'accepted',
       tool: effectiveTool,
       model: options.model || null,
@@ -3717,12 +3140,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       codexThreadId: persistedCodexThreadId,
       providerResumeId: persistedCodexThreadId || persistedClaudeSessionId || null,
       internalOperation: options.internalOperation || null,
-      replyPublicationRootRunId: replyPublicationRootRunId || null,
     },
     manifest: {
       sessionId,
       requestId,
-      responseId: primaryResponseId || null,
+      responseId: responseId || null,
       forkBaseSeq: snapshot.latestSeq,
       forkContextHead: forkContextHead || null,
       folder: session.folder,
@@ -3730,8 +3152,6 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       ...(effectiveRuntimeFamily ? { runtimeFamily: effectiveRuntimeFamily } : {}),
       prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options),
       internalOperation: options.internalOperation || null,
-      ...(replyPublicationRootRunId ? { replyPublicationRootRunId } : {}),
-      ...(publicationResponseIds.length > 0 ? { replyPublicationResponseIds: publicationResponseIds } : {}),
       ...(normalizeSourceDeliveryPlan(options.sourceDelivery)
         ? { sourceDelivery: normalizeSourceDeliveryPlan(options.sourceDelivery) }
         : {}),
@@ -3762,9 +3182,6 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     },
   });
 
-  if (!replyPublicationRootRunId) {
-    await updateRunReplyPublication(run.id, () => buildInitialReplyPublication(run, publicationResponseIds));
-  }
 
   const activeSession = (await mutateSessionMeta(sessionId, (draft) => {
     draft.activeRunId = run.id;
@@ -3778,11 +3195,12 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.recordUserMessage !== false) {
     const userEvent = messageEvent('user', recordedUserText, imageRefs.length > 0 ? imageRefs : undefined, {
       requestId,
-      responseId: primaryResponseId || undefined,
+      responseId: responseId || undefined,
       runId: run.id,
       ...(sourceContext ? { sourceContext } : {}),
     });
-    await appendEvent(sessionId, userEvent);
+    const existingEvents = await readEventsAfter(sessionId, snapshot.latestSeq);
+    if (!existingEvents.some(event => event.type === 'message' && event.role === 'user' && event.requestId === requestId)) await appendEvent(sessionId, userEvent);
 
     const toolDefinition = await getToolDefinitionAsync(effectiveTool);
     const promptMode = toolDefinition?.promptMode === 'bare-user'
@@ -3793,7 +3211,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
       if (managerTurnContext && shouldPersistManagerTurnContext()) {
         await appendEvent(sessionId, managerContextEvent(managerTurnContext, {
           requestId,
-          ...(primaryResponseId ? { responseId: primaryResponseId } : {}),
+          ...(responseId ? { responseId: responseId } : {}),
           runId: run.id,
         }));
       }
@@ -3813,6 +3231,8 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     }
   }
 
+  await requests.mutate(record.key, current => ({ ...current, preparedAt: nowIso() }));
+  await requestRuntime.refresh(record.key);
   observeDetachedRun(sessionId, run.id);
   const spawned = await spawnDetachedRunner(run.id);
   await updateRun(run.id, (current) => ({
@@ -3824,27 +3244,28 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   }));
 
   broadcastSessionInvalidation(sessionId);
-  return {
-    requestId,
-    duplicate: false,
-    queued: false,
-    run: await getRun(run.id) || run,
-    session: await getSession(sessionId) || session,
-    response: await getSessionReplyPublication(sessionId, responseId),
-  };
 }
 
 export async function sendMessage(sessionId, text, images, options = {}) {
   return submitHttpMessage(sessionId, text, images, {
     ...options,
-    requestId: options.requestId || createInternalRequestId('compat'),
+    requestId: options.requestId || createInternalRequestId('message'),
   });
 }
 
 export async function cancelActiveRun(sessionId) {
   const session = await findSessionMeta(sessionId);
-  if (!session?.activeRunId) return null;
-  const run = await flushDetachedRunIfNeeded(sessionId, session.activeRunId) || await getRun(session.activeRunId);
+  if (!session) return null;
+  const request = (await requests.active()).find(record => record.sessionId === sessionId && !record.releasedAt && !record.options.deliveryOnly);
+  if (request) {
+    await requests.mutate(request.key, current => ({ ...current, cancelRequestedAt: current.cancelRequestedAt || nowIso() }));
+    await requestRuntime.refresh(request.key);
+    const existing = await getRun(request.runId);
+    if (!existing) return { id: request.runId, state: 'accepted', cancelRequested: true };
+  }
+  const runId = request?.runId || session.activeRunId;
+  if (!runId) return null;
+  const run = await flushDetachedRunIfNeeded(sessionId, runId) || await getRun(runId);
   if (!run) return null;
   if (isTerminalRunState(run.state)) {
     return run;
@@ -4067,12 +3488,17 @@ export async function compactSession(sessionId) {
   return queueContextCompaction(sessionId, session, null, { automatic: false }, getCompactionServices());
 }
 
-export function killAll() {
-  for (const sessionId of sessionRuntimeStateById.keys()) {
-    clearFollowUpFlushTimer(sessionId);
-  }
+export async function drainRequestRuntime() {
+  requestRuntime.stop();
+  await requestRuntime.idle();
+}
+
+export async function killAll() {
+  await drainRequestRuntime();
   sessionRuntimeStateById.clear();
   for (const runId of observedRuns.keys()) {
     stopObservedRun(runId);
   }
+  await Promise.allSettled(runSyncPromises.values());
+  await Promise.allSettled(runPostFinalizePromises.values());
 }

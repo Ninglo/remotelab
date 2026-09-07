@@ -81,6 +81,6 @@ try {
 
   console.log('test-session-active-message-count: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(home, { recursive: true, force: true });
 }

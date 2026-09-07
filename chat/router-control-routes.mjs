@@ -33,6 +33,8 @@ import {
 import {
   buildSourceDeliveryPlan,
   claimSourceDelivery,
+  enqueueSourceDelivery,
+  resolveSourceDelivery,
   completeSourceDelivery,
   failSourceDelivery,
   listSourceDeliveries,
@@ -428,6 +430,12 @@ export async function handleControlRoutes({
     return true;
   }
 
+  if (pathname === '/api/source-deliveries' && req.method === 'POST') {
+    try { writeJson(res, 202, { delivery: await enqueueSourceDelivery(JSON.parse(await readBody(req, 1024 * 1024))) }); }
+    catch (error) { writeJson(res, 400, { error: error.message }); }
+    return true;
+  }
+
   if (pathname === '/api/source-deliveries' && req.method === 'GET') {
     writeJson(res, 200, { deliveries: await listSourceDeliveries({
       connector: typeof parsedUrl?.query?.connector === 'string' ? parsedUrl.query.connector : '',
@@ -456,9 +464,9 @@ export async function handleControlRoutes({
     try {
       const body = await readBody(req, 32768);
       payload = body ? JSON.parse(body) : {};
-      const delivery = sourceDeliveryRoute.action === 'complete'
+      const delivery = sourceDeliveryRoute.action === 'resolve' ? await resolveSourceDelivery(sourceDeliveryRoute.deliveryId, payload) : sourceDeliveryRoute.action === 'complete'
         ? await completeSourceDelivery(sourceDeliveryRoute.deliveryId, payload.leaseId, payload)
-        : await failSourceDelivery(sourceDeliveryRoute.deliveryId, payload.leaseId, payload.error || 'Delivery failed');
+        : await failSourceDelivery(sourceDeliveryRoute.deliveryId, payload.leaseId, payload.error || 'Delivery failed', payload);
       if (!delivery) writeJson(res, 404, { error: 'Source delivery not found' });
       else writeJson(res, 200, { delivery });
     } catch (error) {

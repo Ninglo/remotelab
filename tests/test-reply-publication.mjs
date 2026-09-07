@@ -48,7 +48,7 @@ const {
   killAll,
   sendMessage,
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
-const { updateRun } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
+const { getRun } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
 
 async function waitFor(predicate, description, timeoutMs = 6000) {
   const start = Date.now();
@@ -92,20 +92,12 @@ try {
   assert.deepEqual(publication?.continuationRunIds, []);
   assert.equal(publication?.payload?.text, '主 Harness 已经直接完成并交付结果。');
 
-  await updateRun(runId, (run) => ({
-    ...run,
-    replyPublication: {
-      ...run.replyPublication,
-      state: 'running',
-      resolution: '',
-      readyAt: null,
-    },
-  }));
+  assert.equal(Object.hasOwn(await getRun(runId), 'replyPublication'), false, 'publication has no independently mutable persisted state');
   const recoveredPublication = await getSessionReplyPublication(session.id, responseId);
   assert.equal(
     recoveredPublication?.state,
     'ready',
-    'a terminal run must repair a stale non-terminal reply publication',
+    'publication reads the immutable request result',
   );
   assert.equal(recoveredPublication?.resolution, 'accepted_as_is');
 
@@ -156,8 +148,9 @@ try {
   );
   assert.equal(laterConnectorPublication?.payload?.sessionEntry, undefined);
   assert.doesNotMatch(laterConnectorPublication?.payload?.text || '', new RegExp(connectorSession.id));
+  await waitFor(async () => (await getRunState(secondOutcome.run.id))?.finalizedAt, 'second request to finish');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }
 

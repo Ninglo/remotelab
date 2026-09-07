@@ -30,15 +30,9 @@ const [
   import('./lib/guest-wechat-connector-startup.mjs'),
 ]);
 
-for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
-  await ensureDir(dir);
-}
-
-await apiRequestLog.initApiRequestLog();
-await usageLedger.initUsageLedger();
-await tools.ensureDefaultMicroAgentToolRegistrationAsync();
-
+let ready = false;
 const server = http.createServer((req, res) => {
+  if (!ready) { res.writeHead(503); res.end('Instance is recovering'); return; }
   const requestLog = apiRequestLog.startApiRequestLog(req, res);
   handleRequest(req, res).catch(err => {
     requestLog.markError(err);
@@ -50,20 +44,27 @@ const server = http.createServer((req, res) => {
   });
 });
 
+// Bind the instance's single control endpoint before any scheduler starts writing.
+await new Promise((resolve, reject) => {
+  server.once('error', reject);
+  server.listen(CHAT_PORT, CHAT_BIND_HOST, resolve);
+});
+for (const dir of [MEMORY_DIR, join(MEMORY_DIR, 'tasks')]) {
+  await ensureDir(dir);
+}
+
+await apiRequestLog.initApiRequestLog();
+await usageLedger.initUsageLedger();
+await tools.ensureDefaultMicroAgentToolRegistrationAsync();
+
 ws.attachWebSocket(server);
+await sessionManager.startDetachedRunObservers();
 triggers.startTriggerScheduler();
 recurringSchedules.startRecurringScheduleScheduler({
   createScheduledTrigger: triggers.createScheduledTrigger,
   countOpenScheduleTriggers: triggers.countOpenScheduleTriggers,
   onMaterialized: () => triggers.processDueTriggersNow(),
 });
-void (async () => {
-  try {
-    await sessionManager.startDetachedRunObservers();
-  } catch (error) {
-    console.error('Failed to rehydrate detached runs on startup:', error);
-  }
-})();
 
 const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
   createSession: sessionManager.createSession,
@@ -72,19 +73,24 @@ const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
 });
 
 async function shutdown() {
+  if (!ready) return;
+  ready = false;
+  server.close();
+  server.closeIdleConnections?.();
   console.log('Shutting down chat server...');
   if (mailWorker) mailWorker.stop();
   await apiRequestLog.closeApiRequestLog();
   await usageLedger.closeUsageLedger();
   triggers.stopTriggerScheduler();
   recurringSchedules.stopRecurringScheduleScheduler();
-  sessionManager.killAll();
+  await sessionManager.killAll();
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-server.listen(CHAT_PORT, CHAT_BIND_HOST, () => {
+ready = true;
+{
   console.log(`Chat server listening on http://${CHAT_BIND_HOST}:${CHAT_PORT}`);
   console.log(`Cookie mode: ${SECURE_COOKIES ? 'Secure (HTTPS)' : 'Non-secure (localhost)'}`);
   void (async () => {
@@ -97,4 +103,4 @@ server.listen(CHAT_PORT, CHAT_BIND_HOST, () => {
       console.error(`[startup] guest WeChat connector ensure failed: ${error?.message || error}`);
     }
   })();
-});
+}

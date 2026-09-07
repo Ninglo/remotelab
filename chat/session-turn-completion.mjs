@@ -1,4 +1,4 @@
-import { normalizeReplyPublicationResponseIds } from './reply-publication.mjs';
+import { requests } from './requests.mjs';
 
 export function createSessionTurnCompletionHelpers(services) {
   const {
@@ -20,7 +20,6 @@ export function createSessionTurnCompletionHelpers(services) {
     isInternalSession,
     isSessionRunning,
     isTerminalRunState,
-    listRunIds,
     loadHistory,
     maybeApplyAssistantWorkSummary,
     maybeAutoCompact,
@@ -39,60 +38,13 @@ export function createSessionTurnCompletionHelpers(services) {
     return typeof value === 'string' ? value.trim() : '';
   }
 
-  function getReplyPublicationRootRunId(run) {
-    return trimString(run?.replyPublicationRootRunId) || trimString(run?.id);
-  }
-
-  async function updateReplyPublication(run, updater) {
-    const rootRunId = getReplyPublicationRootRunId(run);
-    if (!rootRunId || typeof updater !== 'function') return null;
-    return updateRun(rootRunId, (existing) => {
-      const current = existing?.replyPublication && typeof existing.replyPublication === 'object'
-        ? existing.replyPublication
-        : {
-            responseIds: normalizeReplyPublicationResponseIds([], trimString(existing?.responseId || existing?.requestId || run?.responseId || run?.requestId)),
-            state: 'running',
-            resolution: '',
-            rootRunId,
-            finalRunId: rootRunId,
-            continuationRunIds: [],
-            updatedAt: nowIso(),
-            readyAt: null,
-            failedAt: null,
-            lastError: null,
-          };
-      const next = updater(current, existing);
-      if (!next || typeof next !== 'object') {
-        return existing;
-      }
-      return {
-        ...existing,
-        replyPublication: {
-          ...current,
-          ...next,
-          responseIds: normalizeReplyPublicationResponseIds(
-            next.responseIds,
-            trimString(existing?.responseId || existing?.requestId || run?.responseId || run?.requestId),
-          ),
-          updatedAt: trimString(next.updatedAt) || nowIso(),
-        },
-      };
-    });
-  }
-
   async function queueSessionCompletionTargets(session, run, manifest) {
     if (!session?.id || !run?.id || manifest?.internalOperation) return false;
     const latestRun = await getRun(run.id) || run;
-    const publication = latestRun?.replyPublication;
-    if (!publication || trimString(publication.state).toLowerCase() !== 'ready') {
-      return false;
-    }
-    if (trimString(publication.finalRunId) !== trimString(latestRun.id)) {
-      return false;
-    }
+    if ((await requests.byRunId(latestRun.id))?.result?.state !== 'completed') return false;
     const targets = sanitizeAllCompletionTargets(session.completionTargets || []);
     if (targets.length === 0) return false;
-    dispatchSessionConnectorActions({
+    await dispatchSessionConnectorActions({
       ...session,
       completionTargets: targets,
     }, latestRun).catch((error) => {
@@ -108,18 +60,6 @@ export function createSessionTurnCompletionHelpers(services) {
     if (getSessionQueueCount(currentSession) > 0) return false;
     sendCompletionPush({ ...currentSession, id: sessionId }).catch(() => {});
     return true;
-  }
-
-  async function resumePendingCompletionTargets() {
-    for (const runId of await listRunIds()) {
-      const run = await getRun(runId);
-      if (!run || !isTerminalRunState(run.state)) continue;
-      const session = await getSession(run.sessionId);
-      if (!session?.completionTargets?.length) continue;
-      const manifest = await getRunManifest(runId);
-      if (manifest?.internalOperation) continue;
-      await queueSessionCompletionTargets(session, run, manifest);
-    }
   }
 
   async function loadLatestTurnBodyEvents(sessionId) {
@@ -261,28 +201,6 @@ export function createSessionTurnCompletionHelpers(services) {
     let sessionChanged = false;
     const allowCompletionEffects = allowsSessionTurnCompletionEffects(manifest);
 
-    if (finalizedRun.state === 'failed' || finalizedRun.state === 'cancelled') {
-      await updateReplyPublication(finalizedRun, (current) => ({
-        ...current,
-        state: finalizedRun.state,
-        resolution: '',
-        finalRunId: trimString(finalizedRun.id),
-        failedAt: current.failedAt || nowIso(),
-        readyAt: null,
-        lastError: trimString(finalizedRun.failureReason),
-      }));
-    } else if (finalizedRun.state === 'completed') {
-      await updateReplyPublication(finalizedRun, (current) => ({
-        ...current,
-        state: 'ready',
-        resolution: 'accepted_as_is',
-        finalRunId: trimString(finalizedRun.id),
-        readyAt: current.readyAt || nowIso(),
-        failedAt: null,
-        lastError: null,
-      }));
-    }
-
     if (allowCompletionEffects) {
       const workSummarySession = await maybeApplyAssistantWorkSummary(sessionId, finalizedRun.id, session, getWorkSummaryFollowupServices());
       if (workSummarySession) {
@@ -321,7 +239,6 @@ export function createSessionTurnCompletionHelpers(services) {
     maybePublishRunResultAssets,
     maybeSendSessionCompletionPush,
     queueSessionCompletionTargets,
-    resumePendingCompletionTargets,
     runSessionTurnCompletionEffects,
     scheduleSessionStateSuggestion,
   };

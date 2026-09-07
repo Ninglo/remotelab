@@ -1,3 +1,4 @@
+import { requests } from './requests.mjs';
 import { randomBytes } from 'crypto';
 import { appendFile, mkdir, open, readFile, readdir, rm } from 'fs/promises';
 import { dirname, join } from 'path';
@@ -246,8 +247,6 @@ export function createRunRecord(input = {}) {
     failureReason: input.failureReason || null,
     contextInputTokens: Number.isInteger(input.contextInputTokens) ? input.contextInputTokens : null,
     contextWindowTokens: Number.isInteger(input.contextWindowTokens) ? input.contextWindowTokens : null,
-    replyPublicationRootRunId: input.replyPublicationRootRunId || null,
-    replyPublication: input.replyPublication || null,
   };
 }
 
@@ -621,14 +620,6 @@ export async function listRunIds() {
 }
 
 export async function findRunByRequest(sessionId, requestId) {
-  if (!sessionId || !requestId) return null;
-  const runIds = (await listRunIds()).reverse();
-  for (const runId of runIds) {
-    const run = await getRun(runId);
-    if (!run) continue;
-    if (run.sessionId === sessionId && run.requestId === requestId) {
-      return run;
-    }
-  }
-  return null;
+  const record = await requests.byRequest(sessionId, requestId);
+  return record ? await getRun(record.runId) : null;
 }

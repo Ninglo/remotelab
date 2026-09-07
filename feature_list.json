@@ -3,5 +3,18 @@
     "id": "connector-first-reply-session-link",
     "description": "Add the RemoteLab session URL to the first reply from a connector-created session only.",
     "pass": true
+  },
+  {
+    "id": "durable-connector-lifecycle",
+    "description": "First implementation: persist accepted requests and deliveries; recover in-flight work after restart without replaying AI or scanning historical runs.",
+    "pass": true,
+    "steps": [
+      "Establish isolated baseline and failing recovery tests",
+      "Implement durable records and single reconciliation path",
+      "Replace connector memory queues and ordinary reply direct-send path",
+      "Verify process restart, delivery ambiguity, ordering and full regressions",
+      "Document one-time conversion and land verified code on main"
+    ],
+    "rollout": "Not deployed. Offline state reconciliation and real Feishu acceptance remain required."
   }
 ]

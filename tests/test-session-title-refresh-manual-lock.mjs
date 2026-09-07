@@ -180,6 +180,6 @@ try {
 
   console.log('test-session-title-refresh-manual-lock: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

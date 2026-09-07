@@ -54,3 +54,18 @@ true !== false
 The post-restart evidence verifies loaded configuration and connectivity. New human
 messages were not required for, or sent as part of, validation. Machine-local logs
 are under `~/.remotelab/workspace/feishu-group-trigger-20260907/`.
+
+## Main integration boundary
+
+While publishing this fix, main advanced to `12213e27` with the durable connector
+Inbox/Request refactor. The merge keeps the group filter ahead of local commands
+and request submission in the new `handleMessage`, and adapts its scenario test to
+observe admission rather than the retired reply-generation hook. Inbox replay
+therefore observes the same restriction.
+
+The production mitigation was activated on `32df5b72` using the current state
+format. The separate request-store migration requires an offline conversion and
+unfinished-executor disposition documented in `connector-request-recovery.md`.
+That migration is not part of disabling automatic responses in one group; do not
+restart the existing production instance on the new state format without completing
+that conversion. Both source lines include the group trigger restriction.

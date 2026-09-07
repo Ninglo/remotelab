@@ -1,3 +1,7 @@
+import { isProcessIdentityAlive } from '../lib/process-identity.mjs';
+import { readRecord } from '../lib/durable-records.mjs';
+import { join } from 'node:path';
+import { CHAT_RUNS_DIR } from '../lib/config.mjs';
 import { execFile as execFileCallback } from 'child_process';
 import { promisify } from 'util';
 import { DETACHED_RUNNER_SYSTEMD_LAUNCH_MODE } from './run-launcher.mjs';
@@ -66,12 +70,13 @@ export function createDetachedRunReconciler({
       return null;
     }
 
-    const runnerProcessAlive = isRecordedProcessAlive(run?.runnerProcessId);
+    const launch = await readRecord(join(CHAT_RUNS_DIR, runId, 'launch.json'));
+    const runnerProcessAlive = await isProcessIdentityAlive(launch?.identity);
     const runnerUnitActive = !runnerProcessAlive
       ? await isRecordedRunnerUnitActive(run?.runnerUnitName, run?.runnerUnitScope)
       : false;
     const runnerAlive = runnerProcessAlive || runnerUnitActive;
-    const toolAlive = isRecordedProcessAlive(run?.toolProcessId);
+    const toolAlive = await isProcessIdentityAlive(run?.toolProcessIdentity);
     if (runnerAlive || toolAlive) {
       return null;
     }

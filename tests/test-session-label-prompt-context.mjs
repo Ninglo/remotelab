@@ -215,6 +215,6 @@ try {
 
   console.log('test-session-label-prompt-context: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

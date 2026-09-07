@@ -190,6 +190,6 @@ try {
 
   console.log('test-connector-action-dispatcher: ok');
 } finally {
-  killAll();
+  await killAll();
   rmSync(tempHome, { recursive: true, force: true });
 }

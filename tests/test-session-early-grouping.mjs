@@ -153,7 +153,7 @@ assert.equal(
   'finished session should keep the early AI description',
 );
 
-killAll();
+await killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
 console.log('test-session-early-grouping: ok');

@@ -164,7 +164,7 @@ await waitFor(
   'welcome onboarding retirement should settle before cleanup',
 );
 
-killAll();
+await killAll();
 rmSync(tempHome, { recursive: true, force: true });
 
 console.log('test-session-welcome-work-summary: ok');
