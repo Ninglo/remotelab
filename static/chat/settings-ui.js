@@ -1185,6 +1185,75 @@ async function initVoiceInputSettings() {
   voiceInputAppId.dataset.bound = "true";
 }
 
+let pushNotificationPermissionPending = false;
+let pushNotificationPermissionError = "";
+
+function supportsBrowserPushSettings() {
+  return "Notification" in window && "PushManager" in window
+    && Boolean(navigator.serviceWorker) && window.isSecureContext !== false;
+}
+
+function renderPushNotificationSettings() {
+  const section = document.getElementById("settingsPushSection");
+  const button = document.getElementById("settingsPushEnableBtn");
+  const statusEl = document.getElementById("settingsPushStatus");
+  if (!section || !button || !statusEl) return;
+  section.hidden = !isOwnerPushFeatureEnabled();
+  if (section.hidden) return;
+
+  const supported = supportsBrowserPushSettings();
+  const permission = supported ? Notification.permission : "default";
+  const state = typeof getPushNotificationSetupState === "function"
+    ? getPushNotificationSetupState()
+    : { status: "idle", error: "" };
+  const busy = pushNotificationPermissionPending || state.status === "registering";
+  button.disabled = !supported || permission === "denied" || busy;
+  button.textContent = t(busy ? "settings.push.enabling"
+    : permission === "granted" ? "settings.push.reconnect" : "settings.push.enable");
+
+  let statusKey = "settings.push.statusDefault";
+  if (!supported) statusKey = "settings.push.statusUnsupported";
+  else if (permission === "denied") statusKey = "settings.push.statusDenied";
+  else if (pushNotificationPermissionPending && permission !== "granted") statusKey = "settings.push.statusRequesting";
+  else if (pushNotificationPermissionError) statusKey = "settings.push.statusFailed";
+  else if (permission === "granted") {
+    statusKey = state.status === "subscribed" ? "settings.push.statusSubscribed"
+      : state.status === "registering" ? "settings.push.statusRegistering"
+      : state.status === "failed" ? "settings.push.statusFailed"
+      : "settings.push.statusGranted";
+  }
+  statusEl.textContent = t(statusKey, { error: pushNotificationPermissionError || state.error });
+}
+
+async function enablePushNotificationsFromSettings() {
+  if (!isOwnerPushFeatureEnabled() || !supportsBrowserPushSettings() || pushNotificationPermissionPending) return;
+  pushNotificationPermissionPending = true;
+  pushNotificationPermissionError = "";
+  renderPushNotificationSettings();
+  try {
+    // Keep requestPermission in the click's activation stack, before any network/SW await.
+    const permission = Notification.permission === "default"
+      ? await Notification.requestPermission()
+      : Notification.permission;
+    if (permission === "granted") await setupPushNotifications();
+  } catch (error) {
+    pushNotificationPermissionError = error?.message || String(error);
+  } finally {
+    pushNotificationPermissionPending = false;
+    renderPushNotificationSettings();
+  }
+}
+
+function initPushNotificationSettings() {
+  const button = document.getElementById("settingsPushEnableBtn");
+  if (!button) return;
+  renderPushNotificationSettings();
+  if (button.dataset.bound !== "true") {
+    button.addEventListener("click", enablePushNotificationsFromSettings);
+    button.dataset.bound = "true";
+  }
+}
+
 function renderInstallSettingsPanel() {
   const installBtn = document.getElementById("settingsInstallAppBtn");
   const statusEl = document.getElementById("settingsInstallStatus");
@@ -1531,6 +1600,7 @@ initThemeSettings();
 initThinkingBlockDisplaySettings();
 void initVoiceInputSettings();
 initInstallSettings();
+initPushNotificationSettings();
 void renderSettingsConnectorsPanel();
 renderSettingsSessionPresentationPanel();
 void renderSettingsAgentsPanel();
@@ -1555,6 +1625,7 @@ if (tabAgents && tabAgents.dataset.appsBound !== "true") {
 
 if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
   tabSettings.addEventListener("click", () => {
+    renderPushNotificationSettings();
     void refreshCodexAuthStatus({ force: true });
     void refreshPiAuthStatus({ force: true });
     void renderSettingsConnectorsPanel({ force: true });
@@ -1574,10 +1645,14 @@ window.addEventListener("remotelab:localechange", () => {
     syncVoiceInputSettings();
   }
   renderInstallSettingsPanel();
+  renderPushNotificationSettings();
   void renderSettingsConnectorsPanel();
   renderSettingsSessionPresentationPanel();
   void renderSettingsAgentsPanel();
 });
+
+window.addEventListener("remotelab:pushstatechange", renderPushNotificationSettings);
+window.addEventListener("focus", renderPushNotificationSettings);
 
 window.addEventListener("remotelab:themechange", () => {
   syncThemeSelect();

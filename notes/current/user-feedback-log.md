@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-07 — Browser notification permission needs an explicit activation and recovery path
+
+- Source: owner reported missing notifications while Chrome still showed the site's permission as `Ask`; RemoteLab had never asked.
+- Observed failure: the instance had no push subscriptions or recent subscription requests. Ordinary page startup only registered push when permission was already granted; prompting was limited to a post-install flag, and Settings had no notification activation control.
+- Product implication: distinguish browser permission from a server-confirmed subscription. Provide a user-gesture-bound enable button, visible blocked/unsupported/error states, and a reconnect action. Never report success when subscription persistence fails; do not treat Chrome's `Ask` state as user refusal or require users to discover browser settings to activate the feature.
+
 ### 2026-09-06 — Session execution state needs text, not color alone
 
 - Source: direct owner feedback while reading the live mobile Session list.

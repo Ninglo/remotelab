@@ -1699,47 +1699,77 @@ async function bootstrapShareSnapshotView() {
   return normalizedSession;
 }
 
+let pushNotificationSetupState = { status: "idle", error: "" };
+let pushNotificationSetupPromise = null;
+
+function getPushNotificationSetupState() {
+  return { ...pushNotificationSetupState };
+}
+
+function updatePushNotificationSetupState(status, error = "") {
+  pushNotificationSetupState = { status, error };
+  window.dispatchEvent(new CustomEvent("remotelab:pushstatechange"));
+  return getPushNotificationSetupState();
+}
+
 async function setupPushNotifications() {
   const ownerPushFeaturesEnabled = typeof shouldEnableOwnerPushFeatures === "function"
     ? shouldEnableOwnerPushFeatures()
     : !visitorMode;
-  if (!ownerPushFeaturesEnabled) return;
-  if (!("PushManager" in window)) return;
-  try {
-    const persistSubscription = async (subscription) => {
-      const payload = subscription?.toJSON ? subscription.toJSON() : subscription;
-      if (!payload?.endpoint) return;
-      const subscribeUrl = typeof window.remotelabResolveProductPath === "function"
-        ? window.remotelabResolveProductPath("/api/push/subscribe")
-        : "/api/push/subscribe";
-      await fetch(subscribeUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    };
-    const reg = await ensureServiceWorkerRegistration();
-    if (!reg) return;
-    const existing = await reg.pushManager.getSubscription();
-    if (existing) {
-      await persistSubscription(existing);
-      return;
-    }
-    const vapidPublicKeyUrl = typeof window.remotelabResolveProductPath === "function"
-      ? window.remotelabResolveProductPath("/api/push/vapid-public-key")
-      : "/api/push/vapid-public-key";
-    const res = await fetch(vapidPublicKeyUrl);
-    if (!res.ok) return;
-    const { publicKey } = await res.json();
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
-    });
-    await persistSubscription(sub);
-    console.log("[push] Subscribed to web push");
-  } catch (err) {
-    console.warn("[push] Setup failed:", err.message);
+  if (!ownerPushFeaturesEnabled) return updatePushNotificationSetupState("disabled");
+  if (!("PushManager" in window) || !navigator.serviceWorker || !("Notification" in window)) {
+    return updatePushNotificationSetupState("unsupported");
   }
+  // Permission requests belong to the explicit user gesture, never background setup.
+  if (Notification.permission !== "granted") return updatePushNotificationSetupState("idle");
+  if (pushNotificationSetupPromise) return pushNotificationSetupPromise;
+  pushNotificationSetupPromise = (async () => {
+    updatePushNotificationSetupState("registering");
+    try {
+      const persistSubscription = async (subscription) => {
+        const payload = subscription?.toJSON ? subscription.toJSON() : subscription;
+        if (!payload?.endpoint) throw new Error("Browser returned an invalid push subscription");
+        const subscribeUrl = typeof window.remotelabResolveProductPath === "function"
+          ? window.remotelabResolveProductPath("/api/push/subscribe")
+          : "/api/push/subscribe";
+        const response = await fetch(subscribeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok || response.redirected) {
+          throw new Error(`Saving push subscription failed (HTTP ${response.status})`);
+        }
+        const result = await response.json();
+        if (result?.ok !== true) throw new Error("Server did not confirm push subscription");
+      };
+      const reg = await ensureServiceWorkerRegistration();
+      if (!reg?.pushManager) throw new Error("Push service worker is unavailable");
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        const vapidPublicKeyUrl = typeof window.remotelabResolveProductPath === "function"
+          ? window.remotelabResolveProductPath("/api/push/vapid-public-key")
+          : "/api/push/vapid-public-key";
+        const res = await fetch(vapidPublicKeyUrl);
+        if (!res.ok || res.redirected) throw new Error(`Loading push key failed (HTTP ${res.status})`);
+        const { publicKey } = await res.json();
+        if (typeof publicKey !== "string" || !publicKey) throw new Error("Server returned an invalid push key");
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      }
+      await persistSubscription(sub);
+      console.log("[push] Subscribed to web push");
+      return updatePushNotificationSetupState("subscribed");
+    } catch (err) {
+      console.warn("[push] Setup failed:", err.message);
+      return updatePushNotificationSetupState("failed", err.message);
+    }
+  })().finally(() => {
+    pushNotificationSetupPromise = null;
+  });
+  return pushNotificationSetupPromise;
 }
 
 async function ensureServiceWorkerRegistration() {
