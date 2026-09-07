@@ -274,6 +274,7 @@ async function readSessionMessagePayload(req, pathname) {
       thinking: payload?.thinking === true,
       source: typeof payload?.source === 'string' ? payload.source.trim() : '',
       sourceContext: payload?.sourceContext && typeof payload.sourceContext === 'object' ? payload.sourceContext : null,
+      sourceDelivery: payload?.sourceDelivery,
       attachments,
     };
   }
@@ -342,6 +343,7 @@ async function readSessionMessagePayload(req, pathname) {
     thinking: parseFormString(formData.get('thinking')) === 'true',
     source: parseFormString(formData.get('source')),
     sourceContext: parseFormJson(parseFormString(formData.get('sourceContext')), null),
+    sourceDelivery: parseFormJson(parseFormString(formData.get('sourceDelivery')), undefined),
     attachments,
   };
 }
