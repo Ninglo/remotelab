@@ -778,9 +778,10 @@ try {
       };
     },
   });
-  assert.deepEqual(ackMessages, ['已收到，正在处理。', '最终回复。']);
-  assert.equal(ackHandled?.processingAckMessageId, 'reply_1');
-  assert.equal(ackHandled?.responseMessageId, 'reply_2');
+  // Legacy acknowledgement configuration must not resurrect extra text bubbles.
+  assert.deepEqual(ackMessages, ['最终回复。']);
+  assert.equal(ackHandled?.processingAckMessageId, undefined);
+  assert.equal(ackHandled?.responseMessageId, 'reply_1');
 
   const failureMessages = [];
   let failureHandled = null;
@@ -942,5 +943,5 @@ console.log('ok - generated WeChat sessions use the wechat app scope');
 console.log('ok - outbound WeChat replies reuse stored context tokens');
 console.log('ok - WeChat images are decrypted and submitted as RemoteLab attachments');
 console.log('ok - unsupported non-text WeChat payloads remain safely ignored');
-console.log('ok - slow WeChat turns send a processing acknowledgement before the final reply');
+console.log('ok - legacy processing acknowledgement settings do not add text bubbles');
 console.log('ok - idle WeChat workers pick up newly linked accounts without restart');

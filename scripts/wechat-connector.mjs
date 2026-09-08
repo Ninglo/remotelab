@@ -40,6 +40,7 @@ import {
   submitConnectorMessage,
   waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
+import { createWeChatTypingApi, createWeChatTypingController } from '../connectors/wechat/typing.mjs';
 import { createWeChatCapabilityController } from '../connectors/wechat/index.mjs';
 import {
   createWeChatInboundResourceService,
@@ -63,7 +64,6 @@ const DEFAULT_LOGIN_WAIT_TIMEOUT_MS = 8 * 60 * 1000;
 const DEFAULT_LOGIN_STATUS_POLL_INTERVAL_MS = 1000;
 const DEFAULT_IDLE_DELAY_MS = 1000;
 const DEFAULT_ERROR_DELAY_MS = 5000;
-const DEFAULT_PROCESSING_ACK_DELAY_MS = 2000;
 const DEFAULT_LOGIN_BOT_TYPE = '3';
 const DEFAULT_SURFACE_HOST = '127.0.0.1';
 const DEFAULT_SURFACE_TITLE = 'WeChat';
@@ -237,10 +237,6 @@ function sanitizeIdPart(value, fallback = 'unknown') {
   return normalized || fallback;
 }
 
-function containsCjk(text) {
-  return /[\u3400-\u9FFF]/u.test(String(text || ''));
-}
-
 function maskToken(token) {
   const normalized = trimString(token);
   if (!normalized) return '(none)';
@@ -385,8 +381,6 @@ Config shape:
     "systemPrompt": "${DEFAULT_SESSION_SYSTEM_PROMPT.replace(/"/g, '\\"')}",
     "activeAccountId": "",
     "silentConfirmationText": "",
-    "processingAckText": "",
-    "processingAckDelayMs": ${DEFAULT_PROCESSING_ACK_DELAY_MS},
     "login": {
       "qrBaseUrl": "${WECHAT_LOGIN_QR_BASE_URL}",
       "botType": "${DEFAULT_LOGIN_BOT_TYPE}",
@@ -474,11 +468,6 @@ function normalizeConfig(value, options = {}) {
     group: trimString(normalized.group || DEFAULT_GROUP) || DEFAULT_GROUP,
     activeAccountId: trimString(normalized.activeAccountId),
     silentConfirmationText: trimString(normalized.silentConfirmationText),
-    processingAckText: trimString(normalized.processingAckText),
-    processingAckDelayMs: parseNonNegativeInteger(
-      normalized.processingAckDelayMs,
-      DEFAULT_PROCESSING_ACK_DELAY_MS,
-    ),
     login: {
       qrBaseUrl: normalizeBaseUrl(normalized.login?.qrBaseUrl, WECHAT_LOGIN_QR_BASE_URL),
       botType: trimString(normalized.login?.botType || DEFAULT_LOGIN_BOT_TYPE) || DEFAULT_LOGIN_BOT_TYPE,
@@ -1958,16 +1947,23 @@ function buildFailureReply(summary, reason = '') {
   return buildConnectorFailureReply(summary, reason);
 }
 
-function buildProcessingAck(summary, configuredText = '') {
-  const normalizedConfiguredText = normalizeReplyText(configuredText);
-  if (normalizedConfiguredText) {
-    return normalizedConfiguredText;
-  }
-  const prefersChinese = containsCjk(`${summary?.textPreview || ''}\n${summary?.contentSummary || ''}`);
-  if (prefersChinese) {
-    return '已收到，正在处理。';
-  }
-  return 'Received. I am working on it.';
+function createTypingApiForRuntime(runtime) {
+  return createWeChatTypingApi({
+    post: apiPostFetch,
+    baseInfo: buildBaseInfo,
+    resolveAccount: (summary) => {
+      const account = runtime.accountsDoc?.accounts?.[summary.accountId];
+      return account && { ...account, baseUrl: account.baseUrl || runtime.config.apiBaseUrl };
+    },
+  });
+}
+
+function getTypingController(runtime) {
+  runtime.typingController ||= createWeChatTypingController({
+    ...createTypingApiForRuntime(runtime),
+    report: (event) => console.log(JSON.stringify(event)),
+  });
+  return runtime.typingController;
 }
 
 function createRuntimeContext(config, documents = {}) {
@@ -2529,51 +2525,7 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
 
   runtime.processingMessageIds.add(messageKey);
   const processingStartedAt = Date.now();
-  const processingAckDelayMs = parseNonNegativeInteger(
-    runtime?.config?.processingAckDelayMs,
-    DEFAULT_PROCESSING_ACK_DELAY_MS,
-  );
-  const processingAckText = trimString(summary.textPreview)
-    ? buildProcessingAck(summary, runtime?.config?.processingAckText)
-    : '';
-  let processingAck = null;
-  let processingAckPromise = null;
-  let processingAckTimer = null;
-  let processingAckAttempted = false;
-
-  const maybeSendProcessingAck = async () => {
-    if (processingAckAttempted || !processingAckText) {
-      return processingAck;
-    }
-    processingAckAttempted = true;
-    try {
-      const reply = await deliverWeChatVisibleReply(runtime, summary, {
-        responseId: buildRequestId(summary),
-        kind: 'content',
-        text: processingAckText,
-      }, sendText);
-      processingAck = {
-        messageId: trimString(reply?.message_id),
-        sentAt: nowIso(),
-      };
-      logConnectorStage('processing ack sent', {
-        messageId: summary.messageId,
-        responseMessageId: processingAck.messageId,
-        ackDelayMs: elapsedMs(processingStartedAt),
-      });
-      return processingAck;
-    } catch (ackError) {
-      console.warn(`[wechat-connector] processing ack failed for ${summary.messageId}:`, ackError?.stack || ackError);
-      return null;
-    }
-  };
-
-  const getProcessingAckMetadata = () => processingAck
-    ? {
-      processingAckMessageId: processingAck.messageId || '',
-      processingAckSentAt: processingAck.sentAt || '',
-    }
-    : {};
+  let typing = null;
   try {
     logConnectorStage('processing started', {
       messageId: summary.messageId,
@@ -2597,20 +2549,14 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
       return;
     }
 
-    if (processingAckDelayMs > 0 && processingAckText) {
-      processingAckTimer = setTimeout(() => {
-        processingAckPromise = maybeSendProcessingAck();
-      }, processingAckDelayMs);
-    }
-
+    typing = getTypingController(runtime).begin({
+      ...summary,
+      contextToken: trimString(summary.contextToken)
+        || getStoredContextToken(runtime.contextTokensDoc, summary.accountId, summary.peerUserId),
+    });
     const generated = await generateReply(runtime, summary);
-    if (processingAckTimer) {
-      clearTimeout(processingAckTimer);
-      processingAckTimer = null;
-    }
-    if (processingAckPromise) {
-      await processingAckPromise;
-    }
+    // Feedback transport must never delay the actual reply.
+    void typing.stop();
     const replyText = normalizeReplyText(generated.replyText);
     const finalReply = decideConnectorUserVisibleReply({
       replyText,
@@ -2627,7 +2573,6 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
         requestId: generated.requestId,
         duplicate: generated.duplicate,
         reason: finalReply.reason,
-        ...getProcessingAckMetadata(),
         processingMs: elapsedMs(processingStartedAt),
         pipelineMs: generated.timingMs?.total,
         runMs: generated.timingMs?.run,
@@ -2656,7 +2601,6 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
       ...(finalReply.action === 'send_confirmation' ? { confirmationText: finalReply.text } : {}),
       responseMessageId: reply.message_id || '',
       repliedAt: nowIso(),
-      ...getProcessingAckMetadata(),
       processingMs,
       pipelineMs: generated.timingMs?.total,
       sessionMs: generated.timingMs?.session,
@@ -2678,13 +2622,7 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
       replySendMs,
     });
   } catch (error) {
-    if (processingAckTimer) {
-      clearTimeout(processingAckTimer);
-      processingAckTimer = null;
-    }
-    if (processingAckPromise) {
-      await processingAckPromise;
-    }
+    void typing?.stop();
     console.error(`[wechat-connector] processing failed for ${summary.messageId}:`, error?.stack || error);
     try {
       const failureReason = error?.message || String(error);
@@ -2703,16 +2641,13 @@ async function handleWeChatMessage(runtime, summary, helpers = {}) {
         failureCategory,
         responseMessageId: reply.message_id || '',
         repliedAt: nowIso(),
-        ...getProcessingAckMetadata(),
         processingMs: elapsedMs(processingStartedAt),
       });
     } catch (sendError) {
       console.error(`[wechat-connector] fallback send failed for ${summary.messageId}:`, sendError?.stack || sendError);
     }
   } finally {
-    if (processingAckTimer) {
-      clearTimeout(processingAckTimer);
-    }
+    void typing?.stop();
     runtime.processingMessageIds.delete(messageKey);
   }
 }
@@ -2965,10 +2900,14 @@ async function runPollLoop(runtime, options = {}) {
   const stop = (signal) => {
     if (stopped) return;
     stopped = true;
+    void getTypingController(runtime).close();
     console.log(`[wechat-connector] stopping (${signal})`);
   };
-  process.on('SIGINT', () => stop('SIGINT'));
-  process.on('SIGTERM', () => stop('SIGTERM'));
+  const onInterrupt = () => stop('SIGINT');
+  const onTerminate = () => stop('SIGTERM');
+  process.on('SIGINT', onInterrupt);
+  process.on('SIGTERM', onTerminate);
+  try {
 
   const maybeReplayStoredMessages = async (accounts = []) => {
     const accountIds = (Array.isArray(accounts) ? accounts : [])
@@ -3042,6 +2981,11 @@ async function runPollLoop(runtime, options = {}) {
     }
     await delay(runtime.config.polling.idleDelayMs);
   }
+  } finally {
+    process.off('SIGINT', onInterrupt);
+    process.off('SIGTERM', onTerminate);
+    await getTypingController(runtime).close();
+  }
 }
 
 export {
@@ -3050,6 +2994,7 @@ export {
   buildRemoteLabMessage,
   claimConnectorPidLock,
   createRuntimeContext,
+  createTypingApiForRuntime,
   ensureAuthCookie,
   generateRemoteLabReply,
   getStoredContextToken,
