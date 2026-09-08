@@ -113,6 +113,39 @@ try {
   await assert.rejects(readFile(join(source, "requests/schema.json")), {
     code: "ENOENT",
   });
+  // A frequently used instance cannot keep every byte still during a long live rehearsal.
+  // Offline mode must stop its writers before copying, and still verify/recover normally.
+  plan.preflightMode = "offline";
+  plan.workDir = join(root, "offline");
+  await put(planFile, plan);
+  let heartbeat = 0;
+  let writing = Promise.resolve();
+  const timer = setInterval(() => {
+    writing = writing.then(async () => {
+      const state = JSON.parse(await readFile(control));
+      if (state.running && state.version === "old")
+        await writeFile(join(source, "heartbeat.txt"), `${++heartbeat}:${"x".repeat(65536)}`);
+    }).catch(() => {});
+  }, 5);
+  try {
+    await run("apply");
+  } finally {
+    clearInterval(timer);
+    await writing;
+  }
+  assert.equal(JSON.parse(await readFile(join(plan.workDir, "upgrade.json"))).phase, "migrated");
+  assert.equal(await readFile(join(source, "heartbeat.txt"), "utf8"),
+    await readFile(join(plan.workDir, "backup/heartbeat.txt"), "utf8"));
+  await run("rollback");
+  plan.workDir = join(root, "offline-invalid");
+  await put(planFile, plan);
+  await put(join(source, "chat-sessions.json"), [{ id: "s", completionTargets: [{ kind: "unresolved" }] }]);
+  await assert.rejects(run("apply"), /old version verified restored/);
+  assert.equal(JSON.parse(await readFile(control)).running, true);
+  assert.equal(JSON.parse(await readFile(join(plan.workDir, "upgrade.json"))).phase, "rolled_back");
+  assert.equal(JSON.parse(await readFile(join(source, "chat-sessions.json")))[0].completionTargets.length, 1);
+  await put(join(source, "chat-sessions.json"), [{ id: "s", name: "preserved" }]);
+  delete plan.preflightMode;
   const work2 = join(root, "work2");
   plan.workDir = work2;
   plan.commands.connectorsHealthy = command("fail");

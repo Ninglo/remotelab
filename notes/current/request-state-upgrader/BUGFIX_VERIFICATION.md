@@ -41,3 +41,13 @@ must include every writer and preserve runnable old/new sources and dependencies
 health commands must check current connector startup evidence. Ambiguous batches,
 unreconciled completion targets, unowned child processes and unsafe filesystem
 layouts stop with retained evidence instead of being silently discarded.
+
+## 2026-09-08: continuously written instance
+
+A real guest rehearsal took about 13 minutes for 204,520 files. A 10-minute schedule and login background state changed the source during conversion; the guard correctly rejected staging while the old service stayed online. No production cutover occurred.
+
+RED: a fixture writing a heartbeat throughout old-service uptime fails with `Source changed during conversion` when requesting offline preflight on the old implementation.
+
+Fix: explicitly supported `preflightMode: offline` checks the old service and live work before stopping writers, then uses the unchanged strict converter and independent verification once. Failure before installation restores and verifies the old service; plan fingerprints and the default online mode remain compatible.
+
+GREEN: the heartbeat case migrates and preserves the frozen bytes; unsupported legacy completion targets trigger a verified rollback with the original data intact. Existing SIGKILL resume and new-data overwrite guards also pass.

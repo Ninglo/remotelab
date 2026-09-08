@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "preflightMode": "online",
   "configDir": "/home/OWNER/.config/remotelab",
   "workDir": "/home/OWNER/.remotelab/upgrade-UNIQUE-ID",
   "timeoutMs": 60000,
