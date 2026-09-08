@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+const chatTemplate = readFileSync(new URL('../templates/chat.html', import.meta.url), 'utf8');
+assert.match(chatTemplate, /src="chat\/activity-ui\.js\?v=\{\{ASSET_VERSION\}\}" nonce="\{\{NONCE\}\}"/, 'the real chat entry must load activity renderers, not just the fallback loader');
+assert(chatTemplate.indexOf('chat/activity-ui.js') < chatTemplate.indexOf('chat/init.js'), 'activity renderers must load before initialization');
 class Element {
   constructor(tag) {
     this.tagName = tag; this.children = []; this.dataset = {}; this.attributes = {};
