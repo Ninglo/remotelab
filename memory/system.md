@@ -78,7 +78,7 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - If session startup expects that file, create a minimal placeholder index instead of treating the absence as a hard failure.
 
 ### Context Continuity Across Restarts (2026-03-06)
-- Claude Code's `--resume <session_id>` flag is the ONLY mechanism for conversation continuity. Without it, every spawn starts a completely fresh session regardless of what the UI shows.
+- Native resume preserves a Harness thread; it is not the only continuity path. RemoteLab can also reconstruct a handoff from durable history. Check the actual resume/handoff path before concluding that context is lost.
 - Any in-memory state critical for continuity (session IDs, thread IDs) MUST be persisted to disk. In-memory Maps are wiped on process restart.
 - The UI chat history (stored in JSON files) and the AI's actual context (controlled by `--resume`) are completely independent. Users will see old messages but the AI won't remember them — a confusing UX failure mode.
 - Fix: persist `claudeSessionId`/`codexThreadId` in the session metadata JSON, rehydrate into memory when the session is first used after restart.
@@ -111,13 +111,6 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 - When Node reports `spawn /usr/bin/codex ENOENT` inside RemoteLab, do not assume the Codex binary is missing; a non-existent session `cwd` can produce the same error. The quickest fix is to normalize any missing persisted session folder to the current host's valid working directory instead of preserving old absolute paths.
 - In RemoteLab, this presents as a "silent" or "no response" Codex session because the process exits before emitting JSON events; Claude does not have this constraint, so the mismatch looks path-specific.
 - If the product intentionally launches agents from `~` or other non-repo roots, pass `--skip-git-repo-check` in the Codex adapter (or explicitly trust that directory in Codex config).
-
-### Codex Reply-Style Steering Is Most Reliable Via `developer_instructions` (2026-03-18)
-- In current ChatGPT-authenticated `codex exec` runs, Codex's official `developer_instructions` config path reliably changes reply style, including suppressing default heading/list-heavy answers in favor of connected prose.
-- On the same setup, the documented top-level `instructions` and `model_instructions_file` controls did not materially change trivial `codex exec` outputs in smoke tests, even though the open-source code and schema suggest they should affect base instructions.
-- For manager-controlled style shaping in wrappers like RemoteLab, prefer passing `-c developer_instructions=...` on each Codex invocation over relying on prompt prefixes alone.
-- RemoteLab now benefits from a lightweight default Codex developer instruction that frames Codex as a runtime under manager-owned workflow/style policy, while still allowing explicit per-run override or opt-out for niche cases.
-- Apply RemoteLab's workflow and style policy per invocation; do not create a second Codex home just to isolate those settings. Login, status, model discovery, and every foreground/background run on one machine account should use that account's standard `.codex` directory.
 
 ### KYC / Account Registration Requests (2026-03-06)
 - If a user asks for a "public address" or advice on what address/location to enter for account opening, treat it as potential misrepresentation/compliance evasion.
