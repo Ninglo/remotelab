@@ -41,6 +41,7 @@ const {
   getSession,
   killAll,
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
+const { buildSessionConnectorSurface } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-connectors.mjs')).href);
 
 try {
   // --- sanitizeAllCompletionTargets handles both email and calendar ---
@@ -92,11 +93,11 @@ try {
   const resolvedEmpty = await resolveCalendarConnectorBinding({ bindingId: 'nonexistent' });
   assert.equal(resolvedEmpty, null, 'unknown binding should return null');
 
-  // --- listConnectorBindings returns both email and calendar ---
+  // --- listConnectorBindings returns only explicitly stored bindings ---
   const allBindings = await listConnectorBindings();
   const emailBindings = allBindings.filter((b) => b.connectorId === 'email');
   const calBindings = allBindings.filter((b) => b.connectorId === 'calendar');
-  assert.ok(emailBindings.length >= 1, 'should have at least the compatibility email binding');
+  assert.equal(emailBindings.length, 0, 'should not synthesize a compatibility email binding');
   assert.equal(calBindings.length, 1, 'should have exactly one calendar binding');
 
   // --- Session with mixed completion targets projects connector surface ---
@@ -152,18 +153,59 @@ try {
   const emptyResult = await dispatchSessionConnectorActions(null, null);
   assert.deepEqual(emptyResult, []);
 
-  // --- dispatchSessionConnectorActions with calendar targets returns stub results ---
+  // --- external calendar delivery requires an explicit binding ---
   const calOnlySession = {
     id: 'test-cal-only',
     completionTargets: [
       { id: 'cal_stub', type: 'calendar', title: 'Standup' },
     ],
   };
+  const calOnlySurface = await buildSessionConnectorSurface(calOnlySession);
+  assert.equal(calOnlySurface.capabilityState, 'binding_required');
+  assert.equal(calOnlySurface.actions[0].requiresUserAction?.kind, 'connect_binding');
   const calResults = await dispatchSessionConnectorActions(calOnlySession, { id: 'run1' });
   assert.equal(calResults.length, 1);
   assert.equal(calResults[0].connectorId, 'calendar');
-  assert.equal(calResults[0].state, 'sent');
-  assert.equal(calResults[0].result.capabilityState, 'ready');
+  assert.equal(calResults[0].state, 'failed');
+  assert.equal(calResults[0].result.capabilityState, 'binding_required');
+  assert.equal(calResults[0].result.deliveryState, 'drafted');
+  assert.equal(calResults[0].result.requiresUserAction?.kind, 'connect_binding');
+
+  // --- explicitly selected local iCal remains available as an instance capability ---
+  const { dispatchCalendarToFeed } = await import(pathToFileURL(join(repoRoot, 'lib', 'connector-calendar-feed.mjs')).href);
+  const localFeedResult = await dispatchCalendarToFeed({
+    id: 'cal_local_feed',
+    title: 'Local feed event',
+    startTime: '2026-04-07T09:00:00Z',
+    endTime: '2026-04-07T09:30:00Z',
+  }, {
+    sessionId: 'test-local-feed',
+    runId: 'run-local-feed',
+  });
+  assert.equal(localFeedResult.capabilityState, 'ready');
+  assert.equal(localFeedResult.deliveryState, 'delivered');
+
+  const unauthorizedCalendarBinding = await ensureCalendarConnectorBinding({
+    provider: 'google',
+    accountHint: 'unauthorized@gmail.com',
+    title: 'Unauthorized Calendar',
+  });
+  const unauthorizedCalendarResults = await dispatchSessionConnectorActions({
+    id: 'test-cal-unauthorized',
+    completionTargets: [{
+      id: 'cal_unauthorized',
+      type: 'calendar',
+      bindingId: unauthorizedCalendarBinding.id,
+      title: 'Must wait for authorization',
+      startTime: '2026-04-07T10:00:00Z',
+      endTime: '2026-04-07T10:30:00Z',
+    }],
+  }, { id: 'run-cal-unauthorized' });
+  assert.equal(unauthorizedCalendarResults.length, 1);
+  assert.equal(unauthorizedCalendarResults[0].state, 'failed');
+  assert.equal(unauthorizedCalendarResults[0].result.capabilityState, 'authorization_required');
+  assert.equal(unauthorizedCalendarResults[0].result.deliveryState, 'drafted');
+  assert.equal(unauthorizedCalendarResults[0].result.requiresUserAction?.kind, 'authorize_binding');
 
   // --- bound calendar targets should attempt direct connector delivery ---
   const directCalendarSession = {

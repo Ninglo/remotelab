@@ -38,13 +38,33 @@ const {
 
 try {
   const bindingId = buildEmailBindingId(mailboxRoot);
-  const syntheticBinding = await resolveEmailConnectorBinding({ rootDir: mailboxRoot });
-  assert.equal(syntheticBinding.id, bindingId, 'email bindings should be stable per mailbox root');
-  assert.equal(syntheticBinding.capabilityState, 'binding_required');
+  const missingBinding = await resolveEmailConnectorBinding({ rootDir: mailboxRoot });
+  assert.equal(missingBinding, null, 'missing email bindings must not be synthesized from a mailbox root');
 
   const persistedBinding = await ensureEmailConnectorBinding({ rootDir: mailboxRoot });
   assert.equal(persistedBinding.id, bindingId, 'registry should persist the same stable email binding id');
   assert.equal(persistedBinding.capabilityState, 'binding_required');
+
+  const unknownBinding = await resolveEmailConnectorBinding({
+    bindingId: 'binding_email_unknown',
+    rootDir: mailboxRoot,
+  });
+  assert.equal(unknownBinding, null, 'unknown email binding ids must not fall back to a mailbox root');
+
+  const unknownBindingSession = await createSession(workspace, 'codex', 'Unknown email binding', {
+    completionTargets: [{
+      id: 'email_target_unknown',
+      type: 'email',
+      bindingId: 'binding_email_unknown',
+      to: 'owner@example.com',
+      subject: 'Re: unknown binding',
+      mailboxRoot,
+    }],
+  });
+  const unknownBindingLoaded = await getSession(unknownBindingSession.id);
+  assert.equal(unknownBindingLoaded?.connectors?.capabilityState, 'binding_required');
+  assert.equal(unknownBindingLoaded?.connectors?.bindings?.length, 0);
+  assert.equal(unknownBindingLoaded?.connectors?.actions?.[0]?.requiresUserAction?.kind, 'connect_binding');
 
   const unboundSession = await createSession(workspace, 'codex', 'Unbound email reply', {
     completionTargets: [{

@@ -843,7 +843,7 @@ async function clearGmailAuthStateEntry(state) {
 }
 
 async function getCalendarAuthStatus(req) {
-  const binding = await getConnectorBinding(DEFAULT_CALENDAR_BINDING_ID, { includeCompatibilityEmail: false });
+  const binding = await getConnectorBinding(DEFAULT_CALENDAR_BINDING_ID);
   const credentialsPresent = await pathExists(GOOGLE_CALENDAR_CREDENTIALS_PATH);
   const tokenPresent = await pathExists(GOOGLE_CALENDAR_TOKEN_PATH);
   const redirectUri = resolveCalendarAuthRedirectUri(req);
@@ -867,7 +867,7 @@ async function getCalendarAuthStatus(req) {
 }
 
 async function getGmailAuthStatus(req) {
-  const binding = await getConnectorBinding(DEFAULT_GMAIL_BINDING_ID, { includeCompatibilityEmail: false });
+  const binding = await getConnectorBinding(DEFAULT_GMAIL_BINDING_ID);
   let credentialsPath = '';
   let credentialsPresent = false;
   let setupError = '';

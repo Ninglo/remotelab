@@ -40,6 +40,11 @@ await fs.writeFile(
   'utf8',
 );
 
+const { ensureEmailConnectorBinding } = await import('../lib/connector-bindings.mjs');
+await ensureEmailConnectorBinding({
+  rootDir: path.join(tempHome, 'instance-data', 'config', 'agent-mailbox'),
+});
+
 const { buildSystemContext } = await import('../chat/system-prompt.mjs');
 const context = await buildSystemContext({ sessionId: 'session-test-gmail' });
 

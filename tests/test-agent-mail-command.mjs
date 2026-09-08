@@ -12,9 +12,10 @@ setIsolatedTestHome(tempHome);
 
 const mailboxRoot = join(tempHome, '.config', 'remotelab', 'agent-mailbox');
 
-const { initializeMailbox, loadOutboundConfig, saveOutboundConfig } = await import('../lib/agent-mailbox.mjs');
+const { loadOutboundConfig, saveOutboundConfig } = await import('../lib/agent-mailbox.mjs');
 const { runAgentMailCommand } = await import('../lib/agent-mail-command.mjs');
 const { sendOutboundEmail } = await import('../lib/agent-mail-outbound.mjs');
+const { resolveEmailConnectorBinding } = await import('../lib/connector-bindings.mjs');
 
 const requests = [];
 const sockets = new Set();
@@ -42,13 +43,27 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const { port } = server.address();
 
 try {
-  await initializeMailbox({
-    rootDir: mailboxRoot,
-    name: 'Rowan',
-    localPart: 'rowan',
-    domain: 'example.com',
-    allowEmails: ['owner@example.com'],
+  let initStdout = '';
+  const initCode = await runAgentMailCommand([
+    'init',
+    '--root', mailboxRoot,
+    '--name', 'Rowan',
+    '--local-part', 'rowan',
+    '--domain', 'example.com',
+    '--allow', 'owner@example.com',
+  ], {
+    stdout: {
+      write(chunk) {
+        initStdout += String(chunk);
+      },
+    },
   });
+  assert.equal(initCode, 0);
+  assert.match(initStdout, /Initialized mailbox/);
+  assert.ok(
+    await resolveEmailConnectorBinding({ rootDir: mailboxRoot }),
+    'mail init must persist the explicit email binding immediately',
+  );
 
   const defaultOutbound = await loadOutboundConfig(mailboxRoot);
   assert.equal(defaultOutbound.provider, 'resend_api');

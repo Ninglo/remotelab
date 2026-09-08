@@ -540,6 +540,58 @@ async function testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled() {
   }
 }
 
+async function testRejectsInboundMailWithoutRecipientIdentity() {
+  const rootDir = mkdtempSync(join(tmpdir(), 'remotelab-agent-mailbox-missing-recipient-'));
+  try {
+    await initializeMailbox({
+      rootDir,
+      name: 'Rowan',
+      localPart: 'rowan',
+      domain: 'jiujianian.dev',
+      allowEmails: ['jiujianian@gmail.com'],
+    });
+
+    await assert.rejects(
+      ingestRawMessage(
+        [
+          'From: jiujianian@gmail.com',
+          'Subject: missing recipient',
+          'Message-ID: <missing-recipient@example.com>',
+          'Content-Type: text/plain; charset=UTF-8',
+          '',
+          'This message has neither an envelope recipient nor a To header.',
+        ].join('\n'),
+        'missing-recipient.eml',
+        rootDir,
+        { text: 'This message has neither an envelope recipient nor a To header.' },
+      ),
+      /recipient/i,
+      'mail without a resolvable recipient must not fall back to the owner mailbox identity',
+    );
+
+    await assert.rejects(
+      ingestRawMessage(
+        [
+          'From: jiujianian@gmail.com',
+          'To: unknown@outside.example',
+          'Subject: unrecognized recipient',
+          'Message-ID: <unrecognized-recipient@example.com>',
+          'Content-Type: text/plain; charset=UTF-8',
+          '',
+          'This recipient cannot be mapped to the owner or an instance.',
+        ].join('\n'),
+        'unrecognized-recipient.eml',
+        rootDir,
+        { text: 'This recipient cannot be mapped to the owner or an instance.' },
+      ),
+      /recipient/i,
+      'mail for an unrecognized recipient must not fall back to the owner instance',
+    );
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+  }
+}
+
 await testCloudflareWebhookHealthy();
 await testCloudflareQueueReady();
 await testCloudflareValidatedDelivery();
@@ -552,4 +604,5 @@ await testExtractsInlineImageAttachments();
 await testEnvelopeRecipientRoutesToGuestInstanceAlias();
 await testSubjectInstanceTagRoutesBaseMailboxToGuestInstance();
 await testDirectInstanceRecipientRoutesWhenLocalPartModeEnabled();
+await testRejectsInboundMailWithoutRecipientIdentity();
 console.log('agent mailbox tests passed');

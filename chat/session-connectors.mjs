@@ -119,7 +119,7 @@ async function resolveEmailAction(target, { session = null, run = null, bindingC
   return createConnectorActionResult({
     actionId: trimString(target?.id),
     connectorId: 'email',
-    bindingId: trimString(binding?.id),
+    bindingId: trimString(binding?.id || target?.bindingId),
     targetId: buildEmailTargetId(target),
     capabilityState: trimString(binding?.capabilityState) || 'binding_required',
     deliveryState,
@@ -169,7 +169,7 @@ async function resolveCalendarAction(target, { session = null, run = null } = {}
     connectorId: 'calendar',
     bindingId,
     targetId: `event:${trimString(target?.title).slice(0, 50)}`,
-    capabilityState: trimString(binding?.capabilityState) || 'ready',
+    capabilityState: trimString(binding?.capabilityState) || 'binding_required',
     deliveryState,
     message: targetRunState?.lastError || '',
   });

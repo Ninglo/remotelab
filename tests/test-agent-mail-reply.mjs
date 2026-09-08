@@ -29,6 +29,7 @@ const { appendEvent } = await import(pathToFileURL(join(repoRoot, 'chat', 'histo
 const { messageEvent } = await import(pathToFileURL(join(repoRoot, 'chat', 'normalizer.mjs')).href);
 const { createRun } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
 const { dispatchSessionEmailCompletionTargets } = await import(pathToFileURL(join(repoRoot, 'lib', 'agent-mail-completion-targets.mjs')).href);
+const { ensureEmailConnectorBinding } = await import(pathToFileURL(join(repoRoot, 'lib', 'connector-bindings.mjs')).href);
 
 const requests = [];
 const server = http.createServer(async (req, res) => {
@@ -57,6 +58,7 @@ try {
     domain: 'example.com',
     allowEmails: ['owner@example.com'],
   });
+  const emailBinding = await ensureEmailConnectorBinding({ rootDir: mailboxRoot });
 
   // This suite exercises the optional manual-review path explicitly; production defaults auto-process allowlisted senders.
   await saveMailboxAutomation(mailboxRoot, {
@@ -89,6 +91,7 @@ try {
   const appleSession = await createSession(workspace, 'codex', 'Mail app reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: appleRequestId,
       to: 'owner@example.com',
       subject: 'Re: hello from apple mail!',
@@ -161,6 +164,7 @@ try {
   const cloudflareSession = await createSession(workspace, 'codex', 'Cloudflare Worker reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: cloudflareRequestId,
       to: 'owner@example.com',
       subject: 'Re: hello from cloudflare worker!',
@@ -243,6 +247,7 @@ try {
   const resendSession = await createSession(workspace, 'codex', 'Resend API reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: resendRequestId,
       to: 'owner@example.com',
       subject: 'Re: hello from resend api!',
@@ -336,6 +341,7 @@ try {
   const blankSubjectSession = await createSession(workspace, 'codex', 'Cloudflare blank subject reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: blankSubjectRequestId,
       to: 'owner@example.com',
       subject: '',
@@ -407,6 +413,7 @@ try {
   const todoTailSession = await createSession(workspace, 'codex', 'Cloudflare todo tail reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: todoTailRequestId,
       to: 'owner@example.com',
       subject: 'Re: choose the real summary',
@@ -482,6 +489,7 @@ try {
   const retrySession = await createSession(workspace, 'codex', 'Cloudflare retry clear test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: retryRequestId,
       to: 'owner@example.com',
       subject: 'Re: clear retry error state',
@@ -573,6 +581,7 @@ try {
   const fallbackSession = await createSession(workspace, 'codex', 'Fallback outbound reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: fallbackRequestId,
       to: 'outside@example.net',
       subject: 'Re: hello from fallback routing!',
@@ -690,6 +699,7 @@ try {
   const attachmentOnlySession = await createSession(workspace, 'codex', 'Cloudflare attachment-only reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: attachmentOnlyRequestId,
       to: 'owner@example.com',
       subject: 'Re: attachment only reply',
@@ -750,6 +760,7 @@ try {
   const missingQueueSession = await createSession(workspace, 'codex', 'Cloudflare missing queue item reply test', {
     completionTargets: [{
       type: 'email',
+      bindingId: emailBinding.id,
       requestId: missingQueueRequestId,
       to: 'owner@example.com',
       subject: 'Re: legacy recovery',
@@ -795,6 +806,45 @@ try {
     references: '<mail-cloudflare-missing-queue@example.com>',
   });
   assert.equal((await findQueueItem('mail_missing_legacy_queue', mailboxRoot))?.item || null, null);
+
+  const unknownBindingRequestId = 'mailbox_reply_unknown_binding';
+  const unknownBindingSession = await createSession(workspace, 'codex', 'Unknown email binding must stop', {
+    completionTargets: [{
+      type: 'email',
+      bindingId: 'binding_email_unknown',
+      requestId: unknownBindingRequestId,
+      to: 'owner@example.com',
+      subject: 'Re: unknown binding',
+      mailboxRoot,
+    }],
+  });
+  const unknownBindingRun = await createRun({
+    status: {
+      sessionId: unknownBindingSession.id,
+      requestId: unknownBindingRequestId,
+      state: 'completed',
+      tool: 'codex',
+    },
+    manifest: {
+      sessionId: unknownBindingSession.id,
+      requestId: unknownBindingRequestId,
+      folder: workspace,
+      tool: 'codex',
+      prompt: 'do not send through an unknown binding',
+      options: {},
+    },
+  });
+  await appendEvent(unknownBindingSession.id, messageEvent('assistant', 'This must not be sent.', undefined, {
+    runId: unknownBindingRun.id,
+    requestId: unknownBindingRequestId,
+  }));
+
+  const unknownBindingRequestIndex = requests.length;
+  const unknownBindingDeliveries = await dispatchSessionEmailCompletionTargets(unknownBindingSession, unknownBindingRun);
+  assert.equal(unknownBindingDeliveries.length, 1);
+  assert.equal(unknownBindingDeliveries[0].state, 'failed');
+  assert.match(unknownBindingDeliveries[0].error, /requested email binding/i);
+  assert.equal(requests.length, unknownBindingRequestIndex, 'unknown bindings must stop before transport dispatch');
 
   const directResendAttachmentRequests = [];
   const resendAttachmentResult = await sendOutboundEmail({
