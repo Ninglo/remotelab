@@ -69,7 +69,7 @@ import {
   shouldRouteFeishuMessageToRemoteLab,
 } from '../connectors/feishu/response-policy.mjs';
 import {
-  claimFeishuBotHandoff, recordFeishuBotHandoffScope,
+  claimFeishuBotHandoff, recordFeishuBotHandoffScope, normalizeFeishuBotHandoffPolicy,
   restoreFeishuBotHandoffScopes, withFeishuHandoffLock,
 } from '../connectors/feishu/bot-handoff.mjs';
 import {
@@ -328,6 +328,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     sessionPolicy: normalizeFeishuSessionPolicy(parsed?.sessionPolicy),
+    botHandoffPolicy: normalizeFeishuBotHandoffPolicy(parsed?.botHandoffPolicy),
     accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
       baseDir: configDir,
       defaultAllowedSendersPath: join(configDir, DEFAULT_ALLOWED_SENDERS_FILENAME),
@@ -1123,7 +1124,7 @@ async function processFeishuMessage(runtime, summary, sourceLabel, helpers = {})
     ...summary, continueCommand: true, messageText: command.text, textPreview: command.text,
   };
   summary = await applyDefaultFork(runtime, summary);
-  if (isFeishuBotSender(summary)) {
+  if (isFeishuBotSender(summary) && runtime.config.botHandoffPolicy !== 'unlimited') {
     const binding = await findFeishuThreadSessionBinding(runtime, summary);
     if (!await claimFeishuBotHandoff(runtime, summary, binding?.sessionId)) {
       return { ignored: true, reason: 'bot_handoff_consumed' };

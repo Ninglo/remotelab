@@ -7,7 +7,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const home = await mkdtemp(join(tmpdir(), 'feishu-bot-handoff-'));
 setIsolatedTestHome(home);
-const { handleMessage, processSourceDeliveryOnce, recordFeishuThreadSessionBinding, summarizeEvent } = await import('../scripts/feishu-connector.mjs');
+const { handleMessage, loadConfig, processSourceDeliveryOnce, recordFeishuThreadSessionBinding, summarizeEvent } = await import('../scripts/feishu-connector.mjs');
 const { claimFeishuBotHandoff, restoreFeishuBotHandoffScopes } = await import('../connectors/feishu/bot-handoff.mjs');
 const { createDeliveryReceipts } = await import('../lib/delivery-receipts.mjs');
 const { shouldReplyInFeishuThread } = await import('../connectors/feishu/index.mjs');
@@ -132,6 +132,29 @@ try {
   assert.equal((await send({ messageId: 'chat-isolation', chatId: 'other-chat', threadId: 'created-thread' })).sessionId, 'session-chat-isolation');
   rt = { ...runtime(), config: { ...runtime().config, sourceRouteId: 'other-route' } };
   assert.equal((await send({ messageId: 'route-isolation', threadId: 'created-thread' })).sessionId, 'session-route-isolation');
+
+  // An owner-configured trigger-only peer may submit repeatedly without a code fork.
+  const configPath = join(home, 'policy-config.json');
+  const configInput = { appId: 'cli_self', appSecret: 'test-only', storageDir: home };
+  await writeFile(configPath, JSON.stringify(configInput));
+  assert.equal((await loadConfig(configPath)).botHandoffPolicy, 'once_per_session');
+  await writeFile(configPath, JSON.stringify({ ...configInput, botHandoffPolicy: 'unlimited' }));
+  const unlimited = (await loadConfig(configPath)).botHandoffPolicy;
+  assert.equal(unlimited, 'unlimited');
+  for (const messageId of ['unlimited-first', 'unlimited-after-restart']) {
+    rt = runtime();
+    rt.config.botHandoffPolicy = unlimited;
+    assert.equal((await send({ messageId, threadId: 'created-thread' })).sessionId, `session-${messageId}`);
+    assert.equal(effects.at(-1).forkCommand, undefined, 'unlimited admission preserves thread continuation');
+  }
+  await ignored({ messageId: 'unlimited-unmentioned', mentions: [] });
+  await ignored({ messageId: 'unlimited-self', sender: { senderType: 'bot', openId: 'ou_self' } });
+  rt = runtime();
+  await ignored({ messageId: 'limited-again', threadId: 'created-thread' });
+  for (const botHandoffPolicy of [null, false, {}, 'other']) {
+    await writeFile(configPath, JSON.stringify({ ...configInput, botHandoffPolicy }));
+    await assert.rejects(loadConfig(configPath), /Unsupported botHandoffPolicy/);
+  }
 
   // Bot admission must not alter the routing policy selected for human messages.
   for (const [name, patch, sessionPolicy, expectedThread] of [

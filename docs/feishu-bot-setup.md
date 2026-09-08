@@ -306,7 +306,14 @@ access control and Bot handoff loop protection are unchanged.
   retain the consumed quota in `storageDir/bot-handoffs/`. Preserve this directory
   with Inbox and delivery receipts during backup/migration; do not clear it to retry.
 
-This bounds Bot interaction within a Session/thread, not unrelated new top-level
+For an instance whose peer Bots are intentionally repeated task triggers, set
+`"botHandoffPolicy": "unlimited"` in its connector config. The default is
+`"once_per_session"`. This setting changes only the admission quota: self-message,
+explicit-mention and sender-access checks still apply, as does normal session
+routing. Existing quota records are retained, including when the default is
+restored. Use the default for Bots that can reply to one another.
+
+The default bounds Bot interaction within a Session/thread, not unrelated new top-level
 messages. Verify a real peer-Bot mention after enabling the permission; local
 admission tests alone do not prove platform event delivery.
 

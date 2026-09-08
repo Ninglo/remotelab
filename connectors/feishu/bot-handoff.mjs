@@ -3,6 +3,13 @@ import { dirname, join } from 'node:path';
 import { createRecordStore, serialQueue } from '../../lib/durable-records.mjs';
 import { buildExternalTriggerId, trimString } from './index.mjs';
 
+export function normalizeFeishuBotHandoffPolicy(value = 'once_per_session') {
+  if (!['once_per_session', 'unlimited'].includes(value)) {
+    throw new Error(`Unsupported botHandoffPolicy: ${value}`);
+  }
+  return value;
+}
+
 // Separate from the best-effort message index: admission must survive a crash,
 // retries and concurrent delivery acknowledgements without losing a used quota.
 function handoffStore(runtime) {
