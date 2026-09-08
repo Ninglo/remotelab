@@ -1,5 +1,11 @@
 [
   {
+    "id": "lightweight-activity-surfaces",
+    "description": "Center usage footer and replace nested gray activity surfaces with typography, spacing and understated detail switches.",
+    "pass": true,
+    "verification_plan": "Browser computed-style regression plus desktop/mobile native MOCK acceptance and full npm test."
+  },
+  {
     "id": "compact-thinking-tool-ui",
     "name": "Compact thinking and tool activity UI",
     "description": "Render thinking as a quiet activity timeline and merge each tool call/result into one compact stateful row with non-duplicated detail.",

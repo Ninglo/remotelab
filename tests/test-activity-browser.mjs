@@ -50,6 +50,19 @@ try {
   assert.equal(await page.locator('.activity-input').first().isVisible(), true);
   assert.equal(await page.locator('.activity-output').isVisible(), false);
   await page.getByRole('button', { name: '输出', exact: true }).click();
+  await page.mouse.move(0, 0);
+  const quietSurface = await page.locator('.tool-card').first().evaluate(card => {
+    const header = getComputedStyle(card.querySelector('summary'));
+    const output = getComputedStyle(card.querySelector('.activity-output'));
+    const tab = getComputedStyle(card.querySelector('[aria-pressed="true"]'));
+    const usage = document.createElement('div');
+    usage.className = 'usage-info';
+    card.parentElement.append(usage);
+    const alignment = getComputedStyle(usage).textAlign;
+    usage.remove();
+    return { header: header.backgroundColor, output: output.backgroundColor, border: output.borderTopWidth, tab: tab.backgroundColor, alignment };
+  });
+  assert.deepEqual(quietSurface, { header: 'rgba(0, 0, 0, 0)', output: 'rgba(0, 0, 0, 0)', border: '0px', tab: 'rgba(0, 0, 0, 0)', alignment: 'center' }, 'activity is typography-first, without stacked filled containers');
   await page.screenshot({ path: resolve(output, 'activity-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));

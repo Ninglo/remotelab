@@ -80,6 +80,7 @@ function updateActivityTool(card) {
   title.textContent = summarizeToolInput(use.toolInput) || use.toolName || t('ui.toolFallback');
   title.title = use.toolInput || '';
   card.querySelector('.activity-tool-name').textContent = use.toolName || t('ui.toolFallback');
+  card.querySelector('.activity-header').title = use.toolName || t('ui.toolFallback');
   // Keep mounted input/output nodes and user selection across live updates.
   const body = card.querySelector('.activity-detail');
   let tabs = body.querySelector('.activity-tabs');
@@ -126,6 +127,7 @@ function updateActivityTool(card) {
     button.type = 'button';
     button.dataset.tab = tab;
     button.textContent = activityText(tab);
+    if (tab === 'input') button.title = use.toolName || t('ui.toolFallback');
     button.addEventListener('click', () => select(tab));
     tabs.append(button);
   }
