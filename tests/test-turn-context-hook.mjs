@@ -32,9 +32,9 @@ assert.match(hook, /Auto system memory: (?:.*\/memory|\[platform-shared-memory\]
 assert.match(hook, /Model context root: .*\/memory\/model-context/);
 assert.match(hook, /active working agreements/);
 assert.match(hook, /默认自然段表达。/);
-assert.match(hook, /Current provider-neutral work summary/);
-assert.match(hook, /Reusable patterns/);
-assert.match(hook, /sales\.xlsx/);
+assert.doesNotMatch(hook, /Current provider-neutral work summary/);
+assert.doesNotMatch(hook, /Reusable patterns/);
+assert.doesNotMatch(hook, /sales\.xlsx/);
 
 assert.doesNotMatch(hook, /standing authorization/);
 assert.doesNotMatch(hook, /Prefer RemoteLab-side execution/);

@@ -6,6 +6,8 @@ function normalizeSourceKey(value) {
   return trimString(value).toLowerCase();
 }
 
+const SOURCE_CONTEXT_HELP = 'If connector metadata is needed, use `remotelab api GET /api/sessions/$REMOTELAB_SESSION_ID/source-context --base-url "$REMOTELAB_CHAT_BASE_URL"`; this CLI supplies owner authentication, unlike a bare HTTP request.';
+
 function buildFeishuRuntimePrompt(session) {
   const sourceName = trimString(session?.sourceName) || 'Feishu';
   const chatType = trimString(session?.sourceContext?.chatType).toLowerCase();
@@ -24,7 +26,7 @@ function buildFeishuRuntimePrompt(session) {
       : 'Write mathematical expressions as standard LaTeX using \\(...\\) for inline math and \\[...\\] or $$...$$ for display math so the connector can render them reliably.',
     'Do not include emoji characters, emoticons, or sticker aliases like [委屈] in the message body; keep acknowledgements as plain words.',
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
-    'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
+    SOURCE_CONTEXT_HELP,
     'If essential context is missing, ask for the minimum additional context you need instead of guessing.',
     chatType === 'group' ? 'This session maps to a group chat; if a message clearly does not require a response from you, output an empty string.' : '',
     'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',
@@ -38,7 +40,7 @@ function buildWeChatRuntimePrompt(session) {
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, actually do the work before replying.',
     `Produce plain text suitable for sending back through ${sourceName}.`,
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
-    'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
+    SOURCE_CONTEXT_HELP,
     'Prefer concise direct replies unless the user explicitly asked for depth.',
     'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
   ].join('\n');
@@ -51,7 +53,7 @@ function buildWhatsAppRuntimePrompt(session) {
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, actually do the work before replying.',
     `Produce plain text suitable for sending back through ${sourceName}.`,
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
-    'If connector metadata is genuinely needed, inspect `/api/sessions/$REMOTELAB_SESSION_ID/source-context` using `REMOTELAB_CHAT_BASE_URL` instead of assuming it belongs inline in every prompt.',
+    SOURCE_CONTEXT_HELP,
     'Prefer concise, mobile-friendly replies unless the user explicitly asked for depth.',
     'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
   ].join('\n');

@@ -256,7 +256,7 @@ If the user asks to connect Gmail or Gmail is not ready yet, direct them to the 
 
 ## Instance Connectors
 
-This section is the complete RemoteLab connector-action catalog for this instance. If an action is absent, no instance-bound RemoteLab connector is configured for it.`;
+This section lists actions exposed by the RemoteLab connector catalog. It does not enumerate Harness tools, installed CLIs, Skills, or their existing authorizations; absence here is not evidence that those capabilities are unavailable.`;
 
   if (connectorSections.length > 0) {
     section += '\n\n' + connectorSections.join('\n\n');

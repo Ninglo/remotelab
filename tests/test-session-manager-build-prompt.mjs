@@ -74,7 +74,8 @@ assert.match(freshPrompt, new RegExp(`Auto user memory: ${memoryRootPattern}\\/m
 assert.match(freshPrompt, /Auto system memory: (?:.*\/memory|\[platform-shared-memory\])\/auto-system-memory\.md/);
 assert.match(freshPrompt, /Model context root:/);
 assert.match(freshPrompt, new RegExp(`${memoryRootPattern}\\/model-context`));
-assert.match(freshPrompt, /complete RemoteLab connector-action catalog for this instance/);
+assert.match(freshPrompt, /actions exposed by the RemoteLab connector catalog/);
+assert.match(freshPrompt, /absence here is not evidence/);
 assert.doesNotMatch(freshPrompt, /standing authorization/);
 assert.doesNotMatch(freshPrompt, /brief self-review/);
 assert.doesNotMatch(freshPrompt, /Guest Privacy Boundary/);
@@ -182,7 +183,8 @@ assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned f
 assert.match(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI/);
 assert.match(feishuSourcePrompt, /Do not collapse action requests into a one-line acknowledgement/);
 assert.match(feishuSourcePrompt, /Do not include emoji characters, emoticons, or sticker aliases/);
-assert.match(feishuSourcePrompt, /source-context/);
+assert.match(feishuSourcePrompt, /remotelab api GET .*source-context/);
+assert.match(feishuSourcePrompt, /--base-url/);
 assert.match(feishuSourcePrompt, /This session maps to a group chat/);
 
 const observerSourcePrompt = await buildPrompt(
@@ -249,11 +251,11 @@ const promptWithWorkSummary = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(promptWithWorkSummary, /Current provider-neutral work summary/);
-assert.match(promptWithWorkSummary, /Execution mode: project/);
-assert.match(promptWithWorkSummary, /sales\.xlsx/);
-assert.match(promptWithWorkSummary, /Reusable patterns/);
-assert.match(promptWithWorkSummary, /Session-scoped reusable context/);
+assert.doesNotMatch(promptWithWorkSummary, /Current provider-neutral work summary/);
+assert.doesNotMatch(promptWithWorkSummary, /Execution mode: project/);
+assert.doesNotMatch(promptWithWorkSummary, /sales\.xlsx/);
+assert.doesNotMatch(promptWithWorkSummary, /Reusable patterns/);
+assert.doesNotMatch(promptWithWorkSummary, /Session-scoped reusable context/);
 
 const crossHarnessPrompt = await buildPrompt(
   'session-test-7',
@@ -274,8 +276,8 @@ const crossHarnessPrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(crossHarnessPrompt, /这份状态必须从 Codex 传给 Claude/);
-assert.match(crossHarnessPrompt, /Provider 原生线程不是跨 Harness 记忆真相/);
+assert.doesNotMatch(crossHarnessPrompt, /这份状态必须从 Codex 传给 Claude/);
+assert.doesNotMatch(crossHarnessPrompt, /Provider 原生线程不是跨 Harness 记忆真相/);
 assert.match(crossHarnessPrompt, /切换到 Claude 继续/);
 
 const welcomePrompt = await buildPrompt(
