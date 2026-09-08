@@ -1,4 +1,5 @@
 import { normalizeFeishuMode, trimString } from './index.mjs';
+import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 
 function normalizeGroupResponseMode(value) {
   const mode = trimString(value).toLowerCase();
@@ -26,7 +27,7 @@ export async function resolveFeishuBotIdentity(runtime) {
   return identity;
 }
 
-export function shouldRouteFeishuMessageToRemoteLab(runtime, summary) {
+export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary) {
   const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
   if (modes.includes('p2p') || modes.includes('private')) return true;
   if (!modes.some((mode) => ['group', 'topic', 'thread'].includes(mode))) return true;
@@ -34,9 +35,11 @@ export function shouldRouteFeishuMessageToRemoteLab(runtime, summary) {
   if (policy.group === 'all') return true;
   const identity = runtime?.botIdentity || {};
   // Match IDs by namespace; names, stale flags, thread bindings and @all are not mentions of this Bot.
-  return (Array.isArray(summary?.mentions) ? summary.mentions : []).some((mention) => (
+  const mentioned = (Array.isArray(summary?.mentions) ? summary.mentions : []).some((mention) => (
     ['openId', 'userId', 'unionId'].some((key) => (
       trimString(identity[key]) && trimString(mention?.[key]) === trimString(identity[key])
     ))
   ));
+  // Only this Bot's durable binding to the exact thread permits mention-free replies.
+  return mentioned || Boolean((await findFeishuThreadSessionBinding(runtime, summary))?.sessionId);
 }

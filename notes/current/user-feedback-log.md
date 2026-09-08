@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-08 — Group attention gates should not add friction inside an invited AI thread
+
+- Source: owner compared an AI thread interaction with the recently restored mention-only group policy.
+- Observed friction: requiring an explicit Bot mention on every thread reply prevents natural follow-up after the Bot has already been invited. Removing the mention gate for the whole group instead floods a broad audience with AI output.
+- Product implication: gate entry at the public group boundary; once a Bot has joined an exact thread, admit subsequent human replies there without another mention and preserve the existing Session. Keep this participation durable and isolated by Bot, chat and thread, never inferred from a group-wide Session. Sender access control and Bot loop protection remain separate and unchanged.
+- Implementation and verification: `notes/current/feishu-thread-continuation.md`.
+
 ### 2026-09-07 — Browser notification permission needs an explicit activation and recovery path
 
 - Source: owner reported missing notifications while Chrome still showed the site's permission as `Ask`; RemoteLab had never asked.

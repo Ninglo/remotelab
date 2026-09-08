@@ -6,6 +6,7 @@ import {
   FEISHU_CONNECTOR_ID,
   buildFeishuMessageIndexRecord,
   buildFeishuOutboundMessageIndexRecord,
+  buildFeishuTopicId,
 } from './index.mjs';
 
 function trimString(value) {
@@ -17,7 +18,7 @@ function getFeishuAccountId(summary) {
 }
 
 function getFeishuThreadId(summary, explicitThreadId = '') {
-  return trimString(explicitThreadId || summary?.threadId || summary?.topicId);
+  return trimString(explicitThreadId) || buildFeishuTopicId(summary);
 }
 
 function buildFeishuThreadBindingMessageId(threadId) {
@@ -73,12 +74,15 @@ export async function findFeishuThreadSessionBinding(runtime, summary) {
   const pathname = trimString(runtime?.storagePaths?.messageIndexPath);
   const threadId = getFeishuThreadId(summary);
   const messageId = buildFeishuThreadBindingMessageId(threadId);
-  if (!pathname || !messageId) return null;
-  return findConnectorMessageIndexRecord(pathname, {
+  const chatId = trimString(summary?.chatId);
+  if (!pathname || !messageId || !chatId) return null;
+  const binding = await findConnectorMessageIndexRecord(pathname, {
     connector: FEISHU_CONNECTOR_ID,
     accountId: getFeishuAccountId(summary),
     messageId,
-    chatId: trimString(summary?.chatId),
+    chatId,
     conversationId: threadId,
   });
+  return binding?.direction === 'binding' && binding.chatId === chatId
+    && binding.conversationId === threadId ? binding : null;
 }

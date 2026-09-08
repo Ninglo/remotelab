@@ -1080,8 +1080,8 @@ async function queueFeishuReply(runtime, summary, text) {
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   if (!isProcessableMessage(summary)) return { ignored: true };
-  if (!isFeishuDocumentCommentSummary(summary) && !shouldRouteFeishuMessageToRemoteLab(runtime, summary)) {
-    console.log(`[feishu-connector] skipped ${summary.messageId} (response policy requires a mention of this Bot)`);
+  if (!isFeishuDocumentCommentSummary(summary) && !await shouldRouteFeishuMessageToRemoteLab(runtime, summary)) {
+    console.log(`[feishu-connector] skipped ${summary.messageId} (response policy requires a Bot mention or an active Bot thread)`);
     return { ignored: true, reason: 'group_reply_policy' };
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);

@@ -232,13 +232,19 @@ Notes:
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
 These are the only two message policies. `accessPolicy` decides who may use the
-Bot. `responsePolicy.group` defaults to `mention_only`, requiring an explicit
-mention of this Bot. Set it to `all` to accept every group message. Private
-messages are always admitted immediately after access control.
+Bot. `responsePolicy.group` defaults to `mention_only`: group messages require an
+explicit mention of this Bot to start a conversation. Once the Bot has joined a
+thread, human replies in that same thread need no further mention and continue
+its existing Session. Participation is persisted per Bot and thread, including
+threads created by a Bot reply; it survives connector restarts. Other threads
+and ordinary group chatter still require a mention. An existing group Session,
+quoting a message outside a thread, mentioning another user, or `@all` cannot
+activate a thread. Set the policy to `all` to accept every human group message.
+Private messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
-including stored-message replay. Mention matching uses the Bot's API identity;
-mentioning another user or continuing an existing thread does not count. Policies
-apply to the whole Connector so two groups cannot silently behave differently.
+including stored-message replay. Mention matching uses the Bot's API identity.
+Thread continuation never bypasses sender access control or Bot loop protection.
+Policies apply to the whole Connector so two groups cannot silently behave differently.
 
 ### Markdown rendering
 

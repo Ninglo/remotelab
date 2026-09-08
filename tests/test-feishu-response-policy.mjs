@@ -84,7 +84,75 @@ try {
     await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', [legacyKey]: {} }));
     await assert.rejects(loadConfig(configPath), new RegExp(legacyKey));
   }
-  console.log('Feishu access, response and processing acknowledgement tests passed');
+  const { findFeishuThreadSessionBinding, recordFeishuThreadSessionBinding,
+    recordFeishuMessageSession } = await import('../connectors/feishu/session-flow.mjs');
+  runtime.storagePaths.messageIndexPath = join(testHome, 'bot-1', 'message-index.json');
+  const thread = { threadId: 'thread-1', tenantKey: 'tenant-1' };
+  await check('an unjoined thread stays silent', thread, []);
+  await check('another mention cannot activate a thread', { ...thread, mentions: [{ openId: 'human' }] }, []);
+  await check('@all cannot activate a thread', { ...thread, mentions: [{ openId: 'all' }] }, []);
+  await check('explicit mention joins a thread', { ...thread, mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
+  assert.equal((await findFeishuThreadSessionBinding(runtime, { ...base, ...thread })).sessionId, 'routing-session');
+  await check('thread replies need no further mention', thread, ['reaction', 'submit']);
+  await check('another human may continue the same thread', {
+    ...thread, sender: { senderType: 'user', openId: 'another-human' },
+  }, ['reaction', 'submit']);
+  await check('the rest of the group stays silent after activation', {}, []);
+  await check('sibling threads stay silent', { ...thread, threadId: 'thread-2' }, []);
+  await check('thread IDs cannot cross groups', { ...thread, chatId: 'group-2' }, []);
+  await check('thread IDs cannot cross tenants', { ...thread, tenantKey: 'tenant-2' }, []);
+  await check('topic ID alias can continue a joined thread', {
+    tenantKey: thread.tenantKey, topicId: thread.threadId,
+  }, ['reaction', 'submit']);
+  await check('an unmentioned app cannot loop in a joined thread', {
+    ...thread, sender: { senderType: 'app', openId: 'other-bot' },
+  }, []);
+  await check('self messages do not continue a joined thread', {
+    ...thread, sender: { senderType: 'app', openId: 'bot-self' },
+  }, []);
+
+  effects = [];
+  const restartedRuntime = {
+    config: structuredClone(runtime.config), botIdentity: structuredClone(runtime.botIdentity),
+    storagePaths: { ...runtime.storagePaths },
+  };
+  await handleMessage(restartedRuntime, { ...base, ...thread }, 'test', helpers);
+  assert.deepEqual(effects, ['reaction', 'submit'], 'participation survives a fresh runtime');
+  const firstBotIndex = runtime.storagePaths.messageIndexPath;
+  runtime.storagePaths.messageIndexPath = join(testHome, 'bot-2', 'message-index.json');
+  await check('another Bot does not inherit participation', thread, []);
+  runtime.storagePaths.messageIndexPath = firstBotIndex;
+
+  await recordFeishuMessageSession(runtime, base, 'old-group-session');
+  await check('a group session does not activate unrelated threads', { threadId: 'unjoined' }, []);
+  await check('a quoted group reply without thread identity stays silent', {
+    rootId: base.messageId, parentId: base.messageId,
+  }, []);
+  await check('a topic root may invite the Bot before a thread ID exists', {
+    chatMode: 'topic', messageId: 'topic-root', mentions: [{ openId: 'bot-self' }],
+  }, ['reaction', 'submit']);
+  await check('native topic replies can identify the joined topic by root ID', {
+    chatMode: 'topic', messageId: 'topic-reply', rootId: 'topic-root',
+  }, ['reaction', 'submit']);
+  await check('a different topic root stays silent', {
+    chatMode: 'topic', messageId: 'other-topic-reply', rootId: 'other-topic-root',
+  }, []);
+
+  // Sending a reply may assign a new Feishu thread ID to an admitted group root.
+  await recordFeishuThreadSessionBinding(runtime, base, 'outbound-session', { threadId: 'created-by-reply' });
+  await check('a thread created by the Bot reply can be continued', {
+    threadId: 'created-by-reply',
+  }, ['reaction', 'submit']);
+
+  effects = [];
+  await assert.rejects(handleMessage(runtime, {
+    ...base, threadId: 'failed-admission', mentions: [{ openId: 'bot-self' }],
+  }, 'test', {
+    ...helpers, submitRemoteLabRequest: async () => { throw new Error('submission failed'); },
+  }), /submission failed/);
+  await check('failed submission does not activate a thread', { threadId: 'failed-admission' }, []);
+
+  console.log('Feishu access, response, durable thread continuation and processing acknowledgement tests passed');
 } finally {
   await rm(testHome, { recursive: true, force: true });
 }
