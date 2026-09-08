@@ -82,7 +82,7 @@
     "observer:instance": "./scripts/proactive-observer-instance.sh start",
     "transcript:measure": "node scripts/measure-transcript-overhead.mjs",
     "lint:filesize": "node scripts/report-oversized-files.mjs",
-    "test": "npm run test:smoke",
+    "test": "node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:smoke",
     "test:restart-gate": "node scripts/run-with-clean-instance-env.mjs npm run test:restart-gate:raw",
     "test:restart-gate:raw": "node tests/test-runtime-alignment.mjs && node tests/test-chat-static-assets.mjs && node tests/test-chat-split-frontend-smoke.mjs && node tests/test-build-info-versioning.mjs && node tests/test-static-publish-command.mjs && node tests/test-static-asset-routing.mjs && node tests/test-chat-loader-versioned-assets.mjs && node tests/test-chat-build-update-indicator.mjs && node tests/test-source-runtime-only.mjs && node tests/test-cli-release-removed.mjs && node tests/test-cli-legacy-command-removed.mjs",
     "test:smoke": "node scripts/run-with-clean-instance-env.mjs npm run test:smoke:raw",

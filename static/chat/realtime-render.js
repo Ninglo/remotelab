@@ -390,7 +390,7 @@ async function fetchEventBody(sessionId, seq) {
   ))
     .then((data) => {
       const body = data.body || null;
-      eventBodyCache.set(key, body);
+      if (body && body.field !== 'diff') eventBodyCache.set(key, body);
       eventBodyRequests.delete(key);
       return body;
     })
@@ -405,6 +405,11 @@ async function fetchEventBody(sessionId, seq) {
 function applyLazyBodyToNode(node, body) {
   if (!node) return;
   const renderMode = node.dataset.bodyRender || "text";
+  if (renderMode === 'diff') {
+    if (typeof body?.value !== 'string') throw new Error('Diff body unavailable');
+    renderActivityDiff(node, body.value);
+    return;
+  }
   const value = formatDecodedDisplayText(body?.value || node.dataset.preview || "");
   if (renderMode === "markdown" && typeof renderMarkdownIntoNode === "function") {
     renderMarkdownIntoNode(node, value);
@@ -470,11 +475,21 @@ async function hydrateLazyNode(node) {
   const sessionId = currentSessionId;
   const seq = parseInt(node?.dataset?.eventSeq || "", 10);
   if (!sessionId || !seq || node.dataset.bodyPending !== "true") return;
+  if (node.dataset.bodyRender === 'diff' && node.closest('details:not([open])')) return;
   try {
     const body = await fetchEventBody(sessionId, seq);
     applyLazyBodyToNode(node, body);
     node.dataset.bodyPending = "false";
   } catch (error) {
+    if (node.dataset.bodyRender === 'diff') {
+      node.textContent = activityText('diffLoadFailed') + ' ';
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'activity-diff-retry';
+      retry.textContent = activityText('retryDiff');
+      retry.addEventListener('click', () => { node.textContent = activityText('loadingDiff'); hydrateLazyNode(node); });
+      node.append(retry);
+    }
     console.warn("[event-body] Failed to load body:", error.message);
   }
 }

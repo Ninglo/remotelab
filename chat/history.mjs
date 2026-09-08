@@ -17,9 +17,10 @@ const BODY_FIELD_BY_TYPE = {
   template_context: 'content',
   tool_use: 'toolInput',
   tool_result: 'output',
+  file_change: 'diff',
 };
-const ALWAYS_EXTERNALIZE_TYPES = new Set(['reasoning']);
-const DEFERRED_INDEX_BODY_TYPES = new Set(['message', 'reasoning', 'template_context', 'tool_use', 'tool_result']);
+const ALWAYS_EXTERNALIZE_TYPES = new Set(['reasoning', 'file_change']);
+const DEFERRED_INDEX_BODY_TYPES = new Set(['message', 'reasoning', 'template_context', 'tool_use', 'tool_result', 'file_change']);
 const INLINE_BODY_LIMITS = {
   message: 64 * 1024,
   reasoning: 0,
@@ -150,7 +151,7 @@ function serializeEventForIndex(event, options = {}) {
   }
   const inlineBody = typeof next[bodyField] === 'string' ? next[bodyField] : '';
   const hasBody = !!inlineBody || next.bodyAvailable === true || !!next.bodyRef;
-  const preview = next.type === 'message'
+  const preview = ['message', 'file_change'].includes(next.type)
     ? ''
     : (inlineBody ? clipMiddle(inlineBody, previewLimitFor(next)) : '');
   next[bodyField] = '';
@@ -251,17 +252,18 @@ async function writeBody(sessionId, seq, field, value) {
   await ensureSessionDir(sessionId);
   const ref = `evt_${String(seq).padStart(EVENT_FILE_WIDTH, '0')}_${field}`;
   await writeTextAtomic(bodyPath(sessionId, ref), value || '');
-  bodyCache.set(bodyCacheKey(sessionId, ref), value || '');
+  if (field !== 'diff') bodyCache.set(bodyCacheKey(sessionId, ref), value || '');
   return ref;
 }
 
 async function readBody(sessionId, ref) {
   if (!ref) return '';
   const key = bodyCacheKey(sessionId, ref);
-  if (bodyCache.has(key)) return bodyCache.get(key);
+  const cacheable = !ref.endsWith('_diff');
+  if (cacheable && bodyCache.has(key)) return bodyCache.get(key);
   try {
     const value = await readFile(bodyPath(sessionId, ref), 'utf8');
-    bodyCache.set(key, value);
+    if (cacheable) bodyCache.set(key, value);
     return value;
   } catch {
     return '';
@@ -274,9 +276,15 @@ async function storeEvent(sessionId, event) {
   const bodyField = eventBodyField(stored);
   if (bodyField && typeof stored[bodyField] === 'string') {
     const raw = stored[bodyField];
+    if (stored.type === 'file_change') {
+      stored.diffStats = {
+        additions: raw.split('\n').filter(line => line.startsWith('+') && !line.startsWith('+++')).length,
+        deletions: raw.split('\n').filter(line => line.startsWith('-') && !line.startsWith('---')).length,
+      };
+    }
     const shouldExternalize = ALWAYS_EXTERNALIZE_TYPES.has(stored.type) || raw.length > inlineLimitFor(stored);
     if (shouldExternalize && raw) {
-      stored[bodyField] = clipMiddle(raw, previewLimitFor(stored));
+      stored[bodyField] = stored.type === 'file_change' ? '' : clipMiddle(raw, previewLimitFor(stored));
       stored.bodyAvailable = true;
       stored.bodyLoaded = false;
       stored.bodyField = bodyField;
@@ -429,7 +437,7 @@ export async function loadHistory(sessionId, options = {}) {
   for (let seq = fromSeq; seq <= toSeq; seq += 1) {
     const stored = await loadStoredEvent(sessionId, seq);
     if (!stored) continue;
-    events.push(includeBodies ? await hydrateEvent(sessionId, stored) : stored);
+    events.push(includeBodies && !(options.deferFileDiffs && stored.type === 'file_change') ? await hydrateEvent(sessionId, stored) : stored);
   }
   return events;
 }

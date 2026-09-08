@@ -71,6 +71,38 @@ try {
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile has no horizontal page overflow');
   await page.screenshot({ path: resolve(output, 'activity-mobile.png'), fullPage: true });
+  // Use the production lazy-body code, not the fixture's no-op hydrator.
+  await page.addScriptTag({ path: resolve('static/chat/realtime-render.js') });
+  await page.evaluate(async () => {
+    window.currentSessionId = 'diff-fixture';
+    window.eventBodyCache = new Map();
+    window.eventBodyRequests = new Map();
+    window.diffRequests = 0;
+    window.fetchJsonOrRedirect = async () => {
+      window.diffRequests++;
+      if (window.diffRequests === 1) throw new Error('Simulated offline request');
+      return { body: { field: 'diff', value: '@@ -1 +1 @@\n-old\n+new <private>literal code</private>\n' } };
+    };
+    renderActivityFile(document.querySelector('#activity'), {
+      seq: 123, filePath: '/fixture/lazy.txt', changeType: 'edit', diff: '',
+      bodyAvailable: true, bodyLoaded: false, bodyField: 'diff', diffStats: { additions: 1, deletions: 1 },
+    });
+    await hydrateLazyNodes(document.querySelector('#activity'));
+  });
+  assert.equal(await page.evaluate(() => window.diffRequests), 0, 'expanding the parent never fetches unopened file patches');
+  const lazy = page.locator('.activity-file').last();
+  await lazy.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await lazy.locator('.activity-diff-retry').waitFor();
+  assert.equal(await page.evaluate(() => window.diffRequests), 1, 'opening the file starts exactly one request');
+  await lazy.locator('.activity-diff-retry').click();
+  await lazy.locator('[data-body-pending="false"]').waitFor();
+  assert.match(await lazy.locator('.activity-diff').textContent(), /<private>literal code<\/private>/, 'code is literal, not passed through hidden-message stripping');
+  assert.equal(await lazy.locator('.diff-add').count(), 1);
+  await lazy.locator('summary').click();
+  await lazy.locator('summary').click();
+  assert.equal(await page.evaluate(() => window.diffRequests), 2, 'loaded DOM is reused on reopen');
+  assert.equal(await page.evaluate(() => eventBodyCache.size), 0, 'full patches do not accumulate in the global text cache');
   assert.deepEqual(errors, []);
-  console.log('activity browser: desktop/mobile, output/input switching, duplicate lifecycle and page errors passed');
+  console.log('activity browser: desktop/mobile, tool lifecycle, lazy file diff, retry, literal code and keyboard passed');
 } finally { await browser.close(); }

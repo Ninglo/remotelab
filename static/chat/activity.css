@@ -30,6 +30,7 @@
 .activity-empty { color: var(--text-muted); margin: 4px 0; }
 .activity-file .activity-title { color: var(--text); }
 .activity-diff { padding: 2px 0; border-left: 0; white-space: pre; overflow-wrap: normal; }
+.activity-diff-retry { border: 0; background: transparent; color: var(--text); font: inherit; text-decoration: underline; cursor: pointer; padding: 4px; }
 .activity-diff span { display: block; padding: 0 12px; min-width: max-content; }
 .diff-add { background: var(--success-bg); color: var(--success); }
 .diff-delete { background: var(--error-bg); color: var(--error); }

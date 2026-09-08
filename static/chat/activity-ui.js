@@ -170,34 +170,50 @@ function settleActivityTools(container) {
   }
 }
 
+function renderActivityDiff(pre, diff) {
+  pre.replaceChildren();
+  for (const line of String(diff).split('\n')) {
+    const row = document.createElement('span');
+    row.className = line.startsWith('@@') ? 'diff-hunk' : line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-delete' : 'diff-context';
+    row.textContent = line + '\n';
+    pre.append(row);
+  }
+}
+
 function renderActivityFile(container, evt) {
   const path = String(evt.filePath || '');
   const name = path.split(/[\\/]/).pop() || path;
   const diff = typeof evt.diff === 'string' ? evt.diff : '';
   const lines = diff.split('\n');
-  const additions = lines.filter(line => line.startsWith('+') && !line.startsWith('+++')).length;
-  const deletions = lines.filter(line => line.startsWith('-') && !line.startsWith('---')).length;
-  const meta = diff ? `+${additions} −${deletions}` : formatFileChangeTypeLabel(evt.changeType || 'edit');
+  const additions = evt.diffStats?.additions ?? lines.filter(line => line.startsWith('+') && !line.startsWith('+++')).length;
+  const deletions = evt.diffStats?.deletions ?? lines.filter(line => line.startsWith('-') && !line.startsWith('---')).length;
+  const hasDiff = !!diff || evt.bodyAvailable;
+  const meta = (hasDiff ? `+${additions} −${deletions}` : formatFileChangeTypeLabel(evt.changeType || 'edit'))
+    + (evt.changeState === 'failed' ? ` · ${activityText('failed')}` : '');
   const { card, body, label } = createActivityDisclosure(name, { kind: 'file', meta });
   label.title = path;
   const location = document.createElement('div');
   location.className = 'activity-path';
   location.textContent = path;
   body.append(location);
-  if (diff) {
+  if (hasDiff) {
+    if (evt.changeState === 'failed') {
+      const warning = document.createElement('p');
+      warning.className = 'activity-empty';
+      warning.textContent = activityText('attemptedDiff');
+      body.append(warning);
+    }
     const pre = document.createElement('pre');
     pre.className = 'activity-code activity-diff';
-    for (const line of lines) {
-      const row = document.createElement('span');
-      row.className = line.startsWith('@@') ? 'diff-hunk' : line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-delete' : 'diff-context';
-      row.textContent = line + '\n';
-      pre.append(row);
-    }
+    if (evt.bodyAvailable && !evt.bodyLoaded) {
+      pre.textContent = activityText('loadingDiff');
+      markLazyEventBodyNode(pre, evt, { renderMode: 'diff' });
+    } else renderActivityDiff(pre, diff);
     body.append(pre);
   } else {
     const note = document.createElement('p');
     note.className = 'activity-empty';
-    note.textContent = activityText('noDiff');
+    note.textContent = activityText(evt.diffUnavailableReason === 'binary' ? 'binaryDiff' : evt.diffStats ? 'emptyDiff' : 'noDiff');
     body.append(note);
   }
   if (evt.changeState === 'failed') card.classList.add('is-failed');

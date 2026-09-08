@@ -345,6 +345,10 @@ async function sanitizeStructuredRecord(runId, value) {
     await externalizeStringField(runId, next.item, 'aggregated_output', 'aggregated_output');
     await externalizeStringField(runId, next.item, 'text', 'item_text');
     await externalizeStringField(runId, next.item, 'command', 'item_command');
+    for (const change of next.item.type === 'file_change' && Array.isArray(next.item.changes) ? next.item.changes : []) {
+      await externalizeStringField(runId, change, 'diff', 'file_diff');
+      await externalizeStringField(runId, change, 'patch', 'file_patch');
+    }
   }
 
   if (next.message && typeof next.message === 'object' && Array.isArray(next.message.content)) {
@@ -379,6 +383,10 @@ async function hydrateStructuredRecord(runId, value) {
     await restoreField(next.item, 'aggregated_output');
     await restoreField(next.item, 'text');
     await restoreField(next.item, 'command');
+    for (const change of next.item.type === 'file_change' && Array.isArray(next.item.changes) ? next.item.changes : []) {
+      await restoreField(change, 'diff');
+      await restoreField(change, 'patch');
+    }
   }
 
   if (next.message && typeof next.message === 'object' && Array.isArray(next.message.content)) {

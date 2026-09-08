@@ -163,9 +163,14 @@ function parseItem(item) {
       if (Array.isArray(item.changes)) {
         for (const change of item.changes) {
           events.push(fileChangeEvent(change.path, change.kind, {
+            toolCallId: item.id,
             ...(typeof change.diff === 'string' ? { diff: change.diff } : {}),
             ...(typeof change.patch === 'string' ? { diff: change.patch } : {}),
             changeState: item.status,
+            diffSource: change.diffSource || 'runtime',
+            nativeChangeId: change.nativeChangeId,
+            previousPath: change.previousPath,
+            diffUnavailableReason: change.diffUnavailableReason,
           }));
         }
       }

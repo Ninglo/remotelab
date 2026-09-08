@@ -716,7 +716,7 @@ async function buildSessionTimelineEvents(sessionId, options = {}) {
   if (activeRunId) {
     await syncDetachedRun(sessionId, activeRunId);
   }
-  return loadHistory(sessionId, { includeBodies: options.includeBodies !== false });
+  return loadHistory(sessionId, { includeBodies: options.includeBodies !== false, deferFileDiffs: true });
 }
 
 async function syncDetachedRunUnlocked(sessionId, runId) {

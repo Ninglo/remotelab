@@ -12,6 +12,7 @@ import {
 } from './codex-session-metrics.mjs';
 import { CHAT_PORT } from '../lib/config.mjs';
 import { claimOnce } from '../lib/durable-records.mjs';
+import { createCodexFileChangeCapture } from './codex-file-changes.mjs';
 import {
   appendRunSpoolRecord,
   getRun,
@@ -389,12 +390,19 @@ async function main() {
   }, IDLE_CHECK_INTERVAL_MS);
   if (typeof idleTimer.unref === 'function') idleTimer.unref();
 
+  const captureRun = await getRun(runId);
+  const fileChangeCapture = createCodexFileChangeCapture({ startedAt: captureRun.startedAt || captureRun.createdAt });
   const recordStdoutLine = async (line) => {
     lastOutputAt = Date.now();
     let parsed = null;
     try {
       parsed = JSON.parse(line);
     } catch {}
+    if (initialInvocation.isCodexFamily && parsed?.item?.type === 'file_change') {
+      const current = await getRun(runId);
+      parsed = await fileChangeCapture.enrich(parsed, current?.codexThreadId);
+      line = JSON.stringify(parsed);
+    }
     await appendRunSpoolRecord(runId, {
       ts: nowIso(),
       stream: 'stdout',
@@ -537,6 +545,7 @@ async function main() {
       }));
     }
 
+    if (initialInvocation.isCodexFamily) await fileChangeCapture.prepare(manifest.options?.codexThreadId);
     attempt = await runToolAttempt(initialInvocation);
     current = await getRun(runId) || run;
     const canRecoverMissingCodexRollout = (

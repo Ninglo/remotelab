@@ -154,6 +154,10 @@ function collectLocalMarkdownImageRewriteMap(events = []) {
 function stripDeferredBodyFields(event, { localMarkdownImageRewriteMapBySeq = null } = {}) {
   const next = stripEventAttachmentSavedPaths(cloneJson(event));
   if (!next || typeof next !== 'object') return next;
+  if (next.type === 'file_change' && next.bodyAvailable && !next.bodyLoaded) {
+    delete next.bodyRef;
+    return next;
+  }
   if (next.type === 'message' && next.role === 'assistant' && typeof next.content === 'string') {
     const messageRewrites = Number.isInteger(next.seq) && localMarkdownImageRewriteMapBySeq instanceof Map
       ? localMarkdownImageRewriteMapBySeq.get(next.seq)

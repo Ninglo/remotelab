@@ -37,11 +37,12 @@ completion; text output and diffs are inserted as text, not HTML.
 
 ## Diff evidence boundary
 
-The normalizer and Codex adapter retain `diff`/`patch` if the runtime supplies it;
-shares preserve the patch. File rows do not run `git diff` against a changing working
-tree to reconstruct historical edits. Older Codex events frequently contain only
-path and kind; those explicitly state that no patch was supplied. Support for
-provider-specific patch recovery is a separate data-capture improvement.
+The Codex runner captures native completion patches into durable run output;
+history stores an independent body with no age-based expiry. File rows fetch the
+saved body only when opened; shares preserve the patch. They never run `git diff`
+against a changing working tree. Older uncaptured events explicitly say that
+details were not recorded. See [historical file diffs](historical-file-diffs.md)
+for capture identity, ownership, retention, failure states and verification.
 
 ## Verification
 
