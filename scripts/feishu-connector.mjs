@@ -175,7 +175,7 @@ Config shape:
     "thinking": false,
     "systemPrompt": "${DEFAULT_SESSION_SYSTEM_PROMPT.replace(/"/g, '\\"')}",
     "responsePolicy": {
-      "group": "all"
+      "group": "mention_only"
     },
     "accessPolicy": {
       "mode": "all",

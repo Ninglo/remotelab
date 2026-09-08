@@ -75,7 +75,10 @@ try {
   await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test' }));
   const defaults = await loadConfig(configPath);
   assert.equal(defaults.accessPolicy.mode, 'all');
-  assert.deepEqual(defaults.responsePolicy, { group: 'all' });
+  assert.deepEqual(defaults.responsePolicy, { group: 'mention_only' });
+  await check('omitting the group setting rejects ordinary group messages', {}, [], {});
+  await check('omitting the group setting admits explicit Bot mentions', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit'], {});
+  await check('omitting the group setting still admits private messages', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit'], {});
 
   for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'processingReaction', 'silentConfirmationText']) {
     await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', [legacyKey]: {} }));
