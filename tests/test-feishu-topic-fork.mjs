@@ -11,6 +11,13 @@ import {
 } from '../connectors/feishu/session-flow.mjs';
 import { handleMessage, submitRemoteLabRequest } from '../scripts/feishu-connector.mjs';
 
+import { normalizeFeishuSessionPolicy } from '../connectors/feishu/session-policy.mjs';
+
+assert.deepEqual(normalizeFeishuSessionPolicy(), { defaultMode: 'fork', groups: {} });
+for (const invalid of [null, [], { defaultMode: 'other' }, { groups: [] }, { groups: { chat: 'other' } }]) {
+  assert.throws(() => normalizeFeishuSessionPolicy(invalid), /sessionPolicy/);
+}
+
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-topic-fork-'));
 const runtime = {
   storagePaths: {
@@ -224,6 +231,25 @@ try {
     await send({ messageId: 'media-only', messageType: 'image', messageText: '' });
     assert.ok(submittedPayloads.at(-1).text.length > 0, 'media-only default forks retain the input envelope');
     assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
+
+    connectorRuntime.config.sessionPolicy = { defaultMode: 'continue', groups: { 'chat-2': 'fork' } };
+    await send({ messageId: 'configured-continue', messageText: 'shared by default' });
+    assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
+    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.forkCommand, undefined);
+    await send({ chatId: 'chat-2', messageId: 'configured-fork' });
+    assert.match(createdPayloads.at(-1).externalTriggerId, /^feishu:fork:.*chat-2:configured-fork$/);
+    await send({ messageId: 'override-fork', messageText: '/fork explicit' });
+    assert.match(createdPayloads.at(-1).externalTriggerId, /:override-fork$/);
+    await send({ chatId: 'chat-2', messageId: 'override-continue', messageText: '/continue explicit' });
+    assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-2');
+    connectorRuntime.config.sessionPolicy = { defaultMode: 'fork', groups: { 'chat-1': 'continue' } };
+    await send({ messageId: 'group-continue' });
+    assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
+    const beforeConfiguredThread = createCount;
+    await send({ messageId: 'configured-thread', threadId: 'created-thread-1' });
+    assert.equal(createCount, beforeConfiguredThread, 'continue policy preserves existing thread binding');
+    await send({ messageId: 'configured-private', chatType: 'p2p' });
+    assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:p2p:chat-1');
 
     let usage;
     await handleMessage(connectorRuntime, { ...task, messageId: 'empty-continue', messageText: '/continue' }, 'test', {

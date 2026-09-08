@@ -59,6 +59,7 @@ import {
 } from '../connectors/feishu/reply-attachments.mjs';
 import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { withTimeout } from '../lib/connector-driver-transports.mjs';
+import { normalizeFeishuSessionPolicy, resolveFeishuSessionMode } from '../connectors/feishu/session-policy.mjs';
 import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
@@ -326,6 +327,7 @@ async function loadConfig(pathname) {
     apiTimeoutMs: normalizePositiveTimeout(parsed?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
+    sessionPolicy: normalizeFeishuSessionPolicy(parsed?.sessionPolicy),
     accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
       baseDir: configDir,
       defaultAllowedSendersPath: join(configDir, DEFAULT_ALLOWED_SENDERS_FILENAME),
@@ -1088,7 +1090,8 @@ async function applyDefaultFork(runtime, summary) {
   if (isFeishuDocumentCommentSummary(summary) || summary.forkCommand || summary.continueCommand) return summary;
   const isGroup = [summary.chatType, summary.chatMode, summary.groupMessageType]
     .map(normalizeFeishuMode).some(mode => ['group', 'topic', 'thread'].includes(mode));
-  if (!isGroup || await findFeishuThreadSessionBinding(runtime, summary)) return summary;
+  if (!isGroup || resolveFeishuSessionMode(runtime.config, summary) === 'continue'
+    || await findFeishuThreadSessionBinding(runtime, summary)) return summary;
   return { ...summary, forkCommand: true, replyInThread: true,
     forkText: trimString(stripLeadingMentionTokens(summary.messageText || summary.textPreview)),
   };

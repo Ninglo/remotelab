@@ -244,9 +244,37 @@ Private messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
 including stored-message replay. Mention matching uses the Bot's API identity.
 Thread continuation never bypasses sender access control or Bot loop protection.
-Policies apply to the whole Connector so two groups cannot silently behave differently.
+Access and response policies apply to the whole Connector. Session-start routing
+can separately be overridden per group with `sessionPolicy` below.
 
 ### Default fork and one-shot Bot handoffs
+
+To preserve different groups' working habits, ask your agent:
+“Set the Connector default to Continue, but use Fork for these group chat IDs: … .
+Keep explicit commands and bound-thread continuation unchanged; do not deploy
+or restart another instance.” Provide the target Connector and exact chat IDs
+in that same request. The agent should validate and edit its config, then reload
+by restarting only that Connector when rollout is authorized.
+
+```json
+{
+  "sessionPolicy": {
+    "defaultMode": "continue",
+    "groups": {
+      "oc_example_fresh_tasks": "fork",
+      "oc_example_shared_context": "continue"
+    }
+  }
+}
+```
+
+Only `fork` and `continue` are accepted; invalid modes fail config loading.
+Precedence: explicit `/fork` or `/continue` → existing thread binding → exact
+chat-ID override → Connector default. Omitting the policy keeps the current
+`fork` default. `continue` uses the existing group/topic route (creating its
+Session if absent), not the most recently created fork. Changing this policy
+never moves or deletes existing Sessions; private chats, document comments,
+access control and Bot handoff loop protection are unchanged.
 
 - A new group task (including an unbound topic/thread) creates a blank Session
   by default and replies in a Feishu thread. It does not copy group history.
