@@ -42,6 +42,6 @@
       "Add a fixed processing reaction before durable AI submission",
       "Remove per-chat overrides, chat approval state, membership grants and reaction configuration"
     ],
-    "rollout": "Deployed: bot-2 uses mention_only and the primary Bot uses all; both connectors restarted and reconnected."
+    "rollout": "Both Bot configs now use mention_only for groups. Omitted group policy also defaults to mention_only; private messages continue to pass response filtering."
   }
 ]

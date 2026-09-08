@@ -5,7 +5,7 @@
 Feishu message admission has two policy dimensions:
 
 - `accessPolicy.mode`: `all` by default, or `whitelist` using explicit sender IDs.
-- `responsePolicy.group`: `all` or `mention_only` for the whole Bot.
+- `responsePolicy.group`: `mention_only` by default, or explicit `all`, for the whole Bot.
 
 Private messages always pass the response policy after sender access succeeds.
 Every admitted AI request receives a fixed `THINKING` reaction before durable
@@ -42,3 +42,22 @@ had no call site in `handleMessage` after the durable Inbox refactor.
   Startup logs show the expected policies and `ws client ready` for each Bot.
 - A real bot-2 API call added a `THINKING` reaction to the message that requested
   this change and returned a Feishu reaction ID.
+
+## Default correction — 2026-09-08
+
+The owner requested mention-only groups for every Bot. The primary config was
+backed up and changed to `mention_only`; bot-2 already used that value. Primary
+reconnected with a fresh process and logged `response policy: {"group":"mention_only"}`
+and `ws client ready`. Code defaults and CLI examples now also use `mention_only`.
+The default-config regression failed with actual `all` before the fix and passed
+after it. Tests cover omitted settings rejecting ordinary group messages while
+admitting Bot mentions and private messages; explicit `all` remains supported.
+
+Full `npm test` passed. Saved output: `/tmp/feishu-default-mention-20260908-test_results.txt`.
+Selected actual output:
+
+```text
+Feishu access, response and processing acknowledgement tests passed
+ok - whitelist file reloads without restart
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+```

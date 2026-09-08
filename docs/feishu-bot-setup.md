@@ -232,9 +232,9 @@ Notes:
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
 These are the only two message policies. `accessPolicy` decides who may use the
-Bot. `responsePolicy.group` decides when group messages are admitted: `all`
-accepts every group message, while `mention_only` requires an explicit mention of
-this Bot. Private messages are always admitted immediately after access control.
+Bot. `responsePolicy.group` defaults to `mention_only`, requiring an explicit
+mention of this Bot. Set it to `all` to accept every group message. Private
+messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
 including stored-message replay. Mention matching uses the Bot's API identity;
 mentioning another user or continuing an existing thread does not count. Policies

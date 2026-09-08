@@ -77,6 +77,7 @@ assert.equal(initializedRuntimeProfile.brand, 'feishu');
 assert.equal(initializedRuntimeProfile.cliPath, join(repoRoot, 'node_modules', '.bin', 'lark-cli'));
 
 const runtime = {
+  config: { responsePolicy: { group: 'all' } },
   processingMessageIds: new Set(),
   storagePaths: {
     handledMessagesPath: '/tmp/remotelab-feishu-connector-test-handled.json',
@@ -1032,6 +1033,7 @@ const accessRuntime = createRuntimeContext({
   region: 'feishu-cn',
   loggerLevel: 'error',
   accessPolicy: accessPolicy,
+  responsePolicy: { group: 'all' },
   storeRawEvents: false,
   chatBaseUrl: 'http://127.0.0.1:7690',
   sessionFolder: repoRoot,

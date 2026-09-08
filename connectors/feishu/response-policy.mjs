@@ -9,7 +9,7 @@ function normalizeGroupResponseMode(value) {
 }
 
 export function normalizeFeishuResponsePolicy(value = {}) {
-  return { group: normalizeGroupResponseMode(value?.group ?? 'all') };
+  return { group: normalizeGroupResponseMode(value?.group ?? 'mention_only') };
 }
 
 export async function resolveFeishuBotIdentity(runtime) {
