@@ -258,6 +258,12 @@ Policies apply to the whole Connector so two groups cannot silently behave diffe
 - Other Bots (`app` / `bot` senders) may hand off a task only with an explicit
   mention of this Bot, even under `group: all`. Self messages remain ignored.
   Sender access control still applies; a mention does not bypass the whitelist.
+  **Feishu-console prerequisite:** enable and publish
+  `im:message.group_at_msg.include_bot:readonly` (receive user/Bot mentions).
+  The broader `im:message.group_msg.include_bot:read` also delivers Bot events,
+  but is not needed just for handoffs. Ordinary `group_at_msg` / `group_msg`
+  permissions only deliver user messages; changing local filtering cannot fix
+  a missing upstream permission. See [Feishu's receive-event contract](https://open.feishu.cn/document/server-docs/im-v1/message/events/receive).
 - All peer Bots share **one admission per Session/thread**, not one per sender.
   Once used, later Bot events in that thread are silently ignored, including
   `/fork` and command-usage requests; humans can continue normally. The same
@@ -270,8 +276,8 @@ Policies apply to the whole Connector so two groups cannot silently behave diffe
   with Inbox and delivery receipts during backup/migration; do not clear it to retry.
 
 This bounds Bot interaction within a Session/thread, not unrelated new top-level
-messages. The upstream Feishu app must actually deliver peer-Bot message events;
-local admission tests alone do not prove platform event delivery.
+messages. Verify a real peer-Bot mention after enabling the permission; local
+admission tests alone do not prove platform event delivery.
 
 ### Markdown rendering
 
