@@ -10,6 +10,7 @@ setIsolatedTestHome(home);
 const { handleMessage, processSourceDeliveryOnce, recordFeishuThreadSessionBinding, summarizeEvent } = await import('../scripts/feishu-connector.mjs');
 const { claimFeishuBotHandoff, restoreFeishuBotHandoffScopes } = await import('../connectors/feishu/bot-handoff.mjs');
 const { createDeliveryReceipts } = await import('../lib/delivery-receipts.mjs');
+const { shouldReplyInFeishuThread } = await import('../connectors/feishu/index.mjs');
 const runtime = () => ({
   config: { storageDir: home, sourceRouteId: 'bot-self', appId: 'cli_self', responsePolicy: { group: 'all' } },
   storagePaths: { messageIndexPath: join(home, 'message-index.json') },
@@ -131,6 +132,38 @@ try {
   assert.equal((await send({ messageId: 'chat-isolation', chatId: 'other-chat', threadId: 'created-thread' })).sessionId, 'session-chat-isolation');
   rt = { ...runtime(), config: { ...runtime().config, sourceRouteId: 'other-route' } };
   assert.equal((await send({ messageId: 'route-isolation', threadId: 'created-thread' })).sessionId, 'session-route-isolation');
+
+  // Bot admission must not alter the routing policy selected for human messages.
+  for (const [name, patch, sessionPolicy, expectedThread] of [
+    ['default-fork', {}, undefined, true],
+    ['explicit-continue', { messageText: '/continue task' }, undefined, false],
+    ['group-continue', {}, { defaultMode: 'continue' }, false],
+    ['group-override', {}, { defaultMode: 'fork', groups: { 'parity-group-override': 'continue' } }, false],
+    ['explicit-fork', { messageText: '/fork task' }, { defaultMode: 'continue' }, true],
+    ['private', { chatType: 'p2p' }, undefined, false],
+    ['existing-thread', { threadId: 'parity-thread' }, { defaultMode: 'continue' }, true],
+  ]) {
+    rt = runtime();
+    rt.config.sessionPolicy = sessionPolicy;
+    const summary = { ...base, ...patch, chatId: `parity-${name}` };
+    if (patch.threadId) await recordFeishuThreadSessionBinding(rt, summary, `parity-session-${name}`);
+    const routed = [];
+    for (const senderType of ['user', 'bot']) {
+      await handleMessage(rt, { ...summary, messageId: `parity-${name}-${senderType}`,
+        sender: { ...base.sender, senderType } }, 'test', {
+        addProcessingReaction: async () => null,
+        submitRemoteLabRequest: async (_runtime, value) => {
+          routed.push(value);
+          return { sessionId: `parity-session-${name}` };
+        },
+      });
+    }
+    assert.equal(routed.length, 2, `${name}: both senders are admitted`);
+    for (const field of ['forkCommand', 'forkText', 'continueCommand', 'replyInThread']) {
+      assert.equal(routed[1][field], routed[0][field], `${name}: bot and human ${field} match`);
+    }
+    assert.equal(shouldReplyInFeishuThread(routed[1]), expectedThread, `${name}: common outbound routing`);
+  }
 
   // Fail closed when durability is unavailable or corrupt, not an in-memory reset.
   rt = { ...runtime(), storagePaths: {}, config: { responsePolicy: { group: 'all' } } };

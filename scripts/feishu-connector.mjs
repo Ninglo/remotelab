@@ -1128,7 +1128,7 @@ async function processFeishuMessage(runtime, summary, sourceLabel, helpers = {})
     if (!await claimFeishuBotHandoff(runtime, summary, binding?.sessionId)) {
       return { ignored: true, reason: 'bot_handoff_consumed' };
     }
-    summary = { ...summary, botHandoffMessageId: summary.messageId, replyInThread: true };
+    summary = { ...summary, botHandoffMessageId: summary.messageId };
   }
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (command && !command.text) return enqueue(runtime, summary, `用法：/${command.type} <任务文本>`);

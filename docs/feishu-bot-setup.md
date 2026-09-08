@@ -286,6 +286,9 @@ access control and Bot handoff loop protection are unchanged.
 - Other Bots (`app` / `bot` senders) may hand off a task only with an explicit
   mention of this Bot, even under `group: all`. Self messages remain ignored.
   Sender access control still applies; a mention does not bypass the whitelist.
+  Admitted Bot messages use the same session and reply-location routing as human
+  messages. Bot identity never forces a thread reply; only the shared fork/thread
+  rules do so.
   **Feishu-console prerequisite:** enable and publish
   `im:message.group_at_msg.include_bot:readonly` (receive user/Bot mentions).
   The broader `im:message.group_msg.include_bot:read` also delivers Bot events,
