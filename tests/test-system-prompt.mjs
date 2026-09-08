@@ -50,7 +50,8 @@ assert.match(context, /not applying a filesystem confinement boundary/);
 assert.match(context, /remotelab agenda add --title "Title" --start "ISO8601" --duration 60/);
 assert.match(context, /Subscription helper path: \/subscribe\/calendar/);
 assert.match(context, /\[点击订阅日历\]\(\/subscribe\/calendar\)/);
-assert.match(context, /complete RemoteLab connector-action catalog for this instance/);
+assert.match(context, /actions exposed by the RemoteLab connector catalog/);
+assert.match(context, /absence here is not evidence that those capabilities are unavailable/);
 
 // RemoteLab projects runtime facts and capabilities. It must not grow a
 // second Harness policy stack through startup prose.
