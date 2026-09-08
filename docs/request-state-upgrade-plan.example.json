@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "configDir": "/home/OWNER/.config/remotelab",
+  "workDir": "/home/OWNER/.remotelab/upgrade-UNIQUE-ID",
+  "timeoutMs": 60000,
+  "http": {
+    "baseUrl": "http://127.0.0.1:7690",
+    "oldCommit": "OLD_FULL_COMMIT",
+    "newCommit": "NEW_FULL_COMMIT"
+  },
+  "commands": {
+    "preflight": [
+      {"argv": ["git", "-C", "/PREPARED/old-source", "rev-parse", "HEAD"], "stdout": "OLD_FULL_COMMIT"},
+      {"argv": ["git", "-C", "/PREPARED/new-source", "rev-parse", "HEAD"], "stdout": "NEW_FULL_COMMIT"},
+      ["/PREPARED/check-service-permissions-and-snapshots.sh"]
+    ],
+    "stop": [["sudo", "-n", "systemctl", "stop", "OWNER-feishu.service", "OWNER-remotelab.service"]],
+    "stopped": [
+      {"argv": ["systemctl", "is-active", "--quiet", "OWNER-remotelab.service"], "exitCode": 3},
+      {"argv": ["systemctl", "is-active", "--quiet", "OWNER-feishu.service"], "exitCode": 3}
+    ],
+    "activate": [["/PREPARED/activate-new-source-and-units.sh"]],
+    "restore": [["/PREPARED/restore-old-source-and-units.sh"]],
+    "start": [["sudo", "-n", "systemctl", "start", "OWNER-remotelab.service", "OWNER-feishu.service"]],
+    "connectorsHealthy": [["/PREPARED/check-current-connector-readiness.sh"]]
+  }
+}

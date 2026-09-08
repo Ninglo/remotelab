@@ -33,6 +33,7 @@ Usage:
   remotelab start                    Start all services
   remotelab stop                     Stop all services
   remotelab restart [service]        Restart services (chat=owner+guests|tunnel|bridge|all)
+  remotelab upgrade-state            Convert legacy state with verification and rollback
   remotelab provision-host           Plan or execute whole-host provider provisioning
   remotelab bootstrap-host           Converge a Linux host into a RemoteLab host baseline
   remotelab install-profile          Resolve modules from install env and render runtime plan
@@ -77,6 +78,13 @@ switch (command) {
     } catch (err) {
       process.exit(err.status ?? 1);
     }
+    break;
+  }
+
+  case 'upgrade-state': {
+    const { runRequestStateUpgradeCommand } = await import(scriptPath('scripts/upgrade-request-state.mjs'));
+    try { process.exitCode = await runRequestStateUpgradeCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
     break;
   }
 

@@ -135,3 +135,13 @@ Limits: this review did not rerun production conversion or live Feishu E2E. The 
 - Full `npm test`: exit 0, including smoke, merge-safety, shared-tools, connector recovery, and the new compact-card regression.
 - `git diff --check`: exit 0.
 - `npm run lint:filesize`: advisory report completed; existing oversized-file findings remain, including static/chat/ui.js.
+
+2026-09-08 consistent Request state upgrade tool
+RED: old converter rejected multiple attempts sharing s/req. Transaction entry point absent.
+GREEN: deterministic identity preservation, imported dedup, quarantined uncertainty, external storage, whitelist retention, tamper detection and repeat refusal passed.
+GREEN: transaction/idempotency, active lock and unfinished Run refusal, verified rollback, failed rollback recovery, SIGKILL resume and refusal to discard new work passed.
+Original schema/conversion and Inbox regressions: passed.
+Full npm test: exit=0 in isolated verification checkout; final changed-path regressions rerun after process ownership and permission checks.
+CLI help, doc links, plan JSON and git diff --check: passed.
+Evidence: ~/.remotelab/workspace/request-state-upgrader-20260908/{conversion-red.log,transaction-red.log,conversion-green.log,transaction-green.log,npm-test.log}.
+Live Feishu E2E and upgrades of other machines: not executed by this task.

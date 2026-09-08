@@ -39,6 +39,8 @@ A flaky test cleanup path formerly waited for a second `exit` event from an alre
 
 ## Offline conversion and rollout
 
+**Consistent upgrade execution:** [upgrade-state tool](../../docs/request-state-upgrade-tool.md) now automates deterministic identity reconciliation, Inbox import, validation and journaled cutover. The converter details below describe the original deployment boundary; use the tool guide for current behavior.
+
 **Operator entry point:** [legacy-instance upgrade and rollback](../../docs/request-state-upgrade.md). The first production attempt failed during conversion and its rollback did not restore service; see the [incident review](../archive/2026-09-07-request-state-upgrade-incident.md). Conversion later completed with additional repairs. The verification limits below describe the initial implementation, not the current migration status of every instance.
 
 Production rollout is separate from code verification. New startup refuses pre-request runtime state; it does not scan and mutate old Run/Publications as a repair fallback.
@@ -54,7 +56,7 @@ Unfinished executors require disposition. Prefer waiting for them to finish. If 
 Before switching a gateway and its instances together:
 
 1. Stop old input consumers/writers and inventory all unfinished work; preserve a full backup.
-2. Convert each instance into staging and inspect its report. Resolve duplicate historical attempts explicitly if the converter refuses them.
+2. Convert each instance into staging and inspect its report. Review the converter identity mappings; reconcile unsupported batched identities if it refuses them.
 3. Reconcile gateway `events.jsonl`, `handled-messages.json`, custom storage roots and receipt journals against the instance requests. The converter does not infer delivery success for ordinary historical replies. No uncertain historical message should be blindly replayed.
 4. Verify pending completion targets and old executors separately. Historical results are preserved; the converter does not automatically resend old email/calendar completion effects.
 5. Switch one complete gateway/instance unit, confirm real inbound, text, file and failure delivery, then restart it during a controlled task. Only after this passes should other users' instances be changed.

@@ -51,5 +51,12 @@
       "Remove per-chat overrides, chat approval state, membership grants and reaction configuration"
     ],
     "rollout": "Both Bot configs now use mention_only for groups. Omitted group policy also defaults to mention_only; private messages continue to pass response filtering."
+  },
+  {
+    "id": "consistent-request-state-upgrade",
+    "description": "One upgrade command with deterministic historical conversion, Inbox import, independent verification, durable cutover journal and verified rollback.",
+    "pass": true,
+    "verification": "Isolated full npm test; conversion and subprocess/HTTP transaction regressions including SIGKILL resume, failed rollback and new-work preservation.",
+    "rollout": "Tool implementation only; no fleet migration or live Feishu E2E performed. See docs/request-state-upgrade-tool.md."
   }
 ]
