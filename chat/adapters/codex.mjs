@@ -93,7 +93,7 @@ export function createCodexAdapter() {
           if (obj.item) {
             const item = obj.item;
             if (item.type === 'command_execution' && item.status === 'in_progress') {
-              events.push(toolUseEvent('bash', item.command || ''));
+              events.push(toolUseEvent('bash', item.command || '', { toolCallId: item.id }));
             }
           }
           break;
@@ -148,12 +148,13 @@ function parseItem(item) {
       break;
 
     case 'command_execution':
-      events.push(toolUseEvent('bash', item.command || ''));
+      events.push(toolUseEvent('bash', item.command || '', { toolCallId: item.id }));
       if (item.status === 'completed' || item.status === 'failed') {
         events.push(toolResultEvent(
           'bash',
           item.aggregated_output || '',
           item.exit_code ?? (item.status === 'failed' ? 1 : 0),
+          { toolCallId: item.id },
         ));
       }
       break;
@@ -161,27 +162,31 @@ function parseItem(item) {
     case 'file_change':
       if (Array.isArray(item.changes)) {
         for (const change of item.changes) {
-          events.push(fileChangeEvent(change.path, change.kind));
+          events.push(fileChangeEvent(change.path, change.kind, {
+            ...(typeof change.diff === 'string' ? { diff: change.diff } : {}),
+            ...(typeof change.patch === 'string' ? { diff: change.patch } : {}),
+            changeState: item.status,
+          }));
         }
       }
       break;
 
     case 'mcp_tool_call': {
       const toolName = `${item.server}/${item.tool}`;
-      events.push(toolUseEvent(toolName, JSON.stringify(item.arguments || {})));
+      events.push(toolUseEvent(toolName, JSON.stringify(item.arguments || {}), { toolCallId: item.id }));
       if (item.status === 'completed' || item.status === 'failed') {
         const output = item.error
           ? `Error: ${item.error.message}`
           : item.result
             ? JSON.stringify(item.result)
             : '';
-        events.push(toolResultEvent(toolName, output, item.error ? 1 : 0));
+        events.push(toolResultEvent(toolName, output, item.error || item.status === 'failed' ? 1 : 0, { toolCallId: item.id }));
       }
       break;
     }
 
     case 'web_search':
-      events.push(toolUseEvent('web_search', item.query || ''));
+      events.push(toolUseEvent('web_search', item.query || '', { toolCallId: item.id, toolState: 'completed' }));
       break;
 
     case 'todo_list':

@@ -58,6 +58,7 @@ export function createClaudeAdapter() {
                   typeof block.input === 'string'
                     ? block.input
                     : JSON.stringify(block.input, null, 2),
+                  { toolCallId: block.id },
                 ));
               } else if (block.type === 'tool_result') {
                 const output = typeof block.content === 'string'
@@ -65,7 +66,7 @@ export function createClaudeAdapter() {
                   : Array.isArray(block.content)
                     ? block.content.map(c => c.text || '').join('\n')
                     : JSON.stringify(block.content);
-                events.push(toolResultEvent(block.tool_use_id || '', output));
+                events.push(toolResultEvent(block.tool_use_id || '', output, block.is_error ? 1 : 0, { toolCallId: block.tool_use_id }));
               }
             }
           }
@@ -95,6 +96,7 @@ export function createClaudeAdapter() {
                   block.tool_use_id || '',
                   output,
                   block.is_error ? 1 : 0,
+                  { toolCallId: block.tool_use_id },
                 ));
               }
             }

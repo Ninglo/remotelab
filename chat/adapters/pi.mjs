@@ -160,12 +160,13 @@ export function createPiAdapter() {
           return parsedEvents;
         }
         case 'tool_execution_start':
-          return [toolUseEvent(event.toolName || 'tool', serializeToolValue(event.args))];
+          return [toolUseEvent(event.toolName || 'tool', serializeToolValue(event.args), { toolCallId: event.toolCallId })];
         case 'tool_execution_end':
           return [toolResultEvent(
             event.toolName || 'tool',
             serializeToolValue(event.result),
             event.isError ? 1 : 0,
+            { toolCallId: event.toolCallId },
           )];
         case 'agent_settled':
           if (lastAssistantStopReason === 'error') {

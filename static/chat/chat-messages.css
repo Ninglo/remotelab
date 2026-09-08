@@ -492,11 +492,13 @@
   animation: fadeIn 0.15s ease;
 }
 .thinking-header {
+  appearance: none; background: none; border: 0; width: 100%; text-align: left; font-family: inherit;
   display: flex; align-items: center; gap: 8px;
   cursor: pointer; padding: 5px 2px; user-select: none;
   color: var(--text-secondary); font-size: 12px;
 }
 .thinking-header:hover { color: var(--text); }
+.thinking-header:focus-visible { outline: 2px solid var(--focus-border); border-radius: 5px; }
 .thinking-icon { width: 13px; height: 13px; flex-shrink: 0; color: var(--text-muted); }
 .thinking-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thinking-chevron {
@@ -549,67 +551,3 @@
   font-size: 12px; color: var(--text-secondary);
   line-height: 1.55; margin: 2px 0 9px;
 }
-
-/* Tool cards inside thinking block */
-.tool-card {
-  border-radius: 7px;
-  margin: 1px 0 5px; overflow: hidden;
-  transition: background 0.15s ease;
-}
-.tool-header {
-  appearance: none; width: 100%; border: 0; background: transparent;
-  display: flex; align-items: center; gap: 7px; padding: 5px 7px;
-  cursor: pointer; font: inherit; font-size: 12px; color: var(--text-secondary);
-  text-align: left; transition: background 0.15s ease;
-}
-.tool-header:hover, .tool-header.expanded { background: var(--surface-hover); }
-.tool-header:focus-visible { outline: 2px solid var(--focus-border); outline-offset: -2px; }
-.tool-status {
-  width: 6px; height: 6px; border-radius: 999px; flex: 0 0 auto;
-  background: var(--text-muted);
-}
-.tool-card.is-running .tool-status {
-  background: var(--notice);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--notice) 14%, transparent);
-  animation: toolStatusPulse 1.4s ease-in-out infinite;
-}
-.tool-card.is-complete .tool-status { background: var(--success); }
-.tool-card.is-failed .tool-status { background: var(--error); }
-@keyframes toolStatusPulse { 50% { opacity: 0.45; transform: scale(0.82); } }
-.tool-header .tool-name {
-  color: var(--text); font-family: ui-monospace, 'SF Mono', Monaco, Consolas, monospace;
-  font-size: 11.5px; font-weight: 600; flex: 0 0 auto;
-}
-.tool-summary {
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--text-muted); font-family: ui-monospace, 'SF Mono', Monaco, Consolas, monospace;
-}
-.tool-summary:empty { display: none; }
-.tool-state-label { margin-left: auto; flex: 0 0 auto; color: var(--text-muted); font-size: 10px; }
-.tool-header .tool-toggle {
-  font-size: 9px; transition: transform 0.15s; color: var(--text-muted);
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.tool-header.expanded .tool-toggle { transform: rotate(90deg); }
-.tool-body { display: none; padding: 4px 7px 7px 20px; }
-.tool-body.expanded { display: block; }
-.tool-body pre {
-  margin: 0; background: var(--bg-tertiary); padding: 9px 10px; border-radius: 6px; font-size: 11px;
-  overflow-x: auto; white-space: pre-wrap; color: var(--text-secondary);
-  max-height: 180px; overflow-y: auto; font-family: ui-monospace, 'SF Mono', Monaco, Consolas, monospace;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tool-card.is-running .tool-status { animation: none; }
-}
-
-/* File change cards inside thinking block */
-.file-card {
-  background: var(--tool-bg); border: 1px solid var(--border); border-radius: 10px;
-  padding: 8px 12px; margin-bottom: 8px; font-size: 12px;
-  display: flex; align-items: center; gap: 8px;
-}
-.file-path { font-family: ui-monospace, 'SF Mono', Monaco, Consolas, monospace; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.change-type { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 500; flex-shrink: 0; }
-.change-type.add { background: var(--success-bg); color: var(--success); }
-.change-type.edit, .change-type.update { background: var(--bg-tertiary); color: var(--text-secondary); }
-.change-type.delete { background: var(--error-bg); color: var(--error); }

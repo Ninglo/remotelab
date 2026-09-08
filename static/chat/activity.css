@@ -1,0 +1,46 @@
+/* One visual language for expandable transcript activities. */
+.activity-card { margin: 2px 0; border: 0; border-radius: 8px; min-width: 0; color: var(--text-secondary); }
+.activity-header { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 4px 8px; cursor: pointer; list-style: none; font-size: 12px; line-height: 1.5; border-radius: 7px; }
+.activity-header::-webkit-details-marker { display: none; }
+.activity-header::after { content: '›'; margin-left: 1px; color: var(--text-muted); transition: transform .15s; }
+.activity-card[open] > .activity-header::after { transform: rotate(90deg); }
+.activity-header:hover, .activity-card[open] > .activity-header { background: var(--surface-hover); }
+.activity-header:focus-visible { outline: 2px solid var(--focus-border); outline-offset: -2px; }
+.activity-marker { width: 17px; flex: 0 0 17px; font: 13px ui-monospace, monospace; color: var(--text-muted); text-align: center; }
+.activity-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.activity-tool .activity-title { font: 12px ui-monospace, 'SF Mono', Consolas, monospace; color: var(--text-secondary); }
+.activity-tool-name { max-width: 22%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 10px; }
+.activity-meta { color: var(--text-muted); flex-shrink: 0; font-size: 11px; }
+.activity-tool.is-running .activity-marker { color: var(--notice); }
+.activity-tool.is-running .activity-meta { color: var(--notice); }
+.activity-card.is-failed .activity-meta, .activity-card.is-failed .activity-marker { color: var(--error); }
+.activity-detail { margin: 5px 8px 12px 34px; min-width: 0; font-size: 12px; line-height: 1.65; }
+.activity-detail .md-content { font-size: 12px; overflow-wrap: anywhere; }
+.activity-detail .md-content > :first-child { margin-top: 0; }
+.activity-detail .md-content > :last-child { margin-bottom: 0; }
+.activity-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+.activity-tabs button { border: 0; border-radius: 5px; background: none; color: var(--text-muted); padding: 5px 9px; font: inherit; cursor: pointer; }
+.activity-tabs button[aria-pressed="true"] { background: var(--surface-hover); color: var(--text); }
+.activity-tabs button:focus-visible { outline: 2px solid var(--focus-border); }
+.activity-code { margin: 0; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 7px; font: 11px/1.7 ui-monospace, 'SF Mono', Consolas, monospace; max-height: 340px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+.activity-code[hidden] { display: none; }
+.activity-path { font: 11px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; color: var(--text-muted); margin-bottom: 8px; }
+.activity-empty { color: var(--text-muted); margin: 4px 0; }
+.activity-file .activity-title { color: var(--text); }
+.activity-diff { padding: 8px 0; white-space: pre; overflow-wrap: normal; }
+.activity-diff span { display: block; padding: 0 12px; min-width: max-content; }
+.diff-add { background: var(--success-bg); color: var(--success); }
+.diff-delete { background: var(--error-bg); color: var(--error); }
+.diff-hunk { color: var(--notice); background: var(--bg-tertiary); }
+.thinking-body > .msg-assistant { margin: 12px 0; }
+.thinking-body .msg-assistant-time { display: none; }
+.usage-info { text-align: left; margin: 4px 0 12px 8px; color: var(--text-muted); }
+.context-barrier { border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: 11px; text-align: left; padding: 10px 8px; }
+@media (max-width: 600px) {
+  .activity-header { min-height: 40px; gap: 6px; padding-inline: 4px; }
+  .activity-tool-name { display: none; }
+  .activity-detail { margin-left: 24px; margin-right: 0; }
+  .activity-code { max-height: 260px; }
+  .activity-tabs button { min-height: 36px; }
+}
+@media (prefers-reduced-motion: reduce) { .activity-header::after { transition: none; } }

@@ -134,6 +134,9 @@ async function sanitizeEvent(event, shareId) {
       return sanitizeMessageEvent(event, shareId);
     case 'tool_use':
       return {
+        toolCallId: event.toolCallId,
+        runId: event.runId,
+        toolState: event.toolState,
         type: 'tool_use',
         id: event.id,
         timestamp: event.timestamp,
@@ -143,6 +146,8 @@ async function sanitizeEvent(event, shareId) {
       };
     case 'tool_result':
       return {
+        toolCallId: event.toolCallId,
+        runId: event.runId,
         type: 'tool_result',
         id: event.id,
         timestamp: event.timestamp,
@@ -153,6 +158,8 @@ async function sanitizeEvent(event, shareId) {
       };
     case 'file_change':
       return {
+        diff: typeof event.diff === 'string' ? event.diff : undefined,
+        changeState: event.changeState,
         type: 'file_change',
         id: event.id,
         timestamp: event.timestamp,

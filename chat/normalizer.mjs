@@ -22,12 +22,12 @@ export function messageEvent(role, content, images, extra = {}) {
   return normalizeMessageEventAttachments(createEvent('message', fields));
 }
 
-export function toolUseEvent(toolName, toolInput) {
-  return createEvent('tool_use', { role: 'assistant', toolName, toolInput });
+export function toolUseEvent(toolName, toolInput, extra = {}) {
+  return createEvent('tool_use', { role: 'assistant', toolName, toolInput, ...extra });
 }
 
-export function toolResultEvent(toolName, output, exitCode) {
-  return createEvent('tool_result', { role: 'system', toolName, output, exitCode });
+export function toolResultEvent(toolName, output, exitCode, extra = {}) {
+  return createEvent('tool_result', { role: 'system', toolName, output, exitCode, ...extra });
 }
 
 export function artifactEvent({
@@ -49,8 +49,8 @@ export function artifactEvent({
   });
 }
 
-export function fileChangeEvent(filePath, changeType) {
-  return createEvent('file_change', { role: 'system', filePath, changeType });
+export function fileChangeEvent(filePath, changeType, extra = {}) {
+  return createEvent('file_change', { role: 'system', filePath, changeType, ...extra });
 }
 
 export function reasoningEvent(content) {

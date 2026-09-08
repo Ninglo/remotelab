@@ -699,6 +699,7 @@ function syncComposerPendingTurnFeedback() {
 function renderMessageInto(container, evt, { finalizeActiveThinkingBlock = false } = {}) {
   if (!container) return null;
   const role = evt.role || "assistant";
+  if (evt.messageKind === "todo_list") return renderActivityNote(container, evt, "plan");
 
   if (finalizeActiveThinkingBlock && inThinkingBlock) {
     finalizeThinkingBlock();
@@ -800,166 +801,25 @@ function summarizeToolInput(value, maxLength = 120) {
   return summary.slice(0, Math.max(1, maxLength - 1)).trimEnd() + "…";
 }
 
-function createToolCard(evt) {
-  const card = document.createElement("div");
-  card.className = "tool-card is-running";
-
-  const header = document.createElement("button");
-  header.type = "button";
-  header.className = "tool-header";
-  header.setAttribute("aria-expanded", "false");
-  header.innerHTML = `<span class="tool-status" aria-hidden="true"></span>
-    <span class="tool-name">${esc(evt.toolName || t("ui.toolFallback"))}</span>
-    <span class="tool-summary">${esc(summarizeToolInput(evt.toolInput))}</span>
-    <span class="tool-state-label">${esc(t("ui.toolRunning"))}</span>
-    <span class="tool-toggle">${renderUiIcon("chevron-right")}</span>`;
-  header.title = evt.toolInput || "";
-
-  const body = document.createElement("div");
-  body.className = "tool-body";
-  body.id = "tool_" + evt.id;
-  const pre = document.createElement("pre");
-  pre.textContent = evt.toolInput || "";
-  if (evt.bodyAvailable && !evt.bodyLoaded) {
-    pre.dataset.eventSeq = String(evt.seq || "");
-    pre.dataset.bodyPending = "true";
-    pre.dataset.preview = evt.toolInput || "";
-  }
-  body.appendChild(pre);
-
-  header.addEventListener("click", async () => {
-    header.classList.toggle("expanded");
-    body.classList.toggle("expanded");
-    header.setAttribute("aria-expanded", String(body.classList.contains("expanded")));
-    if (body.classList.contains("expanded")) {
-      await hydrateLazyNodes(body);
-    }
-  });
-
-  card.appendChild(header);
-  card.appendChild(body);
-  card.dataset.toolId = evt.id;
-  return { card, body };
-}
-
-function findLatestPendingToolCard(root) {
-  const cards = root?.querySelectorAll?.(".tool-card") || [];
-  for (let index = cards.length - 1; index >= 0; index -= 1) {
-    if (!cards[index].querySelector(".tool-result")) {
-      return cards[index];
-    }
-  }
-  return null;
-}
-
-function renderToolUseInto(container, evt, { toolTracker = null } = {}) {
-  if (!container) return null;
-  if (toolTracker && evt.toolName) {
-    toolTracker.add(evt.toolName);
-  }
-  const { card } = createToolCard(evt);
-  container.appendChild(card);
-  return card;
+function renderToolUseInto(container, evt, options = {}) {
+  return renderActivityToolUse(container, evt, options);
 }
 
 function renderToolResultInto(container, evt) {
-  const targetCard = findLatestPendingToolCard(container);
-  if (!targetCard) return null;
-
-  const body = targetCard.querySelector(".tool-body");
-  if (!body) return null;
-
-  const failed = evt.exitCode !== undefined && evt.exitCode !== 0;
-  targetCard.classList.remove("is-running");
-  targetCard.classList.add("is-complete");
-  targetCard.classList.toggle("is-failed", failed);
-  const stateLabel = targetCard.querySelector(".tool-state-label");
-  if (stateLabel) {
-    stateLabel.textContent = failed ? t("ui.toolFailed") : t("ui.toolDone");
-  }
-  const pre = document.createElement("pre");
-  pre.className = "tool-detail tool-result";
-  pre.textContent = evt.output || "";
-  if (evt.bodyAvailable && !evt.bodyLoaded) {
-    pre.dataset.eventSeq = String(evt.seq || "");
-    pre.dataset.bodyPending = "true";
-    pre.dataset.preview = evt.output || "";
-  }
-  body.replaceChildren(pre);
-  return targetCard;
+  return renderActivityToolResult(container, evt);
 }
 
 function renderFileChangeInto(container, evt) {
-  if (!container) return null;
-  const div = document.createElement("div");
-  div.className = "file-card";
-  const kind = evt.changeType || "edit";
-  const filePath = evt.filePath || "";
-  const pathMarkup = `<span class="file-path">${esc(filePath)}</span>`;
-  const changeLabel = formatFileChangeTypeLabel(kind);
-  div.innerHTML = `${pathMarkup}
-    <span class="change-type ${kind}">${esc(changeLabel)}</span>`;
-  container.appendChild(div);
-  return div;
+  return renderActivityFile(container, evt);
 }
 
 function renderReasoningInto(container, evt) {
-  if (!container) return null;
-  const div = document.createElement("div");
-  div.className = "reasoning md-content";
-  if (evt.content) {
-    const didRender = renderMarkdownIntoNode(div, evt.content);
-    if (!didRender && !evt.bodyAvailable) return null;
-  } else if (evt.bodyAvailable && evt.bodyPreview) {
-    renderMarkdownIntoNode(div, evt.bodyPreview);
-  } else if (!evt.bodyAvailable) {
-    return null;
-  }
-  if (markLazyEventBodyNode(div, evt, {
-    preview: evt.bodyPreview || evt.content || "",
-    renderMode: "markdown",
-  })) {
-    if (typeof queueHydrateLazyNodes === "function") {
-      queueHydrateLazyNodes(div);
-    }
-  }
-  container.appendChild(div);
-  return div;
+  if (!evt.content && !evt.bodyAvailable) return null;
+  return renderActivityNote(container, evt, "reasoning");
 }
 
 function renderManagerContextInto(container, evt) {
-  if (!container) return null;
-  const wrap = document.createElement("div");
-  wrap.className = "manager-context";
-
-  const label = document.createElement("div");
-  label.className = "msg-system";
-  label.textContent = t("ui.managerContext");
-  wrap.appendChild(label);
-
-  const body = document.createElement("div");
-  body.className = "reasoning md-content";
-  if (evt.content) {
-    const didRender = renderMarkdownIntoNode(body, evt.content);
-    if (!didRender && !evt.bodyAvailable) return null;
-  } else if (evt.bodyAvailable && evt.bodyPreview) {
-    renderMarkdownIntoNode(body, evt.bodyPreview);
-  } else if (!evt.bodyAvailable) {
-    return null;
-  }
-
-  if (markLazyEventBodyNode(body, evt, {
-    preview: evt.bodyPreview || evt.content || "",
-    renderMode: "markdown",
-  })) {
-    if (typeof queueHydrateLazyNodes === "function") {
-      queueHydrateLazyNodes(wrap);
-    }
-  }
-
-  wrap.appendChild(body);
-  container.appendChild(wrap);
-  return wrap;
+  return renderActivityNote(container, evt, "context");
 }
 
 function collectHiddenBlockToolNames(events) {
@@ -992,7 +852,9 @@ function createDeferredThinkingBlock(label, { collapsed = true } = {}) {
   const block = document.createElement("div");
   block.className = `thinking-block${collapsed ? " collapsed" : ""}`;
 
-  const header = document.createElement("div");
+  const header = document.createElement("button");
+  header.type = "button";
+  header.setAttribute("aria-expanded", String(!collapsed));
   header.className = "thinking-header";
   header.innerHTML = `${renderUiIcon("gear", "thinking-icon")}
     <span class="thinking-label">${esc(label || t("thinking.active"))}</span>
@@ -1156,6 +1018,7 @@ async function ensureEventBlockLoaded(sessionId, body, evt) {
       ? hiddenEvents[hiddenEvents.length - 1].seq
       : nextEndSeq;
     setRenderedEventBlockRange(body, updatedRenderedStartSeq, updatedRenderedEndSeq);
+    if (evt.state === "completed" && typeof settleActivityTools === "function") settleActivityTools(body);
   } catch (error) {
     if ((body.dataset.blockRange || "") !== rangeKey) return;
     console.warn("[event-block] Failed to load hidden block:", error.message);
@@ -1241,6 +1104,7 @@ function renderThinkingBlockEvent(evt) {
   thinking.header.addEventListener("click", () => {
     thinking.block.classList.toggle("collapsed");
     const expanded = !thinking.block.classList.contains("collapsed");
+    thinking.header.setAttribute?.("aria-expanded", String(expanded));
     if (running && typeof setRunningEventBlockExpanded === "function") {
       setRunningEventBlockExpanded(sessionId, expanded);
     }
@@ -1291,11 +1155,8 @@ function renderStatusInto(container, evt) {
   ) {
     return null;
   }
-  const div = document.createElement("div");
-  div.className = "msg-system";
-  div.textContent = evt.content;
-  container.appendChild(div);
-  return div;
+  if (/^(Thread|Session) started/.test(evt.content)) return null;
+  return renderActivityNote(container, evt);
 }
 
 function renderStatusMsg(evt) {
@@ -1327,50 +1188,7 @@ function humanizeContextOperationValue(value) {
 }
 
 function renderContextOperationInto(container, evt) {
-  if (!container) return null;
-  const card = document.createElement("div");
-  card.className = "context-operation";
-  if (evt?.phase) card.dataset.phase = evt.phase;
-  if (evt?.operation) card.dataset.operation = evt.operation;
-
-  const title = document.createElement("div");
-  title.className = "context-operation-title";
-  title.textContent = evt?.title || evt?.content || t("context.barrier");
-  card.appendChild(title);
-
-  const summaryText = typeof evt?.summary === "string" ? evt.summary.trim() : "";
-  if (summaryText) {
-    const summary = document.createElement("div");
-    summary.className = "context-operation-summary";
-    summary.textContent = summaryText;
-    card.appendChild(summary);
-  }
-
-  const metaParts = [];
-  const phaseText = humanizeContextOperationValue(evt?.phase);
-  if (phaseText) metaParts.push(phaseText);
-  const triggerText = humanizeContextOperationValue(evt?.trigger);
-  if (triggerText) metaParts.push(triggerText);
-  if (Number.isInteger(evt?.compactedThroughSeq) && evt.compactedThroughSeq > 0) {
-    metaParts.push(`through #${evt.compactedThroughSeq}`);
-  }
-  if (metaParts.length > 0) {
-    const meta = document.createElement("div");
-    meta.className = "context-operation-meta";
-    meta.textContent = metaParts.join(" · ");
-    card.appendChild(meta);
-  }
-
-  const reasonText = typeof evt?.reason === "string" ? evt.reason.trim() : "";
-  if (reasonText) {
-    const reason = document.createElement("div");
-    reason.className = "context-operation-reason";
-    reason.textContent = reasonText;
-    card.appendChild(reason);
-  }
-
-  container.appendChild(card);
-  return card;
+  return renderActivityNote(container, { ...evt, content: evt.summary || evt.content }, "context");
 }
 
 function renderContextOperation(evt) {
@@ -1464,16 +1282,8 @@ function renderUsage(evt) {
 }
 
 function renderUnknownEventInto(container, evt) {
-  if (!container) return null;
-  const pre = document.createElement("pre");
-  pre.className = "tool-result";
-  let text = "";
-  try {
-    text = JSON.stringify(evt || {}, null, 2);
-  } catch {
-    text = String(evt?.type || "unknown_event");
-  }
-  pre.textContent = text;
-  container.appendChild(pre);
-  return pre;
+  const { card, body } = createActivityDisclosure(activityText("details"));
+  body.append(activityPre({ content: JSON.stringify(evt || {}, null, 2) }, "content"));
+  container.append(card);
+  return card;
 }

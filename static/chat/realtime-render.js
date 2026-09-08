@@ -197,7 +197,9 @@ function openThinkingBlock() {
   const block = document.createElement("div");
   block.className = "thinking-block collapsed"; // collapsed by default
 
-  const header = document.createElement("div");
+  const header = document.createElement("button");
+  header.type = "button";
+  header.setAttribute("aria-expanded", "false");
   header.className = "thinking-header";
   header.innerHTML = `${renderRealtimeIcon("gear", "thinking-icon")}
     <span class="thinking-label">${t("thinking.active")}</span>
@@ -208,6 +210,7 @@ function openThinkingBlock() {
 
   header.addEventListener("click", async () => {
     block.classList.toggle("collapsed");
+    header.setAttribute("aria-expanded", String(!block.classList.contains("collapsed")));
     if (!block.classList.contains("collapsed")) {
       await hydrateLazyNodes(block);
     }
@@ -234,6 +237,7 @@ function formatToolList(names, max) {
 
 function finalizeThinkingBlock() {
   if (!currentThinkingBlock) return;
+  if (typeof settleActivityTools === "function") settleActivityTools(currentThinkingBlock.body);
   const { label, tools } = currentThinkingBlock;
   const toolList = [...tools];
   if (toolList.length > 0) {
