@@ -21,11 +21,13 @@ await writeFile(join(config, 'auth-sessions.json'), JSON.stringify({ fixture: { 
 await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'fake-codex', name: 'Fixture Codex',
   command: 'fake-codex', runtimeFamily: 'codex-json', models: [{ id: 'fake-model', label: 'Fixture' }] }]));
 await writeFile(join(bin, 'fake-codex'), `#!/usr/bin/env node
+(async () => {
 console.log(JSON.stringify({type:'thread.started',thread_id:'fixture-thread'}));
 console.log(JSON.stringify({type:'turn.started'}));
 await new Promise(resolve => setTimeout(resolve, 500));
 console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'fixture reply for delivery'}}));
 console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,output_tokens:1}}));
+})().catch(error => { console.error(error); process.exitCode = 1; });
 `);
 await chmod(join(bin, 'fake-codex'), 0o755);
 const reservation = createServer();
