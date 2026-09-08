@@ -27,19 +27,39 @@ export async function resolveFeishuBotIdentity(runtime) {
   return identity;
 }
 
-export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary) {
-  const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
-  if (modes.includes('p2p') || modes.includes('private')) return true;
-  if (!modes.some((mode) => ['group', 'topic', 'thread'].includes(mode))) return true;
-  const policy = normalizeFeishuResponsePolicy(runtime?.config?.responsePolicy);
-  if (policy.group === 'all') return true;
+export function isFeishuBotSender(summary) {
+  return ['app', 'bot'].includes(trimString(summary?.sender?.senderType).toLowerCase());
+}
+
+export function isFeishuSelfSender(runtime, summary) {
+  const sender = summary?.sender || {};
+  return ['openId', 'userId', 'unionId'].some(key => (
+    trimString(runtime?.botIdentity?.[key]) && trimString(sender[key]) === trimString(runtime.botIdentity[key])
+  )) || Boolean(trimString(runtime?.config?.appId) && (
+    sender.appId === runtime.config.appId || sender.openId === runtime.config.appId
+  ));
+}
+
+export function mentionsFeishuBot(runtime, summary) {
   const identity = runtime?.botIdentity || {};
   // Match IDs by namespace; names, stale flags, thread bindings and @all are not mentions of this Bot.
-  const mentioned = (Array.isArray(summary?.mentions) ? summary.mentions : []).some((mention) => (
+  return (Array.isArray(summary?.mentions) ? summary.mentions : []).some((mention) => (
     ['openId', 'userId', 'unionId'].some((key) => (
       trimString(identity[key]) && trimString(mention?.[key]) === trimString(identity[key])
     ))
   ));
-  // Only this Bot's durable binding to the exact thread permits mention-free replies.
-  return mentioned || Boolean((await findFeishuThreadSessionBinding(runtime, summary))?.sessionId);
+}
+
+export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary) {
+  if (isFeishuSelfSender(runtime, summary)) return false;
+  // Bot handoffs always need an explicit mention, even in private chats or group=all.
+  if (isFeishuBotSender(summary)) return mentionsFeishuBot(runtime, summary);
+  const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
+  if (modes.includes('p2p') || modes.includes('private')) return true;
+  if (!modes.some((mode) => ['group', 'topic', 'thread'].includes(mode))) return true;
+  const policy = normalizeFeishuResponsePolicy(runtime?.config?.responsePolicy);
+  if (policy.group === 'all' || mentionsFeishuBot(runtime, summary)) return true;
+  // A durable binding means this Bot has already joined this exact thread.
+  // Never infer participation from the group session or a mention of someone else.
+  return Boolean((await findFeishuThreadSessionBinding(runtime, summary))?.sessionId);
 }

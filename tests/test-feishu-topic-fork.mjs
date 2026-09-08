@@ -9,7 +9,7 @@ import {
   findFeishuThreadSessionBinding,
   recordFeishuThreadSessionBinding,
 } from '../connectors/feishu/session-flow.mjs';
-import { submitRemoteLabRequest } from '../scripts/feishu-connector.mjs';
+import { handleMessage, submitRemoteLabRequest } from '../scripts/feishu-connector.mjs';
 
 const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-topic-fork-'));
 const runtime = {
@@ -190,12 +190,53 @@ try {
     assert.equal(continuationReply.sessionId, 'fork-session-2');
     assert.equal(createCount, 1, 'later Thread messages should use the explicit binding');
     assert.equal(submittedPayloads[1].text, '继续\n\n[Feishu source reference: message_id=later-thread-message, message_type=text, thread_id=created-thread-1]');
+
+    connectorRuntime.config.responsePolicy = { group: 'all' };
+    const task = {
+      tenantKey: 'tenant-1', chatType: 'group', chatId: 'chat-1', messageType: 'text',
+      messageText: '@_user_1 task\nask @_user_2', sender: { senderType: 'user' },
+    };
+    const send = patch => handleMessage(connectorRuntime, { ...task, ...patch }, 'test', {
+      addProcessingReaction: async () => null,
+    });
+    await send({ messageId: 'default-task-1' });
+    await send({ messageId: 'default-task-2' });
+    assert.equal(createCount, 3, 'separate group tasks create separate blank sessions by default');
+    assert.equal(createdPayloads[1].externalTriggerId, 'feishu:fork:bot-1:tenant-1:chat-1:default-task-1');
+    assert.equal(createdPayloads[2].externalTriggerId, 'feishu:fork:bot-1:tenant-1:chat-1:default-task-2');
+    assert.equal(submittedPayloads[2].text, 'task\nask @_user_2');
+    assert.equal(submittedPayloads[2].sourceDelivery.target.replyInThread, true);
+    assert.deepEqual(submittedPayloads[2].sourceContext, createdPayloads[1].sourceContext);
+
+    await send({ messageId: 'continue-task', messageText: '@_user_1 /continue shared task' });
+    assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
+    assert.match(submittedPayloads.at(-1).text, /^shared task/);
+    assert.equal(submittedPayloads.at(-1).text.includes('/continue'), false);
+    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, undefined);
+    const countBeforeThread = createCount;
+    await send({ messageId: 'continue-thread', threadId: 'created-thread-1', messageText: '/continue in thread' });
+    assert.equal(createCount, countBeforeThread, '/continue respects an existing thread binding');
+    await send({ messageId: 'explicit-fork', threadId: 'created-thread-1', messageText: '/fork new task' });
+    assert.equal(createCount, countBeforeThread + 1, '/fork still explicitly creates a fresh session inside a thread');
+
+    await send({ messageId: 'private', chatType: 'p2p', messageText: 'private task' });
+    assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:p2p:chat-1', 'private chat routing is unchanged');
+    await send({ messageId: 'media-only', messageType: 'image', messageText: '' });
+    assert.ok(submittedPayloads.at(-1).text.length > 0, 'media-only default forks retain the input envelope');
+    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
+
+    let usage;
+    await handleMessage(connectorRuntime, { ...task, messageId: 'empty-continue', messageText: '/continue' }, 'test', {
+      queueFeishuReply: async (_runtime, _summary, text) => { usage = text; },
+      submitRemoteLabRequest: async () => { throw new Error('usage must not start AI'); },
+    });
+    assert.equal(usage, '用法：/continue <任务文本>');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
 
   console.log('ok - Feishu Thread bindings are explicit and never guessed');
-  console.log('ok - /fork creates a blank Session with minimal Feishu metadata');
+  console.log('ok - default fork, explicit /fork and /continue preserve task and thread routing');
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

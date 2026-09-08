@@ -1777,9 +1777,9 @@ try {
       tenantKey: 'tenant_topic_metadata_1',
     },
   });
-  assert.equal(topicMetadataSessionPayload?.externalTriggerId, 'feishu:topic:chat_topic_metadata_1:msg_topic_metadata_test_1');
-  assert.equal(topicMetadataSessionPayload?.sourceContext?.conversationKind, 'topic');
-  assert.equal(topicMetadataSessionPayload?.sourceContext?.topicId, 'msg_topic_metadata_test_1');
+  assert.equal(topicMetadataSessionPayload?.externalTriggerId, 'feishu:fork:default:tenant_topic_metadata_1:chat_topic_metadata_1:msg_topic_metadata_test_1');
+  assert.equal(topicMetadataSessionPayload?.sourceContext?.chatType, 'group');
+  assert.equal(topicMetadataSubmittedPayload?.sourceDelivery?.target?.replyInThread, true);
   assert.equal(topicMetadataSubmittedPayload?.sourceContext?.messageId, 'msg_topic_metadata_test_1');
   assert.equal(topicMetadataReply.sessionId, 'sess_topic_metadata_test_1');
   assert.equal(topicMetadataReply.replyText, undefined);
@@ -1791,7 +1791,7 @@ try {
 console.log('ok - admission returns the durable receipt without waiting for AI or sending');
 console.log('ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments');
 console.log('ok - mention tokens are rendered inbound and compiled outbound');
-console.log('ok - topic metadata from chat metadata fallback enables topic-scoped sessions');
+console.log('ok - topic metadata fallback preserves default fork and threaded delivery');
 console.log('ok - whitelist file reloads without restart');
 console.log('ok - whitelist access stays limited to explicit sender identities');
 console.log('ok - /fork accepts task text and binds its reply Thread to the new Session');

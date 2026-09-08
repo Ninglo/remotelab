@@ -63,9 +63,14 @@ import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   normalizeFeishuResponsePolicy,
+  isFeishuBotSender,
   resolveFeishuBotIdentity,
   shouldRouteFeishuMessageToRemoteLab,
 } from '../connectors/feishu/response-policy.mjs';
+import {
+  claimFeishuBotHandoff, recordFeishuBotHandoffScope,
+  restoreFeishuBotHandoffScopes, withFeishuHandoffLock,
+} from '../connectors/feishu/bot-handoff.mjs';
 import {
   createConnectorSession,
   submitConnectorMessage,
@@ -823,10 +828,10 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       requestId: submission.requestId, responseId: submission.responseId,
       duplicate: submission.duplicate, queued: submission.queued };
   }
-  const effectiveSummary = {
+  const effectiveSummary = await applyDefaultFork(runtime, {
     ...await enrichSummaryWithChatMetadata(runtime, summary),
     sourceRouteId: runtime.config.sourceRouteId,
-  };
+  });
   const isForkCommand = effectiveSummary.forkCommand === true;
   const externalTriggerId = isForkCommand
     ? buildFeishuForkExternalTriggerId(effectiveSummary)
@@ -861,7 +866,9 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: effectiveSummary },
-    text: isForkCommand ? trimString(effectiveSummary.forkText) : buildRemoteLabMessage(messageSummary),
+    text: isForkCommand
+      ? (trimString(effectiveSummary.forkText) || buildRemoteLabMessage(messageSummary))
+      : buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
     sourceContext: isForkCommand
       ? buildFeishuForkSourceContext(messageSummary)
@@ -875,6 +882,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     externalTriggerId, attachmentCount: attachmentResolution.attachments.length,
     attachmentDownloadFailureCount: attachmentResolution.failures.length,
   } };
+  await recordFeishuBotHandoffScope(runtime, effectiveSummary, { sessionId: session.id });
   await saveSubmission(handoff);
   return submitRemoteLabRequest(runtime, summary, { prepared: handoff });
 }
@@ -967,6 +975,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   const receipts = runtime.deliveryReceipts ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-receipts'));
   const acknowledge = async receipt => {
+    await recordFeishuBotHandoffScope(runtime, receipt.target, {
+      sessionId: receipt.sessionId, threadId: receipt.threadId, messageId: receipt.messageId,
+    });
     if (receipt.sessionId && receipt.messageId && runtime.storagePaths?.messageIndexPath) {
       await recordFeishuOutboundMessageSession(runtime, receipt.target, receipt.sessionId, receipt.messageId);
       await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
@@ -977,7 +988,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     if (!completed.response.ok) throw new Error(completed.json?.error || 'Failed to record delivery receipt');
     return completed.json.delivery;
   };
-  await receipts.flush(acknowledge);
+  await receipts.flush(receipt => withFeishuHandoffLock(runtime, receipt.target, () => acknowledge(receipt)));
   const { response, json } = await request('/api/source-deliveries/claim', { method: 'POST', body: {
     connector: FEISHU_CONNECTOR_ID, sourceRouteId: runtime.config.sourceRouteId || 'default',
   } });
@@ -986,26 +997,28 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   if (!claim) return null;
   const delivery = claim.delivery;
   const summary = { ...delivery.target, mentions: [] };
-  let sent;
-  try {
-    sent = delivery.attachment
-      ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
-      : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
-  } catch (error) {
-    // A network timeout cannot tell whether Feishu executed the operation.
-    await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST', body: {
-      leaseId: claim.leaseId, error: error.message,
-      safeToRetry: error.response?.status === 429,
-      definiteFailure: error.definiteFailure === true,
-    } });
-    throw error;
-  }
-  await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
-    externalId: sent.message_id || sent.reply_id || '', messageId: sent.message_id || '',
-    threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary });
-  let completed;
-  await receipts.flush(async receipt => { completed = await acknowledge(receipt); });
-  return completed;
+  return withFeishuHandoffLock(runtime, summary, async () => {
+    let sent;
+    try {
+      sent = delivery.attachment
+        ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
+        : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
+    } catch (error) {
+      // A network timeout cannot tell whether Feishu executed the operation.
+      await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST', body: {
+        leaseId: claim.leaseId, error: error.message,
+        safeToRetry: error.response?.status === 429,
+        definiteFailure: error.definiteFailure === true,
+      } });
+      throw error;
+    }
+    await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
+      externalId: sent.message_id || sent.reply_id || '', messageId: sent.message_id || '',
+      threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary });
+    let completed;
+    await receipts.flush(async receipt => { completed = await acknowledge(receipt); });
+    return completed;
+  });
 }
 
 function startSourceDeliveryPoller(runtime, options = {}) {
@@ -1042,7 +1055,9 @@ function isProcessableMessage(summary) {
     return false;
   }
   const senderType = trimString(summary?.sender?.senderType).toLowerCase();
-  if (senderType && senderType !== 'user') return false;
+  if (senderType && senderType !== 'user' && (
+    isFeishuDocumentCommentSummary(summary) || !isFeishuBotSender(summary)
+  )) return false;
   return true;
 }
 
@@ -1059,14 +1074,24 @@ function extractLocalCommand(summary) {
   if (!['group', 'topic'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  const forkMatch = commandText.match(/^\/fork(?:[ \t\r\n]+([\s\S]*))?$/i);
-  if (forkMatch) {
+  const commandMatch = commandText.match(/^\/(fork|continue)(?:[ \t\r\n]+([\s\S]*))?$/i);
+  if (commandMatch) {
     return {
-      type: 'fork',
-      text: trimString(forkMatch[1]),
+      type: commandMatch[1].toLowerCase(),
+      text: trimString(commandMatch[2]),
     };
   }
   return null;
+}
+
+async function applyDefaultFork(runtime, summary) {
+  if (isFeishuDocumentCommentSummary(summary) || summary.forkCommand || summary.continueCommand) return summary;
+  const isGroup = [summary.chatType, summary.chatMode, summary.groupMessageType]
+    .map(normalizeFeishuMode).some(mode => ['group', 'topic', 'thread'].includes(mode));
+  if (!isGroup || await findFeishuThreadSessionBinding(runtime, summary)) return summary;
+  return { ...summary, forkCommand: true, replyInThread: true,
+    forkText: trimString(stripLeadingMentionTokens(summary.messageText || summary.textPreview)),
+  };
 }
 
 async function queueFeishuReply(runtime, summary, text) {
@@ -1079,6 +1104,10 @@ async function queueFeishuReply(runtime, summary, text) {
 }
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
+  return withFeishuHandoffLock(runtime, summary, () => processFeishuMessage(runtime, summary, sourceLabel, helpers));
+}
+
+async function processFeishuMessage(runtime, summary, sourceLabel, helpers = {}) {
   if (!isProcessableMessage(summary)) return { ignored: true };
   if (!isFeishuDocumentCommentSummary(summary) && !await shouldRouteFeishuMessageToRemoteLab(runtime, summary)) {
     console.log(`[feishu-connector] skipped ${summary.messageId} (response policy requires a Bot mention or an active Bot thread)`);
@@ -1086,15 +1115,27 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
   const command = extractLocalCommand(summary);
-  const enqueue = helpers.queueFeishuReply || queueFeishuReply;
-  if (command?.type === 'fork' && !command.text) return enqueue(runtime, summary, '用法：/fork <任务文本>');
   if (command?.type === 'fork') summary = { ...summary, forkCommand: true, forkText: command.text, replyInThread: true };
+  if (command?.type === 'continue') summary = {
+    ...summary, continueCommand: true, messageText: command.text, textPreview: command.text,
+  };
+  summary = await applyDefaultFork(runtime, summary);
+  if (isFeishuBotSender(summary)) {
+    const binding = await findFeishuThreadSessionBinding(runtime, summary);
+    if (!await claimFeishuBotHandoff(runtime, summary, binding?.sessionId)) {
+      return { ignored: true, reason: 'bot_handoff_consumed' };
+    }
+    summary = { ...summary, botHandoffMessageId: summary.messageId, replyInThread: true };
+  }
+  const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+  if (command && !command.text) return enqueue(runtime, summary, `用法：/${command.type} <任务文本>`);
   try {
     await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary);
   } catch (error) {
     console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
   }
   const receipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(runtime, summary);
+  await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
   if (runtime.storagePaths?.messageIndexPath) {
     await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
     await recordFeishuThreadSessionBinding(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
@@ -1190,11 +1231,11 @@ async function main() {
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
   const runtime = createRuntimeContext(config, storagePaths);
-  if (config.responsePolicy.group === 'mention_only') {
-    runtime.botIdentity = await withTimeout(
-      () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
-    );
-  }
+  // Identity is also required for self-message suppression and bot handoff mentions in group=all.
+  runtime.botIdentity = await withTimeout(
+    () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
+  );
+  await restoreFeishuBotHandoffScopes(runtime);
   const inbox = initializeInbox(runtime);
   const wsClient = new Lark.WSClient({
     appId: config.appId,

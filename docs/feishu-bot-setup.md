@@ -246,6 +246,33 @@ including stored-message replay. Mention matching uses the Bot's API identity.
 Thread continuation never bypasses sender access control or Bot loop protection.
 Policies apply to the whole Connector so two groups cannot silently behave differently.
 
+### Default fork and one-shot Bot handoffs
+
+- A new group task (including an unbound topic/thread) creates a blank Session
+  by default and replies in a Feishu thread. It does not copy group history.
+- Human follow-ups in a bound thread reuse that Session. `/fork <task>` remains
+  available to explicitly start another blank Session inside an existing thread.
+- `/continue <task>` opts out of the default fork: use the existing thread
+  binding, or the legacy group/topic Session route when there is no binding.
+  Ordinary human private messages and document comments keep their prior routing.
+- Other Bots (`app` / `bot` senders) may hand off a task only with an explicit
+  mention of this Bot, even under `group: all`. Self messages remain ignored.
+  Sender access control still applies; a mention does not bypass the whitelist.
+- All peer Bots share **one admission per Session/thread**, not one per sender.
+  Once used, later Bot events in that thread are silently ignored, including
+  `/fork` and command-usage requests; humans can continue normally. The same
+  bound Session cannot regain its allowance through another thread alias.
+- Admission is reserved durably before reactions or AI submission. Retries of
+  the same upstream event retain their reservation and use the existing request
+  ID; connector restarts and human forks do not reset a thread's allowance.
+  Source/root/parent messages, delivered replies, and returned thread IDs all
+  retain the consumed quota in `storageDir/bot-handoffs/`. Preserve this directory
+  with Inbox and delivery receipts during backup/migration; do not clear it to retry.
+
+This bounds Bot interaction within a Session/thread, not unrelated new top-level
+messages. The upstream Feishu app must actually deliver peer-Bot message events;
+local admission tests alone do not prove platform event delivery.
+
 ### Markdown rendering
 
 The model can emit ordinary Markdown. The connector sends adjacent Markdown
