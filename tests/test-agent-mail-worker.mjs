@@ -112,6 +112,14 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Email source-delivery sender polls this endpoint after each sweep.
+  // Return no claim so the sender loop exits immediately.
+  if (req.method === 'POST' && req.url === '/api/source-deliveries/claim') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ claim: null }));
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'not found' }));
 });
@@ -193,7 +201,8 @@ try {
   const firstSummary = JSON.parse(firstWorker.stdout);
   assert.equal(firstSummary.processed, 1);
   assert.equal(firstSummary.failures.length, 0);
-  assert.equal(requests.length, 3);
+  // auth + create-session + submit-message + source-deliveries/claim
+  assert.equal(requests.length, 4);
 
   const expectedThreadTriggerId = buildEmailThreadExternalTriggerId({
     messageId: '<root-thread@example.com>',
@@ -205,9 +214,14 @@ try {
   assert.equal(sessionCreates[0].name, 'hello!');
   assert.equal(sessionCreates[0].systemPrompt, 'Reply with plain text only.');
   assert.equal(sessionCreates[0].externalTriggerId, expectedThreadTriggerId);
-  assert.equal(sessionCreates[0].completionTargets[0].inReplyTo, '<root-thread@example.com>');
-  assert.equal(sessionCreates[0].completionTargets[0].references, '<root-thread@example.com>');
-  assert.equal(sessionCreates[0].completionTargets[0].subject, 'Re: hello!');
+  // Worker-submitted requests use sourceDelivery (not session completionTargets).
+  assert.ok(!sessionCreates[0].completionTargets || sessionCreates[0].completionTargets.length === 0,
+    'session should not receive worker-added email completionTargets');
+  assert.equal(messageSubmissions[0].sourceDelivery?.connector, 'email',
+    'message payload should carry sourceDelivery with connector=email');
+  assert.equal(messageSubmissions[0].sourceDelivery?.target?.inReplyTo, '<root-thread@example.com>');
+  assert.deepEqual(messageSubmissions[0].sourceDelivery?.target?.references, ['<root-thread@example.com>']);
+  assert.equal(messageSubmissions[0].sourceDelivery?.target?.subject, 'Re: hello!');
   assert.match(messageSubmissions[0].text, /please take a response to test!/);
   assert.match(messageSubmissions[0].text, /^Inbound email\./);
   assert.match(messageSubmissions[0].text, /User message:/);
@@ -292,13 +306,18 @@ try {
   const secondSummary = JSON.parse(secondWorker.stdout);
   assert.equal(secondSummary.processed, 1);
   assert.equal(secondSummary.failures.length, 0);
-  assert.equal(requests.length, 6);
+  // Both workers: 4 requests each (auth + session + message + claim)
+  assert.equal(requests.length, 8);
   assert.equal(sessionCreates.length, 2);
   assert.equal(messageSubmissions.length, 2);
   assert.equal(sessionCreates[1].tool, 'codex');
   assert.equal(sessionCreates[1].externalTriggerId, expectedThreadTriggerId);
-  assert.equal(sessionCreates[1].completionTargets[0].inReplyTo, '<follow-up@example.com>');
-  assert.equal(sessionCreates[1].completionTargets[0].references, '<root-thread@example.com> <follow-up@example.com>');
+  // sourceDelivery in message payload — not completionTargets on session
+  assert.ok(!sessionCreates[1].completionTargets || sessionCreates[1].completionTargets.length === 0,
+    'second session should not receive worker-added email completionTargets');
+  assert.equal(messageSubmissions[1].sourceDelivery?.target?.inReplyTo, '<follow-up@example.com>');
+  assert.deepEqual(messageSubmissions[1].sourceDelivery?.target?.references,
+    ['<root-thread@example.com>', '<follow-up@example.com>']);
   assert.match(messageSubmissions[1].text, /here is the follow-up reply in the same thread\./);
   assert.doesNotMatch(messageSubmissions[1].text, /On Tue, Mar 10, 2026 at 9:56 PM <rowan@example\.com> wrote:/);
   assert.doesNotMatch(messageSubmissions[1].text, /^> please take a response to test!$/m);
@@ -379,12 +398,16 @@ try {
   const thirdSummary = JSON.parse(thirdWorker.stdout);
   assert.equal(thirdSummary.processed, 1);
   assert.equal(thirdSummary.failures.length, 0);
-  assert.equal(requests.length, 9);
+  // Three workers × 4 requests each (auth + session + message + claim)
+  assert.equal(requests.length, 12);
   assert.equal(sessionCreates.length, 3);
   assert.equal(messageSubmissions.length, 3);
   assert.equal(sessionCreates[2].externalTriggerId, expectedThreadTriggerId);
-  assert.equal(sessionCreates[2].completionTargets[0].inReplyTo, '<base64-follow-up@example.com>');
-  assert.equal(sessionCreates[2].completionTargets[0].references, '<root-thread@example.com> <base64-follow-up@example.com>');
+  // sourceDelivery in message payload — not completionTargets on session
+  assert.ok(!sessionCreates[2].completionTargets || sessionCreates[2].completionTargets.length === 0);
+  assert.equal(messageSubmissions[2].sourceDelivery?.target?.inReplyTo, '<base64-follow-up@example.com>');
+  assert.deepEqual(messageSubmissions[2].sourceDelivery?.target?.references,
+    ['<root-thread@example.com>', '<base64-follow-up@example.com>']);
   assert.match(messageSubmissions[2].text, /这一次请完整的回复我这一轮对话给你发送的消息/);
   assert.ok(!messageSubmissions[2].text.includes(encodedChineseBody), 'worker prompt should decode legacy base64 mailbox content');
 
@@ -441,9 +464,11 @@ try {
   assert.equal(sessionCreates.length, 4);
   assert.equal(messageSubmissions.length, 4);
   assert.ok(!Object.hasOwn(sessionCreates[3], 'name'), 'blank-subject threads should not force a session name');
-  assert.equal(sessionCreates[3].completionTargets[0].inReplyTo, '<blank-subject-thread@example.com>');
-  assert.equal(sessionCreates[3].completionTargets[0].references, '<blank-subject-thread@example.com>');
-  assert.equal(sessionCreates[3].completionTargets[0].subject, '', 'blank-subject replies should preserve an empty subject');
+  // sourceDelivery in message payload — not completionTargets on session
+  assert.ok(!sessionCreates[3].completionTargets || sessionCreates[3].completionTargets.length === 0);
+  assert.equal(messageSubmissions[3].sourceDelivery?.target?.inReplyTo, '<blank-subject-thread@example.com>');
+  assert.deepEqual(messageSubmissions[3].sourceDelivery?.target?.references, ['<blank-subject-thread@example.com>']);
+  assert.equal(messageSubmissions[3].sourceDelivery?.target?.subject, '', 'blank-subject replies should preserve an empty subject');
 
   const inlinePngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2lmLcAAAAASUVORK5CYII=';
   const imageIngested = await ingestRawMessage(
@@ -663,10 +688,15 @@ try {
   const sessionOnlySummary = JSON.parse(sessionOnlyWorker.stdout);
   assert.equal(sessionOnlySummary.processed, 1);
   assert.equal(sessionOnlySummary.failures.length, 0);
-  assert.equal(requests.length, 3);
+  // auth (trial6) + create-session + submit-message = 3
+  // + guest delivery sweep: auth (trial6) + claim = 2
+  // Root delivery sweep goes to chatBaseUrl (port 7690), not this server.
+  assert.equal(requests.length, 5);
   assert.equal(sessionCreates.length, 1);
   assert.equal(messageSubmissions.length, 1);
+  // session_only mode: no completionTargets and no sourceDelivery on the message
   assert.equal(sessionCreates[0].completionTargets, undefined);
+  assert.equal(messageSubmissions[0].sourceDelivery, undefined, 'session_only mode should not add sourceDelivery');
   assert.equal(messageSubmissions[0].requestId.startsWith('mailbox_session_'), true);
   const loginRequest = requests.find((entry) => entry.method === 'GET' && entry.url.startsWith('/?token='));
   assert.equal(new URL(loginRequest.url, 'http://127.0.0.1').searchParams.get('token'), 'trial6-auth-token');
@@ -768,10 +798,14 @@ try {
   const localPartSummary = JSON.parse(localPartWorker.stdout);
   assert.equal(localPartSummary.processed, 1);
   assert.equal(localPartSummary.failures.length, 0);
-  assert.equal(requests.length, 3);
+  // auth (trial1) + create-session + submit-message = 3
+  // + guest delivery sweep: auth (trial1) + claim = 2
+  // Root delivery sweep goes to chatBaseUrl (port 7690), not this server.
+  assert.equal(requests.length, 5);
   assert.equal(sessionCreates.length, 1);
   assert.equal(messageSubmissions.length, 1);
-  assert.equal(sessionCreates[0].completionTargets[0].from, 'trial1@example.com');
+  // from-address resolution: same-domain alias should be preserved in sourceDelivery target
+  assert.equal(messageSubmissions[0].sourceDelivery?.target?.from, 'trial1@example.com');
   const localPartLoginRequest = requests.find((entry) => entry.method === 'GET' && entry.url.startsWith('/?token='));
   assert.equal(new URL(localPartLoginRequest.url, 'http://127.0.0.1').searchParams.get('token'), 'trial1-auth-token');
 

@@ -3024,6 +3024,11 @@ const requestRuntime = createRequestRuntime({
 });
 
 export async function submitHttpMessage(sessionId, text, images, options = {}) {
+  // An explicitly requested reply route is part of admission's durable contract.
+  // Never accept work and silently discard its final-delivery responsibility.
+  if (options.sourceDelivery != null && !normalizeSourceDeliveryPlan(options.sourceDelivery)) {
+    throw new Error('Invalid sourceDelivery connector or target');
+  }
   await ensureRequestSchema(CONFIG_DIR);
   const session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
@@ -3254,6 +3259,9 @@ async function prepareRequestRun(record) {
 }
 
 export async function sendMessage(sessionId, text, images, options = {}) {
+  if (options.sourceDelivery != null && !normalizeSourceDeliveryPlan(options.sourceDelivery)) {
+    throw new Error('Invalid sourceDelivery connector or target');
+  }
   return submitHttpMessage(sessionId, text, images, {
     ...options,
     requestId: options.requestId || createInternalRequestId('message'),

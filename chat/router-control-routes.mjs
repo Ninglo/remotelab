@@ -38,6 +38,7 @@ import {
   completeSourceDelivery,
   failSourceDelivery,
   listSourceDeliveries,
+  listSourceDeliveryActivity,
 } from './source-deliveries.mjs';
 import {
   buildAttachmentContentDisposition,
@@ -437,12 +438,16 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/source-deliveries' && req.method === 'GET') {
-    writeJson(res, 200, { deliveries: await listSourceDeliveries({
+    const filters = {
       connector: typeof parsedUrl?.query?.connector === 'string' ? parsedUrl.query.connector : '',
       sourceRouteId: typeof parsedUrl?.query?.sourceRouteId === 'string' ? parsedUrl.query.sourceRouteId : '',
       state: typeof parsedUrl?.query?.state === 'string' ? parsedUrl.query.state : '',
       sessionId: typeof parsedUrl?.query?.sessionId === 'string' ? parsedUrl.query.sessionId : '',
-    }) });
+    };
+    writeJson(res, 200, {
+      deliveries: await listSourceDeliveries(filters),
+      ...(parsedUrl?.query?.includeActivity === 'true' ? { activity: await listSourceDeliveryActivity(filters) } : {}),
+    });
     return true;
   }
 

@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 
 import { readFile } from 'fs/promises';
+import { createHash } from 'node:crypto';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 
 import { AUTH_FILE } from '../lib/config.mjs';
-import { ensureEmailConnectorBinding } from '../lib/connector-bindings.mjs';
+import { buildEmailSourceRouteId, buildEmailSourceDelivery, buildEmailSourceDeliveryTarget } from '../lib/agent-mail-source-delivery.mjs';
+import { processEmailSourceDeliveryOnce } from '../lib/agent-mail-source-delivery-sender.mjs';
 import { findMailboxRuntimeByName, loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 import {
   APPROVED_QUEUE,
   DEFAULT_ROOT_DIR,
   DEFAULT_AUTOMATION_SETTINGS,
   buildEmailThreadExternalTriggerId,
-  buildThreadReferencesHeader,
   decodeMaybeEncodedMailboxText,
   extractNormalizedMailboxContent,
   extractRawMessageAttachments,
@@ -128,39 +129,6 @@ function normalizeBaseUrlMatch(value) {
   }
 }
 
-function normalizeEmailAddress(value) {
-  return trimString(value).toLowerCase();
-}
-
-function splitEmailAddressParts(value) {
-  const normalized = normalizeEmailAddress(value);
-  const atIndex = normalized.lastIndexOf('@');
-  if (atIndex === -1) {
-    return {
-      localPart: normalized,
-      domain: '',
-    };
-  }
-  return {
-    localPart: normalized.slice(0, atIndex),
-    domain: normalized.slice(atIndex + 1),
-  };
-}
-
-function resolveReplyFromAddress(item) {
-  const replyFrom = normalizeEmailAddress(item?.message?.effectiveToAddress)
-    || normalizeEmailAddress(item?.message?.envelopeToAddress)
-    || normalizeEmailAddress(item?.message?.toAddress);
-  const identityAddress = normalizeEmailAddress(item?.identity?.address);
-  if (!replyFrom || !identityAddress) return '';
-
-  const replyFromParts = splitEmailAddressParts(replyFrom);
-  const identityParts = splitEmailAddressParts(identityAddress);
-  if (!replyFromParts.localPart || !replyFromParts.domain) return '';
-  if (!identityParts.domain || replyFromParts.domain !== identityParts.domain) return '';
-  return replyFrom;
-}
-
 function sameBaseUrl(leftValue, rightValue) {
   const left = normalizeBaseUrlMatch(leftValue);
   const right = normalizeBaseUrlMatch(rightValue);
@@ -228,6 +196,7 @@ async function resolveRuntimeTarget(item, automation, fallbackBaseUrl = '') {
 async function loginWithToken(baseUrl, token) {
   const response = await fetch(`${normalizeBaseUrl(baseUrl)}/?token=${encodeURIComponent(token)}`, {
     redirect: 'manual',
+    signal: AbortSignal.timeout(30_000),
   });
   const setCookie = response.headers.get('set-cookie');
   if (response.status !== 302 || !setCookie) {
@@ -248,6 +217,7 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     redirect: 'manual',
+    signal: AbortSignal.timeout(30_000),
   });
 
   const text = await response.text();
@@ -303,12 +273,6 @@ function runtimeMatchesTarget(runtime, target) {
   if (!runtime || !target) return false;
   return sameBaseUrl(runtime.baseUrl, target.baseUrl)
     && normalizeAuthFile(runtime.authFile) === normalizeAuthFile(target.authFile);
-}
-
-function buildReplySubject(subject) {
-  const trimmed = trimString(subject);
-  if (!trimmed) return '';
-  return /^re:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
 }
 
 function buildSessionName(item) {
@@ -404,32 +368,6 @@ function resolveReplyRuntimeSelection(automation, uiSelection) {
   });
 }
 
-async function buildCompletionTarget(item, rootDir, requestId) {
-  const messageId = trimString(item?.message?.messageId);
-  const inReplyTo = trimString(item?.message?.inReplyTo);
-  const references = trimString(item?.message?.replyReferences)
-    || buildThreadReferencesHeader({
-      messageId,
-      inReplyTo,
-      references: trimString(item?.message?.references),
-    });
-  const binding = await ensureEmailConnectorBinding({ rootDir });
-  return {
-    id: `mailbox_email_${item.id}`,
-    type: 'email',
-    requestId,
-    responseId: requestId,
-    bindingId: binding.id,
-    to: trimString(item?.message?.fromAddress),
-    from: resolveReplyFromAddress(item),
-    subject: buildReplySubject(item?.message?.subject),
-    inReplyTo: messageId,
-    references,
-    mailboxRoot: rootDir,
-    mailboxItemId: item.id,
-  };
-}
-
 function requestIdPrefixForMode(deliveryMode) {
   return deliveryMode === 'session_only' ? 'mailbox_session_' : 'mailbox_reply_';
 }
@@ -451,12 +389,27 @@ function shouldProcessItem(item) {
   if (status === 'reply_failed' || automationStatus === 'reply_failed') return false;
   if (status === 'submitted_to_session' || automationStatus === 'submitted_to_session') return false;
   if (status === 'session_submission_failed' || automationStatus === 'session_submission_failed') return false;
+  // Items with a preparedSessionId are mid-submission (session created but
+  // message not yet submitted).  Allow them through so the sweep can resume.
+  if (trimString(item?.automation?.preparedSessionId)) return true;
   return true;
 }
 
+/**
+ * Tag an error as permanent (4xx HTTP rejection) so the sweep can distinguish
+ * transient network failures from definite server-side rejections.
+ */
+function tagPermanentIfHttpError(error, httpStatus) {
+  if (Number.isInteger(httpStatus) && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429) {
+    error.permanent = true;
+  }
+  return error;
+}
+
 async function submitApprovedItem(item, rootDir, automation, runtime) {
-  const deliveryMode = normalizeDeliveryMode(automation.deliveryMode);
-  const requestId = trimString(item?.automation?.requestId) || `${requestIdPrefixForMode(deliveryMode)}${item.id}`;
+  const prepared = item?.automation?.preparedSubmission;
+  const deliveryMode = normalizeDeliveryMode(prepared?.deliveryMode || automation.deliveryMode);
+  const requestId = trimString(prepared?.payload?.requestId || item?.automation?.requestId) || `${requestIdPrefixForMode(deliveryMode)}${item.id}`;
   const externalTriggerId = trimString(item?.message?.externalTriggerId)
     || buildEmailThreadExternalTriggerId({
       messageId: trimString(item?.message?.messageId),
@@ -464,7 +417,8 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
       references: trimString(item?.message?.references),
     })
     || `mailbox:${item.id}`;
-  const runtimeTarget = await resolveRuntimeTarget(item, automation, runtime?.baseUrl || automation.chatBaseUrl);
+  const runtimeTarget = prepared?.runtimeTarget || item?.automation?.preparedRuntimeTarget
+    || await resolveRuntimeTarget(item, automation, runtime?.baseUrl || automation.chatBaseUrl);
   const effectiveRuntime = runtimeMatchesTarget(runtime, runtimeTarget)
     ? runtime
     : createRemoteLabRuntime(runtimeTarget.baseUrl, { authFile: runtimeTarget.authFile });
@@ -473,47 +427,88 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     : undefined;
   const uiSelection = await loadUiRuntimeSelection(targetSelectionFile);
   const runtimeSelection = resolveReplyRuntimeSelection(automation, uiSelection);
-  const sessionPayload = {
-    folder: automation.session.folder,
-    tool: runtimeSelection.tool,
-    sourceId: 'email',
-    sourceName: 'Email',
-    group: automation.session.group,
-    description: buildSessionDescription(item, automation.session.description),
-    systemPrompt: automation.session.systemPrompt,
-    externalTriggerId,
-  };
-  const sessionName = buildSessionName(item);
-  if (sessionName) {
-    sessionPayload.name = sessionName;
-  }
-  if (deliveryMode === 'reply_email') {
-    sessionPayload.completionTargets = [await buildCompletionTarget(item, rootDir, requestId)];
+
+  // ─── PHASE 1: create or reuse session (durable) ───────────────────────────
+  // If a previous sweep crashed after creating the session but before finishing
+  // message submission, item.automation.preparedSessionId is already set.
+  // Reuse it so we never create duplicate sessions for the same email.
+  let preparedSessionId = trimString(prepared?.sessionId || item?.automation?.preparedSessionId);
+
+  if (!preparedSessionId) {
+    const sessionPayload = {
+      folder: automation.session.folder,
+      tool: runtimeSelection.tool,
+      sourceId: 'email',
+      sourceName: 'Email',
+      group: automation.session.group,
+      description: buildSessionDescription(item, automation.session.description),
+      systemPrompt: automation.session.systemPrompt,
+      externalTriggerId,
+    };
+    const sessionName = buildSessionName(item);
+    if (sessionName) sessionPayload.name = sessionName;
+    // Legacy explicit completion targets supplied via external configuration.
+    if (automation.session?.completionTargets?.length > 0) {
+      sessionPayload.completionTargets = automation.session.completionTargets;
+    }
+
+    const createResult = await requestRemoteLab(effectiveRuntime, '/api/sessions', {
+      method: 'POST',
+      body: sessionPayload,
+    });
+    if (!createResult.response.ok || !createResult.json?.session?.id) {
+      const status = createResult.response?.status;
+      throw tagPermanentIfHttpError(
+        new Error(createResult.json?.error || createResult.text || `Failed to create session (${status})`),
+        status,
+      );
+    }
+
+    preparedSessionId = createResult.json.session.id;
+
+    // Persist the session ID before submitting the message.  If the process
+    // crashes here, the next sweep will reuse this session instead of creating
+    // a duplicate.  requestId deduplication makes the message submit idempotent.
+    await updateQueueItem(item.id, rootDir, (draft) => {
+      draft.automation = {
+        ...(draft.automation || {}),
+        preparedSessionId,
+        preparedRuntimeTarget: runtimeTarget,
+        requestId,
+        externalTriggerId,
+        targetBaseUrl: runtimeTarget.baseUrl,
+        targetInstance: runtimeTarget.guestInstance || null,
+        targetMailboxRoot: runtimeTarget.mailboxRoot || null,
+        updatedAt: nowIso(),
+      };
+      return draft;
+    });
   }
 
-  const createResult = await requestRemoteLab(effectiveRuntime, '/api/sessions', {
-    method: 'POST',
-    body: sessionPayload,
-  });
-  if (!createResult.response.ok || !createResult.json?.session?.id) {
-    throw new Error(createResult.json?.error || createResult.text || `Failed to create session (${createResult.response.status})`);
-  }
-
-  const session = createResult.json.session;
-  const messagePayload = {
+  // Freeze the exact payload before POST, including runtime selection and
+  // attachments. A retry must not re-render changed config or source files.
+  let messagePayload = prepared?.payload;
+  if (!messagePayload) {
+  messagePayload = {
     requestId,
     text: await buildReplyPrompt(item),
     tool: runtimeSelection.tool,
   };
+
+  // Pass sourceDelivery in the message for reply_email mode so the outbox
+  // records the reply target durably alongside the request.
+  if (deliveryMode === 'reply_email') {
+    const emailTarget = buildEmailSourceDeliveryTarget(item);
+    const sourceRouteId = buildEmailSourceRouteId(rootDir);
+    messagePayload.sourceDelivery = buildEmailSourceDelivery(sourceRouteId, emailTarget);
+  }
   const rawAttachmentCount = Number(item?.content?.attachmentCount) || 0;
   const attachments = (await extractAttachmentsFromRaw(item)).map((attachment) => ({
     data: attachment.data,
     mimeType: attachment.mimeType,
     originalName: attachment.originalName,
   }));
-  if (attachments.length > 0) {
-    messagePayload.attachments = attachments;
-  }
+  if (attachments.length > 0) messagePayload.attachments = attachments;
   if (rawAttachmentCount > 0 && attachments.length === 0) {
     messagePayload.text += `\n\n⚠️ Warning: This email originally contained ${rawAttachmentCount} attachment(s) but they could not be extracted. The raw email is stored at: ${trimString(item?.storage?.rawPath)}`;
     console.error(`[agent-mail-worker] attachment extraction yielded 0 results for item ${item?.id} (expected ${rawAttachmentCount})`);
@@ -521,34 +516,55 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     messagePayload.text += `\n\n⚠️ Warning: This email originally contained ${rawAttachmentCount} attachment(s) but only ${attachments.length} could be extracted.`;
     console.warn(`[agent-mail-worker] partial attachment extraction for item ${item?.id}: ${attachments.length}/${rawAttachmentCount}`);
   }
-  if (runtimeSelection.thinking) {
-    messagePayload.thinking = true;
-  }
-  if (runtimeSelection.model) {
-    messagePayload.model = runtimeSelection.model;
-  }
-  if (runtimeSelection.effort) {
-    messagePayload.effort = runtimeSelection.effort;
+  if (runtimeSelection.thinking) messagePayload.thinking = true;
+  if (runtimeSelection.model) messagePayload.model = runtimeSelection.model;
+  if (runtimeSelection.effort) messagePayload.effort = runtimeSelection.effort;
+
+  await updateQueueItem(item.id, rootDir, draft => {
+    draft.automation = { ...(draft.automation || {}), preparedSubmission: {
+      sessionId: preparedSessionId, payload: messagePayload, runtimeTarget, deliveryMode, externalTriggerId,
+    } };
+    return draft;
+  });
   }
 
-  const submitResult = await requestRemoteLab(effectiveRuntime, `/api/sessions/${session.id}/messages`, {
-    method: 'POST',
-    body: messagePayload,
+  // One bounded recovery lookup, not an AI completion wait. If admission's
+  // HTTP response was lost, don't re-upload inline attachments to a request
+  // already accepted with stable saved attachment references.
+  let submitResult;
+  if (prepared) {
+    const observed = await requestRemoteLab(effectiveRuntime, `/api/sessions/${preparedSessionId}/responses/${encodeURIComponent(requestId)}`);
+    const publication = observed.json?.replyPublication;
+    if (observed.response.ok && publication?.rootRunId) {
+      submitResult = { response: { status: 200, ok: true }, json: {
+        duplicate: true, queued: publication.state === 'queued', run: { id: publication.rootRunId },
+      } };
+    } else if (observed.response.status !== 404) {
+      throw tagPermanentIfHttpError(new Error(observed.json?.error || 'Cannot reconcile email admission'), observed.response.status);
+    }
+  }
+  submitResult ||= await requestRemoteLab(effectiveRuntime, `/api/sessions/${preparedSessionId}/messages`, {
+    method: 'POST', body: messagePayload,
   });
   const isQueued = submitResult.json?.queued === true;
   if (![200, 202].includes(submitResult.response.status) || (!submitResult.json?.run?.id && !isQueued)) {
-    throw new Error(submitResult.json?.error || submitResult.text || `Failed to submit session message (${submitResult.response.status})`);
+    const status = submitResult.response?.status;
+    throw tagPermanentIfHttpError(
+      new Error(submitResult.json?.error || submitResult.text || `Failed to submit session message (${status})`),
+      status,
+    );
   }
 
   const run = submitResult.json.run;
   const submittedStatus = submittedStatusForMode(deliveryMode);
   await updateQueueItem(item.id, rootDir, (draft) => {
-    draft.status = submittedStatus;
+    const status = draft.status === 'reply_sent' || draft.automation?.status === 'reply_sent' ? 'reply_sent' : submittedStatus;
+    draft.status = status;
     draft.automation = {
       ...(draft.automation || {}),
-      status: submittedStatus,
+      status,
       deliveryMode,
-      sessionId: session.id,
+      sessionId: preparedSessionId,
       runId: run?.id || null,
       requestId,
       externalTriggerId,
@@ -558,6 +574,10 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
       submittedAt: draft.automation?.submittedAt || nowIso(),
       duplicate: submitResult.json?.duplicate === true,
       queued: isQueued,
+      // Clear the prepared flag now that submission is complete.
+      preparedSessionId: null,
+      preparedSubmission: null,
+      preparedRuntimeTarget: null,
       lastError: null,
       updatedAt: nowIso(),
     };
@@ -566,7 +586,7 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
 
   return {
     itemId: item.id,
-    sessionId: session.id,
+    sessionId: preparedSessionId,
     runId: run?.id || null,
     queued: isQueued,
     duplicate: submitResult.json?.duplicate === true,
@@ -576,7 +596,109 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
   };
 }
 
-async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(baseUrl) }) {
+/**
+ * Drain email source-deliveries from one RemoteLab instance endpoint.
+ *
+ * sourceRouteId is always buildEmailSourceRouteId(rootDir) because the
+ * sourceDelivery written by submitApprovedItem uses the root mailbox's binding
+ * ID regardless of which instance runs the AI session.  Outbound email always
+ * uses the root mailbox's credentials.
+ */
+async function drainEmailDeliveriesFromInstance({ requestFn, sourceRouteId, mailboxRoot, baseUrl, authorizeDelivery }) {
+  const deliveries = [];
+  const deliveryErrors = [];
+  const MAX_PER_SWEEP = 20;
+  for (let i = 0; i < MAX_PER_SWEEP; i++) {
+    try {
+      const result = await processEmailSourceDeliveryOnce({
+        requestRemoteLab: requestFn,
+        sourceRouteId,
+        mailboxRoot,
+        authorizeDelivery,
+        // A receipt belongs to one control plane; never acknowledge a guest's
+        // receipt against the root instance (or block every route on its 404).
+        receiptsDir: join(mailboxRoot, 'email-delivery-receipts', createHash('sha256').update(normalizeBaseUrl(baseUrl)).digest('hex').slice(0, 24)),
+      });
+      if (!result) break;
+      deliveries.push(result);
+    } catch (error) {
+      deliveryErrors.push({ error: error.message });
+      break;
+    }
+  }
+  return { deliveries, deliveryErrors };
+}
+
+async function runEmailSourceDeliverySweep({ rootDir, runtime }) {
+  const sourceRouteId = buildEmailSourceRouteId(rootDir);
+  const allDeliveries = [];
+  const allErrors = [];
+
+  // ── sweep root instance ────────────────────────────────────────────
+  const rootResult = await drainEmailDeliveriesFromInstance({
+    requestFn: (path, options = {}) => requestRemoteLab(runtime, path, options),
+    sourceRouteId,
+    mailboxRoot: rootDir,
+    baseUrl: runtime.baseUrl,
+  });
+  allDeliveries.push(...rootResult.deliveries);
+  allErrors.push(...rootResult.deliveryErrors);
+
+  // ── sweep known guest instances (explicit supported targets only) ───────
+  // When submitApprovedItem routes an email to a guest instance, the AI
+  // session runs there and the delivery record ends up in that instance's
+  // outbox.  The root worker must also claim from each guest's outbox so
+  // replies are not silently stranded.
+  //
+  // Safety constraint: only instances that appear in the explicit guest
+  // registry are swept (no blind discovery).  The sourceRouteId and outbound
+  // email credentials always come from the root mailbox.
+  let registry = [];
+  try {
+    registry = await loadGuestRegistry();
+  } catch {
+    // Registry unavailable is not a fatal error for this sweep.
+  }
+
+  for (const guest of registry) {
+    const guestBaseUrl = trimString(guest.localBaseUrl) || trimString(guest.publicBaseUrl);
+    if (!guestBaseUrl || sameBaseUrl(guestBaseUrl, runtime.baseUrl)) continue;
+    // Skip guests that don't expose a base URL we can reach
+    // (e.g. disabled or not yet started).
+    if (!trimString(guest.authFile)) {
+      allErrors.push({ error: 'Guest mailbox route has no bound authentication file', guestBaseUrl });
+      continue;
+    }
+    // Never send the root instance's owner token to another guest.
+    const guestRuntime = createRemoteLabRuntime(guestBaseUrl, { authFile: guest.authFile });
+    const guestResult = await drainEmailDeliveriesFromInstance({
+      requestFn: (path, opts = {}) => requestRemoteLab(guestRuntime, path, opts),
+      sourceRouteId,   // same route ID — matches what submitApprovedItem wrote
+      mailboxRoot: rootDir, // outbound email config is always from root mailbox
+      baseUrl: guestBaseUrl,
+      // Registry membership alone must not grant an arbitrary guest an email
+      // relay using the root mailbox. Only replies to admitted intake qualify.
+      authorizeDelivery: async delivery => (await listQueue(APPROVED_QUEUE, rootDir)).some(item => {
+        const saved = item.automation || {};
+        const targetBaseUrl = saved.targetBaseUrl || saved.preparedSubmission?.runtimeTarget?.baseUrl;
+        const sessionId = saved.sessionId || saved.preparedSessionId || saved.preparedSubmission?.sessionId;
+        return sameBaseUrl(targetBaseUrl, guestBaseUrl) && sessionId === delivery.sessionId
+          && saved.requestId === delivery.responseId
+          && trimString(item.message?.fromAddress).toLowerCase() === trimString(delivery.target?.to).toLowerCase()
+          && (!delivery.target?.inReplyTo || delivery.target.inReplyTo === item.message?.messageId);
+      }),
+    }).catch((error) => {
+      console.error(`[agent-mail-worker] guest email delivery sweep failed for ${guestBaseUrl}: ${error?.message}`);
+      return { deliveries: [], deliveryErrors: [{ error: error.message, guestBaseUrl }] };
+    });
+    allDeliveries.push(...guestResult.deliveries);
+    allErrors.push(...guestResult.deliveryErrors);
+  }
+
+  return { deliveries: allDeliveries, deliveryErrors: allErrors };
+}
+
+async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(baseUrl), deliver = true }) {
   const automation = await loadMailboxAutomation(rootDir);
   const deliveryMode = normalizeDeliveryMode(automation.deliveryMode);
   if (automation.enabled === false) {
@@ -597,19 +719,35 @@ async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(bas
     try {
       successes.push(await submitApprovedItem(item, rootDir, automation, runtime));
     } catch (error) {
-      await updateQueueItem(item.id, rootDir, (draft) => {
-        draft.status = failureStatusForMode(deliveryMode);
-        draft.automation = {
-          ...(draft.automation || {}),
-          status: failureStatusForMode(deliveryMode),
-          deliveryMode,
-          requestId: trimString(draft.automation?.requestId) || `${requestIdPrefixForMode(deliveryMode)}${item.id}`,
-          lastError: error.message,
-          updatedAt: nowIso(),
-        };
-        return draft;
-      });
-      failures.push({ itemId: item.id, error: error.message });
+      if (error.permanent) {
+        // Definite server rejection (4xx): mark permanently failed.
+        await updateQueueItem(item.id, rootDir, (draft) => {
+          draft.status = failureStatusForMode(deliveryMode);
+          draft.automation = {
+            ...(draft.automation || {}),
+            status: failureStatusForMode(deliveryMode),
+            deliveryMode,
+            requestId: trimString(draft.automation?.requestId) || `${requestIdPrefixForMode(deliveryMode)}${item.id}`,
+            lastError: error.message,
+            updatedAt: nowIso(),
+          };
+          return draft;
+        });
+      } else {
+        // Transient failure (network error, 5xx, timeout): leave the item
+        // retriable.  preparedSessionId (if any) is already persisted so the
+        // next sweep resumes from the correct session without creating a
+        // duplicate.
+        await updateQueueItem(item.id, rootDir, (draft) => {
+          draft.automation = {
+            ...(draft.automation || {}),
+            lastError: error.message,
+            updatedAt: nowIso(),
+          };
+          return draft;
+        }).catch(() => {}); // best-effort; do not mask the original error
+      }
+      failures.push({ itemId: item.id, error: error.message, permanent: error.permanent === true });
     }
   }
 
@@ -627,11 +765,20 @@ async function runSweep({ rootDir, baseUrl, runtime = createRemoteLabRuntime(bas
     }
   }
 
+  // --once performs a bounded outbox sweep as well. The resident worker uses
+  // its own independent sender timer, never held behind admission work.
+  const emailDelivery = deliver ? await runEmailSourceDeliverySweep({ rootDir, runtime }).catch((error) => {
+    console.error(`[agent-mail-worker] email delivery sweep error: ${error?.message || error}`);
+    return { deliveries: [], deliveryErrors: [{ error: error.message }] };
+  }) : { deliveries: [], deliveryErrors: [] };
+
   return {
     processed: successes.length,
     skipped: allApprovedItems.length - approvedItems.length,
     successes,
     failures,
+    emailDeliveries: emailDelivery.deliveries.length,
+    emailDeliveryErrors: emailDelivery.deliveryErrors,
   };
 }
 
@@ -661,11 +808,19 @@ async function main() {
   }
 
   let running = false;
+  let stopping = false;
+  let deliveryPending = null;
+  const pumpDeliveries = () => {
+    if (stopping || deliveryPending) return;
+    deliveryPending = runEmailSourceDeliverySweep({ rootDir, runtime })
+      .catch(error => console.error(`[agent-mail-worker] delivery: ${error.message}`))
+      .finally(() => { deliveryPending = null; });
+  };
   const loop = async () => {
-    if (running) return;
+    if (stopping || running) return;
     running = true;
     try {
-      const summary = await runSweep({ rootDir, baseUrl, runtime });
+      const summary = await runSweep({ rootDir, baseUrl, runtime, deliver: false });
       if (summary.processed > 0 || summary.failures.length > 0) {
         console.log(JSON.stringify(summary, null, 2));
       }
@@ -676,14 +831,26 @@ async function main() {
     }
   };
 
+  const admissionTimer = setInterval(loop, intervalMs);
+  const deliveryTimer = setInterval(pumpDeliveries, 1000);
+  const stop = () => {
+    stopping = true;
+    clearInterval(admissionTimer);
+    clearInterval(deliveryTimer);
+    process.off('SIGINT', stop);
+    process.off('SIGTERM', stop);
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+  pumpDeliveries();
   await loop();
-  setInterval(loop, intervalMs);
 }
 
 export {
   createRemoteLabRuntime,
   ensureAuthCookie,
   requestRemoteLab,
+  runEmailSourceDeliverySweep,
   runSweep,
 };
 

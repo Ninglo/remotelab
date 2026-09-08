@@ -14,8 +14,8 @@ process.env.HOME = tempHome;
 const {
   DEFAULT_SESSION_SYSTEM_PROMPT,
   createRuntimeContext,
-  generateRemoteLabReply,
-  handleWeChatMessage,
+  handleWeChatMessageAsync,
+  initializeWeChatInbox,
   loadAccountsDocument,
   loadConfig,
   loadContextTokensDocument,
@@ -30,6 +30,7 @@ const {
   sendDirectWeChatTextToDefaultBinding,
   sendWeChatText,
   startWeChatLogin,
+  submitWeChatMessageAsync,
   summarizeWeChatMessage,
   waitForWeChatLogin,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'wechat-connector.mjs')).href);
@@ -180,28 +181,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === 'GET' && req.url?.startsWith('/api/sessions/sess_wechat_1/responses/')) {
-    const prefix = '/api/sessions/sess_wechat_1/responses/';
-    const responseId = decodeResponseId(req.url, prefix);
-    const failed = Boolean(forcePublicationFailureReason);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      replyPublication: {
-        id: responseId,
-        responseIds: [responseId],
-        state: failed ? 'failed' : 'ready',
-        ready: !failed,
-        rootRunId: 'run_wechat_1',
-        finalRunId: 'run_wechat_1',
-        continuationRunIds: [],
-        lastError: failed ? forcePublicationFailureReason : null,
-        payload: failed ? null : {
-          text: '<private>hidden</private> 已处理。',
-        },
-      },
-    }));
-    return;
-  }
+  // /api/sessions/.../responses/ is NOT used: the async path has no publication wait.
 
   if (req.method === 'GET' && req.url === '/api/sessions/sess_wechat_1/events') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -444,13 +424,19 @@ try {
     contextTokensDoc: await loadContextTokensDocument(config.storagePaths.contextTokensPath),
   });
 
-  const handledSummaries = [];
-  await pollAccountOnce(runtime, 'bot_account_1', {
-    handleWeChatMessage: async (_runtime, summary) => {
-      handledSummaries.push(summary);
-    },
+  // --- Test: pollAccountOnce accepts inbound messages into the durable inbox ---
+  const acceptedSummaries = [];
+  const fakeInbox = {
+    accept: async (id, entry) => { acceptedSummaries.push({ id, summary: entry.summary }); },
+  };
+  const runtimeWithInbox = createRuntimeContext(config, {
+    accountsDoc,
+    syncStateDoc: await loadSyncStateDocument(config.storagePaths.syncStatePath),
+    contextTokensDoc: await loadContextTokensDocument(config.storagePaths.contextTokensPath),
   });
-  await Promise.all([...runtime.chatQueues.values()]);
+  runtimeWithInbox.inbox = fakeInbox;
+
+  await pollAccountOnce(runtimeWithInbox, 'bot_account_1');
 
   const syncDoc = await loadSyncStateDocument(config.storagePaths.syncStatePath);
   assert.equal(syncDoc.accounts.bot_account_1.getUpdatesBuf, 'buf_after_1');
@@ -458,10 +444,14 @@ try {
 
   const contextDoc = await loadContextTokensDocument(config.storagePaths.contextTokensPath);
   assert.equal(contextDoc.accounts.bot_account_1.wx_user_peer_1.token, 'ctx_peer_1');
-  assert.equal(handledSummaries.length, 1);
-  assert.equal(handledSummaries[0].messageId, '7448678501208393000');
-  assert.equal(handledSummaries[0].textPreview, '你好，帮我看下实例状态。');
+  assert.equal(acceptedSummaries.length, 1);
+  assert.equal(acceptedSummaries[0].summary.messageId, '7448678501208393000');
+  assert.equal(acceptedSummaries[0].summary.textPreview, '\u4f60\u597d\uff0c\u5e2e\u6211\u770b\u4e0b\u5b9e\u4f8b\u72b6\u6001\u3002');
+  // pollAccountOnce routes to inbox.accept; it must NOT call waitForConnectorPublication.
+  // (Verified below via the fetch spy in the submitWeChatMessageAsync test.)
 
+  // --- Test: submitWeChatMessageAsync creates session + submits; no publication wait ---
+  const observedPaths = [];
   const replyRuntime = createRuntimeContext({
     ...config,
     chatBaseUrl: `http://127.0.0.1:${port}`,
@@ -473,36 +463,54 @@ try {
   });
   replyRuntime.authCookie = 'session_token=test-cookie';
 
-  const reply = await generateRemoteLabReply(replyRuntime, {
-    accountId: 'bot_account_1',
-    accountUserId: 'wx_user_owner_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_reply_scope',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: 'Please confirm the WeChat app scope.',
-    contentSummary: 'Please confirm the WeChat app scope.',
-  });
+  // Wrap requestJson to spy on paths.
+  let publicationPollAttempted = false;
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (url, ...args) => {
+    const urlStr = String(url);
+    observedPaths.push(urlStr);
+    if (urlStr.includes('/responses/')) publicationPollAttempted = true;
+    return origFetch(url, ...args);
+  };
 
-  assert.equal(createPayload?.sourceId, 'wechat');
-  assert.equal(createPayload?.sourceName, 'WeChat');
-  assert.equal(createPayload?.group, 'WeChat');
-  assert.equal(createPayload?.systemPrompt, '');
-  assert.equal(createPayload?.externalTriggerId, 'wechat:bot_account_1:wx_user_peer_1');
+  try {
+    const receipt = await submitWeChatMessageAsync(replyRuntime, {
+      accountId: 'bot_account_1',
+      accountUserId: 'wx_user_owner_1',
+      peerUserId: 'wx_user_peer_1',
+      messageId: 'msg_reply_scope',
+      messageTypeNumeric: 1,
+      messageType: 'user',
+      messageStateNumeric: 2,
+      messageState: 'finish',
+      textPreview: 'Please confirm the WeChat app scope.',
+      contentSummary: 'Please confirm the WeChat app scope.',
+      imageResources: [],
+    });
 
-  assert.equal(submitPayload?.requestId, 'wechat:bot_account_1:msg_reply_scope');
-  assert.equal(submitPayload?.tool, 'codex');
-  assert.equal(submitPayload?.model, 'ui-model-test');
-  assert.equal(submitPayload?.effort, 'medium');
-  assert.equal(submitPayload?.text, 'Please confirm the WeChat app scope.');
+    assert.equal(createPayload?.sourceId, 'wechat');
+    assert.equal(createPayload?.sourceName, 'WeChat');
+    assert.equal(createPayload?.group, 'WeChat');
+    assert.equal(createPayload?.externalTriggerId, 'wechat:bot_account_1:wx_user_peer_1');
 
-  assert.equal(reply.sessionId, 'sess_wechat_1');
-  assert.equal(reply.runId, 'run_wechat_1');
-  assert.equal(reply.requestId, 'wechat:bot_account_1:msg_reply_scope');
-  assert.equal(reply.replyText, '已处理。');
+    assert.equal(submitPayload?.requestId, 'wechat:bot_account_1:msg_reply_scope');
+    assert.equal(submitPayload?.tool, 'codex');
+    assert.equal(submitPayload?.model, 'ui-model-test');
+    assert.equal(submitPayload?.effort, 'medium');
+    assert.equal(submitPayload?.text, 'Please confirm the WeChat app scope.');
+    assert.equal(submitPayload?.sourceDelivery?.connector, 'wechat',
+      'submitWeChatMessageAsync must set sourceDelivery.connector=wechat');
+    assert.equal(submitPayload?.sourceDelivery?.target?.accountId, 'bot_account_1');
+    assert.equal(submitPayload?.sourceDelivery?.target?.peerUserId, 'wx_user_peer_1');
+    assert.equal(receipt.sessionId, 'sess_wechat_1');
+    assert.equal(receipt.requestId, 'wechat:bot_account_1:msg_reply_scope');
+    assert.equal(publicationPollAttempted, false,
+      'submitWeChatMessageAsync must NEVER call waitForConnectorPublication (no /responses/ poll)');
+  } finally {
+    globalThis.fetch = origFetch;
+  }
 
+  // --- Test: submitWeChatMessageAsync with image attachment ---
   let generatedImageAsset = null;
   replyRuntime.publishRemoteLabAsset = async (asset) => {
     generatedImageAsset = asset;
@@ -513,7 +521,7 @@ try {
       sizeBytes: asset.body.length,
     };
   };
-  await generateRemoteLabReply(replyRuntime, {
+  await submitWeChatMessageAsync(replyRuntime, {
     accountId: 'bot_account_1',
     accountUserId: 'wx_user_owner_1',
     peerUserId: 'wx_user_peer_1',
@@ -534,89 +542,111 @@ try {
   assert.equal(submitPayload?.attachments?.[0]?.assetId, 'asset_wechat_generated_1');
   assert.equal(submitPayload?.attachments?.[0]?.mimeType, 'image/jpeg');
 
-  forcePublicationFailureReason = 'engine_overloaded_error: model engine overloaded after retries';
-  await assert.rejects(
-    generateRemoteLabReply(replyRuntime, {
+  // --- Test: prepared-submission recovery (Feishu model) ---
+  // Simulate a crash after session creation but before the HTTP response is received.
+  // On retry, the same prepared payload must be re-used (no fingerprint conflict).
+  let savedSubmission = null;
+  const firstReceipt = await submitWeChatMessageAsync(replyRuntime, {
+    accountId: 'bot_account_1',
+    peerUserId: 'wx_user_peer_1',
+    messageId: 'msg_prepared_test',
+    messageTypeNumeric: 1,
+    messageState: 'finish',
+    messageStateNumeric: 2,
+    textPreview: 'Test prepared payload.',
+    imageResources: [],
+  }, {
+    saveSubmission: async (handoff) => { savedSubmission = handoff; },
+  });
+  assert.ok(savedSubmission, 'saveSubmission must be called before submitConnectorMessage');
+  assert.equal(savedSubmission.sessionId, 'sess_wechat_1');
+  assert.ok(savedSubmission.payload?.requestId, 'prepared payload must include requestId');
+
+  // On retry, re-use the saved prepared payload.
+  const retryReceipt = await submitWeChatMessageAsync(replyRuntime, {
+    accountId: 'bot_account_1',
+    peerUserId: 'wx_user_peer_1',
+    messageId: 'msg_prepared_test',
+    messageTypeNumeric: 1,
+    messageState: 'finish',
+    messageStateNumeric: 2,
+    textPreview: 'Test prepared payload.',
+    imageResources: [],
+  }, {
+    prepared: savedSubmission,
+    saveSubmission: async () => { assert.fail('saveSubmission must not be called on retry'); },
+  });
+  assert.equal(retryReceipt.requestId, firstReceipt.requestId,
+    'Retry must use the same requestId as the original submission (no fingerprint conflict)');
+
+  // --- Test: handleWeChatMessageAsync unsupported payload is silently skipped ---
+  let unsupportedHandled = null;
+  await handleWeChatMessageAsync({
+    config,
+    storagePaths: {
+      ...config.storagePaths,
+      handledMessagesPath: join(tempConfigDir, 'handled-unsupported.json'),
+    },
+    accountsDoc,
+    contextTokensDoc: contextDoc,
+    processingMessageIds: new Set(),
+  }, {
+    accountId: 'bot_account_1',
+    peerUserId: 'wx_user_peer_1',
+    messageId: 'msg_voice_1',
+    messageTypeNumeric: 1,
+    messageType: 'user',
+    messageStateNumeric: 2,
+    messageState: 'finish',
+    textPreview: '',
+    contentSummary: '[voice message]',
+    imageResources: [],
+  }, {
+    wasMessageHandled: async () => false,
+    markMessageHandled: async (_pathname, _messageKey, metadata) => {
+      unsupportedHandled = metadata;
+    },
+    submitWeChatMessageAsync: async () => { assert.fail('must not submit unsupported message'); },
+  });
+  assert.equal(unsupportedHandled?.status, 'silent_no_reply');
+  assert.equal(unsupportedHandled?.reason, 'unsupported_message_type');
+
+  // --- Test: handleWeChatMessageAsync re-throws on submit failure (enables inbox retry) ---
+  let submitFailureThrown = false;
+  try {
+    await handleWeChatMessageAsync({
+      config,
+      storagePaths: {
+        ...config.storagePaths,
+        handledMessagesPath: join(tempConfigDir, 'handled-submit-fail.json'),
+      },
+      accountsDoc,
+      contextTokensDoc: contextDoc,
+      processingMessageIds: new Set(),
+    }, {
       accountId: 'bot_account_1',
-      accountUserId: 'wx_user_owner_1',
       peerUserId: 'wx_user_peer_1',
-      messageId: 'msg_failed_scope',
+      messageId: 'msg_submit_fail_1',
       messageTypeNumeric: 1,
       messageType: 'user',
       messageStateNumeric: 2,
       messageState: 'finish',
-      textPreview: '请处理这条消息。',
-      contentSummary: '请处理这条消息。',
-    }),
-    /engine_overloaded_error/,
-    'wechat generation should preserve the settled provider failure reason for user-visible classification',
-  );
-  forcePublicationFailureReason = '';
+      textPreview: 'trigger submit failure',
+      imageResources: [],
+    }, {
+      wasMessageHandled: async () => false,
+      markMessageHandled: async () => {},
+      submitWeChatMessageAsync: async () => {
+        throw new Error('RemoteLab unavailable (test)');
+      },
+    });
+  } catch {
+    submitFailureThrown = true;
+  }
+  assert.ok(submitFailureThrown,
+    'handleWeChatMessageAsync must re-throw submit errors so the inbox can retry');
 
-  forcePlanningSubmit = true;
-  const planningReply = await generateRemoteLabReply(replyRuntime, {
-    accountId: 'bot_account_1',
-    accountUserId: 'wx_user_owner_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_reply_scope',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: 'Please confirm the WeChat app scope.',
-    contentSummary: 'Please confirm the WeChat app scope.',
-  });
-  forcePlanningSubmit = false;
-
-  assert.equal(
-    planningReply.replyText,
-    '已处理。',
-    'wechat connector should accept planning replies that return a response id before a run id exists',
-  );
-  assert.equal(planningReply.runId, 'run_wechat_1');
-
-  forceDuplicateSubmitWithRunId = true;
-  const duplicateReply = await generateRemoteLabReply(replyRuntime, {
-    accountId: 'bot_account_1',
-    accountUserId: 'wx_user_owner_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_reply_scope',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: 'Please confirm the WeChat app scope.',
-    contentSummary: 'Please confirm the WeChat app scope.',
-  });
-  forceDuplicateSubmitWithRunId = false;
-
-  assert.equal(
-    duplicateReply.replyText,
-    '已处理。',
-    'duplicate submits with an existing run should reuse the stored assistant reply',
-  );
-
-  forceQueuedSubmit = true;
-  const queuedReply = await generateRemoteLabReply(replyRuntime, {
-    accountId: 'bot_account_1',
-    accountUserId: 'wx_user_owner_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_queued_scope',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: 'This should wait in the durable queue.',
-    contentSummary: 'This should wait in the durable queue.',
-  });
-  forceQueuedSubmit = false;
-  assert.equal(
-    queuedReply.replyText,
-    '已处理。',
-    'wechat connector should wait for queued busy-session submissions instead of sending a failure fallback',
-  );
-  assert.equal(queuedReply.runId, 'run_wechat_1');
-
+  // --- Test: sendWeChatText uses stored contextToken ---
   const sendRuntime = createRuntimeContext(config, {
     accountsDoc,
     syncStateDoc: syncDoc,
@@ -651,181 +681,7 @@ try {
   assert.equal(sentIlinkPayload?.msg?.to_user_id, 'wx_user_owner_1');
   assert.equal(sentIlinkPayload?.msg?.item_list?.[0]?.text_item?.text, 'Default bound user delivery.');
 
-  let unsupportedHandled = null;
-  await handleWeChatMessage({
-    config,
-    storagePaths: {
-      ...config.storagePaths,
-      handledMessagesPath: join(tempConfigDir, 'handled-unsupported.json'),
-    },
-    accountsDoc,
-    contextTokensDoc: contextDoc,
-    processingMessageIds: new Set(),
-  }, {
-    accountId: 'bot_account_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_voice_1',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: '',
-    contentSummary: '[voice message]',
-  }, {
-    wasMessageHandled: async () => false,
-    markMessageHandled: async (_pathname, _messageKey, metadata) => {
-      unsupportedHandled = metadata;
-    },
-  });
-  assert.equal(unsupportedHandled?.status, 'silent_no_reply');
-  assert.equal(unsupportedHandled?.reason, 'unsupported_message_type');
-
-  let imageOnlyHandled = null;
-  let imageOnlyGenerated = false;
-  await handleWeChatMessage({
-    config,
-    storagePaths: {
-      ...config.storagePaths,
-      handledMessagesPath: join(tempConfigDir, 'handled-image-only.json'),
-    },
-    accountsDoc,
-    contextTokensDoc: contextDoc,
-    processingMessageIds: new Set(),
-  }, {
-    accountId: 'bot_account_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_image_only_1',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: '',
-    contentSummary: '[image message]',
-    imageResources: [{ downloadUrl: 'https://wechat.example/image.enc', aesKey: imageKeyHex }],
-  }, {
-    wasMessageHandled: async () => false,
-    markMessageHandled: async (_pathname, _messageKey, metadata) => {
-      imageOnlyHandled = metadata;
-    },
-    generateRemoteLabReply: async () => {
-      imageOnlyGenerated = true;
-      return {
-        sessionId: 'sess_wechat_1',
-        runId: 'run_wechat_1',
-        requestId: 'wechat:bot_account_1:msg_image_only_1',
-        duplicate: false,
-        queued: false,
-        replyText: '图片已收到。',
-      };
-    },
-    sendWeChatText: async () => ({ message_id: 'reply_image_only_1' }),
-  });
-  assert.equal(imageOnlyGenerated, true);
-  assert.equal(imageOnlyHandled?.status, 'sent');
-
-  const ackMessages = [];
-  let ackHandled = null;
-  await handleWeChatMessage({
-    config: {
-      ...config,
-      processingAckDelayMs: 10,
-      processingAckText: '已收到，正在处理。',
-    },
-    storagePaths: {
-      ...config.storagePaths,
-      handledMessagesPath: join(tempConfigDir, 'handled-processing-ack.json'),
-    },
-    accountsDoc,
-    contextTokensDoc: contextDoc,
-    processingMessageIds: new Set(),
-  }, {
-    accountId: 'bot_account_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_ack_1',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: '请慢慢处理这个问题。',
-    contentSummary: '请慢慢处理这个问题。',
-  }, {
-    wasMessageHandled: async () => false,
-    markMessageHandled: async (_pathname, _messageKey, metadata) => {
-      ackHandled = metadata;
-    },
-    generateRemoteLabReply: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      return {
-        sessionId: 'sess_wechat_1',
-        runId: 'run_wechat_1',
-        requestId: 'wechat:bot_account_1:msg_ack_1',
-        duplicate: false,
-        queued: false,
-        replyText: '最终回复。',
-        timingMs: {
-          total: 30,
-          session: 5,
-          submit: 5,
-          run: 20,
-          replyLoad: 0,
-        },
-      };
-    },
-    sendWeChatText: async (_runtime, _summary, text) => {
-      ackMessages.push(text);
-      return {
-        message_id: `reply_${ackMessages.length}`,
-      };
-    },
-  });
-  // Legacy acknowledgement configuration must not resurrect extra text bubbles.
-  assert.deepEqual(ackMessages, ['最终回复。']);
-  assert.equal(ackHandled?.processingAckMessageId, undefined);
-  assert.equal(ackHandled?.responseMessageId, 'reply_1');
-
-  const failureMessages = [];
-  let failureHandled = null;
-  await handleWeChatMessage({
-    config: {
-      ...config,
-      processingAckDelayMs: 60_000,
-    },
-    storagePaths: {
-      ...config.storagePaths,
-      handledMessagesPath: join(tempConfigDir, 'handled-known-failure.json'),
-    },
-    accountsDoc,
-    contextTokensDoc: contextDoc,
-    processingMessageIds: new Set(),
-  }, {
-    accountId: 'bot_account_1',
-    peerUserId: 'wx_user_peer_1',
-    messageId: 'msg_known_failure_1',
-    messageTypeNumeric: 1,
-    messageType: 'user',
-    messageStateNumeric: 2,
-    messageState: 'finish',
-    textPreview: '请再试一次。',
-    contentSummary: '请再试一次。',
-  }, {
-    wasMessageHandled: async () => false,
-    markMessageHandled: async (_pathname, _messageKey, metadata) => {
-      failureHandled = metadata;
-    },
-    generateRemoteLabReply: async () => {
-      throw new Error('429 Organization concurrency limit exceeded (maximum 1)');
-    },
-    sendWeChatText: async (_runtime, _summary, text) => {
-      failureMessages.push(text);
-      return { message_id: 'reply_known_failure_1' };
-    },
-  });
-  assert.deepEqual(failureMessages, [
-    '这次没有生成回复。原因：模型账户的并发额度已占满，目前仍没有可用容量，请稍后再试。',
-  ]);
-  assert.equal(failureHandled?.status, 'failed_with_notice');
-  assert.equal(failureHandled?.failureCategory, 'provider_concurrency');
-
+  // --- Test: replayUnhandledMessages goes through inbox ---
   const replayEventsPath = join(tempConfigDir, 'replay-events.jsonl');
   const replayHandledPath = join(tempConfigDir, 'replay-handled.json');
   await writeFile(replayEventsPath, [
@@ -843,14 +699,18 @@ try {
         messageTypeNumeric: 1,
         messageState: 'finish',
         messageStateNumeric: 2,
-        textPreview: '重启后请补发这条消息。',
-        contentSummary: '重启后请补发这条消息。',
+        textPreview: '\u91cd\u542f\u540e\u8bf7\u8865\u53d1\u8fd9\u6761\u6d88\u606f\u3002',
+        contentSummary: '\u91cd\u542f\u540e\u8bf7\u8865\u53d1\u8fd9\u6761\u6d88\u606f\u3002',
         itemTypes: ['text'],
       },
     }),
     '',
   ].join('\n'), 'utf8');
 
+  const replayInboxAccepted = [];
+  const replayInbox = {
+    accept: async (id, entry) => { replayInboxAccepted.push({ id, messageId: entry.summary.messageId }); },
+  };
   const replayRuntime = {
     config,
     storagePaths: {
@@ -861,16 +721,13 @@ try {
     accountsDoc,
     contextTokensDoc: contextDoc,
     processingMessageIds: new Set(),
+    inbox: replayInbox,
   };
-  const replayedMessages = [];
-  const replayCount = await replayUnhandledMessages(replayRuntime, {
-    handleWeChatMessageImpl: async (_runtime, summary) => {
-      replayedMessages.push(summary.messageId);
-    },
-  });
+  const replayCount = await replayUnhandledMessages(replayRuntime, { accountIds: ['bot_account_1'] });
   assert.equal(replayCount, 1);
-  assert.deepEqual(replayedMessages, ['msg_replay_pending']);
+  assert.deepEqual(replayInboxAccepted.map(e => e.messageId), ['msg_replay_pending']);
 
+  // --- Test: idle poller picks up newly linked accounts and submits via async path ---
   createPayload = null;
   submitPayload = null;
   sentIlinkPayload = null;
@@ -908,7 +765,7 @@ try {
 
   const activeAccountTransitions = [];
   const idleLoop = runPollLoop(idleRuntime, {
-    durationMs: 140,
+    durationMs: 300,
     onActiveAccountsChanged: async (accounts) => {
       activeAccountTransitions.push(accounts.map((account) => account.accountId));
     },
@@ -922,14 +779,20 @@ try {
     userId: 'wx_user_owner_1',
   });
   await idleLoop;
-  await Promise.all([...idleRuntime.chatQueues.values()]);
+  // Wait for inbox to finish processing any accepted messages.
+  idleRuntime.inbox?.stop();
+  await idleRuntime.inbox?.idle();
 
   assert.ok(getUpdatesCalls >= 1, 'idle poller should pick up linked accounts written after startup');
   assert.deepEqual(activeAccountTransitions[0], []);
   assert.deepEqual(activeAccountTransitions.at(-1), ['bot_account_1']);
   assert.equal(idleRuntime.accountsDoc.defaultAccountId, 'bot_account_1');
-  assert.equal(createPayload?.sourceId, 'wechat');
-  assert.equal(submitPayload?.requestId, 'wechat:bot_account_1:7448678501208393000');
+  assert.equal(createPayload?.sourceId, 'wechat',
+    'idle loop must create RemoteLab session via async path');
+  assert.equal(submitPayload?.requestId, 'wechat:bot_account_1:7448678501208393000',
+    'idle loop must submit message to RemoteLab with correct requestId');
+  assert.equal(submitPayload?.sourceDelivery?.connector, 'wechat',
+    'idle loop async path must set sourceDelivery.connector=wechat (no publication wait)');
 } finally {
   await new Promise((resolve) => server.close(resolve));
   await rm(tempConfigDir, { recursive: true, force: true });
@@ -938,10 +801,12 @@ try {
 
 console.log('ok - wechat connector config defaults load correctly');
 console.log('ok - wechat qr login persists linked account state');
-console.log('ok - wechat polling persists sync cursor and context token');
-console.log('ok - generated WeChat sessions use the wechat app scope');
-console.log('ok - outbound WeChat replies reuse stored context tokens');
+console.log('ok - pollAccountOnce accepts inbound messages into durable inbox (no chatQueues)');
+console.log('ok - submitWeChatMessageAsync creates session and submits; no publication wait');
+console.log('ok - submitWeChatMessageAsync uses prepared payload on retry (fingerprint stable)');
+console.log('ok - outbound WeChat replies use stored contextToken');
 console.log('ok - WeChat images are decrypted and submitted as RemoteLab attachments');
-console.log('ok - unsupported non-text WeChat payloads remain safely ignored');
-console.log('ok - legacy processing acknowledgement settings do not add text bubbles');
-console.log('ok - idle WeChat workers pick up newly linked accounts without restart');
+console.log('ok - unsupported non-text WeChat payloads remain safely ignored (async path)');
+console.log('ok - handleWeChatMessageAsync re-throws submit errors for inbox retry');
+console.log('ok - replayUnhandledMessages routes through durable inbox');
+console.log('ok - idle WeChat workers pick up newly linked accounts without restart (async path)');

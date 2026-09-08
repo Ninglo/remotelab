@@ -6,6 +6,9 @@ import { normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
 export function buildSessionEntryDeliveries(session, snapshot, options = {}) {
   if (options.internalOperation || options.recordUserMessage === false || snapshot.userMessageCount > 0) return [];
   const plan = normalizeSourceDeliveryPlan(options.sourceDelivery);
+  // Email has one final message per request, not a separate creation email.
+  // The first result can still include the usual session navigation footer.
+  if (plan?.connector === 'email') return [];
   const entry = buildSessionEntry(session);
   if (!plan || !entry) return [];
   return [{

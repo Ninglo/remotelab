@@ -87,8 +87,6 @@ const WECHAT_CONNECTOR_LOGIN_TEMPLATE_PATH = join(__dirname, '..', 'templates', 
 const DEFAULT_CALENDAR_BINDING_ID = 'binding_calendar_21d351117862';
 const DEFAULT_CALENDAR_ACCOUNT_HINT = 'Google Calendar';
 const GMAIL_CONNECTOR_PAGE_PATH = '/connectors/gmail';
-const WHATSAPP_BUSINESS_CONNECTOR_ID = 'whatsapp-business';
-const WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH = `/connectors/${WHATSAPP_BUSINESS_CONNECTOR_ID}`;
 const GMAIL_STATUS_PATH = '/api/connectors/gmail/google/status';
 const GMAIL_CREDENTIALS_PATH = '/api/connectors/gmail/google/credentials';
 const GMAIL_AUTHORIZE_PATH = '/api/connectors/gmail/google/authorize';
@@ -101,8 +99,6 @@ const SHARED_CONFIG_DIR_ENV = 'REMOTELAB_SHARED_CONFIG_DIR';
 const SYSTEM_HOME_ENV = 'REMOTELAB_SYSTEM_HOME';
 const GMAIL_AUTH_RELAY_STATE_PATH = resolveSharedGmailRelayStatePath();
 const mutateGmailRelayState = createSerialTaskQueue();
-const WHATSAPP_BUSINESS_CONNECTOR_INSTANCE_SCRIPT_PATH = join(__dirname, '..', 'scripts', 'whatsapp-business-connector-instance.sh');
-
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -166,41 +162,6 @@ function normalizeForwardedPrefix(value) {
 
 function getRequestProductBasePath(req) {
   return normalizeForwardedPrefix(req?.headers?.['x-forwarded-prefix']);
-}
-
-async function execFileAsync(file, args = []) {
-  const { execFile } = await import('child_process');
-  return await new Promise((resolve, reject) => {
-    execFile(file, args, (error, stdout = '', stderr = '') => {
-      if (error) {
-        error.stdout = stdout;
-        error.stderr = stderr;
-        reject(error);
-        return;
-      }
-      resolve({ stdout, stderr });
-    });
-  });
-}
-
-async function waitForConnectorSurface(connectorId, {
-  timeoutMs = 8_000,
-  intervalMs = 250,
-} = {}) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const surface = await getConnectorSurface(connectorId);
-    if (surface?.baseUrl) return surface;
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-  return null;
-}
-
-async function ensureWhatsAppBusinessConnectorSurfaceRunning() {
-  const existing = await getConnectorSurface(WHATSAPP_BUSINESS_CONNECTOR_ID);
-  if (existing?.baseUrl) return existing;
-  await execFileAsync(WHATSAPP_BUSINESS_CONNECTOR_INSTANCE_SCRIPT_PATH, ['start']);
-  return waitForConnectorSurface(WHATSAPP_BUSINESS_CONNECTOR_ID);
 }
 
 function parseConnectorSurfaceProxyRoute(pathname) {
@@ -365,26 +326,6 @@ async function getLegacyConnectorSurfaceInfo(connectorId, { productBasePath = ''
       }),
     };
   }
-  if (normalizedConnectorId === WHATSAPP_BUSINESS_CONNECTOR_ID) {
-    return {
-      connectorId: WHATSAPP_BUSINESS_CONNECTOR_ID,
-      title: 'WhatsApp Business',
-      entryUrl: WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH,
-      allowEmbed: true,
-      updatedAt: new Date().toISOString(),
-      surfaceType: 'setup',
-      description: 'Connect one WhatsApp Business Cloud API number so RemoteLab can receive webhook messages and send plain-text replies.',
-      embed: {
-        mode: 'iframe',
-        sameOrigin: true,
-      },
-      surface: {
-        capabilityState: 'authorization_required',
-        status: 'authorization_required',
-        message: 'Open the connector once to start the local runtime and finish setup.',
-      },
-    };
-  }
   if (normalizedConnectorId !== 'wechat') return null;
   const authPath = prependProductBasePath(WECHAT_LOGIN_PAGE_PATH, productBasePath);
   const qrPath = prependProductBasePath(WECHAT_LOGIN_QR_PATH, productBasePath);
@@ -425,7 +366,7 @@ async function listResolvedConnectorSurfaceInfo({ nonce = '', productBasePath = 
     results.push(buildConnectorSurfaceInfoResponse(surface, description));
   }
 
-  for (const connectorId of ['gmail', WHATSAPP_BUSINESS_CONNECTOR_ID, 'wechat']) {
+  for (const connectorId of ['gmail', 'wechat']) {
     const legacySurface = await getLegacyConnectorSurfaceInfo(connectorId, { productBasePath });
     if (legacySurface && !seen.has(legacySurface.connectorId)) {
       results.push(legacySurface);
@@ -1397,38 +1338,6 @@ export async function handleConnectorApiRoutes({
   buildTemplateReplacements,
   serializeJsonForScript,
 }) {
-  if (pathname === WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
-
-    try {
-      const surface = await ensureWhatsAppBusinessConnectorSurfaceRunning();
-      if (!surface?.baseUrl) {
-        writeJson(res, 502, { error: 'WhatsApp Business connector failed to start.' });
-        return true;
-      }
-    } catch (error) {
-      writeJson(res, 502, {
-        error: firstNonEmpty(
-          trimString(error?.stderr),
-          trimString(error?.stdout),
-          trimString(error?.message),
-          'WhatsApp Business connector failed to start.',
-        ),
-      });
-      return true;
-    }
-
-    res.writeHead(302, buildHeaders({
-      Location: prependProductBasePath(WHATSAPP_BUSINESS_CONNECTOR_PAGE_PATH, getRequestProductBasePath(req)),
-      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
-    }));
-    res.end();
-    return true;
-  }
-
   if (pathname === GMAIL_CONNECTOR_PAGE_PATH && req.method === 'GET') {
     if (authSession?.role !== 'owner') {
       writeJson(res, 403, { error: 'Owner access required' });

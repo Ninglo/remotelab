@@ -46,30 +46,6 @@ function buildWeChatRuntimePrompt(session) {
   ].join('\n');
 }
 
-function buildWhatsAppRuntimePrompt(session) {
-  const sourceName = trimString(session?.sourceName) || 'WhatsApp';
-  return [
-    `You are interacting through ${sourceName} via RemoteLab on the user's own machine.`,
-    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or do something on this machine, actually do the work before replying.',
-    `Produce plain text suitable for sending back through ${sourceName}.`,
-    'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
-    SOURCE_CONTEXT_HELP,
-    'Prefer concise, mobile-friendly replies unless the user explicitly asked for depth.',
-    'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
-  ].join('\n');
-}
-
-function buildVoiceRuntimePrompt() {
-  return [
-    'You are interacting through a local wake-word voice connector powered by RemoteLab on the user\'s own machine.',
-    'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, or run something on this machine, do the work before replying when feasible.',
-    'Output only the text that should be spoken aloud through the speaker.',
-    'Prefer short, natural, speech-friendly wording.',
-    'Match the user\'s language unless they ask you to switch.',
-    'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',
-  ].join('\n');
-}
-
 function buildShortcutRuntimePrompt() {
   return [
     'You are replying through RemoteLab\'s Siri/Shortcuts connector on the user\'s own machine.',
@@ -120,12 +96,6 @@ export function buildSourceRuntimePrompt(session) {
   }
   if (sourceId === 'wechat' || sourceId === 'weixin') {
     return buildWeChatRuntimePrompt(session);
-  }
-  if (sourceId === 'whatsapp' || sourceId === 'whatsapp-business') {
-    return buildWhatsAppRuntimePrompt(session);
-  }
-  if (sourceId === 'voice') {
-    return buildVoiceRuntimePrompt();
   }
   if (sourceId === 'shortcut' || sourceId === 'siri-shortcut') {
     return buildShortcutRuntimePrompt();

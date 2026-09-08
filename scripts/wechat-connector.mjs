@@ -15,17 +15,9 @@ import {
 } from '../lib/external-runtime-selection.mjs';
 import {
   buildAssistantReplyAttachmentFallbackText,
-  selectAssistantReplyEvent,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
 import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
-import {
-  buildConnectorFailureReply,
-  classifyConnectorFailureReason,
-  decideConnectorUserVisibleReply,
-} from '../lib/connector-user-visible-reply.mjs';
-import { ConnectorDriver } from '../lib/connector-driver.mjs';
-import { createWeChatConnectorTransport } from '../lib/connector-driver-transports.mjs';
 import {
   loadConnectorSurfaceTemplate,
   renderConnectorSurfaceTemplate,
@@ -33,19 +25,20 @@ import {
 } from '../lib/connector-surface-server.mjs';
 import { getWeChatLoginQrUrl, getWeChatLoginSurface } from '../lib/wechat-connector-login.mjs';
 import {
-  assertConnectorPublicationReady,
   createConnectorSession,
-  loadConnectorAssistantReply,
-  normalizeConnectorPublicationText,
   submitConnectorMessage,
-  waitForConnectorPublication,
 } from '../lib/connector-turn-flow.mjs';
-import { createWeChatTypingApi, createWeChatTypingController } from '../connectors/wechat/typing.mjs';
 import { createWeChatCapabilityController } from '../connectors/wechat/index.mjs';
 import {
   createWeChatInboundResourceService,
   extractWeChatImageResources,
 } from '../connectors/wechat/inbound-resources.mjs';
+import { createConnectorInbox } from '../lib/connector-inbox.mjs';
+import { createWeChatTypingApi, createWeChatTypingController } from '../connectors/wechat/typing.mjs';
+import { createWeChatRequestFeedback } from '../connectors/wechat/request-feedback.mjs';
+import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
+import { serialQueue } from '../lib/durable-records.mjs';
 
 const DEFAULT_STORAGE_DIR = join(CONFIG_DIR, 'wechat-connector');
 const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_WECHAT_CONFIG_PATH
@@ -70,8 +63,6 @@ const DEFAULT_SURFACE_TITLE = 'WeChat';
 const DEFAULT_SURFACE_ENTRY_PATH = '/login';
 const MAX_WECHAT_TEXT_LENGTH = 5000;
 const MAX_LOGIN_QR_REFRESHES = 3;
-const RUN_POLL_INTERVAL_MS = 1500;
-const RUN_POLL_TIMEOUT_MS = 10 * 60 * 1000;
 const CONNECTOR_PID_FILENAME = 'connector.pid';
 const REMOTELAB_SESSION_APP_ID = 'wechat';
 const LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT = [
@@ -468,6 +459,7 @@ function normalizeConfig(value, options = {}) {
     group: trimString(normalized.group || DEFAULT_GROUP) || DEFAULT_GROUP,
     activeAccountId: trimString(normalized.activeAccountId),
     silentConfirmationText: trimString(normalized.silentConfirmationText),
+    sourceRouteId: trimString(normalized.sourceRouteId) || 'default',
     login: {
       qrBaseUrl: normalizeBaseUrl(normalized.login?.qrBaseUrl, WECHAT_LOGIN_QR_BASE_URL),
       botType: trimString(normalized.login?.botType || DEFAULT_LOGIN_BOT_TYPE) || DEFAULT_LOGIN_BOT_TYPE,
@@ -1372,7 +1364,7 @@ async function apiPostFetch({
     });
     const rawText = await response.text();
     if (!response.ok) {
-      throw new Error(`${label} ${response.status}: ${rawText}`);
+      throw Object.assign(new Error(`${label} ${response.status}: ${rawText}`), { statusCode: response.status });
     }
     return rawText;
   } finally {
@@ -1457,8 +1449,9 @@ async function sendMessage({
   });
   if (!trimString(rawText)) return {};
   const parsed = JSON.parse(rawText);
-  if (Number.isInteger(parsed?.ret) && parsed.ret !== 0) {
-    throw new Error(parsed?.errmsg || `sendMessage failed (${parsed.ret})`);
+  const errorCode = Number(parsed?.ret || parsed?.errcode || 0);
+  if (errorCode) {
+    throw Object.assign(new Error(parsed?.errmsg || `sendMessage failed (${errorCode})`), { definiteFailure: true });
   }
   return parsed;
 }
@@ -1831,6 +1824,7 @@ function buildRemoteLabMessage(summary) {
 function buildSessionSourceContext(summary) {
   return sortObjectKeys({
     connector: 'wechat',
+    sourceRouteId: trimString(summary?.sourceRouteId) || 'default',
     chatType: 'direct',
     accountId: trimString(summary?.accountId),
     peerUserId: trimString(summary?.peerUserId),
@@ -1841,6 +1835,7 @@ function buildSessionSourceContext(summary) {
 function buildMessageSourceContext(summary) {
   const context = {
     connector: 'wechat',
+    sourceRouteId: trimString(summary?.sourceRouteId) || 'default',
     messageId: trimString(summary?.messageId),
     chatType: 'direct',
     accountId: trimString(summary?.accountId),
@@ -1865,6 +1860,7 @@ async function readOwnerToken() {
 async function loginWithToken(baseUrl, token) {
   const response = await fetch(`${normalizeBaseUrl(baseUrl)}/?token=${encodeURIComponent(token)}`, {
     redirect: 'manual',
+    signal: AbortSignal.timeout(30_000),
   });
   const setCookie = response.headers.get('set-cookie');
   if (response.status !== 302 || !setCookie) {
@@ -1885,6 +1881,7 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     redirect: 'manual',
+    signal: AbortSignal.timeout(30_000),
   });
 
   const text = await response.text();
@@ -1896,44 +1893,6 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
   return { response, json, text };
 }
 
-async function loadAssistantReply(requester, sessionId, runId, requestId) {
-  const visitedSessionIds = new Set();
-
-  async function loadReplyFromSession(targetSessionId) {
-    if (!targetSessionId || visitedSessionIds.has(targetSessionId)) {
-      return null;
-    }
-    visitedSessionIds.add(targetSessionId);
-
-    const eventsResult = await requester(`/api/sessions/${targetSessionId}/events`);
-    if (!eventsResult.response.ok || !Array.isArray(eventsResult.json?.events)) {
-      throw new Error(eventsResult.json?.error || eventsResult.text || `Failed to load session events for ${targetSessionId}`);
-    }
-    const events = eventsResult.json.events;
-
-    const candidate = await selectAssistantReplyEvent(events, {
-      match: (event) => (
-        (runId && event.runId === runId)
-        || (requestId && event.requestId === requestId)
-      ),
-      hydrate: async (event) => {
-        const bodyResult = await requester(`/api/sessions/${targetSessionId}/events/${event.seq}/body`);
-        if (!bodyResult.response.ok || bodyResult.json?.body?.value === undefined) {
-          return event;
-        }
-        return {
-          ...event,
-          content: bodyResult.json.body.value,
-          bodyLoaded: true,
-        };
-      },
-    });
-    return candidate || null;
-  }
-
-  return loadReplyFromSession(sessionId);
-}
-
 function normalizeReplyText(text) {
   const normalized = stripHiddenBlocks(String(text || '').replace(/\r\n/g, '\n'))
     .replace(/\n{3,}/g, '\n\n')
@@ -1941,29 +1900,6 @@ function normalizeReplyText(text) {
   if (!normalized) return '';
   if (normalized.length <= MAX_WECHAT_TEXT_LENGTH) return normalized;
   return `${normalized.slice(0, MAX_WECHAT_TEXT_LENGTH - 16).trimEnd()}\n\n[truncated]`;
-}
-
-function buildFailureReply(summary, reason = '') {
-  return buildConnectorFailureReply(summary, reason);
-}
-
-function createTypingApiForRuntime(runtime) {
-  return createWeChatTypingApi({
-    post: apiPostFetch,
-    baseInfo: buildBaseInfo,
-    resolveAccount: (summary) => {
-      const account = runtime.accountsDoc?.accounts?.[summary.accountId];
-      return account && { ...account, baseUrl: account.baseUrl || runtime.config.apiBaseUrl };
-    },
-  });
-}
-
-function getTypingController(runtime) {
-  runtime.typingController ||= createWeChatTypingController({
-    ...createTypingApiForRuntime(runtime),
-    report: (event) => console.log(JSON.stringify(event)),
-  });
-  return runtime.typingController;
 }
 
 function createRuntimeContext(config, documents = {}) {
@@ -1974,7 +1910,6 @@ function createRuntimeContext(config, documents = {}) {
     syncStateDoc: normalizeSyncStateDocument(documents.syncStateDoc || {}),
     contextTokensDoc: normalizeContextTokensDocument(documents.contextTokensDoc || {}),
     processingMessageIds: new Set(),
-    chatQueues: new Map(),
     authToken: '',
     authCookie: '',
   };
@@ -1995,23 +1930,6 @@ async function reloadRuntimeState(runtime, options = {}) {
     runtime.contextTokensDoc = await loadContextTokensDocument(runtime.storagePaths.contextTokensPath);
   }
   return runtime;
-}
-
-function enqueueByChat(runtime, summary, worker) {
-  const key = buildExternalTriggerId(summary);
-  const previous = runtime.chatQueues.get(key) || Promise.resolve();
-  const next = previous
-    .catch(() => {})
-    .then(worker)
-    .catch((error) => {
-      console.error(`[wechat-connector] queued processing failed for ${summary.messageId || key}:`, error?.stack || error);
-    });
-  runtime.chatQueues.set(key, next);
-  next.finally(() => {
-    if (runtime.chatQueues.get(key) === next) {
-      runtime.chatQueues.delete(key);
-    }
-  });
 }
 
 async function ensureAuthCookie(runtime, forceRefresh = false) {
@@ -2097,130 +2015,6 @@ async function resolveWeChatRuntimeSelection(runtime) {
   });
 }
 
-async function generateRemoteLabReply(runtime, summary) {
-  const pipelineStartedAt = Date.now();
-  const runtimeSelection = await resolveWeChatRuntimeSelection(runtime);
-  logConnectorStage('runtime selected', {
-    messageId: summary.messageId,
-    tool: runtimeSelection.tool,
-    model: runtimeSelection.model,
-    effort: runtimeSelection.effort,
-    thinking: runtimeSelection.thinking === true,
-  });
-
-  const sessionStartedAt = Date.now();
-  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
-  const session = await createConnectorSession(requester, {
-    folder: runtime.config.sessionFolder,
-    tool: runtimeSelection.tool,
-    name: buildSessionName(summary),
-    sourceId: REMOTELAB_SESSION_APP_ID,
-    sourceName: runtime.config.sourceName,
-    group: runtime.config.group,
-    description: buildSessionDescription(summary),
-    systemPrompt: runtime.config.systemPrompt,
-    externalTriggerId: buildExternalTriggerId(summary),
-    sourceContext: buildSessionSourceContext(summary),
-  });
-  const baselineSeq = Number.isInteger(session?.latestSeq) ? session.latestSeq : 0;
-  const sessionMs = elapsedMs(sessionStartedAt);
-  logConnectorStage('session ready', {
-    messageId: summary.messageId,
-    sessionId: session.id,
-    latestSeq: baselineSeq,
-    sessionMs,
-  });
-
-  const attachmentResolution = await wechatInboundResourceService.resolve(runtime, summary, {
-    sessionId: session.id,
-  });
-  const messageSummary = attachmentResolution.failures.length > 0
-    ? { ...summary, attachmentDownloadFailures: attachmentResolution.failures }
-    : summary;
-
-  const submitStartedAt = Date.now();
-  const submission = await submitConnectorMessage(requester, session.id, {
-    requestId: buildRequestId(summary),
-    text: buildRemoteLabMessage(messageSummary),
-    tool: runtimeSelection.tool,
-    sourceContext: buildMessageSourceContext(messageSummary),
-    ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
-    ...(runtimeSelection.thinking ? { thinking: true } : {}),
-    ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
-    ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
-  });
-  const submitMs = elapsedMs(submitStartedAt);
-  logConnectorStage('message submitted', {
-    messageId: summary.messageId,
-    sessionId: session.id,
-    requestId: submission.requestId,
-    runId: submission.runId || '',
-    duplicate: submission.duplicate,
-    queued: submission.queued === true,
-    submitMs,
-  });
-  const runId = submission.runId;
-  const responseId = submission.responseId;
-  const publicationStartedAt = Date.now();
-  const publication = await waitForConnectorPublication(
-    requester,
-    session.id,
-    responseId,
-    {
-      timeoutMs: RUN_POLL_TIMEOUT_MS,
-      intervalMs: RUN_POLL_INTERVAL_MS,
-    },
-  );
-  const publicationMs = elapsedMs(publicationStartedAt);
-  logConnectorStage('reply publication settled', {
-    messageId: summary.messageId,
-    sessionId: session.id,
-    responseId,
-    state: publication.state,
-    publicationMs,
-  });
-  assertConnectorPublicationReady(publication);
-
-  const replyLoadStartedAt = Date.now();
-  const finalizedRunId = trimString(publication.finalRunId) || runId || '';
-  let replyText = normalizeReplyText(normalizeConnectorPublicationText(publication));
-  if (!replyText) {
-    const replyEvent = await loadAssistantReply(
-      requester,
-      session.id,
-      finalizedRunId,
-      submission.requestId,
-    );
-    replyText = normalizeReplyText(replyEvent?.content);
-  }
-  const replyLoadMs = elapsedMs(replyLoadStartedAt);
-  const totalMs = elapsedMs(pipelineStartedAt);
-  logConnectorStage('reply loaded', {
-    messageId: summary.messageId,
-    sessionId: session.id,
-    runId: finalizedRunId,
-    replyChars: replyText.length,
-    replyLoadMs,
-    totalMs,
-  });
-  return {
-    sessionId: session.id,
-    runId: finalizedRunId,
-    requestId: submission.requestId,
-    responseId,
-    duplicate: submission.duplicate,
-    replyText,
-    silent: !replyText,
-    timingMs: {
-      total: totalMs,
-      session: sessionMs,
-      submit: submitMs,
-      run: publicationMs,
-      replyLoad: replyLoadMs,
-    },
-  };
-}
-
 function buildOutboundClientId() {
   return `remotelab-wechat-${randomBytes(8).toString('hex')}`;
 }
@@ -2228,7 +2022,7 @@ function buildOutboundClientId() {
 async function sendWeChatText(runtime, summary, text) {
   const account = runtime.accountsDoc.accounts?.[summary.accountId];
   if (!account || !trimString(account.token)) {
-    throw new Error(`No linked WeChat token found for account ${summary.accountId}`);
+    throw Object.assign(new Error(`No linked WeChat token found for account ${summary.accountId}`), { definiteFailure: true });
   }
   const contextToken = trimString(summary.contextToken)
     || getStoredContextToken(runtime.contextTokensDoc, summary.accountId, summary.peerUserId);
@@ -2256,33 +2050,410 @@ async function sendWeChatText(runtime, summary, text) {
   return { message_id: clientId };
 }
 
-async function deliverWeChatVisibleReply(runtime, summary, {
-  responseId = '',
-  kind = 'content',
-  text = '',
-}, sendWeChatTextImpl = sendWeChatText) {
-  const transport = createWeChatConnectorTransport({
-    runtime,
-    summary,
-    sendWeChatTextImpl,
-  });
-  const driver = new ConnectorDriver({
-    targetId: `wechat:${trimString(summary?.accountId) || 'account'}:${trimString(summary?.peerUserId) || 'peer'}`,
-    transport,
-  });
-  const delivery = await driver.dispatchMessage({
-    responseId: trimString(responseId) || buildRequestId(summary),
-    kind,
-    text,
-    order: 0,
-  });
-  if (delivery.record.state !== 'delivered') {
-    throw new Error(delivery.record.lastError || 'Failed to deliver WeChat reply');
-  }
+// ---------------------------------------------------------------------------
+// Async admission + independent sender (no per-AI wait)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the source-delivery target for a WeChat inbound message.
+ * accountId + peerUserId are required; contextToken carries WeChat session state.
+ */
+function buildWeChatDeliveryTarget(summary) {
   return {
-    message_id: delivery.record.externalId || '',
+    accountId: trimString(summary.accountId),
+    peerUserId: trimString(summary.peerUserId),
+    contextToken: trimString(summary.contextToken),
+    messageId: trimString(summary.messageId),
   };
 }
+
+/**
+ * Submit a WeChat inbound message to RemoteLab without waiting for the AI reply.
+ *
+ * Follows the Feishu "prepared submission" pattern so that a lost HTTP response
+ * does not cause a fingerprint conflict on the next retry:
+ *   1. Build session + payload.
+ *   2. Save the prepared handoff to the inbox entry via saveSubmission().
+ *   3. Only then call submitConnectorMessage.
+ *
+ * On retry (entry.submission already set), skip to step 3 directly.
+ *
+ * @param {*} runtime
+ * @param {*} summary   The inbound message summary.
+ * @param {{ prepared, saveSubmission }} opts
+ */
+async function submitWeChatMessageAsync(runtime, summary, {
+  prepared = null,
+  saveSubmission = async () => {},
+} = {}) {
+  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
+
+  if (!prepared) {
+    // Build session + payload, then persist before submitting.
+    const runtimeSelection = await resolveWeChatRuntimeSelection(runtime);
+    const session = await createConnectorSession(requester, {
+      folder: runtime.config.sessionFolder,
+      tool: runtimeSelection.tool,
+      name: buildSessionName(summary),
+      sourceId: REMOTELAB_SESSION_APP_ID,
+      sourceName: runtime.config.sourceName,
+      group: runtime.config.group,
+      description: buildSessionDescription(summary),
+      systemPrompt: runtime.config.systemPrompt,
+      externalTriggerId: buildExternalTriggerId(summary),
+      sourceContext: buildSessionSourceContext({ ...summary, sourceRouteId: runtime.config.sourceRouteId }),
+    });
+
+    const attachmentResolution = await wechatInboundResourceService.resolve(runtime, summary, {
+      sessionId: session.id,
+    });
+    const messageSummary = attachmentResolution.failures.length > 0
+      ? { ...summary, attachmentDownloadFailures: attachmentResolution.failures }
+      : summary;
+
+    const sourceRouteId = trimString(runtime.config.sourceRouteId) || 'default';
+    const payload = {
+      requestId: buildRequestId(summary),
+      sourceDelivery: {
+        connector: 'wechat',
+        sourceRouteId,
+        target: buildWeChatDeliveryTarget(summary),
+      },
+      text: buildRemoteLabMessage(messageSummary),
+      tool: runtimeSelection.tool,
+      sourceContext: buildMessageSourceContext({ ...messageSummary, sourceRouteId }),
+      ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
+      ...(runtimeSelection.thinking ? { thinking: true } : {}),
+      ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
+      ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
+    };
+
+    const handoff = {
+      sessionId: session.id,
+      payload,
+      receipt: {
+        externalTriggerId: buildExternalTriggerId(summary),
+        attachmentCount: attachmentResolution.attachments.length,
+        attachmentDownloadFailureCount: attachmentResolution.failures.length,
+      },
+    };
+    // Persist BEFORE sending so a lost HTTP response doesn't change the payload.
+    await saveSubmission(handoff);
+    return submitWeChatMessageAsync(runtime, summary, { prepared: handoff, saveSubmission });
+  }
+
+  // Re-submit using the previously-saved payload (same requestId – RemoteLab deduplicates).
+  const submission = await submitConnectorMessage(requester, prepared.sessionId, prepared.payload);
+
+  logConnectorStage('message submitted async', {
+    messageId: summary.messageId,
+    sessionId: prepared.sessionId,
+    requestId: submission.requestId,
+    runId: submission.runId || '',
+    duplicate: submission.duplicate,
+    queued: submission.queued === true,
+  });
+
+  return {
+    sessionId: prepared.sessionId,
+    requestId: submission.requestId,
+    responseId: submission.responseId,
+    runId: submission.runId || '',
+    duplicate: submission.duplicate,
+    ...prepared.receipt,
+  };
+}
+
+/**
+ * Handle a single inbound WeChat message using the async (no-wait) path.
+ * Submits to RemoteLab, records the submission in handledMessages, and returns.
+ * The AI result will be delivered independently by processWeChatSourceDeliveryOnce.
+ */
+async function handleWeChatMessageAsync(runtime, summary, helpers = {}) {
+  const wasHandled = helpers.wasMessageHandled || wasMessageHandled;
+  const markHandled = helpers.markMessageHandled || markMessageHandled;
+  const submit = helpers.submitWeChatMessageAsync || submitWeChatMessageAsync;
+
+  const messageKey = buildHandledMessageKey(summary);
+  if (!isProcessableMessage(summary)) return;
+  if (runtime.processingMessageIds.has(messageKey)) return;
+  if (await wasHandled(runtime.storagePaths.handledMessagesPath, messageKey)) return;
+
+  runtime.processingMessageIds.add(messageKey);
+  const processingStartedAt = Date.now();
+  try {
+    logConnectorStage('async processing started', {
+      messageId: summary.messageId,
+      peerUserId: summary.peerUserId,
+      text: summary.textPreview || summary.contentSummary,
+    });
+    const hasSupportedImage = Array.isArray(summary.imageResources) && summary.imageResources.length > 0;
+    if (!trimString(summary.textPreview) && !hasSupportedImage) {
+      await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
+        status: 'silent_no_reply',
+        accountId: summary.accountId,
+        peerUserId: summary.peerUserId,
+        requestId: buildRequestId(summary),
+        reason: 'unsupported_message_type',
+        contentSummary: summary.contentSummary || '',
+        processingMs: elapsedMs(processingStartedAt),
+      });
+      console.log(`[wechat-connector] async: no reply for ${summary.messageId} (unsupported)`);
+      return;
+    }
+
+    const receipt = await submit(runtime, summary);
+    await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
+      status: 'submitted',
+      accountId: summary.accountId,
+      peerUserId: summary.peerUserId,
+      sessionId: receipt.sessionId,
+      runId: receipt.runId,
+      requestId: receipt.requestId,
+      responseId: receipt.responseId,
+      duplicate: receipt.duplicate,
+      processingMs: elapsedMs(processingStartedAt),
+    });
+    logConnectorStage('async submission complete', {
+      messageId: summary.messageId,
+      sessionId: receipt.sessionId,
+      requestId: receipt.requestId,
+      processingMs: elapsedMs(processingStartedAt),
+    });
+    return receipt;
+  } catch (error) {
+    // Re-throw so the inbox marks this entry failed and schedules a retry.
+    // Swallowing here would cause the inbox to mark the entry complete even
+    // though nothing was submitted to RemoteLab.
+    console.error(`[wechat-connector] async processing failed for ${summary.messageId}:`, error?.stack || error);
+    throw error;
+  } finally {
+    runtime.processingMessageIds.delete(messageKey);
+  }
+}
+
+/**
+ * Claim one pending WeChat source delivery, send it, and record the receipt.
+ * Returns the completed delivery record, or null if no work was available.
+ */
+async function processWeChatSourceDeliveryOnce(runtime, helpers = {}) {
+  const request = helpers.requestRemoteLab
+    || ((path, options) => requestRemoteLab(runtime, path, options));
+  const sendText = helpers.sendWeChatText || sendWeChatText;
+
+  // Flush any locally-buffered receipts first (survive process restart).
+  const receipts = runtime.wechatDeliveryReceipts
+    ||= createDeliveryReceipts(join(runtime.config.storageDir, 'wechat-delivery-receipts'));
+
+  await receipts.flush(async receipt => {
+    const completed = await request(`/api/source-deliveries/${receipt.deliveryId}/complete`, {
+      method: 'POST',
+      body: { leaseId: receipt.leaseId, externalId: receipt.externalId },
+    });
+    if (!completed.response.ok) {
+      throw new Error(completed.json?.error || 'Failed to record WeChat delivery receipt');
+    }
+    return completed.json.delivery;
+  });
+
+  // Claim one pending delivery.
+  const { response, json } = await request('/api/source-deliveries/claim', {
+    method: 'POST',
+    body: { connector: 'wechat', sourceRouteId: trimString(runtime.config.sourceRouteId) || 'default' },
+  });
+  if (!response.ok) throw new Error(json?.error || 'Failed to claim WeChat delivery');
+  const claim = json?.claim;
+  if (!claim) return null;
+
+  const delivery = claim.delivery;
+  // Target carries the routing fields saved at submission time.
+  const target = delivery.target || {};
+  // Prefer the stored contextToken (refreshed by the last getUpdates call) over the
+  // snapshot that was written at submission time (which may be stale).
+  const liveContextToken =
+    getStoredContextToken(runtime.contextTokensDoc, target.accountId, target.peerUserId)
+    || trimString(target.contextToken);
+  const summary = {
+    accountId: trimString(target.accountId),
+    peerUserId: trimString(target.peerUserId),
+    contextToken: liveContextToken,
+    messageId: trimString(target.messageId),
+  };
+
+  // Resolve what text to send.  For attachment deliveries the AI returned a file
+  // reference; WeChat only supports text via this transport, so we generate a
+  // readable fallback link so the user is not silently left without a response.
+  let textToSend = normalizeReplyText(delivery.text);
+  if (!textToSend && delivery.attachment) {
+    const attachment = delivery.attachment;
+    const description = buildAssistantReplyAttachmentFallbackText({ attachments: [attachment] });
+    const sessionUrl = buildSessionNavigationHref(delivery.sessionId, {
+      requireAbsolute: true,
+      ...(runtime.config.publicBaseUrl ? { publicBaseUrl: runtime.config.publicBaseUrl } : {}),
+    });
+    const candidate = trimString(attachment.downloadUrl || attachment.url);
+    const downloadUrl = /^https?:\/\//i.test(candidate) ? candidate : sessionUrl;
+    textToSend = downloadUrl
+      ? `${description}\n请打开链接下载文件：${downloadUrl}`
+      : `${description}\n请在 RemoteLab 对应会话中下载文件。`;
+  }
+
+  let externalId = '';
+  try {
+    if (textToSend) {
+      const result = await sendText(runtime, summary, textToSend);
+      externalId = trimString(result?.message_id);
+    }
+    // If still nothing to send (empty text + no attachment), complete with no externalId.
+  } catch (error) {
+    // Network timeout cannot confirm whether WeChat executed the send.
+    const isTimeout = error?.code === 'CONNECTOR_SEND_TIMEOUT' || /timeout/i.test(error?.message || '');
+    await request(`/api/source-deliveries/${delivery.id}/fail`, {
+      method: 'POST',
+      body: {
+        leaseId: claim.leaseId,
+        error: error?.message || String(error),
+        // If timeout: unknown semantics — don't retry blindly.
+        safeToRetry: !isTimeout && (error?.statusCode || error?.response?.status) === 429,
+        definiteFailure: !isTimeout && (error?.definiteFailure === true || [400, 401, 403, 404, 422].includes(error?.statusCode)),
+      },
+    });
+    throw error;
+  }
+
+  // Buffer receipt durably before acknowledging to the control plane.
+  await receipts.record({
+    deliveryId: delivery.id,
+    leaseId: claim.leaseId,
+    externalId,
+  });
+  let completed;
+  await receipts.flush(async receipt => {
+    const res = await request(`/api/source-deliveries/${receipt.deliveryId}/complete`, {
+      method: 'POST',
+      body: { leaseId: receipt.leaseId, externalId: receipt.externalId },
+    });
+    if (!res.response.ok) throw new Error(res.json?.error || 'Failed to record WeChat delivery receipt');
+    completed = res.json.delivery;
+  });
+  logConnectorStage('wechat delivery sent', {
+    deliveryId: delivery.id,
+    peerUserId: summary.peerUserId,
+    externalId,
+    state: completed?.state || 'delivered',
+  });
+  return completed;
+}
+
+const DEFAULT_WECHAT_SOURCE_DELIVERY_POLL_MS = 1000;
+
+/**
+ * Start the independent WeChat delivery poller.
+ * Returns a stop function. Multiple calls are idempotent (only one timer runs).
+ */
+function startWeChatSourceDeliveryPoller(runtime, options = {}) {
+  if (runtime.wechatDeliveryTimer) return runtime.wechatDeliveryTimer;
+  const pollMs = Math.max(250, Number.parseInt(options.pollMs, 10) || DEFAULT_WECHAT_SOURCE_DELIVERY_POLL_MS);
+  const tick = () => {
+    if (runtime.wechatDeliveryPollPromise) return;
+    runtime.wechatDeliveryPollPromise = (async () => {
+      await reloadRuntimeState(runtime, { accounts: true });
+      return processWeChatSourceDeliveryOnce(runtime);
+    })()
+      .catch(error => {
+        console.error(`[wechat-connector] delivery poll failed: ${error?.message || error}`);
+      })
+      .finally(() => {
+        runtime.wechatDeliveryPollPromise = null;
+      });
+  };
+  runtime.wechatDeliveryTimer = setInterval(tick, pollMs);
+  tick();
+  return runtime.wechatDeliveryTimer;
+}
+
+function stopWeChatSourceDeliveryPoller(runtime) {
+  if (!runtime?.wechatDeliveryTimer) return false;
+  clearInterval(runtime.wechatDeliveryTimer);
+  runtime.wechatDeliveryTimer = null;
+  return true;
+}
+
+// Preserve native typing as a separate, non-authoritative activity projection.
+function createTypingApiForRuntime(runtime) {
+  return createWeChatTypingApi({
+    post: apiPostFetch,
+    baseInfo: buildBaseInfo,
+    resolveAccount: summary => {
+      const account = runtime.accountsDoc?.accounts?.[summary.accountId];
+      return account && { ...account, baseUrl: account.baseUrl || runtime.config.apiBaseUrl };
+    },
+  });
+}
+
+function createRequestFeedback(runtime) {
+  runtime.typingController ||= createWeChatTypingController({
+    ...createTypingApiForRuntime(runtime),
+    report: event => console.log(JSON.stringify(event)),
+  });
+  return createWeChatRequestFeedback({
+    typing: runtime.typingController,
+    resolveContextToken: target => getStoredContextToken(runtime.contextTokensDoc, target.accountId, target.peerUserId) || trimString(target.contextToken),
+    loadActivity: async () => {
+      const route = encodeURIComponent(trimString(runtime.config.sourceRouteId) || 'default');
+      const result = await requestRemoteLab(runtime, `/api/source-deliveries?connector=wechat&sourceRouteId=${route}&includeActivity=true`);
+      if (!result.response.ok) throw new Error('Activity unavailable');
+      return result.json?.activity;
+    },
+  });
+}
+
+// Mutable context tokens are routing hints, not upstream event identity. Keep
+// the same fingerprint for live intake and log replay after a token refresh.
+function buildWeChatInboxSummary(summary) {
+  const snapshot = {};
+  for (const field of ['accountId', 'peerUserId', 'accountUserId', 'messageId', 'seq', 'createTimeMs',
+    'messageType', 'messageTypeNumeric', 'messageState', 'messageStateNumeric', 'textPreview', 'contentSummary', 'itemTypes']) {
+    if (summary[field] !== undefined) snapshot[field] = summary[field];
+  }
+  return snapshot;
+}
+
+async function acceptWeChatInbound(inbox, summary, raw = null) {
+  if (!isProcessableMessage(summary)) return;
+  return inbox.accept(buildHandledMessageKey(summary), { summary: buildWeChatInboxSummary(summary), detail: summary, raw });
+}
+
+// Persist inbox events and exact prepared submissions before HTTP admission;
+// recovery reuses the saved request and does not re-render changed inputs.
+function initializeWeChatInbox(runtime, options = {}) {
+  const inboxRoot = join(runtime.config.storageDir, 'wechat-inbox');
+  const handleImpl = options.handleMessageImpl || handleWeChatMessageAsync;
+  return createConnectorInbox(inboxRoot, {
+    conversationKey: entry => `${entry.summary?.accountId || ''}:${entry.summary?.peerUserId || ''}`,
+    process: async (entry, update) => {
+      const accountRecord = runtime.accountsDoc.accounts?.[entry.summary.accountId] || {};
+      const fullSummary = entry.detail || (entry.raw
+        ? summarizeWeChatMessage(entry.raw, { ...accountRecord, accountId: entry.summary.accountId })
+        : entry.summary);
+      // Prefer the stored contextToken (refreshed by getUpdates) over what
+      // was captured at accept time.
+      const liveContextToken =
+        getStoredContextToken(runtime.contextTokensDoc, fullSummary.accountId, fullSummary.peerUserId)
+        || trimString(fullSummary.contextToken);
+      const summary = { ...fullSummary, contextToken: liveContextToken };
+      return handleImpl(runtime, summary, {
+        submitWeChatMessageAsync: (rt, sum) => submitWeChatMessageAsync(rt, sum, {
+          prepared: entry.submission || null,
+          saveSubmission: submission => update({ submission }),
+        }),
+      });
+    },
+    onError: error => console.error(`[wechat-inbox] ${error?.message || error}`),
+  });
+}
+
+// ---------------------------------------------------------------------------
 
 async function sendDirectWeChatText(runtime, {
   accountId = '',
@@ -2385,6 +2556,12 @@ async function recordInboundEvent(runtime, summary, rawMessage, sourceLabel = 'g
   });
 }
 
+function restoreLoggedSummary(event) {
+  const summary = event.summary;
+  const imageResources = extractWeChatImageResources(event.raw?.item_list || []);
+  return imageResources.length ? { ...summary, imageResources } : summary;
+}
+
 async function loadLatestReplayableSummary(eventsLogPath) {
   try {
     const raw = await readFile(eventsLogPath, 'utf8');
@@ -2399,7 +2576,7 @@ async function loadLatestReplayableSummary(eventsLogPath) {
       if (!parsed?.summary?.accountId || !parsed?.summary?.peerUserId || !parsed?.summary?.messageId) {
         continue;
       }
-      return parsed.summary;
+      return restoreLoggedSummary(parsed);
     }
   } catch {}
   return null;
@@ -2448,23 +2625,25 @@ async function loadReplayableSummaries(eventsLogPath, handledMessagesPath, { acc
         continue;
       }
       seenMessageKeys.add(messageKey);
-      replayable.push(summary);
+      replayable.push(restoreLoggedSummary(parsed));
     }
   } catch {}
 
   return replayable;
 }
 
-async function replayUnhandledMessages(runtime, {
-  accountIds = [],
-  handleWeChatMessageImpl = handleWeChatMessage,
-} = {}) {
+async function replayUnhandledMessages(runtime, { accountIds = [] } = {}) {
   const summaries = await loadReplayableSummaries(
     runtime.storagePaths.eventsLogPath,
     runtime.storagePaths.handledMessagesPath,
     { accountIds },
   );
   let replayedCount = 0;
+  const inbox = runtime.inbox;
+  if (!inbox) {
+    console.warn('[wechat-connector] replayUnhandledMessages: inbox not initialized, skipping replay');
+    return 0;
+  }
   for (const summary of summaries) {
     const accountId = trimString(summary?.accountId);
     if (!trimString(runtime.accountsDoc?.accounts?.[accountId]?.token)) {
@@ -2475,7 +2654,9 @@ async function replayUnhandledMessages(runtime, {
       contextToken: getStoredContextToken(runtime.contextTokensDoc, summary.accountId, summary.peerUserId),
     };
     console.log(`[wechat-connector] replaying stored message ${augmentedSummary.messageId}`);
-    await handleWeChatMessageImpl(runtime, augmentedSummary);
+    // raw=null for replay; the events-log summary subset is used for the fingerprint,
+    // consistent with what pollAccountOnce writes.
+    await acceptWeChatInbound(inbox, augmentedSummary);
     replayedCount += 1;
   }
   return replayedCount;
@@ -2484,13 +2665,12 @@ async function replayUnhandledMessages(runtime, {
 async function persistContextToken(runtime, summary) {
   const token = trimString(summary?.contextToken);
   if (!token) return;
-  runtime.contextTokensDoc = setStoredContextToken(
-    runtime.contextTokensDoc,
-    summary.accountId,
-    summary.peerUserId,
-    token,
-  );
-  await saveContextTokensDocument(runtime.storagePaths.contextTokensPath, runtime.contextTokensDoc);
+  runtime.contextTokenQueue ||= serialQueue();
+  await runtime.contextTokenQueue(async () => {
+    const next = setStoredContextToken(runtime.contextTokensDoc, summary.accountId, summary.peerUserId, token);
+    await saveContextTokensDocument(runtime.storagePaths.contextTokensPath, next);
+    runtime.contextTokensDoc = next;
+  });
 }
 
 async function markAccountStatus(runtime, accountId, status, lastError = '') {
@@ -2506,151 +2686,8 @@ async function markAccountStatus(runtime, accountId, status, lastError = '') {
   await saveAccountsDocument(runtime.storagePaths.accountsPath, runtime.accountsDoc);
 }
 
-async function handleWeChatMessage(runtime, summary, helpers = {}) {
-  const wasHandled = helpers.wasMessageHandled || wasMessageHandled;
-  const markHandled = helpers.markMessageHandled || markMessageHandled;
-  const generateReply = helpers.generateRemoteLabReply || generateRemoteLabReply;
-  const sendText = helpers.sendWeChatText || sendWeChatText;
-
-  const messageKey = buildHandledMessageKey(summary);
-  if (!isProcessableMessage(summary)) {
-    return;
-  }
-  if (runtime.processingMessageIds.has(messageKey)) {
-    return;
-  }
-  if (await wasHandled(runtime.storagePaths.handledMessagesPath, messageKey)) {
-    return;
-  }
-
-  runtime.processingMessageIds.add(messageKey);
-  const processingStartedAt = Date.now();
-  let typing = null;
-  try {
-    logConnectorStage('processing started', {
-      messageId: summary.messageId,
-      peerUserId: summary.peerUserId,
-      text: summary.textPreview || summary.contentSummary,
-    });
-    await persistContextToken(runtime, summary);
-
-    const hasSupportedImage = Array.isArray(summary.imageResources) && summary.imageResources.length > 0;
-    if (!trimString(summary.textPreview) && !hasSupportedImage) {
-      await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
-        status: 'silent_no_reply',
-        accountId: summary.accountId,
-        peerUserId: summary.peerUserId,
-        requestId: buildRequestId(summary),
-        reason: 'unsupported_message_type',
-        contentSummary: summary.contentSummary || '',
-        processingMs: elapsedMs(processingStartedAt),
-      });
-      console.log(`[wechat-connector] no reply sent for ${summary.messageId} (unsupported message type: ${summary.contentSummary || 'unknown'})`);
-      return;
-    }
-
-    typing = getTypingController(runtime).begin({
-      ...summary,
-      contextToken: trimString(summary.contextToken)
-        || getStoredContextToken(runtime.contextTokensDoc, summary.accountId, summary.peerUserId),
-    });
-    const generated = await generateReply(runtime, summary);
-    // Feedback transport must never delay the actual reply.
-    void typing.stop();
-    const replyText = normalizeReplyText(generated.replyText);
-    const finalReply = decideConnectorUserVisibleReply({
-      replyText,
-      duplicate: generated.duplicate,
-      silentConfirmationText: normalizeReplyText(runtime?.config?.silentConfirmationText),
-    });
-    if (finalReply.action === 'silent') {
-      await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
-        status: finalReply.status,
-        accountId: summary.accountId,
-        peerUserId: summary.peerUserId,
-        sessionId: generated.sessionId,
-        runId: generated.runId,
-        requestId: generated.requestId,
-        duplicate: generated.duplicate,
-        reason: finalReply.reason,
-        processingMs: elapsedMs(processingStartedAt),
-        pipelineMs: generated.timingMs?.total,
-        runMs: generated.timingMs?.run,
-      });
-      console.log(`[wechat-connector] no reply sent for ${summary.messageId} (${finalReply.reason})`);
-      return;
-    }
-
-    const replySendStartedAt = Date.now();
-    const reply = await deliverWeChatVisibleReply(runtime, summary, {
-      responseId: generated.responseId || generated.requestId,
-      kind: finalReply.action === 'send_confirmation' ? 'summary' : 'content',
-      text: finalReply.text,
-    }, sendText);
-    const replySendMs = elapsedMs(replySendStartedAt);
-    const processingMs = elapsedMs(processingStartedAt);
-    await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
-      status: finalReply.status,
-      accountId: summary.accountId,
-      peerUserId: summary.peerUserId,
-      sessionId: generated.sessionId,
-      runId: generated.runId,
-      requestId: generated.requestId,
-      duplicate: generated.duplicate,
-      ...(finalReply.reason ? { reason: finalReply.reason } : {}),
-      ...(finalReply.action === 'send_confirmation' ? { confirmationText: finalReply.text } : {}),
-      responseMessageId: reply.message_id || '',
-      repliedAt: nowIso(),
-      processingMs,
-      pipelineMs: generated.timingMs?.total,
-      sessionMs: generated.timingMs?.session,
-      submitMs: generated.timingMs?.submit,
-      runMs: generated.timingMs?.run,
-      replyLoadMs: generated.timingMs?.replyLoad,
-      replySendMs,
-      replyChars: finalReply.text.length,
-    });
-    logConnectorStage(finalReply.action === 'send_confirmation' ? 'confirmation sent' : 'processing finished', {
-      messageId: summary.messageId,
-      sessionId: generated.sessionId,
-      runId: generated.runId,
-      responseMessageId: reply.message_id || '',
-      replyChars: finalReply.text.length,
-      processingMs,
-      pipelineMs: generated.timingMs?.total,
-      runMs: generated.timingMs?.run,
-      replySendMs,
-    });
-  } catch (error) {
-    void typing?.stop();
-    console.error(`[wechat-connector] processing failed for ${summary.messageId}:`, error?.stack || error);
-    try {
-      const failureReason = error?.message || String(error);
-      const failureCategory = classifyConnectorFailureReason(failureReason);
-      const fallback = buildFailureReply(summary, failureReason);
-      const reply = await deliverWeChatVisibleReply(runtime, summary, {
-        responseId: buildRequestId(summary),
-        kind: 'summary',
-        text: fallback,
-      }, sendText);
-      await markHandled(runtime.storagePaths.handledMessagesPath, messageKey, {
-        status: 'failed_with_notice',
-        accountId: summary.accountId,
-        peerUserId: summary.peerUserId,
-        error: failureReason,
-        failureCategory,
-        responseMessageId: reply.message_id || '',
-        repliedAt: nowIso(),
-        processingMs: elapsedMs(processingStartedAt),
-      });
-    } catch (sendError) {
-      console.error(`[wechat-connector] fallback send failed for ${summary.messageId}:`, sendError?.stack || sendError);
-    }
-  } finally {
-    void typing?.stop();
-    runtime.processingMessageIds.delete(messageKey);
-  }
-}
+// handleWeChatMessage (synchronous, 10-minute wait) removed.
+// Production uses handleWeChatMessageAsync via the durable inbox.
 
 function buildPollAccountList(runtime, selectedAccountId = '', includeReauthRequired = false) {
   const requestedAccountId = trimString(selectedAccountId)
@@ -2670,7 +2707,14 @@ function buildPollAccountList(runtime, selectedAccountId = '', includeReauthRequ
 
 async function pollAccountOnce(runtime, accountId, helpers = {}) {
   const getUpdatesImpl = helpers.getUpdates || getUpdates;
-  const handleMessageImpl = helpers.handleWeChatMessage || handleWeChatMessage;
+  // Accept inbound messages into the durable inbox.  Callers may override for
+  // testing without a real inbox instance.
+  const acceptInboundMessage = helpers.acceptInboundMessage
+    || (async (summary, rawMessage) => {
+      const inbox = runtime.inbox;
+      if (!inbox) throw new Error('[wechat-connector] inbox not initialized');
+      await acceptWeChatInbound(inbox, summary, rawMessage);
+    });
   const saveSyncStateImpl = helpers.saveSyncStateDocument || saveSyncStateDocument;
 
   const account = runtime.accountsDoc.accounts?.[trimString(accountId)];
@@ -2707,15 +2751,6 @@ async function pollAccountOnce(runtime, accountId, helpers = {}) {
 
   const nextBuf = trimString(response?.get_updates_buf);
   const longPollTimeoutMs = parsePositiveInteger(response?.longpolling_timeout_ms, timeoutMs);
-  if (nextBuf || storedSync.getUpdatesBuf || longPollTimeoutMs !== timeoutMs) {
-    runtime.syncStateDoc = updateSyncCursor(runtime.syncStateDoc, accountId, {
-      getUpdatesBuf: nextBuf || storedSync.getUpdatesBuf || '',
-      longPollTimeoutMs,
-      updatedAt: nowIso(),
-    });
-    await saveSyncStateImpl(runtime.storagePaths.syncStatePath, runtime.syncStateDoc);
-  }
-
   const rawMessages = Array.isArray(response?.msgs) ? response.msgs : [];
   if (rawMessages.length > 0) {
     logConnectorStage('updates received', {
@@ -2737,8 +2772,21 @@ async function pollAccountOnce(runtime, accountId, helpers = {}) {
     });
     await recordInboundEvent(runtime, summary, rawMessage, 'getupdates');
     await persistContextToken(runtime, summary);
-    enqueueByChat(runtime, summary, () => handleMessageImpl(runtime, summary));
+    await acceptInboundMessage(summary, rawMessage);
     processedCount += 1;
+  }
+
+  // Acknowledge the upstream cursor only after every event is durable.
+  // A crash/failed disk write before this point safely repeats the batch.
+  if (nextBuf || storedSync.getUpdatesBuf || longPollTimeoutMs !== timeoutMs) {
+    runtime.syncCursorQueue ||= serialQueue();
+    await runtime.syncCursorQueue(async () => {
+      const nextSync = updateSyncCursor(runtime.syncStateDoc, accountId, {
+        getUpdatesBuf: nextBuf || storedSync.getUpdatesBuf || '', longPollTimeoutMs, updatedAt: nowIso(),
+      });
+      await saveSyncStateImpl(runtime.storagePaths.syncStatePath, nextSync);
+      runtime.syncStateDoc = nextSync;
+    });
   }
 
   if (trimString(account.status).toLowerCase() !== 'ready' || trimString(account.lastError)) {
@@ -2858,6 +2906,9 @@ async function runWeChatLogin(config, options = {}) {
 }
 
 async function runPollLoop(runtime, options = {}) {
+  // Initialise the durable inbox and the independent delivery sender.
+  const inbox = initializeWeChatInbox(runtime, options.inboxOptions || {});
+  runtime.inbox = inbox;
   await reloadRuntimeState(runtime, {
     accounts: true,
     syncState: true,
@@ -2897,16 +2948,22 @@ async function runPollLoop(runtime, options = {}) {
     }
   };
 
+  const feedback = createRequestFeedback(runtime);
   const stop = (signal) => {
     if (stopped) return;
     stopped = true;
-    void getTypingController(runtime).close();
+    inbox.stop();
+    stopWeChatSourceDeliveryPoller(runtime);
+    void feedback.stop();
     console.log(`[wechat-connector] stopping (${signal})`);
   };
   const onInterrupt = () => stop('SIGINT');
   const onTerminate = () => stop('SIGTERM');
   process.on('SIGINT', onInterrupt);
   process.on('SIGTERM', onTerminate);
+  inbox.start();
+  startWeChatSourceDeliveryPoller(runtime, { pollMs: options.deliveryPollMs || DEFAULT_WECHAT_SOURCE_DELIVERY_POLL_MS });
+  feedback.start();
   try {
 
   const maybeReplayStoredMessages = async (accounts = []) => {
@@ -2932,8 +2989,11 @@ async function runPollLoop(runtime, options = {}) {
       contextToken: getStoredContextToken(runtime.contextTokensDoc, replaySummary.accountId, replaySummary.peerUserId),
     };
     console.log(`[wechat-connector] replaying stored message ${augmentedSummary.messageId}`);
-    await handleWeChatMessage(runtime, augmentedSummary);
+    // Use the durable inbox for replay (same path as live messages).
+    await acceptWeChatInbound(inbox, augmentedSummary);
+    await inbox.tick();
     if (!deadline) {
+      await inbox.idle();
       return;
     }
   }
@@ -2975,16 +3035,24 @@ async function runPollLoop(runtime, options = {}) {
         await markAccountStatus(runtime, accountId, 'error', result.reason?.message || String(result.reason));
       }
     }
+    // Immediately process any newly accepted inbox entries without waiting for
+    // the next 1-second timer tick.  Errors are non-fatal to the poll loop.
+    await inbox.tick().catch(error =>
+      console.error(`[wechat-inbox] tick error: ${error?.message || error}`));
 
     if (deadline && Date.now() >= deadline) {
       break;
     }
     await delay(runtime.config.polling.idleDelayMs);
   }
+
   } finally {
+    stopped = true;
     process.off('SIGINT', onInterrupt);
     process.off('SIGTERM', onTerminate);
-    await getTypingController(runtime).close();
+    inbox.stop();
+    stopWeChatSourceDeliveryPoller(runtime);
+    await Promise.all([inbox.idle(), runtime.wechatDeliveryPollPromise, feedback.stop()]);
   }
 }
 
@@ -2992,13 +3060,14 @@ export {
   DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
   buildRemoteLabMessage,
+  buildWeChatDeliveryTarget,
   claimConnectorPidLock,
   createRuntimeContext,
   createTypingApiForRuntime,
   ensureAuthCookie,
-  generateRemoteLabReply,
   getStoredContextToken,
-  handleWeChatMessage,
+  handleWeChatMessageAsync,
+  initializeWeChatInbox,
   loadAccountsDocument,
   loadConfig,
   loadContextTokensDocument,
@@ -3007,6 +3076,7 @@ export {
   normalizeReplyText,
   persistLinkedAccount,
   pollAccountOnce,
+  processWeChatSourceDeliveryOnce,
   replayUnhandledMessages,
   runPollLoop,
   releaseConnectorPidLock,
@@ -3020,8 +3090,11 @@ export {
   saveSyncStateDocument,
   sendWeChatText,
   setStoredContextToken,
+  startWeChatSourceDeliveryPoller as startWeChatDeliveryPoller,
+  stopWeChatSourceDeliveryPoller as stopWeChatDeliveryPoller,
   startWeChatLogin,
   summarizeWeChatMessage,
+  submitWeChatMessageAsync,
   updateSyncCursor,
   waitForWeChatLogin,
 };

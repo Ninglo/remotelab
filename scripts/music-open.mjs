@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile)
 
 const DEFAULT_COUNTRY = 'us'
 const DEFAULT_WAIT_MS = 3000
-const DEFAULT_LOG_PATH = join(homedir(), '.config', 'remotelab', 'voice-connector', 'music-actions.jsonl')
+const DEFAULT_LOG_PATH = join(homedir(), '.config', 'remotelab', 'music-open', 'music-actions.jsonl')
 
 const PRESETS = {
   'apple-music-classical': {

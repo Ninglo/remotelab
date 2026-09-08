@@ -4,9 +4,9 @@ WeChat is an instance-local connector. One RemoteLab instance owns one private w
 
 ## Capabilities
 
-- inbound WeChat text / supported images (including image-only messages) -> RemoteLab session message
+- inbound WeChat text / supported images (including image-only messages) -> durable inbox -> RemoteLab request, returning after admission without waiting for AI
 - native typing while processing, without an extra acknowledgement text bubble
-- finalized RemoteLab reply -> the originating WeChat conversation
+- each finalized RemoteLab request -> durable outbox -> independent sender -> the originating WeChat conversation
 - `wechat:send_text` -> deterministic plain-text delivery without starting an AI run
 
 ## Binding and target semantics
@@ -24,7 +24,7 @@ The model-facing action intentionally does not accept an arbitrary raw WeChat us
 
 The long-running WeChat worker starts a loopback action server only while at least one pollable account binding is ready. It registers `wechat:send_text` in the instance connector capability registry and removes the registration when the binding disappears or the worker stops cleanly.
 
-The legacy `scripts/wechat-connector.mjs` entrypoint remains the process launcher and transport implementation for now, but capability declaration comes from `manifest.json` and this package.
+The `scripts/wechat-connector.mjs` entrypoint remains the process launcher and transport implementation for now, but capability declaration comes from `manifest.json` and this package.
 
 ## Operator surface
 
@@ -34,10 +34,10 @@ Use `/connectors/wechat/login` inside the owning RemoteLab instance to bind or r
 
 The worker uses `ilink/bot/getconfig` with the inbound peer and available context token to obtain a transient `typing_ticket`, then `ilink/bot/sendtyping` with status `1` (typing) / `2` (cancel). This is **not an acknowledgement/read receipt**, and does not change the bot nickname or avatar.
 
-- A 300 ms grace period suppresses typing for fast tasks. A config response arriving after completion cannot start typing.
-- Text and image-only processing share the same lifecycle. Unsupported payloads remain silent.
-- Active tasks refresh typing every 5 seconds after the previous request settles; each provider request has a 5-second timeout. Overlapping work for the same account/peer shares one serialized lifecycle. One task finishing cannot cancel another's typing.
-- Success, empty/duplicate publication, failure and cancellation release the lease before final delivery. Cleanup is asynchronous and cannot hold the task or final reply hostage. An ambiguous/failed start still triggers cancel; failed cancels get one bounded retry.
+- A one-second activity scan observes unsettled requests via `GET /api/source-deliveries?...&includeActivity=true`. It reconstructs native feedback after restarts; no inbound handler waits for an AI reply. A 300 ms provider grace period suppresses late starts after fast tasks.
+- Text and image-only requests share this projection. Unsupported payloads remain silent. Accepted/queued requests remain eligible without a model-duration deadline.
+- Active targets refresh typing every 5 seconds after the previous provider request settles; each provider request has a 5-second timeout. Overlapping work for the same account/peer shares one serialized lifecycle. One task finishing cannot cancel another's queued or running work.
+- All terminal results disappear from the next activity scan, independently of final delivery. Provider cleanup is asynchronous and cannot hold the task or final reply hostage. Loss of the activity connection clears stale decoration and reconnect reconstructs it. An ambiguous/failed start still triggers cancel; failed cancels get one bounded retry.
 - Graceful worker exit cancels timers, drains in-flight feedback, and removes its signal listeners. Forced termination or provider failure cannot guarantee immediate remote disappearance; the provider controls expiry/rendering. No success is claimed in that case.
 - Missing or failed ticket acquisition is logged once for that active target; it does not loop every five seconds throughout a long task. A fresh inbound message may retry with its latest context.
 - Tickets are memory-only and discarded when idle. JSON logs contain only `component: wechat_typing`, `operation` (`getconfig`, `start`, `stop`) and `state` (`succeeded`, `failed`, `ticket_unavailable`); never raw provider errors, tickets, tokens or user identifiers. `succeeded` means API acceptance, not verified client visibility.

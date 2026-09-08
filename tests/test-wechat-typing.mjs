@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createWeChatTypingApi, createWeChatTypingController } from '../connectors/wechat/typing.mjs';
-import { handleWeChatMessage } from '../scripts/wechat-connector.mjs';
+import { createWeChatRequestFeedback } from '../connectors/wechat/request-feedback.mjs';
 import { checkTyping } from '../scripts/wechat-typing-check.mjs';
 
 const summary = { accountId: 'test-account', peerUserId: 'test-peer', messageId: 'test-message',
@@ -130,47 +130,34 @@ for (const getConfig of [async () => ({}), async () => { throw new Error('secret
   response = '{"ret":0,"errcode":-14,"errmsg":"secret"}';
   await assert.rejects(api.sendTyping(summary, 'secret-ticket', 1), /typing_provider_rejected/);
 }
-// Real message handler: text/images, success/failure/cancellation/silent publication.
-for (const kind of ['text', 'image', 'failure', 'cancelled', 'silent']) {
-  const configGate = deferred(); let requested = false; const sent = [];
+// Native feedback now observes the durable activity projection, never a long
+// inbound handler. Late getconfig and slow cancellation cannot block results.
+{
+  const configGate = deferred(); let requested = false;
   const f = fixture({ getConfig: async () => { requested = true; return configGate.promise; } });
-  const runtime = { config: {}, storagePaths: {}, processingMessageIds: new Set(), typingController: f.controller };
-  await handleWeChatMessage(runtime, { ...summary,
-    ...(kind === 'image' ? { textPreview: '', imageResources: [{}] } : {}) }, {
-    wasMessageHandled: async () => false, markMessageHandled: async () => {},
-    generateRemoteLabReply: async () => {
-      await until(() => requested);
-      if (kind === 'failure' || kind === 'cancelled') throw new Error(kind);
-      return { requestId: 'test', replyText: kind === 'silent' ? '' : 'final' };
-    },
-    sendWeChatText: async (_runtime, _summary, text) => { sent.push(text); return { message_id: 'test-delivery' }; },
-  });
-  // Handler and final delivery settle even while getconfig is pending.
-  assert.equal(runtime.processingMessageIds.size, 0);
-  assert(sent.length <= 1);
-  if (kind === 'text' || kind === 'image') assert.deepEqual(sent, ['final']);
+  let activity = [{ connector: 'wechat', requestId: 'image-or-text', target: summary }];
+  const feedback = createWeChatRequestFeedback({ typing: f.controller, loadActivity: async () => activity });
+  await feedback.tick();
+  await until(() => requested);
+  activity = []; // Any terminal result disappears from durable activity.
+  await feedback.tick(); // Must return while getconfig is still pending.
   configGate.resolve({ typing_ticket: 'secret-ticket' });
-  await f.controller.close(); assert.deepEqual(f.calls, []);
+  await feedback.stop();
+  assert.deepEqual(f.calls, []);
 }
-// Active typing is cancelled for every terminal path; a slow stop never holds final delivery.
-for (const failure of [false, 'failed', 'cancelled']) {
-  const stopGate = deferred(), calls = [], sent = [];
+for (const terminal of ['completed', 'failed', 'cancelled']) {
+  const stopGate = deferred(), calls = [];
   const f = fixture({ sendTyping: async (_s, _t, status) => {
     calls.push(status); if (status === 2) await stopGate.promise;
   } });
-  const runtime = { config: {}, storagePaths: {}, processingMessageIds: new Set(), typingController: f.controller };
-  await handleWeChatMessage(runtime, { ...summary, textPreview: '', imageResources: [{}] }, {
-    wasMessageHandled: async () => false, markMessageHandled: async () => {},
-    generateRemoteLabReply: async () => {
-      await until(() => calls.includes(1));
-      if (failure) throw new Error(failure);
-      return { requestId: 'active-test', replyText: 'final' };
-    },
-    sendWeChatText: async (_r, _s, text) => { sent.push(text); return { message_id: 'active-delivery' }; },
-  });
-  assert.equal(sent.length, 1);
+  let activity = [{ connector: 'wechat', requestId: terminal, target: summary }];
+  const feedback = createWeChatRequestFeedback({ typing: f.controller, loadActivity: async () => activity });
+  await feedback.tick();
+  await until(() => calls.includes(1));
+  activity = [];
+  await feedback.tick(); // Result delivery does not await provider cancellation.
   await until(() => calls.includes(2));
-  stopGate.resolve(); await f.controller.close();
+  stopGate.resolve(); await feedback.stop();
   assert.equal(calls.filter(s => s === 2).length, 1);
 }
 // Operator probe is bounded and never claims read receipts or exposes ticket values.

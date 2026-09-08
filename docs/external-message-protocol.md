@@ -7,7 +7,6 @@ Use it when integrating things like:
 - email intake / reply workers
 - GitHub issue or PR bridges
 - chat bots / IM relays
-- wake-word voice speaker/microphone bridges
 - custom local automation that wants to open a session and hand work to the active agent
 
 The key product stance is simple:
@@ -61,6 +60,8 @@ RemoteLab owns only the shared conversation/runtime layer:
 - append a new user message into that session
 - execute the selected local agent tool
 - persist run state and normalized events on disk
+- commit request results and source-delivery outbox records together
+- expose independently claimable deliveries, leases, acknowledgements, and operator resolution over HTTP
 - expose status and events over HTTP
 - optionally send lightweight realtime invalidation over WebSocket
 
@@ -96,19 +97,20 @@ The connector can add a short preface such as actor, source, URL, or thread titl
 
 ---
 
-## 3. Minimal connector loop
+## 3. Independent admission and delivery
 
-An external connector should follow this loop:
+A connector has two independently recoverable jobs, not one long-lived function waiting for AI:
 
-1. Authenticate to RemoteLab and obtain an owner session cookie.
-2. Resolve or create the RemoteLab session for the external thread.
-3. Submit the new inbound update as a user message.
-4. Watch the resulting run until it reaches a terminal state.
-5. Read normalized events from the session.
-6. Decide how to publish the assistant reply back to the external platform.
-7. When the external platform changes again, submit another message to the same session.
+1. Persist the upstream event in a durable inbox before acknowledging receipt or advancing the upstream cursor.
+2. Authenticate, resolve/create the session, and persist the prepared submission (stable `requestId`, exact body, session, and `sourceDelivery`).
+3. Submit to RemoteLab. On a lost HTTP response, retry the same prepared submission, not a newly rendered message. Once accepted, finish inbox handling immediately; later messages can enter RemoteLab's normal queue.
+4. RemoteLab executes normally, without a connector-imposed AI deadline. It commits the result and its delivery records in the same request aggregate.
+5. An independent sender claims ready deliveries, formats and sends them, durably records the upstream receipt, then acknowledges the lease. It never waits for an individual AI run.
+6. After a restart, inbox processing and receipt/outbox processing resume from disk.
 
-RemoteLab is therefore the **shared agent conversation engine**, while connectors stay as thin source adapters.
+A protocol acknowledgement or optional “received” notice is not the final AI response. Failure of a decorative acknowledgement must not block admission.
+
+Feishu, WeChat, and inbound Email use this request-scoped contract. A persistent upstream connection may still need a resident process; each message does **not** need a resident waiter. Legacy explicit email completion targets remain compatible, but new email intake must not also attach them and create a second final-delivery owner.
 
 ---
 
@@ -154,8 +156,8 @@ Required fields:
 Useful optional fields for connectors:
 
 - `name` — optional seed title; omit it unless you already have concrete thread/task context
-- `sourceId` — stable connector/runtime source id such as `feishu`, `email`, or `voice`
-- `sourceName` — human-facing connector/runtime source name such as `Feishu`, `Email`, or `Voice`
+- `sourceId` — stable connector/runtime source id such as `feishu`, `email`, or `wechat`
+- `sourceName` — human-facing connector/runtime source name such as `Feishu`, `Email`, or `WeChat`
 - `templateId` — optional Agent id when this connector should run under a reusable Agent definition
 - `templateName` — human-facing label for that Agent
 - `group` — top-level grouping such as `Mail`, `GitHub`, `Bots`
@@ -231,6 +233,7 @@ Optional owner-only fields:
 - `effort`
 - `thinking`
 - `sourceContext`
+- `sourceDelivery` — final reply destination, persisted with this request (see below)
 - `images`
 
 Example:
@@ -251,6 +254,7 @@ Response behavior:
 
 - `202` means the update was accepted, either as a new active run or as a queued follow-up
 - `200` means the same `requestId` was already seen and the call was treated as a duplicate
+- an invalid explicit `sourceDelivery` is rejected before accepting AI work; the server must not silently drop the requested final-reply route
 
 Important response fields:
 
@@ -283,9 +287,37 @@ This means connectors should treat `requestId` as the idempotency key for one up
 
 ---
 
-## 7. Watching progress
+## 7. Durable delivery and optional progress observation
 
-After message submission, connectors have two supported ways to track progress.
+### Source-delivery contract
+
+Pass an explicit `sourceDelivery` on message admission:
+
+```json
+{
+  "connector": "wechat",
+  "sourceRouteId": "instance-account-route",
+  "target": { "accountId": "bound-account", "peerUserId": "upstream-peer", "messageId": "upstream-message", "contextToken": "upstream-context" }
+}
+```
+
+Supported connectors are `feishu`, `wechat`, and `email`. Targets are adapter-specific, validated routing data; credentials remain in instance bindings. Email targets contain `to`, an optional bound reply alias `from`, `subject`, `inReplyTo`, `references` (an array), and thread/message identifiers. Email text and attachments form one delivery; IM text and attachments have separately tracked delivery records.
+
+The independent sender uses owner-authenticated APIs:
+
+- `POST /api/source-deliveries/claim` with `connector` and `sourceRouteId` returns a delivery and lease, or no available work.
+- `POST /api/source-deliveries/:id/complete` with `leaseId` and `externalId` acknowledges a durable upstream receipt. Repeated acknowledgements of the same receipt are harmless.
+- `POST /api/source-deliveries/:id/fail` records sending failure. Set `safeToRetry` only when the upstream operation can safely repeat; ambiguous sends become `unknown`, not blind retries.
+- `GET /api/source-deliveries?connector=...&sourceRouteId=...` exposes pending/unresolved deliveries. Optional `includeActivity=true` also returns compact unsettled-request destinations (no prompt bodies), so native typing can be independently reconstructed from durable state.
+- `POST /api/source-deliveries/:id/resolve` with `state` (`pending`, `delivered`, or `cancelled`) and `reason` allows explicit recovery after upstream inspection.
+
+An expired sending lease means **delivery outcome unknown**, not AI failure. Unknown deliveries block the same destination's following deliveries, not unrelated destinations. Persist receipts before acknowledging RemoteLab, and replay those acknowledgements before claiming new work. Upstream delivery cannot in general guarantee exactly-once transport; retain uncertainty rather than silently sending twice.
+
+Request execution and delivery state are separate: delivery failure never rewrites a successful AI result. Every request gets its own outbox records, even when the session has queued follow-ups.
+
+### Optional progress observation
+
+Clients may also observe progress. This is not a prerequisite for final delivery and must not own the delivery lifecycle.
 
 ### Option A — HTTP polling
 
@@ -303,7 +335,7 @@ Current run states converge around:
 
 For terminal failures, wait for the canonical run/reply publication to settle and preserve its final `failureReason` / `lastError` into connector handling. User-visible notices should map known causes to localized, safe, actionable explanations—such as capacity full, temporary overload, exhausted balance or quota, invalid authorization, context too long, attachment unavailable, or timeout. Do not expose raw provider payloads, credentials, host paths, or stack traces. Use a generic “could not generate a reply” notice only when the final reason is absent or genuinely unclassified.
 
-This is the easiest path for non-interactive connectors. Once a message has been accepted, a temporary polling transport error or restart response (`fetch failed`, connection reset/refused, HTTP 408/425/429/5xx) is not a terminal generation result: keep polling the same response publication until the service recovers or the connector's overall wait deadline expires. Only a canonical `failed` / `cancelled` publication or a non-retryable protocol/authentication error should enter failure delivery and message-handled state.
+Once a message has been accepted, a temporary transport error or restart response (`fetch failed`, connection reset/refused, HTTP 408/425/429/5xx) is not a terminal generation result. An observer may stop waiting and return the request/response identifiers, but that cannot mark the AI request failed or discharge its delivery responsibility. Authentication/protocol failures are connector faults, not evidence of model failure. Only canonical execution results determine generation failure or cancellation. Retain bounded timeouts for individual HTTP operations and sender leases; do not add an overall connector AI wait deadline.
 
 ### Option B — WebSocket invalidation + HTTP fetch
 
@@ -375,7 +407,7 @@ Current normalized event types include:
 - `file_change`
 - `usage`
 
-RemoteLab returns raw normalized events. Connectors that want a single outbound reply should derive it on their side from those events. This repo ships a shared helper in `lib/reply-selection.mjs` for that purpose; it skips assistant-side artifacts such as Codex `todo_list` tails and can fall back past a trailing checklist-only message when an earlier substantive assistant reply exists in the same run.
+Normalized events support observation and debugging. Production source-delivery consumers send the committed request reply payload rather than selecting a session's latest assistant event: another request may already be running by then. The shared reply-selection logic skips assistant-side artifacts such as Codex `todo_list` tails and can fall back past a trailing checklist-only message in the same run.
 
 ---
 
@@ -431,18 +463,20 @@ This keeps the core protocol uniform while still preserving upstream context. If
 - message submission over HTTP
 - idempotency via `requestId`
 - session dedupe via `externalTriggerId`
-- run polling via HTTP
-- incremental event reads via HTTP
+- optional run polling via HTTP
+- normalized event reads via HTTP
 - push-only WebSocket invalidation
+- request-scoped durable outbox for Feishu, WeChat, and Email
+- independent delivery claims, receipt acknowledgements, and explicit uncertain-send resolution
 
 ### Not yet shipped as a general connector primitive
 
 - a generic server-to-server webhook callback for run/session events
-- a generic outbound message capability shared across email, IM, GitHub, and other reply surfaces
-- a first-class “connector registry” or dedicated connector auth scope
+- an outbound adapter for every arbitrary external platform (GitHub automation still owns its publication)
+- a dedicated connector auth scope
 - full model-writable session metadata beyond the currently exposed creation fields
 
-There is already an email-specific completion-target path in the repo, but that is intentionally **not** the long-term generic connector contract.
+Explicit email completion targets remain a compatibility/automation path. New inbound email uses the shared request outbox instead of relying on a whole session becoming idle. WhatsApp Business and the local Voice Connector are retired; the browser/mobile Shortcut surface is separate.
 
 ---
 
@@ -454,8 +488,8 @@ If you are integrating another tool today, the most stable approach is:
 2. authenticate as the owner
 3. create or reuse one session per upstream thread
 4. submit each inbound update as a new user message
-5. poll `/api/runs/:id` or combine `/ws` invalidation with HTTP reads
-6. read assistant message events and publish them however your source platform wants
+5. include a validated `sourceDelivery` destination in the durable request
+6. run an independent receipt-aware outbox consumer for your platform; observe progress only when useful
 
 This already covers most automation surfaces, including non-standard ones like GitHub issues, because the protocol only assumes one thing:
 
@@ -472,15 +506,6 @@ If the target is:
 - RemoteLab exposes normalized event/state back out
 - connectors own all platform-specific wrapping and re-submission logic
 
-then the current implementation is **mostly aligned**, but not fully complete.
+then the shared admission/outbox implementation supports that direction without requiring a generic webhook layer.
 
-It is already sufficient for:
-
-- standard inbound message ingestion
-- thread-to-session mapping
-- idempotent update submission
-- reading normalized results back out
-
-It is not yet sufficient for a fully generic “push events back to arbitrary external systems” story, because the shipped push surface is still only authenticated WebSocket invalidation, not a generic callback/webhook layer.
-
-So the current implementation is a good **message ingress protocol**, but not yet the full **connector callback protocol**.
+It provides durable ingestion, thread-to-session mapping, idempotent submission, result/outbox atomicity, and independently recoverable publication. The sender polls durable work; WebSocket hints may optimize wake-ups but are never the reliability boundary. Adding a platform requires target validation and an adapter, not a new task runtime or a model-duration timeout.

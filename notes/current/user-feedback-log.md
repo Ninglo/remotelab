@@ -21,6 +21,14 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-08 — Connector admission must not wait for AI completion
+
+- Source: owner reviewed connector timeout behavior and explicitly prioritized WeChat and Email while retiring WhatsApp Business and the local Voice Connector.
+- Observed failure: a connector-local ten-minute wait can expire while the accepted AI request is still healthy, misreport model failure, block following input, and lose responsibility for the eventual reply.
+- Product implication: reuse Feishu's durable inbox and independent request-outbox delivery architecture. Acknowledge durable receipt, hand off the request, and end inbound processing; publish each request's result independently of session idleness. Keep per-operation network deadlines and sender leases, not an overall AI deadline. Merely changing a timeout to infinity does not fix restart recovery.
+- Scope boundary: retire unused connector surfaces rather than broadening abstractions for them. Keep browser/mobile Shortcut input separate from the retired local Voice Connector, and keep user-owned Gmail operations separate from Agent Mailbox reply transport.
+- Contract: `docs/external-message-protocol.md`.
+
 ### 2026-09-08 — Group attention gates should not add friction inside an invited AI thread
 
 - Source: owner compared an AI thread interaction with the recently restored mention-only group policy.

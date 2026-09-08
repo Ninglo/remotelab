@@ -23,6 +23,7 @@ await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'fake-codex', 
 await writeFile(join(bin, 'fake-codex'), `#!/usr/bin/env node
 console.log(JSON.stringify({type:'thread.started',thread_id:'fixture-thread'}));
 console.log(JSON.stringify({type:'turn.started'}));
+await new Promise(resolve => setTimeout(resolve, 500));
 console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'fixture reply for delivery'}}));
 console.log(JSON.stringify({type:'turn.completed',usage:{input_tokens:1,output_tokens:1}}));
 `);
@@ -33,7 +34,7 @@ const port = reservation.address().port;
 await new Promise(resolve => reservation.close(resolve));
 let logs = '';
 const server = spawn(process.execPath, ['chat-server.mjs'], { cwd: repo,
-  env: { ...process.env, HOME: home, CHAT_PORT: String(port), SECURE_COOKIES: '0',
+  env: { ...process.env, HOME: home, CHAT_PORT: String(port), SECURE_COOKIES: '0', REMOTELAB_PUBLIC_BASE_URL: 'https://fixture.example.test',
     PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH || ''}` },
   stdio: ['ignore', 'pipe', 'pipe'] });
 server.stdout.on('data', data => { logs += data; });
@@ -60,14 +61,19 @@ try {
   await waitFor(async () => {
     try { return (await request('GET', '/api/auth/me')).status === 200; } catch { return false; }
   }, 'server startup');
-  for (const encoding of ['json', 'multipart']) {
+  const cases = ['feishu', 'wechat', 'email'].flatMap(connector => ['json', 'multipart'].map(encoding => ({ connector, encoding })));
+  for (const { connector, encoding } of cases) {
     const created = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', name: `Fixture ${encoding}` });
     assert.equal(created.status, 201);
     const sessionId = created.body.session.id;
     const requestId = `fixture-${encoding}`;
-    const sourceDelivery = { connector: 'feishu', sourceRouteId: 'fixture-bot-2', target: {
-      chatId: `fixture-chat-${encoding}`, messageId: `fixture-message-${encoding}`, chatType: 'group', replyInThread: true,
-    } };
+    const targets = {
+      feishu: { chatId: `fixture-chat-${encoding}`, messageId: `fixture-message-${encoding}`, chatType: 'group', replyInThread: true },
+      wechat: { accountId: 'fixture-account', peerUserId: `fixture-peer-${encoding}`, messageId: `fixture-message-${encoding}`, contextToken: 'fixture-context' },
+      email: { to: 'fixture@example.test', from: 'agent+alias@example.test', subject: 'Re: fixture', inReplyTo: '<fixture@example.test>',
+        references: ['<root@example.test>', '<fixture@example.test>'], threadId: `fixture-thread-${encoding}`, messageId: '<fixture@example.test>' },
+    };
+    const sourceDelivery = { connector, sourceRouteId: 'fixture-route', target: targets[connector] };
     const payload = { requestId, text: 'Return the fixture reply.', tool: 'fake-codex', model: 'fake-model', sourceDelivery };
     let body = payload;
     if (encoding === 'multipart') {
@@ -81,11 +87,11 @@ try {
     const record = JSON.parse(await readFile(join(config, 'requests/active', `${key}.json`), 'utf8'));
     assert.deepEqual(record.options.sourceDelivery, sourceDelivery, `${encoding} admission must preserve the explicit delivery route`);
     const delivery = await waitFor(async () => {
-      const result = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=fixture-bot-2');
+      const result = await request('GET', `/api/source-deliveries?connector=${connector}&sourceRouteId=fixture-route`);
       assert.equal(result.status, 200);
       return result.body.deliveries.find(item => item.runId === submitted.body.run.id && item.text?.includes('fixture reply for delivery'));
     }, `${encoding} generated reply in outbox`);
-    assert.equal(delivery.sourceRouteId, 'fixture-bot-2');
+    assert.equal(delivery.sourceRouteId, 'fixture-route');
     assert.deepEqual(delivery.target, sourceDelivery.target);
     assert.equal(delivery.state, 'pending');
     if (encoding === 'json') {
@@ -95,7 +101,45 @@ try {
       assert.equal(repeated.body.run.id, submitted.body.run.id);
     }
   }
-  console.log('PASS: JSON and multipart HTTP admission preserve sourceDelivery through generated reply/outbox; no external sender invoked');
+  const emailSession = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', sourceId: 'email' });
+  assert.equal(emailSession.status, 201);
+  const emailSessionId = emailSession.body.session.id;
+  for (const requestId of ['', 'invalid-route']) {
+    const invalid = await request('POST', `/api/sessions/${emailSessionId}/messages`, {
+      ...(requestId ? { requestId } : {}), text: 'Do not execute without the requested route.',
+      sourceDelivery: { connector: 'wechat', target: { chatId: 'missing-account-and-peer' } },
+    });
+    assert.equal(invalid.status, 400, 'invalid explicit delivery targets must fail admission, not silently lose the reply');
+    assert.match(invalid.body.error, /Invalid sourceDelivery/);
+  }
+  const admitted = [];
+  for (const suffix of ['first', 'follow-up']) {
+    const result = await request('POST', `/api/sessions/${emailSessionId}/messages`, {
+      requestId: `email-${suffix}`, text: `Reply to ${suffix}.`, tool: 'fake-codex', model: 'fake-model',
+      sourceDelivery: { connector: 'email', sourceRouteId: 'queued-mailbox', target: {
+        to: 'fixture@example.test', subject: 'Re: queued fixture', threadId: '<thread@example.test>',
+        inReplyTo: `<${suffix}@example.test>`, messageId: `<${suffix}@example.test>`,
+      } },
+    });
+    assert.equal(result.status, 202);
+    admitted.push(result.body);
+  }
+  assert.equal(admitted[1].queued, true, 'second email is admitted while the first request is still executing');
+  const observing = await request('GET', '/api/source-deliveries?connector=email&sourceRouteId=queued-mailbox&includeActivity=true');
+  assert(observing.body.activity.some(item => item.requestId === 'email-follow-up'), 'optional feedback observes durable queued requests');
+  assert(observing.body.activity.every(item => item.text === undefined), 'activity never exports prompt bodies');
+  const queuedReplies = await waitFor(async () => {
+    const result = await request('GET', '/api/source-deliveries?connector=email&sourceRouteId=queued-mailbox');
+    assert(result.body.deliveries.every(item => item.kind !== 'session_entry'), 'email must not create a second session-entry email even with a configured public URL');
+    const replies = result.body.deliveries.filter(item => item.kind === 'content');
+    return replies.length === 2 ? replies : null;
+  }, 'each queued email request owns an independent final reply');
+  assert.deepEqual(new Set(queuedReplies.map(reply => reply.runId)), new Set(admitted.map(item => item.run.id)));
+  assert.deepEqual(new Set(queuedReplies.map(reply => reply.target.inReplyTo)), new Set(['<first@example.test>', '<follow-up@example.test>']));
+  assert(queuedReplies.every(reply => reply.state === 'pending'), 'sender downtime retains every completed email reply');
+  const settledActivity = await request('GET', '/api/source-deliveries?connector=email&sourceRouteId=queued-mailbox&includeActivity=true');
+  assert.deepEqual(settledActivity.body.activity, [], 'terminal requests stop typing even while final delivery is pending');
+  console.log('PASS: Feishu, WeChat and Email JSON/multipart admission preserve sourceDelivery; queued emails each create a reply while sender is offline; no external sends');
 } finally {
   if (server.exitCode === null) {
     server.kill('SIGTERM');

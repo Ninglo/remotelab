@@ -27,6 +27,7 @@ function normalizeTarget(value = {}) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const target = {};
   for (const field of [
+    // Feishu fields
     'chatId',
     'chatType',
     'conversationKind',
@@ -37,9 +38,26 @@ function normalizeTarget(value = {}) {
     'parentId',
     'groupMessageType',
     'chatMode', 'eventType', 'fileType', 'fileToken', 'commentId', 'replyId', 'sourceKind', 'messageType',
+    // WeChat fields
+    'accountId',
+    'peerUserId',
+    'contextToken',
+    // Email fields (preserve the bound mailbox alias used for replies).
+    'to',
+    'from',
+    'subject',
+    'inReplyTo',
   ]) {
     const normalized = trimString(raw[field]);
     if (normalized) target[field] = normalized;
+  }
+  // Email references: stored as array of strings
+  if (Array.isArray(raw.references) && raw.references.length > 0) {
+    const refs = raw.references.map(r => trimString(r)).filter(Boolean);
+    if (refs.length > 0) target.references = refs;
+  } else if (typeof raw.references === 'string') {
+    const ref = trimString(raw.references);
+    if (ref) target.references = [ref];
   }
   if (raw.replyInThread === true) target.replyInThread = true;
   if (raw.forkCommand === true) target.forkCommand = true;
@@ -52,9 +70,16 @@ function normalizeTarget(value = {}) {
 export function normalizeSourceDeliveryPlan(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const connector = trimString(value.connector).toLowerCase();
-  if (connector !== 'feishu') return null;
   const target = normalizeTarget(value.target);
-  if (!target.chatId && !target.commentId) return null;
+  if (connector === 'feishu') {
+    if (!target.chatId && !target.commentId) return null;
+  } else if (connector === 'wechat') {
+    if (!target.accountId || !target.peerUserId) return null;
+  } else if (connector === 'email') {
+    if (!target.to) return null;
+  } else {
+    return null;
+  }
   return {
     connector,
     sourceRouteId: normalizeSourceRouteId(value.sourceRouteId),
@@ -71,9 +96,16 @@ export function buildSourceDeliveryPlan(sourceContext) {
     ? sourceContext.message
     : {};
   const connector = trimString(message.connector || session.connector).toLowerCase();
-  if (connector !== 'feishu') return null;
   const target = normalizeTarget({ ...session, ...message });
-  if (!target.chatId && !target.commentId) return null;
+  if (connector === 'feishu') {
+    if (!target.chatId && !target.commentId) return null;
+  } else if (connector === 'wechat') {
+    if (!target.accountId || !target.peerUserId) return null;
+  } else if (connector === 'email') {
+    if (!target.to) return null;
+  } else {
+    return null;
+  }
   return {
     connector,
     sourceRouteId: normalizeSourceRouteId(message.sourceRouteId || session.sourceRouteId),
@@ -84,6 +116,14 @@ export function buildSourceDeliveryPlan(sourceContext) {
 
 export function buildReplyDeliveries(plan, payload) {
   if (!plan) return [];
+  // Email: one combined delivery; the email worker sends a single message with text + attachments.
+  if (plan.connector === 'email') {
+    const text = payload.text || '';
+    const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
+    if (!text && attachments.length === 0) return [];
+    return [{ ...plan, kind: 'content', text, attachments }];
+  }
+  // All other connectors: split text and attachments into separate deliveries.
   const parts = [];
   if (payload.text) parts.push({ ...plan, kind: 'content', text: payload.text });
   for (const attachment of payload.attachments || []) parts.push({ ...plan, kind: 'attachment', text: '', attachment });
@@ -93,6 +133,20 @@ export function buildReplyDeliveries(plan, payload) {
 export async function listSourceDeliveries(options = {}) {
   const deliveries = (await requests.active()).flatMap(record => record.deliveries);
   return deliveries.filter(entry => ['connector', 'sourceRouteId', 'state', 'sessionId'].every(field => !options[field] || entry[field] === options[field]));
+}
+
+// Optional transport feedback (e.g. native typing) observes durable requests,
+// never a per-message waiter or a connector-imposed execution deadline.
+export async function listSourceDeliveryActivity(options = {}) {
+  const activity = [];
+  for (const record of await requests.active()) {
+    if (record.result || record.options.deliveryOnly || record.options.internalOperation) continue;
+    const plan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
+    if (!plan || ['connector', 'sourceRouteId'].some(field => options[field] && plan[field] !== options[field])) continue;
+    if (options.sessionId && record.sessionId !== options.sessionId) continue;
+    activity.push({ ...plan, sessionId: record.sessionId, requestId: record.requestId, responseId: record.responseId });
+  }
+  return activity;
 }
 
 function parseId(id) {
@@ -120,7 +174,19 @@ export async function enqueueSourceDelivery(input = {}) {
   return record.deliveries[0];
 }
 
-const targetKey = entry => JSON.stringify([entry.connector, entry.sourceRouteId, entry.target.chatId || entry.target.fileToken, entry.target.topicId || entry.target.threadId || entry.target.commentId || '']);
+const targetKey = entry => {
+  const t = entry.target || {};
+  if (entry.connector === 'wechat') {
+    // Serialise per account+peer so messages to different WeChat users never block each other.
+    return JSON.stringify(['wechat', entry.sourceRouteId, `${t.accountId || ''}:${t.peerUserId || ''}`, '']);
+  }
+  if (entry.connector === 'email') {
+    // Serialise per recipient+thread so each email thread is independently ordered.
+    return JSON.stringify(['email', entry.sourceRouteId, t.to || '', t.threadId || t.inReplyTo || '']);
+  }
+  // Feishu (and any future unknown connector): existing key.
+  return JSON.stringify([entry.connector, entry.sourceRouteId, t.chatId || t.fileToken || '', t.topicId || t.threadId || t.commentId || '']);
+};
 
 async function mutateDelivery(id, update) {
   const { key, index } = parseId(id);
