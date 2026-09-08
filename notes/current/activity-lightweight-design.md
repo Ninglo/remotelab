@@ -24,3 +24,10 @@ authenticated MOCK session loaded 9 tool records and 5 file records with working
 input/output switching, diff expansion, transparent surfaces, no page errors and
 no horizontal overflow at 390px. Screenshots reviewed in the native chat shell.
 Full npm test, file-size advisory and git diff --check passed.
+
+Density follow-up: reduce desktop fine-pointer tool/file headers from 32px to
+26px (about 19%), preserving typography, prose/phase spacing and all disclosure
+behavior. Small-screen headers remain 40px; coarse-pointer devices do not receive
+the compact override. Browser regression failed at 32px before the change and
+passes at 26px desktop / 40px mobile afterward. Native MOCK screenshot and output
+disclosure verified; mobile has no page overflow.

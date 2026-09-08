@@ -44,6 +44,8 @@ try {
     root.querySelector('.activity-file').open = true;
   });
   assert.equal(await page.locator('.tool-card').count(), 2, 'duplicate lifecycle renders once');
+  assert.equal(await page.locator('.tool-card summary').first().evaluate(n => n.getBoundingClientRect().height), 26, 'desktop tool rows are compact');
+  assert.equal(await page.locator('.activity-file summary').first().evaluate(n => n.getBoundingClientRect().height), 26, 'desktop file rows share the compact rhythm');
   await page.locator('.tool-card').first().locator('summary').click();
   assert.equal(await page.locator('.activity-output').isVisible(), true);
   await page.getByRole('button', { name: '调用详情' }).click();
@@ -65,6 +67,7 @@ try {
   assert.deepEqual(quietSurface, { header: 'rgba(0, 0, 0, 0)', output: 'rgba(0, 0, 0, 0)', border: '0px', tab: 'rgba(0, 0, 0, 0)', alignment: 'center' }, 'activity is typography-first, without stacked filled containers');
   await page.screenshot({ path: resolve(output, 'activity-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.locator('.tool-card summary').first().evaluate(n => n.getBoundingClientRect().height), 40, 'mobile touch targets remain unchanged');
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'mobile has no horizontal page overflow');
   await page.screenshot({ path: resolve(output, 'activity-mobile.png'), fullPage: true });

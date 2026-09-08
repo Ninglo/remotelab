@@ -38,6 +38,11 @@
 .thinking-body .msg-assistant-time { display: none; }
 .usage-info { text-align: center; margin: 8px 0 16px; color: var(--text-muted); }
 .context-barrier { border: 0; border-top: 1px solid var(--border); background: transparent; color: var(--text-muted); font-size: 11px; text-align: left; padding: 10px 8px; }
+/* Compact repeated records, not prose or touch targets. */
+@media (min-width: 601px) and (pointer: fine) {
+  .activity-tool > .activity-header,
+  .activity-file > .activity-header { min-height: 26px; padding-block: 3px; }
+}
 @media (max-width: 600px) {
   .activity-header { min-height: 40px; gap: 6px; padding-inline: 4px; }
   .activity-tool-name { display: none; }
