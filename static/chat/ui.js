@@ -777,14 +777,43 @@ function renderMessage(evt) {
   });
 }
 
+function summarizeToolInput(value, maxLength = 120) {
+  const input = typeof value === "string" ? value.trim() : "";
+  if (!input) return "";
+
+  let summary = input;
+  if (input.startsWith("{") && input.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(input);
+      const preferredKeys = ["cmd", "command", "query", "path", "url", "file_path"];
+      const preferredValue = preferredKeys
+        .map((key) => parsed?.[key])
+        .find((candidate) => typeof candidate === "string" && candidate.trim());
+      if (preferredValue) summary = preferredValue;
+    } catch {
+      // Keep malformed or partial JSON readable as plain text.
+    }
+  }
+
+  summary = summary.replace(/\s+/g, " ").trim();
+  if (summary.length <= maxLength) return summary;
+  return summary.slice(0, Math.max(1, maxLength - 1)).trimEnd() + "…";
+}
+
 function createToolCard(evt) {
   const card = document.createElement("div");
-  card.className = "tool-card";
+  card.className = "tool-card is-running";
 
-  const header = document.createElement("div");
+  const header = document.createElement("button");
+  header.type = "button";
   header.className = "tool-header";
-  header.innerHTML = `<span class="tool-name">${esc(evt.toolName || t("ui.toolFallback"))}</span>
+  header.setAttribute("aria-expanded", "false");
+  header.innerHTML = `<span class="tool-status" aria-hidden="true"></span>
+    <span class="tool-name">${esc(evt.toolName || t("ui.toolFallback"))}</span>
+    <span class="tool-summary">${esc(summarizeToolInput(evt.toolInput))}</span>
+    <span class="tool-state-label">${esc(t("ui.toolRunning"))}</span>
     <span class="tool-toggle">${renderUiIcon("chevron-right")}</span>`;
+  header.title = evt.toolInput || "";
 
   const body = document.createElement("div");
   body.className = "tool-body";
@@ -801,6 +830,7 @@ function createToolCard(evt) {
   header.addEventListener("click", async () => {
     header.classList.toggle("expanded");
     body.classList.toggle("expanded");
+    header.setAttribute("aria-expanded", String(body.classList.contains("expanded")));
     if (body.classList.contains("expanded")) {
       await hydrateLazyNodes(body);
     }
@@ -839,23 +869,23 @@ function renderToolResultInto(container, evt) {
   const body = targetCard.querySelector(".tool-body");
   if (!body) return null;
 
-  const label = document.createElement("div");
-  label.className = "tool-result-label";
-  label.innerHTML =
-    esc(t("ui.toolResult")) +
-    (evt.exitCode !== undefined
-      ? `<span class="exit-code ${evt.exitCode === 0 ? "ok" : "fail"}">${esc(t("ui.toolExitCode", { code: evt.exitCode }))}</span>`
-      : "");
+  const failed = evt.exitCode !== undefined && evt.exitCode !== 0;
+  targetCard.classList.remove("is-running");
+  targetCard.classList.add("is-complete");
+  targetCard.classList.toggle("is-failed", failed);
+  const stateLabel = targetCard.querySelector(".tool-state-label");
+  if (stateLabel) {
+    stateLabel.textContent = failed ? t("ui.toolFailed") : t("ui.toolDone");
+  }
   const pre = document.createElement("pre");
-  pre.className = "tool-result";
+  pre.className = "tool-detail tool-result";
   pre.textContent = evt.output || "";
   if (evt.bodyAvailable && !evt.bodyLoaded) {
     pre.dataset.eventSeq = String(evt.seq || "");
     pre.dataset.bodyPending = "true";
     pre.dataset.preview = evt.output || "";
   }
-  body.appendChild(label);
-  body.appendChild(pre);
+  body.replaceChildren(pre);
   return targetCard;
 }
 

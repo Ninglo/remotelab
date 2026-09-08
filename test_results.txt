@@ -127,3 +127,11 @@ process recovery: SIGKILL after admission and during execution, offline completi
 git diff --check: exit=0.
 Logs: ~/.remotelab/workspace/request-state-upgrade-review-20260908/{identity-collision.log,npm-test.log}.
 Limits: this review did not rerun production conversion or live Feishu E2E. The full original recovery directory is not present after the separate host move; special historical identity reconciliation and unmatched inbound-event disposition are not fully re-audited here.
+
+2026-09-08 compact thinking and tool activity UI
+- RED: test-chat-compact-tool-cards failed because tool inputs had no compact summary and completed results did not update a stateful card.
+- GREEN: test-chat-compact-tool-cards: ok
+- Focused rendering gates: thinking display preference, event-block append/dispatch, static assets, split frontend smoke, and JS syntax checks passed.
+- Full `npm test`: exit 0, including smoke, merge-safety, shared-tools, connector recovery, and the new compact-card regression.
+- `git diff --check`: exit 0.
+- `npm run lint:filesize`: advisory report completed; existing oversized-file findings remain, including static/chat/ui.js.

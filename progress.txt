@@ -5,6 +5,8 @@
 [2026-09-08 GREEN] Final full `npm test`, syntax, diff and advisory file-size checks passed. Live config migration and connector restart remain.
 [2026-09-08 DEPLOYED] Main contains f4b11ee8 after required CI passed. Migrated primary to all/all and bot-2 to all/mention_only, restarted both connectors into healthy persistent connections, and verified a real bot-2 THINKING reaction on the requesting message.
 
+[2026-09-08 GREEN] Reworked thinking/tool rendering into a compact Codex-style activity timeline. Tool input is summarized in one row with live state; completion updates the same card and the expanded detail switches to output instead of stacking duplicate input/result sections. Added keyboard semantics, reduced-motion handling, bilingual status copy, and a regression gate. Full npm test passed.
+
 [2026-09-06] Started durable connector request lifecycle refactor from origin/main 4e4108f1 in isolated checkout; live checkout has unrelated uncommitted work.
 [2026-09-06] Decision: one persisted request per input, durable Inbox/Outbox, derived reply state, shared reconciliation on startup and normal events; no runtime legacy migration.
 [2026-09-06] Verification: baseline smoke log and isolated fault-injection tests required before any fleet rollout.

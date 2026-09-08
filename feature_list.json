@@ -1,5 +1,13 @@
 [
   {
+    "id": "compact-thinking-tool-ui",
+    "name": "Compact thinking and tool activity UI",
+    "description": "Render thinking as a quiet activity timeline and merge each tool call/result into one compact stateful row with non-duplicated detail.",
+    "verification_plan": "Assert compact card contracts, run focused thinking/event-block/static tests, syntax checks, diff checks, file-size advisory, and the full npm test suite.",
+    "status": "completed",
+    "pass": true
+  },
+  {
     "id": "connector-early-session-entry",
     "name": "Early session entry notification",
     "description": "Send a durable standalone session link at first request admission, before the model finishes; preserve receipts and omit the completed-reply footer.",
