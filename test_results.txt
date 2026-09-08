@@ -111,3 +111,19 @@ Live runtime: serviceCommit=91716eeb; requests/schema.json absent. Not restarted
 - Post-restart API: auth/me=200; both active Run APIs=200 and state=running.
 - node --check, bash -n setup.sh, git diff --check: PASS.
 Evidence: ~/.remotelab/workspace/connector-live-repair-20260907/.
+
+2026-09-08 Request state upgrade documentation and incident review
+Requirement: document the breaking upgrade, review actual migration and failed rollback, and warn other instances before updating.
+Implementation: docs/request-state-upgrade.md, linked from README/setup/AGENTS/restart docs; sanitized incident with evidence limits; corrected historical rollout status.
+Read-only data audit: 3,645 reported Runs present; Request session/request/response identities match Run status; Request result states match conversion report. 109 legacy deliveries remain delivered. Exactly one stopped maintenance Run was converted to failed. Old handled ID sets compared with imported Inbox receipts: default 2,003/2,003, bot-2 353/353, missing=0.
+Actual verification output:
+request schema: old runtime requires explicit conversion; new state initializes once
+conversion: no source writes, explicit interruption, preserved IDs/queue and unknown delivery
+PASS: distinct request IDs with one response ID reproduce the rollout conversion failure.
+PASS: source files unchanged; failed staging has no schema completion marker.
+PASS: 13 upgrade/incident documentation links, Markdown fences, and feature JSON.
+Full npm test: exit=0. Final recovery output:
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+git diff --check: exit=0.
+Logs: ~/.remotelab/workspace/request-state-upgrade-review-20260908/{identity-collision.log,npm-test.log}.
+Limits: this review did not rerun production conversion or live Feishu E2E. The full original recovery directory is not present after the separate host move; special historical identity reconciliation and unmatched inbound-event disposition are not fully re-audited here.

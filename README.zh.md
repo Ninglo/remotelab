@@ -16,6 +16,8 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 ## 快速安装
 
+> **已有实例准备升级？** 2026-09-07 的 Request 状态变更需要先停机转换，不能直接更新后重启。请先读[升级与恢复说明](docs/request-state-upgrade.md)；共享这份源码的其他实例也要分别检查。
+
 如果上面的 demo 已经说明白了，那就别往下看了。直接在部署机器上开一个新的终端，启动 Codex、Claude Code 或其他 coding agent，然后把下面这段 prompt 粘贴进去：
 
 ```text
@@ -333,7 +335,7 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 
 如果机器上还留着早期那种按实例复制出来的 runtime（例如 `remotelab-trial-runtime`），可以运行 `remotelab guest-instance converge <name>` 或 `remotelab guest-instance converge --all`。它会保持原来的端口、域名、登录信息、config 和 memory 目录不变，只把 launch agent 的代码入口切回当前的 `~/code/remotelab`，这样以后代码更新就能统一落到所有实例上，而不用改用户手里的链接。
 
-完成收敛后，这些共享代码树的 guest runtime 会在各自重启后直接吃到当前源码版本：外部链接保持不变，实例自己的状态、资源、config 和 memory 仍然继续隔离，但不再额外经过一层 release snapshot。
+完成收敛后，这些共享代码树的 guest runtime 会在各自重启后直接加载当前源码版本。重启前需按[升级说明](docs/request-state-upgrade.md)检查每个实例的数据格式是否兼容；外部链接和实例的数据目录仍保持独立。
 
 如果你希望每个 guest instance 都有一个对外可用的收件地址，优先做法应该是把 Cloudflare Email Routing 配成 catch-all -> Email Worker，而不是给每个实例单独建邮箱账号。`node scripts/agent-mail-cloudflare-routing.mjs status` 会打印期望的路由形态，`probe --address <email>` 可以直接验证像 `trial6@example.com` 这样的地址当前在 SMTP 层是否会被接受。
 

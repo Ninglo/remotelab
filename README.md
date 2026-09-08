@@ -16,6 +16,8 @@ It does not care much whether the control surface is a phone, tablet, or desktop
 
 ## Quick install
 
+> **Upgrading an existing instance?** The 2026-09-07 Request state change requires offline conversion before restart. Read the [upgrade notice and recovery procedure](docs/request-state-upgrade.md) first, including for instances sharing this source tree.
+
 If the demo makes sense, do not keep reading. Open a fresh terminal on the host machine, start Codex, Claude Code, or another coding agent, and paste this:
 
 ```text
@@ -333,7 +335,7 @@ If you still have older instance-specific runtime copies such as `remotelab-tria
 
 If you want public inbound email per guest instance, prefer Cloudflare Email Routing into the Email Worker rather than creating separate mailbox accounts. `node scripts/agent-mail-cloudflare-routing.mjs status` prints the desired routing shape, `sync` backfills older instances that predate automatic provisioning, and `probe --address <email>` verifies whether SMTP will currently accept a guest mailbox such as `trial6@example.com`.
 
-RemoteLab now boots the current source tree directly after restart. Use `remotelab restart chat` when the owner surface should pick up shared-code changes; guest instances that already point at the shared source tree pick up the same changes on their next restart.
+RemoteLab boots the current source tree directly after restart. First check [state compatibility and required migrations](docs/request-state-upgrade.md); when compatible, use `remotelab restart chat` to pick up shared-code changes. Guest instances sharing that tree also need their own state checked before their next restart.
 
 ## Configuration
 

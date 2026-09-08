@@ -39,6 +39,8 @@ A flaky test cleanup path formerly waited for a second `exit` event from an alre
 
 ## Offline conversion and rollout
 
+**Operator entry point:** [legacy-instance upgrade and rollback](../../docs/request-state-upgrade.md). The first production attempt failed during conversion and its rollback did not restore service; see the [incident review](../archive/2026-09-07-request-state-upgrade-incident.md). Conversion later completed with additional repairs. The verification limits below describe the initial implementation, not the current migration status of every instance.
+
 Production rollout is separate from code verification. New startup refuses pre-request runtime state; it does not scan and mutate old Run/Publications as a repair fallback.
 
 The deployment-only converter writes a **new staging directory** and never modifies the source:

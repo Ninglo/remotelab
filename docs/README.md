@@ -53,6 +53,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - `project-architecture.md` — top-down map of the shipped system
 - `cpolar-setup.md` — model-first cpolar setup for mainland-friendly direct access without a VPN
 - `setup.md` — model-first setup contract, one-round input handoff, human checkpoints, and target state
+- [Request state upgrade](request-state-upgrade.md) — required offline conversion for legacy instances, rollback and the 2026-09-07 incident; read before updating existing services
 - `external-message-protocol.md` — canonical integration contract for external channels
 - `creating-apps.md` — user/developer guide for Agents
 

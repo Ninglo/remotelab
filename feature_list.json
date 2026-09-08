@@ -6,7 +6,7 @@
     "verification_plan": "Block the fake model, claim and acknowledge the entry before its result exists, then verify no footer, duplicate/concurrent admission, archive/restart and full npm test.",
     "status": "completed",
     "pass": true,
-    "rollout": "Not deployed: production still uses the legacy runtime schema. Feishu uses the shared outbox; other adapters retain their existing first-reply footer."
+    "rollout": "First owner conversion and cutover completed on 2026-09-07 after recovery from a failed initial deployment. See docs/request-state-upgrade.md and the incident record for validation limits; other instances require separate migration and acceptance."
   },
   {
     "id": "connector-first-reply-session-link",
@@ -24,7 +24,7 @@
       "Verify process restart, delivery ambiguity, ordering and full regressions",
       "Document one-time conversion and land verified code on main"
     ],
-    "rollout": "Not deployed. Offline state reconciliation and real Feishu acceptance remain required."
+    "rollout": "First owner conversion completed on 2026-09-07 with additional connector/controller repairs. Do not infer complete live Feishu restart acceptance or fleet rollout; see docs/request-state-upgrade.md."
   },
   {
     "id": "runner-restart-ownership",

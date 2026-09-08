@@ -1,5 +1,7 @@
 # RemoteLab Setup Contract (Prompt-First)
 
+> Existing instances: read the [Request state upgrade notice](request-state-upgrade.md) before updating source, running setup over an installation, or restarting shared-source services. The 2026-09-07 state format requires offline conversion; this setup flow does not perform that migration.
+
 This document is the setup contract for an AI agent running on the target machine.
 The canonical public copy is `https://raw.githubusercontent.com/Ninglo/remotelab/main/docs/setup.md`, so the setup flow can start from a clean terminal even before the repo exists locally.
 

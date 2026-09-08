@@ -2,6 +2,8 @@
 
 > Transport/runtimes are now HTTP-first with detached runners. This note stays focused on honest restart behavior for the single shipped chat plane.
 
+> **Scope: compatible state formats and service configuration.** Before loading newer code, check the [Request state upgrade notice](../../docs/request-state-upgrade.md). The 2026-09-07 legacy conversion is a maintenance operation; it is not covered by ordinary restart recovery. Verify the actual process-manager policy preserves runners, and retain a maintenance entry point outside the service being stopped.
+
 ## Brutal truth
 
 If the same `chat-server` process is both:

@@ -69,7 +69,7 @@ Browser / app surface ──HTTPS──→ Cloudflare Tunnel ──→ chat-serv
 
 **Dev workflow**: use the normal `7690` service as the single chat/control plane. Restarting it should boot the current source tree directly; RemoteLab relies on clean restart recovery rather than a separate release snapshot or permanent validation plane.
 
-**Self-hosting rule**: restarting the active chat server is acceptable when needed because runs reconcile back from durable state. Treat restart as a transport interruption with logical recovery, not as a reason to maintain a second permanent chat plane. Manual extra instances remain optional ad-hoc debugging tools only. See `notes/current/self-hosting-dev-restarts.md`.
+**Self-hosting rule**: restarting the active chat server is acceptable when needed because runs reconcile back from durable state. This assumes compatible persisted state and a service manager that preserves detached execution. **Before upgrading an existing instance or repointing shared-source consumers, read [the Request state upgrade notice](docs/request-state-upgrade.md).** The 2026-09-07 schema change requires offline conversion; ordinary restart recovery does not perform it. Keep a working maintenance entry point outside the service being stopped. Manual extra instances remain optional ad-hoc debugging tools only. See `notes/current/self-hosting-dev-restarts.md`.
 
 ---
 
