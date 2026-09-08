@@ -36,5 +36,9 @@ had no call site in `handleMessage` after the durable Inbox refactor.
 - Syntax checks and `git diff --check` passed. `npm run lint:filesize` completed
   with its advisory baseline report; this change reduces
   `scripts/feishu-connector.mjs` by more than 500 lines.
-- Live config migration, restart and reaction verification are recorded during
-  deployment.
+- Both local configs were migrated with backups: primary uses `all/all`; bot-2
+  uses `all/mention_only`. Retired keys are absent.
+- Both systemd connectors restarted into new PIDs and report active/running.
+  Startup logs show the expected policies and `ws client ready` for each Bot.
+- A real bot-2 API call added a `THINKING` reaction to the message that requested
+  this change and returned a Feishu reaction ID.

@@ -42,6 +42,6 @@
       "Add a fixed processing reaction before durable AI submission",
       "Remove per-chat overrides, chat approval state, membership grants and reaction configuration"
     ],
-    "rollout": "Deploy bot-2 as mention_only and the primary Bot as all after migrating both local configs."
+    "rollout": "Deployed: bot-2 uses mention_only and the primary Bot uses all; both connectors restarted and reconnected."
   }
 ]
