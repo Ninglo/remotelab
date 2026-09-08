@@ -62,10 +62,10 @@ import { withTimeout } from '../lib/connector-driver-transports.mjs';
 import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
-  normalizeFeishuGroupReplyPolicy,
+  normalizeFeishuResponsePolicy,
   resolveFeishuBotIdentity,
   shouldRouteFeishuMessageToRemoteLab,
-} from '../connectors/feishu/group-routing.mjs';
+} from '../connectors/feishu/response-policy.mjs';
 import {
   createConnectorSession,
   submitConnectorMessage,
@@ -83,31 +83,13 @@ const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   ? resolve(process.env.REMOTELAB_FEISHU_CONFIG_PATH)
   : CANONICAL_DEFAULT_CONFIG_PATH;
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
-const DEFAULT_ACCESS_STATE_FILENAME = 'access-state.json';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
 const DEFAULT_SOURCE_DELIVERY_POLL_MS = 1000;
 const DEFAULT_SESSION_TOOL = 'codex';
 const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const DEFAULT_FEISHU_API_TIMEOUT_MS = 10_000;
-const DEFAULT_PROCESSING_REACTION_EMOJI_TYPE = 'THINKING';
 const DEFAULT_PROCESSING_REACTION_TIMEOUT_MS = 10_000;
 const CONNECTOR_PID_FILENAME = 'connector.pid';
-const APPROVE_CURRENT_CHAT_COMMANDS = new Set([
-  '授权本群',
-  '授权这个群',
-  'approve this group',
-  'approve group',
-  'trust this group',
-  'trust this chat',
-]);
-const CHAT_ACCESS_STATUS_COMMANDS = new Set([
-  '本群状态',
-  '本群权限',
-  '查看本群状态',
-  '查看本群权限',
-  'group access status',
-  'chat access status',
-]);
 
 function parseArgs(argv) {
   const options = {
@@ -192,20 +174,11 @@ Config shape:
     "effort": "",
     "thinking": false,
     "systemPrompt": "${DEFAULT_SESSION_SYSTEM_PROMPT.replace(/"/g, '\\"')}",
-    "processingReaction": {
-      "enabled": false,
-      "emojiType": "${DEFAULT_PROCESSING_REACTION_EMOJI_TYPE}",
-      "removeOnCompletion": false,
-      "timeoutMs": ${DEFAULT_PROCESSING_REACTION_TIMEOUT_MS}
+    "responsePolicy": {
+      "group": "all"
     },
-    "silentConfirmationText": "",
-    "groupReplyPolicy": {
+    "accessPolicy": {
       "mode": "all",
-      "chatModes": { "oc_example": "mention_only" }
-    },
-    "intakePolicy": {
-      "mode": "allow_all",
-      "accessStatePath": "~/.config/remotelab/feishu-connector/${DEFAULT_ACCESS_STATE_FILENAME}",
       "allowedSendersPath": "~/.config/remotelab/feishu-connector/${DEFAULT_ALLOWED_SENDERS_FILENAME}",
       "allowedSenders": {
         "openIds": [],
@@ -263,104 +236,6 @@ function normalizeAllowedSenders(value) {
   };
 }
 
-function normalizeApprovedChatRecord(value, fallbackChatId = '') {
-  const chatId = trimString(value?.chatId || fallbackChatId);
-  if (!chatId) return null;
-  return {
-    chatId,
-    name: trimString(value?.name),
-    tenantKey: trimString(value?.tenantKey),
-    autoApproveNewMembers: value?.autoApproveNewMembers !== false,
-    source: trimString(value?.source || 'manual'),
-    createdAt: trimString(value?.createdAt),
-    updatedAt: trimString(value?.updatedAt),
-  };
-}
-
-function normalizeApprovedChats(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const normalized = {};
-  for (const [key, chat] of Object.entries(value)) {
-    const record = normalizeApprovedChatRecord(chat, key);
-    if (!record) continue;
-    normalized[record.chatId] = record;
-  }
-  return normalized;
-}
-
-function normalizeMembershipGrantRecord(value, fallbackKey = '') {
-  const chatId = trimString(value?.chatId || fallbackKey.split(':', 1)[0]);
-  const openId = trimString(value?.openId);
-  const userId = trimString(value?.userId);
-  const unionId = trimString(value?.unionId);
-  const tenantKey = trimString(value?.tenantKey);
-  if (!chatId) return null;
-  if (!openId && !userId && !unionId && !tenantKey) return null;
-  return {
-    chatId,
-    openId,
-    userId,
-    unionId,
-    tenantKey,
-    source: trimString(value?.source || 'manual'),
-    grantedAt: trimString(value?.grantedAt),
-    updatedAt: trimString(value?.updatedAt),
-  };
-}
-
-function normalizeMembershipGrants(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const normalized = {};
-  for (const [key, grant] of Object.entries(value)) {
-    const record = normalizeMembershipGrantRecord(grant, key);
-    if (!record) continue;
-    const recordKey = key || `${record.chatId}:${record.openId || record.userId || record.unionId || record.tenantKey}`;
-    normalized[recordKey] = record;
-  }
-  return normalized;
-}
-
-function normalizeAccessState(value) {
-  return {
-    version: 1,
-    allowedSenders: normalizeAllowedSenders(value?.allowedSenders),
-    approvedChats: normalizeApprovedChats(value?.approvedChats),
-    membershipGrants: normalizeMembershipGrants(value?.membershipGrants),
-  };
-}
-
-function createAllowedSendersCache(allowedSenders) {
-  const normalized = normalizeAllowedSenders(allowedSenders);
-  return {
-    openIds: new Set(normalized.openIds),
-    userIds: new Set(normalized.userIds),
-    unionIds: new Set(normalized.unionIds),
-    tenantKeys: new Set(normalized.tenantKeys),
-  };
-}
-
-function snapshotAllowedSendersCache(cache) {
-  return {
-    openIds: Array.from(cache?.openIds || []).sort(),
-    userIds: Array.from(cache?.userIds || []).sort(),
-    unionIds: Array.from(cache?.unionIds || []).sort(),
-    tenantKeys: Array.from(cache?.tenantKeys || []).sort(),
-  };
-}
-
-function sortObjectKeys(value) {
-  return Object.fromEntries(Object.entries(value || {}).sort(([left], [right]) => left.localeCompare(right)));
-}
-
-function snapshotAccessState(access) {
-  return {
-    version: 1,
-    allowedSenders: snapshotAllowedSendersCache(access?.allowedSendersCache),
-    approvedChats: sortObjectKeys(access?.approvedChats),
-    membershipGrants: sortObjectKeys(access?.membershipGrants),
-  };
-}
-
 function resolveOptionalPath(value, baseDir, fallbackPath) {
   const normalized = trimString(value);
   if (!normalized) return fallbackPath;
@@ -373,18 +248,16 @@ function resolveOptionalPath(value, baseDir, fallbackPath) {
   return resolve(baseDir, normalized);
 }
 
-function normalizeIntakePolicy(value, options = {}) {
-  const mode = trimString(value?.mode || 'allow_all').toLowerCase();
-  if (!['allow_all', 'whitelist'].includes(mode)) {
-    throw new Error(`Unsupported intakePolicy.mode: ${value?.mode || '(missing)'}`);
+function normalizeAccessPolicy(value, options = {}) {
+  const mode = trimString(value?.mode || 'all').toLowerCase();
+  if (!['all', 'whitelist'].includes(mode)) {
+    throw new Error(`Unsupported accessPolicy.mode: ${value?.mode || '(missing)'}`);
   }
 
   const baseDir = options.baseDir || homedir();
   const defaultAllowedSendersPath = options.defaultAllowedSendersPath || join(baseDir, DEFAULT_ALLOWED_SENDERS_FILENAME);
-  const defaultAccessStatePath = options.defaultAccessStatePath || join(baseDir, DEFAULT_ACCESS_STATE_FILENAME);
   return {
     mode,
-    accessStatePath: resolveOptionalPath(value?.accessStatePath, baseDir, defaultAccessStatePath),
     allowedSendersPath: resolveOptionalPath(value?.allowedSendersPath, baseDir, defaultAllowedSendersPath),
     allowedSenders: normalizeAllowedSenders(value?.allowedSenders),
   };
@@ -408,47 +281,9 @@ function normalizeBoolean(value, fallback = false) {
   return fallback;
 }
 
-function normalizeReactionEmojiType(value, fallback = DEFAULT_PROCESSING_REACTION_EMOJI_TYPE) {
-  const normalized = trimString(value).replace(/[^A-Za-z0-9_]/g, '').toUpperCase();
-  return normalized || fallback;
-}
-
 function normalizePositiveTimeout(value, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-}
-
-function normalizeProcessingReactionConfig(value) {
-  if (value === true) {
-    return {
-      enabled: true,
-      emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
-      removeOnCompletion: false,
-      timeoutMs: DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
-    };
-  }
-  if (value === false) {
-    return {
-      enabled: false,
-      emojiType: DEFAULT_PROCESSING_REACTION_EMOJI_TYPE,
-      removeOnCompletion: false,
-      timeoutMs: DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
-    };
-  }
-  if (typeof value === 'string') {
-    return {
-      enabled: true,
-      emojiType: normalizeReactionEmojiType(value),
-      removeOnCompletion: false,
-      timeoutMs: DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
-    };
-  }
-  return {
-    enabled: normalizeBoolean(value?.enabled, false),
-    emojiType: normalizeReactionEmojiType(value?.emojiType),
-    removeOnCompletion: normalizeBoolean(value?.removeOnCompletion, false),
-    timeoutMs: normalizePositiveTimeout(value?.timeoutMs, DEFAULT_PROCESSING_REACTION_TIMEOUT_MS),
-  };
 }
 
 function normalizeSystemPrompt(value) {
@@ -466,6 +301,11 @@ async function loadConfig(pathname) {
   const appSecret = trimString(parsed?.appSecret);
   if (!appId) throw new Error(`Missing appId in ${pathname}`);
   if (!appSecret) throw new Error(`Missing appSecret in ${pathname}`);
+  for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'processingReaction', 'silentConfirmationText']) {
+    if (Object.hasOwn(parsed, legacyKey)) {
+      throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy and responsePolicy`);
+    }
+  }
   const configDir = dirname(pathname);
   const storageDir = trimString(parsed?.storageDir) || configDir;
   const explicitBotId = trimString(parsed?.botId) ? sanitizeIdPart(parsed.botId) : '';
@@ -480,10 +320,9 @@ async function loadConfig(pathname) {
     loggerLevel: trimString(parsed?.loggerLevel || 'info'),
     apiTimeoutMs: normalizePositiveTimeout(parsed?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
     storageDir,
-    groupReplyPolicy: normalizeFeishuGroupReplyPolicy(parsed?.groupReplyPolicy),
-    intakePolicy: normalizeIntakePolicy(parsed?.intakePolicy, {
+    responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
+    accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
       baseDir: configDir,
-      defaultAccessStatePath: join(configDir, DEFAULT_ACCESS_STATE_FILENAME),
       defaultAllowedSendersPath: join(configDir, DEFAULT_ALLOWED_SENDERS_FILENAME),
     }),
     storeRawEvents: parsed?.storeRawEvents === true,
@@ -495,8 +334,6 @@ async function loadConfig(pathname) {
     effort: trimString(parsed?.effort),
     thinking: normalizeBoolean(parsed?.thinking, false),
     systemPrompt: normalizeSystemPrompt(parsed?.systemPrompt),
-    processingReaction: normalizeProcessingReactionConfig(parsed?.processingReaction),
-    silentConfirmationText: normalizeReplyText(parsed?.silentConfirmationText),
     sourceRouteId,
   };
 }
@@ -605,13 +442,6 @@ async function writeJson(pathname, value) {
   await writeFile(pathname, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
 }
 
-async function writeJsonAtomic(pathname, value) {
-  await ensureDir(dirname(pathname));
-  const tempPath = `${pathname}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  await rename(tempPath, pathname);
-}
-
 async function readAllowedSendersFile(pathname) {
   try {
     const raw = await readFile(pathname, 'utf8');
@@ -625,22 +455,6 @@ async function readAllowedSendersFile(pathname) {
     }
     console.error(`[feishu-connector] failed to read whitelist file ${pathname}:`, error?.stack || error?.message || error);
     return { status: 'error', allowedSenders: null };
-  }
-}
-
-async function readAccessStateFile(pathname) {
-  try {
-    const raw = await readFile(pathname, 'utf8');
-    return {
-      status: 'ok',
-      accessState: normalizeAccessState(JSON.parse(raw)),
-    };
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      return { status: 'missing', accessState: null };
-    }
-    console.error(`[feishu-connector] failed to read access state file ${pathname}:`, error?.stack || error?.message || error);
-    return { status: 'error', accessState: null };
   }
 }
 
@@ -665,20 +479,9 @@ async function ensureAllowedSendersFile(pathname, seedAllowedSenders) {
 }
 
 async function loadPersistedAccessState(policy) {
-  const accessStateFile = await readAccessStateFile(policy.accessStatePath);
-  const allowedSendersFile = await readAllowedSendersFile(policy.allowedSendersPath);
-  const merged = normalizeAccessState({
-    allowedSenders: mergeAllowedSenders(
-      policy.allowedSenders,
-      accessStateFile.accessState?.allowedSenders,
-      allowedSendersFile.allowedSenders,
-    ),
-    approvedChats: accessStateFile.accessState?.approvedChats,
-    membershipGrants: accessStateFile.accessState?.membershipGrants,
-  });
-  await writeJsonAtomic(policy.accessStatePath, merged);
-  await writeJsonAtomic(policy.allowedSendersPath, merged.allowedSenders);
-  return merged;
+  return {
+    allowedSenders: await ensureAllowedSendersFile(policy.allowedSendersPath, policy.allowedSenders),
+  };
 }
 
 async function loadEffectiveAllowedSenders(policy) {
@@ -687,118 +490,6 @@ async function loadEffectiveAllowedSenders(policy) {
     return fileState.allowedSenders;
   }
   return normalizeAllowedSenders(policy.allowedSenders);
-}
-
-function senderHasAllowedAccess(cache, summary) {
-  const sender = summary?.sender || {};
-  const tenantKey = trimString(sender?.tenantKey || summary?.tenantKey);
-  return (
-    cache?.openIds?.has(trimString(sender?.openId))
-    || cache?.userIds?.has(trimString(sender?.userId))
-    || cache?.unionIds?.has(trimString(sender?.unionId))
-    || cache?.tenantKeys?.has(tenantKey)
-  );
-}
-
-function normalizeGrantIdentity(sender, fallbackTenantKey = '') {
-  return {
-    openId: trimString(sender?.openId),
-    userId: trimString(sender?.userId),
-    unionId: trimString(sender?.unionId),
-    tenantKey: trimString(sender?.tenantKey || fallbackTenantKey),
-  };
-}
-
-function membershipGrantKey(chatId, sender) {
-  const normalizedChatId = trimString(chatId);
-  const normalizedSender = normalizeGrantIdentity(sender);
-  const identityKey = normalizedSender.openId || normalizedSender.userId || normalizedSender.unionId || normalizedSender.tenantKey;
-  if (!normalizedChatId || !identityKey) return '';
-  return `${normalizedChatId}:${identityKey}`;
-}
-
-function grantSenderAccess(runtime, sender, options = {}) {
-  if (!runtime?.access) return { changed: false, grantKey: '' };
-  const identity = normalizeGrantIdentity(sender, options.tenantKey);
-  if (!identity.openId && !identity.userId && !identity.unionId && !identity.tenantKey) {
-    return { changed: false, grantKey: '' };
-  }
-
-  let changed = false;
-  if (identity.openId && !runtime.access.allowedSendersCache.openIds.has(identity.openId)) {
-    runtime.access.allowedSendersCache.openIds.add(identity.openId);
-    changed = true;
-  }
-  if (identity.userId && !runtime.access.allowedSendersCache.userIds.has(identity.userId)) {
-    runtime.access.allowedSendersCache.userIds.add(identity.userId);
-    changed = true;
-  }
-  if (identity.unionId && !runtime.access.allowedSendersCache.unionIds.has(identity.unionId)) {
-    runtime.access.allowedSendersCache.unionIds.add(identity.unionId);
-    changed = true;
-  }
-  if (identity.tenantKey && !runtime.access.allowedSendersCache.tenantKeys.has(identity.tenantKey)) {
-    runtime.access.allowedSendersCache.tenantKeys.add(identity.tenantKey);
-    changed = true;
-  }
-
-  const grantKey = membershipGrantKey(options.chatId, identity);
-  if (!grantKey) {
-    return { changed, grantKey };
-  }
-
-  const existing = runtime.access.membershipGrants[grantKey] || {};
-  const next = {
-    chatId: trimString(options.chatId),
-    openId: identity.openId,
-    userId: identity.userId,
-    unionId: identity.unionId,
-    tenantKey: identity.tenantKey,
-    source: trimString(options.source || existing.source || 'manual'),
-    grantedAt: trimString(existing.grantedAt) || nowIso(),
-    updatedAt: nowIso(),
-  };
-  if (JSON.stringify(existing) !== JSON.stringify(next)) {
-    runtime.access.membershipGrants[grantKey] = next;
-    changed = true;
-  }
-  return { changed, grantKey };
-}
-
-function upsertApprovedChat(runtime, chat) {
-  if (!runtime?.access) return null;
-  const normalized = normalizeApprovedChatRecord(chat, chat?.chatId || '');
-  if (!normalized) return null;
-  const existing = runtime.access.approvedChats[normalized.chatId] || {};
-  const next = {
-    chatId: normalized.chatId,
-    name: normalized.name || trimString(existing.name),
-    tenantKey: normalized.tenantKey || trimString(existing.tenantKey),
-    autoApproveNewMembers: normalized.autoApproveNewMembers !== false,
-    source: normalized.source || trimString(existing.source) || 'manual',
-    createdAt: trimString(existing.createdAt) || normalized.createdAt || nowIso(),
-    updatedAt: nowIso(),
-  };
-  runtime.access.approvedChats[next.chatId] = next;
-  return next;
-}
-
-function isApprovedChat(runtime, chatId) {
-  const normalizedChatId = trimString(chatId);
-  const approved = runtime?.access?.approvedChats?.[normalizedChatId];
-  return Boolean(approved) && approved.autoApproveNewMembers !== false;
-}
-
-function queueAccessStateFlush(runtime) {
-  if (!runtime?.access || !runtime?.config?.intakePolicy) return Promise.resolve();
-  runtime.access.flushPromise = (runtime.access.flushPromise || Promise.resolve())
-    .catch(() => {})
-    .then(async () => {
-      const snapshot = snapshotAccessState(runtime.access);
-      await writeJsonAtomic(runtime.config.intakePolicy.accessStatePath, snapshot);
-      await writeJsonAtomic(runtime.config.intakePolicy.allowedSendersPath, snapshot.allowedSenders);
-    });
-  return runtime.access.flushPromise;
 }
 
 function senderIdentity(summary) {
@@ -845,11 +536,8 @@ async function updateKnownSenders(pathname, summary) {
   await writeJson(pathname, current);
 }
 
-async function isAllowedByPolicy(policy, summary, access = null) {
+async function isAllowedByPolicy(policy, summary) {
   if (policy.mode !== 'whitelist') return true;
-  if (access?.allowedSendersCache) {
-    return senderHasAllowedAccess(access.allowedSendersCache, summary);
-  }
   const sender = summary.sender || {};
   const allowed = await loadEffectiveAllowedSenders(policy);
   return (
@@ -874,7 +562,7 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
 }
 
 async function recordInboundEvent(runtime, summary, raw, sourceLabel) {
-  const allowed = await isAllowedByPolicy(runtime.config.intakePolicy, summary, runtime.access);
+  const allowed = await isAllowedByPolicy(runtime.config.accessPolicy, summary);
   await recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed);
   await updateKnownSenders(runtime.storagePaths.knownSendersPath, summary);
   if (!allowed) {
@@ -956,16 +644,10 @@ async function loadLatestReplayableSummary(eventsLogPath) {
   return null;
 }
 
-function createRuntimeContext(config, storagePaths, accessState) {
+function createRuntimeContext(config, storagePaths) {
   return {
     config,
     storagePaths,
-    access: {
-      allowedSendersCache: createAllowedSendersCache(accessState?.allowedSenders),
-      approvedChats: normalizeApprovedChats(accessState?.approvedChats),
-      membershipGrants: normalizeMembershipGrants(accessState?.membershipGrants),
-      flushPromise: Promise.resolve(),
-    },
     appClient: new Lark.Client({
       httpInstance: createFeishuHttpInstance(Lark.defaultHttpInstance),
       appId: config.appId,
@@ -1197,38 +879,27 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   return submitRemoteLabRequest(runtime, summary, { prepared: handoff });
 }
 
-function isProcessingReactionEnabled(runtime) {
-  return runtime?.config?.processingReaction?.enabled === true;
-}
-
 async function addProcessingReaction(runtime, summary) {
   if (isFeishuDocumentCommentSummary(summary)) {
     return null;
   }
-  if (!isProcessingReactionEnabled(runtime)) {
-    return null;
-  }
   const messageId = trimString(summary?.messageId);
-  if (!messageId) {
+  const createReaction = runtime?.appClient?.im?.v1?.messageReaction?.create;
+  if (!messageId || typeof createReaction !== 'function') {
     return null;
   }
-  const emojiType = normalizeReactionEmojiType(runtime?.config?.processingReaction?.emojiType);
-  const timeoutMs = normalizePositiveTimeout(
-    runtime?.config?.processingReaction?.timeoutMs,
-    DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
-  );
   const response = await withTimeout(
-    () => runtime.appClient.im.v1.messageReaction.create({
+    () => createReaction.call(runtime.appClient.im.v1.messageReaction, {
       path: {
         message_id: messageId,
       },
       data: {
         reaction_type: {
-          emoji_type: emojiType,
+          emoji_type: 'THINKING',
         },
       },
     }),
-    timeoutMs,
+    DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
     'Feishu processing reaction',
   );
   if ((response.code !== undefined && response.code !== 0) || !response.data?.reaction_id) {
@@ -1236,40 +907,8 @@ async function addProcessingReaction(runtime, summary) {
   }
   return {
     reactionId: response.data.reaction_id,
-    emojiType: response.data?.reaction_type?.emoji_type || emojiType,
+    emojiType: response.data?.reaction_type?.emoji_type || 'THINKING',
   };
-}
-
-async function removeProcessingReaction(runtime, summary, reaction) {
-  if (isFeishuDocumentCommentSummary(summary)) {
-    return false;
-  }
-  if (runtime?.config?.processingReaction?.removeOnCompletion === false) {
-    return false;
-  }
-  const messageId = trimString(summary?.messageId);
-  const reactionId = trimString(reaction?.reactionId);
-  if (!messageId || !reactionId) {
-    return false;
-  }
-  const timeoutMs = normalizePositiveTimeout(
-    runtime?.config?.processingReaction?.timeoutMs,
-    DEFAULT_PROCESSING_REACTION_TIMEOUT_MS,
-  );
-  const response = await withTimeout(
-    () => runtime.appClient.im.v1.messageReaction.delete({
-      path: {
-        message_id: messageId,
-        reaction_id: reactionId,
-      },
-    }),
-    timeoutMs,
-    'Feishu processing reaction removal',
-  );
-  if (response.code !== undefined && response.code !== 0) {
-    throw new Error(response.msg || 'Failed to remove Feishu processing reaction');
-  }
-  return true;
 }
 
 async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
@@ -1415,15 +1054,6 @@ function stripLeadingMentionTokens(text) {
   return String(text || '').replace(/^\s*(?:@_[A-Za-z0-9_]+\s*)+/, '');
 }
 
-function normalizeLocalCommandText(text) {
-  return trimString(
-    stripMentionTokens(text)
-      .replace(/[。！？!?]+$/g, '')
-      .replace(/\s+/g, ' ')
-      .toLowerCase(),
-  );
-}
-
 function extractLocalCommand(summary) {
   const chatType = trimString(summary?.chatType).toLowerCase();
   if (!['group', 'topic'].includes(chatType)) return null;
@@ -1436,153 +1066,7 @@ function extractLocalCommand(summary) {
       text: trimString(forkMatch[1]),
     };
   }
-  const normalized = normalizeLocalCommandText(rawText);
-  if (!normalized) return null;
-  if (APPROVE_CURRENT_CHAT_COMMANDS.has(normalized)) {
-    return { type: 'approve_current_chat' };
-  }
-  if (CHAT_ACCESS_STATUS_COMMANDS.has(normalized)) {
-    return { type: 'chat_access_status' };
-  }
   return null;
-}
-
-function buildApprovedChatReply(runtime, summary) {
-  const approved = runtime?.access?.approvedChats?.[summary.chatId] || {};
-  const name = trimString(approved.name);
-  const chatLabel = name ? `${name}（chat_id=${summary.chatId}）` : `chat_id=${summary.chatId}`;
-  return `已授权本群 ${chatLabel}。我已经写入本地状态；后续新成员进群后会自动开通权限，无需重启服务。`;
-}
-
-function buildChatAccessStatusReply(runtime, summary) {
-  const approved = runtime?.access?.approvedChats?.[summary.chatId];
-  if (!approved) {
-    return `本群尚未授权（chat_id=${summary.chatId}）。如需授权，请发送“@我 授权本群”。`;
-  }
-  const name = trimString(approved.name);
-  const label = name ? `${name}（chat_id=${approved.chatId}）` : `chat_id=${approved.chatId}`;
-  return `本群已授权 ${label}。新成员自动开通：开启。状态已保存在本地。`;
-}
-
-async function handleLocalCommand(runtime, summary, command, sendText) {
-  if (!runtime?.access) return { handled: false };
-
-  if (command.type === 'approve_current_chat') {
-    upsertApprovedChat(runtime, {
-      chatId: summary.chatId,
-      tenantKey: summary.tenantKey,
-      source: 'manual_group_command',
-      autoApproveNewMembers: true,
-    });
-    grantSenderAccess(runtime, summary.sender, {
-      chatId: summary.chatId,
-      tenantKey: summary.tenantKey,
-      source: 'manual_group_command',
-    });
-    await queueAccessStateFlush(runtime);
-    const reply = await sendText(runtime, summary, buildApprovedChatReply(runtime, summary));
-    return {
-      handled: true,
-      status: 'approved_chat',
-      commandType: command.type,
-      responseMessageId: reply.message_id || '',
-    };
-  }
-
-  if (command.type === 'chat_access_status') {
-    const reply = await sendText(runtime, summary, buildChatAccessStatusReply(runtime, summary));
-    return {
-      handled: true,
-      status: 'chat_access_status',
-      commandType: command.type,
-      responseMessageId: reply.message_id || '',
-    };
-  }
-
-  return { handled: false };
-}
-
-function summarizeChatMemberUserAddedEvent(data) {
-  const users = Array.isArray(data?.users) ? data.users : [];
-  return {
-    eventId: data?.event_id || '',
-    eventType: data?.event_type || 'im.chat.member.user.added_v1',
-    tenantKey: data?.tenant_key || '',
-    appId: data?.app_id || '',
-    createTime: data?.create_time || '',
-    chatId: data?.chat_id || '',
-    chatName: trimString(data?.name) || trimString(data?.i18n_names?.zh_cn) || trimString(data?.i18n_names?.en_us) || '',
-    operator: {
-      openId: data?.operator_id?.open_id || '',
-      userId: data?.operator_id?.user_id || '',
-      unionId: data?.operator_id?.union_id || '',
-      tenantKey: data?.operator_tenant_key || '',
-    },
-    users: users.map((user) => ({
-      name: trimString(user?.name),
-      tenantKey: trimString(user?.tenant_key || data?.tenant_key),
-      openId: trimString(user?.user_id?.open_id),
-      userId: trimString(user?.user_id?.user_id),
-      unionId: trimString(user?.user_id?.union_id),
-    })).filter((user) => user.openId || user.userId || user.unionId || user.tenantKey),
-  };
-}
-
-function joinEventSenderSummary(eventSummary, user) {
-  const identityKey = user.openId || user.userId || user.unionId || user.tenantKey || 'unknown_sender';
-  return {
-    tenantKey: eventSummary.tenantKey,
-    chatId: eventSummary.chatId,
-    chatType: 'group',
-    messageId: `join:${eventSummary.eventId || identityKey}`,
-    messageType: 'event',
-    textPreview: '',
-    mentions: [],
-    sender: {
-      openId: user.openId,
-      userId: user.userId,
-      unionId: user.unionId,
-      senderType: 'user',
-      tenantKey: user.tenantKey || eventSummary.tenantKey,
-    },
-  };
-}
-
-async function handleChatMemberUserAdded(runtime, summary, raw, sourceLabel) {
-  const approved = isApprovedChat(runtime, summary.chatId);
-  await recordConnectorEvent(runtime, sourceLabel, summary, raw, approved);
-  if (!approved) {
-    console.log(`[feishu-connector] user joined unapproved chat ${summary.chatId}; no access granted`);
-    return { grantedCount: 0, approved: false };
-  }
-
-  let grantedCount = 0;
-  let changed = false;
-  for (const user of summary.users) {
-    const result = grantSenderAccess(runtime, user, {
-      chatId: summary.chatId,
-      tenantKey: user.tenantKey || summary.tenantKey,
-      source: 'chat_member_join',
-    });
-    if (result.changed) {
-      changed = true;
-      grantedCount += 1;
-    }
-    await updateKnownSenders(runtime.storagePaths.knownSendersPath, joinEventSenderSummary(summary, user));
-  }
-
-  const approvedChat = runtime?.access?.approvedChats?.[summary.chatId];
-  if (approvedChat && summary.chatName && approvedChat.name !== summary.chatName) {
-    approvedChat.name = summary.chatName;
-    approvedChat.updatedAt = nowIso();
-    changed = true;
-  }
-
-  if (changed) {
-    await queueAccessStateFlush(runtime);
-  }
-  console.log(`[feishu-connector] auto-approved ${grantedCount} new member(s) for chat ${summary.chatId}`);
-  return { grantedCount, approved: true, changed };
 }
 
 async function queueFeishuReply(runtime, summary, text) {
@@ -1597,7 +1081,7 @@ async function queueFeishuReply(runtime, summary, text) {
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   if (!isProcessableMessage(summary)) return { ignored: true };
   if (!isFeishuDocumentCommentSummary(summary) && !shouldRouteFeishuMessageToRemoteLab(runtime, summary)) {
-    console.log(`[feishu-connector] skipped ${summary.messageId} (group reply policy requires a mention of this Bot)`);
+    console.log(`[feishu-connector] skipped ${summary.messageId} (response policy requires a mention of this Bot)`);
     return { ignored: true, reason: 'group_reply_policy' };
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
@@ -1605,9 +1089,10 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (command?.type === 'fork' && !command.text) return enqueue(runtime, summary, '用法：/fork <任务文本>');
   if (command?.type === 'fork') summary = { ...summary, forkCommand: true, forkText: command.text, replyInThread: true };
-  else if (command) {
-    const local = await handleLocalCommand(runtime, summary, command, enqueue);
-    if (local.handled) return local;
+  try {
+    await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary);
+  } catch (error) {
+    console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
   }
   const receipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(runtime, summary);
   if (runtime.storagePaths?.messageIndexPath) {
@@ -1621,7 +1106,6 @@ function initializeInbox(runtime) {
   return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
     conversationKey: entry => entry.summary.chatId || entry.summary.fileToken,
     process: async (entry, update) => {
-      if (entry.sourceLabel === 'im.chat.member.user.added_v1') return handleChatMemberUserAdded(runtime, entry.summary, entry.raw, entry.sourceLabel);
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
       return allowed ? handleMessage(runtime, entry.summary, entry.sourceLabel, {
         submitRemoteLabRequest: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
@@ -1635,8 +1119,6 @@ function initializeInbox(runtime) {
 
 export {
   DEFAULT_SESSION_SYSTEM_PROMPT,
-  buildApprovedChatReply,
-  buildChatAccessStatusReply,
   buildExternalTriggerId,
   buildFeishuForkExternalTriggerId,
   buildFeishuForkSourceContext,
@@ -1656,19 +1138,14 @@ export {
   findFeishuThreadSessionBinding,
   addProcessingReaction,
   submitRemoteLabRequest,
-  grantSenderAccess,
-  handleChatMemberUserAdded,
   handleMessage,
   isAllowedByPolicy,
   initializeFeishuInstanceRuntime,
   loadPersistedAccessState,
   loadConfig,
   normalizeAllowedSenders,
-  normalizeProcessingReactionConfig,
   normalizeReplyText,
-  queueAccessStateFlush,
   releaseConnectorPidLock,
-  removeProcessingReaction,
   recordFeishuThreadSessionBinding,
   resolveFeishuMessageAttachments,
   resolveFeishuOutboundFileType,
@@ -1678,13 +1155,10 @@ export {
   processSourceDeliveryOnce,
   startSourceDeliveryPoller,
   stopSourceDeliveryPoller,
-  snapshotAccessState,
-  summarizeChatMemberUserAddedEvent,
   summarizeFeishuDocumentCommentEvent,
   hydrateFeishuDocumentCommentSummary,
   sendFeishuCommentReply,
   summarizeEvent,
-  upsertApprovedChat,
 };
 
 async function main() {
@@ -1709,14 +1183,14 @@ async function main() {
     await releasePidLock();
     throw error;
   }
-  const accessState = await loadPersistedAccessState(config.intakePolicy);
+  await loadPersistedAccessState(config.accessPolicy);
   const storagePaths = {
     eventsLogPath: join(config.storageDir, 'events.jsonl'),
     knownSendersPath: join(config.storageDir, 'known-senders.json'),
     messageIndexPath: join(config.storageDir, 'connector-message-index.json'),
   };
-  const runtime = createRuntimeContext(config, storagePaths, accessState);
-  if ([config.groupReplyPolicy.mode, ...Object.values(config.groupReplyPolicy.chatModes)].includes('mention_only')) {
+  const runtime = createRuntimeContext(config, storagePaths);
+  if (config.responsePolicy.group === 'mention_only') {
     runtime.botIdentity = await withTimeout(
       () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
     );
@@ -1742,7 +1216,6 @@ async function main() {
     closeConnection(reason);
     await inbox.idle();
     await runtime.sourceDeliveryPollPromise;
-    await runtime.access.flushPromise;
     await releasePidLock();
     process.exit(code);
   };
@@ -1761,17 +1234,15 @@ async function main() {
   };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
-    'im.chat.member.user.added_v1': persist('im.chat.member.user.added_v1', summarizeChatMemberUserAddedEvent),
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
   inbox.start();
   await wsClient.start({ eventDispatcher });
   startSourceDeliveryPoller(runtime);
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
-  console.log(`[feishu-connector] intake policy: ${config.intakePolicy.mode}`);
-  console.log(`[feishu-connector] group reply policy: ${JSON.stringify(config.groupReplyPolicy)}`);
-  console.log(`[feishu-connector] access state file: ${config.intakePolicy.accessStatePath}`);
-  console.log(`[feishu-connector] whitelist mirror: ${config.intakePolicy.allowedSendersPath}`);
+  console.log(`[feishu-connector] access policy: ${config.accessPolicy.mode}`);
+  console.log(`[feishu-connector] response policy: ${JSON.stringify(config.responsePolicy)}`);
+  console.log(`[feishu-connector] whitelist mirror: ${config.accessPolicy.allowedSendersPath}`);
   console.log(`[feishu-connector] event log: ${storagePaths.eventsLogPath}`);
   console.log(`[feishu-connector] known senders: ${storagePaths.knownSendersPath}`);
   console.log(`[feishu-connector] message index: ${storagePaths.messageIndexPath}`);

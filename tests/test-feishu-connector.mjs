@@ -29,7 +29,6 @@ const {
   ensureAllowedSendersFile,
   extractLocalCommand,
   submitRemoteLabRequest,
-  handleChatMemberUserAdded,
   handleMessage,
   isAllowedByPolicy,
   initializeFeishuInstanceRuntime,
@@ -37,7 +36,6 @@ const {
   loadPersistedAccessState,
   loadRemoteLabReplyAttachment,
   normalizeReplyText,
-  normalizeProcessingReactionConfig,
   releaseConnectorPidLock,
   resolveFeishuMessageAttachments,
   resolveFeishuOutboundFileType,
@@ -50,7 +48,6 @@ const {
   sendFeishuAttachment,
   sendFeishuText,
   processSourceDeliveryOnce,
-  summarizeChatMemberUserAddedEvent,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
 
@@ -894,49 +891,6 @@ await writeFile(derivedRouteConfigPath, `${JSON.stringify({
 assert.equal((await loadConfig(derivedRouteConfigPath)).sourceRouteId, 'connector-beta');
 assert.equal(loadedConfig.systemPrompt, '', 'default config should rely on backend-owned source prompt logic');
 assert.equal(loadedConfig.runtimeSelectionMode, 'ui');
-assert.deepEqual(loadedConfig.processingReaction, {
-  enabled: false,
-  emojiType: 'THINKING',
-  removeOnCompletion: false,
-  timeoutMs: 10000,
-}, 'processing reactions should default to disabled');
-assert.equal(loadedConfig.silentConfirmationText, '', 'silent confirmations should default to disabled');
-
-assert.deepEqual(normalizeProcessingReactionConfig(true), {
-  enabled: true,
-  emojiType: 'THINKING',
-  removeOnCompletion: false,
-  timeoutMs: 10000,
-});
-assert.deepEqual(normalizeProcessingReactionConfig('wronged'), {
-  enabled: true,
-  emojiType: 'WRONGED',
-  removeOnCompletion: false,
-  timeoutMs: 10000,
-});
-assert.deepEqual(normalizeProcessingReactionConfig('fingerheart'), {
-  enabled: true,
-  emojiType: 'FINGERHEART',
-  removeOnCompletion: false,
-  timeoutMs: 10000,
-});
-assert.deepEqual(normalizeProcessingReactionConfig('thinking'), {
-  enabled: true,
-  emojiType: 'THINKING',
-  removeOnCompletion: false,
-  timeoutMs: 10000,
-});
-assert.deepEqual(normalizeProcessingReactionConfig({
-  enabled: true,
-  emojiType: 'smart',
-  removeOnCompletion: false,
-  timeoutMs: 15000,
-}), {
-  enabled: true,
-  emojiType: 'SMART',
-  removeOnCompletion: false,
-  timeoutMs: 15000,
-});
 
 assert.equal(
   compileFeishuReplyText('@_user_1 这是一条消息。', mentionSummary.mentions),
@@ -1059,11 +1013,9 @@ assert.equal(await isAllowedByPolicy(whitelistPolicy, {
 }), true, 'newly written whitelist entries should take effect immediately');
 
 const accessStateDir = await mkdtemp(join(tmpdir(), 'remotelab-feishu-access-state-'));
-const accessStatePath = join(accessStateDir, 'access-state.json');
 const accessAllowedSendersPath = join(accessStateDir, 'allowed-senders.json');
 const accessPolicy = {
   mode: 'whitelist',
-  accessStatePath,
   allowedSendersPath: accessAllowedSendersPath,
   allowedSenders: {
     openIds: ['ou_owner_1'],
@@ -1073,13 +1025,13 @@ const accessPolicy = {
   },
 };
 
-const accessState = await loadPersistedAccessState(accessPolicy);
+await loadPersistedAccessState(accessPolicy);
 const accessRuntime = createRuntimeContext({
   appId: 'cli_test',
   appSecret: 'test-secret',
   region: 'feishu-cn',
   loggerLevel: 'error',
-  intakePolicy: accessPolicy,
+  accessPolicy: accessPolicy,
   storeRawEvents: false,
   chatBaseUrl: 'http://127.0.0.1:7690',
   sessionFolder: repoRoot,
@@ -1093,14 +1045,14 @@ const accessRuntime = createRuntimeContext({
   knownSendersPath: join(accessStateDir, 'known-senders.json'),
   handledMessagesPath: join(accessStateDir, 'handled-messages.json'),
   messageIndexPath: join(accessStateDir, 'message-index.json'),
-}, accessState);
+});
 
-const approveSummary = {
+const groupCommandSummary = {
   messageId: 'msg_group_approve_1',
   chatId: 'chat_group_approve_1',
   chatType: 'group',
   messageType: 'text',
-  textPreview: '@_user_1 授权本群',
+  textPreview: '@_user_1 hello',
   tenantKey: 'tenant_group_1',
   mentions: [{
     key: '@_user_1',
@@ -1122,10 +1074,10 @@ accessRuntime.chatMetadataCache.set('chat_group_approve_1', {
   chatType: 'group',
 });
 
-assert.equal(extractLocalCommand(approveSummary)?.type, 'approve_current_chat');
+assert.equal(extractLocalCommand(groupCommandSummary), null, 'access policy has no chat-approval command path');
 
 const forkCommand = extractLocalCommand({
-  ...approveSummary,
+  ...groupCommandSummary,
   messageId: 'msg_group_fork_1',
   messageText: '@_user_1 /fork   调研这个问题\n并保留 @_user_2 的反馈',
   textPreview: '@_user_1 /fork   调研这个问题\n并保留 @_user_2 的反馈',
@@ -1135,7 +1087,7 @@ assert.deepEqual(forkCommand, {
   text: '调研这个问题\n并保留 @_user_2 的反馈',
 });
 assert.deepEqual(extractLocalCommand({
-  ...approveSummary,
+  ...groupCommandSummary,
   messageId: 'msg_group_empty_fork_1',
   messageText: '@_user_1 /fork',
   textPreview: '@_user_1 /fork',
@@ -1144,18 +1096,12 @@ assert.deepEqual(extractLocalCommand({
   text: '',
 });
 
-let localCommandReply = '';
-const localResult = await handleMessage(accessRuntime, approveSummary, 'test', {
-  submitRemoteLabRequest: async () => { throw new Error('local approval must not start AI'); },
-  queueFeishuReply: async (_runtime, _summary, text) => { localCommandReply = text; return { deliveryId: 'approval-delivery' }; },
-});
-assert.match(localCommandReply, /chat_id=chat_group_approve_1/);
-assert.equal(localResult.status, 'approved_chat');
-const forkSummary = { ...approveSummary, messageId: 'msg_group_fork_1',
+const forkSummary = { ...groupCommandSummary, messageId: 'msg_group_fork_1',
   messageText: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈',
   textPreview: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈' };
 let generatedForkSummary;
 const forkResult = await handleMessage(accessRuntime, forkSummary, 'test', {
+  addProcessingReaction: async () => null,
   submitRemoteLabRequest: async (_runtime, inboundSummary) => {
     generatedForkSummary = inboundSummary;
     return { sessionId: 'sess_fork_command_1', runId: 'run_fork_command_1', requestId: 'feishu:msg_group_fork_1', externalTriggerId: 'feishu:fork:bot-1:tenant_group_1:chat_group_approve_1:msg_group_fork_1' };
@@ -1166,47 +1112,11 @@ assert.equal(generatedForkSummary.forkText, '调研这个问题\n并保留 @_use
 assert.equal(generatedForkSummary.replyInThread, true);
 assert.equal(forkResult.sessionId, 'sess_fork_command_1');
 let emptyForkReply;
-await handleMessage(accessRuntime, { ...approveSummary, messageId: 'empty-fork', messageText: '/fork', textPreview: '/fork' }, 'test', {
+await handleMessage(accessRuntime, { ...groupCommandSummary, messageId: 'empty-fork', messageText: '/fork', textPreview: '/fork' }, 'test', {
   submitRemoteLabRequest: async () => { throw new Error('empty fork must not start AI'); },
   queueFeishuReply: async (_runtime, _summary, text) => { emptyForkReply = text; return { deliveryId: 'usage-delivery' }; },
 });
 assert.equal(emptyForkReply, '用法：/fork <任务文本>');
-
-const persistedApproval = JSON.parse(await readFile(accessStatePath, 'utf8'));
-assert.equal(persistedApproval.approvedChats.chat_group_approve_1.chatId, 'chat_group_approve_1');
-assert.equal(persistedApproval.approvedChats.chat_group_approve_1.autoApproveNewMembers, true);
-
-const joinSummary = summarizeChatMemberUserAddedEvent({
-  event_id: 'event_join_1',
-  event_type: 'im.chat.member.user.added_v1',
-  tenant_key: 'tenant_group_1',
-  app_id: 'cli_test',
-  chat_id: 'chat_group_approve_1',
-  name: 'Family Group',
-  users: [{
-    name: 'New Member',
-    tenant_key: 'tenant_group_1',
-    user_id: {
-      open_id: 'ou_new_user_1',
-      user_id: 'usr_new_user_1',
-      union_id: 'on_new_user_1',
-    },
-  }],
-});
-
-const joinResult = await handleChatMemberUserAdded(accessRuntime, joinSummary, { demo: true }, 'im.chat.member.user.added_v1');
-assert.equal(joinResult.approved, true);
-assert.equal(joinResult.grantedCount, 1, 'approved chats should auto-grant newly joined members');
-
-assert.equal(await isAllowedByPolicy(accessPolicy, {
-  tenantKey: 'tenant_group_1',
-  sender: { openId: 'ou_new_user_1' },
-}, accessRuntime.access), true, 'joined users should be allowed immediately from in-memory cache');
-
-const persistedAfterJoin = JSON.parse(await readFile(accessStatePath, 'utf8'));
-assert.ok(persistedAfterJoin.allowedSenders.openIds.includes('ou_new_user_1'));
-assert.ok(persistedAfterJoin.membershipGrants['chat_group_approve_1:ou_new_user_1']);
-assert.equal(persistedAfterJoin.approvedChats.chat_group_approve_1.name, 'Family Group');
 
 let createdPayload = null;
 let submittedPayload = null;
@@ -1743,9 +1653,8 @@ const topicMetadataRuntime = createRuntimeContext({
   appSecret: 'test-secret',
   region: 'feishu-cn',
   loggerLevel: 'error',
-  intakePolicy: {
-    mode: 'allow_all',
-    accessStatePath: join(tempHome, 'topic-metadata-access-state.json'),
+  accessPolicy: {
+    mode: 'all',
     allowedSendersPath: join(tempHome, 'topic-metadata-allowed-senders.json'),
   },
   storeRawEvents: false,
@@ -1882,8 +1791,7 @@ console.log('ok - Feishu image payloads are downloaded and submitted as RemoteLa
 console.log('ok - mention tokens are rendered inbound and compiled outbound');
 console.log('ok - topic metadata from chat metadata fallback enables topic-scoped sessions');
 console.log('ok - whitelist file reloads without restart');
-console.log('ok - local group approval commands persist approved chats');
-console.log('ok - approved chats auto-grant newly joined members');
+console.log('ok - whitelist access stays limited to explicit sender identities');
 console.log('ok - /fork accepts task text and binds its reply Thread to the new Session');
 console.log('ok - generated Feishu sessions use the feishu app scope');
 console.log('ok - queued and preparing replies return acceptance immediately');

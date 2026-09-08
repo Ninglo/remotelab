@@ -88,10 +88,7 @@ const commentGetPayloads = [];
 const commentListPayloads = [];
 const commentCreatePayloads = [];
 const runtime = {
-  config: {
-    silentConfirmationText: '',
-    processingReaction: { enabled: true, removeOnCompletion: true },
-  },
+  config: {},
   processingMessageIds: new Set(),
   storagePaths: {
     handledMessagesPath: '/tmp/remotelab-feishu-comments-handled.json',

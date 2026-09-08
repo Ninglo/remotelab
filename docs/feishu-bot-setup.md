@@ -43,7 +43,7 @@ The AI should try to confirm the whole packet below in one early exchange.
 - region: `feishu-cn` for `open.feishu.cn` or `lark-global` for `open.larksuite.com`
 - the first validation user is in the same Feishu tenant as the app
 - which RemoteLab session tool should back the bot by default
-- whether V0 should start with `allow_all` or `whitelist`
+- whether V0 should start with `all` or `whitelist`
 
 If the app does not exist yet, the AI should tell the human in one pass which console outputs it will need back later, rather than asking for them one at a time.
 
@@ -88,7 +88,7 @@ Prefer one Feishu-console visit that covers app creation, permissions, event sub
 - run `npm run feishu:ops -- discover`, then use `npm run feishu:ops -- restart --bot <bot-id>` so the recorded config and runtime owner select the exact connector
 - use `npm run feishu:check -- --watch 15` and the connector logs to validate inbound and outbound behavior
 - keep the rollout inside this conversation; when a console fix is required, pause with a precise `[HUMAN]` instruction
-- if V0 succeeds, optionally suggest widening availability or switching from `allow_all` to `whitelist`
+- if V0 succeeds, optionally suggest widening availability or switching from `all` to `whitelist`
 
 ## Fast operator commands
 
@@ -201,14 +201,11 @@ explicit selector.
   "chatBaseUrl": "http://127.0.0.1:7690",
   "sessionTool": "codex",
   "systemPrompt": "You are the operations Bot. Prioritize operations context and workflows relevant to this Bot.",
-  "processingReaction": {
-    "enabled": true,
-    "emojiType": "THINKING",
-    "removeOnCompletion": false
+  "accessPolicy": {
+    "mode": "all"
   },
-  "silentConfirmationText": "",
-  "intakePolicy": {
-    "mode": "allow_all"
+  "responsePolicy": {
+    "group": "mention_only"
   }
 }
 ```
@@ -228,24 +225,20 @@ Notes:
   binary and that same config visible to harness processes
 - `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
   deferred results return through the Bot that owns the originating conversation
-- `processingReaction` lets the bot add a quick reaction on the user's message before the real reply lands; by default it uses `THINKING` and keeps it attached as a lightweight ack marker
-- `emojiType` must be one of Feishu's reaction emoji types such as `THINKING`, `WRONGED`, `FINGERHEART`, `GLANCE`, or `SMILE`; if you specifically want the built-in `委屈`-style reaction, use `WRONGED` rather than `HURT`
-- `silentConfirmationText` lets the connector send a tiny text acknowledgement when the assistant would otherwise stay silent; this is useful for Feishu-style emoticon tokens like `[委屈]`
-- set `removeOnCompletion` to `true` only if you want the reaction to be temporary and disappear after the reply lands
+- every admitted chat message receives a persistent `THINKING` reaction before
+  RemoteLab submission; this acknowledgement is fixed product behavior rather
+  than a third policy dimension, and failure to add it never blocks the request
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
-- `allow_all` is the simplest V0 mode; move to `whitelist` after the first validation if needed
+- `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
-`intakePolicy` controls sender access. Group triggering is a separate transport
-filter, applied before commands, reactions, attachments or AI submission, including
-stored-message replay. Set `groupReplyPolicy.mode` to `mention_only` to require an
-explicit mention of this Bot in every group, or `all` to forward all group messages.
-For a single group, use
-`"groupReplyPolicy": { "mode": "all", "chatModes": { "oc_your_group": "mention_only" } }`.
-Unconfigured connectors retain `all` for compatibility. Private messages are
-unaffected. Mention matching uses this Bot's API identity, never its display name;
-mentioning another person or continuing an existing thread does not trigger
-`mention_only`. Bot identity must load successfully before a restricted connector
-starts accepting events. The broader conversation-continuation policy is deferred.
+These are the only two message policies. `accessPolicy` decides who may use the
+Bot. `responsePolicy.group` decides when group messages are admitted: `all`
+accepts every group message, while `mention_only` requires an explicit mention of
+this Bot. Private messages are always admitted immediately after access control.
+The response filter runs before commands, reactions, attachments and AI submission,
+including stored-message replay. Mention matching uses the Bot's API identity;
+mentioning another user or continuing an existing thread does not count. Policies
+apply to the whole Connector so two groups cannot silently behave differently.
 
 ### Markdown rendering
 

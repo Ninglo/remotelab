@@ -1,24 +1,15 @@
 import { normalizeFeishuMode, trimString } from './index.mjs';
 
-function normalizeMode(value) {
+function normalizeGroupResponseMode(value) {
   const mode = trimString(value).toLowerCase();
   if (!['all', 'mention_only'].includes(mode)) {
-    throw new Error(`Unsupported groupReplyPolicy mode: ${value}`);
+    throw new Error(`Unsupported responsePolicy.group: ${value}`);
   }
   return mode;
 }
 
-export function normalizeFeishuGroupReplyPolicy(value = {}) {
-  // Preserve existing deployments until an operator explicitly selects a policy.
-  const mode = normalizeMode(value?.mode ?? 'all');
-  const chatModes = value?.chatModes ?? {};
-  if (typeof chatModes !== 'object' || Array.isArray(chatModes)) {
-    throw new Error('groupReplyPolicy.chatModes must be an object');
-  }
-  return {
-    mode,
-    chatModes: Object.fromEntries(Object.entries(chatModes).map(([chatId, chatMode]) => [chatId, normalizeMode(chatMode)])),
-  };
+export function normalizeFeishuResponsePolicy(value = {}) {
+  return { group: normalizeGroupResponseMode(value?.group ?? 'all') };
 }
 
 export async function resolveFeishuBotIdentity(runtime) {
@@ -39,9 +30,8 @@ export function shouldRouteFeishuMessageToRemoteLab(runtime, summary) {
   const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
   if (modes.includes('p2p') || modes.includes('private')) return true;
   if (!modes.some((mode) => ['group', 'topic', 'thread'].includes(mode))) return true;
-  const policy = normalizeFeishuGroupReplyPolicy(runtime?.config?.groupReplyPolicy);
-  const mode = Object.hasOwn(policy.chatModes, summary.chatId) ? policy.chatModes[summary.chatId] : policy.mode;
-  if (mode === 'all') return true;
+  const policy = normalizeFeishuResponsePolicy(runtime?.config?.responsePolicy);
+  if (policy.group === 'all') return true;
   const identity = runtime?.botIdentity || {};
   // Match IDs by namespace; names, stale flags, thread bindings and @all are not mentions of this Bot.
   return (Array.isArray(summary?.mentions) ? summary.mentions : []).some((mention) => (

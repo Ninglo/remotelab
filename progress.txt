@@ -1,5 +1,9 @@
 2026-09-07: Completed the shared first-reply session entry link for connector-backed sessions. The link is projected outside model output, requires an absolute public URL, survives attachment-specific reply normalization, and is omitted from later turns.
 
+[2026-09-08 RED] Feishu ordinary group chatter still reached submission under the requested mention-only contract, and the durable Inbox path no longer invoked the configured processing reaction.
+[2026-09-08 GREEN] Reduced Feishu admission to `accessPolicy` and connector-wide `responsePolicy`, made private response unconditional after access control, restored a fixed THINKING acknowledgement before AI submission, and removed per-chat overrides, configurable acknowledgements, group approval state and member auto-grants. Targeted tests pass; full-suite and live rollout pending.
+[2026-09-08 GREEN] Final full `npm test`, syntax, diff and advisory file-size checks passed. Live config migration and connector restart remain.
+
 [2026-09-06] Started durable connector request lifecycle refactor from origin/main 4e4108f1 in isolated checkout; live checkout has unrelated uncommitted work.
 [2026-09-06] Decision: one persisted request per input, durable Inbox/Outbox, derived reply state, shared reconciliation on startup and normal events; no runtime legacy migration.
 [2026-09-06] Verification: baseline smoke log and isolated fault-injection tests required before any fleet rollout.

@@ -295,7 +295,7 @@ async function loadPaths(configPath) {
     if (trimString(parsed?.storageDir)) {
       storageDir = trimString(parsed.storageDir);
     }
-    allowedSendersPath = resolveOptionalPath(parsed?.intakePolicy?.allowedSendersPath, configDir, allowedSendersPath);
+    allowedSendersPath = resolveOptionalPath(parsed?.accessPolicy?.allowedSendersPath, configDir, allowedSendersPath);
   }
 
   return {
@@ -468,7 +468,7 @@ export function formatFeishuApiError(error) {
 async function loadSnapshot(options = {}) {
   const paths = await loadPaths(options.configPath || DEFAULT_CONFIG_PATH);
   const config = await loadConfig(paths.configPath);
-  const accessState = await loadPersistedAccessState(config.intakePolicy);
+  const accessState = await loadPersistedAccessState(config.accessPolicy);
   const connector = await readConnectorStatus(paths.pidPath);
   const eventsRaw = await readTextIfExists(paths.eventLogPath);
   const handledJson = await readJsonIfExists(paths.handledMessagesPath, { messages: {} });

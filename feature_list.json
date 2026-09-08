@@ -30,5 +30,18 @@
     "id": "runner-restart-ownership",
     "description": "Honor configured systemd runner manager and preserve detached execution across controller restart.",
     "pass": true
+  },
+  {
+    "id": "feishu-policy-simplification",
+    "description": "Reduce Feishu message admission to sender access and group response mode, while acknowledging every admitted AI request with a THINKING reaction.",
+    "pass": true,
+    "steps": [
+      "Default sender access to all, with whitelist as the only restricted mode",
+      "Always admit private chats after access control",
+      "Configure group admission as all or mention_only for the whole Bot",
+      "Add a fixed processing reaction before durable AI submission",
+      "Remove per-chat overrides, chat approval state, membership grants and reaction configuration"
+    ],
+    "rollout": "Deploy bot-2 as mention_only and the primary Bot as all after migrating both local configs."
   }
 ]

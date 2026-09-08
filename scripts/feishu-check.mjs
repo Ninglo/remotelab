@@ -119,7 +119,7 @@ async function loadPaths(configPath) {
     if (configuredStorageDir) {
       storageDir = configuredStorageDir;
     }
-    allowedSendersPath = resolveOptionalPath(parsed?.intakePolicy?.allowedSendersPath, configDir, allowedSendersPath);
+    allowedSendersPath = resolveOptionalPath(parsed?.accessPolicy?.allowedSendersPath, configDir, allowedSendersPath);
   }
 
   return {
