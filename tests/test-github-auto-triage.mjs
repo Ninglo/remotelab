@@ -227,6 +227,7 @@ async function runTriage() {
       env: {
         ...process.env,
         HOME: tempHome,
+        XDG_CONFIG_HOME: join(tempHome, '.config'),
         PATH: `${binDir}:${process.env.PATH}`,
         FAKE_GH_STATE: fakeGhStatePath,
       },
