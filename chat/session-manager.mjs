@@ -156,7 +156,7 @@ import {
   normalizeReplyPublicationResponseIds,
 } from './reply-publication.mjs';
 import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
-import { enqueueSourceDelivery, normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
+import { enqueueSourceDelivery, normalizeSourceDeliveryPlan, listSourceDeliveryIssues } from './source-deliveries.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
 import { extractTaggedBlock } from './session-text-parsing.mjs';
 import { buildTurnContextHook } from './turn-context-hook.mjs';
@@ -1958,8 +1958,13 @@ export async function listSessions({
       return getSessionPinSortRank(b) - getSessionPinSortRank(a)
         || getSessionSortTime(b) - getSessionSortTime(a);
     });
-  return Promise.all(filtered.map((meta) => enrichSessionMetaForClient(meta, {
-    includeQueuedMessages,
+  const issueCounts = new Map();
+  for (const issue of await listSourceDeliveryIssues()) {
+    issueCounts.set(issue.sessionId, (issueCounts.get(issue.sessionId) || 0) + 1);
+  }
+  return Promise.all(filtered.map(async (meta) => ({
+    ...await enrichSessionMetaForClient(meta, { includeQueuedMessages }),
+    deliveryIssueCount: issueCounts.get(meta.id) || 0,
   })));
 }
 
@@ -1967,7 +1972,9 @@ export async function getSession(id, options = {}) {
   const metas = await loadSessionsMeta();
   const meta = metas.find((entry) => entry.id === id) || await findSessionMeta(id);
   if (!meta) return null;
-  return enrichSessionMetaForClient(await reconcileTerminalActiveSessionMeta(meta), options);
+  const session = await enrichSessionMetaForClient(await reconcileTerminalActiveSessionMeta(meta), options);
+  const deliveryIssues = await listSourceDeliveryIssues({ sessionId: id });
+  return { ...session, deliveryIssues, deliveryIssueCount: deliveryIssues.length };
 }
 
 export async function getSessionEventsAfter(sessionId, afterSeq = 0, options = {}) {

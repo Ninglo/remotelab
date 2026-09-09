@@ -446,6 +446,20 @@
 .cancel-btn:hover { opacity: 0.88; }
 .cancel-btn:active { transform: scale(0.92); }
 
+.delivery-issues {
+  color: var(--error);
+  background: var(--error-bg);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  max-height: 180px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.delivery-issues summary { cursor: pointer; font-weight: 600; }
+.delivery-issues p { margin: 8px 0 0; }
+.delivery-issue-badge { color: var(--error); }
+
 .queued-panel {
   display: none;
   margin: 0 var(--chat-gutter) 10px;

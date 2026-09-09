@@ -36,7 +36,7 @@ function resolveRemoteLabAttachmentDownloadPath(attachment) {
   throw new Error('RemoteLab attachment is missing an asset download reference');
 }
 
-async function fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthCookie, forceRefresh = false) {
+async function fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthCookie, signal, forceRefresh = false) {
   if (typeof ensureAuthCookie !== 'function') {
     throw new Error('Feishu attachment delivery requires RemoteLab authentication');
   }
@@ -46,11 +46,12 @@ async function fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthC
   let response = await fetch(requestUrl, {
     headers: { Cookie: cookie },
     redirect: 'manual',
+    signal,
   });
 
   if ([401, 403].includes(response.status) && !forceRefresh) {
     await response.body?.cancel?.().catch(() => {});
-    return fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthCookie, true);
+    return fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthCookie, signal, true);
   }
 
   if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -59,7 +60,7 @@ async function fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthC
     if (!location) {
       throw new Error('RemoteLab attachment download redirect is missing a location');
     }
-    response = await fetch(new URL(location, requestUrl), { redirect: 'follow' });
+    response = await fetch(new URL(location, requestUrl), { redirect: 'follow', signal });
   }
 
   if (!response.ok || !response.body) {
@@ -124,7 +125,8 @@ export async function loadRemoteLabReplyAttachment(runtime, attachment, {
     if (Number.isInteger(statedSize) && statedSize > MAX_FEISHU_OUTBOUND_FILE_BYTES) {
       throw new Error(`${resolveFeishuAttachmentFilename(attachment)} exceeds Feishu's 30 MB file limit`);
     }
-    const response = await fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthCookie);
+    const timeout = Math.min(30_000, Math.max(1, Math.floor(Number(runtime.config?.apiTimeoutMs) || 30_000)));
+    const response = await fetchRemoteLabAttachmentResponse(runtime, attachment, ensureAuthCookie, AbortSignal.timeout(timeout));
     buffer = await readResponseBufferWithLimit(response, MAX_FEISHU_OUTBOUND_FILE_BYTES);
   }
   if (buffer.length === 0) {

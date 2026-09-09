@@ -39,10 +39,13 @@ try {
     assert.equal(saved.state, expected, name);
     assert.equal(saved.attempts, 1);
     if (name === 'type-rejection') assert.match(saved.lastError, /230055.*type of file upload/);
-    runtime.appClient.im.v1.message.reply = async () => { sends++; return { code: 0, data: { message_id: 'next-receipt' } }; };
+    const messageTypes = [];
+    runtime.appClient.im.v1.message.reply = async ({ data }) => { sends++; messageTypes.push(data.msg_type); return { code: 0, data: { message_id: 'next-receipt' } }; };
     await processSourceDeliveryOnce(runtime, { requestRemoteLab });
-    assert.equal((await outbox.getSourceDelivery(later.id)).state, expected === 'delivery_failed' ? 'delivered' : 'pending');
-    assert.equal(sends, expected === 'delivery_failed' ? 2 : 1, 'only a proven rejection releases this topic');
+    if (expected !== 'pending') await processSourceDeliveryOnce(runtime, { requestRemoteLab });
+    assert.equal((await outbox.getSourceDelivery(later.id)).state, expected !== 'pending' ? 'delivered' : 'pending');
+    assert.equal(sends, expected !== 'pending' ? 3 : 1, 'failed and uncertain originals are isolated; a notice and later reply proceed');
+    if (expected !== 'pending') assert.deepEqual(messageTypes, ['text', 'post'], 'failure notice uses simple text independently of rich post formatting');
   }
 
   // Upload failure is before the message send; no user-visible send is ambiguous.
@@ -81,14 +84,20 @@ try {
       return requestRemoteLab(path, options);
     } }));
     if (!commitFailure) {
-      await outbox.claimSourceDelivery({ connector: 'feishu', sourceRouteId: route, now: '2035-01-01T00:00:00Z' });
+      const independent = await outbox.claimSourceDelivery({ connector: 'feishu', sourceRouteId: route, now: '2035-01-01T00:00:00Z' });
       assert.equal((await outbox.getSourceDelivery(first.id)).state, 'unknown');
+      // Expiring the old lease now also releases the next message. This fixture
+      // only claimed it (no send), so return it for the restarted sender.
+      if (independent) await outbox.failSourceDelivery(independent.delivery.id, independent.leaseId,
+        'fixture did not start sending', { safeToRetry: true, retryDelayMs: 0 });
     }
     const restarted = { config };
-    await processSourceDeliveryOnce(restarted, { requestRemoteLab, sendFeishuText: async (_runtime, _target, text) => {
-      assert.equal(text, 'still needs delivery');
+    const helpers = { requestRemoteLab, receiptReplayOptions: { now: Date.now() + 60000 }, sendFeishuText: async (_runtime, target, text) => {
+      if (!target.deliveryNotice) assert.equal(text, 'still needs delivery');
       return { message_id: 'after-restart' };
-    } });
+    } };
+    await processSourceDeliveryOnce(restarted, helpers);
+    await processSourceDeliveryOnce(restarted, helpers);
     assert.equal((await outbox.getSourceDelivery(first.id)).state, 'delivery_failed', 'replay preserves definite rejection evidence');
     assert.equal((await outbox.getSourceDelivery(later.id)).state, 'delivered');
     assert.equal(rejectedSends, 1, 'recovery only replays acknowledgement, never the rejected send');

@@ -81,7 +81,8 @@ async function dispatchAction(msg) {
         const queueCount = Number.isInteger(attachedSession?.activity?.queue?.count)
           ? attachedSession.activity.queue.count
           : 0;
-        if (queueCount > 0 && !Array.isArray(attachedSession?.queuedMessages)) {
+        if ((queueCount > 0 && !Array.isArray(attachedSession?.queuedMessages))
+          || (attachedSession?.deliveryIssueCount > 0 && !Array.isArray(attachedSession?.deliveryIssues))) {
           await Promise.all([
             fetchSessionState(msg.sessionId),
             eventsPromise,

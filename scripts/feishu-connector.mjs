@@ -920,7 +920,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
   if (isFeishuDocumentCommentSummary(summary)) {
     return sendFeishuCommentReply(runtime, summary, text);
   }
-  const content = await buildFeishuPostContent(text, mentions, {
+  const content = summary.deliveryNotice ? JSON.stringify({ text }) : await buildFeishuPostContent(text, mentions, {
     resolveFormulaImage: (formula) => resolveFeishuFormulaImage(runtime, formula),
     onFormulaError: (error, formula) => {
       console.warn(
@@ -935,7 +935,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
         message_id: summary.messageId,
       },
       data: {
-        msg_type: 'post',
+        msg_type: summary.deliveryNotice ? 'text' : 'post',
         content,
         reply_in_thread: true,
         uuid: replyUuid,
@@ -953,7 +953,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
     },
     data: {
       receive_id: summary.chatId,
-      msg_type: 'post',
+      msg_type: summary.deliveryNotice ? 'text' : 'post',
       content,
       uuid: replyUuid,
     },
@@ -972,6 +972,11 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   const receipts = runtime.deliveryReceipts ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-receipts'));
   const failures = runtime.deliveryFailures ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-failures'));
+  const replayOptions = {
+    continueOnError: true, limit: 10, budgetMs: 30_000,
+    onError: (error, receipt) => console.error(`[feishu-connector] delivery acknowledgement deferred (${receipt.deliveryId}): ${error.message}`),
+    ...helpers.receiptReplayOptions,
+  };
   const acknowledgeFailure = async receipt => {
     const result = await request(`/api/source-deliveries/${receipt.deliveryId}/fail`, { method: 'POST', body: {
       leaseId: receipt.leaseId, ...receipt.failure,
@@ -993,8 +998,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     if (!completed.response.ok) throw new Error(completed.json?.error || 'Failed to record delivery receipt');
     return completed.json.delivery;
   };
-  await receipts.flush(receipt => withFeishuHandoffLock(runtime, receipt.target, () => acknowledge(receipt)));
-  await failures.flush(acknowledgeFailure);
+  await receipts.flush(receipt => withFeishuHandoffLock(runtime, receipt.target, () => acknowledge(receipt)), replayOptions);
+  await failures.flush(acknowledgeFailure, replayOptions);
   const { response, json } = await request('/api/source-deliveries/claim', { method: 'POST', body: {
     connector: FEISHU_CONNECTOR_ID, sourceRouteId: runtime.config.sourceRouteId || 'default',
   } });
@@ -1002,7 +1007,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const claim = json?.claim;
   if (!claim) return null;
   const delivery = claim.delivery;
-  const summary = { ...delivery.target, mentions: [] };
+  const summary = { ...delivery.target, mentions: [], deliveryNotice: delivery.kind === 'delivery_notice' };
   return withFeishuHandoffLock(runtime, summary, async () => {
     let sent;
     try {
@@ -1014,14 +1019,14 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       // receipts. Restart must not turn a known rejection into an unknown send.
       await failures.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
         failure: classifyFeishuDeliveryError(error) });
-      await failures.flush(acknowledgeFailure);
+      await failures.flush(acknowledgeFailure, replayOptions);
       throw error;
     }
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || '', messageId: sent.message_id || '',
       threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary });
     let completed;
-    await receipts.flush(async receipt => { completed = await acknowledge(receipt); });
+    await receipts.flush(async receipt => { completed = await acknowledge(receipt); }, replayOptions);
     return completed;
   });
 }

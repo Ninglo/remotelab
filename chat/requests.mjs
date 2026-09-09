@@ -6,7 +6,7 @@ import { canonicalJson, createRecordStore, readRecord, serialQueue, writeDurable
 export const requestKey = (sessionId, requestId) => createHash('sha256')
   .update(JSON.stringify([sessionId, requestId])).digest('hex').slice(0, 24);
 
-function appendDeliveries(current, plans) {
+export function appendDeliveries(current, plans) {
   const now = new Date().toISOString();
   const existing = current.deliveries || [];
   return [...existing, ...plans.map((plan, index) => ({
@@ -85,7 +85,7 @@ export function createRequestStore(root) {
     }),
     archiveFinished: async key => {
       const record = await get(key);
-      if (record?.result && !record.postCompletionPending && (record.releasedAt || record.options.deliveryOnly) && record.deliveries.every(x => ['delivered', 'delivery_failed', 'cancelled'].includes(x.state))) {
+      if (record?.result && !record.postCompletionPending && (record.releasedAt || record.options.deliveryOnly) && record.deliveries.every(x => ['delivered', 'cancelled'].includes(x.state) || (x.kind === 'delivery_notice' && ['delivery_failed', 'unknown'].includes(x.state)))) {
         await records.archive(key);
       }
     },

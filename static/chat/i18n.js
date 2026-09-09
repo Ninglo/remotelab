@@ -7,6 +7,13 @@
 
   const translations = {
     en: {
+      "delivery.issues": "Delivery issues: {count}",
+      "delivery.note": "Content is saved here and later messages can continue. Check whether uncertain messages arrived before requesting a resend. Ask me to retry failed items or dismiss this notice.",
+      "delivery.message": "Message",
+      "delivery.unknown": "Delivery unconfirmed; check before resending",
+      "delivery.delivery_failed": "Delivery failed",
+      "delivery.retrying": "Retrying delivery",
+      "delivery.delayed": "Delivery delayed; check the connector connection",
       "app.chatTitle": "RemoteLab Chat",
       "nav.sessions": "Sessions",
       "nav.agents": "Agent",
@@ -398,6 +405,13 @@
       "workflow.status.unreadTitle": "Updated since you last reviewed this session",
     },
     "zh-CN": {
+      "delivery.issues": "{count} 条消息发送异常",
+      "delivery.note": "内容已保留在这里，后续消息可以继续发送。送达情况未知时，请先核对是否收到，再让我补发；也可以让我处理失败项或关闭提示。",
+      "delivery.message": "消息",
+      "delivery.unknown": "送达情况未知，请先核对",
+      "delivery.delivery_failed": "发送失败",
+      "delivery.retrying": "正在重试发送",
+      "delivery.delayed": "发送延迟，请检查连接状态",
       "app.chatTitle": "RemoteLab 对话",
       "nav.sessions": "会话",
       "nav.agents": "Agent",

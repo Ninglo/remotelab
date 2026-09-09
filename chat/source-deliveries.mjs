@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { requests, requestKey } from './requests.mjs';
+import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { serialQueue } from '../lib/durable-records.mjs';
+import { broadcastOwners } from './ws-clients.mjs';
+import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
 const queue = serialQueue();
 const trimString = value => typeof value === 'string' ? value.trim() : '';
 const terminal = state => ['delivered', 'delivery_failed', 'cancelled'].includes(state);
@@ -135,6 +137,10 @@ export async function listSourceDeliveries(options = {}) {
   return deliveries.filter(entry => ['connector', 'sourceRouteId', 'state', 'sessionId'].every(field => !options[field] || entry[field] === options[field]));
 }
 
+export async function listSourceDeliveryIssues(options = {}) {
+  return (await listSourceDeliveries(options)).map(entry => deliveryIssue(entry, options.now ?? Date.now())).filter(Boolean);
+}
+
 // Optional transport feedback (e.g. native typing) observes durable requests,
 // never a per-message waiter or a connector-imposed execution deadline.
 export async function listSourceDeliveryActivity(options = {}) {
@@ -194,24 +200,40 @@ async function mutateDelivery(id, update) {
     if (!current?.deliveries[index]) throw new Error('Delivery not found');
     const deliveries = current.deliveries.slice();
     deliveries[index] = update({ ...deliveries[index] });
-    return { ...current, deliveries };
+    let next = { ...current, deliveries };
+    const entry = deliveries[index];
+    if (entry.connector === 'feishu' && entry.kind !== 'delivery_notice'
+      && ['unknown', 'delivery_failed'].includes(entry.state)
+      && !deliveries.some(part => part.kind === 'delivery_notice')) {
+      next = { ...next, deliveries: appendDeliveries(next, [buildDeliveryNotice(entry)]) };
+    }
+    if (next.deliveries.filter(part => part.kind !== 'delivery_notice')
+      .every(part => ['delivered', 'cancelled'].includes(part.state))) {
+      next.deliveries = next.deliveries.map(part => part.kind === 'delivery_notice' && part.state === 'pending'
+        ? { ...part, state: 'cancelled', resolution: 'Issue resolved before notification' } : part);
+    }
+    return next;
   });
   await requests.archiveFinished(key);
+  broadcastOwners({ type: 'session_invalidated', sessionId: record.sessionId });
   return record.deliveries[index];
 }
 
 export async function claimSourceDelivery(options = {}) {
   return queue(async () => {
     const now = nowIso(options.now);
-    const timeout = options.leaseTimeoutMs || 120_000;
+    const timeout = options.leaseTimeoutMs || DELIVERY_LEASE_MS;
     const entries = await listSourceDeliveries({ connector: options.connector, sourceRouteId: options.sourceRouteId || 'default' });
     const blocked = new Set();
     for (let entry of entries) {
       if (terminal(entry.state)) continue;
       const key = targetKey(entry);
-      if (entry.state === 'sending' && Date.parse(now) - Date.parse(entry.claimedAt) >= timeout) {
+      if (entry.state === 'sending' && (!Number.isFinite(Date.parse(entry.claimedAt)) || Date.parse(now) - Date.parse(entry.claimedAt) >= timeout)) {
         entry = await mutateDelivery(entry.id, current => ({ ...current, state: 'unknown', lastError: 'Sender lease expired without a receipt' }));
       }
+      // Fence this uncertain operation, not the whole conversation. A later
+      // receipt can still settle its original lease without resending it.
+      if (entry.state === 'unknown') continue;
       if (blocked.has(key)) continue;
       blocked.add(key);
       if (entry.state !== 'pending' || Date.parse(entry.availableAt) > Date.parse(now)) continue;

@@ -100,5 +100,11 @@
     "description": "Match Feishu media upload/message types and retain definite rejection receipts across controller and connector restarts.",
     "pass": true,
     "verification_plan": "Reproduce media type mismatch, definite versus ambiguous send failures, lost failure acknowledgements, lease expiry and fencing; full isolated npm test, restart gate, then recover only the verified rejected live delivery."
+  },
+  {
+    "id": "delivery-liveness-and-visible-errors",
+    "description": "Isolate failed or uncertain messages, bound Feishu requests/downloads, defer bad acknowledgements and expose persistent delivery issues with non-recursive Feishu notices.",
+    "pass": true,
+    "verification_plan": "Fault injection for uncertainty, lease expiry, retry exhaustion, ignored abort, stalled redirected body, poisoned receipts, stale notices and API visibility; real browser/API desktop/mobile and live warning clearing; full isolated npm test and restart gate."
   }
 ]

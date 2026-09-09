@@ -877,6 +877,12 @@ function normalizeSessionRecord(session, previous = null) {
     ? applySessionArchiveOptimisticMutation(session)
     : session;
   const normalized = { ...sessionWithOptimisticArchive };
+  if (!Object.prototype.hasOwnProperty.call(session || {}, "deliveryIssues")) {
+    if (session?.deliveryIssueCount === 0) normalized.deliveryIssues = [];
+    else if (session?.deliveryIssueCount === previous?.deliveryIssueCount && Array.isArray(previous?.deliveryIssues)) {
+      normalized.deliveryIssues = previous.deliveryIssues;
+    }
+  }
   if (!Object.prototype.hasOwnProperty.call(session || {}, "queuedMessages")) {
     if (queueCount > 0 && Array.isArray(previous?.queuedMessages)) {
       normalized.queuedMessages = previous.queuedMessages;
@@ -1222,6 +1228,7 @@ function applyAttachedSessionState(id, session) {
     reconcileComposerPendingSendWithSession(session);
   }
   updateStatus("connected", session);
+  if (typeof renderDeliveryIssues === "function") renderDeliveryIssues(session);
   if (typeof renderQueuedMessagePanel === "function") {
     renderQueuedMessagePanel(session);
   }
@@ -1306,6 +1313,8 @@ function getComparableAttachedSessionStateSignature(session) {
     archived: session.archived === true,
     activity: session.activity || null,
     queuedMessages: Array.isArray(session.queuedMessages) ? session.queuedMessages : null,
+    deliveryIssueCount: session.deliveryIssueCount || 0,
+    deliveryIssues: Array.isArray(session.deliveryIssues) ? session.deliveryIssues : null,
     model: typeof session.model === "string" ? session.model : null,
     effort: typeof session.effort === "string" ? session.effort : null,
     thinking: session.thinking === true ? true : null,

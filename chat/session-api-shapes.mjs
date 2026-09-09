@@ -15,6 +15,7 @@ function stripSessionShape(session, {
   delete cloned.titleLocked;
   if (!includeQueuedMessages) {
     delete cloned.queuedMessages;
+    delete cloned.deliveryIssues;
   }
   return cloned;
 }

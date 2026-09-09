@@ -18,6 +18,9 @@ function clearMessages({ preserveRunningBlockExpanded = false } = {}) {
 }
 
 function showEmpty() {
+  if (typeof renderDeliveryIssues === "function") {
+    renderDeliveryIssues(typeof getCurrentSession === "function" ? getCurrentSession() : null);
+  }
   messagesInner.innerHTML = "";
   messagesInner.appendChild(emptyState);
   if (typeof renderQueuedMessagePanel === "function") {
