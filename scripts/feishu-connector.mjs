@@ -9,6 +9,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
+import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
 import {
   normalizeExternalRuntimeSelectionMode,
@@ -941,7 +942,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
       },
     });
     if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
-      throw new Error(response.msg || 'Failed to send Feishu topic reply');
+      throw feishuResponseError(response, 'Failed to send Feishu topic reply');
     }
     return response.data;
   }
@@ -958,7 +959,7 @@ async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summ
     },
   });
   if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
-    throw new Error(response.msg || 'Failed to send Feishu reply');
+    throw feishuResponseError(response, 'Failed to send Feishu reply');
   }
   return response.data;
 }
@@ -970,6 +971,14 @@ async function sendFeishuAttachment(runtime, summary, attachment, uuid = '') {
 async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   const receipts = runtime.deliveryReceipts ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-receipts'));
+  const failures = runtime.deliveryFailures ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-failures'));
+  const acknowledgeFailure = async receipt => {
+    const result = await request(`/api/source-deliveries/${receipt.deliveryId}/fail`, { method: 'POST', body: {
+      leaseId: receipt.leaseId, ...receipt.failure,
+    } });
+    if (!result.response.ok) throw new Error(result.json?.error || 'Failed to record delivery failure');
+    return result.json.delivery;
+  };
   const acknowledge = async receipt => {
     await recordFeishuBotHandoffScope(runtime, receipt.target, {
       sessionId: receipt.sessionId, threadId: receipt.threadId, messageId: receipt.messageId,
@@ -985,6 +994,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     return completed.json.delivery;
   };
   await receipts.flush(receipt => withFeishuHandoffLock(runtime, receipt.target, () => acknowledge(receipt)));
+  await failures.flush(acknowledgeFailure);
   const { response, json } = await request('/api/source-deliveries/claim', { method: 'POST', body: {
     connector: FEISHU_CONNECTOR_ID, sourceRouteId: runtime.config.sourceRouteId || 'default',
   } });
@@ -1000,12 +1010,11 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
         : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
     } catch (error) {
-      // A network timeout cannot tell whether Feishu executed the operation.
-      await request(`/api/source-deliveries/${delivery.id}/fail`, { method: 'POST', body: {
-        leaseId: claim.leaseId, error: error.message,
-        safeToRetry: error.response?.status === 429,
-        definiteFailure: error.definiteFailure === true,
-      } });
+      // Persist rejection evidence before acknowledging it, just like success
+      // receipts. Restart must not turn a known rejection into an unknown send.
+      await failures.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
+        failure: classifyFeishuDeliveryError(error) });
+      await failures.flush(acknowledgeFailure);
       throw error;
     }
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,

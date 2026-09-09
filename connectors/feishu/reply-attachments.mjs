@@ -2,6 +2,7 @@ import {
   buildFeishuApiUuid,
   shouldReplyInFeishuThread,
 } from './index.mjs';
+import { feishuResponseError } from './delivery-errors.mjs';
 
 export const MAX_FEISHU_OUTBOUND_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_FEISHU_OUTBOUND_FILE_BYTES = 30 * 1024 * 1024;
@@ -139,9 +140,7 @@ export async function loadRemoteLabReplyAttachment(runtime, attachment, {
   };
 }
 
-export async function sendFeishuAttachment(runtime, summary, attachment, uuid = '', {
-  ensureAuthCookie,
-} = {}) {
+async function prepareFeishuAttachmentMessage(runtime, attachment, ensureAuthCookie) {
   const prepared = await loadRemoteLabReplyAttachment(runtime, attachment, { ensureAuthCookie });
   const useImageMessage = FEISHU_OUTBOUND_IMAGE_MIME_TYPES.has(prepared.mimeType)
     && prepared.buffer.length <= MAX_FEISHU_OUTBOUND_IMAGE_BYTES;
@@ -157,33 +156,41 @@ export async function sendFeishuAttachment(runtime, summary, attachment, uuid = 
     });
     const imageKey = trimString(uploaded?.image_key || uploaded?.data?.image_key);
     if ((uploaded?.code !== undefined && uploaded.code !== 0) || !imageKey) {
-      throw new Error(uploaded?.msg || `Failed to upload Feishu image ${prepared.filename}`);
+      throw feishuResponseError(uploaded, `Failed to upload Feishu image ${prepared.filename}`);
     }
     msgType = 'image';
     content = JSON.stringify({ image_key: imageKey });
   } else {
+    const fileType = resolveFeishuOutboundFileType({ ...attachment, filename: prepared.filename, mimeType: prepared.mimeType });
     const uploaded = await runtime.appClient.im.v1.file.create({
       data: {
-        file_type: resolveFeishuOutboundFileType({
-          ...attachment,
-          filename: prepared.filename,
-          mimeType: prepared.mimeType,
-        }),
+        file_type: fileType,
         file_name: prepared.filename,
         file: prepared.buffer,
       },
     });
     const fileKey = trimString(uploaded?.file_key || uploaded?.data?.file_key);
     if ((uploaded?.code !== undefined && uploaded.code !== 0) || !fileKey) {
-      throw new Error(uploaded?.msg || `Failed to upload Feishu file ${prepared.filename}`);
+      throw feishuResponseError(uploaded, `Failed to upload Feishu file ${prepared.filename}`);
     }
-    msgType = 'file';
+    msgType = fileType === 'mp4' ? 'media' : fileType === 'opus' ? 'audio' : 'file';
     content = JSON.stringify({ file_key: fileKey });
   }
+  return { msg_type: msgType, content };
+}
 
+export async function sendFeishuAttachment(runtime, summary, attachment, uuid = '', {
+  ensureAuthCookie,
+} = {}) {
+  let prepared;
+  try {
+    prepared = await prepareFeishuAttachmentMessage(runtime, attachment, ensureAuthCookie);
+  } catch (error) {
+    // Upload/download failures precede the user-visible message operation.
+    throw Object.assign(error, { deliveryPhase: 'prepare' });
+  }
   const messageData = {
-    msg_type: msgType,
-    content,
+    ...prepared,
     uuid: buildFeishuApiUuid(uuid, summary),
   };
   if (shouldReplyInFeishuThread(summary)) {
@@ -197,7 +204,7 @@ export async function sendFeishuAttachment(runtime, summary, attachment, uuid = 
       },
     });
     if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
-      throw new Error(response.msg || `Failed to send Feishu ${msgType} reply`);
+      throw feishuResponseError(response, `Failed to send Feishu ${prepared.msg_type} reply`);
     }
     return response.data;
   }
@@ -212,7 +219,7 @@ export async function sendFeishuAttachment(runtime, summary, attachment, uuid = 
     },
   });
   if ((response.code !== undefined && response.code !== 0) || !response.data?.message_id) {
-    throw new Error(response.msg || `Failed to send Feishu ${msgType} message`);
+    throw feishuResponseError(response, `Failed to send Feishu ${prepared.msg_type} message`);
   }
   return response.data;
 }

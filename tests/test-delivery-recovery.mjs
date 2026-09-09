@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 const root = await mkdtemp(join(tmpdir(), 'remotelab-delivery-recovery-'));
 process.env.REMOTELAB_CONFIG_DIR = root;
-const { enqueueSourceDelivery, claimSourceDelivery, getSourceDelivery, completeSourceDelivery, resolveSourceDelivery } = await import('../chat/source-deliveries.mjs');
+const { enqueueSourceDelivery, claimSourceDelivery, getSourceDelivery, completeSourceDelivery, failSourceDelivery, resolveSourceDelivery } = await import('../chat/source-deliveries.mjs');
 try {
   const input = { sessionId: 'session_a', responseId: 'reply_a', text: 'answer', sourceDelivery: { connector: 'feishu', sourceRouteId: 'default', target: { chatId: 'chat_a' } } };
   const first = await enqueueSourceDelivery(input);
@@ -23,6 +23,16 @@ try {
   const replacement = await claimSourceDelivery({ connector: 'feishu', now: '2030-01-01T00:10:00Z' });
   assert.notEqual(second.leaseId, replacement.leaseId);
   await assert.rejects(completeSourceDelivery(second.delivery.id, second.leaseId, { externalId: 'old' }), /lease/);
+  await assert.rejects(failSourceDelivery(second.delivery.id, second.leaseId, 'old failure', { definiteFailure: true }), /lease/);
+  await failSourceDelivery(replacement.delivery.id, replacement.leaseId, 'rate limited', { safeToRetry: true, retryDelayMs: 0 });
+  const retry = await claimSourceDelivery({ connector: 'feishu', now: '2030-01-01T00:11:00Z' });
+  assert.equal(retry.delivery.id, replacement.delivery.id);
+  const stillSending = await failSourceDelivery(replacement.delivery.id, replacement.leaseId, 'rate limited', { safeToRetry: true });
+  assert.equal(stillSending.leaseId, retry.leaseId, 'replaying an acknowledged failure cannot modify a newer send');
+  assert.equal(stillSending.state, 'sending');
+  await completeSourceDelivery(retry.delivery.id, retry.leaseId, { externalId: 'retry-receipt' });
+  await failSourceDelivery(replacement.delivery.id, replacement.leaseId, 'rate limited', { safeToRetry: true });
+  assert.equal((await getSourceDelivery(retry.delivery.id)).state, 'delivered', 'late failure replay cannot reopen delivery');
   const multipart = await enqueueSourceDelivery({ sessionId: 'multipart', responseId: 'parts', text: 'answer',
     attachments: [{ assetId: 'asset-a' }, { assetId: 'asset-b' }],
     sourceDelivery: { connector: 'feishu', sourceRouteId: 'attachments', target: { chatId: 'chat-parts' } } });

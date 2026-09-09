@@ -19,6 +19,12 @@ Admission returns a reserved Run identity immediately; it no longer means that t
 
 Ordinary Feishu output and scheduled Feishu output share Delivery ownership. Text and attachments are separately acknowledged. A target with an unknown send waits for explicit resolution; unrelated targets can still be claimed. The old in-memory Feishu queue, reply-wait loop and ordinary reply driver have been removed. Other platform adapters retain their platform behavior while using the shared request/response contract.
 
+Feishu sends retain structured platform rejections as `delivery_failed`, so a rejected part does not indefinitely block later output. Rate limits and transient attachment preparation failures retry with the existing bounded backoff; a message timeout, gateway failure or missing success receipt remains `unknown`. MP4 uploads use `media` messages and Opus uploads use `audio` messages; document uploads use `file` messages. An upload failure precedes the user-visible send and therefore can be retried without duplicating a message.
+
+Both success and failure evidence are written to connector-local journals before HTTP acknowledgement. `storageDir/delivery-receipts/` holds successes and `storageDir/delivery-failures/` holds failures; preserve both with the Inbox when migrating or backing up a connector. Separate directories prevent an older connector from interpreting a failure as success. Replay acknowledges the original lease, including after lease expiry, and never repeats the external operation. Repeated failure acknowledgements are idempotent and cannot overwrite a newer attempt. This extends the existing Request schema with an optional `failureLeaseId`; it does not require offline conversion. A truly unknown attempt still requires explicit resolution backed by external evidence.
+
+See [the Feishu failure recovery verification](feishu-delivery-failure-recovery/BUGFIX_VERIFICATION.md) for the rejection and lost-acknowledgement regressions.
+
 Result publication occurs before releasing the execution slot. The attachment writer reads session metadata without re-entering Run reconciliation: the former recursive read could wait on its own completion promise. Failed Runs have a failed response with no success payload, and a configured Feishu destination receives a durable failure notice.
 
 ## Verification

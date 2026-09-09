@@ -94,5 +94,11 @@
     "pass": true,
     "verification": "Isolated full npm test; conversion and subprocess/HTTP transaction regressions including SIGKILL resume, failed rollback and new-work preservation.",
     "rollout": "Tool implementation only; no fleet migration or live Feishu E2E performed. See docs/request-state-upgrade-tool.md."
+  },
+  {
+    "id": "feishu-delivery-failure-recovery",
+    "description": "Match Feishu media upload/message types and retain definite rejection receipts across controller and connector restarts.",
+    "pass": true,
+    "verification_plan": "Reproduce media type mismatch, definite versus ambiguous send failures, lost failure acknowledgements, lease expiry and fencing; full isolated npm test, restart gate, then recover only the verified rejected live delivery."
   }
 ]

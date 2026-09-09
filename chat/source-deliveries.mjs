@@ -223,10 +223,6 @@ export async function claimSourceDelivery(options = {}) {
   });
 }
 
-function requireLease(entry, leaseId) {
-  if (entry.state !== 'sending' || !leaseId || entry.leaseId !== leaseId) throw new Error('Source delivery lease mismatch');
-}
-
 export async function completeSourceDelivery(id, leaseId, input = {}) {
   return queue(() => mutateDelivery(id, entry => {
     // Repeating the acknowledgement after an HTTP disconnect is harmless.
@@ -239,10 +235,13 @@ export async function completeSourceDelivery(id, leaseId, input = {}) {
 
 export async function failSourceDelivery(id, leaseId, error, options = {}) {
   return queue(() => mutateDelivery(id, entry => {
-    requireLease(entry, leaseId);
+    // A durable failure receipt may arrive after lease expiry or after its
+    // acknowledgement was committed but the HTTP response was lost.
+    if (leaseId && entry.failureLeaseId === leaseId) return entry;
+    if (!['sending', 'unknown'].includes(entry.state) || !leaseId || entry.leaseId !== leaseId) throw new Error('Source delivery lease mismatch');
     const retryable = options.safeToRetry === true && entry.attempts < (options.maxAttempts || 5);
     const state = retryable ? 'pending' : (options.definiteFailure === true || options.safeToRetry === true) ? 'delivery_failed' : 'unknown';
-    return { ...entry, state,
+    return { ...entry, state, failureLeaseId: leaseId,
       leaseId: state === 'unknown' ? entry.leaseId : '', lastError: String(error?.message || error),
       availableAt: new Date(Date.parse(nowIso(options.now)) + (options.retryDelayMs ?? 5000)).toISOString() };
   }));

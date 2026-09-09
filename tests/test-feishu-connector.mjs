@@ -704,6 +704,23 @@ assert.deepEqual(JSON.parse(feishuReplyPayload?.data?.content || '{}'), {
 });
 
 const sourceDeliveryRequests = [];
+// Feishu rejects an mp4/opus upload sent as a generic file (230055).
+for (const [filename, mimeType, fileType, messageType] of [
+  ['clip.mp4', 'video/mp4', 'mp4', 'media'],
+  ['voice.opus', 'audio/opus', 'opus', 'audio'],
+]) {
+  for (const threaded of [false, true]) {
+    await sendFeishuAttachment(fakeSendRuntime,
+      threaded ? topicSummary : { chatId: 'chat-media', messageId: 'message-media' },
+      { originalName: filename, mimeType, data: Buffer.from('media fixture').toString('base64') },
+      `media-${filename}-${threaded}`);
+    const sent = threaded ? feishuReplyPayload : feishuCreatePayload;
+    assert.equal(feishuFilePayload.data.file_type, fileType);
+    assert.equal(sent.data.msg_type, messageType, 'upload and message types must agree');
+    assert.equal(JSON.parse(sent.data.content).file_key, 'file_uploaded_1');
+  }
+}
+
 const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceRouteId: 'bot-alpha', storageDir: join(tempHome, 'delivery-worker') } }, {
   requestRemoteLab: async (path, options = {}) => {
     sourceDeliveryRequests.push({ path, options });

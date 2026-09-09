@@ -4,6 +4,7 @@ import {
   trimString,
   truncateLogPreview,
 } from './index.mjs';
+import { feishuResponseError } from './delivery-errors.mjs';
 
 const MAX_COMMENT_REPLY_PAGES = 20;
 const COMMENT_REPLY_PAGE_SIZE = 100;
@@ -247,7 +248,7 @@ export async function sendFeishuCommentReply(runtime, summary, text) {
   });
   const replyId = trimString(response.data?.reply_id);
   if ((response.code !== undefined && response.code !== 0) || !replyId) {
-    throw new Error(response.msg || 'Failed to reply to Feishu document comment');
+    throw feishuResponseError(response, 'Failed to reply to Feishu document comment');
   }
   return {
     ...response.data,
