@@ -20,14 +20,15 @@ import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 
 const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi']);
 // Cost boundary: title/group/space and state synchronization are routine metadata
-// tasks, not foreground problem solving. Use a small, low-cost model with low
-// reasoning effort; this call can run after every normal turn.
+// tasks, not foreground problem solving. This call can run after every normal
+// turn: use a small, low-cost model, with high reasoning effort to improve
+// topic/group consistency. Save on model size, not by forcing shallow reasoning.
 // Keep this route independent of PRODUCT_DEFAULT_CODEX_MODEL: upgrading the
 // chat model must NOT silently upgrade this background classifier's cost.
 export const SESSION_STATE_CLASSIFIER_RUNTIME = Object.freeze({
   tool: 'codex',
   model: 'gpt-5.6-luna',
-  effort: 'low',
+  effort: 'high',
   thinking: false,
 });
 

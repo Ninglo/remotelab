@@ -110,10 +110,10 @@ assert.deepEqual(
   {
     tool: 'codex',
     model: 'gpt-5.6-luna',
-    effort: 'low',
+    effort: 'high',
     thinking: false,
   },
-  'an expensive foreground model must retain the independent low-cost Luna/low session-state route',
+  'an expensive foreground model must retain the independent low-cost Luna/high session-state route',
 );
 assert.deepEqual(
   resolveSessionStateClassifierRuntime({
