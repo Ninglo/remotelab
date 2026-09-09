@@ -2,6 +2,9 @@
 import { join } from 'path';
 
 const http = await import('http');
+// Finish the mail worker's shared async dependency graph before starting the
+// remaining dynamic imports. Node 18 can strand this import when they overlap.
+const embeddedMailWorker = await import('./lib/embedded-mail-worker.mjs');
 const [
   { CHAT_PORT, CHAT_BIND_HOST, SECURE_COOKIES, MEMORY_DIR },
   { handleRequest },
@@ -13,7 +16,6 @@ const [
   recurringSchedules,
   tools,
   { ensureDir },
-  embeddedMailWorker,
   guestWeChatConnectorStartup,
 ] = await Promise.all([
   import('./lib/config.mjs'),
@@ -26,7 +28,6 @@ const [
   import('./chat/recurring-schedules.mjs'),
   import('./lib/tools.mjs'),
   import('./chat/fs-utils.mjs'),
-  import('./lib/embedded-mail-worker.mjs'),
   import('./lib/guest-wechat-connector-startup.mjs'),
 ]);
 
