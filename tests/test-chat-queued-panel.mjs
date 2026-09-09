@@ -83,8 +83,8 @@ class FakeElement {
     this.listeners.get(type).push(listener);
   }
 
-  click() {
-    for (const listener of this.listeners.get('click') || []) listener({ target: this });
+  async click() {
+    for (const listener of this.listeners.get('click') || []) await listener({ target: this });
   }
 }
 
@@ -133,7 +133,7 @@ vm.runInNewContext(source, context, { filename: 'session-surface-ui.js' });
 const session = {
   id: 'session-1',
   queuedMessages: [
-    { queuedAt: '2026-08-30T10:30:00.000Z', text: 'A very long first follow-up' },
+    { requestId: 'feishu:message/one', queuedAt: '2026-08-30T10:30:00.000Z', text: 'A very long first follow-up' },
     { queuedAt: '2026-08-30T10:31:00.000Z', text: 'A very long second follow-up' },
   ],
 };
@@ -151,6 +151,48 @@ header.click();
 assert.ok(queuedPanel.classList.contains('expanded'), 'clicking the summary should expand queue details');
 assert.equal(header.getAttribute('aria-expanded'), 'true');
 assert.equal(details.hidden, false);
+
+const remove = findByClass(details, 'queued-item-remove');
+assert.ok(remove, 'each queued message needs a remove action');
+let sent;
+let refreshed;
+context.fetchJsonOrRedirect = async (url, options) => { sent = { url, options }; return { session: { ...session, queuedMessages: [] } }; };
+context.upsertSession = value => value;
+context.renderSessions = () => {};
+context.refreshCurrentSession = async () => { refreshed = true; };
+await remove.click();
+assert.equal(sent.url, '/api/sessions/session-1/queue/feishu%3Amessage%2Fone');
+assert.equal(sent.options.method, 'DELETE');
+assert.equal(queuedPanel.classList.contains('visible'), false, 'successful removal updates the queue immediately');
+context.renderQueuedMessagePanel(session);
+await findByClass(queuedPanel, 'queued-panel-header').click();
+context.fetchJsonOrRedirect = async () => { throw Object.assign(new Error('Already started'), { status: 409 }); };
+await findByClass(queuedPanel, 'queued-item-remove').click();
+assert.equal(findByClass(queuedPanel, 'queued-item-error').textContent, 'queue.remove.started');
+assert.equal(refreshed, true, 'stale queue state is refreshed on conflict');
+
+context.fetchJsonOrRedirect = async () => { throw new Error('Network unavailable'); };
+await findByClass(queuedPanel, 'queued-item-remove').click();
+assert.equal(findByClass(queuedPanel, 'queued-item-error').textContent, 'queue.remove.failed');
+assert.equal(findByClass(queuedPanel, 'queued-item-remove').disabled, false, 'failed removal remains retryable');
+let resolveRemoval;
+let attempts = 0;
+context.fetchJsonOrRedirect = () => { attempts++; return new Promise(resolve => { resolveRemoval = resolve; }); };
+const pendingButton = findByClass(queuedPanel, 'queued-item-remove');
+const pendingClick = pendingButton.click();
+await pendingButton.click();
+assert.equal(attempts, 1, 'pending removal prevents double submission');
+context.currentSessionId = 'session-2';
+context.renderQueuedMessagePanel({ id: 'session-2', queuedMessages: [{ text: 'Different session' }] });
+resolveRemoval({ session: { ...session, queuedMessages: [] } });
+await pendingClick;
+assert.equal(queuedPanel.dataset.sessionId, 'session-2', 'late removal response never clears another session panel');
+context.currentSessionId = session.id;
+
+context.renderQueuedMessagePanel({ ...session, queuedMessages: Array.from({ length: 8 }, (_, n) => ({ requestId: `queued-${n}`, text: `Message ${n}` })) });
+assert.equal(findByClass(queuedPanel, 'queued-list').children.length, 8, 'older queued messages remain removable');
+context.renderQueuedMessagePanel(session);
+await findByClass(queuedPanel, 'queued-panel-header').click();
 assert.equal(findByClass(details, 'queued-item-text').textContent, 'A very long first follow-up');
 
 context.renderQueuedMessagePanel(session);

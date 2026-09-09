@@ -1,0 +1,7 @@
+Focused test output:
+request queue removal: durable, scoped, idempotent, FIFO, replay, restart and preparation race passed
+HTTP queue removal: auth, scope, encoded IDs, conflict, idempotence, replay, live restart and FIFO passed
+test-chat-queued-panel: ok
+
+Gates: npm test exit 0; test:restart-gate exit 0 on sequential run; lint:filesize exit 0 (advisory warnings); syntax and git diff --check exit 0.
+Browser: optional HTTP test with Playwright passed at 1100x850 and 390x844; screenshots inspected.

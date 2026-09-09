@@ -45,6 +45,34 @@ export function createRequestRuntime({ store, prepare, observe, reconcile, postC
   };
   return {
     active, refresh, tick,
+    async removeQueued(sessionId, requestId) {
+      await load();
+      // Share the scheduler's per-session lock: a stale click must never race
+      // preparation/launch or cancel the next request after the head advances.
+      while (sessions.has(sessionId)) await sessions.get(sessionId);
+      const task = Promise.resolve().then(async () => {
+        const record = await store.byRequest(sessionId, requestId);
+        if (!record) throw Object.assign(new Error('Queued message not found'), { code: 'REQUEST_NOT_FOUND' });
+        if (record.queueRemovedAt) return record;
+        if (record.result || record.preparedAt || !active(sessionId).slice(1).some(item => item.key === record.key)) {
+          throw Object.assign(new Error('Message is no longer queued'), { code: 'REQUEST_NOT_QUEUED' });
+        }
+        const now = new Date().toISOString();
+        await store.mutate(record.key, current => ({ ...current,
+          result: { state: 'cancelled', payload: null, error: null },
+          queueRemovedAt: now, cancelRequestedAt: now, settledAt: now, releasedAt: now,
+          postCompletionPending: false,
+          deliveries: current.deliveries.map(delivery => delivery.state === 'pending'
+            ? { ...delivery, state: 'cancelled', updatedAt: now } : delivery),
+        }));
+        const removed = await refresh(record.key);
+        await store.archiveFinished(record.key);
+        return removed;
+      });
+      // Scheduler observers await completion, while the caller owns API errors.
+      sessions.set(sessionId, task.catch(() => {}));
+      try { return await task; } finally { sessions.delete(sessionId); }
+    },
     async accept(input) {
       await load();
       const outcome = await store.accept(input);

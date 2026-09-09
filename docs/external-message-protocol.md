@@ -287,7 +287,20 @@ Important response fields:
 
 - `duplicate` — idempotency result for this `requestId`
 - `queued` — `true` when the message was accepted into the session follow-up queue instead of starting a new run immediately
-- `run` — the new run when one started immediately, otherwise `null`
+- `run` — the reserved execution identity, including when execution is still queued
+
+To remove a mistaken queued follow-up, call `DELETE /api/sessions/:sessionId/queue/:requestId`
+with the request ID URL-encoded (connector IDs may contain `:` or `/`). The normal session
+access rules apply. A successful removal returns `200` with `requestId` and the refreshed
+`session`, including `queuedMessages` and the queue count. Repeating removal returns `200`;
+an unknown request returns `404`; a request that has started or otherwise left the queue
+returns `409`. Removing queued input never interrupts the active request. Its cancellation
+is durable across restart, never enters the conversation transcript or starts a completion
+agent, and does not send an external reply. Retrying admission with the original request ID
+returns the original cancelled result; a deliberately corrected message needs a new ID.
+
+In ChatUI, expand the queued-message panel and select **Remove** beside the message.
+All queued messages remain accessible in the scrollable list, including older entries.
 
 If you want source metadata to stay queryable without padding every prompt, prefer:
 

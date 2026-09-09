@@ -543,6 +543,28 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+.queued-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.queued-item-remove {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.queued-item-remove:hover { color: var(--text); background: var(--surface-hover); }
+.queued-item-remove:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.queued-item-remove:disabled { opacity: 0.6; cursor: wait; }
+.queued-item-error { color: var(--error); font-size: 12px; margin-bottom: 4px; }
 .queued-item-text {
   font-size: 13px;
   line-height: 1.45;

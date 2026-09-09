@@ -81,8 +81,7 @@ function renderQueuedMessagePanel(session) {
 
   const list = document.createElement("div");
   list.className = "queued-list";
-  const visibleItems = items.slice(-5);
-  for (const item of visibleItems) {
+  for (const item of items) {
     const row = document.createElement("div");
     row.className = "queued-item";
 
@@ -94,7 +93,45 @@ function renderQueuedMessagePanel(session) {
     text.className = "queued-item-text";
     text.textContent = item.text || t("queue.attachmentOnly");
 
-    row.appendChild(meta);
+    const itemHeader = document.createElement("div");
+    itemHeader.className = "queued-item-header";
+    itemHeader.appendChild(meta);
+    if (item.requestId) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "queued-item-remove";
+      remove.textContent = t("queue.remove");
+      remove.setAttribute("aria-label", t("queue.remove.label"));
+      const errorLine = document.createElement("div");
+      errorLine.className = "queued-item-error";
+      errorLine.setAttribute("role", "alert");
+      errorLine.hidden = true;
+      remove.addEventListener("click", async () => {
+        if (remove.disabled) return;
+        remove.disabled = true;
+        remove.textContent = t("queue.removing");
+        errorLine.hidden = true;
+        try {
+          const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(session.id)}/queue/${encodeURIComponent(item.requestId)}`, { method: "DELETE" });
+          if (!data?.session) return;
+          const updated = upsertSession(data.session) || data.session;
+          renderSessions();
+          if (currentSessionId === session.id) renderQueuedMessagePanel(updated);
+        } catch (error) {
+          errorLine.textContent = error.status === 409 ? t("queue.remove.started") : t("queue.remove.failed");
+          errorLine.hidden = false;
+          if (error.status === 409 && currentSessionId === session.id) {
+            await refreshCurrentSession().catch(() => {});
+          }
+        } finally {
+          remove.disabled = false;
+          remove.textContent = t("queue.remove");
+        }
+      });
+      itemHeader.appendChild(remove);
+      row.appendChild(errorLine);
+    }
+    row.appendChild(itemHeader);
     row.appendChild(text);
 
     const itemAttachments = Array.isArray(item?.attachments) && item.attachments.length > 0
@@ -112,15 +149,6 @@ function renderQueuedMessagePanel(session) {
   }
 
   details.appendChild(list);
-
-  if (items.length > visibleItems.length) {
-    const more = document.createElement("div");
-    more.className = "queued-panel-more";
-    more.textContent = items.length - visibleItems.length === 1
-      ? t("queue.olderHidden.one")
-      : t("queue.olderHidden.multiple", { count: items.length - visibleItems.length });
-    details.appendChild(more);
-  }
 
   queuedPanel.appendChild(details);
 

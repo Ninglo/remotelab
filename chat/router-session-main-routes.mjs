@@ -12,6 +12,7 @@ import { resolveStarterPresetDefinition } from './starter-session-content.mjs';
 import {
   applyTemplateToSession,
   cancelActiveRun,
+  removeQueuedMessage,
   createSession,
   getRunState,
   getSessionReplyPublication,
@@ -218,6 +219,27 @@ export async function handleSessionMainRoutes({
       vary: '',
     });
     return true;
+  }
+
+  if (pathname.startsWith('/api/sessions/') && req.method === 'DELETE') {
+    const parts = pathname.split('/').filter(Boolean);
+    if (parts.length === 5 && parts[3] === 'queue') {
+      const sessionId = parts[2];
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+      let requestId;
+      try { requestId = decodeURIComponent(parts[4]); } catch {
+        writeJson(res, 400, { error: 'Invalid request id' });
+        return true;
+      }
+      try {
+        const outcome = await removeQueuedMessage(sessionId, requestId);
+        writeJson(res, 200, { requestId: outcome.requestId, session: createClientSessionDetail(outcome.session) });
+      } catch (error) {
+        if (!['REQUEST_NOT_FOUND', 'REQUEST_NOT_QUEUED'].includes(error.code)) throw error;
+        writeJson(res, error.code === 'REQUEST_NOT_FOUND' ? 404 : 409, { error: error.message, code: error.code });
+      }
+      return true;
+    }
   }
 
   if (pathname.startsWith('/api/sessions/') && req.method === 'POST') {

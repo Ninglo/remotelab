@@ -1,5 +1,11 @@
 [
   {
+    "id": "queued-message-removal",
+    "description": "Remove mistaken queued follow-ups individually without interrupting active work.",
+    "pass": true,
+    "verification_plan": "Durable cancellation, same-session scheduler races, duplicate admission, restart, HTTP access, FIFO and desktop/mobile browser interaction."
+  },
+  {
     "id": "connector-turn-context",
     "description": "Project connector request metadata into the same model and UI Context while keeping user text clean.",
     "pass": true,

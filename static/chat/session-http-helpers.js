@@ -290,7 +290,10 @@ async function fetchJsonOrRedirect(url, options = {}) {
     : null;
 
   if (!res.ok) {
-    throw new Error(data?.error || `Request failed (${res.status})`);
+    throw Object.assign(new Error(data?.error || `Request failed (${res.status})`), {
+      status: res.status,
+      code: data?.code,
+    });
   }
 
   if (!data) {
