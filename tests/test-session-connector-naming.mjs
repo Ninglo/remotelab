@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -17,6 +17,9 @@ const sessionManager = await import(
 
 const {
   createSession,
+  forkSession,
+  getSession,
+  renameSession,
   killAll,
 } = sessionManager;
 
@@ -91,6 +94,45 @@ try {
   });
   assert.equal(chatVisitor.name, 'Template Agent', 'chat-origin sessions should keep their explicit titles');
   assert.equal(chatVisitor.autoRenamePending, false, 'chat-origin sessions should not be forced into connector title rules');
+
+  for (const sourceId of ['feishu', 'wechat']) {
+    const sourceName = sourceId === 'feishu' ? 'Feishu' : 'WeChat';
+    const externalTriggerId = sourceId === 'feishu' ? 'feishu:p2p:direct-chat' : 'wechat:account:peer';
+    const extra = { sourceId, sourceName, externalTriggerId,
+      sourceContext: { connector: sourceId, chatType: sourceId === 'feishu' ? 'p2p' : 'direct' } };
+    const direct = await createSession(baseFolder, 'codex', '', extra);
+    assert.equal(direct.name, `${sourceName} 私聊`, 'long-lived direct chats need a stable title');
+    assert.equal(direct.autoRenamePending, false);
+    assert.equal(direct.titleLocked, true);
+    const reused = await createSession(baseFolder, 'codex', '', extra);
+    assert.equal(reused.id, direct.id);
+    assert.equal(reused.name, direct.name, 'reused direct chat retains its identity');
+    const metasPath = join(tempHome, '.config/remotelab/chat-sessions.json');
+    const stored = JSON.parse(readFileSync(metasPath, 'utf8'));
+    const legacy = stored.find(s => s.id === direct.id);
+    const originalUpdatedAt = legacy.updatedAt;
+    delete legacy.titleLocked;
+    legacy.name = 'Previous one-off task';
+    legacy.autoRenamePending = false;
+    writeFileSync(metasPath, JSON.stringify(stored));
+    const restored = await getSession(direct.id);
+    assert.equal(restored.name, `${sourceName} 私聊`, 'existing AI-named direct chats should adopt the stable identity');
+    assert.equal(restored.updatedAt, originalUpdatedAt, 'title normalization must not bump activity');
+    assert.equal(restored.titleLocked, true);
+    await renameSession(direct.id, 'My daily inbox');
+    assert.equal((await createSession(baseFolder, 'codex', '', extra)).name, 'My daily inbox', 'manual names must survive reuse');
+    const child = await forkSession(direct.id);
+    assert.equal(child.name, 'new session', 'forking a direct chat should create an AI-named task');
+    assert.equal(child.autoRenamePending, true);
+    assert.notEqual(child.titleLocked, true, 'a fork must not inherit the private chat title lock');
+    assert.equal((await getSession(direct.id)).name, 'My daily inbox');
+  }
+  for (const externalTriggerId of ['feishu:fork:bot:tenant:chat:message', 'feishu:topic:chat:thread']) {
+    const task = await createSession(baseFolder, 'codex', '', { sourceId: 'feishu',
+      externalTriggerId, sourceContext: { connector: 'feishu', chatType: 'p2p' } });
+    assert.equal(task.name, 'new session', 'private-chat forks and topics remain AI-named tasks');
+    assert.equal(task.autoRenamePending, true);
+  }
 
   console.log('test-session-connector-naming: ok');
 } finally {

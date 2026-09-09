@@ -1,5 +1,11 @@
 [
   {
+    "id": "connector-direct-chat-titles",
+    "description": "Keep Feishu and WeChat direct chat identities stable while forks use normal AI naming.",
+    "pass": true,
+    "verification_plan": "Create/reuse/classify/reload direct sessions and forks; preserve manual names and thread routing; full isolated regression suite."
+  },
+  {
     "id": "chronological-session-list",
     "description": "Order sessions and groups by latest activity; read state and status badges never move rows.",
     "pass": true,

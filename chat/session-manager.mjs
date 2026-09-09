@@ -61,6 +61,7 @@ import {
   normalizeGeneratedSessionTitle,
   normalizeSessionDescription,
   normalizeSessionGroup,
+  normalizeSessionName,
   normalizeSessionSpace,
   resolveInitialSessionName,
 } from './session-naming.mjs';
@@ -398,11 +399,6 @@ async function deriveStructuredRuntimeFailureReason(runId, previewText = '') {
 
 function generateId() {
   return randomBytes(16).toString('hex');
-}
-
-function buildForkSessionName(session) {
-  const sourceName = typeof session?.name === 'string' ? session.name.trim() : '';
-  return `fork - ${sourceName || 'session'}`;
 }
 
 function buildDelegationNoticeMessage(task, childSession) {
@@ -2072,6 +2068,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     sourceId: hasRequestedSourceHint ? requestedSourceId : '',
     sourceName: hasRequestedSourceHint ? requestedSourceName : '',
     externalTriggerId,
+    forkedFromSessionId: extra.forkedFromSessionId,
   });
   const created = await withSessionsMetaMutation(async (metas, saveSessionsMeta) => {
     if (externalTriggerId) {
@@ -3344,7 +3341,7 @@ export async function forkSession(sessionId, options = {}) {
     : await getOrPrepareForkContext(sessionId, forkSnapshot, contextHead);
 
   const hasSourceContextOverride = Object.prototype.hasOwnProperty.call(options, 'sourceContext');
-  const child = await createSession(source.folder, source.tool, typeof options.name === 'string' && options.name.trim() ? options.name.trim() : buildForkSessionName(source), {
+  const child = await createSession(source.folder, source.tool, normalizeSessionName(options.name), {
     space: source.space || '',
     group: typeof options.group === 'string' && options.group.trim() ? options.group.trim() : (source.group || ''),
     description: typeof options.description === 'string' && options.description.trim() ? options.description.trim() : (source.description || ''),

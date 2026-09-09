@@ -123,7 +123,9 @@ try {
   const child = await forkSession(parent.id);
   assert.ok(child, 'fork should create a child session');
   assert.notEqual(child.id, parent.id, 'fork should create a new session id');
-  assert.equal(child.name, 'fork - Invoice discussion', 'fork should keep the fixed name prefix');
+  assert.equal(child.name, 'new session', 'fork should use the normal temporary title');
+  assert.equal(child.autoRenamePending, true, 'fork should allow AI naming after the next turn');
+  assert.notEqual(child.titleLocked, true, 'default fork title must not be locked');
   assert.equal(child.group, parent.group, 'fork should copy the session group');
   assert.equal(child.description, parent.description, 'fork should copy the session description');
   assert.equal(child.folder, parent.folder, 'fork should keep the same folder');
@@ -246,7 +248,13 @@ try {
     requestId: 'req_prompt_cache',
     queueIfBusy: false,
   });
-  const manifest = await getRunManifest(promptOutcome.run.id);
+  let manifest;
+  const deadline = Date.now() + 3000;
+  do {
+    manifest = await getRunManifest(promptOutcome.run.id);
+    if (manifest?.prompt) break;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  } while (Date.now() < deadline);
   assert.match(manifest?.prompt || '', /SENTINEL FORK CONTEXT/, 'first child turn should reuse the prepared fork context');
   assert.equal(manifest?.forkBaseSeq, promptChild.latestSeq, 'run manifest should preserve the pre-run history boundary');
   assert.deepEqual(manifest?.forkContextHead || null, await getContextHead(promptChild.id), 'run manifest should preserve the pre-run context head');

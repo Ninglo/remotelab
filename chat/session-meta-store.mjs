@@ -16,6 +16,7 @@ import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import { normalizeStoredSessionFolder } from './session-folder.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 import { DEFAULT_APP_ID, getBuiltinApp, normalizeAppId } from './apps.mjs';
+import { getConnectorDirectSessionName } from './session-naming.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { migrateLegacySessionRuntimeFields } from '../lib/legacy-micro-agent.mjs';
 
@@ -151,6 +152,18 @@ function normalizeStoredTitleLock(normalized) {
   return false;
 }
 
+function normalizeStoredConnectorDirectTitle(session) {
+  // Preserve explicit/manual titles. Adopt the stable identity for older
+  // AI-named private chats without changing their activity timestamps.
+  if (session.titleLocked === true) return false;
+  const name = getConnectorDirectSessionName(session);
+  if (!name) return false;
+  session.name = name;
+  session.autoRenamePending = false;
+  session.titleLocked = true;
+  return true;
+}
+
 function normalizeStoredSessionMeta(meta) {
   if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
     return { meta: null, changed: true };
@@ -195,6 +208,7 @@ function normalizeStoredSessionMeta(meta) {
   changed = normalizeStoredSessionTemplateFields(normalized) || changed;
   changed = normalizeStoredStarterPreset(normalized) || changed;
   changed = normalizeStoredTitleLock(normalized) || changed;
+  changed = normalizeStoredConnectorDirectTitle(normalized) || changed;
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'folder')) {
     const nextFolder = normalizeStoredSessionFolder(normalized.folder);

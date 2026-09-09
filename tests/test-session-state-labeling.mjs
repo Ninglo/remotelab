@@ -89,6 +89,8 @@ const sessionManager = await import(
 
 const {
   createSession,
+  forkSession,
+  renameSession,
   getSession,
   sendMessage,
   killAll,
@@ -147,6 +149,33 @@ assert.equal(
   'finished session should keep the classified description',
 );
 assert.equal(finished?.autoRenamePending, false, 'post-turn rename should clear autoRenamePending');
+
+for (const sourceId of ['feishu', 'wechat']) {
+  const sourceName = sourceId === 'feishu' ? 'Feishu' : 'WeChat';
+  const direct = await createSession(tempHome, 'fake-codex', '', {
+    sourceId, sourceName,
+    externalTriggerId: sourceId === 'feishu' ? 'feishu:p2p:daily-chat' : 'wechat:account:daily-peer',
+  });
+  await sendMessage(direct.id, 'Change to a new topic in the daily conversation.', [], {
+    tool: 'fake-codex', model: 'fake-model', effort: 'low',
+  });
+  await waitFor(async () => (await getSession(direct.id))?.workflowState === 'done', 'direct chat should be classified');
+  assert.equal((await getSession(direct.id)).name, `${sourceName} 私聊`, 'classifier cannot rename a direct chat after topic changes');
+  assert.equal((await getSession(direct.id)).group, 'RemoteLab', 'fixed titles still allow grouping updates');
+  const child = await forkSession(direct.id);
+  assert.equal(child.autoRenamePending, true);
+  await sendMessage(child.id, 'Work on this separate task.', [], { tool: 'fake-codex', model: 'fake-model', effort: 'low' });
+  await waitFor(async () => (await getSession(child.id))?.name === 'Rename Flow', 'fork must accept the AI-generated title');
+  assert.notEqual((await getSession(child.id)).titleLocked, true);
+  assert.equal((await getSession(direct.id)).name, `${sourceName} 私聊`, 'fork naming must not change its parent');
+  await renameSession(child.id, 'Manual task name');
+  await sendMessage(child.id, 'Continue the manually named task.', [], { tool: 'fake-codex', model: 'fake-model', effort: 'low' });
+  await waitFor(async () => {
+    const current = await getSession(child.id);
+    return current?.workflowState === 'done' && current?.activity?.run?.state === 'idle';
+  }, 'manually named fork should finish');
+  assert.equal((await getSession(child.id)).name, 'Manual task name');
+}
 
 await killAll();
 rmSync(tempHome, { recursive: true, force: true });

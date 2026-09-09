@@ -784,7 +784,8 @@ async function phase11ForkSession() {
     assert.equal(fork.status, 201, 'fork should create a new child session');
     assert.ok(fork.json.session?.id, 'fork should return the child session');
     assert.notEqual(fork.json.session.id, session.id, 'fork should create a distinct child id');
-    assert.equal(fork.json.session.name, 'fork - Fork parent', 'fork should use the fixed child naming convention');
+    assert.equal(fork.json.session.name, 'new session', 'fork should use the normal temporary title');
+    assert.equal(fork.json.session.autoRenamePending, true, 'fork should await AI naming');
     assert.equal(fork.json.session.forkedFromSessionId, session.id, 'fork should record the parent session id');
 
     const parentEvents = await getEvents(port, session.id);
@@ -808,7 +809,7 @@ async function phase11ForkSession() {
     const completedThroughSeq = completedEvents.events.at(-1)?.seq || 0;
 
     const runningSubmit = await submitMessage(port, running.id, 'req-fork-busy', 'active turn must not leak into fork');
-    await waitForSessionBusy(port, running.id);
+    await waitForRunState(port, runningSubmit.json.run.id, 'running');
     const runningFork = await request(port, 'POST', `/api/sessions/${running.id}/fork`);
     assert.equal(runningFork.status, 201, 'fork should use the stable pre-run boundary while the parent is running');
     assert.equal(runningFork.json.session?.forkedFromSessionId, running.id, 'running fork should preserve parent lineage');

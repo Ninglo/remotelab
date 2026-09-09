@@ -37,3 +37,7 @@ Initial reproduction: test-durable-requests failed with `0 !== 1` for admission 
 
 [2026-09-09 RED] Sidebar comparators prioritize attention, run state and organizer order over recency. Regressions require stable positions after review and status changes, with newer activity first for sessions and groups.
 [2026-09-09 GREEN] Chronological Session/Project/Space ordering verified, including review/status stability, legacy organizer order and latest-event precedence. Organizer patches only grouping labels. Isolated npm test, HTTP organizer regression, syntax, diff and advisory file-size checks passed.
+
+[2026-09-09 RED] Default history-copy forks lock a generated fork prefix, while long-lived connector private sessions accept topic-based renames. Add regressions for fork AI naming, private identity titles, manual locks and private-topic exclusion.
+[2026-09-09 CHECK] New title regressions passed; the existing fork-context test read its manifest immediately after asynchronous admission. Updated that fixture to wait for preparation before checking the preserved context.
+[2026-09-09 GREEN] Fixed private titles, metadata reload, fork AI classification and manual-name preservation passed. Full isolated npm test, restart gate, HTTP fork phase, syntax, diff and advisory file-size checks passed. The optional legacy HTTP phase8 cancel assertion also fails on unchanged 14730ca9 (completed vs cancelled); it is outside this change and the shipped npm test gate.

@@ -21,6 +21,11 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-09 — Private chat identity and task titles serve different purposes
+
+- Source: owner found connector fork prefixes redundant but needs a recognizable home for long-running Feishu/WeChat private conversations.
+- Product implication: task and fork titles follow normal AI naming; long-lived direct chats keep a fixed source identity across topic changes. Preserve explicit user titles and distinguish a direct chat from a topic opened inside it by the durable conversation key.
+
 ### 2026-09-09 — Reading a Session must not move its row
 
 - Source: owner reported losing the selected Session when clicking it reordered the sidebar.

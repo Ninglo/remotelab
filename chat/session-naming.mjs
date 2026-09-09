@@ -221,6 +221,19 @@ export function normalizeGeneratedSessionTitle(title, group) {
   return nextTitle || normalizedTitle;
 }
 
+// The external conversation identity distinguishes a long-lived private chat
+// from a task/topic opened inside that chat. Source labels alone are not enough.
+export function getConnectorDirectSessionName(context = {}) {
+  if (context.forkedFromSessionId) return '';
+  const sourceId = normalizeContextLabel(context.sourceId).toLowerCase();
+  const triggerId = normalizeSessionName(context.externalTriggerId);
+  const isFeishuDirect = sourceId === 'feishu' && /^feishu:p2p:[^:]+$/.test(triggerId);
+  const isWechatDirect = sourceId === 'wechat' && /^wechat:[^:]+:[^:]+$/.test(triggerId);
+  if (!isFeishuDirect && !isWechatDirect) return '';
+  const label = normalizeContextLabel(context.sourceName) || (isFeishuDirect ? 'Feishu' : 'WeChat');
+  return `${label} 私聊`;
+}
+
 export function resolveInitialSessionName(name, context = {}) {
   const normalized = normalizeSessionName(name);
   if (isConnectorStyleSession(context)) {
@@ -233,9 +246,10 @@ export function resolveInitialSessionName(name, context = {}) {
         };
       }
     }
+    const directName = getConnectorDirectSessionName(context);
     return {
-      name: DEFAULT_SESSION_NAME,
-      autoRenamePending: true,
+      name: directName || DEFAULT_SESSION_NAME,
+      autoRenamePending: !directName,
     };
   }
   return {

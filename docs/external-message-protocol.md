@@ -210,7 +210,10 @@ Important behavior:
 
 - if an unarchived session with the same `externalTriggerId` already exists, RemoteLab returns that session instead of creating a new one
 - this is the main dedupe mechanism for “one external thread → one RemoteLab session”
-- if the provided `name` is generic or only repeats connector/source/group metadata, RemoteLab keeps the session auto-renameable instead of locking that title in
+- task/topic sessions with no meaningful seed `name` use the normal temporary title and post-turn AI naming; neither Feishu `/fork` tasks nor default history-copy forks need a special prefix
+- long-lived Feishu private chats (`feishu:p2p:<chat>`) and WeChat direct chats (`wechat:<account>:<peer>`) default to a fixed `<sourceName> 私聊` title; topic/fork sessions inside those chats remain AI-named
+- older AI-named direct chats adopt the fixed identity when metadata loads without advancing activity timestamps; explicit/manual names stay locked and are preserved
+- an explicit name supplied when copying a session remains a manual title; default forks do not inherit the parent title lock. Existing locked titles are not guessed to be automatic from their wording alone
 - the owner sidebar source grouping derives from session metadata rather than a hardcoded frontend list
 
 ---
