@@ -1,6 +1,7 @@
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
+import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
 import { requests } from './requests.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -3035,10 +3036,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (session.archived) throw Object.assign(new Error('Session is archived'), { code: 'SESSION_ARCHIVED' });
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
+  const runtimeSelection = await resolveSessionRuntimeSelection(session, options);
   const initialDeliveries = options.sourceDelivery
-    ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), options)
+    ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, ...runtimeSelection })
     : [];
-  const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, initialDeliveries });
+  const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries });
   const queued = !record.result && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
     const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';
@@ -3069,6 +3071,7 @@ async function prepareRequestRun(record) {
   const normalizedText = record.text;
   let session = await getSession(sessionId);
   if (!session) throw new Error('Accepted request has no session');
+  Object.assign(options, record.runtimeSelection || await resolveSessionRuntimeSelection(session, options));
   let existingRun = await getRun(record.runId);
   const launchReceipt = await readRecord(joinRequestPath(runDir(record.runId), 'launch.json'));
   if (record.cancelRequestedAt && !launchReceipt) {
@@ -3197,6 +3200,11 @@ async function prepareRequestRun(record) {
 
   const activeSession = (await mutateSessionMeta(sessionId, (draft) => {
     draft.activeRunId = run.id;
+    if (!options.internalOperation && options.recordUserMessage !== false) {
+      draft.model = options.model || '';
+      draft.effort = options.effort || '';
+      draft.thinking = options.thinking === true;
+    }
     draft.updatedAt = nowIso();
     return true;
   })).meta;

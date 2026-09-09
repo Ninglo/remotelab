@@ -1,5 +1,11 @@
 [
   {
+    "id": "connector-runtime-visibility",
+    "description": "Use the GPT-6 product default and show the admitted model and effort in connector session creation notices and session preferences.",
+    "pass": true,
+    "verification_plan": "Isolated model catalog, runtime resolution, early delivery and replay tests; full npm test and restart gate; live API checks."
+  },
+  {
     "id": "durable-lazy-file-diffs",
     "description": "Capture completed native Codex patches into independent session history; retain without TTL and fetch only on file disclosure.",
     "pass": true,

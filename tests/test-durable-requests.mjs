@@ -52,7 +52,8 @@ const entryRoot = await mkdtemp(join(tmpdir(), 'remotelab-request-entry-'));
 try {
   let store = createRequestStore(entryRoot);
   const entry = { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'test-chat' }, kind: 'session_entry', text: 'Open session' };
-  const input = { sessionId: 'new-session', requestId: 'first', text: 'hello', initialDeliveries: [entry] };
+  const runtimeSelection = { tool: 'codex', model: 'gpt-6-astra', effort: 'xhigh', thinking: false };
+  const input = { sessionId: 'new-session', requestId: 'first', text: 'hello', runtimeSelection, initialDeliveries: [entry] };
   const [first, second] = await Promise.all([
     store.accept(input), store.accept({ ...input, requestId: 'second' }),
   ]);
@@ -63,6 +64,9 @@ try {
   await store.mutate(first.record.key, current => ({ ...current, deliveries: current.deliveries.map(d => ({ ...d, state: 'delivered', externalId: 'entry-receipt' })) }));
   store = createRequestStore(entryRoot);
   assert.equal((await store.accept(input)).duplicate, true);
+  const replay = await store.accept({ ...input, runtimeSelection: { ...runtimeSelection, model: 'gpt-5.6-sol', effort: 'low' } });
+  assert.equal(replay.duplicate, true);
+  assert.deepEqual(replay.record.runtimeSelection, runtimeSelection, 'restart and new defaults preserve the admitted runtime without changing request identity');
   await store.settle(first.record.key, { state: 'completed', payload: { text: 'answer' } }, [{ ...entry, kind: 'content', text: 'answer' }]);
   const settled = await store.get(first.record.key);
   assert.equal(settled.deliveries.length, 2);

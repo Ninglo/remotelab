@@ -55,6 +55,7 @@ export function createRequestStore(root) {
       key,
       sessionId, requestId, responseId: options.responseId || requestId,
       runId: input.runId || `run_${key}`, sequence, fingerprint, text, images, options,
+      ...(input.runtimeSelection ? { runtimeSelection: input.runtimeSelection } : {}),
       acceptedAt: new Date().toISOString(), result: null, releasedAt: null, deliveries: [],
     };
     // Indices are immutable addresses, published before the accepted record.

@@ -50,12 +50,14 @@ process.env.PATH = `${tempBin}:${process.env.PATH}`;
 const {
   createSession,
   getRunState,
+  getSession,
+  updateSessionRuntimePreferences,
   getSessionReplyPublication,
   killAll,
   sendMessage,
   submitHttpMessage,
 } = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
-const { getRun } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
+const { getRun, getRunManifest } = await import(pathToFileURL(join(repoRoot, 'chat', 'runs.mjs')).href);
 const { requests } = await import('../chat/requests.mjs');
 const { claimSourceDelivery, completeSourceDelivery } = await import('../chat/source-deliveries.mjs');
 const { buildSessionEntryDeliveries } = await import('../chat/session-entry-notification.mjs');
@@ -141,6 +143,21 @@ try {
   const earlyClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'bot-2' });
   assert.equal(earlyClaim?.delivery?.kind, 'session_entry', 'entry can be sent while the first model response is still pending');
   assert.ok(earlyClaim.delivery.text.includes(expectedSessionUrl));
+  assert.match(earlyClaim.delivery.text, /模型：fake-model/);
+  assert.match(earlyClaim.delivery.text, /Effort：low/);
+  assert.match(earlyClaim.delivery.text, /Harness：fake-codex/);
+  await waitFor(async () => (await getSession(connectorSession.id)).model === 'fake-model', 'session metadata to reflect the admitted runtime');
+  assert.equal((await getSession(connectorSession.id)).effort, 'low');
+  const admitted = await requests.byResponse(connectorSession.id, firstConnectorOutcome.response.id);
+  assert.equal(admitted.runtimeSelection.model, 'fake-model');
+  assert.equal(admitted.runtimeSelection.effort, 'low');
+  const queuedOptions = { requestId: 'connector-queued-defaults' };
+  const queuedOutcome = await submitHttpMessage(connectorSession.id, 'Use the saved runtime after the blocked turn.', [], queuedOptions);
+  assert.equal(queuedOutcome.queued, true);
+  await updateSessionRuntimePreferences(connectorSession.id, { model: 'changed-after-admission', effort: 'high' });
+  const queuedReplay = await submitHttpMessage(connectorSession.id, 'Use the saved runtime after the blocked turn.', [], queuedOptions);
+  assert.equal(queuedReplay.duplicate, true, 'changing defaults must not change the original request fingerprint');
+  assert.equal((await requests.byResponse(connectorSession.id, queuedOutcome.response.id)).runtimeSelection.model, 'fake-model');
   assert.equal(earlyClaim.delivery.target.threadId, 'test-thread');
   assert.equal((await requests.byResponse(connectorSession.id, firstConnectorOutcome.response.id)).result, null);
   await completeSourceDelivery(earlyClaim.delivery.id, earlyClaim.leaseId, { externalId: 'early-entry-message' });
@@ -161,6 +178,12 @@ try {
   assert.equal(finalClaim?.delivery?.kind, 'content');
   assert.equal(finalClaim.delivery.text, firstConnectorPublication.payload.text);
   await completeSourceDelivery(finalClaim.delivery.id, finalClaim.leaseId, { externalId: 'final-reply-message' });
+
+  await waitFor(async () => (await getRunState(queuedOutcome.run.id))?.state === 'completed', 'queued run completion');
+  const queuedManifest = await getRunManifest(queuedOutcome.run.id);
+  assert.equal(queuedManifest.options.model, 'fake-model', 'the runner must use the admitted selection after preferences change');
+  assert.equal(queuedManifest.options.effort, 'low');
+  assert.equal((await getSession(connectorSession.id)).model, 'fake-model');
 
   const laterConnectorOutcome = await submitHttpMessage(connectorSession.id, '后续消息。', [], { ...connectorOptions, requestId: 'connector-later' });
   assert.equal((await requests.byResponse(connectorSession.id, laterConnectorOutcome.response.id)).deliveries.length, 0);

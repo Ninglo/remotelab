@@ -7,7 +7,6 @@ import { CODEX_MODEL_CATALOG } from '../lib/codex-model-catalog.mjs';
 import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
-  isStaleCodexModelId,
 } from '../lib/legacy-micro-agent.mjs';
 
 // Claude Code has no model cache file — hardcode the known aliases.
@@ -228,16 +227,6 @@ function buildCodexResponse(models = [], preferredDefaultModel = '', preferredDe
   };
 }
 
-function resolveCodexDefaultModel(configuredModel = '', recentModels = []) {
-  for (const candidate of [configuredModel, ...(Array.isArray(recentModels) ? recentModels : [])]) {
-    const normalized = trimString(candidate);
-    if (normalized && !isStaleCodexModelId(normalized)) {
-      return normalized;
-    }
-  }
-  return PRODUCT_DEFAULT_CODEX_MODEL;
-}
-
 async function readCodexConfiguredSettings(codexHomeDir) {
   try {
     const raw = await readFile(join(codexHomeDir, 'config.toml'), 'utf-8');
@@ -377,7 +366,8 @@ async function getCodexModels() {
   const configuredSettings = await readCodexConfiguredSettings(codexHomeDir);
   const configuredModel = configuredSettings.model;
   const recentModels = await readCodexRecentModels(codexHomeDir);
-  const defaultModel = resolveCodexDefaultModel(configuredModel, recentModels);
+  // Native CLI preferences enrich the catalog, but are not RemoteLab defaults.
+  const defaultModel = PRODUCT_DEFAULT_CODEX_MODEL;
   const modelMap = createBaseCodexModelMap();
 
   try {
@@ -413,7 +403,7 @@ async function getCodexModels() {
   codexModelsCache = buildCodexResponse(
     orderedModels,
     defaultModel || HARDCODED_CODEX_MODEL_IDS[0] || '',
-    configuredSettings.effort || PRODUCT_DEFAULT_CODEX_EFFORT,
+    PRODUCT_DEFAULT_CODEX_EFFORT,
   );
   return codexModelsCache;
 }

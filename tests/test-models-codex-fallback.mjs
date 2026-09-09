@@ -90,6 +90,12 @@ try {
     levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     default: 'low',
   });
+  writeFileSync(join(codexDir, 'config.toml'), 'model = "gpt-5.6-sol"\nmodel_reasoning_effort = "xhigh"\n');
+  const fresh = await import(`${pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href}?product-default`);
+  const configured = await fresh.getModelsForTool('codex');
+  assert.equal(configured.defaultModel, 'gpt-6-astra', 'a supported CLI model must not replace the RemoteLab product default');
+  assert.equal(configured.reasoning.default, 'low', 'CLI effort must not replace the product default');
+  assert.ok(configured.models.some(model => model.id === 'gpt-5.6-sol'), 'explicit older model selection remains available');
 } finally {
   delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   rmSync(tempHome, { recursive: true, force: true });

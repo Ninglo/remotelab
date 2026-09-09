@@ -11,9 +11,15 @@ export function buildSessionEntryDeliveries(session, snapshot, options = {}) {
   if (plan?.connector === 'email') return [];
   const entry = buildSessionEntry(session);
   if (!plan || !entry) return [];
+  const text = [
+    '会话已创建。',
+    `模型：${options.model || '默认（由 Harness 决定）'}`,
+    `Effort：${options.effort || '默认（由 Harness 决定）'}`,
+    `Harness：${options.tool || session.tool || '默认'}`,
+  ].join('\n');
   return [{
     ...plan,
     kind: 'session_entry',
-    text: appendSessionEntryFooter('会话已创建。', entry),
+    text: appendSessionEntryFooter(text, entry),
   }];
 }
