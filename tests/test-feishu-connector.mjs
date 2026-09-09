@@ -273,7 +273,8 @@ const partialMixedResourceSummary = {
   attachmentDownloadFailures: mixedResourceResolution.failures,
 };
 assert.equal(buildMessageSourceContext(partialMixedResourceSummary).ingestion.status, 'partial');
-assert.match(buildRemoteLabMessage(partialMixedResourceSummary), /Feishu source reference/);
+assert.doesNotMatch(buildRemoteLabMessage(partialMixedResourceSummary), /Feishu source reference:/);
+assert.equal(buildMessageSourceContext(partialMixedResourceSummary).ingestion.failedResourceCount, 1);
 
 const richPostSummary = summarizeEvent({
   event_id: 'evt_post_1',
@@ -429,6 +430,7 @@ assert.deepEqual(buildMessageSourceContext(topicSummary), {
   messageId: 'msg_topic_reply_1',
   messageType: 'text',
   chatType: 'group',
+  chatId: 'chat_topic_1',
   conversationKind: 'topic',
   ingestion: {
     status: 'complete',
@@ -490,7 +492,8 @@ await handleMessage(runtime, {
 }, 'test', {
   submitRemoteLabRequest: async (_runtime, inboundSummary) => {
     unknownInvokedRemoteLab = true;
-    assert.match(buildRemoteLabMessage(inboundSummary), /message_id=msg_unknown_1/);
+    assert.equal(buildMessageSourceContext(inboundSummary).messageId, 'msg_unknown_1');
+    assert.equal(buildRemoteLabMessage(inboundSummary), 'Feishu message reference');
     return { sessionId: 'session_test_unknown' };
   },
 });

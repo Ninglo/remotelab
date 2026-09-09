@@ -13,7 +13,6 @@ import {
   buildFeishuOutboundMessageIndexRecord,
   buildFeishuPostContent,
   buildFeishuForkExternalTriggerId,
-  buildFeishuForkSourceContext,
   buildFeishuTopicId,
   buildMessageSourceContext,
   buildRemoteLabMessage,
@@ -131,15 +130,8 @@ assert.equal(
   buildFeishuForkExternalTriggerId(forkSummary),
   'feishu:fork:bot-alpha:tenant_1:oc_chat_1:om_fork_command_1',
 );
-assert.deepEqual(buildFeishuForkSourceContext(forkSummary), {
-  connector: 'feishu',
-  sourceRouteId: 'bot-alpha',
-  chatType: 'topic',
-  chatId: 'oc_chat_1',
-  messageId: 'om_fork_command_1',
-  threadId: 'thread_1',
-  rootId: 'om_topic_root_1',
-});
+assert.equal(buildMessageSourceContext(forkSummary).messageId, 'om_fork_command_1');
+assert.equal(buildMessageSourceContext(forkSummary).threadId, 'thread_1');
 assert.deepEqual(buildFeishuMessageIndexRecord(topicSummary, 'session-1'), {
   connector: 'feishu',
   accountId: 'tenant_1',
@@ -265,8 +257,8 @@ assert.deepEqual(buildMessageSourceContext(unknownSummary).sourceReference, {
   messageId: 'om_forward_1',
   messageType: 'merge_forward',
 });
-assert.match(buildRemoteLabMessage(unknownSummary), /Feishu source reference/);
-assert.match(buildRemoteLabMessage(unknownSummary), /message_id=om_forward_1/);
+assert.doesNotMatch(buildRemoteLabMessage(unknownSummary), /Feishu source reference:/);
+assert.equal(buildMessageSourceContext(unknownSummary).messageId, 'om_forward_1');
 
 const legacySummary = summarizeFeishuLegacyMessageEvent({
   open_chat_id: 'oc_legacy_1',

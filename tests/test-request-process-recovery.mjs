@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,6 +60,7 @@ try {
   await boot();
   const session = await rpc('create');
   const options = { requestId: 'upstream-event', tool: 'fake-restart', sourceDelivery: { connector: 'feishu', sourceRouteId: 'default', target: { chatId: 'chat' } } };
+  options.sourceContext = { connector: 'feishu', messageId: 'original-message', sender: { name: 'Original sender' } };
   const accepted = await rpc('accept', session.id, 'work', [], options);
   assert.ok(accepted.run.id);
   await kill(); // Admission has returned; no assumptions about how far preparation got.
@@ -69,12 +70,33 @@ try {
   assert.equal(duplicate.run.id, accepted.run.id);
   assert.equal(duplicate.duplicate, true);
   await kill(); // Executor must survive loss of its observer.
+  // Simulate a prepared manifest with its user event already written but its
+  // Context event missing. Recovery must use the saved projection, not rebuild it.
+  const eventsDir = join(config, 'chat-history', session.id, 'events');
+  let removedContexts = 0;
+  for (const file of await readdir(eventsDir)) {
+    const path = join(eventsDir, file);
+    const event = JSON.parse(await readFile(path, 'utf8'));
+    if (event.type === 'manager_context' && event.runId === accepted.run.id) {
+      await rm(path);
+      removedContexts++;
+    }
+  }
+  assert.equal(removedContexts, 1);
   await writeFile(join(root, 'release'), '');
   await until(async () => !!(await readFile(join(config, 'chat-runs', accepted.run.id, 'result.json'), 'utf8').catch(() => '')), 'executor finishes while control plane is absent');
   await boot();
   await until(async () => (await rpc('response', session.id, 'upstream-event'))?.state === 'ready', 'restart settles result');
   const response = await rpc('response', session.id, 'upstream-event');
   assert.equal(response.payload.text, 'durable answer');
+  const history = await rpc('history', session.id);
+  const contexts = history.filter(event => event.type === 'manager_context' && event.runId === accepted.run.id);
+  assert.equal(contexts.length, 1, 'recovery preserves exactly one Context for the prepared prompt');
+  const manifest = JSON.parse(await readFile(join(config, 'chat-runs', accepted.run.id, 'manifest.json'), 'utf8'));
+  assert.equal(contexts[0].content, manifest.managerTurnContext);
+  assert.ok(manifest.prompt.includes(`<private>\n${contexts[0].content}\n</private>`));
+  assert.match(contexts[0].content, /original-message/);
+  assert.equal(history.find(event => event.type === 'message' && event.role === 'user').content, 'work');
   const starts = (await readFile(join(root, 'starts'), 'utf8')).trim().split('\n');
   assert.equal(starts.filter(x => x === accepted.run.id).length, 1, 'recovery must not execute AI twice');
   const claim = await rpc('claim', { connector: 'feishu' });

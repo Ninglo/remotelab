@@ -1147,62 +1147,28 @@ function buildSessionSystemPrompt() {
     'Return only the exact GitHub comment body that should be posted back to the thread.',
     'Do not add surrounding explanation, connector notes, session ids, or hidden HTML markers.',
     'Use concise, actionable maintainer language.',
+    'Inspect the repo, snapshotFile and contextPointers from the current connector context as needed.',
     'Match the thread language when practical.',
-    'If the inbound message says "Maintainer Test: yes", briefly confirm the GitHub -> RemoteLab bridge worked and mention what was processed.',
+    'If the connector context has maintainerTest set to true, briefly confirm the GitHub -> RemoteLab bridge worked and mention what was processed.',
   ].join('\n');
 }
 
-function formatContextPointer(entry) {
-  const suffix = entry.heading && entry.heading !== 'Overview' ? ` / ${entry.heading}` : '';
-  return `- ${entry.relPath}${suffix}`;
-}
-
-function buildRemoteLabMessage({
-  repo,
-  item,
-  kind,
-  replyMode,
-  classification,
-  relevantContext,
-  snapshotFile,
-  latestExternalActivity,
-  maintainerTest,
+function buildGithubMessageSourceContext({
+  repo, item, kind, replyMode, classification, relevantContext, snapshotFile,
+  latestExternalActivity, maintainerTest,
 }) {
-  const latestBody = trimString(latestExternalActivity?.body) || trimString(item.body);
-  const latestActor = trimString(latestExternalActivity?.actor) || trimString(item.user?.login);
-  const activityUrl = trimString(latestExternalActivity?.url);
-  const contextPointers = relevantContext.length > 0
-    ? relevantContext.map(formatContextPointer).join('\n')
-    : '(none)';
-
-  return [
-    'Source: GitHub',
-    `Kind: ${latestExternalActivity?.source || (maintainerTest ? 'maintainer_test' : 'opened')}`,
-    `Repo: ${repo}`,
-    `Thread: ${repo}#${item.number}`,
-    `Thread Type: ${kind}`,
-    `Title: ${emptyText(item.title)}`,
-    `Thread URL: ${item.html_url}`,
-    `Actor: @${latestActor || 'unknown'}`,
-    `Activity At: ${latestExternalActivity?.timestamp || item.updated_at || item.created_at || nowIso()}`,
-    activityUrl ? `Activity URL: ${activityUrl}` : '',
-    `Reply Mode: ${replyMode}`,
-    `Maintainer Test: ${maintainerTest ? 'yes' : 'no'}`,
-    `Classification: ${classification}`,
-    `Snapshot File: ${snapshotFile}`,
-    '',
-    'Latest user message:',
-    emptyText(latestBody),
-    '',
-    'Relevant local context pointers:',
-    contextPointers,
-    '',
-    'Task:',
-    '- Inspect the repo and the snapshot file as needed.',
-    '- Write the exact GitHub comment body to post back to the thread.',
-    '- Be concrete, concise, and helpful.',
-    '- Do not mention hidden connector/session/run implementation details.',
-  ].filter(Boolean).join('\n');
+  return {
+    connector: 'github', repo, threadId: `${repo}#${item.number}`,
+    messageId: String(latestExternalActivity?.externalId || item.id),
+    threadType: kind, threadUrl: item.html_url, title: emptyText(item.title),
+    kind: latestExternalActivity?.source || (maintainerTest ? 'maintainer_test' : 'opened'),
+    sender: { login: trimString(latestExternalActivity?.actor) || trimString(item.user?.login) },
+    activityAt: latestExternalActivity?.timestamp || item.updated_at || item.created_at || nowIso(),
+    activityUrl: trimString(latestExternalActivity?.url),
+    replyMode, maintainerTest: maintainerTest === true, classification, snapshotFile,
+    contextPointers: relevantContext.map(entry => entry.heading && entry.heading !== 'Overview'
+      ? `${entry.relPath} / ${entry.heading}` : entry.relPath),
+  };
 }
 
 function buildEventKey(repo, item, latestExternalActivity, replyMode) {
@@ -1294,7 +1260,8 @@ async function submitInboundUpdate(
   const session = createResult.json.session;
   const messagePayload = {
     requestId,
-    text: buildRemoteLabMessage({
+    text: trimString(latestExternalActivity?.body) || trimString(item.body) || '(empty body)',
+    sourceContext: buildGithubMessageSourceContext({
       repo: options.repo,
       item,
       kind,

@@ -101,7 +101,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && /^\/api\/sessions\/[^/]+\/messages$/.test(req.url || '')) {
     const payload = JSON.parse(body || '{}');
-    assert.match(payload.text, /User message:/);
+    assert.doesNotMatch(payload.text, /^Inbound email\./);
     messageSubmissions.push(payload);
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -223,8 +223,10 @@ try {
   assert.deepEqual(messageSubmissions[0].sourceDelivery?.target?.references, ['<root-thread@example.com>']);
   assert.equal(messageSubmissions[0].sourceDelivery?.target?.subject, 'Re: hello!');
   assert.match(messageSubmissions[0].text, /please take a response to test!/);
-  assert.match(messageSubmissions[0].text, /^Inbound email\./);
-  assert.match(messageSubmissions[0].text, /User message:/);
+  assert.doesNotMatch(messageSubmissions[0].text, /^Inbound email\./);
+  assert.equal(messageSubmissions[0].sourceContext.subject, 'hello!');
+  assert.equal(messageSubmissions[0].sourceContext.sender.address, 'owner@example.com');
+  assert.equal(messageSubmissions[0].text, 'please take a response to test!');
   assert.doesNotMatch(messageSubmissions[0].text, /Prefer completeness, careful troubleshooting/);
   assert.equal(messageSubmissions[0].tool, 'claude');
   assert.equal(messageSubmissions[0].model, 'claude-sonnet-4-5');

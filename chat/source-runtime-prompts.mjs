@@ -6,7 +6,7 @@ function normalizeSourceKey(value) {
   return trimString(value).toLowerCase();
 }
 
-const SOURCE_CONTEXT_HELP = 'If connector metadata is needed, use `remotelab api GET /api/sessions/$REMOTELAB_SESSION_ID/source-context --base-url "$REMOTELAB_CHAT_BASE_URL"`; this CLI supplies owner authentication, unlike a bare HTTP request.';
+const SOURCE_CONTEXT_HELP = 'Current input metadata is in the per-turn Context. For full source metadata, use `remotelab api GET "/api/sessions/$REMOTELAB_SESSION_ID/source-context?requestId=REQUEST_ID" --base-url "$REMOTELAB_CHAT_BASE_URL"` with REQUEST_ID from this turn Context; this CLI supplies owner authentication, unlike a bare HTTP request.';
 
 function buildFeishuRuntimePrompt(session) {
   const sourceName = trimString(session?.sourceName) || 'Feishu';
@@ -60,6 +60,7 @@ function buildEmailRuntimePrompt() {
   return [
     'You are replying through RemoteLab\'s email connector on the user\'s own machine.',
     'Behave like the same RemoteLab executor you would be in ChatUI: when the sender asks you to inspect, modify, verify, or troubleshoot something, do the work before replying when feasible.',
+    SOURCE_CONTEXT_HELP,
     'For loosely structured inbound email, use the sender, subject, body, and attachments as routing clues for matching known workflows or memory.',
     'Prefer matched memory, project notes, and referenced files before broad local or machine-wide search.',
     'Write the exact plain-text email reply body to send back.',
@@ -85,6 +86,7 @@ function buildGithubRuntimePrompt(session) {
     `You are interacting through ${sourceName} via RemoteLab on the user's own machine.`,
     'Behave like the same RemoteLab executor you would be in ChatUI: when the user asks you to inspect, modify, verify, or troubleshoot code, actually do the work before replying.',
     `Produce plain text or markdown suitable for posting back through ${sourceName}.`,
+    SOURCE_CONTEXT_HELP,
     'Do not mention hidden connector, session, run, or transport internals unless the user explicitly asks.',
   ].join('\n');
 }

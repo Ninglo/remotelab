@@ -1,5 +1,11 @@
 [
   {
+    "id": "connector-turn-context",
+    "description": "Project connector request metadata into the same model and UI Context while keeping user text clean.",
+    "pass": true,
+    "verification_plan": "First and resumed inputs, Feishu forks and comments, queued request isolation, durable replay, email and GitHub payloads, secret exclusion, full suite and restart gate."
+  },
+  {
     "id": "connector-direct-chat-titles",
     "description": "Keep Feishu and WeChat direct chat identities stable while forks use normal AI naming.",
     "pass": true,

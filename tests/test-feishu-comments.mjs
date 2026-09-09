@@ -175,9 +175,9 @@ assert.equal(hydrated.messageText, '@机器人 能结合全文给一个修改建
 assert.equal(hydrated.commentQuote, '这段方案需要补充验证。');
 assert.equal(hydrated.commentThread.length, 2);
 assert.equal(hydrated.commentThread[1].isCurrent, true);
-assert.match(buildRemoteLabMessage(hydrated), /文档中被评论的内容/);
-assert.match(buildRemoteLabMessage(hydrated), /文档评论线程/);
-assert.match(buildRemoteLabMessage(hydrated), /当前 @ 你的评论/);
+assert.equal(buildRemoteLabMessage(hydrated), hydrated.messageText);
+assert.equal(buildMessageSourceContext(hydrated).commentQuote, hydrated.commentQuote);
+assert.deepEqual(buildMessageSourceContext(hydrated).commentThread, hydrated.commentThread.map(({ text, isCurrent }) => ({ text, isCurrent })));
 assert.doesNotMatch(buildRemoteLabMessage(hydrated), /ou_comment_author_1|ou_comment_bot_1/);
 assert.deepEqual(commentGetPayloads[0], {
   params: {

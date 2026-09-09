@@ -167,12 +167,12 @@ const server = http.createServer(async (req, res) => {
     submittedRequestId = payload.requestId;
     submittedText = payload.text;
     assert.match(payload.requestId, /^github:owner__repo:7:opened:7001$/);
-    assert.match(payload.text, /Source: GitHub/);
-    assert.match(payload.text, /Thread: owner\/repo#7/);
-    assert.match(payload.text, /Snapshot File:/);
-    const snapshotMatch = payload.text.match(/Snapshot File: (.+)/);
-    assert.ok(snapshotMatch, 'snapshot path should be included');
-    assert.equal(Boolean(snapshotMatch?.[1] && readFileSync(snapshotMatch[1].trim(), 'utf8').includes('# GitHub intake snapshot')), true);
+    assert.doesNotMatch(payload.text, /Source: GitHub|Snapshot File:/);
+    assert.equal(payload.sourceContext.connector, 'github');
+    assert.equal(payload.sourceContext.threadId, 'owner/repo#7');
+    assert.equal(payload.sourceContext.messageId, '7001');
+    assert.ok(payload.sourceContext.snapshotFile, 'snapshot path belongs to connector context');
+    assert.equal(readFileSync(payload.sourceContext.snapshotFile, 'utf8').includes('# GitHub intake snapshot'), true);
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       duplicate: false,

@@ -7,6 +7,7 @@ process.on('message', async ({ id, action, args }) => {
     const value = action === 'create' ? await manager.createSession(process.env.HOME, 'fake-restart', 'Restart test')
       : action === 'accept' ? await manager.submitHttpMessage(...args)
       : action === 'response' ? await manager.getSessionReplyPublication(...args)
+      : action === 'history' ? await manager.getHistory(...args)
       : action === 'claim' ? await delivery.claimSourceDelivery(...args)
       : action === 'complete' ? await delivery.completeSourceDelivery(...args)
       : action === 'stop' ? await manager.drainRequestRuntime() : null;

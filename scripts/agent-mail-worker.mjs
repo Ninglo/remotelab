@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { buildEmailSourceContext } from '../lib/email-source-context.mjs';
 import { readFile } from 'fs/promises';
 import { createHash } from 'node:crypto';
 import { homedir } from 'os';
@@ -319,10 +320,6 @@ async function extractAttachmentsFromRaw(item) {
 }
 
 async function buildReplyPrompt(item) {
-  const sender = trimString(item?.message?.fromAddress);
-  const subject = trimString(item?.message?.subject);
-  const date = trimString(item?.message?.date);
-  const messageId = trimString(item?.message?.messageId);
   const rawDerivedBody = await extractReadableBodyFromRaw(item);
   const bodySource = trimString(item?.content?.extractedText) || trimString(item?.content?.preview);
   const decodedStoredBody = decodeMaybeEncodedMailboxText(bodySource, {
@@ -331,16 +328,7 @@ async function buildReplyPrompt(item) {
   });
   const body = rawDerivedBody || decodedStoredBody;
 
-  return [
-    'Inbound email.',
-    `- From: ${sender || '(unknown sender)'}`,
-    `- Subject: ${subject || '(no subject)'}`,
-    `- Date: ${date || '(no date)'}`,
-    `- Message-ID: ${messageId || '(no message id)'}`,
-    '',
-    'User message:',
-    body || '(empty body)',
-  ].join('\n');
+  return body || '(empty body)';
 }
 
 function hasExplicitPinnedRuntime(automation) {
@@ -508,12 +496,11 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
     mimeType: attachment.mimeType,
     originalName: attachment.originalName,
   }));
+  messagePayload.sourceContext = buildEmailSourceContext(item, rootDir, attachments.length);
   if (attachments.length > 0) messagePayload.attachments = attachments;
   if (rawAttachmentCount > 0 && attachments.length === 0) {
-    messagePayload.text += `\n\n⚠️ Warning: This email originally contained ${rawAttachmentCount} attachment(s) but they could not be extracted. The raw email is stored at: ${trimString(item?.storage?.rawPath)}`;
     console.error(`[agent-mail-worker] attachment extraction yielded 0 results for item ${item?.id} (expected ${rawAttachmentCount})`);
   } else if (rawAttachmentCount > 0 && attachments.length < rawAttachmentCount) {
-    messagePayload.text += `\n\n⚠️ Warning: This email originally contained ${rawAttachmentCount} attachment(s) but only ${attachments.length} could be extracted.`;
     console.warn(`[agent-mail-worker] partial attachment extraction for item ${item?.id}: ${attachments.length}/${rawAttachmentCount}`);
   }
   if (runtimeSelection.thinking) messagePayload.thinking = true;

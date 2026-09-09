@@ -29,7 +29,6 @@ import {
   buildExternalTriggerId,
   buildFeishuApiUuid,
   buildFeishuForkExternalTriggerId,
-  buildFeishuForkSourceContext,
   buildFeishuPostContent,
   buildFeishuTopicId,
   buildMessageSourceContext,
@@ -850,9 +849,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     description: buildSessionDescription(effectiveSummary),
     systemPrompt: runtime.config.systemPrompt,
     externalTriggerId,
-    sourceContext: isForkCommand
-      ? buildFeishuForkSourceContext(effectiveSummary)
-      : buildSessionSourceContext(effectiveSummary),
+    sourceContext: buildSessionSourceContext(effectiveSummary),
   };
   const threadBinding = isForkCommand
     ? null
@@ -869,13 +866,9 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: effectiveSummary },
-    text: isForkCommand
-      ? (trimString(effectiveSummary.forkText) || buildRemoteLabMessage(messageSummary))
-      : buildRemoteLabMessage(messageSummary),
+    text: buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
-    sourceContext: isForkCommand
-      ? buildFeishuForkSourceContext(messageSummary)
-      : buildMessageSourceContext(messageSummary),
+    sourceContext: buildMessageSourceContext(messageSummary),
     ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
@@ -1166,7 +1159,6 @@ export {
   DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
   buildFeishuForkExternalTriggerId,
-  buildFeishuForkSourceContext,
   buildFeishuTopicId,
   buildMessageSourceContext,
   buildRemoteLabMessage,

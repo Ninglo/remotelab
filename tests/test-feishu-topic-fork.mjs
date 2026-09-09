@@ -174,10 +174,13 @@ try {
       sourceRouteId: 'bot-1',
       chatType: 'group',
       chatId: 'chat-1',
-      messageId: 'fork-command-message',
+      conversationKind: 'group',
     });
     assert.equal(submittedPayloads[0].text, '分析当前问题\n然后给出修复方案');
-    assert.deepEqual(submittedPayloads[0].sourceContext, createdPayloads[0].sourceContext);
+    assert.equal(submittedPayloads[0].sourceContext.messageId, 'fork-command-message');
+    assert.equal(submittedPayloads[0].sourceContext.messageType, 'text');
+    assert.equal(submittedPayloads[0].sourceContext.ingestion.status, 'complete');
+    assert.equal(submittedPayloads[0].sourceContext.threadId, undefined);
 
     await recordFeishuThreadSessionBinding(connectorRuntime, commandSummary, forkReply.sessionId, {
       threadId: 'created-thread-1',
@@ -196,7 +199,8 @@ try {
     });
     assert.equal(continuationReply.sessionId, 'fork-session-2');
     assert.equal(createCount, 1, 'later Thread messages should use the explicit binding');
-    assert.equal(submittedPayloads[1].text, '继续\n\n[Feishu source reference: message_id=later-thread-message, message_type=text, thread_id=created-thread-1]');
+    assert.equal(submittedPayloads[1].text, '继续');
+    assert.equal(submittedPayloads[1].sourceContext.threadId, 'created-thread-1');
 
     connectorRuntime.config.responsePolicy = { group: 'all' };
     const task = {
@@ -213,7 +217,9 @@ try {
     assert.equal(createdPayloads[2].externalTriggerId, 'feishu:fork:bot-1:tenant-1:chat-1:default-task-2');
     assert.equal(submittedPayloads[2].text, 'task\nask @_user_2');
     assert.equal(submittedPayloads[2].sourceDelivery.target.replyInThread, true);
-    assert.deepEqual(submittedPayloads[2].sourceContext, createdPayloads[1].sourceContext);
+    assert.equal(submittedPayloads[2].sourceContext.messageType, 'text');
+    assert.equal(submittedPayloads[2].sourceContext.sender.senderType, 'user');
+    assert.equal(submittedPayloads[2].sourceContext.chatId, 'chat-1');
 
     await send({ messageId: 'continue-task', messageText: '@_user_1 /continue shared task' });
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');

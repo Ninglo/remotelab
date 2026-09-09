@@ -278,11 +278,13 @@ function getWorkSummaryFollowupServices() {
   return { getSession, isInternalSession, isWorkSummaryEnabledForSession, updateSessionWorkSummary };
 }
 
-function normalizeSourceContext(value) {
+// Message snapshots are retained in full; only stable Session metadata uses
+// the size cap. The prompt projection bounds long source values separately.
+function normalizeSourceContext(value, maxBytes = MAX_SESSION_SOURCE_CONTEXT_BYTES) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   try {
     const serialized = JSON.stringify(value);
-    if (!serialized || serialized === '{}' || Buffer.byteLength(serialized, 'utf8') > MAX_SESSION_SOURCE_CONTEXT_BYTES) {
+    if (!serialized || serialized === '{}' || Buffer.byteLength(serialized, 'utf8') > maxBytes) {
       return null;
     }
     return JSON.parse(serialized);
@@ -1488,8 +1490,10 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
   return null;
 }
 
-async function buildManagerTurnContextText(session, _text = '') {
-  return buildTurnContextHook(session);
+async function buildManagerTurnContextText(session, options = {}) {
+  return buildTurnContextHook(session, {
+    sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
+  });
 }
 
 function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
@@ -1540,7 +1544,7 @@ function shouldPersistManagerTurnContext() {
   return !IS_GUEST_INSTANCE;
 }
 
-export async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}) {
+export async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}, preparedTurnContext = null) {
   const toolDefinition = await getToolDefinitionAsync(effectiveTool);
   const promptMode = toolDefinition?.promptMode === 'bare-user'
     ? 'bare-user'
@@ -1571,7 +1575,7 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
 
   let actualText = text;
   if (promptMode === 'default') {
-    const managerTurnContext = await buildManagerTurnContextText(session, text);
+    const managerTurnContext = preparedTurnContext ?? await buildManagerTurnContextText(session, options);
     const turnPrefix = wrapPrivatePromptBlock(managerTurnContext);
     const turnSections = [];
 
@@ -1991,7 +1995,7 @@ export async function getSessionSourceContext(sessionId, options = {}) {
     const event = events[index];
     if (event?.type !== 'message' || event.role !== 'user') continue;
     if (requestedRequestId && (event.requestId || '') !== requestedRequestId) continue;
-    const candidate = normalizeSourceContext(event.sourceContext);
+    const candidate = normalizeSourceContext(event.sourceContext, Infinity);
     if (!candidate) continue;
     messageContext = candidate;
     matchedRequestId = event.requestId || matchedRequestId;
@@ -3055,11 +3059,21 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
 async function ensureRequestInput(record, manifest) {
   if (record.options.recordUserMessage === false) return;
   const events = await readEventsAfter(record.sessionId, manifest.forkBaseSeq || 0);
-  if (events.some(event => event.type === 'message' && event.role === 'user' && event.requestId === record.requestId)) return;
-  await appendEvent(record.sessionId, messageEvent('user', record.options.recordedUserText || record.text, buildMessageAttachmentRefs(record.images), {
-    requestId: record.requestId, responseId: record.responseId, runId: record.runId,
-    ...(record.options.sourceContext ? { sourceContext: record.options.sourceContext } : {}),
-  }));
+  if (!events.some(event => event.type === 'message' && event.role === 'user' && event.requestId === record.requestId)) {
+    const sourceContext = normalizeSourceContext(record.options.sourceContext, Infinity);
+    const recordedText = typeof record.options.recordedUserText === 'string' && record.options.recordedUserText.trim()
+      ? record.options.recordedUserText.trim() : record.text;
+    await appendEvent(record.sessionId, messageEvent('user', recordedText, buildMessageAttachmentRefs(record.images), {
+      requestId: record.requestId, responseId: record.responseId, runId: record.runId,
+      ...(sourceContext ? { sourceContext } : {}),
+    }));
+  }
+  if (manifest.managerTurnContext && shouldPersistManagerTurnContext()
+    && !events.some(event => event.type === 'manager_context' && event.runId === record.runId)) {
+    await appendEvent(record.sessionId, managerContextEvent(manifest.managerTurnContext, {
+      requestId: record.requestId, responseId: record.responseId, runId: record.runId,
+    }));
+  }
 }
 
 async function prepareRequestRun(record) {
@@ -3107,8 +3121,6 @@ async function prepareRequestRun(record) {
   const savedImages = options.preSavedAttachments?.length > 0
     ? sanitizeRequestAttachments(options.preSavedAttachments)
     : await saveAttachments(images);
-  const sourceContext = normalizeSourceContext(options.sourceContext);
-  const imageRefs = buildMessageAttachmentRefs(savedImages);
   const isFirstRecordedUserMessage =
     options.recordUserMessage !== false
     && (snapshot.userMessageCount || 0) === 0;
@@ -3137,6 +3149,9 @@ async function prepareRequestRun(record) {
     codexThreadId: persistedCodexThreadId,
   } = resolveResumeState(effectiveTool, session, options, effectiveRuntimeFamily);
 
+  const managerTurnContext = effectiveToolDefinition?.promptMode === 'bare-user'
+    ? '' : await buildManagerTurnContextText(session, { ...options, requestId });
+
   const run = await createRun({
     status: {
       id: record.runId,
@@ -3162,7 +3177,8 @@ async function prepareRequestRun(record) {
       folder: session.folder,
       tool: effectiveTool,
       ...(effectiveRuntimeFamily ? { runtimeFamily: effectiveRuntimeFamily } : {}),
-      prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options),
+      prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options, managerTurnContext),
+      managerTurnContext,
       internalOperation: options.internalOperation || null,
       ...(normalizeSourceDeliveryPlan(options.sourceDelivery)
         ? { sourceDelivery: normalizeSourceDeliveryPlan(options.sourceDelivery) }
@@ -3209,31 +3225,7 @@ async function prepareRequestRun(record) {
     session = await enrichSessionMeta(activeSession);
   }
 
-  if (options.recordUserMessage !== false) {
-    const userEvent = messageEvent('user', recordedUserText, imageRefs.length > 0 ? imageRefs : undefined, {
-      requestId,
-      responseId: responseId || undefined,
-      runId: run.id,
-      ...(sourceContext ? { sourceContext } : {}),
-    });
-    const existingEvents = await readEventsAfter(sessionId, snapshot.latestSeq);
-    if (!existingEvents.some(event => event.type === 'message' && event.role === 'user' && event.requestId === requestId)) await appendEvent(sessionId, userEvent);
-
-    const toolDefinition = await getToolDefinitionAsync(effectiveTool);
-    const promptMode = toolDefinition?.promptMode === 'bare-user'
-      ? 'bare-user'
-      : 'default';
-    if (promptMode === 'default') {
-      const managerTurnContext = await buildManagerTurnContextText(session, normalizedText);
-      if (managerTurnContext && shouldPersistManagerTurnContext()) {
-        await appendEvent(sessionId, managerContextEvent(managerTurnContext, {
-          requestId,
-          ...(responseId ? { responseId: responseId } : {}),
-          runId: run.id,
-        }));
-      }
-    }
-  }
+  await ensureRequestInput(record, { forkBaseSeq: snapshot.latestSeq, managerTurnContext });
 
   if (!options.internalOperation && isFirstRecordedUserMessage && isSessionAutoRenamePending(session)) {
     const draftName = buildTemporarySessionName(recordedUserText);

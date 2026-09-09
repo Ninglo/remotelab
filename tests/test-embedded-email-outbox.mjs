@@ -68,6 +68,10 @@ try {
     saveAttachments: async () => [],
     submitHttpMessage: async (sessionId, text, images, options) => {
       admissions++;
+      assert.equal(text, 'Please reply.');
+      assert.equal(options.sourceContext.messageId, '<embedded@example.test>');
+      assert.equal(options.sourceContext.sender.address, 'owner@example.test');
+      assert.equal(options.sourceContext.subject, 'embedded result');
       const plan = normalizeSourceDeliveryPlan(options.sourceDelivery);
       assert(plan, 'embedded admission must persist its final reply destination');
       const { record, duplicate } = await requests.accept({ sessionId, text, images, requestId: options.requestId, options });

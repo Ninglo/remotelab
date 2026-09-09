@@ -53,6 +53,11 @@ try {
   assert(saved.automation.preparedSubmission, 'exact payload must be durable before sending');
   assert.notEqual(saved.status, 'reply_failed', 'lost admission response is not permanent AI failure');
   assert.deepEqual(saved.automation.preparedSubmission.payload, posts[0]);
+  assert.equal(posts[0].text, 'Original email body');
+  assert.equal(posts[0].sourceContext.connector, 'email');
+  assert.equal(posts[0].sourceContext.messageId, '<lost-response@example.test>');
+  assert.equal(posts[0].sourceContext.sender.address, 'owner@example.test');
+  assert.equal(posts[0].sourceContext.subject, 'lost-response');
   await saveUiRuntimeSelection({ selectedTool: 'pi', selectedModel: 'changed-model' });
   await writeFile(saved.storage.rawPath, 'Changed source after admission');
   loseResponse = false;

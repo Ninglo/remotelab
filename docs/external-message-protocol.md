@@ -17,6 +17,13 @@ The key product stance is simple:
 
 That means platform-specific wrapping stays outside RemoteLab.
 
+Submit normalized user content in `text` and per-input platform metadata in
+`sourceContext`; keep outbound routing in `sourceDelivery`. RemoteLab projects
+the request's metadata into the existing turn Context for both the model and
+the timeline. Do not append message IDs, sender headers or transport warnings
+to user text. See [Connector metadata in turn Context](connector-turn-context.md)
+for the snapshot, first-turn, fork and recovery contract.
+
 ---
 
 ## 0. Connector topology classes

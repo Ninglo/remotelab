@@ -486,27 +486,6 @@ export function buildFeishuForkExternalTriggerId(summary) {
   return `feishu:fork:${sourceRouteId}:${tenantKey}:${chatId}:${messageId}`;
 }
 
-export function buildFeishuForkSourceContext(summary) {
-  const context = {
-    connector: FEISHU_CONNECTOR_ID,
-  };
-  const sourceRouteId = trimString(summary?.sourceRouteId);
-  if (sourceRouteId) context.sourceRouteId = sourceRouteId;
-  const chatType = trimString(summary?.chatType);
-  if (chatType) context.chatType = chatType;
-  const chatId = trimString(summary?.chatId);
-  if (chatId) context.chatId = chatId;
-  const messageId = trimString(summary?.messageId);
-  if (messageId) context.messageId = messageId;
-  const threadId = trimString(summary?.threadId);
-  if (threadId) context.threadId = threadId;
-  const rootId = trimString(summary?.rootId);
-  if (rootId) context.rootId = rootId;
-  const parentId = trimString(summary?.parentId);
-  if (parentId) context.parentId = parentId;
-  return context;
-}
-
 export function buildFeishuConversationQueueKey(summary) {
   if (trimString(summary?.chatId)) {
     return buildExternalTriggerId(summary);
@@ -573,42 +552,10 @@ export function isSupportedRemoteLabInboundMessage(summary) {
 }
 
 export function buildRemoteLabMessage(summary) {
-  if (isFeishuDocumentCommentSummary(summary)) {
-    const current = trimString(summary?.messageText) || trimString(summary?.textPreview) || '[空评论]';
-    const quote = trimString(summary?.commentQuote);
-    const thread = (Array.isArray(summary?.commentThread) ? summary.commentThread : [])
-      .map((entry) => ({
-        text: trimString(entry?.text) || '[空评论]',
-        isCurrent: entry?.isCurrent === true,
-      }));
-    const lines = [];
-    if (quote) {
-      lines.push(`文档中被评论的内容：\n${quote}`);
-    }
-    if (thread.length > 1) {
-      lines.push(`文档评论线程：\n${thread.map((entry) => `${entry.isCurrent ? '→' : '-'} ${entry.text}`).join('\n')}`);
-    }
-    lines.push(`当前 @ 你的评论：\n${current}`);
-    return lines.join('\n\n');
-  }
-  const rawMessage = trimString(summary?.messageText) || trimString(summary?.textPreview);
-  const renderedMessage = renderMentionPreview(rawMessage, summary?.mentions);
-  const displayMessage = renderedMessage || rawMessage || trimString(summary?.contentSummary) || '[non-text or empty message]';
-  const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
-  const senderPrefix = summary?.chatType === 'group' && senderName ? `${senderName}: ` : '';
-  const downloadFailures = Array.isArray(summary?.attachmentDownloadFailures)
-    ? summary.attachmentDownloadFailures
-    : [];
-  const failureText = downloadFailures.length > 0
-    ? `\n\n[Feishu attachment ingestion is partial: ${downloadFailures.length} resource(s) failed.]`
-    : '';
-  const ingestion = buildFeishuIngestionState(summary);
-  const sourceReference = buildFeishuSourceReference(summary);
-  const topicId = buildFeishuTopicId(summary);
-  const referenceText = sourceReference && (ingestion.status !== 'complete' || topicId)
-    ? `\n\n[Feishu source reference: message_id=${sourceReference.messageId}, message_type=${sourceReference.messageType}${topicId ? `, thread_id=${topicId}` : ''}]`
-    : '';
-  return `${senderPrefix}${displayMessage}${failureText}${referenceText}`;
+  const rawMessage = (summary?.forkCommand ? trimString(summary?.forkText) : '')
+    || trimString(summary?.messageText) || trimString(summary?.textPreview);
+  return renderMentionPreview(rawMessage, summary?.mentions) || rawMessage
+    || trimString(summary?.contentSummary) || '[non-text or empty message]';
 }
 
 export function buildSessionSourceContext(summary) {
@@ -663,6 +610,13 @@ export function buildMessageSourceContext(summary) {
     if (replyId) context.replyId = replyId;
     const contentSummary = trimString(summary?.contentSummary);
     if (contentSummary) context.contentSummary = contentSummary;
+    const commentQuote = trimString(summary?.commentQuote);
+    if (commentQuote) context.commentQuote = commentQuote;
+    if (Array.isArray(summary?.commentThread)) {
+      context.commentThread = summary.commentThread.map(entry => ({
+        text: trimString(entry?.text), isCurrent: entry?.isCurrent === true,
+      }));
+    }
     return context;
   }
   const topicId = buildFeishuTopicId(summary);
@@ -675,6 +629,8 @@ export function buildMessageSourceContext(summary) {
     messageId: trimString(summary?.messageId),
     messageType: trimString(summary?.messageType).toLowerCase(),
     chatType: trimString(summary?.chatType),
+    chatId: trimString(summary?.chatId),
+    ...(trimString(summary?.chatName) ? { chatName: trimString(summary.chatName) } : {}),
     conversationKind: buildFeishuConversationKind(summary),
     ingestion: buildFeishuIngestionState(summary),
   };
