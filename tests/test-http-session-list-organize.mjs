@@ -17,13 +17,11 @@ const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   'Do not rename sessions, archive or unarchive them, change pin state, edit prompts, or ask the user follow-up questions.',
   'Only update existing sessions by calling the owner-authenticated RemoteLab API from this machine.',
   'Use `remotelab api GET /api/sessions` if you need to double-check current state.',
-  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `space`, `group`, and `sidebarOrder`.',
-  'Only writable API fields for this task are `space`, `group`, and `sidebarOrder`.',
-  'Never send read-only snapshot keys such as `title`, `brief`, `existingSpace`, `existingGroup`, or `existingSidebarOrder` in PATCH bodies.',
-  'Example PATCH body: {"space":"Product","group":"RemoteLab","sidebarOrder":3}',
+  'Use `remotelab api PATCH /api/sessions/<sessionId> --body ...` to update `space` and `group`.',
+  'Only writable API fields for this task are `space` and `group`.',
+  'Never send read-only snapshot keys such as `title`, `brief`, `existingSpace`, `existingGroup` in PATCH bodies.',
+  'Example PATCH body: {"space":"Product","group":"RemoteLab"}',
   'If `remotelab` is unavailable in PATH, use `node "$REMOTELAB_PROJECT_ROOT/cli.js" api ...` instead.',
-  '`sidebarOrder` must be a positive integer; smaller numbers sort first.',
-  'Assign unique contiguous `sidebarOrder` values across only the scoped sessions included in the snapshot.',
   'Do not patch sessions outside the snapshot; other source categories are intentionally left untouched for audit or automation review.',
   'A Session is one concrete conversation. A Project is a durable workstream. A Space is a broad working-context switch that normally contains multiple Projects.',
   'Work bottom-up: first cluster Sessions into Projects, then cluster those Projects into Spaces.',
@@ -43,7 +41,7 @@ function buildSessionListOrganizerTask(input = []) {
   return [
     'Organize the scoped non-archived Sessions using the hierarchy and write boundaries from the system prompt.',
     'Apply the organization now; do not merely propose it.',
-    'Patch only Sessions present in the snapshot and send only `space`, `group`, and `sidebarOrder`.',
+    'Patch only Sessions present in the snapshot and send only `space` and `group`.',
     'Treat `title`, `brief`, and every `existing*` field as read-only context.',
     '',
     '<session_list_organizer_input>',
@@ -119,7 +117,7 @@ function buildFakeCodexScript() {
     '  void (async () => {',
     '    try {',
     '      if (organizerMatch) {',
-    '        if (!prompt.includes("Only writable API fields for this task are `space`, `group`, and `sidebarOrder`.")) {',
+    '        if (!prompt.includes("Only writable API fields for this task are `space` and `group`.")) {',
     '          throw new Error("organizer prompt missing writable field guidance");',
     '        }',
     '        if (!prompt.includes("Work bottom-up: first cluster Sessions into Projects, then cluster those Projects into Spaces.")) {',
@@ -163,7 +161,7 @@ function buildFakeCodexScript() {
     '            "--base-url",',
     '            baseUrl,',
     '            "--body",',
-    '            JSON.stringify({ space, group, sidebarOrder: index + 1 }),',
+    '            JSON.stringify({ space, group }),',
     '          ], {',
     '            cwd: projectRoot,',
     '            env: { ...process.env, REMOTELAB_CONFIG_DIR: process.env.REMOTELAB_CONFIG_DIR || `${process.env.HOME}/.config/remotelab` },',
@@ -311,7 +309,6 @@ try {
         brief: 'Clean up the session grouping and structure.',
         existingSpace: 'Old Product',
         existingGroup: 'RemoteLab Cleanup',
-        existingSidebarOrder: null,
       },
       {
         id: quartzSession.json.session.id,
@@ -319,7 +316,6 @@ try {
         brief: 'Polish the publishing workflow and docs.',
         existingSpace: 'Old Publishing',
         existingGroup: 'Quartz Publishing',
-        existingSidebarOrder: null,
       },
     ]),
     model: 'fake-model',
@@ -336,7 +332,7 @@ try {
   );
   assert.match(
     organizerManifest.prompt,
-    /Only writable API fields for this task are `space`, `group`, and `sidebarOrder`\./,
+    /Only writable API fields for this task are `space` and `group`\./,
     'organizer prompt should spell out the writable session fields',
   );
   assert.match(
@@ -349,11 +345,7 @@ try {
     /"existingGroup": "RemoteLab Cleanup"/,
     'organizer task payload should expose existingGroup as read-only snapshot context',
   );
-  assert.match(
-    organizerManifest.prompt,
-    /"existingSidebarOrder": null/,
-    'organizer task payload should expose existingSidebarOrder as read-only snapshot context',
-  );
+  assert.doesNotMatch(organizerManifest.prompt, /sidebarOrder/, 'organizer must leave chronological ordering to the UI');
   assert.doesNotMatch(
     organizerManifest.prompt,
     /"targetProjectCount"|"targetSpaceCount"|"targetSessionsPerProject"|"groupSummary"/,
@@ -378,17 +370,17 @@ try {
   const quartzEntry = listed.json.sessions.find((entry) => entry.id === quartzSession.json.session.id);
   assert.equal(remoteLabEntry?.space, 'Product', 'organizer should patch the RemoteLab Space');
   assert.equal(remoteLabEntry?.group, 'RemoteLab', 'organizer should patch the RemoteLab group');
-  assert.equal(remoteLabEntry?.sidebarOrder, 2, 'organizer should patch the RemoteLab sidebar order');
+  assert.equal(remoteLabEntry?.sidebarOrder, undefined, 'organizer should only update labels');
   assert.equal(quartzEntry?.space, 'Publishing', 'organizer should patch the Quartz Space');
   assert.equal(quartzEntry?.group, 'Quartz', 'organizer should patch the Quartz group');
-  assert.equal(quartzEntry?.sidebarOrder, 1, 'organizer should patch the Quartz sidebar order');
+  assert.equal(quartzEntry?.sidebarOrder, undefined, 'organizer should only update labels');
 
   const storedMeta = JSON.parse(readFileSync(join(configDir, 'chat-sessions.json'), 'utf8'));
   const hiddenOrganizer = storedMeta.find((entry) => entry && entry.internalRole === SESSION_LIST_ORGANIZER_INTERNAL_ROLE);
   assert.ok(hiddenOrganizer, 'organizer trigger should create a hidden internal session');
   assert.match(
     hiddenOrganizer.systemPrompt || '',
-    /Only writable API fields for this task are `space`, `group`, and `sidebarOrder`\./,
+    /Only writable API fields for this task are `space` and `group`\./,
     'hidden organizer session should persist the writable field guardrail',
   );
 

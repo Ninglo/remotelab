@@ -6,13 +6,6 @@ function t(key, vars) {
 let activeSessionRename = null;
 let sessionListRenderDepth = 0;
 
-function getSessionAttentionRank(session) {
-  if (typeof window.RemoteLabSessionStateModel?.getSessionAttentionBand === "function") {
-    return window.RemoteLabSessionStateModel.getSessionAttentionBand(session);
-  }
-  return 3;
-}
-
 function getProjectGroupSessionSortTime(session) {
   if (typeof getSessionSortTime === "function") {
     return getSessionSortTime(session);
@@ -20,25 +13,6 @@ function getProjectGroupSessionSortTime(session) {
   const stamp = session?.lastEventAt || session?.updatedAt || session?.created || "";
   const time = new Date(stamp).getTime();
   return Number.isFinite(time) ? time : 0;
-}
-
-function getProjectGroupRunningRank(groupEntry) {
-  const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
-  return groupSessions.some((session) => {
-    const activity = typeof getSessionActivity === "function" ? getSessionActivity(session) : null;
-    return activity?.run?.state === "running";
-  }) ? 1 : 0;
-}
-
-function getProjectGroupAttentionRank(groupEntry) {
-  const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
-  if (groupSessions.length === 0) return 6;
-  return groupSessions.reduce((bestRank, session) => {
-    const attentionRank = typeof getSessionAttentionRank === "function"
-      ? getSessionAttentionRank(session)
-      : 3;
-    return Math.min(bestRank, attentionRank);
-  }, 6);
 }
 
 function getProjectGroupLatestActivityTime(groupEntry) {
@@ -49,30 +23,7 @@ function getProjectGroupLatestActivityTime(groupEntry) {
   );
 }
 
-function getProjectGroupOrganizerOrder(groupEntry) {
-  const groupSessions = Array.isArray(groupEntry?.sessions) ? groupEntry.sessions : [];
-  return groupSessions.reduce((bestOrder, session) => {
-    const rawOrder = typeof session?.sidebarOrder === "number"
-      ? session.sidebarOrder
-      : Number.parseInt(String(session?.sidebarOrder || "").trim(), 10);
-    if (!Number.isInteger(rawOrder) || rawOrder <= 0) return bestOrder;
-    return bestOrder > 0 ? Math.min(bestOrder, rawOrder) : rawOrder;
-  }, 0);
-}
-
 function compareProjectGroupsByLatestActivity(a, b) {
-  const runningDiff = getProjectGroupRunningRank(b) - getProjectGroupRunningRank(a);
-  if (runningDiff) return runningDiff;
-
-  const attentionDiff = getProjectGroupAttentionRank(a) - getProjectGroupAttentionRank(b);
-  if (attentionDiff) return attentionDiff;
-
-  const organizerOrderA = getProjectGroupOrganizerOrder(a);
-  const organizerOrderB = getProjectGroupOrganizerOrder(b);
-  if (organizerOrderA && organizerOrderB && organizerOrderA !== organizerOrderB) {
-    return organizerOrderA - organizerOrderB;
-  }
-
   const latestActivityDiff = getProjectGroupLatestActivityTime(b) - getProjectGroupLatestActivityTime(a);
   if (latestActivityDiff) return latestActivityDiff;
 

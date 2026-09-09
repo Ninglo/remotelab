@@ -285,12 +285,12 @@ const SESSION_LIST_ORGANIZER_SYSTEM_PROMPT = [
   "4. A Space containing only one Project is normally redundant. Fold it into the closest broader Space unless it is a deliberate durable boundary expected to hold multiple Projects.",
   "Preserve coherent labels; otherwise reuse and merge before creating new ones. Use `Loose` for genuinely temporary or ambiguous work.",
   "Prefer a compact, readable sidebar over taxonomic purity and use the dominant language of the scoped catalog.",
-  "Use `sidebarOrder` for stable hierarchy order; keep each Project's Sessions contiguous. The UI handles transient running and attention priority separately.",
+  "The UI orders Sessions and Project groups by latest activity, newest first. Organize labels only; do not assign sidebar order.",
   "",
   "Boundaries:",
   "- Account scope is strict: never inspect, infer, or patch another account's taxonomy.",
   "- Update only Sessions in the snapshot. Do not rename, archive, unarchive, pin, edit prompts, or ask follow-up questions.",
-  "- Only writable API fields for this task are `space`, `group`, and `sidebarOrder`. Use unique contiguous positive orders within the snapshot.",
+  "- Only writable API fields for this task are `space` and `group`.",
   "- Apply changes with `remotelab api PATCH /api/sessions/<sessionId> --body ...`; if unavailable, use `node \"$REMOTELAB_PROJECT_ROOT/cli.js\" api ...`.",
   "- Never send read-only snapshot fields such as `title`, `brief`, or any `existing*` field in PATCH bodies.",
   "If an important decision is unsupported, inspect only the ambiguous Sessions with `remotelab api GET /api/sessions` instead of doing broad archaeology.",
@@ -338,9 +338,6 @@ function buildSessionListOrganizerSessionMetadata(session) {
       : null,
     existingGroup: typeof session?.group === "string" && session.group.trim()
       ? clipSessionListOrganizerText(session.group, 80)
-      : null,
-    existingSidebarOrder: Number.isInteger(session?.sidebarOrder) && session.sidebarOrder > 0
-      ? session.sidebarOrder
       : null,
     pinned: session?.pinned === true,
     tool: clipSessionListOrganizerText(session?.tool || "", 40),
@@ -428,7 +425,7 @@ function buildSessionListOrganizerTask(input) {
       ? `Source scope: ${scope.sourceLabel}${scope.defaultedToChatUi ? " (All origins defaults to Chat UI for daily organization)." : "."}`
       : "",
     "Apply the organization now; do not merely propose it.",
-    "Patch only Sessions present in the snapshot and send only `space`, `group`, and `sidebarOrder`.",
+    "Patch only Sessions present in the snapshot and send only `space` and `group`.",
     "Treat `title`, `brief`, and every `existing*` field as read-only context.",
     "",
     "<session_list_organizer_input>",

@@ -34,3 +34,6 @@ Initial reproduction: test-durable-requests failed with `0 !== 1` for admission 
 
 [2026-09-09 RED] Investigating inconsistent Codex model defaults and connector runtime visibility. Regressions cover a supported stale CLI default, early entry model/effort, persisted session preferences and duplicate replay after preferences change.
 [2026-09-09 GREEN] Model catalog, runtime resolution, early connector delivery, session metadata, queued-run freezing and duplicate replay regressions pass. Full npm test, restart gate, syntax, diff checks and advisory file-size lint pass. Activation is scoped to the current owner instance.
+
+[2026-09-09 RED] Sidebar comparators prioritize attention, run state and organizer order over recency. Regressions require stable positions after review and status changes, with newer activity first for sessions and groups.
+[2026-09-09 GREEN] Chronological Session/Project/Space ordering verified, including review/status stability, legacy organizer order and latest-event precedence. Organizer patches only grouping labels. Isolated npm test, HTTP organizer regression, syntax, diff and advisory file-size checks passed.

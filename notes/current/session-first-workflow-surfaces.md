@@ -78,7 +78,7 @@ The remaining workflow projection is a projection over sessions.
 
 In practical terms:
 
-- session ordering is derived from live session activity, `workflowState`, `workflowPriority`, pinning, and recency
+- sessions sort by latest activity descending; explicitly pinned sessions retain their separate section
 - attention cues are derived from `workflowState`, `workflowPriority`, and review timestamps
 - any future secondary workflow view must still point back to the underlying session
 - the session list and any future workflow view are projections over the same canonical objects
@@ -105,7 +105,7 @@ The owner sidebar uses one organization path:
 Space → Project group → Session
 ```
 
-There is no parallel Inbox/Projects mode switch. Space already provides the broad context boundary, while Project groups provide workstream recovery inside it. Attention signals still matter, but they should influence Project ordering and lightweight row status rather than creating a second grouping hierarchy that asks the owner to choose how to view the same sessions.
+There is no parallel Inbox/Projects mode switch. Space already provides the broad context boundary, while Project groups provide workstream recovery inside it. Attention signals appear as lightweight row status. Reading or selecting a Session must not change its position or its Project group position.
 
 ---
 
@@ -149,7 +149,7 @@ Singleton Projects are acceptable only when the workstream is genuinely standalo
 
 Space is one level broader: it represents a durable working-context switch, not a decorative category above a Project. Build the hierarchy bottom-up (`Session → Project → Space`). A Space containing only one Project is normally redundant and should be folded into the nearest broader Space unless it is a deliberate durable boundary expected to grow into multiple Projects.
 
-Grouping should be allowed to rebalance previous choices. A per-session label generated at creation time is provisional because it sees incomplete global context. The session-list organizer is the canonical cleanup pass for the current sidebar: it receives the scoped active-session snapshot and may rewrite `space`, `group`, and `sidebarOrder` across every session in that scope. It should not behave as append-only classification for one new row.
+Grouping should be allowed to rebalance previous choices. A per-session label generated at creation time is provisional because it sees incomplete global context. The session-list organizer is the canonical cleanup pass for the current sidebar: it receives the scoped active-session snapshot and may rewrite `space` and `group` across every session in that scope. It should not behave as append-only classification for one new row.
 
 This also means Project compression is allowed without introducing a Project object. If several older groups become fragments of one better workstream topic, the organizer can choose a clearer shared Project name and patch every included session to that `group`. The durable data remains session metadata; the compression is a scoped maintenance pass over those sessions.
 
@@ -170,7 +170,7 @@ Default granularity rules:
 - Reuse and merge before creating labels; preserve specificity in Session titles and descriptions.
 - Prefer a readable sidebar over a perfectly semantic hierarchy.
 
-Sorting should serve return-to-work. Running groups should rise first, groups needing owner attention should rise next, and then organized groups should follow the lowest `sidebarOrder` among their sessions. Latest activity remains the fallback for unorganized or newly created groups, so fresh work can still surface before the next Sort List rebalance. A true group-level pin/order object is only needed later if Projects become first-class objects.
+Sessions sort by their latest event time, falling back to metadata update time and creation time for empty Sessions. Running and idle Sessions use the same timestamp rule. Project groups and Spaces sort by the most recent activity among their Sessions, newest first. Unread/review state, workflow priority, running state and legacy `sidebarOrder` values never override chronology. Equal timestamps use deterministic identity/label tie breakers. The organizer changes grouping labels only; manual pins retain their separate section.
 
 ### Drift-Triggered Sort List
 
@@ -197,13 +197,13 @@ Use three levels instead:
    - Do not run more than once per source scope per day by default.
    - Require a severe signal such as group count above `targetProjectCount * 2`, at least 6 singleton groups, or singleton ratio at or above 0.6.
    - Run only after the current user-facing turn reaches a terminal state, not while the user is typing or while many foreground sessions are running.
-   - The run may patch only `space`, `group`, and `sidebarOrder` on scoped non-archived sessions.
+   - The run may patch only `space` and `group` on scoped non-archived sessions.
 
 The important separation is:
 
 ```text
 deterministic drift detector decides whether sorting is warranted
-AI organizer decides how to merge, rename, split, and order once invoked
+AI organizer decides how to merge, rename and split grouping labels once invoked
 ```
 
 This keeps the self-healing loop strict enough to avoid constant churn while still allowing the Projects list to recover when fragmentation becomes obvious.

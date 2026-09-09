@@ -47,16 +47,14 @@ function extractFunctionSource(source, functionName) {
 const getSessionSortTimeSource = extractFunctionSource(bootstrapSource, 'getSessionSortTime');
 const getSessionPinSortRankSource = extractFunctionSource(bootstrapSource, 'getSessionPinSortRank');
 const compareSessionListSessionsSource = extractFunctionSource(bootstrapSource, 'compareSessionListSessions');
+const compareClientSessionsSource = extractFunctionSource(bootstrapSource, 'compareClientSessions');
 const sortSessionsInPlaceSource = extractFunctionSource(bootstrapSource, 'sortSessionsInPlace');
 const matchesSearchQuerySource = extractFunctionSource(bootstrapSource, 'matchesSearchQuery');
 const getSessionSpaceValueSource = extractFunctionSource(bootstrapSource, 'getSessionSpaceValue');
 const matchesSessionSpaceSource = extractFunctionSource(bootstrapSource, 'matchesSessionSpace');
 const getActiveSessionsSource = extractFunctionSource(bootstrapSource, 'getActiveSessions');
 const getProjectGroupSessionSortTimeSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupSessionSortTime');
-const getProjectGroupRunningRankSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupRunningRank');
-const getProjectGroupAttentionRankSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupAttentionRank');
 const getProjectGroupLatestActivityTimeSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupLatestActivityTime');
-const getProjectGroupOrganizerOrderSource = extractFunctionSource(sessionListUiSource, 'getProjectGroupOrganizerOrder');
 const compareProjectGroupsByLatestActivitySource = extractFunctionSource(sessionListUiSource, 'compareProjectGroupsByLatestActivity');
 const sortProjectGroupsByLatestActivitySource = extractFunctionSource(sessionListUiSource, 'sortProjectGroupsByLatestActivity');
 const renderProjectsViewSource = extractFunctionSource(sessionListUiSource, 'renderProjectsView');
@@ -64,26 +62,6 @@ const renderProjectsViewSource = extractFunctionSource(sessionListUiSource, 'ren
 const context = {
   console,
   Date,
-  sessionStateModel: {
-    getSessionSortTime(session) {
-      return Date.parse(session.lastEventAt || session.updatedAt || session.created || '') || 0;
-    },
-    compareSessionListSessions(a, b) {
-      return (b.rank || 0) - (a.rank || 0)
-        || (Date.parse(b.lastEventAt || b.updatedAt || b.created || '') || 0)
-          - (Date.parse(a.lastEventAt || a.updatedAt || a.created || '') || 0);
-    },
-  },
-  getSessionActivity(session) {
-    return {
-      run: {
-        state: session?.activity?.run?.state === 'running' ? 'running' : 'idle',
-      },
-    };
-  },
-  getSessionAttentionRank(session) {
-    return Number.isInteger(session?.attentionBand) ? session.attentionBand : 3;
-  },
   SESSION_SPACE_ALL_VALUE: '__all_spaces__',
   SESSION_SPACE_LOOSE_VALUE: '__loose_space__',
   activeSessionSpace: '__all_spaces__',
@@ -110,9 +88,12 @@ const context = {
   ],
 };
 context.globalThis = context;
+context.window = context;
+vm.runInNewContext(readFileSync(join(repoRoot, 'static/chat/session-state-model.js'), 'utf8'), context);
+context.sessionStateModel = context.RemoteLabSessionStateModel;
 
 vm.runInNewContext(
-  `${getSessionSortTimeSource}\n${getSessionPinSortRankSource}\n${compareSessionListSessionsSource}\n${sortSessionsInPlaceSource}\n${matchesSearchQuerySource}\n${getSessionSpaceValueSource}\n${matchesSessionSpaceSource}\n${getActiveSessionsSource}`,
+  `${getSessionSortTimeSource}\n${getSessionPinSortRankSource}\n${compareSessionListSessionsSource}\n${compareClientSessionsSource}\n${sortSessionsInPlaceSource}\n${matchesSearchQuerySource}\n${getSessionSpaceValueSource}\n${matchesSessionSpaceSource}\n${getActiveSessionsSource}`,
   context,
   { filename: 'static/chat/bootstrap-session-catalog.js' },
 );
@@ -122,7 +103,7 @@ context.sortSessionsInPlace();
 assert.deepEqual(
   context.sessions.map((session) => session.id),
   ['pinned-session', 'actual-activity-newer', 'metadata-only-newer'],
-  'sidebar sorting should follow pinning first and then the delegated attention comparator',
+  'sidebar should keep the explicit pinned section and sort regular rows by activity',
 );
 
 assert.equal(context.getSessionSpaceValue({ space: 'Product' }), 'Product');
@@ -152,10 +133,7 @@ assert.deepEqual(
 vm.runInNewContext(
   [
     getProjectGroupSessionSortTimeSource,
-    getProjectGroupRunningRankSource,
-    getProjectGroupAttentionRankSource,
     getProjectGroupLatestActivityTimeSource,
-    getProjectGroupOrganizerOrderSource,
     compareProjectGroupsByLatestActivitySource,
     sortProjectGroupsByLatestActivitySource,
     renderProjectsViewSource,
@@ -202,8 +180,8 @@ const projectGroups = [
 
 assert.deepEqual(
   context.sortProjectGroupsByLatestActivity(projectGroups).map((group) => group.key),
-  ['running', 'june-10', 'june-05', 'june-01'],
-  'Projects view should sort unorganized project groups by current running state first and then latest activity descending',
+  ['june-10', 'june-05', 'running', 'june-01'],
+  'Project groups should sort by latest activity even when an older group is running',
 );
 
 const organizedGroups = [
@@ -225,8 +203,8 @@ const organizedGroups = [
 
 assert.deepEqual(
   context.sortProjectGroupsByLatestActivity(organizedGroups).map((group) => group.key),
-  ['organized-first', 'organized-later'],
-  'Projects view should honor organizer sidebar order across groups when both groups have explicit order',
+  ['organized-later', 'organized-first'],
+  'Project groups should ignore legacy organizer order',
 );
 
 const attentionGroups = [
@@ -248,9 +226,21 @@ const attentionGroups = [
 
 assert.deepEqual(
   context.sortProjectGroupsByLatestActivity(attentionGroups).map((group) => group.key),
-  ['needs-attention', 'organized-first'],
-  'Projects view should raise groups needing attention before organized order',
+  ['organized-first', 'needs-attention'],
+  'Project groups should ignore attention state',
 );
+
+const beforeReview = context.sortProjectGroupsByLatestActivity(attentionGroups).map(group => group.key);
+Object.assign(attentionGroups[1].sessions[0], {
+  lastAssistantMessageAt: '2026-06-01T10:00:00Z',
+  lastReviewedAt: '2026-06-01T11:00:00Z', localReviewedAt: '2026-06-01T11:00:00Z',
+  attentionBand: 6, workflowState: 'done',
+});
+assert.deepEqual(context.sortProjectGroupsByLatestActivity(attentionGroups).map(group => group.key),
+  beforeReview, 'reading a session must leave its group in the same position');
+attentionGroups[1].sessions[0].lastEventAt = '2026-06-11T10:00:00Z';
+assert.deepEqual(context.sortProjectGroupsByLatestActivity(attentionGroups).map(group => group.key),
+  ['needs-attention', 'organized-first'], 'new activity should raise the group');
 
 function createElement() {
   return {
@@ -281,4 +271,7 @@ const projectHeader = context.sessionList.children[0]?.children[0];
 assert.match(projectHeader?.innerHTML || '', /class="folder-count">2<\/span>/, 'Projects view should keep the group total');
 assert.doesNotMatch(projectHeader?.innerHTML || '', /folder-attention-count/, 'Projects view should not render an extra attention count badge');
 
+const organizerSource = readFileSync(join(repoRoot, 'static/chat/session-http.js'), 'utf8');
+assert.match(organizerSource, /Only writable API fields for this task are `space` and `group`/);
+assert.doesNotMatch(organizerSource, /`sidebarOrder`|existingSidebarOrder/, 'organizer must not assign row order');
 console.log('test-chat-sidebar-session-sorting: ok');

@@ -159,8 +159,9 @@
   }
 
   function getSessionLatestChangeTime(session) {
-    const stamp = session?.lastEventAt || session?.updatedAt || session?.created || "";
-    return parseSessionTime(stamp);
+    return parseSessionTime(session?.lastEventAt)
+      || parseSessionTime(session?.updatedAt)
+      || parseSessionTime(session?.created);
   }
 
   function getSessionUnreadUpdateTime(session) {
@@ -176,19 +177,7 @@
   }
 
   function getSessionSortTime(session) {
-    const activity = normalizeSessionActivity(session);
-    if (activity.run.state === "running" && activity.run.startedAt) {
-      const startedAt = parseSessionTime(activity.run.startedAt);
-      if (startedAt > 0) return startedAt;
-    }
     return getSessionLatestChangeTime(session);
-  }
-
-  function normalizeSessionSidebarOrder(value) {
-    const parsed = typeof value === "number"
-      ? value
-      : Number.parseInt(String(value || "").trim(), 10);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
   }
 
   function normalizeSessionActivity(session) {
@@ -341,22 +330,8 @@
   }
 
   function compareSessionListSessions(a, b) {
-    const sidebarOrderA = normalizeSessionSidebarOrder(a?.sidebarOrder);
-    const sidebarOrderB = normalizeSessionSidebarOrder(b?.sidebarOrder);
-    if (sidebarOrderA && sidebarOrderB && sidebarOrderA !== sidebarOrderB) {
-      return sidebarOrderA - sidebarOrderB;
-    }
-
-    const attentionBandDiff = getSessionAttentionBand(a) - getSessionAttentionBand(b);
-    if (attentionBandDiff) return attentionBandDiff;
-
-    const priorityDiff = (getSessionWorkflowPriorityInfo(b)?.rank || 0) - (getSessionWorkflowPriorityInfo(a)?.rank || 0);
-    if (priorityDiff) return priorityDiff;
-
-    const pinDiff = (b?.pinned === true ? 1 : 0) - (a?.pinned === true ? 1 : 0);
-    if (pinDiff) return pinDiff;
-
-    return getSessionSortTime(b) - getSessionSortTime(a);
+    return getSessionSortTime(b) - getSessionSortTime(a)
+      || String(a?.id || "").localeCompare(String(b?.id || ""));
   }
 
   root.RemoteLabSessionStateModel = {

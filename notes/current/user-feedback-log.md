@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-09 — Reading a Session must not move its row
+
+- Source: owner reported losing the selected Session when clicking it reordered the sidebar.
+- Cause: review, running and workflow attention ranks overrode activity timestamps for Sessions and groups.
+- Product implication: keep Sessions newest first and compare groups by their most recent Session activity. Read/unread status is a visual cue only. The organizer changes Space/Project labels, not chronological order.
+
 ### 2026-09-08 — Connector admission must not wait for AI completion
 
 - Source: owner reviewed connector timeout behavior and explicitly prioritized WeChat and Email while retiring WhatsApp Business and the local Voice Connector.

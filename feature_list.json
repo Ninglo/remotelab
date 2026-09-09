@@ -1,5 +1,11 @@
 [
   {
+    "id": "chronological-session-list",
+    "description": "Order sessions and groups by latest activity; read state and status badges never move rows.",
+    "pass": true,
+    "verification_plan": "Reproduce click/read reorder; verify recency and stable ties, group rendering, organizer scope, smoke and restart gates."
+  },
+  {
     "id": "connector-runtime-visibility",
     "description": "Use the GPT-6 product default and show the admitted model and effort in connector session creation notices and session preferences.",
     "pass": true,

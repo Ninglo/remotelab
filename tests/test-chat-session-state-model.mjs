@@ -236,16 +236,16 @@ assert.ok(
   model.compareSessionListSessions(
     makeSession({ workflowPriority: 'high', updatedAt: '2026-03-14T12:00:00.000Z' }),
     makeSession({ workflowPriority: 'low', updatedAt: '2026-03-14T13:00:00.000Z' }),
-  ) < 0,
-  'higher derived priority should sort sessions before lower priority',
+  ) > 0,
+  'recency should win over workflow priority',
 );
 
 assert.ok(
   model.compareSessionListSessions(
     makeSession({ pinned: true, workflowPriority: 'medium', updatedAt: '2026-03-14T12:00:00.000Z' }),
     makeSession({ workflowPriority: 'medium', updatedAt: '2026-03-14T13:00:00.000Z' }),
-  ) < 0,
-  'pinned sessions should break ties before recency when priority ties',
+  ) > 0,
+  'the activity comparator should leave the separate pinned section to the sidebar',
 );
 
 assert.ok(
@@ -253,15 +253,15 @@ assert.ok(
     makeSession({ workflowPriority: 'medium', updatedAt: '2026-03-14T12:00:00.000Z' }),
     makeSession({ workflowPriority: 'medium', updatedAt: '2026-03-14T13:00:00.000Z' }),
   ) > 0,
-  'more recent sessions should sort first when priority and pin state tie',
+  'more recent sessions should sort first',
 );
 
 assert.ok(
   model.compareSessionListSessions(
     makeSession({ sidebarOrder: 1, updatedAt: '2026-03-14T12:00:00.000Z' }),
     makeSession({ sidebarOrder: 3, updatedAt: '2026-03-14T13:00:00.000Z' }),
-  ) < 0,
-  'lower explicit sidebar order should sort sessions first when both sessions are organized',
+  ) > 0,
+  'legacy organizer order must not override recency',
 );
 
 assert.ok(
@@ -283,8 +283,8 @@ assert.ok(
         },
       }),
     }),
-  ) < 0,
-  'unread completed work should sort ahead of currently running sessions',
+  ) > 0,
+  'unread completed work must not overtake newer activity',
 );
 
 assert.ok(
@@ -311,9 +311,30 @@ assert.ok(
         },
       }),
     }),
-  ) > 0,
-  'running-session ordering should stay anchored to run start time instead of the latest streamed token time',
+  ) < 0,
+  'running and idle sessions should use the same latest activity timestamp',
 );
+
+const chronologicalSessions = [
+  makeSession({ id: 'older-unread', lastEventAt: '2026-03-14T12:00:00Z',
+    lastAssistantMessageAt: '2026-03-14T12:00:00Z', workflowState: 'waiting_user' }),
+  makeSession({ id: 'newer-reviewed', lastEventAt: '2026-03-14T13:00:00Z',
+    lastReviewedAt: '2026-03-14T13:00:00Z', workflowState: 'done' }),
+];
+const chronologicalIds = () => chronologicalSessions.slice().sort(model.compareSessionListSessions).map(s => s.id);
+assert.deepEqual(chronologicalIds(), ['newer-reviewed', 'older-unread']);
+chronologicalSessions[0].localReviewedAt = '2026-03-14T14:00:00Z';
+assert.equal(model.getSessionReviewStatusInfo(chronologicalSessions[0]), null);
+assert.deepEqual(chronologicalIds(), ['newer-reviewed', 'older-unread'], 'clicking to read must not move a row');
+chronologicalSessions[0].lastReviewedAt = chronologicalSessions[0].localReviewedAt;
+chronologicalSessions[0].updatedAt = '2026-03-14T14:00:00Z';
+chronologicalSessions[0].activity = makeActivity({ run: { state: 'running', startedAt: '2026-03-14T14:00:00Z' } });
+assert.deepEqual(chronologicalIds(), ['newer-reviewed', 'older-unread'], 'metadata and run state must not reorder rows');
+chronologicalSessions[0].lastEventAt = '2026-03-14T15:00:00Z';
+assert.deepEqual(chronologicalIds(), ['older-unread', 'newer-reviewed'], 'new activity should move a row to the top');
+assert.ok(model.compareSessionListSessions({ id: 'a' }, { id: 'b' }) < 0, 'equal timestamps need a stable ID tie breaker');
+assert.equal(model.getSessionSortTime({ lastEventAt: 'invalid', updatedAt: '2026-03-14T12:00:00Z' }),
+  Date.parse('2026-03-14T12:00:00Z'), 'invalid timestamps should fall back to usable activity metadata');
 
 const toolFallbackStatus = model.getSessionStatusSummary(
   makeSession({ tool: 'codex' }),
