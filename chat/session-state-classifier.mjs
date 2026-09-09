@@ -17,13 +17,17 @@ import {
   normalizeSessionWorkflowState,
 } from './session-workflow-state.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
-import { PRODUCT_DEFAULT_CODEX_MODEL, PRODUCT_DEFAULT_CODEX_EFFORT } from '../lib/legacy-micro-agent.mjs';
 
 const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi']);
+// Cost boundary: title/group/space and state synchronization are routine metadata
+// tasks, not foreground problem solving. Use a small, low-cost model with low
+// reasoning effort; this call can run after every normal turn.
+// Keep this route independent of PRODUCT_DEFAULT_CODEX_MODEL: upgrading the
+// chat model must NOT silently upgrade this background classifier's cost.
 export const SESSION_STATE_CLASSIFIER_RUNTIME = Object.freeze({
   tool: 'codex',
-  model: PRODUCT_DEFAULT_CODEX_MODEL,
-  effort: PRODUCT_DEFAULT_CODEX_EFFORT,
+  model: 'gpt-5.6-luna',
+  effort: 'low',
   thinking: false,
 });
 

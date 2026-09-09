@@ -103,17 +103,17 @@ const {
 assert.deepEqual(
   resolveSessionStateClassifierRuntime({
     tool: 'pi',
-    model: 'openai-codex/gpt-5.6-sol',
+    model: 'openai-codex/gpt-6-astra',
     effort: 'xhigh',
     thinking: true,
   }),
   {
     tool: 'codex',
-    model: 'gpt-6-astra',
+    model: 'gpt-5.6-luna',
     effort: 'low',
     thinking: false,
   },
-  'built-in foreground Harnesses should use the dedicated GPT-6 low session-state route',
+  'an expensive foreground model must retain the independent low-cost Luna/low session-state route',
 );
 assert.deepEqual(
   resolveSessionStateClassifierRuntime({
