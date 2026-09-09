@@ -122,7 +122,7 @@ async function createSession(port, name) {
 try {
   const { home } = setupTempHome();
   const port = randomPort();
-  const server = await startServer({ home, port });
+  let server = await startServer({ home, port });
 
   try {
     const older = await createSession(port, 'Older session');
@@ -231,6 +231,26 @@ try {
     assert.equal(staleModelPatch.json.session?.effort, 'xhigh', 'model upgrade should preserve the requested effort');
 
     console.log('test-http-session-patch-runtime-preferences: ok');
+    const selection = { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high', thinking: false };
+    const override = await request(port, 'PATCH', `/api/sessions/${older.id}`, { feishuRuntimeSelection: selection });
+    assert.equal(override.status, 200);
+    assert.deepEqual(override.json.session.feishuRuntimeSelection, selection, 'command preferences persist independently of an active run');
+    assert.equal(override.json.session.model, 'gpt-6-astra', 'setting the next Feishu runtime does not rewrite the current runtime');
+    const reloaded = await request(port, 'GET', `/api/sessions/${older.id}`);
+    assert.deepEqual(reloaded.json.session.feishuRuntimeSelection, selection);
+    await stopServer(server);
+    server = await startServer({ home, port });
+    assert.deepEqual((await request(port, 'GET', `/api/sessions/${older.id}`)).json.session.feishuRuntimeSelection, selection,
+      'command selection survives a controller restart');
+    for (const invalid of ['ui', {}, { ...selection, tool: '' }, { ...selection, thinking: 'yes' }, { ...selection, effort: 4 }]) {
+      assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, { feishuRuntimeSelection: invalid })).status, 400);
+    }
+    const following = await request(port, 'PATCH', `/api/sessions/${older.id}`, { feishuRuntimeSelection: null });
+    assert.equal(following.status, 200);
+    assert.equal(following.json.session.feishuRuntimeSelection, undefined);
+    assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, { feishuRuntimeSelection: selection },
+      { Cookie: 'session_token=not-authorized' })).status, 401, 'unauthenticated callers cannot set an override');
+    console.log('test-http-session-feishu-runtime-override: ok');
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });

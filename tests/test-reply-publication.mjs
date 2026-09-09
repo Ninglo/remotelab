@@ -158,6 +158,17 @@ try {
   const queuedReplay = await submitHttpMessage(connectorSession.id, 'Use the saved runtime after the blocked turn.', [], queuedOptions);
   assert.equal(queuedReplay.duplicate, true, 'changing defaults must not change the original request fingerprint');
   assert.equal((await requests.byResponse(connectorSession.id, queuedOutcome.response.id)).runtimeSelection.model, 'fake-model');
+  const commandSelection = { tool: 'fake-codex', model: 'command-model', effort: 'low', thinking: false };
+  await updateSessionRuntimePreferences(connectorSession.id, { feishuRuntimeSelection: commandSelection });
+  const commandOptions = { ...connectorOptions, requestId: 'command-pinned', model: 'web-ui-model' };
+  const commandOutcome = await submitHttpMessage(connectorSession.id, 'Pinned command choice.', [], commandOptions);
+  assert.equal(commandOutcome.queued, true);
+  assert.deepEqual((await requests.byResponse(connectorSession.id, commandOutcome.response.id)).runtimeSelection, commandSelection);
+  assert.equal((await requests.byResponse(connectorSession.id, firstConnectorOutcome.response.id)).runtimeSelection.model, 'fake-model', 'active input retains its snapshot');
+  await updateSessionRuntimePreferences(connectorSession.id, { feishuRuntimeSelection: null });
+  const commandReplay = await submitHttpMessage(connectorSession.id, 'Pinned command choice.', [], commandOptions);
+  assert.equal(commandReplay.duplicate, true);
+  assert.deepEqual((await requests.byResponse(connectorSession.id, commandOutcome.response.id)).runtimeSelection, commandSelection, '/follow does not rewrite queued or replayed inputs');
   assert.equal(earlyClaim.delivery.target.threadId, 'test-thread');
   assert.equal((await requests.byResponse(connectorSession.id, firstConnectorOutcome.response.id)).result, null);
   await completeSourceDelivery(earlyClaim.delivery.id, earlyClaim.leaseId, { externalId: 'early-entry-message' });
@@ -183,9 +194,11 @@ try {
   const queuedManifest = await getRunManifest(queuedOutcome.run.id);
   assert.equal(queuedManifest.options.model, 'fake-model', 'the runner must use the admitted selection after preferences change');
   assert.equal(queuedManifest.options.effort, 'low');
-  assert.equal((await getSession(connectorSession.id)).model, 'fake-model');
+  await waitFor(async () => (await getRunState(commandOutcome.run.id))?.state === 'completed', 'pinned queued run completion');
+  assert.equal((await getRunManifest(commandOutcome.run.id)).options.model, 'command-model');
 
   const laterConnectorOutcome = await submitHttpMessage(connectorSession.id, '后续消息。', [], { ...connectorOptions, requestId: 'connector-later' });
+  assert.equal((await requests.byResponse(connectorSession.id, laterConnectorOutcome.response.id)).runtimeSelection.model, 'fake-model', '/follow restores Web UI for new inputs');
   assert.equal((await requests.byResponse(connectorSession.id, laterConnectorOutcome.response.id)).deliveries.length, 0);
   await waitFor(
     async () => (await getSessionReplyPublication(connectorSession.id, laterConnectorOutcome.response?.id))?.state === 'ready',

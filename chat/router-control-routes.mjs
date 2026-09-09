@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from 'path';
 import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_ENABLED, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent } from './apps.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { getModelsForTool } from './models.mjs';
@@ -686,6 +687,11 @@ export async function handleControlRoutes({
     const hasModelPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'model');
     const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
     const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
+    const hasFeishuRuntimePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'feishuRuntimeSelection');
+    if (hasFeishuRuntimePatch) {
+      try { patch.feishuRuntimeSelection = normalizeExternalRuntimeOverride(patch.feishuRuntimeSelection); }
+      catch (error) { writeJson(res, 400, { error: error.message }); return true; }
+    }
     const hasSpacePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'space');
     const hasGroupPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'group');
     const hasDescriptionPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'description');
@@ -778,7 +784,7 @@ export async function handleControlRoutes({
       writeJson(res, 403, { error: 'Access denied' });
       return true;
     }
-    if ((hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch) && !getGrantedCapability(authSession, 'changeRuntime')) {
+    if ((hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) && !getGrantedCapability(authSession, 'changeRuntime')) {
       writeJson(res, 403, { error: 'Access denied' });
       return true;
     }
@@ -847,8 +853,9 @@ export async function handleControlRoutes({
         ...(hasWorkflowPriorityPatch ? { workflowPriority: patch.workflowPriority || '' } : {}),
       }) || session;
     }
-    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch) {
+    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) {
       session = await updateSessionRuntimePreferences(sessionId, {
+        ...(hasFeishuRuntimePatch ? { feishuRuntimeSelection: patch.feishuRuntimeSelection } : {}),
         ...(hasToolPatch ? { tool: patch.tool } : {}),
         ...(hasModelPatch ? { model: patch.model } : {}),
         ...(hasEffortPatch ? { effort: patch.effort } : {}),

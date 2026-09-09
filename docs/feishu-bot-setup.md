@@ -247,6 +247,43 @@ Thread continuation never bypasses sender access control or Bot loop protection.
 Access and response policies apply to the whole Connector. Session-start routing
 can separately be overridden per group with `sessionPolicy` below.
 
+### Harness and model commands
+
+Feishu follows the Web UI runtime selection by default. Inside an existing task
+thread or private conversation, use these commands to inspect or override it:
+
+| Command | Behavior |
+| --- | --- |
+| `/status` | Show the Harness, model, effort and mode for the next message. |
+| `/harness` or `/harness <id>` | List available Harnesses or select one. |
+| `/model` or `/model <id>` | List the current Harness's models or select one. |
+| `/effort` or `/effort <level>` | List supported reasoning levels or select one. |
+| `/follow` | Clear this session's override and return to the connector default (normally Follow Web UI). |
+| `/help` | Show these commands and `/fork` / `/continue`. |
+
+Selecting any runtime option pins the complete Harness/model/effort selection
+for subsequent Feishu messages in that Session. Selecting a different Harness
+uses its own default model and effort; selecting a different model uses that
+model's default effort. Invalid choices leave the current configuration intact.
+Lists and `/status` are read-only. In a group with mention-only responses, mention
+the Bot unless it has already joined the current thread.
+
+Control commands execute directly without launching an AI turn or creating a
+task. On the group main timeline they show defaults and direct setters to an
+existing task thread. Groups configured with `sessionPolicy: continue` can also
+change their existing shared group Session. A private conversation must have a
+Session from an earlier task before a setter can apply. Peer Bots cannot invoke
+these control commands.
+
+Overrides are stored as `feishuRuntimeSelection` on Session metadata, separately
+from the last running tool/model. They survive restart and do not change the
+Web UI's global default, other Sessions, or other connector types. The Web UI
+can still submit its own runtime choice for the same Session; the explicit
+Feishu override remains until `/follow` or another Feishu selection command.
+Running and already queued Requests retain the selection frozen at admission.
+The Inbox saves a setter's exact plan before applying it, so retries do not
+re-resolve changing Web UI defaults.
+
 ### Default fork and one-shot Bot handoffs
 
 To preserve different groups' working habits, ask your agent:

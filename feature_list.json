@@ -1,5 +1,11 @@
 [
   {
+    "id": "feishu-runtime-commands",
+    "description": "Follow Web UI by default; select a persistent per-session Harness, model and effort with Feishu commands, or restore follow mode.",
+    "pass": true,
+    "verification_plan": "Direct command routing without model execution, catalog validation, scope isolation, durable overrides, follow restoration, request snapshots and existing fork/continue regressions."
+  },
+  {
     "id": "queued-message-removal",
     "description": "Remove mistaken queued follow-ups individually without interrupting active work.",
     "pass": true,

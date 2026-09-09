@@ -9,8 +9,10 @@ const trim = value => typeof value === 'string' ? value.trim() : '';
 
 // Resolve once at admission; the notice and detached runner share this snapshot.
 export async function resolveSessionRuntimeSelection(session = {}, options = {}) {
-  const saved = migrateLegacySessionRuntimeFields(session);
-  const requested = migrateLegacySessionRuntimeFields(options);
+  const isFeishu = options.sourceContext?.connector === 'feishu' || options.sourceDelivery?.connector === 'feishu';
+  const override = isFeishu ? session.feishuRuntimeSelection : null;
+  const saved = migrateLegacySessionRuntimeFields(override || session);
+  const requested = migrateLegacySessionRuntimeFields(override || options);
   const tool = normalizeLegacyToolId(trim(requested.tool) || saved.tool || 'codex');
   const sameTool = tool === saved.tool;
   let model = trim(requested.model) || (sameTool ? trim(saved.model) : '');

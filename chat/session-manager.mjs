@@ -2,6 +2,7 @@ import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
+import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests } from './requests.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
@@ -2866,11 +2867,13 @@ async function applySessionTemplateMetadata(id, template, extra = {}) {
 }
 
 export async function updateSessionRuntimePreferences(id, patch = {}) {
+  const hasFeishuRuntimePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'feishuRuntimeSelection');
+  const feishuRuntimeSelection = hasFeishuRuntimePatch ? normalizeExternalRuntimeOverride(patch.feishuRuntimeSelection) : null;
   const hasToolPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'tool');
   const hasModelPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'model');
   const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
   const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
-  if (!hasToolPatch && !hasModelPatch && !hasEffortPatch && !hasThinkingPatch) {
+  if (!hasToolPatch && !hasModelPatch && !hasEffortPatch && !hasThinkingPatch && !hasFeishuRuntimePatch) {
     return getSession(id);
   }
 
@@ -2886,6 +2889,12 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
 
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
+
+    if (hasFeishuRuntimePatch && JSON.stringify(session.feishuRuntimeSelection || null) !== JSON.stringify(feishuRuntimeSelection)) {
+      if (feishuRuntimeSelection) session.feishuRuntimeSelection = feishuRuntimeSelection;
+      else delete session.feishuRuntimeSelection;
+      changed = true;
+    }
 
     if (hasToolPatch && nextTool && session.tool !== nextTool) {
       session.tool = nextTool;
