@@ -157,3 +157,13 @@ test-source-runtime-only: ok
 test-source-runtime-only: ok
 Focused regression after review: test-feishu-runtime-commands: ok (broken current-provider catalog).
 Live read-only /status projection: current thread, Follow Web UI, codex, gpt-6-astra, xhigh; no model execution or external send.
+
+[2026-09-09 Feishu conversation mute]
+Full npm test: exit 0; restart gate: exit 0; package boundary/syntax/diff checks: exit 0; advisory file-size lint: exit 0.
+test-feishu-runtime-commands: ok
+test-feishu-mute: ok
+Feishu access, response, durable thread continuation and processing acknowledgement tests passed
+ok - bot handoffs are explicit, durable, one-shot, alias-aware and restart-safe
+test-source-runtime-only: ok
+test-source-runtime-only: ok
+test-source-runtime-only: ok

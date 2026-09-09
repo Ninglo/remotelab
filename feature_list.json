@@ -1,5 +1,11 @@
 [
   {
+    "id": "feishu-conversation-mute",
+    "description": "Mute automatic Feishu conversation responses without model execution, while preserving explicit mentions and commands.",
+    "pass": true,
+    "verification_plan": "Admission before reaction/submission, persisted mute across restarts, explicit one-turn wake-up, command recovery, bot handoff limits and scope isolation."
+  },
+  {
     "id": "feishu-runtime-commands",
     "description": "Follow Web UI by default; select a persistent per-session Harness, model and effort with Feishu commands, or restore follow mode.",
     "pass": true,

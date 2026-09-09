@@ -9,6 +9,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
 import { handleFeishuRuntimeCommand } from '../connectors/feishu/runtime-commands.mjs';
+import { handleFeishuMuteCommand } from '../connectors/feishu/conversation-settings.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
@@ -66,6 +67,7 @@ import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
   normalizeFeishuResponsePolicy,
   isFeishuBotSender,
+  mentionsFeishuBot,
   resolveFeishuBotIdentity,
   shouldRouteFeishuMessageToRemoteLab,
 } from '../connectors/feishu/response-policy.mjs';
@@ -1085,7 +1087,7 @@ function extractLocalCommand(summary) {
   if (!['group', 'topic', 'p2p', 'private'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  const commandMatch = commandText.match(/^\/(fork|continue|help|status|harness|model|effort|follow)(?:[ \t\r\n]+([\s\S]*))?$/i);
+  const commandMatch = commandText.match(/^\/(fork|continue|help|status|harness|model|effort|follow|mute|unmute)(?:[ \t\r\n]+([\s\S]*))?$/i);
   if (commandMatch) {
     if (['fork', 'continue'].includes(commandMatch[1].toLowerCase()) && !['group', 'topic'].includes(chatType)) return null;
     return {
@@ -1122,14 +1124,23 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 
 async function processFeishuMessage(runtime, summary, sourceLabel, helpers = {}) {
   if (!isProcessableMessage(summary)) return { ignored: true };
-  if (!isFeishuDocumentCommentSummary(summary) && !await shouldRouteFeishuMessageToRemoteLab(runtime, summary)) {
-    console.log(`[feishu-connector] skipped ${summary.messageId} (response policy requires a Bot mention or an active Bot thread)`);
+  const command = extractLocalCommand(summary);
+  if (command && !['fork', 'continue'].includes(command.type)
+    && /^\s*@_[A-Za-z0-9_]+/.test(summary.messageText || summary.textPreview || summary.rawContent || '')
+    && !mentionsFeishuBot(runtime, summary)) {
+    return { ignored: true, reason: 'command_for_other_recipient' };
+  }
+  if (!isFeishuDocumentCommentSummary(summary) && !await shouldRouteFeishuMessageToRemoteLab(runtime, summary, { explicitCommand: !!command })) {
+    console.log(`[feishu-connector] skipped ${summary.messageId} (response policy or conversation mute)`);
     return { ignored: true, reason: 'group_reply_policy' };
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
-  const command = extractLocalCommand(summary);
   if (command && !['fork', 'continue'].includes(command.type)) {
     if (isFeishuBotSender(summary)) return { ignored: true, reason: 'bot_control_command' };
+    if (['mute', 'unmute'].includes(command.type)) {
+      const text = await handleFeishuMuteCommand(runtime, summary, command);
+      return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
+    }
     const text = await handleFeishuRuntimeCommand(runtime, summary, command, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
       resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),

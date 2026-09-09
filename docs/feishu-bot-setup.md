@@ -259,6 +259,8 @@ thread or private conversation, use these commands to inspect or override it:
 | `/model` or `/model <id>` | List the current Harness's models or select one. |
 | `/effort` or `/effort <level>` | List supported reasoning levels or select one. |
 | `/follow` | Clear this session's override and return to the connector default (normally Follow Web UI). |
+| `/mute` | Stop automatic responses in the current topic or chat; explicit mentions still wake the Bot once. |
+| `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and `/fork` / `/continue`. |
 
 Selecting any runtime option pins the complete Harness/model/effort selection
@@ -283,6 +285,29 @@ Feishu override remains until `/follow` or another Feishu selection command.
 Running and already queued Requests retain the selection frozen at admission.
 The Inbox saves a setter's exact plan before applying it, so retries do not
 re-resolve changing Web UI defaults.
+
+### Mute a discussion
+
+Send `/mute` in a task thread to stop ordinary discussion messages from starting
+AI turns. The Connector drops these messages before processing reactions,
+attachment downloads, Session creation and model submission. It still records
+normal transport receipts. Existing running or queued tasks continue and can
+deliver their results.
+
+An explicit mention of this Bot wakes it for that input only; the conversation
+stays muted afterwards. Local settings commands and explicit `/fork` or
+`/continue` tasks remain usable under the usual access/mention rules. `/unmute`
+restores normal response routing and never replays skipped discussion. `/status`
+shows the mute setting. If several Bots share a thread, address a settings
+command as `@Bot /mute` to select one; other Bots ignore that addressed command.
+
+Mute defaults to off and is persisted in the Connector's `conversation-settings`
+store, keyed by Bot route, tenant, chat and topic identity. It does not require an
+AI Session. Sibling topics and other Bots retain their own settings. On a group
+main timeline `/mute` affects that timeline only; individual topics remain
+separate. In a private chat it affects that private conversation. Peer Bots
+cannot change these settings, and their explicitly mentioned handoffs retain
+the existing durable loop limits.
 
 ### Default fork and one-shot Bot handoffs
 

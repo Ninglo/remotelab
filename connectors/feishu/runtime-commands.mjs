@@ -1,6 +1,7 @@
 import { buildExternalTriggerId, buildFeishuTopicId } from './index.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 import { resolveFeishuSessionMode } from './session-policy.mjs';
+import { describeFeishuMuteSetting } from './conversation-settings.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const HELP = [
@@ -10,6 +11,8 @@ const HELP = [
   '/model [模型 ID] — 列出或选择当前 Harness 的模型',
   '/effort [级别] — 查看或选择模型支持的思考强度',
   '/follow — 恢复 Follow Web UI',
+  '/mute — 静默当前话题或聊天；明确 @ 可单次唤醒',
+  '/unmute — 恢复当前话题或聊天的正常响应',
   '/fork <任务文本> — 在群聊中新建任务话题',
   '/continue <任务文本> — 在群聊中继续会话',
   '/help — 查看命令',
@@ -80,7 +83,7 @@ export async function handleFeishuRuntimeCommand(runtime, summary, command, {
     const catalog = ['harness', 'follow'].includes(type) ? null
       : await requestJson(request, `/api/models?tool=${encodeURIComponent(selected.tool)}`);
     let selection = catalog ? completeSelection(selected, catalog) : selected;
-    if (type === 'status') return describe(selection, override ? 'pinned' : defaults.mode, !!session);
+    if (type === 'status') return `${describe(selection, override ? 'pinned' : defaults.mode, !!session)}\n${await describeFeishuMuteSetting(runtime, summary)}`;
     if (type === 'harness' && !text) {
       const { tools = [] } = await requestJson(request, '/api/tools');
       return `当前 Harness：${selection.tool}\n${tools.filter(tool => tool.available).map(tool => `/harness ${tool.id}`).join('\n')}`;
