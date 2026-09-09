@@ -157,6 +157,7 @@ import {
 } from './reply-publication.mjs';
 import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
 import { enqueueSourceDelivery, normalizeSourceDeliveryPlan, listSourceDeliveryIssues } from './source-deliveries.mjs';
+import { createSourceDeliveryIssueObserver } from './source-delivery-issue-observer.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
 import { extractTaggedBlock } from './session-text-parsing.mjs';
 import { buildTurnContextHook } from './turn-context-hook.mjs';
@@ -1929,6 +1930,7 @@ async function syncDetachedRun(sessionId, runId) {
 export async function startDetachedRunObservers() {
   await ensureRequestSchema(CONFIG_DIR);
   await requestRuntime.recover();
+  deliveryIssueObserver.start();
 }
 
 export async function listSessions({
@@ -2032,7 +2034,7 @@ export async function getRunState(runId) {
   const run = await getRun(runId);
   if (!run) {
     const record = await requests.byRunId(runId);
-    return record ? { id: runId, sessionId: record.sessionId, requestId: record.requestId, state: 'accepted' } : null;
+    return record ? { id: runId, sessionId: record.sessionId, requestId: record.requestId, state: record.result?.state || 'accepted' } : null;
   }
   const effectiveRun = await flushDetachedRunIfNeeded(run.sessionId, runId) || run;
   const session = await findSessionMeta(effectiveRun.sessionId);
@@ -3021,6 +3023,7 @@ export async function applyTemplateToSession(sessionId, templateId, options = {}
 
   return getSession(sessionId);
 }
+const deliveryIssueObserver = createSourceDeliveryIssueObserver();
 const requestRuntime = createRequestRuntime({
   store: requests, prepare: prepareRequestRun, observe: observeDetachedRun, reconcile: syncDetachedRun,
   postCompletion: async record => {
@@ -3272,6 +3275,12 @@ export async function sendMessage(sessionId, text, images, options = {}) {
   });
 }
 
+export async function removeQueuedMessage(sessionId, requestId) {
+  const record = await requestRuntime.removeQueued(sessionId, requestId);
+  broadcastSessionInvalidation(sessionId);
+  return { requestId: record.requestId, session: await getSession(sessionId, { includeQueuedMessages: true }) };
+}
+
 export async function cancelActiveRun(sessionId) {
   const session = await findSessionMeta(sessionId);
   if (!session) return null;
@@ -3508,6 +3517,7 @@ export async function compactSession(sessionId) {
 }
 
 export async function drainRequestRuntime() {
+  deliveryIssueObserver.stop();
   requestRuntime.stop();
   await requestRuntime.idle();
 }

@@ -69,6 +69,29 @@ try {
     await outbox.completeSourceDelivery(recovered.id, expired.leaseId, { externalId: 'known-success' });
     assert.equal(await outbox.claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'recovered' }), null,
       'a resolved issue must not send a stale warning');
+  } else if (mode === 'observer') {
+    const { createSourceDeliveryIssueObserver } = await import('../chat/source-delivery-issue-observer.mjs');
+    await outbox.enqueueSourceDelivery({ sessionId: 'offline-observer', responseId: 'offline-observer', text: 'waiting',
+      sourceDelivery: { connector: 'feishu', sourceRouteId: 'offline-observer', target: { chatId: 'chat' } } });
+    let clock = Date.now();
+    const notified = [];
+    const observer = createSourceDeliveryIssueObserver({
+      loadIssues: () => outbox.listSourceDeliveryIssues({ now: clock }),
+      notify: sessionId => notified.push(sessionId), intervalMs: 10,
+    });
+    observer.start();
+    try {
+      await observer.tick();
+      assert.deepEqual(notified, []);
+      clock += 180_000;
+      for (let n = 0; n < 100 && !notified.length; n++) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.deepEqual(notified, ['offline-observer'], 'elapsed delay notifies the open page without sender activity or a reload');
+      await observer.tick();
+      assert.equal(notified.length, 1, 'unchanged errors do not repeatedly notify');
+      clock -= 180_000;
+      await observer.tick();
+      assert.equal(notified.length, 2, 'cleared issue also invalidates the page');
+    } finally { observer.stop(); }
   } else if (mode === 'projection') {
     const { createSession, getSession, listSessions } = await import('../chat/session-manager.mjs');
     const session = await createSession(home, 'codex', 'Delivery visibility');
