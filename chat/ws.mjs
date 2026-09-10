@@ -3,6 +3,7 @@ import { isAuthenticated, getAuthSession } from '../lib/auth.mjs';
 import { setWss } from './ws-clients.mjs';
 import { getPageBuildInfo } from './router.mjs';
 import { bindDoubaoVoiceRelaySocket, DOUBAO_VOICE_WS_PATH } from './voice-doubao-relay.mjs';
+import { isBrowserDesktopPath, handleBrowserDesktopUpgrade } from './browser-desktop-proxy.mjs';
 
 function sendJson(ws, payload) {
   if (ws.readyState !== 1) return;
@@ -28,6 +29,10 @@ export function attachWebSocket(server) {
 
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (isBrowserDesktopPath(url.pathname)) {
+      void handleBrowserDesktopUpgrade(req, socket, head).catch(() => socket.destroy());
+      return;
+    }
     if (url.pathname !== '/ws' && url.pathname !== DOUBAO_VOICE_WS_PATH) {
       socket.destroy();
       return;
