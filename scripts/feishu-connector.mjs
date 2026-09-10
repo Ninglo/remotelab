@@ -1091,9 +1091,13 @@ function extractLocalCommand(summary) {
   if (!['group', 'topic', 'p2p', 'private'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  const commandMatch = commandText.match(/^\/(fork|continue|help|status|harness|model|effort|follow|mute|unmute)(?:[ \t\r\n]+([\s\S]*))?$/i);
+  // Fork is a message-wide marker, independent of mention rendering or position.
+  if (['group', 'topic'].includes(chatType) && /\/fork/i.test(commandText)) {
+    return { type: 'fork', text: trimString(commandText.replace(/\/fork/gi, '')) };
+  }
+  const commandMatch = commandText.match(/^\/(continue|help|status|harness|model|effort|follow|mute|unmute)(?:[ \t\r\n]+([\s\S]*))?$/i);
   if (commandMatch) {
-    if (['fork', 'continue'].includes(commandMatch[1].toLowerCase()) && !['group', 'topic'].includes(chatType)) return null;
+    if (commandMatch[1].toLowerCase() === 'continue' && !['group', 'topic'].includes(chatType)) return null;
     return {
       type: commandMatch[1].toLowerCase(),
       text: trimString(commandMatch[2]),

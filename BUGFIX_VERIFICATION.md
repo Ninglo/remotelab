@@ -101,3 +101,48 @@ together; the latter are project guidance, with no credentials or private paths
 in the added lines. The earlier unchecked submission items describe the prior
 review boundary, not the current authorization. No live service restart or
 external mail/calendar delivery is part of this submission.
+
+## Feishu fork marker — 2026-09-10
+
+A rich-text leading mention becomes `@Task Bot`, while the old command parser
+only removed `@_user_1` tokens and required `/fork` at the beginning. The owner
+requested a simpler contract: a case-insensitive `/fork` anywhere in a group
+message starts a fresh task. The marker is removed and the other text is kept.
+Literal discussion of the marker also triggers a fork; ordinary access rules,
+private-chat routing and Bot handoff limits are unchanged.
+
+### RED
+
+Added the raw rich-text fixture and marker cases to
+`tests/test-feishu-runtime-commands.mjs`, plus mocked HTTP admission coverage in
+`tests/test-feishu-topic-fork.mjs`. Both failed before implementation:
+
+```text
+AssertionError [ERR_ASSERTION]: a rich-text mention must not hide the fork marker
++ actual - expected
++ null
+- {
+-   text: '@Task Bot  discover datasets\nkeep the original table intact',
+-   type: 'fork'
+- }
+
+AssertionError [ERR_ASSERTION]: a fork marker overrides the existing thread and continue policy
+12 !== 13
+```
+
+### GREEN and review
+
+- Both regressions pass. The integration test verifies new Session creation,
+  fork routing, preserved task text and thread reply delivery despite an existing
+  thread binding and Continue policy.
+- Connector, runtime-command, topic-fork, response-policy, mute and Bot-handoff
+  focused suites pass. An offline replay of the incident's received message
+  also recognizes the marker and preserves the remaining task text.
+- Full `npm test` completed with exit 0.
+- Changed JavaScript files pass `node --check`; `git diff --check` passes.
+- `npm run lint:filesize` exits 0 with the existing advisory oversized-file
+  report. No new module or parser compatibility layer was introduced.
+- Help text and setup documentation describe the marker and its intentional
+  behavior when quoted or combined with another command.
+- Verification used isolated tests and mocked HTTP transport; it did not resend
+  the original message or post external test messages.

@@ -7,7 +7,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-feishu-commands-'));
 setIsolatedTestHome(home);
 try {
-  const { handleMessage, extractLocalCommand, recordFeishuThreadSessionBinding } = await import('../scripts/feishu-connector.mjs');
+  const { handleMessage, extractLocalCommand, recordFeishuThreadSessionBinding, summarizeEvent } = await import('../scripts/feishu-connector.mjs');
   const { handleFeishuRuntimeCommand } = await import('../connectors/feishu/runtime-commands.mjs');
   const session = { id: 's1', tool: 'codex', model: 'alpha', effort: 'low' };
   const catalog = {
@@ -50,6 +50,30 @@ try {
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { type: 'status', text: '' });
   assert.equal(extractLocalCommand({ ...summary, messageText: 'example: /model beta' }), null);
   assert.equal(extractLocalCommand({ ...summary, messageText: '/modelled beta' }), null);
+  const richFork = summarizeEvent({ message: {
+    chat_type: 'group', message_type: 'post', content: JSON.stringify({ title: '', content: [
+      [{ tag: 'at', user_id: '@_user_1', user_name: 'Task Bot' }, { tag: 'text', text: ' /fork discover datasets' }],
+      [{ tag: 'text', text: 'keep the original table intact' }],
+    ] }),
+  } });
+  assert.deepEqual(extractLocalCommand(richFork), {
+    type: 'fork', text: '@Task Bot  discover datasets\nkeep the original table intact',
+  }, 'a rich-text mention must not hide the fork marker');
+  for (const [messageText, text] of [
+    ['research first\n/fork then compare', 'research first\n then compare'],
+    ['new task /FORK', 'new task'],
+    ['请/fork调查', '请调查'],
+    ['why does /fork fail?', 'why does  fail?'],
+    ['/fork task /fork', 'task'],
+    ['@_user_1 /fork', ''],
+    ['/continue task /fork', '/continue task'],
+  ]) {
+    assert.deepEqual(extractLocalCommand({ ...summary, messageText }), { type: 'fork', text });
+  }
+  for (const chatType of ['p2p', 'private']) {
+    assert.equal(extractLocalCommand({ ...summary, chatType, messageText: 'task /fork' }), null,
+      'the fork marker keeps its group-only scope');
+  }
   assert.match(await run('status'), /Follow Web UI/);
   assert.match(await run('model'), /\/model beta/);
   assert.equal(session.feishuRuntimeSelection, undefined, 'listing must preserve follow mode');

@@ -254,6 +254,18 @@ try {
     const beforeConfiguredThread = createCount;
     await send({ messageId: 'configured-thread', threadId: 'created-thread-1' });
     assert.equal(createCount, beforeConfiguredThread, 'continue policy preserves existing thread binding');
+    for (const [messageId, messageText, expectedText] of [
+      ['rich-mention-fork', '@Task Bot /fork discover datasets', '@Task Bot  discover datasets'],
+      ['trailing-fork', 'discover datasets\n/fork', 'discover datasets'],
+    ]) {
+      const beforeMarker = createCount;
+      await send({ messageId, messageType: 'post', messageText, threadId: 'created-thread-1' });
+      assert.equal(createCount, beforeMarker + 1, 'a fork marker overrides the existing thread and continue policy');
+      assert.ok(createdPayloads.at(-1).externalTriggerId.endsWith(`:${messageId}`));
+      assert.equal(submittedPayloads.at(-1).text, expectedText);
+      assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
+      assert.equal(submittedPayloads.at(-1).sourceDelivery.target.forkCommand, true);
+    }
     await send({ messageId: 'configured-private', chatType: 'p2p' });
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:p2p:chat-1');
 
