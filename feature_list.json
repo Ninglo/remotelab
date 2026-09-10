@@ -2,7 +2,7 @@
   {
     "id": "owner-browser-desktop",
     "description": "Expose a persistent browser desktop under the existing instance domain and owner login, including WebSocket control.",
-    "pass": false,
+    "pass": true,
     "verification_plan": "Isolated HTTP and binary WebSocket authorization, cross-origin denial, upstream credential isolation, browser rendering and live same-domain RFB handshake; existing WS and restart regressions."
   },
   {
