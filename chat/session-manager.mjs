@@ -156,7 +156,7 @@ import {
   collectReplyPublicationHistory,
   normalizeReplyPublicationResponseIds,
 } from './reply-publication.mjs';
-import { maybeRunMemoryWriteback } from './session-memory-writeback.mjs';
+import { maybeRunMemoryWriteback, memoryReviewRuntimeSelection } from './session-memory-writeback.mjs';
 import { enqueueSourceDelivery, normalizeSourceDeliveryPlan, listSourceDeliveryIssues } from './source-deliveries.mjs';
 import { createSourceDeliveryIssueObserver } from './source-delivery-issue-observer.mjs';
 import { createSessionTurnCompletionHelpers } from './session-turn-completion.mjs';
@@ -1878,14 +1878,7 @@ function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, ma
         runPrompt: (prompt) => runDetachedAssistantPrompt({
           ...session,
           id: sessionId,
-          tool: finalizedRun.tool || session.tool,
-          model: (finalizedRun.tool || session.tool) === 'pi'
-            ? `openai-codex/${PRODUCT_DEFAULT_CODEX_MODEL}`
-            : (finalizedRun.tool || session.tool) === 'codex'
-              ? PRODUCT_DEFAULT_CODEX_MODEL
-              : undefined,
-          effort: PRODUCT_DEFAULT_CODEX_EFFORT,
-          thinking: false,
+          ...memoryReviewRuntimeSelection(finalizedRun.tool || session.tool),
         }, prompt, {
           usageTracking: {
             operation: 'memory_writeback_review',

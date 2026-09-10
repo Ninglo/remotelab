@@ -20,6 +20,18 @@ import { extractTaggedBlock, parseJsonObjectText } from './session-text-parsing.
 import { isEnvToggleEnabled } from '../lib/env-toggle.mjs';
 import { createKeyedTaskQueue, writeTextAtomic } from './fs-utils.mjs';
 
+// Background review has its own cost policy; never inherit foreground defaults.
+export function memoryReviewRuntimeSelection(tool) {
+  return {
+    tool,
+    model: tool === 'pi'
+      ? 'openai-codex/gpt-5.6-sol'
+      : tool === 'codex' ? 'gpt-5.6-sol' : undefined,
+    effort: 'low',
+    thinking: false,
+  };
+}
+
 const WRITEBACK_SETTING_ENV = 'REMOTELAB_MEMORY_WRITEBACK';
 const memoryWritebackQueue = createKeyedTaskQueue();
 
