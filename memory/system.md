@@ -568,9 +568,9 @@ Universal learnings and patterns that apply to all RemoteLab deployments, regard
 ### Artifact Delivery Should Be Backend-Owned (2026-04-10)
 - When the model generates a file for the user, the primary contract should be an explicit `Artifacts:` block in the final reply that lists the local file paths to publish.
 - RemoteLab should publish those files after the run completes and surface them through normal attachment UI. The model should not need to call a special upload helper in normal operation.
-- For compatibility and recall, the backend may also scan assistant markdown links and backticked local file paths, plus command output / output flags, but publication should still happen in one backend-owned completion pass.
+- Publication requires an explicit `Artifacts:` declaration or a structured artifact event. Ordinary local markdown links, backticked paths, command output and output flags are not delivery intent; do not publish files inferred from them.
 - Keep event reads side-effect free. Do not wait until `/events` display time to publish assets or rewrite local paths into download URLs.
-- Favor recall over over-filtering here: if the assistant explicitly names a local file path, it is usually better to publish it than to miss a deliverable the user needed.
+- Attachments are optional: answer in conversation when that suffices. Do not generate a document merely to restate a reply or deliver installation binaries/internal logs by default. Preserve ordinary code-span paths as explanatory text. Explicit inline-image handling remains separate.
 
 ### Static-Publish Verification Must Reject Auth Redirects (2026-08-30)
 - A static publisher must not treat a followed `302 -> /login -> 200` chain as successful public delivery. Verify the first response without redirect following, require the intended final path, and confirm an expected page marker or title instead of checking status code alone.

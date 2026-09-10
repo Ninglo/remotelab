@@ -533,7 +533,7 @@ export function stripAssistantArtifactDeliveryHints(text = '') {
   }
 
   let result = keptLines.join('\n');
-  for (const reference of extractAssistantResultFileReferences(result).sort((left, right) => right.index - left.index)) {
+  for (const reference of extractAssistantResultFileReferences(result, { includeCodeSpans: false }).sort((left, right) => right.index - left.index)) {
     const replacement = reference.displayName || basename(reference.candidate);
     result = result.slice(0, reference.index) + replacement + result.slice(reference.index + reference.fullMatch.length);
   }
@@ -673,45 +673,24 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
       continue;
     }
     if (event?.type === 'message' && event.role === 'assistant') {
+      // Only explicit delivery declarations or image embeds authorize publishing.
+      // Ordinary inline paths (even links) are not attachment requests.
       const references = [
         ...extractAssistantArtifactBlockReferences(event.content || ''),
-        ...extractAssistantResultFileReferences(event.content || ''),
+        ...extractAssistantLocalMarkdownImageReferences(event.content || ''),
       ];
       for (const reference of references) {
         await maybeCollectResolvedResultFile(filesByPath, {
           candidate: reference.candidate,
           searchRoots: discoveredSearchRoots,
-          minimumMtimeMs: reference.kind === 'artifact_block' ? 0 : minimumMtimeMs,
+          minimumMtimeMs: 0,
           preferredName: reference.displayName,
         });
       }
       continue;
     }
-    if (event?.type !== 'tool_result' || event.toolName !== 'bash') {
-      continue;
-    }
-    if (Number.isInteger(event.exitCode) && event.exitCode !== 0) {
-      activeCommand = '';
-      continue;
-    }
-
-    const searchRoots = collectResultFileSearchRoots(manifest, activeCommand);
-    for (const root of searchRoots) {
-      pushUnique(discoveredSearchRoots, root);
-    }
-    const candidates = [
-      ...extractResultFileCandidatesFromOutput(event.output || ''),
-      ...extractCommandOutputPathCandidates(activeCommand),
-    ];
-    activeCommand = '';
-
-    for (const candidate of candidates) {
-      await maybeCollectResolvedResultFile(filesByPath, {
-        candidate,
-        searchRoots,
-        minimumMtimeMs,
-      });
-    }
+    // Tool output and command flags are execution evidence, not delivery intent.
+    // In particular, downloads, installed binaries and logs must stay local.
   }
 
   return [...filesByPath.values()];

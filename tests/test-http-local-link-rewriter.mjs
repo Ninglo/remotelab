@@ -126,7 +126,7 @@ console.log(JSON.stringify({
   type: 'item.completed',
   item: {
     type: 'agent_message',
-    text: 'Download it here: [${outputName}](' + outputPath + ')'
+    text: 'Download it here: [${outputName}](' + outputPath + ')\\n\\nArtifacts:\\n- ' + outputPath
   }
 }));
 console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));

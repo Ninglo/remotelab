@@ -104,6 +104,35 @@ try {
   utimesSync(oldDocPath, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'));
   writeFileSync(join(tempRoot, 'report.pdf'), 'real result file', 'utf8');
   const runCreatedAt = new Date().toISOString();
+  const binaryPath = join(tempRoot, 'claude');
+  const logPath = join(tempRoot, 'debug.log');
+  writeFileSync(binaryPath, 'installed executable');
+  writeFileSync(logPath, 'internal diagnostic log');
+  const incidentalEvents = [
+    { type: 'tool_use', toolName: 'bash', toolInput: `curl -o ${binaryPath} https://example.com/cli` },
+    { type: 'tool_result', toolName: 'bash', exitCode: 0, output: `Saved to ${binaryPath}\n${logPath}` },
+    { type: 'message', role: 'assistant', content: `Installed at \`${binaryPath}\`. Log: [debug](${logPath})` },
+  ];
+  assert.deepEqual(
+    await collectGeneratedResultFilesFromRun({ createdAt: runCreatedAt }, { folder: tempRoot }, incidentalEvents),
+    [],
+    'new binaries, logs, inline code paths and local links must not authorize attachments',
+  );
+  assert.equal(
+    stripAssistantArtifactDeliveryHints(`Installed at \`${binaryPath}\`.`),
+    `Installed at \`${binaryPath}\`.`,
+    'ordinary code paths must retain their useful path and formatting',
+  );
+  const explicitOldFile = await collectGeneratedResultFilesFromRun(
+    { createdAt: runCreatedAt }, { folder: tempRoot },
+    [{ type: 'message', role: 'assistant', content: `Artifacts:\n- ${oldDocPath}\n- ${oldDocPath}` }],
+  );
+  assert.equal(explicitOldFile.length, 1, 'explicit delivery supports existing files and deduplicates paths');
+  const nativeArtifacts = await collectGeneratedResultFilesFromRun(
+    {}, { folder: tempRoot },
+    [{ type: 'artifact', localPath: logPath, originalName: 'requested.log' }],
+  );
+  assert.equal(nativeArtifacts.length, 1, 'structured artifact events still authorize delivery');
 
   const generated = await collectGeneratedResultFilesFromRun(
     { id: 'run-test-session-result-files', createdAt: runCreatedAt },

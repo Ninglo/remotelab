@@ -245,15 +245,10 @@ try {
         && typeof event.content === 'string'
         && event.content.startsWith('Download options:')
       ));
-      return generated && original ? { generated, original } : false;
+      return original ? { generated, original } : false;
     }, 'assistant-path result-file message');
 
-    const generated = resultMessage.generated;
-    assert.equal(generated.content, 'Generated files ready to download.', 'generated result message should use the plural copy');
-    assert.equal(generated.images?.length, expectedOutputs.length, 'generated result message should attach each detected file');
-    assert.deepEqual(generated.images.map((image) => image.originalName), expectedOutputs.map((output) => output.name), 'generated attachments should preserve the detected file names');
-    assert.deepEqual(generated.images.map((image) => image.mimeType), ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/pdf'], 'generated attachments should preserve the detected mime types');
-    assert.deepEqual(generated.images.map((image) => image.sizeBytes), expectedOutputs.map((output) => Buffer.byteLength(output.content, 'utf8')), 'generated attachments should preserve file sizes');
+    assert.equal(resultMessage.generated, undefined, 'inline paths and links must not publish attachments');
 
     assert.match(resultMessage.original.content, /\[March report\.xlsx\]\(.+exports\/March report\.xlsx\)/, 'raw assistant history should preserve the original local markdown link');
     assert.match(resultMessage.original.content, /`.+exports\/notes summary\.pdf`/, 'raw assistant history should preserve the original local code span');
@@ -275,24 +270,11 @@ try {
 
     assert.equal(
       visibleEventsRes.content,
-      'Download options: March report.xlsx and notes summary.pdf. Docs: [pricing](/pricing), [guide](./guide/intro), [repo](./AGENTS.md)',
+      `Download options: March report.xlsx and \`${outputPaths[1]}\`. Docs: [pricing](/pricing), [guide](./guide/intro), [repo](./AGENTS.md)`,
       'visible assistant content should replace only local file fallbacks while preserving normal web links',
     );
     assert.doesNotMatch(visibleEventsRes.content, new RegExp(outputPaths[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'visible assistant content should not leak the first host-local path');
-    assert.doesNotMatch(visibleEventsRes.content, new RegExp(outputPaths[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'visible assistant content should not leak the second host-local path');
-
-    const assetId = generated.images[0].assetId;
-    const assetRes = await request(port, 'GET', `/api/assets/${assetId}`);
-    assert.equal(assetRes.status, 200, 'published result asset metadata should load');
-    assert.equal(assetRes.json.asset.originalName, expectedOutputs[0].name, 'published asset should keep the assistant-linked filename');
-
-    const downloadRes = await fetch(`http://127.0.0.1:${port}/api/assets/${assetId}/download?download=1`, {
-      method: 'GET',
-      headers: { Cookie: cookie },
-      redirect: 'manual',
-    });
-    assert.equal(downloadRes.status, 200, 'published assistant-path asset should stream locally');
-    assert.equal(await downloadRes.text(), expectedOutputs[0].content, 'downloaded assistant-path asset should match file contents');
+    assert.ok(visibleEventsRes.content.includes(outputPaths[1]), 'ordinary code paths remain readable without delivery');
   } finally {
     await stopServer(chatServer);
     rmSync(home, { recursive: true, force: true });

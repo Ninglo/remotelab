@@ -128,7 +128,7 @@ outputs.forEach((output, index) => {
 });
 console.log(JSON.stringify({
   type: 'item.completed',
-  item: { type: 'agent_message', text: 'render complete' }
+  item: { type: 'agent_message', text: 'render complete\\n\\nArtifacts:\\n' + outputs.map(output => '- ' + join(outputDir, output.name)).join('\\n') }
 }));
 console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
 `,
@@ -309,7 +309,7 @@ try {
     assert.deepEqual(generated.images.map((image) => image.sizeBytes), expectedOutputs.map((output) => Buffer.byteLength(output.content, 'utf8')), 'generated result attachments should preserve every exported file size');
     assert.ok(generated.images.every((image) => image.renderAs === 'file'), 'generated result attachments should render as download rows');
 
-    const finalAssistant = resultMessage.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.content === 'render complete');
+    const finalAssistant = resultMessage.events.find((event) => event.type === 'message' && event.role === 'assistant' && event.content?.startsWith('render complete'));
     assert.ok(finalAssistant, 'original assistant completion message should still be present');
 
     const assetId = generated.images[0].assetId;
