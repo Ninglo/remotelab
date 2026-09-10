@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runNativeHost } from './native-host.mjs';
 import { readProcessIdentity } from '../lib/process-identity.mjs';
 import { spawn } from 'child_process';
 import { createInterface } from 'readline';
@@ -349,6 +350,7 @@ async function main() {
   }
 
   let activeProc = null;
+  let nativeControl = null;
   let cancelSent = false;
   let lastOutputAt = Date.now();
   const idleTimeoutMs = Number.isFinite(Number(process.env.REMOTELAB_RUN_IDLE_TIMEOUT_MS))
@@ -362,7 +364,12 @@ async function main() {
       if (!current?.cancelRequested || cancelSent) return;
       cancelSent = true;
       try {
-        activeProc?.kill('SIGTERM');
+        if (nativeControl) {
+          void nativeControl.interrupt().catch(error => logSidecarDiagnostic(runId, 'Native interrupt failed', { error: error.message }));
+          const proc = activeProc;
+          const fallback = setTimeout(() => proc?.kill('SIGTERM'), 5000);
+          fallback.unref?.();
+        } else activeProc?.kill('SIGTERM');
       } catch {}
     })();
   }, 250);
@@ -433,6 +440,19 @@ async function main() {
 
   const runToolAttempt = async (invocation) => {
     const resolvedCommand = await resolveCommand(invocation.command);
+    if (manifest.inputMode === 'native') return runNativeHost({
+      directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
+      options: invocationOptions, prompt, cwd: resolvedFolder.cwd, env: spawnEnv,
+      isCancelled: async () => (await getRun(runId))?.cancelRequested === true,
+      onStdout: recordStdoutLine, onStderr: recordStderrLine,
+      onControl: control => { nativeControl = control; },
+      onProcess: async proc => {
+        activeProc = proc;
+        await providerRuntimeLease?.setToolProcessId(proc.pid);
+        const toolProcessIdentity = await readProcessIdentity(proc.pid);
+        await updateRun(runId, current => ({ ...current, toolProcessId: proc.pid, toolProcessIdentity }));
+      },
+    });
     const proc = spawn(resolvedCommand, invocation.args, {
       cwd: resolvedFolder.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],

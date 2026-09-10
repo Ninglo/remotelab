@@ -37,6 +37,17 @@ try {
     chatId: 'chat-2',
   });
   assert.equal(wrongChat, null);
+
+  await Promise.all(Array.from({ length: 12 }, (_, index) => upsertConnectorMessageIndexRecord(indexPath, {
+    connector: 'feishu', accountId: 'tenant-1', messageId: `parallel-${index}`,
+    sessionId: `session-${index}`, chatId: `chat-${index}`, direction: 'binding',
+  })));
+  for (let index = 0; index < 12; index++) {
+    const concurrent = await findConnectorMessageIndexRecord(indexPath, {
+      connector: 'feishu', accountId: 'tenant-1', messageId: `parallel-${index}`,
+    });
+    assert.equal(concurrent?.sessionId, `session-${index}`, 'parallel topics retain every routing binding');
+  }
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

@@ -588,8 +588,8 @@ This is the most important flow in the current architecture.
 
 `submitHttpMessage()` does the following:
 
-1. dedupe by `(sessionId, requestId)` via `findRunByRequest()`
-2. reject archived sessions and queue ordinary follow-ups when a run is already live
+1. durably dedupe by `(sessionId, requestId)` via the Request store
+2. reject archived sessions; forward compatible active inputs to the native Harness, retaining sequential handling for explicit batch-only runtimes
 3. persist uploaded images into `images/`
 4. build the effective prompt
 5. create a durable run record + manifest
@@ -598,7 +598,7 @@ This is the most important flow in the current architecture.
 8. apply a deterministic draft title for a new unnamed Session
 9. spawn a detached runner directly
 
-There is no pre-turn semantic dispatch gate or planner. After structural validation and busy-session queueing, the selected Harness receives the turn and owns task interpretation, planning, tool use, decomposition, and self-review.
+There is no pre-turn semantic dispatch gate or planner. The selected Harness owns task interpretation, planning, tool use, decomposition, steering and self-review. Active built-in Harnesses receive additional messages through the detached sidecar's bidirectional control channel without waiting for the root task to finish; each input retains its durable identity and receipt. The steps creating a Run apply to a new execution; steered inputs reference the existing execution. See [Native Harness input](native-harness-input.md) for protocol, lifecycle and recovery details.
 
 ### 8.4 Prompt construction
 
@@ -623,7 +623,7 @@ This list describes the current shipped prompt assembly, not the full target own
 1. `chat/run-launcher.mjs` chooses the detached launch strategy and starts `chat/runner-sidecar.mjs`
 2. sidecar loads `manifest.json`
 3. sidecar resolves the actual CLI command through `chat/process-runner.mjs` + `lib/tools.mjs`
-4. sidecar spawns the tool in the session folder / resolved cwd
+4. sidecar spawns the tool in the session folder / resolved cwd; built-in native transports retain writable stdin and a private control socket for active inputs
 5. sidecar writes raw stdout/stderr into `spool.jsonl`
 6. sidecar updates `status.json` and `result.json`
 7. sidecar captures provider-native resume identifiers when present

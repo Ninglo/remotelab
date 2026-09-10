@@ -21,6 +21,8 @@ export function createClaudeAdapter() {
   // canonical context-window size is:
   // input_tokens + cache_creation_input_tokens + cache_read_input_tokens
   let lastTurnInputTokens = 0;
+  let thinkingMessageId = '';
+  let streamedThinking = new Map();
 
   return {
     parseLine(line) {
@@ -47,11 +49,16 @@ export function createClaudeAdapter() {
           // Complete assistant message — the authoritative source for text & tool_use
           const content = obj.message?.content;
           if (Array.isArray(content)) {
-            for (const block of content) {
+            for (const [index, block] of content.entries()) {
               if (block.type === 'text') {
                 events.push(messageEvent('assistant', block.text));
               } else if (block.type === 'thinking') {
-                events.push(reasoningEvent(block.thinking));
+                const streamed = (!thinkingMessageId || thinkingMessageId === obj.message?.id)
+                  ? (streamedThinking.get(index) || '') : '';
+                const thinking = typeof block.thinking === 'string' ? block.thinking : '';
+                const unseen = streamed && thinking.startsWith(streamed) ? thinking.slice(streamed.length) : thinking;
+                if (unseen) events.push(reasoningEvent(unseen));
+                streamedThinking.delete(index);
               } else if (block.type === 'tool_use') {
                 events.push(toolUseEvent(
                   block.name,
@@ -137,7 +144,7 @@ export function createClaudeAdapter() {
                     : {})),
             }));
           }
-          events.push(statusEvent('completed'));
+          if (!obj.remotelabNativePending) events.push(statusEvent('completed'));
           break;
 
         case 'stream_event': {
@@ -145,8 +152,15 @@ export function createClaudeAdapter() {
           // Text and tool_use are handled via complete "assistant" messages above.
           const evt = obj.event;
           if (!evt) break;
+          if (evt.type === 'message_start') {
+            thinkingMessageId = evt.message?.id || '';
+            streamedThinking = new Map();
+          }
           if (evt.type === 'content_block_delta' && evt.delta?.type === 'thinking_delta') {
-            events.push(reasoningEvent(evt.delta.thinking || ''));
+            const content = evt.delta.thinking || '';
+            const index = Number.isInteger(evt.index) ? evt.index : 0;
+            streamedThinking.set(index, (streamedThinking.get(index) || '') + content);
+            if (content) events.push(reasoningEvent(content));
           }
           break;
         }
@@ -162,12 +176,17 @@ export function createClaudeAdapter() {
       lastTurnInputTokens = Number.isFinite(state.lastTurnInputTokens)
         ? state.lastTurnInputTokens
         : 0;
+      thinkingMessageId = typeof state.thinkingMessageId === 'string' ? state.thinkingMessageId : '';
+      streamedThinking = new Map(Array.isArray(state.streamedThinking)
+        ? state.streamedThinking.filter((entry) => Array.isArray(entry) && Number.isInteger(entry[0]) && typeof entry[1] === 'string') : []);
     },
 
     getProjectionState() {
       return {
-        version: 1,
+        version: 2,
         lastTurnInputTokens,
+        thinkingMessageId,
+        streamedThinking: [...streamedThinking],
       };
     },
 

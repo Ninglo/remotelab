@@ -1,5 +1,12 @@
 [
   {
+    "id": "native-harness-input",
+    "description": "Forward active-session inputs through Codex App Server, Pi RPC and Claude streaming input, keeping durable transport receipts and recovery.",
+    "pass": true,
+    "verification_plan": "Protocol tests, active-tool steering, admission/completion races, duplicate and uncertain receipts, detached recovery, source delivery coalescing, connector HOL removal, isolated npm test. Production activation explicitly deferred.",
+    "rollout": "Source verified in isolation; production activation explicitly deferred."
+  },
+  {
     "id": "feishu-conversation-mute",
     "description": "Mute automatic Feishu conversation responses without model execution, while preserving explicit mentions and commands.",
     "pass": true,

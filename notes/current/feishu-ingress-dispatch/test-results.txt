@@ -1,0 +1,141 @@
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-connector-inbox.mjs
+connector inbox: durable replay, immediate dispatch, ordered handoff, shutdown and stale-scan deduplication pass
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-connector-message-index.mjs
+ok - connector message index is scoped and rebuildable
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-email-admission-recovery.mjs
+email admission: lost HTTP receipt recovery, durable exact payload/runtime, no attachment re-upload and retry after pre-admission failure passed
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-bot-handoff.mjs
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped unmentioned-thread-bot (response policy or conversation mute)
+[feishu-connector] skipped unlimited-unmentioned (response policy or conversation mute)
+[feishu-connector] skipped unlimited-self (response policy or conversation mute)
+ok - bot handoffs are explicit, durable, one-shot, alias-aware and restart-safe
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-comments.mjs
+ok - Feishu document comment mentions hydrate, reuse a thread session, and reply in place
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-connector.mjs
+[feishu-connector] failed to ingest media resource for msg_media_partial_1: simulated media download failure
+ok - Feishu preserves GFM blocks, native mentions, code, and formula boundaries
+ok - admission returns the durable receipt without waiting for AI or sending
+ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments
+ok - mention tokens are rendered inbound and compiled outbound
+ok - topic metadata fallback preserves default fork and threaded delivery
+ok - whitelist file reloads without restart
+ok - whitelist access stays limited to explicit sender identities
+ok - /fork accepts task text and binds its reply Thread to the new Session
+ok - generated Feishu sessions use the feishu app scope
+ok - queued and preparing replies return acceptance immediately
+ok - source delivery worker persists external receipts
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-delivery-errors.mjs
+[feishu-connector] delivery acknowledgement deferred (srcd_dbe9f8e2a835724f13cfb37d_0): controller unavailable
+[feishu-connector] delivery acknowledgement deferred (srcd_d186376ac290510304ab5d1e_0): controller unavailable
+Feishu delivery errors: definite rejection releases topic, ambiguous sends stay fenced, upload failures retry safely
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-ingress-dispatch.mjs
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-0","messageType":"text","rootId":"","threadId":"http-0","senderOpenId":"human","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-1","messageType":"text","rootId":"","threadId":"http-1","senderOpenId":"sender-1","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-2","messageType":"text","rootId":"","threadId":"http-2","senderOpenId":"sender-2","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-3","messageType":"text","rootId":"","threadId":"http-3","senderOpenId":"sender-3","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-4","messageType":"text","rootId":"","threadId":"http-4","senderOpenId":"sender-4","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-5","messageType":"text","rootId":"","threadId":"http-5","senderOpenId":"sender-5","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-6","messageType":"text","rootId":"","threadId":"http-6","senderOpenId":"sender-6","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-7","messageType":"text","rootId":"","threadId":"http-7","senderOpenId":"sender-7","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-8","messageType":"text","rootId":"","threadId":"http-8","senderOpenId":"sender-8","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+Feishu ingress: independent topics bypass slow/failing transport; routing and retry scope remain stable
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-mute.mjs
+[feishu-connector] skipped m3 (response policy or conversation mute)
+[feishu-connector] skipped m4 (response policy or conversation mute)
+[feishu-connector] skipped m5 (response policy or conversation mute)
+[feishu-connector] skipped m6 (response policy or conversation mute)
+[feishu-connector] skipped m8 (response policy or conversation mute)
+[feishu-connector] skipped m13 (response policy or conversation mute)
+[feishu-connector] skipped m20 (response policy or conversation mute)
+[feishu-connector] skipped m23 (response policy or conversation mute)
+test-feishu-mute: ok
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-response-policy.mjs
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] failed to add processing reaction for routing-test: reaction unavailable
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped other-topic-reply (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+Feishu access, response, durable thread continuation and processing acknowledgement tests passed
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-runtime-commands.mjs
+test-feishu-runtime-commands: ok
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-feishu-topic-fork.mjs
+ok - Feishu Thread bindings are explicit and never guessed
+ok - default fork, explicit /fork and /continue preserve task and thread routing
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-request-upgrade-conversion.mjs
+upgrade conversion: deterministic identity preservation, imported dedup, quarantined uncertainty, external storage, whitelist retention, tamper detection and repeat refusal passed
+
+Exit status: 0
+
+$ node scripts/run-with-clean-instance-env.mjs node tests/test-wechat-inbox-boundary.mjs
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="b" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="b" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] replaying stored message same-id
+[wechat-connector] replaying stored message same-id
+[wechat-connector] wechat delivery sent deliveryId="srcd_aaaaaaaaaaaaaaaaaaaaaaaa_0" peerUserId="peer" externalId="fixture-message" state="delivered"
+WeChat boundaries: inbox before cursor, cursor write failure, account dedup, refreshed-token replay and attachment-only fallback passed
+
+Exit status: 0

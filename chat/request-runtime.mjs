@@ -1,13 +1,15 @@
 // Volatile scheduler state is a projection of the store. Both boot and notifications use tick().
-export function createRequestRuntime({ store, prepare, observe, reconcile, postCompletion = async () => {}, onError, intervalMs = 1000 }) {
+export function createRequestRuntime({ store, prepare, observe, reconcile, forward = async () => {}, postCompletion = async () => {}, onError, intervalMs = 1000 }) {
   const records = new Map();
   const sessions = new Map();
   const completions = new Map();
+  const notified = new Set();
   let timer = null;
   let loading = null;
   let stopped = false;
-  const active = sessionId => [...records.values()].filter(r => r.sessionId === sessionId && !r.releasedAt && !r.options.deliveryOnly)
+  const pending = sessionId => [...records.values()].filter(r => r.sessionId === sessionId && !r.releasedAt && !r.options.deliveryOnly)
     .sort((a, b) => a.sequence - b.sequence);
+  const active = sessionId => pending(sessionId).filter(r => !r.nativeDispatchRunId);
   const refresh = async key => {
     const record = await store.get(key);
     if (record?.releasedAt && !record.postCompletionPending) records.delete(key);
@@ -17,18 +19,20 @@ export function createRequestRuntime({ store, prepare, observe, reconcile, postC
   const load = () => loading ||= store.active().then(items => { for (const item of items) records.set(item.key, item); });
   const tick = sessionId => {
     if (stopped) return Promise.resolve();
-    if (sessions.has(sessionId)) return sessions.get(sessionId);
+    if (sessions.has(sessionId)) { notified.add(sessionId); return sessions.get(sessionId); }
     const task = (async () => {
       await load();
+      for (const record of pending(sessionId).filter(r => r.nativeDispatchRunId)) await forward(record);
       const head = active(sessionId)[0];
       if (!head) return;
       const current = await refresh(head.key);
       if (current.releasedAt) return;
       await prepare(current);
+      for (const record of active(sessionId).slice(1)) await forward(record, current);
       observe(current.sessionId, current.runId);
       await reconcile(current.sessionId, current.runId);
       await refresh(current.key);
-    })().catch(error => onError(error, sessionId)).finally(() => sessions.delete(sessionId));
+    })().catch(error => onError(error, sessionId)).finally(() => { sessions.delete(sessionId); if (notified.delete(sessionId) && !stopped) setImmediate(() => void tick(sessionId)); });
     sessions.set(sessionId, task);
     return task;
   };

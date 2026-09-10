@@ -1,9 +1,13 @@
+import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
+import { createNativeRequestDispatcher } from './native-request-dispatch.mjs';
+import { prependAttachmentPaths } from './process-runner.mjs';
+import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
-import { requests } from './requests.mjs';
+import { requests, appendDeliveries } from './requests.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
 import { readRecord } from '../lib/durable-records.mjs';
 import { join as joinRequestPath } from 'node:path';
@@ -751,7 +755,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       && typeof event.content === 'string'
       && /^error:\s*/i.test(event.content.trim()),
   );
-  const fatalStatusReason = typeof fatalStatusEvent?.content === 'string'
+  const fatalStatusReason = manifest.inputMode !== 'native' && typeof fatalStatusEvent?.content === 'string'
     ? fatalStatusEvent.content.trim().replace(/^error:\s*/i, '').trim()
     : '';
 
@@ -814,7 +818,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
   // result) but the process hasn't exited yet, synthesize a successful result
   // so the finalization pipeline fires immediately — the user shouldn't wait
   // for process cleanup to receive push notifications and completion effects.
-  if (!result && !isTerminalRunState(run.state) && run.spoolCompletionDetectedAt) {
+  if (!result && manifest.inputMode !== 'native' && !isTerminalRunState(run.state) && run.spoolCompletionDetectedAt) {
     const completedAt = run.spoolCompletionDetectedAt;
     const syntheticResult = { completedAt, exitCode: 0, signal: null, synthesized: true };
     await writeRunResult(runId, syntheticResult);
@@ -855,7 +859,7 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       && typeof event.content === 'string'
       && /^error:\s*/i.test(event.content.trim()),
   );
-  const terminalFatalStatusReason = typeof terminalFatalStatusEvent?.content === 'string'
+  const terminalFatalStatusReason = manifest.inputMode !== 'native' && typeof terminalFatalStatusEvent?.content === 'string'
     ? terminalFatalStatusEvent.content.trim().replace(/^error:\s*/i, '').trim()
     : '';
 
@@ -1655,6 +1659,42 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null }, buildReplyDeliveries(plan, deliveryPayload).map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 
+// Several user inputs can be consumed by one native turn. Each keeps its own
+// response address, while the resulting conversation reply is published once.
+async function settleNativeRequest(record, run) {
+  if (!run || !isTerminalRunState(run.state)) return;
+  const root = await requests.byRunId(run.id);
+  if (!root?.result) return;
+  const ownPlan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
+  const rootPlan = normalizeSourceDeliveryPlan(root.options.sourceDelivery);
+  const destination = plan => {
+    if (!plan) return '';
+    const t = plan.target;
+    const thread = plan.connector === 'feishu' && shouldReplyInFeishuThread(t)
+      ? t.rootId || buildFeishuTopicId(t) || t.messageId : '';
+    return JSON.stringify([plan.connector, plan.sourceRouteId,
+      t.chatId || t.commentId || t.peerUserId || t.to,
+      t.commentId || thread, t.accountId || '']);
+  };
+  const ownDestination = destination(ownPlan);
+  if (ownPlan && ownDestination !== destination(rootPlan)) {
+    const payload = root.result.state === 'completed' ? root.result.payload
+      : { text: root.result.state === 'cancelled' ? '任务已取消。' : `任务执行失败：${root.result.error || root.result.state}`, attachments: [] };
+    // Reserve each destination and its deliveries in the same durable commit.
+    // The root owns publication even if an input receipt arrives after finalization.
+    await requests.mutate(root.key, current => {
+      if ((current.nativeReplyDestinations || []).includes(ownDestination)) return current;
+      return { ...current, nativeReplyDestinations: [...(current.nativeReplyDestinations || []), ownDestination],
+        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, payload)) };
+    });
+    await requestRuntime.refresh(root.key);
+  }
+  await requests.settle(record.key, { ...root.result, executionRunId: run.id });
+  await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
+  await requestRuntime.refresh(record.key);
+  await requests.archiveFinished(record.key);
+}
+
 async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvents = []) {
   let historyChanged = false;
   let sessionChanged = false;
@@ -2015,11 +2055,12 @@ export async function getSessionSourceContext(sessionId, options = {}) {
 export async function getSessionReplyPublication(sessionId, responseId) {
   const record = await requests.byResponse(sessionId, responseId);
   if (!record) return null;
-  const run = await getRun(record.runId);
+  const executionRunId = record.nativeDispatchRunId || record.runId;
+  const run = await getRun(executionRunId);
   const state = record.result ? (record.result.state === 'completed' ? 'ready' : record.result.state)
     : !run ? 'queued' : isTerminalRunState(run.state) ? 'preparing' : 'running';
   return buildReplyPublicationSummary({ id: responseId, responseIds: [record.responseId], state,
-    rootRunId: record.runId, finalRunId: record.runId, resolution: state === 'ready' ? 'accepted_as_is' : '',
+    rootRunId: executionRunId, finalRunId: executionRunId, resolution: state === 'ready' ? 'accepted_as_is' : '',
     payload: state === 'ready' ? record.result?.payload : null, lastError: record.result?.error,
     readyAt: record.settledAt, updatedAt: record.settledAt || record.acceptedAt });
 }
@@ -2028,6 +2069,10 @@ export async function getRunState(runId) {
   const run = await getRun(runId);
   if (!run) {
     const record = await requests.byRunId(runId);
+    if (record?.nativeDispatchRunId) {
+      const execution = await getRun(record.nativeDispatchRunId);
+      return { ...execution, id: runId, executionRunId: record.nativeDispatchRunId, requestId: record.requestId, responseId: record.responseId, result: record.result ? execution?.result : null, failureReason: record.result?.error || null, state: record.result?.state || (isTerminalRunState(execution?.state) ? 'accepted' : execution?.state) || 'accepted' };
+    }
     return record ? { id: runId, sessionId: record.sessionId, requestId: record.requestId, state: record.result?.state || 'accepted' } : null;
   }
   const effectiveRun = await flushDetachedRunIfNeeded(run.sessionId, runId) || run;
@@ -3026,8 +3071,32 @@ export async function applyTemplateToSession(sessionId, templateId, options = {}
   return getSession(sessionId);
 }
 const deliveryIssueObserver = createSourceDeliveryIssueObserver();
+const nativeRequestDispatcher = createNativeRequestDispatcher({
+  store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
+  prepareInput: async (record, manifest) => {
+    const attachments = await materializeFileAssetAttachments(record.images || []);
+    const session = await findSessionMeta(record.sessionId);
+    const tool = await getToolDefinitionAsync(manifest.tool);
+    const context = tool?.promptMode === 'bare-user' ? '' : await buildManagerTurnContextText(session, { ...record.options, requestId: record.requestId });
+    let text = tool?.promptMode === 'bare-user' ? record.text
+      : [wrapPrivatePromptBlock(context), `Current user message:\n${record.text}`, ...(session.visitorId ? [VISITOR_TURN_GUARDRAIL] : [])].filter(Boolean).join('\n\n---\n\n');
+    if (tool?.flattenPrompt) text = text.replace(/\s+/g, ' ').trim();
+    return { text: prependAttachmentPaths(text, attachments), context };
+  },
+  recordInput: ensureRequestInput,
+  settle: settleNativeRequest,
+  reject: async (record, error) => {
+    const plan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
+    await requests.settle(record.key, { state: 'failed', payload: null, error },
+      buildReplyDeliveries(plan, { text: `消息未能交给当前 Harness：${error}`, attachments: [] }));
+    await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
+  },
+  changed: async key => { const record = await requestRuntime.refresh(key); if (record) broadcastSessionInvalidation(record.sessionId); },
+  onError: (error, sessionId) => console.error(`[native-input] ${sessionId}: ${error.stack || error}`),
+});
 const requestRuntime = createRequestRuntime({
   store: requests, prepare: prepareRequestRun, observe: observeDetachedRun, reconcile: syncDetachedRun,
+  forward: (record, head) => nativeRequestDispatcher.forward(record, head),
   postCompletion: async record => {
     const run = await getRun(record.runId);
     const manifest = await getRunManifest(record.runId);
@@ -3050,11 +3119,19 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const runtimeSelection = await resolveSessionRuntimeSelection(session, options);
+  const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
+  const activeRequest = requestRuntime.active(sessionId)[0];
+  const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
+  const activeNative = activeManifest?.inputMode === 'native' || (!activeManifest && activeRequest && (await getToolDefinitionAsync(activeRequest.runtimeSelection?.tool || session.tool))?.inputMode === 'native');
+  if (!priorRequest && activeNative && !options.internalOperation &&
+    (options.freshThread || ['tool', 'model', 'effort', 'thinking'].some(key => (runtimeSelection[key] || '') !== (activeRequest.runtimeSelection?.[key] || '')))) {
+    throw Object.assign(new Error('当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。'), { code: 'SESSION_BUSY' });
+  }
   const initialDeliveries = options.sourceDelivery
     ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, ...runtimeSelection })
     : [];
   const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries });
-  const queued = !record.result && requestRuntime.active(sessionId)[0]?.key !== record.key;
+  const queued = !record.result && !record.nativeDispatchRunId && (!activeNative || !!options.internalOperation) && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
     const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';
     await mutateSessionMeta(sessionId, draft => { delete draft.workflowState; delete draft.workflowPriority; if (draftName) draft.name = draftName; return true; });
@@ -3070,7 +3147,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
 
 async function ensureRequestInput(record, manifest) {
   if (record.options.recordUserMessage === false) return;
-  const events = await readEventsAfter(record.sessionId, manifest.forkBaseSeq || 0);
+  const events = await readEventsAfter(record.sessionId, 0);
   if (!events.some(event => event.type === 'message' && event.role === 'user' && event.requestId === record.requestId)) {
     const sourceContext = normalizeSourceContext(record.options.sourceContext, Infinity);
     const recordedText = typeof record.options.recordedUserText === 'string' && record.options.recordedUserText.trim()
@@ -3189,6 +3266,7 @@ async function prepareRequestRun(record) {
       folder: session.folder,
       tool: effectiveTool,
       ...(effectiveRuntimeFamily ? { runtimeFamily: effectiveRuntimeFamily } : {}),
+      inputMode: effectiveToolDefinition?.inputMode === 'native' ? 'native' : 'batch',
       prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options, managerTurnContext),
       managerTurnContext,
       internalOperation: options.internalOperation || null,
@@ -3286,7 +3364,7 @@ export async function removeQueuedMessage(sessionId, requestId) {
 export async function cancelActiveRun(sessionId) {
   const session = await findSessionMeta(sessionId);
   if (!session) return null;
-  const request = (await requests.active()).find(record => record.sessionId === sessionId && !record.releasedAt && !record.options.deliveryOnly);
+  const request = (await requests.active()).find(record => record.sessionId === sessionId && !record.releasedAt && !record.nativeDispatchRunId && !record.options.deliveryOnly);
   if (request) {
     await requests.mutate(request.key, current => ({ ...current, cancelRequestedAt: current.cancelRequestedAt || nowIso() }));
     await requestRuntime.refresh(request.key);

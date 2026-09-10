@@ -66,3 +66,16 @@ const search = adapter.parseLine(JSON.stringify({ type: 'item.completed', item: 
   id: 'search_a', type: 'web_search', query: 'test',
 } }));
 assert.equal(search[0].toolState, 'completed', 'completed searches cannot stay running');
+
+// Native App Server summary deltas use the existing append-only reasoning
+// stream; completed snapshots must not publish that text a second time.
+const streaming = createCodexAdapter();
+const firstReasoning = streaming.parseLine(JSON.stringify({ type: 'item.updated', native_stream: true, item: { id: 'native_reason', type: 'reasoning', text: 'First' } }));
+assert.deepEqual(firstReasoning.map(event => event.content), ['First']);
+const restoredStreaming = createCodexAdapter();
+restoredStreaming.restoreProjectionState(streaming.getProjectionState());
+const nextReasoning = restoredStreaming.parseLine(JSON.stringify({ type: 'item.updated', native_stream: true, item: { id: 'native_reason', type: 'reasoning', text: 'First\n\nSecond' } }));
+assert.deepEqual(nextReasoning.map(event => event.content), ['\n\nSecond']);
+assert.deepEqual(restoredStreaming.parseLine(JSON.stringify({ type: 'item.completed', item: { id: 'native_reason', type: 'reasoning', text: 'First\n\nSecond' } })), []);
+const commandDelta = restoredStreaming.parseLine(JSON.stringify({ type: 'item.updated', native_stream: true, item: { id: 'command_a', type: 'command_execution', status: 'in_progress', command: 'npm test', aggregated_output: 'partial' } }));
+assert.deepEqual(commandDelta, [], 'native output deltas must not re-publish tool starts');

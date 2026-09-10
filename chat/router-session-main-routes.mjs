@@ -295,8 +295,8 @@ export async function handleSessionMainRoutes({
           session: createClientSessionDetail(outcome.session),
         });
       } catch (error) {
-        const statusCode = error?.code === 'SESSION_ARCHIVED' ? 409 : 400;
-        writeJson(res, statusCode, { error: error.message || 'Failed to submit message' });
+        const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY'].includes(error?.code) ? 409 : 400;
+        writeJson(res, statusCode, { error: error.message || 'Failed to submit message', ...(error.code ? { code: error.code } : {}) });
       }
       return true;
     }

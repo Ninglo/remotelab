@@ -38,6 +38,19 @@ import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
  *   error              — { id, type, message }
  */
 export function createCodexAdapter() {
+  let streamedReasoning = new Map();
+
+  function parseStreamedReasoning(item, completed = false) {
+    const prior = streamedReasoning.get(item.id) || '';
+    const content = item.text || '';
+    if (completed) streamedReasoning.delete(item.id);
+    else streamedReasoning.set(item.id, content);
+    // App Server's summaries accumulate during an item. Keep emitted fragments
+    // across projection restarts and omit the repeated completed snapshot.
+    const suffix = content.startsWith(prior) ? content.slice(prior.length) : '';
+    return suffix ? [reasoningEvent(suffix)] : [];
+  }
+
   return {
     parseLine(line) {
       const trimmed = line.trim();
@@ -89,6 +102,12 @@ export function createCodexAdapter() {
 
         case 'item.started':
         case 'item.updated':
+          if (obj.native_stream === true) {
+            if (obj.item?.type === 'reasoning') events.push(...parseStreamedReasoning(obj.item));
+            // Native text snapshots stay in the raw spool until their complete
+            // item arrives; tool output deltas must not duplicate tool starts.
+            break;
+          }
           // For in-progress items, emit status updates
           if (obj.item) {
             const item = obj.item;
@@ -100,7 +119,11 @@ export function createCodexAdapter() {
 
         case 'item.completed':
           if (obj.item) {
-            events.push(...parseItem(obj.item));
+            if (obj.item.type === 'reasoning' && streamedReasoning.has(obj.item.id)) {
+              events.push(...parseStreamedReasoning(obj.item, true));
+            } else {
+              events.push(...parseItem(obj.item));
+            }
           }
           break;
 
@@ -122,6 +145,17 @@ export function createCodexAdapter() {
 
     flush() {
       return [];
+    },
+
+    restoreProjectionState(state = {}) {
+      streamedReasoning = new Map(
+        (Array.isArray(state.streamedReasoning) ? state.streamedReasoning : [])
+          .filter(entry => Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'string'),
+      );
+    },
+
+    getProjectionState() {
+      return { version: 1, streamedReasoning: [...streamedReasoning] };
     },
 
     async collectArtifacts(run = {}) {

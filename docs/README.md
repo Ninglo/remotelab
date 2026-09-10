@@ -56,6 +56,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - [Request state upgrade tool](request-state-upgrade-tool.md) — one-command state conversion, validation, journaled cutover and rollback using an instance plan
 - [Request state upgrade](request-state-upgrade.md) — required offline conversion for legacy instances, rollback and the 2026-09-07 incident; read before updating existing services
 - `external-message-protocol.md` — canonical integration contract for external channels
+- [Native Harness input](native-harness-input.md) — active input transport, native lifecycle, recovery and validation
 - `creating-apps.md` — user/developer guide for Agents
 
 ### Supporting Internal Contracts

@@ -117,6 +117,7 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
 
   return {
     command,
+    inputMode: tool?.inputMode === 'native' ? 'native' : 'batch',
     envOverrides,
     ...runtimeInvocation,
   };

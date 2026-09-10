@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'timers/promises';
 import { fileURLToPath, pathToFileURL } from 'url';
 import * as Lark from '@larksuiteoapi/node-sdk';
 
+import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
 import { handleFeishuRuntimeCommand } from '../connectors/feishu/runtime-commands.mjs';
 import { handleFeishuMuteCommand } from '../connectors/feishu/conversation-settings.mjs';
@@ -99,6 +100,7 @@ const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const DEFAULT_FEISHU_API_TIMEOUT_MS = 10_000;
 const DEFAULT_PROCESSING_REACTION_TIMEOUT_MS = 10_000;
 const CONNECTOR_PID_FILENAME = 'connector.pid';
+const updateSenderIndex = createKeyedTaskQueue();
 
 function parseArgs(argv) {
   const options = {
@@ -540,11 +542,13 @@ function senderKey(identity) {
 }
 
 async function updateKnownSenders(pathname, summary) {
-  const current = await readJson(pathname, { senders: {} });
-  const incoming = senderIdentity(summary);
-  const key = senderKey(incoming);
-  current.senders[key] = mergeSenderIdentity(current.senders[key], incoming);
-  await writeJson(pathname, current);
+  return updateSenderIndex(resolve(pathname), async () => {
+    const current = await readJson(pathname, { senders: {} });
+    const incoming = senderIdentity(summary);
+    const key = senderKey(incoming);
+    current.senders[key] = mergeSenderIdentity(current.senders[key], incoming);
+    await writeJsonAtomic(pathname, current);
+  });
 }
 
 async function isAllowedByPolicy(policy, summary) {
@@ -1119,24 +1123,49 @@ async function queueFeishuReply(runtime, summary, text) {
 }
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
-  return withFeishuHandoffLock(runtime, summary, () => processFeishuMessage(runtime, summary, sourceLabel, helpers));
+  // Publication can create thread aliases before its HTTP acknowledgement.
+  // Fence only routing and bot admission against that publication; reaction,
+  // attachment and RemoteLab transport work must not lock every chat topic.
+  const admission = await withFeishuHandoffLock(runtime, summary,
+    () => prepareFeishuMessage(runtime, summary, helpers));
+  if (admission.receipt) return admission.receipt;
+  return processFeishuMessage(runtime, admission.summary, admission.command, helpers);
 }
 
-async function processFeishuMessage(runtime, summary, sourceLabel, helpers = {}) {
-  if (!isProcessableMessage(summary)) return { ignored: true };
+async function prepareFeishuMessage(runtime, summary, helpers) {
+  if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
   const command = extractLocalCommand(summary);
   if (command && !['fork', 'continue'].includes(command.type)
     && /^\s*@_[A-Za-z0-9_]+/.test(summary.messageText || summary.textPreview || summary.rawContent || '')
     && !mentionsFeishuBot(runtime, summary)) {
-    return { ignored: true, reason: 'command_for_other_recipient' };
+    return { receipt: { ignored: true, reason: 'command_for_other_recipient' } };
   }
   if (!isFeishuDocumentCommentSummary(summary) && !await shouldRouteFeishuMessageToRemoteLab(runtime, summary, { explicitCommand: !!command })) {
     console.log(`[feishu-connector] skipped ${summary.messageId} (response policy or conversation mute)`);
-    return { ignored: true, reason: 'group_reply_policy' };
+    return { receipt: { ignored: true, reason: 'group_reply_policy' } };
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
   if (command && !['fork', 'continue'].includes(command.type)) {
-    if (isFeishuBotSender(summary)) return { ignored: true, reason: 'bot_control_command' };
+    if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
+    return { summary, command };
+  }
+  if (command?.type === 'fork') summary = { ...summary, forkCommand: true, forkText: command.text, replyInThread: true };
+  if (command?.type === 'continue') summary = {
+    ...summary, continueCommand: true, messageText: command.text, textPreview: command.text,
+  };
+  summary = await applyDefaultFork(runtime, summary);
+  if (isFeishuBotSender(summary) && runtime.config.botHandoffPolicy !== 'unlimited') {
+    const binding = await findFeishuThreadSessionBinding(runtime, summary);
+    if (!await claimFeishuBotHandoff(runtime, summary, binding?.sessionId)) {
+      return { receipt: { ignored: true, reason: 'bot_handoff_consumed' } };
+    }
+    summary = { ...summary, botHandoffMessageId: summary.messageId };
+  }
+  return { summary, command };
+}
+
+async function processFeishuMessage(runtime, summary, command, helpers) {
+  if (command && !['fork', 'continue'].includes(command.type)) {
     if (['mute', 'unmute'].includes(command.type)) {
       const text = await handleFeishuMuteCommand(runtime, summary, command);
       return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
@@ -1148,18 +1177,6 @@ async function processFeishuMessage(runtime, summary, sourceLabel, helpers = {})
       savePlan: helpers.saveRuntimeCommand,
     });
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
-  }
-  if (command?.type === 'fork') summary = { ...summary, forkCommand: true, forkText: command.text, replyInThread: true };
-  if (command?.type === 'continue') summary = {
-    ...summary, continueCommand: true, messageText: command.text, textPreview: command.text,
-  };
-  summary = await applyDefaultFork(runtime, summary);
-  if (isFeishuBotSender(summary) && runtime.config.botHandoffPolicy !== 'unlimited') {
-    const binding = await findFeishuThreadSessionBinding(runtime, summary);
-    if (!await claimFeishuBotHandoff(runtime, summary, binding?.sessionId)) {
-      return { ignored: true, reason: 'bot_handoff_consumed' };
-    }
-    summary = { ...summary, botHandoffMessageId: summary.messageId };
   }
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (command && !command.text) return enqueue(runtime, summary, `用法：/${command.type} <任务文本>`);
@@ -1177,9 +1194,16 @@ async function processFeishuMessage(runtime, summary, sourceLabel, helpers = {})
   return receipt;
 }
 
+function buildFeishuInboxKey(summary) {
+  return JSON.stringify([
+    trimString(summary?.tenantKey || summary?.sender?.tenantKey),
+    buildExternalTriggerId(summary),
+  ]);
+}
+
 function initializeInbox(runtime) {
   return createConnectorInbox(join(runtime.config.storageDir, 'inbox'), {
-    conversationKey: entry => entry.summary.chatId || entry.summary.fileToken,
+    conversationKey: entry => buildFeishuInboxKey(entry.summary),
     process: async (entry, update) => {
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
       return allowed ? handleMessage(runtime, entry.summary, entry.sourceLabel, {
@@ -1197,6 +1221,7 @@ function initializeInbox(runtime) {
 export {
   DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
+  buildFeishuInboxKey,
   buildFeishuForkExternalTriggerId,
   buildFeishuTopicId,
   buildMessageSourceContext,
@@ -1216,6 +1241,7 @@ export {
   submitRemoteLabRequest,
   handleMessage,
   isAllowedByPolicy,
+  initializeInbox,
   initializeFeishuInstanceRuntime,
   loadPersistedAccessState,
   loadConfig,
