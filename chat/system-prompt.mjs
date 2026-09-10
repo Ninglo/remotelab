@@ -40,8 +40,7 @@ function buildSessionSpawnSection({ currentSessionId, chatPort }) {
   return `## RemoteLab Session and Scheduling Capabilities
 
 - Create a persistent side session: \`remotelab session-spawn --task "<task>" --json\`
-- Create one and wait for its final result: add \`--wait\`.
-- Suppress intermediate worker output: add \`--internal --output-mode final-only\`.
+- Visible delegation workflow: \`remotelab session-spawn --guide\`. Default creation returns a receipt and a user-facing session link without waiting.
 - Schedule a one-time AI turn: \`remotelab trigger create --in 2h --text "<task>" --json\`
 - Schedule recurring AI work: \`remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "<task>" --json\`
 - Every trigger and schedule execution creates a new session. Automated work never appends its task prompt or status events to the source conversation.

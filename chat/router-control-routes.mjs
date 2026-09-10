@@ -1103,10 +1103,15 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'internal must be a boolean when provided' });
         return true;
       }
+      if (Object.prototype.hasOwnProperty.call(payload, 'sourceRunId') && typeof payload.sourceRunId !== 'string') {
+        writeJson(res, 400, { error: 'sourceRunId must be a string when provided' });
+        return true;
+      }
 
       try {
         const outcome = await delegateSession(sessionId, {
           task,
+          sourceRunId: typeof payload?.sourceRunId === 'string' ? payload.sourceRunId.trim() : '',
           name: typeof payload?.name === 'string' ? payload.name.trim() : '',
           tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
           internal: payload?.internal === true,
@@ -1118,6 +1123,7 @@ export async function handleControlRoutes({
         writeJson(res, 201, {
           session: createClientSessionDetail(outcome.session),
           run: outcome.run || null,
+          sessionUrl: outcome.sessionUrl,
         });
       } catch (error) {
         writeJson(res, 400, { error: error.message || 'Failed to delegate session' });

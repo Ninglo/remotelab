@@ -95,7 +95,7 @@ function buildFakeCodexScript() {
     '      maxBuffer: 1024 * 1024,',
     '    });',
     '    const parsed = JSON.parse((result.stdout || \"\").trim());',
-    '    return { task, sessionId: parsed.sessionId, runId: parsed.runId };',
+    '    return { task, sessionId: parsed.sessionId, runId: parsed.runId, state: parsed.state, sessionUrl: parsed.sessionUrl };',
     '  }));',
     '}',
     'setTimeout(() => {',
@@ -187,8 +187,10 @@ async function startServer({ home, port, delayMs = 120 }) {
     env: {
       ...process.env,
       HOME: home,
+      XDG_CONFIG_HOME: join(home, '.config'),
       CHAT_PORT: String(port),
       REMOTELAB_CHAT_BASE_URL: `http://127.0.0.1:${port}`,
+      REMOTELAB_PUBLIC_BASE_URL: 'https://delegation.example',
       SECURE_COOKIES: '0',
       FAKE_CODEX_DELAY_MS: String(delayMs),
     },
@@ -293,12 +295,17 @@ function findLatestAssistantReply(events, runId) {
 try {
   const { home } = setupTempHome();
   const port = randomPort();
-  const server = await startServer({ home, port });
+  const server = await startServer({ home, port, delayMs: 1500 });
   let manager = null;
   let managerRunId = '';
 
   try {
     manager = await createSession(port, 'Recursive spawn manager');
+    for (const sourceRunId of [42, 'missing-run']) {
+      const invalid = await request(port, 'POST', `/api/sessions/${manager.id}/delegate`, { task: 'Invalid source', sourceRunId });
+      assert.equal(invalid.status, 400, 'invalid source run must fail before child admission');
+      assert.equal((await listSessions(port)).length, 1, 'invalid source run must not leave a child');
+    }
     const patched = await patchSessionRuntime(port, manager.id, {
       tool: 'fake-codex',
       model: 'fake-model',
@@ -315,6 +322,7 @@ try {
       'Manager test: spawn exactly three parallel sessions and keep them independent.',
     );
     managerRunId = submit.json.run.id;
+    await patchSessionRuntime(port, manager.id, { model: 'next-turn-model', effort: 'high' });
     const managerRun = await waitForRunTerminal(port, submit.json.run.id);
     assert.equal(managerRun.state, 'completed', 'manager run should complete after spawning children');
 
@@ -366,6 +374,8 @@ try {
 
     for (const childSummary of summaryPayload) {
       assert.equal(typeof childSummary.runId, 'string', 'each spawned session should report its run id');
+      assert.match(childSummary.sessionUrl, /^https:\/\/delegation\.example\/\?session=/, 'CLI returns the server public URL');
+      assert.ok(['accepted', 'preparing', 'running'].includes(childSummary.state), 'creation reports admission state, not imagined completion');
 
       const childRun = await waitForRunTerminal(port, childSummary.runId);
       assert.equal(childRun.state, 'completed', 'each spawned session run should complete');

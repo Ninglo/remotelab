@@ -692,6 +692,7 @@ try {
   const firstSync = await syncGuestPlatformSkills(memoryDir, { homeDir: platformSkillSyncHome });
   assert.equal(firstSync.changed, true);
   assert.deepEqual(firstSync.seededSkillIds, [
+    'session-delegate',
     'calendar-write',
     'session-debug',
     'stable-static-publish',
@@ -700,6 +701,7 @@ try {
   ]);
   assert.deepEqual(firstSync.updatedSkillIds, []);
   assert.deepEqual(firstSync.skillIds, [
+    'session-delegate',
     'calendar-write',
     'session-debug',
     'stable-static-publish',
@@ -707,6 +709,7 @@ try {
     'feishu-cli',
   ]);
   assert.match(readFileSync(join(platformSkillsDir, 'calendar-write.md'), 'utf8'), /Calendar Write/);
+  assert.match(readFileSync(join(platformSkillsDir, 'session-delegate.md'), 'utf8'), /Visible RemoteLab delegation/);
   assert.match(readFileSync(join(platformSkillsDir, 'feishu-cli.md'), 'utf8'), /direct lark-cli access/i);
   assert.match(readFileSync(join(platformSkillsDir, 'session-debug.md'), 'utf8'), /Session Debug/);
   assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /Static Page Publish/);

@@ -127,6 +127,7 @@ RemoteLab is opinionated in a few ways:
 ### What you can do
 
 - start a session from phone or desktop while the agent works on your real machine
+- hand independent work to a visible child session and open its link to inspect progress; the [shared delegation workflow](docs/platform-skills/session-delegate.md) works across normal Harnesses (`remotelab session-spawn --guide`)
 - download returned files directly from chat when a workflow publishes result assets
 - keep durable history even if the browser disconnects
 - recover long-running work after control-plane restarts

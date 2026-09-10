@@ -1,0 +1,1787 @@
+npm test (exit 0)
+
+
+> @ninglo/remotelab@0.3.2 test
+> npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:smoke
+
+
+> @ninglo/remotelab@0.3.2 test:native-harness
+> node scripts/run-with-clean-instance-env.mjs npm run test:native-harness:raw
+
+
+> @ninglo/remotelab@0.3.2 test:native-harness:raw
+> node tests/test-native-codex.mjs && node tests/test-native-pi.mjs && node tests/test-native-claude.mjs && node tests/test-native-input-transport.mjs && node tests/test-native-request-dispatch.mjs && node tests/test-native-harness-integration.mjs && node tests/test-native-review-cancellation.mjs && node tests/test-native-review-host-settlement.mjs && node tests/test-native-review-duplicate-admission.mjs && node tests/test-native-review-source-replies.mjs
+
+test-native-codex: ok
+✔ Pi sends native steering before current tools finish and waits for provider drain (1.739943ms)
+✔ Pi uses the selected provider and native model id without losing resume options (0.129597ms)
+✔ Pi does not finalize a submit racing a previous idle response or unsettled retry (0.189288ms)
+✔ Pi rejects preflight errors, deduplicates input ids and closes awaiting requests (0.43258ms)
+✔ Pi interrupt clears native queue before aborting (0.134833ms)
+✔ Pi rejected input racing settlement does not strand the active run (0.201419ms)
+✔ Pi reports final provider failure only after the native retry loop settles (0.235136ms)
+✔ Pi successful native retry clears the earlier provider error (0.135781ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7.482129
+✔ Claude forwards input immediately and correlates results even with a zero native queue count (1.757554ms)
+✔ Claude retains the existing sandbox restriction on bypassing permissions (0.164472ms)
+✔ Claude supports consumption replay on older CLIs without inventing a write acknowledgement (0.958685ms)
+✔ Claude handles native merged input turns and retains tool/thinking activity (0.280646ms)
+✔ Claude input identity, interrupt acknowledgement, and transport closure are explicit (0.911352ms)
+✔ Claude startup failure rejects unaccepted input and reports a real error (0.199763ms)
+✔ Claude complete thinking blocks do not repeat streamed thinking or lose a missing suffix (0.262359ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8.937584
+native transport: immediate handoff, concurrent dedupe, durable acknowledgement, safe close passed
+native dispatch: overlapping input, durable run linkage, shared result, uncertain receipt without replay passed
+PASS: second user message reached native turn/steer before the active turn completed, in one detached Harness process.
+PASS: SIGKILL/controller recovery preserved one execution and one copy of each accepted input; all three response addresses share one final answer and one Feishu publication.
+PASS: explicit no-active-turn rejection during the completion race started the follow-up once in the existing Harness, without losing the input or launching a duplicate process.
+PASS: an explicit native input rejection fails only that request, preserves the active turn, and accepts the next valid correction without replay.
+test-native-harness-integration: ok; validation log: /tmp/remotelab-native-integration-results-1988634.log
+native cancellation: new input stays independent while the previous native run is cancelling
+native host settlement: a late rejected input preserves the prior completed turn
+native duplicate admission: asynchronous eligibility cannot reopen a completed input id
+native source replies: Feishu thread aliases and main-timeline quotes retain one final publication
+file diff: native capture, repeated edits, durable lazy storage, compaction, reload, fork and missing body passed
+
+> @ninglo/remotelab@0.3.2 test:smoke
+> node scripts/run-with-clean-instance-env.mjs npm run test:smoke:raw
+
+
+> @ninglo/remotelab@0.3.2 test:smoke:raw
+> node tests/test-chat-session-state-model.mjs && node tests/test-chat-sidebar-session-sorting.mjs && node tests/test-chat-session-store.mjs && node tests/test-chat-composer-store.mjs && node tests/test-chat-static-assets.mjs && node tests/test-static-publish-command.mjs && node tests/test-chat-math-rendering.mjs && node tests/test-session-naming.mjs && node tests/test-session-connector-naming.mjs && node tests/test-session-forking.mjs && node tests/test-cloudflared-config.mjs && node tests/test-tunnel-diagnostics.mjs && node tests/test-history-index-contract.mjs && node tests/test-test-environment-isolation.mjs && node tests/test-session-route-utils.mjs && node tests/test-apps-builtins.mjs && node tests/test-session-app-scope.mjs && node tests/test-session-external-trigger-refresh.mjs && node tests/test-session-follow-up-queue.mjs && node tests/test-request-queue-removal.mjs && node tests/test-http-queue-removal.mjs && node tests/test-chat-queued-panel.mjs && node tests/test-session-label-prompt-context.mjs && node tests/test-session-work-summary.mjs && node tests/test-session-work-summary-migration.mjs && node tests/test-session-state-classification.mjs && node tests/test-session-state-labeling.mjs && node tests/test-session-workflow-state-strategy.mjs && node tests/test-reply-publication.mjs && node tests/test-pi-runtime-error-terminalization.mjs && node tests/test-provider-runtime-queue.mjs && node tests/test-auto-compaction.mjs && node tests/test-agent-mailbox.mjs && node tests/test-agent-mail-worker.mjs && node tests/test-embedded-mail-worker.mjs && node tests/test-agent-mail-reply.mjs && node tests/test-agent-mail-command.mjs && node tests/test-agent-mail-cloudflare-routing.mjs && node tests/test-mailbox-runtime-registry.mjs && node tests/test-mailbox-ingress-self-check.mjs && node tests/test-connector-message-index.mjs && node tests/test-connector-session-flow.mjs && node tests/test-connector-user-visible-reply.mjs && node tests/test-connector-skill-registry.mjs && node tests/test-connector-multi-route-skill.mjs && node tests/test-owner-cross-instance-connector-command.mjs && node tests/test-connector-feishu.mjs && node tests/test-feishu-topic-fork.mjs && node tests/test-feishu-runtime-commands.mjs && node tests/test-feishu-mute.mjs && node tests/test-feishu-math-renderer.mjs && node tests/test-feishu-comments.mjs && node tests/test-feishu-replay.mjs && node tests/test-feishu-response-policy.mjs && node tests/test-feishu-bot-handoff.mjs && node tests/test-feishu-connector.mjs && node tests/test-feishu-http-client.mjs && node tests/test-http-session-source-delivery.mjs && node tests/test-wechat-connector.mjs && node tests/test-wechat-send-text-capability.mjs && node tests/test-connector-surface-public-paths.mjs && node tests/test-connector-surface-health.mjs && node tests/test-guest-wechat-connector-startup.mjs && node tests/test-feishu-bot-registry.mjs && node tests/test-feishu-connector-instance.mjs && node tests/test-feishu-ops.mjs && node tests/test-remote-capability-monitor.mjs && node tests/test-github-auto-triage.mjs && node tests/test-github-ci-auto-repair.mjs && node tests/test-github-ci-auto-repair-runner.mjs && node tests/test-generate-token-preserves-password.mjs && node tests/test-auth-session-migration.mjs && node tests/test-chat-instance-sync.mjs && node tests/test-guest-instance-command.mjs && node tests/test-normalize-owner-instance.mjs && node tests/test-source-runtime-only.mjs && node tests/test-cli-release-removed.mjs && node tests/test-oversized-files-report.mjs && npm run test:merge-safety && npm run test:connector-recovery && npm run test:connector-async
+
+test-chat-session-state-model: ok
+test-chat-sidebar-session-sorting: ok
+test-chat-session-store: ok
+test-chat-composer-store: ok
+test-static-publish-command: ok
+test-chat-math-rendering: ok
+test-session-naming: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-session-connector-naming-ZIFkfR/.local/bin
+  /tmp/remotelab-session-connector-naming-ZIFkfR/.nvm/versions/node/current/bin
+  /tmp/remotelab-session-connector-naming-ZIFkfR/.cargo/bin
+  /tmp/remotelab-session-connector-naming-ZIFkfR/go/bin
+test-session-connector-naming: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-session-fork-VqYxNh/.local/bin
+  /tmp/remotelab-session-fork-VqYxNh/.nvm/versions/node/current/bin
+  /tmp/remotelab-session-fork-VqYxNh/.cargo/bin
+  /tmp/remotelab-session-fork-VqYxNh/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[runs] observer sync failed for run_85bca0824bff9bd6b6ffb1c8: Tool "missing-tool" is missing runtimeFamily
+[requests] be5fc1d5a7ad00102ba3690b48a47348: Error: Tool "missing-tool" is missing runtimeFamily
+    at buildRuntimeInvocation (file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/chat/process-runner.mjs:41:11)
+    at createToolInvocation (file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/chat/process-runner.mjs:112:29)
+    at async collectNormalizedRunEventDelta (file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/chat/run-projection.mjs:149:31)
+    at async syncDetachedRunUnlocked (file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/chat/session-manager.mjs:740:22)
+    at async file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/chat/request-runtime.mjs:33:7
+test-session-forking: ok
+test-cloudflared-config: ok
+test-tunnel-diagnostics: ok
+history-index-contract: ok
+test-test-environment-isolation: ok
+test-session-route-utils: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-apps-builtins-7H2Z10/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-apps-builtins-7H2Z10/.local/bin
+  /tmp/remotelab-apps-builtins-7H2Z10/.nvm/versions/node/current/bin
+  /tmp/remotelab-apps-builtins-7H2Z10/.cargo/bin
+  /tmp/remotelab-apps-builtins-7H2Z10/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-apps-builtins: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-session-app-scope-PP5VLQ/.local/bin
+  /tmp/remotelab-session-app-scope-PP5VLQ/.nvm/versions/node/current/bin
+  /tmp/remotelab-session-app-scope-PP5VLQ/.cargo/bin
+  /tmp/remotelab-session-app-scope-PP5VLQ/go/bin
+test-session-app-scope: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-external-trigger-refresh-ut05nu/.local/bin
+  /tmp/remotelab-external-trigger-refresh-ut05nu/.nvm/versions/node/current/bin
+  /tmp/remotelab-external-trigger-refresh-ut05nu/.cargo/bin
+  /tmp/remotelab-external-trigger-refresh-ut05nu/go/bin
+test-session-external-trigger-refresh: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-follow-up-queue-cDl3m9/.local/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-follow-up-queue-cDl3m9/.nvm/versions/node/current/bin
+  /tmp/remotelab-follow-up-queue-cDl3m9/.cargo/bin
+  /tmp/remotelab-follow-up-queue-cDl3m9/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[session-state] triggerSessionStateSuggestion called for session 6d740e42
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-follow-up-queue-cDl3m9/.local/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-follow-up-queue-cDl3m9/.local/bin/fake-codex model=fake-model effort=low thinking=false for session 6d740e42
+[session-state] Session state suggestion error for 6d740e42: Unexpected model output: reply from fake codex
+[session-state] triggerSessionStateSuggestion called for session 6d740e42
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-follow-up-queue-cDl3m9/.local/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-follow-up-queue-cDl3m9/.local/bin/fake-codex model=fake-model effort=low thinking=false for session 6d740e42
+test-session-follow-up-queue: ok
+[push] Generated new VAPID keys
+[session-state] Session state suggestion error for 6d740e42: Unexpected model output: reply from fake codex
+request queue removal: durable, scoped, idempotent, FIFO, replay, restart and preparation race passed
+HTTP queue removal: auth, scope, encoded IDs, conflict, idempotence, replay, live restart and FIFO passed
+test-chat-queued-panel: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-label-context-9PWWBj/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-label-context-9PWWBj/.local/bin
+  /tmp/remotelab-label-context-9PWWBj/.nvm/versions/node/current/bin
+  /tmp/remotelab-label-context-9PWWBj/.cargo/bin
+  /tmp/remotelab-label-context-9PWWBj/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[session-state] triggerSessionStateSuggestion called for session 000d7738
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-label-context-9PWWBj/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-label-context-9PWWBj/bin/fake-codex model=fake-model effort=low thinking=false for session 000d7738
+[push] Generated new VAPID keys
+test-session-label-prompt-context: ok
+test-session-work-summary: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-work-summary-migration-c30mWz/.local/bin
+  /tmp/remotelab-work-summary-migration-c30mWz/.nvm/versions/node/current/bin
+  /tmp/remotelab-work-summary-migration-c30mWz/.cargo/bin
+  /tmp/remotelab-work-summary-migration-c30mWz/go/bin
+test-session-work-summary-migration: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-chat-work-summary-9vEqXt/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-chat-work-summary-9vEqXt/.local/bin
+  /tmp/remotelab-chat-work-summary-9vEqXt/.nvm/versions/node/current/bin
+  /tmp/remotelab-chat-work-summary-9vEqXt/.cargo/bin
+  /tmp/remotelab-chat-work-summary-9vEqXt/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] copilot (copilot): NOT FOUND
+[tools] claude (claude): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[session-state] triggerSessionStateSuggestion called for session a561ef68
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex model=fake-model effort=low thinking=false for session a561ef68
+[push] Generated new VAPID keys
+[session-state] triggerSessionStateSuggestion called for session 316844e5
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex model=fake-model effort=low thinking=false for session 316844e5
+[session-state] triggerSessionStateSuggestion called for session 316844e5
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex model=fake-model effort=low thinking=false for session 316844e5
+[session-state] triggerSessionStateSuggestion called for session f4d1cc9f
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-chat-work-summary-9vEqXt/bin/fake-codex model=fake-model effort=low thinking=false for session f4d1cc9f
+test-session-state-classification: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-state-labeling-TOhRpc/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-state-labeling-TOhRpc/.local/bin
+  /tmp/remotelab-state-labeling-TOhRpc/.nvm/versions/node/current/bin
+  /tmp/remotelab-state-labeling-TOhRpc/.cargo/bin
+  /tmp/remotelab-state-labeling-TOhRpc/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[session-state] triggerSessionStateSuggestion called for session 7fafd9f0
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex model=fake-model effort=low thinking=false for session 7fafd9f0
+[push] Generated new VAPID keys
+[session-state] triggerSessionStateSuggestion called for session 7125ecb8
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex model=fake-model effort=low thinking=false for session 7125ecb8
+[session-state] triggerSessionStateSuggestion called for session 3c03f93a
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex model=fake-model effort=low thinking=false for session 3c03f93a
+[session-state] triggerSessionStateSuggestion called for session 3c03f93a
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex model=fake-model effort=low thinking=false for session 3c03f93a
+[session-state] triggerSessionStateSuggestion called for session 2455d2ec
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex model=fake-model effort=low thinking=false for session 2455d2ec
+[session-state] triggerSessionStateSuggestion called for session 249fa03d
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex model=fake-model effort=low thinking=false for session 249fa03d
+[session-state] triggerSessionStateSuggestion called for session 249fa03d
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-state-labeling-TOhRpc/bin/fake-codex model=fake-model effort=low thinking=false for session 249fa03d
+test-session-state-labeling: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-workflow-strategy-G31Dnq/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-workflow-strategy-G31Dnq/.local/bin
+  /tmp/remotelab-workflow-strategy-G31Dnq/.nvm/versions/node/current/bin
+  /tmp/remotelab-workflow-strategy-G31Dnq/.cargo/bin
+  /tmp/remotelab-workflow-strategy-G31Dnq/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] copilot (copilot): NOT FOUND
+[tools] claude (claude): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[session-state] triggerSessionStateSuggestion called for session 1f60b461
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex model=fake-model effort=low thinking=false for session 1f60b461
+[push] Generated new VAPID keys
+[session-state] triggerSessionStateSuggestion called for session b2ec3159
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex model=fake-model effort=low thinking=false for session b2ec3159
+[session-state] triggerSessionStateSuggestion called for session af563dd6
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex model=fake-model effort=low thinking=false for session af563dd6
+[session-state] triggerSessionStateSuggestion called for session 1e219e2a
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-workflow-strategy-G31Dnq/bin/fake-codex model=fake-model effort=low thinking=false for session 1e219e2a
+test-session-workflow-state-strategy: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-reply-publication-0uT2Kc/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-reply-publication-0uT2Kc/.local/bin
+  /tmp/remotelab-reply-publication-0uT2Kc/.nvm/versions/node/current/bin
+  /tmp/remotelab-reply-publication-0uT2Kc/.cargo/bin
+  /tmp/remotelab-reply-publication-0uT2Kc/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[session-state] triggerSessionStateSuggestion called for session 2952d140
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex model=fake-model effort=low thinking=false for session 2952d140
+[push] Generated new VAPID keys
+[session-state] Session state suggestion error for 2952d140: Unexpected model output: 主 Harness 已经直接完成并交付结果。
+[session-state] triggerSessionStateSuggestion called for session 2952d140
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex model=fake-model effort=low thinking=false for session 2952d140
+[session-state] Session state suggestion error for 2952d140: Unexpected model output: 主 Harness 已经直接完成并交付结果。
+[session-state] triggerSessionStateSuggestion called for session d75eeef2
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex model=fake-model effort=low thinking=false for session d75eeef2
+[session-state] Session state suggestion error for d75eeef2: Unexpected model output: 主 Harness 已经直接完成并交付结果。
+[session-state] triggerSessionStateSuggestion called for session d75eeef2
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex model=command-model effort=low thinking=false for session d75eeef2
+[session-state] Session state suggestion error for d75eeef2: Unexpected model output: 主 Harness 已经直接完成并交付结果。
+[session-state] triggerSessionStateSuggestion called for session d75eeef2
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex model=fake-model effort=low thinking=false for session d75eeef2
+[session-state] Session state suggestion error for d75eeef2: Unexpected model output: 主 Harness 已经直接完成并交付结果。
+[session-state] triggerSessionStateSuggestion called for session 2f7784c7
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex model=fake-model effort=low thinking=false for session 2f7784c7
+test-reply-publication: ok
+[session-state] stderr: node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module '/tmp/remotelab-reply-publication-0uT2Kc/bin/fake-codex'
+    at Module._resolveFilename (node:internal/modules/cjs/loa
+[session-state] Session state suggestion error for 2f7784c7: fake-codex exited with code 1
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-pi-error-terminalization-4KGX1y/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-pi-error-terminalization-4KGX1y/.local/bin
+  /tmp/remotelab-pi-error-terminalization-4KGX1y/.nvm/versions/node/current/bin
+  /tmp/remotelab-pi-error-terminalization-4KGX1y/.cargo/bin
+  /tmp/remotelab-pi-error-terminalization-4KGX1y/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] copilot (copilot): NOT FOUND
+[tools] claude (claude): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[usage-ledger] Disabled usage ledger writes: ENOENT: no such file or directory, open '/tmp/remotelab-pi-error-terminalization-4KGX1y/.config/remotelab/usage-ledger/2026-09-10.jsonl'
+[push] Generated new VAPID keys
+[session-state] triggerSessionStateSuggestion called for session fc051edc
+[process-runner] Resolved "/tmp/remotelab-pi-error-terminalization-4KGX1y/bin/fake-pi" → /tmp/remotelab-pi-error-terminalization-4KGX1y/bin/fake-pi
+[session-state] Calling tool=fake-pi cmd=/tmp/remotelab-pi-error-terminalization-4KGX1y/bin/fake-pi model=moonshotai/kimi-k3 effort=low thinking=false for session fc051edc
+test-pi-runtime-error-terminalization: ok
+[session-state] stderr: node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module '/tmp/remotelab-pi-error-terminalization-4KGX1y/bin/fake-pi'
+    at Module._resolveFilename (node:internal/modules/cjs
+[session-state] Session state suggestion error for fc051edc: fake-pi exited with code 1
+test-provider-runtime-queue: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-auto-compact-0Cm2BZ/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-auto-compact-0Cm2BZ/.local/bin
+  /tmp/remotelab-auto-compact-0Cm2BZ/.nvm/versions/node/current/bin
+  /tmp/remotelab-auto-compact-0Cm2BZ/.cargo/bin
+  /tmp/remotelab-auto-compact-0Cm2BZ/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[usage-ledger] Disabled usage ledger writes: ENOENT: no such file or directory, open '/tmp/remotelab-auto-compact-0Cm2BZ/.config/remotelab/usage-ledger/2026-09-10.jsonl'
+[session-state] triggerSessionStateSuggestion called for session ee144cb2
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-auto-compact-0Cm2BZ/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-auto-compact-0Cm2BZ/bin/fake-codex model=fake-model effort=low thinking=false for session ee144cb2
+[session-state] Session state suggestion error for ee144cb2: Unexpected model output: Finished the requested task.
+[session-state] triggerSessionStateSuggestion called for session 758ee819
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-auto-compact-0Cm2BZ/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-auto-compact-0Cm2BZ/bin/fake-codex model=fake-model effort=low thinking=false for session 758ee819
+[push] Generated new VAPID keys
+[session-state] Session state suggestion error for 758ee819: Unexpected model output: Finished the requested task.
+test-auto-compaction: ok
+agent mailbox tests passed
+agent mail worker tests passed
+[embedded-mail-worker] disabled by REMOTELAB_DISABLE_EMBEDDED_MAIL_WORKER
+[embedded-mail-worker] mailbox automation is disabled, skipping
+embedded mail worker disable flag and binding bootstrap tests passed
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-agent-mail-reply-gWzmiE/.local/bin
+  /tmp/remotelab-agent-mail-reply-gWzmiE/.nvm/versions/node/current/bin
+  /tmp/remotelab-agent-mail-reply-gWzmiE/.cargo/bin
+  /tmp/remotelab-agent-mail-reply-gWzmiE/go/bin
+agent mail reply tests passed
+test-agent-mail-command: ok
+agent mail cloudflare routing tests passed
+mailbox runtime registry tests passed
+test-mailbox-ingress-self-check: ok
+ok - connector message index is scoped and rebuildable
+ok - connector session flow supports fork and explicit fresh-create fallback
+ok - connector publication failures preserve provider reasons
+ok - connector publication polling survives transient service interruptions
+test-connector-user-visible-reply: ok
+  ✓ registerConnectorSkills returns tool definitions
+  ✓ Multiple channels register independently
+  ✓ getToolDefinitions returns correct tools per channel
+  ✓ getAllToolDefinitions returns all tools from all channels
+  ✓ Skill registry persists to disk and reloads
+  ✓ deregisterConnectorSkills removes channel and is idempotent
+  ✓ Register with empty skills clears the channel entry
+  ✓ executeConnectorSkill routes to connector and returns result
+  ✓ executeConnectorSkill rejects invalid tool name format
+  ✓ executeConnectorSkill returns error for unregistered channel
+  ✓ executeConnectorSkill returns error for unknown skill
+  ✓ executeConnectorSkill handles network errors
+  ✓ executeConnectorSkill surfaces connector error responses
+
+✓ All connector skill registry tests passed
+test-connector-multi-route-skill: ok
+test-owner-cross-instance-connector-command: ok
+ok - feishu connector helpers
+ok - Feishu Thread bindings are explicit and never guessed
+ok - default fork, explicit /fork and /continue preserve task and thread routing
+test-feishu-runtime-commands: ok
+[feishu-connector] skipped m3 (response policy or conversation mute)
+[feishu-connector] skipped m4 (response policy or conversation mute)
+[feishu-connector] skipped m5 (response policy or conversation mute)
+[feishu-connector] skipped m6 (response policy or conversation mute)
+[feishu-connector] skipped m8 (response policy or conversation mute)
+[feishu-connector] skipped m13 (response policy or conversation mute)
+[feishu-connector] skipped m20 (response policy or conversation mute)
+[feishu-connector] skipped m23 (response policy or conversation mute)
+test-feishu-mute: ok
+ok - Feishu formulas use standard parsing, image rendering, cache reuse, and safe fallback
+ok - Feishu document comment mentions hydrate, reuse a thread session, and reply in place
+test-feishu-replay: ok
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] failed to add processing reaction for routing-test: reaction unavailable
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+[feishu-connector] skipped other-topic-reply (response policy or conversation mute)
+[feishu-connector] skipped routing-test (response policy or conversation mute)
+Feishu access, response, durable thread continuation and processing acknowledgement tests passed
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped handoff (response policy or conversation mute)
+[feishu-connector] skipped unmentioned-thread-bot (response policy or conversation mute)
+[feishu-connector] skipped unlimited-unmentioned (response policy or conversation mute)
+[feishu-connector] skipped unlimited-self (response policy or conversation mute)
+ok - bot handoffs are explicit, durable, one-shot, alias-aware and restart-safe
+[feishu-connector] failed to ingest media resource for msg_media_partial_1: simulated media download failure
+ok - Feishu preserves GFM blocks, native mentions, code, and formula boundaries
+ok - admission returns the durable receipt without waiting for AI or sending
+ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments
+ok - mention tokens are rendered inbound and compiled outbound
+ok - topic metadata fallback preserves default fork and threaded delivery
+ok - whitelist file reloads without restart
+ok - whitelist access stays limited to explicit sender identities
+ok - /fork accepts task text and binds its reply Thread to the new Session
+ok - generated Feishu sessions use the feishu app scope
+ok - queued and preparing replies return acceptance immediately
+ok - source delivery worker persists external receipts
+PASS: bounded Feishu request/verb transport and real SDK token acquisition with mocked network
+PASS: Feishu, WeChat and Email JSON/multipart admission preserve sourceDelivery; queued emails each create a reply while sender is offline; no external sends
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=3 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] message submitted async messageId="msg_reply_scope" sessionId="sess_wechat_1" requestId="wechat:bot_account_1:msg_reply_scope" runId="run_wechat_1" duplicate=false queued=false
+[wechat-connector] message submitted async messageId="msg_image_generated_1" sessionId="sess_wechat_1" requestId="wechat:bot_account_1:msg_image_generated_1" runId="run_wechat_1" duplicate=false queued=false
+[wechat-connector] message submitted async messageId="msg_prepared_test" sessionId="sess_wechat_1" requestId="wechat:bot_account_1:msg_prepared_test" runId="run_wechat_1" duplicate=false queued=false
+[wechat-connector] message submitted async messageId="msg_prepared_test" sessionId="sess_wechat_1" requestId="wechat:bot_account_1:msg_prepared_test" runId="run_wechat_1" duplicate=false queued=false
+[wechat-connector] async processing started messageId="msg_voice_1" peerUserId="wx_user_peer_1" text="[voice message]"
+[wechat-connector] async: no reply for msg_voice_1 (unsupported)
+[wechat-connector] async processing started messageId="msg_submit_fail_1" peerUserId="wx_user_peer_1" text="trigger submit failure"
+[wechat-connector] async processing failed for msg_submit_fail_1: Error: RemoteLab unavailable (test)
+    at submitWeChatMessageAsync (file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/tests/test-wechat-connector.mjs:640:15)
+    at handleWeChatMessageAsync (file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/scripts/wechat-connector.mjs:2205:27)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/tests/test-wechat-connector.mjs:617:5
+[wechat-connector] direct message sent accountId="bot_account_1" peerUserId="wx_user_owner_1" responseMessageId="remotelab-wechat-8d8a69fc252ba43f" textChars=28
+[wechat-connector] replaying stored message msg_replay_pending
+[wechat-connector] poller ready (0 accounts; awaiting login)
+[wechat-connector] RemoteLab base URL: http://127.0.0.1:40855
+[wechat-connector] storage dir: /tmp/remotelab-wechat-config-brklID
+[wechat-connector] runtime selection: mode=ui fallbackTool=codex fallbackModel=(default) fallbackEffort=(default) fallbackThinking=off
+[wechat-connector] delivery poll failed: Not found
+[wechat-connector] linked accounts detected; resuming polling (1)
+[wechat-connector] replaying stored message 7448678501208393000
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] async processing started messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] message submitted async messageId="7448678501208393000" sessionId="sess_wechat_1" requestId="wechat:bot_account_1:7448678501208393000" runId="run_wechat_1" duplicate=false queued=false
+[wechat-connector] async submission complete messageId="7448678501208393000" sessionId="sess_wechat_1" requestId="wechat:bot_account_1:7448678501208393000" processingMs=7
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=2 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+[wechat-connector] updates received accountId="bot_account_1" messageCount=1 pollMs=1 nextCursorBytes=11
+[wechat-connector] inbound message accountId="bot_account_1" messageId="7448678501208393000" peerUserId="wx_user_peer_1" text="你好，帮我看下实例状态。"
+ok - wechat connector config defaults load correctly
+ok - wechat qr login persists linked account state
+ok - pollAccountOnce accepts inbound messages into durable inbox (no chatQueues)
+ok - submitWeChatMessageAsync creates session and submits; no publication wait
+ok - submitWeChatMessageAsync uses prepared payload on retry (fingerprint stable)
+ok - outbound WeChat replies use stored contextToken
+ok - WeChat images are decrypted and submitted as RemoteLab attachments
+ok - unsupported non-text WeChat payloads remain safely ignored (async path)
+ok - handleWeChatMessageAsync re-throws submit errors for inbox retry
+ok - replayUnhandledMessages routes through durable inbox
+ok - idle WeChat workers pick up newly linked accounts without restart (async path)
+test-wechat-send-text-capability: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-connector-public-paths-ynDpLB/.local/bin
+  /tmp/remotelab-connector-public-paths-ynDpLB/.nvm/versions/node/current/bin
+  /tmp/remotelab-connector-public-paths-ynDpLB/.cargo/bin
+  /tmp/remotelab-connector-public-paths-ynDpLB/go/bin
+test-connector-surface-public-paths: ok
+ok - stale connector surfaces are cleared when their port is unreachable
+ok - guest startup ensure only starts configured wechat connectors
+feishu bot registry tests passed
+feishu connector instance tests passed
+ok
+test-remote-capability-monitor: ok
+github auto triage tests passed
+github ci auto repair tests passed
+github ci auto repair runner tests passed
+test-generate-token-preserves-password: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-auth-session-migration-7EkNIR/.local/bin
+  /tmp/remotelab-auth-session-migration-7EkNIR/.nvm/versions/node/current/bin
+  /tmp/remotelab-auth-session-migration-7EkNIR/.cargo/bin
+  /tmp/remotelab-auth-session-migration-7EkNIR/go/bin
+test-auth-session-migration: ok
+test-chat-instance-sync: ok
+test-guest-instance-command: ok
+test-normalize-owner-instance: ok
+test-source-runtime-only: ok
+test-cli-release-removed: ok
+test-oversized-files-report: ok
+
+> @ninglo/remotelab@0.3.2 test:merge-safety
+> node scripts/run-with-clean-instance-env.mjs npm run test:merge-safety:raw
+
+
+> @ninglo/remotelab@0.3.2 test:merge-safety:raw
+> node tests/test-runtime-selection.mjs && node tests/test-session-runtime-selection.mjs && node tests/test-chat-tool-default-preference.mjs && node tests/test-codex-medium-default.mjs && node tests/test-tool-visibility.mjs && node tests/test-install-micro-agent.mjs && node tests/test-chat-server-default-micro-agent-bootstrap.mjs && node tests/test-models-micro-agent-per-model-reasoning.mjs && node tests/test-models-codex-fallback.mjs && node tests/test-claude-build-args.mjs && node tests/test-pi-model-routing.mjs && node tests/test-pi-model-baseline.mjs && node tests/test-pi-adapter.mjs && node tests/test-codex-adapter.mjs && node tests/test-pi-auth-manager.mjs && node tests/test-process-runner-runtime-family.mjs && node tests/test-session-state-classifier-codex-home.mjs && node tests/test-detached-assistant-codex-home.mjs && node tests/test-session-pinning.mjs && node tests/test-http-session-patch-runtime-preferences.mjs && node tests/test-http-session-summary-refs.mjs && node tests/test-chat-tooling-layout.mjs && node tests/test-chat-voice-doubao-relay.mjs && node tests/test-browser-desktop-proxy.mjs && node tests/test-chat-upload-button.mjs && node tests/test-chat-share-snapshot-message.mjs && node tests/test-chat-compose-draft.mjs && node tests/test-chat-empty-composer-status.mjs && node tests/test-chat-lazy-session-creation.mjs && node tests/test-chat-sidebar-attachments.mjs && node tests/test-chat-sidebar-filter-options.mjs && node tests/test-chat-sidebar-filters-visibility.mjs && node tests/test-chat-frontend-state-boundary.mjs && node tests/test-chat-swipe-gestures.mjs && node tests/test-chat-session-rename-editor.mjs && node tests/test-session-http-sidebar-refresh.mjs && node tests/test-session-http-foreground-refresh.mjs && node tests/test-session-http-ref-hydration.mjs && node tests/test-session-http-share-snapshot-scroll.mjs && node tests/test-chat-ws-reconnect-scroll-suppression.mjs && node tests/test-session-display-events.mjs && node tests/test-chat-event-block-append.mjs && node tests/test-chat-event-block-dispatch.mjs && node tests/test-chat-compact-tool-cards.mjs && node tests/test-chat-transcript-placeholder-free.mjs && node tests/test-chat-loader-versioned-assets.mjs && node tests/test-chat-build-update-indicator.mjs && node tests/test-chat-split-frontend-smoke.mjs && node tests/test-push-notification-settings.mjs && node tests/test-session-http-push-registration.mjs && node tests/test-push-proxy-config.mjs && node tests/test-chat-launch-intent.mjs && node tests/test-source-runtime-only.mjs && node tests/test-source-runtime-prompts.mjs && node tests/test-custom-tool-prompt-shaping.mjs && npm run test:shared-tools && node tests/test-runtime-policy.mjs && node tests/test-codex-system-prefix.mjs && node tests/test-system-prompt.mjs && node tests/test-turn-context-hook.mjs && node tests/test-session-manager-build-prompt.mjs && node tests/test-source-context-prompt.mjs && node tests/test-session-source-context.mjs && node tests/test-delegated-child-no-spawn-prompt.mjs && node tests/test-visible-session-delegation.mjs && node tests/test-session-spawn-command.mjs && node tests/test-http-session-spawn-recursive.mjs && node tests/test-system-prompt-gmail.mjs && node tests/test-chat-nontechnical-copy.mjs && node tests/test-chat-thinking-block-display-preference.mjs && node tests/test-structured-runtime-auth-failure.mjs && node tests/test-user-shell-env.mjs && node tests/test-usage-summary-command.mjs && node tests/test-connector-gmail.mjs
+
+runtime selection tests passed
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-session-runtime-2QmN8B/.local/bin
+  /tmp/remotelab-session-runtime-2QmN8B/.nvm/versions/node/current/bin
+  /tmp/remotelab-session-runtime-2QmN8B/.cargo/bin
+  /tmp/remotelab-session-runtime-2QmN8B/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-session-runtime-selection: ok
+test-chat-tool-default-preference: ok
+test-gpt6-low-default: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-tool-visibility-okWh4T/.local/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-tool-visibility-okWh4T/.nvm/versions/node/current/bin
+  /tmp/remotelab-tool-visibility-okWh4T/.cargo/bin
+  /tmp/remotelab-tool-visibility-okWh4T/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-tool-visibility: ok
+test-install-micro-agent: ok
+test-chat-server-default-micro-agent-bootstrap: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-models-micro-agent-GgvDlk/.local/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-models-micro-agent-GgvDlk/.nvm/versions/node/current/bin
+  /tmp/remotelab-models-micro-agent-GgvDlk/.cargo/bin
+  /tmp/remotelab-models-micro-agent-GgvDlk/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-models-micro-agent-per-model-reasoning: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-models-codex-81lPyo/.local/bin
+  /tmp/remotelab-models-codex-81lPyo/.nvm/versions/node/current/bin
+  /tmp/remotelab-models-codex-81lPyo/.cargo/bin
+  /tmp/remotelab-models-codex-81lPyo/go/bin
+test-models-codex-fallback: ok
+test-claude-build-args: ok
+test-pi-model-routing: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-pi-baseline-U3ZXi5/.local/bin
+  /tmp/remotelab-pi-baseline-U3ZXi5/.nvm/versions/node/current/bin
+  /tmp/remotelab-pi-baseline-U3ZXi5/.cargo/bin
+  /tmp/remotelab-pi-baseline-U3ZXi5/go/bin
+[pi-models] RPC metadata unavailable; using list supplement: Pi RPC model discovery exited with code 1
+[pi-models] Native discovery unavailable; showing RemoteLab baseline: Command failed: /tmp/remotelab-pi-baseline-U3ZXi5/pi --list-models
+
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-pi-model-baseline: ok
+test-pi-adapter: ok
+test-codex-adapter: ok
+[tools] Resolved PATH dirs: /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+Pi auth manager tests passed
+[tools] Resolved PATH dirs: /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-process-runner-runtime-family: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-session-state-classifier-codex-home-0amBSC/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-session-state-classifier-codex-home-0amBSC/.local/bin
+  /tmp/remotelab-session-state-classifier-codex-home-0amBSC/.nvm/versions/node/current/bin
+  /tmp/remotelab-session-state-classifier-codex-home-0amBSC/.cargo/bin
+  /tmp/remotelab-session-state-classifier-codex-home-0amBSC/go/bin
+[session-state] triggerSessionStateSuggestion called for session acb73fd8
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[process-runner] Resolved "/tmp/remotelab-session-state-classifier-codex-home-0amBSC/bin/codex" → /tmp/remotelab-session-state-classifier-codex-home-0amBSC/bin/codex
+[session-state] Calling tool=fake-codex-home cmd=/tmp/remotelab-session-state-classifier-codex-home-0amBSC/bin/codex model=default effort=low thinking=false for session acb73fd8
+test-session-state-classifier-codex-home: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-detached-codex-home-BJeEZW/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-detached-codex-home-BJeEZW/.local/bin
+  /tmp/remotelab-detached-codex-home-BJeEZW/.nvm/versions/node/current/bin
+  /tmp/remotelab-detached-codex-home-BJeEZW/.cargo/bin
+  /tmp/remotelab-detached-codex-home-BJeEZW/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[process-runner] Resolved "/tmp/remotelab-detached-codex-home-BJeEZW/bin/fake-detached-codex" → /tmp/remotelab-detached-codex-home-BJeEZW/bin/fake-detached-codex
+test-detached-assistant-codex-home: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-session-pinning-Wago7c/.local/bin
+  /tmp/remotelab-session-pinning-Wago7c/.nvm/versions/node/current/bin
+  /tmp/remotelab-session-pinning-Wago7c/.cargo/bin
+  /tmp/remotelab-session-pinning-Wago7c/go/bin
+test-session-pinning: ok
+test-http-session-patch-runtime-preferences: ok
+test-http-session-feishu-runtime-override: ok
+test-http-session-summary-refs: ok
+test-chat-tooling-layout: ok
+test-chat-voice-doubao-relay: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-desktop-test-DbB2Vj/.local/bin
+  /tmp/remotelab-desktop-test-DbB2Vj/.nvm/versions/node/current/bin
+  /tmp/remotelab-desktop-test-DbB2Vj/.cargo/bin
+  /tmp/remotelab-desktop-test-DbB2Vj/go/bin
+browser-desktop-proxy: HTTP owner/visitor/expiry, private headers, assets, binary WS, Origin, disabled/config validation passed
+test-chat-upload-button: ok
+test-chat-share-snapshot-message: ok
+test-chat-compose-draft: ok
+test-chat-empty-composer-status: ok
+test-chat-lazy-session-creation: ok
+test-chat-sidebar-attachments: ok
+test-chat-sidebar-filter-options: ok
+test-chat-sidebar-filters-visibility: ok
+test-chat-frontend-state-boundary: ok
+test-chat-swipe-gestures: ok
+test-chat-session-rename-editor: ok
+test-session-http-sidebar-refresh: ok
+test-session-http-foreground-refresh: ok
+test-session-http-ref-hydration: ok
+test-session-http-share-snapshot-scroll: ok
+test-chat-ws-reconnect-scroll-suppression: ok
+test-session-display-events: ok
+test-chat-event-block-append: ok
+test-chat-event-block-dispatch: ok
+test-chat-compact-tool-cards: lifecycle, concurrency, legacy, disclosure and diffs passed
+test-chat-transcript-placeholder-free: ok
+test-chat-loader-versioned-assets: ok
+test-chat-build-update-indicator: ok
+test-chat-split-frontend-smoke: ok
+test-push-notification-settings: ok
+[push] Subscribed to web push
+[push] Subscribed to web push
+[push] Setup failed: Saving push subscription failed (HTTP 500)
+[push] Setup failed: Saving push subscription failed (HTTP 401)
+[push] Setup failed: Server did not confirm push subscription
+[push] Setup failed: Server did not confirm push subscription
+[push] Setup failed: Saving push subscription failed (HTTP 200)
+[push] Setup failed: Loading push key failed (HTTP 503)
+[sw] Setup failed: SW registration failed
+[push] Setup failed: Push service worker is unavailable
+[push] Setup failed: Push service unavailable
+[push] Subscribed to web push
+[push] Subscribed to web push
+[push] Subscribed to web push
+test-session-http-push-registration: ok
+test-push-proxy-config: ok
+test-chat-launch-intent: ok
+test-source-runtime-only: ok
+test-source-runtime-prompts: ok
+test-custom-tool-prompt-shaping: ok
+
+> @ninglo/remotelab@0.3.2 test:shared-tools
+> node scripts/run-with-clean-instance-env.mjs npm run test:shared-tools:raw
+
+
+> @ninglo/remotelab@0.3.2 test:shared-tools:raw
+> node tests/test-shared-tools-directory.mjs && node tests/test-shared-tool-env-overrides.mjs
+
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-shared-tools-No2Pe3/.local/bin
+  /tmp/remotelab-shared-tools-No2Pe3/.nvm/versions/node/current/bin
+  /tmp/remotelab-shared-tools-No2Pe3/.cargo/bin
+  /tmp/remotelab-shared-tools-No2Pe3/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-shared-tools-directory: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-shared-tool-env-fQULe5/.local/bin
+  /tmp/remotelab-shared-tool-env-fQULe5/.nvm/versions/node/current/bin
+  /tmp/remotelab-shared-tool-env-fQULe5/.cargo/bin
+  /tmp/remotelab-shared-tool-env-fQULe5/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-shared-tool-env-overrides: ok
+test-runtime-policy: ok
+ok - Codex keeps its native developer instructions by default
+ok - explicit system-prefix and developer-instruction overrides still work
+test-system-prompt: ok
+test-turn-context-hook: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-build-prompt-omrmLW/.local/bin
+  /tmp/remotelab-build-prompt-omrmLW/.nvm/versions/node/current/bin
+  /tmp/remotelab-build-prompt-omrmLW/.cargo/bin
+  /tmp/remotelab-build-prompt-omrmLW/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-session-manager-build-prompt: ok
+source context projection: provider fields, ingestion, bounded data, markup and delivery secret separation passed
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-session-source-context-LPGOfb/.local/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-session-source-context-LPGOfb/.nvm/versions/node/current/bin
+  /tmp/remotelab-session-source-context-LPGOfb/.cargo/bin
+  /tmp/remotelab-session-source-context-LPGOfb/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[session-state] triggerSessionStateSuggestion called for session c819f890
+[process-runner] Resolved "fake-codex" → /tmp/remotelab-session-source-context-LPGOfb/.local/bin/fake-codex
+[session-state] Calling tool=fake-codex cmd=/tmp/remotelab-session-source-context-LPGOfb/.local/bin/fake-codex model=fake-model effort=low thinking=false for session c819f890
+test-session-source-context: ok
+[session-state] Session state suggestion error for c819f890: Unexpected model output: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-child-spawn-P6H9eW/.local/bin
+  /tmp/remotelab-child-spawn-P6H9eW/.nvm/versions/node/current/bin
+  /tmp/remotelab-child-spawn-P6H9eW/.cargo/bin
+  /tmp/remotelab-child-spawn-P6H9eW/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-delegated-child-no-spawn-prompt: ok
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-visible-delegation-45W0sr/.local/bin
+  /tmp/remotelab-visible-delegation-45W0sr/.nvm/versions/node/current/bin
+  /tmp/remotelab-visible-delegation-45W0sr/.cargo/bin
+  /tmp/remotelab-visible-delegation-45W0sr/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] cline (cline): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+test-visible-session-delegation: ok
+test-session-spawn-command: ok
+test-http-session-spawn-recursive: ok
+test-system-prompt-gmail: ok
+test-chat-nontechnical-copy: ok
+test-chat-thinking-block-display-preference: ok
+test-structured-runtime-auth-failure: ok
+[tools] Resolved PATH dirs: /tmp/remotelab-user-shell-env-Mf1kfI/shell-bin
+  /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /tmp/remotelab-user-shell-env-Mf1kfI/process-bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-user-shell-env-Mf1kfI/.local/bin
+  /tmp/remotelab-user-shell-env-Mf1kfI/.nvm/versions/node/current/bin
+  /tmp/remotelab-user-shell-env-Mf1kfI/.cargo/bin
+  /tmp/remotelab-user-shell-env-Mf1kfI/go/bin
+test-user-shell-env: ok
+test-usage-summary-command: ok
+test-connector-gmail: ok
+
+> @ninglo/remotelab@0.3.2 test:connector-recovery
+> node scripts/run-with-clean-instance-env.mjs npm run test:connector-recovery:raw
+
+
+> @ninglo/remotelab@0.3.2 test:connector-recovery:raw
+> node tests/test-durable-requests.mjs && node tests/test-connector-inbox.mjs && node tests/test-delivery-receipts.mjs && node tests/test-delivery-recovery.mjs && node tests/test-feishu-delivery-errors.mjs && node tests/test-delivery-liveness.mjs queue && node tests/test-delivery-liveness.mjs receipts && node tests/test-delivery-liveness.mjs deadline && node tests/test-delivery-liveness.mjs download && node tests/test-delivery-liveness.mjs projection && node tests/test-delivery-liveness.mjs observer && node tests/test-request-runtime.mjs && node tests/test-request-schema.mjs && node tests/test-request-conversion.mjs && node tests/test-request-upgrade-conversion.mjs && node tests/test-request-state-upgrade.mjs && node tests/test-process-identity.mjs && node tests/test-runner-systemd-scope.mjs && node tests/test-request-cancel-before-launch.mjs && node tests/test-request-process-recovery.mjs && node tests/test-feishu-ingress-dispatch.mjs
+
+durable requests: admission, conflict, ordering, restart and atomic settlement passed
+durable requests: response identity lookup survives archive
+durable requests: early entry survives admission, concurrency, settlement, archive and restart
+connector inbox: durable replay, immediate dispatch, ordered handoff, shutdown and stale-scan deduplication pass
+delivery receipts: lost control-plane acknowledgement recovers without another external send
+delivery recovery: uncertainty, independent targets, lease fencing and partial attachment receipts passed
+[feishu-connector] delivery acknowledgement deferred (srcd_dbe9f8e2a835724f13cfb37d_0): controller unavailable
+[feishu-connector] delivery acknowledgement deferred (srcd_d186376ac290510304ab5d1e_0): controller unavailable
+Feishu delivery errors: definite rejection releases topic, ambiguous sends stay fenced, upload failures retry safely
+delivery liveness queue: passed
+delivery liveness receipts: passed
+delivery liveness deadline: passed
+delivery liveness download: passed
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/delivery-liveness-0NUlqW/.local/bin
+  /tmp/delivery-liveness-0NUlqW/.nvm/versions/node/current/bin
+  /tmp/delivery-liveness-0NUlqW/.cargo/bin
+  /tmp/delivery-liveness-0NUlqW/go/bin
+delivery liveness projection: passed
+delivery liveness observer: passed
+request runtime: restart resumes post-completion responsibilities without replaying execution
+request schema: old runtime requires explicit conversion; new state initializes once
+conversion: no source writes, explicit interruption, preserved IDs/queue and unknown delivery
+upgrade conversion: deterministic identity preservation, imported dedup, quarantined uncertainty, external storage, whitelist retention, tamper detection and repeat refusal passed
+state upgrade: full transaction, idempotency, verified rollback, SIGKILL resume, and refusal to discard new work passed
+process identity: live executor is distinguished from a recycled PID
+runner manager: configured user scope, async default and matching PID lookup passed
+[tools] Resolved PATH dirs: /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+[tools] codex (codex): available
+[tools] pi (pi): available
+[tools] claude (claude): NOT FOUND
+[tools] copilot (copilot): NOT FOUND
+[tools] kilo-code (kilo-code): NOT FOUND
+[tools] cline (cline): NOT FOUND
+request cancellation: durable admission can be cancelled before any executor starts
+[push] Generated new VAPID keys
+process recovery: SIGKILL after admission and during execution, offline completion, exactly one attempt and persistent delivery receipt passed
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-0","messageType":"text","rootId":"","threadId":"http-0","senderOpenId":"human","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-1","messageType":"text","rootId":"","threadId":"http-1","senderOpenId":"sender-1","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-2","messageType":"text","rootId":"","threadId":"http-2","senderOpenId":"sender-2","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-3","messageType":"text","rootId":"","threadId":"http-3","senderOpenId":"sender-3","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-4","messageType":"text","rootId":"","threadId":"http-4","senderOpenId":"sender-4","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-5","messageType":"text","rootId":"","threadId":"http-5","senderOpenId":"sender-5","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-6","messageType":"text","rootId":"","threadId":"http-6","senderOpenId":"sender-6","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-7","messageType":"text","rootId":"","threadId":"http-7","senderOpenId":"sender-7","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+[feishu-connector] inbound event test (allowed) {"eventId":"","eventType":"","chatId":"chat","chatType":"group","groupMessageType":"","chatMode":"","messageId":"http-8","messageType":"text","rootId":"","threadId":"http-8","senderOpenId":"sender-8","mentionCount":0,"textPreview":"","contentSummary":"","sourceKind":"","fileType":"","fileToken":"","commentId":"","replyId":"","mentionedBot":false}
+Feishu ingress: independent topics bypass slow/failing transport; routing and retry scope remain stable
+
+> @ninglo/remotelab@0.3.2 test:connector-async
+> node scripts/run-with-clean-instance-env.mjs npm run test:connector-async:raw
+
+
+> @ninglo/remotelab@0.3.2 test:connector-async:raw
+> node tests/test-retired-connectors.mjs && node tests/test-http-session-source-delivery.mjs && node tests/test-wechat-async-admission.mjs && node tests/test-wechat-inbox-boundary.mjs && node tests/test-wechat-typing.mjs && node tests/test-wechat-request-feedback.mjs && node tests/test-agent-mail-source-delivery.mjs && node tests/test-email-admission-recovery.mjs && node tests/test-email-send-uncertainty.mjs && node tests/test-embedded-email-outbox.mjs
+
+retired connectors: no WA/Voice runtime or launcher; browser voice and Shortcut remain supported
+PASS: Feishu, WeChat and Email JSON/multipart admission preserve sourceDelivery; queued emails each create a reply while sender is offline; no external sends
+
+§1 WeChat target normalisation
+  PASS  accepts wechat with accountId + peerUserId
+  PASS  rejects wechat without peerUserId
+  PASS  rejects wechat without accountId
+  PASS  buildSourceDeliveryPlan builds wechat plan from sourceContext
+
+§2 Email target normalisation
+  PASS  accepts email with to field
+  PASS  coerces string references to array
+  PASS  rejects email without to
+  PASS  rejects unknown connector
+
+§3 Email buildReplyDeliveries single-delivery contract
+  PASS  email: ONE delivery with text + attachments
+  PASS  email: text only → one delivery
+  PASS  email: attachments only → one delivery
+  PASS  email: empty payload → no delivery
+  PASS  feishu: text + attachments → separate deliveries (unchanged)
+
+§4 WeChat outbox delivery lifecycle
+  PASS  claim → complete lifecycle
+  PASS  idempotent enqueue returns same delivery id
+
+§5 Unknown-send semantics on timeout
+  PASS  timeout failure → unknown state (not retry-safe)
+  PASS  429 failure → retryable pending
+  PASS  unknown delivery → operator can resolve to delivered
+
+§6 processWeChatSourceDeliveryOnce simulation
+[wechat-connector] wechat delivery sent deliveryId="srcd_5c62b8133bff6d510a428937_0" peerUserId="user_s" externalId="wechat_ext_s" state="delivered"
+  PASS  sender claims delivery, sends, records receipt
+  PASS  sender returns null when no pending deliveries
+  PASS  sender marks delivery unknown on network timeout (no retry)
+
+§7 Durable receipt recovery
+  PASS  receipt survives process restart before control-plane ack
+  PASS  recording the same receipt twice does not double-acknowledge
+
+§8 handleWeChatMessageAsync — no waitForConnectorPublication call
+[wechat-connector] async processing started messageId="msg_a" peerUserId="user_a" text="hello world"
+[wechat-connector] async submission complete messageId="msg_a" sessionId="sess_async" requestId="wechat:bot_a:msg_a" processingMs=0
+  PASS  submits to RemoteLab and returns without waiting
+  PASS  already-handled messages are not re-submitted
+[wechat-connector] async processing started messageId="msg_c" peerUserId="user_c"
+[wechat-connector] async: no reply for msg_c (unsupported)
+  PASS  unsupported message type is silently skipped (no submit)
+
+§9 Connector inbox idempotency
+  PASS  rejects duplicate upstream event ID with different content
+  PASS  inbox serialises messages per conversation key
+  PASS  inbox processes different conversations in parallel
+
+§10 Email target ordering key
+  PASS  different email threads do not block each other
+  PASS  wechat: different peers are independent in the outbox
+
+────────────────────────────────────────────────────────────
+WeChat async admission tests: 31 passed, 0 failed
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="b" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="b" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] updates received accountId="a" messageCount=1 pollMs=0 nextCursorBytes=11
+[wechat-connector] inbound message accountId="a" messageId="same-id" peerUserId="peer" text="Fixture input"
+[wechat-connector] replaying stored message same-id
+[wechat-connector] replaying stored message same-id
+[wechat-connector] wechat delivery sent deliveryId="srcd_aaaaaaaaaaaaaaaaaaaaaaaa_0" peerUserId="peer" externalId="fixture-message" state="delivered"
+WeChat boundaries: inbox before cursor, cursor write failure, account dedup, refreshed-token replay and attachment-only fallback passed
+WeChat native typing unit/scenario tests passed
+WeChat native typing: durable activity projection, queued-peer sharing, fresh context, disconnect/reconnect and shutdown passed
+  ok: parseReferencesArray: empty string returns []
+  ok: parseReferencesArray: single ID
+  ok: parseReferencesArray: multiple IDs deduplicated
+  ok: parseReferencesArray: whitespace-only returns []
+  ok: buildEmailReplySubject: adds Re: prefix
+  ok: buildEmailReplySubject: does not double-add Re:
+  ok: buildEmailReplySubject: case-insensitive Re: detection
+  ok: buildEmailReplySubject: empty returns empty
+  ok: resolveEmailReplyFromAddress: same-domain alias preserved
+  ok: resolveEmailReplyFromAddress: different domain returns empty
+  ok: resolveEmailReplyFromAddress: falls back to toAddress
+  ok: buildEmailSourceDeliveryTarget: basic shape
+  ok: buildEmailSourceDeliveryTarget: references always array
+  ok: buildEmailSourceDeliveryTarget: threadId is earliest reference
+  ok: buildEmailSourceDelivery: connector is email
+  ok: buildEmailSourceRouteId: matches buildEmailBindingId
+  ok: from alias preserved through normalizeSourceDeliveryPlan (email connector)
+  ok: processEmailSourceDeliveryOnce: returns null when no claim
+  ok: processEmailSourceDeliveryOnce: single send attempt on success → complete
+  ok: processEmailSourceDeliveryOnce: network error → exactly ONE send attempt → unknown state (no safeToRetry)
+  ok: processEmailSourceDeliveryOnce: definite server rejection → safeToRetry=true
+  ok: processEmailSourceDeliveryOnce: flushes pending receipts before claiming
+  ok: startEmailSourceDeliveryPoller: stop clears interval
+  ok: agent-mail-worker: new submissions use sourceDelivery in message payload, not session completionTargets
+  ok: agent-mail-worker: explicit legacy completionTargets in automation are forwarded to session
+  ok: dispatchSessionEmailCompletionTargets: skipped when run has durable email sourceDelivery
+[tools] Resolved PATH dirs: /usr/local/openmpi/bin
+  /usr/local/cuda/bin
+  /home/zhangyu/.remotelab/workspace/remotelab-feishu-recovery-20260905/node_modules/.bin
+  /home/zhangyu/.remotelab/workspace/node_modules/.bin
+  /home/zhangyu/.remotelab/node_modules/.bin
+  /home/zhangyu/node_modules/.bin
+  /home/node_modules/.bin
+  /node_modules/.bin
+  /opt/node-v24.20.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin
+  /home/zhangyu/.local/bin
+  /opt/node-v24.20.0/bin
+  /opt/node-v24.20.0/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path
+  /home/zhangyu/.codex/tmp/arg0/codex-arg07OAWq7
+  /usr/local/bin
+  /usr/bin
+  /bin
+  /snap/bin
+  /home/zhangyu/.nvm/versions/node/current/bin
+  /home/zhangyu/.cargo/bin
+  /home/zhangyu/go/bin
+  /tmp/remotelab-mail-source-delivery-fE7KE1/.local/bin
+  /tmp/remotelab-mail-source-delivery-fE7KE1/.nvm/versions/node/current/bin
+  /tmp/remotelab-mail-source-delivery-fE7KE1/.cargo/bin
+  /tmp/remotelab-mail-source-delivery-fE7KE1/go/bin
+  ok: dispatchSessionEmailCompletionTargets: fires when run has NO durable email sourceDelivery
+  ok: agent-mail-worker: preparedSessionId persisted; crash-after-session does not duplicate session
+  ok: runEmailSourceDeliverySweep: claims email deliveries from guest instance outbox
+  ok: sendOutboundEmail: disableCurlFallback=true blocks fetch→curl retry (no duplicate send)
+  ok: sendOutboundEmail: timeoutMs forwards AbortSignal to fetchImpl
+  ok: processEmailSourceDeliveryInProcess: claim → send → complete in-process
+  ok: processEmailSourceDeliveryInProcess: returns null when no claim
+  ok: processEmailSourceDeliveryInProcess: network error calls failFn without safeToRetry
+  ok: updateMailboxItemForDelivery: updates matching mailbox item to reply_sent
+[embedded-mail-worker] starting — mailbox bot@example.com, polling every 10000ms
+  ok: embedded-mail-worker: startEmbeddedMailWorker starts in-process delivery poller
+
+36 tests: 36 passed, 0 failed
+email admission: lost HTTP receipt recovery, durable exact payload/runtime, no attachment re-upload and retry after pre-admission failure passed
+email real transport: response loss/502 unknown, 429 retry-safe, embedded receipt repair without resend, and no dropped attachments passed
+[embedded-mail-worker] starting — mailbox agent@example.test, polling every 5000ms
+[embedded-mail-worker] sweep: 0 processed, 1 failed
+[embedded-mail-worker] sweep: 1 processed, 0 failed
+embedded email outbox: independent admission/sender, old offline result, alias, attachment, item status and no duplicate mail passed
+
+npm run test:restart-gate (exit 0)
+
+
+> @ninglo/remotelab@0.3.2 test:restart-gate
+> node scripts/run-with-clean-instance-env.mjs npm run test:restart-gate:raw
+
+
+> @ninglo/remotelab@0.3.2 test:restart-gate:raw
+> node tests/test-runtime-alignment.mjs && node tests/test-chat-static-assets.mjs && node tests/test-chat-split-frontend-smoke.mjs && node tests/test-build-info-versioning.mjs && node tests/test-static-publish-command.mjs && node tests/test-static-asset-routing.mjs && node tests/test-chat-loader-versioned-assets.mjs && node tests/test-chat-build-update-indicator.mjs && node tests/test-source-runtime-only.mjs && node tests/test-cli-release-removed.mjs && node tests/test-cli-legacy-command-removed.mjs
+
+test-runtime-alignment: ok
+test-chat-split-frontend-smoke: ok
+✅ Build info versioning validated
+test-static-publish-command: ok
+✅ Static asset routing validated
+test-chat-loader-versioned-assets: ok
+test-chat-build-update-indicator: ok
+test-source-runtime-only: ok
+test-cli-release-removed: ok
+test-cli-legacy-command-removed: ok
+
+Legacy CLI phase14 and phase14b (exit 0)
+
+phase14-session-spawn-cli: ok
+phase14b-session-spawn-cli-internal-final-only: ok

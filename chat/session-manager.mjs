@@ -6,6 +6,7 @@ import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
+import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
 import { createRequestRuntime } from './request-runtime.mjs';
@@ -445,7 +446,7 @@ function buildDelegationContextOperation(task, childSession) {
     trigger: 'delegation',
     title: 'Parallel session spawned',
     summary: `RemoteLab handed off a focused subtask to ${childName}.`,
-    reason: normalizedTask || `Child session ${childId || childName} is running independently.`,
+    reason: normalizedTask || `Work was admitted to independent child session ${childId || childName}.`,
     ...(childId ? { targetSessionId: childId } : {}),
   });
 }
@@ -3505,10 +3506,9 @@ export async function delegateSession(sessionId, payload = {}) {
   _delegationTimestamps.push(now);
 
   const requestedName = typeof payload?.name === 'string' ? payload.name.trim() : '';
-  const requestedTool = typeof payload?.tool === 'string' ? payload.tool.trim() : '';
   const runInternally = payload?.internal === true;
-  const nextTool = requestedTool || source.tool;
-  const inheritRuntimePreferences = !requestedTool || requestedTool === source.tool;
+  const selection = await resolveDelegationRuntime(source, payload, getRun);
+  const nextTool = selection.tool;
 
   const child = await createSession(source.folder, nextTool, requestedName || '', {
     sourceId: source.sourceId || '',
@@ -3517,9 +3517,9 @@ export async function delegateSession(sessionId, payload = {}) {
     templateName: source.templateName || '',
     systemPrompt: source.systemPrompt || '',
     activeAgreements: source.activeAgreements || [],
-    model: inheritRuntimePreferences ? source.model || '' : '',
-    effort: inheritRuntimePreferences ? source.effort || '' : '',
-    thinking: inheritRuntimePreferences && source.thinking === true,
+    model: selection.model,
+    effort: selection.effort,
+    thinking: selection.thinking,
     delegatedFromSessionId: source.id,
     delegationDepth: sourceDepth + 1,
     ...(runInternally ? { internalRole: INTERNAL_SESSION_ROLE_AGENT_DELEGATE } : {}),
@@ -3532,10 +3532,7 @@ export async function delegateSession(sessionId, payload = {}) {
   });
   const outcome = await submitHttpMessage(child.id, handoffText, [], {
     requestId: createInternalRequestId('delegate'),
-    tool: requestedTool || undefined,
-    model: inheritRuntimePreferences ? source.model || undefined : undefined,
-    effort: inheritRuntimePreferences ? source.effort || undefined : undefined,
-    thinking: inheritRuntimePreferences && source.thinking === true,
+    ...selection,
   });
 
   if (!runInternally) {
@@ -3549,6 +3546,7 @@ export async function delegateSession(sessionId, payload = {}) {
   return {
     session: outcome.session || await getSession(child.id) || child,
     run: outcome.run || null,
+    sessionUrl: buildSessionNavigationHref(child.id),
   };
 }
 

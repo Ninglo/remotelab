@@ -1002,6 +1002,7 @@ async function phase14SessionSpawnCli() {
       {
         HOME: home,
         REMOTELAB_SESSION_ID: session.id,
+        REMOTELAB_RUN_ID: '',
         REMOTELAB_CHAT_BASE_URL: `http://127.0.0.1:${port}`,
       },
     );
@@ -1047,6 +1048,7 @@ async function phase14bSessionSpawnCliInternalFinalOnly() {
       {
         HOME: home,
         REMOTELAB_SESSION_ID: session.id,
+        REMOTELAB_RUN_ID: '',
         REMOTELAB_CHAT_BASE_URL: `http://127.0.0.1:${port}`,
       },
     );

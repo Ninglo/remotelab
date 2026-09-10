@@ -1,5 +1,11 @@
 [
   {
+    "id": "visible-session-delegation",
+    "description": "Ship one cross-Harness visible delegation workflow, with run-snapshot inheritance and an authoritative child session URL.",
+    "pass": true,
+    "verification_plan": "Fresh/resumed Codex, Claude and Pi prompt projection; custom bare-user opt-out; real CLI/HTTP admission, changed defaults, malformed source runs, visible child execution, package contents and full regression gate."
+  },
+  {
     "id": "owner-browser-desktop",
     "description": "Expose a persistent browser desktop under the existing instance domain and owner login, including WebSocket control.",
     "pass": true,
