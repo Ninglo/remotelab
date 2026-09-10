@@ -7,6 +7,7 @@ import { parse as parseUrl, fileURLToPath } from 'url';
 import { createHash } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { handleBrowserDesktopRequest } from './browser-desktop-proxy.mjs';
 import {
   CHAT_IMAGES_DIR,
   FILE_ASSET_STORAGE_ENABLED,
@@ -1558,6 +1559,7 @@ export async function handleRequest(req, res) {
   }
 
   // Auth required from here on
+  if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
   if (authSession?.role !== 'owner' && isOwnerOnlyRoute(pathname, req.method)) {

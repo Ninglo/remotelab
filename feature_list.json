@@ -1,5 +1,11 @@
 [
   {
+    "id": "owner-browser-desktop",
+    "description": "Expose a persistent browser desktop under the existing instance domain and owner login, including WebSocket control.",
+    "pass": true,
+    "verification_plan": "Isolated HTTP and binary WebSocket authorization, cross-origin denial, upstream credential isolation, browser rendering and live same-domain RFB handshake; existing WS and restart regressions."
+  },
+  {
     "id": "native-harness-input",
     "description": "Forward active-session inputs through Codex App Server, Pi RPC and Claude streaming input, keeping durable transport receipts and recovery.",
     "pass": true,
