@@ -21,7 +21,7 @@ const server = await createNativeInputServer({ directory: join(root, head.runId)
   submit: async input => { received.push(input.id); if (input.id === 'uncertain') throw Object.assign(new Error('lost native ack'), { code: 'NATIVE_UNCERTAIN' }); await blocked; return { accepted: true, id: input.id }; },
 });
 const waitFor = async predicate => { const until = Date.now() + 3000; while (!(await predicate())) { if (Date.now() > until) throw new Error('Timed out'); await new Promise(resolve => setTimeout(resolve, 5)); } };
-const dispatcher = createNativeRequestDispatcher({ store, getRun: async () => ({ id: head.runId, state }), getManifest: async () => ({ inputMode: 'native' }), runDirectory: id => join(root, id),
+const dispatcher = createNativeRequestDispatcher({ store, getRun: async () => ({ id: head.runId, state }), getManifest: async () => ({ inputMode: 'native', forkBaseSeq: 42 }), runDirectory: id => join(root, id),
   prepareInput: async r => ({ text: r.text, context: `Context for ${r.requestId}` }),
   recordInput: async (r, manifest) => recorded.push([r.requestId, manifest.managerTurnContext]), changed: async () => {}, onError: error => { throw error; },
   settle: async r => { if (state === 'completed') { await store.settle(r.key, { state: 'completed', payload: { text: 'shared final' } }); await store.mutate(r.key, current => ({ ...current, releasedAt: 'now', postCompletionPending: false })); } },
@@ -33,6 +33,7 @@ try {
   await waitFor(() => received.includes('third'));
   assert.deepEqual(received, ['second', 'third'], 'delayed native acknowledgements cannot block later input');
   assert.equal((await store.get(second.key)).nativeDispatchRunId, head.runId);
+  assert.equal((await store.get(second.key)).nativeInputBaseSeq, 42, 'recovery scans only the active execution history, retaining its original boundary after a declined handoff');
   state = 'completed'; unblock(); await dispatcher.idle();
   assert.equal((await store.get(third.key)).result.state, 'completed');
   assert.deepEqual(recorded.slice(0, 2), [['second', 'Context for second'], ['third', 'Context for third']]);

@@ -3090,6 +3090,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     await requests.settle(record.key, { state: 'failed', payload: null, error },
       buildReplyDeliveries(plan, { text: `消息未能交给当前 Harness：${error}`, attachments: [] }));
     await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
+    await requests.archiveFinished(record.key);
   },
   changed: async key => { const record = await requestRuntime.refresh(key); if (record) broadcastSessionInvalidation(record.sessionId); },
   onError: (error, sessionId) => console.error(`[native-input] ${sessionId}: ${error.stack || error}`),
@@ -3147,7 +3148,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
 
 async function ensureRequestInput(record, manifest) {
   if (record.options.recordUserMessage === false) return;
-  const events = await readEventsAfter(record.sessionId, 0);
+  const events = await readEventsAfter(record.sessionId, record.nativeInputBaseSeq ?? manifest.forkBaseSeq ?? 0);
   if (!events.some(event => event.type === 'message' && event.role === 'user' && event.requestId === record.requestId)) {
     const sourceContext = normalizeSourceContext(record.options.sourceContext, Infinity);
     const recordedText = typeof record.options.recordedUserText === 'string' && record.options.recordedUserText.trim()
