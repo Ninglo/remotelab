@@ -1090,14 +1090,26 @@ function stripLeadingMentionTokens(text) {
   return String(text || '').replace(/^\s*(?:@_[A-Za-z0-9_]+\s*)+/, '');
 }
 
+function extractForkCommandText(commandText) {
+  // Keep /fork line-oriented so mentioning the command in normal prose does
+  // not unexpectedly create a new Session. A visible rich-text mention may
+  // precede the marker; preserve that label in the task text for compatibility.
+  const marker = /(^|\r?\n)([ \t]*(?:@[^\r\n/]+?[ \t]+)?\/fork)(?=$|[ \t\r\n])/im;
+  if (!marker.test(commandText)) return null;
+  return trimString(commandText.replace(
+    /(^|\r?\n)([ \t]*(?:@[^\r\n/]+?[ \t]+)?)\/fork[ \t]*/gim,
+    '$1$2',
+  ));
+}
+
 function extractLocalCommand(summary) {
   const chatType = trimString(summary?.chatType).toLowerCase();
   if (!['group', 'topic', 'p2p', 'private'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  // Fork is a message-wide marker, independent of mention rendering or position.
-  if (['group', 'topic'].includes(chatType) && /\/fork/i.test(commandText)) {
-    return { type: 'fork', text: trimString(commandText.replace(/\/fork/gi, '')) };
+  if (['group', 'topic'].includes(chatType)) {
+    const forkText = extractForkCommandText(commandText);
+    if (forkText !== null) return { type: 'fork', text: forkText };
   }
   const commandMatch = commandText.match(/^\/(continue|help|status|default|harness|model|effort|follow|mute|unmute)(?:[ \t\r\n]+([\s\S]*))?$/i);
   if (commandMatch) {

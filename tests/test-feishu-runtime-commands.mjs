@@ -71,6 +71,9 @@ try {
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /model beta' }), { type: 'model', text: 'beta' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { type: 'status', text: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { type: 'default', text: 'model beta' });
+  assert.equal(extractLocalCommand({ ...summary,
+    messageText: 'connector 命令易用性可能设计下，比如消息里带上很多命令（包括 /fork 之类）。',
+  }), null, 'mentioning /fork in prose must not create a new task Session');
   assert.equal(extractLocalCommand({ ...summary, messageText: 'example: /model beta' }), null);
   assert.equal(extractLocalCommand({ ...summary, messageText: '/modelled beta' }), null);
   const richFork = summarizeEvent({ message: {
@@ -80,18 +83,18 @@ try {
     ] }),
   } });
   assert.deepEqual(extractLocalCommand(richFork), {
-    type: 'fork', text: '@Task Bot  discover datasets\nkeep the original table intact',
+    type: 'fork', text: '@Task Bot discover datasets\nkeep the original table intact',
   }, 'a rich-text mention must not hide the fork marker');
   for (const [messageText, text] of [
-    ['research first\n/fork then compare', 'research first\n then compare'],
-    ['new task /FORK', 'new task'],
-    ['请/fork调查', '请调查'],
-    ['why does /fork fail?', 'why does  fail?'],
-    ['/fork task /fork', 'task'],
+    ['research first\n/fork then compare', 'research first\nthen compare'],
+    ['/fork task', 'task'],
     ['@_user_1 /fork', ''],
-    ['/continue task /fork', '/continue task'],
   ]) {
     assert.deepEqual(extractLocalCommand({ ...summary, messageText }), { type: 'fork', text });
+  }
+  for (const messageText of ['new task /FORK', '请/fork调查', 'why does /fork fail?', '/continue task /fork']) {
+    assert.notEqual(extractLocalCommand({ ...summary, messageText })?.type, 'fork',
+      'fork must not be inferred from a prose or nested command mention');
   }
   for (const chatType of ['p2p', 'private']) {
     assert.equal(extractLocalCommand({ ...summary, chatType, messageText: 'task /fork' }), null,

@@ -339,13 +339,14 @@ access control and Bot handoff loop protection are unchanged.
 - A new group task (including an unbound topic/thread) creates a blank Session
   by default and replies in a Feishu thread. It does not copy group history.
 - Human follow-ups in a bound thread reuse that Session. A case-insensitive
-  `/fork` marker anywhere in a group message explicitly starts another blank
-  Session, including inside an existing thread. Leading mentions, rich-text
-  formatting and surrounding whitespace do not affect detection. All `/fork`
-  occurrences are removed and the remaining text becomes the task. This is a
-  literal marker: quoting or discussing `/fork` also triggers it, and it takes
-  precedence over other commands in the same message. Normal access and mention
-  rules still apply; the marker does not enable forks in private chats.
+  `/fork` command at the start of a message line explicitly starts another
+  blank Session, including inside an existing thread. A leading connector
+  mention (including a rich-text rendered mention) may precede the marker. The
+  marker and its separating whitespace are removed and the remaining text
+  becomes the task. Mentioning or discussing `/fork` inside ordinary prose does
+  not trigger a fork. The command takes precedence over other local commands
+  when it occupies a command line. Normal access and mention rules still apply;
+  the marker does not enable forks in private chats.
 - `/continue <task>` opts out of the default fork: use the existing thread
   binding, or the legacy group/topic Session route when there is no binding.
   Ordinary human private messages and document comments keep their prior routing.

@@ -255,7 +255,7 @@ try {
     await send({ messageId: 'configured-thread', threadId: 'created-thread-1' });
     assert.equal(createCount, beforeConfiguredThread, 'continue policy preserves existing thread binding');
     for (const [messageId, messageText, expectedText] of [
-      ['rich-mention-fork', '@Task Bot /fork discover datasets', '@Task Bot  discover datasets'],
+      ['rich-mention-fork', '@Task Bot /fork discover datasets', '@Task Bot discover datasets'],
       ['trailing-fork', 'discover datasets\n/fork', 'discover datasets'],
     ]) {
       const beforeMarker = createCount;
@@ -266,6 +266,11 @@ try {
       assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
       assert.equal(submittedPayloads.at(-1).sourceDelivery.target.forkCommand, true);
     }
+    const beforeProseMention = createCount;
+    const proseMention = '命令易用性可能需要设计，比如消息里带上很多命令（包括 /fork 之类）。';
+    await send({ messageId: 'prose-fork-mention', messageText: proseMention, threadId: 'created-thread-1' });
+    assert.equal(createCount, beforeProseMention, 'a prose /fork mention must reuse the bound Session');
+    assert.equal(submittedPayloads.at(-1).text, proseMention);
     await send({ messageId: 'configured-private', chatType: 'p2p' });
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:p2p:chat-1');
 

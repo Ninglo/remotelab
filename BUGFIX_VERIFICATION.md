@@ -146,3 +146,37 @@ AssertionError [ERR_ASSERTION]: a fork marker overrides the existing thread and 
   behavior when quoted or combined with another command.
 - Verification used isolated tests and mocked HTTP transport; it did not resend
   the original message or post external test messages.
+
+## Feishu prose `/fork` false-positive — 2026-09-12
+
+The 2026-09-10 marker behavior was too broad for normal conversation. A
+message discussing the command (for example, “包括 `/fork` 之类”) matched the
+message-wide detector, set `forkCommand`, bypassed the existing thread binding,
+and created a fresh Session. The existing thread binding itself was present;
+the new Session was caused by command classification, not by a lookup failure.
+
+### RED
+
+Added regressions for prose mentioning `/fork` and for a bound topic receiving
+that prose. Before the fix, the parser returned `{ type: 'fork' }` for the prose
+case:
+
+```text
+AssertionError [ERR_ASSERTION]: mentioning /fork in prose must not create a new task Session
+actual: { text: 'connector 命令易用性可能设计下，比如消息里带上很多命令（包括  之类）。', type: 'fork' }
+expected: null
+```
+
+### GREEN
+
+- `/fork` is now recognized only at the start of a message line, optionally
+  after a leading connector mention; ordinary prose and nested command text do
+  not trigger it.
+- A bound topic containing the prose mention reuses its existing Session; the
+  integration regression asserts that no new Session is created.
+- Existing explicit fork, rich-text mention and trailing command-line cases
+  remain covered.
+- Targeted runtime-command and topic-fork tests pass. The full suite and
+  restart gate pass; changed-module syntax, whitespace and advisory size
+  checks also pass.
+- No live connector restart, binding edit or external test message was used.
