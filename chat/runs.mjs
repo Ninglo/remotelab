@@ -81,6 +81,15 @@ function clipMiddle(text, maxChars = MAX_SPOOL_PREVIEW_CHARS) {
   return `${text.slice(0, head).trimEnd()}\n[... truncated by RemoteLab ...]\n${text.slice(-tail).trimStart()}`;
 }
 
+function clipStructuredField(container, field) {
+  if (!container || typeof container[field] !== 'string') return false;
+  const value = container[field];
+  if (!value || value.length <= MAX_SPOOL_INLINE_CHARS) return false;
+  container[field] = clipMiddle(value);
+  container[`${field}Bytes`] = Buffer.byteLength(value, 'utf8');
+  return true;
+}
+
 export async function ensureRunsDir() {
   await ensureDir(CHAT_RUNS_DIR);
 }
@@ -341,13 +350,31 @@ async function sanitizeStructuredRecord(runId, value) {
   const next = clone(value);
   if (!next || typeof next !== 'object') return next;
 
+  // Codex emits item.updated for every streaming output delta. Persisting the
+  // complete, growing aggregated_output for each delta creates an unbounded
+  // series of near-duplicate artifacts (and can exhaust disk/heap). The
+  // completed item is still persisted in full below; intermediate updates only
+  // need a bounded preview for live projection and recovery diagnostics.
+  const isIntermediateItemUpdate = next.type === 'item.updated';
+
   if (next.item && typeof next.item === 'object') {
-    await externalizeStringField(runId, next.item, 'aggregated_output', 'aggregated_output');
-    await externalizeStringField(runId, next.item, 'text', 'item_text');
-    await externalizeStringField(runId, next.item, 'command', 'item_command');
+    if (isIntermediateItemUpdate) {
+      clipStructuredField(next.item, 'aggregated_output');
+      clipStructuredField(next.item, 'text');
+      clipStructuredField(next.item, 'command');
+    } else {
+      await externalizeStringField(runId, next.item, 'aggregated_output', 'aggregated_output');
+      await externalizeStringField(runId, next.item, 'text', 'item_text');
+      await externalizeStringField(runId, next.item, 'command', 'item_command');
+    }
     for (const change of next.item.type === 'file_change' && Array.isArray(next.item.changes) ? next.item.changes : []) {
-      await externalizeStringField(runId, change, 'diff', 'file_diff');
-      await externalizeStringField(runId, change, 'patch', 'file_patch');
+      if (isIntermediateItemUpdate) {
+        clipStructuredField(change, 'diff');
+        clipStructuredField(change, 'patch');
+      } else {
+        await externalizeStringField(runId, change, 'diff', 'file_diff');
+        await externalizeStringField(runId, change, 'patch', 'file_patch');
+      }
     }
   }
 
@@ -414,10 +441,16 @@ async function normalizeSpoolRecord(runId, record) {
     normalized.line = JSON.stringify(normalized.json);
   }
   if (typeof normalized.line === 'string' && normalized.line.length > MAX_SPOOL_INLINE_CHARS) {
-    const ref = await writeRunArtifactText(runId, 'line', normalized.line);
-    normalized.lineArtifact = ref;
     normalized.lineBytes = Buffer.byteLength(normalized.line, 'utf8');
-    normalized.line = clipMiddle(normalized.line);
+    // item.updated has already had its large fields clipped above. Avoid
+    // creating a second full-line artifact for each streaming delta.
+    if (normalized.json?.type === 'item.updated') {
+      normalized.line = clipMiddle(normalized.line);
+    } else {
+      const ref = await writeRunArtifactText(runId, 'line', normalized.line);
+      normalized.lineArtifact = ref;
+      normalized.line = clipMiddle(normalized.line);
+    }
   }
   return normalized;
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, readdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -14,6 +14,7 @@ try {
     appendRunSpoolRecord,
     createRun,
     materializeRunSpoolLine,
+    readRunSpoolRecords,
     readRunSpoolDelta,
     updateRun,
   } = await import('./chat/runs.mjs');
@@ -69,6 +70,39 @@ try {
   assert.equal(typeof oversizedDelta.records[0].lineArtifact, 'string');
   assert.equal((await materializeRunSpoolLine(run.id, oversizedDelta.records[0])).startsWith('y'), true);
   assert.equal(oversizedDelta.records[1].line, 'small-4');
+
+  const streamingRun = await createRun({
+    status: { sessionId: 'session_streaming', requestId: 'req_streaming', state: 'accepted', tool: 'fake-codex' },
+    manifest: { sessionId: 'session_streaming', requestId: 'req_streaming', folder: '~', tool: 'fake-codex', prompt: 'hi', options: {} },
+  });
+  const growingOutput = 'z'.repeat(128 * 1024);
+  const streamingItem = {
+    type: 'item.updated',
+    item: { id: 'command_streaming', type: 'command_execution', status: 'in_progress', aggregated_output: growingOutput },
+  };
+  await appendRunSpoolRecord(streamingRun.id, {
+    stream: 'stdout',
+    line: JSON.stringify(streamingItem),
+    json: streamingItem,
+  });
+  const streamingRecords = await readRunSpoolRecords(streamingRun.id);
+  assert.equal(streamingRecords.length, 1);
+  assert.equal(streamingRecords[0].json.item.aggregated_output.length < 5000, true);
+  assert.equal(readdirSync(join(home, '.config', 'remotelab', 'chat-runs', streamingRun.id, 'artifacts')).length, 0);
+
+  const completedItem = {
+    type: 'item.completed',
+    item: { id: 'command_streaming', type: 'command_execution', status: 'completed', aggregated_output: growingOutput },
+  };
+  await appendRunSpoolRecord(streamingRun.id, {
+    stream: 'stdout',
+    line: JSON.stringify(completedItem),
+    json: completedItem,
+  });
+  const completedRecords = await readRunSpoolRecords(streamingRun.id);
+  assert.equal(completedRecords.length, 2);
+  assert.equal((await materializeRunSpoolLine(streamingRun.id, completedRecords[1])).includes(growingOutput), true);
+  assert.equal(readdirSync(join(home, '.config', 'remotelab', 'chat-runs', streamingRun.id, 'artifacts')).length, 1);
 
   console.log('test-run-spool-delta: ok');
 } finally {
