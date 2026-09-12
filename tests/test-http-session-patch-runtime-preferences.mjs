@@ -230,12 +230,36 @@ try {
     );
     assert.equal(staleModelPatch.json.session?.effort, 'xhigh', 'model upgrade should preserve the requested effort');
 
+    const createdWithRuntime = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'codex',
+      model: 'gpt-5.6-sol',
+      effort: 'xhigh',
+      name: 'Creation snapshot',
+      externalTriggerId: 'runtime-snapshot-test',
+    });
+    assert.equal(createdWithRuntime.status, 201);
+    assert.equal(createdWithRuntime.json.session?.model, 'gpt-5.6-sol', 'new Session creation should persist its runtime snapshot');
+    assert.equal(createdWithRuntime.json.session?.effort, 'xhigh');
+    const reusedWithDifferentRuntime = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'codex',
+      model: 'gpt-6-astra',
+      effort: 'low',
+      name: 'Creation snapshot retry',
+      externalTriggerId: 'runtime-snapshot-test',
+    });
+    assert.equal(reusedWithDifferentRuntime.status, 201);
+    assert.equal(reusedWithDifferentRuntime.json.session?.id, createdWithRuntime.json.session?.id);
+    assert.equal(reusedWithDifferentRuntime.json.session?.model, 'gpt-5.6-sol', 'reusing a Session must not silently replace its runtime snapshot');
+    assert.equal(reusedWithDifferentRuntime.json.session?.effort, 'xhigh');
+
     console.log('test-http-session-patch-runtime-preferences: ok');
     const selection = { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high', thinking: false };
     const override = await request(port, 'PATCH', `/api/sessions/${older.id}`, { feishuRuntimeSelection: selection });
     assert.equal(override.status, 200);
     assert.deepEqual(override.json.session.feishuRuntimeSelection, selection, 'command preferences persist independently of an active run');
-    assert.equal(override.json.session.model, 'gpt-6-astra', 'setting the next Feishu runtime does not rewrite the current runtime');
+    assert.equal(override.json.session.model, 'gpt-5.6-sol', 'Session runtime changes apply to the generic Session snapshot');
     const reloaded = await request(port, 'GET', `/api/sessions/${older.id}`);
     assert.deepEqual(reloaded.json.session.feishuRuntimeSelection, selection);
     await stopServer(server);

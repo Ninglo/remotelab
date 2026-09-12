@@ -349,6 +349,9 @@ export async function handleSessionMainRoutes({
         starterPreset,
         systemPrompt,
         welcomeMessage,
+        model,
+        effort,
+        thinking,
         internalRole,
         completionTargets,
         externalTriggerId,
@@ -383,6 +386,21 @@ export async function handleSessionMainRoutes({
       if (!effectiveTool) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'tool is required' }));
+        return true;
+      }
+      if (model !== undefined && typeof model !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'model must be a string' }));
+        return true;
+      }
+      if (effort !== undefined && typeof effort !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'effort must be a string' }));
+        return true;
+      }
+      if (thinking !== undefined && typeof thinking !== 'boolean') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'thinking must be a boolean' }));
         return true;
       }
       if (!await isDirectoryPath(effectiveFolder)) {
@@ -429,6 +447,11 @@ export async function handleSessionMainRoutes({
       }
       if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
         createOptions.sourceContext = sourceContext;
+      }
+      if (!agentScoped) {
+        if (typeof model === 'string' && model.trim()) createOptions.model = model.trim();
+        if (typeof effort === 'string' && effort.trim()) createOptions.effort = effort.trim();
+        if (thinking === true) createOptions.thinking = true;
       }
       const initialWelcomeMessage = createOptions.templateId
         ? ''

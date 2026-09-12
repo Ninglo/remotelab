@@ -198,7 +198,7 @@ try {
   assert.equal((await getRunManifest(commandOutcome.run.id)).options.model, 'command-model');
 
   const laterConnectorOutcome = await submitHttpMessage(connectorSession.id, '后续消息。', [], { ...connectorOptions, requestId: 'connector-later' });
-  assert.equal((await requests.byResponse(connectorSession.id, laterConnectorOutcome.response.id)).runtimeSelection.model, 'fake-model', '/follow restores Web UI for new inputs');
+  assert.equal((await requests.byResponse(connectorSession.id, laterConnectorOutcome.response.id)).runtimeSelection.model, 'command-model', 'a Session runtime change remains stable for later connector inputs');
   assert.equal((await requests.byResponse(connectorSession.id, laterConnectorOutcome.response.id)).deliveries.length, 0);
   await waitFor(
     async () => (await getSessionReplyPublication(connectorSession.id, laterConnectorOutcome.response?.id))?.state === 'ready',

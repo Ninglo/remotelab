@@ -887,6 +887,13 @@ async function main() {
     assert.match(composeAsset.text, /window\.RemoteLabLayout\?\.subscribe/);
     assert.doesNotMatch(composeAsset.text, /voice-transcriptions/);
 
+    const realtimeAsset = await request(port, 'GET', '/chat/realtime.js');
+    assert.equal(realtimeAsset.status, 200, 'realtime asset should load');
+    assert.match(realtimeAsset.text, /createPayload\.model = msg\.model/,
+      'new-session runtime selection should reach the backend create request');
+    assert.match(realtimeAsset.text, /createPayload\.effort = msg\.effort/,
+      'new-session effort should reach the backend create request');
+
     const voiceInputAsset = await request(port, 'GET', '/chat/voice-input.js');
     assert.equal(voiceInputAsset.status, 200, 'voice input asset should load');
     assert.match(voiceInputAsset.text, /DOUBAO_VOICE_WS_PATH/);

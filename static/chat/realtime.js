@@ -106,6 +106,15 @@ async function dispatchAction(msg) {
           templateName: msg.templateName || "",
           sourceContext: msg.sourceContext,
         };
+        if (Object.prototype.hasOwnProperty.call(msg, "model")) {
+          createPayload.model = msg.model || "";
+        }
+        if (Object.prototype.hasOwnProperty.call(msg, "effort")) {
+          createPayload.effort = msg.effort || "";
+        }
+        if (Object.prototype.hasOwnProperty.call(msg, "thinking")) {
+          createPayload.thinking = msg.thinking === true;
+        }
         if (Object.prototype.hasOwnProperty.call(msg, "starterPreset")) {
           createPayload.starterPreset = msg.starterPreset || "";
         }

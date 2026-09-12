@@ -22,14 +22,29 @@ try {
   const session = { ...defaults, feishuRuntimeSelection: pinned };
   const inherited = { tool: 'claude', model: 'opus', effort: '', sourceContext: { connector: 'feishu' } };
   assert.deepEqual(await resolveSessionRuntimeSelection(session, inherited), pinned,
-    'a Feishu command pins the whole selection despite subsequent UI changes');
-  assert.deepEqual(await resolveSessionRuntimeSelection(session, { ...defaults, sourceContext: { connector: 'wechat' } }), defaults,
-    'a Feishu override does not change another surface');
+    'a Session snapshot wins over later connector defaults');
+  assert.deepEqual(await resolveSessionRuntimeSelection(session, { ...defaults, sourceContext: { connector: 'wechat' } }), pinned,
+    'the Session snapshot applies to every connector surface');
   assert.deepEqual(await resolveSessionRuntimeSelection(session, defaults), defaults,
     'Web UI requests can still make their own explicit selection');
-  assert.equal((await resolveSessionRuntimeSelection({ ...session, feishuRuntimeSelection: null }, inherited)).tool, 'claude',
-    '/follow restores the incoming UI selection');
+  assert.equal((await resolveSessionRuntimeSelection({ ...session, feishuRuntimeSelection: null }, inherited)).tool, 'codex',
+    'clearing the legacy field does not change the generic Session snapshot');
   assert.deepEqual(await resolveSessionRuntimeSelection(session, { ...inherited, sourceContext: undefined, sourceDelivery: { connector: 'feishu' } }), pinned);
+  assert.deepEqual(
+    await resolveSessionRuntimeSelection(pinned, { sourceContext: { connector: 'feishu' } }),
+    pinned,
+    'the generic Session runtime snapshot applies to Feishu without a connector-specific override',
+  );
+  assert.deepEqual(
+    await resolveSessionRuntimeSelection(pinned, { sourceContext: { connector: 'wechat' } }),
+    pinned,
+    'the generic Session runtime snapshot applies consistently to every connector',
+  );
+  assert.deepEqual(
+    await resolveSessionRuntimeSelection({ ...defaults, feishuRuntimeSelection: pinned }, { sourceContext: { connector: 'wechat' } }),
+    pinned,
+    'legacy connector snapshots are treated as Session snapshots during migration',
+  );
   const noEffort = { tool: 'unlisted-tool', model: 'plain', effort: '', thinking: false };
   assert.deepEqual(await resolveSessionRuntimeSelection({ ...noEffort, effort: 'high', feishuRuntimeSelection: noEffort }, inherited), noEffort,
     'an explicit empty effort must not inherit the last running model effort');

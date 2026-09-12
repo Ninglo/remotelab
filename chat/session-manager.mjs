@@ -2111,6 +2111,7 @@ export async function createSession(folder, tool, name, extra = {}) {
   const hasRequestedThinking = Object.prototype.hasOwnProperty.call(extra, 'thinking') || isLegacyMicroAgentToolId(tool);
   const requestedThinking = normalizedRuntimeRequest.thinking;
   const hasRequestedSourceContext = Object.prototype.hasOwnProperty.call(extra, 'sourceContext');
+  const allowExistingRuntimeUpdate = extra.updateRuntime === true;
   const requestedSourceContext = normalizeSourceContext(extra.sourceContext);
   const hasRequestedActiveAgreements = Object.prototype.hasOwnProperty.call(extra, 'activeAgreements');
   const requestedActiveAgreements = hasRequestedActiveAgreements
@@ -2222,7 +2223,7 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (updated.tool !== normalizedRuntimeRequest.tool) {
+        if (allowExistingRuntimeUpdate && updated.tool !== normalizedRuntimeRequest.tool) {
           updated.tool = normalizedRuntimeRequest.tool;
           changed = true;
         }
@@ -2233,19 +2234,19 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (hasRequestedModel && (updated.model || '') !== requestedModel) {
+        if (allowExistingRuntimeUpdate && hasRequestedModel && (updated.model || '') !== requestedModel) {
           if (requestedModel) updated.model = requestedModel;
           else delete updated.model;
           changed = true;
         }
 
-        if (hasRequestedEffort && (updated.effort || '') !== requestedEffort) {
+        if (allowExistingRuntimeUpdate && hasRequestedEffort && (updated.effort || '') !== requestedEffort) {
           if (requestedEffort) updated.effort = requestedEffort;
           else delete updated.effort;
           changed = true;
         }
 
-        if (hasRequestedThinking && updated.thinking !== requestedThinking) {
+        if (allowExistingRuntimeUpdate && hasRequestedThinking && updated.thinking !== requestedThinking) {
           if (requestedThinking) updated.thinking = true;
           else delete updated.thinking;
           changed = true;
@@ -2935,6 +2936,29 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
       changed = true;
     }
 
+    // Keep the legacy connector field and the generic Session snapshot
+    // aligned while older persisted sessions are being migrated. New callers
+    // should patch the generic fields below directly.
+    if (hasFeishuRuntimePatch && feishuRuntimeSelection) {
+      if (session.tool !== feishuRuntimeSelection.tool) {
+        session.tool = feishuRuntimeSelection.tool;
+        toolChanged = true;
+        changed = true;
+      }
+      if ((session.model || '') !== feishuRuntimeSelection.model) {
+        session.model = feishuRuntimeSelection.model;
+        changed = true;
+      }
+      if ((session.effort || '') !== feishuRuntimeSelection.effort) {
+        session.effort = feishuRuntimeSelection.effort;
+        changed = true;
+      }
+      if (session.thinking !== feishuRuntimeSelection.thinking) {
+        session.thinking = feishuRuntimeSelection.thinking;
+        changed = true;
+      }
+    }
+
     if (hasToolPatch && nextTool && session.tool !== nextTool) {
       session.tool = nextTool;
       toolChanged = true;
@@ -2961,6 +2985,19 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
       const nextThinking = normalizedRuntimePatch.thinking;
       if (session.thinking !== nextThinking) {
         session.thinking = nextThinking;
+        changed = true;
+      }
+    }
+
+    if ((hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch) && session.feishuRuntimeSelection) {
+      const nextLegacySelection = {
+        tool: session.tool || session.feishuRuntimeSelection.tool,
+        model: session.model || '',
+        effort: session.effort || '',
+        thinking: session.thinking === true,
+      };
+      if (JSON.stringify(session.feishuRuntimeSelection) !== JSON.stringify(nextLegacySelection)) {
+        session.feishuRuntimeSelection = nextLegacySelection;
         changed = true;
       }
     }

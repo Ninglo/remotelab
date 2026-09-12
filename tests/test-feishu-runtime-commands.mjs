@@ -31,10 +31,32 @@ try {
     else if (path === '/api/sessions') json = { sessions: [{ ...session, externalTriggerId: 'feishu:p2p:private' }] };
     else if (path === '/api/sessions/s1') {
       if (options.method === 'PATCH') {
-        if (options.body.feishuRuntimeSelection === null) delete session.feishuRuntimeSelection;
-        else session.feishuRuntimeSelection = structuredClone(options.body.feishuRuntimeSelection);
+        if (Object.prototype.hasOwnProperty.call(options.body, 'tool')) session.tool = options.body.tool;
+        if (Object.prototype.hasOwnProperty.call(options.body, 'model')) session.model = options.body.model;
+        if (Object.prototype.hasOwnProperty.call(options.body, 'effort')) session.effort = options.body.effort;
+        if (Object.prototype.hasOwnProperty.call(options.body, 'thinking')) session.thinking = options.body.thinking;
+        session.feishuRuntimeSelection = {
+          tool: session.tool,
+          model: session.model,
+          effort: session.effort,
+          thinking: session.thinking === true,
+        };
       }
       json = { session: structuredClone(session) };
+    } else if (path === '/api/runtime-selection' && options.method === 'POST') {
+      selection = {
+        mode: 'default',
+        tool: options.body.selectedTool,
+        model: options.body.selectedModel,
+        effort: options.body.selectedEffort,
+        thinking: false,
+      };
+      json = { selection: {
+        selectedTool: options.body.selectedTool,
+        selectedModel: options.body.selectedModel,
+        selectedEffort: options.body.selectedEffort,
+        reasoningKind: options.body.reasoningKind,
+      } };
     } else throw new Error(`Unexpected request ${path}`);
     return { response: { ok: true, status: 200 }, json };
   };
@@ -48,6 +70,7 @@ try {
   const run = (type, text = '', target = summary, extra = {}) => handleFeishuRuntimeCommand(runtime, target, { type, text }, { ...options, ...extra });
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /model beta' }), { type: 'model', text: 'beta' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { type: 'status', text: '' });
+  assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { type: 'default', text: 'model beta' });
   assert.equal(extractLocalCommand({ ...summary, messageText: 'example: /model beta' }), null);
   assert.equal(extractLocalCommand({ ...summary, messageText: '/modelled beta' }), null);
   const richFork = summarizeEvent({ message: {
@@ -74,9 +97,9 @@ try {
     assert.equal(extractLocalCommand({ ...summary, chatType, messageText: 'task /fork' }), null,
       'the fork marker keeps its group-only scope');
   }
-  assert.match(await run('status'), /Follow Web UI/);
+  assert.match(await run('status'), /作用范围：当前 Session/);
   assert.match(await run('model'), /\/model beta/);
-  assert.equal(session.feishuRuntimeSelection, undefined, 'listing must preserve follow mode');
+  assert.equal(session.feishuRuntimeSelection, undefined, 'listing must not mutate the Session');
   assert.match(await run('model', 'beta'), /beta/);
   assert.deepEqual(session.feishuRuntimeSelection, { tool: 'codex', model: 'beta', effort: 'medium', thinking: false });
   selection = { mode: 'ui', tool: 'pi', model: 'provider/gamma', effort: '', thinking: false };
@@ -91,12 +114,15 @@ try {
   assert.match(await run('harness', 'pi'), /provider\/gamma/);
   assert.deepEqual(session.feishuRuntimeSelection, { tool: 'pi', model: 'provider/gamma', effort: '', thinking: false });
   assert.match(await run('effort', 'high'), /不支持/);
-  assert.match(await run('follow'), /Follow Web UI/);
-  assert.equal(session.feishuRuntimeSelection, undefined);
+  assert.match(await run('follow'), /重置为 Default/);
+  assert.equal(session.feishuRuntimeSelection?.tool, 'pi');
   assert.match(await run('status'), /provider\/gamma/);
   assert.match(await run('model', 'beta', { ...summary, threadId: 'unbound' }), /话题/);
   assert.match(await run('model', '', { ...summary, threadId: '' }), /provider\/gamma/);
-  assert.match(await run('status', '', { ...summary, threadId: '', chatType: 'p2p', chatId: 'private' }), /当前会话/);
+  assert.match(await run('status', '', { ...summary, threadId: '', chatType: 'p2p', chatId: 'private' }), /当前 Session/);
+  assert.match(await run('default', 'harness codex', { ...summary, threadId: 'unbound' }), /新 Session 的 Default/);
+  assert.match(await run('default', 'model beta', { ...summary, threadId: 'unbound' }), /新 Session 的 Default/);
+  assert.equal(selection.model, 'beta', 'Default command should update the shared default selection');
   assert.equal(calls.some(call => call.path === '/api/sessions' && call.method === 'POST'), false, 'commands never create AI sessions');
 
   const replies = [];
@@ -109,14 +135,14 @@ try {
     submitRemoteLabRequest: async () => { aiCalls++; return { sessionId: 'unexpected' }; },
   };
   await handleMessage(runtime, { ...summary, messageText: '/status' }, 'test', helpers);
-  assert.match(replies.at(-1), /Follow Web UI/);
+  assert.match(replies.at(-1), /当前 Session/);
   await handleMessage(runtime, { ...summary, messageId: 'm2', messageText: '/help' }, 'test', helpers);
   assert.match(replies.at(-1), /\/follow/);
   runtime.botIdentity = { openId: 'this-bot' };
   const botControl = await handleMessage(runtime, { ...summary, messageText: '/model provider/gamma',
     mentions: [{ openId: 'this-bot' }], sender: { senderType: 'app' } }, 'test', helpers);
   assert.equal(botControl.reason, 'bot_control_command');
-  assert.equal(session.feishuRuntimeSelection, undefined, 'peer bots cannot change runtime preferences');
+  assert.equal(session.feishuRuntimeSelection?.tool, 'pi', 'peer bots cannot change runtime preferences');
   assert.equal(aiCalls, 0, 'control commands never run through a model');
 
   // Persist the exact command plan before PATCH, then reuse it on inbox retry.

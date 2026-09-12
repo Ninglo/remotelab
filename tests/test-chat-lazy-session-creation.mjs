@@ -69,6 +69,8 @@ const context = {
   isDesktop: true,
   preferredTool: 'codex',
   selectedTool: 'codex',
+  selectedModel: 'gpt-5.6-sol',
+  selectedEffort: 'xhigh',
   toolsList: [{ id: 'codex' }],
   DEFAULT_APP_ID: 'chat',
   DEFAULT_WEB_SOURCE_NAME: 'RemoteLab',
@@ -151,6 +153,8 @@ assert.equal(materialized, true);
 assert.equal(calls.dispatch.length, 1, 'the first send path should materialize exactly one backend session');
 assert.equal(calls.dispatch[0]?.action, 'create');
 assert.equal(calls.dispatch[0]?.tool, 'codex');
+assert.equal(calls.dispatch[0]?.model, 'gpt-5.6-sol');
+assert.equal(calls.dispatch[0]?.effort, 'xhigh');
 assert.equal(calls.dispatch[0]?.templateId, 'agent-review');
 assert.equal(calls.dispatch[0]?.sourceContext?.channel, 'pwa_shortcut');
 assert.equal(context.currentSessionId, 'created-session');

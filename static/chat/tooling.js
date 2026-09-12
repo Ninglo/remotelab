@@ -1107,7 +1107,10 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
 
     inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
     applyCurrentModelReasoningUi({ sessionPreferences });
-    queueRuntimeSelectionSync();
+    // Loading an attached Session only reflects its snapshot in the picker;
+    // it must not silently rewrite the shared Default. Explicit picker
+    // changes below still sync both the Default and the current Session.
+    if (!currentSessionId) queueRuntimeSelectionSync();
   } catch (error) {
     console.warn("[models] Failed to load model picker:", error?.message || error);
     resetCurrentModelPickerUi();

@@ -858,6 +858,9 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     systemPrompt: runtime.config.systemPrompt,
     externalTriggerId,
     sourceContext: buildSessionSourceContext(effectiveSummary),
+    ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
+    ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
+    ...(runtimeSelection.thinking ? { thinking: true } : {}),
   };
   const threadBinding = isForkCommand
     ? null
@@ -876,6 +879,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: effectiveSummary },
     text: buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
+    runtimeSelectionScope: 'default',
     sourceContext: buildMessageSourceContext(messageSummary),
     ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
@@ -1095,7 +1099,7 @@ function extractLocalCommand(summary) {
   if (['group', 'topic'].includes(chatType) && /\/fork/i.test(commandText)) {
     return { type: 'fork', text: trimString(commandText.replace(/\/fork/gi, '')) };
   }
-  const commandMatch = commandText.match(/^\/(continue|help|status|harness|model|effort|follow|mute|unmute)(?:[ \t\r\n]+([\s\S]*))?$/i);
+  const commandMatch = commandText.match(/^\/(continue|help|status|default|harness|model|effort|follow|mute|unmute)(?:[ \t\r\n]+([\s\S]*))?$/i);
   if (commandMatch) {
     if (commandMatch[1].toLowerCase() === 'continue' && !['group', 'topic'].includes(chatType)) return null;
     return {

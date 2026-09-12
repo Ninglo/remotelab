@@ -36,6 +36,8 @@ function isNewSessionDraftActive() {
 
 function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions || {}) {
   const tool = selectedTool || preferredTool || toolsList[0]?.id;
+  const model = typeof selectedModel === "string" ? selectedModel : "";
+  const effort = typeof selectedEffort === "string" ? selectedEffort : "";
   if (!tool) return null;
   const preferredAgentId = typeof getPreferredAgentTemplateId === "function"
     ? getPreferredAgentTemplateId()
@@ -54,6 +56,8 @@ function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions ||
     templateId: preferredAgentId,
     templateName: preferredAgentName,
     forceComposerFocus: true,
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
     ...(options?.sourceContext && typeof options.sourceContext === "object"
       ? { sourceContext: options.sourceContext }
       : {}),

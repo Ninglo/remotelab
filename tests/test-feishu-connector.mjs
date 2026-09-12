@@ -1343,6 +1343,8 @@ try {
   assert.equal(createdPayload?.sourceId, 'feishu');
   assert.equal(createdPayload?.sourceName, 'Feishu');
   assert.equal(createdPayload?.tool, 'claude');
+  assert.equal(createdPayload?.model, 'claude-sonnet-4-5', 'the first connector request snapshots its model at Session creation');
+  assert.equal(createdPayload?.effort, 'high', 'the first connector request snapshots its effort at Session creation');
   assert.equal(createdPayload?.name, '', 'Feishu connector should let RemoteLab auto-rename sessions from the turn content');
   assert.equal(createdPayload?.systemPrompt, 'Reply with plain text only.');
   assert.equal(createdPayload?.externalTriggerId, 'feishu:p2p:chat_for_scope');

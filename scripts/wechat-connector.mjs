@@ -2102,6 +2102,9 @@ async function submitWeChatMessageAsync(runtime, summary, {
       systemPrompt: runtime.config.systemPrompt,
       externalTriggerId: buildExternalTriggerId(summary),
       sourceContext: buildSessionSourceContext({ ...summary, sourceRouteId: runtime.config.sourceRouteId }),
+      ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
+      ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
+      ...(runtimeSelection.thinking ? { thinking: true } : {}),
     });
 
     const attachmentResolution = await wechatInboundResourceService.resolve(runtime, summary, {
@@ -2121,6 +2124,7 @@ async function submitWeChatMessageAsync(runtime, summary, {
       },
       text: buildRemoteLabMessage(messageSummary),
       tool: runtimeSelection.tool,
+      runtimeSelectionScope: 'default',
       sourceContext: buildMessageSourceContext({ ...messageSummary, sourceRouteId }),
       ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
       ...(runtimeSelection.thinking ? { thinking: true } : {}),

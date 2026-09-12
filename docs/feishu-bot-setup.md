@@ -249,21 +249,23 @@ can separately be overridden per group with `sessionPolicy` below.
 
 ### Harness and model commands
 
-Feishu follows the Web UI runtime selection by default. Inside an existing task
-thread or private conversation, use these commands to inspect or override it:
+Runtime selection has two levels. `Default` is copied when a new Session is
+created; an existing Session keeps its own snapshot until explicitly changed.
+Inside an existing task thread or private conversation, use these commands:
 
 | Command | Behavior |
 | --- | --- |
-| `/status` | Show the Harness, model, effort and mode for the next message. |
-| `/harness` or `/harness <id>` | List available Harnesses or select one. |
-| `/model` or `/model <id>` | List the current Harness's models or select one. |
-| `/effort` or `/effort <level>` | List supported reasoning levels or select one. |
-| `/follow` | Clear this session's override and return to the connector default (normally Follow Web UI). |
+| `/status` | Show the Harness, model and effort in the current scope. |
+| `/default` or `/default <harness\|model\|effort> <value>` | Show or change the Default used by new Sessions. |
+| `/harness` or `/harness <id>` | List available Harnesses or change the current Session. |
+| `/model` or `/model <id>` | List the current Harness's models or change the current Session. |
+| `/effort` or `/effort <level>` | List supported reasoning levels or change the current Session. |
+| `/follow` | Compatibility alias: copy the current Default into this Session. |
 | `/mute` | Stop automatic responses in the current topic or chat; explicit mentions still wake the Bot once. |
 | `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and `/fork` / `/continue`. |
 
-Selecting any runtime option pins the complete Harness/model/effort selection
+Selecting any runtime option updates the complete Harness/model/effort snapshot
 for subsequent Feishu messages in that Session. Selecting a different Harness
 uses its own default model and effort; selecting a different model uses that
 model's default effort. Invalid choices leave the current configuration intact.
@@ -271,20 +273,16 @@ Lists and `/status` are read-only. In a group with mention-only responses, menti
 the Bot unless it has already joined the current thread.
 
 Control commands execute directly without launching an AI turn or creating a
-task. On the group main timeline they show defaults and direct setters to an
-existing task thread. Groups configured with `sessionPolicy: continue` can also
-change their existing shared group Session. A private conversation must have a
-Session from an earlier task before a setter can apply. Peer Bots cannot invoke
-these control commands.
+task. `/default ...` changes only the shared Default. The other setters change
+only an existing Session; a group main timeline must first create a task with
+`/fork <任务文本>` when no Session is bound. Peer Bots cannot invoke these
+control commands.
 
-Overrides are stored as `feishuRuntimeSelection` on Session metadata, separately
-from the last running tool/model. They survive restart and do not change the
-Web UI's global default, other Sessions, or other connector types. The Web UI
-can still submit its own runtime choice for the same Session; the explicit
-Feishu override remains until `/follow` or another Feishu selection command.
-Running and already queued Requests retain the selection frozen at admission.
-The Inbox saves a setter's exact plan before applying it, so retries do not
-re-resolve changing Web UI defaults.
+When a connector creates a new Session, its selected Harness/model/effort is
+written as part of Session creation and sent with the first prompt. There is no
+separate "set effort, then send the task" step. Running and already queued
+Requests retain the selection frozen at admission. The Inbox saves a setter's
+exact plan before applying it, so retries do not re-resolve changing Defaults.
 
 ### Mute a discussion
 

@@ -167,3 +167,11 @@ ok - bot handoffs are explicit, durable, one-shot, alias-aware and restart-safe
 test-source-runtime-only: ok
 test-source-runtime-only: ok
 test-source-runtime-only: ok
+
+2026-09-12 generic Default + Session runtime settings
+- Focused runtime, connector command, HTTP Session snapshot/reuse, Feishu, WeChat, reply publication, launch and static tests: passed.
+- `npm run test:merge-safety`: exit 0.
+- `npm run test:restart-gate`: exit 0.
+- `npm test`: exit 0.
+- `git diff --check`: exit 0.
+- Production service was not restarted.

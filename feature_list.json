@@ -143,5 +143,11 @@
     "description": "Isolate failed or uncertain messages, bound Feishu requests/downloads, defer bad acknowledgements and expose persistent delivery issues with non-recursive Feishu notices.",
     "pass": true,
     "verification_plan": "Fault injection for uncertainty, lease expiry, retry exhaustion, ignored abort, stalled redirected body, poisoned receipts, stale notices and API visibility; real browser/API desktop/mobile and live warning clearing; full isolated npm test and restart gate."
+  },
+  {
+    "id": "generic-runtime-default-and-session-settings",
+    "description": "Use one two-level runtime settings model: Default for future Sessions and stable per-Session runtime snapshots across Web UI and connectors.",
+    "pass": true,
+    "verification_plan": "Default and Session connector command tests, new-Session runtime snapshot/reuse HTTP test, Feishu/WeChat creation payload tests, Web UI launch/static tests, full npm test and restart gate; production service is not restarted."
   }
 ]
