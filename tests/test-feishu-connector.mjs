@@ -1101,12 +1101,12 @@ assert.equal(extractLocalCommand(groupCommandSummary), null, 'access policy has 
 const forkCommand = extractLocalCommand({
   ...groupCommandSummary,
   messageId: 'msg_group_fork_1',
-  messageText: '@_user_1 /fork   调研这个问题\n并保留 @_user_2 的反馈',
-  textPreview: '@_user_1 /fork   调研这个问题\n并保留 @_user_2 的反馈',
+  messageText: '@_user_1 /fork\n\n调研这个问题\n并保留 @_user_2 的反馈',
+  textPreview: '@_user_1 /fork\n\n调研这个问题\n并保留 @_user_2 的反馈',
 });
 assert.deepEqual(forkCommand, {
-  type: 'fork',
-  text: '调研这个问题\n并保留 @_user_2 的反馈',
+  commands: [{ name: 'fork' }],
+  body: '调研这个问题\n并保留 @_user_2 的反馈',
 });
 assert.deepEqual(extractLocalCommand({
   ...groupCommandSummary,
@@ -1114,13 +1114,13 @@ assert.deepEqual(extractLocalCommand({
   messageText: '@_user_1 /fork',
   textPreview: '@_user_1 /fork',
 }), {
-  type: 'fork',
-  text: '',
+  commands: [{ name: 'fork' }],
+  body: '',
 });
 
 const forkSummary = { ...groupCommandSummary, messageId: 'msg_group_fork_1',
-  messageText: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈',
-  textPreview: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈' };
+  messageText: '@_user_1 /fork\n\n调研这个问题\n并保留 @_user_2 的反馈',
+  textPreview: '@_user_1 /fork\n\n调研这个问题\n并保留 @_user_2 的反馈' };
 let generatedForkSummary;
 const forkResult = await handleMessage(accessRuntime, forkSummary, 'test', {
   addProcessingReaction: async () => null,
@@ -1138,7 +1138,7 @@ await handleMessage(accessRuntime, { ...groupCommandSummary, messageId: 'empty-f
   submitRemoteLabRequest: async () => { throw new Error('empty fork must not start AI'); },
   queueFeishuReply: async (_runtime, _summary, text) => { emptyForkReply = text; return { deliveryId: 'usage-delivery' }; },
 });
-assert.equal(emptyForkReply, '用法：/fork <任务文本>');
+assert.equal(emptyForkReply, '任务命令需要在命令块后空一行，再写任务正文。');
 
 let createdPayload = null;
 let submittedPayload = null;

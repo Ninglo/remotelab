@@ -42,7 +42,7 @@ try {
     assert.deepEqual(effects, [], 'muted input causes no reaction, session creation or model submission');
     assert.equal(replies.length, replyCount, 'muted chatter gets no automatic reply');
   };
-  assert.deepEqual(extractLocalCommand({ ...base, messageText: '@_user_1 /mute' }), { type: 'mute', text: '' });
+  assert.deepEqual(extractLocalCommand({ ...base, messageText: '@_user_1 /mute' }), { commands: [{ name: 'mute' }], body: '' });
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, false);
   await recordFeishuThreadSessionBinding(runtime, base, 's1');
   const otherBotCommand = await send('@_user_1 /mute', { mentions: [{ openId: 'other-bot' }] });
@@ -66,8 +66,8 @@ try {
   await send('/help');
   assert.match(replies.at(-1), /\/unmute/);
   await send('/mute unexpected');
-  assert.equal(replies.at(-1), '用法：/mute');
-  await send('/fork explicit task');
+  assert.equal(replies.at(-1), '/mute 不接受参数（第 1 行）');
+  await send('/fork\n\nexplicit task');
   assert.deepEqual(effects, ['reaction', 'submit'], 'explicit task commands remain available');
   effects.length = 0;
 

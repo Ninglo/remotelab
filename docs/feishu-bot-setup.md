@@ -251,6 +251,28 @@ can separately be overridden per group with `sessionPolicy` below.
 
 Runtime selection has two levels. `Default` is copied when a new Session is
 created; an existing Session keeps its own snapshot until explicitly changed.
+Commands use one explicit block: put consecutive slash-command lines at the
+start of the message, then leave one blank line before any task text. The
+connector parses the whole block first, rejects unknown, duplicate, or
+conflicting commands, and only then applies it. A slash command mentioned in
+ordinary prose is never executed.
+
+Examples:
+
+```text
+/fork
+/harness codex
+/model gpt-5.6
+/effort high
+
+请分析这个问题并给出修复方案。
+```
+
+```text
+/default model gpt-5.6
+/default effort high
+```
+
 Inside an existing task thread or private conversation, use these commands:
 
 | Command | Behavior |
@@ -260,10 +282,10 @@ Inside an existing task thread or private conversation, use these commands:
 | `/harness` or `/harness <id>` | List available Harnesses or change the current Session. |
 | `/model` or `/model <id>` | List the current Harness's models or change the current Session. |
 | `/effort` or `/effort <level>` | List supported reasoning levels or change the current Session. |
-| `/follow` | Compatibility alias: copy the current Default into this Session. |
+| `/follow` | Copy the current Default into this Session. |
 | `/mute` | Stop automatic responses in the current topic or chat; explicit mentions still wake the Bot once. |
 | `/unmute` | Restore the original response behavior in that topic or chat. |
-| `/help` | Show these commands and `/fork` / `/continue`. |
+| `/help` | Show these commands and the command-block format. |
 
 Selecting any runtime option updates the complete Harness/model/effort snapshot
 for subsequent Feishu messages in that Session. Selecting a different Harness
@@ -272,11 +294,10 @@ model's default effort. Invalid choices leave the current configuration intact.
 Lists and `/status` are read-only. In a group with mention-only responses, mention
 the Bot unless it has already joined the current thread.
 
-Control commands execute directly without launching an AI turn or creating a
+Command-only blocks execute directly without launching an AI turn or creating a
 task. `/default ...` changes only the shared Default. The other setters change
-only an existing Session; a group main timeline must first create a task with
-`/fork <任务文本>` when no Session is bound. Peer Bots cannot invoke these
-control commands.
+an existing Session when one is bound, or apply to the one task in the same
+command block. Peer Bots cannot invoke these control commands.
 
 When a connector creates a new Session, its selected Harness/model/effort is
 written as part of Session creation and sent with the first prompt. There is no
@@ -338,17 +359,15 @@ access control and Bot handoff loop protection are unchanged.
 
 - A new group task (including an unbound topic/thread) creates a blank Session
   by default and replies in a Feishu thread. It does not copy group history.
-- Human follow-ups in a bound thread reuse that Session. A case-insensitive
-  `/fork` command at the start of a message line explicitly starts another
-  blank Session, including inside an existing thread. A leading connector
-  mention (including a rich-text rendered mention) may precede the marker. The
-  marker and its separating whitespace are removed and the remaining text
-  becomes the task. Mentioning or discussing `/fork` inside ordinary prose does
-  not trigger a fork. The command takes precedence over other local commands
-  when it occupies a command line. Normal access and mention rules still apply;
-  the marker does not enable forks in private chats.
-- `/continue <task>` opts out of the default fork: use the existing thread
-  binding, or the legacy group/topic Session route when there is no binding.
+- Human follow-ups in a bound thread reuse that Session. A `/fork` command
+  block explicitly starts another blank Session, including inside an existing
+  thread. The command block must be followed by one blank line; its remaining
+  text becomes the task. A leading connector mention may precede the first
+  command. Mentioning or discussing `/fork` inside ordinary prose does not
+  trigger a fork. Normal access and mention rules still apply; the command does
+  not enable forks in private chats.
+- `/continue` in a command block opts out of the default fork: use the existing thread
+  binding, or the stable group/topic Session route when there is no binding.
   Ordinary human private messages and document comments keep their prior routing.
 - Other Bots (`app` / `bot` senders) may hand off a task only with an explicit
   mention of this Bot, even under `group: all`. Self messages remain ignored.

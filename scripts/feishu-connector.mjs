@@ -9,7 +9,12 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
-import { handleFeishuRuntimeCommand } from '../connectors/feishu/runtime-commands.mjs';
+import {
+  handleFeishuRuntimeCommands,
+  prepareFeishuRuntimeCommandPlan,
+  applyFeishuRuntimeCommandPlan,
+} from '../connectors/feishu/runtime-commands.mjs';
+import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
 import { handleFeishuMuteCommand } from '../connectors/feishu/conversation-settings.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
@@ -846,7 +851,8 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const externalTriggerId = isForkCommand
     ? buildFeishuForkExternalTriggerId(effectiveSummary)
     : buildExternalTriggerId(effectiveSummary);
-  const runtimeSelection = await resolveFeishuRuntimeSelection(runtime);
+  const runtimeSelection = effectiveSummary.runtimeSelectionOverride
+    || await resolveFeishuRuntimeSelection(runtime);
   const sessionPayload = {
     folder: runtime.config.sessionFolder,
     tool: runtimeSelection.tool,
@@ -1090,36 +1096,18 @@ function stripLeadingMentionTokens(text) {
   return String(text || '').replace(/^\s*(?:@_[A-Za-z0-9_]+\s*)+/, '');
 }
 
-function extractForkCommandText(commandText) {
-  // Keep /fork line-oriented so mentioning the command in normal prose does
-  // not unexpectedly create a new Session. A visible rich-text mention may
-  // precede the marker; preserve that label in the task text for compatibility.
-  const marker = /(^|\r?\n)([ \t]*(?:@[^\r\n/]+?[ \t]+)?\/fork)(?=$|[ \t\r\n])/im;
-  if (!marker.test(commandText)) return null;
-  return trimString(commandText.replace(
-    /(^|\r?\n)([ \t]*(?:@[^\r\n/]+?[ \t]+)?)\/fork[ \t]*/gim,
-    '$1$2',
-  ));
-}
-
 function extractLocalCommand(summary) {
   const chatType = trimString(summary?.chatType).toLowerCase();
   if (!['group', 'topic', 'p2p', 'private'].includes(chatType)) return null;
   const rawText = summary?.messageText || summary?.textPreview || summary?.rawContent;
   const commandText = stripLeadingMentionTokens(rawText);
-  if (['group', 'topic'].includes(chatType)) {
-    const forkText = extractForkCommandText(commandText);
-    if (forkText !== null) return { type: 'fork', text: forkText };
+  const parsed = parseFeishuCommandBlock(commandText);
+  if (parsed.error) return parsed;
+  if (parsed.commands.some(command => ['fork', 'continue'].includes(command.name))
+    && !['group', 'topic'].includes(chatType)) {
+    return { commands: [], body: '', error: '/fork 和 /continue 只能在群聊或话题中使用。' };
   }
-  const commandMatch = commandText.match(/^\/(continue|help|status|default|harness|model|effort|follow|mute|unmute)(?:[ \t\r\n]+([\s\S]*))?$/i);
-  if (commandMatch) {
-    if (commandMatch[1].toLowerCase() === 'continue' && !['group', 'topic'].includes(chatType)) return null;
-    return {
-      type: commandMatch[1].toLowerCase(),
-      text: trimString(commandMatch[2]),
-    };
-  }
-  return null;
+  return parsed.commands.length > 0 ? parsed : null;
 }
 
 async function applyDefaultFork(runtime, summary) {
@@ -1155,7 +1143,8 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 async function prepareFeishuMessage(runtime, summary, helpers) {
   if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
   const command = extractLocalCommand(summary);
-  if (command && !['fork', 'continue'].includes(command.type)
+  const commandNames = command?.commands?.map(entry => entry.name) || [];
+  if (command && !command.error && !commandNames.some(name => ['fork', 'continue'].includes(name))
     && /^\s*@_[A-Za-z0-9_]+/.test(summary.messageText || summary.textPreview || summary.rawContent || '')
     && !mentionsFeishuBot(runtime, summary)) {
     return { receipt: { ignored: true, reason: 'command_for_other_recipient' } };
@@ -1165,14 +1154,25 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
     return { receipt: { ignored: true, reason: 'group_reply_policy' } };
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
-  if (command && !['fork', 'continue'].includes(command.type)) {
+  if (command && command.error) return { summary, command };
+  if (command?.body && !commandNames.some(name => ['fork', 'continue'].includes(name))) summary = {
+    ...summary, messageText: command.body, textPreview: command.body,
+  };
+  if (command && !commandNames.some(name => ['fork', 'continue'].includes(name))) {
     if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
     return { summary, command };
   }
-  if (command?.type === 'fork') summary = { ...summary, forkCommand: true, forkText: command.text, replyInThread: true };
-  if (command?.type === 'continue') summary = {
-    ...summary, continueCommand: true, messageText: command.text, textPreview: command.text,
+  if (commandNames.includes('fork')) summary = {
+    ...summary, forkCommand: true, forkText: command.body, replyInThread: true,
+    messageText: command.body, textPreview: command.body,
   };
+  if (commandNames.includes('continue')) summary = {
+    ...summary, continueCommand: true, messageText: command.body, textPreview: command.body,
+  };
+  if (command?.body && !commandNames.includes('fork') && !commandNames.includes('continue')) summary = {
+    ...summary, messageText: command.body, textPreview: command.body,
+  };
+  summary = { ...summary, commandBlock: command };
   summary = await applyDefaultFork(runtime, summary);
   if (isFeishuBotSender(summary) && runtime.config.botHandoffPolicy !== 'unlimited') {
     const binding = await findFeishuThreadSessionBinding(runtime, summary);
@@ -1185,12 +1185,21 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 }
 
 async function processFeishuMessage(runtime, summary, command, helpers) {
-  if (command && !['fork', 'continue'].includes(command.type)) {
-    if (['mute', 'unmute'].includes(command.type)) {
-      const text = await handleFeishuMuteCommand(runtime, summary, command);
+  if (command?.error) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, command.error);
+  const commandNames = command?.commands?.map(entry => entry.name) || [];
+  const taskCommand = commandNames.some(name => ['fork', 'continue'].includes(name));
+  const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+  if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute'].includes(name))) {
+    return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');
+  }
+  if (command && !taskCommand && !command.body) {
+    if (commandNames.some(name => ['mute', 'unmute'].includes(name))) {
+      if (commandNames.length !== 1) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, '静默命令不能和其他命令同时使用。');
+      const muteCommand = command.commands[0];
+      const text = await handleFeishuMuteCommand(runtime, summary, { type: muteCommand.name, text: muteCommand.value });
       return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
     }
-    const text = await handleFeishuRuntimeCommand(runtime, summary, command, {
+    const text = await handleFeishuRuntimeCommands(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
       resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),
       prepared: helpers.preparedRuntimeCommand,
@@ -1198,8 +1207,20 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     });
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
   }
-  const enqueue = helpers.queueFeishuReply || queueFeishuReply;
-  if (command && !command.text) return enqueue(runtime, summary, `用法：/${command.type} <任务文本>`);
+  if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要在命令块后空一行，再写任务正文。');
+  if (command && command.body && command.commands.some(entry => ['default', 'harness', 'model', 'effort', 'follow'].includes(entry.name))) {
+    const commandPlan = helpers.preparedRuntimeCommand || await prepareFeishuRuntimeCommandPlan(runtime, summary, command.commands, {
+      request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
+      resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),
+      taskMode: true,
+    });
+    if (commandPlan.error) return enqueue(runtime, summary, commandPlan.text);
+    if (!helpers.preparedRuntimeCommand && helpers.saveRuntimeCommand) await helpers.saveRuntimeCommand(commandPlan);
+    await applyFeishuRuntimeCommandPlan(commandPlan, {
+      request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
+    });
+    summary = { ...summary, runtimeSelectionOverride: commandPlan.selection };
+  }
   try {
     await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary);
   } catch (error) {

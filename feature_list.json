@@ -149,5 +149,11 @@
     "description": "Use one two-level runtime settings model: Default for future Sessions and stable per-Session runtime snapshots across Web UI and connectors.",
     "pass": true,
     "verification_plan": "Default and Session connector command tests, new-Session runtime snapshot/reuse HTTP test, Feishu/WeChat creation payload tests, Web UI launch/static tests, full npm test and restart gate; production service is not restarted."
+  },
+  {
+    "id": "feishu-command-block-protocol",
+    "description": "Replace single-message Feishu command guessing with an explicit command block, atomic validation, and one task submission.",
+    "pass": true,
+    "verification_plan": "Parser edge cases, multi-command runtime selection, fork/continue routing, durable command plan replay, focused Feishu regressions, full npm test, syntax and diff checks."
   }
 ]

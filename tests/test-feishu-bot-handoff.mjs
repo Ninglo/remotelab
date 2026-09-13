@@ -56,7 +56,7 @@ try {
   assert.equal(effects[1].forkText, 'please help');
   assert.equal(effects[1].botHandoffMessageId, 'handoff');
   assert.equal(effects[1].replyInThread, true);
-  await ignored({ messageId: 'before-reply', rootId: 'handoff', messageText: '/fork again' });
+  await ignored({ messageId: 'before-reply', rootId: 'handoff', messageText: '/fork\n\nagain' });
 
   // Retry after a crash retains the original reservation. Distinct bot events do not.
   rt = runtime();
@@ -102,7 +102,7 @@ try {
   // Human continuation and explicit human forks still work; neither resets the quota.
   await send({ messageId: 'human', threadId: 'created-thread', sender: { senderType: 'user' }, messageText: 'continue please' });
   assert.equal(effects.at(-1).forkCommand, undefined);
-  await send({ messageId: 'human-fork', threadId: 'created-thread', sender: { senderType: 'user' }, messageText: '/fork new task' });
+  await send({ messageId: 'human-fork', threadId: 'created-thread', sender: { senderType: 'user' }, messageText: '/fork\n\nnew task' });
   assert.equal(effects.at(-1).forkCommand, true);
   rt = runtime();
   await ignored({ messageId: 'after-human-fork', threadId: 'created-thread' });
@@ -125,9 +125,9 @@ try {
   await send({ messageId: 'private-first', chatType: 'p2p', chatId: 'private-chat' });
   rt = runtime();
   await ignored({ messageId: 'private-second', chatType: 'p2p', chatId: 'private-chat' });
-  await send({ messageId: 'shared-first', messageText: '/continue shared task' });
+  await send({ messageId: 'shared-first', messageText: '/continue\n\nshared task' });
   rt = runtime();
-  await ignored({ messageId: 'shared-second', messageText: '/continue another task' });
+  await ignored({ messageId: 'shared-second', messageText: '/continue\n\nanother task' });
   assert.equal((await send({ messageId: 'tenant-isolation', tenantKey: 'other', threadId: 'created-thread' })).sessionId, 'session-tenant-isolation');
   assert.equal((await send({ messageId: 'chat-isolation', chatId: 'other-chat', threadId: 'created-thread' })).sessionId, 'session-chat-isolation');
   rt = { ...runtime(), config: { ...runtime().config, sourceRouteId: 'other-route' } };
@@ -159,10 +159,10 @@ try {
   // Bot admission must not alter the routing policy selected for human messages.
   for (const [name, patch, sessionPolicy, expectedThread] of [
     ['default-fork', {}, undefined, true],
-    ['explicit-continue', { messageText: '/continue task' }, undefined, false],
+    ['explicit-continue', { messageText: '/continue\n\ntask' }, undefined, false],
     ['group-continue', {}, { defaultMode: 'continue' }, false],
     ['group-override', {}, { defaultMode: 'fork', groups: { 'parity-group-override': 'continue' } }, false],
-    ['explicit-fork', { messageText: '/fork task' }, { defaultMode: 'continue' }, true],
+    ['explicit-fork', { messageText: '/fork\n\ntask' }, { defaultMode: 'continue' }, true],
     ['private', { chatType: 'p2p' }, undefined, false],
     ['existing-thread', { threadId: 'parity-thread' }, { defaultMode: 'continue' }, true],
   ]) {

@@ -68,36 +68,31 @@ try {
   await recordFeishuThreadSessionBinding(runtime, summary, session.id);
   const options = { request, resolveDefault: async () => ({ ...selection }) };
   const run = (type, text = '', target = summary, extra = {}) => handleFeishuRuntimeCommand(runtime, target, { type, text }, { ...options, ...extra });
-  assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /model beta' }), { type: 'model', text: 'beta' });
-  assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { type: 'status', text: '' });
-  assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { type: 'default', text: 'model beta' });
+  assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /model beta' }), { commands: [{ name: 'model', value: 'beta' }], body: '' });
+  assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { commands: [{ name: 'status' }], body: '' });
+  assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { commands: [{ name: 'default', field: 'model', value: 'beta' }], body: '' });
   assert.equal(extractLocalCommand({ ...summary,
     messageText: 'connector 命令易用性可能设计下，比如消息里带上很多命令（包括 /fork 之类）。',
   }), null, 'mentioning /fork in prose must not create a new task Session');
   assert.equal(extractLocalCommand({ ...summary, messageText: 'example: /model beta' }), null);
-  assert.equal(extractLocalCommand({ ...summary, messageText: '/modelled beta' }), null);
-  const richFork = summarizeEvent({ message: {
-    chat_type: 'group', message_type: 'post', content: JSON.stringify({ title: '', content: [
-      [{ tag: 'at', user_id: '@_user_1', user_name: 'Task Bot' }, { tag: 'text', text: ' /fork discover datasets' }],
-      [{ tag: 'text', text: 'keep the original table intact' }],
-    ] }),
-  } });
+  assert.match(extractLocalCommand({ ...summary, messageText: '/modelled beta' }).error, /未知命令/);
+  const richFork = { ...summary, messageText: '@Task Bot /fork\n\nkeep the original table intact' };
   assert.deepEqual(extractLocalCommand(richFork), {
-    type: 'fork', text: '@Task Bot discover datasets\nkeep the original table intact',
+    commands: [{ name: 'fork' }], body: 'keep the original table intact',
   }, 'a rich-text mention must not hide the fork marker');
-  for (const [messageText, text] of [
-    ['research first\n/fork then compare', 'research first\nthen compare'],
-    ['/fork task', 'task'],
+  for (const [messageText, body] of [
+    ['/fork\n\nthen compare', 'then compare'],
+    ['/fork', ''],
     ['@_user_1 /fork', ''],
   ]) {
-    assert.deepEqual(extractLocalCommand({ ...summary, messageText }), { type: 'fork', text });
+    assert.deepEqual(extractLocalCommand({ ...summary, messageText }), { commands: [{ name: 'fork' }], body });
   }
-  for (const messageText of ['new task /FORK', '请/fork调查', 'why does /fork fail?', '/continue task /fork']) {
-    assert.notEqual(extractLocalCommand({ ...summary, messageText })?.type, 'fork',
+  for (const messageText of ['new task /FORK', '请/fork调查', 'why does /fork fail?', '/continue\n\n/fork']) {
+    assert.notEqual(extractLocalCommand({ ...summary, messageText })?.commands?.some(command => command.name === 'fork'), true,
       'fork must not be inferred from a prose or nested command mention');
   }
   for (const chatType of ['p2p', 'private']) {
-    assert.equal(extractLocalCommand({ ...summary, chatType, messageText: 'task /fork' }), null,
+    assert.equal(extractLocalCommand({ ...summary, chatType, messageText: '/fork\n\ntask' })?.error, '/fork 和 /continue 只能在群聊或话题中使用。',
       'the fork marker keeps its group-only scope');
   }
   assert.match(await run('status'), /作用范围：当前 Session/);
@@ -147,6 +142,25 @@ try {
   assert.equal(botControl.reason, 'bot_control_command');
   assert.equal(session.feishuRuntimeSelection?.tool, 'pi', 'peer bots cannot change runtime preferences');
   assert.equal(aiCalls, 0, 'control commands never run through a model');
+
+  let commandBlockSummary;
+  let commandBlockPlan;
+  await handleMessage(runtime, { ...summary, threadId: 'command-block-thread', messageId: 'command-block-task', messageText: '/fork\n/harness pi\n/model provider/gamma\n\n请执行这个任务。' }, 'test', {
+    requestRemoteLab: request,
+    resolveFeishuRuntimeSelection: async () => ({ mode: 'ui', tool: 'codex', model: 'alpha', effort: 'low', thinking: false }),
+    addProcessingReaction: async () => null,
+    saveRuntimeCommand: async value => { commandBlockPlan = structuredClone(value); },
+    submitRemoteLabRequest: async (_runtime, inboundSummary) => {
+      commandBlockSummary = inboundSummary;
+      return { sessionId: 'new-task', runId: 'run-command-block' };
+    },
+  });
+  assert.equal(commandBlockSummary.forkCommand, true);
+  assert.equal(commandBlockSummary.messageText, '请执行这个任务。');
+  assert.deepEqual(commandBlockSummary.runtimeSelectionOverride, {
+    tool: 'pi', model: 'provider/gamma', effort: '', thinking: false,
+  });
+  assert.deepEqual(commandBlockPlan.selection, commandBlockSummary.runtimeSelectionOverride);
 
   // Persist the exact command plan before PATCH, then reuse it on inbox retry.
   selection = { mode: 'ui', tool: 'codex', model: 'alpha', effort: 'low', thinking: false };

@@ -221,15 +221,15 @@ try {
     assert.equal(submittedPayloads[2].sourceContext.sender.senderType, 'user');
     assert.equal(submittedPayloads[2].sourceContext.chatId, 'chat-1');
 
-    await send({ messageId: 'continue-task', messageText: '@_user_1 /continue shared task' });
+    await send({ messageId: 'continue-task', messageText: '@_user_1 /continue\n\nshared task' });
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
     assert.match(submittedPayloads.at(-1).text, /^shared task/);
     assert.equal(submittedPayloads.at(-1).text.includes('/continue'), false);
     assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, undefined);
     const countBeforeThread = createCount;
-    await send({ messageId: 'continue-thread', threadId: 'created-thread-1', messageText: '/continue in thread' });
+    await send({ messageId: 'continue-thread', threadId: 'created-thread-1', messageText: '/continue\n\nin thread' });
     assert.equal(createCount, countBeforeThread, '/continue respects an existing thread binding');
-    await send({ messageId: 'explicit-fork', threadId: 'created-thread-1', messageText: '/fork new task' });
+    await send({ messageId: 'explicit-fork', threadId: 'created-thread-1', messageText: '/fork\n\nnew task' });
     assert.equal(createCount, countBeforeThread + 1, '/fork still explicitly creates a fresh session inside a thread');
 
     await send({ messageId: 'private', chatType: 'p2p', messageText: 'private task' });
@@ -244,9 +244,9 @@ try {
     assert.equal(submittedPayloads.at(-1).sourceDelivery.target.forkCommand, undefined);
     await send({ chatId: 'chat-2', messageId: 'configured-fork' });
     assert.match(createdPayloads.at(-1).externalTriggerId, /^feishu:fork:.*chat-2:configured-fork$/);
-    await send({ messageId: 'override-fork', messageText: '/fork explicit' });
+    await send({ messageId: 'override-fork', messageText: '/fork\n\nexplicit' });
     assert.match(createdPayloads.at(-1).externalTriggerId, /:override-fork$/);
-    await send({ chatId: 'chat-2', messageId: 'override-continue', messageText: '/continue explicit' });
+    await send({ chatId: 'chat-2', messageId: 'override-continue', messageText: '/continue\n\nexplicit' });
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-2');
     connectorRuntime.config.sessionPolicy = { defaultMode: 'fork', groups: { 'chat-1': 'continue' } };
     await send({ messageId: 'group-continue' });
@@ -255,8 +255,8 @@ try {
     await send({ messageId: 'configured-thread', threadId: 'created-thread-1' });
     assert.equal(createCount, beforeConfiguredThread, 'continue policy preserves existing thread binding');
     for (const [messageId, messageText, expectedText] of [
-      ['rich-mention-fork', '@Task Bot /fork discover datasets', '@Task Bot discover datasets'],
-      ['trailing-fork', 'discover datasets\n/fork', 'discover datasets'],
+      ['rich-mention-fork', '@Task Bot /fork\n\ndiscover datasets', 'discover datasets'],
+      ['trailing-fork', '/fork\n\ndiscover datasets', 'discover datasets'],
     ]) {
       const beforeMarker = createCount;
       await send({ messageId, messageType: 'post', messageText, threadId: 'created-thread-1' });
@@ -279,7 +279,7 @@ try {
       queueFeishuReply: async (_runtime, _summary, text) => { usage = text; },
       submitRemoteLabRequest: async () => { throw new Error('usage must not start AI'); },
     });
-    assert.equal(usage, '用法：/continue <任务文本>');
+    assert.equal(usage, '任务命令需要在命令块后空一行，再写任务正文。');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
