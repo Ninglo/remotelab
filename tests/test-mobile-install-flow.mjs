@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import http from 'http';
 import { spawn } from 'child_process';
+import './test-mobile-install-launch.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
@@ -200,9 +201,47 @@ async function main() {
     const installManifestJson = JSON.parse(installManifest.text);
     assert.equal(
       installManifestJson.start_url,
-      `m/install?h=${handoffToken}`,
-      'install manifest should boot back into the install bridge with the handoff token',
+      `m/continue?h=${handoffToken}`,
+      'installed apps should launch through the HTTP-only login bridge, not the install guide',
     );
+    assert.equal(installManifestJson.id, './', 'existing app identity must remain stable');
+    assert.equal(installManifestJson.scope, './');
+    assert.match(installManifest.headers['cache-control'], /no-store/);
+    const plainManifest = await request(port, 'GET', '/manifest.install.json');
+    assert.equal(JSON.parse(plainManifest.text).start_url, 'm/continue');
+
+    const firstLaunch = await request(port, 'GET', `/${installManifestJson.start_url}`);
+    assert.equal(firstLaunch.status, 302, 'first standalone launch should sign in without rendering any intermediate HTML');
+    assert.equal(firstLaunch.text, '');
+    assert.equal(firstLaunch.headers.location, '/?skipInstall=1');
+    const installedCookie = firstLaunch.headers['set-cookie'][0].split(';')[0];
+    assert.match(installedCookie, /^session_token=/);
+
+    // Simulate a saved start URL whose short-lived handoff no longer exists.
+    // The installed app's session, not the handoff, authenticates every later launch.
+    const unavailableHandoff = `ih_${'0'.repeat(48)}`;
+    for (const path of [
+      `/${installManifestJson.start_url}`,
+      `/m/continue?h=${unavailableHandoff}`,
+      '/m/continue?h=invalid',
+      '/m/continue',
+    ]) {
+      const repeatLaunch = await request(port, 'GET', path, { headers: { Cookie: installedCookie } });
+      assert.equal(repeatLaunch.status, 302);
+      assert.equal(repeatLaunch.text, '', 'repeat launch must not render setup/redirect HTML');
+      assert.equal(repeatLaunch.headers.location, '/?skipInstall=1');
+      assert.equal(repeatLaunch.headers['set-cookie'], undefined, 'relaunch should reuse the existing session');
+      assert.match(repeatLaunch.headers['cache-control'], /no-store/);
+    }
+    const app = await request(port, 'GET', firstLaunch.headers.location, { headers: { Cookie: installedCookie } });
+    assert.equal(app.status, 200, 'bridge should land on the authenticated app');
+    assert.doesNotMatch(app.text, /initializeMobileInstallGuide/);
+    for (const path of ['/m/continue', '/m/continue?h=invalid', `/m/continue?h=${unavailableHandoff}`]) {
+      const signedOut = await request(port, 'GET', path);
+      assert.equal(signedOut.status, 302);
+      assert.equal(signedOut.headers.location, '/login', 'missing auth and expired handoffs must require login, not loop through installation');
+      assert.equal(signedOut.headers['set-cookie'], undefined);
+    }
 
     const redeem = await request(port, 'POST', '/api/install/handoff/redeem', {
       body: { token: handoffToken },

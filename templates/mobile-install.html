@@ -12,6 +12,22 @@
   <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)">
   <meta name="remotelab-build" content="{{BUILD_TITLE}}">
   <base href="{{PRODUCT_BASE_HREF}}">
+  <script nonce="{{NONCE}}">
+    (function routeInstalledAppLaunch() {
+      // Old home-screen icons may keep /m/install as their start URL forever.
+      // Leave before first paint, asset loading or service-worker registration.
+      const isStandalone = navigator.standalone === true || (
+        typeof window.matchMedia === 'function'
+        && window.matchMedia('(display-mode: standalone)').matches
+      );
+      if (!isStandalone) return;
+      document.documentElement.style.visibility = 'hidden';
+      const target = new URL('m/continue', document.baseURI);
+      const handoffToken = new URL(window.location.href).searchParams.get('h');
+      if (handoffToken) target.searchParams.set('h', handoffToken);
+      window.location.replace(target.href);
+    })();
+  </script>
   <link rel="manifest" href="{{MANIFEST_HREF}}">
   <link rel="icon" href="favicon.ico?v={{ASSET_VERSION}}" sizes="any">
   <link rel="icon" href="icon.svg?v={{ASSET_VERSION}}" type="image/svg+xml">
@@ -378,9 +394,6 @@
         guidePrimaryFallback: '看安装步骤',
         guideSecondary: '先继续网页版',
         guideScrolled: '',
-        redeemLoadingTitle: '正在完成设置…',
-        redeemLoadingSubtitle: '首次启动会自动把登录接过去，请稍等一秒。',
-        redeemLoadingStatus: '如果这是你第一次从主屏幕打开，接下来会直接进入 RemoteLab。',
         redeemErrorTitle: '需要重新连接',
         redeemErrorSubtitle: '粘贴你的访问链接即可继续。',
         redeemErrorInputPlaceholder: '粘贴链接或令牌',
@@ -416,9 +429,6 @@
         guidePrimaryFallback: 'Show install steps',
         guideSecondary: 'Continue in the browser',
         guideScrolled: '',
-        redeemLoadingTitle: 'Finishing setup…',
-        redeemLoadingSubtitle: 'The first standalone launch is reconnecting your login now.',
-        redeemLoadingStatus: 'If this is the first time you opened RemoteLab from the home screen, you should land in the app in a second.',
         redeemErrorTitle: 'Reconnect needed',
         redeemErrorSubtitle: 'Paste your access link to continue.',
         redeemErrorInputPlaceholder: 'Paste link or token',
@@ -663,23 +673,6 @@
         });
       }
 
-      function continueStandaloneLaunch() {
-        if (!handoffToken) {
-          showRedeemError();
-          return;
-        }
-        benefitsEl.classList.add('hidden');
-        stepsWrapEl.classList.add('hidden');
-        copyBtn.classList.add('hidden');
-        titleEl.textContent = text.redeemLoadingTitle;
-        subtitleEl.textContent = text.redeemLoadingSubtitle;
-        helperEl.textContent = '';
-        setStatus(text.redeemLoadingStatus);
-        primaryBtn.classList.add('hidden');
-        secondaryBtn.classList.add('hidden');
-        window.location.replace(resolveProductPath(`/m/continue?h=${encodeURIComponent(handoffToken)}`));
-      }
-
       window.addEventListener('beforeinstallprompt', function onBeforeInstallPrompt(event) {
         event.preventDefault();
         deferredInstallPrompt = event;
@@ -692,12 +685,10 @@
       });
 
       void (async function bootInstallFlow() {
-        if (await ensureInstallabilityReady()) {
-          return;
-        }
+        // The head script has already routed installed apps; do not wait for SW I/O.
+        if (isStandalone) return;
 
-        if (isStandalone && handoffToken) {
-          continueStandaloneLaunch();
+        if (await ensureInstallabilityReady()) {
           return;
         }
 

@@ -1498,9 +1498,11 @@ export async function handleRequest(req, res) {
       const handoffToken = normalizeInstallHandoffToken(getSingleQueryValue(parsedUrl.query?.h));
       const manifest = {
         ...manifestTemplate,
+        // Launch through the HTTP-only login bridge, never the install guide.
+        // Existing owner cookies take precedence over the short-lived handoff.
         start_url: handoffToken
-          ? `m/install?h=${encodeURIComponent(handoffToken)}`
-          : 'm/install',
+          ? `m/continue?h=${encodeURIComponent(handoffToken)}`
+          : 'm/continue',
       };
       writeCachedResponse(req, res, {
         statusCode: 200,

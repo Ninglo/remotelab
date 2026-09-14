@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-14 — Installed PWA launches must not replay installation
+
+- Source: an owner reported seeing the setup/redirect page on every cold launch from the home screen.
+- Cause: the install manifest used the guide as its permanent start URL; the guide waited for service-worker registration/update before redirecting standalone apps.
+- Product implication: launch new installs through the HTTP-only login bridge, which reuses authenticated sessions before considering the short-lived handoff. Existing icons can retain the old start URL indefinitely, so route standalone guide visits before first paint and without waiting for assets or service workers. Keep ordinary browser installation guidance intact; do not require reinstalling or a shared browser/PWA storage flag.
+- Validation: `tests/test-mobile-install-flow.mjs` covers new/repeat HTTP launches, signed-out recovery, stable app identity, and the pre-paint iOS/Android/browser/prefixed legacy-entry tests.
+
 ### 2026-09-09 — Private chat identity and task titles serve different purposes
 
 - Source: owner found connector fork prefixes redundant but needs a recognizable home for long-running Feishu/WeChat private conversations.
