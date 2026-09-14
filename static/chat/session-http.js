@@ -371,7 +371,7 @@ function getSessionListOrganizerSourceLabel(sourceFilter) {
 function getSessionListOrganizerScope() {
   const currentSourceFilter = typeof getActiveSourceFilterValue === "function"
     ? normalizeSourceFilter(getActiveSourceFilterValue())
-    : normalizeSourceFilter(activeSourceFilter);
+    : FILTER_ALL_VALUE;
   const defaultedToChatUi = currentSourceFilter === FILTER_ALL_VALUE;
   const organizerSourceFilter = defaultedToChatUi ? SESSION_HTTP_SOURCE_FILTER_CHAT_VALUE : currentSourceFilter;
   const scopedSessions = getActiveSessions().filter((session) => (

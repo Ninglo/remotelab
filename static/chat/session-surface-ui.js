@@ -256,7 +256,7 @@ function renderSessionScopeContext(session) {
 
 function getFilteredSessionEmptyText({ archived = false } = {}) {
   if (archived) return t("sidebar.noArchived");
-  if (activeSourceFilter !== FILTER_ALL_VALUE) {
+  if (getCurrentSourceFilter() !== FILTER_ALL_VALUE) {
     return t("sidebar.noSessionsFiltered");
   }
   return t("sidebar.noSessions");

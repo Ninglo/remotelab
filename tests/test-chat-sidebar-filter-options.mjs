@@ -44,6 +44,7 @@ function extractFunctionSource(source, functionName) {
 }
 
 const functionSources = [
+  'getCurrentSourceFilter',
   'isSidebarFilterControlVisible',
   'normalizeSourceId',
   'normalizeSourceFilter',
@@ -122,7 +123,7 @@ function createHarness({
     DEFAULT_APP_NAME: 'Chat',
     visitorMode: false,
     activeTab: 'sessions',
-    activeSourceFilter,
+    getActiveSourceFilterValue() { return activeSourceFilter; },
     sourceFilterSelect: createSelect(''),
     sidebarFilters: {
       classList: {
@@ -169,9 +170,10 @@ function createHarness({
     activeSourceFilter: 'bot',
   });
   context.renderSourceFilterOptions();
-  assert.equal(context.sourceFilterSelect.style.display, 'none', 'source filter should hide when only one origin has matching sessions');
-  assert.equal(context.activeSourceFilter, '__all__', 'source filter should reset stale hidden selections back to all');
-  assert.deepEqual(state.persistedSource, ['__all__'], 'source filter should persist the reset when the previous origin is no longer available');
+  assert.equal(context.sourceFilterSelect.style.display, '', 'a selected empty origin must remain visible so the user can clear it');
+  assert.equal(context.getActiveSourceFilterValue(), 'bot', 'rendering must preserve a valid origin even when its count becomes zero');
+  assert.deepEqual(state.persistedSource, [], 'rendering must not persist implicit filter changes');
+  assert.deepEqual(getOptionValues(context.sourceFilterSelect), ['__all__', 'chat_ui', 'bot']);
 }
 
 {

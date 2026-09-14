@@ -42,7 +42,7 @@ function getSessionSpaceEntries() {
   const spaces = new Map();
   for (const session of getActiveSessions()) {
     if (
-      !matchesSourceFilter(session, activeSourceFilter)
+      !matchesSourceFilter(session)
       || !matchesSearchQuery(session)
     ) continue;
     const value = getSessionSpaceValue(session);
@@ -140,7 +140,7 @@ function renderSessionList() {
       empty.appendChild(emptyText);
 
       const canRestoreStarterSessions = !visitorMode
-        && activeSourceFilter === FILTER_ALL_VALUE
+        && getCurrentSourceFilter() === FILTER_ALL_VALUE
         && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
         && typeof restoreOwnerBootstrapSessions === "function";
       if (canRestoreStarterSessions) {
