@@ -108,6 +108,7 @@ function emptyMeta() {
   return {
     latestSeq: 0,
     lastEventAt: null,
+    lastUserMessageAt: null,
     lastAssistantMessageAt: null,
     size: 0,
     counts: {},
@@ -352,6 +353,13 @@ function getAssistantMessageTimestamp(currentStamp, event) {
   return event.timestamp || currentStamp || Date.now();
 }
 
+function getUserMessageTimestamp(currentStamp, event) {
+  if (event?.type !== 'message' || event.role !== 'user') {
+    return currentStamp || null;
+  }
+  return event.timestamp || currentStamp || Date.now();
+}
+
 async function appendEventUnlocked(sessionId, event) {
   await ensureSessionDir(sessionId);
   const meta = await loadMeta(sessionId);
@@ -362,6 +370,7 @@ async function appendEventUnlocked(sessionId, event) {
   await saveMetaUnlocked(sessionId, {
     latestSeq: seq,
     lastEventAt: stored.timestamp || Date.now(),
+    lastUserMessageAt: getUserMessageTimestamp(meta.lastUserMessageAt, stored),
     lastAssistantMessageAt: getAssistantMessageTimestamp(meta.lastAssistantMessageAt, stored),
     size: meta.size + 1,
     counts: incrementCounts(meta.counts, stored),
@@ -374,6 +383,7 @@ async function appendEventsUnlocked(sessionId, events) {
   const meta = await loadMeta(sessionId);
   let latestSeq = meta.latestSeq;
   let lastEventAt = meta.lastEventAt;
+  let lastUserMessageAt = meta.lastUserMessageAt;
   let lastAssistantMessageAt = meta.lastAssistantMessageAt;
   let size = meta.size;
   let counts = meta.counts;
@@ -385,6 +395,7 @@ async function appendEventsUnlocked(sessionId, events) {
     const stored = await storeEvent(sessionId, normalized);
     appended.push(stored);
     lastEventAt = stored.timestamp || lastEventAt;
+    lastUserMessageAt = getUserMessageTimestamp(lastUserMessageAt, stored);
     lastAssistantMessageAt = getAssistantMessageTimestamp(lastAssistantMessageAt, stored);
     size += 1;
     counts = incrementCounts(counts, stored);
@@ -392,6 +403,7 @@ async function appendEventsUnlocked(sessionId, events) {
   await saveMetaUnlocked(sessionId, {
     latestSeq,
     lastEventAt,
+    lastUserMessageAt,
     lastAssistantMessageAt,
     size,
     counts,
@@ -403,6 +415,16 @@ async function findLatestAssistantMessageAt(sessionId, latestSeq = 0) {
   for (let seq = Math.max(1, latestSeq); seq >= 1; seq -= 1) {
     const stored = await loadStoredEvent(sessionId, seq);
     if (stored?.type === 'message' && stored.role === 'assistant') {
+      return stored.timestamp || null;
+    }
+  }
+  return null;
+}
+
+async function findLatestUserMessageAt(sessionId, latestSeq = 0) {
+  for (let seq = Math.max(1, latestSeq); seq >= 1; seq -= 1) {
+    const stored = await loadStoredEvent(sessionId, seq);
+    if (stored?.type === 'message' && stored.role === 'user') {
       return stored.timestamp || null;
     }
   }
@@ -471,7 +493,7 @@ export async function findLatestAssistantMessage(sessionId, options = {}) {
   return null;
 }
 
-export async function getHistorySnapshot(sessionId) {
+export async function getHistorySnapshot(sessionId, options = {}) {
   const [meta, context] = await Promise.all([
     loadMeta(sessionId),
     loadContext(sessionId),
@@ -487,9 +509,14 @@ export async function getHistorySnapshot(sessionId) {
         ? await findLatestAssistantMessageAt(sessionId, meta.latestSeq || 0)
         : null
     );
+  const lastUserMessageAt = meta.lastUserMessageAt
+    || (options.includeUserMessageAt === true && (meta.counts?.message_user || 0) > 0
+      ? await findLatestUserMessageAt(sessionId, meta.latestSeq || 0)
+      : null);
   return {
     latestSeq: meta.latestSeq || 0,
     lastEventAt: meta.lastEventAt || null,
+    lastUserMessageAt,
     lastAssistantMessageAt,
     size: meta.size || 0,
     counts: { ...(meta.counts || {}) },

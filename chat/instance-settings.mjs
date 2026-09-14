@@ -9,6 +9,7 @@ const DEFAULT_VOICE_LANGUAGE = 'zh-CN';
 const DEFAULT_GATEWAY_URL = 'wss://ai-gateway.vei.volces.com/v1/realtime';
 const DEFAULT_GATEWAY_MODEL = 'bigmodel';
 const DEFAULT_GATEWAY_AUTH_MODE = 'subprotocol';
+export const AUTO_ARCHIVE_RETENTION_HOURS = [12, 24, 72, 168];
 const LEGACY_VOICE_INPUT_FILE = join(dirname(INSTANCE_SETTINGS_FILE), 'voice-input.json');
 const writeInstanceSettings = createSerialTaskQueue();
 
@@ -27,6 +28,15 @@ function firstNonEmpty(...values) {
 function normalizeStringArray(values = []) {
   if (!Array.isArray(values)) return [];
   return [...new Set(values.map((value) => trimString(value)).filter(Boolean))];
+}
+
+export function normalizeSessionAutoArchiveSettings(rawValue = {}) {
+  const value = rawValue && typeof rawValue === 'object' ? rawValue : {};
+  const parsedHours = Number.parseInt(String(value.inactiveAfterHours ?? '').trim(), 10);
+  return {
+    enabled: value.enabled === true,
+    inactiveAfterHours: AUTO_ARCHIVE_RETENTION_HOURS.includes(parsedHours) ? parsedHours : 24,
+  };
 }
 
 function normalizeGoogleOAuthSettings(rawValue = {}, { includeSecrets = true } = {}) {
@@ -104,11 +114,13 @@ export function normalizeInstanceSettings(rawValue = {}, { includeSecrets = true
     : {};
   const voiceInput = normalizeVoiceInputSettings(value.voiceInput, { includeSecrets });
   const googleOAuth = normalizeGoogleOAuthSettings(value.googleOAuth, { includeSecrets });
+  const sessionAutoArchive = normalizeSessionAutoArchiveSettings(value.sessionAutoArchive);
   return {
     version: 1,
     updatedAt: trimString(value.updatedAt) || voiceInput.updatedAt || googleOAuth.updatedAt,
     voiceInput,
     googleOAuth,
+    sessionAutoArchive,
   };
 }
 
@@ -209,6 +221,9 @@ export async function updateInstanceSettings(rawPatch = {}) {
           includeSecrets: true,
         })
         : current.googleOAuth,
+      sessionAutoArchive: Object.prototype.hasOwnProperty.call(patch, 'sessionAutoArchive')
+        ? normalizeSessionAutoArchiveSettings(patch.sessionAutoArchive)
+        : current.sessionAutoArchive,
     };
     await writeJsonAtomic(INSTANCE_SETTINGS_FILE, next);
     return cloneValue(next);

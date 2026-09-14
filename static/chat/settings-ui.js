@@ -12,7 +12,60 @@ const voiceInputGatewayUrl = document.getElementById("voiceInputGatewayUrl");
 const voiceInputGatewayModel = document.getElementById("voiceInputGatewayModel");
 const voiceInputLanguageSelect = document.getElementById("voiceInputLanguageSelect");
 const voiceInputStatus = document.getElementById("voiceInputStatus");
+const sessionAutoArchiveSelect = document.getElementById("sessionAutoArchiveSelect");
 let voiceInputSettingsLoaded = false;
+
+function getSessionAutoArchiveOptions() {
+  return [
+    { value: "0", label: t("settings.autoArchive.optionOff") },
+    { value: "12", label: t("settings.autoArchive.option12h") },
+    { value: "24", label: t("settings.autoArchive.option24h") },
+    { value: "72", label: t("settings.autoArchive.option3d") },
+    { value: "168", label: t("settings.autoArchive.option7d") },
+  ];
+}
+
+function syncSessionAutoArchiveSettings() {
+  if (!sessionAutoArchiveSelect) return;
+  const settings = typeof window.remotelabGetInstanceSettings === "function"
+    ? window.remotelabGetInstanceSettings().sessionAutoArchive
+    : { enabled: false, inactiveAfterHours: 24 };
+  const value = settings?.enabled === true ? String(settings.inactiveAfterHours || 24) : "0";
+  sessionAutoArchiveSelect.innerHTML = "";
+  for (const optionData of getSessionAutoArchiveOptions()) {
+    const option = document.createElement("option");
+    option.value = optionData.value;
+    option.textContent = optionData.label;
+    sessionAutoArchiveSelect.appendChild(option);
+  }
+  sessionAutoArchiveSelect.value = value;
+  sessionAutoArchiveSelect.disabled = !canManageInstanceSettingsFromUi();
+}
+
+async function persistSessionAutoArchiveSettings() {
+  if (!sessionAutoArchiveSelect || !canManageInstanceSettingsFromUi()) return;
+  const hours = Number.parseInt(sessionAutoArchiveSelect.value, 10);
+  await window.remotelabUpdateInstanceSettings({
+    sessionAutoArchive: {
+      enabled: hours > 0,
+      inactiveAfterHours: hours > 0 ? hours : 24,
+    },
+  });
+  syncSessionAutoArchiveSettings();
+}
+
+function initSessionAutoArchiveSettings() {
+  if (!sessionAutoArchiveSelect) return;
+  syncSessionAutoArchiveSettings();
+  if (sessionAutoArchiveSelect.dataset.bound === "true") return;
+  sessionAutoArchiveSelect.addEventListener("change", () => {
+    void persistSessionAutoArchiveSettings().catch((error) => {
+      syncSessionAutoArchiveSettings();
+      console.warn("[settings] Failed to save session auto-archive settings:", error?.message || error);
+    });
+  });
+  sessionAutoArchiveSelect.dataset.bound = "true";
+}
 
 const HIDDEN_MANAGED_AGENT_IDS = new Set([
   "email",
@@ -1598,6 +1651,7 @@ ensurePiAuthSection();
 void refreshPiAuthStatus();
 initThemeSettings();
 initThinkingBlockDisplaySettings();
+initSessionAutoArchiveSettings();
 void initVoiceInputSettings();
 initInstallSettings();
 initPushNotificationSettings();
@@ -1641,6 +1695,7 @@ window.addEventListener("remotelab:localechange", () => {
   }
   syncThemeSelect();
   syncThinkingBlockDisplaySelect();
+  syncSessionAutoArchiveSettings();
   if (voiceInputSettingsLoaded) {
     syncVoiceInputSettings();
   }
@@ -1663,6 +1718,7 @@ window.addEventListener("remotelab:thinkingblockdisplaychange", () => {
 });
 
 window.addEventListener("remotelab:instancesettingschange", () => {
+  syncSessionAutoArchiveSettings();
   syncVoiceInputSettings();
 });
 

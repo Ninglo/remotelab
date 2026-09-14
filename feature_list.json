@@ -155,5 +155,13 @@
     "description": "Replace single-message Feishu command guessing with an explicit command block, atomic validation, and one task submission.",
     "pass": true,
     "verification_plan": "Parser edge cases, multi-command runtime selection, fork/continue routing, durable command plan replay, focused Feishu regressions, full npm test, syntax and diff checks."
+  },
+  {
+    "id": "session-auto-archive",
+    "name": "Configurable session auto archive",
+    "description": "Optionally archive inactive sessions after 12 hours, 24 hours, 3 days, or 7 days while allowing archived sessions to resume on new messages.",
+    "verification_plan": "Pure inactivity eligibility, settings normalization, frontend controls, archived browser/connector admission, and full isolated npm test.",
+    "pass": true,
+    "status": "completed"
   }
 ]

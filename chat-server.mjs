@@ -14,6 +14,7 @@ const [
   sessionManager,
   triggers,
   recurringSchedules,
+  sessionAutoArchive,
   tools,
   { ensureDir },
   guestWeChatConnectorStartup,
@@ -26,6 +27,7 @@ const [
   import('./chat/session-manager.mjs'),
   import('./chat/triggers.mjs'),
   import('./chat/recurring-schedules.mjs'),
+  import('./chat/session-auto-archive.mjs'),
   import('./lib/tools.mjs'),
   import('./chat/fs-utils.mjs'),
   import('./lib/guest-wechat-connector-startup.mjs'),
@@ -66,6 +68,7 @@ recurringSchedules.startRecurringScheduleScheduler({
   countOpenScheduleTriggers: triggers.countOpenScheduleTriggers,
   onMaterialized: () => triggers.processDueTriggersNow(),
 });
+sessionAutoArchive.startSessionAutoArchive();
 
 const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
   createSession: sessionManager.createSession,
@@ -84,6 +87,7 @@ async function shutdown() {
   await usageLedger.closeUsageLedger();
   triggers.stopTriggerScheduler();
   recurringSchedules.stopRecurringScheduleScheduler();
+  sessionAutoArchive.stopSessionAutoArchive();
   await sessionManager.killAll();
   process.exit(0);
 }

@@ -973,11 +973,6 @@ export { resolveSavedAttachments, saveAttachments } from './session-attachments.
 export async function appendAssistantMessage(sessionId, text = '', images = [], options = {}) {
   let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
-  if (session.archived) {
-    const error = new Error('Session is archived');
-    error.code = 'SESSION_ARCHIVED';
-    throw error;
-  }
 
   const normalizedText = typeof text === 'string' ? text.trim() : '';
   const savedImages = options.preSavedAttachments?.length > 0
@@ -3152,9 +3147,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     throw new Error('Invalid sourceDelivery connector or target');
   }
   await ensureRequestSchema(CONFIG_DIR);
-  const session = await findSessionMeta(sessionId);
+  let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
-  if (session.archived) throw Object.assign(new Error('Session is archived'), { code: 'SESSION_ARCHIVED' });
+  // Archive is a sidebar visibility state. New work always reopens the
+  // Session so connector and browser callers share the same continuation path.
+  if (session.archived) {
+    session = await setSessionArchived(sessionId, false) || session;
+  }
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const runtimeSelection = await resolveSessionRuntimeSelection(session, options);

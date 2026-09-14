@@ -362,12 +362,10 @@
     const config = readStoredVoiceInputConfig();
     const currentSession = getCurrentSessionSnapshot();
     const sessionId = typeof currentSessionId === "string" ? currentSessionId : "";
-    const archived = currentSession?.archived === true;
     const shareSnapshotActive = typeof shareSnapshotMode !== "undefined" && shareSnapshotMode === true;
     const canStart = hasVoiceInputSupport()
       && isVoiceInputConfigured(config)
       && !!sessionId
-      && !archived
       && !shareSnapshotActive;
     const isActive = isLiveVoiceCapturePhase();
     const showLiveCaptureState = !!activeVoiceCapture.audioContext
@@ -967,7 +965,7 @@
       return;
     }
     const session = getCurrentSessionSnapshot();
-    if (!session?.id || session.archived) {
+    if (!session?.id) {
       return;
     }
 

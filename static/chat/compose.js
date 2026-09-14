@@ -832,8 +832,6 @@ function sendMessage(existingRequestId) {
     void createSessionAndSendDetachedComposer(text, existingRequestId);
     return;
   }
-  if (currentSession?.archived) return;
-
   const requestId = resolveComposerRequestId(existingRequestId);
   const sessionId = currentSessionId;
   const sendTool = selectedTool;

@@ -557,18 +557,16 @@ function updateStatus(connState, session = getCurrentSession()) {
     statusDot.className = "status-dot";
     statusText.textContent = t("status.reconnecting");
     const composerEnabled = Boolean(currentSessionId) || canStartSessionFromDetachedComposer();
-    msgInput.disabled = !composerEnabled || archived;
-    msgInput.placeholder = archived
-      ? t("input.placeholder.archived")
-      : canStartSessionFromDetachedComposer()
-        ? t("input.placeholder.newSession")
-        : t("input.placeholder.message");
+    msgInput.disabled = !composerEnabled;
+    msgInput.placeholder = canStartSessionFromDetachedComposer()
+      ? t("input.placeholder.newSession")
+      : t("input.placeholder.message");
     sendBtn.style.display = "";
-    sendBtn.disabled = !composerEnabled || archived;
+    sendBtn.disabled = !composerEnabled;
     sendBtn.title = canStartSessionFromDetachedComposer()
       ? t("action.startNewSession")
       : t("action.send");
-    setAttachmentPickerDisabled(!composerEnabled || archived);
+    setAttachmentPickerDisabled(!composerEnabled);
     if (typeof syncComposerVoiceCleanupToggle === "function") {
       syncComposerVoiceCleanupToggle();
     }
@@ -604,16 +602,14 @@ function updateStatus(connState, session = getCurrentSession()) {
   const hasSession = !!currentSessionId;
   const canStartSessionFromComposer = canStartSessionFromDetachedComposer();
   const composerEnabled = hasSession || canStartSessionFromComposer;
-  msgInput.disabled = !composerEnabled || archived;
-  msgInput.placeholder = archived
-    ? t("input.placeholder.archived")
-    : canStartSessionFromComposer
+  msgInput.disabled = !composerEnabled;
+  msgInput.placeholder = canStartSessionFromComposer
       ? t("input.placeholder.newSession")
       : inputBusy
         ? t("input.placeholder.queueFollowUp")
         : t("input.placeholder.message");
   sendBtn.style.display = "";
-  sendBtn.disabled = !composerEnabled || archived;
+  sendBtn.disabled = !composerEnabled;
   sendBtn.title = canStartSessionFromComposer
     ? t("action.startNewSession")
     : inputBusy
@@ -621,11 +617,11 @@ function updateStatus(connState, session = getCurrentSession()) {
       : t("action.send");
   sendBtn.setAttribute("aria-label", sendBtn.title);
   cancelBtn.style.display = runIsActive && hasSession ? "flex" : "none";
-  setAttachmentPickerDisabled(!composerEnabled || archived);
-  inlineToolSelect.disabled = visitorMode || archived;
-  inlineProviderSelect.disabled = !composerEnabled || archived;
-  inlineModelSelect.disabled = !composerEnabled || archived;
-  effortSelect.disabled = !composerEnabled || archived;
+  setAttachmentPickerDisabled(!composerEnabled);
+  inlineToolSelect.disabled = visitorMode;
+  inlineProviderSelect.disabled = !composerEnabled;
+  inlineModelSelect.disabled = !composerEnabled;
+  effortSelect.disabled = !composerEnabled;
   if (typeof syncSessionTemplateControls === "function") {
     syncSessionTemplateControls();
   }

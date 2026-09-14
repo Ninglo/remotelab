@@ -239,6 +239,7 @@ async function main() {
     assert.match(page.text, /<script src="chat\/instance-settings\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /id="sessionAutoArchiveSelect"/);
     assert.match(page.text, /<script src="chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/compose\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /hydrateVoiceSettingsFromBootstrap/, 'chat page should not inline extra voice-settings hydration fallbacks');
@@ -248,6 +249,8 @@ async function main() {
     const ownerSettingsBeforeJson = JSON.parse(ownerSettingsBefore.text);
     assert.equal(ownerSettingsBeforeJson.settings?.voiceInput?.configured, false, 'instance settings should start unconfigured in a fresh home');
     assert.equal(ownerSettingsBeforeJson.settings?.googleOAuth?.configured, false, 'google oauth settings should start unconfigured in a fresh home');
+    assert.equal(ownerSettingsBeforeJson.settings?.sessionAutoArchive?.enabled, false, 'auto archive should be disabled by default');
+    assert.equal(ownerSettingsBeforeJson.settings?.sessionAutoArchive?.inactiveAfterHours, 24, 'auto archive should default to 24 hours when enabled');
 
     const visitorSettingsPatch = await request(port, 'PATCH', '/api/settings', {
       settings: {
@@ -281,6 +284,14 @@ async function main() {
     assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.accessToken, 'token-owner');
     assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration');
     assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.configured, true);
+
+    const ownerAutoArchiveUpdate = await request(port, 'PATCH', '/api/settings', {
+      settings: { sessionAutoArchive: { enabled: true, inactiveAfterHours: 72 } },
+    });
+    assert.equal(ownerAutoArchiveUpdate.status, 200, 'owner should be able to configure session auto archive');
+    const ownerAutoArchiveUpdateJson = JSON.parse(ownerAutoArchiveUpdate.text);
+    assert.equal(ownerAutoArchiveUpdateJson.settings?.sessionAutoArchive?.enabled, true);
+    assert.equal(ownerAutoArchiveUpdateJson.settings?.sessionAutoArchive?.inactiveAfterHours, 72);
 
     const ownerGoogleOAuthUpdate = await request(port, 'PATCH', '/api/settings', {
       settings: {
@@ -871,6 +882,7 @@ async function main() {
     assert.match(settingsUiAsset.text, /function renderSettingsSessionPresentationPanel\(/);
     assert.match(settingsUiAsset.text, /function initInstallSettings\(/);
     assert.match(settingsUiAsset.text, /function initVoiceInputSettings\(/);
+    assert.match(settingsUiAsset.text, /function initSessionAutoArchiveSettings\(/);
     assert.match(settingsUiAsset.text, /function renderVoiceInputClusterOptions\(/);
     assert.match(settingsUiAsset.text, /\/api\/pi-auth\/sync-codex/, 'Pi should reuse the machine Codex login');
     assert.doesNotMatch(settingsUiAsset.text, /Pi · OpenAI[\s\S]*separate from the Codex CLI login/, 'Pi should not expose a second Codex login');

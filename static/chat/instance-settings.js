@@ -8,6 +8,7 @@
   const DEFAULT_GATEWAY_URL = "wss://ai-gateway.vei.volces.com/v1/realtime";
   const DEFAULT_GATEWAY_MODEL = "bigmodel";
   const DEFAULT_GATEWAY_AUTH_MODE = "subprotocol";
+  const AUTO_ARCHIVE_RETENTION_HOURS = [12, 24, 72, 168];
 
   function trimString(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -82,17 +83,28 @@
     };
   }
 
+  function normalizeSessionAutoArchiveSettings(rawValue = {}) {
+    const value = rawValue && typeof rawValue === "object" ? rawValue : {};
+    const parsedHours = Number.parseInt(String(value.inactiveAfterHours ?? "").trim(), 10);
+    return {
+      enabled: value.enabled === true,
+      inactiveAfterHours: AUTO_ARCHIVE_RETENTION_HOURS.includes(parsedHours) ? parsedHours : 24,
+    };
+  }
+
   function normalizeInstanceSettings(rawValue = {}) {
     const value = rawValue && typeof rawValue === "object"
       ? rawValue
       : {};
     const voiceInput = normalizeVoiceInputSettings(value.voiceInput);
     const googleOAuth = normalizeGoogleOAuthSettings(value.googleOAuth);
+    const sessionAutoArchive = normalizeSessionAutoArchiveSettings(value.sessionAutoArchive);
     return {
       version: 1,
       updatedAt: trimString(value.updatedAt) || voiceInput.updatedAt || googleOAuth.updatedAt,
       voiceInput,
       googleOAuth,
+      sessionAutoArchive,
     };
   }
 
