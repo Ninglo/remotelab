@@ -37,27 +37,12 @@ function refreshSessionAttentionUi(sessionId = currentSessionId) {
 let currentThinkingBlock = null; // { el, body, tools: Set }
 let inThinkingBlock = false;
 
-let activeSourceFilter = normalizeSourceFilter(
-  (typeof getActiveSourceFilterValue === "function" ? getActiveSourceFilterValue() : "")
-  || localStorage.getItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY)
-  || localStorage.getItem(LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY)
-  || FILTER_ALL_VALUE,
-);
-
-if (typeof setChatActiveSourceFilter === "function") {
-  setChatActiveSourceFilter(activeSourceFilter, {
-    normalizeSourceFilter,
-  });
-  activeSourceFilter = typeof getActiveSourceFilterValue === "function"
-    ? normalizeSourceFilter(getActiveSourceFilterValue())
-    : activeSourceFilter;
-} else if (typeof dispatchChatStore === "function") {
-  dispatchChatStore({
-    type: "set-active-source-filter",
-    value: activeSourceFilter,
-    normalizeSourceFilter,
-  });
+// The Store owns the origin selection; localStorage only restores it on startup.
+function getCurrentSourceFilter() {
+  return normalizeSourceFilter(getActiveSourceFilterValue());
 }
+
+setChatActiveSourceFilter(getCurrentSourceFilter(), { normalizeSourceFilter });
 
 function registerHiddenMarkdownExtensions() {
   const hiddenTagStart = /<(private|hide)\b/i;
@@ -314,11 +299,11 @@ function refreshAppCatalog() {
 
 function getFilteredActiveSessions({ ignoreSource = false } = {}) {
   return getActiveSessions().filter((session) => (
-    ignoreSource || matchesSourceFilter(session, activeSourceFilter)
+    ignoreSource || matchesSourceFilter(session)
   ));
 }
 
-function matchesSourceFilter(session, sourceFilter = activeSourceFilter) {
+function matchesSourceFilter(session, sourceFilter = getCurrentSourceFilter()) {
   if (sourceFilter === FILTER_ALL_VALUE) return true;
   return getSessionSourceCategory(session) === sourceFilter;
 }
@@ -345,7 +330,7 @@ function matchesSessionSpace(session, spaceFilter = activeSessionSpace) {
 }
 
 function matchesCurrentFilters(session) {
-  return matchesSourceFilter(session, activeSourceFilter)
+  return matchesSourceFilter(session)
     && matchesSessionSpace(session, activeSessionSpace)
     && matchesSearchQuery(session);
 }
@@ -377,7 +362,7 @@ function isSidebarFilterControlVisible(control) {
 function getVisibleSourceFilterOptions() {
   return getSourceFilterDefinitions()
     .map(([value, labelKey]) => [value, t(labelKey)])
-    .filter(([value]) => getSessionCountForSourceFilter(value) > 0);
+    .filter(([value]) => getSessionCountForSourceFilter(value) > 0 || value === getCurrentSourceFilter());
 }
 
 function syncSidebarFiltersVisibility(showingSessions = null) {
@@ -408,73 +393,58 @@ function renderSourceFilterOptions() {
     return;
   }
 
+  // A native picker may hold an uncommitted value before input/change arrives.
+  // Never mutate its options, value or visibility while the user is interacting.
+  if (document.activeElement === sourceFilterSelect) return;
+
+  const selected = getCurrentSourceFilter();
   const options = getVisibleSourceFilterOptions();
-  if (
-    activeSourceFilter !== FILTER_ALL_VALUE
-    && options.length > 0
-    && !options.some(([value]) => value === activeSourceFilter)
-  ) {
-    activeSourceFilter = FILTER_ALL_VALUE;
-    if (typeof setChatActiveSourceFilter === "function") {
-      setChatActiveSourceFilter(activeSourceFilter, {
-        normalizeSourceFilter,
-      });
-    } else if (typeof dispatchChatStore === "function") {
-      dispatchChatStore({
-        type: "set-active-source-filter",
-        value: activeSourceFilter,
-        normalizeSourceFilter,
-      });
+  const display = options.length <= 1 && selected === FILTER_ALL_VALUE ? "none" : "";
+  if (sourceFilterSelect.style.display !== display) sourceFilterSelect.style.display = display;
+
+  const entries = [
+    [FILTER_ALL_VALUE, t("sidebar.filter.allOrigins", {
+      count: getSessionCountForSourceFilter(FILTER_ALL_VALUE),
+    })],
+    ...options.map(([value, name]) => [value, `${name} (${getSessionCountForSourceFilter(value)})`]),
+  ];
+  const existing = Array.from(sourceFilterSelect.children);
+  const sameValues = existing.length === entries.length
+    && existing.every((option, index) => option.value === entries[index][0]);
+  if (!sameValues) {
+    sourceFilterSelect.innerHTML = "";
+    for (const [value, label] of entries) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      sourceFilterSelect.appendChild(option);
     }
-    persistActiveSourceFilter(activeSourceFilter);
+  } else {
+    entries.forEach(([, label], index) => {
+      if (existing[index].textContent !== label) existing[index].textContent = label;
+    });
   }
-
-  if (options.length <= 1) {
-    sourceFilterSelect.style.display = "none";
-    syncSidebarFiltersVisibility();
-    return;
-  }
-
-  sourceFilterSelect.style.display = "";
-  sourceFilterSelect.innerHTML = "";
-
-  const allOption = document.createElement("option");
-  allOption.value = FILTER_ALL_VALUE;
-  allOption.textContent = t("sidebar.filter.allOrigins", {
-    count: getSessionCountForSourceFilter(FILTER_ALL_VALUE),
-  });
-  sourceFilterSelect.appendChild(allOption);
-
-  for (const [value, name] of options) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = `${name} (${getSessionCountForSourceFilter(value)})`;
-    sourceFilterSelect.appendChild(option);
-  }
-  sourceFilterSelect.value = normalizeSourceFilter(activeSourceFilter);
+  if (sourceFilterSelect.value !== selected) sourceFilterSelect.value = selected;
   syncSidebarFiltersVisibility();
 }
 
+function commitSourceFilterSelection() {
+  const selected = normalizeSourceFilter(sourceFilterSelect.value);
+  if (selected === getCurrentSourceFilter()) return;
+  setChatActiveSourceFilter(selected, { normalizeSourceFilter });
+  persistActiveSourceFilter(selected);
+  renderSessionList();
+  renderSourceFilterOptions();
+}
+
 if (sourceFilterSelect) {
-  sourceFilterSelect.addEventListener("change", () => {
-    activeSourceFilter = normalizeSourceFilter(sourceFilterSelect.value);
-    if (typeof setChatActiveSourceFilter === "function") {
-      setChatActiveSourceFilter(activeSourceFilter, {
-        normalizeSourceFilter,
-      });
-      activeSourceFilter = typeof getActiveSourceFilterValue === "function"
-        ? normalizeSourceFilter(getActiveSourceFilterValue())
-        : activeSourceFilter;
-    } else if (typeof dispatchChatStore === "function") {
-      dispatchChatStore({
-        type: "set-active-source-filter",
-        value: activeSourceFilter,
-        normalizeSourceFilter,
-      });
-    }
-    persistActiveSourceFilter(activeSourceFilter);
-    renderSourceFilterOptions();
-    renderSessionList();
+  // input commits promptly; change also covers browsers that only emit change.
+  // Both use the same idempotent state transition.
+  sourceFilterSelect.addEventListener("input", commitSourceFilterSelection);
+  sourceFilterSelect.addEventListener("change", commitSourceFilterSelection);
+  sourceFilterSelect.addEventListener("blur", () => {
+    // Let native selection events finish before reconciling deferred counts.
+    setTimeout(renderSourceFilterOptions, 0);
   });
 }
 
