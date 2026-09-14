@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -201,7 +201,7 @@ async function getEvents(port, sessionId) {
 async function main() {
   const { home } = setupTempHome();
   const port = randomPort();
-  const server = await startServer({ home, port });
+  let server = await startServer({ home, port });
 
   try {
     const session = await createSession(port);
@@ -479,6 +479,33 @@ async function main() {
     });
     assert.equal(cancelSchedule.status, 200);
     assert.equal(cancelSchedule.json.schedule.status, 'cancelled');
+    // Recreate an upgrade after old admission succeeded but its trigger receipt was lost.
+    await stopServer(server);
+    const { createRequestStore } = await import('../chat/requests.mjs');
+    const { canonicalJson } = await import('../lib/durable-records.mjs');
+    const store = createRequestStore(join(home, '.config', 'remotelab', 'requests'));
+    const accepted = await store.byRequest(deliveredTrigger.executionSessionId, trigger.requestId);
+    await store.mutate(accepted.key, current => {
+      const options = { ...current.options, queueIfBusy: false, requireIdle: true,
+        sourceDelivery: { connector: 'feishu', sourceRouteId: 'legacy-bot', target: { chatId: 'legacy-group' } } };
+      return { ...current, options, fingerprint: canonicalJson({ text: current.text, images: current.images, options }) };
+    });
+    const triggerPath = join(home, '.config', 'remotelab', 'chat-triggers.json');
+    const savedTriggers = JSON.parse(readFileSync(triggerPath, 'utf8'));
+    const retry = savedTriggers.find(item => item.id === trigger.id);
+    Object.assign(retry, { status: 'pending', enabled: true, runId: '', deliveredAt: '', lastError: '', nextAttemptAt: '' });
+    writeFileSync(triggerPath, JSON.stringify(savedTriggers));
+    server = await startServer({ home, port });
+    const recovered = await waitFor(async () => {
+      const res = await request(port, 'GET', `/api/triggers/${trigger.id}`);
+      const value = res.json.trigger;
+      return value.status === 'delivered' || value.lastError ? value : false;
+    }, 'old accepted trigger recovery');
+    assert.equal(recovered.status, 'delivered', recovered.lastError || 'old accepted trigger should recover');
+    assert.equal(recovered.runId, deliveredTrigger.runId, 'upgrade retry must not execute the task again');
+    assert.equal((await getEvents(port, deliveredTrigger.executionSessionId))
+      .filter(event => event.type === 'message' && event.role === 'user' && event.requestId === trigger.requestId).length, 1);
+
   } finally {
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });

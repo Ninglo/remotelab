@@ -56,6 +56,9 @@ creation defaults to an ordinary Session; `--conversation source` explicitly
 inherits an existing source, and JSON/file options specify a different target.
 
 Old request-scoped integrations and prepared inbox submissions remain readable.
+A timer whose request was already accepted before an upgrade uses that durable
+acceptance to finish recovery; it does not rebuild its old submission options
+or run the task a second time.
 New Feishu intake binds once at Session creation and submits normal messages.
 The core resolves canonical bindings before consulting the old thread index.
 Adoption is lazy on the next incoming message; old unbound Sessions do not

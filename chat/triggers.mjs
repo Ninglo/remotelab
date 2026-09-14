@@ -7,6 +7,7 @@ import { statusEvent } from './normalizer.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
 import { createSession, getSession, submitHttpMessage } from './session-manager.mjs';
 import { updateSessionConversation } from './session-conversations.mjs';
+import { requests } from './requests.mjs';
 import { getRun, isTerminalRunState, requestRunCancel } from './runs.mjs';
 
 const DEFAULT_TRIGGER_POLL_MS = 15000;
@@ -690,7 +691,8 @@ async function ensureExecutionSession(trigger) {
   const existingSessionId = trimString(trigger.executionSessionId);
   if (existingSessionId) {
     const existing = await getExecutionSession(existingSessionId);
-    if (!Object.hasOwn(existing, 'conversation') && trigger.sessionTemplate?.conversation) {
+    if (!Object.hasOwn(existing, 'conversation') && trigger.sessionTemplate?.conversation
+        && !await requests.byRequest(existingSessionId, trigger.requestId)) {
       await updateSessionConversation(existingSessionId, trigger.sessionTemplate.conversation);
     }
     return { trigger, session: existing };
@@ -729,7 +731,12 @@ async function ensureExecutionSession(trigger) {
 async function deliverTrigger(trigger) {
   const target = await ensureExecutionSession(trigger);
   const activeTrigger = target.trigger;
-  const outcome = await submitHttpMessage(target.session.id, activeTrigger.text, [], {
+  const accepted = await requests.byRequest(target.session.id, activeTrigger.requestId);
+  // Admission is already durable. An upgrade must not reconstruct different
+  // options for that identity or execute it again after a lost acknowledgement.
+  const outcome = accepted ? { duplicate: true, run: { id: accepted.runId },
+    queued: !accepted.result && !await getRun(accepted.runId),
+  } : await submitHttpMessage(target.session.id, activeTrigger.text, [], {
     requestId: activeTrigger.requestId,
     tool: activeTrigger.tool || undefined,
     model: activeTrigger.model || undefined,
