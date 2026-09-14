@@ -71,7 +71,25 @@ try {
     assert.equal(deliveries.filter(item => item.text === 'durable native answer').length, 1,
       `${name}: root/thread aliases or mainline quotes must not publish duplicate final replies into one conversation`);
   }
-  console.log('native source replies: Feishu thread aliases and main-timeline quotes retain one final publication');
+  const conversation = { connector: 'feishu', sourceRouteId: 'bound-bot', target: { chatId: 'chat', rootId: 'root', replyInThread: true } };
+  const bound = await rpc('create', { conversation });
+  const first = await rpc('accept', bound.id, 'Start from browser', [], { requestId: 'bound-first', tool: 'fake-native' });
+  await until(async () => (await log()).some(event => event.runId === first.run.id && event.kind === 'turn/start'));
+  await rpc('accept', bound.id, 'Follow up from another input surface', [], { requestId: 'bound-follow', tool: 'fake-native' });
+  await until(async () => (await log()).some(event => event.runId === first.run.id && event.kind === 'turn/steer'));
+  await writeFile(join(root, `${first.run.id}.release`), '');
+  await until(async () => (await rpc('response', bound.id, 'bound-follow'))?.state === 'ready');
+  const published = [];
+  for (;;) {
+    const claim = await rpc('claim', { connector: 'feishu', sourceRouteId: 'bound-bot' });
+    if (!claim) break;
+    published.push(claim.delivery);
+    await rpc('complete', claim.delivery.id, claim.leaseId, { externalId: `bound-${published.length}` });
+  }
+  assert.equal(published.filter(item => item.text === 'durable native answer').length, 1,
+    'coalesced browser and connector inputs publish one final reply through the Session binding');
+  assert.ok(published.every(item => item.target.rootId === 'root'));
+  console.log('native source replies: legacy aliases and bound Session inputs retain one final publication');
 } finally {
   if (child.exitCode === null && child.signalCode === null) {
     const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited;

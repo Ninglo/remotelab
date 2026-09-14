@@ -18,7 +18,7 @@ The key product stance is simple:
 That means platform-specific wrapping stays outside RemoteLab.
 
 Submit normalized user content in `text` and per-input platform metadata in
-`sourceContext`; keep outbound routing in `sourceDelivery`. RemoteLab projects
+`sourceContext`; bind the external conversation once on `Session.conversation`. RemoteLab projects
 the request's metadata into the existing turn Context for both the model and
 the timeline. Do not append message IDs, sender headers or transport warnings
 to user text. See [Connector metadata in turn Context](connector-turn-context.md)
@@ -91,8 +91,9 @@ Every integration should reduce its own model to this mapping:
 |---|---|---|
 | upstream thread / issue / email chain / DM | session | usually one RemoteLab session per external thread |
 | one upstream inbound update | message submission | one `requestId` per update |
-| upstream thread key | `externalTriggerId` | stable session dedupe key |
-| upstream actor metadata | optional light context inside `text` | keep source-specific structure outside RemoteLab and avoid turning each message into a connector-specific prompt |
+| upstream conversation address | `conversation` | canonical Session binding, scoped by connector and route |
+| creation event key | `externalTriggerId` | idempotent creation; retained for legacy integrations |
+| upstream actor metadata | `sourceContext` | per-input context, separate from the user text and delivery address |
 | local agent reply | assistant events in session history | connector decides how to render or deliver them |
 | source-side follow-up | another message submission | same session, new `requestId` |
 
@@ -104,12 +105,42 @@ The connector can add a short preface such as actor, source, URL, or thread titl
 
 ---
 
+## Session conversation binding
+
+The owner API accepts `conversation: { connector, sourceRouteId, target }` on
+`POST /api/sessions` and `PATCH /api/sessions/:id`. Set it to `null` to detach.
+`POST /api/session-conversations/resolve` with `{ conversation }` returns the
+bound Session ID, including archived Sessions. Creating with an already bound
+topic reuses that Session atomically; a normal history fork does not inherit it.
+The Feishu explicit `/fork` path uses `replaceConversation: true` to transfer
+the topic to a fresh Session. Retried creation keeps the same Session.
+
+For Feishu, a group-only target (`chatId`) means a new topic on first output.
+A target with an existing root message (`rootId`, `messageId`, `replyInThread:
+true`) means that topic. Thread/topic aliases can resolve an existing binding;
+an outbound reply anchor must be an actual Feishu message ID. The connector
+reports `messageId` and optional `threadId` with the send acknowledgement.
+The core binds the new root before completing the outbox record. Pending parts
+then use that root. An ambiguous first send fences subsequent output in that
+Session until its receipt or operator resolution; another Session remains free
+to publish into the same group.
+
+Browser input, Feishu input and scheduled input all use the same publication
+path. Internal maintenance output is excluded. Empty model output stays silent.
+The first visible publication includes the execution Session URL. A schedule
+stores this optional binding in `sessionTemplate.conversation`: group-only
+creates a Session/topic per occurrence, while an anchored topic continues its
+bound Session. See [Session conversations](../notes/current/session-conversations.md)
+and [scheduled task configuration](trigger-control-plane-v0.md).
+
+---
+
 ## 3. Independent admission and delivery
 
 A connector has two independently recoverable jobs, not one long-lived function waiting for AI:
 
 1. Persist the upstream event in a durable inbox before acknowledging receipt or advancing the upstream cursor.
-2. Authenticate, resolve/create the session, and persist the prepared submission (stable `requestId`, exact body, session, and `sourceDelivery`).
+2. Authenticate, resolve/create the session, and persist the prepared submission (stable `requestId`, exact body and Session ID).
 3. Submit to RemoteLab. On a lost HTTP response, retry the same prepared submission, not a newly rendered message. Once accepted, finish inbox handling immediately; later messages can enter RemoteLab's normal queue.
 4. RemoteLab executes normally, without a connector-imposed AI deadline. It commits the result and its delivery records in the same request aggregate.
 5. An independent sender claims ready deliveries, formats and sends them, durably records the upstream receipt, then acknowledges the lease. It never waits for an individual AI run.
@@ -117,7 +148,7 @@ A connector has two independently recoverable jobs, not one long-lived function 
 
 A protocol acknowledgement or optional “received” notice is not the final AI response. Failure of a decorative acknowledgement must not block admission.
 
-Feishu, WeChat, and inbound Email use this request-scoped contract. A persistent upstream connection may still need a resident process; each message does **not** need a resident waiter. Legacy explicit email completion targets remain compatible, but new email intake must not also attach them and create a second final-delivery owner.
+All connectors use this durable request/outbox contract. Feishu binds Sessions at intake. Existing WeChat and Email callers may still supply request-scoped `sourceDelivery`; a Session binding is also supported by the shared publication path. A persistent upstream connection may still need a resident process; each message does **not** need a resident waiter. Legacy explicit email completion targets remain compatible, but new email intake must not also attach them and create a second final-delivery owner.
 
 ---
 
@@ -170,7 +201,8 @@ Useful optional fields for connectors:
 - `group` — top-level grouping such as `Mail`, `GitHub`, `Bots`
 - `description` — short human-facing description
 - `systemPrompt` — optional connector-specific override; keep it minimal and use it only for constraints not already handled by backend-owned source logic
-- `externalTriggerId` — stable dedupe key for the upstream thread
+- `conversation` — optional `{ connector, sourceRouteId, target }`; all user-visible replies from this Session use it
+- `externalTriggerId` — stable creation dedupe key
 - `sourceContext` — optional structured session-level source metadata kept outside the inline user message text and retrievable later on demand
 
 Backend-owned source/runtime policy:
@@ -243,7 +275,7 @@ Optional owner-only fields:
 - `effort`
 - `thinking`
 - `sourceContext`
-- `sourceDelivery` — final reply destination, persisted with this request (see below)
+- `sourceDelivery` — compatibility input for unbound integrations; must agree with an existing Session conversation
 - `images`
 
 Runtime selection is resolved when the request is accepted: explicit request
@@ -331,7 +363,9 @@ This means connectors should treat `requestId` as the idempotency key for one up
 
 ### Source-delivery contract
 
-Pass an explicit `sourceDelivery` on message admission:
+Set `conversation` when creating a Session, or PATCH it on an owner Session. No per-message routing argument is needed afterward. The request snapshots the binding as `deliveryPlan`, separately from its original options so retries retain their admission fingerprint.
+
+For existing unbound integrations only, `sourceDelivery` on message admission remains accepted:
 
 ```json
 {
@@ -528,7 +562,7 @@ If you are integrating another tool today, the most stable approach is:
 2. authenticate as the owner
 3. create or reuse one session per upstream thread
 4. submit each inbound update as a new user message
-5. include a validated `sourceDelivery` destination in the durable request
+5. bind the Session conversation; use legacy `sourceDelivery` only for unbound integrations
 6. run an independent receipt-aware outbox consumer for your platform; observe progress only when useful
 
 This already covers most automation surfaces, including non-standard ones like GitHub issues, because the protocol only assumes one thing:

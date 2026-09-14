@@ -85,9 +85,8 @@ delete process.env.REMOTELAB_INSTANCE_ROOT;
 const { createRequestStore } = await import("../chat/requests.mjs");
 const { buildReplyPublicationPayload, collectReplyPublicationHistory } =
   await import("../chat/reply-publication.mjs");
-const { buildReplyDeliveries, normalizeSourceDeliveryPlan } = await import(
-  "../chat/source-deliveries.mjs"
-);
+const { buildReplyDeliveries } = await import("../lib/reply-deliveries.mjs");
+const { normalizeConversation: normalizeSourceDeliveryPlan } = await import("../lib/conversation-target.mjs");
 const { loadHistory } = await import("../chat/history.mjs");
 const store = createRequestStore(join(output, "requests"));
 const report = {

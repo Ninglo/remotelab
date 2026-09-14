@@ -79,6 +79,7 @@ Use these product nouns when reading or changing current code:
 - **Space** — an AI-managed broad context boundary used to switch between durable areas of work
 - **Project / Group** — a concrete recoverable workstream inside a Space
 - **Session** — one concrete work thread
+- **Conversation binding** — optional external address on a Session; browser, connector and timer inputs share its reply route
 - **Run** — one execution attempt inside a session
 
 The intended relationship is:
@@ -96,6 +97,14 @@ Important compatibility note:
 - current storage and API compatibility still use **app/template** terminology in several places
 - in session metadata today, `sourceId/sourceName` represent the trigger surface, while `templateId/templateName` represent the applied reusable agent/template
 - `space/group/description` are presentation metadata suggested by AI; `Loose` is the explicit fallback for temporary or ambiguous sessions
+
+The binding implementation is deliberately shared: `lib/conversation-target.mjs`
+normalizes identity, `chat/session-conversations.mjs` owns metadata updates,
+and `chat/source-deliveries.mjs` publishes durable reply snapshots. Feishu
+intake resolves this binding; one-time and recurring timers use
+`lib/scheduled-session.mjs` to create or resolve the same kind of Session.
+`connectors/feishu/group-settings.mjs` only controls ordinary intake and initial
+instructions. [Contract and migration](../notes/current/session-conversations.md).
 
 ### 1.2 Connector product model
 

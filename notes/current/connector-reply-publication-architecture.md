@@ -7,3 +7,10 @@ A normal Harness Run now owns one reply publication lifecycle. Publication becom
 Historical multi-run publication design: `notes/archive/connector-reply-publication-architecture.md`.
 
 Current boundary: `notes/current/thin-control-plane-architecture.md` and `docs/external-message-protocol.md`.
+
+Session metadata now owns optional external conversation bindings. Requests
+snapshot the binding independently of submitted options and commit results and
+outbox parts together. Native inputs consumed in one turn publish one answer.
+The first Feishu receipt binds a new group publication to its root; later
+output uses that topic. Browser and scheduled input share this same path.
+See [Session conversations](session-conversations.md).

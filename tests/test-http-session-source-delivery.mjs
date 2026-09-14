@@ -35,12 +35,16 @@ await new Promise(resolve => reservation.listen(0, '127.0.0.1', resolve));
 const port = reservation.address().port;
 await new Promise(resolve => reservation.close(resolve));
 let logs = '';
-const server = spawn(process.execPath, ['chat-server.mjs'], { cwd: repo,
+function startServer() {
+const child = spawn(process.execPath, ['chat-server.mjs'], { cwd: repo,
   env: { ...process.env, HOME: home, CHAT_PORT: String(port), SECURE_COOKIES: '0', REMOTELAB_PUBLIC_BASE_URL: 'https://fixture.example.test',
     PATH: `${bin}:${dirname(process.execPath)}:${process.env.PATH || ''}` },
   stdio: ['ignore', 'pipe', 'pipe'] });
-server.stdout.on('data', data => { logs += data; });
-server.stderr.on('data', data => { logs += data; });
+child.stdout.on('data', data => { logs += data; });
+child.stderr.on('data', data => { logs += data; });
+return child;
+}
+let server = startServer();
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function waitFor(fn, label, timeout = 20000) {
   const start = Date.now();
@@ -63,6 +67,120 @@ try {
   await waitFor(async () => {
     try { return (await request('GET', '/api/auth/me')).status === 200; } catch { return false; }
   }, 'server startup');
+  // A conversation belongs to the Session, including browser-originated turns.
+  const conversation = { connector: 'feishu', sourceRouteId: 'bound-bot',
+    target: { chatId: 'bound-chat', threadId: 'bound-thread', rootId: 'bound-root', messageId: 'bound-root', replyInThread: true } };
+  const bound = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', conversation });
+  for (const sourceRouteId of ['bot-left', 'bot-right']) {
+    const scoped = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex',
+      externalTriggerId: 'feishu:shared-legacy-key', conversation: { ...conversation, sourceRouteId },
+    });
+    assert.equal(scoped.status, 201);
+    assert.equal(scoped.body.session.conversation.sourceRouteId, sourceRouteId,
+      'legacy external keys cannot merge two Bot conversation scopes');
+  }
+
+  assert.equal(bound.status, 201);
+  const boundId = bound.body.session.id;
+  assert.deepEqual(bound.body.session.conversation, conversation, 'creation must retain the optional conversation');
+  const replay = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex',
+    conversation: { ...conversation, target: { chatId: 'bound-chat', topicId: 'bound-thread' } } });
+  assert.equal(replay.body.session.id, boundId, 'topic aliases resolve one Session');
+  const found = await request('POST', '/api/session-conversations/resolve', { conversation });
+  assert.equal(found.body.sessionId, boundId);
+  const browser = await request('POST', `/api/sessions/${boundId}/messages`, {
+    requestId: 'browser-bound', text: 'Reply through the existing conversation.', tool: 'fake-codex', model: 'fake-model',
+  });
+  assert.equal(browser.status, 202);
+  const boundReply = await waitFor(async () => {
+    const result = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
+    return result.body.deliveries.find(item => item.runId === browser.body.run.id && item.kind === 'content');
+  }, 'browser reply through bound topic');
+  assert.deepEqual(boundReply.target, conversation.target);
+  const boundDeliveries = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
+  assert(boundDeliveries.body.deliveries.some(item => item.text?.includes(boundId)), 'initial publication exposes the actual Session link');
+  const crossed = await request('POST', `/api/sessions/${boundId}/messages`, {
+    requestId: 'crossed-route', text: 'Do not move the conversation.',
+    sourceDelivery: { ...conversation, sourceRouteId: 'different-bot' },
+  });
+  assert.equal(crossed.status, 400, 'one request cannot replace a Session conversation');
+  const fork = await request('POST', `/api/sessions/${boundId}/fork`, {});
+  assert.equal(fork.status, 201);
+  assert.equal(fork.body.session.conversation, undefined, 'ordinary forks do not inherit external publication');
+  const archived = await request('PATCH', `/api/sessions/${boundId}`, { archived: true });
+  assert.equal(archived.status, 200);
+  const resumed = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', conversation });
+  assert.equal(resumed.body.session.id, boundId, 'archival does not detach conversation identity');
+  const forkPayload = { folder: home, tool: 'fake-codex', conversation, replaceConversation: true, externalTriggerId: 'explicit-fork' };
+  const transferred = await request('POST', '/api/sessions', forkPayload);
+  assert.equal(transferred.status, 201);
+  assert.notEqual(transferred.body.session.id, boundId);
+  assert.equal((await request('GET', `/api/sessions/${boundId}`)).body.session.conversation, null,
+    'fork transfer leaves a tombstone against legacy index adoption');
+  assert.equal((await request('POST', '/api/sessions', forkPayload)).body.session.id, transferred.body.session.id,
+    'replayed explicit fork must retain the binding');
+  const laterFork = await request('POST', '/api/sessions', { ...forkPayload, externalTriggerId: 'later-fork' });
+  assert.notEqual(laterFork.body.session.id, transferred.body.session.id);
+  assert.equal((await request('POST', '/api/sessions', forkPayload)).body.session.id, transferred.body.session.id,
+    'replaying the previous fork retains its original Session identity');
+  assert.equal((await request('POST', '/api/session-conversations/resolve', { conversation })).body.sessionId, laterFork.body.session.id,
+    'an old fork replay cannot take the topic back from the newer fork');
+  assert.equal((await request('PATCH', `/api/sessions/${boundId}`, { conversation })).status, 400,
+    'two Sessions cannot own the same topic');
+  const unbound = await request('PATCH', `/api/sessions/${boundId}`, { conversation: null });
+  assert.equal(unbound.status, 200);
+  assert.equal(unbound.body.session.conversation, null);
+  console.log('PASS: Session binding, alias reuse, browser reply, route isolation, archive and fork boundaries');
+  const newTopic = { connector: 'feishu', sourceRouteId: 'new-topic-bot', target: { chatId: 'new-topic-chat' } };
+  const published = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', conversation: newTopic });
+  const publishedId = published.body.session.id;
+  await request('POST', `/api/sessions/${publishedId}/messages`, { requestId: 'new-topic-input', text: 'Publish into a new topic.' });
+  const rootClaim = await waitFor(async () => {
+    const result = await request('POST', '/api/source-deliveries/claim', { connector: 'feishu', sourceRouteId: 'new-topic-bot' });
+    return result.body.claim;
+  }, 'new topic first publication');
+  const acknowledgeRoot = () => request('POST', `/api/source-deliveries/${rootClaim.delivery.id}/complete`, {
+    leaseId: rootClaim.leaseId, externalId: 'published-root', messageId: 'published-root', threadId: 'published-thread',
+  });
+  assert.equal((await acknowledgeRoot()).status, 200);
+  assert.equal((await acknowledgeRoot()).status, 200, 'lost acknowledgement is replayable');
+  const publishedSession = (await request('GET', `/api/sessions/${publishedId}`)).body.session;
+  assert.equal(publishedSession.conversation.target.rootId, 'published-root', 'send receipt completes Session binding');
+  assert.equal(publishedSession.conversation.target.threadId, 'published-thread');
+  const contentClaim = await waitFor(async () => {
+    const result = await request('POST', '/api/source-deliveries/claim', { connector: 'feishu', sourceRouteId: 'new-topic-bot' });
+    return result.body.claim;
+  }, 'reply after topic creation');
+  assert.equal(contentClaim.delivery.target.rootId, 'published-root', 'pending output follows the new root without creating another topic');
+  assert.equal(contentClaim.delivery.target.replyInThread, true);
+  const secondTopic = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', conversation: newTopic });
+  assert.notEqual(secondTopic.body.session.id, publishedId, 'a group destination creates a new Session on the next occurrence');
+  // Restart with the same instance state, with a pending send and no connector-local index.
+  server.kill('SIGTERM');
+  await waitFor(() => server.exitCode !== null || server.signalCode !== null, 'restart shutdown');
+  server = startServer();
+  await waitFor(async () => { try { return (await request('GET', '/api/auth/me')).status === 200; } catch { return false; } }, 'restart startup');
+  const restartedBinding = await request('POST', '/api/session-conversations/resolve', { conversation: {
+    ...newTopic, target: { chatId: 'new-topic-chat', threadId: 'published-thread' },
+  } });
+  assert.equal(restartedBinding.body.sessionId, publishedId, 'core binding survives a cold server restart');
+  assert.equal((await acknowledgeRoot()).status, 200, 'receipt replay remains idempotent across restart');
+  const { findFeishuThreadSessionBinding } = await import('../connectors/feishu/session-flow.mjs');
+  const withoutLocalIndex = await findFeishuThreadSessionBinding({ config: { sourceRouteId: 'new-topic-bot' },
+    requestRemoteLab: async (path, options = {}) => {
+      const result = await request(options.method || 'GET', path, options.body);
+      return { response: { ok: result.status < 400, status: result.status }, json: result.body };
+    }, storagePaths: {},
+  }, { chatId: 'new-topic-chat', threadId: 'published-thread', messageId: 'new-human-reply' });
+  assert.equal(withoutLocalIndex.sessionId, publishedId, 'Feishu continuation resolves the core binding without a connector-local index');
+  const replacement = { ...newTopic, target: { chatId: 'new-topic-chat', rootId: 'other-root', replyInThread: true } };
+  assert.equal((await request('PATCH', `/api/sessions/${publishedId}`, { conversation: replacement })).status, 200);
+  assert.equal((await request('POST', `/api/source-deliveries/${contentClaim.delivery.id}/complete`, {
+    leaseId: contentClaim.leaseId, messageId: 'old-reply', threadId: 'old-thread',
+  })).status, 200);
+  assert.equal((await request('GET', `/api/sessions/${publishedId}`)).body.session.conversation.target.rootId, 'other-root',
+    'a delayed old receipt cannot undo explicit rebinding');
+  console.log('PASS: first-publication receipt, pending replies, cold restart and late receipt isolation');
   const cases = ['feishu', 'wechat', 'email'].flatMap(connector => ['json', 'multipart'].map(encoding => ({ connector, encoding })));
   for (const { connector, encoding } of cases) {
     const created = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', name: `Fixture ${encoding}` });

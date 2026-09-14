@@ -1,3 +1,5 @@
+import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
+import { findSessionConversation, requireConversation, updateSessionConversation } from './session-conversations.mjs';
 import { readFile, readdir } from 'fs/promises';
 import { basename, dirname, join, resolve } from 'path';
 
@@ -137,19 +139,23 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function buildScheduledSessionTemplate(payload, sourceSession) {
-  if (payload?.sessionTemplate) return payload.sessionTemplate;
-  if (!sourceSession) return null;
-  const name = String(payload?.title || sourceSession.name || 'Scheduled task').trim();
-  return {
-    folder: sourceSession.folder,
-    tool: String(payload?.tool || sourceSession.tool || '').trim(),
-    name,
-    group: String(sourceSession.group || 'Scheduled executions').trim(),
-    description: `Isolated execution for ${name}`,
-    systemPrompt: String(sourceSession.systemPrompt || '').trim(),
-    internalRole: 'scheduled_execution',
-  };
+async function prepareScheduledTask(payload) {
+  const sourceSessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : String(payload.sourceSessionId || '').trim();
+  const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
+  if (!sourceSession) throw new Error('Source session not found');
+  if (sourceSession.archived) throw new Error('Source session is archived');
+  let input = payload;
+  if (!Object.hasOwn(payload, 'conversation') && !Object.hasOwn(payload, 'sourceDelivery')
+      && !Object.hasOwn(payload.sessionTemplate || {}, 'conversation')
+      && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
+    const sourcePlan = buildSourceDeliveryPlan(await getSessionSourceContext(sourceSessionId, {
+      requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
+    }));
+    const conversation = payload.sourceRequestId ? sourcePlan : sourceSession.conversation || sourcePlan;
+    if (!conversation) throw new Error('Source Session has no external conversation');
+    input = { ...payload, conversation };
+  }
+  return { ...payload, sourceSessionId, sessionTemplate: buildScheduledSessionTemplate(input, sourceSession) };
 }
 
 export async function handleControlRoutes({
@@ -249,6 +255,16 @@ export async function handleControlRoutes({
     return true;
   }
 
+  if (pathname === '/api/session-conversations/resolve' && req.method === 'POST') {
+    if (authSession?.role !== 'owner') { writeJson(res, 403, { error: 'Owner access required' }); return true; }
+    try {
+      const payload = JSON.parse(await readBody(req, 32768));
+      const session = await findSessionConversation(payload.conversation);
+      writeJson(res, 200, { sessionId: session?.id || null, conversation: session?.conversation || null });
+    } catch (error) { writeJson(res, 400, { error: error.message }); }
+    return true;
+  }
+
   if (pathname === '/api/triggers' && req.method === 'POST') {
     let payload = {};
     try {
@@ -267,25 +283,7 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'enabled must be a boolean' });
         return true;
       }
-      const sourceSessionId = typeof payload.sessionId === 'string'
-        ? payload.sessionId.trim()
-        : String(payload.sourceSessionId || '').trim();
-      const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
-      if (!sourceSession) throw new Error('Source session not found');
-      if (sourceSession.archived) throw new Error('Source session is archived');
-      const sessionTemplate = buildScheduledSessionTemplate(payload, sourceSession);
-      let sourceDelivery = payload.sourceDelivery;
-      if (!sourceDelivery && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
-        sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sourceSessionId, {
-          requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
-        }));
-      }
-      const trigger = await createTrigger({
-        ...payload,
-        sourceSessionId,
-        sessionTemplate,
-        sourceDelivery,
-      });
+      const trigger = await createTrigger(await prepareScheduledTask(payload));
       writeJson(res, 201, { trigger });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create trigger' });
@@ -359,25 +357,7 @@ export async function handleControlRoutes({
       return true;
     }
     try {
-      const sourceSessionId = typeof payload.sessionId === 'string'
-        ? payload.sessionId.trim()
-        : String(payload.sourceSessionId || '').trim();
-      const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
-      if (!sourceSession) throw new Error('Source session not found');
-      if (sourceSession.archived) throw new Error('Source session is archived');
-      const sessionTemplate = buildScheduledSessionTemplate(payload, sourceSession);
-      let sourceDelivery = payload.sourceDelivery;
-      if (!sourceDelivery && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
-        sourceDelivery = buildSourceDeliveryPlan(await getSessionSourceContext(sourceSessionId, {
-          requestId: typeof payload.sourceRequestId === 'string' ? payload.sourceRequestId.trim() : '',
-        }));
-      }
-      const schedule = await createRecurringSchedule({
-        ...payload,
-        sourceSessionId,
-        sessionTemplate,
-        sourceDelivery,
-      });
+      const schedule = await createRecurringSchedule(await prepareScheduledTask(payload));
       writeJson(res, 201, { schedule });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create schedule' });
@@ -681,6 +661,12 @@ export async function handleControlRoutes({
       writeJson(res, 400, { error: 'Invalid request body' });
       return true;
     }
+    const hasConversationPatch = Object.hasOwn(patch || {}, 'conversation');
+    if (hasConversationPatch) {
+      if (authSession?.role !== 'owner') { writeJson(res, 403, { error: 'Owner access required' }); return true; }
+      try { requireConversation(patch.conversation); }
+      catch (error) { writeJson(res, 400, { error: error.message }); return true; }
+    }
     const hasArchivedPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'archived');
     const hasPinnedPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'pinned');
     const hasToolPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'tool');
@@ -825,6 +811,10 @@ export async function handleControlRoutes({
       return true;
     }
     let session = null;
+    if (hasConversationPatch) {
+      try { session = await updateSessionConversation(sessionId, patch.conversation); }
+      catch (error) { writeJson(res, 400, { error: error.message }); return true; }
+    }
     if (typeof patch.name === 'string' && patch.name.trim()) {
       session = await renameSession(sessionId, patch.name.trim());
     }

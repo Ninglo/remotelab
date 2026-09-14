@@ -12,11 +12,11 @@ The base trigger still has one execution shape:
 
 - trigger type: `at_time`
 - action type: `session_message`
-- target: one new RemoteLab execution session
-- delivery: create that session at fire time, then submit one canonical task message through the normal run path
-- source conversation: context seed and optional result-delivery route only; never an execution target
+- target: one RemoteLab Session selected by its creation template
+- delivery: create or resolve that Session at fire time, then submit one canonical task message through the normal run path
+- source Session: context/template seed; execution only reuses it when an explicit conversation binding resolves back to it
 
-Recurring schedules materialize that same trigger shape from a five-field cron expression. Source-aware triggers and schedules may also persist a `sourceDelivery` snapshot so the generated result returns to the same Feishu group or Topic.
+Recurring schedules materialize that same trigger shape from a five-field cron expression. Both use `sessionTemplate.conversation`, the same optional binding accepted by normal Session creation. There is no scheduled-result sender or separate binding policy.
 
 The system stays session-first:
 
@@ -52,7 +52,7 @@ Current fields:
 - `enabled`
 - `title`
 - `sourceSessionId` — source/template session for context and list filtering
-- `executionSessionId` — the new session created when the trigger fires
+- `executionSessionId` — the Session created or resolved when the trigger fires
 - `sessionTemplate` — source-derived template used to create the execution session
 - `scheduledAt`
 - `text`
@@ -63,7 +63,7 @@ Current fields:
 - `deliveredAt`, `runId`, `deliveryMode`
 - `lastError`, `lastErrorAt`
 - `scheduleId`, `occurrenceId` when materialized by a recurring schedule
-- `sourceDelivery` when the result must return to its connector source
+- `sessionTemplate.conversation` — optional external conversation; legacy `sourceDelivery` is normalized into this field when read
 
 ## Delivery semantics
 
@@ -72,7 +72,7 @@ The trigger scheduler runs inside `chat-server.mjs`.
 For each due trigger:
 
 1. claim it durably as `delivering`
-2. create a new execution session from the stored template
+2. create or resolve the execution Session from the stored template
 3. submit the configured message to that execution session through `submitHttpMessage()`
 4. reuse stable `requestId = trigger:<triggerId>` for idempotency
 5. append a visible `status` event only in the execution session when delivery is newly accepted
@@ -84,7 +84,7 @@ If delivery fails:
 - permanent failures end as `failed`
 - stale in-progress claims can be retried after timeout
 
-Trigger work never enters the normal follow-up queue, so it cannot be merged into a `queued_batch`. Each trigger therefore has its own execution session, request ID, model run, reply publication, and source-delivery record.
+Each trigger has a stable request ID and uses normal durable Session admission. If an explicitly bound Session is busy, the scheduled input waits as a separate request; it does not steer the active native turn. There is no parallel timer-only execution path.
 
 ## Recurring schedules
 
@@ -95,15 +95,21 @@ Recurring schedules are stored in `chat-recurring-schedules.json` and exposed th
 - separate queued occurrences with a bounded open-occurrence backlog
 - cancellation of future and pending occurrences; `--include-active` also requests cancellation of the active run
 
-Each due occurrence becomes a normal durable Trigger. The schedule advances independently, while its source-delivery snapshot stays unchanged across all occurrences.
+Each due occurrence becomes a normal durable Trigger with the same stored Session template:
 
-Every recurring occurrence gets a new execution session seeded from the source session's folder, runtime, and system prompt. There is no reuse mode. This avoids lifecycle coupling to an interactive session and prevents recurring context growth.
+- No `conversation`: a new ordinary Session per occurrence, with results in RemoteLab.
+- Feishu group-only target: a new Session and a new group message/topic per occurrence.
+- Existing topic target: resolve and continue that topic's bound Session.
+
+The first result in a new external conversation carries its actual execution
+Session link. Follow-ups continue that Session. A schedule's template stays
+unchanged when one occurrence learns its newly published topic ID.
 
 ## Source delivery outbox
 
-Source deliveries are stored in `chat-source-deliveries.json`. Run finalization writes one idempotent outbox record per trigger response. The matching Feishu connector claims records for its `sourceRouteId`, sends them to the recorded group or Topic anchor, and acknowledges completion. Leases, retry backoff, and stable response IDs make the handoff restart-safe.
+Deliveries live inside the durable Request aggregate under `requests/`. Normal Run finalization snapshots the bound destination and commits the reply with its outbox parts. The connector claims records for its `sourceRouteId`, sends and persists the external receipt, then acknowledges completion. The first Feishu receipt also establishes the new Session/topic binding. This is the same path as interactive replies.
 
-Completed runs send their visible text. Failed runs send a short failure notice, empty results send a short no-content notice, and cancelled runs send nothing. The first implementation deliberately supports Feishu post/text results only; generated artifacts remain in RemoteLab.
+Completed runs publish visible text and attachments; empty output stays silent. Failed or cancelled runs publish a short terminal notice. Formatting and native file sending remain connector responsibilities.
 
 ## HTTP API
 
@@ -133,9 +139,10 @@ The command:
 
 - auto-auths through local owner credentials
 - uses `REMOTELAB_SESSION_ID` only as the source for folder, runtime, system prompt, and optional connector return route
-- always creates a new execution session and never appends its task prompt or status events to the source conversation
+- creates a new execution Session by default; an explicit existing conversation binding can select its current Session
 - defaults to `REMOTELAB_CHAT_BASE_URL` for the local control plane
-- captures the current request/session source by default; pass `--no-source-delivery` to keep output local
+- leaves output local by default; `--conversation source` explicitly inherits the source address
+- accepts `--conversation '<JSON>'` or `--conversation-file <path>` for an explicit binding; `--source-request` and `--no-source-delivery` remain compatibility aliases
 
 Fallback when `remotelab` is not on `PATH`:
 
@@ -170,6 +177,26 @@ Recurring example:
 ```bash
 remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "Prepare the weekday brief" --json
 ```
+
+## Optional conversation configuration
+
+Use this JSON with `--conversation-file` on either `trigger create` or `schedule create`:
+
+```json
+{
+  "connector": "feishu",
+  "sourceRouteId": "bot-2",
+  "target": { "chatId": "oc_example" }
+}
+```
+
+This creates a new topic per execution. To continue an existing topic, use its
+actual root message ID in `target.rootId` and `target.messageId`, and set
+`target.replyInThread` to `true`. There is no extra new/reuse switch: the address
+defines the behavior. HTTP callers may supply `conversation` at creation or
+inside `sessionTemplate`; schedule PATCH accepts `conversation` (including
+`null`). Existing stored `sourceDelivery` configurations are read into the same
+template without changing their destination or re-sending past results.
 
 ## Known limitations
 

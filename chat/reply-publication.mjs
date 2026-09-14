@@ -194,7 +194,8 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
     text: buildPayloadText(displayEvents),
   };
 
-  if (includeSessionEntry && isFirstUserTurnPublication(history, rootRun, fullHistory)) {
+  if (includeSessionEntry && (payload.text || payload.attachments.length)
+      && isFirstUserTurnPublication(history, rootRun, fullHistory)) {
     const sessionEntry = buildSessionEntry(session);
     if (sessionEntry) {
       payload.sessionEntry = sessionEntry;

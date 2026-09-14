@@ -1,8 +1,8 @@
+import { normalizeScheduledSessionTemplate as normalizeSessionTemplate } from '../lib/scheduled-session.mjs';
 import { randomBytes } from 'crypto';
 
 import { CHAT_RECURRING_SCHEDULES_FILE } from '../lib/config.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
-import { normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
 
 const DEFAULT_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_POLL_MS = 15000;
@@ -33,19 +33,6 @@ function normalizeTimestamp(value) {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
 }
 
-function normalizeSessionTemplate(value, fallbackTool = '') {
-  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const template = {
-    folder: trimString(raw.folder),
-    tool: trimString(raw.tool) || trimString(fallbackTool),
-    name: trimString(raw.name),
-    group: trimString(raw.group),
-    description: trimString(raw.description),
-    systemPrompt: trimString(raw.systemPrompt),
-    internalRole: trimString(raw.internalRole) || 'scheduled_execution',
-  };
-  return template.folder && template.tool ? template : null;
-}
 
 function createScheduleId() {
   return `sch_${randomBytes(12).toString('hex')}`;
@@ -201,7 +188,7 @@ function normalizeStoredSchedule(value) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const sourceSessionId = trimString(raw.sourceSessionId) || trimString(raw.sessionId);
   const text = trimString(raw.text);
-  const sessionTemplate = normalizeSessionTemplate(raw.sessionTemplate, raw.tool);
+  const sessionTemplate = normalizeSessionTemplate(raw.sessionTemplate, raw.tool, raw);
   if (!text || !sourceSessionId || !sessionTemplate) return null;
   const cron = parseCronExpression(raw.cron).expression;
   const timezone = validateTimezone(raw.timezone);
@@ -224,7 +211,6 @@ function normalizeStoredSchedule(value) {
     model: trimString(raw.model),
     effort: trimString(raw.effort),
     thinking: raw.thinking === true,
-    sourceDelivery: normalizeSourceDeliveryPlan(raw.sourceDelivery),
     nextRunAt: normalizeTimestamp(raw.nextRunAt),
     lastScheduledAt: normalizeTimestamp(raw.lastScheduledAt),
     missedCount: Math.max(0, Number.parseInt(raw.missedCount, 10) || 0),
@@ -295,7 +281,7 @@ export async function getRecurringSchedule(scheduleId) {
 export async function createRecurringSchedule(input = {}, options = {}) {
   const sourceSessionId = trimString(input.sourceSessionId);
   const text = trimString(input.text);
-  const sessionTemplate = normalizeSessionTemplate(input.sessionTemplate, input.tool);
+  const sessionTemplate = normalizeSessionTemplate(input.sessionTemplate, input.tool, input);
   if (!sourceSessionId) throw new Error('sourceSessionId is required');
   if (!sessionTemplate) {
     throw new Error('sessionTemplate with folder and tool is required');
@@ -318,7 +304,6 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     model: input.model,
     effort: input.effort,
     thinking: input.thinking,
-    sourceDelivery: input.sourceDelivery,
     maxOpenOccurrences: input.maxOpenOccurrences,
     nextRunAt: getNextCronOccurrence(cron, timezone, createdAt),
     createdAt,
@@ -345,9 +330,9 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     const text = Object.prototype.hasOwnProperty.call(patch, 'text')
       ? trimString(patch.text)
       : current.text;
-    const sessionTemplate = Object.prototype.hasOwnProperty.call(patch, 'sessionTemplate')
-      ? normalizeSessionTemplate(patch.sessionTemplate, patch.tool || current.tool)
-      : current.sessionTemplate;
+    const sessionTemplate = normalizeSessionTemplate(
+      Object.hasOwn(patch, 'sessionTemplate') ? patch.sessionTemplate : current.sessionTemplate,
+      patch.tool || current.tool, patch);
     if (!sourceSessionId) throw new Error('sourceSessionId is required');
     if (!sessionTemplate) throw new Error('sessionTemplate with folder and tool is required');
     if (sourceSessionId !== current.sourceSessionId) {
@@ -458,7 +443,6 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
             thinking: current.thinking,
             scheduleId: current.id,
             occurrenceId: `${current.id}:${latestAt}`,
-            sourceDelivery: current.sourceDelivery,
           });
           current.lastScheduledAt = latestAt;
           materialized += 1;

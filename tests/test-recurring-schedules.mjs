@@ -65,7 +65,7 @@ assert.equal(createdTriggers.length, 1);
 assert.equal(createdTriggers[0].scheduledAt, '2026-07-27T00:05:00.000Z');
 assert.equal(createdTriggers[0].scheduleId, schedule.id);
 assert.equal(createdTriggers[0].sourceSessionId, 'sess-recurring');
-assert.equal(createdTriggers[0].sourceDelivery.target.chatId, 'oc_test');
+assert.equal(createdTriggers[0].sessionTemplate.conversation.target.chatId, 'oc_test');
 
 const [advanced] = await listRecurringSchedules({ sessionId: 'sess-recurring' });
 assert.equal(advanced.nextRunAt, '2026-07-27T00:06:00.000Z');

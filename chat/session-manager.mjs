@@ -1,3 +1,5 @@
+import { requireConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
+import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
 import { createNativeRequestDispatcher } from './native-request-dispatch.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
@@ -579,7 +581,7 @@ function hasExplicitSessionSource(meta) {
 }
 
 function shouldExposeSession(meta) {
-  return !isInternalSession(meta);
+  return !isInternalSession(meta) || getInternalSessionRole(meta) === 'scheduled_execution';
 }
 
 function isWelcomeStarterSession(meta) {
@@ -1650,7 +1652,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
     session: await findSessionMeta(sessionId), fullHistory: history,
     includeSessionEntry: !record.deliveries.some(delivery => delivery.kind === 'session_entry'),
   });
-  const plan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
+  const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
   const deliveryPayload = run.state === 'completed' ? payload : { text: run.state === 'cancelled' ? '任务已取消。' : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`, attachments: [] };
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null }, buildReplyDeliveries(plan, deliveryPayload).map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
@@ -1661,8 +1663,8 @@ async function settleNativeRequest(record, run) {
   if (!run || !isTerminalRunState(run.state)) return;
   const root = await requests.byRunId(run.id);
   if (!root?.result) return;
-  const ownPlan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
-  const rootPlan = normalizeSourceDeliveryPlan(root.options.sourceDelivery);
+  const ownPlan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
+  const rootPlan = normalizeSourceDeliveryPlan(root.deliveryPlan || root.options.sourceDelivery);
   const destination = plan => {
     if (!plan) return '';
     const t = plan.target;
@@ -1673,7 +1675,9 @@ async function settleNativeRequest(record, run) {
       t.commentId || thread, t.accountId || '']);
   };
   const ownDestination = destination(ownPlan);
-  if (ownPlan && ownDestination !== destination(rootPlan)) {
+  const sharedBinding = record.boundConversation && root.boundConversation
+    && JSON.stringify(refineConversation(rootPlan, ownPlan)) === JSON.stringify(ownPlan);
+  if (ownPlan && !sharedBinding && ownDestination !== destination(rootPlan)) {
     const payload = root.result.state === 'completed' ? root.result.payload
       : { text: root.result.state === 'cancelled' ? '任务已取消。' : `任务执行失败：${root.result.error || root.result.state}`, attachments: [] };
     // Reserve each destination and its deliveries in the same durable commit.
@@ -2085,6 +2089,8 @@ export async function createSession(folder, tool, name, extra = {}) {
     effort: typeof extra.effort === 'string' ? extra.effort.trim() : '',
     thinking: extra.thinking === true,
   });
+  const requestedConversation = requireConversation(extra.conversation);
+  if (requestedConversation && !extra.sourceId) extra = { ...extra, sourceId: requestedConversation.connector };
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
   const { createdByPrincipalId: requestedCreatedByPrincipalId, visitorId: requestedVisitorId } = resolveRequestedSessionPrincipalFields(extra);
   const requestedTemplateId = normalizeAppId(extra.templateId || extra.agentId);
@@ -2119,13 +2125,34 @@ export async function createSession(folder, tool, name, extra = {}) {
     externalTriggerId,
     forkedFromSessionId: extra.forkedFromSessionId,
   });
-  const created = await withSessionsMetaMutation(async (metas, saveSessionsMeta) => {
+  const created = await withSessionsMetaMutation(async (metas, persist) => {
+    const existingIndex = externalTriggerId ? metas.findIndex(meta => meta.externalTriggerId === externalTriggerId
+      && (!meta.archived || requestedConversation)
+      && (!requestedConversation || (!meta.conversation
+        ? !meta.sourceContext?.sourceRouteId || meta.sourceContext.sourceRouteId === requestedConversation.sourceRouteId
+        : JSON.stringify(refineConversation(requestedConversation, meta.conversation)) === JSON.stringify(meta.conversation)))) : -1;
+    let displaced = null;
+    const saveSessionsMeta = async current => {
+      if (displaced) displaced.conversation = null; // Preserve a tombstone against legacy index adoption.
+      await persist(current);
+    };
+    if (requestedConversation) {
+      if (requestedVisitorId) throw new Error('Visitor Sessions cannot bind external conversations');
+      const bound = metas.find(meta => !meta.visitorId && sameConversation(meta.conversation, requestedConversation));
+      if (bound && extra.replaceConversation !== true) return { session: bound, created: false, changed: false };
+      const existing = metas[existingIndex];
+      if (bound && existing && Object.hasOwn(existing, 'conversation')) {
+        // Replaying an old fork cannot steal the topic back from a later fork.
+        return { session: existing, created: false, changed: false };
+      }
+      displaced = bound;
+    }
     if (externalTriggerId) {
-      const existingIndex = metas.findIndex((meta) => meta.externalTriggerId === externalTriggerId && !meta.archived);
       if (existingIndex !== -1) {
         const existing = metas[existingIndex];
         const updated = { ...existing };
         let changed = false;
+        if (requestedConversation && !updated.conversation) { updated.conversation = requestedConversation; changed = true; }
 
         if (requestedSpace && updated.space !== requestedSpace) {
           updated.space = requestedSpace;
@@ -2320,6 +2347,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (extra.compactsSessionId) session.compactsSessionId = extra.compactsSessionId;
     if (externalTriggerId) session.externalTriggerId = externalTriggerId;
     if (requestedSourceContext) session.sourceContext = requestedSourceContext;
+    if (requestedConversation) session.conversation = requestedConversation;
     if (extra.forkedFromSessionId) session.forkedFromSessionId = extra.forkedFromSessionId;
     if (Number.isInteger(extra.forkedFromSeq)) session.forkedFromSeq = extra.forkedFromSeq;
     if (extra.rootSessionId) session.rootSessionId = extra.rootSessionId;
@@ -3119,7 +3147,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
   recordInput: ensureRequestInput,
   settle: settleNativeRequest,
   reject: async (record, error) => {
-    const plan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
+    const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
     await requests.settle(record.key, { state: 'failed', payload: null, error },
       buildReplyDeliveries(plan, { text: `消息未能交给当前 Harness：${error}`, attachments: [] }));
     await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
@@ -3165,10 +3193,13 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     (options.freshThread || ['tool', 'model', 'effort', 'thinking'].some(key => (runtimeSelection[key] || '') !== (activeRequest.runtimeSelection?.[key] || '')))) {
     throw Object.assign(new Error('当前 Harness 正在运行；切换 Harness、模型或推理设置需要先停止当前任务，或在任务完成后发送。'), { code: 'SESSION_BUSY' });
   }
-  const initialDeliveries = options.sourceDelivery
-    ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, ...runtimeSelection })
+  const deliveryPlan = priorRequest
+    ? normalizeSourceDeliveryPlan(priorRequest.deliveryPlan || priorRequest.options.sourceDelivery)
+    : resolveSessionDeliveryPlan(session, options);
+  const initialDeliveries = deliveryPlan
+    ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, sourceDelivery: deliveryPlan, ...runtimeSelection })
     : [];
-  const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries });
+  const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries, deliveryPlan, boundConversation: Boolean(session.conversation) });
   const queued = !record.result && !record.nativeDispatchRunId && (!activeNative || !!options.internalOperation) && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
     const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';
@@ -3205,7 +3236,7 @@ async function ensureRequestInput(record, manifest) {
 
 async function prepareRequestRun(record) {
   const { sessionId, requestId, responseId, images } = record;
-  const options = { ...record.options, preSavedAttachments: images };
+  const options = { ...record.options, preSavedAttachments: images, ...(record.deliveryPlan ? { sourceDelivery: record.deliveryPlan } : {}) };
   const normalizedText = record.text;
   let session = await getSession(sessionId);
   if (!session) throw new Error('Accepted request has no session');

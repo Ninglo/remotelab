@@ -95,4 +95,31 @@ assert.equal(completed.state, 'delivered');
 assert.equal(completed.externalId, 'om_outbound');
 assert.equal((await getSourceDelivery(first.id)).state, 'delivered');
 
+// An uncertain first group publication fences this Session, without blocking another occurrence.
+const { withSessionsMetaMutation, findSessionMeta } = await import('../chat/session-meta-store.mjs');
+const group = { connector: 'feishu', sourceRouteId: 'new-root', target: { chatId: 'same-group' } };
+await withSessionsMetaMutation(async (metas, save) => {
+  metas.push(...['opening-a', 'opening-b'].map(id => ({ id, conversation: group })));
+  await save(metas);
+});
+const enqueue = (sessionId, responseId) => enqueueSourceDelivery({ sessionId, responseId, text: 'output', sourceDelivery: group });
+const root = await enqueue('opening-a', 'root-a');
+const later = await enqueue('opening-a', 'later-a');
+const other = await enqueue('opening-b', 'root-b');
+const pendingRoot = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'new-root' });
+assert.equal(pendingRoot.delivery.id, root.id);
+await failSourceDelivery(root.id, pendingRoot.leaseId, 'ambiguous network failure');
+const independent = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'new-root' });
+assert.equal(independent.delivery.id, other.id, 'another Session can open its own topic');
+assert.equal((await getSourceDelivery(later.id)).state, 'pending', 'later output cannot open a duplicate root');
+await completeSourceDelivery(root.id, pendingRoot.leaseId, { messageId: 'actual-root', threadId: 'actual-thread' });
+assert.equal((await findSessionMeta('opening-a')).conversation.target.rootId, 'actual-root');
+const follow = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'new-root' });
+assert.equal(follow.delivery.id, later.id);
+assert.equal(follow.delivery.target.rootId, 'actual-root');
+const { resolveSourceDelivery } = await import('../chat/source-deliveries.mjs');
+await failSourceDelivery(other.id, independent.leaseId, 'no receipt');
+await assert.rejects(resolveSourceDelivery(other.id, { state: 'delivered' }), /actual messageId/);
+await resolveSourceDelivery(other.id, { state: 'delivered', messageId: 'operator-root', externalId: 'operator-root' });
+assert.equal((await findSessionMeta('opening-b')).conversation.target.rootId, 'operator-root');
 console.log('SourceDelivery outbox tests passed.');

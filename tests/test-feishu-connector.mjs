@@ -1381,7 +1381,8 @@ try {
   assert.equal(reply.runId, 'run_feishu_1');
   assert.equal(reply.attachmentCount, 1);
   assert.equal(reply.replyText, undefined, 'handoff returns acceptance; Delivery owns the answer');
-  assert.equal(submittedPayload.sourceDelivery.connector, 'feishu');
+  assert.equal(createdPayload.conversation.connector, 'feishu');
+  assert.equal(submittedPayload.sourceDelivery, undefined, 'publication is owned by the Session binding');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }
@@ -1705,6 +1706,11 @@ topicMetadataRuntime.authCookie = 'session_token=topic-metadata-test';
 topicMetadataRuntime.authToken = 'ignored';
 
 const topicMetadataServer = http.createServer(async (req, res) => {
+  if (req.method === 'POST' && req.url === '/api/session-conversations/resolve') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ sessionId: null, conversation: null }));
+    return;
+  }
   let body = '';
   req.on('data', (chunk) => {
     body += chunk.toString();
@@ -1801,7 +1807,7 @@ try {
   });
   assert.equal(topicMetadataSessionPayload?.externalTriggerId, 'feishu:fork:default:tenant_topic_metadata_1:chat_topic_metadata_1:msg_topic_metadata_test_1');
   assert.equal(topicMetadataSessionPayload?.sourceContext?.chatType, 'group');
-  assert.equal(topicMetadataSubmittedPayload?.sourceDelivery?.target?.replyInThread, true);
+  assert.equal(topicMetadataSessionPayload?.conversation?.target?.replyInThread, true);
   assert.equal(topicMetadataSubmittedPayload?.sourceContext?.messageId, 'msg_topic_metadata_test_1');
   assert.equal(topicMetadataReply.sessionId, 'sess_topic_metadata_test_1');
   assert.equal(topicMetadataReply.replyText, undefined);

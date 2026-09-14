@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors/feishu/group-settings.mjs';
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
@@ -337,6 +338,7 @@ async function loadConfig(pathname) {
     apiTimeoutMs: normalizePositiveTimeout(parsed?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
+    groups: normalizeFeishuGroups(parsed?.groups),
     sessionPolicy: normalizeFeishuSessionPolicy(parsed?.sessionPolicy),
     botHandoffPolicy: normalizeFeishuBotHandoffPolicy(parsed?.botHandoffPolicy),
     accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
@@ -665,7 +667,7 @@ async function loadLatestReplayableSummary(eventsLogPath) {
 }
 
 function createRuntimeContext(config, storagePaths) {
-  return {
+  const runtime = {
     config,
     storagePaths,
     appClient: new Lark.Client({
@@ -680,6 +682,8 @@ function createRuntimeContext(config, storagePaths) {
     authToken: '',
     authCookie: '',
   };
+  runtime.requestRemoteLab = (path, options) => requestRemoteLab(runtime, path, options);
+  return runtime;
 }
 
 
@@ -861,7 +865,9 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     sourceName: runtime.config.region === 'lark-global' ? LARK_CONNECTOR_NAME : FEISHU_CONNECTOR_NAME,
     group: FEISHU_CONNECTOR_NAME,
     description: buildSessionDescription(effectiveSummary),
-    systemPrompt: runtime.config.systemPrompt,
+    systemPrompt: resolveFeishuGroupSettings(runtime.config, effectiveSummary).systemPrompt,
+    conversation: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: effectiveSummary },
+    ...(isForkCommand ? { replaceConversation: true } : {}),
     externalTriggerId,
     sourceContext: buildSessionSourceContext(effectiveSummary),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
@@ -882,7 +888,6 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     : effectiveSummary;
   const payload = {
     requestId: buildRequestId(effectiveSummary),
-    sourceDelivery: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: effectiveSummary },
     text: buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
     runtimeSelectionScope: 'default',
@@ -1010,7 +1015,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
     }
     const completed = await request(`/api/source-deliveries/${receipt.deliveryId}/complete`, { method: 'POST', body: {
-      leaseId: receipt.leaseId, externalId: receipt.externalId,
+      leaseId: receipt.leaseId, externalId: receipt.externalId, messageId: receipt.messageId, threadId: receipt.threadId,
     } });
     if (!completed.response.ok) throw new Error(completed.json?.error || 'Failed to record delivery receipt');
     return completed.json.delivery;

@@ -420,6 +420,11 @@ export async function handleSessionMainRoutes({
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
       };
+      if (Object.hasOwn(payload, 'conversation')) {
+        if (authSession?.role !== 'owner') { writeJson(res, 403, { error: 'Owner access required' }); return true; }
+        createOptions.conversation = payload.conversation;
+        createOptions.replaceConversation = payload.replaceConversation === true;
+      }
       if (requestedStarterPreset) {
         createOptions.starterPreset = requestedStarterPreset;
       }

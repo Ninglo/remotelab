@@ -1,5 +1,5 @@
 import { appendSessionEntryFooter, buildSessionEntry } from '../lib/session-navigation.mjs';
-import { normalizeSourceDeliveryPlan } from './source-deliveries.mjs';
+import { normalizeConversation as normalizeSourceDeliveryPlan } from '../lib/conversation-target.mjs';
 
 // This is a transport notification, separate from model history and its result.
 // Adapters using the durable outbox need no special sender for session links.

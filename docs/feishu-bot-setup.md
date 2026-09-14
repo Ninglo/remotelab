@@ -245,7 +245,7 @@ The response filter runs before commands, reactions, attachments and AI submissi
 including stored-message replay. Mention matching uses the Bot's API identity.
 Thread continuation never bypasses sender access control or Bot loop protection.
 Access and response policies apply to the whole Connector. Session-start routing
-can separately be overridden per group with `sessionPolicy` below.
+can be overridden per group with `groups` below.
 
 ### Harness and model commands
 
@@ -339,15 +339,34 @@ by restarting only that Connector when rollout is authorized.
 
 ```json
 {
-  "sessionPolicy": {
-    "defaultMode": "continue",
-    "groups": {
-      "oc_example_fresh_tasks": "fork",
-      "oc_example_shared_context": "continue"
-    }
+  "responsePolicy": { "group": "mention_only" },
+  "sessionPolicy": { "defaultMode": "fork" },
+  "groups": {
+    "oc_example_recordings": {
+      "responseMode": "all",
+      "systemPrompt": "Process incoming recordings and discuss the results in this conversation."
+    },
+    "oc_example_shared_context": { "sessionMode": "continue" }
   }
 }
 ```
+
+`groups[chatId]` overrides defaults for `responseMode` (`all`/`mention_only`)
+and `sessionMode` (`fork`/`continue`). Its optional `systemPrompt` is appended
+to global instructions when creating a Session; existing Sessions keep their
+instruction snapshot. `all` admits ordinary human messages without an @ or a
+file predicate. Attachments and text follow normal intake. Recording analysis,
+memory updates and report content belong in Agent instructions, not routing.
+The Bot still needs the upstream permission to receive unmentioned group
+messages; this setting only changes local admission. Existing sender/access,
+mute and bot-loop rules remain active.
+
+Legacy `sessionPolicy.groups[chatId]` remains a read compatibility fallback;
+new per-group settings belong in `groups`. Session metadata owns the durable
+conversation binding. The old connector-local thread index is adopted on the
+next inbound message; after adoption it is only a lookup/migration cache.
+A detached Session has an explicit null tombstone and cannot be reattached by
+that old index. Already bound topics continue through the core after restart.
 
 Only `fork` and `continue` are accepted; invalid modes fail config loading.
 Precedence: explicit `/fork` or `/continue` → existing thread binding → exact

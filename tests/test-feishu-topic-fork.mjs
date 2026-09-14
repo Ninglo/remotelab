@@ -216,7 +216,7 @@ try {
     assert.equal(createdPayloads[1].externalTriggerId, 'feishu:fork:bot-1:tenant-1:chat-1:default-task-1');
     assert.equal(createdPayloads[2].externalTriggerId, 'feishu:fork:bot-1:tenant-1:chat-1:default-task-2');
     assert.equal(submittedPayloads[2].text, 'task\nask @_user_2');
-    assert.equal(submittedPayloads[2].sourceDelivery.target.replyInThread, true);
+    assert.equal(createdPayloads[1].conversation.target.replyInThread, true);
     assert.equal(submittedPayloads[2].sourceContext.messageType, 'text');
     assert.equal(submittedPayloads[2].sourceContext.sender.senderType, 'user');
     assert.equal(submittedPayloads[2].sourceContext.chatId, 'chat-1');
@@ -225,7 +225,7 @@ try {
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
     assert.match(submittedPayloads.at(-1).text, /^shared task/);
     assert.equal(submittedPayloads.at(-1).text.includes('/continue'), false);
-    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, undefined);
+    assert.equal(createdPayloads.at(-1).conversation.target.replyInThread, undefined);
     const countBeforeThread = createCount;
     await send({ messageId: 'continue-thread', threadId: 'created-thread-1', messageText: '/continue\n\nin thread' });
     assert.equal(createCount, countBeforeThread, '/continue respects an existing thread binding');
@@ -236,12 +236,12 @@ try {
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:p2p:chat-1', 'private chat routing is unchanged');
     await send({ messageId: 'media-only', messageType: 'image', messageText: '' });
     assert.ok(submittedPayloads.at(-1).text.length > 0, 'media-only default forks retain the input envelope');
-    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
+    assert.equal(createdPayloads.at(-1).conversation.target.replyInThread, true);
 
     connectorRuntime.config.sessionPolicy = { defaultMode: 'continue', groups: { 'chat-2': 'fork' } };
     await send({ messageId: 'configured-continue', messageText: 'shared by default' });
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
-    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.forkCommand, undefined);
+    assert.equal(createdPayloads.at(-1).conversation.target.forkCommand, undefined);
     await send({ chatId: 'chat-2', messageId: 'configured-fork' });
     assert.match(createdPayloads.at(-1).externalTriggerId, /^feishu:fork:.*chat-2:configured-fork$/);
     await send({ messageId: 'override-fork', messageText: '/fork\n\nexplicit' });
@@ -263,8 +263,8 @@ try {
       assert.equal(createCount, beforeMarker + 1, 'a fork marker overrides the existing thread and continue policy');
       assert.ok(createdPayloads.at(-1).externalTriggerId.endsWith(`:${messageId}`));
       assert.equal(submittedPayloads.at(-1).text, expectedText);
-      assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
-      assert.equal(submittedPayloads.at(-1).sourceDelivery.target.forkCommand, true);
+      assert.equal(createdPayloads.at(-1).conversation.target.replyInThread, true);
+      assert.equal(createdPayloads.at(-1).conversation.target.forkCommand, true);
     }
     const beforeProseMention = createCount;
     const proseMention = '命令易用性可能需要设计，比如消息里带上很多命令（包括 /fork 之类）。';

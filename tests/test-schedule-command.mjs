@@ -62,9 +62,26 @@ async function run(args) {
 
 const created = await run(['create', '--cron', '0 9 * * 1-5', '--text', 'Send date']);
 assert.equal(created.schedule.id, schedule.id);
-assert.equal(requests.at(-1).body.deliverTo, 'session_source');
-assert.equal(requests.at(-1).body.sourceRequestId, 'feishu:om_current');
+assert.equal(requests.at(-1).body.deliverTo, undefined, 'ordinary Session is the default');
+assert.equal(requests.at(-1).body.sourceRequestId, undefined);
 assert.equal(requests.at(-1).body.timezone, 'Asia/Shanghai');
+
+
+const base = ['create', '--cron', '0 9 * * *', '--text', 'hello'];
+const createWith = async (...args) => { await run([...base, ...args]); return requests.at(-1).body; };
+assert.equal((await createWith('--conversation', 'source')).deliverTo, 'session_source');
+const binding = { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'recordings' } };
+assert.deepEqual((await createWith('--conversation', JSON.stringify(binding))).conversation, binding);
+const bindingPath = join(tempRoot, 'conversation.json');
+writeFileSync(bindingPath, JSON.stringify(binding));
+assert.deepEqual((await createWith('--conversation-file', bindingPath)).conversation, binding);
+assert.equal((await createWith('--source-request', 'feishu:explicit')).deliverTo, 'session_source');
+assert.equal((await createWith('--source-request', 'feishu:explicit')).sourceRequestId, 'feishu:explicit');
+assert.equal((await createWith('--no-source-delivery')).deliverTo, undefined);
+const beforeInvalid = requests.length;
+await assert.rejects(createWith('--conversation', '{}'), /Invalid conversation/);
+await assert.rejects(createWith('--conversation', 'source', '--conversation-file', bindingPath), /Choose one/);
+assert.equal(requests.length, beforeInvalid, 'invalid binding must fail before admission');
 
 const listed = await run(['list']);
 assert.equal(listed.schedules.length, 1);

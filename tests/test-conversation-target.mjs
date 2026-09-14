@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import { normalizeConversation, sameConversation, conversationAfterReceipt } from '../lib/conversation-target.mjs';
+
+const group = { connector: 'feishu', sourceRouteId: 'bot-a', target: { chatId: 'group' } };
+const topic = { ...group, target: { chatId: 'group', threadId: 'thread', rootId: 'root', messageId: 'input', replyInThread: true } };
+assert.deepEqual(normalizeConversation(group), group);
+assert.equal(sameConversation(group, group), false, 'group-only destinations create independent conversations');
+assert.equal(sameConversation(topic, { ...group, target: { chatId: 'group', rootId: 'root', replyInThread: true } }), true);
+assert.equal(sameConversation(topic, { ...group, target: { chatId: 'group', topicId: 'thread' } }), true);
+assert.equal(sameConversation(topic, { ...topic, sourceRouteId: 'bot-b' }), false);
+assert.equal(sameConversation(topic, { ...topic, target: { ...topic.target, chatId: 'elsewhere' } }), false);
+assert.equal(sameConversation(topic, { ...group, target: { chatId: 'group', rootId: 'different', replyInThread: true } }), false);
+assert.equal(normalizeConversation({ connector: 'feishu', target: { threadId: 'no-group' } }), null);
+const created = conversationAfterReceipt(group, { messageId: 'new-root', threadId: '' });
+assert.equal(created.target.rootId, 'new-root');
+assert.equal(created.target.messageId, 'new-root');
+assert.equal(created.target.replyInThread, true);
+const resolved = conversationAfterReceipt(created, { messageId: 'reply', threadId: 'assigned-thread' });
+assert.equal(resolved.target.rootId, 'new-root');
+assert.equal(resolved.target.threadId, 'assigned-thread');
+assert.equal(sameConversation(created, resolved), true);
+assert.equal(conversationAfterReceipt(topic, { messageId: 'reply', threadId: 'thread' }).target.rootId, 'root');
+const dm = { ...group, target: { chatId: 'private', chatType: 'p2p' } };
+assert.equal(sameConversation(dm, dm), true);
+assert.deepEqual(conversationAfterReceipt(dm, { messageId: 'reply' }), dm);
+assert.equal(conversationAfterReceipt(group, {}), null, 'missing send receipts cannot bind a topic');
+console.log('PASS: conversation identity, route isolation and first-publication binding');

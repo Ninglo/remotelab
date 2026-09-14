@@ -1,5 +1,11 @@
 [
   {
+    "id": "session-conversations",
+    "description": "One optional Session conversation binding shared by connector input, reply publication and scheduled session creation; per-group Feishu overrides use ordinary message intake.",
+    "pass": true,
+    "verification_plan": "Isolated HTTP fake-Harness scenarios for ordinary/bound Sessions, browser follow-up, restart, first outbound topic binding, scheduled new/continued conversations, dedupe, failure receipts, fork isolation, group overrides and full npm/restart gates."
+  },
+  {
     "id": "visible-session-delegation",
     "description": "Ship one cross-Harness visible delegation workflow, with run-snapshot inheritance and an authoritative child session URL.",
     "pass": true,

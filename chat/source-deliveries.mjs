@@ -1,3 +1,10 @@
+import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+export { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
+import { findSessionMeta } from './session-meta-store.mjs';
+import { updateSessionConversation } from './session-conversations.mjs';
+import { normalizeConversation as normalizeSourceDeliveryPlan, normalizeConversationTarget as normalizeTarget, normalizeConversationRouteId as normalizeSourceRouteId } from '../lib/conversation-target.mjs';
+export { normalizeConversation as normalizeSourceDeliveryPlan } from '../lib/conversation-target.mjs';
 import { randomBytes } from 'node:crypto';
 import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { serialQueue } from '../lib/durable-records.mjs';
@@ -6,10 +13,6 @@ import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-
 const queue = serialQueue();
 const trimString = value => typeof value === 'string' ? value.trim() : '';
 const terminal = state => ['delivered', 'delivery_failed', 'cancelled'].includes(state);
-function normalizeSourceRouteId(value) {
-  const normalized = trimString(value);
-  return !normalized || normalized === 'unknown' ? 'default' : normalized;
-}
 
 function nowIso(value = Date.now()) {
   const parsed = typeof value === 'string' ? Date.parse(value) : Number(value);
@@ -25,69 +28,6 @@ function createId(prefix) {
   return `${prefix}_${randomBytes(12).toString('hex')}`;
 }
 
-function normalizeTarget(value = {}) {
-  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const target = {};
-  for (const field of [
-    // Feishu fields
-    'chatId',
-    'chatType',
-    'conversationKind',
-    'messageId',
-    'topicId',
-    'threadId',
-    'rootId',
-    'parentId',
-    'groupMessageType',
-    'chatMode', 'eventType', 'fileType', 'fileToken', 'commentId', 'replyId', 'sourceKind', 'messageType',
-    // WeChat fields
-    'accountId',
-    'peerUserId',
-    'contextToken',
-    // Email fields (preserve the bound mailbox alias used for replies).
-    'to',
-    'from',
-    'subject',
-    'inReplyTo',
-  ]) {
-    const normalized = trimString(raw[field]);
-    if (normalized) target[field] = normalized;
-  }
-  // Email references: stored as array of strings
-  if (Array.isArray(raw.references) && raw.references.length > 0) {
-    const refs = raw.references.map(r => trimString(r)).filter(Boolean);
-    if (refs.length > 0) target.references = refs;
-  } else if (typeof raw.references === 'string') {
-    const ref = trimString(raw.references);
-    if (ref) target.references = [ref];
-  }
-  if (raw.replyInThread === true) target.replyInThread = true;
-  if (raw.forkCommand === true) target.forkCommand = true;
-  if (!target.messageId && (target.topicId || target.threadId || target.rootId)) {
-    target.messageId = target.rootId || target.topicId || target.threadId;
-  }
-  return target;
-}
-
-export function normalizeSourceDeliveryPlan(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const connector = trimString(value.connector).toLowerCase();
-  const target = normalizeTarget(value.target);
-  if (connector === 'feishu') {
-    if (!target.chatId && !target.commentId) return null;
-  } else if (connector === 'wechat') {
-    if (!target.accountId || !target.peerUserId) return null;
-  } else if (connector === 'email') {
-    if (!target.to) return null;
-  } else {
-    return null;
-  }
-  return {
-    connector,
-    sourceRouteId: normalizeSourceRouteId(value.sourceRouteId),
-    target,
-  };
-}
 
 export function buildSourceDeliveryPlan(sourceContext) {
   if (!sourceContext || typeof sourceContext !== 'object' || Array.isArray(sourceContext)) return null;
@@ -116,22 +56,6 @@ export function buildSourceDeliveryPlan(sourceContext) {
 }
 
 
-export function buildReplyDeliveries(plan, payload) {
-  if (!plan) return [];
-  // Email: one combined delivery; the email worker sends a single message with text + attachments.
-  if (plan.connector === 'email') {
-    const text = payload.text || '';
-    const attachments = Array.isArray(payload.attachments) ? payload.attachments : [];
-    if (!text && attachments.length === 0) return [];
-    return [{ ...plan, kind: 'content', text, attachments }];
-  }
-  // All other connectors: split text and attachments into separate deliveries.
-  const parts = [];
-  if (payload.text) parts.push({ ...plan, kind: 'content', text: payload.text });
-  for (const attachment of payload.attachments || []) parts.push({ ...plan, kind: 'attachment', text: '', attachment });
-  return parts;
-}
-
 export async function listSourceDeliveries(options = {}) {
   const deliveries = (await requests.active()).flatMap(record => record.deliveries);
   return deliveries.filter(entry => ['connector', 'sourceRouteId', 'state', 'sessionId'].every(field => !options[field] || entry[field] === options[field]));
@@ -147,7 +71,7 @@ export async function listSourceDeliveryActivity(options = {}) {
   const activity = [];
   for (const record of await requests.active()) {
     if (record.result || record.options.deliveryOnly || record.options.internalOperation) continue;
-    const plan = normalizeSourceDeliveryPlan(record.options.sourceDelivery);
+    const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
     if (!plan || ['connector', 'sourceRouteId'].some(field => options[field] && plan[field] !== options[field])) continue;
     if (options.sessionId && record.sessionId !== options.sessionId) continue;
     activity.push({ ...plan, sessionId: record.sessionId, requestId: record.requestId, responseId: record.responseId });
@@ -191,7 +115,7 @@ const targetKey = entry => {
     return JSON.stringify(['email', entry.sourceRouteId, t.to || '', t.threadId || t.inReplyTo || '']);
   }
   // Feishu (and any future unknown connector): existing key.
-  return JSON.stringify([entry.connector, entry.sourceRouteId, t.chatId || t.fileToken || '', t.topicId || t.threadId || t.commentId || '']);
+  return JSON.stringify([entry.connector, entry.sourceRouteId, t.chatId || t.fileToken || '', t.rootId || t.topicId || t.threadId || t.commentId || (t.replyInThread ? t.messageId : '') || '']);
 };
 
 async function mutateDelivery(id, update) {
@@ -227,18 +151,24 @@ export async function claimSourceDelivery(options = {}) {
     const blocked = new Set();
     for (let entry of entries) {
       if (terminal(entry.state)) continue;
-      const key = targetKey(entry);
+      const session = await findSessionMeta(entry.sessionId);
+      const refined = refineConversation(entry, session?.conversation);
+      const openingTopic = session?.conversation?.connector === 'feishu' && !sameConversation(session.conversation, session.conversation);
+      const key = openingTopic ? `session:${entry.sessionId}` : targetKey(refined || entry);
       if (entry.state === 'sending' && (!Number.isFinite(Date.parse(entry.claimedAt)) || Date.parse(now) - Date.parse(entry.claimedAt) >= timeout)) {
         entry = await mutateDelivery(entry.id, current => ({ ...current, state: 'unknown', lastError: 'Sender lease expired without a receipt' }));
       }
       // Fence this uncertain operation, not the whole conversation. A later
       // receipt can still settle its original lease without resending it.
-      if (entry.state === 'unknown') continue;
+      if (entry.state === 'unknown') {
+        if (openingTopic) blocked.add(key); // Do not create a second root after an ambiguous first send.
+        continue;
+      }
       if (blocked.has(key)) continue;
       blocked.add(key);
       if (entry.state !== 'pending' || Date.parse(entry.availableAt) > Date.parse(now)) continue;
       const leaseId = createId('lease');
-      const delivery = await mutateDelivery(entry.id, current => ({ ...current, state: 'sending', leaseId, claimedAt: now, attempts: current.attempts + 1 }));
+      const delivery = await mutateDelivery(entry.id, current => ({ ...current, ...(refined ? { target: refined.target } : {}), state: 'sending', leaseId, claimedAt: now, attempts: current.attempts + 1 }));
       return { delivery, leaseId };
     }
     return null;
@@ -246,13 +176,24 @@ export async function claimSourceDelivery(options = {}) {
 }
 
 export async function completeSourceDelivery(id, leaseId, input = {}) {
-  return queue(() => mutateDelivery(id, entry => {
+  return queue(async () => {
+    const { key, index } = parseId(id);
+    const record = await requests.get(key);
+    const entry = record?.deliveries[index];
+    if (!entry) throw new Error('Delivery not found');
+    const duplicate = entry.state === 'delivered' && entry.receiptLeaseId === leaseId;
+    if (!duplicate && (!['sending', 'unknown'].includes(entry.state) || !leaseId || entry.leaseId !== leaseId)) throw new Error('Source delivery lease mismatch');
+    if (!duplicate && input.messageId && await findSessionMeta(entry.sessionId)) {
+      await updateSessionConversation(entry.sessionId, entry, { receipt: input });
+    }
+    return mutateDelivery(id, entry => {
     // Repeating the acknowledgement after an HTTP disconnect is harmless.
     if (entry.state === 'delivered' && entry.receiptLeaseId === leaseId) return entry;
     if (!['sending', 'unknown'].includes(entry.state) || !leaseId || entry.leaseId !== leaseId) throw new Error('Source delivery lease mismatch');
     return { ...entry, state: 'delivered', externalId: trimString(input.externalId), receiptLeaseId: leaseId,
       deliveredAt: nowIso(input.now), leaseId: '', lastError: '' };
-  }));
+    });
+  });
 }
 
 export async function failSourceDelivery(id, leaseId, error, options = {}) {
@@ -270,12 +211,24 @@ export async function failSourceDelivery(id, leaseId, error, options = {}) {
 }
 
 export async function resolveSourceDelivery(id, resolution) {
-  return queue(() => mutateDelivery(id, entry => {
+  return queue(async () => {
+    const current = await getSourceDelivery(id);
+    if (!current || !['unknown', 'delivery_failed'].includes(current.state)) throw new Error('Only an unresolved delivery can be resolved');
+    if (resolution.state === 'delivered') {
+      const session = await findSessionMeta(current.sessionId);
+      if (session?.conversation?.connector === 'feishu'
+          && !sameConversation(session.conversation, session.conversation) && !resolution.messageId) {
+        throw new Error('Resolving a new topic delivery requires its actual messageId');
+      }
+      if (session && resolution.messageId) await updateSessionConversation(current.sessionId, current, { receipt: resolution });
+    }
+    return mutateDelivery(id, entry => {
     if (!['unknown', 'delivery_failed'].includes(entry.state)) throw new Error('Only an unresolved delivery can be resolved');
     if (!['delivered', 'pending', 'cancelled'].includes(resolution.state)) throw new Error('Invalid delivery resolution');
     return { ...entry, state: resolution.state, externalId: resolution.externalId || entry.externalId,
       availableAt: nowIso(), leaseId: '', resolution: resolution.reason || 'operator resolution' };
-  }));
+    });
+  });
 }
 
 export async function cancelSourceDeliveriesForSchedule(scheduleId) {

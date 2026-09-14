@@ -4,7 +4,7 @@ await manager.startDetachedRunObservers();
 process.send({ ready: true });
 process.on('message', async ({ id, action, args }) => {
   try {
-    const value = action === 'create' ? await manager.createSession(process.env.HOME, 'fake-native', 'Native input test')
+    const value = action === 'create' ? await manager.createSession(process.env.HOME, 'fake-native', 'Native input test', args[0] || {})
       : action === 'accept' ? await manager.submitHttpMessage(...args)
       : action === 'response' ? await manager.getSessionReplyPublication(...args)
       : action === 'history' ? await manager.getHistory(...args)

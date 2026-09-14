@@ -40,6 +40,14 @@ try {
   await check('private chat always responds immediately', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit']);
   await check('all group mode admits every message', {}, ['reaction', 'submit'], { group: 'all' });
 
+  runtime.config.groups = { 'group-1': { responseMode: 'all', systemPrompt: 'Group instructions' } };
+  await check('group override admits plain text without a file or mention', {}, ['reaction', 'submit']);
+  await check('other groups retain global behavior', { chatId: 'group-2' }, []);
+  await check('self remains excluded under group override', { sender: { senderType: 'app', openId: 'bot-self' } }, []);
+  runtime.config.groups = { 'group-1': { responseMode: 'mention_only' } };
+  await check('group override can narrow global all', {}, [], { group: 'all' });
+  delete runtime.config.groups;
+
   effects = [];
   runtime.config.responsePolicy = { group: 'mention_only' };
   await handleMessage(runtime, { ...base, mentions: [{ openId: 'bot-self' }] }, 'test', {
@@ -72,6 +80,20 @@ try {
   assert.equal('processingReaction' in config, false);
   assert.equal('silentConfirmationText' in config, false);
 
+  const { resolveFeishuGroupSettings } = await import('../connectors/feishu/group-settings.mjs');
+  await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', systemPrompt: 'Global instructions',
+    sessionPolicy: { defaultMode: 'continue', groups: { 'group-1': 'continue' } },
+    groups: { 'group-1': { responseMode: 'all', sessionMode: 'fork', systemPrompt: 'Group instructions' } },
+  }));
+  const groupConfig = await loadConfig(configPath);
+  assert.deepEqual(resolveFeishuGroupSettings(groupConfig, base), {
+    responseMode: 'all', sessionMode: 'fork', systemPrompt: 'Global instructions\n\nGroup instructions',
+  });
+  assert.equal(resolveFeishuGroupSettings(groupConfig, { chatId: 'other' }).systemPrompt, 'Global instructions');
+  for (const groups of [{ 'group-1': { fileOnly: true } }, { 'group-1': { responseMode: 'typo' } }, { 'group-1': { systemPrompt: 123 } }]) {
+    await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', groups }));
+    await assert.rejects(loadConfig(configPath), /group|Group/);
+  }
   await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test' }));
   const defaults = await loadConfig(configPath);
   assert.equal(defaults.accessPolicy.mode, 'all');

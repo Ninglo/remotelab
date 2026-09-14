@@ -1,3 +1,4 @@
+import { resolveFeishuGroupSettings } from './group-settings.mjs';
 import { normalizeFeishuMode, trimString } from './index.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 import { getFeishuConversationSettings } from './conversation-settings.mjs';
@@ -60,8 +61,8 @@ export async function shouldRouteFeishuMessageToRemoteLab(runtime, summary, { ex
   const modes = [summary?.chatType, summary?.chatMode, summary?.groupMessageType].map(normalizeFeishuMode);
   if (modes.includes('p2p') || modes.includes('private')) return true;
   if (!modes.some((mode) => ['group', 'topic', 'thread'].includes(mode))) return true;
-  const policy = normalizeFeishuResponsePolicy(runtime?.config?.responsePolicy);
-  if (policy.group === 'all' || mentioned) return true;
+  const settings = resolveFeishuGroupSettings(runtime.config, summary);
+  if (settings.responseMode === 'all' || mentioned) return true;
   // A durable binding means this Bot has already joined this exact thread.
   // Never infer participation from the group session or a mention of someone else.
   return Boolean((await findFeishuThreadSessionBinding(runtime, summary))?.sessionId);

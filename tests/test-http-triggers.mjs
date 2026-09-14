@@ -131,6 +131,7 @@ async function startServer({ home, port }) {
       CHAT_PORT: String(port),
       CHAT_BIND_HOST: '127.0.0.1',
       SECURE_COOKIES: '0',
+      REMOTELAB_PUBLIC_BASE_URL: 'https://fixture.example.test',
       FAKE_CODEX_DELAY_MS: '300',
       REMOTELAB_TRIGGER_POLL_MS: '50',
     },
@@ -270,6 +271,42 @@ async function main() {
     assert.equal(executionSessionRes.status, 200);
     assert.equal(executionSessionRes.json.session.internalRole, 'scheduled_execution');
 
+    const conversation = { connector: 'feishu', sourceRouteId: 'scheduled-bot', target: { chatId: 'scheduled-chat' } };
+    const scheduleInto = async binding => {
+      const response = await request(port, 'POST', '/api/triggers', {
+        sessionId: session.id, title: 'Conversation execution', conversation: binding,
+        scheduledAt: new Date(Date.now() + 200).toISOString(), text: 'Publish the scheduled reply.', tool: 'fake-codex',
+      });
+      assert.equal(response.status, 201);
+      assert.deepEqual(response.json.trigger.sessionTemplate.conversation, binding, 'scheduled conversation belongs to the creation template');
+      const executed = await waitFor(async () => {
+        const value = await request(port, 'GET', `/api/triggers/${response.json.trigger.id}`);
+        return value.json.trigger.status === 'delivered' ? value.json.trigger : null;
+      }, 'conversation trigger admission');
+      await waitForRunTerminal(port, executed.runId);
+      return executed;
+    };
+    const firstOccurrence = await scheduleInto(conversation);
+    const firstDelivery = await waitFor(async () => {
+      const value = await request(port, 'POST', '/api/source-deliveries/claim', { connector: 'feishu', sourceRouteId: 'scheduled-bot' });
+      return value.json.claim;
+    }, 'scheduled first reply');
+    assert.equal(firstDelivery.delivery.kind, 'content', 'scheduled execution publishes one result without an extra opening notice');
+    assert(firstDelivery.delivery.text.includes(firstOccurrence.executionSessionId), 'scheduled report includes its execution Session link');
+    const published = await request(port, 'POST', `/api/source-deliveries/${firstDelivery.delivery.id}/complete`, {
+      leaseId: firstDelivery.leaseId, externalId: 'scheduled-root', messageId: 'scheduled-root', threadId: 'scheduled-thread',
+    });
+    assert.equal(published.status, 200);
+    const boundSession = (await request(port, 'GET', `/api/sessions/${firstOccurrence.executionSessionId}`)).json.session;
+    assert.equal(boundSession.conversation.target.rootId, 'scheduled-root');
+    const visible = (await request(port, 'GET', '/api/sessions')).json.sessions;
+    assert(visible.some(item => item.id === firstOccurrence.executionSessionId), 'scheduled work is manageable in the ordinary Session list');
+    const continued = await scheduleInto(boundSession.conversation);
+    assert.equal(continued.executionSessionId, firstOccurrence.executionSessionId, 'targeting a bound topic continues its one Session');
+    const secondOccurrence = await scheduleInto(conversation);
+    assert.notEqual(secondOccurrence.executionSessionId, firstOccurrence.executionSessionId, 'next group occurrence starts an independent Session/topic');
+    console.log('PASS: optional scheduled conversation, new topic, exact continuation, Session link and visibility');
+
     const futureTriggerRes = await request(port, 'POST', '/api/triggers', {
       sessionId: session.id,
       title: 'Later follow-up',
@@ -315,7 +352,7 @@ async function main() {
         deliverTo: 'session_source',
       });
       assert.equal(res.status, 201);
-      assert.equal(res.json.trigger.sourceDelivery.target.chatId, 'oc_source_test');
+      assert.equal(res.json.trigger.sessionTemplate.conversation.target.chatId, 'oc_source_test');
       isolatedTriggers.push(res.json.trigger);
     }
 
@@ -349,7 +386,8 @@ async function main() {
       return res.status === 200 && res.json.claim?.delivery ? res.json.claim : false;
     }, 'source delivery outbox job');
     assert.equal(deliveryClaim.delivery.target.chatId, 'oc_source_test');
-    assert.equal(deliveryClaim.delivery.text, 'trigger run finished');
+    assert.ok(deliveryClaim.delivery.text.startsWith('trigger run finished\n\n'));
+    assert.ok(deliveryClaim.delivery.text.includes(`https://fixture.example.test/?session=${deliveryClaim.delivery.sessionId}&tab=sessions`));
     assert.ok(
       isolatedTriggers.some((entry) => entry.id === deliveryClaim.delivery.triggerId),
       'source delivery must remain traceable to one trigger',
@@ -434,7 +472,7 @@ async function main() {
     assert.equal(scheduleRes.json.schedule.sessionTemplate.folder, sourceSession.folder);
     assert.equal(scheduleRes.json.schedule.sessionTemplate.tool, 'fake-codex');
     assert.equal(scheduleRes.json.schedule.sessionTemplate.internalRole, 'scheduled_execution');
-    assert.equal(scheduleRes.json.schedule.sourceDelivery.target.chatId, 'oc_source_test');
+    assert.equal(scheduleRes.json.schedule.sessionTemplate.conversation.target.chatId, 'oc_source_test');
     const scheduleId = scheduleRes.json.schedule.id;
     const cancelSchedule = await request(port, 'PATCH', `/api/schedules/${scheduleId}`, {
       enabled: false,

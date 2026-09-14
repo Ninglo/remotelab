@@ -1,3 +1,4 @@
+import { resolveFeishuGroupSettings } from './group-settings.mjs';
 // Defaults apply only to unbound group messages; explicit commands and thread
 // bindings retain their existing routing semantics.
 export function normalizeFeishuSessionPolicy(value = {}) {
@@ -22,7 +23,5 @@ export function normalizeFeishuSessionPolicy(value = {}) {
 }
 
 export function resolveFeishuSessionMode(config, summary) {
-  const policy = normalizeFeishuSessionPolicy(config?.sessionPolicy);
-  return Object.hasOwn(policy.groups, summary.chatId)
-    ? policy.groups[summary.chatId] : policy.defaultMode;
+  return resolveFeishuGroupSettings(config, summary).sessionMode;
 }
