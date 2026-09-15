@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import { resolveCodexHomeDir, resolveMachineAccountHomeDir } from '../lib/codex-home.mjs';
 import { resolveToolCommandPathAsync } from '../lib/tools.mjs';
 import { ensureDir } from './fs-utils.mjs';
+import { readCodexAccountStatus, readCodexAuthMetadata } from '../lib/codex-account-status.mjs';
 
 const DEVICE_LOGIN_TTL_MS = 15 * 60 * 1000;
 const STATUS_TIMEOUT_MS = 10 * 1000;
@@ -14,13 +15,15 @@ function cleanOutput(value = '') {
   return String(value || '').replace(ANSI_PATTERN, '').replace(/\r/g, '');
 }
 
-function createPublicState(state, { available, loggedIn, checkedAt } = {}) {
+function createPublicState(state, { available, loggedIn, checkedAt, account = null, accountRevision = '' } = {}) {
   const now = Date.now();
   const expiresAt = Number(state.expiresAt || 0);
   const deviceLoginActive = state.phase === 'starting' || state.phase === 'awaiting';
   return {
     available: available !== false,
     loggedIn: loggedIn === true,
+    account: loggedIn === true ? account : null,
+    accountRevision: loggedIn === true ? accountRevision : '',
     phase: loggedIn === true ? 'authenticated' : state.phase,
     deviceLoginActive,
     verificationUri: deviceLoginActive ? state.verificationUri : '',
@@ -89,6 +92,8 @@ export function createCodexAuthManager({
     error: '',
   };
   const waiters = new Set();
+  let usageCache = null;
+  let usagePending = null;
 
   function notifyWaiters() {
     for (const resolve of waiters) resolve();
@@ -127,6 +132,7 @@ export function createCodexAuthManager({
   }
 
   async function getStatus() {
+    const statusGeneration = generation;
     if (activeChild && state.expiresAt && state.expiresAt <= now()) {
       stopActiveLogin();
       state = { ...state, phase: 'failed', error: 'Codex login code expired' };
@@ -147,12 +153,14 @@ export function createCodexAuthManager({
       });
     }
 
-    const result = await waitForProcess(runtime.command, ['login', 'status'], {
-      env: runtime.env,
-      spawnProcess,
-    });
-    const output = cleanOutput(`${result.stdout}\n${result.stderr}`);
-    const loggedIn = /\blogged in\b/i.test(output) && !/\bnot logged in\b/i.test(output);
+    let result;
+    try {
+      result = await readCodexAccountStatus({ ...runtime, spawnProcess });
+    } catch (error) {
+      return createPublicState({ ...state, phase: 'failed', error: error.message });
+    }
+    if (statusGeneration !== generation) return getStatus();
+    const loggedIn = !!result.account;
     if (loggedIn) {
       state = { ...state, phase: 'authenticated', error: '' };
     } else if (!activeChild && state.phase === 'authenticated') {
@@ -162,11 +170,35 @@ export function createCodexAuthManager({
       available: true,
       loggedIn,
       checkedAt: new Date(now()).toISOString(),
+      account: result.account,
+      accountRevision: result.accountRevision,
     });
+  }
+
+  async function getRateLimits({ force = false } = {}) {
+    const runtime = await resolveRuntime();
+    if (!runtime) return { status: 'unavailable', buckets: [], accountRevision: '' };
+    const { revision } = await readCodexAuthMetadata(runtime.env.CODEX_HOME);
+    const key = `${generation}:${runtime.env.CODEX_HOME}:${revision}`;
+    if (revision && !force && usageCache?.key === key && usageCache.expiresAt > now()) return usageCache.value;
+    if (usagePending?.key === key) return usagePending.promise;
+    const promise = (async () => {
+      const result = await readCodexAccountStatus({ ...runtime, spawnProcess, includeRateLimits: true });
+      const value = { ...result.usage, accountRevision: result.accountRevision, checkedAt: result.checkedAt };
+      if (revision && result.credentialRevision === revision) {
+        usageCache = { key, value, expiresAt: now() + 60_000 };
+      }
+      return value;
+    })();
+    const pending = { key, promise };
+    usagePending = pending;
+    try { return await promise; }
+    finally { if (usagePending === pending) usagePending = null; }
   }
 
   function stopActiveLogin() {
     generation += 1;
+    usageCache = null;
     if (activeChild && !activeChild.killed) {
       activeChild.kill('SIGTERM');
     }
@@ -275,6 +307,7 @@ export function createCodexAuthManager({
 
   return {
     getStatus,
+    getRateLimits,
     logout,
     startDeviceLogin,
     stopActiveLogin,

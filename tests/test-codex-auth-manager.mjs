@@ -1,5 +1,5 @@
 import assert from 'assert/strict';
-import { access, chmod, mkdtemp, readFile, writeFile } from 'fs/promises';
+import { access, copyFile, chmod, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -9,30 +9,7 @@ const tempRoot = await mkdtemp(join(tmpdir(), 'remotelab-codex-auth-'));
 const codexHome = join(tempRoot, 'codex-home');
 const fakeCodex = join(tempRoot, 'fake-codex');
 
-await writeFile(fakeCodex, `#!/bin/sh
-if [ "$1" = "login" ] && [ "$2" = "status" ]; then
-  if [ -f "$CODEX_HOME/auth.json" ]; then
-    echo "Logged in using ChatGPT"
-    exit 0
-  fi
-  echo "Not logged in"
-  exit 1
-fi
-if [ "$1" = "login" ] && [ "$2" = "--device-auth" ]; then
-  echo "Open https://auth.openai.com/codex/device"
-  echo "Enter code 2ABC-4DEFG"
-  sleep 0.2
-  printf '{"tokens":{}}\\n' > "$CODEX_HOME/auth.json"
-  echo "Successfully logged in"
-  exit 0
-fi
-if [ "$1" = "logout" ]; then
-  rm -f "$CODEX_HOME/auth.json"
-  echo "Successfully logged out"
-  exit 0
-fi
-exit 2
-`);
+await copyFile(new URL('./fixtures/codex-account.cjs', import.meta.url), fakeCodex);
 await chmod(fakeCodex, 0o755);
 
 const manager = createCodexAuthManager({

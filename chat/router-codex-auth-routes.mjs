@@ -10,6 +10,7 @@ export async function handleCodexAuthRoutes({
   authManager = codexAuthManager,
 }) {
   if (!pathname.startsWith('/api/codex-auth')) return false;
+  res.setHeader?.('Cache-Control', 'private, no-store');
   if (authSession?.role !== 'owner') {
     writeJson(res, 403, { error: 'Owner access required' });
     return true;
@@ -20,6 +21,16 @@ export async function handleCodexAuthRoutes({
       writeJson(res, 200, { codexAuth: await authManager.getStatus() });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to check Codex login' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/codex-auth/rate-limits' && req.method === 'GET') {
+    try {
+      const force = new URL(req.url || pathname, 'http://localhost').searchParams.get('refresh') === '1';
+      writeJson(res, 200, { codexUsage: await authManager.getRateLimits({ force }) });
+    } catch {
+      writeJson(res, 200, { codexUsage: { status: 'unavailable', buckets: [], accountRevision: '' } });
     }
     return true;
   }

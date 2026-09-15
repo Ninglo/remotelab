@@ -286,6 +286,16 @@
   gap: 8px;
   margin-top: 8px;
 }
+.settings-codex-account,
+.settings-codex-usage {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+  line-height: 1.6;
+}
+.settings-codex-account {
+  font-size: 13px;
+}
 .settings-connector-pill {
   display: inline-flex;
   align-items: center;

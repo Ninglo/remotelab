@@ -79,6 +79,7 @@ let connectorSurfacesLoaded = false;
 let expandedConnectorSurfaceId = "";
 let codexAuthState = null;
 let codexAuthPollTimer = null;
+let codexAuthRequestId = 0;
 let piAuthState = null;
 function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
@@ -100,6 +101,19 @@ function getCodexAuthCopy() {
     switching: "正在退出…",
     switchConfirm: "将清除当前实例的 Codex 登录，并立即生成新的登录码。确定继续吗？",
     logoutFailed: "Codex 退出失败",
+    account: "当前账号",
+    accountUnknown: "账号信息未提供",
+    apiKey: "API Key 登录",
+    usageChecking: "额度检测中…",
+    usageIdle: "点击“检查状态”获取额度",
+    usageUnavailable: "额度暂时无法获取，点击“检查状态”重试",
+    usageUnsupported: "此登录方式未提供 Codex 订阅额度",
+    updated: "额度更新于",
+    reset: "重置",
+    refreshDue: "已到重置时间，请检查状态",
+    quota: "额度",
+    remaining: "剩余",
+    day: "天", hour: "小时", minute: "分钟",
   } : {
     title: "Codex login",
     checking: "Checking…",
@@ -118,6 +132,19 @@ function getCodexAuthCopy() {
     switching: "Signing out…",
     switchConfirm: "This clears the Codex login for this instance and immediately generates a new login code. Continue?",
     logoutFailed: "Codex logout failed",
+    account: "Current account",
+    accountUnknown: "Account details not provided",
+    apiKey: "API key sign-in",
+    usageChecking: "Checking usage…",
+    usageIdle: "Check status to load usage.",
+    usageUnavailable: "Usage temporarily unavailable. Check status to retry.",
+    usageUnsupported: "Codex subscription limits are not provided for this sign-in method.",
+    updated: "Usage updated",
+    reset: "Resets",
+    refreshDue: "Reset time reached. Check status to refresh.",
+    quota: "limit",
+    remaining: "Remaining",
+    day: "d", hour: "h", minute: "min",
   };
 }
 
@@ -133,6 +160,8 @@ function ensureCodexAuthSection() {
     <div class="settings-connector-status">
       <span class="settings-connector-pill pending" id="settingsCodexAuthPill"></span>
     </div>
+    <div class="settings-codex-account" id="settingsCodexAuthAccount" hidden></div>
+    <div class="settings-app-empty settings-codex-usage" id="settingsCodexAuthUsage" aria-live="polite" hidden></div>
     <div class="settings-app-actions">
       <button class="settings-app-btn" id="settingsCodexAuthCheckBtn" type="button"></button>
       <button class="settings-app-btn" id="settingsCodexAuthLoginBtn" type="button"></button>
@@ -194,6 +223,8 @@ function renderCodexAuthPanel({ checking = false } = {}) {
   const link = document.getElementById("settingsCodexAuthLink");
   const copyBtn = document.getElementById("settingsCodexAuthCopyBtn");
   const error = document.getElementById("settingsCodexAuthError");
+  const accountInfo = document.getElementById("settingsCodexAuthAccount");
+  const usageInfo = document.getElementById("settingsCodexAuthUsage");
   const awaiting = !state.loggedIn && state.deviceLoginActive && state.userCode;
 
   title.textContent = copy.title;
@@ -225,26 +256,79 @@ function renderCodexAuthPanel({ checking = false } = {}) {
   copyBtn.textContent = copy.copy;
   error.hidden = !state.error;
   error.textContent = state.error || "";
+  accountInfo.hidden = !state.loggedIn;
+  usageInfo.hidden = !state.loggedIn;
+  const account = state.account || {};
+  const identity = [account.name, account.email].filter(Boolean).join(" · ");
+  accountInfo.textContent = state.loggedIn
+    ? `${copy.account}：${identity || (account.type === "apiKey" ? copy.apiKey : copy.accountUnknown)}${account.planType ? ` · ${account.planType}` : ""}` : "";
+  usageInfo.textContent = state.loggedIn ? formatCodexUsage(state.usage, copy) : "";
 
   if (awaiting) startCodexAuthPolling();
   else stopCodexAuthPolling();
 }
 
-async function refreshCodexAuthStatus({ silent = false } = {}) {
+function formatCodexUsage(usage, copy) {
+  if (usage?.status === "idle") return copy.usageIdle;
+  if (!usage || usage.status === "checking") return copy.usageChecking;
+  if (usage.status === "unsupported") return copy.usageUnsupported;
+  if (usage.status !== "ready" || !usage.buckets?.length) return copy.usageUnavailable;
+  const locale = document.documentElement.lang || undefined;
+  const date = value => new Date(value).toLocaleString(locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const lines = [];
+  for (const bucket of usage.buckets) {
+    for (const window of [bucket.primary, bucket.secondary]) {
+      if (!window) continue;
+      const mins = window.windowDurationMins;
+      const duration = !mins ? "" : mins % 1440 === 0 ? `${mins / 1440}${copy.day}`
+        : mins % 60 === 0 ? `${mins / 60}${copy.hour}` : `${mins}${copy.minute}`;
+      const prefix = usage.buckets.length > 1 || bucket.id !== "codex" ? `${bucket.name || bucket.id} · ` : "";
+      const resetAt = Date.parse(window.resetsAt || "");
+      const quota = Number.isFinite(resetAt) && resetAt <= Date.now() ? copy.refreshDue
+        : `${copy.remaining} ${Number(window.remainingPercent.toFixed(1))}%${Number.isFinite(resetAt) ? ` · ${copy.reset} ${date(resetAt)}` : ""}`;
+      lines.push(`${prefix}${duration} ${copy.quota}：${quota}`);
+    }
+  }
+  if (usage.checkedAt) lines.push(`${copy.updated} ${date(usage.checkedAt)}`);
+  return lines.join("\n");
+}
+
+async function refreshCodexUsage(requestId, { force = false } = {}) {
+  if (!codexAuthState?.loggedIn || requestId !== codexAuthRequestId) return;
+  try {
+    const data = await fetchJsonOrRedirect(`/api/codex-auth/rate-limits${force ? "?refresh=1" : ""}`, { cache: "no-store", revalidate: false });
+    if (requestId !== codexAuthRequestId) return;
+    const usage = data?.codexUsage;
+    codexAuthState.usage = usage?.accountRevision === codexAuthState.accountRevision ? usage : { status: "unavailable" };
+  } catch {
+    if (requestId !== codexAuthRequestId) return;
+    codexAuthState.usage = { status: "unavailable" };
+  }
+  renderCodexAuthPanel();
+}
+
+async function refreshCodexAuthStatus({ silent = false, force = false, includeUsage = true } = {}) {
+  if (!canManageInstanceSettingsFromUi()) return;
+  const requestId = ++codexAuthRequestId;
   renderCodexAuthPanel({ checking: !silent });
   try {
     const data = await fetchJsonOrRedirect("/api/codex-auth/status", {
       cache: "no-store",
       revalidate: false,
     });
+    if (requestId !== codexAuthRequestId) return;
     codexAuthState = data?.codexAuth || {};
+    if (!includeUsage) codexAuthState.usage = { status: "idle" };
   } catch (error) {
+    if (requestId !== codexAuthRequestId) return;
     codexAuthState = { phase: "failed", error: error?.message || "Codex status check failed" };
   }
   renderCodexAuthPanel();
+  if (includeUsage) await refreshCodexUsage(requestId, { force });
 }
 
 async function startCodexDeviceLogin() {
+  const requestId = ++codexAuthRequestId;
   const loginBtn = document.getElementById("settingsCodexAuthLoginBtn");
   if (loginBtn) loginBtn.disabled = true;
   try {
@@ -254,16 +338,23 @@ async function startCodexDeviceLogin() {
       body: JSON.stringify({ restart: true }),
       revalidate: false,
     });
+    if (requestId !== codexAuthRequestId) return;
     codexAuthState = data?.codexAuth || {};
   } catch (error) {
+    if (requestId !== codexAuthRequestId) return;
     codexAuthState = { phase: "failed", error: error?.message || "Codex login failed" };
   }
   renderCodexAuthPanel();
+  await refreshCodexUsage(requestId);
 }
 
 async function switchCodexAccount() {
   const copy = getCodexAuthCopy();
   if (!window.confirm(copy.switchConfirm)) return;
+  const requestId = ++codexAuthRequestId;
+  stopCodexAuthPolling();
+  codexAuthState = null;
+  renderCodexAuthPanel({ checking: true });
   const switchBtn = document.getElementById("settingsCodexAuthSwitchBtn");
   if (switchBtn) {
     switchBtn.disabled = true;
@@ -274,10 +365,12 @@ async function switchCodexAccount() {
       method: "POST",
       revalidate: false,
     });
+    if (requestId !== codexAuthRequestId) return;
     codexAuthState = data?.codexAuth || {};
     renderCodexAuthPanel();
     await startCodexDeviceLogin();
   } catch (error) {
+    if (requestId !== codexAuthRequestId) return;
     codexAuthState = { phase: "failed", error: error?.message || copy.logoutFailed };
     renderCodexAuthPanel();
   }
@@ -1646,7 +1739,7 @@ function renderSettingsSessionPresentationPanel() {
 
 initUiLanguageSettings();
 ensureCodexAuthSection();
-void refreshCodexAuthStatus();
+void refreshCodexAuthStatus({ includeUsage: false });
 ensurePiAuthSection();
 void refreshPiAuthStatus();
 initThemeSettings();

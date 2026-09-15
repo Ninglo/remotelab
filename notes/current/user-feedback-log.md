@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-15 — Codex login needs account identity and current limits
+
+- Observed friction: frequent account changes made a plain signed-in badge insufficient to identify the account currently used by the instance.
+- Product implication: show the available account name, email and plan next to login status, with remaining quota windows and reset times. Fetch this operational state through deterministic account APIs without starting AI work.
+- Implementation: `notes/current/codex-account-status.md`.
+
 ### 2026-09-15 — Thinking should stay one block when a user interrupts
 
 - Observed friction: a new user message changed the preceding unfinished turn
