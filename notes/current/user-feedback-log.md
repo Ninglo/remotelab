@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-15 — Handoff origin must match where the child can be found
+
+- Observed friction: independent children created from Feishu inherited the Feishu
+  origin label without receiving a Feishu topic. Users filtering for Chat UI lost
+  track of work that could only be continued there.
+- Product implication: a handoff child belongs to Chat UI. Keep parent lineage
+  separate from the child's interaction surface, and repair older unbound visible
+  children without changing their history or archived state.
+- Implementation: `notes/current/session-origin-filter.md`.
+
 ### 2026-09-14 — Installed PWA launches must not replay installation
 
 - Source: an owner reported seeing the setup/redirect page on every cold launch from the home screen.

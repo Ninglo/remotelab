@@ -63,6 +63,18 @@ function formatStoredSourceNameFromId(sourceId) {
 function normalizeStoredSessionSourceFields(normalized) {
   let changed = false;
 
+  // Older visible handoffs copied the parent's origin without its routing.
+  // Only repair independently delegated sessions with no external target.
+  if (typeof normalized.delegatedFromSessionId === 'string' && normalized.delegatedFromSessionId.trim()
+    && !normalized.internalRole && !normalized.visitorId
+    && !normalized.conversation && !normalized.sourceContext && !normalized.externalTriggerId
+    && !normalized.completionTargets?.length
+    && normalized.sourceId !== DEFAULT_APP_ID) {
+    normalized.sourceId = DEFAULT_APP_ID;
+    normalized.sourceName = getBuiltinApp(DEFAULT_APP_ID).name;
+    changed = true;
+  }
+
   const explicitSourceId = normalizeAppId(normalized.sourceId);
   const nextSourceId = explicitSourceId || DEFAULT_APP_ID;
 

@@ -41,6 +41,9 @@ a task or requiring authentication.
 
 ## Runtime and source scope
 
+- A handoff child appears under **Chat UI** in the Session origin filter, including
+  when its parent is a Feishu conversation. It has no inherited external topic or
+  reply target; open its `sessionUrl` to continue the work.
 - The command uses `REMOTELAB_SESSION_ID`, `REMOTELAB_RUN_ID` and
   `REMOTELAB_CHAT_BASE_URL` from the invoking runner. Do not replace the instance
   address with a machine-wide default.

@@ -3580,8 +3580,8 @@ export async function delegateSession(sessionId, payload = {}) {
   const nextTool = selection.tool;
 
   const child = await createSession(source.folder, nextTool, requestedName || '', {
-    sourceId: source.sourceId || '',
-    sourceName: source.sourceName || '',
+    // Handoff creates an independent Chat UI session without a connector target.
+    sourceId: DEFAULT_APP_ID,
     templateId: source.templateId || '',
     templateName: source.templateName || '',
     systemPrompt: source.systemPrompt || '',

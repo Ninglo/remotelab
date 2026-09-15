@@ -1,5 +1,10 @@
 # Session origin 筛选：实现与修复记录
 
+2026-09-15 补充：`session-spawn` / handoff 创建的独立子会话默认属于 Chat UI，
+来源不再继承父会话的连接器标签。旧的可见委派会话在没有 conversation、
+sourceContext、externalTriggerId 或 completionTargets 时自动修正来源；
+内部会话、访客会话及真实连接器绑定保留。修复保留 ID、历史、时间戳与归档状态。
+
 更新：2026-09-14。范围：浏览器 Sessions 侧栏的来源筛选、状态同步与后台刷新竞争。
 
 ## 结论

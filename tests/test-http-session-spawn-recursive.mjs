@@ -231,6 +231,9 @@ async function createSession(port, name) {
     name,
     group: 'Tests',
     description: 'Recursive spawn integration',
+    sourceId: 'feishu',
+    sourceName: 'Feishu',
+    sourceContext: { connector: 'feishu', chatId: 'test-parent-chat', topicId: 'test-parent-topic' },
   });
   assert.equal(res.status, 201, 'session creation should succeed');
   return res.json.session;
@@ -357,6 +360,13 @@ try {
       .map((id) => sessions.find((entry) => entry.id === id))
       .filter(Boolean);
     assert.equal(childSessions.length, 3, 'delegated child sessions should all be visible in the session list');
+    assert.equal(sessions.find(entry => entry.id === manager.id)?.sourceId, 'feishu', 'the parent keeps its Feishu origin');
+    for (const child of childSessions) {
+      assert.equal(child.sourceId, 'chat', 'unbound handoff sessions must appear under Chat UI origin');
+      assert.equal(child.sourceName, 'Chat', 'children must not retain the parent connector label');
+      assert.equal(child.conversation, undefined, 'handoff must not inherit a conversation binding');
+      assert.equal(child.externalTriggerId, undefined, 'handoff must not inherit the parent routing key');
+    }
 
     const managerReply = [...managerEvents].reverse().find(
       (event) => event.type === 'message'
@@ -388,6 +398,9 @@ try {
 
       const childDetail = await request(port, 'GET', `/api/sessions/${childSummary.sessionId}`);
       assert.equal(childDetail.status, 200, 'spawned session should be readable');
+      assert.equal(childDetail.json.session?.sourceId, 'chat', 'detail and sidebar agree on the child origin');
+      const childSource = await request(port, 'GET', `/api/sessions/${childSummary.sessionId}/source-context`);
+      assert.equal(childSource.json.sourceContext?.session, null, 'child must not inherit Feishu source context');
       assert.equal(childDetail.json.session?.model, 'fake-model', 'spawned session should inherit the pinned model');
       assert.equal(childDetail.json.session?.effort, 'low', 'spawned session should inherit the pinned effort');
       assert.equal(childDetail.json.session?.delegatedFromSessionId, undefined, 'spawned session should stay independent');
