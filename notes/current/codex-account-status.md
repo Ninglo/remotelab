@@ -1,6 +1,6 @@
 # Codex account and quota status
 
-Settings → Codex login now shows the current account's display name (when supplied), email and plan. API-key sign-in is labelled explicitly. Quota loads independently so a slow usage endpoint does not delay identity or the login controls. Each supplied quota bucket shows remaining percentage, its actual window duration and reset time, plus the observation time. Unknown windows do not become zero; elapsed reset times request a refresh rather than implying a renewed balance.
+Settings → Codex login now shows the current account's display name (when supplied), email and plan. API-key sign-in is labelled explicitly. Quota loads independently so a slow usage endpoint does not delay identity or the login controls. Identity reads have a 12-second deadline; remote quota reads allow up to 45 seconds (live transport can exceed 25 seconds). Each supplied quota bucket shows remaining percentage, its actual window duration and reset time, plus the observation time. Unknown windows do not become zero; elapsed reset times request a refresh rather than implying a renewed balance.
 
 The only Codex RPCs are `initialize`, `initialized`, `account/read` with `refreshToken: false`, and `account/rateLimits/read`. No thread, turn, prompt, model, AI session, scraping, or usage estimation is involved. Protocol reference: https://learn.chatgpt.com/docs/app-server#auth-endpoints . Codex remains the authentication and token-refresh authority; RemoteLab never refreshes grants itself.
 
