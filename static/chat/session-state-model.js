@@ -284,8 +284,14 @@
     return getWorkflowPriorityInfo("medium");
   }
 
+  function usesChatUiReadState(session) {
+    const sourceId = typeof session?.sourceId === "string" ? session.sourceId.trim().toLowerCase() : "";
+    // Browser visits cannot tell us whether an external conversation was read.
+    return !!session && (!sourceId || sourceId === "chat") && !session.conversation;
+  }
+
   function hasSessionUnreadUpdate(session) {
-    if (!session) return false;
+    if (!usesChatUiReadState(session)) return false;
     if (isSessionBusy(session)) return false;
     const unreadUpdateTime = getSessionUnreadUpdateTime(session);
     if (unreadUpdateTime <= 0) return false;
@@ -305,6 +311,7 @@
   }
 
   function isSessionCompleteAndReviewed(session) {
+    if (!usesChatUiReadState(session)) return false;
     const workflowState = normalizeSessionWorkflowState(session?.workflowState || "");
     return workflowState === "done"
       && !isSessionBusy(session)

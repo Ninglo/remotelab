@@ -5,6 +5,10 @@
 sourceContext、externalTriggerId 或 completionTargets 时自动修正来源；
 内部会话、访客会话及真实连接器绑定保留。修复保留 ID、历史、时间戳与归档状态。
 
+同日补充：已读／未读的视觉提示仅适用于 Chat UI 来源且没有外部 conversation
+绑定的会话。其他来源不显示 `review` 未读提示，也不应用“已完成且已读”的标题
+淡化；运行状态仍显示。缺省来源按 Chat UI 处理，独立 handoff 子会话沿用此规则。
+
 更新：2026-09-14。范围：浏览器 Sessions 侧栏的来源筛选、状态同步与后台刷新竞争。
 
 ## 结论

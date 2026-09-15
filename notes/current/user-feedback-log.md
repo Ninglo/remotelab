@@ -21,6 +21,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-15 — Browser read indicators belong to Chat UI conversations
+
+- Observed friction: externally delivered conversations showed unread review
+  badges and read-based title dimming based on visits to RemoteLab, even though
+  users expected to read their replies in the connector's own application.
+- Product implication: show these effects only for Chat UI sessions without an
+  external conversation binding. Keep live execution status visible for every
+  origin. An independent Chat UI handoff retains its own reading indicators.
+- Implementation: `notes/current/session-origin-filter.md`.
+
 ### 2026-09-15 — Handoff origin must match where the child can be found
 
 - Observed friction: independent children created from Feishu inherited the Feishu

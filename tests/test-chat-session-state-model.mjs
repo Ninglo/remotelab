@@ -217,6 +217,28 @@ const completeAndReviewed = makeSession({
 });
 assert.equal(model.isSessionCompleteAndReviewed(completeAndReviewed), true, 'completed sessions with no unseen updates should be de-emphasized');
 
+for (const sourceId of ['feishu', 'feishu-bot:work', 'lark', 'email', 'gmail', 'wechat', 'automation', 'custom-bot']) {
+  for (const session of [unreadDoneSession, completeAndReviewed]) {
+    const external = { ...session, sourceId };
+    assert.equal(model.hasSessionUnreadUpdate(external), false, `${sourceId} should not infer unread state from Web UI visits`);
+    assert.equal(model.getSessionReviewStatusInfo(external), null, `${sourceId} should not show a review badge`);
+    assert.equal(model.isSessionCompleteAndReviewed(external), false, `${sourceId} should not receive read-based dimming`);
+  }
+  const runningExternal = { ...runningSession, sourceId };
+  assert.equal(model.getSessionStatusSummary(runningExternal).primary.key, 'running', 'external run status remains visible');
+}
+
+for (const sourceId of [undefined, '', 'chat', ' Chat ']) {
+  assert.equal(model.hasSessionUnreadUpdate({ ...unreadDoneSession, sourceId }), true, 'Chat UI and legacy default sessions retain unread state');
+  assert.equal(model.isSessionCompleteAndReviewed({ ...completeAndReviewed, sourceId }), true, 'Chat UI keeps read-based dimming');
+}
+const handoffChild = { ...unreadDoneSession, sourceId: 'chat', delegatedFromSessionId: 'feishu-parent' };
+assert.equal(model.getSessionReviewStatusInfo(handoffChild)?.key, 'unread', 'a Chat UI handoff child tracks its own readership');
+const boundChild = { ...handoffChild, conversation: { connector: 'feishu', chatId: 'chat', topicId: 'topic' } };
+assert.equal(model.getSessionReviewStatusInfo(boundChild), null, 'an external conversation binding disables browser read indicators');
+assert.equal(model.isSessionCompleteAndReviewed({ ...boundChild, lastReviewedAt: boundChild.lastAssistantMessageAt }), false,
+  'external bindings must not be styled as read even with an old Chat UI source label');
+
 const runningUnreadCandidate = makeSession({
   lastEventAt: '2026-03-14T13:00:00.000Z',
   lastAssistantMessageAt: '2026-03-14T13:00:00.000Z',
