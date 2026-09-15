@@ -21,6 +21,17 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-15 — Thinking should stay one block when a user interrupts
+
+- Observed friction: a new user message changed the preceding unfinished turn
+  from one thinking block into a stack of separate Thought rows. Intermediate
+  usage events split tool activity into additional blocks.
+- Product implication: each user-message turn owns at most one thinking block.
+  Keep its intermediate commentary, reasoning, tools and usage together, including
+  when the turn is interrupted. Keep the final reply and delivered files accessible.
+- Implementation and regression evidence:
+  `notes/current/thinking-turn-fold/BUGFIX_VERIFICATION.md`.
+
 ### 2026-09-15 — Browser read indicators belong to Chat UI conversations
 
 - Observed friction: externally delivered conversations showed unread review

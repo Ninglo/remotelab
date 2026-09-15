@@ -308,33 +308,64 @@ const autoContinuationHistory = [
   { seq: 13, type: 'message', role: 'assistant', content: '第二段：这是补上的最终结论。', responseId: 'resp_auto_continue', runId: 'run_continued' },
 ];
 
+const interruptedHistory = [
+  { seq: 1, type: 'message', role: 'user', content: 'Investigate the task' },
+  { seq: 2, type: 'manager_context', content: 'Context' },
+  { seq: 3, type: 'status', content: 'Thread started' },
+  { seq: 4, type: 'message', role: 'assistant', content: 'I will inspect the inputs.' },
+  { seq: 5, type: 'tool_use', toolName: 'bash', toolInput: 'inspect' },
+  { seq: 6, type: 'tool_result', output: 'first results' },
+  { seq: 7, type: 'usage', outputTokens: 10 },
+  { seq: 8, type: 'reasoning', content: 'Try another input' },
+  { seq: 9, type: 'tool_use', toolName: 'bash', toolInput: 'inspect again' },
+  { seq: 10, type: 'tool_result', output: 'second results' },
+  { seq: 11, type: 'usage', outputTokens: 20 },
+  { seq: 12, type: 'reasoning', content: 'Unfinished thought' },
+];
+for (const sessionRunning of [true, false]) {
+  const display = buildSessionDisplayEvents(interruptedHistory, { sessionRunning });
+  assert.deepEqual(display.map(event => event.type), ['message', 'thinking_block'],
+    'an unfinished turn keeps one block whether running or interrupted');
+  assert.equal(display[1].blockStartSeq, 2);
+  assert.equal(display[1].blockEndSeq, 12);
+  assert.deepEqual(buildEventBlockEvents(interruptedHistory, 2, 12), interruptedHistory.slice(1),
+    'the single block preserves commentary, tools, usage and reasoning in order');
+}
+const steeredHistory = [...interruptedHistory,
+  { seq: 13, type: 'message', role: 'user', content: 'Continue with this adjustment' },
+  { seq: 14, type: 'reasoning', content: 'Applying the adjustment' },
+  { seq: 15, type: 'message', role: 'assistant', content: 'Final answer' },
+];
+for (const sessionRunning of [true, false]) {
+  const display = buildSessionDisplayEvents(steeredHistory, { sessionRunning });
+  assert.deepEqual(display.map(event => event.type), sessionRunning
+    ? ['message', 'thinking_block', 'message', 'thinking_block']
+    : ['message', 'thinking_block', 'message', 'thinking_block', 'message'],
+  'new input closes one block and starts the next user turn without fragmenting the old turn');
+  assert.equal(display[1].blockEndSeq, 12, 'the previous block cannot swallow the interrupting user input');
+}
+const cancelledHistory = [...interruptedHistory, { seq: 13, type: 'status', content: 'Cancelled' }];
+assert.deepEqual(buildSessionDisplayEvents(cancelledHistory).map(event => event.type), ['message', 'thinking_block', 'status'],
+  'cancellation stays visible without splitting the turn into tool fragments');
+
+
 const autoContinuationDisplay = buildSessionDisplayEvents(autoContinuationHistory, { sessionRunning: false });
 assert.deepEqual(
   autoContinuationDisplay.map((event) => event.type),
-  [
-    'message',
-    'thinking_block',
-    'message',
-    'status',
-    'context_operation',
-    'status',
-    'context_operation',
-    'thinking_block',
-    'message',
-  ],
-  'automatic self-check continuations should keep both user-visible assistant reply parts in the main transcript',
+  ['message', 'thinking_block', 'message'],
+  'automatic continuation uses the same single block per user turn',
 );
 const autoContinuationAssistantMessages = autoContinuationDisplay.filter(
   (event) => event.type === 'message' && event.role === 'assistant',
 );
 assert.deepEqual(
   autoContinuationAssistantMessages.map((event) => event.content),
-  ['第一段：我先说明原因。', '第二段：这是补上的最终结论。'],
-  'automatic continuation display should expose the original visible reply and the repair reply together',
+  ['第二段：这是补上的最终结论。'],
+  'the final reply stays visible while earlier continuation work remains expandable',
 );
-assert.equal(autoContinuationDisplay[1].blockStartSeq, 2, 'original-run hidden work should stay in its own folded block');
-assert.equal(autoContinuationDisplay[1].blockEndSeq, 4, 'original-run folded block should stop before the first visible reply');
-assert.equal(autoContinuationDisplay[7].blockStartSeq, 10, 'repair-run hidden work should stay folded after the self-check drawer');
-assert.equal(autoContinuationDisplay[7].blockEndSeq, 12, 'repair-run folded block should stop before the continued visible reply');
+assert.equal(autoContinuationDisplay[1].blockStartSeq, 2);
+assert.equal(autoContinuationDisplay[1].blockEndSeq, 12);
+assert.ok(buildEventBlockEvents(autoContinuationHistory, 2, 12).some(event => event.content === '第一段：我先说明原因。'),
+  'folding the earlier reply must preserve its full content');
 
 console.log('test-session-display-events: ok');

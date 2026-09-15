@@ -116,13 +116,6 @@ function isHiddenEvent(event) {
   return HIDDEN_EVENT_TYPES.has(event?.type);
 }
 
-function isAutomaticContinuationEvent(event) {
-  return event?.type === 'context_operation'
-    && event.operation === 'continue_turn'
-    && event.trigger === 'automatic'
-    && event.phase === 'applied';
-}
-
 function isVisibleEvent(event) {
   if (!event || typeof event !== 'object') return false;
   if (event.type === 'message') return true;
@@ -233,34 +226,6 @@ function pushVisibleEvent(target, event, { stripAttachments = false, localMarkdo
   target.push(next);
 }
 
-function emitSegmentedTurnBody(target, bodyEvents, {
-  sessionRunning = false,
-  mirroredAttachmentSeqs = null,
-  localMarkdownImageRewriteMapBySeq = null,
-} = {}) {
-  const hiddenSegment = [];
-
-  for (const event of bodyEvents) {
-    if (isHiddenEvent(event)) {
-      hiddenSegment.push(event);
-      continue;
-    }
-
-    if (hiddenSegment.length > 0) {
-      target.push(buildThinkingBlockEvent(hiddenSegment.splice(0), 'completed'));
-    }
-
-    pushVisibleEvent(target, event, {
-      stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
-      localMarkdownImageRewriteMapBySeq,
-    });
-  }
-
-  if (hiddenSegment.length > 0) {
-    target.push(buildThinkingBlockEvent(hiddenSegment, sessionRunning ? 'running' : 'completed'));
-  }
-}
-
 function getTurnEventsWithoutIgnoredStatuses(events = []) {
   return (Array.isArray(events) ? events : []).filter((event) => !isIgnoredStatusEvent(event));
 }
@@ -272,51 +237,6 @@ function findLastHiddenEventIndex(events = []) {
     }
   }
   return -1;
-}
-
-function findAutomaticContinuationIndex(events = []) {
-  for (let index = 0; index < events.length; index += 1) {
-    if (isAutomaticContinuationEvent(events[index])) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-function hasAssistantMessage(events = []) {
-  return events.some((event) => isAssistantMessageEvent(event));
-}
-
-function emitAutoContinuedTurnBody(target, bodyEvents, {
-  mirroredAttachmentSeqs = null,
-  localMarkdownImageRewriteMapBySeq = null,
-} = {}) {
-  const continuationIndex = findAutomaticContinuationIndex(bodyEvents);
-  if (continuationIndex < 1) return false;
-
-  const preContinuationEvents = bodyEvents.slice(0, continuationIndex);
-  const lastHiddenBeforeContinuation = findLastHiddenEventIndex(preContinuationEvents);
-  const originalReplyEvents = preContinuationEvents.slice(lastHiddenBeforeContinuation + 1);
-  if (!hasAssistantMessage(originalReplyEvents)) return false;
-
-  const foldedPrefix = preContinuationEvents.slice(0, lastHiddenBeforeContinuation + 1);
-  if (foldedPrefix.length > 0) {
-    target.push(buildThinkingBlockEvent(foldedPrefix, 'completed'));
-  }
-
-  for (const event of originalReplyEvents) {
-    pushVisibleEvent(target, event, {
-      stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
-      localMarkdownImageRewriteMapBySeq,
-    });
-  }
-
-  emitSegmentedTurnBody(target, bodyEvents.slice(continuationIndex), {
-    sessionRunning: false,
-    mirroredAttachmentSeqs,
-    localMarkdownImageRewriteMapBySeq,
-  });
-  return true;
 }
 
 function findTurnForBlockRange(history = [], startSeq = 0, endSeq = 0) {
@@ -376,55 +296,16 @@ function flushTurnInto(target, turn, { sessionRunning = false } = {}) {
     referenceEvent: bodyEvents[bodyEvents.length - 1] || turn.user,
   });
 
-  if (sessionRunning) {
-    target.push(buildThinkingBlockEvent(bodyEvents, 'running'));
-    if (deliveryEvent) {
-      target.push(deliveryEvent);
-    }
-    return;
+  // One user message owns one work block. A new user message closes the
+  // previous block even if that work stopped before producing a final reply.
+  const lastHiddenIndex = sessionRunning ? bodyEvents.length - 1 : findLastHiddenEventIndex(bodyEvents);
+  if (lastHiddenIndex >= 0) {
+    target.push(buildThinkingBlockEvent(
+      bodyEvents.slice(0, lastHiddenIndex + 1),
+      sessionRunning ? 'running' : 'completed',
+    ));
   }
-
-  if (emitAutoContinuedTurnBody(target, bodyEvents, {
-    mirroredAttachmentSeqs,
-    localMarkdownImageRewriteMapBySeq,
-  })) {
-    if (deliveryEvent) {
-      target.push(deliveryEvent);
-    }
-    return;
-  }
-
-  const lastHiddenIndex = findLastHiddenEventIndex(bodyEvents);
-  if (lastHiddenIndex < 0) {
-    emitSegmentedTurnBody(target, bodyEvents, {
-      sessionRunning,
-      mirroredAttachmentSeqs,
-      localMarkdownImageRewriteMapBySeq,
-    });
-    if (deliveryEvent) {
-      target.push(deliveryEvent);
-    }
-    return;
-  }
-
-  const visibleTail = bodyEvents.slice(lastHiddenIndex + 1).filter(isVisibleEvent);
-  if (visibleTail.length === 0) {
-    emitSegmentedTurnBody(target, bodyEvents, {
-      sessionRunning,
-      mirroredAttachmentSeqs,
-      localMarkdownImageRewriteMapBySeq,
-    });
-    if (deliveryEvent) {
-      target.push(deliveryEvent);
-    }
-    return;
-  }
-
-  const collapsedPrefix = bodyEvents.slice(0, lastHiddenIndex + 1);
-  if (collapsedPrefix.length > 0) {
-    target.push(buildThinkingBlockEvent(collapsedPrefix, 'completed'));
-  }
-  for (const event of visibleTail) {
+  for (const event of bodyEvents.slice(lastHiddenIndex + 1)) {
     pushVisibleEvent(target, event, {
       stripAttachments: shouldStripVisibleMessageAttachments(event, mirroredAttachmentSeqs),
       localMarkdownImageRewriteMapBySeq,
