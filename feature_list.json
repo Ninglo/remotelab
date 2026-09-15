@@ -1,5 +1,11 @@
 [
   {
+    "id": "native-follow-up-queue-state",
+    "description": "Report queued native follow-ups consistently when an internal operation prevents steering, preserving execution and Session selection semantics.",
+    "pass": true,
+    "verification_plan": "Held native Harness integration for internal-root admission, Session detail, duplicate, graceful controller restart, removal and replay; normal steer preservation; full npm test and restart gate."
+  },
+  {
     "id": "session-conversations",
     "description": "One optional Session conversation binding shared by connector input, reply publication and scheduled session creation; per-group Feishu overrides use ordinary message intake.",
     "pass": true,

@@ -25,6 +25,11 @@ finish. Incompatible Harness/model/effort changes during an active native task
 return HTTP 409 (`SESSION_BUSY`). Stop the task or wait for completion before
 sending with the changed configuration. Internal maintenance operations and
 explicit batch-only custom runtimes retain their separate sequential contract.
+This includes ordinary user input arriving while the active request is an
+internal operation (such as `trigger_delivery`): it returns `queued: true`, stays
+visible in the Session queue, and can be removed until execution or native
+handoff starts. Admission and dispatch share the request compatibility checks;
+native capability alone does not mean a follow-up can join the active request.
 
 ## Ownership and recovery
 

@@ -3,6 +3,17 @@ import { submitNativeInput, readNativeInputReceipt } from './native-input-transp
 const terminal = run => ['completed', 'failed', 'cancelled'].includes(run?.state);
 const now = () => new Date().toISOString();
 
+// Admission and dispatch must agree on whether this request may join the
+// current execution. Internal work stays sequential on either side of the pair.
+export function canForwardNativeRequest(record, head) {
+  if (!record || !head || record.key === head.key || record.preparedAt
+      || record.options?.freshThread || head.cancelRequestedAt
+      || record.options?.internalOperation || head.options?.internalOperation) return false;
+  const a = record.runtimeSelection || {};
+  const b = head.runtimeSelection || {};
+  return ['tool', 'model', 'effort', 'thinking'].every(key => (a[key] || '') === (b[key] || ''));
+}
+
 // Each pending promise waits only for a native input receipt. It never prevents
 // the next input from reaching the same Harness, including Claude's delayed ack.
 export function createNativeRequestDispatcher({ store, getRun, getManifest, runDirectory, prepareInput, recordInput, settle, changed, onError, reject: rejectInput }) {
@@ -44,13 +55,10 @@ export function createNativeRequestDispatcher({ store, getRun, getManifest, runD
     async forward(record, head) {
       if (record.releasedAt || record.result || tasks.has(record.key)) return;
       if (!record.nativeDispatchRunId) {
-        if (!head || record.key === head.key || record.preparedAt || record.options.freshThread || head.cancelRequestedAt || record.options.internalOperation || head.options?.internalOperation) return;
+        if (!canForwardNativeRequest(record, head)) return;
         const manifest = await getManifest(head.runId);
         if (manifest?.inputMode !== 'native') return;
         if ((await getRun(head.runId))?.cancelRequested) return;
-        const a = record.runtimeSelection || {};
-        const b = head.runtimeSelection || {};
-        if (['tool', 'model', 'effort', 'thinking'].some(key => (a[key] || '') !== (b[key] || ''))) return;
         const prepared = await prepareInput(record, manifest);
         const text = typeof prepared === 'string' ? prepared : prepared.text;
         const context = typeof prepared === 'string' ? '' : prepared.context || '';

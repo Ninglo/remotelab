@@ -8,6 +8,9 @@ process.on('message', async ({ id, action, args }) => {
       : action === 'accept' ? await manager.submitHttpMessage(...args)
       : action === 'response' ? await manager.getSessionReplyPublication(...args)
       : action === 'history' ? await manager.getHistory(...args)
+      : action === 'session' ? await manager.getSession(args[0], { includeQueuedMessages: true })
+      : action === 'remove' ? await manager.removeQueuedMessage(...args)
+      : action === 'shutdown' ? await manager.killAll()
       : action === 'claim' ? await delivery.claimSourceDelivery(...args)
       : action === 'complete' ? await delivery.completeSourceDelivery(...args)
       : action === 'stop' ? await manager.drainRequestRuntime() : null;

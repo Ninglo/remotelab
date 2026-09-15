@@ -68,6 +68,7 @@ try {
   await until(async () => (await receipt(first.run.id, 'second'))?.state === 'accepted', 'second input acknowledged durably before completion');
   assert.equal((await logs()).filter(event => event.kind === 'completed').length, 0);
   assert.equal((await logs()).filter(event => event.kind === 'process-start').length, 1);
+  await assert.rejects(rpc('remove', session.id, 'second'), error => error.code === 'REQUEST_NOT_QUEUED');
   await evidence('PASS: second user message reached native turn/steer before the active turn completed, in one detached Harness process.');
   await killController(); await boot();
   const duplicate = await accept(session.id, 'second', 'Use my correction immediately');
@@ -117,6 +118,37 @@ try {
   assert.equal(rejectedLog.filter(event => event.kind === 'turn/steer' && event.clientId === 'reject-input').length, 1, 'a rejected input is never retried');
   assert.equal(rejectedLog.filter(event => event.kind === 'process-start').length, 1, 'input rejection does not restart the active Harness');
   await evidence('PASS: an explicit native input rejection fails only that request, preserves the active turn, and accepts the next valid correction without replay.');
+
+  // A triggered task deliberately remains sequential. Admission must describe
+  // the same waiting request as Session detail and queue removal do.
+  const internalSession = await rpc('create');
+  const internalRoot = await rpc('accept', internalSession.id, 'Run an independent scheduled operation', [], {
+    ...options('internal-root'), internalOperation: 'trigger_delivery',
+  });
+  await until(async () => (await logs()).some(event => event.runId === internalRoot.run.id && event.kind === 'turn/start'), 'internal native turn started');
+  const blocked = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  assert.equal(blocked.queued, true, 'user input behind an internal native operation must report queued');
+  assert.equal(blocked.response.state, 'queued');
+  assert.equal(blocked.session.activity.queue.count, 1);
+  assert.deepEqual((await rpc('session', internalSession.id)).queuedMessages.map(item => item.requestId), ['blocked-followup']);
+  const duplicateBlocked = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  assert.equal(duplicateBlocked.duplicate, true);
+  assert.equal(duplicateBlocked.queued, true, 'duplicate admission retains the actual waiting state');
+  await rpc('shutdown');
+  await killController(); await boot();
+  const recoveredBlocked = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  assert.equal(recoveredBlocked.queued, true, 'controller recovery preserves the internal-operation queue boundary');
+  assert.equal(await receipt(internalRoot.run.id, 'blocked-followup'), null, 'queued input never entered native transport');
+  const removed = await rpc('remove', internalSession.id, 'blocked-followup');
+  assert.equal(removed.session.activity.queue.count, 0);
+  assert.equal((await rpc('response', internalSession.id, 'blocked-followup')).state, 'cancelled');
+  const removedReplay = await accept(internalSession.id, 'blocked-followup', 'Wait for the internal operation');
+  assert.equal(removedReplay.queued, false, 'removed input must not be reported as queued or resurrected');
+  assert.equal(removedReplay.response.state, 'cancelled');
+  await writeFile(join(root, `${internalRoot.run.id}.release`), '');
+  await awaitAnswer(internalSession.id, 'internal-root');
+  assert.equal((await logs()).filter(event => event.clientId === 'blocked-followup').length, 0);
+  await evidence('PASS: internal native work keeps follow-ups queued consistently across admission, detail, duplicate, restart and removal; accepted native input cannot be removed.');
   succeeded = true;
   await evidence(`test-native-harness-integration: ok; validation log: ${validationLog}`);
 } catch (error) {

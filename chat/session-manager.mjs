@@ -1,7 +1,7 @@
 import { requireConversation, resolveSessionDeliveryPlan } from './session-conversations.mjs';
 import { sameConversation, refineConversation } from '../lib/conversation-target.mjs';
 import { shouldReplyInFeishuThread, buildFeishuTopicId } from '../connectors/feishu/index.mjs';
-import { createNativeRequestDispatcher } from './native-request-dispatch.mjs';
+import { canForwardNativeRequest, createNativeRequestDispatcher } from './native-request-dispatch.mjs';
 import { prependAttachmentPaths } from './process-runner.mjs';
 import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
@@ -3200,7 +3200,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
     ? buildSessionEntryDeliveries(session, await getHistorySnapshot(sessionId), { ...options, sourceDelivery: deliveryPlan, ...runtimeSelection })
     : [];
   const { record, duplicate } = await requestRuntime.accept({ sessionId, requestId: options.requestId, text: text?.trim(), images: savedImages, options, runtimeSelection, initialDeliveries, deliveryPlan, boundConversation: Boolean(session.conversation) });
-  const queued = !record.result && !record.nativeDispatchRunId && (!activeNative || !!options.internalOperation) && requestRuntime.active(sessionId)[0]?.key !== record.key;
+  const activeRun = activeRequest ? await getRun(activeRequest.runId) : null;
+  const nativeFollowUp = activeNative && !activeRun?.cancelRequested && canForwardNativeRequest(record, activeRequest);
+  const queued = !record.result && !record.nativeDispatchRunId && !nativeFollowUp && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
     const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';
     await mutateSessionMeta(sessionId, draft => { delete draft.workflowState; delete draft.workflowPriority; if (draftName) draft.name = draftName; return true; });
