@@ -202,3 +202,53 @@ Actual-domain Chromium checks: desktop and mobile viewports each passed 60 selec
 Implementation analysis: [Session origin filter](notes/current/session-origin-filter.md).
 
 Only the filter implementation, tests, package gate and these notes belong to this change. Pre-existing backend/model/composer edits remain outside it. Frontend assets are read from source and fingerprinted independently of the running service's startup commit; no backend restart is needed for these changes.
+
+---
+
+# Feishu unrecognized slash-text fallback — 2026-09-16
+
+## Bug Description
+
+The explicit command-block parser treated any message whose first content line
+started with `/` as command syntax, even when the line did not resolve to a
+registered RemoteLab command. Absolute paths such as `/mnt/train/public` and
+`/root/workspace/...` were therefore rejected instead of reaching the Harness
+as ordinary task text.
+
+## RED
+
+Added parser and connector regressions for a leading rich-text mention followed
+by an absolute path, a bare absolute path, and an unregistered slash name. The
+parser test failed before the implementation change:
+
+```text
+AssertionError [ERR_ASSERTION]: text that does not resolve to a registered command must remain ordinary task text
++ actual:   { commands: [], body: '', error: '命令必须连续写在消息开头；命令和任务正文之间要空一行。' }
+- expected: { commands: [], body: '@Task Bot /mnt/train/public 的旧数据对象已全部删除' }
+```
+
+## GREEN
+
+- The first line now enters command handling only when its command name exists
+  as an own entry in the registered command table; inherited object names such
+  as `/constructor` are not commands.
+- Unrecognized slash-prefixed text is returned unchanged as ordinary task text.
+- Once a registered command starts a command block, block structure and later
+  command lines remain strictly validated.
+- Registered commands with invalid arguments still return validation errors.
+
+Focused command-block, runtime-command, topic-fork, response-policy, mute and
+Bot-handoff tests pass.
+
+## Verification
+
+- `npm test` completed with exit 0.
+- Changed JavaScript files pass `node --check`.
+- `git diff --check` passes.
+- `npm run lint:filesize` exits 0 with the repository's existing advisory
+  oversized-file report; this change does not add an oversized file.
+- Unrelated existing worktree changes were preserved and excluded from this
+  fix.
+
+**Fixed by:** Harness Agent
+**Date:** 2026-09-16

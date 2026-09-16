@@ -20,7 +20,7 @@ function normalizeText(value) {
 
 function parseArguments(name, rawArgs, lineNumber) {
   const args = String(rawArgs || '').trim();
-  const definition = COMMANDS[name];
+  const definition = commandDefinition(name);
   if (!definition) return { error: `未知命令：/${name}（第 ${lineNumber} 行）` };
   if (definition.args === 'none' && args) {
     return { error: `/${name} 不接受参数（第 ${lineNumber} 行）` };
@@ -45,6 +45,8 @@ function parseArguments(name, rawArgs, lineNumber) {
  * start of a message. One empty line terminates it; everything after that is
  * task text. A leading @mention is allowed on the first command line because
  * Feishu rich text commonly renders the Bot mention in front of the command.
+ * Slash-prefixed text enters command handling only when the first name is a
+ * registered command; otherwise the complete message remains ordinary text.
  */
 export function parseFeishuCommandBlock(input) {
   const text = normalizeText(input);
@@ -56,12 +58,13 @@ export function parseFeishuCommandBlock(input) {
     const line = lines[index];
     const match = line.trim().match(COMMAND_LINE);
     if (!match) {
-      if (commands.length > 0 || /^\s*(?:@[^/\r\n]+?[ \t]+)?\//.test(line)) {
+      if (commands.length > 0) {
         return { commands: [], body: '', error: '命令必须连续写在消息开头；命令和任务正文之间要空一行。' };
       }
       return { commands: [], body: text.trim() };
     }
     const name = match[1].toLowerCase();
+    if (!commandDefinition(name) && commands.length === 0) return { commands: [], body: text.trim() };
     const parsed = parseArguments(name, match[2], index + 1);
     if (parsed.error) return { commands: [], body: '', error: parsed.error };
     commands.push({ name, ...parsed });
@@ -74,7 +77,7 @@ export function parseFeishuCommandBlock(input) {
 }
 
 export function commandDefinition(name) {
-  return COMMANDS[name] || null;
+  return Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : null;
 }
 
 export const feishuCommandNames = Object.freeze(Object.keys(COMMANDS));

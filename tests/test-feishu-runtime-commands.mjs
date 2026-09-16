@@ -75,7 +75,14 @@ try {
     messageText: 'connector 命令易用性可能设计下，比如消息里带上很多命令（包括 /fork 之类）。',
   }), null, 'mentioning /fork in prose must not create a new task Session');
   assert.equal(extractLocalCommand({ ...summary, messageText: 'example: /model beta' }), null);
-  assert.match(extractLocalCommand({ ...summary, messageText: '/modelled beta' }).error, /未知命令/);
+  for (const messageText of [
+    '@_user_1 /mnt/train/public 的旧数据对象已全部删除',
+    '/root/workspace/MUKA-FoundationModel 已经 git clone 了 git 仓库，看看能不能访问',
+    '/modelled beta',
+  ]) {
+    assert.equal(extractLocalCommand({ ...summary, messageText }), null,
+      'unregistered slash-prefixed text must not enter command handling');
+  }
   const richFork = { ...summary, messageText: '@Task Bot /fork\n\nkeep the original table intact' };
   assert.deepEqual(extractLocalCommand(richFork), {
     commands: [{ name: 'fork' }], body: 'keep the original table intact',
