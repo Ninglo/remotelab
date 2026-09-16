@@ -40,6 +40,9 @@ assert.match(context, /remotelab trigger create --in 2h --text "<task>" --json/)
 assert.match(context, /remotelab schedule create --cron/);
 assert.match(context, /ordinary new Session by default/);
 assert.match(context, /an existing topic continues its bound Session/);
+assert.match(context, /long-running monitoring or background work/);
+assert.match(context, /group-only conversation target/);
+assert.match(context, /--source-request.*intentionally continue the source topic/);
 assert.match(context, /REMOTELAB_SESSION_ID/);
 assert.match(context, /session-test-123/);
 

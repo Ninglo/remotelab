@@ -1,4 +1,9 @@
 
+[2026-09-16 independent-monitor-conversation-guidance]
+RED: New system-prompt and trigger/schedule help assertions failed before guidance was added.
+GREEN: Focused prompt/trigger/schedule tests passed; npm run test:triggers passed; full npm test passed; npm run test:restart-gate passed; node --check and git diff --check passed.
+ADVISORY: npm run lint:filesize exited 0 and reported inherited oversized files; this change adds one line each to three sub-threshold source files.
+
 > @ninglo/remotelab@0.3.2 test
 > npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:smoke
 

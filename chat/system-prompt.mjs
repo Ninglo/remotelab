@@ -44,6 +44,7 @@ function buildSessionSpawnSection({ currentSessionId, chatPort }) {
 - Schedule a one-time AI turn: \`remotelab trigger create --in 2h --text "<task>" --json\`
 - Schedule recurring AI work: \`remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "<task>" --json\`
 - Triggers and schedules create an ordinary new Session by default. Optional --conversation '<JSON>' or --conversation-file <path> binds the execution to a connector: a Feishu group creates a new topic per occurrence; an existing topic continues its bound Session. --conversation source explicitly uses the source conversation. Bound Session replies return there automatically.
+- For long-running monitoring or background work that should have its own Session and Feishu topic, use a group-only conversation target (connector, sourceRouteId and chatId, without messageId, rootId or threadId). --conversation source and --source-request intentionally continue the source topic and may reuse its bound Session; do not use them for independent monitoring.
 - The equivalent fallback is \`node "$REMOTELAB_PROJECT_ROOT/cli.js" <command>\`.
 - \`REMOTELAB_SESSION_ID\` is the source session id${sessionIdSuffix}; spawn, trigger, and schedule commands use it as their context source by default.
 - \`REMOTELAB_CHAT_BASE_URL\` is the local API base URL, normally \`http://127.0.0.1:${chatPort}\`.

@@ -140,6 +140,10 @@ async function runCli(args) {
   return { code, stdout };
 }
 
+const help = (await runCli(['create', '--help'])).stdout;
+assert.match(help, /group-only JSON starts a new topic/);
+assert.match(help, /continue the source request's bound Session\/topic/i);
+
 const created = JSON.parse((await runCli([
   'create',
   '--in', '10m',

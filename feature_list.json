@@ -1,5 +1,11 @@
 [
   {
+    "id": "independent-monitor-conversation-guidance",
+    "description": "Guide long-running monitoring into a new Session and connector topic while preserving explicit same-topic continuation.",
+    "pass": true,
+    "verification_plan": "Failing system-prompt and timer CLI-help assertions, focused prompt/trigger/schedule tests, timer regression suite, full npm test, restart gate, syntax and diff checks."
+  },
+  {
     "id": "native-follow-up-queue-state",
     "description": "Report queued native follow-ups consistently when an internal operation prevents steering, preserving execution and Session selection semantics.",
     "pass": true,

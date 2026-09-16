@@ -52,13 +52,21 @@ const address = server.address();
 const baseUrl = `http://127.0.0.1:${address.port}`;
 const { runScheduleCommand } = await import('../lib/schedule-command.mjs');
 
-async function run(args) {
+async function runText(args) {
   let stdout = '';
   await runScheduleCommand([...args, '--base-url', baseUrl, '--json'], {
     stdout: { write: (chunk) => { stdout += String(chunk); } },
   });
-  return JSON.parse(stdout);
+  return stdout;
 }
+
+async function run(args) {
+  return JSON.parse(await runText(args));
+}
+
+const help = await runText(['create', '--help']);
+assert.match(help, /group-only JSON starts a new topic/);
+assert.match(help, /continue the source request's bound Session\/topic/i);
 
 const created = await run(['create', '--cron', '0 9 * * 1-5', '--text', 'Send date']);
 assert.equal(created.schedule.id, schedule.id);

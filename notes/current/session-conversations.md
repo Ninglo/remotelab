@@ -37,6 +37,12 @@ atomically resolves existing bindings; group-only requests remain independent.
 No `new/reuse`, recording predicate, result-to-session routing map or custom
 schedule reply transport is needed.
 
+Long-running monitoring should use the existing group-only form when it needs
+an independent Home Session and connector topic. `--conversation source` and
+`--source-request` are continuation forms: they intentionally select the source
+topic and may therefore reuse its bound Session. Individual monitor attempts
+stay internal to the Home Session instead of creating one topic per check.
+
 | Responsibility | Module |
 | --- | --- |
 | Pure address normalization and identity | `lib/conversation-target.mjs` |

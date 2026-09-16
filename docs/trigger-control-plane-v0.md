@@ -198,6 +198,12 @@ inside `sessionTemplate`; schedule PATCH accepts `conversation` (including
 `null`). Existing stored `sourceDelivery` configurations are read into the same
 template without changing their destination or re-sending past results.
 
+For long-running monitoring started from a connector conversation, use the
+group-only target above so the monitor owns an independent Session and topic.
+Use `--conversation source` or `--source-request` only when continuation in the
+existing topic and its bound Session is intentional. Monitor cycles may remain
+internal to the monitoring Session; they do not each need another topic.
+
 ## Known limitations
 
 `session_message` in a new execution session is correct for deferred AI work.
