@@ -576,6 +576,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Entry template
 
+### 2026-09-17 — fresh provider sessions need a measurable preflight gate
+
+- Source: direct owner request with a concrete version-probe workflow
+- User slice: owner starting RemoteLab Sessions during a provider rollout where nominal model selection may not establish serving freshness
+- Observed friction or ask: run a no-network knowledge probe before the real first turn, replace a provider session after a configured stale answer, and report daily whether the gate loaded normally, whether replacement was actually needed, and the observed proportion
+- Signal strength: direct workflow request with explicit stale marker and one-minute retry interval
+- Product implication: treat preflight activation, first-attempt pass, replacement-required, eventual pass, and terminal failure as distinct durable states; describe the result as a heuristic signal rather than model-version attestation
+- Promote to: native Harness startup path, instance policy, and local daily operational statistics
+- Follow-up: use observed replacement rate and false-positive evidence to decide whether this should remain an instance policy or become a broader runtime capability
+
 ### 2026-05-25 — large audio attachment send should not be tied to message submission
 
 - Source: live trial8 user report while sending an audio-file request from mobile chat

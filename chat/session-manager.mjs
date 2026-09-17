@@ -3299,6 +3299,11 @@ async function prepareRequestRun(record) {
     claudeSessionId: persistedClaudeSessionId,
     codexThreadId: persistedCodexThreadId,
   } = resolveResumeState(effectiveTool, session, options, effectiveRuntimeFamily);
+  const freshProviderSession = options.freshThread === true || (
+    effectiveRuntimeFamily === 'pi-json'
+      ? previousTool !== effectiveTool || (snapshot.userMessageCount || 0) === 0
+      : !persistedClaudeSessionId && !persistedCodexThreadId
+  );
 
   const managerTurnContext = effectiveToolDefinition?.promptMode === 'bare-user'
     ? '' : await buildManagerTurnContextText(session, { ...options, requestId });
@@ -3356,6 +3361,7 @@ async function prepareRequestRun(record) {
         model: options.model || undefined,
         effort: options.effort || undefined,
         runtimeFamily: effectiveRuntimeFamily || undefined,
+        freshProviderSession,
         claudeSessionId: persistedClaudeSessionId || undefined,
         codexThreadId: persistedCodexThreadId || undefined,
       },

@@ -4,17 +4,29 @@ import { createNativeInputServer } from './native-input-transport.mjs';
 import { createCodexDriver } from './native/codex.mjs';
 import { createPiDriver } from './native/pi.mjs';
 import { createClaudeDriver } from './native/claude.mjs';
+import {
+  classifySessionStartPreflightAnswer,
+  createSessionStartPreflightCapture,
+} from './session-start-preflight.mjs';
 
 const factories = { 'codex-json': createCodexDriver, 'pi-json': createPiDriver, 'claude-stream-json': createClaudeDriver };
 
 // The detached sidecar owns the bidirectional native process. The controller
 // can disappear without closing stdin or losing the Harness's active tools.
-export async function runNativeHost({ directory, command, runtimeFamily, options, prompt, cwd, env, onStdout, onStderr, onProcess, onControl, isCancelled = async () => false }) {
+export async function runNativeHost({ directory, command, runtimeFamily, options, prompt, cwd, env, onStdout, onStderr, onProcess, onControl, isCancelled = async () => false, startPreflight = null, onPreflightResult = async () => {} }) {
   const createDriver = factories[runtimeFamily];
   if (!createDriver) throw new Error(`Unsupported native Harness ${runtimeFamily}`);
+  const preflight = startPreflight?.prompt
+    ? {
+      prompt: String(startPreflight.prompt),
+      restartAnswers: Array.isArray(startPreflight.restartAnswers) ? startPreflight.restartAnswers : [],
+    }
+    : null;
+  const preflightCapture = preflight ? createSessionStartPreflightCapture(runtimeFamily) : null;
   let proc;
   let server;
   let started = false;
+  let acceptingExternalInputs = !preflight;
   let closing = false;
   let interruptRequested = false;
   let nativeResult = null;
@@ -23,6 +35,9 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   let submissions = 0;
   let closeTimer;
   let killTimer;
+  let phase = preflight ? 'preflight' : 'main';
+  let preflightResult = null;
+  let phaseTransition = Promise.resolve();
   let writes = Promise.resolve();
   let writeError = null;
   const queueWrite = fn => { writes = writes.then(fn).catch(error => { writeError ||= error; }); };
@@ -36,13 +51,66 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
   const maybeStop = () => {
     if (started && nativeResult && submissions === 0 && !server?.pending) stop();
   };
+  const emit = event => queueWrite(() => onStdout(JSON.stringify(event)));
   const driver = createDriver({ options, cwd,
     send: message => {
       if (!proc || proc.stdin.destroyed || closing) throw Object.assign(new Error('Native Harness input channel is closed'), { code: 'NATIVE_UNCERTAIN' });
       proc.stdin.write(`${JSON.stringify(message)}\n`);
     },
-    onEvent: event => queueWrite(() => onStdout(JSON.stringify(event))),
-    onSettled: result => { settlementRevision++; nativeResult = result || { status: 'completed' }; queueMicrotask(maybeStop); },
+    onEvent: event => {
+      if (phase === 'preflight') {
+        preflightCapture.observe(event);
+        return;
+      }
+      emit(event);
+    },
+    onSettled: result => {
+      settlementRevision++;
+      if (phase !== 'preflight') {
+        nativeResult = result || { status: 'completed' };
+        queueMicrotask(maybeStop);
+        return;
+      }
+      phase = 'preflight_settling';
+      submissions++;
+      phaseTransition = Promise.resolve().then(async () => {
+        if (result?.status === 'failed') {
+          preflightResult = {
+            status: 'error',
+            answer: preflightCapture.answer(),
+            reason: 'provider_turn_failed',
+            error: result.error?.message || result.error || 'Session start preflight failed',
+            checkedAt: new Date().toISOString(),
+          };
+          await onPreflightResult(preflightResult);
+          nativeResult = { status: 'failed', error: preflightResult.error };
+          return;
+        }
+        preflightResult = {
+          ...classifySessionStartPreflightAnswer(preflightCapture.answer(), preflight),
+          checkedAt: new Date().toISOString(),
+        };
+        await onPreflightResult(preflightResult);
+        if (preflightResult.status !== 'loaded') {
+          nativeResult = preflightResult.status === 'restart_required'
+            ? { status: 'preflight_restart_required' }
+            : { status: 'failed', error: 'Session start preflight returned no usable answer' };
+          return;
+        }
+        const providerIdentityEvent = preflightCapture.providerIdentityEvent();
+        if (providerIdentityEvent) emit(providerIdentityEvent);
+        phase = 'main';
+        nativeResult = null;
+        const receipt = await driver.submit({ id: options.requestId, text: prompt });
+        acceptingExternalInputs = receipt?.accepted === true;
+      }).catch((error) => {
+        fatalError ||= error instanceof Error ? error : new Error(String(error?.message || error));
+        nativeResult = { status: 'failed', error: fatalError.message };
+      }).finally(() => {
+        submissions--;
+        queueMicrotask(maybeStop);
+      });
+    },
     onError: error => { fatalError ||= error instanceof Error ? error : new Error(String(error?.message || error)); stop(); },
   });
   proc = spawn(command, driver.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -66,7 +134,7 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     // The endpoint becomes visible before starting the first model call. It
     // accepts follow-ups as soon as the protocol initialization has completed.
     server = await createNativeInputServer({ directory,
-      isAccepting: async () => { const cancelled = await isCancelled(); return started && !closing && !interruptRequested && !cancelled; },
+      isAccepting: async () => { const cancelled = await isCancelled(); return started && acceptingExternalInputs && !closing && !interruptRequested && !cancelled; },
       onIdle: () => queueMicrotask(maybeStop),
       submit: async input => {
         submissions++;
@@ -82,18 +150,21 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
         finally { submissions--; queueMicrotask(maybeStop); }
       },
     });
-    const initial = driver.start(prompt);
+    const initial = driver.start(preflight?.prompt || prompt);
     // Drivers perform their own handshake gating. Their start promise is a
     // reception receipt and must not block accepting further stdin messages.
     started = true;
+    if (!preflight) initial.then((receipt) => { acceptingExternalInputs = receipt?.accepted === true; }).catch(() => {});
     initial.catch(error => { fatalError ||= error; stop(); });
     const exit = await closed;
+    await phaseTransition;
     driver.close(fatalError || new Error('Native Harness process exited'));
     await readersClosed;
     await writes;
     const failed = fatalError || writeError || (nativeResult?.status === 'failed' ? new Error(nativeResult.error?.message || nativeResult.error || 'Native Harness turn failed') : null);
     return { code: failed ? 1 : nativeResult ? 0 : (exit.code ?? 1), signal: nativeResult ? null : exit.signal,
-      error: failed || (!nativeResult ? new Error('Native Harness exited before reporting completion') : null), stderrText: stderrLines.join('\n') };
+      error: failed || (!nativeResult ? new Error('Native Harness exited before reporting completion') : null), stderrText: stderrLines.join('\n'),
+      ...(preflightResult ? { preflight: preflightResult } : {}) };
   } finally {
     clearTimeout(closeTimer); clearTimeout(killTimer);
     driver.close(fatalError || new Error('Native Harness host closed'));

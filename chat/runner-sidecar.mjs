@@ -30,6 +30,11 @@ import {
   acquireProviderRuntimeLease,
   resolveProviderRuntimeQueueKey,
 } from './provider-runtime-queue.mjs';
+import {
+  appendSessionStartPreflightEvent,
+  formatSessionStartPreflightDay,
+  readSessionStartPreflightPolicy,
+} from './session-start-preflight.mjs';
 
 const runId = process.argv[2];
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -147,6 +152,19 @@ async function persistRunFailure(runId, error, options = {}) {
     ...(cancelled ? {} : { failureReason: message }),
   });
   return result;
+}
+
+async function waitForSessionStartPreflightRetry(retryAtMs, isCancelled) {
+  const intervals = [250, 500, 1_000, 2_000];
+  let index = 0;
+  while (Date.now() < retryAtMs) {
+    if (await isCancelled()) return false;
+    const remaining = retryAtMs - Date.now();
+    const delayMs = Math.min(remaining, intervals[Math.min(index, intervals.length - 1)]);
+    await new Promise((resolve) => setTimeout(resolve, Math.max(1, delayMs)));
+    index += 1;
+  }
+  return !(await isCancelled());
 }
 
 async function cleanEnv(toolId, manifest = {}, options = {}) {
@@ -315,6 +333,60 @@ async function main() {
   };
   const initialInvocation = await createToolInvocation(manifest.tool, prompt, invocationOptions);
   const spawnEnv = await cleanEnv(manifest.tool, manifest, initialInvocation);
+  const sessionStartPreflightPolicy = manifest.inputMode === 'native'
+    ? await readSessionStartPreflightPolicy({
+      tool: manifest.tool,
+      runtimeFamily: initialInvocation.runtimeFamily,
+      model: manifest.options?.model,
+      freshProviderSession: manifest.options?.freshProviderSession === true,
+      internalOperation: manifest.internalOperation,
+    })
+    : null;
+  const sessionStartPreflightStartedAt = sessionStartPreflightPolicy ? nowIso() : '';
+  const sessionStartPreflightDay = sessionStartPreflightPolicy
+    ? formatSessionStartPreflightDay(sessionStartPreflightStartedAt, sessionStartPreflightPolicy.timeZone)
+    : '';
+  const sessionStartPreflightBase = sessionStartPreflightPolicy
+    ? {
+      sessionId: manifest.sessionId,
+      runId,
+      tool: manifest.tool,
+      runtimeFamily: initialInvocation.runtimeFamily,
+      model: manifest.options?.model || '',
+      startedAt: sessionStartPreflightStartedAt,
+    }
+    : null;
+  let sessionStartPreflightHadRestart = false;
+  let sessionStartPreflightCompleted = false;
+
+  const recordSessionStartPreflightEvent = async (event) => {
+    if (!sessionStartPreflightPolicy) return null;
+    try {
+      return await appendSessionStartPreflightEvent({ ...sessionStartPreflightBase, ...event }, {
+        day: sessionStartPreflightDay,
+        timeZone: sessionStartPreflightPolicy.timeZone,
+      });
+    } catch (error) {
+      await logSidecarDiagnostic(runId, 'Failed to persist session start preflight statistics', {
+        eventType: event?.type || null,
+        error: normalizeErrorMessage(error),
+      });
+      return null;
+    }
+  };
+
+  if (sessionStartPreflightPolicy) {
+    await recordSessionStartPreflightEvent({ type: 'started' });
+    await updateRun(runId, (current) => ({
+      ...current,
+      sessionStartPreflight: {
+        state: 'running',
+        startedAt: sessionStartPreflightStartedAt,
+        attempt: 0,
+        maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+      },
+    }));
+  }
 
   const attachmentPaths = [];
   for (const img of materializedImages) {
@@ -438,11 +510,71 @@ async function main() {
 
   let providerRuntimeLease = null;
 
-  const runToolAttempt = async (invocation) => {
+  const runToolAttempt = async (invocation, preflightAttempt = 0) => {
+    const preflightAttemptStartedAt = sessionStartPreflightPolicy ? nowIso() : '';
     const resolvedCommand = await resolveCommand(invocation.command);
     if (manifest.inputMode === 'native') return runNativeHost({
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: invocationOptions, prompt, cwd: resolvedFolder.cwd, env: spawnEnv,
+      ...(sessionStartPreflightPolicy
+        ? {
+          startPreflight: {
+            prompt: sessionStartPreflightPolicy.prompt,
+            restartAnswers: sessionStartPreflightPolicy.restartAnswers,
+            attempt: preflightAttempt,
+          },
+        }
+        : {}),
+      onPreflightResult: async (result) => {
+        if (!sessionStartPreflightPolicy) return;
+        const checkedAtMs = Date.parse(result?.checkedAt || '');
+        const attemptStartedAtMs = Date.parse(preflightAttemptStartedAt);
+        const durationMs = Number.isFinite(checkedAtMs) && Number.isFinite(attemptStartedAtMs)
+          ? Math.max(0, checkedAtMs - attemptStartedAtMs)
+          : null;
+        if (result?.status === 'restart_required') sessionStartPreflightHadRestart = true;
+        await recordSessionStartPreflightEvent({
+          type: 'attempt',
+          attempt: preflightAttempt,
+          status: result?.status || 'error',
+          answer: result?.answer || '',
+          reason: result?.reason || '',
+          ...(result?.matchedAnswer ? { matchedAnswer: result.matchedAnswer } : {}),
+          ...(result?.error ? { error: normalizeErrorMessage(result.error) } : {}),
+          ...(durationMs === null ? {} : { durationMs }),
+        });
+        let outcome = '';
+        if (result?.status === 'loaded') {
+          outcome = sessionStartPreflightHadRestart ? 'loaded_after_restart' : 'loaded_first_attempt';
+        } else if (result?.status === 'error') {
+          outcome = 'error';
+        } else if (result?.status === 'restart_required'
+          && preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) {
+          outcome = 'exhausted';
+        }
+        if (outcome && !sessionStartPreflightCompleted) {
+          sessionStartPreflightCompleted = true;
+          await recordSessionStartPreflightEvent({
+            type: 'completed',
+            outcome,
+            attempts: preflightAttempt,
+            neededNewSession: sessionStartPreflightHadRestart,
+            completedAt: result?.checkedAt || nowIso(),
+          });
+        }
+        await updateRun(runId, (current) => ({
+          ...current,
+          sessionStartPreflight: {
+            ...(current?.sessionStartPreflight || {}),
+            state: outcome || result?.status || 'error',
+            attempt: preflightAttempt,
+            maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+            neededNewSession: sessionStartPreflightHadRestart,
+            answer: result?.answer || '',
+            checkedAt: result?.checkedAt || nowIso(),
+          },
+        }));
+      },
       isCancelled: async () => (await getRun(runId))?.cancelRequested === true,
       onStdout: recordStdoutLine, onStderr: recordStderrLine,
       onControl: control => { nativeControl = control; },
@@ -533,41 +665,173 @@ async function main() {
   const providerQueueKey = resolveProviderRuntimeQueueKey(initialInvocation);
   let attempt;
   let current = await getRun(runId) || run;
-  try {
-    if (providerQueueKey) {
-      providerRuntimeLease = await acquireProviderRuntimeLease({
-        queueKey: providerQueueKey,
-        runId,
-        isCancelled: async () => (await getRun(runId))?.cancelRequested === true,
-        onWait: async () => {
-          await updateRun(runId, (draft) => ({
-            ...draft,
-            providerRuntimeQueue: {
-              key: providerQueueKey,
-              state: 'waiting',
-              queuedAt: draft?.providerRuntimeQueue?.queuedAt || nowIso(),
-            },
-          }));
-          await logSidecarDiagnostic(runId, 'Waiting for serialized provider runtime capacity', {
-            providerQueueKey,
-          });
-        },
+  const acquireProviderLease = async () => {
+    if (!providerQueueKey || providerRuntimeLease) return;
+    providerRuntimeLease = await acquireProviderRuntimeLease({
+      queueKey: providerQueueKey,
+      runId,
+      isCancelled: async () => (await getRun(runId))?.cancelRequested === true,
+      onWait: async () => {
+        await updateRun(runId, (draft) => ({
+          ...draft,
+          providerRuntimeQueue: {
+            key: providerQueueKey,
+            state: 'waiting',
+            queuedAt: draft?.providerRuntimeQueue?.queuedAt || nowIso(),
+          },
+        }));
+        await logSidecarDiagnostic(runId, 'Waiting for serialized provider runtime capacity', {
+          providerQueueKey,
+        });
+      },
+    });
+    await updateRun(runId, (draft) => ({
+      ...draft,
+      providerRuntimeQueue: {
+        key: providerQueueKey,
+        state: 'active',
+        queuedAt: draft?.providerRuntimeQueue?.queuedAt || null,
+        acquiredAt: nowIso(),
+        waited: providerRuntimeLease?.waited === true,
+      },
+    }));
+  };
+  const releaseProviderLease = async () => {
+    if (!providerRuntimeLease) return;
+    const lease = providerRuntimeLease;
+    providerRuntimeLease = null;
+    try {
+      await lease.release();
+    } catch (error) {
+      await logSidecarDiagnostic(runId, 'Failed to release serialized provider runtime capacity', {
+        providerQueueKey,
+        error: normalizeErrorMessage(error),
       });
+    }
+    try {
       await updateRun(runId, (draft) => ({
         ...draft,
         providerRuntimeQueue: {
+          ...(draft?.providerRuntimeQueue || {}),
           key: providerQueueKey,
-          state: 'active',
-          queuedAt: draft?.providerRuntimeQueue?.queuedAt || null,
-          acquiredAt: nowIso(),
-          waited: providerRuntimeLease?.waited === true,
+          state: 'released',
+          acquiredAt: draft?.providerRuntimeQueue?.acquiredAt || lease.acquiredAt,
+          waited: draft?.providerRuntimeQueue?.waited === true || lease.waited === true,
+          releasedAt: nowIso(),
+        },
+      }));
+    } catch (error) {
+      await logSidecarDiagnostic(runId, 'Failed to persist serialized provider runtime release', {
+        providerQueueKey,
+        error: normalizeErrorMessage(error),
+      });
+    }
+  };
+
+  try {
+    await acquireProviderLease();
+
+    if (initialInvocation.isCodexFamily) await fileChangeCapture.prepare(manifest.options?.codexThreadId);
+    let preflightAttempt = 0;
+    while (true) {
+      preflightAttempt += 1;
+      if (sessionStartPreflightPolicy) {
+        await updateRun(runId, (draft) => ({
+          ...draft,
+          sessionStartPreflight: {
+            ...(draft?.sessionStartPreflight || {}),
+            state: 'running',
+            attempt: preflightAttempt,
+            maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+            neededNewSession: sessionStartPreflightHadRestart,
+          },
+        }));
+      }
+      attempt = await runToolAttempt(initialInvocation, preflightAttempt);
+      current = await getRun(runId) || run;
+      if (!sessionStartPreflightPolicy || attempt.preflight?.status !== 'restart_required') break;
+      if (preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) {
+        attempt = {
+          ...attempt,
+          code: 1,
+          error: new Error(`Session start preflight still matched ${attempt.preflight.matchedAnswer || 'a restart answer'} after ${preflightAttempt} attempts`),
+        };
+        break;
+      }
+
+      await releaseProviderLease();
+      const retryAtMs = Date.now() + sessionStartPreflightPolicy.retryDelayMs;
+      await updateRun(runId, (draft) => ({
+        ...draft,
+        sessionStartPreflight: {
+          ...(draft?.sessionStartPreflight || {}),
+          state: 'waiting_retry',
+          attempt: preflightAttempt,
+          maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+          neededNewSession: true,
+          nextRetryAt: new Date(retryAtMs).toISOString(),
+        },
+      }));
+      const shouldRetry = await waitForSessionStartPreflightRetry(
+        retryAtMs,
+        async () => (await getRun(runId))?.cancelRequested === true,
+      );
+      if (!shouldRetry) {
+        current = await getRun(runId) || current;
+        if (!sessionStartPreflightCompleted) {
+          sessionStartPreflightCompleted = true;
+          await recordSessionStartPreflightEvent({
+            type: 'completed',
+            outcome: 'cancelled',
+            attempts: preflightAttempt,
+            neededNewSession: true,
+            completedAt: nowIso(),
+          });
+        }
+        await updateRun(runId, (draft) => ({
+          ...draft,
+          sessionStartPreflight: {
+            ...(draft?.sessionStartPreflight || {}),
+            state: 'cancelled',
+            attempt: preflightAttempt,
+            neededNewSession: true,
+            checkedAt: nowIso(),
+          },
+        }));
+        attempt = { code: 1, signal: null, error: null, stderrText: '' };
+        break;
+      }
+      await acquireProviderLease();
+    }
+    current = await getRun(runId) || run;
+    if (sessionStartPreflightPolicy && !sessionStartPreflightCompleted && !attempt?.preflight) {
+      const outcome = current.cancelRequested === true ? 'cancelled' : 'error';
+      await recordSessionStartPreflightEvent({
+        type: 'attempt',
+        attempt: preflightAttempt,
+        status: outcome,
+        reason: current.cancelRequested === true ? 'cancelled_during_preflight' : 'preflight_process_failed',
+        ...(attempt?.error ? { error: normalizeErrorMessage(attempt.error) } : {}),
+      });
+      sessionStartPreflightCompleted = true;
+      await recordSessionStartPreflightEvent({
+        type: 'completed',
+        outcome,
+        attempts: preflightAttempt,
+        neededNewSession: sessionStartPreflightHadRestart,
+        completedAt: nowIso(),
+      });
+      await updateRun(runId, (draft) => ({
+        ...draft,
+        sessionStartPreflight: {
+          ...(draft?.sessionStartPreflight || {}),
+          state: outcome,
+          attempt: preflightAttempt,
+          neededNewSession: sessionStartPreflightHadRestart,
+          checkedAt: nowIso(),
         },
       }));
     }
-
-    if (initialInvocation.isCodexFamily) await fileChangeCapture.prepare(manifest.options?.codexThreadId);
-    attempt = await runToolAttempt(initialInvocation);
-    current = await getRun(runId) || run;
     const canRecoverMissingCodexRollout = (
       initialInvocation.runtimeFamily === 'codex-json'
       && !!manifest.options?.codexThreadId
@@ -595,37 +859,7 @@ async function main() {
       current = await getRun(runId) || current;
     }
   } finally {
-    if (providerRuntimeLease) {
-      try {
-        await providerRuntimeLease.release();
-      } catch (error) {
-        await logSidecarDiagnostic(runId, 'Failed to release serialized provider runtime capacity', {
-          providerQueueKey,
-          error: normalizeErrorMessage(error),
-        });
-      }
-      try {
-        await updateRun(runId, (draft) => ({
-          ...draft,
-          providerRuntimeQueue: {
-            ...(draft?.providerRuntimeQueue || {}),
-            key: providerQueueKey,
-            state: 'released',
-            acquiredAt: draft?.providerRuntimeQueue?.acquiredAt
-              || providerRuntimeLease.acquiredAt,
-            waited: draft?.providerRuntimeQueue?.waited === true
-              || providerRuntimeLease.waited === true,
-            releasedAt: nowIso(),
-          },
-        }));
-      } catch (error) {
-        await logSidecarDiagnostic(runId, 'Failed to persist serialized provider runtime release', {
-          providerQueueKey,
-          error: normalizeErrorMessage(error),
-        });
-      }
-      providerRuntimeLease = null;
-    }
+    await releaseProviderLease();
   }
 
   clearInterval(cancelTimer);

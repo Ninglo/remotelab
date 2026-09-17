@@ -51,6 +51,7 @@ Usage:
   remotelab trigger                  Manage durable session triggers
   remotelab schedule                 Manage recurring cron schedules
   remotelab usage-summary            Summarize local Codex token usage
+  remotelab session-preflight        Inspect session-start preflight status and daily statistics
   remotelab session-spawn            Spawn a focused parallel session from a source session
   remotelab generate-token           Generate a new access token
   remotelab set-password             Set username & password for login
@@ -243,6 +244,17 @@ switch (command) {
     const { runUsageSummaryCommand } = await import(scriptPath('lib/usage-summary-command.mjs'));
     try {
       process.exitCode = await runUsageSummaryCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'session-preflight': {
+    const { runSessionStartPreflightCommand } = await import(scriptPath('lib/session-start-preflight-command.mjs'));
+    try {
+      process.exitCode = await runSessionStartPreflightCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
