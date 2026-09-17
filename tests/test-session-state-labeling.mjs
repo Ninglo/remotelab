@@ -20,10 +20,15 @@ writeFileSync(
   `#!/usr/bin/env node
 const prompt = process.argv[process.argv.length - 1] || '';
 const isSessionStatePrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
+const isDraftEchoCase = prompt.includes('Current title: Temporary dr…');
+if (isDraftEchoCase && !prompt.includes('Current title status: temporary draft awaiting semantic AI naming')) {
+  console.error('temporary title was not identified as a draft');
+  process.exit(2);
+}
 const delayMs = isSessionStatePrompt ? 20 : 220;
 const text = isSessionStatePrompt
   ? JSON.stringify({
-      title: 'RemoteLab Rename Flow',
+      title: isDraftEchoCase ? 'Temporary dr…' : 'RemoteLab Rename Flow',
       space: 'Product',
       group: 'RemoteLab',
       description: 'Keep labels aligned with the latest completed turn.',
@@ -149,6 +154,21 @@ assert.equal(
   'finished session should keep the classified description',
 );
 assert.equal(finished?.autoRenamePending, false, 'post-turn rename should clear autoRenamePending');
+
+const draftEchoSession = await createSession(tempHome, 'fake-codex', '', {});
+await sendMessage(draftEchoSession.id, 'Temporary draft title must not become final.', [], {
+  tool: 'fake-codex',
+  model: 'fake-model',
+  effort: 'low',
+});
+await waitFor(async () => {
+  const current = await getSession(draftEchoSession.id);
+  return current?.workflowState === 'done' && current?.activity?.run?.state === 'idle';
+}, 'draft-echo classification should finish');
+const draftEchoFinished = await getSession(draftEchoSession.id);
+assert.equal(draftEchoFinished?.name, 'Temporary dr…', 'an echoed deterministic draft may remain visible temporarily');
+assert.equal(draftEchoFinished?.autoRenamePending, true, 'an echoed deterministic draft must not be finalized');
+assert.equal(draftEchoFinished?.group, 'RemoteLab', 'rejecting the draft title must not discard other classifier metadata');
 
 for (const sourceId of ['feishu', 'wechat']) {
   const sourceName = sourceId === 'feishu' ? 'Feishu' : 'WeChat';

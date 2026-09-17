@@ -276,6 +276,7 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
     workflowState,
     workflowPriority,
     workSummary,
+    autoRenamePending,
     runState,
     queuedCount,
   } = sessionMeta;
@@ -295,6 +296,7 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
   const currentWorkflowState = normalizeSessionWorkflowState(workflowState || '');
   const currentWorkflowPriority = normalizeSessionWorkflowPriority(workflowPriority || '');
   const currentWorkSummary = formatWorkSummaryForPrompt(workSummary);
+  const currentTitleIsDraft = autoRenamePending === true;
   const promptContext = await loadSessionLabelPromptContext({
     ...sessionMeta,
     space: currentSpace,
@@ -309,7 +311,10 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
     '',
     'Classification rules:',
     '- This classifier performs conservative local maintenance, not global taxonomy design. Sort List owns cross-session merging, splitting, and hierarchy repair.',
-    '- Keep title, Space, Project group, and description unchanged unless the session\'s durable workstream or current frontier materially shifted.',
+    '- Keep Space, Project group, and description unchanged unless the session\'s durable workstream or current frontier materially shifted.',
+    currentTitleIsDraft
+      ? '- The current title is only a temporary UI draft copied and truncated from a user message. Replace it with a concise semantic title. Never return the draft unchanged, and omit chat mentions or addressing prefixes such as @name.'
+      : '- Keep the current title unchanged unless the session\'s current frontier materially shifted.',
     '- Title is the current frontier. Project group is a durable workstream the user would return to. Space is a broad working-context switch that should normally contain multiple Projects. Description is one compact sentence about the workstream.',
     '- Choose an existing Space from the current hierarchy. Do not create a new Space from one Session; use "Loose" when no existing Space clearly fits.',
     '- Reuse an existing Project when its workstream fits. Create a new Project only inside the chosen existing Space when the work is clearly durable and no current Project can recover it without becoming incoherent.',
@@ -324,6 +329,7 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
     '',
     `Session folder: ${folder}`,
     `Current title: ${name || '(unnamed)'}`,
+    `Current title status: ${currentTitleIsDraft ? 'temporary draft awaiting semantic AI naming' : 'established title'}`,
     `Current Space: ${currentSpace || '(unset)'}`,
     `Current Project group: ${currentGroup || '(unset)'}`,
     `Current description: ${currentDescription || '(unset)'}`,
@@ -341,7 +347,9 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
     turnText,
     '',
     'Return ONLY one valid JSON object with exactly these fields:',
-    '- "title": 2-6 words. Return the current title unchanged when it still fits.',
+    currentTitleIsDraft
+      ? '- "title": 2-6 words. Generate a semantic title that differs from the temporary current-title draft.'
+      : '- "title": 2-6 words. Return the current title unchanged when it still fits.',
     '- "space": 1-3 words.',
     '- "group": 1-4 words.',
     '- "description": one compact sentence.',

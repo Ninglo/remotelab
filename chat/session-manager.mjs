@@ -2557,7 +2557,8 @@ async function applySessionStateSuggestion(id, suggestion = {}, expectedRunId = 
 
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
-    if (nextTitle && (isSessionAutoRenamePending(session) || !isSessionTitleLocked(session))) {
+    const pendingDraftWasRewritten = !isSessionAutoRenamePending(session) || session.name !== nextTitle;
+    if (nextTitle && pendingDraftWasRewritten && (isSessionAutoRenamePending(session) || !isSessionTitleLocked(session))) {
       if (session.name !== nextTitle) {
         session.name = nextTitle;
         changed = true;
