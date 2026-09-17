@@ -12,7 +12,10 @@ its native task interpretation and decides whether delegation is useful.
 2. Write a self-contained handoff: objective, relevant background and input
    paths, constraints, expected output and how to verify it. The child does not
    inherit the parent's full transcript. Do not send credentials in the task.
-   Concurrent writers must have separate files or an agreed write scope.
+   Concurrent writers must have separate files or an agreed write scope. Write
+   the handoff in the user's current conversational language; do not switch to
+   English merely because an internal template, Skill, or technical source is
+   written in English. Keep exact identifiers and code terms unchanged.
 3. Create the task using the instance-local command below. Default delegation is
    visible and returns after admission; omit `--wait`, `--internal` and
    `--final-only` for this workflow.
@@ -59,6 +62,10 @@ a task or requiring authentication.
   their existing RemoteLab UI.
 - A child receives a focused handoff and no recursive delegation discovery;
   existing server depth/rate limits remain in force.
+- RemoteLab localizes the fixed handoff wrapper from the latest source-user
+  message, falling back to the task text. It does not translate the task body,
+  so the calling Agent remains responsible for drafting that body in the user's
+  conversational language.
 
 ## Failure and compatibility
 

@@ -930,6 +930,35 @@ async function phase13DelegateSession() {
     assert.match(delegateNotice.content || '', /- Open: /, 'handoff note should include an explicit open URL line');
     assert.match(delegateNotice.content || '', /Figure out a lightweight child-session strategy for parallel work\./, 'handoff note should include the delegated task');
 
+    const chineseSource = await createSession(port, {
+      name: '中文委派来源',
+      group: 'Tests',
+      description: '验证交接语言继承',
+    });
+    const chineseSubmit = await submitMessage(
+      port,
+      chineseSource.id,
+      'req-delegate-parent-zh',
+      '请先分析这个问题，后续创建独立会话时继续使用中文。',
+    );
+    await waitForRunTerminal(port, chineseSubmit.json.run.id);
+    const chineseDelegate = await request(port, 'POST', `/api/sessions/${chineseSource.id}/delegate`, {
+      task: 'Investigate the handoff language behavior and return verified evidence.',
+      name: '修复交接语言',
+    });
+    assert.equal(chineseDelegate.status, 201, 'Chinese source should create a delegated child');
+    await waitForRunTerminal(port, chineseDelegate.json.run.id);
+    const chineseManifest = readRunManifest(home, chineseDelegate.json.run.id);
+    assert.match(chineseManifest.prompt || '', /^任务交接：/m, 'delegated wrapper should follow the latest source-user language');
+    assert.match(chineseManifest.prompt || '', new RegExp(`父会话 ID：${chineseSource.id}`), 'localized handoff should retain the parent pointer');
+    assert.doesNotMatch(chineseManifest.prompt || '', /Delegation handoff:|Parent session id:/, 'localized wrapper should not fall back to English');
+    const chineseParentEvents = await getEvents(port, chineseSource.id);
+    const chineseNotice = chineseParentEvents.events.find(
+      (event) => event.type === 'message' && event.role === 'assistant' && event.messageKind === 'session_delegate_notice',
+    );
+    assert.match(chineseNotice?.content || '', /^已为这项工作创建独立会话。/, 'visible parent notice should follow the source-user language');
+    assert.match(chineseNotice?.content || '', /- 打开：/, 'localized parent notice should retain the open link');
+
     const duplicateDelegate = await request(port, 'POST', `/api/sessions/${session.id}/delegate`, {
       task: 'Figure out a lightweight child-session strategy for parallel work.',
     });

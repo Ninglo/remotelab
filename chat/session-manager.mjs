@@ -34,6 +34,7 @@ import {
   getForkContext,
   getHistorySnapshot,
   loadHistory,
+  readLastTurnEvents,
   readEventsAfter,
   setForkContext,
   setContextHead,
@@ -135,6 +136,7 @@ import {
   normalizeSessionWorkSummary,
 } from './session-work-summary.mjs';
 import {
+  buildDelegationNotice,
   buildDelegationHandoff,
   clipCompactionSection,
 } from './session-context-compaction.mjs';
@@ -412,25 +414,13 @@ function generateId() {
   return randomBytes(16).toString('hex');
 }
 
-function buildDelegationNoticeMessage(task, childSession) {
-  const normalizedTask = clipCompactionSection(task, 240)
-    .replace(/\s+/g, ' ')
-    .trim();
+function buildDelegationNoticeMessage(task, childSession, sourceText = '') {
   const childName = typeof childSession?.name === 'string'
     ? childSession.name.trim()
-    : 'new session';
+    : '';
   const childId = typeof childSession?.id === 'string' ? childSession.id.trim() : '';
   const targetUrl = childId ? buildSessionNavigationHref(childId) : '';
-  const link = targetUrl ? `[${childName}](${targetUrl})` : childName;
-  return [
-    'Spawned a parallel session for this work.',
-    '',
-    normalizedTask ? `- Task: ${normalizedTask}` : '',
-    `- Session: ${link}`,
-    targetUrl ? `- Open: ${targetUrl}` : '',
-    '',
-    'This new session is independent and can continue on its own.',
-  ].filter(Boolean).join('\n');
+  return buildDelegationNotice({ task, childName, targetUrl, sourceText });
 }
 
 function buildDelegationContextOperation(task, childSession) {
@@ -3578,6 +3568,11 @@ export async function delegateSession(sessionId, payload = {}) {
   const runInternally = payload?.internal === true;
   const selection = await resolveDelegationRuntime(source, payload, getRun);
   const nextTool = selection.tool;
+  const sourceTurn = await readLastTurnEvents(sessionId, { includeBodies: true });
+  const sourceUserMessage = [...sourceTurn]
+    .reverse()
+    .find((event) => event?.type === 'message' && event.role === 'user');
+  const sourceText = typeof sourceUserMessage?.content === 'string' ? sourceUserMessage.content : '';
 
   const child = await createSession(source.folder, nextTool, requestedName || '', {
     // Handoff creates an independent Chat UI session without a connector target.
@@ -3597,6 +3592,7 @@ export async function delegateSession(sessionId, payload = {}) {
 
   const handoffText = buildDelegationHandoff({
     source,
+    sourceText,
     task,
   });
   const outcome = await submitHttpMessage(child.id, handoffText, [], {
@@ -3606,7 +3602,7 @@ export async function delegateSession(sessionId, payload = {}) {
 
   if (!runInternally) {
     await appendEvent(source.id, buildDelegationContextOperation(task, child));
-    await appendEvent(source.id, messageEvent('assistant', buildDelegationNoticeMessage(task, child), undefined, {
+    await appendEvent(source.id, messageEvent('assistant', buildDelegationNoticeMessage(task, child, sourceText), undefined, {
       messageKind: 'session_delegate_notice',
     }));
     broadcastSessionInvalidation(source.id);

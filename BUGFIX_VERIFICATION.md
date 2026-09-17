@@ -252,3 +252,73 @@ Bot-handoff tests pass.
 
 **Fixed by:** Harness Agent
 **Date:** 2026-09-16
+
+---
+
+# 委派 handoff 语言继承修复 — 2026-09-17
+
+## 问题
+
+RemoteLab 服务端的委派包装和父会话可见提示被硬编码为英文。即使来源用户消息和任务正文都是中文，子会话仍以 `Delegation handoff:`、`Parent session id:` 等英文文案开头。浏览器 UI 的语言设置只控制界面文案，没有参与 handoff 生成；委派指南也没有要求 Agent 沿用用户当前语言。
+
+## RED
+
+先在 `tests/test-session-delegation-handoff.mjs` 增加中文来源回归。修改实现前，命令：
+
+```text
+node tests/test-session-delegation-handoff.mjs
+```
+
+按预期失败：
+
+```text
+AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^任务交接：/. Input:
+
+'Delegation handoff:\n' +
+  '- You are already in the delegated target session for this task.\n' +
+  '- You have exactly one focused task below. Complete it directly in this session.\n' +
+  '- Do NOT use session-spawn or delegate further child sessions. This task is already scoped — just do the work.\n' +
+  '\n' +
+  '修复监控通知路由，并保留全部验证证据。\n' +
+  '\n' +
+  'Parent session id: parent-session-zh'
+
+exit_code=1
+```
+
+## GREEN
+
+- 委派时读取来源会话最近一轮用户消息，优先按其语言生成固定包装；任务正文作为后备判断。
+- 中文来源现在使用 `任务交接：`、中文范围说明和 `父会话 ID：`。
+- 父会话中的“已创建独立会话”提示也使用同一语言判断。
+- 英文来源保持原有英文输出，避免破坏现有行为。
+- 委派指南明确要求：handoff 正文沿用用户当前对话语言，不能因为 Skill、模板或技术资料是英文就自动改成英文；精确标识符和代码术语保持不变。
+
+## 验证
+
+以下检查通过：
+
+```text
+node --check chat/session-context-compaction.mjs
+node --check chat/session-manager.mjs
+node tests/test-session-delegation-handoff.mjs
+node tests/test-visible-session-delegation.mjs
+node tests/test-delegated-child-no-spawn-prompt.mjs
+node scripts/run-with-clean-instance-env.mjs node tests/test-http-runtime-phase1.mjs phase13
+node scripts/run-with-clean-instance-env.mjs node tests/test-http-runtime-phase1.mjs phase14
+node scripts/run-with-clean-instance-env.mjs node tests/test-http-runtime-phase1.mjs phase14b
+node tests/test-session-spawn-command.mjs
+node tests/test-http-session-spawn-recursive.mjs
+npm run test:merge-safety
+npm run lint:filesize
+git diff --check
+```
+
+phase 13 的 HTTP 集成回归使用中文来源消息和英文任务正文，实际检查子运行 manifest 为中文包装，同时父会话可见提示也是中文。完整 `test-http-runtime-phase1.mjs` 曾在与本修改无关的 phase 8 取消竞态处中止（预期 `cancelled`、实际快速完成为 `completed`）；随后单独运行与本修复有关的 phase 13、14、14b 均通过。文件大小检查退出 0，仅报告仓库原有 advisory。
+
+## 边界
+
+RemoteLab 只本地化固定包装，不自动翻译任意任务正文；正文语言仍由发起委派的 Agent 负责。已通过委派指南固定这条要求，并把本次 QZZ 活动已有的 handoff 文件改回中文。
+
+**修复者：** Harness Agent
+**日期：** 2026-09-17
