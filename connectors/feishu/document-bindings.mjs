@@ -1,4 +1,6 @@
-import { createHash } from 'node:crypto';
+import { watch } from 'node:fs';
+import { createConnectorInbox } from '../../lib/connector-inbox.mjs';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFile, mkdir, writeFile, rename, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { sameConversation, refineConversation } from '../../lib/conversation-target.mjs';
@@ -144,22 +146,48 @@ export async function reconcileDocumentBinding(runtime, binding) {
   }
 }
 
-export function startDocumentBindingPoller(runtime) {
-  let stopped = false, timer, running;
-  const tick = async () => {
-    try {
-      for (const binding of await listDocumentBindings(runtime.config.storageDir)) {
-        if (stopped) break;
-        if (binding.sourceRouteId !== runtime.config.sourceRouteId) continue;
-        try { await reconcileDocumentBinding(runtime, binding); }
-        catch (error) { console.error(`[feishu-document-binding] ${binding.fileToken}: ${error.message}`); }
-      }
-    } catch (error) {
-      console.error(`[feishu-document-binding] registry: ${error.message}`);
-    } finally {
-      if (!stopped) timer = setTimeout(() => { running = tick(); }, 5000);
+export async function startDocumentBindingEvents(runtime) {
+  const directory = bindingsDirectory(runtime.config.storageDir);
+  await mkdir(directory, { recursive: true });
+  const inbox = createConnectorInbox(join(directory, 'events'), {
+    conversationKey: entry => entry.fileToken,
+    process: async entry => {
+      const binding = (await listDocumentBindings(runtime.config.storageDir))
+        .find(item => item.fileToken === entry.fileToken && item.sourceRouteId === runtime.config.sourceRouteId);
+      if (!binding) return { ignored: 'unbound' };
+      await reconcileDocumentBinding(runtime, binding);
+      return { reconciled: true };
+    },
+    onError: error => console.error(`[feishu-document-event] ${error.message}`),
+  });
+  const enqueue = (fileToken, eventId) => inbox.accept(eventId, { fileToken });
+  const recover = async () => {
+    for (const binding of await listDocumentBindings(runtime.config.storageDir)) {
+      if (binding.sourceRouteId === runtime.config.sourceRouteId)
+        await enqueue(binding.fileToken, `recover:${binding.generation}:${randomUUID()}`);
     }
   };
-  running = tick();
-  return { async stop() { stopped = true; clearTimeout(timer); await running; } };
+  // Local binding changes are filesystem events, never periodic remote scans.
+  const watcher = watch(directory, (_event, filename) => {
+    if (!String(filename).endsWith('.binding.json')) return;
+    void (async () => {
+      const binding = await readBindingJson(join(directory, String(filename)));
+      if (binding?.enabled && binding.sourceRouteId === runtime.config.sourceRouteId)
+        await enqueue(binding.fileToken, `bind:${binding.generation}`);
+    })().catch(error => console.error(`[feishu-document-event] ${error.message}`));
+  });
+  inbox.start();
+  await recover();
+  return {
+    async accept(summary) {
+      const binding = (await listDocumentBindings(runtime.config.storageDir))
+        .find(item => item.fileToken === summary.fileToken && item.sourceRouteId === runtime.config.sourceRouteId);
+      if (!binding) return false;
+      await enqueue(binding.fileToken, `comment:${summary.eventId || summary.messageId}`);
+      return true;
+    },
+    recover,
+    async idle() { await inbox.tick(); await inbox.idle(); },
+    async stop() { watcher.close(); inbox.stop(); await inbox.idle(); },
+  };
 }

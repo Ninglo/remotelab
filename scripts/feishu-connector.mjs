@@ -55,7 +55,7 @@ import {
   summarizeFeishuEvent as summarizeEvent,
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
-import { startDocumentBindingPoller, listDocumentBindings } from '../connectors/feishu/document-bindings.mjs';
+import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
   hydrateFeishuDocumentCommentSummary,
   sendFeishuCommentReply,
@@ -1375,10 +1375,13 @@ async function main() {
     appSecret: config.appSecret,
     domain: resolveDomain(config.region),
     loggerLevel: resolveLoggerLevel(config.loggerLevel),
+    onReconnected: () => {
+      void documentPoller?.recover().catch(error => console.error(`[feishu-document-recovery] ${error.message}`));
+    },
   });
 
   let closed = false;
-  let documentPoller;
+  let documentPoller = await startDocumentBindingEvents(runtime);
   const closeConnection = (reason) => {
     if (closed) return;
     closed = true;
@@ -1406,8 +1409,7 @@ async function main() {
 
   const persist = (sourceLabel, summarize) => async raw => {
     const summary = summarize(raw);
-    if (summary.fileToken && (await listDocumentBindings(config.storageDir))
-      .some(binding => binding.fileToken === summary.fileToken && binding.sourceRouteId === config.sourceRouteId)) return {};
+    if (summary.fileToken && await documentPoller.accept(summary)) return {};
     await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
     return {};
   };
@@ -1418,7 +1420,6 @@ async function main() {
   inbox.start();
   await wsClient.start({ eventDispatcher });
   startSourceDeliveryPoller(runtime);
-  documentPoller = startDocumentBindingPoller(runtime);
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] access policy: ${config.accessPolicy.mode}`);
   console.log(`[feishu-connector] response policy: ${JSON.stringify(config.responsePolicy)}`);
