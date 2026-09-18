@@ -27,6 +27,25 @@ import {
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { normalizeSessionExecutionProfile, QUICK_SESSION_PROFILE } from '../lib/quick-session-profile.mjs';
 
+export const SESSION_CREATION_MAX_BYTES = 64 * 1024;
+
+function sessionCreationBodyTooLargePayload(error) {
+  const contentLengthKnown = Number.isSafeInteger(error?.contentLength);
+  const receivedBytes = contentLengthKnown
+    ? error.contentLength
+    : (Number.isSafeInteger(error?.receivedBytes) ? error.receivedBytes : null);
+  const sizeDescription = receivedBytes === null
+    ? 'an unknown number of bytes'
+    : `${contentLengthKnown ? '' : 'at least '}${receivedBytes} bytes`;
+  return {
+    error: `POST /api/sessions request body is ${sizeDescription}; maximum is ${SESSION_CREATION_MAX_BYTES} bytes (64 KiB). Keep Session metadata small and submit user content to POST /api/sessions/:sessionId/messages.`,
+    code: 'BODY_TOO_LARGE',
+    route: 'POST /api/sessions',
+    maxBytes: SESSION_CREATION_MAX_BYTES,
+    ...(receivedBytes === null ? {} : { receivedBytes }),
+  };
+}
+
 function createClientSessionDetail(session) {
   return createSessionDetail(session);
 }
@@ -326,11 +345,10 @@ export async function handleSessionMainRoutes({
     }
     let body;
     try {
-      body = await readBody(req, 10240);
+      body = await readBody(req, SESSION_CREATION_MAX_BYTES);
     } catch (err) {
       if (err.code === 'BODY_TOO_LARGE') {
-        res.writeHead(413, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Request body too large' }));
+        writeJson(res, 413, sessionCreationBodyTooLargePayload(err));
         return true;
       }
       throw err;
