@@ -9,6 +9,7 @@ const COMMANDS = Object.freeze({
   mute: { args: 'none' },
   unmute: { args: 'none' },
   fork: { args: 'none', task: true },
+  quick: { args: 'none', task: true },
   continue: { args: 'none', task: true },
 });
 

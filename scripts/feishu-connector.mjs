@@ -852,6 +852,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     sourceRouteId: runtime.config.sourceRouteId,
   });
   const isForkCommand = effectiveSummary.forkCommand === true;
+  const isQuickCommand = effectiveSummary.quickMode === true;
   const externalTriggerId = isForkCommand
     ? buildFeishuForkExternalTriggerId(effectiveSummary)
     : buildExternalTriggerId(effectiveSummary);
@@ -870,6 +871,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     ...(isForkCommand ? { replaceConversation: true } : {}),
     externalTriggerId,
     sourceContext: buildSessionSourceContext(effectiveSummary),
+    ...(isQuickCommand ? { executionProfile: 'quick' } : {}),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
@@ -1108,9 +1110,9 @@ function extractLocalCommand(summary) {
   const commandText = stripLeadingMentionTokens(rawText);
   const parsed = parseFeishuCommandBlock(commandText);
   if (parsed.error) return parsed;
-  if (parsed.commands.some(command => ['fork', 'continue'].includes(command.name))
+  if (parsed.commands.some(command => ['fork', 'quick', 'continue'].includes(command.name))
     && !['group', 'topic'].includes(chatType)) {
-    return { commands: [], body: '', error: '/fork 和 /continue 只能在群聊或话题中使用。' };
+    return { commands: [], body: '', error: '/fork、/quick 和 /continue 只能在群聊或话题中使用。' };
   }
   return parsed.commands.length > 0 ? parsed : null;
 }
@@ -1149,7 +1151,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  if (command && !command.error && !commandNames.some(name => ['fork', 'continue'].includes(name))
+  if (command && !command.error && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))
     && /^\s*@_[A-Za-z0-9_]+/.test(summary.messageText || summary.textPreview || summary.rawContent || '')
     && !mentionsFeishuBot(runtime, summary)) {
     return { receipt: { ignored: true, reason: 'command_for_other_recipient' } };
@@ -1160,10 +1162,10 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
   if (command && command.error) return { summary, command };
-  if (command?.body && !commandNames.some(name => ['fork', 'continue'].includes(name))) summary = {
+  if (command?.body && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
-  if (command && !commandNames.some(name => ['fork', 'continue'].includes(name))) {
+  if (command && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))) {
     if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
     return { summary, command };
   }
@@ -1171,10 +1173,14 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
     ...summary, forkCommand: true, forkText: command.body, replyInThread: true,
     messageText: command.body, textPreview: command.body,
   };
+  if (commandNames.includes('quick')) summary = {
+    ...summary, forkCommand: true, quickMode: true, forkText: command.body, replyInThread: true,
+    messageText: command.body, textPreview: command.body,
+  };
   if (commandNames.includes('continue')) summary = {
     ...summary, continueCommand: true, messageText: command.body, textPreview: command.body,
   };
-  if (command?.body && !commandNames.includes('fork') && !commandNames.includes('continue')) summary = {
+  if (command?.body && !commandNames.includes('fork') && !commandNames.includes('quick') && !commandNames.includes('continue')) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
   summary = { ...summary, commandBlock: command };
@@ -1192,7 +1198,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 async function processFeishuMessage(runtime, summary, command, helpers) {
   if (command?.error) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, command.error);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  const taskCommand = commandNames.some(name => ['fork', 'continue'].includes(name));
+  const taskCommand = commandNames.some(name => ['fork', 'quick', 'continue'].includes(name));
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute'].includes(name))) {
     return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');

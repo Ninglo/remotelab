@@ -18,6 +18,14 @@ try {
   assert.equal((await resolveSessionRuntimeSelection({ ...defaults, effort: 'ultra' }, { model: 'gpt-5.6-luna' })).effort, 'medium', 'a different model resolves its own default effort');
   assert.equal((await resolveSessionRuntimeSelection({ tool: 'unlisted-tool' })).model, '', 'unknown runtime defaults remain explicitly unresolved');
   assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'micro-agent' }), defaults);
+  assert.deepEqual(
+    await resolveSessionRuntimeSelection(
+      { executionProfile: 'quick', tool: 'claude', model: 'opus', effort: 'high', thinking: true },
+      { tool: 'pi', model: 'provider/model', effort: 'max', thinking: true },
+    ),
+    { tool: 'codex', model: 'gpt-5.6-luna', effort: 'low', thinking: false },
+    'Quick Sessions ignore every per-message and persisted runtime override',
+  );
   const pinned = { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high', thinking: false };
   const session = { ...defaults, feishuRuntimeSelection: pinned };
   const inherited = { tool: 'claude', model: 'opus', effort: '', sourceContext: { connector: 'feishu' } };

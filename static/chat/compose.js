@@ -838,6 +838,7 @@ function sendMessage(existingRequestId) {
   const sendModel = selectedModel;
   const sendReasoningKind = currentToolReasoningKind;
   const sendEffort = selectedEffort;
+  const quickSession = currentSession?.executionProfile === "quick";
 
   if (typeof setComposerPendingSendState === "function") {
     setComposerPendingSendState({
@@ -899,7 +900,7 @@ function sendMessage(existingRequestId) {
         text: outboundText || "(attachment)",
       };
       msg.requestId = requestId;
-      if (!visitorMode) {
+      if (!visitorMode && !quickSession) {
         if (sendTool) msg.tool = sendTool;
         if (sendModel) msg.model = sendModel;
         if (sendReasoningKind === "enum" && sendEffort) {

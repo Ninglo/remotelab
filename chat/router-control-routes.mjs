@@ -14,6 +14,7 @@ import { getPublicKey, addSubscription } from './push.mjs';
 import { backfillOwnerBootstrapSessions } from './bootstrap-sessions.mjs';
 import { createSessionDetail } from './session-api-shapes.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
+import { isQuickSession } from '../lib/quick-session-profile.mjs';
 import {
   normalizeSessionWorkflowPriority,
   normalizeSessionWorkflowState,
@@ -773,6 +774,16 @@ export async function handleControlRoutes({
     if ((hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) && !getGrantedCapability(authSession, 'changeRuntime')) {
       writeJson(res, 403, { error: 'Access denied' });
       return true;
+    }
+    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) {
+      const targetSession = await getSession(sessionId);
+      if (isQuickSession(targetSession)) {
+        writeJson(res, 409, {
+          error: 'Quick Session 的 Harness、模型和 Effort 在创建时固定；请新建 Standard Session。',
+          code: 'QUICK_SESSION_RUNTIME_IMMUTABLE',
+        });
+        return true;
+      }
     }
     if (
       hasWorkflowStatePatch

@@ -167,11 +167,18 @@
         <div class="delivery-issues" id="deliveryIssues" role="status" aria-live="polite" hidden></div>
         <div class="input-config-row">
           <div class="input-config-group left">
-            <select class="tool-select" id="inlineAgentSelect" disabled title="Choose agent for the next session" aria-label="Choose agent for the next session" data-i18n-title="compose.agent.title" data-i18n-aria-label="compose.agent.ariaLabel"></select>
-            <select class="tool-select" id="inlineToolSelect" disabled></select>
-            <select class="provider-select" id="inlineProviderSelect" disabled style="display:none" title="Choose model provider" aria-label="Choose model provider" data-i18n-title="tooling.providerTitle" data-i18n-aria-label="tooling.providerAriaLabel"></select>
-            <select class="model-select" id="inlineModelSelect" disabled></select>
-            <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
+            <div class="session-profile-control" id="sessionProfileControl" role="group" aria-label="Session mode" data-i18n-aria-label="quick.modeAriaLabel">
+              <button class="session-profile-option active" id="standardProfileBtn" type="button" data-profile="standard" data-i18n="quick.standard">Standard</button>
+              <button class="session-profile-option" id="quickProfileBtn" type="button" data-profile="quick" data-i18n="quick.quick">Quick</button>
+            </div>
+            <span class="quick-profile-badge" id="quickProfileBadge" hidden data-i18n="quick.lockedBadge">Quick · locked</span>
+            <div class="runtime-selection-controls" id="runtimeSelectionControls">
+              <select class="tool-select" id="inlineAgentSelect" disabled title="Choose agent for the next session" aria-label="Choose agent for the next session" data-i18n-title="compose.agent.title" data-i18n-aria-label="compose.agent.ariaLabel"></select>
+              <select class="tool-select" id="inlineToolSelect" disabled></select>
+              <select class="provider-select" id="inlineProviderSelect" disabled style="display:none" title="Choose model provider" aria-label="Choose model provider" data-i18n-title="tooling.providerTitle" data-i18n-aria-label="tooling.providerAriaLabel"></select>
+              <select class="model-select" id="inlineModelSelect" disabled></select>
+              <select class="effort-select" id="effortSelect" disabled style="display:none"></select>
+            </div>
           </div>
           <div class="input-config-group right">
             <span id="contextTokens" class="context-status" style="display:none" role="status" aria-live="polite"></span>

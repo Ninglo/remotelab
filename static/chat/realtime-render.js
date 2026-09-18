@@ -18,6 +18,7 @@ function clearMessages({ preserveRunningBlockExpanded = false } = {}) {
 }
 
 function showEmpty() {
+  if (typeof syncQuickSessionUi === "function") syncQuickSessionUi(null);
   if (typeof renderDeliveryIssues === "function") {
     renderDeliveryIssues(typeof getCurrentSession === "function" ? getCurrentSession() : null);
   }

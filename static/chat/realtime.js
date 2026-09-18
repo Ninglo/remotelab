@@ -105,6 +105,7 @@ async function dispatchAction(msg) {
           templateId: msg.templateId || "",
           templateName: msg.templateName || "",
           sourceContext: msg.sourceContext,
+          ...(msg.executionProfile ? { executionProfile: msg.executionProfile } : {}),
         };
         if (Object.prototype.hasOwnProperty.call(msg, "model")) {
           createPayload.model = msg.model || "";
@@ -524,6 +525,7 @@ function canStartSessionFromDetachedComposer() {
 }
 
 function updateStatus(connState, session = getCurrentSession()) {
+  if (typeof syncQuickSessionUi === "function") syncQuickSessionUi(session);
   if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) {
     statusDot.className = "status-dot";
     statusText.textContent = t("status.readOnlySnapshot");

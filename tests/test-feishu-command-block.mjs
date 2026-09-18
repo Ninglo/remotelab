@@ -15,6 +15,11 @@ assert.deepEqual(parseFeishuCommandBlock('@Task Bot /fork\n\n任务正文'), {
   body: '任务正文',
 });
 
+assert.deepEqual(parseFeishuCommandBlock('/quick\n\n一句话解释这个概念'), {
+  commands: [{ name: 'quick' }],
+  body: '一句话解释这个概念',
+});
+
 assert.deepEqual(parseFeishuCommandBlock('普通正文里提到 /fork 和 /model x'), {
   commands: [],
   body: '普通正文里提到 /fork 和 /model x',

@@ -135,6 +135,13 @@ const context = {
 context.globalThis = context;
 vm.runInNewContext(snippet, context, { filename: 'sidebar-ui-lazy-session.js' });
 
+const quickAction = context.buildNewSessionCreateAction({ executionProfile: 'quick' });
+assert.equal(quickAction.executionProfile, 'quick');
+assert.equal(quickAction.tool, 'codex');
+assert.equal(quickAction.model, undefined, 'Quick should hide and omit model selection details');
+assert.equal(quickAction.effort, undefined, 'Quick should hide and omit effort selection details');
+assert.equal(quickAction.templateId, '', 'Quick should not apply a selected Agent template');
+
 const opened = context.createNewSessionShortcut({
   sourceContext: { channel: 'pwa_shortcut' },
 });

@@ -25,6 +25,7 @@ import {
   submitHttpMessage,
 } from './session-manager.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
+import { normalizeSessionExecutionProfile, QUICK_SESSION_PROFILE } from '../lib/quick-session-profile.mjs';
 
 function createClientSessionDetail(session) {
   return createSessionDetail(session);
@@ -356,6 +357,7 @@ export async function handleSessionMainRoutes({
         completionTargets,
         externalTriggerId,
         sourceContext,
+        executionProfile,
       } = payload;
       const agentScoped = isAgentScopedAuthSession(authSession);
       const scopedAgentId = getAuthScopeAgentId(authSession);
@@ -383,6 +385,17 @@ export async function handleSessionMainRoutes({
         : null;
       const explicitSystemPrompt = typeof systemPrompt === 'string' ? systemPrompt : '';
       const explicitWelcomeMessage = typeof welcomeMessage === 'string' ? welcomeMessage.trim() : '';
+      const requestedExecutionProfile = normalizeSessionExecutionProfile(executionProfile);
+      if (executionProfile !== undefined && !requestedExecutionProfile) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'executionProfile must be quick when provided' }));
+        return true;
+      }
+      if (requestedExecutionProfile === QUICK_SESSION_PROFILE && agentScoped) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Owner access required for Quick Session' }));
+        return true;
+      }
       if (!effectiveTool) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'tool is required' }));
@@ -419,7 +432,12 @@ export async function handleSessionMainRoutes({
         description: description || '',
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
+        ...(requestedExecutionProfile ? { executionProfile: requestedExecutionProfile } : {}),
       };
+      if (requestedExecutionProfile) {
+        createOptions.templateId = '';
+        createOptions.templateName = '';
+      }
       if (Object.hasOwn(payload, 'conversation')) {
         if (authSession?.role !== 'owner') { writeJson(res, 403, { error: 'Owner access required' }); return true; }
         createOptions.conversation = payload.conversation;
@@ -432,9 +450,9 @@ export async function handleSessionMainRoutes({
         createOptions.createdByPrincipalId = scopedPrincipalId;
         createOptions.visitorName = 'Guest';
       }
-      if (Object.prototype.hasOwnProperty.call(payload, 'systemPrompt')) {
+      if (!requestedExecutionProfile && Object.prototype.hasOwnProperty.call(payload, 'systemPrompt')) {
         createOptions.systemPrompt = explicitSystemPrompt;
-      } else if (!createOptions.templateId && starterDefinition?.systemPrompt) {
+      } else if (!requestedExecutionProfile && !createOptions.templateId && starterDefinition?.systemPrompt) {
         createOptions.systemPrompt = starterDefinition.systemPrompt;
       }
       if (Object.prototype.hasOwnProperty.call(payload, 'internalRole')) {
@@ -458,7 +476,7 @@ export async function handleSessionMainRoutes({
         if (typeof effort === 'string' && effort.trim()) createOptions.effort = effort.trim();
         if (thinking === true) createOptions.thinking = true;
       }
-      const initialWelcomeMessage = createOptions.templateId
+      const initialWelcomeMessage = requestedExecutionProfile || createOptions.templateId
         ? ''
         : (Object.prototype.hasOwnProperty.call(payload, 'welcomeMessage')
           ? explicitWelcomeMessage

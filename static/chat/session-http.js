@@ -1203,6 +1203,7 @@ function applyAttachedSessionState(id, session) {
     currentSessionId = id;
     hasAttachedSession = true;
   }
+  if (typeof syncQuickSessionUi === "function") syncQuickSessionUi(session);
   if (!shouldRefreshUi) {
     syncBrowserState();
     syncForkButton();
@@ -1246,7 +1247,7 @@ function applyAttachedSessionState(id, session) {
       inlineToolSelect.value = effectiveSessionTool;
       selectedTool = effectiveSessionTool;
     }
-    if (toolAvailable) {
+    if (toolAvailable && session?.executionProfile !== "quick") {
       Promise.resolve(loadModelsForCurrentTool()).catch(() => {});
     }
   }
@@ -1318,6 +1319,7 @@ function getComparableAttachedSessionStateSignature(session) {
     model: typeof session.model === "string" ? session.model : null,
     effort: typeof session.effort === "string" ? session.effort : null,
     thinking: session.thinking === true ? true : null,
+    executionProfile: session.executionProfile || null,
   });
 }
 

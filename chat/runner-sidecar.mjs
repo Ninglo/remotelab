@@ -330,10 +330,12 @@ async function main() {
     thinking: manifest.options?.thinking,
     model: manifest.options?.model,
     effort: manifest.options?.effort,
+    developerInstructions: manifest.options?.developerInstructions,
+    disableApps: manifest.options?.disableApps === true,
   };
   const initialInvocation = await createToolInvocation(manifest.tool, prompt, invocationOptions);
   const spawnEnv = await cleanEnv(manifest.tool, manifest, initialInvocation);
-  const sessionStartPreflightPolicy = manifest.inputMode === 'native'
+  const sessionStartPreflightPolicy = manifest.inputMode === 'native' && manifest.options?.skipSessionStartPreflight !== true
     ? await readSessionStartPreflightPolicy({
       tool: manifest.tool,
       runtimeFamily: initialInvocation.runtimeFamily,

@@ -8,6 +8,14 @@ import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
 import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
+import {
+  applyQuickSessionRuntime,
+  getQuickSessionDeveloperInstructions,
+  getQuickSessionRuntimeProfile,
+  isQuickSession,
+  normalizeSessionExecutionProfile,
+  QUICK_SESSION_PROFILE,
+} from '../lib/quick-session-profile.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
@@ -2074,18 +2082,22 @@ export async function getRunState(runId) {
 }
 
 export async function createSession(folder, tool, name, extra = {}) {
+  const requestedExecutionProfile = normalizeSessionExecutionProfile(extra.executionProfile);
+  const quickRuntime = requestedExecutionProfile === QUICK_SESSION_PROFILE
+    ? getQuickSessionRuntimeProfile()
+    : null;
   const normalizedRuntimeRequest = normalizeLegacyRuntimeRequest({
-    tool,
-    model: typeof extra.model === 'string' ? extra.model.trim() : '',
-    effort: typeof extra.effort === 'string' ? extra.effort.trim() : '',
-    thinking: extra.thinking === true,
+    tool: quickRuntime?.tool || tool,
+    model: quickRuntime?.model || (typeof extra.model === 'string' ? extra.model.trim() : ''),
+    effort: quickRuntime?.effort || (typeof extra.effort === 'string' ? extra.effort.trim() : ''),
+    thinking: quickRuntime ? false : extra.thinking === true,
   });
   const requestedConversation = requireConversation(extra.conversation);
   if (requestedConversation && !extra.sourceId) extra = { ...extra, sourceId: requestedConversation.connector };
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
   const { createdByPrincipalId: requestedCreatedByPrincipalId, visitorId: requestedVisitorId } = resolveRequestedSessionPrincipalFields(extra);
-  const requestedTemplateId = normalizeAppId(extra.templateId || extra.agentId);
-  const requestedTemplateName = normalizeSessionTemplateName(extra.templateName);
+  const requestedTemplateId = requestedExecutionProfile ? '' : normalizeAppId(extra.templateId || extra.agentId);
+  const requestedTemplateName = requestedExecutionProfile ? '' : normalizeSessionTemplateName(extra.templateName);
   const requestedSourceId = resolveRequestedSessionSourceId(extra);
   const requestedSourceName = resolveRequestedSessionSourceName(extra, requestedSourceId);
   const hasRequestedSourceHint = hasRequestedSessionSourceHint(extra);
@@ -2093,9 +2105,9 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedSpace = normalizeSessionSpace(extra.space || '');
   const requestedGroup = normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
-  const requestedStarterPreset = normalizeSessionStarterPreset(extra.starterPreset);
-  const hasRequestedSystemPrompt = Object.prototype.hasOwnProperty.call(extra, 'systemPrompt');
-  const requestedSystemPrompt = typeof extra.systemPrompt === 'string' ? extra.systemPrompt : '';
+  const requestedStarterPreset = requestedExecutionProfile ? '' : normalizeSessionStarterPreset(extra.starterPreset);
+  const hasRequestedSystemPrompt = !requestedExecutionProfile && Object.prototype.hasOwnProperty.call(extra, 'systemPrompt');
+  const requestedSystemPrompt = hasRequestedSystemPrompt && typeof extra.systemPrompt === 'string' ? extra.systemPrompt : '';
   const hasRequestedModel = Object.prototype.hasOwnProperty.call(extra, 'model') || isLegacyMicroAgentToolId(tool);
   const requestedModel = normalizedRuntimeRequest.model;
   const hasRequestedEffort = Object.prototype.hasOwnProperty.call(extra, 'effort') || isLegacyMicroAgentToolId(tool);
@@ -2141,6 +2153,14 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (externalTriggerId) {
       if (existingIndex !== -1) {
         const existing = metas[existingIndex];
+        if (requestedExecutionProfile && existing.executionProfile !== requestedExecutionProfile) {
+          throw new Error('Session execution profile is immutable');
+        }
+        if (isQuickSession(existing) && allowExistingRuntimeUpdate) {
+          throw Object.assign(new Error('Quick Session runtime is immutable'), {
+            code: 'QUICK_SESSION_RUNTIME_IMMUTABLE',
+          });
+        }
         const updated = { ...existing };
         let changed = false;
         if (requestedConversation && !updated.conversation) { updated.conversation = requestedConversation; changed = true; }
@@ -2206,12 +2226,12 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (requestedTemplateId && updated.templateId !== requestedTemplateId) {
+        if (!isQuickSession(updated) && requestedTemplateId && updated.templateId !== requestedTemplateId) {
           updated.templateId = requestedTemplateId;
           changed = true;
         }
 
-        if (requestedTemplateName && updated.templateName !== requestedTemplateName) {
+        if (!isQuickSession(updated) && requestedTemplateName && updated.templateName !== requestedTemplateName) {
           updated.templateName = requestedTemplateName;
           changed = true;
         }
@@ -2231,7 +2251,7 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (requestedStarterPreset && updated.starterPreset !== requestedStarterPreset) {
+        if (!isQuickSession(updated) && requestedStarterPreset && updated.starterPreset !== requestedStarterPreset) {
           updated.starterPreset = requestedStarterPreset;
           changed = true;
         }
@@ -2241,7 +2261,7 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (hasRequestedSystemPrompt && (updated.systemPrompt || '') !== requestedSystemPrompt) {
+        if (!isQuickSession(updated) && hasRequestedSystemPrompt && (updated.systemPrompt || '') !== requestedSystemPrompt) {
           if (requestedSystemPrompt) updated.systemPrompt = requestedSystemPrompt;
           else delete updated.systemPrompt;
           changed = true;
@@ -2316,6 +2336,7 @@ export async function createSession(folder, tool, name, extra = {}) {
       created: now,
       updatedAt: now,
     };
+    if (requestedExecutionProfile) session.executionProfile = requestedExecutionProfile;
     if (!initialNaming.autoRenamePending) session.titleLocked = true;
 
     if (requestedSpace) session.space = requestedSpace;
@@ -2932,6 +2953,13 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
     return getSession(id);
   }
 
+  const currentSession = await findSessionMeta(id);
+  if (isQuickSession(currentSession)) {
+    throw Object.assign(new Error('Quick Session 的 Harness、模型和 Effort 在创建时固定；请新建 Standard Session。'), {
+      code: 'QUICK_SESSION_RUNTIME_IMMUTABLE',
+    });
+  }
+
   const normalizedRuntimePatch = normalizeLegacyRuntimeRequest({
     tool: hasToolPatch ? patch.tool : '',
     model: hasModelPatch ? patch.model : '',
@@ -3174,6 +3202,7 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   if (session.archived) {
     session = await setSessionArchived(sessionId, false) || session;
   }
+  options = applyQuickSessionRuntime(session, options);
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const runtimeSelection = await resolveSessionRuntimeSelection(session, options);
@@ -3324,6 +3353,7 @@ async function prepareRequestRun(record) {
       codexThreadId: persistedCodexThreadId,
       providerResumeId: persistedCodexThreadId || persistedClaudeSessionId || null,
       internalOperation: options.internalOperation || null,
+      executionProfile: options.executionProfile || null,
     },
     manifest: {
       sessionId,
@@ -3338,6 +3368,7 @@ async function prepareRequestRun(record) {
       prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options, managerTurnContext),
       managerTurnContext,
       internalOperation: options.internalOperation || null,
+      ...(options.executionProfile ? { executionProfile: options.executionProfile } : {}),
       ...(normalizeSourceDeliveryPlan(options.sourceDelivery)
         ? { sourceDelivery: normalizeSourceDeliveryPlan(options.sourceDelivery) }
         : {}),
@@ -3365,6 +3396,12 @@ async function prepareRequestRun(record) {
         freshProviderSession,
         claudeSessionId: persistedClaudeSessionId || undefined,
         codexThreadId: persistedCodexThreadId || undefined,
+        executionProfile: options.executionProfile || undefined,
+        developerInstructions: options.executionProfile === QUICK_SESSION_PROFILE
+          ? getQuickSessionDeveloperInstructions()
+          : undefined,
+        disableApps: options.executionProfile === QUICK_SESSION_PROFILE || undefined,
+        skipSessionStartPreflight: options.executionProfile === QUICK_SESSION_PROFILE || undefined,
       },
     },
   });
@@ -3514,6 +3551,7 @@ export async function forkSession(sessionId, options = {}) {
     forkedFromSeq: forkThroughSeq,
     rootSessionId: source.rootSessionId || source.id,
     forkedAt: nowIso(),
+    ...(isQuickSession(source) ? { executionProfile: QUICK_SESSION_PROFILE } : {}),
   });
   if (!child) return null;
 

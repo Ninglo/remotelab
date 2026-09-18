@@ -94,12 +94,15 @@ try {
   ]) {
     assert.deepEqual(extractLocalCommand({ ...summary, messageText }), { commands: [{ name: 'fork' }], body });
   }
+  assert.deepEqual(extractLocalCommand({ ...summary, messageText: '/quick\n\n直接回答' }), {
+    commands: [{ name: 'quick' }], body: '直接回答',
+  });
   for (const messageText of ['new task /FORK', '请/fork调查', 'why does /fork fail?', '/continue\n\n/fork']) {
     assert.notEqual(extractLocalCommand({ ...summary, messageText })?.commands?.some(command => command.name === 'fork'), true,
       'fork must not be inferred from a prose or nested command mention');
   }
   for (const chatType of ['p2p', 'private']) {
-    assert.equal(extractLocalCommand({ ...summary, chatType, messageText: '/fork\n\ntask' })?.error, '/fork 和 /continue 只能在群聊或话题中使用。',
+    assert.equal(extractLocalCommand({ ...summary, chatType, messageText: '/fork\n\ntask' })?.error, '/fork、/quick 和 /continue 只能在群聊或话题中使用。',
       'the fork marker keeps its group-only scope');
   }
   assert.match(await run('status'), /作用范围：当前 Session/);
@@ -150,6 +153,18 @@ try {
   assert.equal(session.feishuRuntimeSelection?.tool, 'pi', 'peer bots cannot change runtime preferences');
   assert.equal(aiCalls, 0, 'control commands never run through a model');
 
+  let quickSummary;
+  await handleMessage(runtime, { ...summary, threadId: 'quick-thread', messageId: 'quick-task', messageText: '/quick\n\n只回答结论。' }, 'test', {
+    addProcessingReaction: async () => null,
+    submitRemoteLabRequest: async (_runtime, inboundSummary) => {
+      quickSummary = inboundSummary;
+      return { sessionId: 'quick-session', runId: 'run-quick' };
+    },
+  });
+  assert.equal(quickSummary.quickMode, true);
+  assert.equal(quickSummary.forkCommand, true);
+  assert.equal(quickSummary.messageText, '只回答结论。');
+
   let commandBlockSummary;
   let commandBlockPlan;
   await handleMessage(runtime, { ...summary, threadId: 'command-block-thread', messageId: 'command-block-task', messageText: '/fork\n/harness pi\n/model provider/gamma\n\n请执行这个任务。' }, 'test', {
@@ -178,6 +193,13 @@ try {
   const replay = await run('model', 'beta', summary, { prepared: plan });
   assert.match(replay, /beta/);
   assert.deepEqual(session.feishuRuntimeSelection, pinned, 'retry keeps the accepted command selection');
+  session.executionProfile = 'quick';
+  assert.match(await run('status'), /模式：Quick/);
+  const patchCallsBeforeQuickMutation = calls.filter(call => call.path === '/api/sessions/s1' && call.method === 'PATCH').length;
+  assert.match(await run('model', 'beta'), /创建时固定/);
+  assert.equal(calls.filter(call => call.path === '/api/sessions/s1' && call.method === 'PATCH').length, patchCallsBeforeQuickMutation,
+    'Quick Session runtime commands must not reach PATCH');
+  delete session.executionProfile;
   session.feishuRuntimeSelection = { tool: 'pi', model: 'provider/gamma', effort: '', thinking: false };
   brokenCatalog = 'pi';
   assert.match(await run('harness'), /\/harness codex/, 'listing Harnesses works even if the current provider fails');

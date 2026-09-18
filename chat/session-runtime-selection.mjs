@@ -4,11 +4,13 @@ import {
   normalizeCodexModelId,
   normalizeLegacyToolId,
 } from '../lib/legacy-micro-agent.mjs';
+import { getQuickSessionRuntimeProfile, isQuickSession } from '../lib/quick-session-profile.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
 // Resolve once at admission; the notice and detached runner share this snapshot.
 export async function resolveSessionRuntimeSelection(session = {}, options = {}) {
+  if (isQuickSession(session)) return getQuickSessionRuntimeProfile();
   // Runtime preferences belong to the RemoteLab Session, regardless of the
   // connector that delivered the message. Keep the old Feishu field as a
   // migration fallback for sessions created before preferences were generic.

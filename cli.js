@@ -52,6 +52,7 @@ Usage:
   remotelab schedule                 Manage recurring cron schedules
   remotelab usage-summary            Summarize local Codex token usage
   remotelab session-preflight        Inspect session-start preflight status and daily statistics
+  remotelab quick-stats              Summarize Quick Session latency by source
   remotelab session-spawn            Spawn a focused parallel session from a source session
   remotelab generate-token           Generate a new access token
   remotelab set-password             Set username & password for login
@@ -255,6 +256,17 @@ switch (command) {
     const { runSessionStartPreflightCommand } = await import(scriptPath('lib/session-start-preflight-command.mjs'));
     try {
       process.exitCode = await runSessionStartPreflightCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'quick-stats': {
+    const { runQuickStatsCommand } = await import(scriptPath('lib/quick-stats-command.mjs'));
+    try {
+      process.exitCode = await runQuickStatsCommand(args);
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);

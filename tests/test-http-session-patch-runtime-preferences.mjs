@@ -125,6 +125,41 @@ try {
   let server = await startServer({ home, port });
 
   try {
+    const quickCreate = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'claude',
+      name: 'Quick immutable session',
+      executionProfile: 'quick',
+      model: 'opus',
+      effort: 'high',
+      thinking: true,
+      templateId: 'ignored-template',
+      systemPrompt: 'ignored prompt',
+    });
+    assert.equal(quickCreate.status, 201, 'Quick Session creation should succeed for owners');
+    assert.equal(quickCreate.json.session?.executionProfile, 'quick');
+    assert.equal(quickCreate.json.session?.tool, 'codex', 'Quick Session should pin its single Harness');
+    assert.equal(quickCreate.json.session?.model, 'gpt-5.6-luna', 'Quick Session should pin its single model');
+    assert.equal(quickCreate.json.session?.effort, 'low', 'Quick Session should pin its single effort');
+    assert.equal(quickCreate.json.session?.thinking, false, 'Quick Session should disable the legacy thinking flag');
+    assert.equal(quickCreate.json.session?.templateId, undefined, 'Quick Session should not apply an Agent template');
+    assert.equal(quickCreate.json.session?.systemPrompt, undefined, 'Quick Session should not apply a custom system prompt');
+
+    const quickPatch = await request(port, 'PATCH', `/api/sessions/${quickCreate.json.session.id}`, {
+      model: 'gpt-6-astra',
+      effort: 'xhigh',
+    });
+    assert.equal(quickPatch.status, 409, 'Quick runtime settings must remain immutable');
+    assert.equal(quickPatch.json?.code, 'QUICK_SESSION_RUNTIME_IMMUTABLE');
+
+    const invalidProfile = await request(port, 'POST', '/api/sessions', {
+      folder: repoRoot,
+      tool: 'codex',
+      name: 'Invalid profile',
+      executionProfile: 'fast-ish',
+    });
+    assert.equal(invalidProfile.status, 400, 'unknown execution profiles should be rejected');
+
     const older = await createSession(port, 'Older session');
     await sleep(25);
     const newer = await createSession(port, 'Newer session');

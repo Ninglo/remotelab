@@ -178,6 +178,7 @@ try {
     });
     assert.equal(submittedPayloads[0].text, '分析当前问题\n然后给出修复方案');
     assert.equal(submittedPayloads[0].sourceContext.messageId, 'fork-command-message');
+
     assert.equal(submittedPayloads[0].sourceContext.messageType, 'text');
     assert.equal(submittedPayloads[0].sourceContext.ingestion.status, 'complete');
     assert.equal(submittedPayloads[0].sourceContext.threadId, undefined);
@@ -280,6 +281,17 @@ try {
       submitRemoteLabRequest: async () => { throw new Error('usage must not start AI'); },
     });
     assert.equal(usage, '任务命令需要在命令块后空一行，再写任务正文。');
+
+    const quickReply = await submitRemoteLabRequest(connectorRuntime, {
+      ...commandSummary,
+      messageId: 'quick-command-message',
+      quickMode: true,
+      forkText: '只回答结论',
+      messageText: '只回答结论',
+    });
+    assert.equal(quickReply.sessionId, 'fork-session-2');
+    assert.equal(createdPayloads.at(-1).executionProfile, 'quick', '/quick should create a Quick Session through the normal create route');
+    assert.equal(submittedPayloads.at(-1).text, '只回答结论');
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

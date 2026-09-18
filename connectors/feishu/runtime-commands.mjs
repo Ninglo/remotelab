@@ -2,6 +2,7 @@ import { buildExternalTriggerId, buildFeishuTopicId } from './index.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 import { resolveFeishuSessionMode } from './session-policy.mjs';
 import { describeFeishuMuteSetting } from './conversation-settings.mjs';
+import { isQuickSession } from '../../lib/quick-session-profile.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'follow']);
@@ -16,6 +17,7 @@ const HELP = [
   '/mute — 静默当前话题或聊天；明确 @ 可单次唤醒',
   '/unmute — 恢复当前话题或聊天的正常响应',
   '/fork — 新建任务；命令块后的正文是任务内容',
+  '/quick — 新建 Quick Session；整个会话固定为快速问答模式',
   '/continue — 继续当前任务；命令块后的正文是本轮内容',
   '/help — 查看命令',
 ].join('\n');
@@ -110,6 +112,10 @@ function validateCommandSet(commands) {
   if (commands.some(command => command.name === 'fork') && commands.some(command => command.name === 'continue')) {
     return '/fork 和 /continue 不能同时使用。';
   }
+  if (commands.some(command => command.name === 'quick')
+    && commands.some(command => ['fork', 'continue', 'default', 'harness', 'model', 'effort', 'follow'].includes(command.name))) {
+    return '/quick 需要单独使用，不能和任务或运行时配置命令组合。';
+  }
   if (commands.some(command => command.name === 'follow')
     && commands.some(command => ['harness', 'model', 'effort'].includes(command.name))) {
     return '/follow 不能和 /harness、/model、/effort 同时使用。';
@@ -147,12 +153,23 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   const operations = [];
   const notes = [];
 
+  const mutatesSessionRuntime = commands.some(command => command.name === 'follow'
+    || (['harness', 'model', 'effort'].includes(command.name) && command.value));
+  if (isQuickSession(session) && mutatesSessionRuntime) {
+    const text = 'Quick Session 的 Harness、模型和 Effort 在创建时固定；请新建 Standard Session。';
+    return { error: text, text, operations: [] };
+  }
+
   for (const command of commands) {
     if (command.name === 'help') {
       notes.push(HELP);
       continue;
     }
     if (command.name === 'status') {
+      if (isQuickSession(session)) {
+        notes.push(`模式：Quick（创建后固定）\n${await describeFeishuMuteSetting(runtime, summary)}`);
+        continue;
+      }
       catalog = catalog || await catalogFor(selection.tool);
       selection = completeSelection(selection, catalog);
       notes.push(`${describe(selection, Boolean(session))}\n${await describeFeishuMuteSetting(runtime, summary)}`);
