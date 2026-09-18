@@ -20,10 +20,14 @@ assert.equal(commentCandidates(binding, comments, state, { openId: 'bot' }).leng
 assert.ok(state.seen['c:old']);
 assert.ok(state.seen['c:own']);
 assert.throws(() => commentCandidates(binding, comments, state, {}), /identity/);
-const payloads = [], accepted = new Set();
+const payloads = [], accepted = new Set(), reactions = [];
 let failAck = true;
 const runtime = { config: { storageDir }, botIdentity: { openId: 'bot' },
-  appClient: { drive: { v1: {
+  appClient: { drive: { v2: { commentReaction: { updateReaction: async payload => {
+    assert.ok(accepted.size, 'reaction follows admission');
+    reactions.push(payload);
+    throw new Error('reaction unavailable');
+  } } }, v1: {
     fileComment: { list: async () => ({ data: { items: comments } }) },
     fileCommentReply: { list: async () => ({ data: { items: comments[0].replies } }) },
   } } },
@@ -38,11 +42,13 @@ const runtime = { config: { storageDir }, botIdentity: { openId: 'bot' },
 try {
   await writeBindingJson(join(bindingsDirectory(storageDir), `${bindingKey('doc')}.binding.json`), { ...binding, enabled: true });
   await assert.rejects(reconcileDocumentBinding(runtime, binding), /lost acknowledgement/);
+  assert.equal(reactions.length, 0, 'uncertain admission must not acknowledge');
   // A concurrent comment arrives while the first admission has an uncertain receipt.
   comments[0].replies.push(reply('second', 'second'));
   await reconcileDocumentBinding(runtime, binding);
   assert.deepEqual(payloads[0], payloads[1], 'retry must use persisted exact payload');
   assert.equal(accepted.size, 2);
+  assert.equal(reactions.length, 2, 'accepted comments acknowledged despite reaction failures');
   await reconcileDocumentBinding(runtime, binding);
   assert.equal(payloads.length, 3, 'unchanged comments must not repeat');
   comments[0].replies[1].content.elements[0].text_run.text = 'edited';

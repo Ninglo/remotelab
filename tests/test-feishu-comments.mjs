@@ -84,6 +84,7 @@ assert.equal(renderFeishuCommentContent({
   }],
 }, { botUserIds: ['ou_comment_bot_1'] }), '@机器人 请检查这一段https://example.com/context');
 
+const reactionPayloads = [];
 const commentGetPayloads = [];
 const commentListPayloads = [];
 const commentCreatePayloads = [];
@@ -95,6 +96,7 @@ const runtime = {
   },
   appClient: {
     drive: {
+      v2: { commentReaction: { updateReaction: async payload => { reactionPayloads.push(payload); return { code: 0 }; } } },
       v1: {
         fileComment: {
           get: async (payload) => {
@@ -213,11 +215,15 @@ assert.deepEqual(commentCreatePayloads[0], {
   },
 });
 
-assert.equal(
-  await addProcessingReaction(runtime, hydrated),
-  null,
-  'document comments should not call the chat-message reaction API',
-);
+assert.deepEqual(await addProcessingReaction(runtime, hydrated),
+  { replyId: 'reply_current_1', emojiType: 'THINKING' });
+assert.deepEqual(reactionPayloads[0], {
+  path: { file_token: 'docx_comment_1' },
+  params: { file_type: 'docx' },
+  data: { action: 'add', reply_id: 'reply_current_1', reaction_type: 'THINKING' },
+});
+const rootHydrated = await hydrateFeishuDocumentCommentSummary(runtime, { ...summary, replyId: '' });
+assert.equal(rootHydrated.replyId, 'reply_root_1');
 
 let generatedPrompt = '';
 const handoff = await handleMessage(runtime, summary, 'drive.notice.comment_add_v1', {

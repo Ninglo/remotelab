@@ -59,6 +59,7 @@ import {
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
   hydrateFeishuDocumentCommentSummary,
+  addFeishuCommentProcessingReaction,
   sendFeishuCommentReply,
   summarizeFeishuDocumentCommentEvent,
 } from '../connectors/feishu/comment-flow.mjs';
@@ -917,7 +918,8 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
 
 async function addProcessingReaction(runtime, summary) {
   if (isFeishuDocumentCommentSummary(summary)) {
-    return null;
+    return withTimeout(() => addFeishuCommentProcessingReaction(runtime, summary),
+      DEFAULT_PROCESSING_REACTION_TIMEOUT_MS, 'Feishu comment processing reaction');
   }
   const messageId = trimString(summary?.messageId);
   const createReaction = runtime?.appClient?.im?.v1?.messageReaction?.create;

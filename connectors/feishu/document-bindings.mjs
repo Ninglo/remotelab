@@ -5,7 +5,7 @@ import { readFile, mkdir, writeFile, rename, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { sameConversation, refineConversation } from '../../lib/conversation-target.mjs';
 import { submitConnectorMessage } from '../../lib/connector-turn-flow.mjs';
-import { renderFeishuCommentContent } from './comment-flow.mjs';
+import { renderFeishuCommentContent, addFeishuCommentProcessingReaction } from './comment-flow.mjs';
 
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const bindingKey = token => hash(token).slice(0, 32);
@@ -125,6 +125,9 @@ export async function reconcileDocumentBinding(runtime, binding) {
         if (!liveBinding?.enabled || liveBinding.generation !== binding.generation) throw new Error('Document binding disabled or changed before admission');
         const item = state.pending[0];
         await submitConnectorMessage(runtime.requestRemoteLab, binding.sessionId, item.payload);
+        // A failed acknowledgement must never block or replay accepted work.
+        void addFeishuCommentProcessingReaction(runtime, item.payload.sourceContext)
+          .catch(error => console.warn(`[feishu-comment-reaction] ${error.message}`));
         state.seen[item.key] = item.revision;
         state.pending.shift();
         await writeBindingJson(statePath, state);
