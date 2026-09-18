@@ -1,4 +1,4 @@
-import { normalizeScheduledSessionTemplate as normalizeSessionTemplate } from '../lib/scheduled-session.mjs';
+import { normalizeScheduledSessionTemplate as normalizeSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
 import { randomBytes } from 'crypto';
 
 import { CHAT_TRIGGERS_FILE } from '../lib/config.mjs';
@@ -7,6 +7,7 @@ import { statusEvent } from './normalizer.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
 import { createSession, getSession, submitHttpMessage } from './session-manager.mjs';
 import { updateSessionConversation } from './session-conversations.mjs';
+import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { requests } from './requests.mjs';
 import { getRun, isTerminalRunState, requestRunCancel } from './runs.mjs';
 
@@ -687,7 +688,7 @@ async function appendTriggerStatusEvent(trigger, outcome) {
   }
 }
 
-async function ensureExecutionSession(trigger) {
+export async function ensureExecutionSession(trigger) {
   const existingSessionId = trimString(trigger.executionSessionId);
   if (existingSessionId) {
     const existing = await getExecutionSession(existingSessionId);
@@ -699,8 +700,21 @@ async function ensureExecutionSession(trigger) {
   }
   const template = normalizeSessionTemplate(trigger.sessionTemplate, trigger.tool);
   if (!template) throw new Error('Execution session template is missing');
+  const identity = scheduledSessionIdentity(trigger, template);
+  let previousSession = null;
+  if (template.reuse === 'calendar_day') {
+    const previous = (await loadTriggers()).filter(entry => entry.id !== trigger.id
+      && entry.scheduleId === trigger.scheduleId && entry.executionSessionId
+      && scheduledSessionIdentity(entry, template) === identity)
+      .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))[0];
+    if (previous) {
+      previousSession = await getExecutionSession(previous.executionSessionId);
+      if (template.conversation && !sameConversation(refineConversation(template.conversation, previousSession.conversation), previousSession.conversation)
+        && JSON.stringify(template.conversation) !== JSON.stringify(previousSession.conversation)) throw new Error('Daily review conversation changed; explicit migration required');
+    }
+  }
   const scheduledLabel = trimString(trigger.scheduledAt).replace('T', ' ').replace('.000Z', 'Z');
-  const session = await createSession(
+  const session = previousSession || await createSession(
     template.folder,
     trigger.tool || template.tool,
     [template.name || trigger.title || 'Scheduled task', scheduledLabel].filter(Boolean).join(' · '),
@@ -712,7 +726,7 @@ async function ensureExecutionSession(trigger) {
       model: trigger.model || undefined,
       effort: trigger.effort || undefined,
       thinking: trigger.thinking === true,
-      externalTriggerId: trigger.id,
+      externalTriggerId: identity,
       conversation: template.conversation,
     },
   );

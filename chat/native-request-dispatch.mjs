@@ -8,6 +8,7 @@ const now = () => new Date().toISOString();
 export function canForwardNativeRequest(record, head) {
   if (!record || !head || record.key === head.key || record.preparedAt
       || record.options?.freshThread || head.cancelRequestedAt
+      || record.options?.sourceContext?.documentBinding || head.options?.sourceContext?.documentBinding
       || record.options?.internalOperation || head.options?.internalOperation) return false;
   const a = record.runtimeSelection || {};
   const b = head.runtimeSelection || {};
