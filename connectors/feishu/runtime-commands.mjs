@@ -7,7 +7,8 @@ import { isQuickSession } from '../../lib/quick-session-profile.mjs';
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'follow']);
 const HELP = [
-  '命令块写在消息开头，每行一个命令；命令和任务正文之间空一行。',
+  '任务命令可把正文写在同行：/fork [修饰参数] 正文、/continue [修饰参数] 正文、/quick 正文。',
+  '/fork 和 /continue 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>；仍兼容旧的多行命令块。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
   '/default [harness|model|effort] [值] — 查看或修改新 Session 的 Default',
   '/harness [名称] — 查看或修改当前任务使用的 Harness',
@@ -16,9 +17,9 @@ const HELP = [
   '/follow — 把当前 Session 重置为当前 Default',
   '/mute — 静默当前话题或聊天；明确 @ 可单次唤醒',
   '/unmute — 恢复当前话题或聊天的正常响应',
-  '/fork — 新建任务；命令块后的正文是任务内容',
-  '/quick — 新建 Quick Session；整个会话固定为快速问答模式',
-  '/continue — 继续当前任务；命令块后的正文是本轮内容',
+  '/fork [修饰参数] 正文 — 新建任务',
+  '/quick 正文 — 新建 Quick Session；整个会话固定为快速问答模式',
+  '/continue [修饰参数] 正文 — 继续当前任务',
   '/help — 查看命令',
 ].join('\n');
 

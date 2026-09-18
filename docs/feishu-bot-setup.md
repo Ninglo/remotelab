@@ -251,13 +251,21 @@ can be overridden per group with `groups` below.
 
 Runtime selection has two levels. `Default` is copied when a new Session is
 created; an existing Session keeps its own snapshot until explicitly changed.
-Commands use one explicit block: put consecutive slash-command lines at the
-start of the message, then leave one blank line before any task text. The
-connector parses the whole block first, rejects unknown, duplicate, or
-conflicting commands, and only then applies it. A slash command mentioned in
-ordinary prose is never executed.
+Task commands use one primary action, optional modifiers, then task text. The
+short mobile-friendly form is `/fork task text`. Put `--harness`, `--model`,
+and `--effort` before the task text when needed. The connector still accepts
+the legacy multi-line command block, with or without a blank line before the
+task text. It parses the complete command shape first, rejects unknown,
+duplicate, or conflicting commands, and only then applies it. A slash command
+mentioned in ordinary prose is never executed.
 
 Examples:
+
+```text
+/fork --harness codex --model gpt-5.6 --effort high 请分析这个问题并给出修复方案。
+```
+
+Legacy multi-line form:
 
 ```text
 /fork
@@ -285,7 +293,11 @@ Inside an existing task thread or private conversation, use these commands:
 | `/follow` | Copy the current Default into this Session. |
 | `/mute` | Stop automatic responses in the current topic or chat; explicit mentions still wake the Bot once. |
 | `/unmute` | Restore the original response behavior in that topic or chat. |
-| `/help` | Show these commands and the command-block format. |
+| `/help` | Show these commands and the task-command format. |
+
+Task actions are `/fork`, `/continue`, and `/quick`. The first two accept
+`--harness <id>`, `--model <id>`, and `--effort <level>` before the task text.
+Use a standalone `--` before task text that itself starts with `--`.
 
 Selecting any runtime option updates the complete Harness/model/effort snapshot
 for subsequent Feishu messages in that Session. Selecting a different Harness
@@ -379,9 +391,9 @@ access control and Bot handoff loop protection are unchanged.
 - A new group task (including an unbound topic/thread) creates a blank Session
   by default and replies in a Feishu thread. It does not copy group history.
 - Human follow-ups in a bound thread reuse that Session. A `/fork` command
-  block explicitly starts another blank Session, including inside an existing
-  thread. The command block must be followed by one blank line; its remaining
-  text becomes the task. A leading connector mention may precede the first
+  explicitly starts another blank Session, including inside an existing
+  thread. Its task text can follow on the same line or begin on the next line;
+  no blank separator is required. A leading connector mention may precede the
   command. Mentioning or discussing `/fork` inside ordinary prose does not
   trigger a fork. Normal access and mention rules still apply; the command does
   not enable forks in private chats.

@@ -1218,7 +1218,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     });
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
   }
-  if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要在命令块后空一行，再写任务正文。');
+  if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要正文，例如：/fork 帮我调查这个问题。');
   if (command && command.body && command.commands.some(entry => ['default', 'harness', 'model', 'effort', 'follow'].includes(entry.name))) {
     const commandPlan = helpers.preparedRuntimeCommand || await prepareFeishuRuntimeCommandPlan(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),

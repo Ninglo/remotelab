@@ -14,6 +14,11 @@ const COMMANDS = Object.freeze({
 });
 
 const COMMAND_LINE = /^(?:@[^/\r\n]+?[ \t]+)?\/([A-Za-z][A-Za-z0-9_-]*)(?:[ \t]+(.*))?$/;
+const TASK_MODIFIERS = Object.freeze({
+  harness: 'harness',
+  model: 'model',
+  effort: 'effort',
+});
 
 function normalizeText(value) {
   return String(value || '').replace(/\r\n?/g, '\n');
@@ -39,15 +44,42 @@ function parseArguments(name, rawArgs, lineNumber) {
   return {};
 }
 
+function parseTaskArguments(name, rawArgs, lineNumber) {
+  let rest = String(rawArgs || '').trim();
+  const commands = [{ name }];
+
+  while (rest.startsWith('--')) {
+    const delimiter = rest.match(/^--(?:[ \t]+|$)/);
+    if (delimiter) {
+      rest = rest.slice(delimiter[0].length).trim();
+      break;
+    }
+
+    const optionName = rest.match(/^--([A-Za-z][A-Za-z0-9_-]*)(?==|[ \t]|$)/)?.[1]?.toLowerCase();
+    if (!optionName || !Object.hasOwn(TASK_MODIFIERS, optionName)) {
+      return { error: `未知修饰参数：--${optionName || rest.slice(2).split(/\s/, 1)[0]}（第 ${lineNumber} 行）` };
+    }
+
+    const option = rest.match(/^--[A-Za-z][A-Za-z0-9_-]*(?:=([^\s]+)|[ \t]+([^\s]+))(?:[ \t]+|$)/);
+    if (!option) return { error: `--${optionName} 需要一个不含空格的值（第 ${lineNumber} 行）` };
+    commands.push({ name: TASK_MODIFIERS[optionName], value: option[1] || option[2] });
+    rest = rest.slice(option[0].length).trim();
+  }
+
+  return { commands, body: rest };
+}
+
 /**
  * Parse the explicit Feishu command-block protocol.
  *
- * A command block is the consecutive non-empty slash-command lines at the
- * start of a message. One empty line terminates it; everything after that is
- * task text. A leading @mention is allowed on the first command line because
- * Feishu rich text commonly renders the Bot mention in front of the command.
- * Slash-prefixed text enters command handling only when the first name is a
- * registered command; otherwise the complete message remains ordinary text.
+ * Task actions accept an inline shape such as
+ * `/fork --model gpt-5.6 --effort high task text`. Modifiers are expanded to
+ * the same command list used by the legacy multi-line command block. Task text
+ * can start on the action line, on the next non-command line, or after the old
+ * blank-line separator. A leading @mention is allowed on the first command
+ * line because Feishu rich text commonly renders the Bot mention in front of
+ * the command. Slash-prefixed text enters command handling only when the first
+ * name is registered; otherwise the complete message remains ordinary text.
  */
 export function parseFeishuCommandBlock(input) {
   const text = normalizeText(input);
@@ -60,12 +92,25 @@ export function parseFeishuCommandBlock(input) {
     const match = line.trim().match(COMMAND_LINE);
     if (!match) {
       if (commands.length > 0) {
+        if (commands.some(command => commandDefinition(command.name)?.task)) {
+          return { commands, body: lines.slice(index).join('\n').trim() };
+        }
         return { commands: [], body: '', error: '命令必须连续写在消息开头；命令和任务正文之间要空一行。' };
       }
       return { commands: [], body: text.trim() };
     }
     const name = match[1].toLowerCase();
     if (!commandDefinition(name) && commands.length === 0) return { commands: [], body: text.trim() };
+    if (commandDefinition(name)?.task) {
+      const parsed = parseTaskArguments(name, match[2], index + 1);
+      if (parsed.error) return { commands: [], body: '', error: parsed.error };
+      commands.push(...parsed.commands);
+      index += 1;
+      if (parsed.body) {
+        return { commands, body: [parsed.body, ...lines.slice(index)].join('\n').trim() };
+      }
+      continue;
+    }
     const parsed = parseArguments(name, match[2], index + 1);
     if (parsed.error) return { commands: [], body: '', error: parsed.error };
     commands.push({ name, ...parsed });

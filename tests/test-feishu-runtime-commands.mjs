@@ -89,6 +89,8 @@ try {
   }, 'a rich-text mention must not hide the fork marker');
   for (const [messageText, body] of [
     ['/fork\n\nthen compare', 'then compare'],
+    ['/fork then compare', 'then compare'],
+    ['/fork\nthen compare', 'then compare'],
     ['/fork', ''],
     ['@_user_1 /fork', ''],
   ]) {
@@ -167,7 +169,7 @@ try {
 
   let commandBlockSummary;
   let commandBlockPlan;
-  await handleMessage(runtime, { ...summary, threadId: 'command-block-thread', messageId: 'command-block-task', messageText: '/fork\n/harness pi\n/model provider/gamma\n\n请执行这个任务。' }, 'test', {
+  await handleMessage(runtime, { ...summary, threadId: 'command-block-thread', messageId: 'command-block-task', messageText: '/fork --harness pi --model provider/gamma 请执行这个任务。' }, 'test', {
     requestRemoteLab: request,
     resolveFeishuRuntimeSelection: async () => ({ mode: 'ui', tool: 'codex', model: 'alpha', effort: 'low', thinking: false }),
     addProcessingReaction: async () => null,

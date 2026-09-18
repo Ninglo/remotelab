@@ -257,7 +257,7 @@ try {
     assert.equal(createCount, beforeConfiguredThread, 'continue policy preserves existing thread binding');
     for (const [messageId, messageText, expectedText] of [
       ['rich-mention-fork', '@Task Bot /fork\n\ndiscover datasets', 'discover datasets'],
-      ['trailing-fork', '/fork\n\ndiscover datasets', 'discover datasets'],
+      ['inline-fork', '/fork discover datasets', 'discover datasets'],
     ]) {
       const beforeMarker = createCount;
       await send({ messageId, messageType: 'post', messageText, threadId: 'created-thread-1' });
@@ -280,7 +280,7 @@ try {
       queueFeishuReply: async (_runtime, _summary, text) => { usage = text; },
       submitRemoteLabRequest: async () => { throw new Error('usage must not start AI'); },
     });
-    assert.equal(usage, '任务命令需要在命令块后空一行，再写任务正文。');
+    assert.equal(usage, '任务命令需要正文，例如：/fork 帮我调查这个问题。');
 
     const quickReply = await submitRemoteLabRequest(connectorRuntime, {
       ...commandSummary,

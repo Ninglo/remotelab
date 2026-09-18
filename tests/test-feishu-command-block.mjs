@@ -15,6 +15,40 @@ assert.deepEqual(parseFeishuCommandBlock('@Task Bot /fork\n\n任务正文'), {
   body: '任务正文',
 });
 
+assert.deepEqual(parseFeishuCommandBlock('/fork 帮我调查这个问题'), {
+  commands: [{ name: 'fork' }],
+  body: '帮我调查这个问题',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('@Task Bot /fork --harness codex --model=gpt-5.6 --effort high 请分析这个问题'), {
+  commands: [
+    { name: 'fork' },
+    { name: 'harness', value: 'codex' },
+    { name: 'model', value: 'gpt-5.6' },
+    { name: 'effort', value: 'high' },
+  ],
+  body: '请分析这个问题',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('/continue\n直接沿用上文继续处理\n保留原始格式'), {
+  commands: [{ name: 'continue' }],
+  body: '直接沿用上文继续处理\n保留原始格式',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('/fork --model gpt-5.6\n/effort high\n正文不再需要空行'), {
+  commands: [
+    { name: 'fork' },
+    { name: 'model', value: 'gpt-5.6' },
+    { name: 'effort', value: 'high' },
+  ],
+  body: '正文不再需要空行',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('/fork -- --保留这个正文开头'), {
+  commands: [{ name: 'fork' }],
+  body: '--保留这个正文开头',
+});
+
 assert.deepEqual(parseFeishuCommandBlock('/quick\n\n一句话解释这个概念'), {
   commands: [{ name: 'quick' }],
   body: '一句话解释这个概念',
@@ -37,8 +71,13 @@ for (const body of [
   }, 'text that does not resolve to a registered command must remain ordinary task text');
 }
 
-assert.equal(parseFeishuCommandBlock('/fork\n任务正文').error, '命令必须连续写在消息开头；命令和任务正文之间要空一行。');
+assert.deepEqual(parseFeishuCommandBlock('/fork\n任务正文'), {
+  commands: [{ name: 'fork' }],
+  body: '任务正文',
+});
 assert.equal(parseFeishuCommandBlock('/fork\n/unknown\n\n任务正文').error, '未知命令：/unknown（第 2 行）');
+assert.equal(parseFeishuCommandBlock('/fork --unknown value 任务正文').error, '未知修饰参数：--unknown（第 1 行）');
+assert.equal(parseFeishuCommandBlock('/fork --model').error, '--model 需要一个不含空格的值（第 1 行）');
 assert.equal(parseFeishuCommandBlock('/model a b').error, '/model 需要一个不含空格的参数（第 1 行）');
 assert.deepEqual(parseFeishuCommandBlock('/default model gpt-5.6'), {
   commands: [{ name: 'default', field: 'model', value: 'gpt-5.6' }],
