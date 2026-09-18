@@ -38,3 +38,7 @@ Before publishing the repository:
 - RemoteLab 使用 Cloudflare 临时隧道时，公网地址会随隧道重启而变化；若需固定入口，应改用自有域名和持久化 Tunnel Token。
 - RemoteLab 各 connector 的首次会话入口链接应在统一的 reply publication 投影层生成，而不是进入 agent 流程或逐个修改 connector；是否首次回复应依据持久化完整 history 判断，链接仅在配置绝对公网地址且渠道声明支持时附加，且不得携带 owner token。
 - RemoteLab 自身更新或重启可能中断当前会话时，完成通知应通过不依赖该会话的机制，在原消息线程另发消息，不能仅依赖会话最终回复。
+- RemoteLab 的独立监控遇到持续阻塞时，必须将其识别为异常并通知当前用户会话，同时触发或明确上报恢复流程；不得把阻塞降级为 no-change，也不得只在监控会话中留日志。
+- RemoteLab 不应把消息事件写入成功等同于用户可见通知成功；尤其目标 Session 正在运行时，插入的消息可能被折叠进 thinking block，必须另行核验正常时间线中的可见性。
+- RemoteLab 的跨会话内部协调消息必须明确标注为 Agent 生成及其来源，不得记录成用户消息、触发自动会话命名，或把生产写入边界包装成用户要求的新任务或正式交接。
+- 处理异步任务时，避免在前台会话中连续使用固定时长 sleep；应采用有终止条件的 watcher、长轮询或事件机制，并在等待期间推进可并行工作。
