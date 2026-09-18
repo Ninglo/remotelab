@@ -299,24 +299,20 @@ Task actions are `/fork`, `/continue`, and `/quick`. The first two accept
 `--harness <id>`, `--model <id>`, and `--effort <level>` before the task text.
 Use a standalone `--` before task text that itself starts with `--`.
 
-Every command declares an explicit stable alias in the command registry. New
-commands must declare one too; startup validation rejects aliases that collide
-with a canonical name or another alias. Aliases resolve to the canonical name
-before validation and execution:
+The three most frequent commands have explicit stable aliases. Aliases resolve
+to the canonical name before validation and execution, and startup validation
+rejects aliases that collide with a canonical name or another alias:
 
-| Command | Alias | Command | Alias |
-| --- | --- | --- | --- |
-| `/fork` | `/f` | `/continue` | `/c` |
-| `/quick` | `/q` | `/model` | `/m` |
-| `/effort` | `/e` | `/harness` | `/ha` |
-| `/status` | `/s` | `/default` | `/d` |
-| `/follow` | `/fo` | `/mute` | `/mu` |
-| `/unmute` | `/u` | `/help` | `/h` |
+| Command | Alias |
+| --- | --- |
+| `/fork` | `/f` |
+| `/model` | `/m` |
+| `/quick` | `/q` |
 
-Aliases are not generated from the first letter: that would make additions
-such as `fork`/`follow`, `model`/`mute`, and `harness`/`help` unstable. A path
-such as `/f/data` or `/m/checkpoints/model.bin` remains ordinary task text;
-only an exact command or alias followed by whitespace or end-of-line is parsed.
+Aliases are opt-in rather than generated from the first letter, keeping the
+command surface small and avoiding collisions. A path such as `/f/data` or
+`/m/checkpoints/model.bin` remains ordinary task text; only an exact command or
+alias followed by whitespace or end-of-line is parsed.
 
 Selecting any runtime option updates the complete Harness/model/effort snapshot
 for subsequent Feishu messages in that Session. Selecting a different Harness

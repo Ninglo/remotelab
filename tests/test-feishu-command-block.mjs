@@ -1,27 +1,15 @@
 import assert from 'node:assert/strict';
 import {
   feishuCommandAliases,
-  feishuCommandNames,
   parseFeishuCommandBlock,
   resolveFeishuCommandName,
 } from '../connectors/feishu/command-parser.mjs';
 
 assert.deepEqual(feishuCommandAliases, {
-  h: 'help',
-  s: 'status',
-  d: 'default',
-  ha: 'harness',
   m: 'model',
-  e: 'effort',
-  fo: 'follow',
-  mu: 'mute',
-  u: 'unmute',
   f: 'fork',
   q: 'quick',
-  c: 'continue',
 });
-assert.deepEqual(new Set(Object.values(feishuCommandAliases)), new Set(feishuCommandNames),
-  'every command must have an explicit stable alias');
 for (const [alias, canonicalName] of Object.entries(feishuCommandAliases)) {
   assert.equal(resolveFeishuCommandName(alias), canonicalName);
   assert.equal(resolveFeishuCommandName(canonicalName), canonicalName);
@@ -109,6 +97,15 @@ for (const body of [
   '/f/data 是一个普通路径',
   '/m/checkpoints/model.bin',
   '/q/archive/result.json',
+  '/c 这不是命令',
+  '/e high',
+  '/ha codex',
+  '/s',
+  '/d model gpt-5.6',
+  '/fo',
+  '/mu',
+  '/u',
+  '/h',
   '/unknown',
   '/constructor',
 ]) {

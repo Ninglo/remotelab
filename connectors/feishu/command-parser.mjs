@@ -1,26 +1,26 @@
 const COMMANDS = Object.freeze({
-  help: { args: 'none', aliases: ['h'] },
-  status: { args: 'none', aliases: ['s'] },
-  default: { args: 'default', aliases: ['d'] },
-  harness: { args: 'optional', aliases: ['ha'] },
+  help: { args: 'none' },
+  status: { args: 'none' },
+  default: { args: 'default' },
+  harness: { args: 'optional' },
   model: { args: 'optional', aliases: ['m'] },
-  effort: { args: 'optional', aliases: ['e'] },
-  follow: { args: 'none', aliases: ['fo'] },
-  mute: { args: 'none', aliases: ['mu'] },
-  unmute: { args: 'none', aliases: ['u'] },
+  effort: { args: 'optional' },
+  follow: { args: 'none' },
+  mute: { args: 'none' },
+  unmute: { args: 'none' },
   fork: { args: 'none', task: true, aliases: ['f'] },
   quick: { args: 'none', task: true, aliases: ['q'] },
-  continue: { args: 'none', task: true, aliases: ['c'] },
+  continue: { args: 'none', task: true },
 });
 
 function buildCommandAliases() {
   const aliases = {};
   const canonicalNames = new Set(Object.keys(COMMANDS));
   for (const [name, definition] of Object.entries(COMMANDS)) {
-    if (!Array.isArray(definition.aliases) || definition.aliases.length === 0) {
-      throw new Error(`Feishu command /${name} must declare at least one alias`);
+    if (definition.aliases !== undefined && !Array.isArray(definition.aliases)) {
+      throw new Error(`Feishu command /${name} aliases must be an array`);
     }
-    for (const rawAlias of definition.aliases) {
+    for (const rawAlias of definition.aliases || []) {
       const alias = String(rawAlias || '').trim().toLowerCase();
       if (!/^[a-z][a-z0-9_-]*$/.test(alias)) throw new Error(`Invalid Feishu command alias: /${rawAlias}`);
       if (canonicalNames.has(alias)) throw new Error(`Feishu command alias /${alias} conflicts with a command name`);

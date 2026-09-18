@@ -150,8 +150,7 @@ try {
   assert.match(replies.at(-1), /当前 Session/);
   await handleMessage(runtime, { ...summary, messageId: 'm2', messageText: '/help' }, 'test', helpers);
   assert.match(replies.at(-1), /\/follow/);
-  await handleMessage(runtime, { ...summary, messageId: 'm2-alias', messageText: '/h' }, 'test', helpers);
-  assert.match(replies.at(-1), /短名：\/f fork/);
+  assert.match(replies.at(-1), /短名：\/f fork、\/m model、\/q quick/);
   runtime.botIdentity = { openId: 'this-bot' };
   const botControl = await handleMessage(runtime, { ...summary, messageText: '/model provider/gamma',
     mentions: [{ openId: 'this-bot' }], sender: { senderType: 'app' } }, 'test', helpers);
