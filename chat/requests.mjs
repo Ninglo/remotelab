@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { CONFIG_DIR } from '../lib/config.mjs';
 import { canonicalJson, createRecordStore, readRecord, serialQueue, writeDurableJson } from '../lib/durable-records.mjs';
+import { notifySourceDeliveryAvailable } from './source-delivery-signals.mjs';
 
 export const requestKey = (sessionId, requestId) => createHash('sha256')
   .update(JSON.stringify([sessionId, requestId])).digest('hex').slice(0, 24);
@@ -27,6 +28,11 @@ export function createRequestStore(root) {
   const records = createRecordStore(root);
   const admission = serialQueue();
   const get = records.get;
+  const publishPendingDeliveries = record => {
+    notifySourceDeliveryAvailable(record?.deliveries || []);
+    return record;
+  };
+  const mutate = async (...args) => publishPendingDeliveries(await records.mutate(...args));
   const indexPath = (kind, scope, id) => join(root, 'lookup', kind, `${requestKey(scope, id)}.json`);
   const index = async (kind, scope, id, key) => {
     const path = indexPath(kind, scope, id);
@@ -72,15 +78,15 @@ export function createRequestStore(root) {
       if (!first) await index('first-user-request', sessionId, 'first', key);
       if (!first || first.key === key) initial.deliveries = appendDeliveries(initial, input.initialDeliveries || []);
     }
-    const record = await records.mutate(key, () => input.result ? withResult(initial, input.result, input.plans || []) : initial);
+    const record = publishPendingDeliveries(await records.mutate(key, () => input.result ? withResult(initial, input.result, input.plans || []) : initial));
     return { record, duplicate: false };
   });
   return {
-    get, accept, active: records.active, mutate: records.mutate,
+    get, accept, active: records.active, mutate,
     byRequest: (sessionId, requestId) => get(requestKey(sessionId, requestId)),
     byResponse: (sessionId, responseId) => lookup('response', sessionId, responseId),
     byRunId: runId => lookup('run', '', runId),
-    settle: (key, result, plans = []) => records.mutate(key, current => {
+    settle: (key, result, plans = []) => mutate(key, current => {
       if (!current) throw new Error('Request not found');
       if (current.result) return current;
       return withResult(current, result, plans);

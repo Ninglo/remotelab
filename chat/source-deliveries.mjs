@@ -10,7 +10,12 @@ import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { serialQueue } from '../lib/durable-records.mjs';
 import { broadcastOwners } from './ws-clients.mjs';
 import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
+import {
+  getSourceDeliverySignalVersion,
+  waitForSourceDeliverySignal,
+} from './source-delivery-signals.mjs';
 const queue = serialQueue();
+export const MAX_SOURCE_DELIVERY_WAIT_MS = 25_000;
 const trimString = value => typeof value === 'string' ? value.trim() : '';
 const terminal = state => ['delivered', 'delivery_failed', 'cancelled'].includes(state);
 
@@ -143,19 +148,22 @@ async function mutateDelivery(id, update) {
   return record.deliveries[index];
 }
 
-export async function claimSourceDelivery(options = {}) {
+async function inspectAndClaimSourceDelivery(options = {}) {
   return queue(async () => {
     const now = nowIso(options.now);
+    const nowMs = Date.parse(now);
     const timeout = options.leaseTimeoutMs || DELIVERY_LEASE_MS;
     const entries = await listSourceDeliveries({ connector: options.connector, sourceRouteId: options.sourceRouteId || 'default' });
     const blocked = new Set();
+    let nextCheckAt = Infinity;
     for (let entry of entries) {
       if (terminal(entry.state)) continue;
       const session = await findSessionMeta(entry.sessionId);
       const refined = refineConversation(entry, session?.conversation);
       const openingTopic = session?.conversation?.connector === 'feishu' && !sameConversation(session.conversation, session.conversation);
       const key = openingTopic ? `session:${entry.sessionId}` : targetKey(refined || entry);
-      if (entry.state === 'sending' && (!Number.isFinite(Date.parse(entry.claimedAt)) || Date.parse(now) - Date.parse(entry.claimedAt) >= timeout)) {
+      const claimedAt = Date.parse(entry.claimedAt);
+      if (entry.state === 'sending' && (!Number.isFinite(claimedAt) || nowMs - claimedAt >= timeout)) {
         entry = await mutateDelivery(entry.id, current => ({ ...current, state: 'unknown', lastError: 'Sender lease expired without a receipt' }));
       }
       // Fence this uncertain operation, not the whole conversation. A later
@@ -166,13 +174,44 @@ export async function claimSourceDelivery(options = {}) {
       }
       if (blocked.has(key)) continue;
       blocked.add(key);
-      if (entry.state !== 'pending' || Date.parse(entry.availableAt) > Date.parse(now)) continue;
+      if (entry.state === 'sending') {
+        if (Number.isFinite(claimedAt)) nextCheckAt = Math.min(nextCheckAt, claimedAt + timeout);
+        continue;
+      }
+      const availableAt = Date.parse(entry.availableAt);
+      if (entry.state !== 'pending' || (Number.isFinite(availableAt) && availableAt > nowMs)) {
+        if (entry.state === 'pending' && Number.isFinite(availableAt)) nextCheckAt = Math.min(nextCheckAt, availableAt);
+        continue;
+      }
       const leaseId = createId('lease');
       const delivery = await mutateDelivery(entry.id, current => ({ ...current, ...(refined ? { target: refined.target } : {}), state: 'sending', leaseId, claimedAt: now, attempts: current.attempts + 1 }));
-      return { delivery, leaseId };
+      return { claim: { delivery, leaseId }, nextCheckAt };
     }
-    return null;
+    return { claim: null, nextCheckAt };
   });
+}
+
+export async function claimSourceDelivery(options = {}) {
+  return (await inspectAndClaimSourceDelivery(options)).claim;
+}
+
+export async function claimSourceDeliveryWithWait(options = {}) {
+  const waitMs = Math.min(MAX_SOURCE_DELIVERY_WAIT_MS, Math.max(0, Number.parseInt(options.waitMs, 10) || 0));
+  const deadline = Date.now() + waitMs;
+  while (true) {
+    const afterVersion = getSourceDeliverySignalVersion(options);
+    const { claim, nextCheckAt } = await inspectAndClaimSourceDelivery(options);
+    if (claim || !waitMs || options.signal?.aborted) return claim;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return null;
+    const untilStateChange = Number.isFinite(nextCheckAt) ? Math.max(1, nextCheckAt - Date.now()) : remaining;
+    const wake = await waitForSourceDeliverySignal({
+      ...options,
+      afterVersion,
+      timeoutMs: Math.min(remaining, untilStateChange),
+    });
+    if (wake.reason === 'aborted') return null;
+  }
 }
 
 export async function completeSourceDelivery(id, leaseId, input = {}) {

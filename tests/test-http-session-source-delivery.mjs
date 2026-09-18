@@ -67,6 +67,21 @@ try {
   await waitFor(async () => {
     try { return (await request('GET', '/api/auth/me')).status === 200; } catch { return false; }
   }, 'server startup');
+  const longClaim = request('POST', '/api/source-deliveries/claim', {
+    connector: 'feishu', sourceRouteId: 'long-poll-fixture', waitMs: 5000,
+  });
+  const queuedForLongClaim = await request('POST', '/api/source-deliveries', {
+    responseId: 'long-poll-response', sessionId: 'long-poll-session', text: 'wake the waiting connector',
+    sourceDelivery: { connector: 'feishu', sourceRouteId: 'long-poll-fixture', target: { chatId: 'long-poll-chat' } },
+  });
+  assert.equal(queuedForLongClaim.status, 202);
+  const wokenClaim = await longClaim;
+  assert.equal(wokenClaim.status, 200);
+  assert.equal(wokenClaim.body.claim.delivery.id, queuedForLongClaim.body.delivery.id);
+  assert.equal((await request('POST', `/api/source-deliveries/${wokenClaim.body.claim.delivery.id}/complete`, {
+    leaseId: wokenClaim.body.claim.leaseId, externalId: 'long-poll-message',
+  })).status, 200);
+  console.log('PASS: route-scoped long claim wakes from a durable outbox commit');
   // A conversation belongs to the Session, including browser-originated turns.
   const conversation = { connector: 'feishu', sourceRouteId: 'bound-bot',
     target: { chatId: 'bound-chat', threadId: 'bound-thread', rootId: 'bound-root', messageId: 'bound-root', replyInThread: true } };

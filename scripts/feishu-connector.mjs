@@ -100,7 +100,8 @@ const DEFAULT_CONFIG_PATH = process.env.REMOTELAB_FEISHU_CONFIG_PATH
   : CANONICAL_DEFAULT_CONFIG_PATH;
 const DEFAULT_ALLOWED_SENDERS_FILENAME = 'allowed-senders.json';
 const DEFAULT_CHAT_BASE_URL = `http://127.0.0.1:${CHAT_PORT}`;
-const DEFAULT_SOURCE_DELIVERY_POLL_MS = 1000;
+const DEFAULT_SOURCE_DELIVERY_LONG_POLL_MS = 20_000;
+const DEFAULT_SOURCE_DELIVERY_RETRY_MS = 1000;
 const DEFAULT_SESSION_TOOL = 'codex';
 const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const DEFAULT_FEISHU_API_TIMEOUT_MS = 10_000;
@@ -618,7 +619,7 @@ async function loginWithToken(baseUrl, token) {
   return setCookie.split(';')[0];
 }
 
-async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {}) {
+async function requestJson(baseUrl, path, { method = 'GET', cookie, body, signal } = {}) {
   const headers = {
     Accept: 'application/json',
   };
@@ -630,7 +631,7 @@ async function requestJson(baseUrl, path, { method = 'GET', cookie, body } = {})
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     redirect: 'manual',
-    signal: AbortSignal.timeout(30000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
   });
 
   const text = await response.text();
@@ -1026,7 +1027,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   await failures.flush(acknowledgeFailure, replayOptions);
   const { response, json } = await request('/api/source-deliveries/claim', { method: 'POST', body: {
     connector: FEISHU_CONNECTOR_ID, sourceRouteId: runtime.config.sourceRouteId || 'default',
-  } });
+    waitMs: Math.max(0, Number.parseInt(helpers.waitMs, 10) || 0),
+  }, signal: helpers.signal });
   if (!response.ok) throw new Error(json?.error || 'Failed to claim delivery');
   const claim = json?.claim;
   if (!claim) return null;
@@ -1056,27 +1058,41 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
 }
 
 function startSourceDeliveryPoller(runtime, options = {}) {
-  if (runtime.sourceDeliveryTimer) return runtime.sourceDeliveryTimer;
-  const pollMs = Math.max(250, Number.parseInt(options.pollMs, 10) || DEFAULT_SOURCE_DELIVERY_POLL_MS);
-  const tick = () => {
-    if (runtime.sourceDeliveryPollPromise) return;
-    runtime.sourceDeliveryPollPromise = processSourceDeliveryOnce(runtime)
-      .catch((error) => {
-        console.error(`[feishu-connector] source delivery poll failed: ${error?.message || error}`);
-      })
-      .finally(() => {
-        runtime.sourceDeliveryPollPromise = null;
-      });
-  };
-  runtime.sourceDeliveryTimer = setInterval(tick, pollMs);
-  tick();
-  return runtime.sourceDeliveryTimer;
+  if (runtime.sourceDeliveryPollPromise) return runtime.sourceDeliveryPollPromise;
+  const waitMs = Math.min(25_000, Math.max(1000,
+    Number.parseInt(options.waitMs, 10) || DEFAULT_SOURCE_DELIVERY_LONG_POLL_MS));
+  const retryMs = Math.max(250,
+    Number.parseInt(options.retryMs, 10) || DEFAULT_SOURCE_DELIVERY_RETRY_MS);
+  const processOnce = options.processOnce || processSourceDeliveryOnce;
+  runtime.sourceDeliveryPollStopped = false;
+  runtime.sourceDeliveryPollAbort = new AbortController();
+  const signal = runtime.sourceDeliveryPollAbort.signal;
+  const pollPromise = (async () => {
+    while (!runtime.sourceDeliveryPollStopped) {
+      try {
+        await processOnce(runtime, { waitMs, signal });
+      } catch (error) {
+        if (runtime.sourceDeliveryPollStopped || signal.aborted) break;
+        console.error(`[feishu-connector] source delivery wait failed: ${error?.message || error}`);
+        try {
+          await delay(retryMs, undefined, { signal });
+        } catch (delayError) {
+          if (!signal.aborted) throw delayError;
+        }
+      }
+    }
+  })();
+  runtime.sourceDeliveryPollPromise = pollPromise.finally(() => {
+    runtime.sourceDeliveryPollPromise = null;
+    runtime.sourceDeliveryPollAbort = null;
+  });
+  return runtime.sourceDeliveryPollPromise;
 }
 
 function stopSourceDeliveryPoller(runtime) {
-  if (!runtime?.sourceDeliveryTimer) return false;
-  clearInterval(runtime.sourceDeliveryTimer);
-  runtime.sourceDeliveryTimer = null;
+  if (!runtime?.sourceDeliveryPollPromise) return false;
+  runtime.sourceDeliveryPollStopped = true;
+  runtime.sourceDeliveryPollAbort?.abort();
   return true;
 }
 
@@ -1233,7 +1249,10 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     summary = { ...summary, runtimeSelectionOverride: commandPlan.selection };
   }
   try {
-    await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary);
+    void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
+      .catch(error => {
+        console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
+      });
   } catch (error) {
     console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
   }

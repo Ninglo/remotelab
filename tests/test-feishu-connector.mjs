@@ -48,6 +48,8 @@ const {
   sendFeishuAttachment,
   sendFeishuText,
   processSourceDeliveryOnce,
+  startSourceDeliveryPoller,
+  stopSourceDeliveryPoller,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
 
@@ -761,8 +763,24 @@ const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceR
 });
 assert.equal(sourceDeliveryResult.state, 'delivered');
 assert.equal(sourceDeliveryRequests[0].options.body.sourceRouteId, 'bot-alpha');
+assert.equal(sourceDeliveryRequests[0].options.body.waitMs, 0);
 assert.equal(sourceDeliveryRequests[1].path, '/api/source-deliveries/srcd_000000000000000000000001_0/complete');
 assert.equal(sourceDeliveryRequests[1].options.body.externalId, 'om_source_delivery_out');
+
+let longPollSignal;
+const longPollRuntime = {};
+const longPollLoop = startSourceDeliveryPoller(longPollRuntime, {
+  processOnce: async (_runtime, options) => {
+    longPollSignal = options.signal;
+    await new Promise(resolve => options.signal.addEventListener('abort', resolve, { once: true }));
+  },
+});
+await Promise.resolve();
+assert.equal(longPollSignal?.aborted, false);
+assert.equal(stopSourceDeliveryPoller(longPollRuntime), true);
+await longPollLoop;
+assert.equal(longPollSignal.aborted, true, 'shutdown aborts the outstanding long claim');
+assert.equal(longPollRuntime.sourceDeliveryPollPromise, null);
 
 
 
@@ -1133,6 +1151,27 @@ assert.equal(generatedForkSummary.forkCommand, true);
 assert.equal(generatedForkSummary.forkText, '调研这个问题\n并保留 @_user_2 的反馈');
 assert.equal(generatedForkSummary.replyInThread, true);
 assert.equal(forkResult.sessionId, 'sess_fork_command_1');
+let releaseDetachedReaction;
+let detachedReactionStarted = false;
+let detachedSubmitStarted = false;
+const detachedResult = await handleMessage(accessRuntime, {
+  ...forkSummary,
+  messageId: 'msg_group_detached_reaction_1',
+}, 'test', {
+  addProcessingReaction: () => {
+    detachedReactionStarted = true;
+    return new Promise(resolve => { releaseDetachedReaction = resolve; });
+  },
+  submitRemoteLabRequest: async () => {
+    detachedSubmitStarted = true;
+    return { sessionId: 'sess_detached_reaction_1', runId: 'run_detached_reaction_1' };
+  },
+});
+assert.equal(detachedSubmitStarted, true);
+assert.equal(detachedReactionStarted, true);
+assert.equal(detachedResult.sessionId, 'sess_detached_reaction_1', 'reaction completion must not gate request admission');
+releaseDetachedReaction();
+await Promise.resolve();
 let emptyForkReply;
 await handleMessage(accessRuntime, { ...groupCommandSummary, messageId: 'empty-fork', messageText: '/fork', textPreview: '/fork' }, 'test', {
   submitRemoteLabRequest: async () => { throw new Error('empty fork must not start AI'); },

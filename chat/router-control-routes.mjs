@@ -37,6 +37,7 @@ import {
 import {
   buildSourceDeliveryPlan,
   claimSourceDelivery,
+  claimSourceDeliveryWithWait,
   enqueueSourceDelivery,
   resolveSourceDelivery,
   completeSourceDelivery,
@@ -435,12 +436,21 @@ export async function handleControlRoutes({
 
   if (pathname === '/api/source-deliveries/claim' && req.method === 'POST') {
     let payload = {};
+    const abortController = new AbortController();
+    const abortWait = () => abortController.abort();
+    res.once('close', abortWait);
     try {
       const body = await readBody(req, 32768);
       payload = body ? JSON.parse(body) : {};
-      const claim = await claimSourceDelivery(payload);
+      const claim = payload.waitMs
+        ? await claimSourceDeliveryWithWait({ ...payload, signal: abortController.signal })
+        : await claimSourceDelivery(payload);
+      res.off('close', abortWait);
+      if (abortController.signal.aborted || res.destroyed) return true;
       writeJson(res, 200, { claim });
     } catch (error) {
+      res.off('close', abortWait);
+      if (abortController.signal.aborted || res.destroyed) return true;
       writeJson(res, 400, { error: error.message || 'Failed to claim source delivery' });
     }
     return true;

@@ -9,6 +9,7 @@ process.env.REMOTELAB_CONFIG_DIR = mkdtempSync(join(tmpdir(), 'remotelab-source-
 const {
   buildSourceDeliveryPlan,
   claimSourceDelivery,
+  claimSourceDeliveryWithWait,
   completeSourceDelivery,
   enqueueSourceDelivery,
   failSourceDelivery,
@@ -94,6 +95,39 @@ const completed = await completeSourceDelivery(first.id, secondClaim.leaseId, {
 assert.equal(completed.state, 'delivered');
 assert.equal(completed.externalId, 'om_outbound');
 assert.equal((await getSourceDelivery(first.id)).state, 'delivered');
+
+// A waiter must wake from a durable outbox commit without an interval poll.
+const waitingClaim = claimSourceDeliveryWithWait({
+  connector: 'feishu', sourceRouteId: 'wake-route', waitMs: 1000,
+});
+const wakeDelivery = await enqueueSourceDelivery({
+  responseId: 'wake-response', sessionId: 'wake-session', text: 'wake now',
+  sourceDelivery: { connector: 'feishu', sourceRouteId: 'wake-route', target: { chatId: 'wake-chat' } },
+});
+const woken = await waitingClaim;
+assert.equal(woken.delivery.id, wakeDelivery.id);
+await completeSourceDelivery(wakeDelivery.id, woken.leaseId, { externalId: 'wake-message' });
+
+const retryDelivery = await enqueueSourceDelivery({
+  responseId: 'retry-response', sessionId: 'retry-session', text: 'retry later',
+  sourceDelivery: { connector: 'feishu', sourceRouteId: 'retry-route', target: { chatId: 'retry-chat' } },
+});
+const retryFirstClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'retry-route' });
+await failSourceDelivery(retryDelivery.id, retryFirstClaim.leaseId, 'temporary', {
+  safeToRetry: true, retryDelayMs: 10,
+});
+const retrySecondClaim = await claimSourceDeliveryWithWait({
+  connector: 'feishu', sourceRouteId: 'retry-route', waitMs: 1000,
+});
+assert.equal(retrySecondClaim.delivery.id, retryDelivery.id, 'long claim wakes when retry backoff becomes due');
+await completeSourceDelivery(retryDelivery.id, retrySecondClaim.leaseId, { externalId: 'retry-message' });
+
+const abortedWait = new AbortController();
+const abortedClaim = claimSourceDeliveryWithWait({
+  connector: 'feishu', sourceRouteId: 'abort-route', waitMs: 1000, signal: abortedWait.signal,
+});
+abortedWait.abort();
+assert.equal(await abortedClaim, null, 'connector shutdown aborts an idle claim immediately');
 
 // An uncertain first group publication fences this Session, without blocking another occurrence.
 const { withSessionsMetaMutation, findSessionMeta } = await import('../chat/session-meta-store.mjs');
