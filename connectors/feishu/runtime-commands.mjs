@@ -9,6 +9,7 @@ const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'follo
 const HELP = [
   '任务命令可把正文写在同行：/fork [修饰参数] 正文、/continue [修饰参数] 正文、/quick 正文。',
   '/fork 和 /continue 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>；仍兼容旧的多行命令块。',
+  '短名：/f fork、/c continue、/q quick、/m model、/e effort、/ha harness、/s status、/d default、/fo follow、/mu mute、/u unmute、/h help。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
   '/default [harness|model|effort] [值] — 查看或修改新 Session 的 Default',
   '/harness [名称] — 查看或修改当前任务使用的 Harness',

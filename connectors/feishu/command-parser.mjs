@@ -1,17 +1,37 @@
 const COMMANDS = Object.freeze({
-  help: { args: 'none' },
-  status: { args: 'none' },
-  default: { args: 'default' },
-  harness: { args: 'optional' },
-  model: { args: 'optional' },
-  effort: { args: 'optional' },
-  follow: { args: 'none' },
-  mute: { args: 'none' },
-  unmute: { args: 'none' },
-  fork: { args: 'none', task: true },
-  quick: { args: 'none', task: true },
-  continue: { args: 'none', task: true },
+  help: { args: 'none', aliases: ['h'] },
+  status: { args: 'none', aliases: ['s'] },
+  default: { args: 'default', aliases: ['d'] },
+  harness: { args: 'optional', aliases: ['ha'] },
+  model: { args: 'optional', aliases: ['m'] },
+  effort: { args: 'optional', aliases: ['e'] },
+  follow: { args: 'none', aliases: ['fo'] },
+  mute: { args: 'none', aliases: ['mu'] },
+  unmute: { args: 'none', aliases: ['u'] },
+  fork: { args: 'none', task: true, aliases: ['f'] },
+  quick: { args: 'none', task: true, aliases: ['q'] },
+  continue: { args: 'none', task: true, aliases: ['c'] },
 });
+
+function buildCommandAliases() {
+  const aliases = {};
+  const canonicalNames = new Set(Object.keys(COMMANDS));
+  for (const [name, definition] of Object.entries(COMMANDS)) {
+    if (!Array.isArray(definition.aliases) || definition.aliases.length === 0) {
+      throw new Error(`Feishu command /${name} must declare at least one alias`);
+    }
+    for (const rawAlias of definition.aliases) {
+      const alias = String(rawAlias || '').trim().toLowerCase();
+      if (!/^[a-z][a-z0-9_-]*$/.test(alias)) throw new Error(`Invalid Feishu command alias: /${rawAlias}`);
+      if (canonicalNames.has(alias)) throw new Error(`Feishu command alias /${alias} conflicts with a command name`);
+      if (Object.hasOwn(aliases, alias)) throw new Error(`Duplicate Feishu command alias: /${alias}`);
+      aliases[alias] = name;
+    }
+  }
+  return Object.freeze(aliases);
+}
+
+const COMMAND_ALIASES = buildCommandAliases();
 
 const COMMAND_LINE = /^(?:@[^/\r\n]+?[ \t]+)?\/([A-Za-z][A-Za-z0-9_-]*)(?:[ \t]+(.*))?$/;
 const TASK_MODIFIERS = Object.freeze({
@@ -99,8 +119,10 @@ export function parseFeishuCommandBlock(input) {
       }
       return { commands: [], body: text.trim() };
     }
-    const name = match[1].toLowerCase();
-    if (!commandDefinition(name) && commands.length === 0) return { commands: [], body: text.trim() };
+    const enteredName = match[1].toLowerCase();
+    const name = resolveFeishuCommandName(enteredName);
+    if (!name && commands.length === 0) return { commands: [], body: text.trim() };
+    if (!name) return { commands: [], body: '', error: `未知命令：/${enteredName}（第 ${index + 1} 行）` };
     if (commandDefinition(name)?.task) {
       const parsed = parseTaskArguments(name, match[2], index + 1);
       if (parsed.error) return { commands: [], body: '', error: parsed.error };
@@ -123,7 +145,15 @@ export function parseFeishuCommandBlock(input) {
 }
 
 export function commandDefinition(name) {
-  return Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : null;
+  const canonicalName = resolveFeishuCommandName(name);
+  return canonicalName ? COMMANDS[canonicalName] : null;
 }
 
 export const feishuCommandNames = Object.freeze(Object.keys(COMMANDS));
+export const feishuCommandAliases = COMMAND_ALIASES;
+
+export function resolveFeishuCommandName(value) {
+  const name = String(value || '').trim().toLowerCase();
+  if (Object.hasOwn(COMMANDS, name)) return name;
+  return Object.hasOwn(COMMAND_ALIASES, name) ? COMMAND_ALIASES[name] : '';
+}

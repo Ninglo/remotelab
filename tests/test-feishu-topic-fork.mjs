@@ -257,7 +257,7 @@ try {
     assert.equal(createCount, beforeConfiguredThread, 'continue policy preserves existing thread binding');
     for (const [messageId, messageText, expectedText] of [
       ['rich-mention-fork', '@Task Bot /fork\n\ndiscover datasets', 'discover datasets'],
-      ['inline-fork', '/fork discover datasets', 'discover datasets'],
+      ['inline-fork-alias', '/f discover datasets', 'discover datasets'],
     ]) {
       const beforeMarker = createCount;
       await send({ messageId, messageType: 'post', messageText, threadId: 'created-thread-1' });

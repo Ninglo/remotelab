@@ -1,5 +1,31 @@
 import assert from 'node:assert/strict';
-import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
+import {
+  feishuCommandAliases,
+  feishuCommandNames,
+  parseFeishuCommandBlock,
+  resolveFeishuCommandName,
+} from '../connectors/feishu/command-parser.mjs';
+
+assert.deepEqual(feishuCommandAliases, {
+  h: 'help',
+  s: 'status',
+  d: 'default',
+  ha: 'harness',
+  m: 'model',
+  e: 'effort',
+  fo: 'follow',
+  mu: 'mute',
+  u: 'unmute',
+  f: 'fork',
+  q: 'quick',
+  c: 'continue',
+});
+assert.deepEqual(new Set(Object.values(feishuCommandAliases)), new Set(feishuCommandNames),
+  'every command must have an explicit stable alias');
+for (const [alias, canonicalName] of Object.entries(feishuCommandAliases)) {
+  assert.equal(resolveFeishuCommandName(alias), canonicalName);
+  assert.equal(resolveFeishuCommandName(canonicalName), canonicalName);
+}
 
 assert.deepEqual(parseFeishuCommandBlock('/fork\n/model gpt-5.6\n/effort high\n\n请继续分析。'), {
   commands: [
@@ -18,6 +44,24 @@ assert.deepEqual(parseFeishuCommandBlock('@Task Bot /fork\n\n任务正文'), {
 assert.deepEqual(parseFeishuCommandBlock('/fork 帮我调查这个问题'), {
   commands: [{ name: 'fork' }],
   body: '帮我调查这个问题',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('/f --model gpt-5.6 帮我调查这个问题'), {
+  commands: [
+    { name: 'fork' },
+    { name: 'model', value: 'gpt-5.6' },
+  ],
+  body: '帮我调查这个问题',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('/m gpt-5.6'), {
+  commands: [{ name: 'model', value: 'gpt-5.6' }],
+  body: '',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('/q 一句话解释这个概念'), {
+  commands: [{ name: 'quick' }],
+  body: '一句话解释这个概念',
 });
 
 assert.deepEqual(parseFeishuCommandBlock('@Task Bot /fork --harness codex --model=gpt-5.6 --effort high 请分析这个问题'), {
@@ -62,6 +106,9 @@ assert.deepEqual(parseFeishuCommandBlock('普通正文里提到 /fork 和 /model
 for (const body of [
   '@Task Bot /mnt/train/public 的旧数据对象已全部删除',
   '/root/workspace/MUKA-FoundationModel 已经 git clone 了 git 仓库，看看能不能访问',
+  '/f/data 是一个普通路径',
+  '/m/checkpoints/model.bin',
+  '/q/archive/result.json',
   '/unknown',
   '/constructor',
 ]) {

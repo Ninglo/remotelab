@@ -69,6 +69,7 @@ try {
   const options = { request, resolveDefault: async () => ({ ...selection }) };
   const run = (type, text = '', target = summary, extra = {}) => handleFeishuRuntimeCommand(runtime, target, { type, text }, { ...options, ...extra });
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /model beta' }), { commands: [{ name: 'model', value: 'beta' }], body: '' });
+  assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /m beta' }), { commands: [{ name: 'model', value: 'beta' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { commands: [{ name: 'status' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { commands: [{ name: 'default', field: 'model', value: 'beta' }], body: '' });
   assert.equal(extractLocalCommand({ ...summary,
@@ -90,6 +91,7 @@ try {
   for (const [messageText, body] of [
     ['/fork\n\nthen compare', 'then compare'],
     ['/fork then compare', 'then compare'],
+    ['/f then compare', 'then compare'],
     ['/fork\nthen compare', 'then compare'],
     ['/fork', ''],
     ['@_user_1 /fork', ''],
@@ -148,6 +150,8 @@ try {
   assert.match(replies.at(-1), /当前 Session/);
   await handleMessage(runtime, { ...summary, messageId: 'm2', messageText: '/help' }, 'test', helpers);
   assert.match(replies.at(-1), /\/follow/);
+  await handleMessage(runtime, { ...summary, messageId: 'm2-alias', messageText: '/h' }, 'test', helpers);
+  assert.match(replies.at(-1), /短名：\/f fork/);
   runtime.botIdentity = { openId: 'this-bot' };
   const botControl = await handleMessage(runtime, { ...summary, messageText: '/model provider/gamma',
     mentions: [{ openId: 'this-bot' }], sender: { senderType: 'app' } }, 'test', helpers);
@@ -156,7 +160,7 @@ try {
   assert.equal(aiCalls, 0, 'control commands never run through a model');
 
   let quickSummary;
-  await handleMessage(runtime, { ...summary, threadId: 'quick-thread', messageId: 'quick-task', messageText: '/quick\n\n只回答结论。' }, 'test', {
+  await handleMessage(runtime, { ...summary, threadId: 'quick-thread', messageId: 'quick-task', messageText: '/q 只回答结论。' }, 'test', {
     addProcessingReaction: async () => null,
     submitRemoteLabRequest: async (_runtime, inboundSummary) => {
       quickSummary = inboundSummary;
