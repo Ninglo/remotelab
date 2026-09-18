@@ -111,9 +111,32 @@
 .model-select { max-width: 210px; }
 .effort-select { max-width: 92px; }
 .tool-select:focus, .provider-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
-#contextTokens {
-  font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0;
+#contextTokens.context-status {
+  --context-progress: 0%;
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  max-width: min(42vw, 230px);
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--focus-border) 12%, transparent) var(--context-progress),
+    transparent var(--context-progress));
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+#contextTokens.context-status[data-context-level="medium"] {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+}
+#contextTokens.context-status[data-context-level="high"] {
+  border-color: color-mix(in srgb, var(--error) 60%, var(--border));
+  color: var(--text);
 }
 .compact-btn {
   background: none; border: 1px solid var(--border); color: var(--text-muted);

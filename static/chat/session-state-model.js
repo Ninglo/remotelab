@@ -177,6 +177,8 @@
   }
 
   function getSessionSortTime(session) {
+    const lastUserMessageAt = parseSessionTime(session?.lastUserMessageAt);
+    if (lastUserMessageAt > 0) return lastUserMessageAt;
     return getSessionLatestChangeTime(session);
   }
 

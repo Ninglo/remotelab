@@ -1099,7 +1099,7 @@ function normalizeSessionReviewedAt(value) {
 
 async function enrichSessionMeta(meta, _options = {}) {
   const runtimeState = sessionRuntimeStateById.get(meta.id);
-  const snapshot = await getHistorySnapshot(meta.id);
+  const snapshot = await getHistorySnapshot(meta.id, { includeUserMessageAt: true });
   const queuedCount = getFollowUpQueueCount(meta);
   const activeRequest = requestRuntime.active(meta.id)[0];
   const runActivity = activeRequest ? { state: 'running', run: await getRun(activeRequest.runId) || { id: activeRequest.runId, state: 'accepted' } } : await resolveSessionRunActivity(meta);
@@ -1129,6 +1129,7 @@ async function enrichSessionMeta(meta, _options = {}) {
     ...(templateName ? { templateName } : {}),
     latestSeq: snapshot.latestSeq,
     lastEventAt: snapshot.lastEventAt,
+    lastUserMessageAt: snapshot.lastUserMessageAt,
     lastAssistantMessageAt: snapshot.lastAssistantMessageAt,
     messageCount: snapshot.messageCount,
     activeMessageCount: snapshot.activeMessageCount,

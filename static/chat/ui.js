@@ -1234,6 +1234,7 @@ function updateContextDisplay(contextSize, contextWindowSize) {
     contextTokens.textContent = percent !== null
       ? t("context.currentShort", {
         tokens: formatCompactTokens(contextSize),
+        window: formatCompactTokens(contextWindowSize),
         percent: formatContextPercent(percent),
       })
       : t("context.currentOnly", { tokens: formatCompactTokens(contextSize) });
@@ -1244,9 +1245,25 @@ function updateContextDisplay(contextSize, contextWindowSize) {
         percent: formatContextPercent(percent, { precise: true }),
       })
       : t("context.currentTitle", { context: contextSize.toLocaleString() });
+    const progressValue = `${Math.min(100, Math.max(0, percent || 0))}%`;
+    if (typeof contextTokens.style?.setProperty === "function") {
+      contextTokens.style.setProperty("--context-progress", progressValue);
+    } else if (contextTokens.style) {
+      contextTokens.style["--context-progress"] = progressValue;
+    }
+    if (contextTokens.dataset) contextTokens.dataset.contextLevel = percent !== null && percent >= 85
+      ? "high"
+      : percent !== null && percent >= 65 ? "medium" : "normal";
     contextTokens.style.display = "";
     compactBtn.style.display = "";
     dropToolsBtn.style.display = "";
+  }
+}
+
+function removePreviousUsage(container) {
+  const usageNodes = container?.querySelectorAll?.(".usage-info") || [];
+  for (const usageNode of usageNodes) {
+    usageNode.remove();
   }
 }
 
@@ -1257,6 +1274,7 @@ function renderUsageInto(container, evt, { updateContext = false } = {}) {
   const contextWindowSize = getContextWindowTokens(evt);
   const percent = getContextPercent(contextSize, contextWindowSize);
   const output = evt.outputTokens || 0;
+  removePreviousUsage(container);
   const div = document.createElement("div");
   div.className = "usage-info";
   const parts = [t("context.usage.current", { tokens: formatCompactTokens(contextSize) })];
