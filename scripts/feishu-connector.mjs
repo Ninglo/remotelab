@@ -10,6 +10,7 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
+import { normalizeConversationTarget } from '../lib/conversation-target.mjs';
 import {
   handleFeishuRuntimeCommands,
   prepareFeishuRuntimeCommandPlan,
@@ -869,7 +870,11 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     group: FEISHU_CONNECTOR_NAME,
     description: buildSessionDescription(effectiveSummary),
     systemPrompt: resolveFeishuGroupSettings(runtime.config, effectiveSummary).systemPrompt,
-    conversation: { connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default', target: effectiveSummary },
+    conversation: {
+      connector: 'feishu',
+      sourceRouteId: runtime.config.sourceRouteId || 'default',
+      target: normalizeConversationTarget(effectiveSummary),
+    },
     ...(isForkCommand ? { replaceConversation: true } : {}),
     externalTriggerId,
     sourceContext: buildSessionSourceContext(effectiveSummary),

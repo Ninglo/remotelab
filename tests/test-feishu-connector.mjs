@@ -1334,6 +1334,7 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 
 try {
   const address = server.address();
+  const longInboundText = `Please confirm the app scope.\n${'长消息'.repeat(3000)}`;
   await saveUiRuntimeSelection({
     selectedTool: 'claude',
     selectedModel: 'claude-sonnet-4-5',
@@ -1373,7 +1374,10 @@ try {
       chatType: 'p2p',
       chatId: 'chat_for_scope',
       messageId: 'msg_for_scope',
-      textPreview: 'Please confirm the app scope.',
+      messageText: longInboundText,
+      textPreview: longInboundText,
+      contentSummary: `Text message: ${longInboundText}`,
+      rawContent: JSON.stringify({ text: longInboundText }),
       imageKeys: ['img_scope_1'],
       sender: { openId: 'ou_scope_test' },
     },
@@ -1389,11 +1393,18 @@ try {
   assert.equal(createdPayload?.externalTriggerId, 'feishu:p2p:chat_for_scope');
   assert.equal(createdPayload?.sourceContext?.chatType, 'p2p');
   assert.equal(createdPayload?.sourceContext?.chatId, 'chat_for_scope');
+  assert.ok(Buffer.byteLength(JSON.stringify(createdPayload)) < 10240,
+    'long Feishu text must not overflow the Session creation request limit');
+  assert.deepEqual(createdPayload?.conversation?.target, {
+    chatType: 'p2p',
+    chatId: 'chat_for_scope',
+    messageId: 'msg_for_scope',
+  });
   assert.equal(submittedPayload?.tool, 'claude');
   assert.equal(submittedPayload?.model, 'claude-sonnet-4-5');
   assert.equal(submittedPayload?.effort, 'high');
   assert.equal(submittedPayload?.thinking, undefined);
-  assert.equal(submittedPayload?.text, 'Please confirm the app scope.');
+  assert.equal(submittedPayload?.text, longInboundText);
   assert.deepEqual(generatedReplyResourcePayload, {
     params: { type: 'image' },
     path: { message_id: 'msg_for_scope', file_key: 'img_scope_1' },
