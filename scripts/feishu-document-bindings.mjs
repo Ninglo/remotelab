@@ -1,7 +1,9 @@
 import { readFile, mkdir, open, unlink } from 'node:fs/promises';
-import { dirname, join, basename } from 'node:path';
+import { dirname, join, basename, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
+import { CONFIG_DIR } from '../lib/config.mjs';
+import { sanitizeIdPart } from '../connectors/feishu/index.mjs';
 import { bindingKey, bindingsDirectory, readBindingJson, writeBindingJson } from '../connectors/feishu/document-bindings.mjs';
 
 const [command, ...args] = process.argv.slice(2);
@@ -38,7 +40,9 @@ if (!['bind', 'status', 'unbind'].includes(command) || !options.config || !optio
       const client = createRemoteLabHttpClient({ baseUrl: options['base-url'] || config.chatBaseUrl });
       const result = await client.request(`/api/sessions/${options.session}`);
       const session = result.json?.session;
-      const route = config.botId || basename(dirname(options.config));
+      const route = (config.botId ? sanitizeIdPart(config.botId) : '')
+        || (resolve(options.config) === resolve(join(CONFIG_DIR, 'feishu-connector', 'config.json'))
+          ? 'default' : sanitizeIdPart(basename(dirname(options.config))) || 'default');
       if (!result.response.ok || session?.conversation?.connector !== 'feishu'
         || session.conversation.sourceRouteId !== route || !session.conversation.target?.chatId) {
         throw new Error('Target must be a Feishu conversation on this connector');
