@@ -12,9 +12,9 @@ import {
 // Claude Code has no model cache file — hardcode the known aliases.
 // These alias names are stable; the full model IDs behind them update automatically.
 const CLAUDE_MODELS = [
-  { id: 'sonnet', label: 'Sonnet 4.6' },
-  { id: 'opus',   label: 'Opus 4.6'   },
-  { id: 'haiku',  label: 'Haiku 4.5'  },
+  { id: 'sonnet', label: 'Sonnet 5' },
+  { id: 'opus',   label: 'Opus 5'   },
+  { id: 'haiku',  label: 'Haiku 4.5' },
 ];
 const DEFAULT_CODEX_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh'];
 const DEFAULT_CODEX_REASONING = Object.freeze({
