@@ -299,13 +299,14 @@ Task actions are `/fork`, `/continue`, and `/quick`. The first two accept
 `--harness <id>`, `--model <id>`, and `--effort <level>` before the task text.
 Use a standalone `--` before task text that itself starts with `--`.
 
-The three most frequent commands have explicit stable aliases. Aliases resolve
+Four frequent commands have explicit stable aliases. Aliases resolve
 to the canonical name before validation and execution, and startup validation
 rejects aliases that collide with a canonical name or another alias:
 
 | Command | Alias |
 | --- | --- |
 | `/fork` | `/f` |
+| `/continue` | `/c` |
 | `/model` | `/m` |
 | `/quick` | `/q` |
 

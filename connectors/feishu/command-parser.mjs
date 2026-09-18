@@ -10,7 +10,7 @@ const COMMANDS = Object.freeze({
   unmute: { args: 'none' },
   fork: { args: 'none', task: true, aliases: ['f'] },
   quick: { args: 'none', task: true, aliases: ['q'] },
-  continue: { args: 'none', task: true },
+  continue: { args: 'none', task: true, aliases: ['c'] },
 });
 
 function buildCommandAliases() {

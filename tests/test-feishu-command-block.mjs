@@ -9,6 +9,7 @@ assert.deepEqual(feishuCommandAliases, {
   m: 'model',
   f: 'fork',
   q: 'quick',
+  c: 'continue',
 });
 for (const [alias, canonicalName] of Object.entries(feishuCommandAliases)) {
   assert.equal(resolveFeishuCommandName(alias), canonicalName);
@@ -50,6 +51,11 @@ assert.deepEqual(parseFeishuCommandBlock('/m gpt-5.6'), {
 assert.deepEqual(parseFeishuCommandBlock('/q 一句话解释这个概念'), {
   commands: [{ name: 'quick' }],
   body: '一句话解释这个概念',
+});
+
+assert.deepEqual(parseFeishuCommandBlock('/c 继续处理这个问题'), {
+  commands: [{ name: 'continue' }],
+  body: '继续处理这个问题',
 });
 
 assert.deepEqual(parseFeishuCommandBlock('@Task Bot /fork --harness codex --model=gpt-5.6 --effort high 请分析这个问题'), {
@@ -97,7 +103,6 @@ for (const body of [
   '/f/data 是一个普通路径',
   '/m/checkpoints/model.bin',
   '/q/archive/result.json',
-  '/c 这不是命令',
   '/e high',
   '/ha codex',
   '/s',
