@@ -3640,6 +3640,7 @@ export async function delegateSession(sessionId, payload = {}) {
     source,
     sourceText,
     task,
+    context: typeof payload?.context === 'string' ? payload.context : '',
   });
   const outcome = await submitHttpMessage(child.id, handoffText, [], {
     requestId: createInternalRequestId('delegate'),

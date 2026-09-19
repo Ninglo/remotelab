@@ -31,9 +31,11 @@ export function buildDelegationHandoff({
   source,
   sourceText,
   task,
+  context,
   languageHint,
 }) {
   const normalizedTask = clipCompactionSection(task, 4000);
+  const normalizedContext = clipCompactionSection(context, 6000);
   const sourceId = typeof source?.id === 'string' ? source.id.trim() : '';
   const language = resolveDelegationHandoffLanguage({ languageHint, sourceText, task: normalizedTask });
   const lines = language === 'zh-CN'
@@ -44,6 +46,8 @@ export function buildDelegationHandoff({
       '- 不要使用 session-spawn，也不要继续创建子会话；任务范围已经确定，请直接执行。',
       '',
       normalizedTask || '（未提供交接任务）',
+      normalizedContext ? '必要上下文（由父会话显式提供）：' : '',
+      normalizedContext,
     ]
     : [
       'Delegation handoff:',
@@ -52,6 +56,8 @@ export function buildDelegationHandoff({
       '- Do NOT use session-spawn or delegate further child sessions. This task is already scoped — just do the work.',
       '',
       normalizedTask || '(no delegated task provided)',
+      normalizedContext ? 'Essential context explicitly provided by the parent session:' : '',
+      normalizedContext,
     ];
   if (sourceId) {
     lines.push('', language === 'zh-CN' ? `父会话 ID：${sourceId}` : `Parent session id: ${sourceId}`);

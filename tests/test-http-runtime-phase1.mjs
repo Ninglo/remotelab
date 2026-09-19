@@ -894,6 +894,7 @@ async function phase13DelegateSession() {
 
     const delegate = await request(port, 'POST', `/api/sessions/${session.id}/delegate`, {
       task: 'Figure out a lightweight child-session strategy for parallel work.',
+      context: 'The parent already validated the failing endpoint; preserve that evidence.',
     });
     assert.equal(delegate.status, 201, 'delegate should create a child session');
     assert.ok(delegate.json.session?.id, 'delegate should return the child session');
@@ -908,6 +909,7 @@ async function phase13DelegateSession() {
 
     const manifest = readRunManifest(home, delegate.json.run.id);
     assert.match(manifest.prompt || '', /Figure out a lightweight child-session strategy for parallel work\./, 'delegated prompt should include the requested child task');
+    assert.match(manifest.prompt || '', /The parent already validated the failing endpoint/, 'delegated prompt should include explicitly supplied bounded context');
     assert.match(manifest.prompt || '', new RegExp(`Parent session id: ${session.id}`), 'delegated prompt should include the parent session id');
     assert.doesNotMatch(manifest.prompt || '', /## Delegated task/, 'delegated prompt should not impose a heavy sectioned handoff format');
     assert.doesNotMatch(manifest.prompt || '', /## Source session reference/, 'delegated prompt should not include extra source-session formatting blocks');
