@@ -35,6 +35,12 @@ import {
   updateRecurringSchedule,
 } from './recurring-schedules.mjs';
 import {
+  applyAutomationTaskAction,
+  createAutomationTask,
+  getAutomationTask,
+  listAutomationTasks,
+} from './automation-tasks.mjs';
+import {
   buildSourceDeliveryPlan,
   claimSourceDelivery,
   claimSourceDeliveryWithWait,
@@ -68,7 +74,7 @@ import {
   loadInstanceSettings,
   updateInstanceSettings,
 } from './instance-settings.mjs';
-import { broadcastAll } from './ws-clients.mjs';
+import { broadcastAll, broadcastOwners } from './ws-clients.mjs';
 import {
   applyTemplateToSession,
   appendAssistantMessage,
@@ -181,6 +187,61 @@ async function prepareScheduledTask(payload) {
   return { ...input, sourceSessionId, sessionTemplate: buildScheduledSessionTemplate(input, sourceSession) };
 }
 
+async function prepareAutomationTask(payload = {}) {
+  const kind = trimString(payload.kind).toLowerCase();
+  if (!['one_time', 'recurring'].includes(kind)) {
+    throw new Error('kind must be one_time or recurring');
+  }
+  const target = payload.target && typeof payload.target === 'object' ? payload.target : {};
+  const targetMode = trimString(target.mode).toLowerCase();
+  if (!['fixed_session', 'new_session'].includes(targetMode)) {
+    throw new Error('target.mode must be fixed_session or new_session');
+  }
+  const sourceSessionId = trimString(target.sessionId || target.sourceSessionId);
+  if (!sourceSessionId) throw new Error('A target Session is required');
+  const sourceSession = await getSession(sourceSessionId);
+  if (!sourceSession) throw new Error('Target Session not found');
+  if (sourceSession.archived) throw new Error('Target Session is archived');
+
+  const notification = payload.notification && typeof payload.notification === 'object'
+    ? payload.notification
+    : { mode: 'remotelab' };
+  const notificationMode = trimString(notification.mode).toLowerCase() || 'remotelab';
+  if (!['remotelab', 'source_conversation'].includes(notificationMode)) {
+    throw new Error('notification.mode must be remotelab or source_conversation');
+  }
+
+  const title = trimString(payload.title);
+  const input = {
+    ...payload,
+    kind,
+    sessionId: sourceSessionId,
+    sourceSessionId,
+    text: trimString(payload.prompt || payload.text),
+    ...(targetMode === 'fixed_session' ? {
+      sessionTemplate: {
+        folder: sourceSession.folder,
+        tool: trimString(payload.tool) || sourceSession.tool,
+        name: title || sourceSession.name || 'Automated task',
+        group: sourceSession.group || 'Automated tasks',
+        description: `Fixed Session execution for ${title || 'automated task'}`,
+        systemPrompt: sourceSession.systemPrompt,
+        internalRole: sourceSession.internalRole || 'scheduled_execution',
+        reuse: 'fixed_session',
+        sessionId: sourceSession.id,
+      },
+    } : {}),
+  };
+  delete input.conversation;
+  delete input.sourceDelivery;
+  delete input.sourceRequestId;
+  delete input.deliverTo;
+  if (targetMode === 'new_session') delete input.sessionTemplate;
+  if (notificationMode === 'source_conversation') input.deliverTo = 'session_source';
+  const prepared = await prepareScheduledTask(input);
+  return { ...prepared, kind };
+}
+
 export async function handleControlRoutes({
   req,
   res,
@@ -266,6 +327,56 @@ export async function handleControlRoutes({
     return true;
   }
 
+  if (pathname === '/api/automation-tasks' && req.method === 'GET') {
+    try {
+      writeJson(res, 200, { tasks: await listAutomationTasks() });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to load automation tasks' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/automation-tasks' && req.method === 'POST') {
+    let payload = {};
+    try {
+      const body = await readBody(req, 32768);
+      payload = body ? JSON.parse(body) : {};
+    } catch {
+      writeJson(res, 400, { error: 'Invalid request body' });
+      return true;
+    }
+    try {
+      const task = await createAutomationTask(await prepareAutomationTask(payload));
+      writeJson(res, 201, { task });
+      broadcastOwners({ type: 'automation_tasks_updated', taskId: task.id });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to create automation task' });
+    }
+    return true;
+  }
+
+  const automationTaskMatch = /^\/api\/automation-tasks\/((?:trg|sch)_[a-f0-9]{24})(?:\/(pause|resume|cancel))?$/.exec(pathname);
+  if (automationTaskMatch && req.method === 'GET' && !automationTaskMatch[2]) {
+    const task = await getAutomationTask(automationTaskMatch[1]);
+    if (!task) writeJson(res, 404, { error: 'Automation task not found' });
+    else writeJson(res, 200, { task });
+    return true;
+  }
+  if (automationTaskMatch && req.method === 'POST' && automationTaskMatch[2]) {
+    try {
+      const result = await applyAutomationTaskAction(automationTaskMatch[1], automationTaskMatch[2]);
+      if (!result) {
+        writeJson(res, 404, { error: 'Automation task not found' });
+        return true;
+      }
+      writeJson(res, 200, result);
+      broadcastOwners({ type: 'automation_tasks_updated', taskId: result.task.id });
+    } catch (error) {
+      writeJson(res, 409, { error: error.message || 'Failed to update automation task' });
+    }
+    return true;
+  }
+
   if (pathname === '/api/triggers' && req.method === 'GET') {
     const sessionId = typeof parsedUrl?.query?.sessionId === 'string'
       ? parsedUrl.query.sessionId
@@ -308,6 +419,7 @@ export async function handleControlRoutes({
       }
       const trigger = await createTrigger(await prepareScheduledTask(payload));
       writeJson(res, 201, { trigger });
+      broadcastOwners({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create trigger' });
     }
@@ -348,6 +460,7 @@ export async function handleControlRoutes({
         return true;
       }
       writeJson(res, 200, { trigger });
+      broadcastOwners({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to update trigger' });
     }
@@ -361,6 +474,7 @@ export async function handleControlRoutes({
       return true;
     }
     writeJson(res, 200, { ok: true, trigger });
+    broadcastOwners({ type: 'automation_tasks_updated', taskId: trigger.id });
     return true;
   }
 
@@ -382,6 +496,7 @@ export async function handleControlRoutes({
     try {
       const schedule = await createRecurringSchedule(await prepareScheduledTask(payload));
       writeJson(res, 201, { schedule });
+      broadcastOwners({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create schedule' });
     }
@@ -414,10 +529,11 @@ export async function handleControlRoutes({
         return true;
       }
       let cancellation = null;
-      if (payload.enabled === false) {
+      if (payload.enabled === false || ['paused', 'cancelled'].includes(trimString(payload.status).toLowerCase())) {
         cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: payload.includeActive === true });
       }
       writeJson(res, 200, { schedule, cancellation });
+      broadcastOwners({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to update schedule' });
     }
@@ -432,6 +548,7 @@ export async function handleControlRoutes({
     }
     const cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: false });
     writeJson(res, 200, { ok: true, schedule, cancellation });
+    broadcastOwners({ type: 'automation_tasks_updated', taskId: schedule.id });
     return true;
   }
 

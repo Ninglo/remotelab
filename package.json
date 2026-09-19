@@ -92,7 +92,7 @@
     "test:integration": "node scripts/run-with-clean-instance-env.mjs npm run test:integration:raw",
     "test:integration:raw": "node tests/test-http-session-templates.mjs && node tests/test-http-session-source-delivery.mjs && node tests/test-http-session-media-upload.mjs && node tests/test-http-file-assets.mjs && node tests/test-http-result-file-assets.mjs && node tests/test-http-codex-generated-image.mjs && node tests/test-http-voice-cleanup.mjs",
     "test:triggers": "node scripts/run-with-clean-instance-env.mjs npm run test:triggers:raw",
-    "test:triggers:raw": "node tests/test-trigger-command.mjs && node tests/test-schedule-command.mjs && node tests/test-recurring-schedules.mjs && node tests/test-source-deliveries.mjs && node tests/test-http-triggers.mjs",
+    "test:triggers:raw": "node tests/test-trigger-command.mjs && node tests/test-schedule-command.mjs && node tests/test-recurring-schedules.mjs && node tests/test-source-deliveries.mjs && node tests/test-http-triggers.mjs && node tests/test-http-automation-tasks.mjs && node tests/test-task-center-ui.mjs",
     "test:live:agenda-agent": "node tests/test-agenda-agent-live-smoke.mjs",
     "stop": "./stop.sh",
     "setup": "./setup.sh",

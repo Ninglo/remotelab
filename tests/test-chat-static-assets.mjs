@@ -239,6 +239,8 @@ async function main() {
     assert.match(page.text, /<script src="chat\/instance-settings\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/task-center\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /id="taskCenterPanel"/, 'chat page should expose the owner Task Center surface');
     assert.match(page.text, /id="sessionAutoArchiveSelect"/);
     assert.match(page.text, /<script src="chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/compose\.js(?:\?v=[^"]*)?"/);

@@ -42,9 +42,9 @@
         typeof state.activeSourceFilter === "string" && state.activeSourceFilter.trim()
           ? state.activeSourceFilter.trim()
           : "__all__",
-      activeTab: state.activeTab === "settings"
-        ? "settings"
-        : (state.activeTab === "agents" ? "agents" : "sessions"),
+      activeTab: ["agents", "tasks", "settings"].includes(state.activeTab)
+        ? state.activeTab
+        : "sessions",
       sessionStatus: state.sessionStatus === "running" ? "running" : "idle",
     };
   }
@@ -231,7 +231,7 @@
   function setActiveTab(state, value, { normalizeTab = null } = {}) {
     const nextValue = typeof normalizeTab === "function"
       ? normalizeTab(value)
-      : (value === "settings" ? "settings" : "sessions");
+      : (["agents", "tasks", "settings"].includes(value) ? value : "sessions");
     return createState({
       ...state,
       activeTab: nextValue,

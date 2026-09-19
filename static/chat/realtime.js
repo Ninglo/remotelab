@@ -479,6 +479,9 @@ function handleWsMessage(msg) {
       if (archivedSessionsLoaded) {
         fetchArchivedSessions({ forceFresh: true }).catch(() => {});
       }
+      if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") === "tasks") {
+        window.RemoteLabTaskCenter?.refresh?.({ force: true }).catch(() => {});
+      }
       break;
 
     case "session_invalidated":
@@ -506,6 +509,12 @@ function handleWsMessage(msg) {
         window.remotelabFetchInstanceSettings({ force: true }).catch((error) => {
           console.warn("[instance_settings_updated] failed to refresh settings:", error?.message || error);
         });
+      }
+      break;
+
+    case "automation_tasks_updated":
+      if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") === "tasks") {
+        window.RemoteLabTaskCenter?.refresh?.({ force: true }).catch(() => {});
       }
       break;
 

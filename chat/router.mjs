@@ -1405,6 +1405,8 @@ function serializeJsonForScript(value) {
 
 function isOwnerOnlyRoute(pathname, method) {
   if (pathname.startsWith('/api/codex-auth') && ['GET', 'POST'].includes(method)) return true;
+  if (pathname === '/api/automation-tasks' && ['GET', 'POST'].includes(method)) return true;
+  if (pathname.startsWith('/api/automation-tasks/') && ['GET', 'POST'].includes(method)) return true;
   if (pathname === '/api/triggers' && (method === 'GET' || method === 'POST')) return true;
   if (pathname.startsWith('/api/triggers/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
   if (pathname === '/api/schedules' && ['GET', 'POST'].includes(method)) return true;

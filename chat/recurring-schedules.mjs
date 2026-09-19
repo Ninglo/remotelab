@@ -193,10 +193,18 @@ function normalizeStoredSchedule(value) {
   const cron = parseCronExpression(raw.cron).expression;
   const timezone = validateTimezone(raw.timezone);
   const createdAt = normalizeTimestamp(raw.createdAt) || nowIso();
-  const enabled = raw.enabled !== false && trimString(raw.status) !== 'cancelled';
+  const requestedStatus = trimString(raw.status).toLowerCase();
+  const status = requestedStatus === 'paused'
+    ? 'paused'
+    : requestedStatus === 'cancelled'
+      ? 'cancelled'
+      : raw.enabled === false
+        ? 'cancelled'
+        : 'active';
+  const enabled = status === 'active';
   return {
     id: /^sch_[a-f0-9]{24}$/.test(trimString(raw.id)) ? trimString(raw.id) : createScheduleId(),
-    status: enabled ? 'active' : 'cancelled',
+    status,
     enabled,
     sourceSessionId,
     sessionTemplate,
@@ -342,9 +350,24 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     if (Object.prototype.hasOwnProperty.call(patch, 'thinking') && typeof patch.thinking !== 'boolean') {
       throw new Error('thinking must be a boolean');
     }
-    const enabled = Object.prototype.hasOwnProperty.call(patch, 'enabled')
-      ? patch.enabled === true
-      : current.enabled;
+    const hasRequestedStatus = Object.prototype.hasOwnProperty.call(patch, 'status');
+    const requestedStatus = hasRequestedStatus
+      ? trimString(patch.status).toLowerCase()
+      : '';
+    if (hasRequestedStatus && !['active', 'paused', 'cancelled'].includes(requestedStatus)) {
+      throw new Error('status must be active, paused, or cancelled');
+    }
+    if (hasRequestedStatus && Object.prototype.hasOwnProperty.call(patch, 'enabled')
+        && patch.enabled !== (requestedStatus === 'active')) {
+      throw new Error('enabled conflicts with status');
+    }
+    if (requestedStatus === 'active' && current.status === 'cancelled') {
+      throw new Error('Cancelled schedules cannot be resumed');
+    }
+    const nextStatus = requestedStatus || (Object.prototype.hasOwnProperty.call(patch, 'enabled')
+      ? (patch.enabled === true ? 'active' : 'cancelled')
+      : current.status);
+    const enabled = nextStatus === 'active';
     if (Object.prototype.hasOwnProperty.call(patch, 'enabled') && typeof patch.enabled !== 'boolean') {
       throw new Error('enabled must be a boolean');
     }
@@ -363,8 +386,8 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
       cron,
       timezone,
       enabled,
-      status: enabled ? 'active' : 'cancelled',
-      cancelledAt: enabled ? '' : updatedAt,
+      status: nextStatus,
+      cancelledAt: nextStatus === 'cancelled' ? (current.cancelledAt || updatedAt) : '',
       nextRunAt: enabled && (!current.enabled || cron !== current.cron || timezone !== current.timezone)
         ? getNextCronOccurrence(cron, timezone, updatedAt)
         : current.nextRunAt,

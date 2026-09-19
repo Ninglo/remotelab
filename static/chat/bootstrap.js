@@ -403,9 +403,11 @@ const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
 const tabAgents = document.getElementById("tabAgents");
+const tabTasks = document.getElementById("tabTasks");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const agentsPanel = document.getElementById("agentsPanel");
+const taskCenterPanel = document.getElementById("taskCenterPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
@@ -695,6 +697,7 @@ window.addEventListener("remotelab:localechange", () => {
 
 function normalizeSidebarTab(tab) {
   if (tab === "agents") return "agents";
+  if (tab === "tasks") return "tasks";
   if (tab === "settings") return "settings";
   return "sessions";
 }

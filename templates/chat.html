@@ -48,6 +48,7 @@
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" id="tabSessions" data-i18n="nav.sessions">Sessions</button>
         <button class="sidebar-tab" id="tabAgents" data-i18n="nav.agents">Agent</button>
+        <button class="sidebar-tab" id="tabTasks" data-i18n="nav.tasks">Tasks</button>
         <button class="sidebar-tab" id="tabSettings" data-i18n="nav.settings">Settings</button>
         <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
       </div>
@@ -65,6 +66,86 @@
           <div class="settings-apps-list" id="settingsAgentsList">
             <div class="settings-app-empty" data-i18n="settings.apps.loading">Loading agents…</div>
           </div>
+        </div>
+      </div>
+      <div class="settings-panel task-center-panel" id="taskCenterPanel">
+        <section class="task-center-hero">
+          <div>
+            <div class="task-center-kicker" data-i18n="tasks.kicker">Automation control</div>
+            <h2 data-i18n="tasks.title">Task Center</h2>
+            <p data-i18n="tasks.note">See every scheduled Agent task, where it runs, and what happened last.</p>
+          </div>
+          <button class="task-center-primary" id="taskCenterCreateToggle" type="button" data-i18n="tasks.new">New task</button>
+        </section>
+        <form class="task-center-form" id="taskCenterForm" hidden>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.name">Name</span>
+            <input id="taskCenterTitle" type="text" maxlength="120" required placeholder="Daily project review" data-i18n-placeholder="tasks.form.namePlaceholder">
+          </label>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.prompt">Agent instruction</span>
+            <textarea id="taskCenterPrompt" rows="4" required placeholder="Review the latest project state and decide the next action." data-i18n-placeholder="tasks.form.promptPlaceholder"></textarea>
+          </label>
+          <div class="task-center-grid">
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.timing">Timing</span>
+              <select id="taskCenterKind">
+                <option value="one_time" data-i18n="tasks.kind.oneTime">One time</option>
+                <option value="recurring" data-i18n="tasks.kind.recurring">Recurring</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterOnceField">
+              <span data-i18n="tasks.form.runAt">Run at</span>
+              <input id="taskCenterScheduledAt" type="datetime-local">
+            </label>
+          </div>
+          <div class="task-center-grid" id="taskCenterCronFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.cron">Cron</span>
+              <input id="taskCenterCron" type="text" value="0 9 * * 1-5" spellcheck="false">
+            </label>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.timezone">Timezone</span>
+              <input id="taskCenterTimezone" type="text" value="Asia/Shanghai" spellcheck="false">
+            </label>
+          </div>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.execution">Execution</span>
+            <select id="taskCenterTargetMode">
+              <option value="fixed_session" data-i18n="tasks.target.fixed">Wake one fixed Session</option>
+              <option value="new_session" data-i18n="tasks.target.new">Create a new Session each run</option>
+            </select>
+          </label>
+          <label class="task-center-field">
+            <span id="taskCenterSessionLabel" data-i18n="tasks.form.session">Session</span>
+            <select id="taskCenterSession" required></select>
+            <small id="taskCenterSessionHelp" data-i18n="tasks.form.fixedHelp">Each run is queued into this Session.</small>
+          </label>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.notification">Result delivery</span>
+            <select id="taskCenterNotification">
+              <option value="remotelab" data-i18n="tasks.notification.remotelab">RemoteLab only</option>
+              <option value="source_conversation" data-i18n="tasks.notification.source">Session's connected source</option>
+            </select>
+          </label>
+          <div class="task-center-safety" data-i18n="tasks.form.safety">Execution and delivery are configured separately. Pausing or cancelling prevents future admissions; it does not terminate a run already in progress.</div>
+          <div class="task-center-form-actions">
+            <button class="task-center-secondary" id="taskCenterCreateCancel" type="button" data-i18n="action.close">Close</button>
+            <button class="task-center-primary" id="taskCenterCreateSubmit" type="submit" data-i18n="tasks.form.create">Create task</button>
+          </div>
+          <div class="task-center-feedback" id="taskCenterFormStatus" role="status" aria-live="polite"></div>
+        </form>
+        <div class="task-center-toolbar">
+          <select id="taskCenterFilter" aria-label="Filter tasks" data-i18n-aria-label="tasks.filter.ariaLabel">
+            <option value="all" data-i18n="tasks.filter.all">All tasks</option>
+            <option value="active" data-i18n="tasks.filter.active">Active</option>
+            <option value="paused" data-i18n="tasks.filter.paused">Paused</option>
+            <option value="history" data-i18n="tasks.filter.history">History</option>
+          </select>
+          <button class="task-center-icon-btn" id="taskCenterRefresh" type="button" title="Refresh tasks" aria-label="Refresh tasks" data-i18n-title="tasks.refresh" data-i18n-aria-label="tasks.refresh" data-icon="refresh"></button>
+        </div>
+        <div class="task-center-list" id="taskCenterList">
+          <div class="task-center-empty" data-i18n="tasks.loading">Loading tasks…</div>
         </div>
       </div>
       <div class="settings-panel" id="settingsPanel">
@@ -350,6 +431,7 @@
 <script src="chat/instance-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/task-center.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

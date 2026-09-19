@@ -177,7 +177,7 @@ function buildNavigationUrl(state = {}) {
   url.searchParams.delete("source");
   if (nextSessionId) url.searchParams.set("session", nextSessionId);
   else url.searchParams.delete("session");
-  if (nextTab === "settings") {
+  if (nextTab !== "sessions") {
     url.searchParams.set("tab", nextTab);
   } else {
     url.searchParams.delete("tab");

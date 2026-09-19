@@ -48,6 +48,7 @@ export async function updateSessionConversation(sessionId, value, { receipt } = 
 // destination is an independent request snapshot, like runtimeSelection.
 export function resolveSessionDeliveryPlan(session, options) {
   const explicit = normalizeConversation(options.sourceDelivery);
+  if (options.suppressSourceDelivery === true) return null;
   const bound = normalizeConversation(session.conversation);
   if (options.internalOperation && options.internalOperation !== 'trigger_delivery') return explicit;
   if (!bound) return explicit;

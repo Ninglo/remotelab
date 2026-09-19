@@ -105,6 +105,8 @@ function applyAgentScopedMode(authInfo = null) {
   if (sortSessionListBtn) sortSessionListBtn.style.display = canOrganizeSessionList() ? "" : "none";
   if (tabAgents) tabAgents.style.display = "none";
   if (agentsPanel) agentsPanel.style.display = "none";
+  if (tabTasks) tabTasks.style.display = "none";
+  if (taskCenterPanel) taskCenterPanel.style.display = "none";
   if (inlineAgentSelect) inlineAgentSelect.style.display = canSwitchAgents() ? "" : "none";
   if (inlineToolSelect) inlineToolSelect.style.display = canChangeRuntimeSelection() ? "" : "none";
   if (inlineProviderSelect) inlineProviderSelect.style.display = canChangeRuntimeSelection() ? inlineProviderSelect.style.display : "none";
@@ -115,7 +117,7 @@ function applyAgentScopedMode(authInfo = null) {
   if (contextTokens) contextTokens.style.display = "none";
   if (saveTemplateBtn) saveTemplateBtn.style.display = "none";
   if (sessionTemplateRow) sessionTemplateRow.style.display = "none";
-  if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : null) === "agents" && typeof switchTab === "function") {
+  if (["agents", "tasks"].includes(typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : null) && typeof switchTab === "function") {
     switchTab("sessions");
   }
   if (typeof requestLayoutPass === "function") {

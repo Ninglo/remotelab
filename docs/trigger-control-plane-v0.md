@@ -8,15 +8,15 @@ The goal is to stop hiding automation policy inside prompts and standalone scrip
 
 ## Scope
 
-The base trigger still has one execution shape:
+The base trigger still has one action shape:
 
 - trigger type: `at_time`
 - action type: `session_message`
-- target: one RemoteLab Session selected by its creation template
-- delivery: create or resolve that Session at fire time, then submit one canonical task message through the normal run path
+- target: either one explicitly fixed RemoteLab Session or a Session created from the stored template
+- delivery: resolve or create that Session at fire time, then submit one canonical task message through the normal run path
 - source Session: context/template seed; execution only reuses it when an explicit conversation binding resolves back to it
 
-Recurring schedules materialize that same trigger shape from a five-field cron expression. Both use `sessionTemplate.conversation`, the same optional binding accepted by normal Session creation. There is no scheduled-result sender or separate binding policy.
+Recurring schedules materialize that same trigger shape from a five-field cron expression. Both use `sessionTemplate.conversation`, the same optional binding accepted by normal Session creation. Task Center exposes execution target and result delivery as separate controls while continuing to use this one trigger/run path.
 
 The system stays session-first:
 
@@ -48,7 +48,7 @@ Current fields:
 - `id`
 - `triggerType` → `at_time`
 - `actionType` → `session_message`
-- `status` → `pending | delivering | delivered | failed | cancelled`
+- `status` → `pending | paused | delivering | delivered | failed | cancelled`
 - `enabled`
 - `title`
 - `sourceSessionId` — source/template session for context and list filtering
@@ -64,6 +64,9 @@ Current fields:
 - `lastError`, `lastErrorAt`
 - `scheduleId`, `occurrenceId` when materialized by a recurring schedule
 - `sessionTemplate.conversation` — optional external conversation; legacy `sourceDelivery` is normalized into this field when read
+- `sessionTemplate.reuse = fixed_session` plus `sessionTemplate.sessionId` — explicitly wake one existing Session instead of creating an execution Session
+
+Task Center also uses `paused` as a reversible pre-admission Trigger state. The legacy CLI `cancel` operation continues to create the terminal `cancelled` state.
 
 ## Delivery semantics
 
@@ -126,6 +129,11 @@ Owner-only routes:
 - `GET /api/source-deliveries`
 - `POST /api/source-deliveries/claim`
 - `POST /api/source-deliveries/:id/complete|fail`
+- `GET|POST /api/automation-tasks`
+- `GET /api/automation-tasks/:id`
+- `POST /api/automation-tasks/:id/pause|resume|cancel`
+
+See [Task Center v1](task-center-v1.md) for the unified read model and stop semantics.
 
 ## CLI convenience
 
@@ -238,7 +246,6 @@ Not in scope yet:
 
 - arbitrary condition graphs
 - multi-step workflow DAGs
-- UI surface for trigger authoring
 - dedicated UI authoring and model-native permission controls
 
 Those can come later, but only after this narrow wake-up primitive proves stable.
@@ -247,11 +254,10 @@ Those can come later, but only after this narrow wake-up primitive proves stable
 
 Likely next steps:
 
-1. session-scoped trigger listing in the UI
-2. agent-facing trigger creation tools built on the same HTTP/control surface
-3. `connector_action` action type for deterministic external delivery
-4. `external_event` trigger type with the same delivery contract
-5. stable links between trigger objects and control-inbox / reminder flows
+1. agent-facing trigger creation tools built on the same HTTP/control surface
+2. `connector_action` action type for deterministic external delivery
+3. `external_event` trigger type with the same delivery contract
+4. stable links between trigger objects and control-inbox / reminder flows
 
 The main rule should stay the same:
 

@@ -17,6 +17,7 @@ const DELIVERY_CLAIM_TIMEOUT_MS = 2 * 60 * 1000;
 const MAX_DELIVERY_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [30 * 1000, 2 * 60 * 1000, 10 * 60 * 1000];
 const TRIGGER_STATUS_PENDING = 'pending';
+const TRIGGER_STATUS_PAUSED = 'paused';
 const TRIGGER_STATUS_DELIVERING = 'delivering';
 const TRIGGER_STATUS_DELIVERED = 'delivered';
 const TRIGGER_STATUS_FAILED = 'failed';
@@ -83,6 +84,7 @@ function normalizeTriggerStatus(value, fallback = TRIGGER_STATUS_PENDING) {
   const normalized = trimString(value).toLowerCase();
   if ([
     TRIGGER_STATUS_PENDING,
+    TRIGGER_STATUS_PAUSED,
     TRIGGER_STATUS_DELIVERING,
     TRIGGER_STATUS_DELIVERED,
     TRIGGER_STATUS_FAILED,
@@ -121,10 +123,9 @@ function normalizeStoredTrigger(value) {
     return null;
   }
 
-  const enabled = normalizeBoolean(
-    raw.enabled,
-    status !== TRIGGER_STATUS_DELIVERED && status !== TRIGGER_STATUS_CANCELLED,
-  );
+  const enabled = [TRIGGER_STATUS_PAUSED, TRIGGER_STATUS_DELIVERED, TRIGGER_STATUS_CANCELLED].includes(status)
+    ? false
+    : normalizeBoolean(raw.enabled, true);
   const createdAt = normalizeTimestamp(raw.createdAt) || nowIso();
   const updatedAt = normalizeTimestamp(raw.updatedAt) || createdAt;
   const id = validTriggerId(raw.id) ? raw.id : createTriggerId();
@@ -427,6 +428,18 @@ export async function updateTrigger(triggerId, patch = {}) {
     }
   }
 
+  const hasRequestedStatus = Object.prototype.hasOwnProperty.call(patch, 'status');
+  const requestedStatus = hasRequestedStatus
+    ? trimString(patch.status).toLowerCase()
+    : '';
+  if (hasRequestedStatus && ![TRIGGER_STATUS_PENDING, TRIGGER_STATUS_PAUSED, TRIGGER_STATUS_CANCELLED].includes(requestedStatus)) {
+    throw new Error('status must be pending, paused, or cancelled');
+  }
+  if (hasRequestedStatus && Object.prototype.hasOwnProperty.call(patch, 'enabled')
+      && patch.enabled !== (requestedStatus === TRIGGER_STATUS_PENDING)) {
+    throw new Error('enabled conflicts with status');
+  }
+
   let updatedTrigger = null;
   await withTriggerMutation(async (triggers, saveTriggers) => {
     const index = triggers.findIndex((trigger) => trigger.id === normalizedTriggerId);
@@ -448,6 +461,7 @@ export async function updateTrigger(triggerId, patch = {}) {
       'effort',
       'thinking',
       'enabled',
+      'status',
     ].some((key) => Object.prototype.hasOwnProperty.call(patch, key));
 
     if (current.status === TRIGGER_STATUS_DELIVERED && affectsDelivery) {
@@ -504,6 +518,22 @@ export async function updateTrigger(triggerId, patch = {}) {
     }
 
     let nextEnabled = current.enabled;
+    if (requestedStatus) {
+      if (requestedStatus === TRIGGER_STATUS_PENDING && current.status === TRIGGER_STATUS_CANCELLED) {
+        throw new Error('Cancelled triggers cannot be resumed');
+      }
+      if (requestedStatus === TRIGGER_STATUS_PENDING && ![
+        TRIGGER_STATUS_PAUSED,
+        TRIGGER_STATUS_FAILED,
+        TRIGGER_STATUS_PENDING,
+      ].includes(current.status)) {
+        throw new Error(`Trigger cannot be resumed from ${current.status}`);
+      }
+      next.status = requestedStatus;
+      nextEnabled = requestedStatus === TRIGGER_STATUS_PENDING;
+      next.enabled = nextEnabled;
+      changed = requestedStatus !== current.status || nextEnabled !== current.enabled || changed;
+    }
     if (Object.prototype.hasOwnProperty.call(patch, 'enabled')) {
       if (typeof patch.enabled !== 'boolean') {
         throw new Error('enabled must be a boolean');
@@ -521,7 +551,9 @@ export async function updateTrigger(triggerId, patch = {}) {
     }
 
     if (affectsDelivery) {
-      if (!nextEnabled) {
+      if (requestedStatus) {
+        next.status = requestedStatus;
+      } else if (!nextEnabled) {
         next.status = TRIGGER_STATUS_CANCELLED;
       } else if (current.status === TRIGGER_STATUS_FAILED || current.status === TRIGGER_STATUS_CANCELLED || current.status === TRIGGER_STATUS_DELIVERING) {
         next.status = TRIGGER_STATUS_PENDING;
@@ -586,37 +618,6 @@ async function claimTriggerForDelivery(triggerId) {
   });
 
   return claimedTrigger;
-}
-
-async function markTriggerDelivered(triggerId, deliveryResult) {
-  const normalizedTriggerId = trimString(triggerId);
-  if (!normalizedTriggerId) return null;
-  const deliveredAt = nowIso();
-
-  let updatedTrigger = null;
-  await withTriggerMutation(async (triggers, saveTriggers) => {
-    const index = triggers.findIndex((trigger) => trigger.id === normalizedTriggerId);
-    if (index === -1) return;
-    const current = triggers[index];
-    const next = {
-      ...current,
-      status: TRIGGER_STATUS_DELIVERED,
-      enabled: false,
-      deliveredAt,
-      updatedAt: deliveredAt,
-      claimedAt: '',
-      nextAttemptAt: '',
-      lastError: '',
-      lastErrorAt: '',
-      runId: trimString(deliveryResult?.runId),
-      deliveryMode: deliveryResult?.queued ? 'queued' : 'run',
-    };
-    triggers[index] = next;
-    await saveTriggers(triggers);
-    updatedTrigger = cloneTrigger(next);
-  });
-
-  return updatedTrigger;
 }
 
 async function markTriggerDeliveryFailure(triggerId, error, attemptCount = 1) {
@@ -688,18 +689,96 @@ async function appendTriggerStatusEvent(trigger, outcome) {
   }
 }
 
+async function admitAndMarkTriggerDelivered(trigger, session) {
+  return withTriggerMutation(async (triggers, saveTriggers) => {
+    const index = triggers.findIndex((entry) => entry.id === trigger.id);
+    if (index === -1) {
+      const error = new Error('Trigger was removed before delivery');
+      error.code = 'TRIGGER_STOPPED';
+      throw error;
+    }
+    const current = triggers[index];
+    if (!current.enabled || current.status !== TRIGGER_STATUS_DELIVERING) {
+      const error = new Error('Trigger was stopped before delivery');
+      error.code = 'TRIGGER_STOPPED';
+      throw error;
+    }
+
+    const accepted = await requests.byRequest(session.id, current.requestId);
+    // Admission is already durable. An upgrade must not reconstruct different
+    // options for that identity or execute it again after a lost acknowledgement.
+    const outcome = accepted ? { duplicate: true, run: { id: accepted.runId },
+      queued: !accepted.result && !await getRun(accepted.runId),
+    } : await submitHttpMessage(session.id, current.text, [], {
+      requestId: current.requestId,
+      tool: current.tool || undefined,
+      model: current.model || undefined,
+      effort: current.effort || undefined,
+      thinking: current.thinking === true,
+      internalOperation: 'trigger_delivery',
+      queueIfBusy: true,
+      skipDispatch: true,
+      triggerId: current.id,
+      scheduleId: current.scheduleId || undefined,
+      occurrenceId: current.occurrenceId || undefined,
+      ...(current.sessionTemplate?.reuse === 'fixed_session'
+        ? current.sessionTemplate?.conversation
+          ? { sourceDelivery: current.sessionTemplate.conversation }
+          : { suppressSourceDelivery: true }
+        : {}),
+    });
+
+    const deliveredAt = nowIso();
+    const next = {
+      ...current,
+      status: TRIGGER_STATUS_DELIVERED,
+      enabled: false,
+      deliveredAt,
+      updatedAt: deliveredAt,
+      claimedAt: '',
+      nextAttemptAt: '',
+      lastError: '',
+      lastErrorAt: '',
+      runId: trimString(outcome?.run?.id),
+      deliveryMode: outcome?.queued ? 'queued' : 'run',
+    };
+    triggers[index] = next;
+    await saveTriggers(triggers);
+    return { outcome, trigger: cloneTrigger(next) };
+  });
+}
+
 export async function ensureExecutionSession(trigger) {
+  const template = normalizeSessionTemplate(trigger.sessionTemplate, trigger.tool);
+  if (!template) throw new Error('Execution session template is missing');
   const existingSessionId = trimString(trigger.executionSessionId);
   if (existingSessionId) {
     const existing = await getExecutionSession(existingSessionId);
-    if (!Object.hasOwn(existing, 'conversation') && trigger.sessionTemplate?.conversation
+    if (template.reuse !== 'fixed_session'
+        && !Object.hasOwn(existing, 'conversation') && template.conversation
         && !await requests.byRequest(existingSessionId, trigger.requestId)) {
-      await updateSessionConversation(existingSessionId, trigger.sessionTemplate.conversation);
+      await updateSessionConversation(existingSessionId, template.conversation);
     }
     return { trigger, session: existing };
   }
-  const template = normalizeSessionTemplate(trigger.sessionTemplate, trigger.tool);
-  if (!template) throw new Error('Execution session template is missing');
+  if (template.reuse === 'fixed_session') {
+    const session = await getExecutionSession(template.sessionId);
+    if (session.archived) {
+      const error = new Error('Fixed execution Session is archived');
+      error.code = 'SESSION_ARCHIVED';
+      throw error;
+    }
+    let attached = null;
+    await withTriggerMutation(async (triggers, saveTriggers) => {
+      const index = triggers.findIndex((entry) => entry.id === trigger.id);
+      if (index === -1) throw new Error('Trigger disappeared while resolving its fixed execution Session');
+      triggers[index].executionSessionId = session.id;
+      triggers[index].updatedAt = nowIso();
+      attached = cloneTrigger(triggers[index]);
+      await saveTriggers(triggers);
+    });
+    return { trigger: attached, session };
+  }
   const identity = scheduledSessionIdentity(trigger, template);
   let previousSession = null;
   if (template.reuse === 'calendar_day') {
@@ -744,37 +823,15 @@ export async function ensureExecutionSession(trigger) {
 
 async function deliverTrigger(trigger) {
   const target = await ensureExecutionSession(trigger);
-  const activeTrigger = target.trigger;
-  const accepted = await requests.byRequest(target.session.id, activeTrigger.requestId);
-  // Admission is already durable. An upgrade must not reconstruct different
-  // options for that identity or execute it again after a lost acknowledgement.
-  const outcome = accepted ? { duplicate: true, run: { id: accepted.runId },
-    queued: !accepted.result && !await getRun(accepted.runId),
-  } : await submitHttpMessage(target.session.id, activeTrigger.text, [], {
-    requestId: activeTrigger.requestId,
-    tool: activeTrigger.tool || undefined,
-    model: activeTrigger.model || undefined,
-    effort: activeTrigger.effort || undefined,
-    thinking: activeTrigger.thinking === true,
-    internalOperation: 'trigger_delivery',
-    queueIfBusy: true,
-    skipDispatch: true,
-    triggerId: activeTrigger.id,
-    scheduleId: activeTrigger.scheduleId || undefined,
-    occurrenceId: activeTrigger.occurrenceId || undefined,
-  });
+  const admitted = await admitAndMarkTriggerDelivered(target.trigger, target.session);
+  const { outcome, trigger: deliveredTrigger } = admitted;
 
   if (!outcome.duplicate) {
-    await appendTriggerStatusEvent(activeTrigger, {
+    await appendTriggerStatusEvent(deliveredTrigger, {
       queued: outcome.queued === true,
       runId: trimString(outcome?.run?.id),
     });
   }
-
-  await markTriggerDelivered(activeTrigger.id, {
-    queued: outcome.queued === true,
-    runId: trimString(outcome?.run?.id),
-  });
 }
 
 async function attemptTriggerDelivery(triggerId) {
@@ -785,6 +842,9 @@ async function attemptTriggerDelivery(triggerId) {
     await deliverTrigger(trigger);
     return await getTrigger(trigger.id);
   } catch (error) {
+    if (error?.code === 'TRIGGER_STOPPED') {
+      return await getTrigger(trigger.id);
+    }
     if (error?.code === 'SESSION_BUSY') {
       await releaseTriggerForBusy(trigger.id);
       return await getTrigger(trigger.id);
