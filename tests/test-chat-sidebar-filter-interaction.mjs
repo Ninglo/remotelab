@@ -68,7 +68,7 @@ function harness({ origin = '__all__' } = {}) {
   for (const file of ['session-store.js', 'session-state-model.js']) vm.runInContext(source(file), context);
   context.chatStoreModel = context.RemoteLabChatStore;
   context.sessionStateModel = context.RemoteLabSessionStateModel;
-  vm.runInContext(bootstrap.slice(bootstrap.indexOf('const FILTER_ALL_VALUE'), bootstrap.indexOf('const PREFERRED_AGENT_TEMPLATE_STORAGE_KEY')), context);
+  vm.runInContext(bootstrap.slice(bootstrap.indexOf('const FILTER_ALL_VALUE'), bootstrap.indexOf('const THINKING_BLOCK_DISPLAY_STORAGE_KEY')), context);
   // Use the real Store wrappers, catalog listeners, HTTP refresh path and list rendering.
   vm.runInContext(bootstrap.slice(bootstrap.indexOf('const chatStore ='), bootstrap.indexOf('function getChatStoreSession')), context);
   for (const file of ['bootstrap-session-catalog.js', 'session-list-ui.js', 'session-http-list-state.js']) {

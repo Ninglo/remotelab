@@ -25,6 +25,7 @@
     box-shadow: none;
     transition: none;
   }
+  .sidebar-primary-nav { padding-top: 10px; }
   .sidebar-overlay.open .sidebar { left: auto; }
   .sidebar-close-btn { display: none; }
 

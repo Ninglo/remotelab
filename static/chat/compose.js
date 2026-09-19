@@ -1249,7 +1249,6 @@ function switchTab(tab, { syncState = true } = {}) {
   const resolvedTaskCenterPanel = typeof taskCenterPanel !== "undefined" ? taskCenterPanel : null;
   const resolvedSettingsPanel = typeof settingsPanel !== "undefined" ? settingsPanel : null;
   const resolvedSessionWorkspace = typeof sessionWorkspace !== "undefined" ? sessionWorkspace : null;
-  const resolvedSessionListFooter = typeof sessionListFooter !== "undefined" ? sessionListFooter : null;
   const resolvedSortSessionListBtn = typeof sortSessionListBtn !== "undefined" ? sortSessionListBtn : null;
   const resolvedNewSessionBtn = typeof newSessionBtn !== "undefined" ? newSessionBtn : null;
   const nextTab = normalizeSidebarTab(tab);
@@ -1299,7 +1298,6 @@ function switchTab(tab, { syncState = true } = {}) {
   if (resolvedTaskCenterPanel) resolvedTaskCenterPanel.classList.toggle("visible", showingTasks);
   if (resolvedSettingsPanel) resolvedSettingsPanel.classList.toggle("visible", showingSettings);
   if (resolvedSessionWorkspace) resolvedSessionWorkspace.hidden = !showingSessions;
-  if (resolvedSessionListFooter) resolvedSessionListFooter.classList.toggle("hidden", false);
   if (resolvedSortSessionListBtn) resolvedSortSessionListBtn.classList.toggle("hidden", false);
   if (resolvedNewSessionBtn) resolvedNewSessionBtn.classList.toggle("hidden", false);
   if (showingTasks) void window.RemoteLabTaskCenter?.onTabShown?.();

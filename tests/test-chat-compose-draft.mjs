@@ -190,7 +190,6 @@ function createContext({
     saveTemplateBtn: makeEventTarget(),
     tabSessions: makeEventTarget(),
     tabSettings: makeEventTarget(),
-    sessionListFooter: makeEventTarget(),
     sortSessionListBtn: makeEventTarget(),
     newSessionBtn: makeEventTarget(),
     settingsPanel: {

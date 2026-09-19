@@ -42,7 +42,6 @@ function applyVisitorMode(authInfo = null) {
   if (sortSessionListBtn) sortSessionListBtn.style.display = "none";
   if (newSessionBtn) newSessionBtn.style.display = "none";
   // Hide tool/model selectors and context management (visitors use defaults)
-  if (inlineAgentSelect) inlineAgentSelect.style.display = "none";
   if (inlineToolSelect) inlineToolSelect.style.display = "none";
   if (inlineProviderSelect) inlineProviderSelect.style.display = "none";
   if (inlineModelSelect) inlineModelSelect.style.display = "none";
@@ -86,13 +85,6 @@ function applyAgentScopedMode(authInfo = null) {
   document.body.classList.remove("visitor-mode");
   document.body.classList.add("agent-scoped-mode");
 
-  if (scopedAgentContext?.id && typeof setPreferredAgentTemplate === "function") {
-    setPreferredAgentTemplate(scopedAgentContext.id, {
-      name: scopedAgentContext.name || "",
-      persist: false,
-    });
-  }
-
   if (scopedAgentContext?.tool) {
     preferredTool = scopedAgentContext.tool;
     selectedTool = scopedAgentContext.tool;
@@ -103,11 +95,8 @@ function applyAgentScopedMode(authInfo = null) {
   if (menuBtn) menuBtn.style.display = "";
   if (newSessionBtn) newSessionBtn.style.display = hasAuthCapability("createSession") ? "" : "none";
   if (sortSessionListBtn) sortSessionListBtn.style.display = canOrganizeSessionList() ? "" : "none";
-  if (tabAgents) tabAgents.style.display = "none";
-  if (agentsPanel) agentsPanel.style.display = "none";
   if (tabTasks) tabTasks.style.display = "none";
   if (taskCenterPanel) taskCenterPanel.style.display = "none";
-  if (inlineAgentSelect) inlineAgentSelect.style.display = canSwitchAgents() ? "" : "none";
   if (inlineToolSelect) inlineToolSelect.style.display = canChangeRuntimeSelection() ? "" : "none";
   if (inlineProviderSelect) inlineProviderSelect.style.display = canChangeRuntimeSelection() ? inlineProviderSelect.style.display : "none";
   if (inlineModelSelect) inlineModelSelect.style.display = canChangeRuntimeSelection() ? inlineModelSelect.style.display : "none";

@@ -26,9 +26,10 @@ assert.match(template, /value="remotelab"/, 'UI must configure RemoteLab-only re
 assert.match(template, /value="source_conversation"/, 'UI must configure connected-source delivery independently');
 assert.match(template, /id="taskCenterFilter"/, 'UI must expose task lifecycle filtering');
 
-assert.match(css, /\.task-center-panel\s*\{[^}]*padding:\s*0/s, 'Task Center should own the full panel canvas');
+assert.match(css, /\.task-center-panel\s*\{[^}]*padding:\s*clamp\(22px,\s*4vw,\s*48px\)/s, 'Task Center should use the shared workspace canvas inset');
+assert.match(template, /class="workspace-page-header task-center-header"/, 'Task Center should share the Settings page header hierarchy');
 assert.match(css, /\.task-center-list\s*\{[^}]*display:\s*grid/s, 'Task cards should use a stable vertical grid');
-assert.match(css, /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*440px\),\s*1fr\)\)/, 'wide Task Center workspaces should use their available width');
+assert.match(css, /\.task-center-list\s*\{[^}]*grid-template-columns:\s*1fr[^}]*width:\s*min\(100%,\s*880px\)/s, 'Task Center should use one readable list column aligned with Settings');
 assert.match(css, /@media \(max-width:\s*720px\)/, 'mobile layouts need an explicit visual breakpoint');
 assert.match(css, /@media \(max-width:\s*720px\)[\s\S]*\.task-center-grid\s*\{[^}]*grid-template-columns:\s*1fr/s, 'form columns should stack on narrow screens');
 assert.match(css, /overflow-wrap:\s*anywhere/, 'long task and Session names must not overflow cards');
