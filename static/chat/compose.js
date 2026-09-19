@@ -1216,13 +1216,13 @@ function restoreFailedSendState(sessionId, text, images, requestId = "") {
   }
 }
 
-// ---- Sidebar tabs ----
+// ---- Application views ----
 let activeTab = normalizeSidebarTab(
   (typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") ||
     pendingNavigationState.tab ||
     localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY) ||
     "sessions",
-); // "sessions" | "agents" | "tasks" | "settings"
+); // "sessions" | "tasks" | "settings"
 
 if (typeof setChatActiveTab === "function") {
   setChatActiveTab(activeTab, {
@@ -1240,15 +1240,12 @@ if (typeof setChatActiveTab === "function") {
 }
 
 function switchTab(tab, { syncState = true } = {}) {
-  const resolvedTabSessions = typeof tabSessions !== "undefined" ? tabSessions : null;
-  const resolvedTabAgents = typeof tabAgents !== "undefined" ? tabAgents : null;
   const resolvedTabTasks = typeof tabTasks !== "undefined" ? tabTasks : null;
   const resolvedTabSettings = typeof tabSettings !== "undefined" ? tabSettings : null;
   const resolvedSidebarFilters = typeof sidebarFilters !== "undefined" ? sidebarFilters : null;
   const resolvedSessionList = typeof sessionList !== "undefined" ? sessionList : null;
   const resolvedSidebarSearch = typeof sidebarSearch !== "undefined" ? sidebarSearch : null;
   const resolvedSidebarSpaceSwitcher = typeof sidebarSpaceSwitcher !== "undefined" ? sidebarSpaceSwitcher : null;
-  const resolvedAgentsPanel = typeof agentsPanel !== "undefined" ? agentsPanel : null;
   const resolvedTaskCenterPanel = typeof taskCenterPanel !== "undefined" ? taskCenterPanel : null;
   const resolvedSettingsPanel = typeof settingsPanel !== "undefined" ? settingsPanel : null;
   const resolvedSessionWorkspace = typeof sessionWorkspace !== "undefined" ? sessionWorkspace : null;
@@ -1274,19 +1271,8 @@ function switchTab(tab, { syncState = true } = {}) {
     }
   }
   const showingSessions = activeTab === "sessions";
-  const showingAgents = activeTab === "agents";
   const showingTasks = activeTab === "tasks";
   const showingSettings = activeTab === "settings";
-  if (resolvedTabSessions) {
-    resolvedTabSessions.classList.toggle("active", activeTab === "sessions");
-    if (activeTab === "sessions") resolvedTabSessions.setAttribute?.("aria-current", "page");
-    else resolvedTabSessions.removeAttribute?.("aria-current");
-  }
-  if (resolvedTabAgents) {
-    resolvedTabAgents.classList.toggle("active", activeTab === "agents");
-    if (activeTab === "agents") resolvedTabAgents.setAttribute?.("aria-current", "page");
-    else resolvedTabAgents.removeAttribute?.("aria-current");
-  }
   if (resolvedTabTasks) {
     resolvedTabTasks.classList.toggle("active", activeTab === "tasks");
     if (activeTab === "tasks") resolvedTabTasks.setAttribute?.("aria-current", "page");
@@ -1310,7 +1296,6 @@ function switchTab(tab, { syncState = true } = {}) {
   if (resolvedSessionList) resolvedSessionList.style.display = "";
   if (resolvedSidebarSearch) resolvedSidebarSearch.style.display = "";
   if (resolvedSidebarSpaceSwitcher) resolvedSidebarSpaceSwitcher.style.display = "";
-  if (resolvedAgentsPanel) resolvedAgentsPanel.classList.toggle("visible", showingAgents);
   if (resolvedTaskCenterPanel) resolvedTaskCenterPanel.classList.toggle("visible", showingTasks);
   if (resolvedSettingsPanel) resolvedSettingsPanel.classList.toggle("visible", showingSettings);
   if (resolvedSessionWorkspace) resolvedSessionWorkspace.hidden = !showingSessions;
@@ -1326,12 +1311,6 @@ function switchTab(tab, { syncState = true } = {}) {
   }
 }
 
-if (typeof tabSessions !== "undefined" && tabSessions) {
-  tabSessions.addEventListener("click", () => switchTab("sessions"));
-}
-if (typeof tabAgents !== "undefined" && tabAgents) {
-  tabAgents.addEventListener("click", () => switchTab("agents"));
-}
 if (typeof tabTasks !== "undefined" && tabTasks) {
   tabTasks.addEventListener("click", () => switchTab("tasks"));
 }

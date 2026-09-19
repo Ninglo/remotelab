@@ -1750,7 +1750,6 @@ initInstallSettings();
 initPushNotificationSettings();
 void renderSettingsConnectorsPanel();
 renderSettingsSessionPresentationPanel();
-void renderSettingsAgentsPanel();
 
 if (createAgentBtn && createAgentBtn.dataset.bound !== "true") {
   createAgentBtn.addEventListener("click", () => {
@@ -1761,13 +1760,6 @@ if (createAgentBtn && createAgentBtn.dataset.bound !== "true") {
     });
   });
   createAgentBtn.dataset.bound = "true";
-}
-
-if (tabAgents && tabAgents.dataset.appsBound !== "true") {
-  tabAgents.addEventListener("click", () => {
-    void renderSettingsAgentsPanel({ force: true });
-  });
-  tabAgents.dataset.appsBound = "true";
 }
 
 if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
@@ -1796,7 +1788,6 @@ window.addEventListener("remotelab:localechange", () => {
   renderPushNotificationSettings();
   void renderSettingsConnectorsPanel();
   renderSettingsSessionPresentationPanel();
-  void renderSettingsAgentsPanel();
 });
 
 window.addEventListener("remotelab:pushstatechange", renderPushNotificationSettings);

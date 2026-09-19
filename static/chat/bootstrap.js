@@ -716,7 +716,6 @@ window.addEventListener("remotelab:localechange", () => {
 });
 
 function normalizeSidebarTab(tab) {
-  if (tab === "agents") return "agents";
   if (tab === "tasks") return "tasks";
   if (tab === "settings") return "settings";
   return "sessions";

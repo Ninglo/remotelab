@@ -14,7 +14,7 @@ RemoteLab owns generic automation mechanics:
 
 The Agent still interprets the instruction and decides the concrete work. Task Center does not know evaluation, GPU, report, inbox, or other domain semantics.
 
-Settings remains the place for instance configuration. Sessions, Agents, Tasks, and Settings switch inside one application document through a compact global navigation rail. Only Sessions owns the contextual Session-list sidebar; Task Center uses the main workspace and never inserts management cards into a Session transcript. The URL query remains shareable/restorable UI state rather than a separate page load.
+Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Tasks sit above the Session list, while Settings sits below it. Selecting a Session, Task Center, or Settings swaps the main workspace inside the same application document; there is no second application rail and no dedicated Agent-management destination. Task Center uses the main workspace and never inserts management cards into a Session transcript. The URL query remains shareable/restorable UI state rather than a separate page load.
 
 ## Domain model
 

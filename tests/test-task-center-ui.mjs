@@ -10,8 +10,9 @@ const css = readFileSync(join(repoRoot, 'static', 'chat', 'task-center.css'), 'u
 const script = readFileSync(join(repoRoot, 'static', 'chat', 'task-center.js'), 'utf8');
 const compose = readFileSync(join(repoRoot, 'static', 'chat', 'compose.js'), 'utf8');
 
-assert.match(template, /class="app-rail-button" id="tabTasks"[^>]*data-i18n-title="nav\.tasks"/, 'Tasks must be a first-class application-rail destination');
-assert.match(template, /<nav class="app-rail"[^>]*>[\s\S]*id="tabSessions"[\s\S]*id="tabAgents"[\s\S]*id="tabTasks"[\s\S]*id="tabSettings"[\s\S]*<\/nav>/, 'global destinations should live in one compact navigation rail');
+assert.match(template, /class="sidebar-nav-button" id="tabTasks"[^>]*>[\s\S]*data-i18n="nav\.tasks"/, 'Tasks must be a first-class row in the Session sidebar');
+assert.match(template, /<aside class="sidebar"[^>]*>[\s\S]*id="newSessionBtn"[\s\S]*id="tabTasks"[\s\S]*id="sessionList"[\s\S]*id="tabSettings"[\s\S]*<\/aside>/, 'Task Center and Settings should share one classic sidebar with Sessions');
+assert.doesNotMatch(template, /class="app-rail"|id="tabAgents"|id="agentsPanel"/, 'Task Center must not introduce a separate navigation rail or Agent column');
 assert.match(template, /id="taskCenterPanel"/, 'Task Center needs its own management panel');
 assert.ok(
   template.indexOf('class="app-workspace"') < template.indexOf('id="taskCenterPanel"')

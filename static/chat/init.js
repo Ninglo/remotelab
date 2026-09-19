@@ -117,7 +117,7 @@ function applyAgentScopedMode(authInfo = null) {
   if (contextTokens) contextTokens.style.display = "none";
   if (saveTemplateBtn) saveTemplateBtn.style.display = "none";
   if (sessionTemplateRow) sessionTemplateRow.style.display = "none";
-  if (["agents", "tasks"].includes(typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : null) && typeof switchTab === "function") {
+  if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : null) === "tasks" && typeof switchTab === "function") {
     switchTab("sessions");
   }
   if (typeof requestLayoutPass === "function") {

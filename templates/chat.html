@@ -42,49 +42,39 @@
 </div>
 
 <div class="app-container">
-  <!-- Single-page application navigation + Session-local sidebar -->
+  <!-- Single-page application sidebar -->
   <div class="sidebar-overlay" id="sidebarOverlay">
-    <div class="navigation-drawer">
-      <nav class="app-rail" aria-label="Application" data-i18n-aria-label="nav.application">
-        <div class="app-rail-brand" aria-hidden="true">R</div>
-        <button class="app-rail-button active" id="tabSessions" type="button" title="Sessions" aria-label="Sessions" aria-current="page" data-i18n-title="nav.sessions" data-i18n-aria-label="nav.sessions" data-icon="chat"></button>
-        <button class="app-rail-button" id="tabAgents" type="button" title="Agents" aria-label="Agents" data-i18n-title="nav.agents" data-i18n-aria-label="nav.agents" data-icon="agents"></button>
-        <button class="app-rail-button" id="tabTasks" type="button" title="Tasks" aria-label="Tasks" data-i18n-title="nav.tasks" data-i18n-aria-label="nav.tasks" data-icon="tasks"></button>
-        <span class="app-rail-spacer"></span>
-        <button class="app-rail-button" id="tabSettings" type="button" title="Settings" aria-label="Settings" data-i18n-title="nav.settings" data-i18n-aria-label="nav.settings" data-icon="gear"></button>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <strong>RemoteLab</strong>
+        <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
+      </div>
+      <nav class="sidebar-primary-nav" aria-label="Main actions" data-i18n-aria-label="nav.application">
+        <button class="sidebar-nav-button new-session-btn" id="newSessionBtn" type="button">
+          <span class="sidebar-nav-icon" data-icon="plus" aria-hidden="true"></span>
+          <span data-i18n="sidebar.newSession">New Session</span>
+        </button>
+        <button class="sidebar-nav-button" id="tabTasks" type="button">
+          <span class="sidebar-nav-icon" data-icon="tasks" aria-hidden="true"></span>
+          <span data-i18n="nav.tasks">Tasks</span>
+        </button>
       </nav>
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-          <span data-i18n="nav.sessions">Sessions</span>
-          <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
-        </div>
-        <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
-        <div class="sidebar-list" id="sessionList"></div>
-        <div class="sidebar-filters" id="sidebarFilters">
-          <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
-        </div>
-        <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
-        <button class="new-session-btn" id="newSessionBtn" data-i18n="sidebar.newSession">+ New Session</button>
-      </aside>
-    </div>
+      <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
+      <div class="sidebar-list" id="sessionList"></div>
+      <div class="sidebar-filters" id="sidebarFilters">
+        <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
+      </div>
+      <nav class="sidebar-footer-nav" aria-label="Settings" data-i18n-aria-label="nav.settings">
+        <button class="sidebar-nav-button" id="tabSettings" type="button">
+          <span class="sidebar-nav-icon" data-icon="gear" aria-hidden="true"></span>
+          <span data-i18n="nav.settings">Settings</span>
+        </button>
+      </nav>
+      <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
+    </aside>
   </div>
 
   <div class="app-workspace">
-      <div class="settings-panel" id="agentsPanel">
-        <header class="workspace-page-header">
-          <div class="workspace-page-kicker">RemoteLab</div>
-          <h2 data-i18n="settings.apps.title">Agents</h2>
-          <p data-i18n="settings.apps.note">Create and reuse agents.</p>
-        </header>
-        <div class="settings-section">
-          <div class="settings-app-actions">
-            <button class="settings-app-btn" id="createAgentBtn" type="button" data-i18n="settings.apps.create">Create Agent</button>
-          </div>
-          <div class="settings-apps-list" id="settingsAgentsList">
-            <div class="settings-app-empty" data-i18n="settings.apps.loading">Loading agents…</div>
-          </div>
-        </div>
-      </div>
       <div class="settings-panel task-center-panel" id="taskCenterPanel">
         <section class="task-center-hero">
           <div>
