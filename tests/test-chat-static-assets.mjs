@@ -434,7 +434,7 @@ async function main() {
       chatInputStylesheet.text,
       chatResponsiveStylesheet.text,
     ].join('\n');
-    assert.match(combinedChatStyles, /\.header-btn,\s*\.app-rail-button,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'application rail and sidebar interactions should suppress the mobile tap highlight flash');
+    assert.match(combinedChatStyles, /\.header-btn,\s*\.sidebar-nav-button,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'application sidebar interactions should suppress the mobile tap highlight flash');
     assert.match(combinedChatStyles, /--app-height:\s*100dvh/);
     assert.match(combinedChatStyles, /\.input-config-row\s*\{[\s\S]*overflow-x:\s*auto;[\s\S]*touch-action:\s*pan-x;/, 'runtime controls should remain horizontally scrollable on mobile');
     assert.match(combinedChatStyles, /\.tool-select,\s*\.provider-select,\s*\.model-select,\s*\.effort-select\s*\{[\s\S]*field-sizing:\s*content;/, 'runtime pickers should size from the selected text when supported');
@@ -452,8 +452,8 @@ async function main() {
     assert.match(combinedChatStyles, /\.queued-panel-details\s*\{[\s\S]*?max-height:\s*min\(36vh, 320px\);[\s\S]*?overflow-y:\s*auto;/, 'expanded queue details should stay scroll-bounded instead of covering the chat surface');
     assert.match(combinedChatStyles, /\.queued-panel-details\[hidden\]\s*\{[\s\S]*?display:\s*none;/, 'queue details should support a collapsed summary-only state');
     assert.doesNotMatch(combinedChatStyles, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
-    assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--app-rail-width\) \+ var\(--sidebar-width\) \+ 24px\);/, 'Session modals should offset against the application rail and contextual sidebar');
-    assert.match(combinedChatStyles, /body:not\(\[data-app-view="sessions"\]\) \.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--app-rail-width\) \+ 24px\);/, 'control-workspace modals should offset only against the application rail');
+    assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'modals should offset against the one persistent desktop sidebar');
+    assert.doesNotMatch(combinedChatStyles, /--app-rail-width|\.app-rail|\.navigation-drawer/, 'the classic layout should not retain a second application rail');
     assert.match(combinedChatStyles, /body\.keyboard-open \.messages/);
     assert.match(combinedChatStyles, /body\.keyboard-open \.input-area/);
     assert.doesNotMatch(combinedChatStyles, /--app-top-offset/);

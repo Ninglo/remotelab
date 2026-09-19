@@ -36,11 +36,9 @@
   --chat-gutter: 16px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
-  --app-rail-width: 62px;
   --sidebar-width: 300px;
   --sidebar-width-expanded: min(80vw, calc(100vw - 240px));
   --sidebar-mobile-width: 320px;
-  --navigation-drawer-width: min(94vw, 364px);
 }
 
 @media (prefers-color-scheme: dark) {
