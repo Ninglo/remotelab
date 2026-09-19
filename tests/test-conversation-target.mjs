@@ -23,6 +23,11 @@ assert.equal(sameConversationScope(topic, { ...currentRoot, sourceRouteId: 'bot-
 assert.equal(sameConversationScope(topic, { ...currentRoot, target: { ...currentRoot.target, chatId: 'other-group' } }), false);
 assert.deepEqual(refineConversation(currentRoot, topic), currentRoot,
   'a request-scoped root reply must not be redirected into the Session\'s older topic');
+const unthreadedCurrentRoot = { ...group, target: { chatId: 'group', messageId: 'current-root' } };
+assert.deepEqual(refineConversation(unthreadedCurrentRoot, topic), unthreadedCurrentRoot,
+  'an unthreaded continue-mode reply must not be redirected into the Session\'s older topic');
+assert.deepEqual(conversationAfterReceipt(unthreadedCurrentRoot, { messageId: 'group-reply', threadId: 'new-thread' }), unthreadedCurrentRoot,
+  'an outbound receipt must not turn an unthreaded continue-mode binding into a topic');
 assert.equal(normalizeConversation({ connector: 'feishu', target: { threadId: 'no-group' } }), null);
 const created = conversationAfterReceipt(group, { messageId: 'new-root', threadId: '' });
 assert.equal(created.target.rootId, 'new-root');
