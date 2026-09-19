@@ -11,10 +11,12 @@ const proxied = {
 
 assert.deepEqual(resolveCodexConfigOverrides({}, proxied), [
   'features.respect_system_proxy=true',
+  'suppress_unstable_features_warning=true',
   'check_for_update_on_startup=false',
 ]);
 assert.deepEqual(resolveCodexConfigOverrides({ executionProfile: 'quick' }, proxied), [
   'features.respect_system_proxy=true',
+  'suppress_unstable_features_warning=true',
   'check_for_update_on_startup=false',
   'model_catalog_json="/tmp/models.json"',
   'mcp_servers.openaiDeveloperDocs.enabled=false',
@@ -40,6 +42,7 @@ try {
     args.filter((value, index) => args[index - 1] === '-c'),
     [
       'features.respect_system_proxy=true',
+      'suppress_unstable_features_warning=true',
       'check_for_update_on_startup=false',
       'model_catalog_json="/tmp/models.json"',
     ],
