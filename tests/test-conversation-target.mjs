@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { normalizeConversation, sameConversation, conversationAfterReceipt } from '../lib/conversation-target.mjs';
+import {
+  normalizeConversation,
+  sameConversation,
+  sameConversationScope,
+  conversationAfterReceipt,
+  refineConversation,
+} from '../lib/conversation-target.mjs';
 
 const group = { connector: 'feishu', sourceRouteId: 'bot-a', target: { chatId: 'group' } };
 const topic = { ...group, target: { chatId: 'group', threadId: 'thread', rootId: 'root', messageId: 'input', replyInThread: true } };
@@ -10,6 +16,13 @@ assert.equal(sameConversation(topic, { ...group, target: { chatId: 'group', topi
 assert.equal(sameConversation(topic, { ...topic, sourceRouteId: 'bot-b' }), false);
 assert.equal(sameConversation(topic, { ...topic, target: { ...topic.target, chatId: 'elsewhere' } }), false);
 assert.equal(sameConversation(topic, { ...group, target: { chatId: 'group', rootId: 'different', replyInThread: true } }), false);
+const currentRoot = { ...group, target: { chatId: 'group', messageId: 'current-root', replyInThread: true } };
+assert.equal(sameConversationScope(topic, currentRoot), true,
+  'different Feishu topics in one Bot and chat share a safe request-delivery scope');
+assert.equal(sameConversationScope(topic, { ...currentRoot, sourceRouteId: 'bot-b' }), false);
+assert.equal(sameConversationScope(topic, { ...currentRoot, target: { ...currentRoot.target, chatId: 'other-group' } }), false);
+assert.deepEqual(refineConversation(currentRoot, topic), currentRoot,
+  'a request-scoped root reply must not be redirected into the Session\'s older topic');
 assert.equal(normalizeConversation({ connector: 'feishu', target: { threadId: 'no-group' } }), null);
 const created = conversationAfterReceipt(group, { messageId: 'new-root', threadId: '' });
 assert.equal(created.target.rootId, 'new-root');

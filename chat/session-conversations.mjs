@@ -1,4 +1,4 @@
-import { normalizeConversation, sameConversation, conversationAfterReceipt } from '../lib/conversation-target.mjs';
+import { normalizeConversation, sameConversation, sameConversationScope, conversationAfterReceipt } from '../lib/conversation-target.mjs';
 import { loadSessionsMeta, withSessionsMetaMutation } from './session-meta-store.mjs';
 import { broadcastOwners } from './ws-clients.mjs';
 
@@ -51,9 +51,14 @@ export function resolveSessionDeliveryPlan(session, options) {
   const bound = normalizeConversation(session.conversation);
   if (options.internalOperation && options.internalOperation !== 'trigger_delivery') return explicit;
   if (!bound) return explicit;
-  if (explicit && !sameConversation(bound, explicit)
-      && JSON.stringify(bound) !== JSON.stringify(explicit)) {
-    throw new Error('sourceDelivery conflicts with the Session conversation');
+  if (!explicit) return bound;
+  const exact = JSON.stringify(bound) === JSON.stringify(explicit);
+  const requestScopedFeishuReply = bound.connector === 'feishu' && sameConversationScope(bound, explicit);
+  if (!exact && !sameConversation(bound, explicit) && !requestScopedFeishuReply) {
+    throw new Error('sourceDelivery conflicts with the Session conversation: connector, source route, tenant, or chat differs');
   }
-  return bound;
+  // The Session binding preserves context identity. The explicit request plan
+  // is an immutable reply snapshot and therefore wins within that identity's
+  // Feishu chat (for example, a new root message in continue mode).
+  return explicit;
 }

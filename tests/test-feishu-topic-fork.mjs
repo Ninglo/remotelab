@@ -182,6 +182,10 @@ try {
     assert.equal(submittedPayloads[0].sourceContext.messageType, 'text');
     assert.equal(submittedPayloads[0].sourceContext.ingestion.status, 'complete');
     assert.equal(submittedPayloads[0].sourceContext.threadId, undefined);
+    assert.deepEqual(submittedPayloads[0].sourceDelivery.target, {
+      chatId: 'chat-1', tenantKey: 'tenant-1', chatType: 'group', messageId: 'fork-command-message',
+      messageType: 'text', replyInThread: true, forkCommand: true,
+    });
 
     await recordFeishuThreadSessionBinding(connectorRuntime, commandSummary, forkReply.sessionId, {
       threadId: 'created-thread-1',
@@ -202,6 +206,7 @@ try {
     assert.equal(createCount, 1, 'later Thread messages should use the explicit binding');
     assert.equal(submittedPayloads[1].text, '继续');
     assert.equal(submittedPayloads[1].sourceContext.threadId, 'created-thread-1');
+    assert.equal(submittedPayloads[1].sourceDelivery.target.threadId, 'created-thread-1');
 
     connectorRuntime.config.responsePolicy = { group: 'all' };
     const task = {
@@ -227,6 +232,10 @@ try {
     assert.match(submittedPayloads.at(-1).text, /^shared task/);
     assert.equal(submittedPayloads.at(-1).text.includes('/continue'), false);
     assert.equal(createdPayloads.at(-1).conversation.target.replyInThread, undefined);
+    assert.deepEqual(submittedPayloads.at(-1).sourceDelivery.target, {
+      chatId: 'chat-1', tenantKey: 'tenant-1', chatType: 'group', messageId: 'continue-task',
+      messageType: 'text', replyInThread: true,
+    }, 'continue reuses Session context while replying beside the current root message');
     const countBeforeThread = createCount;
     await send({ messageId: 'continue-thread', threadId: 'created-thread-1', messageText: '/continue\n\nin thread' });
     assert.equal(createCount, countBeforeThread, '/continue respects an existing thread binding');
@@ -243,6 +252,8 @@ try {
     await send({ messageId: 'configured-continue', messageText: 'shared by default' });
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
     assert.equal(createdPayloads.at(-1).conversation.target.forkCommand, undefined);
+    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.messageId, 'configured-continue');
+    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
     await send({ chatId: 'chat-2', messageId: 'configured-fork' });
     assert.match(createdPayloads.at(-1).externalTriggerId, /^feishu:fork:.*chat-2:configured-fork$/);
     await send({ messageId: 'override-fork', messageText: '/fork\n\nexplicit' });

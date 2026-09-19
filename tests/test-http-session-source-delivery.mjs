@@ -114,11 +114,30 @@ try {
   assert.deepEqual(boundReply.target, conversation.target);
   const boundDeliveries = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
   assert(boundDeliveries.body.deliveries.some(item => item.text?.includes(boundId)), 'initial publication exposes the actual Session link');
+  const currentRootDelivery = { connector: 'feishu', sourceRouteId: 'bound-bot',
+    target: { chatId: 'bound-chat', chatType: 'group', messageId: 'current-root', replyInThread: true } };
+  const continuedFromCurrentRoot = await request('POST', `/api/sessions/${boundId}/messages`, {
+    requestId: 'current-root-route', text: 'Keep the Session context but reply beside this message.',
+    sourceDelivery: currentRootDelivery,
+  });
+  assert.equal(continuedFromCurrentRoot.status, 202,
+    'a request in the same Feishu chat may override an older topic-bound Session destination');
+  const currentRootReply = await waitFor(async () => {
+    const result = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
+    return result.body.deliveries.find(item => item.runId === continuedFromCurrentRoot.body.run.id && item.kind === 'content');
+  }, 'request-scoped reply beside the current root message');
+  assert.deepEqual(currentRootReply.target, currentRootDelivery.target,
+    'the durable request snapshot must retain the current inbound message instead of the old Session topic');
   const crossed = await request('POST', `/api/sessions/${boundId}/messages`, {
     requestId: 'crossed-route', text: 'Do not move the conversation.',
     sourceDelivery: { ...conversation, sourceRouteId: 'different-bot' },
   });
   assert.equal(crossed.status, 400, 'one request cannot replace a Session conversation');
+  const crossedChat = await request('POST', `/api/sessions/${boundId}/messages`, {
+    requestId: 'crossed-chat', text: 'Do not move the conversation to another chat.',
+    sourceDelivery: { ...currentRootDelivery, target: { ...currentRootDelivery.target, chatId: 'different-chat' } },
+  });
+  assert.equal(crossedChat.status, 400, 'request-scoped delivery cannot escape the bound Feishu chat');
   const fork = await request('POST', `/api/sessions/${boundId}/fork`, {});
   assert.equal(fork.status, 201);
   assert.equal(fork.body.session.conversation, undefined, 'ordinary forks do not inherit external publication');

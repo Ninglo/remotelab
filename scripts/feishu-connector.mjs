@@ -896,12 +896,25 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const messageSummary = attachmentResolution.failures.length > 0
     ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
     : effectiveSummary;
+  const requestDeliveryTarget = normalizeConversationTarget({
+    ...messageSummary,
+    ...(!isFeishuDocumentCommentSummary(messageSummary)
+      && isFeishuGroupSummary(messageSummary)
+      && trimString(messageSummary.messageId)
+      ? { replyInThread: true }
+      : {}),
+  });
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
     runtimeSelectionScope: 'default',
     sourceContext: buildMessageSourceContext(messageSummary),
+    sourceDelivery: {
+      connector: 'feishu',
+      sourceRouteId: runtime.config.sourceRouteId || 'default',
+      target: requestDeliveryTarget,
+    },
     ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),
@@ -1141,11 +1154,14 @@ function extractLocalCommand(summary) {
   return parsed.commands.length > 0 ? parsed : null;
 }
 
+function isFeishuGroupSummary(summary) {
+  return [summary?.chatType, summary?.chatMode, summary?.groupMessageType]
+    .map(normalizeFeishuMode).some(mode => ['group', 'topic', 'thread'].includes(mode));
+}
+
 async function applyDefaultFork(runtime, summary) {
   if (isFeishuDocumentCommentSummary(summary) || summary.forkCommand || summary.continueCommand) return summary;
-  const isGroup = [summary.chatType, summary.chatMode, summary.groupMessageType]
-    .map(normalizeFeishuMode).some(mode => ['group', 'topic', 'thread'].includes(mode));
-  if (!isGroup || resolveFeishuSessionMode(runtime.config, summary) === 'continue'
+  if (!isFeishuGroupSummary(summary) || resolveFeishuSessionMode(runtime.config, summary) === 'continue'
     || await findFeishuThreadSessionBinding(runtime, summary)) return summary;
   return { ...summary, forkCommand: true, replyInThread: true,
     forkText: trimString(stripLeadingMentionTokens(summary.messageText || summary.textPreview)),

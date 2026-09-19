@@ -4,7 +4,11 @@ Status: implemented and verified in isolated tests, 2026-09-14. Deployment accep
 
 ## Contract
 
-A Session optionally binds one external conversation. Incoming external messages enter that Session; all user-visible replies from it use the binding, including browser and scheduled input. Internal maintenance output is not a user-visible conversation reply. A true fork does not inherit the parent binding.
+A Session optionally binds one external conversation. Incoming external
+messages enter that Session. Browser and scheduled input use the binding;
+connector input may snapshot its current reply anchor inside the same bound
+scope. Internal maintenance output is not a user-visible conversation reply. A
+true fork does not inherit the parent binding.
 
 A schedule creates an ordinary Session by default. Its optional conversation is part of the creation template: a group destination creates a fresh topic on first publication; an existing topic resolves to its bound Session. Repeated schedule occurrences in a group each get their own Session/topic. No recording or report semantics belong in routing.
 
@@ -14,10 +18,10 @@ Feishu group settings override connector defaults for response mode and optional
 
 - Shared pure conversation target normalization defines connector route and external address once.
 - Session metadata owns the persistent binding. Connector message indexes are reverse lookup/migration records, not an alternative output policy.
-- Requests retain immutable delivery snapshots and the existing durable outbox/receipts. This preserves retries and native-turn coalescing; it does not define another user-facing binding.
+- Requests retain immutable delivery snapshots and the existing durable outbox/receipts. A request snapshot may select a current Feishu root/topic inside the Session's connector, route, tenant and chat without changing the Session binding.
 - Feishu receipt handling refines a newly created group destination to its actual topic/root and persists that before acknowledging publication.
 - Scheduled template normalization and construction are shared by recurring schedules and one-time triggers. Legacy sourceDelivery input is translated at this boundary.
-- Existing per-request sourceDelivery remains an ingress compatibility surface for unbound callers. Bound Session replies have one canonical destination.
+- Per-request `sourceDelivery` is the reply authority for that request. Bound Sessions provide the default and constrain explicit snapshots so they cannot cross transport scopes.
 
 ## Verification
 
@@ -65,7 +69,9 @@ Old request-scoped integrations and prepared inbox submissions remain readable.
 A timer whose request was already accepted before an upgrade uses that durable
 acceptance to finish recovery; it does not rebuild its old submission options
 or run the task a second time.
-New Feishu intake binds once at Session creation and submits normal messages.
+New Feishu intake binds at Session creation and submits every message with its
+own reply snapshot. In group `continue` mode this deliberately decouples shared
+Session context from the current root/topic destination.
 The core resolves canonical bindings before consulting the old thread index.
 Adoption is lazy on the next incoming message; old unbound Sessions do not
 acquire a browser reply destination merely from having historical source

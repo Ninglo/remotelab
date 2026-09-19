@@ -1432,7 +1432,11 @@ try {
   assert.equal(reply.attachmentCount, 1);
   assert.equal(reply.replyText, undefined, 'handoff returns acceptance; Delivery owns the answer');
   assert.equal(createdPayload.conversation.connector, 'feishu');
-  assert.equal(submittedPayload.sourceDelivery, undefined, 'publication is owned by the Session binding');
+  assert.deepEqual(submittedPayload.sourceDelivery, {
+    connector: 'feishu',
+    sourceRouteId: 'default',
+    target: { chatType: 'p2p', chatId: 'chat_for_scope', messageId: 'msg_for_scope' },
+  }, 'each connector request snapshots its own reply destination');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }
