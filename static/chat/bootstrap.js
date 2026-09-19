@@ -381,23 +381,42 @@ const compactBtn = document.getElementById("compactBtn");
 const dropToolsBtn = document.getElementById("dropToolsBtn");
 const saveTemplateBtn = document.getElementById("saveTemplateBtn");
 
+let renderedHeaderSessionName = "";
+
 function renderHeaderSessionTitle(sessionName = "") {
   if (!headerTitle) return;
-  headerTitle.classList.toggle("has-session", Boolean(sessionName));
+  renderedHeaderSessionName = typeof sessionName === "string" ? sessionName : "";
+  const activeView = document.body?.dataset?.appView || "sessions";
+  const workspaceLabel = activeView === "sessions"
+    ? renderedHeaderSessionName
+    : (typeof window.remotelabT === "function"
+      ? window.remotelabT(`nav.${activeView}`)
+      : activeView);
+  headerTitle.classList.toggle("has-session", Boolean(workspaceLabel));
   const productName = document.createElement("span");
   productName.className = "header-product-name";
   productName.textContent = "RemoteLab";
   headerTitle.replaceChildren(productName);
-  if (!sessionName) return;
+  if (!workspaceLabel) return;
 
   const divider = document.createElement("span");
   divider.className = "header-title-divider";
   divider.textContent = "·";
   const title = document.createElement("span");
   title.className = "header-session-name";
-  title.textContent = sessionName;
-  headerTitle.append(divider, title);
+  title.textContent = workspaceLabel;
+  headerTitle.appendChild(divider);
+  headerTitle.appendChild(title);
 }
+
+function renderHeaderWorkspaceTitle(view = "sessions") {
+  if (document.body?.dataset) document.body.dataset.appView = view;
+  renderHeaderSessionTitle(renderedHeaderSessionName);
+}
+
+window.addEventListener("remotelab:localechange", () => {
+  renderHeaderSessionTitle(renderedHeaderSessionName);
+});
 const sessionTemplateRow = document.getElementById("sessionTemplateRow");
 const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
@@ -409,6 +428,7 @@ const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const agentsPanel = document.getElementById("agentsPanel");
 const taskCenterPanel = document.getElementById("taskCenterPanel");
 const settingsPanel = document.getElementById("settingsPanel");
+const sessionWorkspace = document.getElementById("sessionWorkspace");
 const inputArea = document.getElementById("inputArea");
 const composerPendingState = document.getElementById("composerPendingState");
 

@@ -287,6 +287,7 @@ function renderArchivedSection() {
         </div>`;
       div.addEventListener("click", (e) => {
         if (e.target.closest(".session-action-btn")) return;
+        if (typeof switchTab === "function") switchTab("sessions");
         attachSession(s.id, s);
         if (!isDesktop) closeSidebarFn();
       });

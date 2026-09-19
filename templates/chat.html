@@ -20,14 +20,14 @@
 <title>{{PAGE_TITLE}}</title>
 <link rel="stylesheet" href="chat/chat.css?v={{ASSET_VERSION}}">
 </head>
-<body class="{{BODY_CLASS}}">
+<body class="{{BODY_CLASS}}" data-app-view="sessions">
 <div class="app-shell">
 
 <!-- Header -->
 <div class="header">
-  <button class="header-btn header-btn--sessions" id="menuBtn" title="Sessions" aria-label="Sessions" data-i18n-title="nav.sessions" data-i18n-aria-label="nav.sessions">
+  <button class="header-btn header-btn--sessions" id="menuBtn" title="Open navigation" aria-label="Open navigation" data-i18n-title="nav.open" data-i18n-aria-label="nav.open">
     <span class="header-btn-icon" data-icon="menu" aria-hidden="true"></span>
-    <span class="header-btn-label sr-only" data-i18n="nav.sessions">Sessions</span>
+    <span class="header-btn-label sr-only" data-i18n="nav.open">Open navigation</span>
   </button>
   <h1 id="headerTitle"><span class="header-product-name">RemoteLab</span></h1>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
@@ -42,24 +42,41 @@
 </div>
 
 <div class="app-container">
-  <!-- Sidebar overlay -->
+  <!-- Single-page application navigation + Session-local sidebar -->
   <div class="sidebar-overlay" id="sidebarOverlay">
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-tabs">
-        <button class="sidebar-tab active" id="tabSessions" data-i18n="nav.sessions">Sessions</button>
-        <button class="sidebar-tab" id="tabAgents" data-i18n="nav.agents">Agent</button>
-        <button class="sidebar-tab" id="tabTasks" data-i18n="nav.tasks">Tasks</button>
-        <button class="sidebar-tab" id="tabSettings" data-i18n="nav.settings">Settings</button>
-        <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
-      </div>
-      <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
-      <div class="sidebar-list" id="sessionList"></div>
-      <div class="sidebar-filters" id="sidebarFilters">
-        <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
-      </div>
+    <div class="navigation-drawer">
+      <nav class="app-rail" aria-label="Application" data-i18n-aria-label="nav.application">
+        <div class="app-rail-brand" aria-hidden="true">R</div>
+        <button class="app-rail-button active" id="tabSessions" type="button" title="Sessions" aria-label="Sessions" aria-current="page" data-i18n-title="nav.sessions" data-i18n-aria-label="nav.sessions" data-icon="chat"></button>
+        <button class="app-rail-button" id="tabAgents" type="button" title="Agents" aria-label="Agents" data-i18n-title="nav.agents" data-i18n-aria-label="nav.agents" data-icon="agents"></button>
+        <button class="app-rail-button" id="tabTasks" type="button" title="Tasks" aria-label="Tasks" data-i18n-title="nav.tasks" data-i18n-aria-label="nav.tasks" data-icon="tasks"></button>
+        <span class="app-rail-spacer"></span>
+        <button class="app-rail-button" id="tabSettings" type="button" title="Settings" aria-label="Settings" data-i18n-title="nav.settings" data-i18n-aria-label="nav.settings" data-icon="gear"></button>
+      </nav>
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <span data-i18n="nav.sessions">Sessions</span>
+          <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
+        </div>
+        <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
+        <div class="sidebar-list" id="sessionList"></div>
+        <div class="sidebar-filters" id="sidebarFilters">
+          <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
+        </div>
+        <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
+        <button class="new-session-btn" id="newSessionBtn" data-i18n="sidebar.newSession">+ New Session</button>
+      </aside>
+    </div>
+  </div>
+
+  <div class="app-workspace">
       <div class="settings-panel" id="agentsPanel">
+        <header class="workspace-page-header">
+          <div class="workspace-page-kicker">RemoteLab</div>
+          <h2 data-i18n="settings.apps.title">Agents</h2>
+          <p data-i18n="settings.apps.note">Create and reuse agents.</p>
+        </header>
         <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.apps.title">Agents</div>
           <div class="settings-app-actions">
             <button class="settings-app-btn" id="createAgentBtn" type="button" data-i18n="settings.apps.create">Create Agent</button>
           </div>
@@ -149,6 +166,11 @@
         </div>
       </div>
       <div class="settings-panel" id="settingsPanel">
+        <header class="workspace-page-header">
+          <div class="workspace-page-kicker">RemoteLab</div>
+          <h2 data-i18n="nav.settings">Settings</h2>
+          <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
+        </header>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
           <div class="settings-inline-form">
@@ -221,13 +243,9 @@
           </div>
         </div>
       </div>
-      <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
-      <button class="new-session-btn" id="newSessionBtn" data-i18n="sidebar.newSession">+ New Session</button>
-    </aside>
-  </div>
 
   <!-- Chat area -->
-  <main class="chat-area">
+  <main class="chat-area" id="sessionWorkspace">
     <div class="messages" id="messages">
       <div class="messages-inner" id="messagesInner">
         <div class="empty-state" id="emptyState">
@@ -318,6 +336,7 @@
       </div>
     </div>
   </main>
+  </div>
 </div>
 </div>
 

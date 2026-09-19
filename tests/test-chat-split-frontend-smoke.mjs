@@ -361,7 +361,8 @@ assert.equal(context.normalizeSidebarTab('tasks'), 'tasks', 'Task Center deep li
 context.switchTab('tasks', { syncState: false });
 assert.equal(getElementById('tabTasks').classList.contains('active'), true, 'Tasks tab should become active');
 assert.equal(getElementById('taskCenterPanel').classList.contains('visible'), true, 'Task Center panel should become visible');
-assert.equal(getElementById('sessionList').style.display, 'none', 'Task Center should replace the Session list rather than enter a transcript');
+assert.equal(getElementById('sessionWorkspace').hidden, true, 'Task Center should replace the Session workspace rather than enter a transcript');
+assert.equal(getElementById('sessionList').style.display, '', 'the Session list should remain intact as Sessions-local navigation');
 
 console.log('test-chat-split-frontend-smoke: ok');
 process.exit(0);

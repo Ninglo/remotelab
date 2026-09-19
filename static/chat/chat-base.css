@@ -36,9 +36,11 @@
   --chat-gutter: 16px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
+  --app-rail-width: 62px;
   --sidebar-width: 300px;
   --sidebar-width-expanded: min(80vw, calc(100vw - 240px));
   --sidebar-mobile-width: 320px;
+  --navigation-drawer-width: min(94vw, 364px);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -334,6 +336,10 @@ body {
   color: var(--text-muted);
   line-height: 1;
 }
+body:not([data-app-view="sessions"]) .header-status,
+body:not([data-app-view="sessions"]) #shareSnapshotBtn {
+  display: none !important;
+}
 .header-refresh-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; padding: 0; border-radius: 999px;
@@ -384,4 +390,13 @@ body {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.app-workspace {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
 }

@@ -1251,6 +1251,7 @@ function switchTab(tab, { syncState = true } = {}) {
   const resolvedAgentsPanel = typeof agentsPanel !== "undefined" ? agentsPanel : null;
   const resolvedTaskCenterPanel = typeof taskCenterPanel !== "undefined" ? taskCenterPanel : null;
   const resolvedSettingsPanel = typeof settingsPanel !== "undefined" ? settingsPanel : null;
+  const resolvedSessionWorkspace = typeof sessionWorkspace !== "undefined" ? sessionWorkspace : null;
   const resolvedSessionListFooter = typeof sessionListFooter !== "undefined" ? sessionListFooter : null;
   const resolvedSortSessionListBtn = typeof sortSessionListBtn !== "undefined" ? sortSessionListBtn : null;
   const resolvedNewSessionBtn = typeof newSessionBtn !== "undefined" ? newSessionBtn : null;
@@ -1278,31 +1279,48 @@ function switchTab(tab, { syncState = true } = {}) {
   const showingSettings = activeTab === "settings";
   if (resolvedTabSessions) {
     resolvedTabSessions.classList.toggle("active", activeTab === "sessions");
+    if (activeTab === "sessions") resolvedTabSessions.setAttribute?.("aria-current", "page");
+    else resolvedTabSessions.removeAttribute?.("aria-current");
   }
   if (resolvedTabAgents) {
     resolvedTabAgents.classList.toggle("active", activeTab === "agents");
+    if (activeTab === "agents") resolvedTabAgents.setAttribute?.("aria-current", "page");
+    else resolvedTabAgents.removeAttribute?.("aria-current");
   }
   if (resolvedTabTasks) {
     resolvedTabTasks.classList.toggle("active", activeTab === "tasks");
+    if (activeTab === "tasks") resolvedTabTasks.setAttribute?.("aria-current", "page");
+    else resolvedTabTasks.removeAttribute?.("aria-current");
   }
   if (resolvedTabSettings) {
     resolvedTabSettings.classList.toggle("active", activeTab === "settings");
+    if (activeTab === "settings") resolvedTabSettings.setAttribute?.("aria-current", "page");
+    else resolvedTabSettings.removeAttribute?.("aria-current");
+  }
+  if (typeof renderHeaderWorkspaceTitle === "function") {
+    renderHeaderWorkspaceTitle(activeTab);
+  } else if (document.body?.dataset) {
+    document.body.dataset.appView = activeTab;
   }
   if (typeof syncSidebarFiltersVisibility === "function") {
-    syncSidebarFiltersVisibility(showingSessions);
+    syncSidebarFiltersVisibility(true);
   } else if (resolvedSidebarFilters) {
-    resolvedSidebarFilters.classList.toggle("hidden", !showingSessions);
+    resolvedSidebarFilters.classList.toggle("hidden", false);
   }
-  if (resolvedSessionList) resolvedSessionList.style.display = showingSessions ? "" : "none";
-  if (resolvedSidebarSearch) resolvedSidebarSearch.style.display = showingSessions ? "" : "none";
-  if (resolvedSidebarSpaceSwitcher) resolvedSidebarSpaceSwitcher.style.display = showingSessions ? "" : "none";
+  if (resolvedSessionList) resolvedSessionList.style.display = "";
+  if (resolvedSidebarSearch) resolvedSidebarSearch.style.display = "";
+  if (resolvedSidebarSpaceSwitcher) resolvedSidebarSpaceSwitcher.style.display = "";
   if (resolvedAgentsPanel) resolvedAgentsPanel.classList.toggle("visible", showingAgents);
   if (resolvedTaskCenterPanel) resolvedTaskCenterPanel.classList.toggle("visible", showingTasks);
   if (resolvedSettingsPanel) resolvedSettingsPanel.classList.toggle("visible", showingSettings);
-  if (resolvedSessionListFooter) resolvedSessionListFooter.classList.toggle("hidden", !showingSessions);
-  if (resolvedSortSessionListBtn) resolvedSortSessionListBtn.classList.toggle("hidden", !showingSessions);
-  if (resolvedNewSessionBtn) resolvedNewSessionBtn.classList.toggle("hidden", !showingSessions);
+  if (resolvedSessionWorkspace) resolvedSessionWorkspace.hidden = !showingSessions;
+  if (resolvedSessionListFooter) resolvedSessionListFooter.classList.toggle("hidden", false);
+  if (resolvedSortSessionListBtn) resolvedSortSessionListBtn.classList.toggle("hidden", false);
+  if (resolvedNewSessionBtn) resolvedNewSessionBtn.classList.toggle("hidden", false);
   if (showingTasks) void window.RemoteLabTaskCenter?.onTabShown?.();
+  if (!showingSessions && typeof isDesktop === "boolean" && !isDesktop && typeof closeSidebarFn === "function") {
+    closeSidebarFn();
+  }
   if (syncState) {
     syncBrowserState();
   }

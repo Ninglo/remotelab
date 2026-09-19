@@ -1,6 +1,6 @@
 # Task Center v1
 
-Task Center is the owner-only control surface for RemoteLab's durable automated Agent tasks. It is a top-level sidebar surface, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
+Task Center is the owner-only control surface for RemoteLab's durable automated Agent tasks. It is a top-level application workspace, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
 
 ## Product boundary
 
@@ -14,7 +14,7 @@ RemoteLab owns generic automation mechanics:
 
 The Agent still interprets the instruction and decides the concrete work. Task Center does not know evaluation, GPU, report, inbox, or other domain semantics.
 
-Settings remains the place for instance configuration. Task Center shares the current sidebar shell but has its own `Tasks` tab and never inserts management cards into a Session transcript.
+Settings remains the place for instance configuration. Sessions, Agents, Tasks, and Settings switch inside one application document through a compact global navigation rail. Only Sessions owns the contextual Session-list sidebar; Task Center uses the main workspace and never inserts management cards into a Session transcript. The URL query remains shareable/restorable UI state rather than a separate page load.
 
 ## Domain model
 

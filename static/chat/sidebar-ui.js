@@ -10,6 +10,11 @@ function closeSidebarFn() {
   sidebarOverlay.classList.remove("open");
 }
 
+function openApplicationNavigation() {
+  openSidebar();
+  return true;
+}
+
 function openSessionsSidebar() {
   if (typeof switchTab === "function") {
     switchTab("sessions");
@@ -195,7 +200,7 @@ function createSortSessionListShortcut() {
   return organizeSessionListWithAgent({ closeSidebar: false });
 }
 
-menuBtn.addEventListener("click", openSessionsSidebar);
+menuBtn.addEventListener("click", openApplicationNavigation);
 closeSidebar.addEventListener("click", closeSidebarFn);
 sidebarOverlay.addEventListener("click", (e) => {
   if (e.target === sidebarOverlay && !isDesktop) closeSidebarFn();

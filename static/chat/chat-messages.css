@@ -7,6 +7,7 @@
   min-height: 0;
   min-width: 0;
 }
+.chat-area[hidden] { display: none; }
 .chat-area > * {
   min-width: 0;
 }

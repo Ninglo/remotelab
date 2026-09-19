@@ -1,5 +1,6 @@
 .task-center-panel {
   padding: 0;
+  background: var(--bg-secondary);
 }
 
 .task-center-hero {
@@ -7,7 +8,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 14px 14px;
+  padding: clamp(24px, 4vw, 42px) clamp(18px, 5vw, 64px) 28px;
   border-bottom: 1px solid var(--border);
   background:
     radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 42%),
@@ -26,15 +27,17 @@
 .task-center-hero h2 {
   margin: 0;
   color: var(--text);
-  font-size: 19px;
-  line-height: 1.2;
+  font-size: clamp(25px, 3vw, 32px);
+  line-height: 1.15;
+  letter-spacing: -0.035em;
 }
 
 .task-center-hero p {
   margin: 6px 0 0;
   color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
+  max-width: 620px;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .task-center-primary,
@@ -76,8 +79,9 @@
 .task-center-form {
   display: grid;
   gap: 11px;
-  margin: 12px;
-  padding: 13px;
+  width: min(calc(100% - 32px), 840px);
+  margin: 18px auto;
+  padding: clamp(16px, 3vw, 24px);
   border: 1px solid var(--border-strong);
   border-radius: 12px;
   background: var(--bg);
@@ -181,12 +185,13 @@
 .task-center-toolbar {
   display: flex;
   gap: 8px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  width: min(calc(100% - 32px), 1120px);
+  margin: 18px auto 0;
+  padding: 0;
 }
 
 .task-center-toolbar select {
-  flex: 1;
+  width: min(260px, calc(100% - 44px));
 }
 
 .task-center-icon-btn {
@@ -205,8 +210,11 @@
 
 .task-center-list {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: 14px;
+  width: min(calc(100% - 32px), 1120px);
+  margin: 0 auto;
+  padding: 16px 0 40px;
 }
 
 .task-center-empty {
@@ -219,6 +227,8 @@
 
 .task-card {
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--bg);
@@ -247,6 +257,7 @@
 }
 
 .task-card-main {
+  flex: 1;
   padding: 12px;
 }
 
@@ -343,7 +354,7 @@
   color: var(--danger, #c2413c);
 }
 
-@media (max-width: 360px) {
+@media (max-width: 720px) {
   .task-center-hero {
     display: grid;
   }
@@ -353,6 +364,10 @@
   }
 
   .task-center-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-center-list {
     grid-template-columns: 1fr;
   }
 }

@@ -7,18 +7,38 @@
   .header #menuBtn { display: none; }
 
   .sidebar-overlay {
-    display: block !important; position: static; background: none;
-    width: var(--sidebar-width); flex-shrink: 0;
-    border-right: 1px solid var(--border); z-index: auto;
+    display: block !important;
+    position: static;
+    width: calc(var(--app-rail-width) + var(--sidebar-width));
+    flex-shrink: 0;
+    background: none;
+    z-index: auto;
     transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .sidebar {
-    position: static; left: auto; width: 100%; height: 100%;
-    border-right: none; z-index: auto; transition: none; padding-top: 0;
+  .navigation-drawer {
+    position: static;
+    width: 100%;
+    height: 100%;
+    border-right: 1px solid var(--border);
+    box-shadow: none;
+    transition: none;
   }
-  .sidebar-overlay.open .sidebar { left: auto; }
+
+  .sidebar {
+    width: var(--sidebar-width);
+    height: 100%;
+    flex: 0 0 var(--sidebar-width);
+    padding-top: 0;
+  }
+  .app-rail { padding-top: 10px; padding-bottom: 10px; }
   .sidebar-close-btn { display: none; }
+  body:not([data-app-view="sessions"]) .sidebar-overlay {
+    width: var(--app-rail-width);
+  }
+  body:not([data-app-view="sessions"]) .sidebar {
+    display: none;
+  }
 
   /* Desktop: strip side padding from containers; 70% width on inner elements */
   .messages { padding: 28px 0; }
@@ -32,7 +52,10 @@
   .queued-panel { margin-bottom: 10px; }
   .input-area { padding: 0 0 14px; padding-bottom: calc(14px + var(--safe-bottom)); }
   .input-resize-handle { margin: 0 0 10px; }
-  .modal-backdrop { padding-left: calc(var(--sidebar-width) + 24px); }
+  .modal-backdrop { padding-left: calc(var(--app-rail-width) + var(--sidebar-width) + 24px); }
+  body:not([data-app-view="sessions"]) .modal-backdrop {
+    padding-left: calc(var(--app-rail-width) + 24px);
+  }
 }
 
 @media (max-width: 767px) {
@@ -49,6 +72,10 @@
     gap: 6px;
     padding-left: 10px;
     padding-right: 10px;
+  }
+
+  .settings-panel {
+    padding: 22px 16px calc(30px + var(--safe-bottom));
   }
 
   .header-status {

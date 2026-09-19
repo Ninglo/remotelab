@@ -380,8 +380,8 @@ async function main() {
     assert.doesNotMatch(page.text, /id="voiceInputBtn"/);
     assert.doesNotMatch(page.text, /id="voiceFileInput"/);
     assert.doesNotMatch(page.text, /id="voiceCleanupToggle"/);
-    assert.match(page.text, /class="header-btn header-btn--sessions" id="menuBtn"/, 'mobile header should expose an icon-only session-list entry');
-    assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label sr-only" data-i18n="nav\.sessions">Sessions</, 'session button should keep its localized label available to assistive technology only');
+    assert.match(page.text, /class="header-btn header-btn--sessions" id="menuBtn"/, 'mobile header should expose an icon-only application-navigation entry');
+    assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label sr-only" data-i18n="nav\.open">Open navigation</, 'navigation button should keep its localized label available to assistive technology only');
     assert.doesNotMatch(page.text, /id="forkSessionBtn"/, 'fork should no longer occupy the top header');
     assert.match(page.text, /class="header-status"[\s\S]*id="statusText"[\s\S]*id="shareSnapshotBtn"/, 'run status should sit immediately before the share action');
     assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"[\s\S]*class="header-action-label sr-only"/, 'share should render as an icon-only action with an accessible label');
@@ -434,7 +434,7 @@ async function main() {
       chatInputStylesheet.text,
       chatResponsiveStylesheet.text,
     ].join('\n');
-    assert.match(combinedChatStyles, /\.header-btn,\s*\.sidebar-tab,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'sidebar interactions should suppress the mobile tap highlight flash');
+    assert.match(combinedChatStyles, /\.header-btn,\s*\.app-rail-button,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'application rail and sidebar interactions should suppress the mobile tap highlight flash');
     assert.match(combinedChatStyles, /--app-height:\s*100dvh/);
     assert.match(combinedChatStyles, /\.input-config-row\s*\{[\s\S]*overflow-x:\s*auto;[\s\S]*touch-action:\s*pan-x;/, 'runtime controls should remain horizontally scrollable on mobile');
     assert.match(combinedChatStyles, /\.tool-select,\s*\.provider-select,\s*\.model-select,\s*\.effort-select\s*\{[\s\S]*field-sizing:\s*content;/, 'runtime pickers should size from the selected text when supported');
@@ -452,7 +452,8 @@ async function main() {
     assert.match(combinedChatStyles, /\.queued-panel-details\s*\{[\s\S]*?max-height:\s*min\(36vh, 320px\);[\s\S]*?overflow-y:\s*auto;/, 'expanded queue details should stay scroll-bounded instead of covering the chat surface');
     assert.match(combinedChatStyles, /\.queued-panel-details\[hidden\]\s*\{[\s\S]*?display:\s*none;/, 'queue details should support a collapsed summary-only state');
     assert.doesNotMatch(combinedChatStyles, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
-    assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'desktop modals should offset against the fixed-width sidebar');
+    assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--app-rail-width\) \+ var\(--sidebar-width\) \+ 24px\);/, 'Session modals should offset against the application rail and contextual sidebar');
+    assert.match(combinedChatStyles, /body:not\(\[data-app-view="sessions"\]\) \.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--app-rail-width\) \+ 24px\);/, 'control-workspace modals should offset only against the application rail');
     assert.match(combinedChatStyles, /body\.keyboard-open \.messages/);
     assert.match(combinedChatStyles, /body\.keyboard-open \.input-area/);
     assert.doesNotMatch(combinedChatStyles, /--app-top-offset/);
@@ -872,7 +873,7 @@ async function main() {
     const sidebarUiAsset = await request(port, 'GET', '/chat/sidebar-ui.js');
     assert.equal(sidebarUiAsset.status, 200, 'sidebar ui asset should load');
     assert.match(sidebarUiAsset.text, /function openSidebar\(/);
-    assert.match(sidebarUiAsset.text, /menuBtn\.addEventListener\("click", openSessionsSidebar\);/, 'header session button should always open the sessions tab');
+    assert.match(sidebarUiAsset.text, /menuBtn\.addEventListener\("click", openApplicationNavigation\);/, 'the mobile header button should open the application navigation without changing workspaces');
     assert.doesNotMatch(sidebarUiAsset.text, /setSessionViewMode|viewInboxBtn|viewProjectsBtn/, 'sidebar controller should not retain the removed Inbox/Projects toggle');
     assert.match(sidebarUiAsset.text, /function createNewSessionShortcut\([\s\S]*?forceComposerFocus = true/, 'new-session drafts should reclaim composer focus by default');
     assert.match(sidebarUiAsset.text, /function materializeNewSessionShortcut\(\)/, 'the first send should have an explicit session-materialization path');

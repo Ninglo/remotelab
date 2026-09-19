@@ -359,6 +359,7 @@ function createActiveSessionItem(session) {
     if (e.target.closest(".session-action-btn")) {
       return;
     }
+    if (typeof switchTab === "function") switchTab("sessions");
     attachSession(session.id, session);
     if (!isDesktop) closeSidebarFn();
   });
