@@ -2,9 +2,9 @@
 
 import { basename } from 'path';
 
-import { backfillOwnerBootstrapSessions } from '../chat/bootstrap-sessions.mjs';
+import { backfillBootstrapSessions } from '../chat/bootstrap-sessions.mjs';
 
-const result = await backfillOwnerBootstrapSessions();
+const result = await backfillBootstrapSessions();
 const instanceRoot = process.env.REMOTELAB_INSTANCE_ROOT || '';
 
 console.log(JSON.stringify({

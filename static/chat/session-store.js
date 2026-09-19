@@ -42,6 +42,10 @@
         typeof state.activeSourceFilter === "string" && state.activeSourceFilter.trim()
           ? state.activeSourceFilter.trim()
           : "__all__",
+      activePersonFilter:
+        typeof state.activePersonFilter === "string" && state.activePersonFilter.trim()
+          ? state.activePersonFilter.trim()
+          : "__all__",
       activeTab: ["tasks", "settings"].includes(state.activeTab)
         ? state.activeTab
         : "sessions",
@@ -228,6 +232,14 @@
     });
   }
 
+  function setActivePersonFilter(state, value) {
+    const nextValue = typeof value === "string" && value.trim() ? value.trim() : "__all__";
+    return createState({
+      ...state,
+      activePersonFilter: nextValue,
+    });
+  }
+
   function setActiveTab(state, value, { normalizeTab = null } = {}) {
     const nextValue = typeof normalizeTab === "function"
       ? normalizeTab(value)
@@ -273,6 +285,7 @@
       && a?.archivedSessionsLoaded === b?.archivedSessionsLoaded
       && a?.archivedSessionsLoading === b?.archivedSessionsLoading
       && a?.activeSourceFilter === b?.activeSourceFilter
+      && a?.activePersonFilter === b?.activePersonFilter
       && a?.activeTab === b?.activeTab
       && a?.sessionStatus === b?.sessionStatus;
   }
@@ -320,6 +333,9 @@
         case "set-active-source-filter":
           nextState = setActiveSourceFilter(state, action.value, action);
           break;
+        case "set-active-person-filter":
+          nextState = setActivePersonFilter(state, action.value);
+          break;
         case "set-active-tab":
           nextState = setActiveTab(state, action.value, action);
           break;
@@ -361,6 +377,7 @@
     setCurrentSession,
     setArchivedSessionsLoading,
     setActiveSourceFilter,
+    setActivePersonFilter,
     setActiveTab,
     setSessionStatus,
     findSession,

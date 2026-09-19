@@ -113,8 +113,8 @@
   }
 
   function resolveInstanceSettingsUrl() {
-    if (typeof withVisitorModeUrl === "function") {
-      return withVisitorModeUrl("/api/settings");
+    if (typeof resolveProductRequestUrl === "function") {
+      return resolveProductRequestUrl("/api/settings");
     }
     if (typeof globalScope.remotelabResolveProductPath === "function") {
       return globalScope.remotelabResolveProductPath("/api/settings");
@@ -127,7 +127,7 @@
   }
 
   function canManageInstanceSettings() {
-    return globalScope.__REMOTELAB_BOOTSTRAP__?.auth?.role === "owner";
+    return !!globalScope.__REMOTELAB_BOOTSTRAP__?.auth;
   }
 
   let currentInstanceSettings = getBootstrapSettings();
@@ -206,9 +206,6 @@
   }
 
   async function updateInstanceSettings(patch = {}) {
-    if (!canManageInstanceSettings()) {
-      throw new Error("Owner access required");
-    }
     const mutationId = latestMutationId + 1;
     latestMutationId = mutationId;
     const optimisticSettings = mergeInstanceSettingsPatch(patch);

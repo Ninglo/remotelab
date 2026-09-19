@@ -4,14 +4,21 @@ import { readFile, readdir } from 'fs/promises';
 import { basename, dirname, join, resolve } from 'path';
 
 import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_ENABLED, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
-import { listAgents, getAgent, createAgent, updateAgent, deleteAgent } from './apps.mjs';
+import {
+  addPersonCredential,
+  createPerson,
+  listPeopleForClient,
+  moveIdentityToPerson,
+  removePersonCredential,
+  updatePerson,
+} from '../lib/auth.mjs';
 import { loadUiRuntimeSelection, saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { getModelsForTool } from './models.mjs';
 import { getPublicKey, addSubscription } from './push.mjs';
-import { backfillOwnerBootstrapSessions } from './bootstrap-sessions.mjs';
+import { backfillBootstrapSessions } from './bootstrap-sessions.mjs';
 import { createSessionDetail } from './session-api-shapes.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import { isQuickSession } from '../lib/quick-session-profile.mjs';
@@ -74,9 +81,8 @@ import {
   loadInstanceSettings,
   updateInstanceSettings,
 } from './instance-settings.mjs';
-import { broadcastAll, broadcastOwners } from './ws-clients.mjs';
+import { broadcastAll } from './ws-clients.mjs';
 import {
-  applyTemplateToSession,
   appendAssistantMessage,
   compactSession,
   delegateSession,
@@ -86,7 +92,6 @@ import {
   getSession,
   getSessionSourceContext,
   renameSession,
-  saveSessionAsTemplate,
   setSessionArchived,
   setSessionPinned,
   updateSessionAgreements,
@@ -133,14 +138,6 @@ async function getSessionForClient(id, options = {}) {
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(String(value || '').trim(), 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function getGrantedCapability(authSession, capability, fallback = false) {
-  if (authSession?.role === 'owner') return true;
-  if (!capability) return fallback;
-  return authSession?.capabilities?.[capability] === true
-    ? true
-    : fallback;
 }
 
 function trimString(value) {
@@ -262,13 +259,94 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
-  if (pathname === '/api/bootstrap/owner-sessions/restore' && req.method === 'POST') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
+  if (pathname === '/api/people' && req.method === 'GET') {
+    writeJson(res, 200, { people: await listPeopleForClient() });
+    return true;
+  }
+
+  if (pathname === '/api/people' && req.method === 'POST') {
+    try {
+      const payload = JSON.parse(await readBody(req, 32768) || '{}');
+      const created = await createPerson(payload);
+      writeJson(res, 201, { ...created, people: await listPeopleForClient() });
+      broadcastAll({ type: 'people_updated' });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to create person' });
+    }
+    return true;
+  }
+
+  const personMatch = /^\/api\/people\/([^/]+)$/.exec(pathname);
+  if (personMatch && req.method === 'PATCH') {
+    try {
+      const payload = JSON.parse(await readBody(req, 32768) || '{}');
+      const updated = await updatePerson(personMatch[1], payload);
+      if (!updated) {
+        writeJson(res, 404, { error: 'Person not found' });
+        return true;
+      }
+      writeJson(res, 200, { people: await listPeopleForClient() });
+      broadcastAll({ type: 'people_updated' });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to update person' });
+    }
+    return true;
+  }
+
+  const personCredentialCollectionMatch = /^\/api\/people\/([^/]+)\/credentials$/.exec(pathname);
+  if (personCredentialCollectionMatch && req.method === 'POST') {
+    try {
+      const payload = JSON.parse(await readBody(req, 32768) || '{}');
+      const created = await addPersonCredential(personCredentialCollectionMatch[1], payload);
+      if (!created) {
+        writeJson(res, 404, { error: 'Person not found' });
+        return true;
+      }
+      writeJson(res, 201, { ...created, people: await listPeopleForClient() });
+      broadcastAll({ type: 'people_updated' });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to add credential' });
+    }
+    return true;
+  }
+
+  const personCredentialMatch = /^\/api\/people\/([^/]+)\/credentials\/([^/]+)$/.exec(pathname);
+  if (personCredentialMatch && req.method === 'DELETE') {
+    const removed = await removePersonCredential(personCredentialMatch[1], personCredentialMatch[2]);
+    if (!removed) {
+      writeJson(res, 404, { error: 'Credential not found' });
       return true;
     }
+    writeJson(res, 200, { people: await listPeopleForClient() });
+    broadcastAll({ type: 'people_updated' });
+    return true;
+  }
+
+  const personIdentityMatch = /^\/api\/people\/([^/]+)\/identities$/.exec(pathname);
+  if (personIdentityMatch && req.method === 'POST') {
     try {
-      const result = await backfillOwnerBootstrapSessions();
+      const payload = JSON.parse(await readBody(req, 32768) || '{}');
+      const identityId = trimString(payload.identityId);
+      if (!identityId) {
+        writeJson(res, 400, { error: 'identityId is required' });
+        return true;
+      }
+      const moved = await moveIdentityToPerson(identityId, personIdentityMatch[1]);
+      if (!moved) {
+        writeJson(res, 404, { error: 'Person or identity not found' });
+        return true;
+      }
+      writeJson(res, 200, { people: await listPeopleForClient() });
+      broadcastAll({ type: 'people_updated' });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to move identity' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/bootstrap/sessions/restore' && req.method === 'POST') {
+    try {
+      const result = await backfillBootstrapSessions();
       writeJson(res, 200, {
         ok: true,
         created: result.created,
@@ -285,7 +363,7 @@ export async function handleControlRoutes({
   if (pathname === '/api/settings' && req.method === 'GET') {
     try {
       const settings = await loadInstanceSettings({
-        includeSecrets: authSession?.role === 'owner',
+        includeSecrets: true,
       });
       writeJson(res, 200, {
         settings: buildClientInstanceSettings(settings, { authSession }),
@@ -297,10 +375,6 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/settings' && req.method === 'PATCH') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     let payload = {};
     try {
       const body = await readBody(req, 65536);
@@ -348,7 +422,7 @@ export async function handleControlRoutes({
     try {
       const task = await createAutomationTask(await prepareAutomationTask(payload));
       writeJson(res, 201, { task });
-      broadcastOwners({ type: 'automation_tasks_updated', taskId: task.id });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: task.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create automation task' });
     }
@@ -370,7 +444,7 @@ export async function handleControlRoutes({
         return true;
       }
       writeJson(res, 200, result);
-      broadcastOwners({ type: 'automation_tasks_updated', taskId: result.task.id });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: result.task.id });
     } catch (error) {
       writeJson(res, 409, { error: error.message || 'Failed to update automation task' });
     }
@@ -390,7 +464,6 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/session-conversations/resolve' && req.method === 'POST') {
-    if (authSession?.role !== 'owner') { writeJson(res, 403, { error: 'Owner access required' }); return true; }
     try {
       const payload = JSON.parse(await readBody(req, 32768));
       const session = await findSessionConversation(payload.conversation);
@@ -419,7 +492,7 @@ export async function handleControlRoutes({
       }
       const trigger = await createTrigger(await prepareScheduledTask(payload));
       writeJson(res, 201, { trigger });
-      broadcastOwners({ type: 'automation_tasks_updated', taskId: trigger.id });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create trigger' });
     }
@@ -460,7 +533,7 @@ export async function handleControlRoutes({
         return true;
       }
       writeJson(res, 200, { trigger });
-      broadcastOwners({ type: 'automation_tasks_updated', taskId: trigger.id });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to update trigger' });
     }
@@ -474,7 +547,7 @@ export async function handleControlRoutes({
       return true;
     }
     writeJson(res, 200, { ok: true, trigger });
-    broadcastOwners({ type: 'automation_tasks_updated', taskId: trigger.id });
+    broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     return true;
   }
 
@@ -496,7 +569,7 @@ export async function handleControlRoutes({
     try {
       const schedule = await createRecurringSchedule(await prepareScheduledTask(payload));
       writeJson(res, 201, { schedule });
-      broadcastOwners({ type: 'automation_tasks_updated', taskId: schedule.id });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to create schedule' });
     }
@@ -533,7 +606,7 @@ export async function handleControlRoutes({
         cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: payload.includeActive === true });
       }
       writeJson(res, 200, { schedule, cancellation });
-      broadcastOwners({ type: 'automation_tasks_updated', taskId: schedule.id });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to update schedule' });
     }
@@ -548,7 +621,7 @@ export async function handleControlRoutes({
     }
     const cancellation = await cancelScheduleTriggers(scheduleId, { includeActive: false });
     writeJson(res, 200, { ok: true, schedule, cancellation });
-    broadcastOwners({ type: 'automation_tasks_updated', taskId: schedule.id });
+    broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     return true;
   }
 
@@ -626,10 +699,6 @@ export async function handleControlRoutes({
       return true;
     }
     if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-    if (!getGrantedCapability(authSession, 'uploadAttachments', true)) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
 
     try {
       const intent = await createFileAssetUploadIntent({
@@ -637,7 +706,7 @@ export async function handleControlRoutes({
         originalName: typeof payload?.originalName === 'string' ? payload.originalName : '',
         mimeType: typeof payload?.mimeType === 'string' ? payload.mimeType : '',
         sizeBytes: payload?.sizeBytes,
-        createdBy: authSession?.role === 'visitor' ? 'visitor' : 'owner',
+        createdBy: authSession?.personId || 'authenticated',
         forceLocal: !FILE_ASSET_STORAGE_ENABLED,
       });
       writeJson(res, 200, intent);
@@ -654,10 +723,6 @@ export async function handleControlRoutes({
       return true;
     }
     if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
-    if (!getGrantedCapability(authSession, 'downloadArtifacts', true)) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
     const clientAsset = await getFileAssetForClient(asset.id, {
       includeDirectUrl: asset.status === 'ready',
     });
@@ -672,10 +737,6 @@ export async function handleControlRoutes({
       return true;
     }
     if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
-    if (!getGrantedCapability(authSession, 'uploadAttachments', true)) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
 
     try {
       await ingestFileAssetUpload(asset.id, req);
@@ -697,10 +758,6 @@ export async function handleControlRoutes({
       return true;
     }
     if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
-    if (!getGrantedCapability(authSession, 'uploadAttachments', true)) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
 
     let payload = {};
     try {
@@ -730,10 +787,6 @@ export async function handleControlRoutes({
       return true;
     }
     if (!await requireSessionAccess(res, authSession, asset.sessionId)) return true;
-    if (!getGrantedCapability(authSession, 'downloadArtifacts', true)) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
     const downloadRequested = String(parsedUrl?.query?.download || '') === '1';
 
     try {
@@ -759,16 +812,11 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/usage/summary' && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
-
-    const principalType = typeof parsedUrl?.query?.principalType === 'string'
-      ? parsedUrl.query.principalType.trim()
+    const identityKind = typeof parsedUrl?.query?.identityKind === 'string'
+      ? parsedUrl.query.identityKind.trim()
       : '';
-    const principalId = typeof parsedUrl?.query?.principalId === 'string'
-      ? parsedUrl.query.principalId.trim()
+    const identityId = typeof parsedUrl?.query?.identityId === 'string'
+      ? parsedUrl.query.identityId.trim()
       : '';
     const sessionId = typeof parsedUrl?.query?.sessionId === 'string'
       ? parsedUrl.query.sessionId.trim()
@@ -782,8 +830,8 @@ export async function handleControlRoutes({
     const summary = await queryUsageLedger({
       days: parsePositiveInteger(parsedUrl?.query?.days, 7),
       top: parsePositiveInteger(parsedUrl?.query?.top, 10),
-      principalType,
-      principalId,
+      identityKind,
+      identityId,
       sessionId,
       tool,
       model,
@@ -812,7 +860,6 @@ export async function handleControlRoutes({
     }
     const hasConversationPatch = Object.hasOwn(patch || {}, 'conversation');
     if (hasConversationPatch) {
-      if (authSession?.role !== 'owner') { writeJson(res, 403, { error: 'Owner access required' }); return true; }
       try { requireConversation(patch.conversation); }
       catch (error) { writeJson(res, 400, { error: error.message }); return true; }
     }
@@ -903,26 +950,6 @@ export async function handleControlRoutes({
       writeJson(res, 400, { error: 'entryMode must be a string or null' });
       return true;
     }
-    if (hasEntryModePatch && authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required to update entryMode' });
-      return true;
-    }
-    if (typeof patch.name === 'string' && patch.name.trim() && !getGrantedCapability(authSession, 'renameSession')) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
-    if (hasArchivedPatch && !getGrantedCapability(authSession, 'archiveSession')) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
-    if (hasPinnedPatch && !getGrantedCapability(authSession, 'pinSession')) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
-    if ((hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) && !getGrantedCapability(authSession, 'changeRuntime')) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
     if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) {
       const targetSession = await getSession(sessionId);
       if (isQuickSession(targetSession)) {
@@ -975,7 +1002,9 @@ export async function handleControlRoutes({
       catch (error) { writeJson(res, 400, { error: error.message }); return true; }
     }
     if (typeof patch.name === 'string' && patch.name.trim()) {
-      session = await renameSession(sessionId, patch.name.trim());
+      session = await renameSession(sessionId, patch.name.trim(), {
+        viewPersonId: authSession?.personId || '',
+      });
     }
     if (hasArchivedPatch) {
       session = await setSessionArchived(sessionId, patch.archived) || session;
@@ -989,7 +1018,7 @@ export async function handleControlRoutes({
         ...(hasGroupPatch ? { group: patch.group ?? '' } : {}),
         ...(hasDescriptionPatch ? { description: patch.description ?? '' } : {}),
         ...(hasSidebarOrderPatch ? { sidebarOrder: patch.sidebarOrder ?? null } : {}),
-      }) || session;
+      }, { personId: authSession?.personId || '' }) || session;
     }
     if (hasActiveAgreementsPatch) {
       session = await updateSessionAgreements(sessionId, {
@@ -1018,7 +1047,7 @@ export async function handleControlRoutes({
       session = await updateSessionEntryMode(sessionId, patch.entryMode || '') || session;
     }
     if (!session) {
-      session = await getSessionForClient(sessionId);
+      session = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });
     }
     if (!session) {
       writeJson(res, 404, { error: 'Session not found' });
@@ -1035,10 +1064,6 @@ export async function handleControlRoutes({
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'assistant-messages') {
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-      if (authSession?.role !== 'owner') {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return true;
-      }
       let body;
       try {
         body = await readSessionMessagePayload(req, pathname);
@@ -1084,114 +1109,25 @@ export async function handleControlRoutes({
     }
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'compact') {
-      if (authSession?.role === 'visitor') {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return true;
-      }
       if (!await compactSession(sessionId)) {
         writeJson(res, 409, { error: 'Unable to compact session' });
         return true;
       }
-      writeJson(res, 200, { ok: true, session: await getSessionForClient(sessionId) });
+      writeJson(res, 200, { ok: true, session: await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' }) });
       return true;
     }
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'drop-tools') {
-      if (authSession?.role === 'visitor') {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return true;
-      }
       if (!await dropToolUse(sessionId)) {
         writeJson(res, 409, { error: 'Unable to drop tool results' });
         return true;
       }
-      writeJson(res, 200, { ok: true, session: await getSessionForClient(sessionId) });
-      return true;
-    }
-
-    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'apply-template') {
-      if (authSession?.role === 'visitor') {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return true;
-      }
-      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-      let body;
-      try { body = await readBody(req, 10240); } catch {
-        writeJson(res, 400, { error: 'Bad request' });
-        return true;
-      }
-      let payload;
-      try { payload = JSON.parse(body); } catch {
-        writeJson(res, 400, { error: 'Invalid request body' });
-        return true;
-      }
-      const templateId = typeof payload?.templateId === 'string' ? payload.templateId.trim() : '';
-      if (!templateId) {
-        writeJson(res, 400, { error: 'templateId is required' });
-        return true;
-      }
-      const session = await getSessionForClient(sessionId);
-      if (!session) {
-        writeJson(res, 404, { error: 'Session not found' });
-        return true;
-      }
-      if (session.activity?.run?.state === 'running') {
-        writeJson(res, 409, { error: 'Session is running' });
-        return true;
-      }
-      if ((session.messageCount || 0) > 0) {
-        writeJson(res, 409, { error: 'Templates can only be applied before the first message' });
-        return true;
-      }
-      const updated = await applyTemplateToSession(sessionId, templateId, {
-        appendWelcome: true,
-      });
-      if (!updated) {
-        writeJson(res, 409, { error: 'Unable to apply template' });
-        return true;
-      }
-      writeJson(res, 200, { session: createClientSessionDetail(updated) });
-      return true;
-    }
-
-    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'save-template') {
-      if (authSession?.role === 'visitor') {
-        writeJson(res, 403, { error: 'Owner access required' });
-        return true;
-      }
-      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-      let body = '';
-      try { body = await readBody(req, 10240); } catch {
-        writeJson(res, 400, { error: 'Bad request' });
-        return true;
-      }
-      let payload = {};
-      if (body) {
-        try { payload = JSON.parse(body); } catch {
-          writeJson(res, 400, { error: 'Invalid request body' });
-          return true;
-        }
-      }
-      const session = await getSessionForClient(sessionId);
-      if (!session) {
-        writeJson(res, 404, { error: 'Session not found' });
-        return true;
-      }
-      const template = await saveSessionAsTemplate(sessionId, typeof payload?.name === 'string' ? payload.name.trim() : '');
-      if (!template) {
-        writeJson(res, 409, { error: 'Unable to save template' });
-        return true;
-      }
-      writeJson(res, 201, { template });
+      writeJson(res, 200, { ok: true, session: await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' }) });
       return true;
     }
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'fork') {
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-      if (!getGrantedCapability(authSession, 'forkSession')) {
-        writeJson(res, 403, { error: 'Access denied' });
-        return true;
-      }
       let payload = {};
       try {
         const body = await readBody(req, 10240);
@@ -1200,16 +1136,17 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'Invalid request body' });
         return true;
       }
-      const source = await getSessionForClient(sessionId);
+      const source = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });
       if (!source) {
         writeJson(res, 404, { error: 'Session not found' });
         return true;
       }
-      if (source.visitorId) {
-        writeJson(res, 409, { error: 'Visitor sessions cannot be forked' });
-        return true;
-      }
-      const session = await forkSession(sessionId, payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {});
+      const forkOptions = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+      const session = await forkSession(sessionId, {
+        ...forkOptions,
+        initiatedByIdentityId: authSession?.identityId || source.initiatedByIdentityId || '',
+        viewPersonId: authSession?.personId || '',
+      });
       if (!session) {
         writeJson(res, 409, { error: 'Unable to fork session' });
         return true;
@@ -1220,13 +1157,9 @@ export async function handleControlRoutes({
 
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'delegate') {
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-      const source = await getSessionForClient(sessionId);
+      const source = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });
       if (!source) {
         writeJson(res, 404, { error: 'Session not found' });
-        return true;
-      }
-      if (source.visitorId) {
-        writeJson(res, 409, { error: 'Visitor sessions cannot be delegated' });
         return true;
       }
 
@@ -1269,6 +1202,8 @@ export async function handleControlRoutes({
           name: typeof payload?.name === 'string' ? payload.name.trim() : '',
           tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
           internal: payload?.internal === true,
+          initiatedByIdentityId: authSession?.identityId || source.initiatedByIdentityId || '',
+          viewPersonId: authSession?.personId || '',
         });
         if (!outcome?.session) {
           writeJson(res, 409, { error: 'Unable to delegate session' });
@@ -1294,7 +1229,7 @@ export async function handleControlRoutes({
       return true;
     }
 
-    const session = await getSessionForClient(id);
+    const session = await getSessionForClient(id, { viewPersonId: authSession?.personId || '' });
     if (!session) {
       writeJson(res, 404, { error: 'Session not found' });
       return true;
@@ -1312,10 +1247,6 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/runtime-selection' && req.method === 'POST') {
-    if (authSession?.role === 'visitor') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     let body;
     try { body = await readBody(req, 4096); } catch (err) {
       writeJson(res, err.code === 'BODY_TOO_LARGE' ? 413 : 400, { error: err.code === 'BODY_TOO_LARGE' ? 'Request body too large' : 'Bad request' });
@@ -1352,12 +1283,6 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/tools' && req.method === 'POST') {
-    if (authSession?.role !== 'owner') {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Owner access required' }));
-      return true;
-    }
-
     let body;
     try { body = await readBody(req, 65536); } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -1488,10 +1413,6 @@ export async function handleControlRoutes({
 
   // POST /api/notifications — broadcast a system notification to connected clients
   if (pathname === '/api/notifications' && req.method === 'POST') {
-    if (authSession?.role === 'visitor') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     let body;
     try { body = await readBody(req, 10240); } catch {
       writeJson(res, 400, { error: 'Bad request' });
@@ -1508,18 +1429,13 @@ export async function handleControlRoutes({
       writeJson(res, 400, { error: 'Missing message' });
       return true;
     }
-    const { broadcastOwners } = await import('./ws-clients.mjs');
-    broadcastOwners({ type: 'system_notification', message, level });
+    broadcastAll({ type: 'system_notification', message, level });
     writeJson(res, 200, { ok: true });
     return true;
   }
 
   // GET /api/mailbox/status — recent mailbox failures & stats
   if (pathname === '/api/mailbox/status' && req.method === 'GET') {
-    if (authSession?.role === 'visitor') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     try {
       const mailboxRoot = join(CONFIG_DIR, 'agent-mailbox');
       const approvedDir = join(mailboxRoot, 'approved');
@@ -1549,87 +1465,6 @@ export async function handleControlRoutes({
       writeJson(res, 200, { ok: true, failures, total: files.length });
     } catch (error) {
       writeJson(res, 500, { error: error.message || 'Failed to read mailbox status' });
-    }
-    return true;
-  }
-
-  // ---- Agents CRUD ----
-
-  if (pathname === '/api/agents' && req.method === 'GET') {
-    try {
-      const agents = await listAgents();
-      writeJson(res, 200, { agents });
-    } catch (error) {
-      writeJson(res, 500, { error: error.message || 'Failed to list agents' });
-    }
-    return true;
-  }
-
-  if (pathname === '/api/agents' && req.method === 'POST') {
-    let payload = {};
-    try {
-      const body = await readBody(req, 65536);
-      payload = body ? JSON.parse(body) : {};
-    } catch {
-      writeJson(res, 400, { error: 'Invalid request body' });
-      return true;
-    }
-    try {
-      const agent = await createAgent(payload);
-      writeJson(res, 201, agent);
-    } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to create agent' });
-    }
-    return true;
-  }
-
-  const agentIdMatch = pathname.match(/^\/api\/agents\/([a-z0-9_]+)$/);
-  if (agentIdMatch && req.method === 'PATCH') {
-    let payload = {};
-    try {
-      const body = await readBody(req, 65536);
-      payload = body ? JSON.parse(body) : {};
-    } catch {
-      writeJson(res, 400, { error: 'Invalid request body' });
-      return true;
-    }
-    try {
-      const updated = await updateAgent(agentIdMatch[1], payload);
-      if (!updated) {
-        writeJson(res, 404, { error: 'Agent not found' });
-        return true;
-      }
-      writeJson(res, 200, updated);
-    } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to update agent' });
-    }
-    return true;
-  }
-
-  if (agentIdMatch && req.method === 'DELETE') {
-    try {
-      const deleted = await deleteAgent(agentIdMatch[1]);
-      if (!deleted) {
-        writeJson(res, 404, { error: 'Agent not found' });
-        return true;
-      }
-      writeJson(res, 200, { ok: true });
-    } catch (error) {
-      writeJson(res, 500, { error: error.message || 'Failed to delete agent' });
-    }
-    return true;
-  }
-
-  if (agentIdMatch && req.method === 'GET') {
-    try {
-      const agent = await getAgent(agentIdMatch[1]);
-      if (!agent) {
-        writeJson(res, 404, { error: 'Agent not found' });
-        return true;
-      }
-      writeJson(res, 200, agent);
-    } catch (error) {
-      writeJson(res, 500, { error: error.message || 'Failed to get agent' });
     }
     return true;
   }

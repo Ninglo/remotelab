@@ -8,7 +8,12 @@ import { join } from 'path';
 const tempRoot = mkdtempSync(join(tmpdir(), 'remotelab-schedule-command-'));
 const homeDir = join(tempRoot, 'home');
 mkdirSync(join(homeDir, '.config', 'remotelab'), { recursive: true });
-writeFileSync(join(homeDir, '.config', 'remotelab', 'auth.json'), `${JSON.stringify({ token: 'owner-token' })}\n`);
+writeFileSync(join(homeDir, '.config', 'remotelab', 'auth.json'), `${JSON.stringify({
+  version: 2,
+  serviceToken: 'owner-token',
+  primaryPersonId: 'person_default',
+  people: [{ id: 'person_default', name: 'Administrator', credentials: [] }],
+})}\n`);
 process.env.HOME = homeDir;
 process.env.REMOTELAB_SESSION_ID = 'sess-current';
 process.env.REMOTELAB_REQUEST_ID = 'feishu:om_current';

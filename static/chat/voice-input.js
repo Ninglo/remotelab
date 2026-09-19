@@ -302,7 +302,7 @@
     return normalizedConfig?.clientReady === true;
   }
 
-  function isVoiceInputOwnerOnly(config = readStoredVoiceInputConfig()) {
+  function isVoiceInputServerOnly(config = readStoredVoiceInputConfig()) {
     const normalizedConfig = normalizeVoiceInputConfig(config);
     return isGatewayDirectVoiceProvider(normalizedConfig)
       && normalizedConfig?.configured === true
@@ -325,7 +325,7 @@
       default: {
         const config = readStoredVoiceInputConfig();
         if (!hasVoiceInputSupport()) return t("voice.button.unsupported");
-        if (isVoiceInputOwnerOnly(config)) return t("voice.button.ownerOnly");
+        if (isVoiceInputServerOnly(config)) return t("voice.button.setup");
         if (!isVoiceInputConfigured(config)) return t("voice.button.setup");
         return t("action.voiceInput");
       }
@@ -386,8 +386,8 @@
 
   function resolveVoiceRelayUrl() {
     const proto = globalScope.location?.protocol === "https:" ? "wss:" : "ws:";
-    const relativePath = typeof withVisitorModeUrl === "function"
-      ? withVisitorModeUrl(DOUBAO_VOICE_WS_PATH)
+    const relativePath = typeof resolveProductRequestUrl === "function"
+      ? resolveProductRequestUrl(DOUBAO_VOICE_WS_PATH)
       : DOUBAO_VOICE_WS_PATH;
     return `${proto}//${globalScope.location.host}${relativePath}`;
   }

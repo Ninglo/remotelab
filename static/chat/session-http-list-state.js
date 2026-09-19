@@ -42,7 +42,7 @@ function applySessionListState(nextSessions, {
   const nextSignature = typeof getComparableSessionStateSignature === "function"
     ? getComparableSessionStateSignature({ archivedCount: archivedSessionCount, sessions })
     : "";
-  refreshAppCatalog();
+  refreshSessionCatalog();
   if (!hadLoadedSessions || previousSignature !== nextSignature) {
     renderSessionList();
   }
@@ -90,7 +90,7 @@ function applyArchivedSessionListState(nextSessions, {
   const nextSignature = typeof getComparableSessionStateSignature === "function"
     ? getComparableSessionStateSignature({ archivedCount: archivedSessionCount, sessions })
     : "";
-  refreshAppCatalog();
+  refreshSessionCatalog();
   if (!hadArchivedSessionsLoaded || previousSignature !== nextSignature) {
     renderSessionList();
   }

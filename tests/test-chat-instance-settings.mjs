@@ -35,17 +35,20 @@ assert.equal(directSettings.voiceInput.configured, true);
 assert.equal(directSettings.voiceInput.clientReady, true);
 assert.equal(directSettings.voiceInput.gatewayApiKey, 'gateway-key-live');
 
-const ownerView = buildClientInstanceSettings(directSettings, {
-  authSession: { role: 'owner' },
+const alphaView = buildClientInstanceSettings(directSettings, {
+  authSession: { personId: 'person_alpha', identityId: 'identity_web_alpha' },
 });
-assert.equal(ownerView.voiceInput.gatewayApiKey, 'gateway-key-live');
-assert.equal(ownerView.voiceInput.clientReady, true);
+assert.equal(alphaView.voiceInput.gatewayApiKey, 'gateway-key-live');
+assert.equal(alphaView.voiceInput.clientReady, true);
 
-const visitorView = buildClientInstanceSettings(directSettings, {
-  authSession: { role: 'visitor' },
+const betaView = buildClientInstanceSettings(directSettings, {
+  authSession: { personId: 'person_beta', identityId: 'identity_web_beta' },
 });
-assert.equal(visitorView.voiceInput.gatewayApiKey, '', 'visitor view should redact gateway secrets');
-assert.equal(visitorView.voiceInput.configured, true, 'visitor view should still expose service readiness');
-assert.equal(visitorView.voiceInput.clientReady, false, 'visitor view should not advertise direct-browser readiness without the key');
+assert.equal(betaView.voiceInput.gatewayApiKey, 'gateway-key-live', 'every authenticated Person has complete instance access');
+assert.equal(betaView.voiceInput.clientReady, true);
+
+const anonymousView = buildClientInstanceSettings(directSettings);
+assert.equal(anonymousView.voiceInput.gatewayApiKey, '', 'anonymous bootstrap data must redact gateway secrets');
+assert.equal(anonymousView.voiceInput.clientReady, false);
 
 console.log('test-chat-instance-settings: ok');

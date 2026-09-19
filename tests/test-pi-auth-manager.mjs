@@ -92,38 +92,38 @@ await handlePiAuthRoutes({
   req: { method: 'POST' },
   res: syncResponse.res,
   pathname: '/api/pi-auth/sync-codex',
-  authSession: { role: 'owner' },
+  authSession: { personId: 'person_primary' },
   writeJson: syncResponse.writeJson,
   authManager: manager,
 });
 assert.equal(syncResponse.capture.status, 200);
 assert.equal(syncResponse.capture.payload?.piAuth?.loggedIn, true);
 
-const ownerResponse = createResponseCapture();
+const primaryResponse = createResponseCapture();
 await handlePiAuthRoutes({
   req: { method: 'GET' },
-  res: ownerResponse.res,
+  res: primaryResponse.res,
   pathname: '/api/pi-auth/status',
-  authSession: { role: 'owner' },
-  writeJson: ownerResponse.writeJson,
+  authSession: { personId: 'person_primary' },
+  writeJson: primaryResponse.writeJson,
   authManager: {
     async getStatus() {
       return { available: true, loggedIn: true, phase: 'authenticated' };
     },
   },
 });
-assert.equal(ownerResponse.capture.status, 200);
-assert.equal(ownerResponse.capture.payload?.piAuth?.loggedIn, true);
+assert.equal(primaryResponse.capture.status, 200);
+assert.equal(primaryResponse.capture.payload?.piAuth?.loggedIn, true);
 
-const visitorResponse = createResponseCapture();
+const secondPersonResponse = createResponseCapture();
 await handlePiAuthRoutes({
   req: { method: 'GET' },
-  res: visitorResponse.res,
+  res: secondPersonResponse.res,
   pathname: '/api/pi-auth/status',
-  authSession: { role: 'visitor' },
-  writeJson: visitorResponse.writeJson,
+  authSession: { personId: 'person_second' },
+  writeJson: secondPersonResponse.writeJson,
   authManager: manager,
 });
-assert.equal(visitorResponse.capture.status, 403);
+assert.equal(secondPersonResponse.capture.status, 200);
 
 console.log('Pi auth manager tests passed');

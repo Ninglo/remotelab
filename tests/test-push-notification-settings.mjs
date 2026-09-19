@@ -14,7 +14,7 @@ assert.match(template, /id="settingsPushStatus"[^>]*role="status"/);
 assert.match(source, /initPushNotificationSettings\(\);/);
 assert.match(source, /"remotelab:pushstatechange", renderPushNotificationSettings/);
 
-function createHarness({ permission = 'default', response = 'granted', supported = true, owner = true, result = 'subscribed', requestError = null } = {}) {
+function createHarness({ permission = 'default', response = 'granted', supported = true, result = 'subscribed', requestError = null } = {}) {
   const elements = new Map(['settingsPushSection', 'settingsPushEnableBtn', 'settingsPushStatus'].map((id) => [id, {
     dataset: {}, listeners: [], disabled: false, hidden: false, textContent: '',
     addEventListener(type, callback) { this.listeners.push({ type, callback }); },
@@ -35,7 +35,7 @@ function createHarness({ permission = 'default', response = 'granted', supported
     window: supported ? { Notification: notification, PushManager: function () {}, isSecureContext: true } : {},
     navigator: supported ? { serviceWorker: {} } : {},
     Notification: notification,
-    isOwnerPushFeatureEnabled: () => owner,
+    isPushFeatureEnabled: () => true,
     getPushNotificationSetupState: () => state,
     async setupPushNotifications() {
       calls.push('setup');
@@ -122,9 +122,4 @@ assert.equal(unsupported.status.textContent, 'settings.push.statusUnsupported');
 assert.equal(unsupported.button.disabled, true);
 await unsupported.click();
 assert.deepEqual(unsupported.calls, []);
-const scoped = createHarness({ owner: false });
-assert.equal(scoped.section.hidden, true);
-await scoped.click();
-assert.deepEqual(scoped.calls, [], 'visitors and agent-scoped surfaces cannot activate owner notifications');
-
 console.log('test-push-notification-settings: ok');

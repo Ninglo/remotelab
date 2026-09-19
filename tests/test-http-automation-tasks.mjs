@@ -8,7 +8,8 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const ownerCookie = 'session_token=task-center-owner';
+const primaryCookie = 'session_token=task-center-primary';
+const secondPersonCookie = 'session_token=task-center-second';
 
 function randomPort() {
   return 36000 + Math.floor(Math.random() * 8000);
@@ -26,7 +27,7 @@ async function waitFor(predicate, description, timeoutMs = 10000) {
   throw new Error(`Timed out: ${description}`);
 }
 
-function request(port, method, path, body = null, cookie = ownerCookie) {
+function request(port, method, path, body = null, cookie = primaryCookie) {
   return new Promise((resolve, reject) => {
     const req = http.request({
       hostname: '127.0.0.1',
@@ -60,11 +61,25 @@ function setupHome() {
   mkdirSync(configDir, { recursive: true });
   mkdirSync(binDir, { recursive: true });
   writeFileSync(join(configDir, 'auth.json'), JSON.stringify({
-    token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    version: 2,
+    serviceToken: 'f'.repeat(64),
+    primaryPersonId: 'person_primary',
+    people: [
+      {
+        id: 'person_primary', name: 'Primary',
+        credentials: [{ id: 'credential_primary', type: 'token', token: '0'.repeat(64) }],
+        identities: [{ id: 'identity_web_primary', kind: 'web', realm: 'remotelab', subjectId: 'person_primary', displayName: 'Primary' }],
+      },
+      {
+        id: 'person_second', name: 'Second',
+        credentials: [{ id: 'credential_second', type: 'token', token: '1'.repeat(64) }],
+        identities: [{ id: 'identity_web_second', kind: 'web', realm: 'remotelab', subjectId: 'person_second', displayName: 'Second' }],
+      },
+    ],
   }));
   writeFileSync(join(configDir, 'auth-sessions.json'), JSON.stringify({
-    'task-center-owner': { expiry: Date.now() + 3600000, role: 'owner' },
-    'task-center-visitor': { expiry: Date.now() + 3600000, role: 'visitor', sessionId: 'visitor-session' },
+    'task-center-primary': { expiry: Date.now() + 3600000, personId: 'person_primary', personName: 'Primary', identityId: 'identity_web_primary' },
+    'task-center-second': { expiry: Date.now() + 3600000, personId: 'person_second', personName: 'Second', identityId: 'identity_web_second' },
   }));
   writeFileSync(join(configDir, 'tools.json'), JSON.stringify([{
     id: 'task-center-tool',
@@ -130,8 +145,8 @@ async function main() {
   const port = randomPort();
   const server = await startServer({ ...fixture, port });
   try {
-    const visitor = await request(port, 'GET', '/api/automation-tasks', null, 'visitor_session_token=task-center-visitor');
-    assert.equal(visitor.status, 403, 'Task Center must remain owner-only');
+    const secondPerson = await request(port, 'GET', '/api/automation-tasks', null, secondPersonCookie);
+    assert.equal(secondPerson.status, 200, 'Task Center must be available to every authenticated Person');
 
     const fixedSession = await createSession(port, 'Fixed automation home');
     const templateSession = await createSession(port, 'Independent execution template');

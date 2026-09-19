@@ -6,7 +6,6 @@ import {
   setContextHead,
 } from './history.mjs';
 import { contextOperationEvent, messageEvent, statusEvent } from './normalizer.mjs';
-import { buildTemplateFreshnessNotice } from './session-continuation.mjs';
 import { formatAttachmentContextLine, getMessageAttachments } from './attachment-utils.mjs';
 import { updateRun } from './runs.mjs';
 import { readLatestCodexSessionMetrics } from './codex-session-metrics.mjs';
@@ -271,16 +270,6 @@ function formatCompactionMessage(event) {
   return `[${label}]\n${parts.join('\n')}`;
 }
 
-function formatCompactionTemplateContext(event) {
-  const content = normalizeCompactionText(event.content);
-  if (!content) return '';
-  const name = normalizeCompactionText(event.templateName) || 'template';
-  const freshnessNotice = buildTemplateFreshnessNotice(event);
-  return freshnessNotice
-    ? `[Applied template context: ${name}]\n${freshnessNotice}\n\n${content}`
-    : `[Applied template context: ${name}]\n${content}`;
-}
-
 function formatCompactionStatus(event) {
   const content = clipCompactionEventText(event.content, 1000);
   if (!content) return '';
@@ -293,7 +282,6 @@ function prepareConversationOnlyContinuationBody(events) {
     .map((event) => {
       if (!event || !event.type) return '';
       if (event.type === 'message') return formatCompactionMessage(event);
-      if (event.type === 'template_context') return formatCompactionTemplateContext(event);
       if (event.type === 'status') return formatCompactionStatus(event);
       return '';
     })

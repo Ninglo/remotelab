@@ -38,7 +38,6 @@ function createContext({
     URL,
     encodeURIComponent,
     currentSessionId: 'session_share_1',
-    visitorMode: false,
     shareSnapshotBtn,
     forkSessionBtn: null,
     document: {

@@ -68,6 +68,13 @@ function initSessionAutoArchiveSettings() {
 }
 
 const settingsConnectorsList = document.getElementById("settingsConnectorsList");
+const settingsPeopleList = document.getElementById("settingsPeopleList");
+const settingsPersonName = document.getElementById("settingsPersonName");
+const settingsPersonCredentialType = document.getElementById("settingsPersonCredentialType");
+const settingsPersonUsername = document.getElementById("settingsPersonUsername");
+const settingsPersonPassword = document.getElementById("settingsPersonPassword");
+const settingsPersonCreate = document.getElementById("settingsPersonCreate");
+const settingsPeopleStatus = document.getElementById("settingsPeopleStatus");
 let connectorSurfacesCache = [];
 let connectorSurfacesLoaded = false;
 let expandedConnectorSurfaceId = "";
@@ -76,6 +83,252 @@ let codexAuthPollTimer = null;
 let codexAuthRequestId = 0;
 const CODEX_AUTH_MUTATION_TIMEOUT_MS = 20_000;
 let piAuthState = null;
+
+function setPeopleStatus(message = "", { error = false } = {}) {
+  if (!settingsPeopleStatus) return;
+  settingsPeopleStatus.hidden = !message;
+  settingsPeopleStatus.textContent = message;
+  settingsPeopleStatus.classList.toggle("error", error);
+}
+
+async function requestPeople(path = "/api/people", options = {}) {
+  const payload = await fetchJsonOrRedirect(path, {
+    revalidate: false,
+    ...options,
+    headers: options.body ? { "Content-Type": "application/json", ...(options.headers || {}) } : options.headers,
+  });
+  if (Array.isArray(payload?.people)) {
+    replacePeopleDirectory(payload.people);
+    if (typeof refreshSessionCatalog === "function") refreshSessionCatalog();
+  }
+  return payload;
+}
+
+function buildPersonIdentityLabel(identity) {
+  const parts = [identity.kind, identity.displayName, identity.realm].filter(Boolean);
+  if (identity.subjectHint) parts.push(`…${identity.subjectHint}`);
+  return parts.join(" · ");
+}
+
+function buildPersonCard(person, allPeople) {
+  const card = document.createElement("div");
+  card.className = "settings-app-card";
+  const header = document.createElement("div");
+  header.className = "settings-app-card-header";
+  const name = document.createElement("input");
+  name.className = "settings-inline-input settings-app-name";
+  name.value = person.name;
+  name.disabled = person.system === true;
+  name.setAttribute("aria-label", t("settings.people.namePlaceholder"));
+  header.appendChild(name);
+  const kind = document.createElement("div");
+  kind.className = "settings-app-kind";
+  kind.textContent = person.system
+    ? t("settings.people.system")
+    : (person.id === currentPerson?.id ? t("settings.people.current") : (person.discovered ? t("settings.people.discovered") : ""));
+  header.appendChild(kind);
+  card.appendChild(header);
+
+  if (!person.system) {
+    const actions = document.createElement("div");
+    actions.className = "settings-app-actions";
+    const saveName = document.createElement("button");
+    saveName.className = "settings-app-btn";
+    saveName.type = "button";
+    saveName.textContent = t("action.save");
+    saveName.addEventListener("click", async () => {
+      saveName.disabled = true;
+      try {
+        await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name: name.value }),
+        });
+        await renderPeopleSettings();
+      } catch (error) {
+        setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      } finally {
+        saveName.disabled = false;
+      }
+    });
+    actions.appendChild(saveName);
+
+    const addToken = document.createElement("button");
+    addToken.className = "settings-app-btn";
+    addToken.type = "button";
+    addToken.textContent = t("settings.people.addToken");
+    addToken.addEventListener("click", async () => {
+      addToken.disabled = true;
+      try {
+        const result = await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials`, {
+          method: "POST",
+          body: JSON.stringify({ type: "token" }),
+        });
+        setPeopleStatus(`${t("settings.people.copyToken")}: ${result.issuedToken || ""}`);
+        await renderPeopleSettings();
+      } catch (error) {
+        setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      } finally {
+        addToken.disabled = false;
+      }
+    });
+    actions.appendChild(addToken);
+
+    const addPassword = document.createElement("button");
+    addPassword.className = "settings-app-btn";
+    addPassword.type = "button";
+    addPassword.textContent = t("settings.people.addPassword");
+    addPassword.addEventListener("click", async () => {
+      const username = window.prompt(t("settings.people.usernamePrompt"), "")?.trim() || "";
+      if (!username) return;
+      const password = window.prompt(t("settings.people.passwordPrompt"), "") || "";
+      if (!password) return;
+      addPassword.disabled = true;
+      try {
+        await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials`, {
+          method: "POST",
+          body: JSON.stringify({ type: "password", username, password }),
+        });
+        await renderPeopleSettings();
+      } catch (error) {
+        setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      } finally {
+        addPassword.disabled = false;
+      }
+    });
+    actions.appendChild(addPassword);
+
+    if (person.id === currentPerson?.id) {
+      const defaultFilter = document.createElement("select");
+      defaultFilter.className = "settings-inline-select";
+      for (const [value, label] of [["all", t("settings.people.defaultAll")], ["mine", t("settings.people.defaultMine")]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        defaultFilter.appendChild(option);
+      }
+      defaultFilter.value = person.preferences?.defaultSessionPersonFilter === "mine" ? "mine" : "all";
+      defaultFilter.addEventListener("change", async () => {
+        await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ defaultSessionPersonFilter: defaultFilter.value }),
+        });
+      });
+      actions.appendChild(defaultFilter);
+    }
+    card.appendChild(actions);
+  }
+
+  const details = document.createElement("div");
+  details.className = "settings-app-editor";
+  for (const credential of person.credentials || []) {
+    const row = document.createElement("div");
+    row.className = "settings-inline-row";
+    const label = document.createElement("span");
+    label.textContent = credential.type === "password"
+      ? `${credential.username} · ${t("settings.people.password")}`
+      : `${credential.label || t("settings.people.token")} · ••••${credential.tokenSuffix || ""}`;
+    row.appendChild(label);
+    const remove = document.createElement("button");
+    remove.className = "settings-app-btn";
+    remove.type = "button";
+    remove.textContent = t("action.remove");
+    remove.addEventListener("click", async () => {
+      if (!window.confirm(t("settings.people.removeCredentialConfirm"))) return;
+      await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials/${encodeURIComponent(credential.id)}`, { method: "DELETE" });
+      await renderPeopleSettings();
+    });
+    row.appendChild(remove);
+    details.appendChild(row);
+  }
+  for (const identity of person.identities || []) {
+    if (identity.kind === "web" || identity.kind === "system") continue;
+    const row = document.createElement("div");
+    row.className = "settings-inline-row";
+    const label = document.createElement("span");
+    label.textContent = buildPersonIdentityLabel(identity);
+    row.appendChild(label);
+    const targets = allPeople.filter((entry) => !entry.system && entry.id !== person.id);
+    if (targets.length > 0) {
+      const select = document.createElement("select");
+      select.className = "settings-inline-select";
+      for (const target of targets) {
+        const option = document.createElement("option");
+        option.value = target.id;
+        option.textContent = target.name;
+        select.appendChild(option);
+      }
+      row.appendChild(select);
+      const move = document.createElement("button");
+      move.className = "settings-app-btn";
+      move.type = "button";
+      move.textContent = t("settings.people.mergeIdentity");
+      move.addEventListener("click", async () => {
+        await requestPeople(`/api/people/${encodeURIComponent(select.value)}/identities`, {
+          method: "POST",
+          body: JSON.stringify({ identityId: identity.id }),
+        });
+        await renderPeopleSettings();
+      });
+      row.appendChild(move);
+    }
+    details.appendChild(row);
+  }
+  card.appendChild(details);
+  return card;
+}
+
+async function renderPeopleSettings({ refresh = false } = {}) {
+  if (!settingsPeopleList) return;
+  if (refresh) {
+    try {
+      await requestPeople();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.loadFailed"), { error: true });
+    }
+  }
+  const people = getPeopleDirectory();
+  settingsPeopleList.replaceChildren(...people.map((person) => buildPersonCard(person, people)));
+}
+
+function syncPersonCredentialFields() {
+  const password = settingsPersonCredentialType?.value === "password";
+  if (settingsPersonUsername) settingsPersonUsername.hidden = !password;
+  if (settingsPersonPassword) settingsPersonPassword.hidden = !password;
+}
+
+function initPeopleSettings() {
+  if (!settingsPeopleList) return;
+  syncPersonCredentialFields();
+  settingsPersonCredentialType?.addEventListener("change", syncPersonCredentialFields);
+  settingsPersonCreate?.addEventListener("click", async () => {
+    const name = settingsPersonName?.value.trim() || "";
+    if (!name) return setPeopleStatus(t("settings.people.nameRequired"), { error: true });
+    settingsPersonCreate.disabled = true;
+    setPeopleStatus("");
+    try {
+      const credentialType = settingsPersonCredentialType?.value === "password" ? "password" : "token";
+      const result = await requestPeople("/api/people", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          credentialType,
+          username: settingsPersonUsername?.value || "",
+          password: settingsPersonPassword?.value || "",
+        }),
+      });
+      if (settingsPersonName) settingsPersonName.value = "";
+      if (settingsPersonUsername) settingsPersonUsername.value = "";
+      if (settingsPersonPassword) settingsPersonPassword.value = "";
+      setPeopleStatus(result.issuedToken ? `${t("settings.people.copyToken")}: ${result.issuedToken}` : t("settings.people.added"));
+      await renderPeopleSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+    } finally {
+      settingsPersonCreate.disabled = false;
+    }
+  });
+  void renderPeopleSettings();
+}
 function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
@@ -505,12 +758,6 @@ async function syncPiCodexLogin() {
   renderPiAuthPanel();
 }
 
-function isAgentScopedModeFromUi() {
-  return typeof isAgentScopedMode === "function"
-    ? isAgentScopedMode()
-    : false;
-}
-
 function temporarilyUpdateButtonLabel(button, label, {
   resetLabel = "",
   durationMs = 1600,
@@ -835,7 +1082,7 @@ function setVoiceInputStatus(message, { hidden = false } = {}) {
 function canManageInstanceSettingsFromUi() {
   return typeof window.remotelabCanManageInstanceSettings === "function"
     ? window.remotelabCanManageInstanceSettings()
-    : !visitorMode;
+    : true;
 }
 
 function getCurrentVoiceInputSettings() {
@@ -888,14 +1135,9 @@ function getVoiceInputStatusMessage(config, {
   if (saving) return t("settings.voice.statusSaving");
   if (loadFailed) return t("settings.voice.statusLoadFailed");
   if (saveFailed) return t("settings.voice.statusSaveFailed");
-  if (canManageInstanceSettingsFromUi()) {
-    return config?.configured === true
-      ? t("settings.voice.statusStored")
-      : t("settings.voice.statusIncomplete");
-  }
   return config?.configured === true
-    ? t("settings.voice.statusOwnerOnlyConfigured")
-    : t("settings.voice.statusOwnerOnlyIncomplete");
+    ? t("settings.voice.statusStored")
+    : t("settings.voice.statusIncomplete");
 }
 
 function syncVoiceInputSettings() {
@@ -1054,7 +1296,7 @@ function renderPushNotificationSettings() {
   const button = document.getElementById("settingsPushEnableBtn");
   const statusEl = document.getElementById("settingsPushStatus");
   if (!section || !button || !statusEl) return;
-  section.hidden = !isOwnerPushFeatureEnabled();
+  section.hidden = !isPushFeatureEnabled();
   if (section.hidden) return;
 
   const supported = supportsBrowserPushSettings();
@@ -1082,7 +1324,7 @@ function renderPushNotificationSettings() {
 }
 
 async function enablePushNotificationsFromSettings() {
-  if (!isOwnerPushFeatureEnabled() || !supportsBrowserPushSettings() || pushNotificationPermissionPending) return;
+  if (!isPushFeatureEnabled() || !supportsBrowserPushSettings() || pushNotificationPermissionPending) return;
   pushNotificationPermissionPending = true;
   pushNotificationPermissionError = "";
   renderPushNotificationSettings();
@@ -1119,7 +1361,7 @@ function renderInstallSettingsPanel() {
     ? window.remotelabGetInstallFlowState()
     : { promptReady: false, standalone: false, mobileEligible: false };
 
-  installBtn.disabled = visitorMode;
+  installBtn.disabled = false;
   installBtn.textContent = state.promptReady
     ? t("settings.install.promptReady")
     : t("settings.install.open");
@@ -1159,7 +1401,7 @@ function initInstallSettings() {
 }
 
 function canManageConnectorSurfacesFromUi() {
-  return !visitorMode && !isAgentScopedModeFromUi();
+  return true;
 }
 
 function resolveConnectorSurfaceUrl(entryUrl) {
@@ -1298,10 +1540,6 @@ function buildConnectorSurfaceCard(surface) {
 
 async function renderSettingsConnectorsPanel({ force = false } = {}) {
   if (!settingsConnectorsList) return;
-  if (!canManageConnectorSurfacesFromUi()) {
-    settingsConnectorsList.innerHTML = `<div class="settings-app-empty">${t("settings.connectors.ownerOnly")}</div>`;
-    return;
-  }
 
   if (force || !connectorSurfacesLoaded) {
     settingsConnectorsList.innerHTML = `<div class="settings-app-empty">${t("settings.connectors.loading")}</div>`;
@@ -1359,7 +1597,6 @@ function renderManagedSessionEntryModeOptions(selectEl, selectedValue = "resume"
 }
 
 function getManagedSettingsSession() {
-  if (visitorMode || isAgentScopedModeFromUi()) return null;
   if (typeof getCurrentSession === "function") {
     return getCurrentSession();
   }
@@ -1370,10 +1607,6 @@ function getManagedSettingsSession() {
 
 function renderSettingsSessionPresentationPanel() {
   if (!settingsSessionPresentationList) return;
-  if (visitorMode || isAgentScopedModeFromUi()) {
-    settingsSessionPresentationList.innerHTML = `<div class="settings-app-empty">${t("settings.sessionPresentation.ownerOnly")}</div>`;
-    return;
-  }
   const session = getManagedSettingsSession();
   settingsSessionPresentationList.innerHTML = "";
   if (!session?.id) {
@@ -1455,6 +1688,7 @@ void refreshPiAuthStatus();
 initThemeSettings();
 initThinkingBlockDisplaySettings();
 initSessionAutoArchiveSettings();
+initPeopleSettings();
 void initVoiceInputSettings();
 initInstallSettings();
 initPushNotificationSettings();
@@ -1466,6 +1700,7 @@ if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
     renderPushNotificationSettings();
     void refreshCodexAuthStatus({ force: true });
     void refreshPiAuthStatus({ force: true });
+    void renderPeopleSettings({ refresh: true });
     void renderSettingsConnectorsPanel({ force: true });
   });
   tabSettings.dataset.connectorsBound = "true";
@@ -1480,6 +1715,7 @@ window.addEventListener("remotelab:localechange", () => {
   syncThemeSelect();
   syncThinkingBlockDisplaySelect();
   syncSessionAutoArchiveSettings();
+  void renderPeopleSettings();
   if (voiceInputSettingsLoaded) {
     syncVoiceInputSettings();
   }

@@ -85,15 +85,13 @@ try {
   assert.equal(explicitWechat.name, '客户追问发票状态', 'WeChat connector titles should drop redundant group prefixes');
   assert.equal(explicitWechat.autoRenamePending, false, 'explicit WeChat connector titles should be preserved');
 
-  const chatVisitor = await createSession(baseFolder, 'codex', 'Template Agent', {
-    templateId: 'visitor-template',
-    templateName: 'Template Agent',
+  const explicitChat = await createSession(baseFolder, 'codex', 'Planning notes', {
     sourceId: 'chat',
     sourceName: 'Chat',
-    externalTriggerId: 'visitor_session:template:visitor_1',
+    externalTriggerId: 'chat:planning-notes',
   });
-  assert.equal(chatVisitor.name, 'Template Agent', 'chat-origin sessions should keep their explicit titles');
-  assert.equal(chatVisitor.autoRenamePending, false, 'chat-origin sessions should not be forced into connector title rules');
+  assert.equal(explicitChat.name, 'Planning notes', 'chat-origin sessions should keep their explicit titles');
+  assert.equal(explicitChat.autoRenamePending, false, 'chat-origin sessions should not be forced into connector title rules');
 
   for (const sourceId of ['feishu', 'wechat']) {
     const sourceName = sourceId === 'feishu' ? 'Feishu' : 'WeChat';

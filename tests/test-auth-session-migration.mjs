@@ -35,11 +35,9 @@ try {
       accountUsername: 'old-member',
       accountKind: 'member',
     },
-    visitor: {
+    'unsupported-role': {
       expiry: now + 60_000,
-      role: 'visitor',
-      sessionId: 'visitor-session',
-      visitorId: 'visitor-1',
+      role: 'read_only',
     },
     expired: {
       expiry: now - 1,
@@ -53,17 +51,25 @@ try {
   const authModule = await import(pathToFileURL(join(repoRoot, 'lib', 'auth.mjs')).href);
   assert.equal(authModule.sessions.has('legacy-owner'), true, 'legacy owner sessions should remain valid');
   assert.equal(authModule.sessions.has('legacy-member'), false, 'legacy member cookies must not become owner sessions');
-  assert.equal(authModule.sessions.has('visitor'), true, 'visitor sessions should remain valid');
+  assert.equal(authModule.sessions.has('unsupported-role'), false, 'unsupported legacy roles must not gain full instance access');
   assert.equal(authModule.sessions.has('expired'), false, 'expired sessions should be removed');
   assert.deepEqual(
     authModule.sessions.get('legacy-owner'),
-    { expiry: now + 60_000, role: 'owner' },
-    'retained owner sessions should drop retired account metadata',
+    {
+      expiry: now + 60_000,
+      personId: 'person_default',
+      personName: 'owner',
+      identityId: 'identity_web_default',
+    },
+    'retained authenticated sessions should map to the migrated primary person',
   );
 
   const persisted = JSON.parse(readFileSync(authSessionsPath, 'utf8'));
-  assert.deepEqual(Object.keys(persisted).sort(), ['legacy-owner', 'visitor']);
+  assert.deepEqual(Object.keys(persisted), ['legacy-owner']);
   assert.equal(Object.hasOwn(persisted['legacy-owner'], 'accountKind'), false);
+  const migratedAuth = JSON.parse(readFileSync(join(configDir, 'auth.json'), 'utf8'));
+  assert.equal(migratedAuth.version, 2);
+  assert.notEqual(migratedAuth.serviceToken, '0'.repeat(64), 'migration must separate service and Person credentials');
 
   console.log('test-auth-session-migration: ok');
 } finally {

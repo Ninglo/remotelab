@@ -604,7 +604,7 @@ async function createOwnerBootstrapSession(definition) {
   return applyBootstrapSessionPresentation(session, definition);
 }
 
-export async function backfillOwnerBootstrapSessions() {
+export async function backfillBootstrapSessions() {
   const [ownerBootstrapSessions, mailboxAddress] = await Promise.all([
     getOwnerBootstrapSessionDefinitions(),
     resolveCurrentMailboxAddress(),

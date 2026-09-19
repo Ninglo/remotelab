@@ -69,7 +69,6 @@ function createBaseContext() {
     hasAttachedSession: false,
     archivedSessionCount: 0,
     sessions: [],
-    visitorMode: false,
     getEffectiveSessionSourceId(session) {
       return session?.sourceId || 'chat';
     },
@@ -717,7 +716,7 @@ archiveContext.settleAttachedSessionSidebarState = (options) => {
   archiveSettledSessions.push({ ...options });
   return Promise.resolve();
 };
-archiveContext.restoreOwnerSessionSelection = () => {
+archiveContext.restoreSessionSelection = () => {
   archiveSelectionRestores += 1;
   archiveContext.currentSessionId = 'session-newer';
 };

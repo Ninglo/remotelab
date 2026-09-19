@@ -133,7 +133,6 @@ try {
       model: 'opus',
       effort: 'high',
       thinking: true,
-      templateId: 'ignored-template',
       systemPrompt: 'ignored prompt',
     });
     assert.equal(quickCreate.status, 201, 'Quick Session creation should succeed for owners');
@@ -142,7 +141,6 @@ try {
     assert.equal(quickCreate.json.session?.model, 'gpt-5.6-terra', 'Quick Session should pin its single model');
     assert.equal(quickCreate.json.session?.effort, 'low', 'Quick Session should pin its single effort');
     assert.equal(quickCreate.json.session?.thinking, false, 'Quick Session should disable the legacy thinking flag');
-    assert.equal(quickCreate.json.session?.templateId, undefined, 'Quick Session should not apply an Agent template');
     assert.equal(quickCreate.json.session?.systemPrompt, undefined, 'Quick Session should not apply a custom system prompt');
 
     const quickPatch = await request(port, 'PATCH', `/api/sessions/${quickCreate.json.session.id}`, {

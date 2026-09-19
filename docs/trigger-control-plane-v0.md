@@ -91,7 +91,7 @@ Each trigger has a stable request ID and uses normal durable Session admission. 
 
 ## Recurring schedules
 
-Recurring schedules are stored in `chat-recurring-schedules.json` and exposed through owner-only `/api/schedules` routes plus the `remotelab schedule` CLI. They support:
+Recurring schedules are stored in `chat-recurring-schedules.json` and exposed through authenticated `/api/schedules` routes plus the `remotelab schedule` CLI. They support:
 
 - five-field cron with IANA timezone, defaulting to `Asia/Shanghai`
 - restart catch-up policy `latest_once`
@@ -116,7 +116,7 @@ Completed runs publish visible text and attachments; empty output stays silent. 
 
 ## HTTP API
 
-Owner-only routes:
+Authenticated routes:
 
 - `GET /api/triggers`
 - `GET /api/triggers?sessionId=<id>`
@@ -145,7 +145,7 @@ remotelab trigger create --in 2h --text "Follow up on this later" --json
 
 The command:
 
-- auto-auths through local owner credentials
+- auto-auths through the local service credential
 - uses `REMOTELAB_SESSION_ID` only as the source for folder, runtime, system prompt, and optional connector return route
 - creates a new execution Session by default; an explicit existing conversation binding can select its current Session
 - defaults to `REMOTELAB_CHAT_BASE_URL` for the local control plane

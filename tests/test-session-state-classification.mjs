@@ -22,6 +22,7 @@ const prompt = process.argv[process.argv.length - 1] || '';
 const isSessionStatePrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
 const isSecondState = prompt.includes('SECOND_STATE');
 const isFirstState = prompt.includes('FIRST_STATE') && !isSecondState;
+const isBetaView = prompt.includes('BETA_VIEW');
 const summary = isSecondState
   ? '第二轮状态必须最终生效。'
   : isFirstState
@@ -30,8 +31,8 @@ const summary = isSecondState
 const text = isSessionStatePrompt
   ? JSON.stringify({
       title: '统一会话状态',
-      space: 'Product',
-      group: 'RemoteLab',
+      space: isBetaView ? 'Beta Space' : 'Product',
+      group: isBetaView ? 'Beta Group' : 'RemoteLab',
       description: '在一个分类调用中维护跨 Harness 会话状态。',
       shouldSetWorkflowState: true,
       workflowState: 'done',
@@ -141,6 +142,28 @@ try {
   );
   assert.equal(updatedChatSession?.workflowState, 'done');
   assert.equal(updatedChatSession?.space, 'Product');
+  assert.equal(
+    (await getSession(chatSession.id, { viewPersonId: 'person_beta' }))?.space,
+    undefined,
+    'another person should not inherit the first person’s automatic layout',
+  );
+
+  await sendMessage(chatSession.id, 'BETA_VIEW', [], {
+    tool: 'fake-codex',
+    model: 'fake-model',
+    effort: 'low',
+    viewPersonId: 'person_beta',
+  });
+  await waitFor(
+    async () => (await getSession(chatSession.id, { viewPersonId: 'person_beta' }))?.group === 'Beta Group',
+    'the second person should receive an independent automatic classification',
+  );
+  assert.equal((await getSession(chatSession.id, { viewPersonId: 'person_beta' }))?.space, 'Beta Space');
+  assert.equal(
+    (await getSession(chatSession.id, { viewPersonId: 'person_default' }))?.group,
+    'RemoteLab',
+    'classifying the second person’s view must not rewrite the first person’s grouping',
+  );
 
   const raceSession = await createSession(tempHome, 'fake-codex', 'State race', {
     group: 'RemoteLab',

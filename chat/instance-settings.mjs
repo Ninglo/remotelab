@@ -184,7 +184,7 @@ export async function loadInstanceSettings({ includeSecrets = true } = {}) {
 }
 
 export function buildClientInstanceSettings(settings, { authSession = null } = {}) {
-  const includeSecrets = authSession?.role === 'owner';
+  const includeSecrets = !!authSession;
   return normalizeInstanceSettings(settings, { includeSecrets });
 }
 

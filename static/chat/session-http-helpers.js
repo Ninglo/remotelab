@@ -20,7 +20,7 @@ function redirectToLogin() {
   }
 }
 
-const PRODUCT_LOCAL_HREF_RE = /^\/(?:api|share|share-asset|agent|visitor|login|logout|m)(?:[/?#]|$)/i;
+const PRODUCT_LOCAL_HREF_RE = /^\/(?:api|share|share-asset|login|logout|m)(?:[/?#]|$)/i;
 
 function enhanceRenderedContentLinks(root) {
   if (!root) return;
@@ -80,8 +80,8 @@ function getSessionSidebarUrl(sessionId) {
 }
 
 function resolveRequestUrl(url) {
-  if (typeof withVisitorModeUrl === "function") {
-    return withVisitorModeUrl(url);
+  if (typeof resolveProductRequestUrl === "function") {
+    return resolveProductRequestUrl(url);
   }
   if (typeof window.remotelabResolveProductPath === "function") {
     return window.remotelabResolveProductPath(url);

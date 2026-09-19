@@ -14,121 +14,70 @@ function normalizeBootstrapText(value) {
   return normalized || "";
 }
 
-const OWNER_AUTH_CAPABILITIES = Object.freeze({
-  listSessions: true,
-  createSession: true,
-  renameSession: true,
-  archiveSession: true,
-  pinSession: true,
-  forkSession: true,
-  uploadAttachments: true,
-  downloadArtifacts: true,
-  changeRuntime: true,
-  organizeSessionList: true,
-  publishShareSnapshot: true,
-});
-
-const AGENT_SCOPED_AUTH_CAPABILITIES = Object.freeze({
-  listSessions: true,
-  createSession: true,
-  renameSession: true,
-  archiveSession: true,
-  pinSession: true,
-  forkSession: false,
-  uploadAttachments: true,
-  downloadArtifacts: true,
-  changeRuntime: false,
-  organizeSessionList: false,
-  publishShareSnapshot: false,
-});
-
-const LEGACY_VISITOR_AUTH_CAPABILITIES = Object.freeze({
-  listSessions: false,
-  createSession: false,
-  renameSession: false,
-  archiveSession: false,
-  pinSession: false,
-  forkSession: false,
-  uploadAttachments: true,
-  downloadArtifacts: true,
-  changeRuntime: false,
-  organizeSessionList: false,
-  publishShareSnapshot: false,
-});
-
-function cloneAuthCapabilityDefaults(mode = "owner") {
-  if (mode === "agent_scoped") {
-    return { ...AGENT_SCOPED_AUTH_CAPABILITIES };
-  }
-  if (mode === "visitor") {
-    return { ...LEGACY_VISITOR_AUTH_CAPABILITIES };
-  }
-  return { ...OWNER_AUTH_CAPABILITIES };
-}
-
-function normalizeBootstrapCapabilities(raw, mode = "owner") {
-  const defaults = cloneAuthCapabilityDefaults(mode);
-  if (!raw || typeof raw !== "object") {
-    return defaults;
-  }
-  return Object.fromEntries(
-    Object.keys(defaults).map((key) => [key, raw[key] === true ? true : defaults[key]]),
-  );
-}
-
-function normalizeBootstrapCurrentAgent(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const id = normalizeBootstrapText(raw.id);
-  if (!id) return null;
-  return {
-    id,
-    name: normalizeBootstrapText(raw.name),
-    tool: normalizeBootstrapText(raw.tool),
-  };
-}
-
 function normalizeBootstrapAuthInfo(raw) {
   if (!raw || typeof raw !== "object") return null;
-  const role = raw.role === "visitor" ? "visitor" : "owner";
+  const person = raw.person && typeof raw.person === "object" ? raw.person : {};
+  const personId = normalizeBootstrapText(person.id);
+  const identityId = normalizeBootstrapText(person.identityId);
+  if (!personId || !identityId) return null;
   const preferredLanguage = normalizeBootstrapText(raw.preferredLanguage);
-  if (role === "owner") {
-    const info = {
-      role,
-      principalKind: normalizeBootstrapText(raw.principalKind) || "owner",
-      surfaceMode: "owner",
-      capabilities: normalizeBootstrapCapabilities(raw.capabilities, "owner"),
-    };
-    if (preferredLanguage) info.preferredLanguage = preferredLanguage;
-    return info;
-  }
-
-  const surfaceMode = normalizeBootstrapText(raw.surfaceMode) === "agent_scoped"
-    ? "agent_scoped"
-    : "visitor";
-  const sessionId = normalizeBootstrapText(raw.sessionId);
-  if (!sessionId && surfaceMode !== "agent_scoped") return null;
-
   const info = {
-    role,
-    principalKind: normalizeBootstrapText(raw.principalKind)
-      || (surfaceMode === "agent_scoped" ? "agent_guest" : "visitor"),
-    surfaceMode,
-    capabilities: normalizeBootstrapCapabilities(raw.capabilities, surfaceMode),
+    person: {
+      id: personId,
+      name: normalizeBootstrapText(person.name) || personId,
+      identityId,
+    },
   };
-  if (sessionId) info.sessionId = sessionId;
-  const agentId = normalizeBootstrapText(raw.agentId);
-  if (agentId) info.agentId = agentId;
-  const visitorId = normalizeBootstrapText(raw.visitorId);
-  if (visitorId) info.visitorId = visitorId;
-  const principalId = normalizeBootstrapText(raw.principalId || raw.visitorId);
-  if (principalId) info.principalId = principalId;
-  const currentAgent = normalizeBootstrapCurrentAgent(raw.currentAgent);
-  if (currentAgent) info.currentAgent = currentAgent;
   if (preferredLanguage) info.preferredLanguage = preferredLanguage;
   return info;
 }
 
 const bootstrapAuthInfo = normalizeBootstrapAuthInfo(pageBootstrap.auth);
+
+function normalizeBootstrapPeople(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((person) => {
+    if (!person || typeof person !== "object") return null;
+    const id = normalizeBootstrapText(person.id);
+    if (!id) return null;
+    return {
+      id,
+      name: normalizeBootstrapText(person.name) || id,
+      system: person.system === true,
+      discovered: person.discovered === true,
+      preferences: person.preferences && typeof person.preferences === "object"
+        ? { ...person.preferences }
+        : {},
+      credentials: Array.isArray(person.credentials)
+        ? person.credentials.filter(Boolean).map((credential) => ({ ...credential }))
+        : [],
+      identities: Array.isArray(person.identities)
+        ? person.identities.filter(Boolean).map((identity) => ({ ...identity }))
+        : [],
+    };
+  }).filter(Boolean);
+}
+
+let peopleDirectory = normalizeBootstrapPeople(pageBootstrap.people);
+const bootstrapPersonFilterDefault = peopleDirectory.find(
+  (person) => person.id === bootstrapAuthInfo?.person?.id,
+)?.preferences?.defaultSessionPersonFilter === "mine"
+  ? bootstrapAuthInfo.person.id
+  : "__all__";
+
+function getPeopleDirectory() {
+  return peopleDirectory.map((person) => ({
+    ...person,
+    preferences: { ...person.preferences },
+    credentials: person.credentials.map((credential) => ({ ...credential })),
+    identities: person.identities.map((identity) => ({ ...identity })),
+  }));
+}
+
+function replacePeopleDirectory(raw) {
+  peopleDirectory = normalizeBootstrapPeople(raw);
+  return getPeopleDirectory();
+}
 
 function normalizeBootstrapAssetUploads(raw) {
   if (!raw || typeof raw !== "object") {
@@ -217,12 +166,7 @@ function getBootstrapAuthInfo() {
   if (!bootstrapAuthInfo) return null;
   return {
     ...bootstrapAuthInfo,
-    capabilities: bootstrapAuthInfo.capabilities
-      ? { ...bootstrapAuthInfo.capabilities }
-      : undefined,
-    currentAgent: bootstrapAuthInfo.currentAgent
-      ? { ...bootstrapAuthInfo.currentAgent }
-      : undefined,
+    person: { ...bootstrapAuthInfo.person },
   };
 }
 
@@ -369,7 +313,6 @@ const cancelBtn = document.getElementById("cancelBtn");
 const contextTokens = document.getElementById("contextTokens");
 const compactBtn = document.getElementById("compactBtn");
 const dropToolsBtn = document.getElementById("dropToolsBtn");
-const saveTemplateBtn = document.getElementById("saveTemplateBtn");
 
 let renderedHeaderSessionName = "";
 
@@ -407,13 +350,11 @@ function renderHeaderWorkspaceTitle(view = "sessions") {
 window.addEventListener("remotelab:localechange", () => {
   renderHeaderSessionTitle(renderedHeaderSessionName);
 });
-const sessionTemplateRow = document.getElementById("sessionTemplateRow");
-const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
-const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
 const tabTasks = document.getElementById("tabTasks");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
+const personFilterSelect = document.getElementById("personFilterSelect");
 const taskCenterPanel = document.getElementById("taskCenterPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const sessionWorkspace = document.getElementById("sessionWorkspace");
@@ -463,6 +404,7 @@ const ACTIVE_SESSION_STORAGE_KEY = "activeSessionId";
 const ACTIVE_SIDEBAR_TAB_STORAGE_KEY = "activeSidebarTab";
 const LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeAppFilter";
 const ACTIVE_SOURCE_FILTER_STORAGE_KEY = "activeSourceFilter";
+const ACTIVE_PERSON_FILTER_STORAGE_KEY = `activePersonFilter:${bootstrapAuthInfo?.person?.id || "anonymous"}`;
 const LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY = "sessionSendFailures";
 const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
@@ -698,7 +640,7 @@ window.addEventListener("storage", (event) => {
 
 window.addEventListener("remotelab:localechange", () => {
   applyThemeTextOverrides(currentThemePreference);
-  if (typeof refreshAppCatalog === "function") refreshAppCatalog();
+  if (typeof refreshSessionCatalog === "function") refreshSessionCatalog();
 });
 
 function normalizeSidebarTab(tab) {
@@ -753,19 +695,7 @@ let archivedSessionCount = 0;
 let archivedSessionsLoaded = false;
 let archivedSessionsLoading = false;
 let archivedSessionsRefreshPromise = null;
-let visitorMode = false;
-let surfaceMode = bootstrapAuthInfo?.surfaceMode || "owner";
-let principalKind = bootstrapAuthInfo?.principalKind
-  || (bootstrapAuthInfo?.role === "visitor" ? "visitor" : "owner");
-let principalId = normalizeBootstrapText(bootstrapAuthInfo?.principalId || bootstrapAuthInfo?.visitorId);
-let authCapabilities = bootstrapAuthInfo?.capabilities
-  ? { ...bootstrapAuthInfo.capabilities }
-  : cloneAuthCapabilityDefaults(surfaceMode);
-let scopedAgentContext = bootstrapAuthInfo?.currentAgent
-  ? { ...bootstrapAuthInfo.currentAgent }
-  : null;
-let scopedRequestMode = false;
-let visitorSessionId = null;
+let currentPerson = bootstrapAuthInfo?.person ? { ...bootstrapAuthInfo.person } : null;
 let shareSnapshotMode = false;
 let shareSnapshotPayload = bootstrapShareSnapshot;
 let currentSessionRefreshPromise = null;
@@ -809,6 +739,9 @@ const chatStore = chatStoreModel.createStore({
     localStorage.getItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY)
     || localStorage.getItem(LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY)
     || FILTER_ALL_VALUE,
+  activePersonFilter:
+    localStorage.getItem(ACTIVE_PERSON_FILTER_STORAGE_KEY)
+    || bootstrapPersonFilterDefault,
   activeTab: normalizeSidebarTab(
     pendingNavigationState.tab
     || localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY)
@@ -855,6 +788,7 @@ function getChatStoreFallbackState() {
     archivedSessionsLoaded,
     archivedSessionsLoading,
     activeSourceFilter: getActiveSourceFilterValue(),
+    activePersonFilter: getActivePersonFilterValue(),
     activeTab: getActiveSidebarTabValue(),
     sessionStatus,
   });
@@ -953,6 +887,16 @@ function setChatActiveSourceFilter(value, options = {}) {
   return reduceChatStoreFallback(chatStoreModel.setActiveSourceFilter, value, options);
 }
 
+function setChatActivePersonFilter(value) {
+  if (typeof dispatchChatStore === "function") {
+    return dispatchChatStore({
+      type: "set-active-person-filter",
+      value,
+    });
+  }
+  return reduceChatStoreFallback(chatStoreModel.setActivePersonFilter, value);
+}
+
 function setChatActiveTab(value, options = {}) {
   if (typeof dispatchChatStore === "function") {
     return dispatchChatStore({
@@ -996,6 +940,13 @@ function getActiveSourceFilterValue() {
     || FILTER_ALL_VALUE;
 }
 
+function getActivePersonFilterValue() {
+  const value = getChatStoreStateSnapshot()?.activePersonFilter;
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return localStorage.getItem(ACTIVE_PERSON_FILTER_STORAGE_KEY)
+    || bootstrapPersonFilterDefault;
+}
+
 function getChatStoreSession(sessionId = currentSessionId) {
   return chatStoreModel.findSession(getChatStoreStateSnapshot(), sessionId);
 }
@@ -1005,58 +956,35 @@ function setRunningEventBlockExpanded(sessionId, expanded) {
   renderedEventState.runningBlockExpanded = expanded === true;
 }
 
-function shouldUseVisitorRequests() {
-  return visitorMode === true || scopedRequestMode === true;
-}
-
-function isAgentScopedMode() {
-  return surfaceMode === "agent_scoped";
-}
-
-function getActiveAuthCapabilities() {
-  return authCapabilities
-    ? { ...authCapabilities }
-    : cloneAuthCapabilityDefaults(surfaceMode);
-}
-
-function hasAuthCapability(name, fallback = false) {
-  if (!name) return fallback;
-  const capabilities = getActiveAuthCapabilities();
-  return capabilities[name] === true ? true : fallback;
-}
-
 function canChangeRuntimeSelection() {
-  return !visitorMode && hasAuthCapability("changeRuntime");
+  return true;
 }
 
 function canPublishShareSnapshots() {
-  return !visitorMode && hasAuthCapability("publishShareSnapshot");
+  return true;
 }
 
 function canForkSessions() {
-  return !visitorMode && hasAuthCapability("forkSession");
+  return true;
 }
 
 function canOrganizeSessionList() {
-  return !visitorMode && hasAuthCapability("organizeSessionList");
+  return true;
 }
 
-function shouldPersistOwnerNavigationState() {
-  return !visitorMode && !isAgentScopedMode();
+function shouldPersistNavigationState() {
+  return true;
 }
 
-function shouldEnableOwnerPushFeatures() {
-  return !visitorMode && !isAgentScopedMode();
+function shouldEnablePushFeatures() {
+  return true;
 }
 
-function withVisitorModeUrl(url) {
+function resolveProductRequestUrl(url) {
   const resolvedUrl = typeof window.remotelabResolveProductUrl === "function"
     ? window.remotelabResolveProductUrl(url)
     : new URL(String(url || ""), window.location.href).toString();
   const parsed = new URL(resolvedUrl, window.location.href);
-  if (shouldUseVisitorRequests()) {
-    parsed.searchParams.set("visitor", "1");
-  }
   if (parsed.origin === window.location.origin) {
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   }
@@ -1190,10 +1118,6 @@ const storedLegacySelectedTool = normalizeStoredToolId(localStorage.getItem("sel
 
 let preferredTool = derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool);
 let selectedTool = preferredTool;
-try {
-  localStorage.removeItem("preferredAgentTemplateId");
-  localStorage.removeItem("preferredAgentTemplateName");
-} catch {}
 // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
 let selectedModel = null;
 let selectedModelProvider = "";

@@ -57,8 +57,8 @@ export function attachWebSocket(server) {
   });
 
   wss.on('connection', (ws) => {
-    const role = ws._authSession?.role || 'owner';
-    console.log(`[ws] Client connected (role=${role})`);
+    const personId = ws._authSession?.personId || 'unknown';
+    console.log(`[ws] Client connected (person=${personId})`);
     void sendBuildInfo(ws);
 
     ws.on('message', () => {
@@ -68,13 +68,13 @@ export function attachWebSocket(server) {
     });
 
     ws.on('close', () => {
-      console.log(`[ws] Client disconnected (role=${role})`);
+      console.log(`[ws] Client disconnected (person=${personId})`);
     });
   });
 
   voiceRelayWss.on('connection', (ws) => {
-    const role = ws._authSession?.role || 'owner';
-    console.log(`[voice-relay] client connected (role=${role})`);
+    const personId = ws._authSession?.personId || 'unknown';
+    console.log(`[voice-relay] client connected (person=${personId})`);
     bindDoubaoVoiceRelaySocket(ws);
   });
 

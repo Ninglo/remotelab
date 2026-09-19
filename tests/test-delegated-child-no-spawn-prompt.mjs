@@ -27,7 +27,6 @@ const { buildPrompt } = await import('../chat/session-manager.mjs');
 
 const baseSession = {
   systemPrompt: '',
-  visitorId: '',
   claudeSessionId: null,
   codexThreadId: null,
   activeAgreements: [],

@@ -59,6 +59,14 @@ assert.deepEqual(buildSessionSourceContext(summary), {
   fileType: 'docx',
   fileToken: 'docx_comment_1',
   commentId: 'comment_1',
+  sender: {
+    openId: 'ou_comment_author_1',
+    userId: 'user_comment_author_1',
+    unionId: 'on_comment_author_1',
+    senderType: 'user',
+    tenantKey: 'tenant_comment_1',
+    isInternal: true,
+  },
 });
 assert.deepEqual(buildMessageSourceContext(summary), {
   connector: 'feishu',

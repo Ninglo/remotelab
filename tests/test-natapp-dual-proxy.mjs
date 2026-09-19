@@ -101,18 +101,18 @@ try {
   );
 
   const upstreamHeaders = proxy.buildUpstreamHeaders({
-    cookie: 'owner__session_token=abc123; owner__visitor_session_token=def456; session_token=root-token',
+    cookie: 'owner__session_token=abc123; session_token=root-token',
     'x-test-header': 'ok',
   }, ownerRoute);
-  assert.equal(upstreamHeaders.cookie, 'session_token=abc123; visitor_session_token=def456');
+  assert.equal(upstreamHeaders.cookie, 'session_token=abc123');
   assert.equal(upstreamHeaders['x-forwarded-prefix'], proxy.BRIDGE_SERVICE_PREFIX);
   assert.equal(upstreamHeaders['x-test-header'], 'ok');
   assert.equal(upstreamHeaders['accept-encoding'], 'identity');
 
   const bridgedOwnerHeaders = proxy.buildUpstreamHeaders({
-    cookie: 'session_token=legacy-owner; visitor_session_token=legacy-visitor; trial4__session_token=trial-cookie',
+    cookie: 'session_token=legacy-primary; trial4__session_token=trial-cookie',
   }, ownerRoute);
-  assert.equal(bridgedOwnerHeaders.cookie, 'session_token=legacy-owner; visitor_session_token=legacy-visitor');
+  assert.equal(bridgedOwnerHeaders.cookie, 'session_token=legacy-primary');
   assert.equal(bridgedOwnerHeaders['x-forwarded-prefix'], proxy.BRIDGE_SERVICE_PREFIX);
 
   const bridgedTrialHeaders = proxy.buildUpstreamHeaders({

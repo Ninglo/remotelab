@@ -558,6 +558,28 @@ export function buildRemoteLabMessage(summary) {
     || trimString(summary?.contentSummary) || '[non-text or empty message]';
 }
 
+function buildFeishuSenderContext(summary) {
+  const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
+  const senderOpenId = trimString(summary?.sender?.openId);
+  const senderUserId = trimString(summary?.sender?.userId);
+  const senderUnionId = trimString(summary?.sender?.unionId);
+  const senderType = trimString(summary?.sender?.senderType);
+  const senderTenantKey = trimString(summary?.sender?.tenantKey);
+  const tenantKey = trimString(summary?.tenantKey);
+  if (!senderName && !senderOpenId && !senderUserId && !senderUnionId && !senderType && !senderTenantKey) {
+    return null;
+  }
+  return {
+    ...(senderName ? { name: senderName } : {}),
+    ...(senderOpenId ? { openId: senderOpenId } : {}),
+    ...(senderUserId ? { userId: senderUserId } : {}),
+    ...(senderUnionId ? { unionId: senderUnionId } : {}),
+    ...(senderType ? { senderType } : {}),
+    ...(senderTenantKey ? { tenantKey: senderTenantKey } : {}),
+    ...(tenantKey && senderTenantKey ? { isInternal: tenantKey === senderTenantKey } : {}),
+  };
+}
+
 export function buildSessionSourceContext(summary) {
   if (isFeishuDocumentCommentSummary(summary)) {
     const context = {
@@ -569,6 +591,8 @@ export function buildSessionSourceContext(summary) {
     };
     const sourceRouteId = trimString(summary?.sourceRouteId);
     if (sourceRouteId) context.sourceRouteId = sourceRouteId;
+    const sender = buildFeishuSenderContext(summary);
+    if (sender) context.sender = sender;
     return context;
   }
   const topicId = buildFeishuTopicId(summary);
@@ -591,6 +615,8 @@ export function buildSessionSourceContext(summary) {
   if (threadId) context.threadId = threadId;
   const rootId = trimString(summary?.rootId);
   if (rootId) context.rootId = rootId;
+  const sender = buildFeishuSenderContext(summary);
+  if (sender) context.sender = sender;
   return context;
 }
 
@@ -658,23 +684,8 @@ export function buildMessageSourceContext(summary) {
   if (groupMessageType) context.groupMessageType = groupMessageType;
   const chatMode = trimString(summary?.chatMode);
   if (chatMode) context.chatMode = chatMode;
-  const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
-  const senderOpenId = trimString(summary?.sender?.openId);
-  const senderUserId = trimString(summary?.sender?.userId);
-  const senderUnionId = trimString(summary?.sender?.unionId);
-  const senderType = trimString(summary?.sender?.senderType);
-  const senderTenantKey = trimString(summary?.sender?.tenantKey);
-  if (senderName || senderOpenId || senderUserId || senderUnionId || senderType || senderTenantKey) {
-    context.sender = {
-      ...(senderName ? { name: senderName } : {}),
-      ...(senderOpenId ? { openId: senderOpenId } : {}),
-      ...(senderUserId ? { userId: senderUserId } : {}),
-      ...(senderUnionId ? { unionId: senderUnionId } : {}),
-      ...(senderType ? { senderType } : {}),
-      ...(senderTenantKey ? { tenantKey: senderTenantKey } : {}),
-      ...(tenantKey && senderTenantKey ? { isInternal: tenantKey === senderTenantKey } : {}),
-    };
-  }
+  const sender = buildFeishuSenderContext(summary);
+  if (sender) context.sender = sender;
   const mentions = (Array.isArray(summary?.mentions) ? summary.mentions : [])
     .map((mention) => {
       const name = mentionDisplayName(mention);

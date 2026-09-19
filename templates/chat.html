@@ -58,6 +58,7 @@
       </nav>
       <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
       <div class="sidebar-filters" id="sidebarFilters">
+        <select class="sidebar-filter-select" id="personFilterSelect" aria-label="Filter sessions by person" data-i18n-aria-label="sidebar.filter.person"></select>
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
@@ -159,8 +160,24 @@
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
           <div class="settings-inline-form">
-            <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ownerAriaLabel"></select>
+            <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ariaLabel"></select>
           </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.people.title">People &amp; sign-in</div>
+          <div class="settings-section-note" data-i18n="settings.people.note">People labels make shared Session lists easier to filter. Every signed-in person still has full access to the instance.</div>
+          <div class="settings-inline-form settings-people-create">
+            <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
+            <select class="settings-inline-select" id="settingsPersonCredentialType" aria-label="Sign-in method" data-i18n-aria-label="settings.people.credentialType">
+              <option value="token" data-i18n="settings.people.token">Token</option>
+              <option value="password" data-i18n="settings.people.password">Username + password</option>
+            </select>
+            <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Username" data-i18n-placeholder="settings.people.usernamePlaceholder" hidden>
+            <input class="settings-inline-input" id="settingsPersonPassword" type="password" autocomplete="new-password" placeholder="Password" data-i18n-placeholder="settings.people.passwordPlaceholder" hidden>
+            <button class="settings-app-btn settings-inline-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.add">Add person</button>
+            <div class="settings-app-empty inline-status" id="settingsPeopleStatus" hidden></div>
+          </div>
+          <div class="settings-apps-list" id="settingsPeopleList"></div>
         </div>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.theme.title">Theme</div>
@@ -183,7 +200,7 @@
         </div>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.voice.title">Voice Input</div>
-          <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. The owner can keep the relay setup or try direct gateway voice input here.</div>
+          <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. Any signed-in person can manage it.</div>
           <div class="settings-inline-form">
             <select class="settings-inline-select" id="voiceInputProviderSelect" aria-label="Choose a voice input transport" data-i18n-aria-label="settings.voice.providerAriaLabel"></select>
             <input class="settings-inline-input" id="voiceInputAppId" type="text" autocomplete="off" placeholder="Doubao App ID" data-i18n-placeholder="settings.voice.appIdPlaceholder">

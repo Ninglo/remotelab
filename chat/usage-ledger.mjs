@@ -4,6 +4,7 @@ import { join } from 'path';
 import readline from 'readline';
 
 import { USAGE_LEDGER_DIR } from '../lib/config.mjs';
+import { SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
 import { estimateUsageCost } from '../lib/model-pricing.mjs';
 import { ensureDir } from './fs-utils.mjs';
 
@@ -104,26 +105,12 @@ function ensureStream(now = new Date()) {
   }
 }
 
-function resolvePrincipal(session = {}) {
-  const visitorId = trimString(session.visitorId);
-  const visitorName = trimString(session.visitorName);
-
-  if (visitorId) {
-    return {
-      principalType: 'visitor',
-      principalId: visitorId,
-      principalName: visitorName || visitorId,
-      visitorId,
-      visitorName,
-    };
-  }
-
+function resolveIdentity(session = {}) {
+  const identityId = trimString(session.initiatedByIdentityId) || SYSTEM_IDENTITY_ID;
   return {
-    principalType: 'owner',
-    principalId: 'owner',
-    principalName: 'Owner',
-    visitorId,
-    visitorName,
+    identityId,
+    identityKind: identityId === SYSTEM_IDENTITY_ID ? 'system' : 'identity',
+    identityName: identityId === SYSTEM_IDENTITY_ID ? 'System' : identityId,
   };
 }
 
@@ -257,10 +244,10 @@ export function classifyUsageOperation(input, extra = {}) {
         category: 'delivery',
         background: true,
       };
-    case 'agent_delegate':
+    case 'session_delegate':
       return {
         key: operation,
-        label: 'Agent delegate',
+        label: 'Session delegate',
         group: 'background',
         category: 'orchestration',
         background: true,
@@ -384,7 +371,7 @@ export function buildUsageLedgerRecord({
     return null;
   }
 
-  const principal = resolvePrincipal(session);
+  const identity = resolveIdentity(session);
   const operation = resolveOperationInfo(session, manifest);
   const requestId = trimString(run.requestId);
   const effort = trimString(run.effort || session.effort);
@@ -402,11 +389,9 @@ export function buildUsageLedgerRecord({
     sessionName: trimString(session.name),
     ...(trimString(session.group) ? { sessionGroup: trimString(session.group) } : {}),
     ...(trimString(session.rootSessionId) ? { rootSessionId: trimString(session.rootSessionId) } : {}),
-    principalType: principal.principalType,
-    principalId: principal.principalId,
-    principalName: principal.principalName,
-    ...(principal.visitorId ? { visitorId: principal.visitorId } : {}),
-    ...(principal.visitorName ? { visitorName: principal.visitorName } : {}),
+    identityKind: identity.identityKind,
+    identityId: identity.identityId,
+    identityName: identity.identityName,
     tool,
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
@@ -477,7 +462,7 @@ export function buildDetachedUsageLedgerRecord({
     return null;
   }
 
-  const principal = resolvePrincipal(session);
+  const identity = resolveIdentity(session);
   const internalRole = trimString(tracking.internalRole);
   const internalOperation = trimString(tracking.internalOperation);
   const operation = trimString(tracking.operation) || internalOperation || internalRole || 'background_prompt';
@@ -497,11 +482,9 @@ export function buildDetachedUsageLedgerRecord({
     sessionName: trimString(tracking.sessionName || session.name),
     ...(trimString(tracking.sessionGroup || session.group) ? { sessionGroup: trimString(tracking.sessionGroup || session.group) } : {}),
     ...(trimString(tracking.rootSessionId || session.rootSessionId) ? { rootSessionId: trimString(tracking.rootSessionId || session.rootSessionId) } : {}),
-    principalType: principal.principalType,
-    principalId: principal.principalId,
-    principalName: principal.principalName,
-    ...(principal.visitorId ? { visitorId: principal.visitorId } : {}),
-    ...(principal.visitorName ? { visitorName: principal.visitorName } : {}),
+    identityKind: identity.identityKind,
+    identityId: identity.identityId,
+    identityName: identity.identityName,
     tool,
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
@@ -573,15 +556,11 @@ function normalizeLedgerRecord(record) {
     costSource: record.costSource,
   });
   const recordedAtMs = normalizeTimestampMs(record.recordedAt);
-  const principalType = ['owner', 'visitor'].includes(trimString(record.principalType))
-    ? trimString(record.principalType)
-    : 'owner';
-  const principalId = principalType === 'owner'
-    ? 'owner'
-    : trimString(record.principalId);
-  const principalName = principalType === 'owner'
-    ? 'Owner'
-    : (trimString(record.principalName) || principalId || '(unknown)');
+  const identityId = trimString(record.identityId) || SYSTEM_IDENTITY_ID;
+  const identityKind = trimString(record.identityKind)
+    || (identityId === SYSTEM_IDENTITY_ID ? 'system' : 'identity');
+  const identityName = trimString(record.identityName)
+    || (identityId === SYSTEM_IDENTITY_ID ? 'System' : identityId);
 
   return {
     type: 'run_usage',
@@ -596,11 +575,9 @@ function normalizeLedgerRecord(record) {
     sessionName: trimString(record.sessionName),
     sessionGroup: trimString(record.sessionGroup),
     rootSessionId: trimString(record.rootSessionId),
-    principalType,
-    principalId,
-    principalName,
-    visitorId: trimString(record.visitorId),
-    visitorName: trimString(record.visitorName),
+    identityKind,
+    identityId,
+    identityName,
     tool,
     model,
     effort: trimString(record.effort),
@@ -764,8 +741,8 @@ async function listLedgerFiles(startMs, endMs, ledgerDir = USAGE_LEDGER_DIR) {
 }
 
 function matchesRecordFilters(record, filters = {}) {
-  if (filters.principalType && record.principalType !== filters.principalType) return false;
-  if (filters.principalId && record.principalId !== filters.principalId) return false;
+  if (filters.identityKind && record.identityKind !== filters.identityKind) return false;
+  if (filters.identityId && record.identityId !== filters.identityId) return false;
   if (filters.sessionId && record.sessionId !== filters.sessionId) return false;
   if (filters.tool && record.tool !== filters.tool) return false;
   if (filters.model && record.model !== filters.model) return false;
@@ -778,9 +755,9 @@ function summarizeTopRun(record) {
     runId: record.runId,
     sessionId: record.sessionId,
     sessionName: record.sessionName,
-    principalType: record.principalType,
-    principalId: record.principalId,
-    principalName: record.principalName,
+    identityKind: record.identityKind,
+    identityId: record.identityId,
+    identityName: record.identityName,
     tool: record.tool,
     model: record.model,
     effort: record.effort,
@@ -813,8 +790,8 @@ export async function queryUsageLedger(options = {}) {
   const { startMs, endMs, days } = normalizeWindow(options);
   const ledgerDir = resolveLedgerDir(options.ledgerDir);
   const filters = {
-    principalType: trimString(options.principalType),
-    principalId: trimString(options.principalId),
+    identityKind: trimString(options.identityKind),
+    identityId: trimString(options.identityId),
     sessionId: trimString(options.sessionId),
     tool: trimString(options.tool),
     model: trimString(options.model),
@@ -867,7 +844,7 @@ export async function queryUsageLedger(options = {}) {
     });
 
   const totals = createTotals();
-  const byPrincipal = new Map();
+  const byIdentity = new Map();
   const byTool = new Map();
   const byModel = new Map();
   const byOperation = new Map();
@@ -890,17 +867,17 @@ export async function queryUsageLedger(options = {}) {
       contextTokenCount += 1;
     }
 
-    const principalBucket = getOrCreateBucket(
-      byPrincipal,
-      `${record.principalType}:${record.principalId || '(unknown)'}`,
+    const identityBucket = getOrCreateBucket(
+      byIdentity,
+      `${record.identityKind}:${record.identityId || '(unknown)'}`,
       {
-        principalType: record.principalType,
-        principalId: record.principalId,
-        principalName: record.principalName,
+        identityKind: record.identityKind,
+        identityId: record.identityId,
+        identityName: record.identityName,
       },
     );
-    appendMetrics(principalBucket, record);
-    touchLatest(principalBucket, record);
+    appendMetrics(identityBucket, record);
+    touchLatest(identityBucket, record);
 
     const toolBucket = getOrCreateBucket(byTool, record.tool || '(unknown)', { label: record.tool || '(unknown)' });
     appendMetrics(toolBucket, record);
@@ -934,8 +911,8 @@ export async function queryUsageLedger(options = {}) {
     const sessionBucket = getOrCreateBucket(bySession, record.sessionId, {
       sessionId: record.sessionId,
       sessionName: record.sessionName || record.sessionId,
-      principalType: record.principalType,
-      principalId: record.principalId,
+      identityKind: record.identityKind,
+      identityId: record.identityId,
       tool: record.tool,
       model: record.model,
     });
@@ -985,7 +962,7 @@ export async function queryUsageLedger(options = {}) {
         ? roundAverage(backgroundTokens / totals.totalTokens)
         : null,
     },
-    byPrincipal: sortBuckets(byPrincipal, top),
+    byIdentity: sortBuckets(byIdentity, top),
     byTool: sortBuckets(byTool, top),
     byModel: sortBuckets(byModel, top),
     byOperation: sortBuckets(byOperation, top),

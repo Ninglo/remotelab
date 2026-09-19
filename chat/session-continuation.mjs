@@ -8,48 +8,6 @@ function normalizeText(value) {
   return String(value ?? '').replace(/\r\n/g, '\n').trim();
 }
 
-function formatTemplateSourceLabel(evt) {
-  const sourceSessionName = normalizeText(evt?.sourceSessionName);
-  if (sourceSessionName) return `session "${sourceSessionName}"`;
-  const sourceSessionId = normalizeText(evt?.sourceSessionId);
-  if (sourceSessionId) return `session ${sourceSessionId}`;
-  return 'its source session';
-}
-
-export function buildTemplateFreshnessNotice(evt) {
-  const freshness = normalizeText(evt?.templateFreshness).toLowerCase();
-  if (!freshness) return '';
-
-  const templateUpdatedAt = normalizeText(evt?.templateUpdatedAt);
-  const currentSourceUpdatedAt = normalizeText(evt?.currentSourceUpdatedAt || evt?.sourceSessionUpdatedAt);
-  const sourceLabel = formatTemplateSourceLabel(evt);
-
-  if (freshness === 'stale') {
-    const snapshotLine = templateUpdatedAt
-      ? `This snapshot was saved at ${templateUpdatedAt}.`
-      : 'This snapshot was saved earlier.';
-    const sourceLine = currentSourceUpdatedAt
-      ? `The source session changed again at ${currentSourceUpdatedAt}.`
-      : 'The source session changed again after the snapshot was saved.';
-    return [
-      '[Template freshness warning]',
-      `${snapshotLine} ${sourceLine} Treat the template from ${sourceLabel} as historical bootstrap context only. Re-read current files and notes before making changes.`,
-    ].join('\n');
-  }
-
-  if (freshness === 'source_missing') {
-    const snapshotLine = templateUpdatedAt
-      ? `The last saved snapshot was captured at ${templateUpdatedAt}.`
-      : 'The last saved snapshot time is unknown.';
-    return [
-      '[Template source unavailable]',
-      `${snapshotLine} The original source session is no longer available, so verify current files and notes before making changes.`,
-    ].join('\n');
-  }
-
-  return '';
-}
-
 function clipText(value, maxChars = MAX_EVENT_CHARS) {
   const text = normalizeText(value);
   if (!text) return '';
@@ -108,23 +66,11 @@ function formatStatus(evt) {
   return `[System status]\n${content}`;
 }
 
-function formatTemplateContext(evt) {
-  const content = normalizeText(evt.content);
-  if (!content) return '';
-  const name = normalizeText(evt.templateName) || 'template';
-  const freshnessNotice = buildTemplateFreshnessNotice(evt);
-  return freshnessNotice
-    ? `[Applied template context: ${name}]\n${freshnessNotice}\n\n${content}`
-    : `[Applied template context: ${name}]\n${content}`;
-}
-
 function formatContinuationEvent(evt) {
   if (!evt || !evt.type) return '';
   switch (evt.type) {
     case 'message':
       return formatMessage(evt);
-    case 'template_context':
-      return formatTemplateContext(evt);
     case 'tool_use':
       return formatToolUse(evt);
     case 'tool_result':

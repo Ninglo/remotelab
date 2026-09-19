@@ -7,6 +7,7 @@ import { homedir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { waitForReplyPublication } from '../lib/reply-publication-client.mjs';
+import { readServiceToken } from '../lib/auth-config.mjs';
 
 const HOME = homedir();
 const DEFAULT_CONFIG_PATH = join(HOME, '.config', 'remotelab', 'remote-capability-monitor', 'config.json');
@@ -785,11 +786,10 @@ async function requestJson(baseUrl, pathname, { method = 'GET', cookie = '', bod
   return { response, text, json };
 }
 
-async function authenticateOwner(baseUrl, authFile) {
-  const auth = await readJson(expandHome(authFile), null);
-  const token = trimString(auth?.token);
+async function authenticateService(baseUrl, authFile) {
+  const token = await readServiceToken(expandHome(authFile)).catch(() => '');
   if (!token) {
-    throw new Error(`Missing owner token in ${expandHome(authFile)}`);
+    throw new Error(`Missing service token in ${expandHome(authFile)}`);
   }
 
   const response = await fetch(`${normalizeBaseUrl(baseUrl)}/?token=${encodeURIComponent(token)}`, {
@@ -801,17 +801,9 @@ async function authenticateOwner(baseUrl, authFile) {
     .map((part) => part.trim())
     .find((part) => part.startsWith('session_token='));
   if (!sessionCookie) {
-    throw new Error(`Owner auth failed (${response.status})`);
+    throw new Error(`RemoteLab authentication failed (${response.status})`);
   }
   return sessionCookie;
-}
-
-async function loadAutomationAgent(baseUrl, agentId, cookie) {
-  const result = await requestJson(baseUrl, '/api/agents', { cookie });
-  if (!result.response.ok || !Array.isArray(result.json?.agents)) {
-    throw new Error(result.json?.error || result.text || `Failed to load agents (${result.response.status})`);
-  }
-  return result.json.agents.find((agent) => agent?.id === agentId) || null;
 }
 
 function buildSessionDigestMessage({
@@ -907,13 +899,12 @@ async function waitForRunCompletion(baseUrl, runId, cookie) {
 
 async function submitDigestToRemoteLab(config, { runAt, firstRun, pendingInteresting, allInteresting, sourceResults, reportPaths, dryRun }) {
   const remoteConfig = config?.remotelab || {};
-  const sessionConfig = remoteConfig?.session || {};
-  const agentId = trimString(sessionConfig.agentId || sessionConfig.appId);
-  if (!agentId) {
+  const sessionConfig = remoteConfig?.session;
+  if (!sessionConfig || typeof sessionConfig !== 'object' || sessionConfig.enabled === false) {
     return {
       success: false,
       skipped: true,
-      reason: 'no_agent_configured',
+      reason: 'session_delivery_disabled',
     };
   }
 
@@ -922,30 +913,23 @@ async function submitDigestToRemoteLab(config, { runAt, firstRun, pendingInteres
       success: false,
       skipped: true,
       reason: 'dry_run',
-      agentId,
     };
   }
 
   const baseUrl = normalizeBaseUrl(trimString(remoteConfig.baseUrl) || DEFAULT_REMOTELAB_BASE_URL);
   const authFile = trimString(remoteConfig.authFile) || DEFAULT_REMOTELAB_AUTH_FILE;
-  const cookie = await authenticateOwner(baseUrl, authFile);
-  const agent = await loadAutomationAgent(baseUrl, agentId, cookie);
-  if (!agent) {
-    throw new Error(`Agent not found for remote capability monitor: ${agentId}`);
-  }
+  const cookie = await authenticateService(baseUrl, authFile);
 
   const sessionPayload = {
     folder: expandHome(trimString(sessionConfig.folder) || trimString(remoteConfig.sessionFolder) || DEFAULT_REMOTELAB_SESSION_FOLDER),
-    tool: trimString(sessionConfig.tool) || trimString(agent.tool) || trimString(remoteConfig.tool) || 'codex',
-    name: trimString(sessionConfig.name) || trimString(agent.name) || 'Agent Radar',
+    tool: trimString(sessionConfig.tool) || trimString(remoteConfig.tool) || 'codex',
+    name: trimString(sessionConfig.name) || 'Capability Radar',
     sourceId: 'automation',
     sourceName: 'Automation',
-    templateId: agentId,
-    templateName: trimString(agent.name),
     group: trimString(sessionConfig.group) || 'Automation',
     description: trimString(sessionConfig.description) || 'Scheduled scout for remote-control coding-agent capabilities and competitor changes.',
-    systemPrompt: trimString(agent.systemPrompt) || trimString(sessionConfig.systemPrompt),
-    externalTriggerId: trimString(sessionConfig.externalTriggerId) || `automation:${agentId}:remote-capability-monitor`,
+    systemPrompt: trimString(sessionConfig.systemPrompt),
+    externalTriggerId: trimString(sessionConfig.externalTriggerId) || 'automation:remote-capability-monitor',
   };
 
   const createResult = await requestJson(baseUrl, '/api/sessions', {
@@ -1001,8 +985,7 @@ async function submitDigestToRemoteLab(config, { runAt, firstRun, pendingInteres
 
   return {
     success: runState === 'completed',
-    agentId,
-    appName: trimString(agent.name),
+    sessionName: sessionPayload.name,
     sessionId: session.id,
     runId: finalizedRunId || null,
     requestId,
@@ -1057,7 +1040,7 @@ function buildNotificationMessage({ pendingInteresting, allInteresting, reportPa
 
   if (pendingInteresting.length === 0) {
     const noSignalTitle = sessionResult?.success
-      ? `${sessionResult.appName || 'Agent Radar'}: review refreshed`
+      ? `${sessionResult.sessionName || 'Capability Radar'}: review refreshed`
       : 'RemoteLab scout: no new signals';
     const noSignalBody = sessionResult?.success
       ? 'No new signals; the review session was refreshed.'
@@ -1069,7 +1052,7 @@ function buildNotificationMessage({ pendingInteresting, allInteresting, reportPa
         `RemoteLab scout completed an ${firstRun ? 'initial bootstrap' : 'incremental'} cycle and found no new high-signal items.`,
         '',
         ...(sessionResult?.success ? [
-          `Review session: ${sessionResult.appName || 'Agent Radar'} (${sessionResult.sessionId})`,
+          `Review session: ${sessionResult.sessionName || 'Capability Radar'} (${sessionResult.sessionId})`,
           `Deep link: ${sessionResult.sessionUrl}`,
           '',
         ] : []),
@@ -1082,11 +1065,11 @@ function buildNotificationMessage({ pendingInteresting, allInteresting, reportPa
   }
 
   const title = sessionResult?.success
-    ? `Agent Radar: ${pendingInteresting.length} new signal${pendingInteresting.length === 1 ? '' : 's'} ready`
+    ? `Capability Radar: ${pendingInteresting.length} new signal${pendingInteresting.length === 1 ? '' : 's'} ready`
     : `RemoteLab scout: ${pendingInteresting.length} new signal${pendingInteresting.length === 1 ? '' : 's'}`;
   const firstHeadline = truncate(focusItems[0]?.headline || 'New remote-agent signal', 72);
   const body = sessionResult?.success
-    ? `Review is ready in ${sessionResult.appName || 'the scout session'}`
+    ? `Review is ready in ${sessionResult.sessionName || 'the scout session'}`
     : (pendingInteresting.length === 1 ? firstHeadline : `${firstHeadline}; +${pendingInteresting.length - 1} more`);
   const lines = [
     `RemoteLab scout found ${pendingInteresting.length} new high-signal item${pendingInteresting.length === 1 ? '' : 's'}.`,
@@ -1105,7 +1088,7 @@ function buildNotificationMessage({ pendingInteresting, allInteresting, reportPa
   }
   lines.push('');
   if (sessionResult?.success) {
-    lines.push(`Review session: ${sessionResult.appName || 'Agent Radar'} (${sessionResult.sessionId})`);
+    lines.push(`Review session: ${sessionResult.sessionName || 'Capability Radar'} (${sessionResult.sessionId})`);
     lines.push(`Deep link: ${sessionResult.sessionUrl}`);
     lines.push('');
   }

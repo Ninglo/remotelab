@@ -1,22 +1,21 @@
 /**
- * Session source, visitor, and template context resolution.
- *
- * Extracted from session-manager.mjs — pure functions for resolving
- * session source (app, fork, direct), visitor display names,
- * and template context content.
+ * Pure helpers for normalizing the transport/source attached to a Session.
+ * A source is display metadata only; it never changes Session visibility.
  */
 
-import {
-  DEFAULT_APP_ID,
-  getBuiltinApp,
-  normalizeAppId,
-} from './apps.mjs';
+export const DEFAULT_SESSION_SOURCE_ID = 'chat';
 
-// ── Name normalization ───────────────────────────────────────────────
+const BUILTIN_SOURCE_NAMES = new Map([
+  ['chat', 'Chat'],
+  ['email', 'Email'],
+  ['feishu', 'Feishu'],
+  ['wechat', 'WeChat'],
+  ['github', 'GitHub'],
+]);
 
-export function normalizeSessionTemplateName(value) {
+export function normalizeSessionSourceId(value) {
   if (typeof value !== 'string') return '';
-  return value.trim().replace(/\s+/g, ' ');
+  return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
 export function normalizeSessionSourceName(value) {
@@ -24,124 +23,34 @@ export function normalizeSessionSourceName(value) {
   return value.trim().replace(/\s+/g, ' ');
 }
 
-export function normalizeSessionVisitorName(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim().replace(/\s+/g, ' ');
-}
-
-export function normalizeSessionPrincipalId(value) {
-  if (typeof value !== 'string') return '';
-  return value.trim();
-}
-
 export function formatSessionSourceNameFromId(sourceId) {
-  const normalized = typeof sourceId === 'string' ? sourceId.trim() : '';
+  const normalized = normalizeSessionSourceId(sourceId);
   if (!normalized) return 'Chat';
   return normalized
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-// ── Source resolution ────────────────────────────────────────────────
-
 export function resolveSessionSourceId(meta) {
-  const explicitSourceId = normalizeAppId(meta?.sourceId);
-  if (explicitSourceId) return explicitSourceId;
-  return DEFAULT_APP_ID;
+  return normalizeSessionSourceId(meta?.sourceId) || DEFAULT_SESSION_SOURCE_ID;
 }
 
 export function resolveSessionSourceName(meta, sourceId = resolveSessionSourceId(meta)) {
-  const explicitSourceName = normalizeSessionSourceName(meta?.sourceName);
-  if (explicitSourceName) return explicitSourceName;
-
-  const builtinSource = getBuiltinApp(sourceId);
-  if (builtinSource?.name) return builtinSource.name;
-
-  return formatSessionSourceNameFromId(sourceId);
+  return normalizeSessionSourceName(meta?.sourceName)
+    || BUILTIN_SOURCE_NAMES.get(sourceId)
+    || formatSessionSourceNameFromId(sourceId);
 }
 
 export function hasRequestedSessionSourceHint(extra = {}) {
-  const explicitSourceId = normalizeAppId(extra?.sourceId);
-  return !!explicitSourceId;
+  return !!normalizeSessionSourceId(extra?.sourceId);
 }
 
 export function resolveRequestedSessionSourceId(extra = {}) {
-  const explicitSourceId = normalizeAppId(extra?.sourceId);
-  if (explicitSourceId) return explicitSourceId;
-
-  return DEFAULT_APP_ID;
+  return normalizeSessionSourceId(extra?.sourceId) || DEFAULT_SESSION_SOURCE_ID;
 }
 
 export function resolveRequestedSessionSourceName(extra = {}, sourceId = resolveRequestedSessionSourceId(extra)) {
-  const explicitSourceName = normalizeSessionSourceName(extra?.sourceName);
-  if (explicitSourceName) return explicitSourceName;
-
-  const builtinSource = getBuiltinApp(sourceId);
-  if (builtinSource?.name) return builtinSource.name;
-
-  return formatSessionSourceNameFromId(sourceId);
-}
-
-export function resolveAuthSessionPrincipalId(authSession = {}) {
-  return normalizeSessionPrincipalId(authSession?.principalId || authSession?.visitorId);
-}
-
-export function resolveSessionPrincipalId(session = {}) {
-  return normalizeSessionPrincipalId(session?.createdByPrincipalId || session?.visitorId);
-}
-
-export function resolveAuthSessionAgentId(authSession = {}) {
-  return normalizeAppId(authSession?.agentId || authSession?.scope?.agentId);
-}
-
-export function resolveSessionAgentId(session = {}) {
-  return normalizeAppId(session?.templateId);
-}
-
-export function resolveRequestedSessionPrincipalFields(extra = {}) {
-  const explicitCreatedByPrincipalId = normalizeSessionPrincipalId(extra?.createdByPrincipalId);
-  const explicitVisitorId = normalizeSessionPrincipalId(extra?.visitorId);
-  const requestedVisitorName = normalizeSessionVisitorName(extra?.visitorName);
-  const principalId = explicitCreatedByPrincipalId || explicitVisitorId;
-
-  return {
-    createdByPrincipalId: principalId,
-    visitorId: explicitVisitorId || (requestedVisitorName ? principalId : ''),
-  };
-}
-
-// ── Template resolution ──────────────────────────────────────────────
-
-export function resolveSessionTemplateId(meta) {
-  return normalizeAppId(meta?.templateId);
-}
-
-export function resolveSessionTemplateName(meta) {
-  return normalizeSessionTemplateName(meta?.templateName);
-}
-
-// ── Template context helpers ─────────────────────────────────────────
-
-export function buildSavedTemplateContextContent(prepared) {
-  if (!prepared) return '';
-
-  const summary = typeof prepared.summary === 'string' ? prepared.summary.trim() : '';
-  const continuationBody = typeof prepared.continuationBody === 'string'
-    ? prepared.continuationBody.trim()
-    : '';
-  const parts = [];
-
-  if (summary) {
-    parts.push(`[Conversation summary]\n\n${summary}`);
-  }
-  if (continuationBody) {
-    parts.push(continuationBody);
-  }
-
-  return parts.join('\n\n---\n\n').trim();
-}
-
-export function parseTimestampMs(value) {
-  const timestamp = Date.parse(typeof value === 'string' ? value : '');
-  return Number.isFinite(timestamp) ? timestamp : 0;
+  return normalizeSessionSourceName(extra?.sourceName)
+    || BUILTIN_SOURCE_NAMES.get(sourceId)
+    || formatSessionSourceNameFromId(sourceId);
 }

@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
+import { readServiceToken } from '../lib/auth-config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
@@ -669,13 +670,8 @@ export function buildSessionMessage({ repo, sessionFolder, run, commit, failedJo
   return lines.join('\n');
 }
 
-async function readOwnerToken() {
-  const auth = await readJson(AUTH_FILE, {});
-  const token = trimString(auth?.token);
-  if (!token) {
-    throw new Error(`No owner token found in ${AUTH_FILE}`);
-  }
-  return token;
+async function readConnectorToken() {
+  return readServiceToken(AUTH_FILE);
 }
 
 async function loginWithToken(baseUrl, token) {
@@ -720,7 +716,7 @@ async function ensureAuthCookie(runtime, forceRefresh = false) {
     runtime.authToken = '';
   }
   if (!runtime.authToken) {
-    runtime.authToken = await readOwnerToken();
+    runtime.authToken = await readConnectorToken();
   }
   runtime.authCookie = await loginWithToken(runtime.baseUrl, runtime.authToken);
   return runtime.authCookie;

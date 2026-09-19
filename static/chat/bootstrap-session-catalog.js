@@ -44,6 +44,16 @@ function getCurrentSourceFilter() {
 
 setChatActiveSourceFilter(getCurrentSourceFilter(), { normalizeSourceFilter });
 
+const PERSON_FILTER_UNASSIGNED_VALUE = "__unassigned__";
+
+function getCurrentPersonFilter() {
+  const value = getActivePersonFilterValue();
+  if (value === FILTER_ALL_VALUE || value === PERSON_FILTER_UNASSIGNED_VALUE) return value;
+  return getPeopleDirectory().some((person) => person.id === value) ? value : FILTER_ALL_VALUE;
+}
+
+setChatActivePersonFilter(getCurrentPersonFilter());
+
 function registerHiddenMarkdownExtensions() {
   const hiddenTagStart = /<(private|hide)\b/i;
   const hiddenBlockPattern = /^(?: {0,3})<(private|hide)\b[^>]*>[\s\S]*?<\/\1>(?:\n+|$)/i;
@@ -110,32 +120,26 @@ function clearInstalledNotificationPromptFlag() {
   } catch {}
 }
 
-function isOwnerPushFeatureEnabled() {
-  return typeof shouldEnableOwnerPushFeatures === "function"
-    ? shouldEnableOwnerPushFeatures()
-    : !visitorMode;
+function isPushFeatureEnabled() {
+  return typeof shouldEnablePushFeatures === "function"
+    ? shouldEnablePushFeatures()
+    : true;
 }
 
-function shouldPersistNavigationState() {
-  return typeof shouldPersistOwnerNavigationState === "function"
-    ? shouldPersistOwnerNavigationState()
-    : !visitorMode;
-}
-
-function isAgentScopedUiMode() {
-  return typeof isAgentScopedMode === "function"
-    ? isAgentScopedMode()
-    : false;
+function isNavigationPersistenceEnabled() {
+  return typeof shouldPersistNavigationState === "function"
+    ? shouldPersistNavigationState()
+    : true;
 }
 
 function initializePushNotifications(options = {}) {
-  if (!isOwnerPushFeatureEnabled() || !("Notification" in window)) return;
+  if (!isPushFeatureEnabled() || !("Notification" in window)) return;
   const shouldPrompt = options.prompt === true;
   if (Notification.permission === "default") {
     if (!shouldPrompt) return;
     Notification.requestPermission().then((perm) => {
       clearInstalledNotificationPromptFlag();
-      if (perm === "granted" && isOwnerPushFeatureEnabled()) setupPushNotifications();
+      if (perm === "granted" && isPushFeatureEnabled()) setupPushNotifications();
     });
   } else if (Notification.permission === "granted") {
     if (shouldPrompt) clearInstalledNotificationPromptFlag();
@@ -148,7 +152,7 @@ function initializePushNotifications(options = {}) {
 registerHiddenMarkdownExtensions();
 
 function persistActiveSessionId(sessionId) {
-  if (!shouldPersistNavigationState()) return;
+  if (!isNavigationPersistenceEnabled()) return;
   if (sessionId) {
     localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, sessionId);
   } else {
@@ -157,7 +161,7 @@ function persistActiveSessionId(sessionId) {
 }
 
 function persistActiveSidebarTab(tab) {
-  if (!shouldPersistNavigationState()) return;
+  if (!isNavigationPersistenceEnabled()) return;
   localStorage.setItem(
     ACTIVE_SIDEBAR_TAB_STORAGE_KEY,
     normalizeSidebarTab(tab),
@@ -173,7 +177,6 @@ function buildNavigationUrl(state = {}) {
       : state.tab,
   );
   const url = new URL(window.location.href);
-  url.searchParams.delete("visitor");
   url.searchParams.delete("source");
   if (nextSessionId) url.searchParams.set("session", nextSessionId);
   else url.searchParams.delete("session");
@@ -193,7 +196,7 @@ function syncBrowserState(state = {}) {
       ? (typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : activeTab)
       : state.tab,
   );
-  if (shouldPersistNavigationState()) {
+  if (isNavigationPersistenceEnabled()) {
     persistActiveSessionId(nextSessionId);
     persistActiveSidebarTab(nextTab);
   }
@@ -239,7 +242,7 @@ function getSourceFilterValues() {
 }
 
 function persistActiveSourceFilter(value) {
-  if (!shouldPersistNavigationState()) return;
+  if (!isNavigationPersistenceEnabled()) return;
   localStorage.setItem(ACTIVE_SOURCE_FILTER_STORAGE_KEY, normalizeSourceFilter(value));
 }
 
@@ -293,19 +296,37 @@ function getSessionSourceCategory(session) {
   return SOURCE_FILTER_BOT_VALUE;
 }
 
-function refreshAppCatalog() {
+function refreshSessionCatalog() {
   renderSourceFilterOptions();
+  renderPersonFilterOptions();
 }
 
-function getFilteredActiveSessions({ ignoreSource = false } = {}) {
+function getFilteredActiveSessions({ ignoreSource = false, ignorePerson = false } = {}) {
   return getActiveSessions().filter((session) => (
-    ignoreSource || matchesSourceFilter(session)
+    (ignoreSource || matchesSourceFilter(session))
+    && (ignorePerson || matchesPersonFilter(session))
   ));
 }
 
 function matchesSourceFilter(session, sourceFilter = getCurrentSourceFilter()) {
   if (sourceFilter === FILTER_ALL_VALUE) return true;
   return getSessionSourceCategory(session) === sourceFilter;
+}
+
+function getSessionPersonId(session) {
+  const identityId = typeof session?.initiatedByIdentityId === "string"
+    ? session.initiatedByIdentityId.trim()
+    : "";
+  if (!identityId) return PERSON_FILTER_UNASSIGNED_VALUE;
+  const person = getPeopleDirectory().find((entry) => entry.identities.some(
+    (identity) => identity.id === identityId,
+  ));
+  return person?.id || PERSON_FILTER_UNASSIGNED_VALUE;
+}
+
+function matchesPersonFilter(session, personFilter = getCurrentPersonFilter()) {
+  if (personFilter === FILTER_ALL_VALUE) return true;
+  return getSessionPersonId(session) === personFilter;
 }
 
 function matchesSearchQuery(session) {
@@ -331,6 +352,7 @@ function matchesSessionSpace(session, spaceFilter = activeSessionSpace) {
 
 function matchesCurrentFilters(session) {
   return matchesSourceFilter(session)
+    && matchesPersonFilter(session)
     && matchesSessionSpace(session, activeSessionSpace)
     && matchesSearchQuery(session);
 }
@@ -353,6 +375,12 @@ function getSessionCountForSourceFilter(sourceFilter) {
   return activeSessions.filter((session) => getSessionSourceCategory(session) === sourceFilter).length;
 }
 
+function getSessionCountForPersonFilter(personFilter) {
+  const activeSessions = getFilteredActiveSessions({ ignorePerson: true });
+  if (personFilter === FILTER_ALL_VALUE) return activeSessions.length;
+  return activeSessions.filter((session) => getSessionPersonId(session) === personFilter).length;
+}
+
 function isSidebarFilterControlVisible(control) {
   if (!control) return false;
   if (control.hidden === true) return false;
@@ -372,22 +400,49 @@ function syncSidebarFiltersVisibility(showingSessions = null) {
     : ((typeof getActiveSidebarTabValue === "function"
       ? getActiveSidebarTabValue()
       : activeTab) === "sessions");
-  const agentScopedMode = typeof isAgentScopedMode === "function"
-    ? isAgentScopedMode()
-    : false;
-  const controls = [sourceFilterSelect].filter(Boolean);
+  const controls = [personFilterSelect, sourceFilterSelect].filter(Boolean);
   const hasVisibleControls = controls.length === 0
     ? true
     : controls.some((control) => isSidebarFilterControlVisible(control));
-  const visible = resolvedShowingSessions && !visitorMode && !agentScopedMode && hasVisibleControls;
+  const visible = resolvedShowingSessions && hasVisibleControls;
   sidebarFilters.classList.toggle("hidden", !visible);
 }
 
+function renderPersonFilterOptions() {
+  if (!personFilterSelect || document.activeElement === personFilterSelect) return;
+  const selected = getCurrentPersonFilter();
+  const people = getPeopleDirectory();
+  const entries = [[
+    FILTER_ALL_VALUE,
+    `${t("sidebar.filter.allPeople")} (${getSessionCountForPersonFilter(FILTER_ALL_VALUE)})`,
+  ]];
+  for (const person of people) {
+    const count = getSessionCountForPersonFilter(person.id);
+    if (count === 0 && person.id !== selected && person.id !== currentPerson?.id) continue;
+    const label = person.id === currentPerson?.id
+      ? t("sidebar.filter.mine")
+      : person.name;
+    entries.push([person.id, `${label} (${count})`]);
+  }
+  const unassignedCount = getSessionCountForPersonFilter(PERSON_FILTER_UNASSIGNED_VALUE);
+  if (unassignedCount > 0 || selected === PERSON_FILTER_UNASSIGNED_VALUE) {
+    entries.push([
+      PERSON_FILTER_UNASSIGNED_VALUE,
+      `${t("sidebar.filter.unassigned")} (${unassignedCount})`,
+    ]);
+  }
+  personFilterSelect.replaceChildren(...entries.map(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    return option;
+  }));
+  personFilterSelect.value = selected;
+  syncSidebarFiltersVisibility();
+}
+
 function renderSourceFilterOptions() {
-  const agentScopedMode = typeof isAgentScopedMode === "function"
-    ? isAgentScopedMode()
-    : false;
-  if (!sourceFilterSelect || visitorMode || agentScopedMode) {
+  if (!sourceFilterSelect) {
     if (sourceFilterSelect) sourceFilterSelect.style.display = "none";
     syncSidebarFiltersVisibility();
     return;
@@ -448,7 +503,23 @@ if (sourceFilterSelect) {
   });
 }
 
-refreshAppCatalog();
+function commitPersonFilterSelection() {
+  const selected = personFilterSelect?.value || FILTER_ALL_VALUE;
+  if (selected === getCurrentPersonFilter()) return;
+  setChatActivePersonFilter(selected);
+  localStorage.setItem(ACTIVE_PERSON_FILTER_STORAGE_KEY, selected);
+  renderSessionList();
+  renderPersonFilterOptions();
+  renderSourceFilterOptions();
+}
+
+if (personFilterSelect) {
+  personFilterSelect.addEventListener("input", commitPersonFilterSelection);
+  personFilterSelect.addEventListener("change", commitPersonFilterSelection);
+  personFilterSelect.addEventListener("blur", () => setTimeout(renderPersonFilterOptions, 0));
+}
+
+refreshSessionCatalog();
 
 function getSessionSortTime(session) {
   if (typeof sessionStateModel.getSessionSortTime === "function") {

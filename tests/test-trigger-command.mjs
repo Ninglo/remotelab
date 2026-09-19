@@ -7,7 +7,12 @@ import { join } from 'path';
 const tempRoot = mkdtempSync(join(tmpdir(), 'remotelab-trigger-command-'));
 const homeDir = join(tempRoot, 'home');
 mkdirSync(join(homeDir, '.config', 'remotelab'), { recursive: true });
-writeFileSync(join(homeDir, '.config', 'remotelab', 'auth.json'), `${JSON.stringify({ token: 'owner-token' })}\n`, 'utf8');
+writeFileSync(join(homeDir, '.config', 'remotelab', 'auth.json'), `${JSON.stringify({
+  version: 2,
+  serviceToken: 'owner-token',
+  primaryPersonId: 'person_default',
+  people: [{ id: 'person_default', name: 'Administrator', credentials: [] }],
+})}\n`, 'utf8');
 process.env.HOME = homeDir;
 process.env.REMOTELAB_SESSION_ID = 'sess-current';
 

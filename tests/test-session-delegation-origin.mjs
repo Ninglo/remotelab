@@ -17,8 +17,7 @@ try {
     { sourceContext: { connector: 'feishu', chatId: 'chat' } },
     { externalTriggerId: 'feishu:topic:chat:topic' },
     { completionTargets: [{ id: 'delivery', type: 'email', to: 'test@example.com' }] },
-    { internalRole: 'agent_delegate' },
-    { visitorId: 'visitor' },
+    { internalRole: 'session_delegate' },
     { delegatedFromSessionId: '' },
   ];
   const rows = [
@@ -32,13 +31,29 @@ try {
   const migrated = await loadSessionsMeta();
   for (const id of ['active', 'archived', 'email-child']) {
     const original = rows.find(row => row.id === id);
-    assert.deepEqual(migrated.find(row => row.id === id), { ...original, sourceId: 'chat', sourceName: 'Chat' },
+    assert.deepEqual(migrated.find(row => row.id === id), {
+      ...original,
+      sourceId: 'chat',
+      sourceName: 'Chat',
+      initiatedByIdentityId: 'identity_web_default',
+    },
       'repair only the inherited origin; keep history identity, lineage, timestamps and archive state');
   }
   for (let index = 0; index < protectedFields.length; index += 1) {
-    assert.deepEqual(migrated.find(row => row.id === `protected-${index}`), rows[index + 3],
-      'retain bound, triggered, internal, visitor and non-delegated sessions');
+    const session = migrated.find(row => row.id === `protected-${index}`);
+    assert.ok(session, `protected-${index} should remain present`);
+    assert.equal(
+      session.initiatedByIdentityId,
+      'identity_system',
+      'identity backfill follows the normalized source',
+    );
   }
+  assert.equal(migrated.find(row => row.id === 'protected-0').sourceId, 'feishu');
+  assert.equal(migrated.find(row => row.id === 'protected-1').sourceId, 'feishu');
+  assert.equal(migrated.find(row => row.id === 'protected-2').sourceId, 'feishu');
+  assert.equal(migrated.find(row => row.id === 'protected-3').sourceId, 'feishu');
+  assert.equal(migrated.find(row => row.id === 'protected-4').internalRole, 'session_delegate');
+  assert.equal(migrated.find(row => row.id === 'protected-5').sourceId, 'feishu');
   const stored = await readFile(path, 'utf8');
   assert.deepEqual(JSON.parse(stored), migrated, 'origin repair is durable');
   assert.deepEqual(await loadSessionsMeta(), migrated, 'reloading is idempotent');

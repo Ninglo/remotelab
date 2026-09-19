@@ -7,6 +7,7 @@ import { dirname, join, relative } from 'path';
 import { fileURLToPath } from 'url';
 import { promisify } from 'util';
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs';
+import { readServiceToken } from '../lib/auth-config.mjs';
 import {
   buildAssistantReplyAttachmentFallbackText,
   selectAssistantReplyEvent,
@@ -289,13 +290,8 @@ function normalizeBaseUrl(baseUrl) {
   return normalized.replace(/\/+$/, '');
 }
 
-async function readOwnerToken() {
-  const auth = JSON.parse(await readFile(AUTH_FILE, 'utf8'));
-  const token = trimString(auth?.token);
-  if (!token) {
-    throw new Error(`No owner token found in ${AUTH_FILE}`);
-  }
-  return token;
+async function readConnectorToken() {
+  return readServiceToken(AUTH_FILE);
 }
 
 async function loginWithToken(baseUrl, token) {
@@ -1528,7 +1524,7 @@ async function main() {
   let cookiePromise = null;
   const getCookie = async () => {
     if (!cookiePromise) {
-      cookiePromise = (async () => loginWithToken(options.chatBaseUrl, await readOwnerToken()))();
+      cookiePromise = (async () => loginWithToken(options.chatBaseUrl, await readConnectorToken()))();
     }
     try {
       return await cookiePromise;

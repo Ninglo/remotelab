@@ -37,8 +37,8 @@ function isQuickSessionUi(session = typeof getCurrentSession === "function" ? ge
 function syncQuickSessionUi(session = typeof getCurrentSession === "function" ? getCurrentSession() : null) {
   const attached = Boolean(currentSessionId && session);
   const quick = attached ? isQuickSessionUi(session) : getDraftExecutionProfile() === "quick";
-  if (sessionProfileControl) sessionProfileControl.hidden = attached || visitorMode;
-  if (quickProfileBadge) quickProfileBadge.hidden = !attached || !quick || visitorMode;
+  if (sessionProfileControl) sessionProfileControl.hidden = attached;
+  if (quickProfileBadge) quickProfileBadge.hidden = !attached || !quick;
   if (runtimeSelectionControls) runtimeSelectionControls.hidden = quick;
   if (standardProfileBtn) {
     standardProfileBtn.classList.toggle("active", !quick);
@@ -51,7 +51,7 @@ function syncQuickSessionUi(session = typeof getCurrentSession === "function" ? 
 }
 
 function setDraftExecutionProfile(profile) {
-  if (currentSessionId || visitorMode) return false;
+  if (currentSessionId) return false;
   pendingNewSessionCreateOptions = {
     ...(pendingNewSessionCreateOptions || {}),
     ...(profile === "quick" ? { executionProfile: "quick" } : {}),
@@ -63,11 +63,7 @@ function setDraftExecutionProfile(profile) {
 
 function getActiveComposerSessionId() {
   if (currentSessionId) return currentSessionId;
-  const canCreateSession = !visitorMode
-    && (typeof hasAuthCapability === "function"
-      ? hasAuthCapability("createSession")
-      : true);
-  return canCreateSession ? DETACHED_COMPOSER_SESSION_ID : "";
+  return DETACHED_COMPOSER_SESSION_ID;
 }
 
 function isNewSessionDraftActive() {
@@ -189,7 +185,7 @@ function createNewSessionShortcut({
 }
 
 function createSortSessionListShortcut() {
-  return organizeSessionListWithAgent({ closeSidebar: false });
+  return organizeSessionList({ closeSidebar: false });
 }
 
 menuBtn.addEventListener("click", openApplicationNavigation);

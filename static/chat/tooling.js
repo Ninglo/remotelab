@@ -9,19 +9,19 @@ let lastSyncedRuntimeSelectionPayload = '';
 function canChangeRuntimeSelectionFromUi() {
   return typeof canChangeRuntimeSelection === "function"
     ? canChangeRuntimeSelection()
-    : !visitorMode;
+    : true;
 }
 
 function canPublishShareSnapshotsFromUi() {
   return typeof canPublishShareSnapshots === "function"
     ? canPublishShareSnapshots()
-    : !visitorMode;
+    : true;
 }
 
 function canForkSessionsFromUi() {
   return typeof canForkSessions === "function"
     ? canForkSessions()
-    : !visitorMode;
+    : true;
 }
 
 function buildRuntimeSelectionPayload() {
@@ -434,7 +434,7 @@ function syncShareButton() {
   if (!shareSnapshotBtn) return;
   const publishShareSnapshotsEnabled = typeof canPublishShareSnapshots === "function"
     ? canPublishShareSnapshots()
-    : !visitorMode;
+    : true;
   const visible = publishShareSnapshotsEnabled && !!currentSessionId;
   shareSnapshotBtn.style.display = visible ? "" : "none";
   if (!visible) {
@@ -446,7 +446,7 @@ function syncForkButton() {
   if (!forkSessionBtn) return;
   const forkSessionsEnabled = typeof canForkSessions === "function"
     ? canForkSessions()
-    : !visitorMode;
+    : true;
   const visible = forkSessionsEnabled && !!currentSessionId;
   forkSessionBtn.style.display = visible ? "" : "none";
   if (!visible) {
@@ -488,7 +488,7 @@ function getShareSnapshotBaseUrl() {
 async function shareCurrentSessionSnapshot() {
   const publishShareSnapshotsEnabled = typeof canPublishShareSnapshots === "function"
     ? canPublishShareSnapshots()
-    : !visitorMode;
+    : true;
   if (!currentSessionId || !publishShareSnapshotsEnabled || !shareSnapshotBtn) return;
 
   const currentSession = getCurrentSession();
@@ -545,7 +545,7 @@ async function shareCurrentSessionSnapshot() {
 async function forkCurrentSession() {
   const forkSessionsEnabled = typeof canForkSessions === "function"
     ? canForkSessions()
-    : !visitorMode;
+    : true;
   if (!currentSessionId || !forkSessionsEnabled || !forkSessionBtn) return;
 
   const original = forkSessionBtn.dataset.originalLabel || forkSessionBtn.textContent;

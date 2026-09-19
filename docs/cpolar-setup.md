@@ -81,7 +81,7 @@ The AI should do the rest inside the conversation:
   - on macOS, install it with the official Homebrew path from the cpolar download page
   - on Linux, use the official install script / package path from the cpolar download page
 - authenticate cpolar with the dashboard token via `cpolar authtoken ...` or through the local cpolar web UI on `http://127.0.0.1:9200`
-- configure RemoteLab so the owner chat plane stays on `http://127.0.0.1:7690`
+- configure RemoteLab so the primary chat plane stays on `http://127.0.0.1:7690`
 - create an HTTP tunnel that points to local port `7690`
 - prefer `cn_vip` / China VIP for mainland-facing access
 - if the user asked only for a quick test, accept a random public URL for the first validation pass
@@ -93,7 +93,7 @@ The AI should do the rest inside the conversation:
 
 | Surface | Expected state |
 | --- | --- |
-| Primary chat service | boot-managed owner service on `http://127.0.0.1:7690` |
+| Primary chat service | boot-managed instance service on `http://127.0.0.1:7690` |
 | Public access | cpolar HTTP tunnel routes a public hostname to port `7690` |
 | Mainland access | the returned URL opens directly in mainland China without a VPN |
 | Tunnel shape | temporary random URL for validation, or reserved fixed subdomain for long-lived sharing |

@@ -1,21 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from 'readline';
-import { access, mkdir, readFile, writeFile } from 'fs/promises';
-import { dirname } from 'path';
 import { hashPasswordAsync } from './lib/auth.mjs';
-import { AUTH_FILE } from './lib/config.mjs';
-
-const authFile = AUTH_FILE;
-const authDir = dirname(authFile);
-
-async function pathExists(path) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { findPerson, updateAuthDocument } from './lib/auth-config.mjs';
 
 const rl = createInterface({ input: process.stdin, output: process.stdout });
 const ask = (prompt) => new Promise(resolve => rl.question(prompt, resolve));
@@ -29,15 +15,24 @@ if (!username || !password) {
   process.exit(1);
 }
 
-await mkdir(authDir, { recursive: true });
-
-let existing = {};
-if (await pathExists(authFile)) {
-  try { existing = JSON.parse(await readFile(authFile, 'utf8')); } catch {}
-}
-
-existing.username = username;
-existing.passwordHash = await hashPasswordAsync(password);
-
-await writeFile(authFile, JSON.stringify(existing, null, 2), 'utf8');
+const passwordHash = await hashPasswordAsync(password);
+await updateAuthDocument((document) => {
+  const person = findPerson(document, document.primaryPersonId) || document.people[0];
+  const existing = person.credentials.find((credential) => credential.type === 'password');
+  if (existing) {
+    existing.username = username;
+    existing.passwordHash = passwordHash;
+    existing.label = username;
+    existing.lastUsedAt = '';
+  } else {
+    person.credentials.push({
+      id: `credential_password_${Date.now().toString(36)}`,
+      type: 'password',
+      username,
+      passwordHash,
+      label: username,
+      createdAt: new Date().toISOString(),
+    });
+  }
+});
 console.log(`Password set for user "${username}".`);

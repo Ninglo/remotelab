@@ -1,6 +1,6 @@
 # Task Center v1
 
-Task Center is the owner-only control surface for RemoteLab's durable automated tasks. It is a top-level application workspace, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
+Task Center is the authenticated control surface for RemoteLab's durable automated tasks. It is a top-level application workspace, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
 
 ## Product boundary
 
@@ -16,7 +16,7 @@ The execution Session still interprets the instruction and decides the concrete 
 
 Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Tasks sit above the Session list, while Settings sits below it. Selecting a Session, Task Center, or Settings swaps the main workspace inside the same application document; there is no second application rail and no template-management destination. Task Center and Settings share the same flat, readable main-canvas geometry and never insert management cards into a Session transcript. The sidebar shows the product brand only in the global header, keeps origin filtering next to the Session list, and does not spend primary space on build metadata. The URL query remains shareable/restorable UI state rather than a separate page load.
 
-The owner UI also has no per-Session template selector or preferred-template browser state. New owner Sessions start from the selected tool/runtime only. Persisted template metadata and the legacy shared-guest route remain a compatibility boundary for existing links; they are not presented as an owner-facing product concept.
+There is no per-Session template selector or preferred-template browser state. New Sessions start from the selected tool/runtime only. Interactive template objects and shared-guest routes do not exist in the v1 product model.
 
 ## Domain model
 
@@ -62,7 +62,7 @@ The public projection contains:
 There are two explicit execution modes:
 
 - `fixed_session`: every occurrence submits its wake-up instruction to the selected existing Session. Normal Session queueing remains authoritative, so overlapping work is serialized there.
-- `new_session`: the selected Session is provenance and a template source only. Every occurrence creates an independent execution Session through the existing scheduled-session path.
+- `new_session`: the selected Session supplies explicit provenance and starting context. Every occurrence creates an independent execution Session through the existing scheduled-session path.
 
 Legacy `calendar_day` schedules remain visible and are projected as `calendar_day_session`; Task Center does not rewrite them.
 
@@ -75,7 +75,7 @@ The execution Session remains the durable work record in both cases. Connector d
 
 ## HTTP API
 
-All routes are owner-only.
+All routes require authentication and are available to every authenticated Person.
 
 ### List and inspect
 
@@ -106,7 +106,7 @@ One-time example:
 }
 ```
 
-Recurring tasks replace `scheduledAt` with `cron` and `timezone`. `target.mode = new_session` uses the selected `sessionId` as the template source.
+Recurring tasks replace `scheduledAt` with `cron` and `timezone`. `target.mode = new_session` uses the selected `sessionId` as the explicit source Session.
 
 ### Lifecycle actions
 
@@ -150,5 +150,5 @@ This distinction is visible in the interface copy. `paused` or `cancelled` is ne
 - Projection and lifecycle facade: `chat/automation-tasks.mjs`
 - Existing producers: `chat/triggers.mjs`, `chat/recurring-schedules.mjs`
 - Fixed/new Session contract: `lib/scheduled-session.mjs`
-- Owner routes: `chat/router-control-routes.mjs`
+- Authenticated routes: `chat/router-control-routes.mjs`
 - UI: `static/chat/task-center.js`, `static/chat/task-center.css`, `templates/chat.html`

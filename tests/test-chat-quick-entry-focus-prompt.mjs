@@ -235,7 +235,6 @@ function createHarness() {
     msgInput,
     currentSessionId: 'persisted-session',
     hasAttachedSession: true,
-    visitorMode: false,
     shareSnapshotMode: false,
     pendingNavigationState: { sessionId: 'url-session', tab: 'settings' },
     initResponsiveLayout() {},
@@ -257,7 +256,7 @@ function createHarness() {
     bootstrapViaHttp() {
       return Promise.resolve();
     },
-    restoreOwnerSessionSelection() {},
+    restoreSessionSelection() {},
     connect() {},
     setupForegroundRefreshHandlers() {},
     loadModelsForCurrentTool() {

@@ -426,6 +426,12 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
   topicId: 'thread_topic_1',
   threadId: 'thread_topic_1',
   rootId: 'msg_topic_root_1',
+  sender: {
+    openId: 'ou_topic_1',
+    senderType: 'user',
+    tenantKey: 'tenant_topic_1',
+    isInternal: true,
+  },
 });
 assert.deepEqual(buildMessageSourceContext(topicSummary), {
   connector: 'feishu',
@@ -505,7 +511,7 @@ const authRefreshRuntime = {
   authCookie: 'session_token=stale-cookie',
   authToken: 'stale-token',
   config: { chatBaseUrl: 'http://127.0.0.1:7690' },
-  readOwnerToken: async () => 'fresh-token',
+  readServiceToken: async () => 'fresh-token',
   loginWithToken: async (_baseUrl, token) => `session_token=${token}`,
 };
 
@@ -518,7 +524,7 @@ assert.equal(
 assert.equal(
   await ensureAuthCookie(authRefreshRuntime, true),
   'session_token=fresh-token',
-  'forced auth refresh should re-read the current owner token before logging in again',
+  'forced auth refresh should re-read the current service token before logging in again',
 );
 assert.equal(authRefreshRuntime.authToken, 'fresh-token');
 assert.equal(authRefreshRuntime.authCookie, 'session_token=fresh-token');

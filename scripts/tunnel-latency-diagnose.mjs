@@ -6,6 +6,7 @@ import { join } from 'path';
 import { promisify } from 'util';
 import { randomUUID } from 'crypto';
 import { AUTH_FILE, API_REQUEST_LOGS_DIR } from '../lib/config.mjs';
+import { readServiceToken } from '../lib/auth-config.mjs';
 import { selectCloudflaredAccessDomain } from '../lib/cloudflared-config.mjs';
 import {
   appendQueryMarker,
@@ -25,13 +26,13 @@ Options:
   --path <path>           Repeatable path to probe
   --local-base <url>      Local origin base URL (default: http://127.0.0.1:7690)
   --remote-base <url>     Public tunnel base URL
-  --token <token>         Owner auth token override for /api/* probes
+  --token <token>         Service token override for /api/* probes
   --warm <count>          Warm samples per probe (default: 2)
   --json                  Emit JSON instead of a text report
   --help                  Show this help
 
 Defaults probe these paths:
-  /api/sessions?view=refs&includeVisitor=1
+  /api/sessions?view=refs
   /api/models
   /chat/ui.js
 `);
@@ -89,7 +90,7 @@ function parseArgs(argv) {
 
   if (args.paths.length === 0) {
     args.paths = [
-      '/api/sessions?view=refs&includeVisitor=1',
+      '/api/sessions?view=refs',
       '/api/models',
       '/chat/ui.js',
     ];
@@ -236,9 +237,7 @@ function getHeaderValue(headersText, name) {
 
 async function readAuthToken(tokenOverride) {
   if (tokenOverride) return tokenOverride;
-  const raw = await readFile(AUTH_FILE, 'utf8').catch(() => '');
-  const parsed = raw ? JSON.parse(raw) : {};
-  return typeof parsed.token === 'string' ? parsed.token.trim() : '';
+  return readServiceToken(AUTH_FILE).catch(() => '');
 }
 
 async function readCloudflaredContext() {
@@ -453,7 +452,7 @@ async function main() {
   const needsAuth = args.paths.some((path) => isApiPath(path));
   const token = needsAuth ? await readAuthToken(args.token) : '';
   if (needsAuth && !token) {
-    throw new Error(`At least one /api/* path was requested, but no owner token was available in ${AUTH_FILE}.`);
+    throw new Error(`At least one /api/* path was requested, but no service token was available in ${AUTH_FILE}.`);
   }
 
   const tempDir = await mkdtemp(join(tmpdir(), 'remotelab-tunnel-diag-'));

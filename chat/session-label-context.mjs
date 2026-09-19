@@ -6,6 +6,7 @@ import { getContextHead } from './history.mjs';
 import { readJson } from './fs-utils.mjs';
 import { loadSessionsMeta } from './session-meta-store.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
+import { projectSessionPersonView } from './session-person-view.mjs';
 import {
   DEFAULT_SESSION_NAME,
   normalizeSessionDescription,
@@ -774,7 +775,10 @@ export async function loadSessionLabelPromptContext(sessionMeta, turnText) {
     turnText,
     contextSummary,
   });
-  const existingSessions = buildActiveSessionCatalogPrompt(sessions, sessionMeta);
+  const sessionsForView = sessions.map((session) => (
+    projectSessionPersonView(session, sessionMeta?.viewPersonId || '')
+  ));
+  const existingSessions = buildActiveSessionCatalogPrompt(sessionsForView, sessionMeta);
 
   return {
     contextSummary,

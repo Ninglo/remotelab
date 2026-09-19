@@ -175,6 +175,10 @@ try {
       chatType: 'group',
       chatId: 'chat-1',
       conversationKind: 'group',
+      sender: {
+        tenantKey: 'tenant-1',
+        isInternal: true,
+      },
     });
     assert.equal(submittedPayloads[0].text, '分析当前问题\n然后给出修复方案');
     assert.equal(submittedPayloads[0].sourceContext.messageId, 'fork-command-message');

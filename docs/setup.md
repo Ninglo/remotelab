@@ -84,7 +84,7 @@ The AI should do the rest inside the conversation:
 - do not require the human to pre-clone the repo; if `~/code/remotelab` is missing, fetch this contract from its canonical URL, clone `https://github.com/Ninglo/remotelab.git` into `~/code/remotelab`, otherwise update the existing repo, then run `npm install` and expose the CLI with `npm link` if needed
 - prefer `remotelab setup` when it cleanly fits the environment; for cpolar or Tailscale mode, configure the service directly when the current setup flow is still Cloudflare-oriented
 - generate access auth with `remotelab generate-token`; optionally add password auth with `remotelab set-password`
-- configure the boot-managed owner stack based on network mode:
+- configure the boot-managed instance stack based on network mode:
   - **Cloudflare**: chat plane on `127.0.0.1:7690`, Cloudflare tunnel for the public URL
   - **cpolar**: chat plane on `127.0.0.1:7690`, cpolar HTTP tunnel for the public URL, prefer `cn_vip` / China VIP for mainland-facing access, and use either a quick random URL or a reserved stable subdomain based on the user's sharing need
   - **Tailscale**: chat plane on `0.0.0.0:7690` (via `CHAT_BIND_HOST=0.0.0.0`), `SECURE_COOKIES=0` for HTTP access. Note: `0.0.0.0` listens on all interfaces; on untrusted networks, configure a firewall to restrict port `7690` to the Tailscale subnet (`100.64.0.0/10`)
@@ -98,7 +98,7 @@ The AI should do the rest inside the conversation:
 
 | Surface | Expected state |
 | --- | --- |
-| Primary chat service | boot-managed owner service (`remotelab.service` on Linux) on `http://127.0.0.1:7690` |
+| Primary chat service | boot-managed instance service (`remotelab.service` on Linux) on `http://127.0.0.1:7690` |
 | Public access | Cloudflare Tunnel routing `https://[subdomain].[domain]` to port `7690` |
 | Auth | `~/.config/remotelab/auth.json` exists and the token is known to the user |
 | Tunnel config | `~/.cloudflared/config.yml` exists |
@@ -108,7 +108,7 @@ The AI should do the rest inside the conversation:
 
 | Surface | Expected state |
 | --- | --- |
-| Primary chat service | boot-managed owner service on `http://127.0.0.1:7690` |
+| Primary chat service | boot-managed instance service on `http://127.0.0.1:7690` |
 | Public access | cpolar HTTP tunnel routes a public hostname to port `7690` |
 | Mainland access | the returned URL opens directly for users in mainland China without a VPN |
 | Tunnel mode | random temporary URL for quick validation, or a reserved stable subdomain when the user asked for long-lived sharing |
@@ -119,7 +119,7 @@ The AI should do the rest inside the conversation:
 
 | Surface | Expected state |
 | --- | --- |
-| Primary chat service | boot-managed owner service (`remotelab.service` on Linux) on `http://0.0.0.0:7690` |
+| Primary chat service | boot-managed instance service (`remotelab.service` on Linux) on `http://0.0.0.0:7690` |
 | Access | `http://[hostname].[tailnet].ts.net:7690` reachable from phone on the same tailnet |
 | Auth | `~/.config/remotelab/auth.json` exists and the token is known to the user |
 | Environment | `CHAT_BIND_HOST=0.0.0.0` and `SECURE_COOKIES=0` set in the service config |

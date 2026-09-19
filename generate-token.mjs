@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { randomBytes } from 'crypto';
-import { access, mkdir, readFile, writeFile } from 'fs/promises';
+import { access, readFile } from 'fs/promises';
 import { homedir } from 'os';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { AUTH_FILE, CHAT_PORT } from './lib/config.mjs';
+import { findPerson, updateAuthDocument } from './lib/auth-config.mjs';
 import { selectCloudflaredAccessDomain } from './lib/cloudflared-config.mjs';
 
 const authFile = AUTH_FILE;
-const authDir = dirname(authFile);
 
 async function pathExists(path) {
   try {
@@ -18,17 +18,23 @@ async function pathExists(path) {
   }
 }
 
-await mkdir(authDir, { recursive: true });
-
 const token = randomBytes(32).toString('hex');
-let existing = {};
-if (await pathExists(authFile)) {
-  try {
-    existing = JSON.parse(await readFile(authFile, 'utf8')) || {};
-  } catch {}
-}
-
-await writeFile(authFile, JSON.stringify({ ...existing, token }, null, 2), 'utf8');
+await updateAuthDocument((document) => {
+  const person = findPerson(document, document.primaryPersonId) || document.people[0];
+  const existing = person.credentials.find((credential) => credential.type === 'token');
+  if (existing) {
+    existing.token = token;
+    existing.lastUsedAt = '';
+  } else {
+    person.credentials.push({
+      id: `credential_${randomBytes(12).toString('hex')}`,
+      type: 'token',
+      token,
+      label: 'Primary access token',
+      createdAt: new Date().toISOString(),
+    });
+  }
+});
 
 // Try to read real domain from cloudflared config
 let domain = null;

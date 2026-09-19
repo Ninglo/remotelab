@@ -19,10 +19,10 @@ export function isBrowserDesktopPath(pathname) {
   return pathname === PREFIX || pathname.startsWith(`${PREFIX}/`);
 }
 
-async function ownerStatus(req) {
+async function authStatus(req) {
   await authenticateBearerToken(req);
   const session = getAuthSession(req);
-  return !session ? 401 : session.role === 'owner' ? 200 : 403;
+  return session ? 200 : 401;
 }
 
 async function loadDesktop() {
@@ -50,7 +50,7 @@ async function loadDesktop() {
 }
 
 function upstreamOptions(req, url, desktop, upgrade = false) {
-  // Never pass the owner's cookies/token or caller-selected destinations upstream.
+  // Never pass RemoteLab cookies/tokens or caller-selected destinations upstream.
   const headers = {
     host: `127.0.0.1:${desktop.port}`,
     authorization: desktop.authorization,
@@ -80,10 +80,9 @@ function respond(res, status, message, extra = {}) {
 export async function handleBrowserDesktopRequest(req, res) {
   const url = new URL(req.url, 'http://localhost');
   if (!isBrowserDesktopPath(url.pathname)) return false;
-  const status = await ownerStatus(req);
+  const status = await authStatus(req);
   if (status !== 200) {
-    if (status === 401) respond(res, 302, '', { Location: `/login?next=${encodeURIComponent(req.url)}` });
-    else respond(res, 403, 'Owner access required');
+    respond(res, 302, '', { Location: `/login?next=${encodeURIComponent(req.url)}` });
     return true;
   }
   let desktop;
@@ -141,7 +140,7 @@ function sameOrigin(req) {
 export async function handleBrowserDesktopUpgrade(req, socket, head) {
   socket.on('error', () => socket.destroy());
   const url = new URL(req.url, 'http://localhost');
-  const status = await ownerStatus(req);
+  const status = await authStatus(req);
   if (status !== 200) { rejectUpgrade(socket, status); return; }
   if (!sameOrigin(req)) { rejectUpgrade(socket, 403); return; }
   if (url.pathname !== SOCKET_PATH || req.method !== 'GET'

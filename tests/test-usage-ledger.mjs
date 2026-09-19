@@ -38,12 +38,12 @@ try {
 
   appendBuiltRecord({
     session: {
-      id: 'sess_owner',
-      name: 'Owner Session',
+      id: 'sess_primary',
+      name: 'Primary Session',
       tool: 'claude',
     },
     run: {
-      id: 'run_owner',
+      id: 'run_primary',
       tool: 'claude',
       model: 'claude-sonnet',
       effort: 'high',
@@ -63,14 +63,13 @@ try {
 
   appendBuiltRecord({
     session: {
-      id: 'sess_visitor',
-      name: 'Visitor Session',
+      id: 'sess_alice',
+      name: 'Alice Session',
       tool: 'claude',
-      visitorId: 'visitor_1',
-      visitorName: 'Alice',
+      initiatedByIdentityId: 'identity_alice',
     },
     run: {
-      id: 'run_visitor',
+      id: 'run_alice',
       tool: 'claude',
       model: 'claude-sonnet',
       state: 'completed',
@@ -87,8 +86,8 @@ try {
 
   appendBuiltRecord({
     session: {
-      id: 'sess_owner_secondary',
-      name: 'Second Owner Session',
+      id: 'sess_secondary',
+      name: 'Second Session',
       tool: 'claude',
     },
     run: {
@@ -160,8 +159,8 @@ try {
 
   const detachedRecord = usageLedger.buildDetachedUsageLedgerRecord({
     session: {
-      id: 'sess_owner',
-      name: 'Owner Session',
+      id: 'sess_primary',
+      name: 'Primary Session',
       tool: 'claude',
     },
     usageEvent: {
@@ -185,12 +184,12 @@ try {
 
   assert.equal(usageLedger.appendUsageLedgerRecord({
     ts: '2026-04-05T16:00:00.000Z',
-    runId: 'run_owner_fallback',
-    sessionId: 'sess-owner-fallback',
-    sessionName: 'Owner fallback session',
-    principalType: 'owner',
-    principalId: 'owner',
-    principalName: 'Owner',
+    runId: 'run_system_fallback',
+    sessionId: 'sess-system-fallback',
+    sessionName: 'System fallback session',
+    identityKind: 'system',
+    identityId: 'identity_system',
+    identityName: 'System',
     tool: 'claude',
     model: 'opus',
     state: 'completed',
@@ -205,9 +204,9 @@ try {
     runId: 'run_unknown_unpriced',
     sessionId: 'sess-unknown',
     sessionName: 'Unknown model session',
-    principalType: 'owner',
-    principalId: 'owner',
-    principalName: 'Owner',
+    identityKind: 'system',
+    identityId: 'identity_system',
+    identityName: 'System',
     tool: 'custom-tool',
     model: 'custom-model',
     state: 'completed',
@@ -220,14 +219,13 @@ try {
   // Duplicate run id should collapse to the latest appended record at query time.
   appendBuiltRecord({
     session: {
-      id: 'sess_visitor',
-      name: 'Visitor Session',
+      id: 'sess_alice',
+      name: 'Alice Session',
       tool: 'claude',
-      visitorId: 'visitor_1',
-      visitorName: 'Alice',
+      initiatedByIdentityId: 'identity_alice',
     },
     run: {
-      id: 'run_visitor',
+      id: 'run_alice',
       tool: 'claude',
       model: 'claude-sonnet',
       state: 'completed',
@@ -276,17 +274,17 @@ try {
   assert.equal(summary.totals.backgroundTokens, 90, 'background tokens should aggregate across internal and detached runs');
   assert.equal(summary.totals.foregroundTokens, 2645, 'foreground tokens should aggregate user-facing runs');
 
-  assert.equal(summary.byPrincipal[0].principalType, 'owner', 'principal buckets should sort by total usage after fallback-estimated owner traffic is included');
-  assert.equal(summary.byPrincipal[0].principalId, 'owner');
-  assert.equal(summary.byPrincipal[0].totalTokens, 2375);
+  assert.equal(summary.byIdentity[0].identityKind, 'system', 'identity buckets should sort by total usage after fallback-estimated system traffic is included');
+  assert.equal(summary.byIdentity[0].identityId, 'identity_system');
+  assert.equal(summary.byIdentity[0].totalTokens, 2375);
 
-  const visitorBucket = summary.byPrincipal.find((bucket) => bucket.principalId === 'visitor_1');
-  assert.equal(visitorBucket?.totalTokens, 360, 'visitor bucket should reflect the deduped latest run');
-  assert.equal(visitorBucket?.costUsd, 0.8, 'visitor cost should reflect the deduped latest run');
+  const aliceBucket = summary.byIdentity.find((bucket) => bucket.identityId === 'identity_alice');
+  assert.equal(aliceBucket?.totalTokens, 360, 'Alice identity bucket should reflect the deduped latest run');
+  assert.equal(aliceBucket?.costUsd, 0.8, 'Alice identity cost should reflect the deduped latest run');
 
-  const ownerBucket = summary.byPrincipal.find((bucket) => bucket.principalId === 'owner');
-  assert.equal(ownerBucket?.totalTokens, 2375, 'owner bucket should include every non-visitor run, including direct, internal, detached, fallback-estimated, and unpriced traffic');
-  assert.equal(ownerBucket?.estimatedCostUsd, 0.0295, 'owner bucket should preserve detached and fallback estimated cost separately');
+  const systemBucket = summary.byIdentity.find((bucket) => bucket.identityId === 'identity_system');
+  assert.equal(systemBucket?.totalTokens, 2375, 'system bucket should include direct, internal, detached, fallback-estimated, and unpriced traffic');
+  assert.equal(systemBucket?.estimatedCostUsd, 0.0295, 'system bucket should preserve detached and fallback estimated cost separately');
 
   const replySelfCheckBucket = summary.byOperation.find((bucket) => bucket.key === 'reply_self_check');
   assert.equal(replySelfCheckBucket?.totalTokens, 40, 'internal operations should remain queryable');
@@ -297,14 +295,14 @@ try {
   const sessionManagementBucket = summary.byOperationCategory.find((bucket) => bucket.key === 'session_management');
   assert.equal(sessionManagementBucket?.totalTokens, 50, 'operation categories should group detached session-management usage');
 
-  const visitorOnly = await usageLedger.queryUsageLedger({
+  const aliceOnly = await usageLedger.queryUsageLedger({
     days: 3,
     endMs: Date.parse('2026-04-06T12:00:00.000Z'),
-    principalType: 'visitor',
-    principalId: 'visitor_1',
+    identityKind: 'identity',
+    identityId: 'identity_alice',
   });
-  assert.equal(visitorOnly.runCount, 1, 'principal filters should constrain the summary');
-  assert.equal(visitorOnly.totals.totalTokens, 360);
+  assert.equal(aliceOnly.runCount, 1, 'identity filters should constrain the summary');
+  assert.equal(aliceOnly.totals.totalTokens, 360);
 
   console.log('test-usage-ledger: ok');
 } finally {

@@ -277,8 +277,8 @@ export function bindDoubaoVoiceRelaySocket(ws) {
   };
 
   function getLogPrefix() {
-    const role = trimString(ws?._authSession?.role) || 'owner';
-    return `[voice-relay ${relayState.connectionId} role=${role}]`;
+    const personId = trimString(ws?._authSession?.personId) || 'unknown';
+    return `[voice-relay ${relayState.connectionId} person=${personId}]`;
   }
 
   function logInfo(message, extra = '') {

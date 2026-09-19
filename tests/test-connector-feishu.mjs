@@ -118,6 +118,13 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
   topicId: 'thread_1',
   threadId: 'thread_1',
   rootId: 'om_topic_root_1',
+  sender: {
+    openId: 'ou_user_1',
+    userId: 'u_user_1',
+    senderType: 'user',
+    tenantKey: 'tenant_1',
+    isInternal: true,
+  },
 });
 assert.deepEqual(buildMessageSourceContext(topicSummary).attachments, { imageCount: 1 });
 assert.equal(buildMessageSourceContext(topicSummary).sourceRouteId, 'bot-alpha');

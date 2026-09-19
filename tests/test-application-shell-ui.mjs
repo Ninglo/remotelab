@@ -54,7 +54,6 @@ assert.match(compose, /resolvedSessionWorkspace\.hidden = !showingSessions/, "wo
 assert.match(sidebarUi, /function openApplicationNavigation\(\)[\s\S]*?openSidebar\(\)/, "mobile navigation should open without forcing a workspace change");
 assert.doesNotMatch(compose, /location\.(?:assign|replace|href)\s*=/, "workspace switches should not perform page navigation");
 assert.doesNotMatch(tooling, /\/api\/agents|inlineAgentSelect/, "owner tooling should not load or render Agent choices");
-assert.doesNotMatch(sidebarUi, /getPreferredAgentTemplate/, "new owner sessions should not inherit Agent templates");
 assert.doesNotMatch(bootstrap, /function (?:set|get)PreferredAgentTemplate/, "the owner shell should not keep Agent preference state");
 
 console.log("Classic sidebar and single-page workspace contract tests passed.");

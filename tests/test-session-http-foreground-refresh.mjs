@@ -183,8 +183,6 @@ function createContext({ fetchImpl, pendingNavigationState = null } = {}) {
     },
     pendingNavigationState,
     activeTab: 'sessions',
-    visitorMode: false,
-    visitorSessionId: null,
     currentSessionId: 'current-session',
     hasAttachedSession: true,
     hasLoadedSessions: true,
@@ -253,6 +251,7 @@ function createContext({ fetchImpl, pendingNavigationState = null } = {}) {
       context.sessions.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
     },
     refreshAppCatalog() {},
+    refreshSessionCatalog() {},
     renderSessionList() {},
     clearMessages() {
       context.messagesInner.children = [];

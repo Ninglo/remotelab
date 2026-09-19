@@ -36,7 +36,7 @@ const {
 const authRefreshRuntime = createRemoteLabRuntime('http://127.0.0.1:7690');
 authRefreshRuntime.authCookie = 'session_token=stale-cookie';
 authRefreshRuntime.authToken = 'stale-token';
-authRefreshRuntime.readOwnerToken = async () => 'fresh-token';
+authRefreshRuntime.readServiceToken = async () => 'fresh-token';
 authRefreshRuntime.loginWithToken = async (_baseUrl, token) => `session_token=${token}`;
 
 assert.equal(
@@ -47,13 +47,13 @@ assert.equal(
 assert.equal(
   await ensureAuthCookie(authRefreshRuntime, true),
   'session_token=fresh-token',
-  'mail worker should reread the current owner token on forced auth refresh',
+  'mail worker should reread the current service token on forced auth refresh',
 );
 
 const retryProbeRuntime = createRemoteLabRuntime('http://127.0.0.1:7690');
 retryProbeRuntime.authCookie = 'session_token=stale-cookie';
 retryProbeRuntime.authToken = 'stale-token';
-retryProbeRuntime.readOwnerToken = async () => 'fresh-token';
+retryProbeRuntime.readServiceToken = async () => 'fresh-token';
 retryProbeRuntime.loginWithToken = async (_baseUrl, token) => `session_token=${token === 'fresh-token' ? 'fresh-cookie' : token}`;
 const retryProbeCookies = [];
 retryProbeRuntime.requestJson = async (_baseUrl, _path, options = {}) => {
@@ -617,7 +617,10 @@ try {
   const guestAuthFile = join(guestAuthDir, 'auth.json');
   mkdirSync(guestAuthDir, { recursive: true });
   writeFileSync(guestAuthFile, JSON.stringify({
-    token: 'trial6-auth-token',
+    version: 2,
+    serviceToken: 'trial6-auth-token',
+    primaryPersonId: 'person_default',
+    people: [{ id: 'person_default', name: 'Administrator', credentials: [] }],
   }, null, 2));
   writeFileSync(join(tempHome, '.config', 'remotelab', 'guest-instances.json'), JSON.stringify([
     {
@@ -739,7 +742,10 @@ try {
   const trial1AuthFile = join(trial1AuthDir, 'auth.json');
   mkdirSync(trial1AuthDir, { recursive: true });
   writeFileSync(trial1AuthFile, JSON.stringify({
-    token: 'trial1-auth-token',
+    version: 2,
+    serviceToken: 'trial1-auth-token',
+    primaryPersonId: 'person_default',
+    people: [{ id: 'person_default', name: 'Administrator', credentials: [] }],
   }, null, 2));
   writeFileSync(join(tempHome, '.config', 'remotelab', 'guest-instances.json'), JSON.stringify([
     {

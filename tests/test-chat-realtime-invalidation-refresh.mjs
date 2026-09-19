@@ -57,7 +57,6 @@ function createContext(overrides = {}) {
     console,
     archivedSessionsLoaded: false,
     currentSessionId: 'session-current',
-    visitorMode: false,
     fetchSessionsList(options = {}) {
       calls.sessions.push(options);
       return Promise.resolve([]);

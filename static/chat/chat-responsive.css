@@ -109,10 +109,6 @@
   }
 }
 
-/* ---- Visitor mode: chat-only, no sidebar ---- */
-body.visitor-mode .sidebar-overlay { display: none !important; }
-body.visitor-mode .header #menuBtn { display: none !important; }
-body.visitor-mode .gesture-pill { display: none !important; }
 body.share-snapshot-mode .input-area {
   opacity: 1;
 }

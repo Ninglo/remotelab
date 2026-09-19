@@ -1,6 +1,6 @@
 import { normalizeConversation, sameConversation, sameConversationScope, conversationAfterReceipt } from '../lib/conversation-target.mjs';
 import { loadSessionsMeta, withSessionsMetaMutation } from './session-meta-store.mjs';
-import { broadcastOwners } from './ws-clients.mjs';
+import { broadcastAll } from './ws-clients.mjs';
 
 export function requireConversation(value) {
   if (value === null || value === undefined) return null;
@@ -12,7 +12,7 @@ export function requireConversation(value) {
 export async function findSessionConversation(value) {
   const conversation = requireConversation(value);
   if (!conversation) return null;
-  return (await loadSessionsMeta()).find(session => !session.visitorId && sameConversation(session.conversation, conversation)) || null;
+  return (await loadSessionsMeta()).find(session => sameConversation(session.conversation, conversation)) || null;
 }
 
 export async function updateSessionConversation(sessionId, value, { receipt } = {}) {
@@ -20,7 +20,6 @@ export async function updateSessionConversation(sessionId, value, { receipt } = 
   const session = await withSessionsMetaMutation(async (metas, save) => {
     const current = metas.find(meta => meta.id === sessionId);
     if (!current) throw new Error('Session not found');
-    if (current.visitorId) throw new Error('Visitor Sessions cannot bind external conversations');
     let conversation = requested;
     if (receipt) {
       const bound = normalizeConversation(current.conversation);
@@ -40,7 +39,7 @@ export async function updateSessionConversation(sessionId, value, { receipt } = 
     await save(metas);
     return current;
   });
-  broadcastOwners({ type: 'session_invalidated', sessionId });
+  broadcastAll({ type: 'session_invalidated', sessionId });
   return session;
 }
 

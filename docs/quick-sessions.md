@@ -10,7 +10,7 @@ Quick uses the normal RemoteLab Session, history, context, delivery, and memory
 pipelines. It does not introduce a second execution service. The profile:
 
 - pins one runtime (`codex`, `gpt-5.6-terra`, `low` by default);
-- omits Agent templates and custom system prompts;
+- omits custom Session instructions;
 - tells the model to return a concise final answer and avoid unnecessary tool
   use or progress updates;
 - keeps Codex apps available and skips session-start preflight;
