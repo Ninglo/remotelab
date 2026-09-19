@@ -59,10 +59,30 @@ await handleCodexAuthRoutes({
 assert.equal(visitorResponse.capture.status, 403);
 assert.equal(logoutCalls, 1, 'visitor logout must not reach the instance auth manager');
 
+let switchCalls = 0;
+const switchResponse = createResponseCapture();
+await handleCodexAuthRoutes({
+  req: { method: 'POST' },
+  res: switchResponse.res,
+  pathname: '/api/codex-auth/switch-account',
+  authSession: { role: 'owner' },
+  writeJson: switchResponse.writeJson,
+  authManager: {
+    async switchAccount() {
+      switchCalls += 1;
+      return { available: true, loggedIn: false, phase: 'awaiting', deviceLoginActive: true, userCode: 'redacted' };
+    },
+  },
+});
+assert.equal(switchResponse.capture.status, 200);
+assert.equal(switchResponse.capture.payload?.codexAuth?.phase, 'awaiting');
+assert.equal(switchCalls, 1, 'owner switch should be one server-side auth transaction');
+
 const settingsSource = readFileSync(join(repoRoot, 'static', 'chat', 'settings-ui.js'), 'utf8');
 assert.match(settingsSource, /id="settingsCodexAuthSwitchBtn"/);
 assert.match(settingsSource, /window\.confirm\(copy\.switchConfirm\)/);
-assert.match(settingsSource, /fetchJsonOrRedirect\("\/api\/codex-auth\/logout"/);
-assert.match(settingsSource, /await startCodexDeviceLogin\(\)/);
+assert.match(settingsSource, /fetchJsonOrRedirect\("\/api\/codex-auth\/switch-account"/);
+assert.match(settingsSource, /CODEX_AUTH_MUTATION_TIMEOUT_MS/);
+assert.match(settingsSource, /refreshCodexAuthStatus\(\{ force: true, includeUsage: false \}\)/);
 
 console.log('test-codex-auth-switch-account: ok');

@@ -369,12 +369,18 @@ export function createCodexAuthManager({
     }
   }
 
+  async function switchAccount() {
+    await logout();
+    return startDeviceLogin({ restart: true });
+  }
+
   return {
     getStatus,
     getRateLimits,
     logout,
     startDeviceLogin,
     stopActiveLogin,
+    switchAccount,
   };
 }
 

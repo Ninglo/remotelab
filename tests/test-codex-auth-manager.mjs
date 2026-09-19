@@ -1,6 +1,6 @@
 import assert from 'assert/strict';
 import { EventEmitter } from 'events';
-import { access, copyFile, chmod, mkdtemp, readFile, writeFile } from 'fs/promises';
+import { access, copyFile, chmod, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { PassThrough } from 'stream';
@@ -93,5 +93,19 @@ const usageCancellation = await pendingUsage;
 assert.equal(rateCheckAborted, true, 'logout should cancel an in-flight Codex usage probe');
 assert.equal(usageCancellation?.name, 'AbortError');
 assert.equal(raceLoggedOut.loggedIn, false);
+
+const switchHome = join(tempRoot, 'switch-home');
+await mkdir(switchHome, { recursive: true });
+await writeFile(join(switchHome, 'auth.json'), JSON.stringify({ tokens: { id_token: 'x.e30.x' } }));
+const switchManager = createCodexAuthManager({
+  resolveCommand: async () => fakeCodex,
+  resolveHome: () => switchHome,
+  baseEnv: () => process.env,
+});
+const switched = await switchManager.switchAccount();
+assert.equal(switched.loggedIn, false);
+assert.equal(switched.deviceLoginActive, true);
+assert.equal(switched.phase, 'awaiting');
+assert.equal(switched.userCode, '2ABC-4DEFG');
 
 console.log('Codex auth manager tests passed');

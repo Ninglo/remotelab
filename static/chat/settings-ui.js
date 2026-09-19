@@ -80,6 +80,7 @@ let expandedConnectorSurfaceId = "";
 let codexAuthState = null;
 let codexAuthPollTimer = null;
 let codexAuthRequestId = 0;
+const CODEX_AUTH_MUTATION_TIMEOUT_MS = 20_000;
 let piAuthState = null;
 function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
@@ -101,6 +102,7 @@ function getCodexAuthCopy() {
     switching: "正在退出…",
     switchConfirm: "将清除当前实例的 Codex 登录，并立即生成新的登录码。确定继续吗？",
     logoutFailed: "Codex 退出失败",
+    switchTimedOut: "切换请求超时，正在重新读取登录状态…",
     account: "当前账号",
     accountUnknown: "账号信息未提供",
     apiKey: "API Key 登录",
@@ -132,6 +134,7 @@ function getCodexAuthCopy() {
     switching: "Signing out…",
     switchConfirm: "This clears the Codex login for this instance and immediately generates a new login code. Continue?",
     logoutFailed: "Codex logout failed",
+    switchTimedOut: "Account switch timed out. Reloading login status…",
     account: "Current account",
     accountUnknown: "Account details not provided",
     apiKey: "API key sign-in",
@@ -360,19 +363,27 @@ async function switchCodexAccount() {
     switchBtn.disabled = true;
     switchBtn.textContent = copy.switching;
   }
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), CODEX_AUTH_MUTATION_TIMEOUT_MS);
   try {
-    const data = await fetchJsonOrRedirect("/api/codex-auth/logout", {
+    const data = await fetchJsonOrRedirect("/api/codex-auth/switch-account", {
       method: "POST",
+      signal: controller.signal,
       revalidate: false,
     });
     if (requestId !== codexAuthRequestId) return;
     codexAuthState = data?.codexAuth || {};
     renderCodexAuthPanel();
-    await startCodexDeviceLogin();
   } catch (error) {
     if (requestId !== codexAuthRequestId) return;
-    codexAuthState = { phase: "failed", error: error?.message || copy.logoutFailed };
+    codexAuthState = {
+      phase: "failed",
+      error: controller.signal.aborted ? copy.switchTimedOut : (error?.message || copy.logoutFailed),
+    };
     renderCodexAuthPanel();
+    await refreshCodexAuthStatus({ force: true, includeUsage: false });
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
