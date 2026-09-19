@@ -318,6 +318,7 @@ export function resolveCodexConfigOverrides(options = {}, env = process.env) {
   ].some(value => typeof value === 'string' && value.trim());
   if (hasSystemProxy && envFlagEnabled(env.REMOTELAB_CODEX_RESPECT_SYSTEM_PROXY, true)) {
     overrides.push('features.respect_system_proxy=true');
+    overrides.push('suppress_unstable_features_warning=true');
   }
   overrides.push(...parseConfigOverrides(
     env.REMOTELAB_CODEX_CONFIG_OVERRIDES_JSON,
