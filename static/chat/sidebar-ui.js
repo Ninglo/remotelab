@@ -80,12 +80,6 @@ function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions ||
   const model = typeof selectedModel === "string" ? selectedModel : "";
   const effort = typeof selectedEffort === "string" ? selectedEffort : "";
   if (!quick && !tool) return null;
-  const preferredAgentId = typeof getPreferredAgentTemplateId === "function"
-    ? getPreferredAgentTemplateId()
-    : "";
-  const preferredAgentName = typeof getPreferredAgentTemplateName === "function"
-    ? getPreferredAgentTemplateName()
-    : "";
   return {
     action: "create",
     folder: typeof window.remotelabGetDefaultSessionFolder === "function"
@@ -94,8 +88,6 @@ function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions ||
     tool: quick ? "codex" : tool,
     sourceId: DEFAULT_APP_ID,
     sourceName: DEFAULT_WEB_SOURCE_NAME,
-    templateId: quick ? "" : preferredAgentId,
-    templateName: quick ? "" : preferredAgentName,
     forceComposerFocus: true,
     ...(quick ? { executionProfile: "quick" } : {}),
     ...(!quick && model ? { model } : {}),

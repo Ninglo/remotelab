@@ -45,10 +45,7 @@
   <!-- Single-page application sidebar -->
   <div class="sidebar-overlay" id="sidebarOverlay">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <strong>RemoteLab</strong>
-        <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
-      </div>
+      <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
       <nav class="sidebar-primary-nav" aria-label="Main actions" data-i18n-aria-label="nav.application">
         <button class="sidebar-nav-button new-session-btn" id="newSessionBtn" type="button">
           <span class="sidebar-nav-icon" data-icon="plus" aria-hidden="true"></span>
@@ -60,37 +57,36 @@
         </button>
       </nav>
       <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
-      <div class="sidebar-list" id="sessionList"></div>
       <div class="sidebar-filters" id="sidebarFilters">
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
       </div>
+      <div class="sidebar-list" id="sessionList"></div>
       <nav class="sidebar-footer-nav" aria-label="Settings" data-i18n-aria-label="nav.settings">
         <button class="sidebar-nav-button" id="tabSettings" type="button">
           <span class="sidebar-nav-icon" data-icon="gear" aria-hidden="true"></span>
           <span data-i18n="nav.settings">Settings</span>
         </button>
       </nav>
-      <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
     </aside>
   </div>
 
   <div class="app-workspace">
       <div class="settings-panel task-center-panel" id="taskCenterPanel">
-        <section class="task-center-hero">
+        <header class="workspace-page-header task-center-header">
           <div>
-            <div class="task-center-kicker" data-i18n="tasks.kicker">Automation control</div>
+            <div class="workspace-page-kicker" data-i18n="tasks.kicker">Automation</div>
             <h2 data-i18n="tasks.title">Task Center</h2>
-            <p data-i18n="tasks.note">See every scheduled Agent task, where it runs, and what happened last.</p>
+            <p data-i18n="tasks.note">See every scheduled task, where it runs, and what happened last.</p>
           </div>
           <button class="task-center-primary" id="taskCenterCreateToggle" type="button" data-i18n="tasks.new">New task</button>
-        </section>
+        </header>
         <form class="task-center-form" id="taskCenterForm" hidden>
           <label class="task-center-field">
             <span data-i18n="tasks.form.name">Name</span>
             <input id="taskCenterTitle" type="text" maxlength="120" required placeholder="Daily project review" data-i18n-placeholder="tasks.form.namePlaceholder">
           </label>
           <label class="task-center-field">
-            <span data-i18n="tasks.form.prompt">Agent instruction</span>
+            <span data-i18n="tasks.form.prompt">Instructions</span>
             <textarea id="taskCenterPrompt" rows="4" required placeholder="Review the latest project state and decide the next action." data-i18n-placeholder="tasks.form.promptPlaceholder"></textarea>
           </label>
           <div class="task-center-grid">
@@ -157,7 +153,6 @@
       </div>
       <div class="settings-panel" id="settingsPanel">
         <header class="workspace-page-header">
-          <div class="workspace-page-kicker">RemoteLab</div>
           <h2 data-i18n="nav.settings">Settings</h2>
           <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
         </header>
@@ -262,7 +257,6 @@
             </div>
             <span class="quick-profile-badge" id="quickProfileBadge" hidden data-i18n="quick.lockedBadge">Quick · locked</span>
             <div class="runtime-selection-controls" id="runtimeSelectionControls">
-              <select class="tool-select" id="inlineAgentSelect" disabled title="Choose agent for the next session" aria-label="Choose agent for the next session" data-i18n-title="compose.agent.title" data-i18n-aria-label="compose.agent.ariaLabel"></select>
               <select class="tool-select" id="inlineToolSelect" disabled></select>
               <select class="provider-select" id="inlineProviderSelect" disabled style="display:none" title="Choose model provider" aria-label="Choose model provider" data-i18n-title="tooling.providerTitle" data-i18n-aria-label="tooling.providerAriaLabel"></select>
               <select class="model-select" id="inlineModelSelect" disabled></select>
@@ -335,31 +329,31 @@
 <div class="modal-backdrop" id="addToolModal" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addToolModalTitle">
     <div class="modal-header">
-      <div class="modal-title" id="addToolModalTitle" data-i18n="modal.addAgentsTitle">Add more agents</div>
+      <div class="modal-title" id="addToolModalTitle" data-i18n="modal.addToolsTitle">Add more tools</div>
       <button class="modal-close" id="closeAddToolModal" type="button" aria-label="Close" data-i18n-aria-label="action.close" data-icon="close">&times;</button>
     </div>
     <div class="modal-body">
-      <p class="modal-lead" data-i18n="modal.addAgentsLead">
-        RemoteLab is not limited to the builtin agents. For simple tools, save a lightweight config here and the picker refreshes immediately.
+      <p class="modal-lead" data-i18n="modal.addToolsLead">
+        RemoteLab is not limited to the builtin tools. For simple tools, save a lightweight config here and the picker refreshes immediately.
         If you need custom parsing or runtime behavior, use the advanced path below.
       </p>
 
-        <div class="provider-helper-card">
-          <div class="provider-helper-card-header">
-            <div class="provider-helper-card-title" data-i18n="modal.quickAddTitle">Quick add</div>
-            <button class="modal-btn primary" id="saveToolConfigBtn" type="button" data-i18n="modal.saveRefresh">Save &amp; refresh</button>
-          </div>
+      <div class="provider-helper-card">
+        <div class="provider-helper-card-header">
+          <div class="provider-helper-card-title" data-i18n="modal.quickAddTitle">Quick add</div>
+          <button class="modal-btn primary" id="saveToolConfigBtn" type="button" data-i18n="modal.saveRefresh">Save &amp; refresh</button>
+        </div>
         <p data-i18n="modal.quickAddBody">
-          Use this for wrappers or simple command-based agents that speak an existing runtime family and accept that family's core prompt/model/reasoning flags. We save the config for you and refresh the picker without restarting the service.
+          Use this for wrappers or simple command-based tools that speak an existing runtime family and accept that family's core prompt/model/reasoning flags. We save the config for you and refresh the picker without restarting the service.
         </p>
         <div class="provider-helper-grid">
           <div class="provider-helper-field">
             <label for="addToolNameInput" data-i18n="modal.name">Name</label>
-            <input id="addToolNameInput" type="text" value="My Agent" autocomplete="off">
+            <input id="addToolNameInput" type="text" value="My Tool" autocomplete="off">
           </div>
           <div class="provider-helper-field">
             <label for="addToolCommandInput" data-i18n="modal.command">Command</label>
-            <input id="addToolCommandInput" type="text" value="my-agent" autocomplete="off">
+            <input id="addToolCommandInput" type="text" value="my-tool" autocomplete="off">
           </div>
           <div class="provider-helper-field">
             <label for="addToolRuntimeFamilySelect" data-i18n="modal.runtimeFamily">Runtime family</label>
@@ -403,8 +397,8 @@
           If the simple setup is not enough, start a dedicated technical session and paste this setup brief.
         </p>
         <ul>
-          <li data-i18n="modal.advancedBullet1">It asks the agent to decide whether simple setup is enough or whether deeper integration is needed.</li>
-          <li data-i18n="modal.advancedBullet2">It points the agent at the relevant technical notes and keeps the changes minimal.</li>
+          <li data-i18n="modal.advancedBullet1">It asks the implementation session to decide whether simple setup is enough or deeper integration is needed.</li>
+          <li data-i18n="modal.advancedBullet2">It points that session at the relevant technical notes and keeps the changes minimal.</li>
         </ul>
         <div class="provider-helper-code"><code id="providerPromptCode"></code></div>
       </div>

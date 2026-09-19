@@ -23,8 +23,6 @@ const OWNER_AUTH_CAPABILITIES = Object.freeze({
   forkSession: true,
   uploadAttachments: true,
   downloadArtifacts: true,
-  switchAgents: true,
-  manageAgents: true,
   changeRuntime: true,
   organizeSessionList: true,
   publishShareSnapshot: true,
@@ -39,8 +37,6 @@ const AGENT_SCOPED_AUTH_CAPABILITIES = Object.freeze({
   forkSession: false,
   uploadAttachments: true,
   downloadArtifacts: true,
-  switchAgents: false,
-  manageAgents: false,
   changeRuntime: false,
   organizeSessionList: false,
   publishShareSnapshot: false,
@@ -55,8 +51,6 @@ const LEGACY_VISITOR_AUTH_CAPABILITIES = Object.freeze({
   forkSession: false,
   uploadAttachments: true,
   downloadArtifacts: true,
-  switchAgents: false,
-  manageAgents: false,
   changeRuntime: false,
   organizeSessionList: false,
   publishShareSnapshot: false,
@@ -344,10 +338,7 @@ const sidebarSearch = document.getElementById("sidebarSearch");
 const sessionSearchInput = document.getElementById("sessionSearchInput");
 const sidebarSpaceSwitcher = document.getElementById("sidebarSpaceSwitcher");
 const sessionList = document.getElementById("sessionList");
-const sessionListFooter = document.getElementById("sessionListFooter");
 const settingsSessionPresentationList = document.getElementById("settingsSessionPresentationList");
-const settingsAgentsList = document.getElementById("settingsAgentsList");
-const createAgentBtn = document.getElementById("createAgentBtn");
 const uiLanguageSelect = document.getElementById("uiLanguageSelect");
 const thinkingBlockDisplaySelect = document.getElementById("thinkingBlockDisplaySelect");
 const sortSessionListBtn = document.getElementById("sortSessionListBtn");
@@ -365,7 +356,6 @@ const statusText = document.getElementById("statusText");
 const imgBtn = document.getElementById("imgBtn");
 const imgFileInput = document.getElementById("imgFileInput");
 const imgPreviewStrip = document.getElementById("imgPreviewStrip");
-const inlineAgentSelect = document.getElementById("inlineAgentSelect");
 const inlineToolSelect = document.getElementById("inlineToolSelect");
 const inlineProviderSelect = document.getElementById("inlineProviderSelect");
 const inlineModelSelect = document.getElementById("inlineModelSelect");
@@ -421,11 +411,9 @@ const sessionTemplateRow = document.getElementById("sessionTemplateRow");
 const sessionTemplateSelect = document.getElementById("sessionTemplateSelect");
 const sessionTemplateStatus = document.getElementById("sessionTemplateStatus");
 const tabSessions = document.getElementById("tabSessions");
-const tabAgents = document.getElementById("tabAgents");
 const tabTasks = document.getElementById("tabTasks");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
-const agentsPanel = document.getElementById("agentsPanel");
 const taskCenterPanel = document.getElementById("taskCenterPanel");
 const settingsPanel = document.getElementById("settingsPanel");
 const sessionWorkspace = document.getElementById("sessionWorkspace");
@@ -512,8 +500,6 @@ const SOURCE_FILTER_SOURCE_ID_RULES = Object.freeze([
 const DEFAULT_APP_ID = "chat";
 const DEFAULT_APP_NAME = "Chat";
 const DEFAULT_WEB_SOURCE_NAME = "RemoteLab";
-const PREFERRED_AGENT_TEMPLATE_STORAGE_KEY = "preferredAgentTemplateId";
-const PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY = "preferredAgentTemplateName";
 const THINKING_BLOCK_DISPLAY_STORAGE_KEY = "remotelab.thinkingBlockDisplay.v2";
 const UI_THEMES = {
   system: {
@@ -1039,14 +1025,6 @@ function hasAuthCapability(name, fallback = false) {
   return capabilities[name] === true ? true : fallback;
 }
 
-function canSwitchAgents() {
-  return !visitorMode && hasAuthCapability("switchAgents");
-}
-
-function canManageAgents() {
-  return !visitorMode && hasAuthCapability("manageAgents");
-}
-
 function canChangeRuntimeSelection() {
   return !visitorMode && hasAuthCapability("changeRuntime");
 }
@@ -1106,16 +1084,6 @@ const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "gpt6-low-v1";
 function normalizeStoredToolId(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
   return LEGACY_REMOVED_TOOL_IDS.has(normalized) ? DEFAULT_TOOL_ID : normalized;
-}
-
-function normalizeStoredAgentTemplateId(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizeStoredAgentTemplateName(value) {
-  return typeof value === "string"
-    ? value.trim().replace(/\s+/g, " ")
-    : "";
 }
 
 function parseVersionedGptModelId(value) {
@@ -1222,12 +1190,10 @@ const storedLegacySelectedTool = normalizeStoredToolId(localStorage.getItem("sel
 
 let preferredTool = derivePreferredToolId(storedPreferredTool, storedLegacySelectedTool);
 let selectedTool = preferredTool;
-let preferredAgentTemplateId = normalizeStoredAgentTemplateId(
-  localStorage.getItem(PREFERRED_AGENT_TEMPLATE_STORAGE_KEY),
-);
-let preferredAgentTemplateName = normalizeStoredAgentTemplateName(
-  localStorage.getItem(PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY),
-);
+try {
+  localStorage.removeItem("preferredAgentTemplateId");
+  localStorage.removeItem("preferredAgentTemplateName");
+} catch {}
 // Model/effort are stored per-tool: "selectedModel_claude", "selectedModel_codex"
 let selectedModel = null;
 let selectedModelProvider = "";
@@ -1254,45 +1220,6 @@ let collapsedFolders = JSON.parse(
 );
 let sessionSearchQuery = "";
 let activeSessionSpace = localStorage.getItem(ACTIVE_SESSION_SPACE_STORAGE_KEY) || SESSION_SPACE_ALL_VALUE;
-
-function setPreferredAgentTemplate(value, { name = "", persist = true } = {}) {
-  preferredAgentTemplateId = normalizeStoredAgentTemplateId(value);
-  preferredAgentTemplateName = preferredAgentTemplateId
-    ? normalizeStoredAgentTemplateName(name)
-    : "";
-  if (persist) {
-    try {
-      if (preferredAgentTemplateId) {
-        localStorage.setItem(PREFERRED_AGENT_TEMPLATE_STORAGE_KEY, preferredAgentTemplateId);
-      } else {
-        localStorage.removeItem(PREFERRED_AGENT_TEMPLATE_STORAGE_KEY);
-      }
-      if (preferredAgentTemplateName) {
-        localStorage.setItem(PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY, preferredAgentTemplateName);
-      } else {
-        localStorage.removeItem(PREFERRED_AGENT_TEMPLATE_NAME_STORAGE_KEY);
-      }
-    } catch {}
-  }
-  window.dispatchEvent(new CustomEvent("remotelab:preferred-agent-change", {
-    detail: {
-      templateId: preferredAgentTemplateId,
-      templateName: preferredAgentTemplateName,
-    },
-  }));
-  return {
-    templateId: preferredAgentTemplateId,
-    templateName: preferredAgentTemplateName,
-  };
-}
-
-function getPreferredAgentTemplateId() {
-  return preferredAgentTemplateId || "";
-}
-
-function getPreferredAgentTemplateName() {
-  return preferredAgentTemplateName || "";
-}
 
 try {
   localStorage.removeItem(LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY);

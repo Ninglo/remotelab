@@ -85,12 +85,6 @@ const context = {
   hasAuthCapability(name) {
     return name === 'createSession';
   },
-  getPreferredAgentTemplateId() {
-    return 'agent-review';
-  },
-  getPreferredAgentTemplateName() {
-    return 'Review';
-  },
   switchTab() {},
   settleAttachedSessionSidebarState() {
     return Promise.resolve();
@@ -140,7 +134,8 @@ assert.equal(quickAction.executionProfile, 'quick');
 assert.equal(quickAction.tool, 'codex');
 assert.equal(quickAction.model, undefined, 'Quick should hide and omit model selection details');
 assert.equal(quickAction.effort, undefined, 'Quick should hide and omit effort selection details');
-assert.equal(quickAction.templateId, '', 'Quick should not apply a selected Agent template');
+assert.equal(quickAction.templateId, undefined, 'Quick should not carry a session template');
+assert.equal(quickAction.templateName, undefined, 'Quick should not carry a session template name');
 
 const opened = context.createNewSessionShortcut({
   sourceContext: { channel: 'pwa_shortcut' },
@@ -162,7 +157,8 @@ assert.equal(calls.dispatch[0]?.action, 'create');
 assert.equal(calls.dispatch[0]?.tool, 'codex');
 assert.equal(calls.dispatch[0]?.model, 'gpt-5.6-sol');
 assert.equal(calls.dispatch[0]?.effort, 'xhigh');
-assert.equal(calls.dispatch[0]?.templateId, 'agent-review');
+assert.equal(calls.dispatch[0]?.templateId, undefined, 'owner-created sessions should not carry a template');
+assert.equal(calls.dispatch[0]?.templateName, undefined, 'owner-created sessions should not carry a template name');
 assert.equal(calls.dispatch[0]?.sourceContext?.channel, 'pwa_shortcut');
 assert.equal(context.currentSessionId, 'created-session');
 assert.equal(context.readPendingCreateOptions(), null, 'creation metadata should clear after materialization');

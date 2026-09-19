@@ -1,20 +1,22 @@
 # Task Center v1
 
-Task Center is the owner-only control surface for RemoteLab's durable automated Agent tasks. It is a top-level application workspace, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
+Task Center is the owner-only control surface for RemoteLab's durable automated tasks. It is a top-level application workspace, separate from the ordinary Session transcript. The first version is deliberately a projection and control facade over the existing trigger and recurring-schedule stores; it does not add another scheduler, systemd producer, or workflow engine.
 
 ## Product boundary
 
 RemoteLab owns generic automation mechanics:
 
-- when an Agent should be woken
+- when automated work should be admitted
 - which Session receives the instruction
 - whether each occurrence gets an independent Session
 - where the resulting reply may be delivered
 - durable admission, retries, status, and safe lifecycle controls
 
-The Agent still interprets the instruction and decides the concrete work. Task Center does not know evaluation, GPU, report, inbox, or other domain semantics.
+The execution Session still interprets the instruction and decides the concrete work. Task Center does not know evaluation, GPU, report, inbox, or other domain semantics.
 
-Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Tasks sit above the Session list, while Settings sits below it. Selecting a Session, Task Center, or Settings swaps the main workspace inside the same application document; there is no second application rail and no dedicated Agent-management destination. Task Center uses the main workspace and never inserts management cards into a Session transcript. The URL query remains shareable/restorable UI state rather than a separate page load.
+Settings remains the place for instance configuration. RemoteLab uses one persistent, ChatGPT-style sidebar: New Session and Tasks sit above the Session list, while Settings sits below it. Selecting a Session, Task Center, or Settings swaps the main workspace inside the same application document; there is no second application rail and no template-management destination. Task Center and Settings share the same flat, readable main-canvas geometry and never insert management cards into a Session transcript. The sidebar shows the product brand only in the global header, keeps origin filtering next to the Session list, and does not spend primary space on build metadata. The URL query remains shareable/restorable UI state rather than a separate page load.
+
+The owner UI also has no per-Session template selector or preferred-template browser state. New owner Sessions start from the selected tool/runtime only. Persisted template metadata and the legacy shared-guest route remain a compatibility boundary for existing links; they are not presented as an owner-facing product concept.
 
 ## Domain model
 
@@ -132,7 +134,7 @@ Lifecycle behavior:
 
 Pause/cancel and Trigger admission are serialized through the Trigger mutation queue. Whichever operation wins that boundary is authoritative: if stop wins, the request is not admitted; if admission wins, the resulting Run is allowed to finish. The Task Center UI intentionally does not expose `includeActive` Run termination.
 
-This distinction is visible in the interface copy. `paused` or `cancelled` is never presented as proof that an already running Agent process has stopped.
+This distinction is visible in the interface copy. `paused` or `cancelled` is never presented as proof that an already running process has stopped.
 
 ## Compatibility and limits
 
