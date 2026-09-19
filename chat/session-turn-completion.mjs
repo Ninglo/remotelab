@@ -162,7 +162,13 @@ export function createSessionTurnCompletionHelpers(services) {
   }
 
   function scheduleSessionStateSuggestion(session, run) {
-    if (!session?.id || !run || session.archived || isInternalSession(session)) {
+    if (
+      !session?.id
+      || !run
+      || session.archived
+      || isInternalSession(session)
+      || trimString(session.executionProfile).toLowerCase() === 'quick'
+    ) {
       return false;
     }
 
