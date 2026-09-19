@@ -3400,7 +3400,7 @@ async function prepareRequestRun(record) {
         developerInstructions: options.executionProfile === QUICK_SESSION_PROFILE
           ? getQuickSessionDeveloperInstructions()
           : undefined,
-        disableApps: options.executionProfile === QUICK_SESSION_PROFILE || undefined,
+        disableApps: options.executionProfile === QUICK_SESSION_PROFILE ? false : undefined,
         skipSessionStartPreflight: options.executionProfile === QUICK_SESSION_PROFILE || undefined,
       },
     },

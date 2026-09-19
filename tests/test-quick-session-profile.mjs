@@ -12,7 +12,7 @@ assert.equal(normalizeSessionExecutionProfile(' QUICK '), 'quick');
 assert.equal(normalizeSessionExecutionProfile('standard'), '');
 assert.equal(isQuickSession({ executionProfile: 'quick' }), true);
 assert.deepEqual(getQuickSessionRuntimeProfile({}), {
-  tool: 'codex', model: 'gpt-5.6-luna', effort: 'low', thinking: false,
+  tool: 'codex', model: 'gpt-5.6-terra', effort: 'low', thinking: false,
 });
 assert.deepEqual(
   applyQuickSessionRuntime(
@@ -20,11 +20,15 @@ assert.deepEqual(
     { tool: 'claude', model: 'opus', effort: 'high', thinking: true, sourceContext: { connector: 'feishu' } },
   ),
   {
-    tool: 'codex', model: 'gpt-5.6-luna', effort: 'low', thinking: false,
+    tool: 'codex', model: 'gpt-5.6-terra', effort: 'low', thinking: false,
     executionProfile: 'quick', sourceContext: { connector: 'feishu' },
   },
 );
-assert.match(getQuickSessionDeveloperInstructions(), /Do not call tools/);
-assert.match(getQuickSessionDeveloperInstructions(), /Standard Session/);
+const developerInstructions = getQuickSessionDeveloperInstructions();
+assert.match(developerInstructions, /Do not proactively use tools/);
+assert.match(developerInstructions, /explicitly requests tool use/);
+assert.match(developerInstructions, /use the necessary available capabilities/);
+assert.doesNotMatch(developerInstructions, /Do not call tools/);
+assert.doesNotMatch(developerInstructions, /requires a Standard Session/);
 
 console.log('test-quick-session-profile: ok');
