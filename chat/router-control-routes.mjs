@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from 'path';
 
 import { CHAT_IMAGES_DIR, CONFIG_DIR, FILE_ASSET_STORAGE_ENABLED, FILE_ASSET_STORAGE_PROVIDER } from '../lib/config.mjs';
 import { listAgents, getAgent, createAgent, updateAgent, deleteAgent } from './apps.mjs';
-import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { loadUiRuntimeSelection, saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
@@ -141,12 +141,33 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function applyScheduledRuntimeDefaults(payload, sourceSession, uiSelection) {
+  const explicitTool = trimString(payload.tool);
+  const sourceTool = explicitTool || trimString(sourceSession.tool);
+  const defaultTool = trimString(uiSelection?.selectedTool);
+  if (!sourceTool || !defaultTool || sourceTool !== defaultTool) return payload;
+
+  const explicitModel = trimString(payload.model);
+  const defaultModel = trimString(uiSelection.selectedModel);
+  const explicitEffort = trimString(payload.effort);
+  const defaultEffort = trimString(uiSelection.selectedEffort);
+  const canUseDefaultEffort = trimString(uiSelection.reasoningKind).toLowerCase() === 'enum'
+    && (!explicitModel || explicitModel === defaultModel);
+
+  return {
+    ...payload,
+    tool: sourceTool,
+    ...(explicitModel || !defaultModel ? {} : { model: defaultModel }),
+    ...(explicitEffort || !defaultEffort || !canUseDefaultEffort ? {} : { effort: defaultEffort }),
+  };
+}
+
 async function prepareScheduledTask(payload) {
   const sourceSessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : String(payload.sourceSessionId || '').trim();
   const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
   if (!sourceSession) throw new Error('Source session not found');
   if (sourceSession.archived) throw new Error('Source session is archived');
-  let input = payload;
+  let input = applyScheduledRuntimeDefaults(payload, sourceSession, await loadUiRuntimeSelection());
   if (!Object.hasOwn(payload, 'conversation') && !Object.hasOwn(payload, 'sourceDelivery')
       && !Object.hasOwn(payload.sessionTemplate || {}, 'conversation')
       && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
@@ -155,9 +176,9 @@ async function prepareScheduledTask(payload) {
     }));
     const conversation = payload.sourceRequestId ? sourcePlan : sourceSession.conversation || sourcePlan;
     if (!conversation) throw new Error('Source Session has no external conversation');
-    input = { ...payload, conversation };
+    input = { ...input, conversation };
   }
-  return { ...payload, sourceSessionId, sessionTemplate: buildScheduledSessionTemplate(input, sourceSession) };
+  return { ...input, sourceSessionId, sessionTemplate: buildScheduledSessionTemplate(input, sourceSession) };
 }
 
 export async function handleControlRoutes({

@@ -204,6 +204,13 @@ async function main() {
   let server = await startServer({ home, port });
 
   try {
+    const defaultRuntimeRes = await request(port, 'POST', '/api/runtime-selection', {
+      selectedTool: 'fake-codex',
+      selectedModel: 'fake-model',
+      selectedEffort: 'low',
+      reasoningKind: 'enum',
+    });
+    assert.equal(defaultRuntimeRes.status, 200, 'Default runtime selection should be configured');
     const session = await createSession(port);
 
     const createTriggerRes = await request(port, 'POST', '/api/triggers', {
@@ -278,6 +285,8 @@ async function main() {
         scheduledAt: new Date(Date.now() + 200).toISOString(), text: 'Publish the scheduled reply.', tool: 'fake-codex',
       });
       assert.equal(response.status, 201);
+      assert.equal(response.json.trigger.model, 'fake-model', 'trigger should snapshot the matching Default model');
+      assert.equal(response.json.trigger.effort, 'low', 'trigger should snapshot the matching Default effort');
       assert.deepEqual(response.json.trigger.sessionTemplate.conversation, binding, 'scheduled conversation belongs to the creation template');
       const executed = await waitFor(async () => {
         const value = await request(port, 'GET', `/api/triggers/${response.json.trigger.id}`);
@@ -473,6 +482,9 @@ async function main() {
     assert.equal(scheduleRes.json.schedule.sessionTemplate.tool, 'fake-codex');
     assert.equal(scheduleRes.json.schedule.sessionTemplate.internalRole, 'scheduled_execution');
     assert.equal(scheduleRes.json.schedule.sessionTemplate.conversation.target.chatId, 'oc_source_test');
+    assert.equal(scheduleRes.json.schedule.tool, 'fake-codex', 'schedule should snapshot the matching Default Harness');
+    assert.equal(scheduleRes.json.schedule.model, 'fake-model', 'schedule should snapshot the matching Default model');
+    assert.equal(scheduleRes.json.schedule.effort, 'low', 'schedule should snapshot the matching Default effort');
     const scheduleId = scheduleRes.json.schedule.id;
     const cancelSchedule = await request(port, 'PATCH', `/api/schedules/${scheduleId}`, {
       enabled: false,
