@@ -138,11 +138,12 @@ and [scheduled task configuration](trigger-control-plane-v0.md).
 
 The binding identifies the Session's external context; it is not permission to
 reuse a stale topic as every future request's reply anchor. A connector may
-attach `sourceDelivery` to one message to select the current root/topic within
-the same connector, route, tenant and chat. The request snapshot wins for that
-request only and never rebinds or moves the Session across chats. Feishu uses
-this for group `continue` mode so context can remain shared while every new root
-message receives its answer beside that message.
+attach `sourceDelivery` to one message to select a request-local destination
+within the same connector, route, tenant and chat. The request snapshot wins
+for that request only and never rebinds or moves the Session across chats.
+Feishu preserves the mode selected when the conversation starts: `continue`
+uses an ordinary group reply, while `fork` and bound thread follow-ups stay in
+their Feishu thread.
 
 ---
 

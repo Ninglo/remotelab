@@ -234,8 +234,8 @@ try {
     assert.equal(createdPayloads.at(-1).conversation.target.replyInThread, undefined);
     assert.deepEqual(submittedPayloads.at(-1).sourceDelivery.target, {
       chatId: 'chat-1', tenantKey: 'tenant-1', chatType: 'group', messageId: 'continue-task',
-      messageType: 'text', replyInThread: true,
-    }, 'continue reuses Session context while replying beside the current root message');
+      messageType: 'text',
+    }, 'continue reuses Session context while publishing an ordinary group reply');
     const countBeforeThread = createCount;
     await send({ messageId: 'continue-thread', threadId: 'created-thread-1', messageText: '/continue\n\nin thread' });
     assert.equal(createCount, countBeforeThread, '/continue respects an existing thread binding');
@@ -253,7 +253,8 @@ try {
     assert.equal(createdPayloads.at(-1).externalTriggerId, 'feishu:group:chat-1');
     assert.equal(createdPayloads.at(-1).conversation.target.forkCommand, undefined);
     assert.equal(submittedPayloads.at(-1).sourceDelivery.target.messageId, 'configured-continue');
-    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, true);
+    assert.equal(submittedPayloads.at(-1).sourceDelivery.target.replyInThread, undefined,
+      'continue mode must not turn each new group message into a Feishu thread');
     await send({ chatId: 'chat-2', messageId: 'configured-fork' });
     assert.match(createdPayloads.at(-1).externalTriggerId, /^feishu:fork:.*chat-2:configured-fork$/);
     await send({ messageId: 'override-fork', messageText: '/fork\n\nexplicit' });

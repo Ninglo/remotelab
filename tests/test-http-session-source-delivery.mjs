@@ -115,19 +115,19 @@ try {
   const boundDeliveries = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
   assert(boundDeliveries.body.deliveries.some(item => item.text?.includes(boundId)), 'initial publication exposes the actual Session link');
   const currentRootDelivery = { connector: 'feishu', sourceRouteId: 'bound-bot',
-    target: { chatId: 'bound-chat', chatType: 'group', messageId: 'current-root', replyInThread: true } };
+    target: { chatId: 'bound-chat', chatType: 'group', messageId: 'current-root' } };
   const continuedFromCurrentRoot = await request('POST', `/api/sessions/${boundId}/messages`, {
-    requestId: 'current-root-route', text: 'Keep the Session context but reply beside this message.',
+    requestId: 'current-root-route', text: 'Keep the Session context but publish to the group root.',
     sourceDelivery: currentRootDelivery,
   });
   assert.equal(continuedFromCurrentRoot.status, 202,
-    'a request in the same Feishu chat may override an older topic-bound Session destination');
+    'a request in the same Feishu chat may use an unthreaded continue-mode destination');
   const currentRootReply = await waitFor(async () => {
     const result = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
     return result.body.deliveries.find(item => item.runId === continuedFromCurrentRoot.body.run.id && item.kind === 'content');
-  }, 'request-scoped reply beside the current root message');
+  }, 'request-scoped group-root reply');
   assert.deepEqual(currentRootReply.target, currentRootDelivery.target,
-    'the durable request snapshot must retain the current inbound message instead of the old Session topic');
+    'the durable request snapshot must retain the selected mode instead of the old Session topic');
   const crossed = await request('POST', `/api/sessions/${boundId}/messages`, {
     requestId: 'crossed-route', text: 'Do not move the conversation.',
     sourceDelivery: { ...conversation, sourceRouteId: 'different-bot' },

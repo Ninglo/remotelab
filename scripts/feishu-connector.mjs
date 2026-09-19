@@ -896,14 +896,11 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const messageSummary = attachmentResolution.failures.length > 0
     ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
     : effectiveSummary;
-  const requestDeliveryTarget = normalizeConversationTarget({
-    ...messageSummary,
-    ...(!isFeishuDocumentCommentSummary(messageSummary)
-      && isFeishuGroupSummary(messageSummary)
-      && trimString(messageSummary.messageId)
-      ? { replyInThread: true }
-      : {}),
-  });
+  // Snapshot the request's actual reply location without changing the mode
+  // selected at conversation entry. Forks set replyInThread explicitly and
+  // bound Feishu threads carry a topic/thread id; continue-mode group roots
+  // intentionally remain ordinary group messages.
+  const requestDeliveryTarget = normalizeConversationTarget(messageSummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: buildRemoteLabMessage(messageSummary),

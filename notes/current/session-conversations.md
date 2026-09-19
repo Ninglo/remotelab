@@ -70,8 +70,9 @@ A timer whose request was already accepted before an upgrade uses that durable
 acceptance to finish recovery; it does not rebuild its old submission options
 or run the task a second time.
 New Feishu intake binds at Session creation and submits every message with its
-own reply snapshot. In group `continue` mode this deliberately decouples shared
-Session context from the current root/topic destination.
+own reply snapshot. That snapshot preserves the selected conversation mode:
+group `continue` stays unthreaded, while `fork` and bound thread follow-ups stay
+threaded.
 The core resolves canonical bindings before consulting the old thread index.
 Adoption is lazy on the next incoming message; old unbound Sessions do not
 acquire a browser reply destination merely from having historical source
