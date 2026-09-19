@@ -131,6 +131,27 @@ assert.equal(await abortedClaim, null, 'connector shutdown aborts an idle claim 
 
 // An uncertain first group publication fences this Session, without blocking another occurrence.
 const { withSessionsMetaMutation, findSessionMeta } = await import('../chat/session-meta-store.mjs');
+const legacyThread = {
+  connector: 'feishu', sourceRouteId: 'continue-route',
+  target: { chatId: 'continue-chat', messageId: 'old-root', rootId: 'old-root', threadId: 'old-thread', replyInThread: true },
+};
+await withSessionsMetaMutation(async (metas, save) => {
+  metas.push({ id: 'continue-session', conversation: legacyThread });
+  await save(metas);
+});
+const continueDelivery = await enqueueSourceDelivery({
+  sessionId: 'continue-session', responseId: 'continue-response', text: 'reply in group',
+  sourceDelivery: {
+    connector: 'feishu', sourceRouteId: 'continue-route',
+    target: { chatId: 'continue-chat', messageId: 'current-message' },
+  },
+});
+const continueClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'continue-route' });
+assert.equal(continueClaim.delivery.id, continueDelivery.id);
+assert.deepEqual(continueClaim.delivery.target, { chatId: 'continue-chat', messageId: 'current-message' },
+  'claim preserves an unthreaded request snapshot instead of restoring a legacy Session thread');
+await completeSourceDelivery(continueDelivery.id, continueClaim.leaseId, { externalId: 'group-reply' });
+
 const group = { connector: 'feishu', sourceRouteId: 'new-root', target: { chatId: 'same-group' } };
 await withSessionsMetaMutation(async (metas, save) => {
   metas.push(...['opening-a', 'opening-b'].map(id => ({ id, conversation: group })));
