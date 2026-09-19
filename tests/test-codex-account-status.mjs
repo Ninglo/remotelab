@@ -8,6 +8,7 @@ import { handleCodexAuthRoutes } from '../chat/router-codex-auth-routes.mjs';
 
 const home = await mkdtemp(join(tmpdir(), 'codex-account-test-'));
 const command = join(home, 'codex');
+const requestLog = join(home, 'requests.jsonl');
 await copyFile(new URL('./fixtures/codex-account.cjs', import.meta.url), command);
 await chmod(command, 0o755);
 const env = { PATH: process.env.PATH, CODEX_HOME: home };
@@ -21,6 +22,14 @@ const limits = { rateLimitsByLimitId: {
   extra: { limitName: '<b>Extra</b>', primary: { usedPercent: 0, windowDurationMins: 60 } },
   missing: { primary: { usedPercent: null, windowDurationMins: 60 } },
 } };
+async function waitFor(predicate, message, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
 try {
   assert.equal((await query()).account, null);
   await login();
@@ -38,6 +47,15 @@ try {
   assert.equal((await query({ includeRateLimits: true })).usage.status, 'unavailable');
   await provider({ hang: true });
   assert.equal((await query({ includeRateLimits: true, timeoutMs: 250 })).usage.status, 'unavailable');
+  const previousRateLimitRequests = (await readFile(requestLog, 'utf8')).split('\n').filter(s => s.includes('account/rateLimits/read')).length;
+  const controller = new AbortController();
+  const cancelled = query({ includeRateLimits: true, timeoutMs: 5000, signal: controller.signal });
+  await waitFor(async () => {
+    const current = (await readFile(requestLog, 'utf8')).split('\n').filter(s => s.includes('account/rateLimits/read')).length;
+    return current > previousRateLimitRequests;
+  }, 'cancellable rate-limit request to start');
+  controller.abort();
+  await assert.rejects(cancelled, error => error?.name === 'AbortError' && error?.code === 'ABORT_ERR');
   await provider({ account: { type: 'apiKey' } });
   assert.equal((await query({ includeRateLimits: true })).usage.status, 'unsupported');
   await provider({ changeAuth: '{"tokens":{}}', limits });
