@@ -294,6 +294,50 @@ function envFlagEnabled(value, fallback = false) {
   return !['0', 'false', 'no', 'off'].includes(normalized);
 }
 
+function parseConfigOverrides(value, label) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label} must be a JSON array of Codex config overrides: ${error.message}`);
+  }
+  if (!Array.isArray(parsed) || parsed.some(entry => typeof entry !== 'string')) {
+    throw new Error(`${label} must be a JSON array of Codex config override strings`);
+  }
+  return parsed.map(entry => entry.trim()).filter(Boolean);
+}
+
+export function resolveCodexConfigOverrides(options = {}, env = process.env) {
+  const overrides = [];
+  const hasSystemProxy = [
+    env.HTTPS_PROXY, env.https_proxy,
+    env.HTTP_PROXY, env.http_proxy,
+    env.ALL_PROXY, env.all_proxy,
+  ].some(value => typeof value === 'string' && value.trim());
+  if (hasSystemProxy && envFlagEnabled(env.REMOTELAB_CODEX_RESPECT_SYSTEM_PROXY, true)) {
+    overrides.push('features.respect_system_proxy=true');
+  }
+  overrides.push(...parseConfigOverrides(
+    env.REMOTELAB_CODEX_CONFIG_OVERRIDES_JSON,
+    'REMOTELAB_CODEX_CONFIG_OVERRIDES_JSON',
+  ));
+  if (options.executionProfile === 'quick') {
+    overrides.push(...parseConfigOverrides(
+      env.REMOTELAB_QUICK_CODEX_CONFIG_OVERRIDES_JSON,
+      'REMOTELAB_QUICK_CODEX_CONFIG_OVERRIDES_JSON',
+    ));
+  }
+  if (Array.isArray(options.codexConfigOverrides)) {
+    overrides.push(...options.codexConfigOverrides
+      .filter(entry => typeof entry === 'string')
+      .map(entry => entry.trim())
+      .filter(Boolean));
+  }
+  return [...new Set(overrides)];
+}
+
 /**
  * Build args for spawning Codex exec.
  */
@@ -313,6 +357,10 @@ export function buildCodexArgs(prompt, options = {}) {
   args.push('--skip-git-repo-check');
   if (disableApps) {
     args.push('--disable', 'apps');
+  }
+
+  for (const override of resolveCodexConfigOverrides(options)) {
+    args.push('-c', override);
   }
 
   if (developerInstructions) {

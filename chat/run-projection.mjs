@@ -19,6 +19,8 @@ export function createRunProjectionService({
       effort: manifest.options?.effort,
       thinking: manifest.options?.thinking,
       runtimeFamily: manifest.runtimeFamily || manifest.options?.runtimeFamily,
+      executionProfile: manifest.options?.executionProfile,
+      codexConfigOverrides: manifest.options?.codexConfigOverrides,
     });
   }
 
