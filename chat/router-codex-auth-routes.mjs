@@ -44,6 +44,15 @@ export async function handleCodexAuthRoutes({
     return true;
   }
 
+  if (pathname === '/api/codex-auth/switch-account' && req.method === 'POST') {
+    try {
+      writeJson(res, 200, { codexAuth: await authManager.switchAccount() });
+    } catch (error) {
+      writeJson(res, 500, { error: error.message || 'Failed to switch Codex account' });
+    }
+    return true;
+  }
+
   if (pathname === '/api/codex-auth/device-login' && req.method === 'POST') {
     let payload = {};
     try {
