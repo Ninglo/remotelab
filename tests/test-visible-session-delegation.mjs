@@ -48,5 +48,6 @@ try {
   assert.match(guide, /session-spawn/);
   assert.match(guide, /sessionUrl/);
   assert.match(guide, /--task-file/);
+  assert.match(guide, /--context-file/);
   console.log('test-visible-session-delegation: ok');
 } finally { await rm(home, { recursive: true, force: true }); }

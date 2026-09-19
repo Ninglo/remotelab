@@ -37,10 +37,13 @@ try {
   let output = '';
   const io = { stdout: { write: s => { output += s; } } };
   const taskFile = join(home, 'handoff with spaces.md');
+  const contextFile = join(home, 'context with spaces.md');
   const task = 'Inspect the API.\nKeep literal $(whoami), `shell` and $HOME as task text.';
+  const context = 'The source already confirmed the failing endpoint and preserved its evidence.';
   await writeFile(taskFile, task);
-  assert.equal(await runSessionSpawnCommand(['--task-file', taskFile, '--json', '--base-url', base], io), 0);
-  assert.deepEqual(requests, [{ path: '/api/sessions/parent/delegate', method: 'POST', body: { task, sourceRunId: 'parent-run' } }],
+  await writeFile(contextFile, context);
+  assert.equal(await runSessionSpawnCommand(['--task-file', taskFile, '--context-file', contextFile, '--json', '--base-url', base], io), 0);
+  assert.deepEqual(requests, [{ path: '/api/sessions/parent/delegate', method: 'POST', body: { task, context, sourceRunId: 'parent-run' } }],
     'default creation admits once without polling and preserves the handoff');
   const receipt = JSON.parse(output);
   assert.equal(receipt.state, 'accepted');
@@ -53,6 +56,7 @@ try {
   await runSessionSpawnCommand(['--source-session', 'other', '--source-run', 'other-run', '--task', 'Review', '--json', '--base-url', base], io);
   assert.equal(requests.at(-1).body.sourceRunId, 'other-run');
   await assert.rejects(runSessionSpawnCommand(['--task', 'one', '--task-file', taskFile], io), /only one/);
+  await assert.rejects(runSessionSpawnCommand(['--task', 'one', '--context', 'inline', '--context-file', contextFile], io), /only one/);
   const count = requests.length;
   output = '';
   await runSessionSpawnCommand(['--guide'], io);

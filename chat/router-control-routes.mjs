@@ -1139,10 +1139,15 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'sourceRunId must be a string when provided' });
         return true;
       }
+      if (Object.prototype.hasOwnProperty.call(payload, 'context') && typeof payload.context !== 'string') {
+        writeJson(res, 400, { error: 'context must be a string when provided' });
+        return true;
+      }
 
       try {
         const outcome = await delegateSession(sessionId, {
           task,
+          context: typeof payload?.context === 'string' ? payload.context.trim() : '',
           sourceRunId: typeof payload?.sourceRunId === 'string' ? payload.sourceRunId.trim() : '',
           name: typeof payload?.name === 'string' ? payload.name.trim() : '',
           tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',

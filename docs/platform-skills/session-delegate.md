@@ -9,9 +9,11 @@ its native task interpretation and decides whether delegation is useful.
 1. For independent delegated work, use RemoteLab `session-spawn` instead of a
    Harness-native subagent or a detached provider CLI. Native subagents do not
    create user-visible RemoteLab sessions. Simple work can stay in this session.
-2. Write a self-contained handoff: objective, relevant background and input
-   paths, constraints, expected output and how to verify it. The child does not
-   inherit the parent's full transcript. Do not send credentials in the task.
+2. Give `--task` one focused objective. When the child needs facts that do not
+   belong in the objective, pass one bounded context block with `--context` or
+   `--context-file`. The child does not inherit the parent's full transcript;
+   do not dump it into context or send credentials. Put constraints, expected
+   output and verification requirements in the task only when they matter.
    Concurrent writers must have separate files or an agreed write scope. Write
    the handoff in the user's current conversational language; do not switch to
    English merely because an internal template, Skill, or technical source is
@@ -36,6 +38,16 @@ For a longer handoff, write a UTF-8 file with a file-writing tool and use:
 ```sh
 remotelab session-spawn --task-file /absolute/path/to/handoff.md --name "<short task name>" --json
 ```
+
+If task and background are maintained separately:
+
+```sh
+remotelab session-spawn --task "<focused objective>" --context-file /absolute/path/to/context.md --name "<short task name>" --json
+```
+
+This is deliberately a two-part contract—task plus optional context—not a new
+workflow schema. The context is clipped before prompt assembly and remains an
+explicit caller choice instead of an automatic transcript copy.
 
 If the command is unavailable in PATH, use
 `node "$REMOTELAB_PROJECT_ROOT/cli.js" session-spawn ...` with the same arguments.

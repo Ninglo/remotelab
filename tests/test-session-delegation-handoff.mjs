@@ -40,8 +40,19 @@ assert.doesNotMatch(chineseHandoff, /Delegation handoff|Parent session id/);
 const chineseTaskHandoff = buildDelegationHandoff({
   source: {},
   task: '修复监控通知路由，并保留全部验证证据。',
+  context: '异常已经持久化；不要恢复旧的定时监控。',
 });
 assert.match(chineseTaskHandoff, /^任务交接：/);
+assert.match(chineseTaskHandoff, /必要上下文（由父会话显式提供）：/);
+assert.match(chineseTaskHandoff, /异常已经持久化/);
+
+const clippedContextHandoff = buildDelegationHandoff({
+  source: {},
+  task: 'Keep the handoff bounded.',
+  context: 'x'.repeat(7000),
+});
+assert.match(clippedContextHandoff, /Essential context explicitly provided by the parent session:/);
+assert.match(clippedContextHandoff, /\[\.\.\. truncated by RemoteLab \.\.\.\]/);
 
 const chineseNotice = buildDelegationNotice({
   sourceText: '请创建一个独立会话处理这个问题。',
