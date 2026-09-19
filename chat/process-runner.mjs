@@ -65,6 +65,9 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       reasoningEffort: options.effort,
       developerInstructions: options.developerInstructions,
       systemPrefix: options.systemPrefix,
+      disableApps: options.disableApps,
+      executionProfile: options.executionProfile,
+      codexConfigOverrides: options.codexConfigOverrides,
     });
   } else if (normalizedRuntimeFamily === 'pi-json') {
     const route = resolvePiModelRoute(options.model);

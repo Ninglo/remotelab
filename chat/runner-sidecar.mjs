@@ -332,6 +332,8 @@ async function main() {
     effort: manifest.options?.effort,
     developerInstructions: manifest.options?.developerInstructions,
     disableApps: manifest.options?.disableApps === true,
+    executionProfile: manifest.options?.executionProfile,
+    codexConfigOverrides: manifest.options?.codexConfigOverrides,
   };
   const initialInvocation = await createToolInvocation(manifest.tool, prompt, invocationOptions);
   const spawnEnv = await cleanEnv(manifest.tool, manifest, initialInvocation);
