@@ -91,6 +91,7 @@ import {
   getHistory,
   getSession,
   getSessionSourceContext,
+  mergeSessionPersonViewOwnership,
   renameSession,
   setSessionArchived,
   setSessionPinned,
@@ -336,6 +337,7 @@ export async function handleControlRoutes({
         writeJson(res, 404, { error: 'Person or identity not found' });
         return true;
       }
+      await mergeSessionPersonViewOwnership(moved.sourcePersonId, moved.targetPersonId);
       writeJson(res, 200, { people: await listPeopleForClient() });
       broadcastAll({ type: 'people_updated' });
     } catch (error) {

@@ -212,6 +212,7 @@ import {
 } from '../lib/legacy-micro-agent.mjs';
 import {
   getSessionPersonView,
+  mergeSessionPersonViews,
   normalizeSessionSidebarOrder,
   projectSessionPersonView,
   updateSessionPersonView,
@@ -2318,6 +2319,25 @@ export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT
     broadcastSessionInvalidation(id);
   }
   return projectSessionPersonView(await enrichSessionMeta(result.meta), personId);
+}
+
+export async function mergeSessionPersonViewOwnership(sourcePersonId, targetPersonId) {
+  const sourceId = typeof sourcePersonId === 'string' ? sourcePersonId.trim() : '';
+  const targetId = typeof targetPersonId === 'string' ? targetPersonId.trim() : '';
+  if (!sourceId || !targetId || sourceId === targetId) return { updatedSessions: 0 };
+  const result = await withSessionsMetaMutation(async (metas, persist) => {
+    let updatedSessions = 0;
+    for (let index = 0; index < metas.length; index += 1) {
+      const draft = { ...metas[index] };
+      if (!mergeSessionPersonViews(draft, sourceId, targetId)) continue;
+      metas[index] = draft;
+      updatedSessions += 1;
+    }
+    if (updatedSessions > 0) await persist(metas);
+    return { updatedSessions };
+  });
+  if (result.updatedSessions > 0) broadcastSessionsInvalidation();
+  return result;
 }
 
 async function updateSessionWorkSummary(id, workSummary) {

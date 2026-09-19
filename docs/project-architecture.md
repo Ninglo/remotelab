@@ -86,6 +86,8 @@ External connector senders are discovered on admission. For Feishu, the stable
 identity key is scoped by connector route/application and prefers the sender's
 `openId`. A discovered identity initially gets its own Person so it can be filtered
 immediately. Settings can merge that identity into an existing Person later.
+That merge also transfers the discovered Person's Session views; target-Person
+values win when both sides already classify the same Session field.
 
 The service token authenticates connector processes; the sender carried in
 `sourceContext` determines human attribution. If no human sender exists, the

@@ -97,3 +97,23 @@ export function updateSessionPersonView(session, personId, patch = {}) {
   else delete session.personViews;
   return true;
 }
+
+export function mergeSessionPersonViews(session, sourcePersonId, targetPersonId) {
+  const sourceId = trimString(sourcePersonId);
+  const targetId = trimString(targetPersonId);
+  if (!session || typeof session !== 'object' || !sourceId || !targetId || sourceId === targetId) return false;
+
+  const currentViews = normalizeSessionPersonViews(session.personViews);
+  const sourceView = currentViews[sourceId];
+  if (!sourceView) return false;
+  const targetView = currentViews[targetId] || {};
+  const mergedTargetView = normalizeSessionPersonView({
+    ...sourceView,
+    ...targetView,
+  });
+  delete currentViews[sourceId];
+  if (Object.keys(mergedTargetView).length > 0) currentViews[targetId] = mergedTargetView;
+  if (Object.keys(currentViews).length > 0) session.personViews = currentViews;
+  else delete session.personViews;
+  return true;
+}

@@ -594,11 +594,25 @@ async function main() {
     const feishuCreatedJson = JSON.parse(feishuCreated.text);
     assert.notEqual(feishuCreatedJson.session?.initiatedByIdentityId, 'identity_system');
     const peopleAfterFeishu = JSON.parse((await request(port, 'GET', '/api/people')).text).people;
+    const discoveredFeishuPerson = peopleAfterFeishu.find((person) => person.name === 'Feishu Person');
     assert.equal(
-      peopleAfterFeishu.some((person) => person.name === 'Feishu Person'
-        && person.identities?.some((identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha')),
+      discoveredFeishuPerson?.identities?.some((identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha'),
       true,
       'Feishu sender IDs should discover a filterable person identity without restricting Session access',
+    );
+    const discoveredFeishuIdentity = discoveredFeishuPerson.identities.find((identity) => identity.kind === 'feishu');
+    const mergedIdentity = await request(port, 'POST', '/api/people/person_alpha/identities', {
+      identityId: discoveredFeishuIdentity.id,
+    });
+    assert.equal(mergedIdentity.status, 200, 'connector identities should be mergeable into an existing Person');
+    const peopleAfterIdentityMerge = JSON.parse(mergedIdentity.text).people;
+    assert.equal(peopleAfterIdentityMerge.some((person) => person.id === discoveredFeishuPerson.id), false);
+    assert.equal(
+      peopleAfterIdentityMerge.find((person) => person.id === 'person_alpha')?.identities?.some(
+        (identity) => identity.id === discoveredFeishuIdentity.id,
+      ),
+      true,
+      'the merged connector identity should belong to the target Person',
     );
 
     const betaList = await request(port, 'GET', '/api/sessions', null, { Cookie: secondPersonCookie });
