@@ -11,6 +11,29 @@ import {
 
 const factories = { 'codex-json': createCodexDriver, 'pi-json': createPiDriver, 'claude-stream-json': createClaudeDriver };
 
+function createLfLineReader(stream, onLine) {
+  let buffer = '';
+  stream.setEncoding('utf8');
+  const closed = new Promise((resolve, reject) => {
+    stream.on('data', chunk => {
+      buffer += chunk;
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        let line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        onLine(line);
+      }
+    });
+    stream.once('end', () => {
+      if (buffer) onLine(buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer);
+      resolve();
+    });
+    stream.once('error', reject);
+  });
+  return { closed };
+}
+
 // The detached sidecar owns the bidirectional native process. The controller
 // can disappear without closing stdin or losing the Harness's active tools.
 export async function runNativeHost({ directory, command, runtimeFamily, options, prompt, cwd, env, onStdout, onStderr, onProcess, onControl, isCancelled = async () => false, startPreflight = null, onPreflightResult = async () => {} }) {
@@ -119,13 +142,18 @@ export async function runNativeHost({ directory, command, runtimeFamily, options
     proc.once('close', (code, signal) => resolve({ code, signal }));
   });
   proc.stdin.on('error', error => { if (!closing) { fatalError ||= error; stop(); } });
-  const stdout = createInterface({ input: proc.stdout });
-  const stderr = createInterface({ input: proc.stderr });
-  const readersClosed = Promise.all([stdout, stderr].map(reader => new Promise(resolve => reader.once('close', resolve))));
-  stdout.on('line', line => {
+  // App Server speaks JSONL, whose record separator is LF. Node's readline
+  // also splits on the valid JSON string characters U+2028 and U+2029, which
+  // corrupts frames when tool output contains copied web or document text.
+  const stdout = createLfLineReader(proc.stdout, line => {
     try { driver.handle(JSON.parse(line)); }
     catch (error) { fatalError ||= error; stop(); }
   });
+  const stderr = createInterface({ input: proc.stderr });
+  const readersClosed = Promise.all([
+    stdout.closed,
+    new Promise(resolve => stderr.once('close', resolve)),
+  ]);
   const stderrLines = [];
   stderr.on('line', line => { stderrLines.push(line); queueWrite(() => onStderr(line)); });
   try {
