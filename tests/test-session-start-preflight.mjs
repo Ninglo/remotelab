@@ -50,6 +50,12 @@ try {
   assert.match(formatSessionStartPreflightActivity({
     state: 'loaded', attempt: 2, maxAttempts: 3, answer: '3.1', hadRestart: true,
   }), /passed in the replacement provider session with answer "3.1"/);
+  assert.match(formatSessionStartPreflightActivity({
+    state: 'exhausted', attempt: 3, maxAttempts: 3, answer: '2.5', matchedAnswer: '2.5', continuesRealRequest: true,
+  }), /continuing with the original request instead of failing the run/);
+  assert.match(formatSessionStartPreflightActivity({
+    state: 'error', attempt: 1, maxAttempts: 3, reason: 'empty_answer', continuesRealRequest: true,
+  }), /continuing with the original request instead of failing the run/);
 
   const eventsDir = join(root, 'events');
   const base = { day: '2026-09-17', timeZone: 'Asia/Shanghai', tool: 'codex', runtimeFamily: 'codex-json', model: 'gpt-test' };

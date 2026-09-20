@@ -590,10 +590,10 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Source: direct owner review after using the session-start freshness gate
 - User slice: owner waiting for a fresh provider Session while one or more preflight attempts run before the real request
-- Observed friction or ask: the gate was useful but too implicit; without a visible trace, the startup delay looked unexplained and the user could not tell what was being checked or why a replacement was happening
-- Signal strength: direct feedback on the live workflow, followed by an implementation trial
-- Product implication: keep probe turns out of user/assistant messages, but project the configured probe, attempt number, returned answer, stale-marker match, retry wait, and terminal outcome into the folded Thought block
-- Promote to: native Harness startup observability and other backend-owned gates that delay a real turn
+- Observed friction or ask: the gate was useful but too implicit; without a visible trace, the startup delay looked unexplained and the user could not tell what was being checked or why a replacement was happening. Live follow-up also showed that exhausting all attempts failed the run before the original prompt reached the Harness, making a later “continue” operate on probe context instead of the actual task.
+- Signal strength: direct feedback on the live workflow, confirmed against the affected Session's durable run manifest and history
+- Product implication: keep probe turns out of user/assistant messages, but project the configured probe, attempt number, returned answer, stale-marker match, retry wait, and outcome into the folded Thought block. Treat preflight as fail-open warming: exhaustion or a probe error is recorded, then the same durable run must submit the original prompt; only failure of the real request may fail the run.
+- Promote to: native Harness startup observability and other backend-owned warming steps that delay a real turn
 - Follow-up: observe whether the detailed trace is understandable without becoming noisy; consider structured/localized activity rendering if more startup gates adopt the same pattern
 
 ### 2026-05-25 — large audio attachment send should not be tied to message submission

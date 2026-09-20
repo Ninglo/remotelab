@@ -532,13 +532,14 @@ async function main() {
 
   let providerRuntimeLease = null;
 
-  const runToolAttempt = async (invocation, preflightAttempt = 0) => {
-    const preflightAttemptStartedAt = sessionStartPreflightPolicy ? nowIso() : '';
+  const runToolAttempt = async (invocation, preflightAttempt = 0, options = {}) => {
+    const useSessionStartPreflight = !!sessionStartPreflightPolicy && options.skipSessionStartPreflight !== true;
+    const preflightAttemptStartedAt = useSessionStartPreflight ? nowIso() : '';
     const resolvedCommand = await resolveCommand(invocation.command);
     if (manifest.inputMode === 'native') return runNativeHost({
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: invocationOptions, prompt, cwd: resolvedFolder.cwd, env: spawnEnv,
-      ...(sessionStartPreflightPolicy
+      ...(useSessionStartPreflight
         ? {
           startPreflight: {
             prompt: sessionStartPreflightPolicy.prompt,
@@ -589,6 +590,7 @@ async function main() {
           error: result?.error ? normalizeErrorMessage(result.error) : '',
           retryDelayMs: sessionStartPreflightPolicy.retryDelayMs,
           hadRestart: sessionStartPreflightHadRestart,
+          continuesRealRequest: activityState === 'exhausted' || activityState === 'error',
         }), { phase: activityState, attempt: preflightAttempt });
         if (outcome && !sessionStartPreflightCompleted) {
           sessionStartPreflightCompleted = true;
@@ -793,15 +795,21 @@ async function main() {
       }
       attempt = await runToolAttempt(initialInvocation, preflightAttempt);
       current = await getRun(runId) || run;
-      if (!sessionStartPreflightPolicy || attempt.preflight?.status !== 'restart_required') break;
-      if (preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) {
-        attempt = {
-          ...attempt,
-          code: 1,
-          error: new Error(`Session start preflight still matched ${attempt.preflight.matchedAnswer || 'a restart answer'} after ${preflightAttempt} attempts`),
-        };
+      if (!sessionStartPreflightPolicy || !attempt.preflight) break;
+
+      const preflightExhausted = attempt.preflight.status === 'restart_required'
+        && preflightAttempt >= sessionStartPreflightPolicy.maxAttempts;
+      const preflightErrored = attempt.preflight.status === 'error';
+      if ((preflightExhausted || preflightErrored) && current.cancelRequested !== true) {
+        // Preflight is warming and observability, not an admission gate. Keep
+        // the original prompt in this same durable run and execute it once the
+        // warming attempts are exhausted or cannot produce a usable answer.
+        attempt = await runToolAttempt(initialInvocation, 0, { skipSessionStartPreflight: true });
+        current = await getRun(runId) || current;
         break;
       }
+      if (attempt.preflight.status !== 'restart_required') break;
+      if (preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) break;
 
       await releaseProviderLease();
       const retryAtMs = Date.now() + sessionStartPreflightPolicy.retryDelayMs;

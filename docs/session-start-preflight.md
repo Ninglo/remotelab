@@ -1,6 +1,6 @@
 # Session Start Preflight
 
-RemoteLab can run a short knowledge-freshness probe before the first real turn of a fresh provider session. The probe never becomes a user or assistant message, but the folded **Thought** block shows the configured probe, each attempt, the returned answer, replacement waits, and the final outcome so the startup delay is understandable. When an answer matches a configured stale marker, RemoteLab closes that provider session, waits for the configured retry window, and starts a different provider session. The real user prompt is submitted only after the probe passes.
+RemoteLab can run a short knowledge-freshness probe before the first real turn of a fresh provider session. The probe never becomes a user or assistant message, but the folded **Thought** block shows the configured probe, each attempt, the returned answer, replacement waits, and the final outcome so the startup delay is understandable. When an answer matches a configured stale marker, RemoteLab closes that provider session, waits for the configured retry window, and starts a different provider session. Preflight is warming and observability rather than an admission gate: after the configured attempts are exhausted, or after the probe cannot produce a usable result, RemoteLab still submits the original user prompt in the same durable run.
 
 This is a heuristic freshness gate, not provider attestation. It answers “did this provider session return the configured stale signal?”; it does not prove the exact serving model or release revision.
 
@@ -24,7 +24,7 @@ Create `${REMOTELAB_CONFIG_DIR:-~/.config/remotelab}/session-start-preflight.jso
 }
 ```
 
-Empty `tools`, `runtimeFamilies`, or `models` lists mean all values. The gate runs only when RemoteLab is about to create a fresh provider context; resumed turns do not repeat it. An exhausted or errored preflight fails closed, so a real task is never silently sent through a session that still matches the stale marker.
+Empty `tools`, `runtimeFamilies`, or `models` lists mean all values. The warming run happens only when RemoteLab is about to create a fresh provider context; resumed turns do not repeat it. A stale answer can trigger up to `maxAttempts` provider-session replacements, but exhaustion or a probe error is recorded and then fails open into the original request. Only an actual runtime failure while executing that request should fail the run.
 
 ## Daily statistics
 
@@ -42,5 +42,6 @@ The report keeps these states separate:
 - `normalLoads`: passed on the first attempt.
 - `neededNewSession`: at least one attempt matched a restart answer.
 - `loadedAfterRestart`: a later fresh provider session passed.
-- `exhausted`, `errors`, `cancelled`, and `incomplete`: unresolved or non-success terminal states.
+- `exhausted` and `errors`: warming did not pass, but the original request continued; these remain separate from successful warming outcomes.
+- `cancelled` and `incomplete`: warming did not reach a normal recorded outcome.
 - `neededNewSessionRate`: `neededNewSession / triggered`.

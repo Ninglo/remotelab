@@ -148,7 +148,10 @@ export function formatSessionStartPreflightActivity(options = {}) {
   if (state === 'restart_required' || state === 'exhausted') {
     const marker = quotePreflightActivityValue(options.matchedAnswer || options.answer, 240);
     if (state === 'exhausted') {
-      return `Session start preflight returned ${answer}, matching the configured stale marker ${marker}. No attempts remain, so the real request was not sent.`;
+      const continuation = options.continuesRealRequest === true
+        ? ' No warming attempts remain, so RemoteLab is continuing with the original request instead of failing the run.'
+        : ' No warming attempts remain.';
+      return `Session start preflight returned ${answer}, matching the configured stale marker ${marker}.${continuation}`;
     }
     return `Session start preflight returned ${answer}, matching the configured stale marker ${marker}. Closing this provider session and trying a new one ${formatPreflightRetryDelay(options.retryDelayMs)}; the real request has not been sent yet.`;
   }
@@ -156,7 +159,10 @@ export function formatSessionStartPreflightActivity(options = {}) {
     return `Session start preflight was cancelled after attempt ${attempt}/${maxAttempts}; the real request was not sent.`;
   }
   if (state === 'error') {
-    return `Session start preflight failed before the real request was sent: ${quotePreflightActivityValue(options.error || options.reason, 240)}.`;
+    const continuation = options.continuesRealRequest === true
+      ? ' RemoteLab is continuing with the original request instead of failing the run.'
+      : '';
+    return `Session start preflight could not produce a usable warming result: ${quotePreflightActivityValue(options.error || options.reason, 240)}.${continuation}`;
   }
   return '';
 }
