@@ -473,7 +473,7 @@ function initPeopleSettings() {
     settingsPersonCreate.disabled = true;
     setPeopleStatus("");
     try {
-      await requestPeople("/api/people", {
+      const result = await requestPeople("/api/people", {
         method: "POST",
         body: JSON.stringify({
           name,
@@ -483,7 +483,9 @@ function initPeopleSettings() {
       });
       resetPersonCreateForm();
       setPersonCreateExpanded(false);
-      setPeopleStatus(t("settings.people.added"));
+      setPeopleStatus(result.issuedToken
+        ? `${t("settings.people.copyToken")}: ${result.issuedToken}`
+        : t("settings.people.added"));
       await renderPeopleSettings();
     } catch (error) {
       setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
