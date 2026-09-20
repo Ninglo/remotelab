@@ -374,6 +374,351 @@ body:not([data-app-view="sessions"]) .session-item.active {
   color: var(--text-muted);
   font-size: 11px;
 }
+
+/* People */
+.settings-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.settings-person-add-toggle {
+  flex: 0 0 auto;
+  margin-top: -2px;
+}
+.settings-current-person {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 14px;
+  padding: 15px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+}
+.settings-current-person-profile {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 11px;
+}
+.settings-current-person-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.settings-current-person-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-current-person-copy span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-current-person-filter {
+  width: min(240px, 42%);
+  flex: 0 0 auto;
+}
+.settings-person-avatar {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 55%, transparent);
+  border-radius: 12px;
+  background: var(--accent-dim);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+.settings-person-avatar.small {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+.settings-person-avatar[data-tone="1"] { background: var(--success-bg); color: var(--success); }
+.settings-person-avatar[data-tone="2"] { background: color-mix(in srgb, var(--notice) 12%, var(--bg)); color: var(--notice); }
+.settings-person-avatar[data-tone="3"] { background: color-mix(in srgb, var(--naming) 12%, var(--bg)); color: var(--naming); }
+.settings-person-avatar[data-tone="4"] { background: color-mix(in srgb, var(--warning) 12%, var(--bg)); color: var(--warning); }
+.settings-person-create {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-secondary);
+}
+.settings-person-create[hidden] { display: none; }
+.settings-person-create-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.settings-people-status {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 24%, var(--border));
+  border-radius: 10px;
+  background: var(--success-bg);
+  color: var(--success);
+  overflow-wrap: anywhere;
+}
+.settings-people-status.error {
+  border-color: color-mix(in srgb, var(--error) 24%, var(--border));
+  background: var(--error-bg);
+  color: var(--error);
+}
+.settings-people-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.settings-person-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.settings-person-card[open] {
+  border-color: var(--border-strong);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--text) 5%, transparent);
+}
+.settings-person-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.settings-person-summary::-webkit-details-marker { display: none; }
+.settings-person-summary:hover { background: var(--surface-hover); }
+.settings-person-summary:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: -2px;
+}
+.settings-person-card[open] > .settings-person-summary {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.settings-person-summary-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.settings-person-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+.settings-person-title-row > strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-person-handle {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-person-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.settings-person-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 560;
+  line-height: 1.2;
+}
+.settings-person-badge.current,
+.settings-person-badge.connected {
+  border-color: color-mix(in srgb, var(--success) 18%, var(--border));
+  background: var(--success-bg);
+  color: var(--success);
+}
+.settings-person-badge.muted {
+  color: var(--text-muted);
+}
+.settings-person-manage {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.settings-person-manage::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 140ms ease;
+}
+.settings-person-card[open] .settings-person-manage::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+.settings-person-body {
+  display: grid;
+  gap: 0;
+  padding: 0 18px;
+}
+.settings-person-detail-section {
+  display: grid;
+  gap: 12px;
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+}
+.settings-person-detail-section:first-child { border-top: 0; }
+.settings-person-detail-heading h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+.settings-person-detail-heading p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.settings-person-profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.settings-person-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.settings-person-field > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 560;
+}
+.settings-person-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-person-form-actions.left { justify-content: flex-start; }
+.settings-person-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+.settings-person-primary:hover {
+  border-color: var(--text-secondary);
+  background: var(--text-secondary);
+}
+.settings-person-data-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+.settings-person-data-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 9px 11px;
+  border-top: 1px solid var(--border);
+}
+.settings-person-data-row:first-child { border-top: 0; }
+.settings-person-data-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 720;
+}
+.settings-person-data-icon.connected {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.settings-person-data-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.settings-person-data-copy strong,
+.settings-person-data-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-person-data-copy strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 620;
+}
+.settings-person-data-copy span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.settings-person-text-btn {
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.settings-person-text-btn:hover { background: var(--surface-hover); color: var(--text); }
+.settings-person-text-btn.danger:hover { background: var(--error-bg); color: var(--error); }
+.settings-person-connected-status {
+  color: var(--success);
+  font-size: 10px;
+  font-weight: 600;
+}
+.settings-person-empty-state {
+  padding: 13px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
 .settings-connector-status {
   display: flex;
   align-items: center;

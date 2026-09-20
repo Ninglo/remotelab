@@ -69,11 +69,14 @@ function initSessionAutoArchiveSettings() {
 
 const settingsConnectorsList = document.getElementById("settingsConnectorsList");
 const settingsPeopleList = document.getElementById("settingsPeopleList");
+const settingsCurrentPersonSummary = document.getElementById("settingsCurrentPersonSummary");
+const settingsDefaultPersonFilter = document.getElementById("settingsDefaultPersonFilter");
+const settingsPersonCreateToggle = document.getElementById("settingsPersonCreateToggle");
+const settingsPersonCreatePanel = document.getElementById("settingsPersonCreatePanel");
 const settingsPersonName = document.getElementById("settingsPersonName");
-const settingsPersonCredentialType = document.getElementById("settingsPersonCredentialType");
 const settingsPersonUsername = document.getElementById("settingsPersonUsername");
-const settingsPersonPassword = document.getElementById("settingsPersonPassword");
 const settingsPersonCreate = document.getElementById("settingsPersonCreate");
+const settingsPersonCreateCancel = document.getElementById("settingsPersonCreateCancel");
 const settingsPeopleStatus = document.getElementById("settingsPeopleStatus");
 let connectorSurfacesCache = [];
 let connectorSurfacesLoaded = false;
@@ -104,81 +107,227 @@ async function requestPeople(path = "/api/people", options = {}) {
   return payload;
 }
 
-function buildPersonIdentityLabel(identity) {
-  const parts = [identity.kind, identity.displayName, identity.realm].filter(Boolean);
-  if (identity.subjectHint) parts.push(`…${identity.subjectHint}`);
-  return parts.join(" · ");
+function getPersonInitials(person) {
+  const name = String(person?.name || person?.handle || "?").trim();
+  if (!name) return "?";
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length > 1) return words.slice(0, 2).map((word) => Array.from(word)[0]).join("").toUpperCase();
+  const characters = Array.from(name);
+  return characters.length > 0 ? characters[0].toUpperCase() : "?";
 }
 
-function buildPersonCard(person, allPeople) {
-  const card = document.createElement("div");
-  card.className = "settings-app-card";
-  const header = document.createElement("div");
-  header.className = "settings-app-card-header";
+function getPersonTone(person) {
+  let hash = 0;
+  for (const character of String(person?.handle || person?.id || "")) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return String(Math.abs(hash) % 5);
+}
+
+function buildPersonAvatar(person, className = "") {
+  const avatar = document.createElement("div");
+  avatar.className = `settings-person-avatar${className ? ` ${className}` : ""}`;
+  avatar.dataset.tone = getPersonTone(person);
+  avatar.textContent = getPersonInitials(person);
+  avatar.setAttribute("aria-hidden", "true");
+  return avatar;
+}
+
+function buildPersonBadge(text, variant = "") {
+  const badge = document.createElement("span");
+  badge.className = `settings-person-badge${variant ? ` ${variant}` : ""}`;
+  badge.textContent = text;
+  return badge;
+}
+
+function getConnectedIdentities(person) {
+  return (person.identities || []).filter((identity) => identity.kind !== "web" && identity.kind !== "system");
+}
+
+function buildPersonSummaryMeta(person) {
+  const meta = document.createElement("div");
+  meta.className = "settings-person-summary-meta";
+  const identities = getConnectedIdentities(person);
+  const identityCounts = new Map();
+  for (const identity of identities) {
+    const kind = identity.kind === "feishu" ? "Feishu" : identity.kind;
+    identityCounts.set(kind, (identityCounts.get(kind) || 0) + 1);
+  }
+  for (const [kind, count] of identityCounts) meta.appendChild(buildPersonBadge(count > 1 ? `${kind} ×${count}` : kind, "connected"));
+  const passwords = (person.credentials || []).filter((credential) => credential.type === "password");
+  const tokens = (person.credentials || []).filter((credential) => credential.type === "token");
+  if (passwords.length > 0) meta.appendChild(buildPersonBadge(t("settings.people.passwordAccess")));
+  if (tokens.length > 0) meta.appendChild(buildPersonBadge(tokens.length > 1 ? `${t("settings.people.token")} ×${tokens.length}` : t("settings.people.token")));
+  if (passwords.length === 0 && tokens.length === 0) meta.appendChild(buildPersonBadge(t("settings.people.noWebSignIn"), "muted"));
+  return meta;
+}
+
+function buildPersonSection(title, note = "") {
+  const section = document.createElement("section");
+  section.className = "settings-person-detail-section";
+  const heading = document.createElement("div");
+  heading.className = "settings-person-detail-heading";
+  const label = document.createElement("h4");
+  label.textContent = title;
+  heading.appendChild(label);
+  if (note) {
+    const description = document.createElement("p");
+    description.textContent = note;
+    heading.appendChild(description);
+  }
+  section.appendChild(heading);
+  return section;
+}
+
+function buildCredentialRow(person, credential) {
+  const row = document.createElement("div");
+  row.className = "settings-person-data-row";
+  const icon = document.createElement("div");
+  icon.className = "settings-person-data-icon";
+  icon.textContent = credential.type === "password" ? "P" : "T";
+  icon.setAttribute("aria-hidden", "true");
+  row.appendChild(icon);
+  const copy = document.createElement("div");
+  copy.className = "settings-person-data-copy";
+  const title = document.createElement("strong");
+  title.textContent = credential.type === "password"
+    ? t("settings.people.passwordAccess")
+    : (credential.label || t("settings.people.token"));
+  const detail = document.createElement("span");
+  detail.textContent = credential.type === "password"
+    ? `@${credential.username || person.handle}`
+    : `•••• ${credential.tokenSuffix || ""}`;
+  copy.append(title, detail);
+  row.appendChild(copy);
+  const remove = document.createElement("button");
+  remove.className = "settings-person-text-btn danger";
+  remove.type = "button";
+  remove.textContent = t("action.remove");
+  remove.addEventListener("click", async () => {
+    if (!window.confirm(t("settings.people.removeCredentialConfirm"))) return;
+    remove.disabled = true;
+    try {
+      await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials/${encodeURIComponent(credential.id)}`, { method: "DELETE" });
+      await renderPeopleSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      remove.disabled = false;
+    }
+  });
+  row.appendChild(remove);
+  return row;
+}
+
+function buildIdentityRow(identity) {
+  const row = document.createElement("div");
+  row.className = "settings-person-data-row";
+  const icon = document.createElement("div");
+  icon.className = "settings-person-data-icon connected";
+  icon.textContent = identity.kind === "feishu" ? "飞" : String(identity.kind || "?").slice(0, 1).toUpperCase();
+  icon.setAttribute("aria-hidden", "true");
+  row.appendChild(icon);
+  const copy = document.createElement("div");
+  copy.className = "settings-person-data-copy";
+  const title = document.createElement("strong");
+  title.textContent = identity.kind === "feishu" ? "Feishu" : identity.kind;
+  const detail = document.createElement("span");
+  detail.textContent = [identity.displayName, identity.realm].filter(Boolean).join(" · ");
+  copy.append(title, detail);
+  row.appendChild(copy);
+  const status = document.createElement("span");
+  status.className = "settings-person-connected-status";
+  status.textContent = t("settings.people.connected");
+  row.appendChild(status);
+  return row;
+}
+
+function buildPersonCard(person) {
+  const card = document.createElement("details");
+  card.className = "settings-person-card";
+  const summary = document.createElement("summary");
+  summary.className = "settings-person-summary";
+  summary.appendChild(buildPersonAvatar(person));
+  const summaryCopy = document.createElement("div");
+  summaryCopy.className = "settings-person-summary-copy";
+  const titleRow = document.createElement("div");
+  titleRow.className = "settings-person-title-row";
+  const title = document.createElement("strong");
+  title.textContent = person.name;
+  titleRow.appendChild(title);
+  if (person.id === currentPerson?.id) titleRow.appendChild(buildPersonBadge(t("settings.people.you"), "current"));
+  const handle = document.createElement("span");
+  handle.className = "settings-person-handle";
+  handle.textContent = `@${person.handle}`;
+  summaryCopy.append(titleRow, handle, buildPersonSummaryMeta(person));
+  summary.appendChild(summaryCopy);
+  const manage = document.createElement("span");
+  manage.className = "settings-person-manage";
+  manage.textContent = t("settings.people.manage");
+  summary.appendChild(manage);
+  card.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "settings-person-body";
+  const profile = buildPersonSection(t("settings.people.profile"), t("settings.people.profileNote"));
+  const profileGrid = document.createElement("div");
+  profileGrid.className = "settings-person-profile-grid";
+  const nameField = document.createElement("label");
+  nameField.className = "settings-person-field";
+  const nameLabel = document.createElement("span");
+  nameLabel.textContent = t("settings.people.nameLabel");
   const name = document.createElement("input");
-  name.className = "settings-inline-input settings-app-name";
+  name.className = "settings-inline-input";
   name.value = person.name;
-  name.disabled = person.system === true;
-  name.setAttribute("aria-label", t("settings.people.namePlaceholder"));
-  header.appendChild(name);
-  const handle = document.createElement("input");
-  handle.className = "settings-inline-input settings-app-name";
-  handle.value = person.handle || "";
-  handle.disabled = person.system === true;
-  handle.setAttribute("aria-label", t("settings.people.handle"));
-  header.appendChild(handle);
-  const kind = document.createElement("div");
-  kind.className = "settings-app-kind";
-  kind.textContent = person.system
-    ? t("settings.people.system")
-    : (person.id === currentPerson?.id ? t("settings.people.current") : (person.discovered ? t("settings.people.discovered") : ""));
-  header.appendChild(kind);
-  card.appendChild(header);
+  name.maxLength = 120;
+  nameField.append(nameLabel, name);
+  const handleField = document.createElement("label");
+  handleField.className = "settings-person-field";
+  const handleLabel = document.createElement("span");
+  handleLabel.textContent = t("settings.people.handleLabel");
+  const handleInput = document.createElement("input");
+  handleInput.className = "settings-inline-input";
+  handleInput.value = person.handle || "";
+  handleInput.autocomplete = "username";
+  handleField.append(handleLabel, handleInput);
+  profileGrid.append(nameField, handleField);
+  profile.appendChild(profileGrid);
+  const profileActions = document.createElement("div");
+  profileActions.className = "settings-person-form-actions";
+  const save = document.createElement("button");
+  save.className = "settings-app-btn settings-person-primary";
+  save.type = "button";
+  save.textContent = t("action.save");
+  save.addEventListener("click", async () => {
+    save.disabled = true;
+    try {
+      await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: name.value, handle: handleInput.value }),
+      });
+      setPeopleStatus(t("settings.people.saved"));
+      await renderPeopleSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      save.disabled = false;
+    }
+  });
+  profileActions.appendChild(save);
+  profile.appendChild(profileActions);
+  body.appendChild(profile);
 
-  if (!person.system) {
-    const actions = document.createElement("div");
-    actions.className = "settings-app-actions";
-    const saveName = document.createElement("button");
-    saveName.className = "settings-app-btn";
-    saveName.type = "button";
-    saveName.textContent = t("action.save");
-    saveName.addEventListener("click", async () => {
-      saveName.disabled = true;
-      try {
-        await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ name: name.value, handle: handle.value }),
-        });
-        await renderPeopleSettings();
-      } catch (error) {
-        setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
-      } finally {
-        saveName.disabled = false;
-      }
-    });
-    actions.appendChild(saveName);
-
-    const addToken = document.createElement("button");
-    addToken.className = "settings-app-btn";
-    addToken.type = "button";
-    addToken.textContent = t("settings.people.addToken");
-    addToken.addEventListener("click", async () => {
-      addToken.disabled = true;
-      try {
-        const result = await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials`, {
-          method: "POST",
-          body: JSON.stringify({ type: "token" }),
-        });
-        setPeopleStatus(`${t("settings.people.copyToken")}: ${result.issuedToken || ""}`);
-        await renderPeopleSettings();
-      } catch (error) {
-        setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
-      } finally {
-        addToken.disabled = false;
-      }
-    });
-    actions.appendChild(addToken);
-
+  const credentials = person.credentials || [];
+  const signIn = buildPersonSection(t("settings.people.signIn"), t("settings.people.signInNote"));
+  const credentialList = document.createElement("div");
+  credentialList.className = "settings-person-data-list";
+  for (const credential of credentials) credentialList.appendChild(buildCredentialRow(person, credential));
+  if (credentials.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "settings-person-empty-state";
+    empty.textContent = t("settings.people.noSignInMethods");
+    credentialList.appendChild(empty);
+  }
+  signIn.appendChild(credentialList);
+  const credentialActions = document.createElement("div");
+  credentialActions.className = "settings-person-form-actions left";
+  if (!credentials.some((credential) => credential.type === "password")) {
     const addPassword = document.createElement("button");
     addPassword.className = "settings-app-btn";
     addPassword.type = "button";
@@ -192,69 +341,73 @@ function buildPersonCard(person, allPeople) {
           method: "POST",
           body: JSON.stringify({ type: "password", password }),
         });
+        setPeopleStatus(t("settings.people.passwordAdded"));
         await renderPeopleSettings();
       } catch (error) {
         setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
-      } finally {
         addPassword.disabled = false;
       }
     });
-    actions.appendChild(addPassword);
-
-    if (person.id === currentPerson?.id) {
-      const defaultFilter = document.createElement("select");
-      defaultFilter.className = "settings-inline-select";
-      for (const [value, label] of [["all", t("settings.people.defaultAll")], ["mine", t("settings.people.defaultMine")]]) {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label;
-        defaultFilter.appendChild(option);
-      }
-      defaultFilter.value = person.preferences?.defaultSessionPersonFilter === "mine" ? "mine" : "all";
-      defaultFilter.addEventListener("change", async () => {
-        await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
-          method: "PATCH",
-          body: JSON.stringify({ defaultSessionPersonFilter: defaultFilter.value }),
-        });
+    credentialActions.appendChild(addPassword);
+  }
+  const addToken = document.createElement("button");
+  addToken.className = "settings-app-btn";
+  addToken.type = "button";
+  addToken.textContent = t("settings.people.addToken");
+  addToken.addEventListener("click", async () => {
+    addToken.disabled = true;
+    try {
+      const result = await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials`, {
+        method: "POST",
+        body: JSON.stringify({ type: "token" }),
       });
-      actions.appendChild(defaultFilter);
-    }
-    card.appendChild(actions);
-  }
-
-  const details = document.createElement("div");
-  details.className = "settings-app-editor";
-  for (const credential of person.credentials || []) {
-    const row = document.createElement("div");
-    row.className = "settings-inline-row";
-    const label = document.createElement("span");
-    label.textContent = credential.type === "password"
-      ? `${credential.username} · ${t("settings.people.password")}`
-      : `${credential.label || t("settings.people.token")} · ••••${credential.tokenSuffix || ""}`;
-    row.appendChild(label);
-    const remove = document.createElement("button");
-    remove.className = "settings-app-btn";
-    remove.type = "button";
-    remove.textContent = t("action.remove");
-    remove.addEventListener("click", async () => {
-      if (!window.confirm(t("settings.people.removeCredentialConfirm"))) return;
-      await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials/${encodeURIComponent(credential.id)}`, { method: "DELETE" });
+      setPeopleStatus(`${t("settings.people.copyToken")}: ${result.issuedToken || ""}`);
       await renderPeopleSettings();
-    });
-    row.appendChild(remove);
-    details.appendChild(row);
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      addToken.disabled = false;
+    }
+  });
+  credentialActions.appendChild(addToken);
+  signIn.appendChild(credentialActions);
+  body.appendChild(signIn);
+
+  const identities = getConnectedIdentities(person);
+  const connections = buildPersonSection(t("settings.people.connectedApps"), t("settings.people.connectedAppsNote"));
+  const identityList = document.createElement("div");
+  identityList.className = "settings-person-data-list";
+  for (const identity of identities) identityList.appendChild(buildIdentityRow(identity));
+  if (identities.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "settings-person-empty-state";
+    empty.textContent = t("settings.people.noConnectedApps");
+    identityList.appendChild(empty);
   }
-  for (const identity of person.identities || []) {
-    if (identity.kind === "web" || identity.kind === "system") continue;
-    const row = document.createElement("div");
-    row.className = "settings-inline-row";
-    const label = document.createElement("span");
-    label.textContent = buildPersonIdentityLabel(identity);
-    row.appendChild(label);
-    details.appendChild(row);
-  }
-  card.appendChild(details);
+  connections.appendChild(identityList);
+  body.appendChild(connections);
+  card.appendChild(body);
   return card;
+}
+
+function renderCurrentPersonSettings(people = getPeopleDirectory()) {
+  if (!settingsCurrentPersonSummary || !settingsDefaultPersonFilter) return;
+  const person = people.find((entry) => entry.id === currentPerson?.id && entry.system !== true);
+  settingsCurrentPersonSummary.replaceChildren();
+  if (!person) {
+    settingsDefaultPersonFilter.disabled = true;
+    return;
+  }
+  settingsCurrentPersonSummary.appendChild(buildPersonAvatar(person, "small"));
+  const copy = document.createElement("div");
+  copy.className = "settings-current-person-copy";
+  const name = document.createElement("strong");
+  name.textContent = person.name;
+  const handle = document.createElement("span");
+  handle.textContent = `@${person.handle}`;
+  copy.append(name, handle);
+  settingsCurrentPersonSummary.appendChild(copy);
+  settingsDefaultPersonFilter.disabled = false;
+  settingsDefaultPersonFilter.value = person.preferences?.defaultSessionPersonFilter === "mine" ? "mine" : "all";
 }
 
 async function renderPeopleSettings({ refresh = false } = {}) {
@@ -267,40 +420,70 @@ async function renderPeopleSettings({ refresh = false } = {}) {
     }
   }
   const people = getPeopleDirectory();
-  settingsPeopleList.replaceChildren(...people.map((person) => buildPersonCard(person, people)));
+  renderCurrentPersonSettings(people);
+  const visiblePeople = people
+    .filter((person) => person.system !== true)
+    .sort((left, right) => {
+      if (left.id === currentPerson?.id) return -1;
+      if (right.id === currentPerson?.id) return 1;
+      return String(left.name || "").localeCompare(String(right.name || ""));
+    });
+  settingsPeopleList.replaceChildren(...visiblePeople.map((person) => buildPersonCard(person)));
 }
 
-function syncPersonCredentialFields() {
-  const password = settingsPersonCredentialType?.value === "password";
-  if (settingsPersonUsername) settingsPersonUsername.hidden = false;
-  if (settingsPersonPassword) settingsPersonPassword.hidden = !password;
+function setPersonCreateExpanded(expanded) {
+  if (!settingsPersonCreatePanel || !settingsPersonCreateToggle) return;
+  settingsPersonCreatePanel.hidden = !expanded;
+  settingsPersonCreateToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  if (expanded) settingsPersonName?.focus();
+}
+
+function resetPersonCreateForm() {
+  if (settingsPersonName) settingsPersonName.value = "";
+  if (settingsPersonUsername) settingsPersonUsername.value = "";
 }
 
 function initPeopleSettings() {
   if (!settingsPeopleList) return;
-  syncPersonCredentialFields();
-  settingsPersonCredentialType?.addEventListener("change", syncPersonCredentialFields);
+  settingsPersonCreateToggle?.addEventListener("click", () => {
+    setPersonCreateExpanded(settingsPersonCreatePanel?.hidden !== false);
+  });
+  settingsPersonCreateCancel?.addEventListener("click", () => {
+    resetPersonCreateForm();
+    setPersonCreateExpanded(false);
+  });
+  settingsDefaultPersonFilter?.addEventListener("change", async () => {
+    const person = getPeopleDirectory().find((entry) => entry.id === currentPerson?.id);
+    if (!person) return;
+    settingsDefaultPersonFilter.disabled = true;
+    try {
+      await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ defaultSessionPersonFilter: settingsDefaultPersonFilter.value }),
+      });
+      renderCurrentPersonSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      renderCurrentPersonSettings();
+    }
+  });
   settingsPersonCreate?.addEventListener("click", async () => {
     const name = settingsPersonName?.value.trim() || "";
     if (!name) return setPeopleStatus(t("settings.people.nameRequired"), { error: true });
     settingsPersonCreate.disabled = true;
     setPeopleStatus("");
     try {
-      const credentialType = settingsPersonCredentialType?.value === "password" ? "password" : "token";
-      const result = await requestPeople("/api/people", {
+      await requestPeople("/api/people", {
         method: "POST",
         body: JSON.stringify({
           name,
           handle: settingsPersonUsername?.value || "",
-          credentialType,
-          username: settingsPersonUsername?.value || "",
-          password: settingsPersonPassword?.value || "",
+          credentialType: "none",
         }),
       });
-      if (settingsPersonName) settingsPersonName.value = "";
-      if (settingsPersonUsername) settingsPersonUsername.value = "";
-      if (settingsPersonPassword) settingsPersonPassword.value = "";
-      setPeopleStatus(result.issuedToken ? `${t("settings.people.copyToken")}: ${result.issuedToken}` : t("settings.people.added"));
+      resetPersonCreateForm();
+      setPersonCreateExpanded(false);
+      setPeopleStatus(t("settings.people.added"));
       await renderPeopleSettings();
     } catch (error) {
       setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });

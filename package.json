@@ -1,6 +1,6 @@
 {
   "name": "@ninglo/remotelab",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Shared AI workbench built around durable sessions and connector-backed workflows",
   "type": "module",
   "license": "MIT",

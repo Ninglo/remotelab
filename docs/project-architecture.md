@@ -8,7 +8,7 @@ This document describes the shipped `v1` architecture. Historical proposals in
 RemoteLab has one interactive work object: the **Session**.
 
 - An **Instance** is the deployment and data-isolation boundary.
-- A **Person** is an authenticated human profile used for attribution and UI preferences.
+- A **Person** is a human profile used for attribution and UI preferences. Sign-in methods are attached separately.
 - An **Identity** is one way a Person appears: a web credential, a Feishu sender,
   another connector sender, or the system identity.
 - A **Session** is a durable shared work thread.
@@ -80,7 +80,11 @@ The manual **Sort List** flow follows the same rule.
 
 Browser authentication creates an entry in `auth-sessions.json` containing the
 resolved `personId` and `identityId`. `/api/auth/me` returns the current Person.
-Settings exposes People, handles, credentials, resolved identities, and the default Person filter.
+Settings keeps the current Person's default filter under **My view**, while the People
+directory shows compact profile summaries and expands credentials or resolved identities
+only on demand. System attribution is not presented as a manageable Person. A Person may
+be created without immediately issuing a token or password; sign-in methods are attached
+separately afterward.
 
 External connector senders are discovered on admission. For Feishu, the durable
 provider identity is scoped by connector route/application and prefers the sender's

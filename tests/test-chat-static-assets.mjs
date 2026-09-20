@@ -270,6 +270,9 @@ async function main() {
     assert.match(page.text, /<script src="chat\/task-center\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /id="taskCenterPanel"/, 'chat page should expose the Task Center surface');
     assert.match(page.text, /id="settingsPeopleList"/, 'settings should expose people management');
+    assert.match(page.text, /id="settingsCurrentPersonView"/, 'settings should separate the current Person view from the directory');
+    assert.match(page.text, /id="settingsPersonCreatePanel" hidden/, 'the add-Person form should stay collapsed until requested');
+    assert.doesNotMatch(page.text, /id="settingsPersonCredentialType"/, 'creating a Person should not mix profile and credential setup');
     assert.match(page.text, /id="personFilterSelect"/, 'the session sidebar should expose a person filter');
     assert.match(page.text, /id="sessionAutoArchiveSelect"/);
     assert.match(page.text, /<script src="chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
@@ -544,6 +547,20 @@ async function main() {
       'legacy People should receive readable stable handles during normalization',
     );
 
+    const profileOnlyCreate = await request(port, 'POST', '/api/people', {
+      name: 'Profile Only',
+      handle: 'profile-only',
+      credentialType: 'none',
+    });
+    assert.equal(profileOnlyCreate.status, 201, 'a Person profile should be creatable before choosing a sign-in method');
+    const profileOnlyJson = JSON.parse(profileOnlyCreate.text);
+    assert.equal(profileOnlyJson.issuedToken, '');
+    assert.equal('credentialId' in profileOnlyJson, false);
+    const profileOnlyPerson = profileOnlyJson.people?.find((person) => person.id === profileOnlyJson.personId);
+    assert.equal(profileOnlyPerson?.handle, 'profile-only');
+    assert.deepEqual(profileOnlyPerson?.credentials, []);
+    assert.deepEqual(profileOnlyPerson?.identities, []);
+
     const browserReconcile = await request(port, 'POST', '/api/people/reconcile-external-identity', {
       kind: 'feishu',
       realm: 'bot-alpha',
@@ -551,7 +568,7 @@ async function main() {
       displayName: 'Alpha',
     });
     assert.equal(browserReconcile.status, 403, 'identity reconciliation should be connector-service only');
-    const peopleCountBeforeNoMatch = peopleJson.people.length;
+    const peopleCountBeforeNoMatch = profileOnlyJson.people.length;
     const noMatchReconcile = await request(port, 'POST', '/api/people/reconcile-external-identity', {
       kind: 'feishu',
       realm: 'bot-alpha',

@@ -164,20 +164,46 @@
           </div>
         </div>
         <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.people.title">People &amp; sign-in</div>
-          <div class="settings-section-note" data-i18n="settings.people.note">People labels make shared Session lists easier to filter. Every signed-in person still has full access to the instance.</div>
-          <div class="settings-inline-form settings-people-create">
-            <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
-            <select class="settings-inline-select" id="settingsPersonCredentialType" aria-label="Sign-in method" data-i18n-aria-label="settings.people.credentialType">
-              <option value="token" data-i18n="settings.people.token">Token</option>
-              <option value="password" data-i18n="settings.people.password">Username + password</option>
-            </select>
-            <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Handle (optional)" data-i18n-placeholder="settings.people.handlePlaceholder">
-            <input class="settings-inline-input" id="settingsPersonPassword" type="password" autocomplete="new-password" placeholder="Password" data-i18n-placeholder="settings.people.passwordPlaceholder" hidden>
-            <button class="settings-app-btn settings-inline-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.add">Add person</button>
-            <div class="settings-app-empty inline-status" id="settingsPeopleStatus" hidden></div>
+          <div class="settings-section-title" data-i18n="settings.people.myViewTitle">My view</div>
+          <div class="settings-section-note" data-i18n="settings.people.myViewNote">Choose how the shared Session list opens for you. Your Spaces, groups, and sorting remain personal.</div>
+          <div class="settings-current-person" id="settingsCurrentPersonView">
+            <div class="settings-current-person-profile" id="settingsCurrentPersonSummary"></div>
+            <label class="settings-person-field settings-current-person-filter">
+              <span data-i18n="settings.people.defaultFilterLabel">Default Session filter</span>
+              <select class="settings-inline-select" id="settingsDefaultPersonFilter" aria-label="Default Session filter" data-i18n-aria-label="settings.people.defaultFilterLabel">
+                <option value="all" data-i18n="settings.people.allSessions">All sessions</option>
+                <option value="mine" data-i18n="settings.people.mySessions">My sessions</option>
+              </select>
+            </label>
           </div>
-          <div class="settings-apps-list" id="settingsPeopleList"></div>
+        </div>
+        <div class="settings-section settings-people-section">
+          <div class="settings-section-heading">
+            <div>
+              <div class="settings-section-title" data-i18n="settings.people.title">People</div>
+              <div class="settings-section-note" data-i18n="settings.people.note">Readable handles identify people across Web sign-in and connected apps. They organize the interface, not access permissions.</div>
+            </div>
+            <button class="settings-app-btn settings-person-add-toggle" id="settingsPersonCreateToggle" type="button" aria-expanded="false" data-i18n="settings.people.add">Add person</button>
+          </div>
+          <div class="settings-person-create" id="settingsPersonCreatePanel" hidden>
+            <div class="settings-person-profile-grid">
+              <label class="settings-person-field">
+                <span data-i18n="settings.people.nameLabel">Name</span>
+                <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
+              </label>
+              <label class="settings-person-field">
+                <span data-i18n="settings.people.handleLabel">Username</span>
+                <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Generated automatically when left blank" data-i18n-placeholder="settings.people.handlePlaceholder">
+              </label>
+            </div>
+            <div class="settings-person-create-note" data-i18n="settings.people.createNote">Sign-in methods and connected apps can be managed after the person is created.</div>
+            <div class="settings-person-form-actions">
+              <button class="settings-app-btn" id="settingsPersonCreateCancel" type="button" data-i18n="action.cancel">Cancel</button>
+              <button class="settings-app-btn settings-person-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.create">Create person</button>
+            </div>
+          </div>
+          <div class="settings-app-empty inline-status settings-people-status" id="settingsPeopleStatus" role="status" aria-live="polite" hidden></div>
+          <div class="settings-people-list" id="settingsPeopleList"></div>
         </div>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.theme.title">Theme</div>
