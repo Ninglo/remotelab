@@ -67,9 +67,9 @@ try {
   assert.match(replies.at(-1), /\/unmute/);
   await send('/mute unexpected');
   assert.equal(replies.at(-1), '/mute 不接受参数（第 1 行）');
-  await send('/fork\n\nexplicit task');
-  assert.deepEqual(effects, ['reaction', 'submit'], 'explicit task commands remain available');
-  effects.length = 0;
+  await send('/thread\n\nexplicit task');
+  assert.match(replies.at(-1), /Thread 内的回复位置已经固定/);
+  assert.deepEqual(effects, [], 'reply-mode commands do not split an existing Thread');
 
   runtime = makeRuntime();
   await silent('still muted after restart');

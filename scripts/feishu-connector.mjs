@@ -10,7 +10,6 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
-import { normalizeConversationTarget } from '../lib/conversation-target.mjs';
 import {
   handleFeishuRuntimeCommands,
   prepareFeishuRuntimeCommandPlan,
@@ -40,7 +39,6 @@ import {
   LEGACY_DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT as LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
   buildFeishuApiUuid,
-  buildFeishuForkExternalTriggerId,
   buildFeishuPostContent,
   buildFeishuTopicId,
   buildMessageSourceContext,
@@ -72,7 +70,13 @@ import {
 } from '../connectors/feishu/reply-attachments.mjs';
 import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { withTimeout } from '../lib/connector-driver-transports.mjs';
-import { normalizeFeishuSessionPolicy, resolveFeishuSessionMode } from '../connectors/feishu/session-policy.mjs';
+import { normalizeFeishuReplyPolicy } from '../connectors/feishu/reply-policy.mjs';
+import {
+  applyFeishuReplyRouting,
+  buildFeishuRequestDeliveryTarget,
+  buildFeishuSessionConversationTarget,
+  buildFeishuSessionExternalTriggerId,
+} from '../connectors/feishu/reply-routing.mjs';
 import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
@@ -323,9 +327,9 @@ async function loadConfig(pathname) {
   const appSecret = trimString(parsed?.appSecret);
   if (!appId) throw new Error(`Missing appId in ${pathname}`);
   if (!appSecret) throw new Error(`Missing appSecret in ${pathname}`);
-  for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'processingReaction', 'silentConfirmationText']) {
+  for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
     if (Object.hasOwn(parsed, legacyKey)) {
-      throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy and responsePolicy`);
+      throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy, responsePolicy and replyPolicy`);
     }
   }
   const configDir = dirname(pathname);
@@ -344,7 +348,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
-    sessionPolicy: normalizeFeishuSessionPolicy(parsed?.sessionPolicy),
+    replyPolicy: normalizeFeishuReplyPolicy(parsed?.replyPolicy),
     botHandoffPolicy: normalizeFeishuBotHandoffPolicy(parsed?.botHandoffPolicy),
     accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
       baseDir: configDir,
@@ -951,15 +955,15 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       duplicate: submission.duplicate, queued: submission.queued };
   }
   const summaryWithChatMetadata = await enrichSummaryWithChatMetadata(runtime, summary);
-  const effectiveSummary = await applyDefaultFork(runtime, {
+  const effectiveSummary = applyFeishuReplyRouting(runtime.config, {
     ...await enrichSummaryWithSenderProfile(runtime, summaryWithChatMetadata),
     sourceRouteId: runtime.config.sourceRouteId,
   });
-  const isForkCommand = effectiveSummary.forkCommand === true;
   const isQuickCommand = effectiveSummary.quickMode === true;
-  const externalTriggerId = isForkCommand
-    ? buildFeishuForkExternalTriggerId(effectiveSummary)
-    : buildExternalTriggerId(effectiveSummary);
+  const externalTriggerId = buildFeishuSessionExternalTriggerId(
+    effectiveSummary,
+    runtime.config.sourceRouteId || 'default',
+  );
   const runtimeSelection = effectiveSummary.runtimeSelectionOverride
     || await resolveFeishuRuntimeSelection(runtime);
   const sessionPayload = {
@@ -974,9 +978,8 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     conversation: {
       connector: 'feishu',
       sourceRouteId: runtime.config.sourceRouteId || 'default',
-      target: normalizeConversationTarget(effectiveSummary),
+      target: buildFeishuSessionConversationTarget(effectiveSummary),
     },
-    ...(isForkCommand ? { replaceConversation: true } : {}),
     externalTriggerId,
     sourceContext: buildSessionSourceContext(effectiveSummary),
     ...(isQuickCommand ? { executionProfile: 'quick' } : {}),
@@ -984,9 +987,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
   };
-  const threadBinding = isForkCommand
-    ? null
-    : await findFeishuThreadSessionBinding(runtime, effectiveSummary);
+  const threadBinding = await findFeishuThreadSessionBinding(runtime, effectiveSummary);
   const session = threadBinding?.sessionId
     ? { id: threadBinding.sessionId }
     : await createConnectorSession(requester, sessionPayload);
@@ -996,11 +997,10 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const messageSummary = attachmentResolution.failures.length > 0
     ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
     : effectiveSummary;
-  // Snapshot the request's actual reply location without changing the mode
-  // selected at conversation entry. Forks set replyInThread explicitly and
-  // bound Feishu threads carry a topic/thread id; continue-mode group roots
-  // intentionally remain ordinary group messages.
-  const requestDeliveryTarget = normalizeConversationTarget(messageSummary);
+  // Session identity follows main-vs-thread topology. Each request still owns
+  // an immutable delivery snapshot so delayed replies return to the location
+  // selected for that inbound message.
+  const requestDeliveryTarget = buildFeishuRequestDeliveryTarget(messageSummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: buildRemoteLabMessage(messageSummary),
@@ -1244,25 +1244,7 @@ function extractLocalCommand(summary) {
   const commandText = stripLeadingMentionTokens(rawText);
   const parsed = parseFeishuCommandBlock(commandText);
   if (parsed.error) return parsed;
-  if (parsed.commands.some(command => ['fork', 'quick', 'continue'].includes(command.name))
-    && !['group', 'topic'].includes(chatType)) {
-    return { commands: [], body: '', error: '/fork、/quick 和 /continue 只能在群聊或话题中使用。' };
-  }
   return parsed.commands.length > 0 ? parsed : null;
-}
-
-function isFeishuGroupSummary(summary) {
-  return [summary?.chatType, summary?.chatMode, summary?.groupMessageType]
-    .map(normalizeFeishuMode).some(mode => ['group', 'topic', 'thread'].includes(mode));
-}
-
-async function applyDefaultFork(runtime, summary) {
-  if (isFeishuDocumentCommentSummary(summary) || summary.forkCommand || summary.continueCommand) return summary;
-  if (!isFeishuGroupSummary(summary) || resolveFeishuSessionMode(runtime.config, summary) === 'continue'
-    || await findFeishuThreadSessionBinding(runtime, summary)) return summary;
-  return { ...summary, forkCommand: true, replyInThread: true,
-    forkText: trimString(stripLeadingMentionTokens(summary.messageText || summary.textPreview)),
-  };
 }
 
 async function queueFeishuReply(runtime, summary, text) {
@@ -1288,7 +1270,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  if (command && !command.error && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))
+  if (command && !command.error && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))
     && /^\s*@_[A-Za-z0-9_]+/.test(summary.messageText || summary.textPreview || summary.rawContent || '')
     && !mentionsFeishuBot(runtime, summary)) {
     return { receipt: { ignored: true, reason: 'command_for_other_recipient' } };
@@ -1299,29 +1281,32 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
   if (command && command.error) return { summary, command };
-  if (command?.body && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))) summary = {
+  if (command?.body && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
-  if (command && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))) {
+  if (command && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))) {
     if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
     return { summary, command };
   }
-  if (commandNames.includes('fork')) summary = {
-    ...summary, forkCommand: true, forkText: command.body, replyInThread: true,
-    messageText: command.body, textPreview: command.body,
+  const startsTask = commandNames.some(name => ['inline', 'thread', 'quick'].includes(name));
+  if (startsTask && buildFeishuTopicId(summary)) {
+    if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
+    return { summary, command: { ...command, error: 'Thread 内的回复位置已经固定；请直接发送任务正文。' } };
+  }
+  if (commandNames.includes('inline')) summary = {
+    ...summary, replyModeOverride: 'inline', messageText: command.body, textPreview: command.body,
+  };
+  if (commandNames.includes('thread')) summary = {
+    ...summary, replyModeOverride: 'thread', messageText: command.body, textPreview: command.body,
   };
   if (commandNames.includes('quick')) summary = {
-    ...summary, forkCommand: true, quickMode: true, forkText: command.body, replyInThread: true,
+    ...summary, replyModeOverride: 'thread', quickMode: true,
     messageText: command.body, textPreview: command.body,
   };
-  if (commandNames.includes('continue')) summary = {
-    ...summary, continueCommand: true, messageText: command.body, textPreview: command.body,
-  };
-  if (command?.body && !commandNames.includes('fork') && !commandNames.includes('quick') && !commandNames.includes('continue')) summary = {
+  if (command?.body && !commandNames.includes('inline') && !commandNames.includes('thread') && !commandNames.includes('quick')) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
-  summary = { ...summary, commandBlock: command };
-  summary = await applyDefaultFork(runtime, summary);
+  summary = applyFeishuReplyRouting(runtime.config, { ...summary, commandBlock: command });
   if (isFeishuBotSender(summary) && runtime.config.botHandoffPolicy !== 'unlimited') {
     const binding = await findFeishuThreadSessionBinding(runtime, summary);
     if (!await claimFeishuBotHandoff(runtime, summary, binding?.sessionId)) {
@@ -1335,7 +1320,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 async function processFeishuMessage(runtime, summary, command, helpers) {
   if (command?.error) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, command.error);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  const taskCommand = commandNames.some(name => ['fork', 'quick', 'continue'].includes(name));
+  const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick'].includes(name));
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute'].includes(name))) {
     return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');
@@ -1355,7 +1340,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     });
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
   }
-  if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要正文，例如：/fork 帮我调查这个问题。');
+  if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要正文，例如：/thread 帮我调查这个问题。');
   if (command && command.body && command.commands.some(entry => ['default', 'harness', 'model', 'effort', 'follow'].includes(entry.name))) {
     const commandPlan = helpers.preparedRuntimeCommand || await prepareFeishuRuntimeCommandPlan(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
@@ -1414,7 +1399,6 @@ export {
   DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
   buildFeishuInboxKey,
-  buildFeishuForkExternalTriggerId,
   buildFeishuTopicId,
   buildMessageSourceContext,
   buildRemoteLabMessage,

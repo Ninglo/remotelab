@@ -1,15 +1,15 @@
-import { buildExternalTriggerId, buildFeishuTopicId } from './index.mjs';
+import { buildExternalTriggerId } from './index.mjs';
 import { findFeishuThreadSessionBinding } from './session-flow.mjs';
-import { resolveFeishuSessionMode } from './session-policy.mjs';
+import { buildFeishuSessionConversationTarget, isFeishuThreadConversation } from './reply-routing.mjs';
 import { describeFeishuMuteSetting } from './conversation-settings.mjs';
 import { isQuickSession } from '../../lib/quick-session-profile.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'follow']);
 const HELP = [
-  '任务命令可把正文写在同行：/fork [修饰参数] 正文、/continue [修饰参数] 正文、/quick 正文。',
-  '/fork 和 /continue 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>；仍兼容旧的多行命令块。',
-  '短名：/f fork、/c continue、/m model、/q quick。',
+  '任务命令可把正文写在同行：/inline [修饰参数] 正文、/thread [修饰参数] 正文、/quick 正文。',
+  '/inline 和 /thread 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>。',
+  '短名：/m model、/q quick。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
   '/default [harness|model|effort] [值] — 查看或修改新 Session 的 Default',
   '/harness [名称] — 查看或修改当前任务使用的 Harness',
@@ -18,9 +18,9 @@ const HELP = [
   '/follow — 把当前 Session 重置为当前 Default',
   '/mute — 静默当前话题或聊天；明确 @ 可单次唤醒',
   '/unmute — 恢复当前话题或聊天的正常响应',
-  '/fork [修饰参数] 正文 — 新建任务',
-  '/quick 正文 — 新建 Quick Session；整个会话固定为快速问答模式',
-  '/continue [修饰参数] 正文 — 继续当前任务',
+  '/inline [修饰参数] 正文 — 在群聊或私聊主线继续并直接回复',
+  '/thread [修饰参数] 正文 — 从主线新建 Thread Session 并在线程中回复',
+  '/quick 正文 — 从主线新建 Quick Thread Session；整个会话固定为快速问答模式',
   '/help — 查看命令',
 ].join('\n');
 
@@ -35,8 +35,18 @@ async function findCommandSession(runtime, summary, request) {
   if (binding?.sessionId) {
     return (await requestJson(request, `/api/sessions/${encodeURIComponent(binding.sessionId)}`)).session;
   }
-  if (buildFeishuTopicId(summary)
-    || (['group', 'topic'].includes(summary.chatType) && resolveFeishuSessionMode(runtime.config, summary) !== 'continue')) return null;
+  if (isFeishuThreadConversation(summary)) return null;
+  const conversation = {
+    connector: 'feishu',
+    sourceRouteId: runtime.config?.sourceRouteId || 'default',
+    target: buildFeishuSessionConversationTarget({ ...summary, conversationKind: 'main' }),
+  };
+  const resolved = await requestJson(request, '/api/session-conversations/resolve', {
+    method: 'POST', body: { conversation },
+  });
+  if (resolved.sessionId) {
+    return (await requestJson(request, `/api/sessions/${encodeURIComponent(resolved.sessionId)}`)).session;
+  }
   const { sessions = [] } = await requestJson(request, '/api/sessions');
   return sessions.find(session => !session.archived && session.externalTriggerId === buildExternalTriggerId(summary)) || null;
 }
@@ -111,11 +121,11 @@ function validateCommandSet(commands) {
     seen.add(key);
   }
   if (hasQuery && hasMutation) return '/help 或 /status 不能和配置变更放在同一个命令块中。';
-  if (commands.some(command => command.name === 'fork') && commands.some(command => command.name === 'continue')) {
-    return '/fork 和 /continue 不能同时使用。';
+  if (commands.some(command => command.name === 'inline') && commands.some(command => command.name === 'thread')) {
+    return '/inline 和 /thread 不能同时使用。';
   }
   if (commands.some(command => command.name === 'quick')
-    && commands.some(command => ['fork', 'continue', 'default', 'harness', 'model', 'effort', 'follow'].includes(command.name))) {
+    && commands.some(command => ['inline', 'thread', 'default', 'harness', 'model', 'effort', 'follow'].includes(command.name))) {
     return '/quick 需要单独使用，不能和任务或运行时配置命令组合。';
   }
   if (commands.some(command => command.name === 'follow')
@@ -140,7 +150,7 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
     return catalogs.get(tool);
   };
   const defaults = await resolveDefault();
-  const session = summary?.forkCommand ? null : await findCommandSession(runtime, summary, request);
+  const session = summary?.startThread ? null : await findCommandSession(runtime, summary, request);
   let defaultCatalog = null;
   let defaultSelection = null;
   const ensureDefault = async () => {

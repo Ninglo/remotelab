@@ -28,6 +28,7 @@ try {
       if (tool === brokenCatalog) throw new Error('Current provider is unavailable');
       json = catalog[tool];
     }
+    else if (path === '/api/session-conversations/resolve') json = { sessionId: options.body?.conversation?.target?.conversationKind === 'main' ? 's1' : null };
     else if (path === '/api/sessions') json = { sessions: [{ ...session, externalTriggerId: 'feishu:p2p:private' }] };
     else if (path === '/api/sessions/s1') {
       if (options.method === 'PATCH') {
@@ -73,8 +74,8 @@ try {
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { commands: [{ name: 'status' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { commands: [{ name: 'default', field: 'model', value: 'beta' }], body: '' });
   assert.equal(extractLocalCommand({ ...summary,
-    messageText: 'connector 命令易用性可能设计下，比如消息里带上很多命令（包括 /fork 之类）。',
-  }), null, 'mentioning /fork in prose must not create a new task Session');
+    messageText: 'connector 命令易用性可能设计下，比如消息里带上很多命令（包括 /thread 之类）。',
+  }), null, 'mentioning /thread in prose must not create a new task Session');
   assert.equal(extractLocalCommand({ ...summary, messageText: 'example: /model beta' }), null);
   for (const messageText of [
     '@_user_1 /mnt/train/public 的旧数据对象已全部删除',
@@ -84,30 +85,29 @@ try {
     assert.equal(extractLocalCommand({ ...summary, messageText }), null,
       'unregistered slash-prefixed text must not enter command handling');
   }
-  const richFork = { ...summary, messageText: '@Task Bot /fork\n\nkeep the original table intact' };
-  assert.deepEqual(extractLocalCommand(richFork), {
-    commands: [{ name: 'fork' }], body: 'keep the original table intact',
-  }, 'a rich-text mention must not hide the fork marker');
+  const richThread = { ...summary, messageText: '@Task Bot /thread\n\nkeep the original table intact' };
+  assert.deepEqual(extractLocalCommand(richThread), {
+    commands: [{ name: 'thread' }], body: 'keep the original table intact',
+  }, 'a rich-text mention must not hide the thread marker');
   for (const [messageText, body] of [
-    ['/fork\n\nthen compare', 'then compare'],
-    ['/fork then compare', 'then compare'],
-    ['/f then compare', 'then compare'],
-    ['/fork\nthen compare', 'then compare'],
-    ['/fork', ''],
-    ['@_user_1 /fork', ''],
+    ['/thread\n\nthen compare', 'then compare'],
+    ['/thread then compare', 'then compare'],
+    ['/thread\nthen compare', 'then compare'],
+    ['/thread', ''],
+    ['@_user_1 /thread', ''],
   ]) {
-    assert.deepEqual(extractLocalCommand({ ...summary, messageText }), { commands: [{ name: 'fork' }], body });
+    assert.deepEqual(extractLocalCommand({ ...summary, messageText }), { commands: [{ name: 'thread' }], body });
   }
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '/quick\n\n直接回答' }), {
     commands: [{ name: 'quick' }], body: '直接回答',
   });
-  for (const messageText of ['new task /FORK', '请/fork调查', 'why does /fork fail?', '/continue\n\n/fork']) {
-    assert.notEqual(extractLocalCommand({ ...summary, messageText })?.commands?.some(command => command.name === 'fork'), true,
-      'fork must not be inferred from a prose or nested command mention');
+  for (const messageText of ['new task /THREAD', '请/thread调查', 'why does /thread fail?', '/inline\n\n/thread']) {
+    assert.notEqual(extractLocalCommand({ ...summary, messageText })?.commands?.some(command => command.name === 'thread'), true,
+      'thread must not be inferred from a prose or nested command mention');
   }
   for (const chatType of ['p2p', 'private']) {
-    assert.equal(extractLocalCommand({ ...summary, chatType, messageText: '/fork\n\ntask' })?.error, '/fork、/quick 和 /continue 只能在群聊或话题中使用。',
-      'the fork marker keeps its group-only scope');
+    assert.deepEqual(extractLocalCommand({ ...summary, chatType, messageText: '/thread\n\ntask' }),
+      { commands: [{ name: 'thread' }], body: 'task' }, 'private and group mainlines share the reply-mode commands');
   }
   assert.match(await run('status'), /作用范围：当前 Session/);
   assert.match(await run('model'), /\/model beta/);
@@ -150,7 +150,7 @@ try {
   assert.match(replies.at(-1), /当前 Session/);
   await handleMessage(runtime, { ...summary, messageId: 'm2', messageText: '/help' }, 'test', helpers);
   assert.match(replies.at(-1), /\/follow/);
-  assert.match(replies.at(-1), /短名：\/f fork、\/c continue、\/m model、\/q quick/);
+  assert.match(replies.at(-1), /短名：\/m model、\/q quick/);
   runtime.botIdentity = { openId: 'this-bot' };
   const botControl = await handleMessage(runtime, { ...summary, messageText: '/model provider/gamma',
     mentions: [{ openId: 'this-bot' }], sender: { senderType: 'app' } }, 'test', helpers);
@@ -159,7 +159,7 @@ try {
   assert.equal(aiCalls, 0, 'control commands never run through a model');
 
   let quickSummary;
-  await handleMessage(runtime, { ...summary, threadId: 'quick-thread', messageId: 'quick-task', messageText: '/q 只回答结论。' }, 'test', {
+  await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'quick-task', messageText: '/q 只回答结论。' }, 'test', {
     addProcessingReaction: async () => null,
     submitRemoteLabRequest: async (_runtime, inboundSummary) => {
       quickSummary = inboundSummary;
@@ -167,12 +167,13 @@ try {
     },
   });
   assert.equal(quickSummary.quickMode, true);
-  assert.equal(quickSummary.forkCommand, true);
+  assert.equal(quickSummary.startThread, true);
+  assert.equal(quickSummary.conversationKind, 'thread');
   assert.equal(quickSummary.messageText, '只回答结论。');
 
   let commandBlockSummary;
   let commandBlockPlan;
-  await handleMessage(runtime, { ...summary, threadId: 'command-block-thread', messageId: 'command-block-task', messageText: '/fork --harness pi --model provider/gamma 请执行这个任务。' }, 'test', {
+  await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'command-block-task', messageText: '/thread --harness pi --model provider/gamma 请执行这个任务。' }, 'test', {
     requestRemoteLab: request,
     resolveFeishuRuntimeSelection: async () => ({ mode: 'ui', tool: 'codex', model: 'alpha', effort: 'low', thinking: false }),
     addProcessingReaction: async () => null,
@@ -182,7 +183,8 @@ try {
       return { sessionId: 'new-task', runId: 'run-command-block' };
     },
   });
-  assert.equal(commandBlockSummary.forkCommand, true);
+  assert.equal(commandBlockSummary.startThread, true);
+  assert.equal(commandBlockSummary.conversationKind, 'thread');
   assert.equal(commandBlockSummary.messageText, '请执行这个任务。');
   assert.deepEqual(commandBlockSummary.runtimeSelectionOverride, {
     tool: 'pi', model: 'provider/gamma', effort: '', thinking: false,

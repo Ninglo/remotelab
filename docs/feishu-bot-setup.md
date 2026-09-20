@@ -251,10 +251,10 @@ can be overridden per group with `groups` below.
 
 Runtime selection has two levels. `Default` is copied when a new Session is
 created; an existing Session keeps its own snapshot until explicitly changed.
-Task commands use one primary action, optional modifiers, then task text. The
-short mobile-friendly form is `/fork task text`. Put `--harness`, `--model`,
-and `--effort` before the task text when needed. The connector still accepts
-the legacy multi-line command block, with or without a blank line before the
+Task commands use one primary reply action, optional modifiers, then task text.
+The short mobile-friendly form is `/thread task text`. Put `--harness`,
+`--model`, and `--effort` before the task text when needed. The connector also
+accepts the multi-line command block, with or without a blank line before the
 task text. It parses the complete command shape first, rejects unknown,
 duplicate, or conflicting commands, and only then applies it. A slash command
 mentioned in ordinary prose is never executed.
@@ -262,13 +262,13 @@ mentioned in ordinary prose is never executed.
 Examples:
 
 ```text
-/fork --harness codex --model gpt-5.6 --effort high 请分析这个问题并给出修复方案。
+/thread --harness codex --model gpt-5.6 --effort high 请分析这个问题并给出修复方案。
 ```
 
-Legacy multi-line form:
+Multi-line form:
 
 ```text
-/fork
+/thread
 /harness codex
 /model gpt-5.6
 /effort high
@@ -295,18 +295,21 @@ Inside an existing task thread or private conversation, use these commands:
 | `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and the task-command format. |
 
-Task actions are `/fork`, `/continue`, and `/quick`. The first two accept
-`--harness <id>`, `--model <id>`, and `--effort <level>` before the task text.
-Use a standalone `--` before task text that itself starts with `--`.
+Task actions are `/inline`, `/thread`, and `/quick`. They control where the
+next answer is published; they do not copy or fork old context. `/inline` uses
+the chat's long-lived main Session. `/thread` creates a blank Session for a new
+Thread. `/quick` creates a new Thread Session with the fixed Quick runtime.
+All three accept `--harness <id>`, `--model <id>`, and `--effort <level>` before
+the task text (Quick runtime remains immutable). Use a standalone `--` before
+task text that itself starts with `--`. Inside an existing Thread, omit these
+reply actions: the message always reuses that Thread's Session and replies there.
+The removed `/fork`, `/continue`, `/f`, and `/c` forms are ordinary text, not aliases.
 
-Four frequent commands have explicit stable aliases. Aliases resolve
-to the canonical name before validation and execution, and startup validation
-rejects aliases that collide with a canonical name or another alias:
+Two frequent commands have explicit stable aliases. Aliases resolve to the
+canonical name before validation and execution:
 
 | Command | Alias |
 | --- | --- |
-| `/fork` | `/f` |
-| `/continue` | `/c` |
 | `/model` | `/m` |
 | `/quick` | `/q` |
 
@@ -342,8 +345,8 @@ normal transport receipts. Existing running or queued tasks continue and can
 deliver their results.
 
 An explicit mention of this Bot wakes it for that input only; the conversation
-stays muted afterwards. Local settings commands and explicit `/fork` or
-`/continue` tasks remain usable under the usual access/mention rules. `/unmute`
+stays muted afterwards. Local settings commands remain usable under the usual
+access/mention rules. `/unmute`
 restores normal response routing and never replays skipped discussion. `/status`
 shows the mute setting. If several Bots share a thread, address a settings
 command as `@Bot /mute` to select one; other Bots ignore that addressed command.
@@ -356,72 +359,58 @@ separate. In a private chat it affects that private conversation. Peer Bots
 cannot change these settings, and their explicitly mentioned handoffs retain
 the existing durable loop limits.
 
-### Default fork and one-shot Bot handoffs
+### Reply placement, Session topology, and one-shot Bot handoffs
 
-To preserve different groups' working habits, ask your agent:
-“Set the Connector default to Continue, but use Fork for these group chat IDs: … .
-Keep explicit commands and bound-thread continuation unchanged; do not deploy
-or restart another instance.” Provide the target Connector and exact chat IDs
-in that same request. The agent should validate and edit its config, then reload
-by restarting only that Connector when rollout is authorized.
+Every chat has one long-lived main Session. Every Feishu Thread has one separate
+Session. A message already inside a Thread always reuses that Thread's Session;
+reply settings and commands cannot move it back to the mainline or split it.
+The inbound message ID is only a delivery address and is never part of mainline
+Session identity.
 
 ```json
 {
   "responsePolicy": { "group": "mention_only" },
-  "sessionPolicy": { "defaultMode": "fork" },
+  "replyPolicy": {
+    "group": "thread",
+    "private": "inline",
+    "chats": { "oc_example_shared_mainline": "inline" }
+  },
   "groups": {
     "oc_example_recordings": {
       "responseMode": "all",
+      "replyMode": "thread",
       "systemPrompt": "Process incoming recordings and discuss the results in this conversation."
-    },
-    "oc_example_shared_context": { "sessionMode": "continue" }
+    }
   }
 }
 ```
 
-`groups[chatId]` overrides defaults for `responseMode` (`all`/`mention_only`)
-and `sessionMode` (`fork`/`continue`). Its optional `systemPrompt` is appended
-to global instructions when creating a Session; existing Sessions keep their
-instruction snapshot. `all` admits ordinary human messages without an @ or a
-file predicate. Attachments and text follow normal intake. Recording analysis,
-memory updates and report content belong in Agent instructions, not routing.
-The Bot still needs the upstream permission to receive unmentioned group
-messages; this setting only changes local admission. Existing sender/access,
-mute and bot-loop rules remain active.
+`replyPolicy.group` defaults to `thread`; `replyPolicy.private` defaults to
+`inline`. `replyPolicy.chats[chatId]` and `groups[chatId].replyMode` override the
+default with `inline` or `thread`. `groups[chatId]` also supports
+`responseMode` (`all`/`mention_only`) and an optional `systemPrompt`. The latter
+is appended to global instructions when creating a Session; existing Sessions
+keep their instruction snapshot.
 
-Legacy `sessionPolicy.groups[chatId]` remains a read compatibility fallback;
-new per-group settings belong in `groups`. Session metadata owns the durable
-conversation binding. The old connector-local thread index is adopted on the
-next inbound message; after adoption it is only a lookup/migration cache.
-A detached Session has an explicit null tombstone and cannot be reattached by
-that old index. Already bound topics continue through the core after restart.
+Precedence is: existing Thread topology → explicit `/inline` or `/thread` →
+exact chat-ID override → chat-type default. `/thread` starts a blank Thread
+Session; it never copies the main Session history. `/inline` submits to the
+stable main Session. Private chats use the same model, although actual Thread
+publication still depends on Feishu supporting Threads in that chat type.
+`sessionPolicy`, `sessionMode`, `/fork`, and `/continue` are intentionally not
+supported and fail configuration validation or remain ordinary message text.
 
-Only `fork` and `continue` are accepted; invalid modes fail config loading.
-Precedence: explicit `/fork` or `/continue` → existing thread binding → exact
-chat-ID override → Connector default. Omitting the policy keeps the current
-`fork` default. `continue` uses the existing group/topic route (creating its
-Session if absent), not the most recently created fork. Changing this policy
-never moves or deletes existing Sessions; private chats, document comments,
-access control and Bot handoff loop protection are unchanged.
-
-- A new group task (including an unbound topic/thread) creates a blank Session
-  by default and replies in a Feishu thread. It does not copy group history.
-- Human follow-ups in a bound thread reuse that Session. A `/fork` command
-  explicitly starts another blank Session, including inside an existing
-  thread. Its task text can follow on the same line or begin on the next line;
-  no blank separator is required. A leading connector mention may precede the
-  command. Mentioning or discussing `/fork` inside ordinary prose does not
-  trigger a fork. Normal access and mention rules still apply; the command does
-  not enable forks in private chats.
-- `/continue` in a command block opts out of the default fork: use the existing thread
-  binding, or the stable group/topic Session route when there is no binding.
-  Ordinary human private messages and document comments keep their prior routing.
+- A mainline task follows the configured reply mode. `thread` creates a blank
+  Thread Session; `inline` reuses the chat's main Session.
+- Human follow-ups in a bound Thread always reuse that Session. A leading Bot
+  mention may precede `/inline` or `/thread` on the mainline. Mentioning either
+  command in ordinary prose does not execute it.
 - Other Bots (`app` / `bot` senders) may hand off a task only with an explicit
   mention of this Bot, even under `group: all`. Self messages remain ignored.
   Sender access control still applies; a mention does not bypass the whitelist.
   Admitted Bot messages use the same session and reply-location routing as human
-  messages. Bot identity never forces a thread reply; only the shared fork/thread
-  rules do so.
+  messages. Bot identity never forces a Thread reply; only the shared reply
+  routing rules do so.
   **Feishu-console prerequisite:** enable and publish
   `im:message.group_at_msg.include_bot:readonly` (receive user/Bot mentions).
   The broader `im:message.group_msg.include_bot:read` also delivers Bot events,
@@ -430,11 +419,11 @@ access control and Bot handoff loop protection are unchanged.
   a missing upstream permission. See [Feishu's receive-event contract](https://open.feishu.cn/document/server-docs/im-v1/message/events/receive).
 - All peer Bots share **one admission per Session/thread**, not one per sender.
   Once used, later Bot events in that thread are silently ignored, including
-  `/fork` and command-usage requests; humans can continue normally. The same
+  reply-mode and command-usage requests; humans can continue normally. The same
   bound Session cannot regain its allowance through another thread alias.
 - Admission is reserved durably before reactions or AI submission. Retries of
   the same upstream event retain their reservation and use the existing request
-  ID; connector restarts and human forks do not reset a thread's allowance.
+  ID; connector restarts and human messages do not reset a thread's allowance.
   Source/root/parent messages, delivered replies, and returned thread IDs all
   retain the consumed quota in `storageDir/bot-handoffs/`. Preserve this directory
   with Inbox and delivery receipts during backup/migration; do not clear it to retry.

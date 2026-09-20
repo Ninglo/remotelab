@@ -114,13 +114,15 @@ The authenticated API accepts `conversation: { connector, sourceRouteId, target 
 `POST /api/sessions` and `PATCH /api/sessions/:id`. Set it to `null` to detach.
 `POST /api/session-conversations/resolve` with `{ conversation }` returns the
 bound Session ID, including archived Sessions. Creating with an already bound
-topic reuses that Session atomically; a normal history fork does not inherit it.
-The Feishu explicit `/fork` path uses `replaceConversation: true` to transfer
-the topic to a fresh Session. Retried creation keeps the same Session.
+conversation reuses that Session atomically; a normal history fork does not
+inherit it. Retried creation keeps the same Session.
 
-For Feishu, a group-only target (`chatId`) means a new topic on first output.
-A target with an existing root message (`rootId`, `messageId`, `replyInThread:
-true`) means that topic. Thread/topic aliases can resolve an existing binding;
+For Feishu, `conversationKind: "main"` with a `chatId` is the chat's stable
+mainline Session. `conversationKind: "thread"` with an existing root message
+(`rootId`, `messageId`, `replyInThread: true`) identifies that Thread. A newly
+requested Thread initially uses the inbound root `messageId`; the publication
+receipt adds Feishu's server-assigned `threadId`. Thread/topic aliases can
+resolve an existing binding;
 an outbound reply anchor must be an actual Feishu message ID. The connector
 reports `messageId` and optional `threadId` with the send acknowledgement.
 The core binds the new root before completing the outbox record. Pending parts
@@ -261,8 +263,8 @@ Important behavior:
 
 - if an unarchived session with the same `externalTriggerId` already exists, RemoteLab returns that session instead of creating a new one
 - this is the main dedupe mechanism for “one external thread → one RemoteLab session”
-- task/topic sessions with no meaningful seed `name` use the normal temporary title and post-turn AI naming; neither Feishu `/fork` tasks nor default history-copy forks need a special prefix
-- long-lived Feishu private chats (`feishu:p2p:<chat>`) and WeChat direct chats (`wechat:<account>:<peer>`) default to a fixed `<sourceName> 私聊` title; topic/fork sessions inside those chats remain AI-named
+- task/topic sessions with no meaningful seed `name` use the normal temporary title and post-turn AI naming; Feishu Thread tasks do not need a special prefix
+- long-lived Feishu mainline Sessions (`feishu:main:<route>:<tenant>:<chat>`) and WeChat direct chats (`wechat:<account>:<peer>`) default to a fixed source title; Thread Sessions remain AI-named
 - older AI-named direct chats adopt the fixed identity when metadata loads without advancing activity timestamps; explicit/manual names stay locked and are preserved
 - an explicit name supplied when copying a session remains a manual title; default forks do not inherit the parent title lock. Existing locked titles are not guessed to be automatic from their wording alone
 - sidebar origin grouping derives from Session metadata rather than a hardcoded frontend list

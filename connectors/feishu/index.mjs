@@ -478,14 +478,6 @@ export function buildExternalTriggerId(summary) {
   return `feishu:${sanitizeIdPart(summary?.chatType || 'chat')}:${chatId}`;
 }
 
-export function buildFeishuForkExternalTriggerId(summary) {
-  const sourceRouteId = sanitizeIdPart(summary?.sourceRouteId || 'default');
-  const tenantKey = sanitizeIdPart(summary?.tenantKey || summary?.sender?.tenantKey || 'unknown_tenant');
-  const chatId = sanitizeIdPart(summary?.chatId || 'unknown_chat');
-  const messageId = sanitizeIdPart(summary?.messageId || 'unknown_message');
-  return `feishu:fork:${sourceRouteId}:${tenantKey}:${chatId}:${messageId}`;
-}
-
 export function buildFeishuConversationQueueKey(summary) {
   if (trimString(summary?.chatId)) {
     return buildExternalTriggerId(summary);
@@ -552,8 +544,7 @@ export function isSupportedRemoteLabInboundMessage(summary) {
 }
 
 export function buildRemoteLabMessage(summary) {
-  const rawMessage = (summary?.forkCommand ? trimString(summary?.forkText) : '')
-    || trimString(summary?.messageText) || trimString(summary?.textPreview);
+  const rawMessage = trimString(summary?.messageText) || trimString(summary?.textPreview);
   return renderMentionPreview(rawMessage, summary?.mentions) || rawMessage
     || trimString(summary?.contentSummary) || '[non-text or empty message]';
 }

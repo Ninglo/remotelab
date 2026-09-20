@@ -8,9 +8,9 @@ const COMMANDS = Object.freeze({
   follow: { args: 'none' },
   mute: { args: 'none' },
   unmute: { args: 'none' },
-  fork: { args: 'none', task: true, aliases: ['f'] },
+  inline: { args: 'none', task: true },
+  thread: { args: 'none', task: true },
   quick: { args: 'none', task: true, aliases: ['q'] },
-  continue: { args: 'none', task: true, aliases: ['c'] },
 });
 
 function buildCommandAliases() {
@@ -93,7 +93,7 @@ function parseTaskArguments(name, rawArgs, lineNumber) {
  * Parse the explicit Feishu command-block protocol.
  *
  * Task actions accept an inline shape such as
- * `/fork --model gpt-5.6 --effort high task text`. Modifiers are expanded to
+ * `/thread --model gpt-5.6 --effort high task text`. Modifiers are expanded to
  * the same command list used by the legacy multi-line command block. Task text
  * can start on the action line, on the next non-command line, or after the old
  * blank-line separator. A leading @mention is allowed on the first command
