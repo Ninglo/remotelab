@@ -147,6 +147,46 @@ const accepted = await handleMessage(runtime, summary, 'test', {
   sendFeishuText: async () => { throw new Error('admission must not send a reply'); },
 });
 assert.equal(accepted.sessionId, 'session_test_1');
+
+let mergeForwardSubmissions = 0;
+const mergeForwardRoot = {
+  ...summary,
+  messageId: 'msg_merge_forward_root_1',
+  chatType: 'group',
+  threadId: 'thread_merge_forward_1',
+  messageType: 'merge_forward',
+  rawContent: 'Merged and Forwarded Message',
+};
+assert.deepEqual(await handleMessage(runtime, mergeForwardRoot, 'test', {
+  submitRemoteLabRequest: async () => {
+    mergeForwardSubmissions += 1;
+    return { sessionId: 'session_merge_forward_wrong' };
+  },
+}), { ignored: true, reason: 'merge_forward_context_only' });
+assert.equal(mergeForwardSubmissions, 0, 'a merge-forward root must not create a Session');
+
+let mergeForwardReplySummary;
+const mergeForwardReply = await handleMessage(runtime, {
+  ...summary,
+  messageId: 'msg_merge_forward_reply_1',
+  chatType: 'group',
+  threadId: 'thread_merge_forward_1',
+  rootId: 'msg_merge_forward_root_1',
+  parentId: 'msg_merge_forward_root_1',
+  messageType: 'text',
+  messageText: '分析上面转发的内容',
+  textPreview: '分析上面转发的内容',
+}, 'test', {
+  addProcessingReaction: async () => null,
+  submitRemoteLabRequest: async (_runtime, inboundSummary) => {
+    mergeForwardReplySummary = inboundSummary;
+    return { sessionId: 'session_merge_forward_reply_1' };
+  },
+});
+assert.equal(mergeForwardReply.sessionId, 'session_merge_forward_reply_1');
+assert.equal(mergeForwardReplySummary.conversationKind, 'thread');
+assert.equal(mergeForwardReplySummary.replyInThread, true, 'the first reply keeps the normal topic admission path');
+
 await assert.rejects(handleMessage(runtime, summary, 'test', {
   submitRemoteLabRequest: async () => { throw new Error('control plane offline'); },
 }), /offline/, 'Inbox must retain failed handoffs for recovery');

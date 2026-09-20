@@ -1268,6 +1268,9 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 
 async function prepareFeishuMessage(runtime, summary, helpers) {
   if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
+  if (trimString(summary?.messageType).toLowerCase() === 'merge_forward') {
+    return { receipt: { ignored: true, reason: 'merge_forward_context_only' } };
+  }
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
   if (command && !command.error && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))
