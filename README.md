@@ -112,6 +112,7 @@ The architectural assumptions behind that model:
 - runtime processes are disposable; durable state lives on disk
 - every authenticated Person has full instance access; unauthenticated requests cannot enter the workbench
 - Person identity controls attribution and frontend filtering only, never visibility or authorization
+- each Person has one readable handle; Web usernames use it and Feishu identities bind to it automatically
 - Session title, transcript, runtime and workflow state are shared; Space, Group and sidebar order are per-Person views
 - the frontend stays framework-light and endpoint-flexible
 

@@ -73,21 +73,27 @@ The manual **Sort List** flow follows the same rule.
 
 `auth.json` is a versioned document managed by `lib/auth-config.mjs`. It stores:
 
-- `people`: display profiles;
+- `people`: display profiles with one readable `handle` each;
 - `credentials`: web token/password records mapped to a Person and web identity;
 - `identities`: web, connector, and system identities mapped to People when appropriate;
 - `serviceToken`: machine-to-machine authentication for local connectors and workers.
 
 Browser authentication creates an entry in `auth-sessions.json` containing the
 resolved `personId` and `identityId`. `/api/auth/me` returns the current Person.
-Settings exposes People, credentials, identity merging, and the default Person filter.
+Settings exposes People, handles, credentials, resolved identities, and the default Person filter.
 
-External connector senders are discovered on admission. For Feishu, the stable
-identity key is scoped by connector route/application and prefers the sender's
-`openId`. A discovered identity initially gets its own Person so it can be filtered
-immediately. Settings can merge that identity into an existing Person later.
-That merge also transfers the discovered Person's Session views; target-Person
-values win when both sides already classify the same Session field.
+External connector senders are discovered on admission. For Feishu, the durable
+provider identity is scoped by connector route/application and prefers the sender's
+`openId`. The connector performs a cached, fail-open profile lookup so the server can
+derive a readable pinyin-style handle. Matching is automatic in this order: an
+existing provider identity, an exact handle/Web username, the same stable proposed
+handle across connector routes, then one unambiguous display-name match. If nothing
+matches, the server creates a discovered Person with a short stable suffix such as
+`jiujianian-a31f`. A later enriched message or a Web Person created with that handle
+automatically coalesces the records. Coalescing also transfers the discovered
+Person's Session views; target-Person values win when both sides already classify
+the same Session field. The manual identity endpoint remains only as a repair path
+for ambiguous or incorrect upstream directory data.
 
 The service token authenticates connector processes; the sender carried in
 `sourceContext` determines human attribution. If no human sender exists, the
@@ -156,7 +162,7 @@ control-plane restarts through durable Request/Run state and reconciliation.
 - `docs/frontend-chat-architecture.md` — frontend state ownership and rendering boundary.
 - `static/chat/bootstrap-session-catalog.js` — composition of Person, origin,
   Space, search, and archive filters.
-- `static/chat/settings-ui.js` — People, credential, identity-merge, and default
+- `static/chat/settings-ui.js` — People, handle, credential, resolved-identity, and default
   filter management.
 - `static/chat/session-list-ui.js` and `static/chat/sidebar-ui.js` — rendering of
   the current Person's projected view.
@@ -181,6 +187,7 @@ Important authenticated routes include:
 - `POST /api/people/:id/credentials`
 - `DELETE /api/people/:id/credentials/:credentialId`
 - `POST /api/people/:id/identities`
+- `POST /api/people/reconcile-external-identity` (connector service only)
 - `GET|POST /api/sessions`
 - `GET|PATCH /api/sessions/:id`
 - `POST /api/sessions/:id/messages`

@@ -26,6 +26,7 @@ const {
   claimConnectorPidLock,
   compileFeishuReplyText,
   ensureAuthCookie,
+  enrichSummaryWithSenderProfile,
   ensureAllowedSendersFile,
   extractLocalCommand,
   submitRemoteLabRequest,
@@ -52,6 +53,34 @@ const {
   stopSourceDeliveryPoller,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
+
+let userProfileLookups = 0;
+const userProfileRuntime = {
+  config: { apiTimeoutMs: 1_000 },
+  userProfileCache: new Map(),
+  appClient: {
+    contact: { v3: { user: { get: async (payload) => {
+      userProfileLookups += 1;
+      assert.equal(payload.params.user_id_type, 'open_id');
+      assert.equal(payload.path.user_id, 'ou_profile_1');
+      return { code: 0, data: { user: { name: '酒嘉年', en_name: 'Jianian Jiu' } } };
+    } } } },
+  },
+};
+const profileSummary = await enrichSummaryWithSenderProfile(userProfileRuntime, {
+  sender: { senderType: 'user', openId: 'ou_profile_1' },
+});
+assert.equal(profileSummary.sender.name, '酒嘉年');
+assert.equal(profileSummary.sender.englishName, 'Jianian Jiu');
+assert.equal(
+  buildSessionSourceContext(profileSummary).sender.englishName,
+  'Jianian Jiu',
+  'the normalized source context should carry the readable Feishu profile to identity resolution',
+);
+await enrichSummaryWithSenderProfile(userProfileRuntime, {
+  sender: { senderType: 'user', openId: 'ou_profile_1' },
+});
+assert.equal(userProfileLookups, 1, 'Feishu user profiles should be cached by openId');
 
 const connectorLauncherSource = await readFile(join(repoRoot, 'scripts', 'feishu-connector.mjs'), 'utf8');
 assert.ok(

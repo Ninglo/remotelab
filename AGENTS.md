@@ -171,7 +171,8 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 | PATCH | `/api/people/{id}` | Rename or update a Person |
 | POST | `/api/people/{id}/credentials` | Add a token or password credential |
 | DELETE | `/api/people/{id}/credentials/{credentialId}` | Remove a credential |
-| POST | `/api/people/{id}/identities` | Merge an external identity into a Person |
+| POST | `/api/people/{id}/identities` | Repair an exceptional external-identity match manually |
+| POST | `/api/people/reconcile-external-identity` | Connector-service-only automatic identity reconciliation |
 
 ### Tools & Models
 | Method | Path | Purpose |
@@ -199,7 +200,7 @@ Deployment and data-isolation boundary. One host may run several guest instances
 The one durable product object for a work thread. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts. Session title, transcript, runtime, workflow state and lifecycle are shared by all authenticated People.
 
 ### People and identities
-A Person is a human-facing profile. Web tokens/passwords and external connector identities map to a Person. Feishu identities use the route-scoped sender ID, preferring `openId`. Identity is used for attribution and frontend filtering only; it never hides or protects Sessions.
+A Person is a human-facing profile with one readable `handle`. The handle is the Web username and the automatic connector-binding key. Feishu identities retain the route-scoped sender ID (preferring `openId`) as the durable provider identity, while the connector resolves the sender profile and the server auto-links by handle or one unambiguous name match. Newly discovered people receive stable pinyin-style handles with a short collision suffix. Identity is used for attribution and frontend filtering only; it never hides or protects Sessions.
 
 ### Per-Person Session views
 Every Person may organize the same shared Sessions differently. `space`, `group`, and `sidebarOrder` live under `session.personViews[personId]` and are projected for the requesting Person. Automatic sorting/classification updates only the Person whose turn triggered it. Shared fields remain global.

@@ -22,6 +22,7 @@ import {
   getSessionSourceContext,
   getSessionTimelineEvents,
   listSessions,
+  mergeSessionPersonViewOwnership,
   sendMessage,
   submitHttpMessage,
 } from './session-manager.mjs';
@@ -84,9 +85,17 @@ async function resolveSessionInitiator(authSession, sourceId, sourceContext) {
       kind,
       realm: trimString(context.sourceRouteId || sender.tenantKey || context.tenantKey),
       subjectId,
+      stableSubjectId: trimString(sender.unionId || sender.userId || subjectId),
       displayName: trimString(sender.name || sender.displayName || sender.address || sender.login),
+      englishName: trimString(sender.englishName),
+      handleHint: trimString(sender.handle || sender.username || sender.login),
     });
-    if (resolved?.identityId) return resolved;
+    if (resolved?.identityId) {
+      if (resolved.sourcePersonId && resolved.targetPersonId) {
+        await mergeSessionPersonViewOwnership(resolved.sourcePersonId, resolved.targetPersonId);
+      }
+      return resolved;
+    }
   }
   if (authSession?.authKind === 'service') {
     return { identityId: SYSTEM_IDENTITY_ID, personId: SYSTEM_PERSON_ID };

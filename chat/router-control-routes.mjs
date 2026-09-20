@@ -10,6 +10,7 @@ import {
   listPeopleForClient,
   moveIdentityToPerson,
   removePersonCredential,
+  resolveOrCreateExternalIdentity,
   updatePerson,
 } from '../lib/auth.mjs';
 import { loadUiRuntimeSelection, saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
@@ -262,6 +263,34 @@ export async function handleControlRoutes({
 }) {
   if (pathname === '/api/people' && req.method === 'GET') {
     writeJson(res, 200, { people: await listPeopleForClient() });
+    return true;
+  }
+
+  if (pathname === '/api/people/reconcile-external-identity' && req.method === 'POST') {
+    if (authSession?.authKind !== 'service') {
+      writeJson(res, 403, { error: 'Service authentication required' });
+      return true;
+    }
+    try {
+      const payload = JSON.parse(await readBody(req, 32768) || '{}');
+      const resolved = await resolveOrCreateExternalIdentity({
+        kind: payload.kind,
+        realm: payload.realm,
+        subjectId: payload.subjectId,
+        stableSubjectId: payload.stableSubjectId,
+        displayName: payload.displayName,
+        englishName: payload.englishName,
+        handleHint: payload.handleHint,
+        createIfMissing: false,
+      });
+      if (resolved?.sourcePersonId && resolved?.targetPersonId) {
+        await mergeSessionPersonViewOwnership(resolved.sourcePersonId, resolved.targetPersonId);
+      }
+      if (resolved) broadcastAll({ type: 'people_updated' });
+      writeJson(res, 200, { matched: Boolean(resolved), resolution: resolved });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Failed to reconcile external identity' });
+    }
     return true;
   }
 

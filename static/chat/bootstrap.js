@@ -43,6 +43,7 @@ function normalizeBootstrapPeople(raw) {
     return {
       id,
       name: normalizeBootstrapText(person.name) || id,
+      handle: normalizeBootstrapText(person.handle),
       system: person.system === true,
       discovered: person.discovered === true,
       preferences: person.preferences && typeof person.preferences === "object"

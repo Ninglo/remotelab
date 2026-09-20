@@ -560,17 +560,19 @@ export function buildRemoteLabMessage(summary) {
 
 function buildFeishuSenderContext(summary) {
   const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
+  const senderEnglishName = trimString(summary?.sender?.englishName);
   const senderOpenId = trimString(summary?.sender?.openId);
   const senderUserId = trimString(summary?.sender?.userId);
   const senderUnionId = trimString(summary?.sender?.unionId);
   const senderType = trimString(summary?.sender?.senderType);
   const senderTenantKey = trimString(summary?.sender?.tenantKey);
   const tenantKey = trimString(summary?.tenantKey);
-  if (!senderName && !senderOpenId && !senderUserId && !senderUnionId && !senderType && !senderTenantKey) {
+  if (!senderName && !senderEnglishName && !senderOpenId && !senderUserId && !senderUnionId && !senderType && !senderTenantKey) {
     return null;
   }
   return {
     ...(senderName ? { name: senderName } : {}),
+    ...(senderEnglishName ? { englishName: senderEnglishName } : {}),
     ...(senderOpenId ? { openId: senderOpenId } : {}),
     ...(senderUserId ? { userId: senderUserId } : {}),
     ...(senderUnionId ? { unionId: senderUnionId } : {}),

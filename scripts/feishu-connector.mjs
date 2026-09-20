@@ -678,6 +678,7 @@ function createRuntimeContext(config, storagePaths) {
       loggerLevel: resolveLoggerLevel(config.loggerLevel),
     }),
     chatMetadataCache: new Map(),
+    userProfileCache: new Map(),
     botIdentity: null,
     authToken: '',
     authCookie: '',
@@ -757,6 +758,108 @@ async function enrichSummaryWithChatMetadata(runtime, summary) {
     chatMode: trimString(summary.chatMode) || metadata.chatMode,
     chatType: trimString(summary.chatType) || metadata.chatType,
   };
+}
+
+async function loadFeishuUserProfile(runtime, openId) {
+  const normalizedOpenId = trimString(openId);
+  if (!normalizedOpenId || !runtime?.appClient?.contact?.v3?.user?.get) return null;
+  if (!runtime.userProfileCache) runtime.userProfileCache = new Map();
+  if (runtime.userProfileCache.has(normalizedOpenId)) {
+    return await runtime.userProfileCache.get(normalizedOpenId);
+  }
+
+  const pending = (async () => {
+    try {
+      const timeoutMs = Math.min(
+        normalizePositiveTimeout(runtime?.config?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
+        5_000,
+      );
+      const response = await withTimeout(
+        () => runtime.appClient.contact.v3.user.get({
+          params: { user_id_type: 'open_id' },
+          path: { user_id: normalizedOpenId },
+        }),
+        timeoutMs,
+        'Feishu user profile lookup',
+      );
+      if (response.code !== undefined && response.code !== 0) {
+        throw new Error(response.msg || `Failed to load Feishu user profile (${response.code})`);
+      }
+      const user = response.data?.user || response.data || {};
+      const profile = {
+        name: trimString(user.name || user.nickname),
+        englishName: trimString(user.en_name),
+      };
+      return profile.name || profile.englishName ? profile : null;
+    } catch (error) {
+      console.warn(`[feishu-connector] failed to load user profile for ${normalizedOpenId}: ${error?.message || error}`);
+      return null;
+    }
+  })();
+  runtime.userProfileCache.set(normalizedOpenId, pending);
+  const profile = await pending;
+  runtime.userProfileCache.set(normalizedOpenId, profile);
+  return profile;
+}
+
+async function enrichSummaryWithSenderProfile(runtime, summary) {
+  if (!summary || typeof summary !== 'object') return summary;
+  const sender = summary.sender && typeof summary.sender === 'object' ? summary.sender : {};
+  if (trimString(sender.senderType).toLowerCase() !== 'user') return summary;
+  const profile = await loadFeishuUserProfile(runtime, sender.openId);
+  if (!profile) return summary;
+  return {
+    ...summary,
+    sender: {
+      ...sender,
+      name: trimString(sender.name) || profile.name || profile.englishName,
+      englishName: trimString(sender.englishName) || profile.englishName,
+    },
+  };
+}
+
+async function reconcileKnownFeishuPeople(runtime) {
+  const knownSendersPath = trimString(runtime?.storagePaths?.knownSendersPath);
+  if (!knownSendersPath) return { checked: 0, matched: 0 };
+  let records = [];
+  try {
+    const stored = JSON.parse(await readFile(knownSendersPath, 'utf8'));
+    records = Object.values(stored?.senders || {}).filter((sender) => (
+      trimString(sender?.senderType).toLowerCase() === 'user'
+      && trimString(sender?.openId)
+      && trimString(sender?.userId)
+    ));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    return { checked: 0, matched: 0 };
+  }
+
+  let cursor = 0;
+  let matched = 0;
+  const workerCount = Math.min(4, records.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < records.length) {
+      const sender = records[cursor];
+      cursor += 1;
+      const enriched = await enrichSummaryWithSenderProfile(runtime, { sender });
+      const resolved = await requestRemoteLab(runtime, '/api/people/reconcile-external-identity', {
+        method: 'POST',
+        body: {
+          kind: FEISHU_CONNECTOR_ID,
+          realm: runtime.config.sourceRouteId || 'default',
+          subjectId: sender.openId,
+          stableSubjectId: sender.unionId || sender.userId || sender.openId,
+          displayName: enriched?.sender?.name || '',
+          englishName: enriched?.sender?.englishName || '',
+        },
+      });
+      if (!resolved.response.ok) {
+        throw new Error(resolved.json?.error || `RemoteLab identity reconciliation failed (${resolved.response.status})`);
+      }
+      if (resolved.json?.matched === true) matched += 1;
+    }
+  }));
+  return { checked: records.length, matched };
 }
 
 async function ensureAuthCookie(runtime, forceRefresh = false) {
@@ -847,8 +950,9 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       requestId: submission.requestId, responseId: submission.responseId,
       duplicate: submission.duplicate, queued: submission.queued };
   }
+  const summaryWithChatMetadata = await enrichSummaryWithChatMetadata(runtime, summary);
   const effectiveSummary = await applyDefaultFork(runtime, {
-    ...await enrichSummaryWithChatMetadata(runtime, summary),
+    ...await enrichSummaryWithSenderProfile(runtime, summaryWithChatMetadata),
     sourceRouteId: runtime.config.sourceRouteId,
   });
   const isForkCommand = effectiveSummary.forkCommand === true;
@@ -1322,6 +1426,7 @@ export {
   createRuntimeContext,
   downloadFeishuMessageResource,
   ensureAuthCookie,
+  enrichSummaryWithSenderProfile,
   ensureAllowedSendersFile,
   extractLocalCommand,
   findFeishuThreadSessionBinding,
@@ -1336,6 +1441,7 @@ export {
   normalizeAllowedSenders,
   normalizeReplyText,
   releaseConnectorPidLock,
+  reconcileKnownFeishuPeople,
   recordFeishuThreadSessionBinding,
   resolveFeishuMessageAttachments,
   resolveFeishuOutboundFileType,
@@ -1436,6 +1542,11 @@ async function main() {
   inbox.start();
   await wsClient.start({ eventDispatcher });
   startSourceDeliveryPoller(runtime);
+  void reconcileKnownFeishuPeople(runtime)
+    .then(({ checked, matched }) => {
+      if (checked > 0) console.log(`[feishu-connector] person reconciliation complete (checked=${checked}, matched=${matched})`);
+    })
+    .catch((error) => console.warn(`[feishu-connector] person reconciliation failed: ${error?.message || error}`));
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] access policy: ${config.accessPolicy.mode}`);
   console.log(`[feishu-connector] response policy: ${JSON.stringify(config.responsePolicy)}`);

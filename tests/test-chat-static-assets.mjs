@@ -105,6 +105,7 @@ function setupTempHome() {
         {
           id: 'person_alpha',
           name: 'Alpha',
+          handle: 'zhangyu95',
           credentials: [{ id: 'credential_alpha', type: 'token', token: primaryAccessToken }],
           identities: [{ id: 'identity_web_alpha', kind: 'web', realm: 'remotelab', subjectId: 'person_alpha', displayName: 'Alpha' }],
           preferences: { defaultSessionPersonFilter: 'all' },
@@ -536,6 +537,34 @@ async function main() {
     assert.equal(peopleJson.people?.some((person) => person.id === 'person_alpha'), true);
     assert.equal(peopleJson.people?.some((person) => person.id === 'person_beta'), true);
     assert.equal(peopleJson.people?.some((person) => person.system === true), true);
+    assert.equal(peopleJson.people?.find((person) => person.id === 'person_alpha')?.handle, 'zhangyu95');
+    assert.match(
+      peopleJson.people?.find((person) => person.id === 'person_beta')?.handle || '',
+      /^beta-[a-f0-9]{4}$/,
+      'legacy People should receive readable stable handles during normalization',
+    );
+
+    const browserReconcile = await request(port, 'POST', '/api/people/reconcile-external-identity', {
+      kind: 'feishu',
+      realm: 'bot-alpha',
+      subjectId: 'ou_browser_forbidden',
+      displayName: 'Alpha',
+    });
+    assert.equal(browserReconcile.status, 403, 'identity reconciliation should be connector-service only');
+    const peopleCountBeforeNoMatch = peopleJson.people.length;
+    const noMatchReconcile = await request(port, 'POST', '/api/people/reconcile-external-identity', {
+      kind: 'feishu',
+      realm: 'bot-alpha',
+      subjectId: 'ou_no_match',
+      displayName: 'No Matching Person',
+    }, { Cookie: '', Authorization: `Bearer ${serviceToken}` });
+    assert.equal(noMatchReconcile.status, 200);
+    assert.equal(JSON.parse(noMatchReconcile.text).matched, false);
+    assert.equal(
+      JSON.parse((await request(port, 'GET', '/api/people')).text).people.length,
+      peopleCountBeforeNoMatch,
+      'startup reconciliation must not create People for unrelated known senders',
+    );
 
     const betaCreated = await request(port, 'POST', '/api/sessions', {
       tool: 'codex',
@@ -587,32 +616,50 @@ async function main() {
       sourceContext: {
         connector: 'feishu',
         sourceRouteId: 'bot-alpha',
-        sender: { openId: 'ou_feishu_person_1', name: 'Feishu Person' },
+        sender: { openId: 'ou_feishu_person_1', unionId: 'on_feishu_person_1' },
       },
     }, { Cookie: '', Authorization: `Bearer ${serviceToken}` });
     assert.equal(feishuCreated.status, 201);
     const feishuCreatedJson = JSON.parse(feishuCreated.text);
     assert.notEqual(feishuCreatedJson.session?.initiatedByIdentityId, 'identity_system');
     const peopleAfterFeishu = JSON.parse((await request(port, 'GET', '/api/people')).text).people;
-    const discoveredFeishuPerson = peopleAfterFeishu.find((person) => person.name === 'Feishu Person');
+    const discoveredFeishuPerson = peopleAfterFeishu.find((person) => person.identities?.some(
+      (identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha',
+    ));
     assert.equal(
       discoveredFeishuPerson?.identities?.some((identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha'),
       true,
       'Feishu sender IDs should discover a filterable person identity without restricting Session access',
     );
-    const discoveredFeishuIdentity = discoveredFeishuPerson.identities.find((identity) => identity.kind === 'feishu');
-    const mergedIdentity = await request(port, 'POST', '/api/people/person_alpha/identities', {
-      identityId: discoveredFeishuIdentity.id,
-    });
-    assert.equal(mergedIdentity.status, 200, 'connector identities should be mergeable into an existing Person');
-    const peopleAfterIdentityMerge = JSON.parse(mergedIdentity.text).people;
+    assert.match(discoveredFeishuPerson.handle, /^feishu-[a-f0-9]{4}$/);
+    const enrichedFeishuCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'Feishu automatically linked session',
+      sourceId: 'feishu',
+      sourceContext: {
+        connector: 'feishu',
+        sourceRouteId: 'bot-alpha',
+        sender: {
+          openId: 'ou_feishu_person_1',
+          unionId: 'on_feishu_person_1',
+          name: '张予',
+        },
+      },
+    }, { Cookie: '', Authorization: `Bearer ${serviceToken}` });
+    assert.equal(enrichedFeishuCreated.status, 201);
+    assert.equal(
+      JSON.parse(enrichedFeishuCreated.text).session?.initiatedByIdentityId,
+      feishuCreatedJson.session?.initiatedByIdentityId,
+      'profile enrichment should preserve the durable provider identity',
+    );
+    const peopleAfterIdentityMerge = JSON.parse((await request(port, 'GET', '/api/people')).text).people;
     assert.equal(peopleAfterIdentityMerge.some((person) => person.id === discoveredFeishuPerson.id), false);
     assert.equal(
       peopleAfterIdentityMerge.find((person) => person.id === 'person_alpha')?.identities?.some(
-        (identity) => identity.id === discoveredFeishuIdentity.id,
+        (identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha',
       ),
       true,
-      'the merged connector identity should belong to the target Person',
+      'an enriched Feishu identity should automatically coalesce with the matching Web Person',
     );
 
     const betaList = await request(port, 'GET', '/api/sessions', null, { Cookie: secondPersonCookie });

@@ -121,6 +121,12 @@ function buildPersonCard(person, allPeople) {
   name.disabled = person.system === true;
   name.setAttribute("aria-label", t("settings.people.namePlaceholder"));
   header.appendChild(name);
+  const handle = document.createElement("input");
+  handle.className = "settings-inline-input settings-app-name";
+  handle.value = person.handle || "";
+  handle.disabled = person.system === true;
+  handle.setAttribute("aria-label", t("settings.people.handle"));
+  header.appendChild(handle);
   const kind = document.createElement("div");
   kind.className = "settings-app-kind";
   kind.textContent = person.system
@@ -141,7 +147,7 @@ function buildPersonCard(person, allPeople) {
       try {
         await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
           method: "PATCH",
-          body: JSON.stringify({ name: name.value }),
+          body: JSON.stringify({ name: name.value, handle: handle.value }),
         });
         await renderPeopleSettings();
       } catch (error) {
@@ -178,15 +184,13 @@ function buildPersonCard(person, allPeople) {
     addPassword.type = "button";
     addPassword.textContent = t("settings.people.addPassword");
     addPassword.addEventListener("click", async () => {
-      const username = window.prompt(t("settings.people.usernamePrompt"), "")?.trim() || "";
-      if (!username) return;
       const password = window.prompt(t("settings.people.passwordPrompt"), "") || "";
       if (!password) return;
       addPassword.disabled = true;
       try {
         await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials`, {
           method: "POST",
-          body: JSON.stringify({ type: "password", username, password }),
+          body: JSON.stringify({ type: "password", password }),
         });
         await renderPeopleSettings();
       } catch (error) {
@@ -247,30 +251,6 @@ function buildPersonCard(person, allPeople) {
     const label = document.createElement("span");
     label.textContent = buildPersonIdentityLabel(identity);
     row.appendChild(label);
-    const targets = allPeople.filter((entry) => !entry.system && entry.id !== person.id);
-    if (targets.length > 0) {
-      const select = document.createElement("select");
-      select.className = "settings-inline-select";
-      for (const target of targets) {
-        const option = document.createElement("option");
-        option.value = target.id;
-        option.textContent = target.name;
-        select.appendChild(option);
-      }
-      row.appendChild(select);
-      const move = document.createElement("button");
-      move.className = "settings-app-btn";
-      move.type = "button";
-      move.textContent = t("settings.people.mergeIdentity");
-      move.addEventListener("click", async () => {
-        await requestPeople(`/api/people/${encodeURIComponent(select.value)}/identities`, {
-          method: "POST",
-          body: JSON.stringify({ identityId: identity.id }),
-        });
-        await renderPeopleSettings();
-      });
-      row.appendChild(move);
-    }
     details.appendChild(row);
   }
   card.appendChild(details);
@@ -292,7 +272,7 @@ async function renderPeopleSettings({ refresh = false } = {}) {
 
 function syncPersonCredentialFields() {
   const password = settingsPersonCredentialType?.value === "password";
-  if (settingsPersonUsername) settingsPersonUsername.hidden = !password;
+  if (settingsPersonUsername) settingsPersonUsername.hidden = false;
   if (settingsPersonPassword) settingsPersonPassword.hidden = !password;
 }
 
@@ -311,6 +291,7 @@ function initPeopleSettings() {
         method: "POST",
         body: JSON.stringify({
           name,
+          handle: settingsPersonUsername?.value || "",
           credentialType,
           username: settingsPersonUsername?.value || "",
           password: settingsPersonPassword?.value || "",
