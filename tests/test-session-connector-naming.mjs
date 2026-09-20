@@ -76,6 +76,21 @@ try {
   assert.equal(enrichedReuse.name, '修复支付回调', 'reused pending connector sessions should accept later explicit context');
   assert.equal(enrichedReuse.autoRenamePending, false, 'later explicit context should clear pending auto-rename');
 
+  const continuingGroup = await createSession(baseFolder, 'codex', 'First group task', {
+    sourceId: 'feishu', sourceName: 'Feishu', group: 'Feishu',
+    externalTriggerId: 'feishu:group:chat_4',
+    conversation: { connector: 'feishu', sourceRouteId: 'bot-1',
+      target: { chatId: 'chat_4', chatType: 'group', messageId: 'message_1' } },
+  });
+  const continuingGroupReuse = await createSession(baseFolder, 'codex', 'Second group task', {
+    sourceId: 'feishu', sourceName: 'Feishu', group: 'Feishu',
+    externalTriggerId: 'feishu:group:chat_4',
+    conversation: { connector: 'feishu', sourceRouteId: 'bot-1',
+      target: { chatId: 'chat_4', chatType: 'group', messageId: 'message_2' } },
+  });
+  assert.equal(continuingGroupReuse.id, continuingGroup.id,
+    'successive unthreaded group mentions should reuse the continue-mode Session');
+
   const explicitWechat = await createSession(baseFolder, 'codex', '微信：客户追问发票状态', {
     sourceId: 'wechat',
     sourceName: '微信',

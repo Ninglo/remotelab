@@ -24,6 +24,11 @@ assert.equal(sameConversationScope(topic, { ...currentRoot, target: { ...current
 assert.deepEqual(refineConversation(currentRoot, topic), currentRoot,
   'a request-scoped root reply must not be redirected into the Session\'s older topic');
 const unthreadedCurrentRoot = { ...group, target: { chatId: 'group', messageId: 'current-root' } };
+const nextUnthreadedRoot = { ...group, target: { chatId: 'group', messageId: 'next-root' } };
+assert.equal(sameConversation(unthreadedCurrentRoot, nextUnthreadedRoot), true,
+  'unthreaded group roots reuse one continue-mode conversation');
+assert.equal(sameConversation(unthreadedCurrentRoot, group), false,
+  'an unaddressed group publication remains an independent conversation');
 assert.deepEqual(refineConversation(unthreadedCurrentRoot, topic), unthreadedCurrentRoot,
   'an unthreaded continue-mode reply must not be redirected into the Session\'s older topic');
 assert.deepEqual(conversationAfterReceipt(unthreadedCurrentRoot, { messageId: 'group-reply', threadId: 'new-thread' }), unthreadedCurrentRoot,
