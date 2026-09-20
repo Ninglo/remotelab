@@ -1,6 +1,6 @@
 # Session Start Preflight
 
-RemoteLab can run a short knowledge-freshness probe before the first real turn of a fresh provider session. The probe and its answer stay outside the user-visible conversation. When an answer matches a configured stale marker, RemoteLab closes that provider session, waits for the configured retry window, and starts a different provider session. The real user prompt is submitted only after the probe passes.
+RemoteLab can run a short knowledge-freshness probe before the first real turn of a fresh provider session. The probe never becomes a user or assistant message, but the folded **Thought** block shows the configured probe, each attempt, the returned answer, replacement waits, and the final outcome so the startup delay is understandable. When an answer matches a configured stale marker, RemoteLab closes that provider session, waits for the configured retry window, and starts a different provider session. The real user prompt is submitted only after the probe passes.
 
 This is a heuristic freshness gate, not provider attestation. It answers “did this provider session return the configured stale signal?”; it does not prove the exact serving model or release revision.
 

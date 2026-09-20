@@ -4,6 +4,14 @@ import { createCodexAdapter } from '../chat/adapters/codex.mjs';
 
 const adapter = createCodexAdapter();
 
+const preflightActivity = adapter.parseLine(JSON.stringify({
+  type: 'remotelab.activity',
+  presentation: 'reasoning',
+  content: 'Session start preflight passed.',
+}));
+assert.equal(preflightActivity[0]?.type, 'reasoning');
+assert.equal(preflightActivity[0]?.content, 'Session start preflight passed.');
+
 const reconnectEvents = adapter.parseLine(JSON.stringify({
   type: 'error',
   message: 'Reconnecting... 2/5 (stream disconnected before completion)',

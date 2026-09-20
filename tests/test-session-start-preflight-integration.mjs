@@ -93,8 +93,16 @@ try {
   assert.deepEqual(
     history.filter((event) => event.type === 'message' && event.role === 'assistant').map((event) => event.content),
     ['actual visible answer'],
-    'probe replies stay out of canonical user history',
+    'probe replies stay out of canonical assistant messages',
   );
+  const preflightThought = history
+    .filter((event) => event.type === 'reasoning')
+    .map((event) => event.content)
+    .join('\n');
+  assert.match(preflightThought, /Probe: "PREFLIGHT_MARKER"/);
+  assert.match(preflightThought, /matching the configured stale marker "2.5"/);
+  assert.match(preflightThought, /preflight retry \(attempt 2\/3\)/i);
+  assert.match(preflightThought, /passed in the replacement provider session with answer "3.1"/);
   const prompts = (await readFile(logPath, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
   assert.deepEqual(prompts.map((entry) => entry.text), ['PREFLIGHT_MARKER', 'PREFLIGHT_MARKER', 'REAL_USER_PROMPT']);
 

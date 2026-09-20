@@ -15,6 +15,14 @@ assert.ok(args.includes('high'));
 assert.equal(args.at(-1), 'Hello world');
 
 const adapter = createPiAdapter();
+const preflightActivity = adapter.parseLine(JSON.stringify({
+  type: 'remotelab.activity',
+  presentation: 'reasoning',
+  content: 'Session start preflight passed.',
+}));
+assert.equal(preflightActivity[0]?.type, 'reasoning');
+assert.equal(preflightActivity[0]?.content, 'Session start preflight passed.');
+
 const messageEvents = adapter.parseLine(JSON.stringify({
   type: 'message_end',
   message: {

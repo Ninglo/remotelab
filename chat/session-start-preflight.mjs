@@ -113,6 +113,54 @@ export function classifySessionStartPreflightAnswer(answer, policy = {}) {
   return { status: 'loaded', answer: normalized.slice(0, 240), reason: 'accepted_answer' };
 }
 
+function quotePreflightActivityValue(value, maximumLength = 320) {
+  const normalized = trimString(value).replace(/\s+/g, ' ');
+  const clipped = normalized.length > maximumLength
+    ? `${normalized.slice(0, Math.max(0, maximumLength - 1)).trimEnd()}…`
+    : normalized;
+  return JSON.stringify(clipped || 'unknown');
+}
+
+function formatPreflightRetryDelay(milliseconds) {
+  const value = Number(milliseconds);
+  if (!Number.isFinite(value) || value <= 0) return 'immediately';
+  if (value < 1000) return `in ${Math.round(value)} ms`;
+  const seconds = Math.round(value / 1000);
+  return `in ${seconds} second${seconds === 1 ? '' : 's'}`;
+}
+
+export function formatSessionStartPreflightActivity(options = {}) {
+  const state = trimString(options.state);
+  const attempt = boundedInteger(options.attempt, 1, 1, MAX_ATTEMPTS);
+  const maxAttempts = boundedInteger(options.maxAttempts, DEFAULT_MAX_ATTEMPTS, 1, MAX_ATTEMPTS);
+  const answer = quotePreflightActivityValue(options.answer, 240);
+
+  if (state === 'attempt') {
+    if (attempt > 1) {
+      return `Session start preflight retry (attempt ${attempt}/${maxAttempts}): sending the same freshness probe to a newly created provider session. The real request is still waiting.`;
+    }
+    return `Session start preflight (attempt ${attempt}/${maxAttempts}): sending the configured freshness probe to a new provider session before the real request. Its reply is used only to keep or replace that provider session.\n\nProbe: ${quotePreflightActivityValue(options.prompt)}`;
+  }
+  if (state === 'loaded') {
+    const replacement = options.hadRestart === true ? ' in the replacement provider session' : '';
+    return `Session start preflight passed${replacement} with answer ${answer}. Starting the real request now.`;
+  }
+  if (state === 'restart_required' || state === 'exhausted') {
+    const marker = quotePreflightActivityValue(options.matchedAnswer || options.answer, 240);
+    if (state === 'exhausted') {
+      return `Session start preflight returned ${answer}, matching the configured stale marker ${marker}. No attempts remain, so the real request was not sent.`;
+    }
+    return `Session start preflight returned ${answer}, matching the configured stale marker ${marker}. Closing this provider session and trying a new one ${formatPreflightRetryDelay(options.retryDelayMs)}; the real request has not been sent yet.`;
+  }
+  if (state === 'cancelled') {
+    return `Session start preflight was cancelled after attempt ${attempt}/${maxAttempts}; the real request was not sent.`;
+  }
+  if (state === 'error') {
+    return `Session start preflight failed before the real request was sent: ${quotePreflightActivityValue(options.error || options.reason, 240)}.`;
+  }
+  return '';
+}
+
 function assistantTextParts(event, runtimeFamily) {
   if (!event || typeof event !== 'object') return [];
   if (runtimeFamily === 'codex-json') {

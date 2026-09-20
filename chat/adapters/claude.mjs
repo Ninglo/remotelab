@@ -39,6 +39,12 @@ export function createClaudeAdapter() {
       const events = [];
 
       switch (obj.type) {
+        case 'remotelab.activity':
+          if (obj.presentation === 'reasoning' && typeof obj.content === 'string' && obj.content.trim()) {
+            events.push(reasoningEvent(obj.content.trim()));
+          }
+          break;
+
         case 'system':
           events.push(statusEvent(obj.subtype === 'init'
             ? `Session started (${obj.session_id || 'unknown'})`

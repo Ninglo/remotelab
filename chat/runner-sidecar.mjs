@@ -32,6 +32,7 @@ import {
 } from './provider-runtime-queue.mjs';
 import {
   appendSessionStartPreflightEvent,
+  formatSessionStartPreflightActivity,
   formatSessionStartPreflightDay,
   readSessionStartPreflightPolicy,
 } from './session-start-preflight.mjs';
@@ -379,6 +380,23 @@ async function main() {
     }
   };
 
+  const recordSessionStartPreflightActivity = async (content, metadata = {}) => {
+    if (!sessionStartPreflightPolicy || !String(content || '').trim()) return;
+    const payload = {
+      type: 'remotelab.activity',
+      activityType: 'session_start_preflight',
+      presentation: 'reasoning',
+      content: String(content).trim(),
+      ...metadata,
+    };
+    await appendRunSpoolRecord(runId, {
+      ts: nowIso(),
+      stream: 'stdout',
+      line: JSON.stringify(payload),
+      json: payload,
+    });
+  };
+
   if (sessionStartPreflightPolicy) {
     await recordSessionStartPreflightEvent({ type: 'started' });
     await updateRun(runId, (current) => ({
@@ -556,6 +574,22 @@ async function main() {
           && preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) {
           outcome = 'exhausted';
         }
+        const activityState = outcome === 'exhausted'
+          ? 'exhausted'
+          : ['loaded', 'restart_required', 'error'].includes(result?.status)
+            ? result.status
+            : 'error';
+        await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+          state: activityState,
+          attempt: preflightAttempt,
+          maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+          answer: result?.answer || '',
+          matchedAnswer: result?.matchedAnswer || '',
+          reason: result?.reason || '',
+          error: result?.error ? normalizeErrorMessage(result.error) : '',
+          retryDelayMs: sessionStartPreflightPolicy.retryDelayMs,
+          hadRestart: sessionStartPreflightHadRestart,
+        }), { phase: activityState, attempt: preflightAttempt });
         if (outcome && !sessionStartPreflightCompleted) {
           sessionStartPreflightCompleted = true;
           await recordSessionStartPreflightEvent({
@@ -740,6 +774,12 @@ async function main() {
     while (true) {
       preflightAttempt += 1;
       if (sessionStartPreflightPolicy) {
+        await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+          state: 'attempt',
+          attempt: preflightAttempt,
+          maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+          prompt: sessionStartPreflightPolicy.prompt,
+        }), { phase: 'attempt', attempt: preflightAttempt });
         await updateRun(runId, (draft) => ({
           ...draft,
           sessionStartPreflight: {
@@ -792,6 +832,11 @@ async function main() {
             completedAt: nowIso(),
           });
         }
+        await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+          state: 'cancelled',
+          attempt: preflightAttempt,
+          maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+        }), { phase: 'cancelled', attempt: preflightAttempt });
         await updateRun(runId, (draft) => ({
           ...draft,
           sessionStartPreflight: {
@@ -825,6 +870,13 @@ async function main() {
         neededNewSession: sessionStartPreflightHadRestart,
         completedAt: nowIso(),
       });
+      await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+        state: outcome,
+        attempt: preflightAttempt,
+        maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+        reason: current.cancelRequested === true ? 'cancelled_during_preflight' : 'preflight_process_failed',
+        error: attempt?.error ? normalizeErrorMessage(attempt.error) : '',
+      }), { phase: outcome, attempt: preflightAttempt });
       await updateRun(runId, (draft) => ({
         ...draft,
         sessionStartPreflight: {
