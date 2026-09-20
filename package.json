@@ -59,6 +59,7 @@
   "scripts": {
     "start": "node chat-server.mjs",
     "chat": "node chat-server.mjs",
+    "test:antigravity": "node scripts/run-with-clean-instance-env.mjs node --test tests/test-antigravity-adapter.mjs tests/test-native-antigravity.mjs",
     "readme:showcase": "python3 scripts/generate-readme-showcase.py",
     "diag:tunnel": "node scripts/tunnel-latency-diagnose.mjs",
     "github:ci:repair": "node scripts/github-ci-auto-repair.mjs",
@@ -78,7 +79,7 @@
     "observer:instance": "./scripts/proactive-observer-instance.sh start",
     "transcript:measure": "node scripts/measure-transcript-overhead.mjs",
     "lint:filesize": "node scripts/report-oversized-files.mjs",
-    "test": "npm run test:quick && npm run test:session-preflight && npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:smoke",
+    "test": "npm run test:antigravity && npm run test:quick && npm run test:session-preflight && npm run test:native-harness && node scripts/run-with-clean-instance-env.mjs node tests/test-file-change-durability.mjs && npm run test:smoke",
     "test:quick": "node scripts/run-with-clean-instance-env.mjs node tests/test-quick-session-profile.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-quick-stats-command.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-person-handle.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-session-person-view.mjs && node scripts/run-with-clean-instance-env.mjs node tests/test-http-session-body-limit.mjs",
     "test:restart-gate": "node scripts/run-with-clean-instance-env.mjs npm run test:restart-gate:raw",
     "test:restart-gate:raw": "node tests/test-runtime-alignment.mjs && node tests/test-chat-static-assets.mjs && node tests/test-chat-split-frontend-smoke.mjs && node tests/test-build-info-versioning.mjs && node tests/test-static-publish-command.mjs && node tests/test-static-asset-routing.mjs && node tests/test-chat-loader-versioned-assets.mjs && node tests/test-chat-build-update-indicator.mjs && node tests/test-source-runtime-only.mjs && node tests/test-cli-release-removed.mjs && node tests/test-cli-legacy-command-removed.mjs",

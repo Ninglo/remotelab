@@ -147,6 +147,7 @@ RemoteLab is opinionated in a few ways:
 - That is not because executor choice is the product. The opposite is true: RemoteLab should stay adapter-first and integrate the strongest executors available locally.
 - API-key / local-CLI style integrations are usually a cleaner fit for a self-hosted control plane than consumer-login-based remote wrappers.
 - `Claude Code` still works in RemoteLab, and any other compatible local tool can fit as long as its auth and terms work for your setup.
+- `Antigravity` (`agy`) is a built-in native Harness when the official CLI is installed. Authenticate once with an interactive `agy` session; RemoteLab then uses its documented headless `stream-json` protocol and official conversation IDs.
 - Over time, the goal is portability across executors, not loyalty to one closed runtime.
 - In practice, the main risk is usually the underlying provider auth / terms, not the binary name by itself. Make your own call based on the provider and account type behind that tool.
 

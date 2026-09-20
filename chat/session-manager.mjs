@@ -773,13 +773,19 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       : {}),
   })) || run;
 
-  if (run.claudeSessionId || run.codexThreadId) {
-    sessionChanged = await persistResumeIds(sessionId, run.claudeSessionId, run.codexThreadId) || sessionChanged;
+  if (run.claudeSessionId || run.codexThreadId || run.antigravityConversationId) {
+    sessionChanged = await persistResumeIds(
+      sessionId,
+      run.claudeSessionId,
+      run.codexThreadId,
+      run.antigravityConversationId,
+    ) || sessionChanged;
   }
 
   const isStructuredRuntime = projection.runtimeInvocation.isClaudeFamily
     || projection.runtimeInvocation.isCodexFamily
-    || projection.runtimeInvocation.isPiFamily;
+    || projection.runtimeInvocation.isPiFamily
+    || projection.runtimeInvocation.isAntigravityFamily;
   let result = await getRunResult(runId);
   if (!result && !isTerminalRunState(run.state)) {
     const reconciled = await synthesizeDetachedRunTermination(runId, run);
@@ -1026,7 +1032,7 @@ const {
   updateRun,
 });
 
-async function persistResumeIds(sessionId, claudeSessionId, codexThreadId) {
+async function persistResumeIds(sessionId, claudeSessionId, codexThreadId, antigravityConversationId) {
   return (await mutateSessionMeta(sessionId, (session) => {
     let changed = false;
     if (claudeSessionId && session.claudeSessionId !== claudeSessionId) {
@@ -1035,6 +1041,13 @@ async function persistResumeIds(sessionId, claudeSessionId, codexThreadId) {
     }
     if (codexThreadId && session.codexThreadId !== codexThreadId) {
       session.codexThreadId = codexThreadId;
+      changed = true;
+    }
+    if (
+      antigravityConversationId
+      && session.antigravityConversationId !== antigravityConversationId
+    ) {
+      session.antigravityConversationId = antigravityConversationId;
       changed = true;
     }
     if (changed) {
@@ -1053,6 +1066,10 @@ async function clearPersistedResumeIds(sessionId) {
     }
     if (session.codexThreadId) {
       delete session.codexThreadId;
+      changed = true;
+    }
+    if (session.antigravityConversationId) {
+      delete session.antigravityConversationId;
       changed = true;
     }
     if (changed) {
@@ -1352,6 +1369,7 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
       hasResume: false,
       claudeSessionId: null,
       codexThreadId: null,
+      antigravityConversationId: null,
     };
   }
 
@@ -1365,6 +1383,7 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
       hasResume: !!claudeSessionId,
       claudeSessionId,
       codexThreadId: null,
+      antigravityConversationId: null,
     };
   }
 
@@ -1374,6 +1393,17 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
       hasResume: !!codexThreadId,
       claudeSessionId: null,
       codexThreadId,
+      antigravityConversationId: null,
+    };
+  }
+
+  if (tool === 'antigravity' || family === 'antigravity-stream-json') {
+    const antigravityConversationId = session?.antigravityConversationId || null;
+    return {
+      hasResume: !!antigravityConversationId,
+      claudeSessionId: null,
+      codexThreadId: null,
+      antigravityConversationId,
     };
   }
 
@@ -1381,6 +1411,7 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
     hasResume: false,
     claudeSessionId: null,
     codexThreadId: null,
+    antigravityConversationId: null,
   };
 }
 
@@ -1622,6 +1653,13 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
       }
       if (run.codexThreadId && session.codexThreadId !== run.codexThreadId) {
         session.codexThreadId = run.codexThreadId;
+        changed = true;
+      }
+      if (
+        run.antigravityConversationId
+        && session.antigravityConversationId !== run.antigravityConversationId
+      ) {
+        session.antigravityConversationId = run.antigravityConversationId;
         changed = true;
       }
     }
@@ -2961,16 +2999,21 @@ async function prepareRequestRun(record) {
       ? 'claude-stream-json'
       : effectiveTool === 'codex'
         ? 'codex-json'
-        : effectiveTool === 'pi' ? 'pi-json' : null);
+        : effectiveTool === 'pi'
+          ? 'pi-json'
+          : effectiveTool === 'antigravity' ? 'antigravity-stream-json' : null);
 
   const {
     claudeSessionId: persistedClaudeSessionId,
     codexThreadId: persistedCodexThreadId,
+    antigravityConversationId: persistedAntigravityConversationId,
   } = resolveResumeState(effectiveTool, session, options, effectiveRuntimeFamily);
   const freshProviderSession = options.freshThread === true || (
     effectiveRuntimeFamily === 'pi-json'
       ? previousTool !== effectiveTool || (snapshot.userMessageCount || 0) === 0
-      : !persistedClaudeSessionId && !persistedCodexThreadId
+      : !persistedClaudeSessionId
+        && !persistedCodexThreadId
+        && !persistedAntigravityConversationId
   );
 
   const managerTurnContext = effectiveToolDefinition?.promptMode === 'bare-user'
@@ -2989,7 +3032,11 @@ async function prepareRequestRun(record) {
       thinking: options.thinking === true,
       claudeSessionId: persistedClaudeSessionId,
       codexThreadId: persistedCodexThreadId,
-      providerResumeId: persistedCodexThreadId || persistedClaudeSessionId || null,
+      antigravityConversationId: persistedAntigravityConversationId,
+      providerResumeId: persistedCodexThreadId
+        || persistedClaudeSessionId
+        || persistedAntigravityConversationId
+        || null,
       internalOperation: options.internalOperation || null,
       executionProfile: options.executionProfile || null,
     },
@@ -3035,6 +3082,7 @@ async function prepareRequestRun(record) {
         freshProviderSession,
         claudeSessionId: persistedClaudeSessionId || undefined,
         codexThreadId: persistedCodexThreadId || undefined,
+        antigravityConversationId: persistedAntigravityConversationId || undefined,
         executionProfile: options.executionProfile || undefined,
         developerInstructions: options.executionProfile === QUICK_SESSION_PROFILE
           ? getQuickSessionDeveloperInstructions()

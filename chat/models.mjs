@@ -3,6 +3,7 @@ import { join } from 'path';
 import { resolveCodexHomeDir } from '../lib/codex-home.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { discoverPiModels } from './pi-models.mjs';
+import { discoverAntigravityModels } from './antigravity-models.mjs';
 import { CODEX_MODEL_CATALOG } from '../lib/codex-model-catalog.mjs';
 import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
@@ -333,6 +334,9 @@ export async function getModelsForTool(toolId, options = {}) {
   }
   if (toolId === 'pi') {
     return discoverPiModels({ refresh: options.refresh === true });
+  }
+  if (toolId === 'antigravity') {
+    return discoverAntigravityModels();
   }
 
   const tool = await getToolDefinitionAsync(toolId);

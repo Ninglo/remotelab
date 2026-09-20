@@ -18,7 +18,7 @@ import {
 } from './session-workflow-state.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 
-const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi']);
+const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi', 'antigravity']);
 // Cost boundary: title/group/space and state synchronization are routine metadata
 // tasks, not foreground problem solving. This call can run after every normal
 // turn: use a small, low-cost model, with high reasoning effort to improve

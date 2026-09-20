@@ -4,12 +4,18 @@ import { createNativeInputServer } from './native-input-transport.mjs';
 import { createCodexDriver } from './native/codex.mjs';
 import { createPiDriver } from './native/pi.mjs';
 import { createClaudeDriver } from './native/claude.mjs';
+import { createAntigravityDriver } from './native/antigravity.mjs';
 import {
   classifySessionStartPreflightAnswer,
   createSessionStartPreflightCapture,
 } from './session-start-preflight.mjs';
 
-const factories = { 'codex-json': createCodexDriver, 'pi-json': createPiDriver, 'claude-stream-json': createClaudeDriver };
+const factories = {
+  'codex-json': createCodexDriver,
+  'pi-json': createPiDriver,
+  'claude-stream-json': createClaudeDriver,
+  'antigravity-stream-json': createAntigravityDriver,
+};
 
 function createLfLineReader(stream, onLine) {
   let buffer = '';

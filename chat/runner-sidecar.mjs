@@ -205,6 +205,17 @@ function captureResume(run, parsed) {
       providerResumeId: parsed.thread_id,
     };
   }
+  const antigravityConversationId = parsed.event === 'init'
+    ? (parsed.conversation_id || parsed.init?.conversation_id)
+    : parsed.event === 'result'
+      ? parsed.result?.conversation_id
+      : null;
+  if (antigravityConversationId) {
+    return {
+      antigravityConversationId,
+      providerResumeId: antigravityConversationId,
+    };
+  }
   return null;
 }
 
@@ -327,6 +338,7 @@ async function main() {
     dangerouslySkipPermissions: true,
     claudeSessionId: manifest.options?.claudeSessionId,
     codexThreadId: manifest.options?.codexThreadId,
+    antigravityConversationId: manifest.options?.antigravityConversationId,
     piSessionId: manifest.sessionId,
     thinking: manifest.options?.thinking,
     model: manifest.options?.model,

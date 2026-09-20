@@ -192,6 +192,10 @@ function assistantTextParts(event, runtimeFamily) {
       .map((block) => trimString(block.text))
       .filter(Boolean);
   }
+  if (runtimeFamily === 'antigravity-stream-json') {
+    if (event.event !== 'result') return [];
+    return [trimString(event.result?.response)].filter(Boolean);
+  }
   return [];
 }
 
@@ -206,6 +210,15 @@ export function createSessionStartPreflightCapture(runtimeFamily) {
         providerIdentityEvent = { type: 'thread.started', thread_id: event.thread_id };
       } else if (runtimeFamily === 'claude-stream-json' && event.session_id && !providerIdentityEvent) {
         providerIdentityEvent = { type: 'system', subtype: 'init', session_id: event.session_id };
+      } else if (
+        runtimeFamily === 'antigravity-stream-json'
+        && event.event === 'init'
+        && !providerIdentityEvent
+      ) {
+        const conversationId = trimString(event.conversation_id) || trimString(event.init?.conversation_id);
+        if (conversationId) {
+          providerIdentityEvent = { event: 'init', conversation_id: conversationId, init: event.init || {} };
+        }
       }
     },
     answer() {
