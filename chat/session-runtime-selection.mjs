@@ -5,6 +5,11 @@ import {
   normalizeLegacyToolId,
 } from '../lib/legacy-micro-agent.mjs';
 import { getQuickSessionRuntimeProfile, isQuickSession } from '../lib/quick-session-profile.mjs';
+import {
+  completeRuntimeProfile,
+  normalizeRuntimeProfile,
+  resolveRuntimeProfile,
+} from '../lib/runtime-profile.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -32,21 +37,18 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {})
     options.runtimeSelectionScope === 'default' || session.feishuRuntimeSelection || completeConnectorSnapshot
   );
   const requested = migrateLegacySessionRuntimeFields(carriesDefaultSnapshot ? {} : options);
-  const tool = normalizeLegacyToolId(trim(requested.tool) || saved.tool || 'codex');
-  const sameTool = tool === saved.tool;
-  let model = trim(requested.model) || (sameTool ? trim(saved.model) : '');
-  if (tool === 'codex') model = normalizeCodexModelId(model);
-  const sameModel = sameTool && (!trim(requested.model) || model === trim(saved.model));
-  let effort = trim(requested.effort) || (sameModel ? trim(saved.effort) : '');
-  if (!model || !effort) {
-    const catalog = await getModelsForTool(tool);
-    model ||= trim(catalog.defaultModel);
-    const descriptor = catalog.models?.find(candidate => candidate.id === model);
-    const reasoning = descriptor?.reasoning || catalog.reasoning;
-    if (reasoning?.kind === 'enum') effort ||= trim(reasoning.default);
+  const savedProfile = normalizeRuntimeProfile(saved);
+  const requestedProfile = normalizeRuntimeProfile(requested);
+  requestedProfile.tool = normalizeLegacyToolId(requestedProfile.tool);
+  if (savedProfile.tool === 'codex') savedProfile.model = normalizeCodexModelId(savedProfile.model);
+  if (requestedProfile.tool === 'codex') requestedProfile.model = normalizeCodexModelId(requestedProfile.model);
+  let profile = resolveRuntimeProfile(savedProfile, requestedProfile);
+  const sameTool = profile.tool === savedProfile.tool;
+  if (!profile.model || !profile.effort) {
+    profile = completeRuntimeProfile(profile, await getModelsForTool(profile.tool));
   }
   return {
-    tool, model, effort,
+    ...profile,
     thinking: typeof requested.thinking === 'boolean'
       ? requested.thinking : sameTool && saved.thinking === true,
   };

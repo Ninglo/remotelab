@@ -89,6 +89,14 @@ function setupTempHome() {
         models: [{ id: 'fake-model', label: 'Fake model', defaultEffort: 'low' }],
         reasoning: { kind: 'enum', label: 'Reasoning', levels: ['low'], default: 'low' },
       },
+      {
+        id: 'source-harness',
+        name: 'Source Harness',
+        command: 'fake-codex',
+        runtimeFamily: 'codex-json',
+        models: [{ id: 'source-model', label: 'Source model', defaultEffort: 'high' }],
+        reasoning: { kind: 'enum', label: 'Reasoning', levels: ['high'], default: 'high' },
+      },
     ], null, 2),
     'utf8',
   );
@@ -170,13 +178,18 @@ async function createSession(port, {
   group = 'Tests',
   description = 'Trigger delivery session',
   sourceContext = null,
+  tool = 'fake-codex',
+  model = '',
+  effort = '',
 } = {}) {
   const res = await request(port, 'POST', '/api/sessions', {
     folder: repoRoot,
-    tool: 'fake-codex',
+    tool,
     name,
     group,
     description,
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
     ...(sourceContext ? { sourceContext } : {}),
   });
   assert.equal(res.status, 201, 'create session should succeed');
@@ -491,6 +504,50 @@ async function main() {
     });
     assert.equal(cancelSchedule.status, 200);
     assert.equal(cancelSchedule.json.schedule.status, 'cancelled');
+
+    const alternateSource = await createSession(port, {
+      name: 'Alternate runtime source',
+      tool: 'source-harness',
+      model: 'source-model',
+      effort: 'high',
+    });
+    const defaultProfileSchedule = await request(port, 'POST', '/api/schedules', {
+      sessionId: alternateSource.id,
+      title: 'Atomic Default profile',
+      cron: '0 10 * * *',
+      timezone: 'Asia/Shanghai',
+      text: 'Use the complete Default profile',
+    });
+    assert.equal(defaultProfileSchedule.status, 201);
+    assert.deepEqual(
+      {
+        tool: defaultProfileSchedule.json.schedule.tool,
+        model: defaultProfileSchedule.json.schedule.model,
+        effort: defaultProfileSchedule.json.schedule.effort,
+      },
+      { tool: 'fake-codex', model: 'fake-model', effort: 'low' },
+      'a schedule without overrides should snapshot the complete Default profile, not mix it with the source Session Harness',
+    );
+    assert.equal(defaultProfileSchedule.json.schedule.sessionTemplate.tool, 'fake-codex');
+
+    const switchedHarnessSchedule = await request(port, 'POST', '/api/schedules', {
+      sessionId: sourceSession.id,
+      title: 'Explicit Harness profile',
+      cron: '0 11 * * *',
+      timezone: 'Asia/Shanghai',
+      text: 'Resolve this Harness profile atomically',
+      tool: 'source-harness',
+    });
+    assert.equal(switchedHarnessSchedule.status, 201);
+    assert.deepEqual(
+      {
+        tool: switchedHarnessSchedule.json.schedule.tool,
+        model: switchedHarnessSchedule.json.schedule.model,
+        effort: switchedHarnessSchedule.json.schedule.effort,
+      },
+      { tool: 'source-harness', model: 'source-model', effort: 'high' },
+      'changing Harness should resolve that Harness model and effort defaults instead of carrying the Default pair across',
+    );
     // Recreate an upgrade after old admission succeeded but its trigger receipt was lost.
     await stopServer(server);
     const { createRequestStore } = await import('../chat/requests.mjs');

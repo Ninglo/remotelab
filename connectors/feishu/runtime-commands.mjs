@@ -3,6 +3,11 @@ import { findFeishuThreadSessionBinding } from './session-flow.mjs';
 import { buildFeishuSessionConversationTarget, isFeishuThreadConversation } from './reply-routing.mjs';
 import { describeFeishuMuteSetting } from './conversation-settings.mjs';
 import { isQuickSession } from '../../lib/quick-session-profile.mjs';
+import {
+  completeRuntimeProfile,
+  reasoningForRuntimeProfile,
+  runtimeProfileToUiSelection,
+} from '../../lib/runtime-profile.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'follow']);
@@ -52,15 +57,11 @@ async function findCommandSession(runtime, summary, request) {
 }
 
 function reasoningFor(catalog, model) {
-  return catalog.models?.find(item => item.id === model)?.reasoning || catalog.reasoning || { kind: 'none' };
+  return reasoningForRuntimeProfile(catalog, model);
 }
 
 function completeSelection(selection, catalog) {
-  const model = trim(selection.model) || trim(catalog.defaultModel);
-  const reasoning = reasoningFor(catalog, model);
-  return { tool: selection.tool, model,
-    effort: reasoning.kind === 'enum' ? trim(selection.effort) || trim(reasoning.default) : '',
-    thinking: selection.thinking === true };
+  return { ...completeRuntimeProfile(selection, catalog), thinking: selection.thinking === true };
 }
 
 function describe(selection, scoped) {
@@ -92,12 +93,7 @@ function sessionSelection(session, fallback) {
 
 function defaultSelectionPayload(selection, catalog) {
   const reasoning = reasoningFor(catalog, selection.model);
-  return {
-    selectedTool: selection.tool,
-    selectedModel: selection.model || '',
-    selectedEffort: reasoning.kind === 'enum' ? (selection.effort || '') : '',
-    reasoningKind: reasoning.kind,
-  };
+  return runtimeProfileToUiSelection(selection, reasoning.kind);
 }
 
 function normalizeCommands(commands) {

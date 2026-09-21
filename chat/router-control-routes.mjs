@@ -15,6 +15,12 @@ import {
 } from '../lib/auth.mjs';
 import { loadUiRuntimeSelection, saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
+import {
+  completeRuntimeProfile,
+  normalizeRuntimeProfile,
+  resolveRuntimeProfile,
+  runtimeProfileFromUiSelection,
+} from '../lib/runtime-profile.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { getModelsForTool } from './models.mjs';
@@ -146,25 +152,18 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function applyScheduledRuntimeDefaults(payload, sourceSession, uiSelection) {
-  const explicitTool = trimString(payload.tool);
-  const sourceTool = explicitTool || trimString(sourceSession.tool);
-  const defaultTool = trimString(uiSelection?.selectedTool);
-  if (!sourceTool || !defaultTool || sourceTool !== defaultTool) return payload;
-
-  const explicitModel = trimString(payload.model);
-  const defaultModel = trimString(uiSelection.selectedModel);
-  const explicitEffort = trimString(payload.effort);
-  const defaultEffort = trimString(uiSelection.selectedEffort);
-  const canUseDefaultEffort = trimString(uiSelection.reasoningKind).toLowerCase() === 'enum'
-    && (!explicitModel || explicitModel === defaultModel);
-
-  return {
-    ...payload,
-    tool: sourceTool,
-    ...(explicitModel || !defaultModel ? {} : { model: defaultModel }),
-    ...(explicitEffort || !defaultEffort || !canUseDefaultEffort ? {} : { effort: defaultEffort }),
-  };
+async function applyScheduledRuntimeProfile(payload, sourceSession, uiSelection) {
+  const defaultProfile = runtimeProfileFromUiSelection(uiSelection);
+  const inheritedProfile = defaultProfile.tool
+    ? defaultProfile
+    : normalizeRuntimeProfile(sourceSession);
+  const requestedProfile = normalizeRuntimeProfile(payload);
+  const selectedProfile = resolveRuntimeProfile(inheritedProfile, requestedProfile);
+  const profile = completeRuntimeProfile(
+    selectedProfile,
+    await getModelsForTool(selectedProfile.tool),
+  );
+  return { ...payload, ...profile };
 }
 
 async function prepareScheduledTask(payload) {
@@ -172,7 +171,7 @@ async function prepareScheduledTask(payload) {
   const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
   if (!sourceSession) throw new Error('Source session not found');
   if (sourceSession.archived) throw new Error('Source session is archived');
-  let input = applyScheduledRuntimeDefaults(payload, sourceSession, await loadUiRuntimeSelection());
+  let input = await applyScheduledRuntimeProfile(payload, sourceSession, await loadUiRuntimeSelection());
   if (!Object.hasOwn(payload, 'conversation') && !Object.hasOwn(payload, 'sourceDelivery')
       && !Object.hasOwn(payload.sessionTemplate || {}, 'conversation')
       && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {

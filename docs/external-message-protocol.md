@@ -299,14 +299,15 @@ the submitted payload, so retries keep their original identity and queued runs
 retain the accepted configuration across preference changes and restarts.
 RemoteLab's Codex product default is `gpt-6-astra` with `low` effort; native CLI
 configuration and recently used models only enrich the model catalog. Explicit
-model/effort choices remain supported. Feishu continues to inherit the synced
-WebUI selection unless configured in pinned mode.
+Harness/model/effort profiles remain supported. Feishu continues to inherit the
+synced WebUI profile unless configured in pinned mode.
 
 The first durable connector admission notice includes the session link, model,
 effort and Harness from that same snapshot. Unknown provider defaults are shown
 as delegated to the Harness rather than guessed. Starting an ordinary user run
-also saves its model/effort on the session for the WebUI. Later turns do not
-repeat the creation notice; internal operations do not replace user preferences.
+also saves its complete Harness/model/effort profile on the Session for the
+WebUI. Later turns do not repeat the creation notice; internal operations do not
+replace user preferences.
 Email retains its single final-message behavior.
 
 Example:
