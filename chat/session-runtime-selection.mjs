@@ -10,6 +10,7 @@ import {
   normalizeRuntimeProfile,
   resolveRuntimeProfile,
 } from '../lib/runtime-profile.mjs';
+import { JEV_AUTO_MODEL_ID, resolveJevAutoRoute } from '../lib/jev-auto-router.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
 
@@ -46,6 +47,9 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {})
   const sameTool = profile.tool === savedProfile.tool;
   if (!profile.model || !profile.effort) {
     profile = completeRuntimeProfile(profile, await getModelsForTool(profile.tool));
+  }
+  if (profile.tool === 'codex' && profile.model === JEV_AUTO_MODEL_ID) {
+    return resolveJevAutoRoute(options.autoRoutingText);
   }
   return {
     ...profile,

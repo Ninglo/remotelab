@@ -66,6 +66,31 @@ RemoteLab setup is the primary configuration UX.
 - the current chat turn's tool/model choice remains the runtime source of truth
 - background helpers such as auto-naming or summarization should inherit the current turn selection rather than silently switching providers
 
+### Optional Jev auto model routing
+
+When a TypeSafe API key is configured, the CodeX model list includes `Auto
+(Jev)`. Selecting it for a new Standard Session asks Jev to choose Luna, Sol,
+or Astra plus a reasoning level from the first user message. RemoteLab persists
+that concrete selection on the Session, so later turns keep the same native
+provider context. A user-selected concrete model always bypasses Jev.
+
+Store the key in the service environment as `TYPESAFE_API_KEY`, or in the
+instance config directory as a private `typesafe.env` file:
+
+```text
+TYPESAFE_API_KEY=...
+```
+
+The file must be readable only by the service user. The optional
+`TYPESAFE_KEY_FILE` environment variable may point to a different private env
+file. `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`, and
+`TYPESAFE_TIMEOUT_MS` override the API URL, Jev model, and routing timeout.
+
+Routing failures, missing credentials, material high-risk probability, and
+malformed responses fall back to CodeX Astra with high reasoning. The persisted routing
+receipt contains the chosen route, confidence summary, latency, and fallback
+reason; it never contains the API key or user prompt.
+
 ## [HUMAN] checkpoints
 
 1. Cloudflare authentication via browser if `cloudflared tunnel login` requires it (Cloudflare mode only).

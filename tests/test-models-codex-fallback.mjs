@@ -53,6 +53,7 @@ process.env.HOME = tempHome;
 process.env.REMOTELAB_CONFIG_DIR = join(tempHome, '.config', 'remotelab');
 delete process.env.REMOTELAB_INSTANCE_ROOT;
 process.env.REMOTELAB_MACHINE_CODEX_HOME = codexDir;
+process.env.TYPESAFE_API_KEY = 'private-test-key';
 
 try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
@@ -72,10 +73,11 @@ try {
     'stale configured/recent Codex models should not override the product default',
   );
   assert.deepEqual(
-    result.models.slice(0, 4).map((model) => model.id),
-    ['gpt-6-astra', 'gpt-5.3-codex', 'gpt-5.4', 'gpt-5.2-codex'],
-    'Codex should put the product default first while retaining configured + recent session models',
+    result.models.slice(0, 5).map((model) => model.id),
+    ['auto', 'gpt-6-astra', 'gpt-5.3-codex', 'gpt-5.4', 'gpt-5.2-codex'],
+    'Codex should expose Jev auto first while retaining the product default plus configured and recent models',
   );
+  assert.deepEqual(result.models[0].reasoning, { kind: 'none', label: 'Thinking' });
   assert.deepEqual(
     hardcodedModelIds.every((modelId) => result.models.some((model) => model.id === modelId)),
     true,
@@ -98,6 +100,7 @@ try {
   assert.ok(configured.models.some(model => model.id === 'gpt-5.6-sol'), 'explicit older model selection remains available');
 } finally {
   delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
+  delete process.env.TYPESAFE_API_KEY;
   rmSync(tempHome, { recursive: true, force: true });
 }
 

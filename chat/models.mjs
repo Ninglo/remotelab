@@ -9,6 +9,7 @@ import {
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
 } from '../lib/legacy-micro-agent.mjs';
+import { isJevAutoConfigured, JEV_AUTO_MODEL_ID } from '../lib/jev-auto-router.mjs';
 
 // Claude Code has no model cache file — hardcode the known aliases.
 // These alias names are stable; the full model IDs behind them update automatically.
@@ -25,6 +26,11 @@ const DEFAULT_CODEX_REASONING = Object.freeze({
   default: PRODUCT_DEFAULT_CODEX_EFFORT,
 });
 const HARDCODED_CODEX_MODELS = CODEX_MODEL_CATALOG;
+const JEV_AUTO_CODEX_MODEL = Object.freeze({
+  id: JEV_AUTO_MODEL_ID,
+  label: 'Auto (Jev)',
+  reasoning: { kind: 'none', label: 'Thinking' },
+});
 const HARDCODED_CODEX_MODEL_IDS = HARDCODED_CODEX_MODELS.map((model) => model.id);
 const MAX_CODEX_RECENT_SESSION_FILES = 24;
 const MAX_CODEX_RECENT_MODELS = 8;
@@ -373,6 +379,7 @@ async function getCodexModels() {
   // Native CLI preferences enrich the catalog, but are not RemoteLab defaults.
   const defaultModel = PRODUCT_DEFAULT_CODEX_MODEL;
   const modelMap = createBaseCodexModelMap();
+  if (await isJevAutoConfigured()) modelMap.set(JEV_AUTO_MODEL_ID, JEV_AUTO_CODEX_MODEL);
 
   try {
     const raw = await readFile(join(codexHomeDir, 'models_cache.json'), 'utf-8');
@@ -394,7 +401,13 @@ async function getCodexModels() {
   }
 
   const prioritizedModelIds = [...new Set(
-    [defaultModel, configuredModel, ...recentModels, ...HARDCODED_CODEX_MODEL_IDS]
+    [
+      ...(modelMap.has(JEV_AUTO_MODEL_ID) ? [JEV_AUTO_MODEL_ID] : []),
+      defaultModel,
+      configuredModel,
+      ...recentModels,
+      ...HARDCODED_CODEX_MODEL_IDS,
+    ]
       .map((modelId) => trimString(modelId))
       .filter(Boolean),
   )];

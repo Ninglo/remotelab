@@ -2888,7 +2888,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   options = applyQuickSessionRuntime(session, options);
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
-  const runtimeSelection = await resolveSessionRuntimeSelection(session, options);
+  const runtimeSelection = await resolveSessionRuntimeSelection(session, {
+    ...options,
+    autoRoutingText: text?.trim(),
+  });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
   const activeRequest = requestRuntime.active(sessionId)[0];
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
@@ -3058,6 +3061,7 @@ async function prepareRequestRun(record) {
         || null,
       internalOperation: options.internalOperation || null,
       executionProfile: options.executionProfile || null,
+      autoRoutingReceipt: options.autoRoutingReceipt || null,
     },
     manifest: {
       sessionId,
@@ -3074,6 +3078,7 @@ async function prepareRequestRun(record) {
       internalOperation: options.internalOperation || null,
       viewPersonId: typeof options.viewPersonId === 'string' ? options.viewPersonId.trim() : '',
       ...(options.executionProfile ? { executionProfile: options.executionProfile } : {}),
+      ...(options.autoRoutingReceipt ? { autoRoutingReceipt: options.autoRoutingReceipt } : {}),
       ...(normalizeSourceDeliveryPlan(options.sourceDelivery)
         ? { sourceDelivery: normalizeSourceDeliveryPlan(options.sourceDelivery) }
         : {}),
@@ -3126,6 +3131,7 @@ async function prepareRequestRun(record) {
       draft.model = options.model || '';
       draft.effort = options.effort || '';
       draft.thinking = options.thinking === true;
+      if (options.autoRoutingReceipt) draft.autoRouting = options.autoRoutingReceipt;
     }
     draft.updatedAt = nowIso();
     return true;
