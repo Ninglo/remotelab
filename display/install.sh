@@ -18,14 +18,18 @@ if [ ! -x "$python_bin" ]; then
   exit 4
 fi
 
-server_origin=$($python_bin - "$enrollment_url" <<'PY'
+server_base=$($python_bin - "$enrollment_url" <<'PY'
 import sys
 from urllib.parse import urlparse
 
 parsed = urlparse(sys.argv[1])
 if parsed.scheme != "https" or not parsed.netloc:
     raise SystemExit("Enrollment URL must use HTTPS")
-print(f"{parsed.scheme}://{parsed.netloc}")
+suffix = "/v1/enroll/"
+if suffix not in parsed.path:
+    raise SystemExit("Enrollment URL has an unexpected path")
+prefix = parsed.path.split(suffix, 1)[0].rstrip("/")
+print(f"{parsed.scheme}://{parsed.netloc}{prefix}")
 PY
 )
 
@@ -38,7 +42,7 @@ agent="$app_dir/agent.py"
 mkdir -p "$app_dir" "$launch_dir"
 chmod 700 "$app_dir"
 temporary="$app_dir/agent.py.download"
-curl -fsSL "$server_origin/agent.py" -o "$temporary"
+curl -fsSL "$server_base/agent.py" -o "$temporary"
 chmod 700 "$temporary"
 mv "$temporary" "$agent"
 
@@ -52,7 +56,7 @@ if ! "$python_bin" "$agent" check-usb; then
   fi
 fi
 
-echo "Registering this display with $server_origin …"
+echo "Registering this display with $server_base …"
 "$python_bin" "$agent" enroll "$enrollment_url"
 
 cat > "$plist" <<EOF

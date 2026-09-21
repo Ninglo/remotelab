@@ -78,6 +78,7 @@ import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
 import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
+import { handleDisplayPublicRoutes, handleDisplaySettingsRoutes } from './router-display-routes.mjs';
 import { handleLocalBridgeOwnerRoutes, handleLocalBridgePublicRoutes } from './router-local-bridge-routes.mjs';
 import {
   handleCalendarFeedRoute,
@@ -1408,12 +1409,20 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (await handleDisplayPublicRoutes({ req, res, pathname, writeJson })) {
+    return;
+  }
+
   // Auth required from here on
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
 
   // ---- API endpoints ----
+
+  if (await handleDisplaySettingsRoutes({ req, res, pathname, authSession, writeJson })) {
+    return;
+  }
 
   if (await handleConnectorSurfaceRoutes({
     req,

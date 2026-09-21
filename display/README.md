@@ -1,9 +1,10 @@
 # RemoteLab Display v0
 
 This is an instance-local companion for a RemoteLab Server. There is no central
-display control plane: each RemoteLab deployment serves its own settings page,
+display control plane or separate user-facing display hostname: each RemoteLab
+deployment exposes the feature in its existing Settings UI and serves its own
 installer, one-time enrollments, device credentials, live dashboard frames,
-and device inventory.
+and device inventory under `/display`.
 
 The generated command deliberately downloads both the installer and agent from
 the same Server that issued the enrollment URL, so their protocol versions
@@ -15,23 +16,25 @@ scope; reinstalling from the target Server is the recovery path.
 
 ```bash
 export REMOTELAB_CHAT_BASE_URL=http://127.0.0.1:7696
-export REMOTELAB_DISPLAY_PUBLIC_BASE_URL=https://display.example.com
 node display/server.mjs
 ```
 
-The service listens on `127.0.0.1:8792` by default. The administrator URL is
-written to stdout on startup and uses a private token stored at
-`$REMOTELAB_CONFIG_DIR/display-admin-token` (or the default RemoteLab config
-directory). The settings page generates a ten-minute, one-use command such as:
+The companion listens on `127.0.0.1:8792` by default. The main RemoteLab server
+proxies its public protocol under `/display`; its internal administrator token
+is stored at `$REMOTELAB_CONFIG_DIR/display-admin-token` (or the default
+RemoteLab config directory). The authenticated Settings page generates a
+ten-minute, one-use command such as:
 
 ```bash
-curl -fsSL 'https://display.example.com/install.sh' | sh -s -- \
-  'https://display.example.com/v1/enroll/rld_enroll_...'
+curl -fsSL 'https://your-remotelab.example/display/install.sh' | sh -s -- \
+  'https://your-remotelab.example/display/v1/enroll/rld_enroll_...'
 ```
 
 ## Security boundary
 
 - The enrollment link is single-use and expires after ten minutes.
+- Enrollments and device inventory are bound to the signed-in RemoteLab Person.
+- A device frame contains only Sessions initiated by identities linked to that Person.
 - The installed agent receives a device-only credential; it cannot query the
   RemoteLab API or connector data.
 - The display service authenticates to its colocated RemoteLab privately and

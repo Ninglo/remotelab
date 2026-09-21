@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { Resvg } from '@resvg/resvg-js';
 
+import { findPerson, loadAuthDocument } from '../lib/auth-config.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 
@@ -85,7 +86,11 @@ function requestOrigin(req) {
   const forwardedProto = trimString(req.headers['x-forwarded-proto']).split(',')[0] || 'http';
   const forwardedHost = trimString(req.headers['x-forwarded-host']).split(',')[0];
   const host = forwardedHost || trimString(req.headers.host);
-  return host ? `${forwardedProto}://${host}` : `http://${bindHost}:${listenPort}`;
+  const forwardedPrefix = trimString(req.headers['x-forwarded-prefix']).split(',')[0];
+  const prefix = /^\/[A-Za-z0-9/_-]*$/.test(forwardedPrefix)
+    ? forwardedPrefix.replace(/\/+$/, '')
+    : '';
+  return host ? `${forwardedProto}://${host}${prefix}` : `http://${bindHost}:${listenPort}${prefix}`;
 }
 
 function sendJson(res, status, value, headers = {}) {
@@ -159,7 +164,15 @@ function timestampMs(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-async function collectSnapshot() {
+async function getPersonIdentityIds(personId) {
+  const document = await loadAuthDocument({ persistMigration: true });
+  const person = findPerson(document, personId);
+  if (!person) throw Object.assign(new Error('Display owner no longer exists'), { status: 410 });
+  return new Set((person.identities || []).map((identity) => trimString(identity.id)).filter(Boolean));
+}
+
+async function collectSnapshot(personId) {
+  const identityIds = await getPersonIdentityIds(personId);
   const result = await client.request('/api/sessions');
   if (!result.response.ok || !Array.isArray(result.json?.sessions)) {
     throw new Error(result.json?.error || result.text || 'RemoteLab sessions unavailable');
@@ -172,6 +185,7 @@ async function collectSnapshot() {
   let deliveryIssues = 0;
   const active = [];
   for (const session of result.json.sessions) {
+    if (!identityIds.has(trimString(session?.initiatedByIdentityId))) continue;
     const run = session?.activity?.run || {};
     const queueCount = Number(session?.activity?.queue?.count || 0);
     if (run.state === 'running') {
@@ -274,29 +288,13 @@ function snapshotSvg(snapshot) {
   </svg>`;
 }
 
-async function renderFrame() {
-  const snapshot = await collectSnapshot();
+async function renderFrame(personId) {
+  const snapshot = await collectSnapshot(personId);
   const renderer = new Resvg(snapshotSvg(snapshot), {
     background: '#0b0f13',
     font: { loadSystemFonts: true, defaultFontFamily: 'sans-serif' },
   });
   return { png: Buffer.from(renderer.render().asPng()), snapshot };
-}
-
-function settingsHtml(adminToken) {
-  const safeToken = JSON.stringify(adminToken).replace(/</g, '\\u003c');
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-  <title>RemoteLab 副屏</title><style>
-  :root{color-scheme:dark}body{margin:0;background:#0b0f13;color:#edf2f5;font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:820px;margin:56px auto;padding:0 24px}h1{font-size:30px;margin:0 0 8px}p{color:#91a0aa;line-height:1.6}.panel{margin-top:28px;padding:24px;border:1px solid #26323a;border-radius:18px;background:#111820}button{border:0;border-radius:10px;padding:11px 16px;background:#56e0b4;color:#07110e;font-weight:700;cursor:pointer}pre{white-space:pre-wrap;word-break:break-all;padding:16px;border-radius:12px;background:#080b0e;color:#cbd5db;min-height:44px}.device{padding:12px 0;border-top:1px solid #26323a}.ok{color:#56e0b4}.muted{color:#71818b}</style></head>
-  <body><main class="wrap"><h1>副屏设备</h1><p>此页面和安装脚本均由当前 RemoteLab Server 提供。生成的命令只会把副屏连接到本实例。</p>
-  <section class="panel"><button id="create">生成一次性安装命令</button><pre id="command">点击上方按钮生成。命令有效期 10 分钟，只能使用一次。</pre><button id="copy" hidden>复制命令</button></section>
-  <section class="panel"><h2>已连接设备</h2><div id="devices" class="muted">正在读取…</div></section></main>
-  <script>const admin=${safeToken};const command=document.getElementById('command');const copy=document.getElementById('copy');
-  async function api(path,options={}){const joiner=path.includes('?')?'&':'?';const response=await fetch(path+joiner+'admin='+encodeURIComponent(admin),options);if(!response.ok)throw new Error((await response.json()).error||'请求失败');return response.json()}
-  function deviceRow(device){const row=document.createElement('div');row.className='device';const name=document.createElement('strong');name.textContent=device.name;const meta=document.createElement('div');meta.className='muted';meta.textContent=device.id+' · '+(device.lastSeenAt?'最近在线 '+device.lastSeenAt:'尚未连接');row.append(name,meta);return row}
-  async function load(){const data=await api('/v1/devices');const root=document.getElementById('devices');root.replaceChildren();if(!data.devices.length){root.textContent='还没有副屏设备。';return}for(const device of data.devices)root.append(deviceRow(device))}
-  document.getElementById('create').onclick=async()=>{try{const data=await api('/v1/enrollments',{method:'POST'});command.textContent=data.command;copy.hidden=false}catch(error){command.textContent=error.message}};
-  copy.onclick=async()=>{await navigator.clipboard.writeText(command.textContent);copy.textContent='已复制'};load().catch(e=>document.getElementById('devices').textContent=e.message);</script></body></html>`;
 }
 
 async function handle(req, res) {
@@ -314,22 +312,17 @@ async function handle(req, res) {
     sendText(res, 200, 'text/x-python; charset=utf-8', await readFile(join(moduleDir, 'agent.py')));
     return;
   }
-  if ((pathname === '/' || pathname === '/settings') && req.method === 'GET') {
-    if (!await requireAdmin(req, res, url)) return;
-    sendText(res, 200, 'text/html; charset=utf-8', settingsHtml(adminCredential(req, url)), {
-      'Referrer-Policy': 'no-referrer',
-      'X-Robots-Tag': 'noindex, nofollow, noarchive',
-    });
-    return;
-  }
   if (pathname === '/v1/enrollments' && req.method === 'POST') {
     if (!await requireAdmin(req, res, url)) return;
+    const payload = await readRequestJson(req);
+    const personId = trimString(payload.personId);
+    await getPersonIdentityIds(personId);
     const token = newToken('rld_enroll');
     const createdAt = Date.now();
     const expiresAt = createdAt + enrollmentTtlMs;
     await updateState((state) => {
       state.enrollments = state.enrollments.filter((item) => !item.usedAt && item.expiresAt > createdAt);
-      state.enrollments.push({ tokenHash: tokenHash(token), createdAt, expiresAt, usedAt: null });
+      state.enrollments.push({ tokenHash: tokenHash(token), personId, createdAt, expiresAt, usedAt: null });
     });
     const origin = requestOrigin(req);
     const enrollmentUrl = `${origin}/v1/enroll/${encodeURIComponent(token)}`;
@@ -350,6 +343,7 @@ async function handle(req, res) {
       const device = {
         id: `display-${randomBytes(8).toString('hex')}`,
         tokenHash: tokenHash(deviceToken),
+        personId: enrollment.personId,
         name: trimString(payload.name).slice(0, 100) || 'RemoteLab Display',
         hostname: trimString(payload.hostname).slice(0, 120),
         platform: trimString(payload.platform).slice(0, 80),
@@ -377,10 +371,43 @@ async function handle(req, res) {
   }
   if (pathname === '/v1/devices' && req.method === 'GET') {
     if (!await requireAdmin(req, res, url)) return;
+    const personId = trimString(url.searchParams.get('personId'));
+    await getPersonIdentityIds(personId);
     const state = await loadState();
     sendJson(res, 200, {
-      devices: state.devices.filter((device) => !device.revokedAt).map(({ tokenHash: _tokenHash, ...device }) => device),
+      devices: state.devices
+        .filter((device) => device.personId === personId && !device.revokedAt)
+        .map(({ tokenHash: _tokenHash, ...device }) => device),
     });
+    return;
+  }
+  const adminDeviceMatch = /^\/v1\/devices\/(display-[a-f0-9]{16})$/.exec(pathname);
+  if (adminDeviceMatch && req.method === 'DELETE') {
+    if (!await requireAdmin(req, res, url)) return;
+    const personId = trimString(url.searchParams.get('personId'));
+    const revoked = await updateState((state) => {
+      const device = state.devices.find((item) => item.id === adminDeviceMatch[1] && item.personId === personId);
+      if (!device || device.revokedAt) return false;
+      device.revokedAt = new Date().toISOString();
+      return true;
+    });
+    if (!revoked) sendJson(res, 404, { error: 'Display not found' });
+    else sendJson(res, 200, { ok: true });
+    return;
+  }
+  if (adminDeviceMatch && req.method === 'PATCH') {
+    if (!await requireAdmin(req, res, url)) return;
+    const payload = await readRequestJson(req);
+    const personId = trimString(payload.personId);
+    await getPersonIdentityIds(personId);
+    const claimed = await updateState((state) => {
+      const device = state.devices.find((item) => item.id === adminDeviceMatch[1] && !item.personId && !item.revokedAt);
+      if (!device) return false;
+      device.personId = personId;
+      return true;
+    });
+    if (!claimed) sendJson(res, 404, { error: 'Unowned display not found' });
+    else sendJson(res, 200, { ok: true });
     return;
   }
   const deviceMatch = /^\/v1\/devices\/(display-[a-f0-9]{16})\/(frame\.png|heartbeat)$/.exec(pathname);
@@ -400,7 +427,11 @@ async function handle(req, res) {
       return;
     }
     if (deviceMatch[2] === 'frame.png' && req.method === 'GET') {
-      const { png, snapshot } = await renderFrame();
+      if (!device.personId) {
+        sendJson(res, 409, { error: 'Display ownership is not configured' });
+        return;
+      }
+      const { png, snapshot } = await renderFrame(device.personId);
       const now = new Date().toISOString();
       await updateState((state) => {
         const current = state.devices.find((item) => item.id === device.id);
@@ -426,10 +457,9 @@ const server = createServer((req, res) => {
 });
 
 server.listen(listenPort, bindHost, async () => {
-  const adminToken = await ensureAdminToken();
+  await ensureAdminToken();
   console.log(JSON.stringify({
     event: 'display_server_ready',
     listen: `http://${bindHost}:${listenPort}`,
-    settingsUrl: `${publicBaseUrl || `http://${bindHost}:${listenPort}`}/settings?admin=${adminToken}`,
   }));
 });

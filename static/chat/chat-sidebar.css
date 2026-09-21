@@ -375,6 +375,46 @@ body:not([data-app-view="sessions"]) .session-item.active {
   font-size: 11px;
 }
 
+/* Side display */
+.settings-display-generate {
+  flex: 0 0 auto;
+}
+.settings-display-command {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+.settings-display-command code {
+  overflow-x: auto;
+  padding: 12px;
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.settings-display-command .settings-app-btn {
+  justify-self: start;
+}
+.settings-display-devices-heading {
+  margin-top: 20px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.settings-display-device .settings-app-kind {
+  color: var(--success, #29976f);
+}
+.settings-display-disconnect {
+  color: var(--danger, #c64f4f);
+}
+
 /* People */
 .settings-section-heading {
   display: flex;
