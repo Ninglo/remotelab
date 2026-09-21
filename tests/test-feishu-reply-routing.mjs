@@ -133,9 +133,78 @@ try {
   }, 'test', {
     queueFeishuReply: async (_runtime, _summary, text) => { commandReply = text; return { queued: true }; },
   });
-  assert.match(commandReply, /Thread 内的回复位置已经固定/);
+  assert.match(commandReply, /Thread 内不能切换为 inline/);
 
-  console.log('ok - explicit main/thread topology and inline/thread reply routing');
+  let explicitThreadSummary = null;
+  await handleMessage(runtime, {
+    ...base, messageId: 'thread-command-explicit', rootId: 'thread-root-1', threadId: 'provider-thread-1',
+    messageText: '/thread continue explicitly', textPreview: '/thread continue explicitly',
+  }, 'test', {
+    addProcessingReaction: async () => null,
+    submitRemoteLabRequest: async (_runtime, summary) => {
+      explicitThreadSummary = summary;
+      return { sessionId: firstThread.sessionId };
+    },
+  });
+  assert.equal(explicitThreadSummary.messageText, 'continue explicitly');
+  assert.equal(explicitThreadSummary.conversationKind, 'thread', '/thread is idempotent inside an existing Thread');
+
+  const topicRoot = {
+    ...base, chatId: 'topic-chat', threadId: 'provider-topic-quick',
+    messageId: 'topic-quick-root', messageText: '/quick fast answer', textPreview: '/quick fast answer',
+  };
+  const quickTopic = await handleMessage(runtime, topicRoot, 'test', { addProcessingReaction: async () => null });
+  const quickTopicSession = sessions.find(session => session.id === quickTopic.sessionId);
+  assert.equal(quickTopicSession.executionProfile, 'quick',
+    'a new topic root may create a Quick Session even before chat metadata enrichment');
+  assert.equal(quickTopicSession.conversation.target.conversationKind, 'thread');
+  assert.equal(submitted.at(-1).body.text, 'fast answer');
+  assert.equal(submitted.at(-1).body.sourceDelivery.target.threadId, 'provider-topic-quick');
+
+  const quickTopicFollowup = await handleMessage(runtime, {
+    ...topicRoot, messageId: 'topic-quick-followup', rootId: 'topic-quick-root',
+    messageText: '/quick another fast answer', textPreview: '/quick another fast answer',
+  }, 'test', { addProcessingReaction: async () => null });
+  assert.equal(quickTopicFollowup.sessionId, quickTopic.sessionId,
+    'an explicit /quick in an already-Quick topic remains on the bound Quick Session');
+
+  commandReply = '';
+  await handleMessage(runtime, {
+    ...base, chatId: 'topic-inline-chat', chatMode: 'topic', threadId: 'provider-topic-inline',
+    messageId: 'topic-inline-root', messageText: '/inline impossible', textPreview: '/inline impossible',
+  }, 'test', {
+    queueFeishuReply: async (_runtime, _summary, text) => { commandReply = text; return { queued: true }; },
+  });
+  assert.match(commandReply, /话题群只支持 Thread/);
+
+  const standardTopicRoot = {
+    ...base, chatId: 'topic-standard-chat', chatMode: 'topic', threadId: 'provider-topic-standard',
+    messageId: 'topic-standard-root', messageText: 'standard task', textPreview: 'standard task',
+  };
+  const standardTopic = await handleMessage(runtime, standardTopicRoot, 'test', { addProcessingReaction: async () => null });
+  assert.equal(sessions.find(session => session.id === standardTopic.sessionId).executionProfile, undefined);
+  commandReply = '';
+  await handleMessage(runtime, {
+    ...standardTopicRoot, messageId: 'topic-standard-followup', rootId: 'topic-standard-root',
+    messageText: '/quick switch profile', textPreview: '/quick switch profile',
+  }, 'test', {
+    addProcessingReaction: async () => null,
+    queueFeishuReply: async (_runtime, _summary, text) => { commandReply = text; return { queued: true }; },
+  });
+  assert.match(commandReply, /已经绑定 Standard Session/,
+    'Quick remains immutable after a Standard Session is bound to the topic');
+
+  runtime.config.replyPolicy = normalizeFeishuReplyPolicy({ group: 'inline', private: 'inline' });
+  const inlineQuick = await handleMessage(runtime, {
+    ...base, chatId: 'quick-inline-chat', messageId: 'quick-inline-root',
+    messageText: '/quick inline fast answer', textPreview: '/quick inline fast answer',
+  }, 'test', { addProcessingReaction: async () => null });
+  const inlineQuickSession = sessions.find(session => session.id === inlineQuick.sessionId);
+  assert.equal(inlineQuickSession.executionProfile, 'quick');
+  assert.equal(inlineQuickSession.conversation.target.conversationKind, 'main',
+    'Quick selects an execution profile without forcing Thread placement');
+
+  console.log('ok - chat-style topology and Quick execution profile remain independent');
 } finally {
   server.close();
   await rm(tempDir, { recursive: true, force: true });

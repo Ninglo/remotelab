@@ -67,9 +67,12 @@ try {
   assert.match(replies.at(-1), /\/unmute/);
   await send('/mute unexpected');
   assert.equal(replies.at(-1), '/mute 不接受参数（第 1 行）');
+  effects.length = 0;
+  const replyCountBeforeExplicitThread = replies.length;
   await send('/thread\n\nexplicit task');
-  assert.match(replies.at(-1), /Thread 内的回复位置已经固定/);
-  assert.deepEqual(effects, [], 'reply-mode commands do not split an existing Thread');
+  assert.equal(replies.length, replyCountBeforeExplicitThread);
+  assert.deepEqual(effects, ['reaction', 'submit'],
+    '/thread explicitly continues the fixed Thread instead of trying to split it');
 
   runtime = makeRuntime();
   await silent('still muted after restart');

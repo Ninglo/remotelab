@@ -48,6 +48,7 @@ import {
   buildSessionSourceContext,
   compileFeishuReplyText,
   isFeishuDocumentCommentSummary,
+  isFeishuTopicChat,
   normalizeFeishuMode,
   normalizeReplyText,
   sanitizeIdPart,
@@ -94,6 +95,7 @@ import {
   createConnectorSession,
   submitConnectorMessage,
 } from '../lib/connector-turn-flow.mjs';
+import { isQuickSession } from '../lib/quick-session-profile.mjs';
 import {
   findFeishuThreadSessionBinding,
   recordFeishuMessageSession,
@@ -115,6 +117,7 @@ const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const DEFAULT_FEISHU_API_TIMEOUT_MS = 10_000;
 const DEFAULT_PROCESSING_REACTION_TIMEOUT_MS = 10_000;
 const CONNECTOR_PID_FILENAME = 'connector.pid';
+const QUICK_PROFILE_CONFLICT = 'FEISHU_QUICK_PROFILE_CONFLICT';
 const updateSenderIndex = createKeyedTaskQueue();
 
 function parseArgs(argv) {
@@ -988,9 +991,21 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
   };
   const threadBinding = await findFeishuThreadSessionBinding(runtime, effectiveSummary);
-  const session = threadBinding?.sessionId
-    ? { id: threadBinding.sessionId }
-    : await createConnectorSession(requester, sessionPayload);
+  let session;
+  if (threadBinding?.sessionId) {
+    const result = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`);
+    if (!result.response?.ok || !result.json?.session?.id) {
+      throw new Error(result.json?.error || `Unable to read bound Session (${result.response?.status || 'unknown'})`);
+    }
+    session = result.json.session;
+  } else {
+    session = await createConnectorSession(requester, sessionPayload);
+  }
+  if (isQuickCommand && !isQuickSession(session)) {
+    throw Object.assign(new Error('Quick profile conflicts with the Session already bound to this conversation'), {
+      code: QUICK_PROFILE_CONFLICT,
+    });
+  }
   const attachmentResolution = await resolveFeishuMessageAttachments(runtime, effectiveSummary, {
     sessionId: session.id,
   });
@@ -1271,6 +1286,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   if (trimString(summary?.messageType).toLowerCase() === 'merge_forward') {
     return { receipt: { ignored: true, reason: 'merge_forward_context_only' } };
   }
+  summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
   if (command && !command.error && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))
@@ -1291,10 +1307,12 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
     if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
     return { summary, command };
   }
-  const startsTask = commandNames.some(name => ['inline', 'thread', 'quick'].includes(name));
-  if (startsTask && buildFeishuTopicId(summary)) {
+  if (commandNames.includes('inline') && buildFeishuTopicId(summary)) {
     if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
-    return { summary, command: { ...command, error: 'Thread 内的回复位置已经固定；请直接发送任务正文。' } };
+    const error = isFeishuTopicChat(summary)
+      ? '话题群只支持 Thread；请使用 /thread，或直接发送任务正文。'
+      : 'Thread 内不能切换为 inline；请直接发送任务正文。';
+    return { summary, command: { ...command, error } };
   }
   if (commandNames.includes('inline')) summary = {
     ...summary, replyModeOverride: 'inline', messageText: command.body, textPreview: command.body,
@@ -1303,7 +1321,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
     ...summary, replyModeOverride: 'thread', messageText: command.body, textPreview: command.body,
   };
   if (commandNames.includes('quick')) summary = {
-    ...summary, replyModeOverride: 'thread', quickMode: true,
+    ...summary, quickMode: true,
     messageText: command.body, textPreview: command.body,
   };
   if (command?.body && !commandNames.includes('inline') && !commandNames.includes('thread') && !commandNames.includes('quick')) summary = {
@@ -1365,7 +1383,16 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   } catch (error) {
     console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
   }
-  const receipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(runtime, summary);
+  let receipt;
+  try {
+    receipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(runtime, summary);
+  } catch (error) {
+    if (error?.code === QUICK_PROFILE_CONFLICT) {
+      return enqueue(runtime, summary,
+        '当前主线或话题已经绑定 Standard Session，不能原地切换为 Quick；请新开一个话题后使用 /quick。');
+    }
+    throw error;
+  }
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
   if (runtime.storagePaths?.messageIndexPath) {
     await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });

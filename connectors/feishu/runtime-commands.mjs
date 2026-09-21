@@ -14,6 +14,7 @@ const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'follo
 const HELP = [
   '任务命令可把正文写在同行：/inline [修饰参数] 正文、/thread [修饰参数] 正文、/quick 正文。',
   '/inline 和 /thread 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>。',
+  '普通聊天群支持 inline/thread；话题群固定使用 Thread。Quick 是独立执行模式，不改变回复位置。',
   '短名：/m model、/q quick。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
   '/default [harness|model|effort] [值] — 查看或修改新 Session 的 Default',
@@ -25,7 +26,7 @@ const HELP = [
   '/unmute — 恢复当前话题或聊天的正常响应',
   '/inline [修饰参数] 正文 — 在群聊或私聊主线继续并直接回复',
   '/thread [修饰参数] 正文 — 从主线新建 Thread Session 并在线程中回复',
-  '/quick 正文 — 从主线新建 Quick Thread Session；整个会话固定为快速问答模式',
+  '/quick 正文 — 在当前新主线或新话题创建 Quick Session；回复位置遵循聊天拓扑',
   '/help — 查看命令',
 ].join('\n');
 

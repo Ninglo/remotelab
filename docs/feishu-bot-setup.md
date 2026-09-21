@@ -295,14 +295,22 @@ Inside an existing task thread or private conversation, use these commands:
 | `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and the task-command format. |
 
-Task actions are `/inline`, `/thread`, and `/quick`. They control where the
-next answer is published; they do not copy or fork old context. `/inline` uses
-the chat's long-lived main Session. `/thread` creates a blank Session for a new
-Thread. `/quick` creates a new Thread Session with the fixed Quick runtime.
-All three accept `--harness <id>`, `--model <id>`, and `--effort <level>` before
-the task text (Quick runtime remains immutable). Use a standalone `--` before
-task text that itself starts with `--`. Inside an existing Thread, omit these
-reply actions: the message always reuses that Thread's Session and replies there.
+`/inline` and `/thread` select reply topology; they do not copy or fork old
+context. In an ordinary chat group, `/inline` uses the chat's long-lived main
+Session and `/thread` creates a blank Session for a new Thread. A topic-mode
+group is already a Thread surface, so it supports `/thread` but not `/inline`.
+Inside an existing Thread, `/thread` is a harmless explicit restatement of the
+fixed topology.
+
+`/quick` is an independent execution-profile choice. It creates a Session with
+the fixed Quick runtime at the location selected by the chat topology and
+`replyPolicy`: ordinary groups may be inline or threaded, while topic-mode
+groups always remain threaded. A new topic may therefore start with `/quick`
+without conflicting with its Thread identity. An already-bound Standard
+Session cannot be converted in place; start a new topic for a new Quick Session.
+Only `/inline` and `/thread` accept `--harness <id>`, `--model <id>`, and
+`--effort <level>` before the task text. Use a standalone `--` before task text
+that itself starts with `--`.
 The removed `/fork`, `/continue`, `/f`, and `/c` forms are ordinary text, not aliases.
 
 Two frequent commands have explicit stable aliases. Aliases resolve to the
@@ -392,11 +400,14 @@ default with `inline` or `thread`. `groups[chatId]` also supports
 is appended to global instructions when creating a Session; existing Sessions
 keep their instruction snapshot.
 
-Precedence is: existing Thread topology → explicit `/inline` or `/thread` →
-exact chat-ID override → chat-type default. `/thread` starts a blank Thread
-Session; it never copies the main Session history. `/inline` submits to the
-stable main Session. Private chats use the same model, although actual Thread
-publication still depends on Feishu supporting Threads in that chat type.
+Precedence is: topic-group or existing-Thread topology → explicit `/inline` or
+`/thread` → exact chat-ID override → chat-type default. `/thread` starts a blank
+Thread Session from an ordinary mainline and is idempotent inside a Thread; it
+never copies the main Session history. `/inline` submits to the stable main
+Session and is rejected in topic-mode groups or existing Threads. `/quick`
+selects only the execution profile after that placement is resolved. Private
+chats use the same model, although actual Thread publication still depends on
+Feishu supporting Threads in that chat type.
 `sessionPolicy`, `sessionMode`, `/fork`, and `/continue` are intentionally not
 supported and fail configuration validation or remain ordinary message text.
 
