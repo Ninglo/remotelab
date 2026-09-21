@@ -10,10 +10,6 @@ export async function handlePiAuthRoutes({
   authManager = piAuthManager,
 }) {
   if (!pathname.startsWith('/api/pi-auth')) return false;
-  if (authSession?.role !== 'owner') {
-    writeJson(res, 403, { error: 'Owner access required' });
-    return true;
-  }
 
   if (pathname === '/api/pi-auth/status' && req.method === 'GET') {
     try {
