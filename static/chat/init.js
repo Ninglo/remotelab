@@ -29,8 +29,6 @@ function applyShareSnapshotMode(snapshot) {
   if (inlineProviderSelect) inlineProviderSelect.style.display = "none";
   if (inlineModelSelect) inlineModelSelect.style.display = "none";
   if (effortSelect) effortSelect.style.display = "none";
-  if (compactBtn) compactBtn.style.display = "none";
-  if (dropToolsBtn) dropToolsBtn.style.display = "none";
   if (contextTokens) contextTokens.style.display = "none";
   if (statusText) {
     statusText.dataset.i18n = "status.readOnlySnapshot";

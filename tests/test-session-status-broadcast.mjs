@@ -72,7 +72,6 @@ const wsClients = await import(
 
 const {
   createSession,
-  dropToolUse,
   getRunState,
   killAll,
   submitHttpMessage,
@@ -151,22 +150,6 @@ assert.equal(
   alphaWs.messages.some((msg) => ['session', 'event', 'history'].includes(msg.type)),
   false,
   'websockets should not receive state-bearing payloads',
-);
-
-alphaWs.messages = [];
-const dropResult = await dropToolUse(alphaSession.id);
-assert.equal(dropResult, true, 'drop tool use should succeed for a shared Session');
-assert.equal(
-  alphaWs.messages.some(
-    (msg) => msg.type === 'session_invalidated' && msg.sessionId === alphaSession.id,
-  ),
-  true,
-  'drop tool use should still invalidate the affected session',
-);
-assert.equal(
-  alphaWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
-  false,
-  'drop tool use should not invalidate the whole session list',
 );
 
 const betaSession = await createSession(tempHome, 'fake-codex', 'Beta task', {

@@ -285,6 +285,9 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
   if (lastTurnEvents.length === 0) {
     return { ok: false, skipped: 'no_history' };
   }
+  const classifiedUserMessageSeq = lastTurnEvents.find(
+    (event) => event?.type === 'message' && event.role === 'user' && Number.isInteger(event.seq),
+  )?.seq || 0;
   const turnText = formatTurnForPrompt(lastTurnEvents);
   if (!turnText.trim()) {
     return { ok: false, skipped: 'empty_turn' };
@@ -385,6 +388,7 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
 
   return {
     ok: true,
+    classifiedUserMessageSeq,
     title: nextTitle,
     space: nextSpace,
     group: nextGroup,

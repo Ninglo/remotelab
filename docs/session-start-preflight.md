@@ -20,11 +20,13 @@ Create `${REMOTELAB_CONFIG_DIR:-~/.config/remotelab}/session-start-preflight.jso
   "tools": ["codex", "claude", "pi"],
   "runtimeFamilies": [],
   "models": [],
-  "includeInternalOperations": true
+  "includeInternalOperations": false
 }
 ```
 
 Empty `tools`, `runtimeFamilies`, or `models` lists mean all values. The warming run happens only when RemoteLab is about to create a fresh provider context; resumed turns do not repeat it. A stale answer can trigger up to `maxAttempts` provider-session replacements, but exhaustion or a probe error is recorded and then fails open into the original request. Only an actual runtime failure while executing that request should fail the run.
+
+Preflight follows execution purpose, not whether the transport happens to mark a request as internal. Interactive turns and scheduled user work may run it because the accepted provider context will perform the requested task. Silent metadata and maintenance calls do not: Session-state classification, memory review, and legacy context-compaction maintenance skip preflight. `includeInternalOperations` remains only as a compatibility switch for unclassified legacy internal operations.
 
 ## Daily statistics
 

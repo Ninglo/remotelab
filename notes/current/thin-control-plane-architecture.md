@@ -66,7 +66,8 @@ Provider-native threads remain useful runtime caches, but they are not the sourc
 Cross-Harness continuity comes from RemoteLab-owned state:
 
 - normalized Session history
-- `context.json` continuation head and compaction summary
+- bounded continuation packets reconstructed from normalized history
+- existing `context.json` continuation heads remain readable, but RemoteLab no longer creates a second hidden compaction run
 - `workState.summary`
 - active agreements
 - pointer-first user/project/task memory
@@ -96,6 +97,8 @@ The active architecture removes:
 - removable shared startup-defaults behavior bundle
 
 Historical usage-ledger operation labels may remain readable for old records, but no active path emits those operations.
+
+Manual `compact` and `drop-tools` controls are retired. Codex, Pi, Claude, and other Harnesses own their live context management; RemoteLab preserves normalized durable history, bounded cross-Harness continuation, and existing legacy continuation heads without resetting native resume state behind the Harness.
 
 ## Benchmark gate for future upper-Harness work
 

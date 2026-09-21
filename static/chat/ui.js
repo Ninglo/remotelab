@@ -1255,8 +1255,6 @@ function updateContextDisplay(contextSize, contextWindowSize) {
       ? "high"
       : percent !== null && percent >= 65 ? "medium" : "normal";
     contextTokens.style.display = "";
-    compactBtn.style.display = "";
-    dropToolsBtn.style.display = "";
   }
 }
 

@@ -83,7 +83,13 @@ export async function readSessionStartPreflightPolicy(options = {}) {
   const policy = normalizePolicy(await readJson(options.configFile || SESSION_START_PREFLIGHT_CONFIG_FILE));
   if (!policy?.enabled) return null;
   if (options.freshProviderSession !== true) return null;
-  if (trimString(options.internalOperation) && !policy.includeInternalOperations) return null;
+  const purpose = trimString(options.purpose);
+  if (purpose === 'metadata' || purpose === 'maintenance') return null;
+  if (
+    trimString(options.internalOperation)
+    && purpose !== 'scheduled_user_work'
+    && !policy.includeInternalOperations
+  ) return null;
   if (!matchesOptionalList(policy.tools, options.tool)) return null;
   if (!matchesOptionalList(policy.runtimeFamilies, options.runtimeFamily)) return null;
   if (!matchesOptionalList(policy.models, options.model)) return null;

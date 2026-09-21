@@ -1201,8 +1201,6 @@ function applyAttachedSessionState(id, session) {
   }
   currentTokens = 0;
   contextTokens.style.display = "none";
-  compactBtn.style.display = "none";
-  dropToolsBtn.style.display = "none";
 
   const displayName = getSessionDisplayName(session);
   if (typeof renderHeaderSessionTitle === "function") {

@@ -12,7 +12,6 @@ export function createSessionTurnCompletionHelpers(services) {
     dispatchSessionConnectorActions,
     findAssistantAttachmentMessageForRun,
     findResultAssetMessageForRun,
-    getCompactionServices,
     getRun,
     getRunManifest,
     getSession,
@@ -23,7 +22,6 @@ export function createSessionTurnCompletionHelpers(services) {
     isTerminalRunState,
     loadHistory,
     maybeApplyAssistantWorkSummary,
-    maybeAutoCompact,
     normalizeAttachmentSizeBytes,
     normalizePublishedResultAssetAttachments,
     nowIso,
@@ -200,7 +198,9 @@ export function createSessionTurnCompletionHelpers(services) {
 
     suggestionDone.then(async (result) => {
       if (!result?.ok) return;
-      await applySessionStateSuggestion(session.id, result, run.id, viewPersonId);
+      await applySessionStateSuggestion(session.id, result, {
+        classifiedUserMessageSeq: result.classifiedUserMessageSeq,
+      }, viewPersonId);
     }).catch((error) => {
       console.error(`[session-state] Failed to update session state for ${session.id?.slice(0, 8)}: ${error.message}`);
     });
@@ -231,13 +231,6 @@ export function createSessionTurnCompletionHelpers(services) {
       if (finalizedRun.state === 'completed') {
         scheduleSessionStateSuggestion(session, finalizedRun, manifest);
       }
-    }
-
-    const autoCompactionQueued = allowCompletionEffects && !hasQueuedFollowUps
-      ? await maybeAutoCompact(sessionId, session, finalizedRun, manifest, getCompactionServices())
-      : false;
-    if (autoCompactionQueued) {
-      return { session, sessionChanged };
     }
 
     if (allowCompletionEffects && !hasQueuedFollowUps) {

@@ -357,6 +357,7 @@ async function main() {
       model: manifest.options?.model,
       freshProviderSession: manifest.options?.freshProviderSession === true,
       internalOperation: manifest.internalOperation,
+      purpose: manifest.options?.sessionStartPreflightPurpose,
     })
     : null;
   const sessionStartPreflightStartedAt = sessionStartPreflightPolicy ? nowIso() : '';

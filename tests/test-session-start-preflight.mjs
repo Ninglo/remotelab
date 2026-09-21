@@ -38,6 +38,24 @@ try {
   assert.equal(await readSessionStartPreflightPolicy({
     configFile, tool: 'codex', runtimeFamily: 'codex-json', model: 'gpt-test', freshProviderSession: false,
   }), null, 'resumed provider sessions must not repeat the gate');
+  assert.equal(await readSessionStartPreflightPolicy({
+    configFile,
+    tool: 'codex',
+    runtimeFamily: 'codex-json',
+    model: 'gpt-test',
+    freshProviderSession: true,
+    internalOperation: 'context_compaction_worker',
+    purpose: 'maintenance',
+  }), null, 'silent maintenance work must not run startup preflight');
+  assert.equal((await readSessionStartPreflightPolicy({
+    configFile,
+    tool: 'codex',
+    runtimeFamily: 'codex-json',
+    model: 'gpt-test',
+    freshProviderSession: true,
+    internalOperation: 'trigger_delivery',
+    purpose: 'scheduled_user_work',
+  }))?.enabled, true, 'scheduled user work may retain startup preflight even though delivery plumbing is internal');
   assert.equal(classifySessionStartPreflightAnswer('Gemini 2.5 Pro', { restartAnswers: ['2.5'] }).status, 'restart_required');
   assert.equal(classifySessionStartPreflightAnswer('3.1', { restartAnswers: ['2.5'] }).status, 'loaded');
   assert.equal(classifySessionStartPreflightAnswer('', { restartAnswers: ['2.5'] }).status, 'error');

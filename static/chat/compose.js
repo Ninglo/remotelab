@@ -936,16 +936,6 @@ function sendMessage(existingRequestId) {
 
 cancelBtn.addEventListener("click", () => dispatchAction({ action: "cancel" }));
 
-compactBtn.addEventListener("click", () => {
-  if (!currentSessionId) return;
-  dispatchAction({ action: "compact" });
-});
-
-dropToolsBtn.addEventListener("click", () => {
-  if (!currentSessionId) return;
-  dispatchAction({ action: "drop_tools" });
-});
-
 sendBtn.addEventListener("click", () => sendMessage());
 msgInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {

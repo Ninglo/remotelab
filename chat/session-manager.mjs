@@ -73,6 +73,7 @@ import {
 import { broadcastAll } from './ws-clients.mjs';
 import {
   buildTemporarySessionName,
+  DEFAULT_SESSION_NAME,
   isSessionAutoRenamePending,
   isSessionTitleLocked,
   normalizeGeneratedSessionTitle,
@@ -150,8 +151,6 @@ import {
 import {
   applyCompactionWorkerResult,
   INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR,
-  maybeAutoCompact,
-  queueContextCompaction,
 } from './session-auto-compaction.mjs';
 import {
   findLatestAssistantMessageForRun,
@@ -1009,7 +1008,6 @@ const {
   sanitizeAllCompletionTargets,
   findAssistantAttachmentMessageForRun,
   findResultAssetMessageForRun,
-  getCompactionServices,
   getRun,
   getRunManifest,
   getSessionPersonView,
@@ -1021,7 +1019,6 @@ const {
   isTerminalRunState,
   loadHistory,
   maybeApplyAssistantWorkSummary,
-  maybeAutoCompact,
   normalizeAttachmentSizeBytes,
   normalizePublishedResultAssetAttachments,
   nowIso,
@@ -2404,15 +2401,25 @@ async function updateSessionWorkSummary(id, workSummary) {
   return await maybeRetireWelcomeOnboarding(id, enriched) || enriched;
 }
 
-async function applySessionStateSuggestion(id, suggestion = {}, expectedRunId = '', viewPersonId = DEFAULT_PERSON_ID) {
+export function isSessionStateSuggestionCurrent(history = [], suggestion = {}) {
+  const classifiedUserMessageSeq = Number.isInteger(suggestion?.classifiedUserMessageSeq)
+    ? suggestion.classifiedUserMessageSeq
+    : 0;
+  if (classifiedUserMessageSeq <= 0) return false;
+  const latestUserMessage = [...history].reverse().find(
+    (event) => event?.type === 'message' && event.role === 'user' && Number.isInteger(event.seq),
+  );
+  return !latestUserMessage || latestUserMessage.seq <= classifiedUserMessageSeq;
+}
+
+async function applySessionStateSuggestion(id, suggestion = {}, classification = {}, viewPersonId = DEFAULT_PERSON_ID) {
   if (!suggestion?.ok) return getSession(id);
 
-  if (expectedRunId) {
-    const history = await loadHistory(id, { includeBodies: false });
-    const latestUserMessage = [...history].reverse().find((event) => event?.type === 'message' && event.role === 'user');
-    if (latestUserMessage?.runId && latestUserMessage.runId !== expectedRunId) {
-      return getSession(id);
-    }
+  const history = await loadHistory(id, { includeBodies: false });
+  if (!isSessionStateSuggestionCurrent(history, {
+    classifiedUserMessageSeq: classification.classifiedUserMessageSeq,
+  })) {
+    return getSession(id);
   }
 
   const nextSpace = normalizeSessionSpace(suggestion.space || '');
@@ -2901,10 +2908,22 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const nativeFollowUp = activeNative && !activeRun?.cancelRequested && canForwardNativeRequest(record, activeRequest);
   const queued = !record.result && !record.nativeDispatchRunId && !nativeFollowUp && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
-    const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';
-    await mutateSessionMeta(sessionId, draft => { delete draft.workflowState; delete draft.workflowPriority; if (draftName) draft.name = draftName; return true; });
-    if (draftName) session.name = draftName;
-    delete session.workflowState; delete session.workflowPriority;
+    const draftName = isSessionAutoRenamePending(session)
+      ? buildTemporarySessionName(record.text)
+      : '';
+    const mutation = await mutateSessionMeta(sessionId, draft => {
+      delete draft.workflowState;
+      delete draft.workflowPriority;
+      if (
+        draftName
+        && isSessionAutoRenamePending(draft)
+        && normalizeSessionName(draft.name) === DEFAULT_SESSION_NAME
+      ) {
+        draft.name = draftName;
+      }
+      return true;
+    });
+    if (mutation.meta) session = mutation.meta;
   }
   broadcastSessionInvalidation(sessionId);
   return { requestId: record.requestId, duplicate, queued,
@@ -3088,7 +3107,14 @@ async function prepareRequestRun(record) {
           ? getQuickSessionDeveloperInstructions()
           : undefined,
         disableApps: options.executionProfile === QUICK_SESSION_PROFILE ? false : undefined,
-        skipSessionStartPreflight: options.executionProfile === QUICK_SESSION_PROFILE || undefined,
+        sessionStartPreflightPurpose: options.internalOperation === 'trigger_delivery'
+          ? 'scheduled_user_work'
+          : options.internalOperation
+            ? 'maintenance'
+            : 'interactive_user_work',
+        skipSessionStartPreflight: options.skipSessionStartPreflight === true
+          || options.executionProfile === QUICK_SESSION_PROFILE
+          || undefined,
       },
     },
   });
@@ -3357,51 +3383,6 @@ export async function delegateSession(sessionId, payload = {}) {
     run: outcome.run || null,
     sessionUrl: buildSessionNavigationHref(child.id),
   };
-}
-
-export async function dropToolUse(sessionId) {
-  const session = await getSession(sessionId);
-  if (!session) return false;
-
-  const history = await loadHistory(sessionId);
-  const textEvents = history.filter((event) => event.type === 'message');
-  const transcript = textEvents
-    .map((event) => `[${event.role === 'user' ? 'User' : 'Assistant'}]: ${event.content || ''}`)
-    .join('\n\n');
-
-  await clearPersistedResumeIds(sessionId);
-  if (transcript.trim()) {
-    const snapshot = await getHistorySnapshot(sessionId);
-    await setContextHead(sessionId, {
-      mode: 'summary',
-      summary: `[Previous conversation — tool results removed]\n\n${transcript}`,
-      activeFromSeq: snapshot.latestSeq,
-      compactedThroughSeq: snapshot.latestSeq,
-      updatedAt: nowIso(),
-      source: 'drop_tool_use',
-    });
-  } else {
-    await clearContextHead(sessionId);
-  }
-
-  const kept = textEvents.length;
-  const dropped = history.filter((event) => ['tool_use', 'tool_result', 'file_change'].includes(event.type)).length;
-  const dropEvent = statusEvent(`Tool results dropped — ${dropped} tool events removed from context, ${kept} messages kept`);
-  await appendEvent(sessionId, dropEvent);
-  broadcastSessionInvalidation(sessionId);
-  return true;
-}
-
-export async function compactSession(sessionId) {
-  const session = await getSession(sessionId);
-  if (!session) return false;
-  if (getSessionQueueCount(session) > 0) return false;
-  const runId = getSessionRunId(session);
-  if (runId) {
-    const run = await getRun(runId);
-    if (run && !isTerminalRunState(run.state)) return false;
-  }
-  return queueContextCompaction(sessionId, session, null, { automatic: false }, getCompactionServices());
 }
 
 export async function drainRequestRuntime() {

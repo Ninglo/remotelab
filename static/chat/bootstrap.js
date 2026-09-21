@@ -312,8 +312,6 @@ const quickProfileBadge = document.getElementById("quickProfileBadge");
 const runtimeSelectionControls = document.getElementById("runtimeSelectionControls");
 const cancelBtn = document.getElementById("cancelBtn");
 const contextTokens = document.getElementById("contextTokens");
-const compactBtn = document.getElementById("compactBtn");
-const dropToolsBtn = document.getElementById("dropToolsBtn");
 
 let renderedHeaderSessionName = "";
 

@@ -1,26 +1,16 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 
 const repoRoot = dirname(fileURLToPath(import.meta.url));
-const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-auto-compact-'));
+const tempHome = mkdtempSync(join(tmpdir(), 'remotelab-harness-context-ownership-'));
 const tempBin = join(tempHome, 'bin');
 const configDir = join(tempHome, '.config', 'remotelab');
 const codexSessionsDir = join(tempHome, '.codex', 'sessions', '2026', '03', '10');
-const compactionWorkerText = JSON.stringify(
-  '<summary>Carry forward only the compacted continuation summary.</summary>\n\n'
-  + '<handoff># Auto Compress\n\n'
-  + '## Kept in current context\n'
-  + '- Carry forward only the compacted continuation summary.\n\n'
-  + '## Left out of current context\n'
-  + '- Older messages above the marker are no longer in the current context.\n\n'
-  + '## Continue from here\n'
-  + '- Keep going from the fresh handoff.</handoff>'
-);
 
 mkdirSync(tempBin, { recursive: true });
 mkdirSync(configDir, { recursive: true });
@@ -30,105 +20,62 @@ const fakeCodexPath = join(tempBin, 'fake-codex');
 writeFileSync(
   fakeCodexPath,
   `#!/usr/bin/env node
-const args = process.argv.slice(2);
-const prompt = args[args.length - 1] || '';
-const resumeIndex = args.indexOf('resume');
-const resumedThreadId = resumeIndex >= 0 ? args[resumeIndex + 1] : '';
-const isCompaction = prompt.includes('Please compress this entire session into a continuation summary');
-
-let threadId = resumedThreadId || 'overflow-thread';
-if (!isCompaction) {
-  if (prompt.includes('exact case')) threadId = 'exact-thread';
-  if (prompt.includes('overflow case')) threadId = 'overflow-thread';
-}
-
-console.log(JSON.stringify({ type: 'thread.started', thread_id: threadId }));
+const prompt = process.argv[process.argv.length - 1] || '';
+const isSessionStatePrompt = prompt.includes("You are RemoteLab's single post-turn session-state classifier.");
+const text = isSessionStatePrompt
+  ? JSON.stringify({
+      title: 'Harness Context Ownership',
+      space: 'Product',
+      group: 'RemoteLab',
+      description: 'Keep live context management inside the selected Harness.',
+      shouldSetWorkflowState: false,
+      workflowState: '',
+      workflowPriority: '',
+      workSummary: { mode: 'task', summary: 'Harness owns live context management.' },
+    })
+  : 'Finished without a RemoteLab compaction worker.';
+console.log(JSON.stringify({ type: 'thread.started', thread_id: isSessionStatePrompt ? 'state-thread' : 'overflow-thread' }));
 console.log(JSON.stringify({ type: 'turn.started' }));
-console.log(JSON.stringify({
-  type: 'item.completed',
-  item: {
-    type: 'agent_message',
-    text: isCompaction
-      ? ${compactionWorkerText}
-      : 'Finished the requested task.',
-  },
-}));
-console.log(JSON.stringify({
-  type: 'turn.completed',
-  usage: { input_tokens: 1, output_tokens: 1 },
-}));
-setTimeout(() => process.exit(0), 50);
+console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text } }));
+console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } }));
 `,
   'utf8',
 );
 chmodSync(fakeCodexPath, 0o755);
 
+writeFileSync(join(configDir, 'tools.json'), JSON.stringify([{
+  id: 'fake-codex',
+  name: 'Fake Codex',
+  command: 'fake-codex',
+  runtimeFamily: 'codex-json',
+  models: [{ id: 'fake-model', label: 'Fake model' }],
+  reasoning: { kind: 'enum', label: 'Reasoning', levels: ['low'], default: 'low' },
+}], null, 2));
+
 writeFileSync(
-  join(configDir, 'tools.json'),
-  JSON.stringify(
-    [
-      {
-        id: 'fake-codex',
-        name: 'Fake Codex',
-        command: 'fake-codex',
-        runtimeFamily: 'codex-json',
-        models: [{ id: 'fake-model', label: 'Fake model' }],
-        reasoning: {
-          kind: 'enum',
-          label: 'Reasoning',
-          levels: ['low'],
-          default: 'low',
-        },
+  join(codexSessionsDir, 'rollout-2026-03-10T12-17-55-overflow-thread.jsonl'),
+  `${JSON.stringify({
+    timestamp: '2026-03-10T04:18:17.666Z',
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        total_token_usage: { input_tokens: 101, output_tokens: 12, total_tokens: 113 },
+        last_token_usage: { input_tokens: 101, output_tokens: 12, total_tokens: 113 },
+        model_context_window: 100,
       },
-    ],
-    null,
-    2,
-  ),
+    },
+  })}\n`,
   'utf8',
 );
 
-function writeCodexMetrics(threadId, contextTokens, contextWindowTokens) {
-  writeFileSync(
-    join(codexSessionsDir, `rollout-2026-03-10T12-17-55-${threadId}.jsonl`),
-    `${JSON.stringify({
-      timestamp: '2026-03-10T04:18:17.666Z',
-      type: 'event_msg',
-      payload: {
-        type: 'token_count',
-        info: {
-          total_token_usage: {
-            input_tokens: contextTokens,
-            output_tokens: 12,
-            total_tokens: contextTokens + 12,
-          },
-          last_token_usage: {
-            input_tokens: contextTokens,
-            output_tokens: 12,
-            total_tokens: contextTokens + 12,
-          },
-          model_context_window: contextWindowTokens,
-        },
-      },
-    })}\n`,
-    'utf8',
-  );
-}
-
-writeCodexMetrics('overflow-thread', 101, 100);
-writeCodexMetrics('exact-thread', 100, 100);
-
 setIsolatedTestHome(tempHome);
 process.env.REMOTELAB_MACHINE_CODEX_HOME = join(tempHome, '.codex');
+process.env.REMOTELAB_MEMORY_WRITEBACK = 'off';
 process.env.PATH = `${tempBin}:${process.env.PATH}`;
-delete process.env.REMOTELAB_CURRENT_CONTEXT_COMPACT_TOKENS;
 
-const sessionManager = await import(
-  pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href
-);
-const history = await import(
-  pathToFileURL(join(repoRoot, 'chat', 'history.mjs')).href
-);
-
+const sessionManager = await import(pathToFileURL(join(repoRoot, 'chat', 'session-manager.mjs')).href);
+const history = await import(pathToFileURL(join(repoRoot, 'chat', 'history.mjs')).href);
 const {
   createSession,
   getHistory,
@@ -138,149 +85,59 @@ const {
   sendMessage,
 } = sessionManager;
 
-const { getContextHead } = history;
-
-function readPersistedContextHead(sessionId) {
-  const raw = readFileSync(join(configDir, 'chat-history', sessionId, 'context.json'), 'utf8');
-  return JSON.parse(raw);
-}
-
-async function waitFor(predicate, description, timeoutMs = 20000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
+async function waitFor(predicate, description, timeoutMs = 8000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
     if (await predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`Timed out: ${description}`);
 }
 
-async function removeTempHomeWithRetries() {
-  let lastError = null;
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    try {
-      rmSync(tempHome, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      lastError = error;
-      if (!['ENOTEMPTY', 'EBUSY', 'EPERM'].includes(error?.code)) {
-        throw error;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-  }
-  throw lastError;
-}
-
 try {
-  const overflowSession = await createSession(tempHome, 'fake-codex', 'Overflow Fallback', {
+  const session = await createSession(tempHome, 'fake-codex', '', {
     group: 'RemoteLab',
-    description: 'Verify fallback compaction only after window overflow.',
   });
-
-  await sendMessage(overflowSession.id, 'overflow case', [], {
+  await sendMessage(session.id, 'Let the selected Harness own context compaction.', [], {
     tool: 'fake-codex',
     model: 'fake-model',
     effort: 'low',
   });
 
   await waitFor(
-    async () => (await getSession(overflowSession.id))?.contextMode === 'summary',
-    'overflow session should auto-compact after exceeding the context window',
+    async () => (await getSession(session.id))?.activity?.run?.state === 'idle',
+    'foreground run to finish',
   );
-
-  const overflowContextHead = readPersistedContextHead(overflowSession.id);
-  assert.match(
-    overflowContextHead?.summary || '',
-    /Carry forward only the compacted continuation summary\./,
-    'overflow session should store the compaction summary as the continuation head',
-  );
-
-  const overflowHistory = await getHistory(overflowSession.id);
-  assert.ok(
-    overflowHistory.some((event) => event.type === 'status' && /exceeded the model window/.test(event.content || '')),
-    'overflow session should record the automatic fallback compaction status',
-  );
-  const queuedCompactionEvent = overflowHistory.find(
-    (event) => event.type === 'context_operation' && event.operation === 'compact_context' && event.phase === 'queued',
-  );
-  assert.ok(
-    queuedCompactionEvent,
-    'overflow session should append a visible queued context operation for auto-compaction',
-  );
-  assert.equal(queuedCompactionEvent.operation, 'compact_context');
-  assert.equal(queuedCompactionEvent.trigger, 'automatic');
-  assert.ok(
-    overflowHistory.some((event) => event.type === 'context_barrier' && /no longer in the model's current context/i.test(event.content || '')),
-    'overflow session should insert a visible context barrier after auto-compaction',
-  );
-  assert.ok(
-    overflowHistory.some((event) => event.type === 'message' && event.role === 'assistant' && /# Auto Compress/.test(event.content || '')),
-    'overflow session should append a visible auto-compress handoff message',
-  );
-  assert.ok(
-    overflowHistory.some((event) => event.type === 'status' && /Auto Compress finished/.test(event.content || '')),
-    'overflow session should record the successful compaction completion status',
-  );
-  const appliedCompactionEvent = overflowHistory.find(
-    (event) => event.type === 'context_operation' && event.operation === 'compact_context' && event.phase === 'applied',
-  );
-  assert.ok(
-    appliedCompactionEvent,
-    'overflow session should append a visible applied context operation after compaction succeeds',
-  );
-  assert.equal(appliedCompactionEvent.operation, 'compact_context');
-  assert.equal(appliedCompactionEvent.trigger, 'automatic');
-  assert.match(
-    appliedCompactionEvent.summary || '',
-    /continuation summary and handoff/i,
-    'applied context operation should describe the new carried-forward continuation state',
-  );
-
   await waitFor(
-    async () => (await getSession(overflowSession.id))?.activity?.run?.state === 'idle',
-    'overflow session should settle back to idle after compaction',
+    async () => (await getSession(session.id))?.name === 'Harness Context Ownership',
+    'post-turn Session-state classifier to finish',
   );
 
-  const visibleSessionsAfterOverflow = await listSessions({ includeArchived: true });
   assert.equal(
-    visibleSessionsAfterOverflow.filter((session) => session.id === overflowSession.id).length,
-    1,
-    'overflow session should still be listed exactly once after auto-compaction',
-  );
-
-  const exactSession = await createSession(tempHome, 'fake-codex', 'Exact Limit', {
-    group: 'RemoteLab',
-    description: 'Verify exact 100% context usage does not auto-compact.',
-  });
-
-  await sendMessage(exactSession.id, 'exact case', [], {
-    tool: 'fake-codex',
-    model: 'fake-model',
-    effort: 'low',
-  });
-
-  await waitFor(
-    async () => (await getSession(exactSession.id))?.activity?.run?.state === 'idle',
-    'exact-limit session should finish the main run',
-  );
-  await new Promise((resolve) => setTimeout(resolve, 250));
-
-  const exactContextHead = await getContextHead(exactSession.id);
-  assert.equal(
-    exactContextHead,
+    await history.getContextHead(session.id),
     null,
-    'exact 100% context usage should not trigger fallback auto-compaction',
+    'RemoteLab must not replace a Harness thread with its own continuation summary after overflow metrics',
+  );
+  assert.equal(
+    (await getSession(session.id))?.codexThreadId,
+    'overflow-thread',
+    'the Harness resume identity must remain intact',
+  );
+  assert.equal(
+    (await listSessions({ includeArchived: true })).some((entry) => entry.internalRole === 'context_compactor'),
+    false,
+    'ordinary completion must not create a hidden RemoteLab compactor Session',
+  );
+  assert.equal(
+    (await getHistory(session.id)).some((event) => event.operation === 'compact_context'),
+    false,
+    'ordinary completion must not append RemoteLab compaction operations',
   );
 
-  const exactHistory = await getHistory(exactSession.id);
-  assert.ok(
-    !exactHistory.some((event) => event.type === 'status' && /compacting conversation/i.test(event.content || '')),
-    'exact 100% context usage should not queue an automatic compaction run',
-  );
-
-  console.log('test-auto-compaction: ok');
+  console.log('harness context ownership: RemoteLab auto-compaction remains retired');
 } finally {
   await killAll();
   delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
-  await removeTempHomeWithRetries();
+  delete process.env.REMOTELAB_MEMORY_WRITEBACK;
+  rmSync(tempHome, { recursive: true, force: true });
 }

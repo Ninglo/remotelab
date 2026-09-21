@@ -23,10 +23,8 @@ import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import {
   appendAssistantMessage,
   cancelActiveRun,
-  compactSession,
   createSession,
   delegateSession,
-  dropToolUse,
   forkSession,
   getHistory,
   getRunState,

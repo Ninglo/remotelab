@@ -364,18 +364,6 @@ async function dispatchAction(msg) {
         });
         await refreshCurrentSession();
         return true;
-      case "compact":
-        await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(currentSessionId)}/compact`, {
-          method: "POST",
-        });
-        await refreshCurrentSession();
-        return true;
-      case "drop_tools":
-        await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(currentSessionId)}/drop-tools`, {
-          method: "POST",
-        });
-        await refreshCurrentSession();
-        return true;
       default:
         return false;
     }

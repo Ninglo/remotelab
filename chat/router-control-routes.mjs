@@ -91,9 +91,7 @@ import {
 import { broadcastAll } from './ws-clients.mjs';
 import {
   appendAssistantMessage,
-  compactSession,
   delegateSession,
-  dropToolUse,
   forkSession,
   getHistory,
   getSession,
@@ -1138,21 +1136,15 @@ export async function handleControlRoutes({
       return true;
     }
 
-    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'compact') {
-      if (!await compactSession(sessionId)) {
-        writeJson(res, 409, { error: 'Unable to compact session' });
-        return true;
-      }
-      writeJson(res, 200, { ok: true, session: await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' }) });
+    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'compact' && req.method === 'POST') {
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+      writeJson(res, 410, { error: 'RemoteLab context compaction has been retired; the selected Harness owns context compaction.' });
       return true;
     }
 
-    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'drop-tools') {
-      if (!await dropToolUse(sessionId)) {
-        writeJson(res, 409, { error: 'Unable to drop tool results' });
-        return true;
-      }
-      writeJson(res, 200, { ok: true, session: await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' }) });
+    if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'drop-tools' && req.method === 'POST') {
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+      writeJson(res, 410, { error: 'RemoteLab tool-result dropping has been retired; the selected Harness owns its active context.' });
       return true;
     }
 
