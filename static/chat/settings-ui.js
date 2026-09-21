@@ -87,161 +87,6 @@ let piAuthPollTimer = null;
 let codexAuthRequestId = 0;
 const CODEX_AUTH_MUTATION_TIMEOUT_MS = 20_000;
 let piAuthState = null;
-let displaySettingsLoaded = false;
-
-function ensureDisplaySettingsSection() {
-  if (!settingsPanel) return null;
-  let section = document.getElementById("settingsDisplaySection");
-  if (section) return section;
-  section = document.createElement("div");
-  section.className = "settings-section settings-display-section";
-  section.id = "settingsDisplaySection";
-  section.innerHTML = `
-    <div class="settings-section-heading">
-      <div>
-        <div class="settings-section-title" data-display-copy="title"></div>
-        <div class="settings-section-note" data-display-copy="note"></div>
-      </div>
-      <button class="settings-app-btn settings-display-generate" id="settingsDisplayGenerate" type="button"></button>
-    </div>
-    <div class="settings-display-command" id="settingsDisplayCommandPanel" hidden>
-      <div class="settings-section-note" data-display-copy="commandHelp"></div>
-      <code id="settingsDisplayCommand"></code>
-      <button class="settings-app-btn" id="settingsDisplayCopy" type="button"></button>
-    </div>
-    <div class="settings-display-devices-heading" data-display-copy="devices"></div>
-    <div class="settings-apps-list" id="settingsDisplayDevices"></div>
-    <div class="settings-app-empty inline-status" id="settingsDisplayStatus" role="status" aria-live="polite"></div>
-  `;
-  const myViewSection = settingsCurrentPersonSummary?.closest(".settings-section");
-  if (myViewSection) myViewSection.after(section);
-  else settingsPanel.appendChild(section);
-  document.getElementById("settingsDisplayGenerate")?.addEventListener("click", () => {
-    void generateDisplayEnrollment();
-  });
-  document.getElementById("settingsDisplayCopy")?.addEventListener("click", async (event) => {
-    const command = document.getElementById("settingsDisplayCommand")?.textContent || "";
-    if (!command) return;
-    if (typeof copyText === "function") await copyText(command);
-    else await navigator.clipboard.writeText(command);
-    temporarilyUpdateButtonLabel(event.currentTarget, t("settings.display.copied"), {
-      resetLabel: t("settings.display.copy"),
-    });
-  });
-  renderDisplaySettingsCopy();
-  return section;
-}
-
-function renderDisplaySettingsCopy() {
-  const section = ensureDisplaySettingsSection();
-  if (!section) return;
-  for (const node of section.querySelectorAll("[data-display-copy]")) {
-    node.textContent = t(`settings.display.${node.dataset.displayCopy}`);
-  }
-  const generate = document.getElementById("settingsDisplayGenerate");
-  const copy = document.getElementById("settingsDisplayCopy");
-  if (generate && !generate.disabled) generate.textContent = t("settings.display.generate");
-  if (copy) copy.textContent = t("settings.display.copy");
-}
-
-function setDisplayStatus(message = "", { error = false } = {}) {
-  const status = document.getElementById("settingsDisplayStatus");
-  if (!status) return;
-  status.hidden = !message;
-  status.textContent = message;
-  status.classList.toggle("error", error);
-}
-
-function displayLastSeenCopy(device) {
-  const lastSeen = Date.parse(device?.lastSeenAt || "");
-  if (Number.isFinite(lastSeen) && Date.now() - lastSeen < 90_000) return t("settings.display.connected");
-  if (!Number.isFinite(lastSeen)) return t("settings.display.empty");
-  return t("settings.display.lastSeen", {
-    time: new Date(lastSeen).toLocaleString(document.documentElement.lang || undefined),
-  });
-}
-
-function renderDisplayDevice(device) {
-  const card = document.createElement("div");
-  card.className = "settings-app-card settings-display-device";
-  const header = document.createElement("div");
-  header.className = "settings-app-card-header";
-  const name = document.createElement("div");
-  name.className = "settings-app-name";
-  name.textContent = device.name || "RemoteLab Display";
-  const state = document.createElement("div");
-  state.className = "settings-app-kind";
-  state.textContent = displayLastSeenCopy(device);
-  header.append(name, state);
-  const meta = document.createElement("div");
-  meta.className = "settings-app-meta";
-  meta.textContent = [device.platform, device.id].filter(Boolean).join(" · ");
-  const actions = document.createElement("div");
-  actions.className = "settings-app-actions";
-  const disconnect = document.createElement("button");
-  disconnect.className = "settings-app-btn settings-display-disconnect";
-  disconnect.type = "button";
-  disconnect.textContent = t("settings.display.disconnect");
-  disconnect.addEventListener("click", async () => {
-    if (!window.confirm(t("settings.display.disconnectConfirm"))) return;
-    disconnect.disabled = true;
-    try {
-      await fetchJsonOrRedirect(`/api/display/devices/${encodeURIComponent(device.id)}`, {
-        method: "DELETE",
-        revalidate: false,
-      });
-      await loadDisplaySettings({ force: true });
-    } catch (error) {
-      setDisplayStatus(error?.message || t("settings.display.actionFailed"), { error: true });
-      disconnect.disabled = false;
-    }
-  });
-  actions.appendChild(disconnect);
-  card.append(header, meta, actions);
-  return card;
-}
-
-async function loadDisplaySettings({ force = false } = {}) {
-  const section = ensureDisplaySettingsSection();
-  if (!section || (displaySettingsLoaded && !force)) return;
-  const root = document.getElementById("settingsDisplayDevices");
-  if (!root) return;
-  setDisplayStatus(t("settings.display.loading"));
-  try {
-    const payload = await fetchJsonOrRedirect("/api/display/devices", { revalidate: false });
-    const devices = Array.isArray(payload?.devices) ? payload.devices : [];
-    root.replaceChildren(...devices.map(renderDisplayDevice));
-    setDisplayStatus(devices.length ? "" : t("settings.display.empty"));
-    displaySettingsLoaded = true;
-  } catch (error) {
-    setDisplayStatus(error?.message || t("settings.display.loadFailed"), { error: true });
-  }
-}
-
-async function generateDisplayEnrollment() {
-  ensureDisplaySettingsSection();
-  const button = document.getElementById("settingsDisplayGenerate");
-  if (!button) return;
-  button.disabled = true;
-  button.textContent = t("settings.display.generating");
-  setDisplayStatus();
-  try {
-    const payload = await fetchJsonOrRedirect("/api/display/enrollments", {
-      method: "POST",
-      revalidate: false,
-    });
-    const panel = document.getElementById("settingsDisplayCommandPanel");
-    const command = document.getElementById("settingsDisplayCommand");
-    if (command) command.textContent = payload?.command || "";
-    if (panel) panel.hidden = !payload?.command;
-  } catch (error) {
-    setDisplayStatus(error?.message || t("settings.display.actionFailed"), { error: true });
-  } finally {
-    button.disabled = false;
-    button.textContent = t("settings.display.generate");
-  }
-}
-
 function setPeopleStatus(message = "", { error = false } = {}) {
   if (!settingsPeopleStatus) return;
   settingsPeopleStatus.hidden = !message;
@@ -2094,8 +1939,6 @@ initThemeSettings();
 initThinkingBlockDisplaySettings();
 initSessionAutoArchiveSettings();
 initPeopleSettings();
-ensureDisplaySettingsSection();
-void loadDisplaySettings();
 void initVoiceInputSettings();
 initInstallSettings();
 initPushNotificationSettings();
@@ -2108,7 +1951,6 @@ if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
     void refreshCodexAuthStatus({ force: true });
     void refreshPiAuthStatus({ force: true });
     void renderPeopleSettings({ refresh: true });
-    void loadDisplaySettings({ force: true });
     void renderSettingsConnectorsPanel({ force: true });
   });
   tabSettings.dataset.connectorsBound = "true";
@@ -2124,8 +1966,6 @@ window.addEventListener("remotelab:localechange", () => {
   syncThinkingBlockDisplaySelect();
   syncSessionAutoArchiveSettings();
   void renderPeopleSettings();
-  renderDisplaySettingsCopy();
-  if (displaySettingsLoaded) void loadDisplaySettings({ force: true });
   if (voiceInputSettingsLoaded) {
     syncVoiceInputSettings();
   }
