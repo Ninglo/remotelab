@@ -28,15 +28,6 @@ export async function handlePiAuthRoutes({
     return true;
   }
 
-  if (pathname === '/api/pi-auth/sync-codex' && req.method === 'POST') {
-    try {
-      writeJson(res, 200, { piAuth: await authManager.syncCodexLogin() });
-    } catch (error) {
-      writeJson(res, 500, { error: error.message || 'Failed to sync the Codex login to Pi' });
-    }
-    return true;
-  }
-
   writeJson(res, 404, { error: 'Pi login route not found' });
   return true;
 }

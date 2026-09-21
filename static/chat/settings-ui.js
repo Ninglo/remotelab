@@ -804,24 +804,24 @@ function getPiAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
     title: "Pi · OpenAI 登录",
-    note: "Pi 复用本机 Codex 登录，不再维护第二套 OpenAI 账号。",
+    note: "Pi 使用独立登录。请在终端启动 Pi，并用 /login 登录 OpenAI。",
     checking: "检测中…",
-    authenticated: "已同步",
-    loggedOut: "未同步",
+    authenticated: "已登录",
+    loggedOut: "未登录",
     unavailable: "未安装 Pi",
-    failed: "同步异常",
+    failed: "登录异常",
     check: "检查状态",
-    start: "同步 Codex 登录",
+    logout: "退出登录",
   } : {
     title: "Pi · OpenAI login",
-    note: "Pi reuses this machine's Codex login instead of maintaining a second OpenAI account.",
+    note: "Pi uses its own login. Start Pi in a terminal and use /login to sign in to OpenAI.",
     checking: "Checking…",
-    authenticated: "Synced",
-    loggedOut: "Not synced",
+    authenticated: "Signed in",
+    loggedOut: "Signed out",
     unavailable: "Pi is not installed",
-    failed: "Sync issue",
+    failed: "Login issue",
     check: "Check status",
-    start: "Sync Codex login",
+    logout: "Sign out",
   };
 }
 
@@ -849,7 +849,7 @@ function ensurePiAuthSection() {
     void refreshPiAuthStatus({ force: true });
   });
   document.getElementById("settingsPiAuthLoginBtn")?.addEventListener("click", () => {
-    void syncPiCodexLogin();
+    void logoutPiLogin();
   });
   return section;
 }
@@ -868,8 +868,8 @@ function renderPiAuthPanel({ checking = false } = {}) {
   title.textContent = copy.title;
   note.textContent = copy.note;
   checkBtn.textContent = copy.check;
-  loginBtn.textContent = copy.start;
-  loginBtn.hidden = state.loggedIn === true;
+  loginBtn.textContent = copy.logout;
+  loginBtn.hidden = state.loggedIn !== true;
   loginBtn.disabled = checking || state.available === false;
   checkBtn.disabled = checking;
 
@@ -902,24 +902,17 @@ async function refreshPiAuthStatus({ silent = false } = {}) {
   renderPiAuthPanel();
 }
 
-async function syncPiCodexLogin() {
+async function logoutPiLogin() {
   const loginBtn = document.getElementById("settingsPiAuthLoginBtn");
   if (loginBtn) loginBtn.disabled = true;
   try {
-    const data = await fetchJsonOrRedirect("/api/pi-auth/sync-codex", {
+    const data = await fetchJsonOrRedirect("/api/pi-auth/logout", {
       method: "POST",
       revalidate: false,
     });
     piAuthState = data?.piAuth || {};
-    if (
-      piAuthState.loggedIn === true
-      && selectedTool === "pi"
-      && typeof loadModelsForCurrentTool === "function"
-    ) {
-      await loadModelsForCurrentTool({ refresh: true });
-    }
   } catch (error) {
-    piAuthState = { phase: "failed", error: error?.message || "Pi login sync failed" };
+    piAuthState = { phase: "failed", error: error?.message || "Pi logout failed" };
   }
   renderPiAuthPanel();
 }

@@ -1006,8 +1006,8 @@ async function main() {
     assert.match(settingsUiAsset.text, /function initVoiceInputSettings\(/);
     assert.match(settingsUiAsset.text, /function initSessionAutoArchiveSettings\(/);
     assert.match(settingsUiAsset.text, /function renderVoiceInputClusterOptions\(/);
-    assert.match(settingsUiAsset.text, /\/api\/pi-auth\/sync-codex/, 'Pi should reuse the machine Codex login');
-    assert.doesNotMatch(settingsUiAsset.text, /Pi · OpenAI[\s\S]*separate from the Codex CLI login/, 'Pi should not expose a second Codex login');
+    assert.doesNotMatch(settingsUiAsset.text, /\/api\/pi-auth\/sync-codex/, 'Pi should not copy the machine Codex login');
+    assert.match(settingsUiAsset.text, /Pi uses its own login/, 'Pi should explain its independent login');
 
     const instanceSettingsAsset = await request(port, 'GET', '/chat/instance-settings.js');
     assert.equal(instanceSettingsAsset.status, 200, 'instance settings asset should load');

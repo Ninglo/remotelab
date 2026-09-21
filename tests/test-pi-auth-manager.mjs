@@ -1,5 +1,5 @@
 import assert from 'assert/strict';
-import { access, chmod, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -8,7 +8,6 @@ import { handlePiAuthRoutes } from '../chat/router-pi-auth-routes.mjs';
 
 const tempRoot = await mkdtemp(join(tmpdir(), 'remotelab-pi-auth-'));
 const piAgentDir = join(tempRoot, 'pi-agent');
-const codexHome = join(tempRoot, '.codex');
 const fakePi = join(tempRoot, 'fake-pi');
 const expirySeconds = Math.floor(Date.now() / 1000) + 3600;
 const accessToken = `header.${Buffer.from(JSON.stringify({ exp: expirySeconds })).toString('base64url')}.signature`;
@@ -29,7 +28,6 @@ await chmod(fakePi, 0o755);
 const manager = createPiAuthManager({
   resolvePiCommand: async () => fakePi,
   resolveAgentDir: () => piAgentDir,
-  resolveCodexHome: () => codexHome,
   baseEnv: () => process.env,
 });
 
@@ -37,37 +35,27 @@ const initial = await manager.getStatus();
 assert.equal(initial.available, true);
 assert.equal(initial.loggedIn, false);
 
-const missingCodexLogin = await manager.syncCodexLogin();
-assert.equal(missingCodexLogin.loggedIn, false);
-assert.equal(missingCodexLogin.phase, 'failed');
-assert.match(missingCodexLogin.error, /Sign in to Codex/);
-
-await mkdir(codexHome, { recursive: true });
-await writeFile(join(codexHome, 'auth.json'), JSON.stringify({
-  auth_mode: 'chatgpt',
-  tokens: {
-    access_token: accessToken,
-    refresh_token: 'refresh-test',
-    account_id: 'account-test',
+await mkdir(piAgentDir, { recursive: true });
+await writeFile(join(piAgentDir, 'auth.json'), JSON.stringify({
+  'openai-codex': {
+    type: 'oauth',
+    access: accessToken,
+    refresh: 'pi-refresh-test',
+    expires: expirySeconds * 1000,
+    accountId: 'pi-account-test',
   },
 }));
-const completed = await manager.syncCodexLogin();
-assert.equal(completed.loggedIn, true);
-assert.equal(completed.phase, 'authenticated');
+const independentlyLoggedIn = await manager.getStatus();
+assert.equal(independentlyLoggedIn.loggedIn, true);
+assert.equal(independentlyLoggedIn.phase, 'authenticated');
 const stored = JSON.parse(await readFile(join(piAgentDir, 'auth.json'), 'utf8'));
 assert.deepEqual(stored['openai-codex'], {
   type: 'oauth',
   access: accessToken,
-  refresh: 'refresh-test',
+  refresh: 'pi-refresh-test',
   expires: expirySeconds * 1000,
-  accountId: 'account-test',
+  accountId: 'pi-account-test',
 });
-await access(join(codexHome, 'auth.json'));
-
-const redundantLogin = await manager.syncCodexLogin();
-assert.equal(redundantLogin.loggedIn, true);
-assert.equal(redundantLogin.phase, 'authenticated');
-assert.equal(redundantLogin.deviceLoginActive, false);
 
 const loggedOut = await manager.logout();
 assert.equal(loggedOut.loggedIn, false);
@@ -96,8 +84,8 @@ await handlePiAuthRoutes({
   writeJson: syncResponse.writeJson,
   authManager: manager,
 });
-assert.equal(syncResponse.capture.status, 200);
-assert.equal(syncResponse.capture.payload?.piAuth?.loggedIn, true);
+assert.equal(syncResponse.capture.status, 404);
+assert.equal(syncResponse.capture.payload?.error, 'Pi login route not found');
 
 const primaryResponse = createResponseCapture();
 await handlePiAuthRoutes({
