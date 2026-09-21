@@ -240,6 +240,9 @@ async function main() {
     assert.equal(recurring.json.task.state, 'active');
     assert.ok(recurring.json.task.nextRunAt);
     assert.equal(recurring.json.task.target.mode, 'new_session');
+    assert.equal(recurring.json.task.schedule.type, 'cron');
+    assert.deepEqual(recurring.json.task.lifetime, { mode: 'continuous' });
+    assert.deepEqual(recurring.json.task.gate, { mode: 'direct' });
 
     const pausedSchedule = await request(port, 'POST', `/api/automation-tasks/${scheduleId}/pause`);
     assert.equal(pausedSchedule.status, 200, pausedSchedule.text);
@@ -253,9 +256,45 @@ async function main() {
     assert.equal(cancelledSchedule.status, 200, cancelledSchedule.text);
     assert.equal(cancelledSchedule.json.task.state, 'cancelled');
 
+    const gated = await request(port, 'POST', '/api/automation-tasks', {
+      kind: 'recurring',
+      title: 'High-frequency gated monitor',
+      prompt: 'Inspect the condition that matched.',
+      schedule: { type: 'interval', everySeconds: 10 },
+      lifetime: { mode: 'bounded', maxExecutions: 2 },
+      gate: {
+        mode: 'script', runtime: 'bash', source: 'echo no', timeoutSeconds: 2, cooldownSeconds: 30,
+      },
+      target: { mode: 'fixed_session', sessionId: fixedSession.id },
+      resultDelivery: { mode: 'source_conversation' },
+      alerts: { mode: 'remotelab', on: ['gate_error', 'execution_failure'] },
+    });
+    assert.equal(gated.status, 201, gated.text);
+    assert.equal(gated.json.task.schedule.type, 'interval');
+    assert.equal(gated.json.task.schedule.everySeconds, 10);
+    assert.equal(gated.json.task.lifetime.maxExecutions, 2);
+    assert.equal(gated.json.task.gate.mode, 'script');
+    assert.equal(gated.json.task.gate.runtime, 'bash');
+    assert.equal(gated.json.task.gate.snapshotSha256.length, 64);
+    assert.equal(Object.hasOwn(gated.json.task.gate, 'source'), false, 'read model must not expose gate source');
+    assert.equal(gated.json.task.resultDelivery.mode, 'conversation');
+    assert.equal(gated.json.task.resultDelivery.sourceRouteId, 'task-center-test');
+    assert.equal(gated.json.task.alerts.mode, 'remotelab');
+    const cancelledGated = await request(port, 'POST', `/api/automation-tasks/${gated.json.task.id}/cancel`);
+    assert.equal(cancelledGated.status, 200, cancelledGated.text);
+
+    const invalidGate = await request(port, 'POST', '/api/automation-tasks', {
+      kind: 'recurring',
+      prompt: 'Invalid gate',
+      schedule: { type: 'interval', everySeconds: 10 },
+      gate: { mode: 'script', runtime: 'bash' },
+      target: { mode: 'new_session', sessionId: templateSession.id },
+    });
+    assert.equal(invalidGate.status, 400);
+
     const all = await request(port, 'GET', '/api/automation-tasks');
     assert.equal(all.status, 200, all.text);
-    assert.equal(all.json.tasks.length, 4, 'Task Center should unify one-time triggers and recurring schedules');
+    assert.equal(all.json.tasks.length, 5, 'Task Center should unify one-time triggers and recurring schedules');
     assert.ok(all.json.tasks.some((task) => task.id === fixedCreate.json.task.id && task.lastExecution?.runId));
 
     const invalid = await request(port, 'POST', '/api/automation-tasks', {

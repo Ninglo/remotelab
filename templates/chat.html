@@ -103,15 +103,75 @@
               <input id="taskCenterScheduledAt" type="datetime-local">
             </label>
           </div>
-          <div class="task-center-grid" id="taskCenterCronFields" hidden>
+          <div class="task-center-grid" id="taskCenterRecurringFields" hidden>
             <label class="task-center-field">
+              <span data-i18n="tasks.form.cadence">Cadence</span>
+              <select id="taskCenterCadence">
+                <option value="cron" data-i18n="tasks.form.cadenceCron">Calendar (cron)</option>
+                <option value="interval" data-i18n="tasks.form.cadenceInterval">Interval</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterCronField">
               <span data-i18n="tasks.form.cron">Cron</span>
               <input id="taskCenterCron" type="text" value="0 9 * * 1-5" spellcheck="false">
             </label>
-            <label class="task-center-field">
+            <label class="task-center-field" id="taskCenterIntervalField" hidden>
+              <span data-i18n="tasks.form.everySeconds">Every (seconds)</span>
+              <input id="taskCenterEverySeconds" type="number" value="60" min="10" step="1">
+              <small data-i18n="tasks.form.intervalHelp">Minimum 10 seconds. Missed checks collapse to the latest one.</small>
+            </label>
+            <label class="task-center-field" id="taskCenterTimezoneField">
               <span data-i18n="tasks.form.timezone">Timezone</span>
               <input id="taskCenterTimezone" type="text" value="Asia/Shanghai" spellcheck="false">
             </label>
+          </div>
+          <div class="task-center-grid" id="taskCenterLifetimeFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.lifetime">Lifetime</span>
+              <select id="taskCenterLifetime">
+                <option value="continuous" data-i18n="tasks.form.continuous">Continuous</option>
+                <option value="bounded" data-i18n="tasks.form.finite">Finite</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterMaxExecutionsField" hidden>
+              <span data-i18n="tasks.form.agentAdmissions">Agent admissions</span>
+              <input id="taskCenterMaxExecutions" type="number" value="1" min="1" step="1">
+              <small data-i18n="tasks.form.admissionLimitHelp">Checks that return no do not consume this limit.</small>
+            </label>
+          </div>
+          <div class="task-center-grid" id="taskCenterGateFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.admission">Admission</span>
+              <select id="taskCenterGateMode">
+                <option value="direct" data-i18n="tasks.form.admissionDirect">Run Agent every time</option>
+                <option value="script" data-i18n="tasks.form.admissionScript">Check with a script first</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterGateRuntimeField" hidden>
+              <span data-i18n="tasks.form.scriptRuntime">Script runtime</span>
+              <select id="taskCenterGateRuntime">
+                <option value="bash">Bash</option>
+                <option value="python">Python</option>
+                <option value="node">Node.js</option>
+              </select>
+            </label>
+          </div>
+          <div id="taskCenterGateScriptFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.conditionScript">Condition script</span>
+              <textarea id="taskCenterGateSource" rows="5" spellcheck="false" placeholder="echo no"></textarea>
+              <small data-i18n="tasks.form.conditionScriptHelp">Print exactly yes/no, or JSON with a boolean trigger. Errors fail closed. The script is snapshotted when the task is created.</small>
+            </label>
+            <div class="task-center-grid">
+              <label class="task-center-field">
+                <span data-i18n="tasks.form.timeoutSeconds">Timeout (seconds)</span>
+                <input id="taskCenterGateTimeout" type="number" value="5" min="1" max="30" step="1">
+              </label>
+              <label class="task-center-field">
+                <span data-i18n="tasks.form.cooldownSeconds">Cooldown (seconds)</span>
+                <input id="taskCenterGateCooldown" type="number" value="0" min="0" step="1">
+              </label>
+            </div>
           </div>
           <label class="task-center-field">
             <span data-i18n="tasks.form.execution">Execution</span>

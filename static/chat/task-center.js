@@ -11,9 +11,26 @@
   const kindSelect = document.getElementById("taskCenterKind");
   const onceField = document.getElementById("taskCenterOnceField");
   const scheduledAtInput = document.getElementById("taskCenterScheduledAt");
-  const cronFields = document.getElementById("taskCenterCronFields");
+  const recurringFields = document.getElementById("taskCenterRecurringFields");
+  const cadenceSelect = document.getElementById("taskCenterCadence");
+  const cronField = document.getElementById("taskCenterCronField");
   const cronInput = document.getElementById("taskCenterCron");
+  const intervalField = document.getElementById("taskCenterIntervalField");
+  const everySecondsInput = document.getElementById("taskCenterEverySeconds");
+  const timezoneField = document.getElementById("taskCenterTimezoneField");
   const timezoneInput = document.getElementById("taskCenterTimezone");
+  const lifetimeFields = document.getElementById("taskCenterLifetimeFields");
+  const lifetimeSelect = document.getElementById("taskCenterLifetime");
+  const maxExecutionsField = document.getElementById("taskCenterMaxExecutionsField");
+  const maxExecutionsInput = document.getElementById("taskCenterMaxExecutions");
+  const gateFields = document.getElementById("taskCenterGateFields");
+  const gateModeSelect = document.getElementById("taskCenterGateMode");
+  const gateRuntimeField = document.getElementById("taskCenterGateRuntimeField");
+  const gateRuntimeSelect = document.getElementById("taskCenterGateRuntime");
+  const gateScriptFields = document.getElementById("taskCenterGateScriptFields");
+  const gateSourceInput = document.getElementById("taskCenterGateSource");
+  const gateTimeoutInput = document.getElementById("taskCenterGateTimeout");
+  const gateCooldownInput = document.getElementById("taskCenterGateCooldown");
   const targetModeSelect = document.getElementById("taskCenterTargetMode");
   const sessionSelect = document.getElementById("taskCenterSession");
   const sessionLabel = document.getElementById("taskCenterSessionLabel");
@@ -84,10 +101,37 @@
   function syncTimingFields() {
     const recurring = kindSelect?.value === "recurring";
     if (onceField) onceField.hidden = recurring;
-    if (cronFields) cronFields.hidden = !recurring;
+    if (recurringFields) recurringFields.hidden = !recurring;
+    if (lifetimeFields) lifetimeFields.hidden = !recurring;
+    if (gateFields) gateFields.hidden = !recurring;
     if (scheduledAtInput) scheduledAtInput.required = !recurring;
-    if (cronInput) cronInput.required = recurring;
-    if (timezoneInput) timezoneInput.required = recurring;
+    syncCadenceFields();
+    syncLifetimeFields();
+    syncGateFields();
+  }
+
+  function syncCadenceFields() {
+    const recurring = kindSelect?.value === "recurring";
+    const interval = cadenceSelect?.value === "interval";
+    if (cronField) cronField.hidden = !recurring || interval;
+    if (intervalField) intervalField.hidden = !recurring || !interval;
+    if (timezoneField) timezoneField.hidden = !recurring || interval;
+    if (cronInput) cronInput.required = recurring && !interval;
+    if (timezoneInput) timezoneInput.required = recurring && !interval;
+    if (everySecondsInput) everySecondsInput.required = recurring && interval;
+  }
+
+  function syncLifetimeFields() {
+    const bounded = kindSelect?.value === "recurring" && lifetimeSelect?.value === "bounded";
+    if (maxExecutionsField) maxExecutionsField.hidden = !bounded;
+    if (maxExecutionsInput) maxExecutionsInput.required = bounded;
+  }
+
+  function syncGateFields() {
+    const scripted = kindSelect?.value === "recurring" && gateModeSelect?.value === "script";
+    if (gateRuntimeField) gateRuntimeField.hidden = !scripted;
+    if (gateScriptFields) gateScriptFields.hidden = !scripted;
+    if (gateSourceInput) gateSourceInput.required = scripted;
   }
 
   function syncTargetFields() {
@@ -158,6 +202,10 @@
 
   function taskScheduleText(task) {
     if (task?.kind === "recurring") {
+      if (task.schedule?.type === "interval") {
+        const seconds = task.schedule?.everySeconds || "—";
+        return translate("tasks.schedule.interval", `Every ${seconds}s`, { seconds });
+      }
       return `${task.schedule?.cron || "—"} · ${task.schedule?.timezone || "—"}`;
     }
     return formatDateTime(task?.schedule?.scheduledAt);
@@ -181,12 +229,49 @@
   }
 
   function notificationText(task) {
-    const notification = task?.notification || {};
+    const notification = task?.resultDelivery || task?.notification || {};
     if (notification.mode !== "conversation") {
       return translate("tasks.notification.remotelab", "RemoteLab only");
     }
     const connector = notification.connector || translate("tasks.notification.external", "External source");
     return `${connector}${notification.sourceRouteId ? ` · ${notification.sourceRouteId}` : ""}`;
+  }
+
+  function lifetimeText(task) {
+    const lifetime = task?.lifetime || {};
+    if (lifetime.mode !== "bounded") return translate("tasks.lifetime.continuous", "Continuous");
+    const parts = [];
+    if (lifetime.maxExecutions) {
+      const admitted = task?.counters?.admittedExecutions || 0;
+      parts.push(translate("tasks.lifetime.admissions", `${admitted}/${lifetime.maxExecutions} Agent admissions`, {
+        admitted,
+        max: lifetime.maxExecutions,
+      }));
+    }
+    if (lifetime.maxChecks) {
+      const checks = task?.counters?.checks || 0;
+      parts.push(translate("tasks.lifetime.checks", `${checks}/${lifetime.maxChecks} checks`, {
+        checks,
+        max: lifetime.maxChecks,
+      }));
+    }
+    if (lifetime.endsAt) {
+      const time = formatDateTime(lifetime.endsAt);
+      parts.push(translate("tasks.lifetime.until", `until ${time}`, { time }));
+    }
+    return parts.join(" · ") || translate("tasks.lifetime.finite", "Finite");
+  }
+
+  function gateText(task) {
+    if (task?.gate?.mode !== "script") return translate("tasks.gate.direct", "Direct");
+    const checks = task?.counters?.checks || 0;
+    const matches = task?.counters?.matches || 0;
+    const runtime = task.gate.runtime || "script";
+    return translate("tasks.gate.scriptStats", `${runtime} · ${matches}/${checks} matched`, {
+      runtime,
+      matches,
+      checks,
+    });
   }
 
   function addMetaRow(container, label, value, { link = "" } = {}) {
@@ -272,6 +357,10 @@
     );
     addMetaRow(meta, translate("tasks.meta.execution", "Execution"), taskTargetText(task));
     addMetaRow(meta, translate("tasks.meta.delivery", "Delivery"), notificationText(task));
+    if (task.kind === "recurring") {
+      addMetaRow(meta, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
+      addMetaRow(meta, translate("tasks.meta.admission", "Admission"), gateText(task));
+    }
     const execution = task.lastExecution;
     addMetaRow(
       meta,
@@ -387,8 +476,25 @@
           : "remotelab",
       },
       ...(kind === "recurring" ? {
-        cron: cronInput?.value?.trim() || "",
-        timezone: timezoneInput?.value?.trim() || "Asia/Shanghai",
+        schedule: cadenceSelect?.value === "interval"
+          ? { type: "interval", everySeconds: Number(everySecondsInput?.value || 0) }
+          : {
+            type: "cron",
+            cron: cronInput?.value?.trim() || "",
+            timezone: timezoneInput?.value?.trim() || "Asia/Shanghai",
+          },
+        lifetime: lifetimeSelect?.value === "bounded"
+          ? { mode: "bounded", maxExecutions: Number(maxExecutionsInput?.value || 0) }
+          : { mode: "continuous" },
+        gate: gateModeSelect?.value === "script"
+          ? {
+            mode: "script",
+            runtime: gateRuntimeSelect?.value || "bash",
+            source: gateSourceInput?.value || "",
+            timeoutSeconds: Number(gateTimeoutInput?.value || 5),
+            cooldownSeconds: Number(gateCooldownInput?.value || 0),
+          }
+          : { mode: "direct" },
       } : {
         scheduledAt,
       }),
@@ -421,6 +527,9 @@
   createToggle?.addEventListener("click", () => setFormVisible(Boolean(form?.hidden)));
   createCancel?.addEventListener("click", () => setFormVisible(false));
   kindSelect?.addEventListener("change", syncTimingFields);
+  cadenceSelect?.addEventListener("change", syncCadenceFields);
+  lifetimeSelect?.addEventListener("change", syncLifetimeFields);
+  gateModeSelect?.addEventListener("change", syncGateFields);
   targetModeSelect?.addEventListener("change", syncTargetFields);
   filterSelect?.addEventListener("change", renderTasks);
   refreshButton?.addEventListener("click", () => void refreshTasks({ force: true }));

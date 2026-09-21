@@ -24,6 +24,10 @@ assert.match(template, /value="fixed_session"/, 'UI must offer a fixed Session e
 assert.match(template, /value="new_session"/, 'UI must offer an independent Session execution mode');
 assert.match(template, /value="remotelab"/, 'UI must configure RemoteLab-only result delivery independently');
 assert.match(template, /value="source_conversation"/, 'UI must configure connected-source delivery independently');
+assert.match(template, /id="taskCenterCadence"[\s\S]*value="cron"[\s\S]*value="interval"/, 'UI must offer cron and interval cadence');
+assert.match(template, /id="taskCenterLifetime"[\s\S]*value="continuous"[\s\S]*value="bounded"/, 'UI must offer continuous and finite lifetime');
+assert.match(template, /id="taskCenterGateMode"[\s\S]*value="direct"[\s\S]*value="script"/, 'UI must offer direct and script-gated admission');
+assert.match(template, /id="taskCenterGateSource"/, 'UI must expose the snapshotted condition script');
 assert.match(template, /id="taskCenterFilter"/, 'UI must expose task lifecycle filtering');
 
 assert.match(css, /\.task-center-panel\s*\{[^}]*padding:\s*clamp\(22px,\s*4vw,\s*48px\)/s, 'Task Center should use the shared workspace canvas inset');
@@ -39,6 +43,9 @@ assert.match(compose, /resolvedSessionWorkspace\.hidden = !showingSessions/, 'wo
 assert.match(compose, /RemoteLabTaskCenter\?\.onTabShown/, 'opening Tasks must refresh its read model');
 assert.match(script, /\/api\/automation-tasks/, 'Task Center must use the unified API');
 assert.match(script, /scheduledAt = parsed\.toISOString\(\)/, 'local date input must be normalized before submission');
+assert.match(script, /everySeconds:\s*Number/, 'interval cadence must be submitted as seconds');
+assert.match(script, /maxExecutions:\s*Number/, 'finite lifetime must submit its Agent admission limit');
+assert.match(script, /mode:\s*"script"[\s\S]*runtime:[\s\S]*source:/, 'script gate configuration must be submitted explicitly');
 assert.match(script, /globalScope\.confirm/, 'terminal cancellation needs a user confirmation');
 assert.doesNotMatch(script, /\.innerHTML\s*=/, 'task content should not be rendered through innerHTML');
 

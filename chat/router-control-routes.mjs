@@ -199,13 +199,17 @@ async function prepareAutomationTask(payload = {}) {
   if (!sourceSession) throw new Error('Target Session not found');
   if (sourceSession.archived) throw new Error('Target Session is archived');
 
-  const notification = payload.notification && typeof payload.notification === 'object'
-    ? payload.notification
+  const resultDelivery = payload.resultDelivery && typeof payload.resultDelivery === 'object'
+    ? payload.resultDelivery
+    : payload.notification && typeof payload.notification === 'object'
+      ? payload.notification
     : { mode: 'remotelab' };
-  const notificationMode = trimString(notification.mode).toLowerCase() || 'remotelab';
-  if (!['remotelab', 'source_conversation'].includes(notificationMode)) {
-    throw new Error('notification.mode must be remotelab or source_conversation');
+  const resultDeliveryMode = trimString(resultDelivery.mode).toLowerCase() || 'remotelab';
+  if (!['remotelab', 'source_conversation'].includes(resultDeliveryMode)) {
+    throw new Error('resultDelivery.mode must be remotelab or source_conversation');
   }
+
+  const schedule = payload.schedule && typeof payload.schedule === 'object' ? payload.schedule : {};
 
   const title = trimString(payload.title);
   const input = {
@@ -214,6 +218,12 @@ async function prepareAutomationTask(payload = {}) {
     sessionId: sourceSessionId,
     sourceSessionId,
     text: trimString(payload.prompt || payload.text),
+    ...(kind === 'recurring' ? {
+      ...(schedule.type ? { cadence: schedule } : {}),
+      ...(Object.hasOwn(schedule, 'cron') ? { cron: schedule.cron } : {}),
+      ...(Object.hasOwn(schedule, 'timezone') ? { timezone: schedule.timezone } : {}),
+      ...(Object.hasOwn(schedule, 'everySeconds') ? { everySeconds: schedule.everySeconds } : {}),
+    } : {}),
     ...(targetMode === 'fixed_session' ? {
       sessionTemplate: {
         folder: sourceSession.folder,
@@ -233,7 +243,7 @@ async function prepareAutomationTask(payload = {}) {
   delete input.sourceRequestId;
   delete input.deliverTo;
   if (targetMode === 'new_session') delete input.sessionTemplate;
-  if (notificationMode === 'source_conversation') input.deliverTo = 'session_source';
+  if (resultDeliveryMode === 'source_conversation') input.deliverTo = 'session_source';
   const prepared = await prepareScheduledTask(input);
   return { ...prepared, kind };
 }
@@ -441,7 +451,7 @@ export async function handleControlRoutes({
   if (pathname === '/api/automation-tasks' && req.method === 'POST') {
     let payload = {};
     try {
-      const body = await readBody(req, 32768);
+      const body = await readBody(req, 131072);
       payload = body ? JSON.parse(body) : {};
     } catch {
       writeJson(res, 400, { error: 'Invalid request body' });
@@ -588,7 +598,7 @@ export async function handleControlRoutes({
   if (pathname === '/api/schedules' && req.method === 'POST') {
     let payload = {};
     try {
-      const body = await readBody(req, 32768);
+      const body = await readBody(req, 131072);
       payload = body ? JSON.parse(body) : {};
     } catch {
       writeJson(res, 400, { error: 'Invalid request body' });
@@ -614,7 +624,7 @@ export async function handleControlRoutes({
   if (scheduleId && req.method === 'PATCH') {
     let payload = {};
     try {
-      const body = await readBody(req, 32768);
+      const body = await readBody(req, 131072);
       payload = body ? JSON.parse(body) : {};
     } catch {
       writeJson(res, 400, { error: 'Invalid request body' });

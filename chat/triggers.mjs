@@ -51,6 +51,20 @@ function normalizeBoolean(value, fallback = false) {
   return fallback;
 }
 
+function normalizeTaskAlerts(value) {
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const mode = trimString(raw.mode).toLowerCase() || 'remotelab';
+  if (!['none', 'remotelab'].includes(mode)) {
+    throw new Error('alerts.mode must be none or remotelab');
+  }
+  const on = Array.isArray(raw.on)
+    ? [...new Set(raw.on.map((entry) => trimString(entry).toLowerCase()).filter((entry) => (
+      ['gate_error', 'execution_failure', 'completed'].includes(entry)
+    )))]
+    : ['execution_failure'];
+  return { mode, on };
+}
+
 function validTriggerId(value) {
   return /^trg_[a-f0-9]{24}$/.test(trimString(value));
 }
@@ -146,6 +160,7 @@ function normalizeStoredTrigger(value) {
     model: trimString(raw.model),
     effort: trimString(raw.effort),
     thinking: normalizeBoolean(raw.thinking, false),
+    alerts: normalizeTaskAlerts(raw.alerts),
     requestId,
     createdAt,
     updatedAt,
@@ -342,6 +357,7 @@ export async function createTrigger(input = {}) {
     model: trimString(input.model),
     effort: trimString(input.effort),
     thinking: input.thinking === true,
+    alerts: normalizeTaskAlerts(input.alerts),
     requestId: buildTriggerRequestId(id),
     createdAt,
     updatedAt: createdAt,
@@ -352,18 +368,23 @@ export async function createTrigger(input = {}) {
   };
 
   let createdTrigger = trigger;
+  let deduplicated = false;
   await withTriggerMutation(async (triggers, saveTriggers) => {
     if (trigger.occurrenceId) {
       const existing = triggers.find((entry) => entry.occurrenceId === trigger.occurrenceId);
       if (existing) {
         createdTrigger = existing;
+        deduplicated = true;
         return;
       }
     }
     triggers.push(trigger);
     await saveTriggers(triggers);
   });
-  return cloneTrigger(createdTrigger);
+  return {
+    ...cloneTrigger(createdTrigger),
+    ...(deduplicated ? { deduplicated: true } : {}),
+  };
 }
 
 export async function createScheduledTrigger(input = {}) {
@@ -382,6 +403,20 @@ export async function countOpenScheduleTriggers(scheduleId) {
     if (run && !isTerminalRunState(run.state)) open += 1;
   }
   return open;
+}
+
+export async function getScheduleTriggerCounts(scheduleId) {
+  const normalizedScheduleId = trimString(scheduleId);
+  if (!normalizedScheduleId) {
+    return { admittedExecutions: 0, pendingAdmissions: 0, failedExecutions: 0, cancelledExecutions: 0 };
+  }
+  const triggers = (await loadTriggers()).filter((trigger) => trigger.scheduleId === normalizedScheduleId);
+  return {
+    admittedExecutions: triggers.filter((trigger) => trigger.status === TRIGGER_STATUS_DELIVERED).length,
+    pendingAdmissions: triggers.filter((trigger) => [TRIGGER_STATUS_PENDING, TRIGGER_STATUS_DELIVERING].includes(trigger.status)).length,
+    failedExecutions: triggers.filter((trigger) => trigger.status === TRIGGER_STATUS_FAILED).length,
+    cancelledExecutions: triggers.filter((trigger) => trigger.status === TRIGGER_STATUS_CANCELLED).length,
+  };
 }
 
 export async function cancelScheduleTriggers(scheduleId, options = {}) {

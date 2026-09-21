@@ -16,7 +16,7 @@ The base trigger still has one action shape:
 - delivery: resolve or create that Session at fire time, then submit one canonical task message through the normal run path
 - source Session: context/template seed; execution only reuses it when an explicit conversation binding resolves back to it
 
-Recurring schedules materialize that same trigger shape from a five-field cron expression. Both use `sessionTemplate.conversation`, the same optional binding accepted by normal Session creation. Task Center exposes execution target and result delivery as separate controls while continuing to use this one trigger/run path.
+Recurring schedules materialize that same trigger shape from either a five-field cron expression or a seconds-based interval. An optional local script gate can decide whether a due check should materialize the Trigger at all. Both use `sessionTemplate.conversation`, the same optional binding accepted by normal Session creation. Task Center exposes cadence, lifetime, admission gate, execution target, result delivery, and alert policy as separate controls while continuing to use this one trigger/run path.
 
 The system stays session-first:
 
@@ -94,8 +94,11 @@ Each trigger has a stable request ID and uses normal durable Session admission. 
 Recurring schedules are stored in `chat-recurring-schedules.json` and exposed through authenticated `/api/schedules` routes plus the `remotelab schedule` CLI. They support:
 
 - five-field cron with IANA timezone, defaulting to `Asia/Shanghai`
+- intervals down to 10 seconds
+- `continuous` or bounded lifetime (`maxExecutions`, `maxChecks`, `endsAt`)
+- direct admission or a snapshotted Bash/Python/Node yes/no script gate
 - restart catch-up policy `latest_once`
-- separate queued occurrences with a bounded open-occurrence backlog
+- one open occurrence by default, so a slow Agent Run does not create a flood
 - cancellation of future and pending occurrences; `--include-active` also requests cancellation of the active run
 
 Each due occurrence becomes a normal durable Trigger with the same stored Session template:
@@ -185,6 +188,21 @@ Recurring example:
 ```bash
 remotelab schedule create --cron "0 9 * * 1-5" --timezone Asia/Shanghai --text "Prepare the weekday brief" --json
 ```
+
+High-frequency checks can avoid invoking an Agent until a cheap local condition matches:
+
+```bash
+remotelab schedule create \
+  --every 30s \
+  --times 5 \
+  --gate-file ./check-change.sh \
+  --gate-runtime bash \
+  --cooldown 1m \
+  --text "Inspect and report the matching state" \
+  --json
+```
+
+The gate prints exactly `yes`, `no`, or strict JSON containing boolean `trigger`; failures are recorded and fail closed. Script gates run as the RemoteLab service user and are not a sandbox.
 
 ## Optional conversation configuration
 

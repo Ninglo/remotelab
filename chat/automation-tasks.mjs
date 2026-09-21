@@ -58,6 +58,26 @@ function projectNotification(record) {
   };
 }
 
+function projectAlerts(record) {
+  const alerts = record?.alerts && typeof record.alerts === 'object' ? record.alerts : {};
+  return {
+    mode: trimString(alerts.mode) || 'remotelab',
+    on: Array.isArray(alerts.on) ? [...alerts.on] : ['gate_error', 'execution_failure'],
+  };
+}
+
+function projectGate(record) {
+  const gate = record?.gate && typeof record.gate === 'object' ? record.gate : { mode: 'direct' };
+  if (gate.mode !== 'script') return { mode: 'direct' };
+  return {
+    mode: 'script',
+    runtime: trimString(gate.runtime),
+    snapshotSha256: trimString(gate.snapshotSha256),
+    timeoutSeconds: Number(gate.timeoutSeconds) || 0,
+    cooldownSeconds: Number(gate.cooldownSeconds) || 0,
+  };
+}
+
 function projectExecutionState(trigger, run) {
   if (run?.state) return trimString(run.state);
   switch (trigger?.status) {
@@ -111,6 +131,7 @@ function oneTimeState(trigger, execution) {
 
 async function projectOneTimeTask(trigger) {
   const execution = await projectExecution(trigger);
+  const resultDelivery = projectNotification(trigger);
   return {
     id: trigger.id,
     kind: 'one_time',
@@ -122,8 +143,12 @@ async function projectOneTimeTask(trigger) {
       type: 'once',
       scheduledAt: trigger.scheduledAt,
     },
+    lifetime: { mode: 'bounded', maxExecutions: 1 },
+    gate: { mode: 'direct' },
     target: projectTarget(trigger),
-    notification: projectNotification(trigger),
+    resultDelivery,
+    notification: resultDelivery,
+    alerts: projectAlerts(trigger),
     nextRunAt: trigger.status === 'pending' ? trigger.scheduledAt : '',
     lastExecution: execution,
     recentExecutions: execution ? [execution] : [],
@@ -139,6 +164,10 @@ async function projectRecurringTask(schedule, occurrences) {
     .sort((left, right) => timestamp(right.scheduledAt) - timestamp(left.scheduledAt))
     .slice(0, RECENT_EXECUTION_LIMIT);
   const recentExecutions = await Promise.all(recentTriggers.map(projectExecution));
+  const resultDelivery = projectNotification(schedule);
+  const admittedExecutions = occurrences.filter((trigger) => trigger.status === 'delivered').length;
+  const pendingAdmissions = occurrences.filter((trigger) => ['pending', 'delivering'].includes(trigger.status)).length;
+  const maxExecutions = schedule.lifetime?.maxExecutions || 0;
   return {
     id: schedule.id,
     kind: 'recurring',
@@ -147,14 +176,29 @@ async function projectRecurringTask(schedule, occurrences) {
     state: schedule.status,
     enabled: schedule.enabled === true,
     schedule: {
-      type: 'cron',
-      cron: schedule.cron,
-      timezone: schedule.timezone,
+      type: schedule.cadence?.type || 'cron',
+      ...(schedule.cadence?.type === 'interval'
+        ? { everySeconds: schedule.cadence.everySeconds }
+        : { cron: schedule.cron, timezone: schedule.timezone }),
       missedCount: schedule.missedCount,
       skippedCount: schedule.skippedCount,
     },
+    lifetime: schedule.lifetime,
+    gate: projectGate(schedule),
+    counters: {
+      checks: schedule.checkCount || 0,
+      matches: schedule.matchCount || 0,
+      gateSkips: schedule.gateSkipCount || 0,
+      gateErrors: schedule.gateErrorCount || 0,
+      deduplicated: schedule.deduplicatedCount || 0,
+      admittedExecutions,
+      pendingAdmissions,
+      ...(maxExecutions ? { remainingExecutions: Math.max(0, maxExecutions - admittedExecutions) } : {}),
+    },
     target: projectTarget(schedule),
-    notification: projectNotification(schedule),
+    resultDelivery,
+    notification: resultDelivery,
+    alerts: projectAlerts(schedule),
     nextRunAt: schedule.status === 'active' ? schedule.nextRunAt : '',
     lastExecution: recentExecutions[0] || null,
     recentExecutions,

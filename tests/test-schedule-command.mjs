@@ -79,6 +79,24 @@ assert.equal(requests.at(-1).body.deliverTo, undefined, 'ordinary Session is the
 assert.equal(requests.at(-1).body.sourceRequestId, undefined);
 assert.equal(requests.at(-1).body.timezone, 'Asia/Shanghai');
 
+const gatePath = join(tempRoot, 'condition.sh');
+writeFileSync(gatePath, 'echo yes\n');
+await run([
+  'create', '--every', '30s', '--text', 'Inspect matching state', '--times', '3',
+  '--gate-file', gatePath, '--gate-runtime', 'bash', '--gate-timeout', '2', '--cooldown', '5m',
+]);
+const intervalBody = requests.at(-1).body;
+assert.equal(intervalBody.everySeconds, 30);
+assert.deepEqual(intervalBody.lifetime, { mode: 'bounded', maxExecutions: 3 });
+assert.equal(intervalBody.gate.mode, 'script');
+assert.equal(intervalBody.gate.source, 'echo yes\n');
+assert.equal(intervalBody.gate.timeoutSeconds, 2);
+assert.equal(intervalBody.gate.cooldownSeconds, 300);
+await assert.rejects(
+  run(['create', '--cron', '* * * * *', '--every', '30s', '--text', 'ambiguous']),
+  /exactly one/,
+);
+
 
 const base = ['create', '--cron', '0 9 * * *', '--text', 'hello'];
 const createWith = async (...args) => { await run([...base, ...args]); return requests.at(-1).body; };

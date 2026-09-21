@@ -27,7 +27,7 @@ There is no per-Session template selector or preferred-template browser state. N
 | `one_time` | one at-time Trigger | `trg_*` |
 | `recurring` | one recurring Schedule plus its occurrence Triggers | `sch_*` |
 
-The public projection contains:
+The public projection keeps the existing `trg_*` / `sch_*` identity and makes cadence, lifetime, admission, execution, and delivery independent dimensions:
 
 ```json
 {
@@ -37,16 +37,36 @@ The public projection contains:
   "prompt": "Review the project and choose the next action.",
   "state": "active",
   "schedule": {
-    "type": "cron",
-    "cron": "0 9 * * 1-5",
-    "timezone": "Asia/Shanghai"
+    "type": "interval",
+    "everySeconds": 30
+  },
+  "lifetime": {
+    "mode": "bounded",
+    "maxExecutions": 5
+  },
+  "gate": {
+    "mode": "script",
+    "runtime": "bash",
+    "snapshotSha256": "...",
+    "timeoutSeconds": 5,
+    "cooldownSeconds": 60
   },
   "target": {
     "mode": "new_session",
     "sourceSessionId": "..."
   },
-  "notification": {
+  "resultDelivery": {
     "mode": "remotelab"
+  },
+  "alerts": {
+    "mode": "remotelab",
+    "on": ["gate_error", "execution_failure"]
+  },
+  "counters": {
+    "checks": 18,
+    "matches": 3,
+    "admittedExecutions": 3,
+    "remainingExecutions": 2
   },
   "nextRunAt": "...",
   "lastExecution": {
@@ -66,10 +86,50 @@ There are two explicit execution modes:
 
 Legacy `calendar_day` schedules remain visible and are projected as `calendar_day_session`; Task Center does not rewrite them.
 
-Execution and notification are separate fields:
+### Cadence and lifetime
 
-- `notification.mode = remotelab` keeps the result in RemoteLab. For fixed Sessions this explicitly suppresses inheritance of an existing external conversation.
-- `notification.mode = source_conversation` snapshots the selected Session's connected source through the existing conversation/source-delivery contract.
+Recurring tasks support either:
+
+- `schedule.type = cron`: a five-field cron expression plus IANA timezone
+- `schedule.type = interval`: `everySeconds`, with a current minimum of 10 seconds
+
+Restart and delay handling remains `latest_once`: a delayed interval does not replay every missed check. It evaluates the latest due occurrence once and records the missed count.
+
+Lifetime is independent of cadence:
+
+- `continuous`: keep checking until paused or cancelled
+- `bounded`: stop at the first configured bound: `maxExecutions`, `maxChecks`, or `endsAt`
+
+`maxExecutions` counts only occurrences durably admitted into the normal Agent Run path. A script check that returns no, a gate error, or a skipped overlap does not consume it. The scheduler also reserves at most the remaining finite capacity while admission is pending, then reconciles the Schedule to terminal `completed` from durable Trigger records.
+
+### Admission gate
+
+`gate.mode = direct` materializes a normal Trigger whenever the cadence is due. `gate.mode = script` first runs a snapshotted Bash, Python, or Node script. The script must print exactly one of:
+
+```text
+yes
+no
+```
+
+or one JSON object:
+
+```json
+{"trigger":true,"reason":"revision changed","dedupeKey":"revision-42"}
+```
+
+Errors, timeout, non-zero exit, excess output, and malformed output all fail closed: no Agent Run is admitted. `dedupeKey` prevents repeated matches for the same observed state from producing another Trigger. `cooldownSeconds` can suppress checks between recent matches. Gate source is persisted as the immutable creation snapshot and its SHA-256 is exposed in the read model; source text is not returned by Task Center APIs.
+
+Gate scripts are trusted local automation, not a sandbox. They run as the RemoteLab service user, with a reduced environment and a 30-second maximum timeout. Do not embed secrets in script source; use an explicitly provisioned local credential mechanism when required.
+
+### Results and alerts
+
+Execution, result delivery, and alert policy are separate fields:
+
+- `resultDelivery.mode = remotelab` keeps the result in RemoteLab. For fixed Sessions this explicitly suppresses inheritance of an existing external conversation.
+- `resultDelivery.mode = source_conversation` snapshots the selected Session's connected source through the existing conversation/source-delivery contract.
+- `alerts.mode = remotelab | none` stores an alert policy independently from result delivery. Task health and durable errors remain inspectable in Task Center either way. This first implementation does not yet run a proactive or external alert fan-out worker, so it does not claim alert delivery receipts.
+
+`notification` remains a compatibility alias for `resultDelivery` in requests and responses.
 
 The execution Session remains the durable work record in both cases. Connector delivery is only a projection of the result.
 
@@ -106,7 +166,44 @@ One-time example:
 }
 ```
 
-Recurring tasks replace `scheduledAt` with `cron` and `timezone`. `target.mode = new_session` uses the selected `sessionId` as the explicit source Session.
+Recurring direct cron example:
+
+```json
+{
+  "kind": "recurring",
+  "title": "Weekday review",
+  "prompt": "Review the project and choose the next action.",
+  "schedule": { "type": "cron", "cron": "0 9 * * 1-5", "timezone": "Asia/Shanghai" },
+  "lifetime": { "mode": "continuous" },
+  "gate": { "mode": "direct" },
+  "target": { "mode": "new_session", "sessionId": "..." },
+  "resultDelivery": { "mode": "remotelab" },
+  "alerts": { "mode": "remotelab", "on": ["gate_error", "execution_failure"] }
+}
+```
+
+High-frequency finite gated example:
+
+```json
+{
+  "kind": "recurring",
+  "title": "Change monitor",
+  "prompt": "Inspect and report the state that changed.",
+  "schedule": { "type": "interval", "everySeconds": 30 },
+  "lifetime": { "mode": "bounded", "maxExecutions": 5 },
+  "gate": {
+    "mode": "script",
+    "runtime": "bash",
+    "source": "./local-check-command --json",
+    "timeoutSeconds": 5,
+    "cooldownSeconds": 60
+  },
+  "target": { "mode": "fixed_session", "sessionId": "..." },
+  "resultDelivery": { "mode": "remotelab" }
+}
+```
+
+`target.mode = new_session` uses the selected `sessionId` as the explicit source Session. Top-level `cron`, `timezone`, and `notification` remain accepted for compatibility.
 
 ### Lifecycle actions
 
@@ -120,7 +217,7 @@ The API returns the refreshed task plus any occurrence-cancellation counts.
 
 Task-level states are intentionally small:
 
-- recurring: `active | paused | cancelled`
+- recurring: `active | paused | completed | cancelled`
 - one-time before admission: `scheduled | paused | failed | cancelled`
 - admitted one-time execution: the underlying Run state, such as `accepted | running | completed | failed | cancelled`
 
@@ -132,6 +229,8 @@ Lifecycle behavior:
 | Resume | enabled from `paused` | not recreated; next valid occurrence is recomputed | unchanged | n/a |
 | Cancel | blocked permanently in Task Center | cancelled | continues | no |
 
+`completed` is an automatic, terminal state for bounded tasks. Like cancellation, it does not terminate an occurrence already admitted into a Run.
+
 Pause/cancel and Trigger admission are serialized through the Trigger mutation queue. Whichever operation wins that boundary is authoritative: if stop wins, the request is not admitted; if admission wins, the resulting Run is allowed to finish. The Task Center UI intentionally does not expose `includeActive` Run termination.
 
 This distinction is visible in the interface copy. `paused` or `cancelled` is never presented as proof that an already running process has stopped.
@@ -141,9 +240,10 @@ This distinction is visible in the interface copy. `paused` or `cancelled` is ne
 - Existing `/api/triggers`, `/api/schedules`, and CLI commands continue to work.
 - Existing `PATCH enabled:false` behavior remains a terminal cancellation for compatibility; Task Center uses the explicit `status: paused` path when pausing.
 - Cancelling preserves the durable task record for audit. The v1 UI does not delete tasks.
-- Editing task definitions and arbitrary external notification-target authoring are deferred. Create a replacement task when routing or cadence must materially change.
+- Editing routing in Task Center and arbitrary external alert-target authoring are deferred. Create a replacement task when execution or delivery routing must materially change.
 - Task Center only inventories RemoteLab Trigger/Schedule producers. An unrelated systemd timer or standalone watcher is not silently claimed as managed.
-- The existing recurring policy remains `latest_once` with a bounded open-occurrence backlog; v1 does not add a workflow DAG or business-specific rule engine.
+- Recurring policy is `latest_once`, with one open occurrence by default; v1 does not add a workflow DAG or business-specific rule engine.
+- Agent-facing creation is available through the existing authenticated Task API and the converged `remotelab schedule` CLI. The CLI supports `--every`, `--times`, `--max-checks`, `--until`, and `--gate-file`; it does not expose raw persistence operations to the Agent.
 
 ## Implementation map
 
