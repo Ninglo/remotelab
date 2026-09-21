@@ -109,15 +109,15 @@ await handlePiAuthRoutes({
 assert.equal(ownerResponse.capture.status, 200);
 assert.equal(ownerResponse.capture.payload?.piAuth?.loggedIn, true);
 
-const visitorResponse = createResponseCapture();
+const secondaryPersonResponse = createResponseCapture();
 await handlePiAuthRoutes({
   req: { method: 'GET' },
-  res: visitorResponse.res,
+  res: secondaryPersonResponse.res,
   pathname: '/api/pi-auth/status',
-  authSession: { role: 'visitor' },
-  writeJson: visitorResponse.writeJson,
+  authSession: { personId: 'person_second' },
+  writeJson: secondaryPersonResponse.writeJson,
   authManager: manager,
 });
-assert.equal(visitorResponse.capture.status, 403);
+assert.equal(secondaryPersonResponse.capture.status, 200);
 
 console.log('Pi auth manager tests passed');
