@@ -1007,7 +1007,8 @@ async function main() {
     assert.match(settingsUiAsset.text, /function initSessionAutoArchiveSettings\(/);
     assert.match(settingsUiAsset.text, /function renderVoiceInputClusterOptions\(/);
     assert.doesNotMatch(settingsUiAsset.text, /\/api\/pi-auth\/sync-codex/, 'Pi should not copy the machine Codex login');
-    assert.match(settingsUiAsset.text, /Pi uses its own login/, 'Pi should explain its independent login');
+    assert.match(settingsUiAsset.text, /\/api\/pi-auth\/device-login/, 'Pi should expose its own device login');
+    assert.match(settingsUiAsset.text, /separate from the Codex CLI login/, 'Pi should explain that login state is independent');
 
     const instanceSettingsAsset = await request(port, 'GET', '/chat/instance-settings.js');
     assert.equal(instanceSettingsAsset.status, 200, 'instance settings asset should load');

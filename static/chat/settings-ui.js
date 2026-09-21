@@ -83,6 +83,7 @@ let connectorSurfacesLoaded = false;
 let expandedConnectorSurfaceId = "";
 let codexAuthState = null;
 let codexAuthPollTimer = null;
+let piAuthPollTimer = null;
 let codexAuthRequestId = 0;
 const CODEX_AUTH_MUTATION_TIMEOUT_MS = 20_000;
 let piAuthState = null;
@@ -804,24 +805,42 @@ function getPiAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
     title: "Pi · OpenAI 登录",
-    note: "Pi 使用独立登录。请在终端启动 Pi，并用 /login 登录 OpenAI。",
+    note: "供 Pi 中的 GPT / Codex 模型使用，与 Codex CLI 登录相互独立。",
     checking: "检测中…",
     authenticated: "已登录",
+    awaiting: "等待登录",
     loggedOut: "未登录",
-    unavailable: "未安装 Pi",
+    unavailable: "未安装 Pi 或 Codex",
     failed: "登录异常",
     check: "检查状态",
-    logout: "退出登录",
+    start: "获取登录码",
+    retry: "重新获取",
+    open: "打开登录页",
+    copy: "复制验证码",
+    copied: "已复制",
+    switchAccount: "更换账号",
+    switching: "正在退出…",
+    switchConfirm: "将清除 Pi 的 OpenAI 登录，并立即生成新的登录码。确定继续吗？",
+    logoutFailed: "Pi 退出失败",
   } : {
     title: "Pi · OpenAI login",
-    note: "Pi uses its own login. Start Pi in a terminal and use /login to sign in to OpenAI.",
+    note: "Used by GPT / Codex models in Pi. This is separate from the Codex CLI login.",
     checking: "Checking…",
     authenticated: "Signed in",
+    awaiting: "Waiting for sign-in",
     loggedOut: "Signed out",
-    unavailable: "Pi is not installed",
+    unavailable: "Pi or Codex is not installed",
     failed: "Login issue",
     check: "Check status",
-    logout: "Sign out",
+    start: "Get login code",
+    retry: "Get a new code",
+    open: "Open login page",
+    copy: "Copy code",
+    copied: "Copied",
+    switchAccount: "Switch account",
+    switching: "Signing out…",
+    switchConfirm: "This clears Pi's OpenAI login and immediately generates a new login code. Continue?",
+    logoutFailed: "Pi logout failed",
   };
 }
 
@@ -841,6 +860,14 @@ function ensurePiAuthSection() {
     <div class="settings-app-actions">
       <button class="settings-app-btn" id="settingsPiAuthCheckBtn" type="button"></button>
       <button class="settings-app-btn" id="settingsPiAuthLoginBtn" type="button"></button>
+      <button class="settings-app-btn" id="settingsPiAuthSwitchBtn" type="button" hidden></button>
+    </div>
+    <div class="settings-app-card" id="settingsPiAuthDevice" hidden>
+      <div class="settings-app-name" id="settingsPiAuthCode"></div>
+      <div class="settings-app-actions">
+        <a class="settings-app-btn" id="settingsPiAuthLink" target="_blank" rel="noopener noreferrer"></a>
+        <button class="settings-app-btn" id="settingsPiAuthCopyBtn" type="button"></button>
+      </div>
     </div>
     <div class="settings-app-empty inline-status" id="settingsPiAuthError" hidden></div>
   `;
@@ -849,9 +876,32 @@ function ensurePiAuthSection() {
     void refreshPiAuthStatus({ force: true });
   });
   document.getElementById("settingsPiAuthLoginBtn")?.addEventListener("click", () => {
-    void logoutPiLogin();
+    void startPiDeviceLogin();
+  });
+  document.getElementById("settingsPiAuthSwitchBtn")?.addEventListener("click", () => {
+    void switchPiAccount();
+  });
+  document.getElementById("settingsPiAuthCopyBtn")?.addEventListener("click", async (event) => {
+    const code = String(piAuthState?.userCode || "");
+    if (!code) return;
+    if (typeof copyText === "function") await copyText(code);
+    else await navigator.clipboard.writeText(code);
+    const copy = getPiAuthCopy();
+    temporarilyUpdateButtonLabel(event.currentTarget, copy.copied, { resetLabel: copy.copy });
   });
   return section;
+}
+
+function stopPiAuthPolling() {
+  if (piAuthPollTimer) window.clearInterval(piAuthPollTimer);
+  piAuthPollTimer = null;
+}
+
+function startPiAuthPolling() {
+  if (piAuthPollTimer) return;
+  piAuthPollTimer = window.setInterval(() => {
+    void refreshPiAuthStatus({ silent: true });
+  }, 2500);
 }
 
 function renderPiAuthPanel({ checking = false } = {}) {
@@ -863,14 +913,23 @@ function renderPiAuthPanel({ checking = false } = {}) {
   const pill = document.getElementById("settingsPiAuthPill");
   const checkBtn = document.getElementById("settingsPiAuthCheckBtn");
   const loginBtn = document.getElementById("settingsPiAuthLoginBtn");
+  const switchBtn = document.getElementById("settingsPiAuthSwitchBtn");
+  const device = document.getElementById("settingsPiAuthDevice");
+  const code = document.getElementById("settingsPiAuthCode");
+  const link = document.getElementById("settingsPiAuthLink");
+  const copyBtn = document.getElementById("settingsPiAuthCopyBtn");
   const error = document.getElementById("settingsPiAuthError");
+  const awaiting = !state.loggedIn && state.deviceLoginActive && state.userCode;
 
   title.textContent = copy.title;
   note.textContent = copy.note;
   checkBtn.textContent = copy.check;
-  loginBtn.textContent = copy.logout;
-  loginBtn.hidden = state.loggedIn !== true;
+  loginBtn.textContent = awaiting ? copy.retry : copy.start;
+  loginBtn.hidden = state.loggedIn === true;
   loginBtn.disabled = checking || state.available === false;
+  switchBtn.textContent = copy.switchAccount;
+  switchBtn.hidden = state.loggedIn !== true;
+  switchBtn.disabled = checking || state.available === false;
   checkBtn.disabled = checking;
 
   let statusLabel = copy.loggedOut;
@@ -879,13 +938,22 @@ function renderPiAuthPanel({ checking = false } = {}) {
   else if (state.loggedIn) {
     statusLabel = copy.authenticated;
     tone = "ready";
-  } else if (state.available === false) statusLabel = copy.unavailable;
+  } else if (awaiting) statusLabel = copy.awaiting;
+  else if (state.available === false) statusLabel = copy.unavailable;
   else if (state.phase === "failed") statusLabel = copy.failed;
   pill.className = `settings-connector-pill ${tone}`;
   pill.textContent = statusLabel;
 
+  device.hidden = !awaiting;
+  code.textContent = awaiting ? state.userCode : "";
+  link.textContent = copy.open;
+  link.href = awaiting ? state.verificationUri : "";
+  copyBtn.textContent = copy.copy;
   error.hidden = !state.error;
   error.textContent = state.error || "";
+
+  if (state.deviceLoginActive) startPiAuthPolling();
+  else stopPiAuthPolling();
 }
 
 async function refreshPiAuthStatus({ silent = false } = {}) {
@@ -902,19 +970,43 @@ async function refreshPiAuthStatus({ silent = false } = {}) {
   renderPiAuthPanel();
 }
 
-async function logoutPiLogin() {
+async function startPiDeviceLogin() {
   const loginBtn = document.getElementById("settingsPiAuthLoginBtn");
   if (loginBtn) loginBtn.disabled = true;
+  try {
+    const data = await fetchJsonOrRedirect("/api/pi-auth/device-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ restart: true }),
+      revalidate: false,
+    });
+    piAuthState = data?.piAuth || {};
+  } catch (error) {
+    piAuthState = { phase: "failed", error: error?.message || "Pi login failed" };
+  }
+  renderPiAuthPanel();
+}
+
+async function switchPiAccount() {
+  const copy = getPiAuthCopy();
+  if (!window.confirm(copy.switchConfirm)) return;
+  const switchBtn = document.getElementById("settingsPiAuthSwitchBtn");
+  if (switchBtn) {
+    switchBtn.disabled = true;
+    switchBtn.textContent = copy.switching;
+  }
   try {
     const data = await fetchJsonOrRedirect("/api/pi-auth/logout", {
       method: "POST",
       revalidate: false,
     });
     piAuthState = data?.piAuth || {};
+    renderPiAuthPanel();
+    await startPiDeviceLogin();
   } catch (error) {
-    piAuthState = { phase: "failed", error: error?.message || "Pi logout failed" };
+    piAuthState = { phase: "failed", error: error?.message || copy.logoutFailed };
+    renderPiAuthPanel();
   }
-  renderPiAuthPanel();
 }
 
 function temporarilyUpdateButtonLabel(button, label, {
