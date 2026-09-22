@@ -36,6 +36,7 @@ assert.equal(
 const createdTriggers = [];
 const schedule = await createRecurringSchedule({
   sourceSessionId: 'sess-recurring',
+  createdByIdentityId: 'identity_creator',
   sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Daily execution' },
   title: 'Daily date',
   text: 'Send the date',
@@ -52,6 +53,7 @@ assert.match(schedule.id, /^sch_[a-f0-9]{24}$/);
 assert.equal(schedule.nextRunAt, '2026-07-27T00:01:00.000Z');
 assert.equal(schedule.misfirePolicy, 'latest_once');
 assert.equal(schedule.overlapPolicy, 'latest_once');
+assert.equal(schedule.createdByIdentityId, 'identity_creator');
 
 const result = await materializeDueRecurringSchedulesNow({
   now: '2026-07-27T00:05:20.000Z',
@@ -67,6 +69,7 @@ assert.equal(createdTriggers.length, 1);
 assert.equal(createdTriggers[0].scheduledAt, '2026-07-27T00:05:00.000Z');
 assert.equal(createdTriggers[0].scheduleId, schedule.id);
 assert.equal(createdTriggers[0].sourceSessionId, 'sess-recurring');
+assert.equal(createdTriggers[0].createdByIdentityId, 'identity_creator');
 assert.equal(createdTriggers[0].sessionTemplate.conversation.target.chatId, 'oc_test');
 
 const [advanced] = await listRecurringSchedules({ sessionId: 'sess-recurring' });

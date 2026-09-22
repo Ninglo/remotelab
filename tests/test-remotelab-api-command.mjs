@@ -7,10 +7,16 @@ import { join } from 'path';
 const tempRoot = mkdtempSync(join(tmpdir(), 'remotelab-api-command-'));
 const homeDir = join(tempRoot, 'home');
 mkdirSync(join(homeDir, '.config', 'remotelab'), { recursive: true });
-writeFileSync(join(homeDir, '.config', 'remotelab', 'auth.json'), `${JSON.stringify({ token: 'owner-token' })}\n`, 'utf8');
+writeFileSync(join(homeDir, '.config', 'remotelab', 'auth.json'), `${JSON.stringify({
+  version: 2,
+  serviceToken: 'owner-token',
+  primaryPersonId: 'person_owner',
+  people: [{ id: 'person_owner', name: 'Owner', credentials: [], identities: [] }],
+})}\n`, 'utf8');
 process.env.HOME = homeDir;
 
 let runPolls = 0;
+let observedSourceSessionId = '';
 const sockets = new Set();
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -31,6 +37,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/tools') {
+    observedSourceSessionId = String(req.headers['x-remotelab-source-session-id'] || '');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ tools: [{ id: 'codex' }, { id: 'micro-agent' }] }));
     return;
@@ -91,6 +98,7 @@ assert(address && typeof address === 'object');
 const baseUrl = `http://127.0.0.1:${address.port}`;
 
 const { runRemoteLabApiCommand } = await import('../lib/remotelab-api-command.mjs');
+process.env.REMOTELAB_SESSION_ID = 'source-session-from-environment';
 
 async function runCli(args) {
   let stdout = '';
@@ -106,6 +114,7 @@ async function runCli(args) {
 
 const toolsJson = JSON.parse(await runCli(['GET', '/api/tools', '--base-url', baseUrl]));
 assert.deepEqual(toolsJson.tools.map((tool) => tool.id), ['codex', 'micro-agent']);
+assert.equal(observedSourceSessionId, 'source-session-from-environment');
 
 const messageJson = JSON.parse(await runCli([
   'POST',

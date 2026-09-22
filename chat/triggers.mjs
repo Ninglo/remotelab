@@ -9,7 +9,13 @@ import { CHAT_TRIGGERS_FILE } from '../lib/config.mjs';
 import { appendEvent } from './history.mjs';
 import { statusEvent } from './normalizer.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
-import { createSession, getSession, submitHttpMessage } from './session-manager.mjs';
+import {
+  createSession,
+  getSession,
+  listSessions,
+  submitHttpMessage,
+  updateSessionInitiatorIdentity,
+} from './session-manager.mjs';
 import { findSessionConversation, updateSessionConversation } from './session-conversations.mjs';
 import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { requests } from './requests.mjs';
@@ -157,6 +163,7 @@ function normalizeStoredTrigger(value) {
     enabled,
     title: trimString(raw.title),
     sourceSessionId,
+    createdByIdentityId: trimString(raw.createdByIdentityId),
     sessionTemplate,
     scheduledAt,
     text,
@@ -352,6 +359,7 @@ export async function createTrigger(input = {}) {
     enabled,
     title: trimString(input.title),
     sourceSessionId,
+    createdByIdentityId: trimString(input.createdByIdentityId),
     sessionTemplate,
     scheduledAt,
     text,
@@ -456,7 +464,7 @@ export async function updateTrigger(triggerId, patch = {}) {
   const normalizedTriggerId = trimString(triggerId);
   if (!normalizedTriggerId) return null;
 
-  for (const field of ['sessionId', 'sourceSessionId', 'sessionTemplate', 'executionSessionId', 'conversation', 'sourceDelivery']) {
+  for (const field of ['sessionId', 'sourceSessionId', 'sessionTemplate', 'executionSessionId', 'createdByIdentityId', 'conversation', 'sourceDelivery']) {
     if (Object.prototype.hasOwnProperty.call(patch, field)) {
       throw new Error('Trigger execution routing is immutable; create a new trigger instead');
     }
@@ -796,6 +804,19 @@ async function resolveExecutionRuntime(trigger, session = null) {
 }
 
 export async function ensureExecutionSession(trigger) {
+  if (!trimString(trigger.createdByIdentityId) && trimString(trigger.sourceSessionId)) {
+    const sourceSession = await getSession(trigger.sourceSessionId);
+    const createdByIdentityId = trimString(sourceSession?.initiatedByIdentityId);
+    if (createdByIdentityId) {
+      await withTriggerMutation(async (triggers, saveTriggers) => {
+        const current = triggers.find((entry) => entry.id === trigger.id);
+        if (!current || current.createdByIdentityId) return;
+        current.createdByIdentityId = createdByIdentityId;
+        await saveTriggers(triggers);
+      });
+      trigger = { ...trigger, createdByIdentityId };
+    }
+  }
   const template = normalizeSessionTemplate(trigger.sessionTemplate, trigger.tool);
   if (!template) throw new Error('Execution session template is missing');
   const existingSessionId = trimString(trigger.executionSessionId);
@@ -864,6 +885,7 @@ export async function ensureExecutionSession(trigger) {
       model: trigger.executionRuntime.model || undefined,
       effort: trigger.executionRuntime.effort || undefined,
       thinking: trigger.executionRuntime.thinking,
+      initiatedByIdentityId: trimString(trigger.createdByIdentityId),
       externalTriggerId: identity,
       conversation: template.conversation,
     },
@@ -878,6 +900,42 @@ export async function ensureExecutionSession(trigger) {
     await saveTriggers(triggers);
   });
   return { trigger: attached, session };
+}
+
+export async function reconcileTriggeredSessionOwnership() {
+  const sessionsById = new Map((await listSessions({ includeArchived: true })).map((session) => [session.id, session]));
+  const sourceIdentityBySessionId = new Map();
+  const sessionUpdates = new Map();
+  let updatedTasks = 0;
+  await withTriggerMutation(async (triggers, saveTriggers) => {
+    for (const trigger of triggers) {
+      let createdByIdentityId = trimString(trigger.createdByIdentityId);
+      if (!createdByIdentityId && trimString(trigger.sourceSessionId)) {
+        if (!sourceIdentityBySessionId.has(trigger.sourceSessionId)) {
+          const source = sessionsById.get(trigger.sourceSessionId);
+          sourceIdentityBySessionId.set(trigger.sourceSessionId, trimString(source?.initiatedByIdentityId));
+        }
+        createdByIdentityId = sourceIdentityBySessionId.get(trigger.sourceSessionId) || '';
+        if (createdByIdentityId) {
+          trigger.createdByIdentityId = createdByIdentityId;
+          updatedTasks += 1;
+        }
+      }
+      if (createdByIdentityId && trimString(trigger.executionSessionId)) {
+        sessionUpdates.set(trigger.executionSessionId, createdByIdentityId);
+      }
+    }
+    if (updatedTasks > 0) await saveTriggers(triggers);
+  });
+
+  let updatedSessions = 0;
+  for (const [sessionId, identityId] of sessionUpdates) {
+    const session = sessionsById.get(sessionId);
+    if (!session || trimString(session.initiatedByIdentityId) === identityId) continue;
+    if (trimString(session.initiatedByIdentityId) && trimString(session.initiatedByIdentityId) !== 'identity_system') continue;
+    if (await updateSessionInitiatorIdentity(sessionId, identityId)) updatedSessions += 1;
+  }
+  return { updatedTasks, updatedSessions };
 }
 
 async function deliverTrigger(trigger) {

@@ -12,6 +12,7 @@ import {
   updateRecurringSchedule,
 } from './recurring-schedules.mjs';
 import { getRun } from './runs.mjs';
+import { getSession } from './session-manager.mjs';
 import { scheduledRuntimeIntent } from '../lib/scheduled-runtime-policy.mjs';
 
 const RECENT_EXECUTION_LIMIT = 5;
@@ -79,6 +80,15 @@ function projectGate(record) {
   };
 }
 
+async function projectCreatedByIdentityId(record) {
+  const explicit = trimString(record?.createdByIdentityId);
+  if (explicit) return explicit;
+  const sourceSessionId = trimString(record?.sourceSessionId);
+  if (!sourceSessionId) return '';
+  const source = await getSession(sourceSessionId);
+  return trimString(source?.initiatedByIdentityId);
+}
+
 function projectExecutionState(trigger, run) {
   if (run?.state) return trimString(run.state);
   switch (trigger?.status) {
@@ -134,6 +144,7 @@ function oneTimeState(trigger, execution) {
 async function projectOneTimeTask(trigger) {
   const execution = await projectExecution(trigger);
   const resultDelivery = projectNotification(trigger);
+  const createdByIdentityId = await projectCreatedByIdentityId(trigger);
   return {
     id: trigger.id,
     kind: 'one_time',
@@ -156,6 +167,7 @@ async function projectOneTimeTask(trigger) {
     lastExecution: execution,
     recentExecutions: execution ? [execution] : [],
     sourceSessionId: trigger.sourceSessionId,
+    createdByIdentityId,
     createdAt: trigger.createdAt,
     updatedAt: trigger.updatedAt,
     actions: oneTimeActions(trigger, execution),
@@ -171,6 +183,7 @@ async function projectRecurringTask(schedule, occurrences) {
   const admittedExecutions = occurrences.filter((trigger) => trigger.status === 'delivered').length;
   const pendingAdmissions = occurrences.filter((trigger) => ['pending', 'delivering'].includes(trigger.status)).length;
   const maxExecutions = schedule.lifetime?.maxExecutions || 0;
+  const createdByIdentityId = await projectCreatedByIdentityId(schedule);
   return {
     id: schedule.id,
     kind: 'recurring',
@@ -207,6 +220,7 @@ async function projectRecurringTask(schedule, occurrences) {
     lastExecution: recentExecutions[0] || null,
     recentExecutions,
     sourceSessionId: schedule.sourceSessionId,
+    createdByIdentityId,
     createdAt: schedule.createdAt,
     updatedAt: schedule.updatedAt,
     lastError: schedule.lastError || '',

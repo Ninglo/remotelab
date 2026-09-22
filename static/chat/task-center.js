@@ -71,6 +71,15 @@
     return session?.name || sessionId || translate("tasks.session.unknown", "Unknown Session");
   }
 
+  function creatorName(identityId) {
+    const normalized = typeof identityId === "string" ? identityId.trim() : "";
+    if (!normalized || typeof getPeopleDirectory !== "function") return "";
+    const person = getPeopleDirectory().find((entry) => (entry.identities || []).some(
+      (identity) => identity.id === normalized,
+    ));
+    return person?.name || person?.handle || "";
+  }
+
   function formatDateTime(value) {
     const parsed = new Date(value || "");
     if (!Number.isFinite(parsed.getTime())) return translate("tasks.time.none", "Not scheduled");
@@ -357,6 +366,8 @@
     if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
 
     const meta = createNode("div", "task-card-meta");
+    const creator = creatorName(task.createdByIdentityId);
+    if (creator) addMetaRow(meta, translate("tasks.meta.creator", "Creator"), creator);
     addMetaRow(
       meta,
       translate("tasks.meta.schedule", "Schedule"),

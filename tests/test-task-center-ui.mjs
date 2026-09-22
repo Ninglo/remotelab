@@ -42,6 +42,7 @@ assert.match(compose, /showingTasks = activeTab === "tasks"/, 'tab navigation mu
 assert.match(compose, /resolvedSessionWorkspace\.hidden = !showingSessions/, 'workspace switching must hide the Session UI without navigating away');
 assert.match(compose, /RemoteLabTaskCenter\?\.onTabShown/, 'opening Tasks must refresh its read model');
 assert.match(script, /\/api\/automation-tasks/, 'Task Center must use the unified API');
+assert.match(script, /tasks\.meta\.creator/, 'Task cards should show the human creator label');
 assert.match(script, /scheduledAt = parsed\.toISOString\(\)/, 'local date input must be normalized before submission');
 assert.match(script, /everySeconds:\s*Number/, 'interval cadence must be submitted as seconds');
 assert.match(script, /maxExecutions:\s*Number/, 'finite lifetime must submit its Agent admission limit');

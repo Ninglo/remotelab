@@ -168,7 +168,13 @@ async function applyScheduledRuntimeProfile(payload, sourceSession, uiSelection)
   return { ...payload, ...profile, runtimePolicy };
 }
 
-async function prepareScheduledTask(payload) {
+function resolveTaskCreatorIdentity(authSession, sourceSession) {
+  const sourceIdentityId = trimString(sourceSession?.initiatedByIdentityId);
+  if (authSession?.authKind === 'service') return sourceIdentityId;
+  return trimString(authSession?.identityId) || sourceIdentityId;
+}
+
+async function prepareScheduledTask(payload, { authSession = null } = {}) {
   const sourceSessionId = typeof payload.sessionId === 'string' ? payload.sessionId.trim() : String(payload.sourceSessionId || '').trim();
   const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
   if (!sourceSession) throw new Error('Source session not found');
@@ -184,7 +190,12 @@ async function prepareScheduledTask(payload) {
     if (!conversation) throw new Error('Source Session has no external conversation');
     input = { ...input, conversation };
   }
-  return { ...input, sourceSessionId, sessionTemplate: buildScheduledSessionTemplate(input, sourceSession) };
+  return {
+    ...input,
+    sourceSessionId,
+    createdByIdentityId: resolveTaskCreatorIdentity(authSession, sourceSession),
+    sessionTemplate: buildScheduledSessionTemplate(input, sourceSession),
+  };
 }
 
 async function prepareScheduledRuntimePatch(current, payload) {
@@ -195,7 +206,7 @@ async function prepareScheduledRuntimePatch(current, payload) {
   return { ...payload, ...resolved };
 }
 
-async function prepareAutomationTask(payload = {}) {
+async function prepareAutomationTask(payload = {}, authSession = null) {
   const kind = trimString(payload.kind).toLowerCase();
   if (!['one_time', 'recurring'].includes(kind)) {
     throw new Error('kind must be one_time or recurring');
@@ -256,7 +267,7 @@ async function prepareAutomationTask(payload = {}) {
   delete input.deliverTo;
   if (targetMode === 'new_session') delete input.sessionTemplate;
   if (resultDeliveryMode === 'source_conversation') input.deliverTo = 'session_source';
-  const prepared = await prepareScheduledTask(input);
+  const prepared = await prepareScheduledTask(input, { authSession });
   return { ...prepared, kind };
 }
 
@@ -470,7 +481,7 @@ export async function handleControlRoutes({
       return true;
     }
     try {
-      const task = await createAutomationTask(await prepareAutomationTask(payload));
+      const task = await createAutomationTask(await prepareAutomationTask(payload, authSession));
       writeJson(res, 201, { task });
       broadcastAll({ type: 'automation_tasks_updated', taskId: task.id });
     } catch (error) {
@@ -557,7 +568,7 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'enabled must be a boolean' });
         return true;
       }
-      const trigger = await createTrigger(await prepareScheduledTask(payload));
+      const trigger = await createTrigger(await prepareScheduledTask(payload, { authSession }));
       writeJson(res, 201, { trigger });
       broadcastAll({ type: 'automation_tasks_updated', taskId: trigger.id });
     } catch (error) {
@@ -635,7 +646,7 @@ export async function handleControlRoutes({
       return true;
     }
     try {
-      const schedule = await createRecurringSchedule(await prepareScheduledTask(payload));
+      const schedule = await createRecurringSchedule(await prepareScheduledTask(payload, { authSession }));
       writeJson(res, 201, { schedule });
       broadcastAll({ type: 'automation_tasks_updated', taskId: schedule.id });
     } catch (error) {

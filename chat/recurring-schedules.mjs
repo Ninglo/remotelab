@@ -332,6 +332,7 @@ function normalizeStoredSchedule(value) {
     status,
     enabled,
     sourceSessionId,
+    createdByIdentityId: trimString(raw.createdByIdentityId),
     sessionTemplate,
     title: trimString(raw.title),
     text,
@@ -446,6 +447,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     status: input.enabled === false ? 'cancelled' : 'active',
     enabled: input.enabled !== false,
     sourceSessionId,
+    createdByIdentityId: input.createdByIdentityId,
     sessionTemplate,
     title: input.title,
     text,
@@ -472,6 +474,9 @@ export async function createRecurringSchedule(input = {}, options = {}) {
 
 export async function updateRecurringSchedule(scheduleId, patch = {}) {
   const id = trimString(scheduleId);
+  if (Object.hasOwn(patch, 'createdByIdentityId')) {
+    throw new Error('Task creator cannot be changed; create a new schedule instead');
+  }
   let result = null;
   await withScheduleMutation(async (schedules, save) => {
     const index = schedules.findIndex((entry) => entry.id === id);
@@ -812,6 +817,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
             : occurrences.latestAt;
           const createdTrigger = await createScheduledTrigger({
             sourceSessionId: current.sourceSessionId,
+            createdByIdentityId: current.createdByIdentityId,
             sessionTemplate: current.sessionTemplate,
             title: current.title,
             text: current.text,

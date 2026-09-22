@@ -106,6 +106,20 @@ async function resolveSessionInitiator(authSession, sourceId, sourceContext) {
   };
 }
 
+async function resolveSessionCreationInitiator(req, authSession, sourceId, sourceContext) {
+  const direct = await resolveSessionInitiator(authSession, sourceId, sourceContext);
+  if (authSession?.authKind !== 'service' || direct.identityId !== SYSTEM_IDENTITY_ID) return direct;
+  const sourceSessionId = trimString(req.headers['x-remotelab-source-session-id']);
+  if (!sourceSessionId) return direct;
+  const sourceSession = await getSession(sourceSessionId);
+  const inheritedIdentityId = trimString(sourceSession?.initiatedByIdentityId);
+  if (!inheritedIdentityId || inheritedIdentityId === SYSTEM_IDENTITY_ID) return direct;
+  return {
+    identityId: inheritedIdentityId,
+    personId: trimString(authSession?.personId) || SYSTEM_PERSON_ID,
+  };
+}
+
 export async function handleSessionMainRoutes({
   req,
   res,
@@ -477,7 +491,8 @@ export async function handleSessionMainRoutes({
       if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
         createOptions.sourceContext = sourceContext;
       }
-      const initiator = await resolveSessionInitiator(
+      const initiator = await resolveSessionCreationInitiator(
+        req,
         authSession,
         createOptions.sourceId,
         createOptions.sourceContext,
