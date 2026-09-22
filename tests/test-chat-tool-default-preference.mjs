@@ -75,13 +75,14 @@ const context = {
   DEFAULT_TOOL_ID: 'codex',
   PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-5.6-sol',
   CURRENT_CODEX_MODEL_IDS: new Set([
+    'gpt-6-astra',
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-5.6-luna',
     'gpt-5.5',
     'gpt-5.2',
   ]),
-  RETIRED_CODEX_MODEL_IDS: new Set(['gpt-6-astra']),
+  RETIRED_CODEX_MODEL_IDS: new Set([]),
   LEGACY_AUTO_PREFERRED_TOOL_IDS: new Set(['codex', 'micro-agent']),
   LEGACY_REMOVED_TOOL_IDS: new Set(['micro-agent']),
   localStorage: {
@@ -179,11 +180,11 @@ assert.equal(
 context.migrateRetiredCodexModelLocalStorage();
 assert.equal(
   localStorageValues.get('selectedModel_codex'),
-  'gpt-5.6-sol',
-  'retired Astra browser preferences should migrate to Sol',
+  'gpt-6-astra',
+  'explicit Astra browser preferences should remain available',
 );
-assert.equal(localStorageValues.get('selectedModel_pi'), 'openai-codex/gpt-5.6-sol');
-assert.equal(localStorageValues.get('selectedModel_pi_openai-codex'), 'openai-codex/gpt-5.6-sol');
+assert.equal(localStorageValues.get('selectedModel_pi'), 'openai-codex/gpt-6-astra');
+assert.equal(localStorageValues.get('selectedModel_pi_openai-codex'), 'openai-codex/gpt-6-astra');
 assert.equal(
   localStorageValues.get('selectedEffort_codex'),
   'xhigh',

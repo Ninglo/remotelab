@@ -69,14 +69,14 @@ try {
   );
   assert.equal(staleCodex.selectedEffort, 'xhigh');
 
-  const retiredAstra = await saveUiRuntimeSelection({
+  const explicitAstra = await saveUiRuntimeSelection({
     selectedTool: 'codex',
     selectedModel: 'gpt-6-astra',
     selectedEffort: 'ultra',
     reasoningKind: 'enum',
   });
-  assert.equal(retiredAstra.selectedModel, 'gpt-5.6-sol');
-  assert.equal(retiredAstra.selectedEffort, 'ultra', 'retiring Astra should preserve a Sol-compatible effort');
+  assert.equal(explicitAstra.selectedModel, 'gpt-6-astra');
+  assert.equal(explicitAstra.selectedEffort, 'ultra', 'Astra should preserve its selected effort');
 
   const currentOlderCodex = await saveUiRuntimeSelection({
     selectedTool: 'codex',

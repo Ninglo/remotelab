@@ -71,6 +71,11 @@ const context = {
   selectedModel: 'gpt-5.6-sol',
   selectedEffort: 'xhigh',
   toolsList: [{ id: 'codex' }],
+  inlineToolSelect: { value: 'codex' },
+  async loadModelsForCurrentTool() {
+    context.selectedModel = 'auto';
+    context.selectedEffort = '';
+  },
   DEFAULT_APP_ID: 'chat',
   DEFAULT_WEB_SOURCE_NAME: 'RemoteLab',
   window: {
@@ -134,7 +139,7 @@ assert.equal(quickAction.tool, 'codex');
 assert.equal(quickAction.model, undefined, 'Quick should hide and omit model selection details');
 assert.equal(quickAction.effort, undefined, 'Quick should hide and omit effort selection details');
 
-const opened = context.createNewSessionShortcut({
+const opened = await context.createNewSessionShortcut({
   sourceContext: { channel: 'pwa_shortcut' },
 });
 assert.equal(opened, true);
@@ -152,8 +157,8 @@ assert.equal(materialized, true);
 assert.equal(calls.dispatch.length, 1, 'the first send path should materialize exactly one backend session');
 assert.equal(calls.dispatch[0]?.action, 'create');
 assert.equal(calls.dispatch[0]?.tool, 'codex');
-assert.equal(calls.dispatch[0]?.model, 'gpt-5.6-sol');
-assert.equal(calls.dispatch[0]?.effort, 'xhigh');
+assert.equal(calls.dispatch[0]?.model, 'auto');
+assert.equal(calls.dispatch[0]?.effort, undefined);
 assert.equal(calls.dispatch[0]?.sourceContext?.channel, 'pwa_shortcut');
 assert.equal(context.currentSessionId, 'created-session');
 assert.equal(context.readPendingCreateOptions(), null, 'creation metadata should clear after materialization');

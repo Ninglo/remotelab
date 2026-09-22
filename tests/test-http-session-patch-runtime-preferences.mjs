@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -74,8 +74,13 @@ function setupTempHome() {
     }, null, 2),
     'utf8',
   );
+  writeFileSync(
+    join(configDir, 'ui-runtime-selection.json'),
+    JSON.stringify({ selectedTool: 'codex', selectedModel: 'auto', selectedEffort: '', reasoningKind: 'none' }, null, 2),
+    'utf8',
+  );
 
-  return { home };
+  return { home, configDir };
 }
 
 async function startServer({ home, port }) {
@@ -120,7 +125,7 @@ async function createSession(port, name) {
 }
 
 try {
-  const { home } = setupTempHome();
+  const { home, configDir } = setupTempHome();
   const port = randomPort();
   let server = await startServer({ home, port });
 
@@ -180,7 +185,7 @@ try {
     assert.equal(patched.json.session?.workflowState, 'waiting_user', 'PATCH should persist the normalized workflow state');
     assert.equal(patched.json.session?.workflowPriority, 'high', 'PATCH should persist the normalized workflow priority');
     assert.equal(patched.json.session?.tool, 'codex', 'PATCH should persist the tool');
-    assert.equal(patched.json.session?.model, 'gpt-5.6-sol', 'PATCH should migrate a retired Astra model to Sol');
+    assert.equal(patched.json.session?.model, 'gpt-6-astra', 'PATCH should preserve the explicit Astra model');
     assert.equal(patched.json.session?.effort, 'high', 'PATCH should persist the effort');
     assert.equal(patched.json.session?.thinking, true, 'PATCH should persist the thinking flag');
     assert.equal(
@@ -206,7 +211,7 @@ try {
     const detail = await request(port, 'GET', `/api/sessions/${older.id}`);
     assert.equal(detail.status, 200, 'session detail should remain readable after the patch');
     assert.equal(detail.json.session?.thinking, true, 'detail should expose persisted thinking');
-    assert.equal(detail.json.session?.model, 'gpt-5.6-sol', 'detail should expose the migrated model');
+    assert.equal(detail.json.session?.model, 'gpt-6-astra', 'detail should expose the selected model');
     assert.equal(detail.json.session?.workflowState, 'waiting_user', 'detail should expose persisted workflow state');
     assert.equal(detail.json.session?.workflowPriority, 'high', 'detail should expose persisted workflow priority');
     assert.equal(detail.json.session?.lastReviewedAt, reviewStamp, 'detail should expose the persisted review timestamp');
@@ -215,6 +220,33 @@ try {
       'Persist the meeting transcript for the daily review.',
       'detail should expose the same Session instructions shown to the model',
     );
+
+    const presetCatalog = await request(port, 'GET', '/api/runtime-presets');
+    assert.equal(presetCatalog.status, 200);
+    assert.deepEqual(
+      presetCatalog.json.presets.map((preset) => preset.id),
+      ['auto', 'sota', 'quality', 'balanced', 'economy'],
+    );
+    const sotaPreset = await request(port, 'PATCH', `/api/sessions/${older.id}`, { runtimeTier: 'sota' });
+    assert.equal(sotaPreset.status, 200);
+    assert.equal(sotaPreset.json.session?.runtimeTier, 'sota');
+    assert.equal(sotaPreset.json.session?.model, 'gpt-6-astra');
+    assert.equal(sotaPreset.json.session?.effort, 'xhigh');
+    assert.equal(
+      JSON.parse(readFileSync(join(configDir, 'ui-runtime-selection.json'), 'utf8')).selectedModel,
+      'auto',
+      'a Session preset must not change the shared default',
+    );
+    assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, { runtimeTier: 'unknown' })).status, 400);
+    assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, {
+      runtimeTier: 'quality', model: 'gpt-5.6-sol',
+    })).status, 400, 'tier presets must not be mixed with explicit runtime fields');
+
+    const manualRuntime = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
+      tool: 'codex', model: 'gpt-5.6-sol', effort: 'high',
+    });
+    assert.equal(manualRuntime.status, 200);
+    assert.equal(manualRuntime.json.session?.runtimeTier, undefined, 'manual runtime changes clear the preset label');
 
     const invalidPinned = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
       pinned: 'yes',
@@ -262,8 +294,8 @@ try {
     assert.equal(listAfterUnpin.status, 200, 'listing sessions should still work after unpinning');
     assert.deepEqual(
       listAfterUnpin.json.sessions.slice(0, 3).map((session) => session.id),
-      [newest.id, older.id, newer.id],
-      'after unpinning, normal recency ordering should resume',
+      [older.id, newest.id, newer.id],
+      'after unpinning, normal recency ordering should reflect the latest preset update',
     );
 
     const staleModelPatch = await request(port, 'PATCH', `/api/sessions/${older.id}`, {

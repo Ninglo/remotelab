@@ -143,18 +143,19 @@
 .runtime-selection-controls[hidden] {
   display: none;
 }
-.tool-select, .provider-select, .model-select, .effort-select {
+.runtime-preset-select, .tool-select, .provider-select, .model-select, .effort-select {
   width: auto; field-sizing: content; min-width: 0; flex: 0 0 auto;
   padding: 4px 8px; background: transparent; border: 1px solid var(--border);
   border-radius: 6px; color: var(--text-secondary); font-size: 12px; outline: none;
   cursor: pointer; font-family: inherit;
   transition: border-color 0.15s ease, color 0.15s ease;
 }
+.runtime-preset-select { max-width: 130px; }
 .tool-select { max-width: 112px; }
 .provider-select { max-width: 124px; }
 .model-select { max-width: 210px; }
 .effort-select { max-width: 92px; }
-.tool-select:focus, .provider-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
+.runtime-preset-select:focus, .tool-select:focus, .provider-select:focus, .model-select:focus, .effort-select:focus { border-color: var(--border-strong); }
 #contextTokens.context-status {
   --context-progress: 0%;
   display: inline-flex;

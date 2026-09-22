@@ -10,7 +10,7 @@ import {
 } from '../../lib/runtime-profile.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
-const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'follow']);
+const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'tier', 'follow']);
 const HELP = [
   '任务命令可把正文写在同行：/inline [修饰参数] 正文、/thread [修饰参数] 正文、/quick 正文。',
   '/inline 和 /thread 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>。',
@@ -21,6 +21,7 @@ const HELP = [
   '/harness [名称] — 查看或修改当前任务使用的 Harness',
   '/model [模型 ID] — 查看或修改当前任务使用的模型',
   '/effort [级别] — 查看或修改当前任务的 Effort',
+  '/tier [auto|sota|quality|balanced|economy] — 只修改当前 Session 的模型档位',
   '/follow — 把当前 Session 重置为当前 Default',
   '/mute — 静默当前话题或聊天；明确 @ 可单次唤醒',
   '/unmute — 恢复当前话题或聊天的正常响应',
@@ -89,6 +90,7 @@ function sessionSelection(session, fallback) {
     model: trim(saved.model),
     effort: trim(saved.effort),
     thinking: saved.thinking === true,
+    runtimeTier: trim(session.runtimeTier),
   };
 }
 
@@ -122,12 +124,12 @@ function validateCommandSet(commands) {
     return '/inline 和 /thread 不能同时使用。';
   }
   if (commands.some(command => command.name === 'quick')
-    && commands.some(command => ['inline', 'thread', 'default', 'harness', 'model', 'effort', 'follow'].includes(command.name))) {
+    && commands.some(command => ['inline', 'thread', 'default', 'harness', 'model', 'effort', 'tier', 'follow'].includes(command.name))) {
     return '/quick 需要单独使用，不能和任务或运行时配置命令组合。';
   }
   if (commands.some(command => command.name === 'follow')
-    && commands.some(command => ['harness', 'model', 'effort'].includes(command.name))) {
-    return '/follow 不能和 /harness、/model、/effort 同时使用。';
+    && commands.some(command => ['harness', 'model', 'effort', 'tier'].includes(command.name))) {
+    return '/follow 不能和 /harness、/model、/effort、/tier 同时使用。';
   }
   return '';
 }
@@ -163,7 +165,7 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   const notes = [];
 
   const mutatesSessionRuntime = commands.some(command => command.name === 'follow'
-    || (['harness', 'model', 'effort'].includes(command.name) && command.value));
+    || (['harness', 'model', 'effort', 'tier'].includes(command.name) && command.value));
   if (isQuickSession(session) && mutatesSessionRuntime) {
     const text = 'Quick Session 的 Harness、模型和 Effort 在创建时固定；请新建 Standard Session。';
     return { error: text, text, operations: [] };
@@ -227,6 +229,29 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
       catalog = await catalogFor(selection.tool);
       continue;
     }
+    if (command.name === 'tier') {
+      const { presets = [] } = await requestJson(request, '/api/runtime-presets');
+      if (!command.value) {
+        const currentTier = selection.runtimeTier
+          || presets.find((preset) => preset.model === selection.model && (preset.effort || '') === (selection.effort || ''))?.id
+          || 'custom';
+        notes.push(`当前档位：${currentTier}\n${presets.map((preset) => `/tier ${preset.id}`).join('\n')}`);
+        continue;
+      }
+      const preset = presets.find((entry) => entry.id === command.value.toLowerCase());
+      if (!preset) {
+        return { error: `未知档位：${command.value}。`, text: `未知档位：${command.value}。\n${presets.map((entry) => `/tier ${entry.id}`).join('\n')}`, operations: [] };
+      }
+      selection = {
+        tool: 'codex',
+        model: preset.model,
+        effort: preset.effort || '',
+        thinking: false,
+        runtimeTier: preset.id,
+      };
+      catalog = await catalogFor('codex');
+      continue;
+    }
     if (command.name === 'harness') {
       const { tools = [] } = await requestJson(request, '/api/tools');
       if (!command.value) {
@@ -279,8 +304,14 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
       defaultPayload: defaultSelectionPayload(defaultSelection, await catalogFor(defaultSelection.tool)) });
   }
   if (session && commands.some(command => command.name === 'follow'
-    || (['harness', 'model', 'effort'].includes(command.name) && command.value))) {
-    operations.push({ scope: 'session', sessionId: session.id, selection });
+    || (['harness', 'model', 'effort', 'tier'].includes(command.name) && command.value))) {
+    const tierCommand = commands.find(command => command.name === 'tier' && command.value);
+    operations.push({
+      scope: 'session',
+      sessionId: session.id,
+      selection,
+      ...(tierCommand ? { runtimeTier: selection.runtimeTier } : {}),
+    });
   }
   if (notes.length === 0 && operations.length > 0) {
     const defaultOperation = operations.find(operation => operation.scope === 'default');
@@ -300,11 +331,15 @@ export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
       continue;
     }
     const { session } = await requestJson(request, `/api/sessions/${encodeURIComponent(operation.sessionId)}`, {
-      method: 'PATCH', body: {
-        tool: operation.selection.tool, model: operation.selection.model || '', effort: operation.selection.effort || '', thinking: operation.selection.thinking === true,
-      },
+      method: 'PATCH',
+      body: operation.runtimeTier
+        ? { runtimeTier: operation.runtimeTier }
+        : {
+          tool: operation.selection.tool, model: operation.selection.model || '', effort: operation.selection.effort || '', thinking: operation.selection.thinking === true,
+        },
     });
     const persisted = session?.feishuRuntimeSelection || session;
+    if (operation.runtimeTier && session?.runtimeTier !== operation.runtimeTier) throw new Error('RemoteLab did not persist the requested Session tier');
     if (persisted?.tool !== operation.selection.tool || (persisted?.model || '') !== (operation.selection.model || '')
       || (persisted?.effort || '') !== (operation.selection.effort || '')) throw new Error('RemoteLab did not persist the requested Session runtime selection');
   }

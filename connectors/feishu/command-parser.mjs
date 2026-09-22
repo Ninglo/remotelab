@@ -5,6 +5,7 @@ const COMMANDS = Object.freeze({
   harness: { args: 'optional' },
   model: { args: 'optional', aliases: ['m'] },
   effort: { args: 'optional' },
+  tier: { args: 'optional' },
   follow: { args: 'none' },
   mute: { args: 'none' },
   unmute: { args: 'none' },

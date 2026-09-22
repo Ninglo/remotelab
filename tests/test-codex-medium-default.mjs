@@ -16,7 +16,7 @@ assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";/);
 assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_EFFORT = "low";/);
 assert.match(bootstrap, /CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "gpt6-low-v1"/);
 assert.equal(normalizeCodexModelId('gpt-5.4'), 'gpt-5.6-sol');
-assert.equal(normalizeCodexModelId('gpt-6-astra'), 'gpt-5.6-sol', 'retired Astra selections must normalize to Sol');
+assert.equal(normalizeCodexModelId('gpt-6-astra'), 'gpt-6-astra', 'explicit Astra selections must remain available');
 assert.equal(normalizeCodexModelId('gpt-5.6-sol'), 'gpt-5.6-sol', 'one-time migration must not permanently ban explicit older-model choices');
 
 const start = bootstrap.indexOf('function migrateCodexEffortDefaultLocalStorage()');

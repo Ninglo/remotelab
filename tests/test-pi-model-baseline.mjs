@@ -130,19 +130,21 @@ if (process.argv.includes('--list-models')) {
   assert(found.models.some((model) => model.id === 'deepseek/deepseek-chat'));
   assert(!found.models.some((model) => model.provider === 'openai'));
   assert.equal(found.defaultModel, 'openai-codex/gpt-5.6-sol');
-  assert.equal(found.models[0].id, 'openai-codex/gpt-5.6-sol');
-  assert.equal(found.models[0].providerDefault, true);
-  assert.equal(found.models[0].reasoning.default, 'low');
-  assert.equal(found.models[1].providerDefault, undefined);
-  assert.equal(found.models[1].reasoning.default, 'medium');
+  assert.equal(found.models[0].id, 'openai-codex/gpt-6-astra');
+  assert.equal(found.models[0].providerDefault, undefined);
+  assert.equal(found.models[0].reasoning.default, 'medium');
+  assert.equal(found.models[1].providerDefault, true);
+  assert.equal(found.models[1].reasoning.default, 'low');
   assert(!found.models.some((model) => model.effortLevels?.includes('ultra')));
 
   for (const scenario of ['empty', 'text', 'failed']) {
     const result = await discoverPiModels({ command, env: { ...env, TEST_PI_SCENARIO: scenario }, refresh: true });
     assert.deepEqual(result.models.map((model) => model.id), ids, scenario);
     assert.deepEqual(result.models[0].effortLevels, ['low', 'medium', 'high', 'xhigh', 'max']);
-    assert.equal(result.models[0].reasoning.default, 'low');
-    assert.equal(result.models[0].providerDefault, true);
+    assert.equal(result.models[0].reasoning.default, 'medium');
+    assert.equal(result.models[0].providerDefault, undefined);
+    assert.equal(result.models[1].reasoning.default, 'low');
+    assert.equal(result.models[1].providerDefault, true);
     assert(!result.models.some((model) => model.effortLevels?.includes('ultra')));
     assert.equal(Boolean(result.discoveryError), scenario === 'failed');
   }

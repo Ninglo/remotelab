@@ -16,13 +16,13 @@ try {
   assert.deepEqual(await resolveSessionRuntimeSelection({ ...defaults, effort: 'ultra' }), { ...defaults, effort: 'ultra' });
   assert.deepEqual(
     await resolveSessionRuntimeSelection({ tool: 'codex', model: 'gpt-6-astra', effort: 'ultra' }),
-    { ...defaults, effort: 'ultra' },
-    'retired Astra Session snapshots should run on Sol without lowering effort',
+    { ...defaults, model: 'gpt-6-astra', effort: 'ultra' },
+    'explicit Astra Session snapshots should remain on Astra',
   );
   assert.deepEqual(
     await resolveSessionRuntimeSelection({ tool: 'pi', model: 'openai-codex/gpt-6-astra', effort: 'max' }),
-    { tool: 'pi', model: 'openai-codex/gpt-5.6-sol', effort: 'max', thinking: false },
-    'retired Astra Pi snapshots should keep the Codex subscription route while moving to Sol',
+    { tool: 'pi', model: 'openai-codex/gpt-6-astra', effort: 'max', thinking: false },
+    'explicit Astra Pi snapshots should keep the Codex subscription route',
   );
   assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'claude', model: 'opus', effort: 'high' }, { tool: 'codex' }), defaults);
   assert.equal((await resolveSessionRuntimeSelection({ ...defaults, effort: 'ultra' }, { model: 'gpt-5.6-luna' })).effort, 'medium', 'a different model resolves its own default effort');
@@ -36,7 +36,7 @@ try {
       json: async () => ({
         model: 'jev-test',
         answers: {
-          service_tier: { choice: 'economy', confidence: 0.9, probabilities: { quality: 0.02, balanced: 0.03, economy: 0.95 } },
+          service_tier: { choice: 'economy', confidence: 0.9, probabilities: { sota: 0, quality: 0.02, balanced: 0.03, economy: 0.95 } },
         },
       }),
     });

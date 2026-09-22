@@ -104,7 +104,7 @@ async function materializeNewSessionShortcut() {
   return created;
 }
 
-function createNewSessionShortcut({
+async function createNewSessionShortcut({
   closeSidebar = true,
   forceComposerFocus = true,
   sourceContext = null,
@@ -133,6 +133,12 @@ function createNewSessionShortcut({
     ...(sourceContext && typeof sourceContext === "object" ? { sourceContext } : {}),
   };
   if (typeof syncQuickSessionUi === "function") syncQuickSessionUi(null);
+  if (Array.isArray(toolsList) && toolsList.some((tool) => tool.id === "codex")) {
+    selectedTool = "codex";
+    preferredTool = "codex";
+    inlineToolSelect.value = "codex";
+    await loadModelsForCurrentTool();
+  }
 
   const detachedAttachments = typeof getComposerAttachmentsState === "function"
     ? getComposerAttachmentsState(DETACHED_COMPOSER_SESSION_ID)

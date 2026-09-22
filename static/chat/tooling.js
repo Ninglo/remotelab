@@ -3,8 +3,7 @@ function t(key, vars) {
   return window.remotelabT ? window.remotelabT(key, vars) : key;
 }
 
-let runtimeSelectionSyncPromise = Promise.resolve();
-let lastSyncedRuntimeSelectionPayload = '';
+let runtimePresetCatalog = [];
 
 function canChangeRuntimeSelectionFromUi() {
   return typeof canChangeRuntimeSelection === "function"
@@ -24,39 +23,64 @@ function canForkSessionsFromUi() {
     : true;
 }
 
-function buildRuntimeSelectionPayload() {
-  if (!canChangeRuntimeSelectionFromUi() || !selectedTool) return null;
-  return {
-    selectedTool,
-    selectedModel: selectedModel || '',
-    selectedEffort: currentToolReasoningKind === 'enum' ? (selectedEffort || '') : '',
-    reasoningKind: currentToolReasoningKind || 'none',
-  };
+async function loadRuntimePresetCatalog() {
+  try {
+    const data = await fetchJsonOrRedirect('/api/runtime-presets', { revalidate: true });
+    runtimePresetCatalog = Array.isArray(data?.presets) ? data.presets : [];
+  } catch (error) {
+    runtimePresetCatalog = [];
+    console.warn('[runtime-presets] Failed to load presets:', error?.message || error);
+  }
+  syncRuntimePresetUi();
 }
 
-function queueRuntimeSelectionSync() {
-  const payload = buildRuntimeSelectionPayload();
-  if (!payload) return;
-  const serialized = JSON.stringify(payload);
-  if (serialized === lastSyncedRuntimeSelectionPayload) {
-    return;
-  }
-  lastSyncedRuntimeSelectionPayload = serialized;
-  runtimeSelectionSyncPromise = runtimeSelectionSyncPromise
-    .catch(() => {})
-    .then(async () => {
-      try {
-        await fetchJsonOrRedirect('/api/runtime-selection', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: serialized,
-        });
-      } catch (error) {
-        lastSyncedRuntimeSelectionPayload = '';
-        console.warn('[runtime-selection] Failed to sync current selection:', error.message);
-      }
-    });
+function inferCurrentRuntimePreset(session) {
+  const storedTier = typeof session?.runtimeTier === 'string' ? session.runtimeTier : '';
+  if (runtimePresetCatalog.some((preset) => preset.id === storedTier)) return storedTier;
+  if (session?.tool === 'codex' && session?.model === 'auto') return 'auto';
+  const exact = runtimePresetCatalog.find((preset) => (
+    preset.id !== 'auto'
+    && preset.model === session?.model
+    && (preset.effort || '') === (session?.effort || '')
+  ));
+  return exact?.id || 'custom';
 }
+
+function syncRuntimePresetUi() {
+  if (!runtimePresetSelect) return;
+  const session = typeof getCurrentSession === 'function' ? getCurrentSession() : null;
+  const visible = Boolean(currentSessionId && session && !isQuickSessionUi(session) && session.tool === 'codex');
+  runtimePresetSelect.hidden = !visible;
+  if (!visible) return;
+  runtimePresetSelect.innerHTML = '';
+  for (const preset of runtimePresetCatalog) {
+    const option = document.createElement('option');
+    option.value = preset.id;
+    option.textContent = t(`tooling.preset.${preset.id}`);
+    option.title = preset.id === 'auto'
+      ? t('tooling.presetTitle')
+      : `${preset.model} / ${preset.effort}`;
+    runtimePresetSelect.appendChild(option);
+  }
+  const inferred = inferCurrentRuntimePreset(session);
+  if (inferred === 'custom') {
+    const option = document.createElement('option');
+    option.value = 'custom';
+    option.textContent = t('tooling.preset.custom');
+    option.disabled = true;
+    runtimePresetSelect.appendChild(option);
+  }
+  runtimePresetSelect.value = inferred;
+}
+
+runtimePresetSelect?.addEventListener('change', () => {
+  if (!currentSessionId || runtimePresetSelect.value === 'custom') return;
+  dispatchAction({
+    action: 'session_preferences',
+    sessionId: currentSessionId,
+    runtimeTier: runtimePresetSelect.value,
+  });
+});
 
 function cloneReasoningState(reasoning, fallbackLabel = t("tooling.thinking")) {
   if (!reasoning || typeof reasoning !== "object") return null;
@@ -195,7 +219,6 @@ effortSelect.addEventListener("change", () => {
   if (selectedTool && selectedModel) {
     localStorage.setItem(`selectedEffort_${selectedTool}_${selectedModel}`, selectedEffort);
   }
-  queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });
 // ---- Inline tool select ----
@@ -753,6 +776,7 @@ async function loadInlineTools({ skipModelLoad = false } = {}) {
     return;
   }
   try {
+    await loadRuntimePresetCatalog();
     const data = await fetchJsonOrRedirect("/api/tools");
     allToolsList = Array.isArray(data.tools) ? data.tools : [];
     const initialTool = refreshPrimaryToolPicker();
@@ -787,7 +811,6 @@ inlineToolSelect.addEventListener("change", async () => {
   localStorage.setItem("preferredTool", preferredTool);
   localStorage.setItem("selectedTool", selectedTool);
   await loadModelsForCurrentTool();
-  queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });
 
@@ -873,6 +896,7 @@ function resetCurrentModelPickerUi() {
   inlineModelSelect.innerHTML = "";
   inlineModelSelect.style.display = "none";
   effortSelect.style.display = "none";
+  if (runtimePresetSelect) runtimePresetSelect.hidden = true;
 }
 
 async function loadModelsForCurrentTool({ refresh = false } = {}) {
@@ -911,7 +935,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     }
     const defaultModel = data.defaultModel || "";
     const attachedModel = sessionPreferences?.hasModel ? sessionPreferences.model : "";
-    const requestedModel = attachedModel || savedModel;
+    const requestedModel = attachedModel || (!currentSessionId ? defaultModel : savedModel);
 
     if (toolId === "pi") {
       const providers = getPiProviderCatalog();
@@ -956,10 +980,10 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
 
     inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
     applyCurrentModelReasoningUi({ sessionPreferences });
-    // Loading an attached Session only reflects its snapshot in the picker;
-    // it must not silently rewrite the shared Default. Explicit picker
-    // changes below still sync both the Default and the current Session.
-    if (!currentSessionId) queueRuntimeSelectionSync();
+    syncRuntimePresetUi();
+    // Runtime controls belong to the attached Session or the pending draft.
+    // They never rewrite the shared Default, which remains Auto unless an
+    // explicit /default command or API call changes it.
   } catch (error) {
     console.warn("[models] Failed to load model picker:", error?.message || error);
     resetCurrentModelPickerUi();
@@ -982,7 +1006,6 @@ inlineProviderSelect.addEventListener("change", () => {
     localStorage.setItem(`selectedModel_${selectedTool}_${selectedModelProvider}`, selectedModel);
   }
   applyCurrentModelReasoningUi({ preserveCurrentSelection: false });
-  queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });
 
@@ -994,12 +1017,12 @@ inlineModelSelect.addEventListener("change", () => {
     localStorage.setItem(`selectedModel_${selectedTool}_${selectedModelProvider}`, selectedModel);
   }
   applyCurrentModelReasoningUi({ preserveCurrentSelection: false });
-  queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
 });
 
 window.addEventListener("remotelab:localechange", () => {
   applyCurrentModelReasoningUi({ preserveCurrentSelection: true });
+  syncRuntimePresetUi();
 });
 
 addToolNameInput.addEventListener("input", () => {

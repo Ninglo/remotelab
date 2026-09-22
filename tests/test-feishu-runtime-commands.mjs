@@ -28,10 +28,30 @@ try {
       if (tool === brokenCatalog) throw new Error('Current provider is unavailable');
       json = catalog[tool];
     }
+    else if (path === '/api/runtime-presets') json = { presets: [
+      { id: 'auto', model: 'auto', effort: '' },
+      { id: 'sota', model: 'frontier', effort: 'xhigh' },
+      { id: 'quality', model: 'alpha', effort: 'high' },
+      { id: 'balanced', model: 'beta', effort: 'medium' },
+      { id: 'economy', model: 'cheap', effort: 'low' },
+    ] };
     else if (path === '/api/session-conversations/resolve') json = { sessionId: options.body?.conversation?.target?.conversationKind === 'main' ? 's1' : null };
     else if (path === '/api/sessions') json = { sessions: [{ ...session, externalTriggerId: 'feishu:p2p:private' }] };
     else if (path === '/api/sessions/s1') {
       if (options.method === 'PATCH') {
+        if (Object.prototype.hasOwnProperty.call(options.body, 'runtimeTier')) {
+          const preset = {
+            auto: { model: 'auto', effort: '' },
+            sota: { model: 'frontier', effort: 'xhigh' },
+            quality: { model: 'alpha', effort: 'high' },
+            balanced: { model: 'beta', effort: 'medium' },
+            economy: { model: 'cheap', effort: 'low' },
+          }[options.body.runtimeTier];
+          session.tool = 'codex';
+          session.model = preset.model;
+          session.effort = preset.effort;
+          session.runtimeTier = options.body.runtimeTier;
+        }
         if (Object.prototype.hasOwnProperty.call(options.body, 'tool')) session.tool = options.body.tool;
         if (Object.prototype.hasOwnProperty.call(options.body, 'model')) session.model = options.body.model;
         if (Object.prototype.hasOwnProperty.call(options.body, 'effort')) session.effort = options.body.effort;
@@ -71,6 +91,7 @@ try {
   const run = (type, text = '', target = summary, extra = {}) => handleFeishuRuntimeCommand(runtime, target, { type, text }, { ...options, ...extra });
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /model beta' }), { commands: [{ name: 'model', value: 'beta' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /m beta' }), { commands: [{ name: 'model', value: 'beta' }], body: '' });
+  assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /tier sota' }), { commands: [{ name: 'tier', value: 'sota' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { commands: [{ name: 'status' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { commands: [{ name: 'default', field: 'model', value: 'beta' }], body: '' });
   assert.equal(extractLocalCommand({ ...summary,
@@ -118,6 +139,11 @@ try {
   assert.match(await run('status'), /beta/);
   assert.match(await run('effort', 'high'), /high/);
   assert.equal(session.feishuRuntimeSelection.effort, 'high');
+  assert.match(await run('tier'), /\/tier sota/);
+  assert.match(await run('tier', 'sota'), /frontier/);
+  assert.equal(session.runtimeTier, 'sota');
+  assert.equal(session.model, 'frontier');
+  assert.equal(session.effort, 'xhigh');
   const beforeInvalid = structuredClone(session);
   assert.match(await run('effort', 'ultra'), /不支持/);
   assert.match(await run('model', 'unknown'), /不可用/);

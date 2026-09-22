@@ -70,9 +70,12 @@ RemoteLab setup is the primary configuration UX.
 
 When a TypeSafe API key is configured, the CodeX model list defaults to `Auto
 (Jev)` for new selections without a saved preference. Selecting it for a new
-Standard Session asks Jev to choose one of three service tiers from the first
+Standard Session asks Jev to choose one of four service tiers from the first
 user message. The default tier mappings are:
 
+- `sota`: GPT-6 Astra with `xhigh` reasoning. Jev may choose it only when the
+  user explicitly requests the strongest/SOTA model, maximum reasoning, or
+  explicitly marks the task as extremely important and asks for top quality.
 - `quality`: GPT-5.6 Sol with `high` reasoning. This is the conservative default
   for serious work, research, development, debugging, and contextual tasks.
 - `balanced`: GPT-5.6 Terra with `medium` reasoning for clearly bounded,
@@ -102,6 +105,7 @@ The tier mappings can be changed without changing the routing prompt. Create
 
 ```json
 {
+  "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
   "quality": { "model": "gpt-5.6-sol", "effort": "high" },
   "balanced": { "model": "gpt-5.6-terra", "effort": "medium" },
   "economy": { "model": "gpt-5.6-luna", "effort": "low" }

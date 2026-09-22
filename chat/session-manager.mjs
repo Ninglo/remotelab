@@ -2840,7 +2840,9 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
   const hasModelPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'model');
   const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
   const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
-  if (!hasToolPatch && !hasModelPatch && !hasEffortPatch && !hasThinkingPatch && !hasFeishuRuntimePatch) {
+  const hasRuntimeTierPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'runtimeTier');
+  const runtimeTier = hasRuntimeTierPatch ? trimString(patch.runtimeTier).toLowerCase() : '';
+  if (!hasToolPatch && !hasModelPatch && !hasEffortPatch && !hasThinkingPatch && !hasFeishuRuntimePatch && !hasRuntimeTierPatch) {
     return getSession(id);
   }
 
@@ -2863,6 +2865,17 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
 
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
+
+    if (hasRuntimeTierPatch) {
+      if ((session.runtimeTier || '') !== runtimeTier) {
+        if (runtimeTier) session.runtimeTier = runtimeTier;
+        else delete session.runtimeTier;
+        changed = true;
+      }
+    } else if ((hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) && session.runtimeTier) {
+      delete session.runtimeTier;
+      changed = true;
+    }
 
     if (hasFeishuRuntimePatch && JSON.stringify(session.feishuRuntimeSelection || null) !== JSON.stringify(feishuRuntimeSelection)) {
       if (feishuRuntimeSelection) session.feishuRuntimeSelection = feishuRuntimeSelection;
@@ -3281,7 +3294,12 @@ async function prepareRequestRun(record) {
       draft.model = options.model || '';
       draft.effort = options.effort || '';
       draft.thinking = options.thinking === true;
-      if (options.autoRoutingReceipt) draft.autoRouting = options.autoRoutingReceipt;
+      if (options.autoRoutingReceipt) {
+        draft.autoRouting = options.autoRoutingReceipt;
+        if (options.autoRoutingReceipt.status === 'routed' && options.autoRoutingReceipt.decision?.tier) {
+          draft.runtimeTier = options.autoRoutingReceipt.decision.tier;
+        }
+      }
     }
     draft.updatedAt = nowIso();
     return true;

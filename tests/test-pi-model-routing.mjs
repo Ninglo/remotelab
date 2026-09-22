@@ -116,6 +116,16 @@ assert.deepEqual(
   })),
   [
     {
+      id: 'openai-codex/gpt-6-astra',
+      provider: 'openai-codex',
+      levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      control: '',
+      default: 'medium',
+      defaultEffort: 'medium',
+      providerDefault: false,
+      kind: 'enum',
+    },
+    {
       id: 'openai-codex/gpt-5.6-sol',
       provider: 'openai-codex',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
@@ -168,8 +178,8 @@ assert.deepEqual(
   ],
   'Pi RPC metadata should expose provider grouping and each model’s real thinking control shape',
 );
-assert.equal(rpcCatalog.some((model) => model.id === 'openai-codex/gpt-6-astra'), false,
-  'retired Astra routes must not be exposed by Pi discovery');
+assert.equal(rpcCatalog.some((model) => model.id === 'openai-codex/gpt-6-astra'), true,
+  'Astra must remain available for explicit SOTA routing');
 const glmFlashCatalog = parsePiRpcModels([
   {
     provider: 'glm-api',

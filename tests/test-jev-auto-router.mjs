@@ -8,13 +8,19 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const testHome = await mkdtemp(join(tmpdir(), 'remotelab-jev-routing-'));
 setIsolatedTestHome(testHome);
 test.after(() => rm(testHome, { recursive: true, force: true }));
-const { applyJevAutoPolicy, normalizeJevTierProfiles, resolveJevAutoRoute } = await import('../lib/jev-auto-router.mjs');
+const {
+  applyJevAutoPolicy,
+  normalizeJevTierProfiles,
+  resolveJevAutoRoute,
+  resolveJevTierPreset,
+} = await import('../lib/jev-auto-router.mjs');
 
 function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
   const defaults = {
-    quality: { quality: 0.9, balanced: 0.08, economy: 0.02 },
-    balanced: { quality: 0.1, balanced: 0.85, economy: 0.05 },
-    economy: { quality: 0.02, balanced: 0.03, economy: 0.95 },
+    sota: { sota: 0.92, quality: 0.06, balanced: 0.015, economy: 0.005 },
+    quality: { sota: 0.01, quality: 0.9, balanced: 0.07, economy: 0.02 },
+    balanced: { sota: 0.005, quality: 0.095, balanced: 0.85, economy: 0.05 },
+    economy: { sota: 0.005, quality: 0.015, balanced: 0.03, economy: 0.95 },
   };
   return {
     service_tier: {
@@ -25,7 +31,11 @@ function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
   };
 }
 
-test('three service tiers map to fixed model and effort profiles', () => {
+test('four service tiers map to fixed model and effort profiles', () => {
+  assert.deepEqual(
+    (({ tool, model, effort }) => ({ tool, model, effort }))(applyJevAutoPolicy(answer('sota'))),
+    { tool: 'codex', model: 'gpt-6-astra', effort: 'xhigh' },
+  );
   assert.deepEqual(
     (({ tool, model, effort }) => ({ tool, model, effort }))(applyJevAutoPolicy(answer('quality'))),
     { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high' },
@@ -42,25 +52,35 @@ test('three service tiers map to fixed model and effort profiles', () => {
 
 test('uncertain downgrade and material quality probability return to quality', () => {
   const uncertain = applyJevAutoPolicy(answer('economy', 0.4, {
-    quality: 0.3, balanced: 0.15, economy: 0.55,
+    sota: 0, quality: 0.3, balanced: 0.15, economy: 0.55,
   }));
   assert.equal(uncertain.policy.tier, 'quality');
   assert.deepEqual(uncertain.policy.reasons, ['tier_uncertain']);
 
   const mixed = applyJevAutoPolicy(answer('balanced', 0.9, {
-    quality: 0.26, balanced: 0.7, economy: 0.04,
+    sota: 0, quality: 0.26, balanced: 0.7, economy: 0.04,
   }));
   assert.equal(mixed.policy.tier, 'quality');
   assert.deepEqual(mixed.policy.reasons, ['quality_probability']);
 });
 
+test('uncertain SOTA requests return to quality', () => {
+  const route = applyJevAutoPolicy(answer('sota', 0.6, {
+    sota: 0.6, quality: 0.35, balanced: 0.04, economy: 0.01,
+  }));
+  assert.equal(route.policy.tier, 'quality');
+  assert.deepEqual(route.policy.reasons, ['sota_uncertain']);
+});
+
 test('tier profiles are configurable while invalid fields keep safe defaults', () => {
   const profiles = normalizeJevTierProfiles({
+    sota: { model: 'frontier', effort: 'xhigh' },
     quality: { model: 'future-sota', effort: 'high' },
     balanced: { model: 'sweet-spot', effort: 'medium' },
     economy: { model: '', effort: 'invalid' },
   });
   assert.deepEqual(profiles, {
+    sota: { model: 'frontier', effort: 'xhigh' },
     quality: { model: 'future-sota', effort: 'high' },
     balanced: { model: 'sweet-spot', effort: 'medium' },
     economy: { model: 'gpt-5.6-luna', effort: 'low' },
@@ -70,6 +90,7 @@ test('tier profiles are configurable while invalid fields keep safe defaults', (
 test('successful API decisions use the tier config file and return a bounded receipt', async () => {
   const tierConfigFile = join(testHome, 'jev-routing.json');
   await writeFile(tierConfigFile, JSON.stringify({
+    sota: { model: 'frontier', effort: 'xhigh' },
     quality: { model: 'future-sota', effort: 'high' },
     balanced: { model: 'sweet-spot', effort: 'medium' },
     economy: { model: 'cheap-model', effort: 'low' },
@@ -93,6 +114,21 @@ test('successful API decisions use the tier config file and return a bounded rec
   assert.equal(route.autoRoutingReceipt.decision.tier, 'balanced');
   const serialized = JSON.stringify(route.autoRoutingReceipt);
   assert.doesNotMatch(serialized, /private-test-key|package\.json/);
+});
+
+test('session presets resolve through the same configurable tier map', async () => {
+  const tierConfigFile = join(testHome, 'preset-routing.json');
+  await writeFile(tierConfigFile, JSON.stringify({
+    sota: { model: 'future-frontier', effort: 'xhigh' },
+    quality: { model: 'future-quality', effort: 'high' },
+  }));
+  assert.deepEqual(await resolveJevTierPreset('auto', { tierConfigFile }), {
+    tier: 'auto', tool: 'codex', model: 'auto', effort: '', thinking: false,
+  });
+  assert.deepEqual(await resolveJevTierPreset('sota', { tierConfigFile }), {
+    tier: 'sota', tool: 'codex', model: 'future-frontier', effort: 'xhigh', thinking: false,
+  });
+  await assert.rejects(() => resolveJevTierPreset('unknown', { tierConfigFile }), /Unknown Jev tier/);
 });
 
 test('API failures fall back to the configured quality tier without throwing', async () => {

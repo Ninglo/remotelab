@@ -15,6 +15,7 @@ import {
   updatePerson,
 } from '../lib/auth.mjs';
 import { loadUiRuntimeSelection, saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { getJevTierProfiles, resolveJevTierPreset } from '../lib/jev-auto-router.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import {
   completeRuntimeProfile,
@@ -969,6 +970,7 @@ export async function handleControlRoutes({
     const hasEffortPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'effort');
     const hasThinkingPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'thinking');
     const hasFeishuRuntimePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'feishuRuntimeSelection');
+    const hasRuntimeTierPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'runtimeTier');
     if (hasFeishuRuntimePatch) {
       try { patch.feishuRuntimeSelection = normalizeExternalRuntimeOverride(patch.feishuRuntimeSelection); }
       catch (error) { writeJson(res, 400, { error: error.message }); return true; }
@@ -1005,6 +1007,14 @@ export async function handleControlRoutes({
     }
     if (hasThinkingPatch && typeof patch.thinking !== 'boolean') {
       writeJson(res, 400, { error: 'thinking must be a boolean' });
+      return true;
+    }
+    if (hasRuntimeTierPatch && typeof patch.runtimeTier !== 'string') {
+      writeJson(res, 400, { error: 'runtimeTier must be a string' });
+      return true;
+    }
+    if (hasRuntimeTierPatch && (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch)) {
+      writeJson(res, 400, { error: 'runtimeTier cannot be combined with explicit runtime fields' });
       return true;
     }
     if (hasSpacePatch && patch.space !== null && typeof patch.space !== 'string') {
@@ -1054,7 +1064,16 @@ export async function handleControlRoutes({
       writeJson(res, 400, { error: 'entryMode must be a string or null' });
       return true;
     }
-    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) {
+    let runtimeTierPreset = null;
+    if (hasRuntimeTierPatch) {
+      try {
+        runtimeTierPreset = await resolveJevTierPreset(patch.runtimeTier);
+      } catch (error) {
+        writeJson(res, 400, { error: error.message });
+        return true;
+      }
+    }
+    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch || hasRuntimeTierPatch) {
       const targetSession = await getSession(sessionId);
       if (isQuickSession(targetSession)) {
         writeJson(res, 409, {
@@ -1138,8 +1157,15 @@ export async function handleControlRoutes({
         ...(hasWorkflowPriorityPatch ? { workflowPriority: patch.workflowPriority || '' } : {}),
       }) || session;
     }
-    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch) {
+    if (hasToolPatch || hasModelPatch || hasEffortPatch || hasThinkingPatch || hasFeishuRuntimePatch || hasRuntimeTierPatch) {
       session = await updateSessionRuntimePreferences(sessionId, {
+        ...(hasRuntimeTierPatch ? {
+          runtimeTier: runtimeTierPreset.tier,
+          tool: runtimeTierPreset.tool,
+          model: runtimeTierPreset.model,
+          effort: runtimeTierPreset.effort,
+          thinking: runtimeTierPreset.thinking,
+        } : {}),
         ...(hasFeishuRuntimePatch ? { feishuRuntimeSelection: patch.feishuRuntimeSelection } : {}),
         ...(hasToolPatch ? { tool: patch.tool } : {}),
         ...(hasModelPatch ? { model: patch.model } : {}),
@@ -1369,6 +1395,18 @@ export async function handleControlRoutes({
     } catch (error) {
       writeJson(res, 400, { error: error.message || 'Failed to save runtime selection' });
     }
+    return true;
+  }
+
+  if (pathname === '/api/runtime-presets' && req.method === 'GET') {
+    const profiles = await getJevTierProfiles();
+    writeJson(res, 200, {
+      defaultPreset: 'auto',
+      presets: [
+        { id: 'auto', model: 'auto', effort: '' },
+        ...['sota', 'quality', 'balanced', 'economy'].map((id) => ({ id, ...profiles[id] })),
+      ],
+    });
     return true;
   }
 

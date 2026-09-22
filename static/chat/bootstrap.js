@@ -301,6 +301,7 @@ const statusText = document.getElementById("statusText");
 const imgBtn = document.getElementById("imgBtn");
 const imgFileInput = document.getElementById("imgFileInput");
 const imgPreviewStrip = document.getElementById("imgPreviewStrip");
+const runtimePresetSelect = document.getElementById("runtimePresetSelect");
 const inlineToolSelect = document.getElementById("inlineToolSelect");
 const inlineProviderSelect = document.getElementById("inlineProviderSelect");
 const inlineModelSelect = document.getElementById("inlineModelSelect");
@@ -998,13 +999,14 @@ const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
 const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 const PRODUCT_DEFAULT_CODEX_EFFORT = "low";
 const CURRENT_CODEX_MODEL_IDS = new Set([
+  "gpt-6-astra",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
   "gpt-5.5",
   "gpt-5.2",
 ]);
-const RETIRED_CODEX_MODEL_IDS = new Set(["gpt-6-astra"]);
+const RETIRED_CODEX_MODEL_IDS = new Set([]);
 const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "gpt6-low-v1";
 
 function normalizeStoredToolId(value) {
