@@ -35,6 +35,7 @@ The public projection keeps the existing `trg_*` / `sch_*` identity and makes ca
   "kind": "recurring",
   "title": "Weekday review",
   "prompt": "Review the project and choose the next action.",
+  "createdByIdentityId": "identity_...",
   "state": "active",
   "schedule": {
     "type": "interval",
@@ -85,6 +86,12 @@ There are two explicit execution modes:
 - `new_session`: the selected Session supplies explicit provenance and starting context. Every occurrence creates an independent execution Session through the existing scheduled-session path.
 
 Legacy `calendar_day` schedules remain visible and are projected as `calendar_day_session`; Task Center does not rewrite them.
+
+### Creator attribution
+
+Task ownership is a UI attribution label, not a separate runtime user or an access-control boundary. A task created in the browser belongs to the signed-in Person. A task created by an Agent or connector through service authentication inherits the Person attached to its source Session. Recurring occurrences keep the task creator instead of becoming owned by the scheduler, and every newly created execution Session inherits the same identity. `System` remains an internal fallback for genuinely senderless maintenance work but is not exposed as a Person in the user-facing directory.
+
+`createdByIdentityId` is fixed at creation time. Selecting another Person's Session as the execution target does not transfer task ownership; it only chooses where or from what context the work runs.
 
 ### Model policy
 

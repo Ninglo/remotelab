@@ -188,8 +188,9 @@ async function main() {
       scheduledAt: new Date(Date.now() + 120).toISOString(),
       target: { mode: 'new_session', sessionId: templateSession.id },
       notification: { mode: 'remotelab' },
-    });
+    }, secondPersonCookie);
     assert.equal(independentCreate.status, 201, independentCreate.text);
+    assert.equal(independentCreate.json.task.createdByIdentityId, 'identity_web_second');
     const completedIndependent = await waitFor(async () => {
       const response = await request(port, 'GET', `/api/automation-tasks/${independentCreate.json.task.id}`);
       return response.json?.task?.state === 'completed' ? response.json.task : false;
@@ -199,6 +200,9 @@ async function main() {
       templateSession.id,
       'new_session mode must create an independent execution Session',
     );
+    const independentSession = await request(port, 'GET', `/api/sessions/${completedIndependent.lastExecution.sessionId}`);
+    assert.equal(independentSession.status, 200, independentSession.text);
+    assert.equal(independentSession.json.session.initiatedByIdentityId, 'identity_web_second');
 
     const controllable = await request(port, 'POST', '/api/automation-tasks', {
       kind: 'one_time',

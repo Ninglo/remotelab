@@ -539,7 +539,7 @@ async function main() {
     const peopleJson = JSON.parse(peopleResponse.text);
     assert.equal(peopleJson.people?.some((person) => person.id === 'person_alpha'), true);
     assert.equal(peopleJson.people?.some((person) => person.id === 'person_beta'), true);
-    assert.equal(peopleJson.people?.some((person) => person.system === true), true);
+    assert.equal(peopleJson.people?.some((person) => person.system === true), false, 'System is an internal actor, not a user-facing Person');
     assert.equal(peopleJson.people?.find((person) => person.id === 'person_alpha')?.handle, 'zhangyu95');
     assert.match(
       peopleJson.people?.find((person) => person.id === 'person_beta')?.handle || '',
@@ -600,6 +600,21 @@ async function main() {
     const defaultCreatedJson = JSON.parse(defaultCreated.text);
     assert.equal(defaultCreatedJson.session?.initiatedByIdentityId, 'identity_web_alpha');
     assert.equal(defaultCreatedJson.session?.folder, join(home, '.remotelab', 'workspace'));
+
+    const inheritedServiceCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'Agent-created child session',
+    }, {
+      Cookie: '',
+      Authorization: `Bearer ${serviceToken}`,
+      'X-RemoteLab-Source-Session-Id': defaultCreatedJson.session.id,
+    });
+    assert.equal(inheritedServiceCreated.status, 201);
+    assert.equal(
+      JSON.parse(inheritedServiceCreated.text).session?.initiatedByIdentityId,
+      'identity_web_alpha',
+      'service work launched from a Session should inherit that Session creator as its UI owner',
+    );
 
     const serviceCreated = await request(port, 'POST', '/api/sessions', {
       tool: 'codex',

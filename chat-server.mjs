@@ -62,6 +62,7 @@ await tools.ensureDefaultMicroAgentToolRegistrationAsync();
 
 ws.attachWebSocket(server);
 await sessionManager.startDetachedRunObservers();
+await triggers.reconcileTriggeredSessionOwnership();
 triggers.startTriggerScheduler();
 recurringSchedules.startRecurringScheduleScheduler({
   createScheduledTrigger: triggers.createScheduledTrigger,

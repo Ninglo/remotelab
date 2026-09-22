@@ -2454,6 +2454,19 @@ export async function updateSessionSystemPrompt(id, systemPrompt) {
   return enrichSessionMeta(result.meta);
 }
 
+export async function updateSessionInitiatorIdentity(id, initiatedByIdentityId) {
+  const nextIdentityId = typeof initiatedByIdentityId === 'string' ? initiatedByIdentityId.trim() : '';
+  if (!nextIdentityId) return null;
+  const result = await mutateSessionMeta(id, (session) => {
+    if (session.initiatedByIdentityId === nextIdentityId) return false;
+    session.initiatedByIdentityId = nextIdentityId;
+    return true;
+  });
+  if (!result.meta) return null;
+  if (result.changed) broadcastSessionInvalidation(id);
+  return enrichSessionMeta(result.meta);
+}
+
 export async function mergeSessionPersonViewOwnership(sourcePersonId, targetPersonId) {
   const sourceId = typeof sourcePersonId === 'string' ? sourcePersonId.trim() : '';
   const targetId = typeof targetPersonId === 'string' ? targetPersonId.trim() : '';
