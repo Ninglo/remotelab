@@ -231,6 +231,7 @@ export function createRunRecord(input = {}) {
     model: input.model || null,
     effort: input.effort || null,
     thinking: input.thinking === true,
+    ...(input.autoRoutingReceipt ? { autoRoutingReceipt: clone(input.autoRoutingReceipt) } : {}),
     createdAt: input.createdAt || now,
     startedAt: input.startedAt || null,
     updatedAt: input.updatedAt || now,

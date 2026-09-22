@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyJevAutoPolicy, resolveJevAutoRoute } from '../lib/jev-auto-router.mjs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setIsolatedTestHome } from './isolate-test-environment.mjs';
+
+const testHome = await mkdtemp(join(tmpdir(), 'remotelab-jev-routing-'));
+setIsolatedTestHome(testHome);
+test.after(() => rm(testHome, { recursive: true, force: true }));
+const { applyJevAutoPolicy, resolveJevAutoRoute } = await import('../lib/jev-auto-router.mjs');
 
 function choice(selected, confidence, options) {
   const selectedProbability = confidence >= 0.6 ? 0.8 : 0.45;
@@ -108,4 +116,16 @@ test('concrete runtime selections do not invoke Jev', async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('routing receipts survive run creation and status updates on disk', async () => {
+  const { createRun, updateRun, runDir } = await import('../chat/runs.mjs');
+  const receipt = { provider: 'typesafe', status: 'routed', route: { model: 'gpt-5.6-luna', effort: 'low' } };
+  const run = await createRun({
+    status: { sessionId: 'jev-test', autoRoutingReceipt: receipt },
+    manifest: { autoRoutingReceipt: receipt },
+  });
+  await updateRun(run.id, current => ({ ...current, state: 'running' }));
+  const persisted = JSON.parse(await readFile(join(runDir(run.id), 'status.json'), 'utf8'));
+  assert.deepEqual(persisted.autoRoutingReceipt, receipt);
 });
