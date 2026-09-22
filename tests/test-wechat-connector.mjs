@@ -341,7 +341,7 @@ try {
   const loadedConfig = await loadConfig(tempConfigPath);
   assert.equal(loadedConfig.sessionTool, 'codex');
   assert.equal(loadedConfig.systemPrompt, '');
-  assert.equal(loadedConfig.runtimeSelectionPath, join(tempConfigDir, 'ui-runtime-selection.json'));
+  assert.equal(loadedConfig.runtimeSelectionPath, undefined);
   assert.match(DEFAULT_SESSION_SYSTEM_PROMPT, /Keep connector-specific overrides minimal/i);
 
   const nestedStorageConfigPath = join(tempConfigDir, 'nested-config.json');
@@ -349,11 +349,7 @@ try {
     storageDir: join(tempConfigDir, 'wechat-connector'),
   }, null, 2)}\n`, 'utf8');
   const nestedStorageConfig = await loadConfig(nestedStorageConfigPath);
-  assert.equal(
-    nestedStorageConfig.runtimeSelectionPath,
-    join(tempConfigDir, 'ui-runtime-selection.json'),
-    'wechat-connector storage dirs should default to the parent config root runtime selection file',
-  );
+  assert.equal(nestedStorageConfig.runtimeSelectionPath, undefined);
 
   await writeFile(tempConfigPath, `${JSON.stringify({
     storageDir: tempConfigDir,
@@ -390,13 +386,6 @@ try {
     },
   }, null, 2)}\n`, 'utf8');
   const config = await loadConfig(tempConfigPath);
-  await writeFile(config.runtimeSelectionPath, `${JSON.stringify({
-    selectedTool: 'codex',
-    selectedModel: 'ui-model-test',
-    selectedEffort: 'medium',
-    reasoningKind: 'enum',
-  }, null, 2)}\n`, 'utf8');
-
   const loginSession = await startWeChatLogin(config);
   assert.equal(loginSession.qrcodeUrl, 'https://weixin.qq.com/x/qr_test_1');
 
@@ -495,8 +484,9 @@ try {
 
     assert.equal(submitPayload?.requestId, 'wechat:bot_account_1:msg_reply_scope');
     assert.equal(submitPayload?.tool, 'codex');
-    assert.equal(submitPayload?.model, 'ui-model-test');
-    assert.equal(submitPayload?.effort, 'medium');
+    assert.equal(submitPayload?.runtimeSelectionScope, 'auto');
+    assert.equal(submitPayload?.model, 'auto');
+    assert.equal(submitPayload?.effort, undefined);
     assert.equal(submitPayload?.text, 'Please confirm the WeChat app scope.');
     assert.equal(submitPayload?.sourceDelivery?.connector, 'wechat',
       'submitWeChatMessageAsync must set sourceDelivery.connector=wechat');

@@ -25,12 +25,11 @@ import {
   normalizeExternalRuntimeSelectionMode,
   resolveExternalRuntimeSelection,
 } from '../lib/external-runtime-selection.mjs';
-import { loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
 import {
   buildInstanceRuntimeCellEnvironment,
   ensureInstanceLarkCliBotProfile,
 } from '../lib/instance-runtime-cell.mjs';
-import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
 import {
   DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT as DEFAULT_SESSION_SYSTEM_PROMPT,
   FEISHU_CONNECTOR_ID,
@@ -920,28 +919,8 @@ async function loadRemoteLabReplyAttachment(runtime, attachment) {
   return loadRemoteLabReplyAttachmentImpl(runtime, attachment, { ensureAuthCookie });
 }
 
-async function resolveTargetConfigDir(chatBaseUrl) {
-  try {
-    const normalized = chatBaseUrl?.replace(/\/+$/, '').toLowerCase();
-    if (!normalized) return '';
-    const registry = await loadMailboxRuntimeRegistry();
-    for (const record of registry) {
-      const local = (record.localBaseUrl || '').replace(/\/+$/, '').toLowerCase();
-      const pub = (record.publicBaseUrl || '').replace(/\/+$/, '').toLowerCase();
-      if ((local && local === normalized) || (pub && pub === normalized)) {
-        return trimString(record.configDir);
-      }
-    }
-  } catch { /* guest registry not available */ }
-  return '';
-}
-
 async function resolveFeishuRuntimeSelection(runtime) {
-  const targetConfigDir = await resolveTargetConfigDir(runtime?.config?.chatBaseUrl);
-  const selectionFile = targetConfigDir
-    ? join(targetConfigDir, 'ui-runtime-selection.json')
-    : undefined;
-  const uiSelection = await loadUiRuntimeSelection(selectionFile);
+  const uiSelection = getAutoRuntimeSelection();
   return resolveExternalRuntimeSelection({
     uiSelection,
     mode: runtime?.config?.runtimeSelectionMode || DEFAULT_RUNTIME_SELECTION_MODE,
@@ -1046,7 +1025,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     requestId: buildRequestId(effectiveSummary),
     text: buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
-    runtimeSelectionScope: 'default',
+    runtimeSelectionScope: 'auto',
     sourceContext: buildMessageSourceContext(messageSummary),
     sourceDelivery: {
       connector: 'feishu',

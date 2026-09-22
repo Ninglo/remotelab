@@ -122,12 +122,10 @@ test('session presets resolve through the same configurable tier map', async () 
     sota: { model: 'future-frontier', effort: 'xhigh' },
     quality: { model: 'future-quality', effort: 'high' },
   }));
-  assert.deepEqual(await resolveJevTierPreset('auto', { tierConfigFile }), {
-    tier: 'auto', tool: 'codex', model: 'auto', effort: '', thinking: false,
-  });
   assert.deepEqual(await resolveJevTierPreset('sota', { tierConfigFile }), {
     tier: 'sota', tool: 'codex', model: 'future-frontier', effort: 'xhigh', thinking: false,
   });
+  await assert.rejects(() => resolveJevTierPreset('auto', { tierConfigFile }), /Unknown Jev tier/);
   await assert.rejects(() => resolveJevTierPreset('unknown', { tierConfigFile }), /Unknown Jev tier/);
 });
 

@@ -108,7 +108,6 @@ function classifyRequestRoute(method, pathname) {
   if (pathname === '/api/browse' && method === 'GET') return 'GET /api/browse';
   if (pathname === '/api/push/vapid-public-key' && method === 'GET') return 'GET /api/push/vapid-public-key';
   if (pathname === '/api/push/subscribe' && method === 'POST') return 'POST /api/push/subscribe';
-  if (pathname === '/api/runtime-selection' && method === 'POST') return 'POST /api/runtime-selection';
   if (pathname.startsWith('/api/images/') && method === 'GET') return 'GET /api/images/:imageName';
   if (pathname.startsWith('/api/media/') && method === 'GET') return 'GET /api/media/:mediaName';
   if (pathname === '/api/sessions' && method === 'POST') return 'POST /api/sessions';

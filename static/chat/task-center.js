@@ -165,7 +165,7 @@
     const source = activeSessions().find(entry => entry.id === sessionSelect?.value);
     runtimeHelp.textContent = runtimePolicySelect?.value === "fixed"
       ? [source?.tool, source?.model, source?.effort].filter(Boolean).join(" · ")
-      : translate("tasks.runtime.help", "New Sessions use the latest Default. Reused Sessions keep their own runtime.");
+      : translate("tasks.runtime.help", "Each new Session starts from Auto. Reused Sessions keep their own runtime.");
   }
 
   function renderSessionOptions() {
@@ -381,8 +381,8 @@
     addMetaRow(meta, translate("tasks.meta.execution", "Execution"), taskTargetText(task));
     const runtime = task.runtime;
     addMetaRow(meta, translate("tasks.runtime.label", "Model policy"),
-      runtime?.runtimePolicy === "follow_default"
-        ? translate("tasks.runtime.follow", "Follow Default") + " · " + translate("tasks.runtime.help", "New Sessions use the latest Default. Reused Sessions keep their own runtime.")
+      runtime?.runtimePolicy === "auto" || runtime?.runtimePolicy === "follow_default"
+        ? translate("tasks.runtime.follow", "Auto for each new Session") + " · " + translate("tasks.runtime.help", "Each new Session starts from Auto. Reused Sessions keep their own runtime.")
         : translate("tasks.runtime.fixed", "Fixed") + " · " + [runtime?.tool, runtime?.model, runtime?.effort].filter(Boolean).join(" · "));
     addMetaRow(meta, translate("tasks.meta.delivery", "Delivery"), notificationText(task));
     if (task.kind === "recurring") {
@@ -409,11 +409,11 @@
     if (Array.isArray(task.actions) && task.actions.length > 0) {
       const actions = createNode("div", "task-card-actions");
       if (runtime?.runtimePolicy === "fixed") {
-        const follow = createNode("button", "task-center-action", translate("tasks.runtime.useDefault", "Follow Default from now on"));
-        follow.type = "button";
-        follow.disabled = Boolean(actionTaskId);
-        follow.addEventListener("click", () => void useDefaultRuntime(task));
-        actions.appendChild(follow);
+        const useAuto = createNode("button", "task-center-action", translate("tasks.runtime.useAuto", "Use Auto for future new Sessions"));
+        useAuto.type = "button";
+        useAuto.disabled = Boolean(actionTaskId);
+        useAuto.addEventListener("click", () => void useAutoRuntime(task));
+        actions.appendChild(useAuto);
       }
       for (const action of task.actions) {
         const button = createNode("button", `task-center-action${action === "cancel" ? " danger" : ""}`, actionLabel(action));
@@ -501,7 +501,7 @@
     }
     const body = {
       kind,
-      runtimePolicy: runtimePolicySelect?.value === "fixed" ? "fixed" : "follow_default",
+      runtimePolicy: runtimePolicySelect?.value === "fixed" ? "fixed" : "auto",
       ...(runtimePolicySelect?.value === "fixed" ? (() => {
         const source = activeSessions().find(entry => entry.id === sessionSelect.value);
         return { tool: source?.tool, model: source?.model, effort: source?.effort, thinking: source?.thinking === true };
@@ -566,14 +566,14 @@
     }
   }
 
-  async function useDefaultRuntime(task) {
+  async function useAutoRuntime(task) {
     if (actionTaskId) return;
     actionTaskId = task.id;
     renderTasks();
     try {
       const payload = await fetchJsonOrRedirect(`/api/automation-tasks/${encodeURIComponent(task.id)}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runtimePolicy: "follow_default" }), revalidate: false,
+        body: JSON.stringify({ runtimePolicy: "auto" }), revalidate: false,
       });
       tasks = tasks.map(entry => entry.id === task.id ? payload.task : entry);
     } catch (error) {

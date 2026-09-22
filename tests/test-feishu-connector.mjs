@@ -15,7 +15,6 @@ delete process.env.LARKSUITE_CLI_CONFIG_DIR;
 
 const { selectAssistantReplyEvent } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-selection.mjs')).href);
 const { waitForReplyPublication } = await import(pathToFileURL(join(repoRoot, 'lib', 'reply-publication-client.mjs')).href);
-const { saveUiRuntimeSelection } = await import(pathToFileURL(join(repoRoot, 'lib', 'runtime-selection.mjs')).href);
 
 const {
   DEFAULT_SESSION_SYSTEM_PROMPT,
@@ -1413,12 +1412,6 @@ await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 try {
   const address = server.address();
   const longInboundText = `Please confirm the app scope.\n${'长消息'.repeat(3000)}`;
-  await saveUiRuntimeSelection({
-    selectedTool: 'claude',
-    selectedModel: 'claude-sonnet-4-5',
-    selectedEffort: 'high',
-    reasoningKind: 'enum',
-  });
   const reply = await submitRemoteLabRequest(
     {
       authCookie: 'session_token=test-cookie',
@@ -1463,9 +1456,9 @@ try {
 
   assert.equal(createdPayload?.sourceId, 'feishu');
   assert.equal(createdPayload?.sourceName, 'Feishu');
-  assert.equal(createdPayload?.tool, 'claude');
-  assert.equal(createdPayload?.model, 'claude-sonnet-4-5', 'the first connector request snapshots its model at Session creation');
-  assert.equal(createdPayload?.effort, 'high', 'the first connector request snapshots its effort at Session creation');
+  assert.equal(createdPayload?.tool, 'codex');
+  assert.equal(createdPayload?.model, 'auto', 'every new connector Session starts from immutable Auto');
+  assert.equal(createdPayload?.effort, undefined, 'Auto selects effort when the first turn is routed');
   assert.equal(createdPayload?.name, '', 'Feishu connector should let RemoteLab auto-rename sessions from the turn content');
   assert.equal(createdPayload?.systemPrompt, 'Reply with plain text only.');
   assert.equal(createdPayload?.externalTriggerId, 'feishu:main:default:unknown:chat_for_scope');
@@ -1478,9 +1471,9 @@ try {
     chatType: 'p2p',
     conversationKind: 'main',
   });
-  assert.equal(submittedPayload?.tool, 'claude');
-  assert.equal(submittedPayload?.model, 'claude-sonnet-4-5');
-  assert.equal(submittedPayload?.effort, 'high');
+  assert.equal(submittedPayload?.tool, 'codex');
+  assert.equal(submittedPayload?.model, 'auto');
+  assert.equal(submittedPayload?.effort, undefined);
   assert.equal(submittedPayload?.thinking, undefined);
   assert.equal(submittedPayload?.text, longInboundText);
   assert.deepEqual(generatedReplyResourcePayload, {
@@ -1600,10 +1593,6 @@ await new Promise((resolve) => planningServer.listen(0, '127.0.0.1', resolve));
 
 try {
   const address = planningServer.address();
-  await saveUiRuntimeSelection({
-    selectedTool: 'codex',
-    selectedModel: 'gpt-5.4',
-  });
   const reply = await submitRemoteLabRequest(
     {
       authCookie: 'session_token=test-cookie',
@@ -1627,8 +1616,8 @@ try {
   assert.equal(planningSubmittedPayload?.requestId, 'feishu:msg_planning_scope');
   assert.equal(
     planningSubmittedPayload?.model,
-    'gpt-5.6-sol',
-    'Feishu should upgrade stale inherited Codex UI models before submitting a message',
+    'auto',
+    'each new Feishu Session should start from immutable Auto',
   );
   assert.equal(reply.sessionId, 'sess_feishu_planning_1');
   assert.equal(reply.runId, null);
@@ -1770,10 +1759,6 @@ await new Promise((resolve) => queuedServer.listen(0, '127.0.0.1', resolve));
 
 try {
   const address = queuedServer.address();
-  await saveUiRuntimeSelection({
-    selectedTool: 'codex',
-    selectedModel: '',
-  });
   const reply = await submitRemoteLabRequest(
     {
       authCookie: 'session_token=test-cookie',

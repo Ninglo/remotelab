@@ -9,7 +9,13 @@ setIsolatedTestHome(home);
 try {
   const { resolveSessionRuntimeSelection } = await import('../chat/session-runtime-selection.mjs');
   const defaults = { tool: 'codex', model: 'gpt-5.6-sol', effort: 'low', thinking: false };
-  assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'codex' }), defaults);
+  const autoDefault = await resolveSessionRuntimeSelection({ tool: 'codex' });
+  assert.deepEqual(
+    { tool: autoDefault.tool, model: autoDefault.model, effort: autoDefault.effort, thinking: autoDefault.thinking },
+    { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high', thinking: false },
+    'an incomplete new Codex Session starts from Auto and safely falls back to quality',
+  );
+  assert.equal(autoDefault.autoRoutingReceipt.status, 'fallback');
   assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'codex' }, { model: 'gpt-5.6-sol', effort: 'xhigh' }), {
     ...defaults, model: 'gpt-5.6-sol', effort: 'xhigh',
   });
@@ -24,10 +30,22 @@ try {
     { tool: 'pi', model: 'openai-codex/gpt-6-astra', effort: 'max', thinking: false },
     'explicit Astra Pi snapshots should keep the Codex subscription route',
   );
-  assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'claude', model: 'opus', effort: 'high' }, { tool: 'codex' }), defaults);
+  const switchedToCodex = await resolveSessionRuntimeSelection(
+    { tool: 'claude', model: 'opus', effort: 'high' },
+    { tool: 'codex' },
+  );
+  assert.deepEqual(
+    { tool: switchedToCodex.tool, model: switchedToCodex.model, effort: switchedToCodex.effort },
+    { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high' },
+    'switching to Codex without a concrete model starts from Auto',
+  );
   assert.equal((await resolveSessionRuntimeSelection({ ...defaults, effort: 'ultra' }, { model: 'gpt-5.6-luna' })).effort, 'medium', 'a different model resolves its own default effort');
   assert.equal((await resolveSessionRuntimeSelection({ tool: 'unlisted-tool' })).model, '', 'unknown runtime defaults remain explicitly unresolved');
-  assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'micro-agent' }), defaults);
+  const migratedAuto = await resolveSessionRuntimeSelection({ tool: 'micro-agent' });
+  assert.deepEqual(
+    { tool: migratedAuto.tool, model: migratedAuto.model, effort: migratedAuto.effort },
+    { tool: 'codex', model: 'gpt-5.6-sol', effort: 'low' },
+  );
   const previousFetch = globalThis.fetch;
   process.env.TYPESAFE_API_KEY = 'private-test-key';
   try {

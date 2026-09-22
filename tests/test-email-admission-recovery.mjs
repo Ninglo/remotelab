@@ -9,7 +9,6 @@ const home = await mkdtemp(join(tmpdir(), 'remotelab-email-admission-recovery-')
 setIsolatedTestHome(home);
 const rootDir = join(home, '.config/remotelab/agent-mailbox');
 const mail = await import('../lib/agent-mailbox.mjs');
-const { saveUiRuntimeSelection } = await import('../lib/runtime-selection.mjs');
 const { createRemoteLabRuntime, runSweep } = await import('../scripts/agent-mail-worker.mjs');
 const accepted = new Map();
 const posts = [];
@@ -44,7 +43,6 @@ const runtime = createRemoteLabRuntime(baseUrl); runtime.authCookie = 'session_t
 try {
   await mail.initializeMailbox({ rootDir, name: 'Fixture', localPart: 'agent', domain: 'example.test', allowEmails: ['owner@example.test'] });
   await mail.saveMailboxAutomation(rootDir, { enabled: true, allowlistAutoApprove: true, chatBaseUrl: baseUrl, session: { folder: home } });
-  await saveUiRuntimeSelection({ selectedTool: 'codex', selectedModel: 'first-model' });
   const ingest = async id => mail.ingestRawMessage(['From: owner@example.test', 'To: agent@example.test', `Subject: ${id}`,
     `Message-ID: <${id}@example.test>`, 'Content-Type: text/plain; charset=UTF-8', '', 'Original email body'].join('\n'), `${id}.eml`, rootDir, { text: 'Original email body' });
   const item = await ingest('lost-response');
@@ -58,7 +56,6 @@ try {
   assert.equal(posts[0].sourceContext.messageId, '<lost-response@example.test>');
   assert.equal(posts[0].sourceContext.sender.address, 'owner@example.test');
   assert.equal(posts[0].sourceContext.subject, 'lost-response');
-  await saveUiRuntimeSelection({ selectedTool: 'pi', selectedModel: 'changed-model' });
   await writeFile(saved.storage.rawPath, 'Changed source after admission');
   loseResponse = false;
   await runSweep({ rootDir, baseUrl, runtime });
@@ -74,13 +71,12 @@ try {
   const firstAttempt = posts.at(-1);
   const retrySaved = (await mail.findQueueItem(retryItem.id, rootDir)).item;
   await writeFile(retrySaved.storage.rawPath, 'Changed before retry');
-  await saveUiRuntimeSelection({ selectedTool: 'codex', selectedModel: 'third-model' });
   rejectAdmission = false;
   await runSweep({ rootDir, baseUrl, runtime });
   assert.equal(creates, 2, 'failed submission reuses its already persisted session');
-  assert.deepEqual(posts.at(-1), firstAttempt, '404 recovery resubmits the exact persisted payload, not changed config/body');
+  assert.deepEqual(posts.at(-1), firstAttempt, '404 recovery resubmits the exact persisted payload, not changed source content');
   assert.equal((await mail.findQueueItem(retryItem.id, rootDir)).item.status, 'processing_for_reply');
-  console.log('email admission: lost HTTP receipt recovery, durable exact payload/runtime, no attachment re-upload and retry after pre-admission failure passed');
+  console.log('email admission: lost HTTP receipt recovery, durable exact Auto payload, no attachment re-upload and retry after pre-admission failure passed');
 } finally {
   await new Promise(resolve => server.close(resolve));
   await rm(home, { recursive: true, force: true });

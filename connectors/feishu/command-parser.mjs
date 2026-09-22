@@ -1,18 +1,19 @@
 const COMMANDS = Object.freeze({
   help: { args: 'none' },
   status: { args: 'none' },
-  default: { args: 'default' },
   harness: { args: 'optional' },
   model: { args: 'optional', aliases: ['m'] },
   effort: { args: 'optional' },
   tier: { args: 'optional' },
-  follow: { args: 'none' },
   mute: { args: 'none' },
   unmute: { args: 'none' },
   inline: { args: 'none', task: true },
   thread: { args: 'none', task: true },
   quick: { args: 'none', task: true, aliases: ['q'] },
 });
+
+const RETIRED_RUNTIME_COMMANDS = new Set(['default', 'follow']);
+const IMMUTABLE_DEFAULT_MESSAGE = '新 Session 的默认运行方式固定为 Auto，不能修改。模型、档位和 Effort 调整只作用于当前 Session。';
 
 function buildCommandAliases() {
   const aliases = {};
@@ -56,11 +57,6 @@ function parseArguments(name, rawArgs, lineNumber) {
     if (!args) return {};
     if (/\s/.test(args)) return { error: `/${name} 需要一个不含空格的参数（第 ${lineNumber} 行）` };
     return { value: args };
-  }
-  if (definition.args === 'default') {
-    const match = args.match(/^(harness|model|effort)[ \t]+([^\s]+)$/i);
-    if (!match) return { error: '/default 用法：/default harness <名称>、/default model <模型 ID> 或 /default effort <级别>' };
-    return { field: match[1].toLowerCase(), value: match[2] };
   }
   return {};
 }
@@ -122,6 +118,9 @@ export function parseFeishuCommandBlock(input) {
     }
     const enteredName = match[1].toLowerCase();
     const name = resolveFeishuCommandName(enteredName);
+    if (!name && RETIRED_RUNTIME_COMMANDS.has(enteredName)) {
+      return { commands: [], body: '', error: IMMUTABLE_DEFAULT_MESSAGE };
+    }
     if (!name && commands.length === 0) return { commands: [], body: text.trim() };
     if (!name) return { commands: [], body: '', error: `未知命令：/${enteredName}（第 ${index + 1} 行）` };
     if (commandDefinition(name)?.task) {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -74,13 +74,7 @@ function setupTempHome() {
     }, null, 2),
     'utf8',
   );
-  writeFileSync(
-    join(configDir, 'ui-runtime-selection.json'),
-    JSON.stringify({ selectedTool: 'codex', selectedModel: 'auto', selectedEffort: '', reasoningKind: 'none' }, null, 2),
-    'utf8',
-  );
-
-  return { home, configDir };
+  return { home };
 }
 
 async function startServer({ home, port }) {
@@ -125,7 +119,7 @@ async function createSession(port, name) {
 }
 
 try {
-  const { home, configDir } = setupTempHome();
+  const { home } = setupTempHome();
   const port = randomPort();
   let server = await startServer({ home, port });
 
@@ -225,7 +219,7 @@ try {
     assert.equal(presetCatalog.status, 200);
     assert.deepEqual(
       presetCatalog.json.presets.map((preset) => preset.id),
-      ['auto', 'sota', 'quality', 'balanced', 'economy'],
+      ['sota', 'quality', 'balanced', 'economy'],
     );
     const sotaPreset = await request(port, 'PATCH', `/api/sessions/${older.id}`, { runtimeTier: 'sota' });
     assert.equal(sotaPreset.status, 200);
@@ -233,9 +227,11 @@ try {
     assert.equal(sotaPreset.json.session?.model, 'gpt-6-astra');
     assert.equal(sotaPreset.json.session?.effort, 'xhigh');
     assert.equal(
-      JSON.parse(readFileSync(join(configDir, 'ui-runtime-selection.json'), 'utf8')).selectedModel,
-      'auto',
-      'a Session preset must not change the shared default',
+      (await request(port, 'POST', '/api/runtime-selection', {
+        selectedTool: 'codex', selectedModel: 'gpt-5.6-sol', selectedEffort: 'high', reasoningKind: 'enum',
+      })).status,
+      404,
+      'the mutable shared Default endpoint should no longer exist',
     );
     assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, { runtimeTier: 'unknown' })).status, 400);
     assert.equal((await request(port, 'PATCH', `/api/sessions/${older.id}`, {

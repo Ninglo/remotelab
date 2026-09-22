@@ -18,7 +18,6 @@ import {
   getAuthSession, listPeopleForClient, refreshAuthSession,
 } from '../lib/auth.mjs';
 import { normalizeInstallHandoffToken } from '../lib/install-handoffs.mjs';
-import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import {
   appendAssistantMessage,

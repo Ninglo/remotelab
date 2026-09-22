@@ -86,8 +86,11 @@ assert.equal(parseFeishuCommandBlock('/thread\n/unknown\n\n任务正文').error,
 assert.equal(parseFeishuCommandBlock('/thread --unknown value 任务正文').error, '未知修饰参数：--unknown（第 1 行）');
 assert.equal(parseFeishuCommandBlock('/thread --model').error, '--model 需要一个不含空格的值（第 1 行）');
 assert.equal(parseFeishuCommandBlock('/model a b').error, '/model 需要一个不含空格的参数（第 1 行）');
-assert.deepEqual(parseFeishuCommandBlock('/default model gpt-5.6'), {
-  commands: [{ name: 'default', field: 'model', value: 'gpt-5.6' }], body: '',
-});
+assert.match(
+  parseFeishuCommandBlock('/default model gpt-5.6').error,
+  /固定为 Auto/,
+  'the removed mutable Default command should explain the immutable Auto rule',
+);
+assert.match(parseFeishuCommandBlock('/follow').error, /固定为 Auto/);
 
 console.log('test-feishu-command-block: ok');

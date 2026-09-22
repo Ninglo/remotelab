@@ -188,6 +188,10 @@ async function main() {
       scheduledAt: new Date(Date.now() + 120).toISOString(),
       target: { mode: 'new_session', sessionId: templateSession.id },
       notification: { mode: 'remotelab' },
+      runtimePolicy: 'fixed',
+      tool: 'task-center-tool',
+      model: 'fixture-model',
+      effort: 'low',
     }, secondPersonCookie);
     assert.equal(independentCreate.status, 201, independentCreate.text);
     assert.equal(independentCreate.json.task.createdByIdentityId, 'identity_web_second');
@@ -214,12 +218,12 @@ async function main() {
     });
     assert.equal(controllable.status, 201, controllable.text);
     const oneTimeId = controllable.json.task.id;
-    assert.equal(controllable.json.task.runtime.runtimePolicy, 'follow_default');
+    assert.equal(controllable.json.task.runtime.runtimePolicy, 'auto');
     const pinnedRuntime = await request(port, 'PATCH', `/api/automation-tasks/${oneTimeId}`, { runtimePolicy: 'fixed' });
     assert.equal(pinnedRuntime.status, 200, pinnedRuntime.text);
     assert.equal(pinnedRuntime.json.task.runtime.runtimePolicy, 'fixed');
     assert.ok(pinnedRuntime.json.task.runtime.model);
-    const followRuntime = await request(port, 'PATCH', `/api/automation-tasks/${oneTimeId}`, { runtimePolicy: 'follow_default' });
+    const followRuntime = await request(port, 'PATCH', `/api/automation-tasks/${oneTimeId}`, { runtimePolicy: 'auto' });
     assert.equal(followRuntime.status, 200, followRuntime.text);
     assert.equal(followRuntime.json.task.runtime.model, '');
     const invalidRuntime = await request(port, 'PATCH', `/api/automation-tasks/${oneTimeId}`, { runtimePolicy: 'bad' });

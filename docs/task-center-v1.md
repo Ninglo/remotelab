@@ -97,14 +97,14 @@ Task ownership is a UI attribution label, not a separate runtime user or an acce
 
 Task Center, one-time triggers, recurring schedules, and their CLI commands share `runtimePolicy`:
 
-- `follow_default` (the default when creating a task without runtime overrides): resolve the latest instance Default's complete Harness/model/effort when a new execution Session is created. A reused fixed or calendar-day Session retains its own profile. Changing Default affects the next new execution Session, including when Default is `auto`.
+- `auto` (the default when creating a task without runtime overrides): every new execution Session starts from Auto. A reused fixed or calendar-day Session retains its own profile. The legacy value `follow_default` is accepted and normalized to `auto`.
 - `fixed`: persist a complete profile. Explicit `tool`, `model`, `effort`, or enabled `thinking` implies this policy unless `runtimePolicy` is specified. Task Center can pin the selected template Session's profile; the API/CLI can specify any supported runtime.
 
-The task card shows the policy and the last execution's resolved profile. `PATCH /api/automation-tasks/:id` accepts runtime settings; switching to `follow_default` clears saved overrides. The same fields work on the trigger and schedule APIs. CLI creation accepts `--runtime-policy follow_default|fixed`.
+The task card shows the policy and the last execution's resolved profile. `PATCH /api/automation-tasks/:id` accepts runtime settings; switching to `auto` clears saved overrides. The same fields work on the trigger and schedule APIs. CLI creation accepts `--runtime-policy auto|fixed`.
 
 Occurrence triggers preserve `executionRuntime` before creating their Session/admitting their request. Retries and restarts retain that snapshot, and already admitted requests retain their existing options. Updates to a schedule affect future occurrences, not already materialized triggers or running requests.
 
-For legacy records, empty runtime fields become `follow_default`; nonempty profiles remain `fixed` because older records do not distinguish explicit choices from creation-time Default snapshots. An operator can migrate verified inherited snapshots through the API. Historical completed requests and their model evidence are not rewritten.
+For legacy records, empty runtime fields and `follow_default` become `auto`; nonempty profiles remain `fixed` because older records do not distinguish explicit choices from creation-time snapshots. Historical completed requests and their model evidence are not rewritten.
 
 ### Cadence and lifetime
 

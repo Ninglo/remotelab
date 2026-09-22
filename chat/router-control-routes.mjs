@@ -14,7 +14,7 @@ import {
   resolveOrCreateExternalIdentity,
   updatePerson,
 } from '../lib/auth.mjs';
-import { loadUiRuntimeSelection, saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { getJevTierProfiles, resolveJevTierPreset } from '../lib/jev-auto-router.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import {
@@ -156,7 +156,7 @@ function trimString(value) {
 
 async function applyScheduledRuntimeProfile(payload, sourceSession, uiSelection) {
   const runtimePolicy = scheduledRuntimePolicy(payload);
-  if (runtimePolicy === 'follow_default') return { ...payload, ...scheduledRuntimeIntent(payload) };
+  if (runtimePolicy === 'auto') return { ...payload, ...scheduledRuntimeIntent(payload) };
   const defaultProfile = runtimeProfileFromUiSelection(uiSelection);
   const inheritedProfile = defaultProfile.tool
     ? defaultProfile
@@ -199,7 +199,7 @@ async function prepareScheduledTask(payload, { authSession = null } = {}) {
   const sourceSession = sourceSessionId ? await getSession(sourceSessionId) : null;
   if (!sourceSession) throw new Error('Source session not found');
   if (sourceSession.archived) throw new Error('Source session is archived');
-  let input = await applyScheduledRuntimeProfile(payload, sourceSession, await loadUiRuntimeSelection());
+  let input = await applyScheduledRuntimeProfile(payload, sourceSession, getAutoRuntimeSelection());
   if (!Object.hasOwn(payload, 'conversation') && !Object.hasOwn(payload, 'sourceDelivery')
       && !Object.hasOwn(payload.sessionTemplate || {}, 'conversation')
       && String(payload.deliverTo || '').trim().toLowerCase() === 'session_source') {
@@ -222,7 +222,7 @@ async function prepareScheduledRuntimePatch(current, payload) {
   const patch = patchScheduledRuntime(current, payload);
   if (!Object.keys(patch).length) return payload;
   const source = await getSession(current.sourceSessionId);
-  const resolved = await applyScheduledRuntimeProfile(patch, source, await loadUiRuntimeSelection());
+  const resolved = await applyScheduledRuntimeProfile(patch, source, getAutoRuntimeSelection());
   return { ...payload, ...resolved };
 }
 
@@ -1376,36 +1376,10 @@ export async function handleControlRoutes({
     return true;
   }
 
-  if (pathname === '/api/runtime-selection' && req.method === 'POST') {
-    let body;
-    try { body = await readBody(req, 4096); } catch (err) {
-      writeJson(res, err.code === 'BODY_TOO_LARGE' ? 413 : 400, { error: err.code === 'BODY_TOO_LARGE' ? 'Request body too large' : 'Bad request' });
-      return true;
-    }
-    let payload;
-    try {
-      payload = JSON.parse(body);
-    } catch {
-      writeJson(res, 400, { error: 'Invalid request body' });
-      return true;
-    }
-    try {
-      const selection = await saveUiRuntimeSelection(payload || {});
-      writeJson(res, 200, { selection });
-    } catch (error) {
-      writeJson(res, 400, { error: error.message || 'Failed to save runtime selection' });
-    }
-    return true;
-  }
-
   if (pathname === '/api/runtime-presets' && req.method === 'GET') {
     const profiles = await getJevTierProfiles();
     writeJson(res, 200, {
-      defaultPreset: 'auto',
-      presets: [
-        { id: 'auto', model: 'auto', effort: '' },
-        ...['sota', 'quality', 'balanced', 'economy'].map((id) => ({ id, ...profiles[id] })),
-      ],
+      presets: ['sota', 'quality', 'balanced', 'economy'].map((id) => ({ id, ...profiles[id] })),
     });
     return true;
   }

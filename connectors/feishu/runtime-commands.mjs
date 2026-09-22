@@ -6,23 +6,20 @@ import { isQuickSession } from '../../lib/quick-session-profile.mjs';
 import {
   completeRuntimeProfile,
   reasoningForRuntimeProfile,
-  runtimeProfileToUiSelection,
 } from '../../lib/runtime-profile.mjs';
 
 const trim = value => typeof value === 'string' ? value.trim() : '';
-const CONFIG_COMMANDS = new Set(['default', 'harness', 'model', 'effort', 'tier', 'follow']);
+const CONFIG_COMMANDS = new Set(['harness', 'model', 'effort', 'tier']);
 const HELP = [
   '任务命令可把正文写在同行：/inline [修饰参数] 正文、/thread [修饰参数] 正文、/quick 正文。',
   '/inline 和 /thread 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>。',
   '普通聊天群支持 inline/thread；话题群固定使用 Thread。Quick 是独立执行模式，不改变回复位置。',
   '短名：/m model、/q quick。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
-  '/default [harness|model|effort] [值] — 查看或修改新 Session 的 Default',
   '/harness [名称] — 查看或修改当前任务使用的 Harness',
   '/model [模型 ID] — 查看或修改当前任务使用的模型',
   '/effort [级别] — 查看或修改当前任务的 Effort',
-  '/tier [auto|sota|quality|balanced|economy] — 只修改当前 Session 的模型档位',
-  '/follow — 把当前 Session 重置为当前 Default',
+  '/tier [sota|quality|balanced|economy] — 只修改当前 Session 的模型档位',
   '/mute — 静默当前话题或聊天；明确 @ 可单次唤醒',
   '/unmute — 恢复当前话题或聊天的正常响应',
   '/inline [修饰参数] 正文 — 在群聊或私聊主线继续并直接回复',
@@ -66,9 +63,9 @@ function completeSelection(selection, catalog) {
   return { ...completeRuntimeProfile(selection, catalog), thinking: selection.thinking === true };
 }
 
-function describe(selection, scoped) {
+function describe(selection) {
   return [
-    scoped ? '作用范围：当前 Session' : '作用范围：新 Session Default',
+    '作用范围：当前 Session',
     `Harness：${selection.tool}`,
     `Model：${selection.model || 'Harness 默认'}`,
     `Effort：${selection.effort || '不适用'}`,
@@ -94,11 +91,6 @@ function sessionSelection(session, fallback) {
   };
 }
 
-function defaultSelectionPayload(selection, catalog) {
-  const reasoning = reasoningFor(catalog, selection.model);
-  return runtimeProfileToUiSelection(selection, reasoning.kind);
-}
-
 function normalizeCommands(commands) {
   return (Array.isArray(commands) ? commands : []).map(command => ({
     name: trim(command?.name || command?.type).toLowerCase(),
@@ -115,7 +107,7 @@ function validateCommandSet(commands) {
     if (!command.name) return '命令名称不能为空。';
     if (['help', 'status'].includes(command.name)) hasQuery = true;
     if (CONFIG_COMMANDS.has(command.name) || ['mute', 'unmute'].includes(command.name)) hasMutation = true;
-    const key = command.name === 'default' ? `default:${command.field}` : command.name;
+    const key = command.name;
     if (seen.has(key)) return `命令重复：/${command.name}。同一字段一条消息只能设置一次。`;
     seen.add(key);
   }
@@ -124,12 +116,8 @@ function validateCommandSet(commands) {
     return '/inline 和 /thread 不能同时使用。';
   }
   if (commands.some(command => command.name === 'quick')
-    && commands.some(command => ['inline', 'thread', 'default', 'harness', 'model', 'effort', 'tier', 'follow'].includes(command.name))) {
+    && commands.some(command => ['inline', 'thread', 'harness', 'model', 'effort', 'tier'].includes(command.name))) {
     return '/quick 需要单独使用，不能和任务或运行时配置命令组合。';
-  }
-  if (commands.some(command => command.name === 'follow')
-    && commands.some(command => ['harness', 'model', 'effort', 'tier'].includes(command.name))) {
-    return '/follow 不能和 /harness、/model、/effort、/tier 同时使用。';
   }
   return '';
 }
@@ -150,22 +138,14 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
   };
   const defaults = await resolveDefault();
   const session = summary?.startThread ? null : await findCommandSession(runtime, summary, request);
-  let defaultCatalog = null;
-  let defaultSelection = null;
-  const ensureDefault = async () => {
-    if (!defaultCatalog) {
-      defaultCatalog = await catalogFor(defaults.tool);
-      defaultSelection = completeSelection(defaults, defaultCatalog);
-    }
-    return defaultSelection;
-  };
   let selection = sessionSelection(session, defaults) || { ...defaults };
   let catalog = null;
   const operations = [];
   const notes = [];
 
-  const mutatesSessionRuntime = commands.some(command => command.name === 'follow'
-    || (['harness', 'model', 'effort', 'tier'].includes(command.name) && command.value));
+  const mutatesSessionRuntime = commands.some(command => (
+    ['harness', 'model', 'effort', 'tier'].includes(command.name) && command.value
+  ));
   if (isQuickSession(session) && mutatesSessionRuntime) {
     const text = 'Quick Session 的 Harness、模型和 Effort 在创建时固定；请新建 Standard Session。';
     return { error: text, text, operations: [] };
@@ -183,51 +163,13 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
       }
       catalog = catalog || await catalogFor(selection.tool);
       selection = completeSelection(selection, catalog);
-      notes.push(`${describe(selection, Boolean(session))}\n${await describeFeishuMuteSetting(runtime, summary)}`);
-      continue;
-    }
-    if (command.name === 'default') {
-      await ensureDefault();
-      if (!command.field) {
-        notes.push(describe(defaultSelection, false));
-        continue;
-      }
-      if (command.field === 'harness') {
-        const { tools = [] } = await requestJson(request, '/api/tools');
-        if (!tools.some(tool => tool.id === command.value && tool.available)) {
-          return { error: `Harness 不可用：${command.value}。`, text: `Harness 不可用：${command.value}。`, operations: [] };
-        }
-        const nextCatalog = await catalogFor(command.value);
-        defaultCatalog = nextCatalog;
-        defaultSelection = completeSelection({ tool: command.value }, nextCatalog);
-      } else if (command.field === 'model') {
-        if (!defaultCatalog.models?.some(model => model.id === command.value)) {
-          return { error: `当前 Default Harness 下模型不可用：${command.value}。`, text: `当前 Default Harness 下模型不可用：${command.value}。\n${modelList(defaultCatalog)}`, operations: [] };
-        }
-        defaultSelection = completeSelection({ ...defaultSelection, model: command.value,
-          ...(command.value !== defaultSelection.model ? { effort: '', thinking: false } : {}) }, defaultCatalog);
-      } else {
-        const defaultReasoning = reasoningFor(defaultCatalog, defaultSelection.model);
-        if (defaultReasoning.kind !== 'enum' || !defaultReasoning.levels.includes(command.value)) {
-          return { error: `当前 Default 模型不支持此思考强度：${command.value}。`, text: `当前 Default 模型不支持此思考强度：${command.value}。`, operations: [] };
-        }
-        defaultSelection.effort = command.value;
-      }
-      if (taskMode && !session) {
-        selection = { ...defaultSelection };
-        catalog = await catalogFor(selection.tool);
-      }
+      notes.push(`${describe(selection)}\n${await describeFeishuMuteSetting(runtime, summary)}`);
       continue;
     }
     if (!CONFIG_COMMANDS.has(command.name)) continue;
-    if (!session && !taskMode && (command.name === 'follow' || command.value)) {
+    if (!session && !taskMode && command.value) {
       return { error: '请在已有任务话题或私聊会话中执行此命令；也可以把命令块和任务正文放在同一条消息中。',
         text: '请在已有任务话题或私聊会话中执行此命令；也可以把命令块和任务正文放在同一条消息中。', operations: [] };
-    }
-    if (command.name === 'follow') {
-      selection = completeSelection(await ensureDefault(), await catalogFor((await ensureDefault()).tool));
-      catalog = await catalogFor(selection.tool);
-      continue;
     }
     if (command.name === 'tier') {
       const { presets = [] } = await requestJson(request, '/api/runtime-presets');
@@ -298,13 +240,9 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
     }
   }
 
-  if (commands.some(command => command.name === 'default' && command.field)) {
-    await ensureDefault();
-    operations.push({ scope: 'default', selection: defaultSelection,
-      defaultPayload: defaultSelectionPayload(defaultSelection, await catalogFor(defaultSelection.tool)) });
-  }
-  if (session && commands.some(command => command.name === 'follow'
-    || (['harness', 'model', 'effort', 'tier'].includes(command.name) && command.value))) {
+  if (session && commands.some(command => (
+    ['harness', 'model', 'effort', 'tier'].includes(command.name) && command.value
+  ))) {
     const tierCommand = commands.find(command => command.name === 'tier' && command.value);
     operations.push({
       scope: 'session',
@@ -314,22 +252,14 @@ export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawComma
     });
   }
   if (notes.length === 0 && operations.length > 0) {
-    const defaultOperation = operations.find(operation => operation.scope === 'default');
     const sessionOperation = operations.find(operation => operation.scope === 'session');
-    const followed = commands.some(command => command.name === 'follow');
-    if (defaultOperation) notes.push(`已更新新 Session 的 Default。\n${describe(defaultSelection, false)}`);
-    if (sessionOperation) notes.push(`${followed ? '已将当前 Session 重置为 Default 当前值。' : '已更新当前 Session 配置。'}\n${describe(selection, true)}`);
+    if (sessionOperation) notes.push(`已更新当前 Session 配置。\n${describe(selection)}`);
   }
   return { commands, operations, selection, sessionId: session?.id || '', text: notes.join('\n\n') || HELP };
 }
 
 export async function applyFeishuRuntimeCommandPlan(plan, { request } = {}) {
   for (const operation of plan.operations || []) {
-    if (operation.scope === 'default') {
-      const result = await requestJson(request, '/api/runtime-selection', { method: 'POST', body: operation.defaultPayload });
-      if (!result.selection || result.selection.selectedTool !== operation.selection.tool) throw new Error('RemoteLab did not persist the requested Default runtime selection');
-      continue;
-    }
     const { session } = await requestJson(request, `/api/sessions/${encodeURIComponent(operation.sessionId)}`, {
       method: 'PATCH',
       body: operation.runtimeTier
@@ -356,10 +286,8 @@ export async function handleFeishuRuntimeCommands(runtime, summary, commands, op
 
 export async function handleFeishuRuntimeCommand(runtime, summary, command, options) {
   return handleFeishuRuntimeCommands(runtime, summary, [{
-    name: command.type, ...(command.type === 'default' && command.text ? (() => {
-      const [field, value] = command.text.split(/\s+/);
-      return { field, value };
-    })() : { value: command.text }),
+    name: command.type,
+    value: command.text,
   }], options);
 }
 

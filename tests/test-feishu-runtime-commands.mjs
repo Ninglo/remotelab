@@ -29,7 +29,6 @@ try {
       json = catalog[tool];
     }
     else if (path === '/api/runtime-presets') json = { presets: [
-      { id: 'auto', model: 'auto', effort: '' },
       { id: 'sota', model: 'frontier', effort: 'xhigh' },
       { id: 'quality', model: 'alpha', effort: 'high' },
       { id: 'balanced', model: 'beta', effort: 'medium' },
@@ -41,7 +40,6 @@ try {
       if (options.method === 'PATCH') {
         if (Object.prototype.hasOwnProperty.call(options.body, 'runtimeTier')) {
           const preset = {
-            auto: { model: 'auto', effort: '' },
             sota: { model: 'frontier', effort: 'xhigh' },
             quality: { model: 'alpha', effort: 'high' },
             balanced: { model: 'beta', effort: 'medium' },
@@ -64,20 +62,6 @@ try {
         };
       }
       json = { session: structuredClone(session) };
-    } else if (path === '/api/runtime-selection' && options.method === 'POST') {
-      selection = {
-        mode: 'default',
-        tool: options.body.selectedTool,
-        model: options.body.selectedModel,
-        effort: options.body.selectedEffort,
-        thinking: false,
-      };
-      json = { selection: {
-        selectedTool: options.body.selectedTool,
-        selectedModel: options.body.selectedModel,
-        selectedEffort: options.body.selectedEffort,
-        reasoningKind: options.body.reasoningKind,
-      } };
     } else throw new Error(`Unexpected request ${path}`);
     return { response: { ok: true, status: 200 }, json };
   };
@@ -93,7 +77,7 @@ try {
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /m beta' }), { commands: [{ name: 'model', value: 'beta' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, messageText: '@_user_1 /tier sota' }), { commands: [{ name: 'tier', value: 'sota' }], body: '' });
   assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/status' }), { commands: [{ name: 'status' }], body: '' });
-  assert.deepEqual(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }), { commands: [{ name: 'default', field: 'model', value: 'beta' }], body: '' });
+  assert.match(extractLocalCommand({ ...summary, chatType: 'p2p', messageText: '/default model beta' }).error, /固定为 Auto/);
   assert.equal(extractLocalCommand({ ...summary,
     messageText: 'connector 命令易用性可能设计下，比如消息里带上很多命令（包括 /thread 之类）。',
   }), null, 'mentioning /thread in prose must not create a new task Session');
@@ -144,6 +128,7 @@ try {
   assert.equal(session.runtimeTier, 'sota');
   assert.equal(session.model, 'frontier');
   assert.equal(session.effort, 'xhigh');
+  assert.match(await run('tier', 'auto'), /未知档位/);
   const beforeInvalid = structuredClone(session);
   assert.match(await run('effort', 'ultra'), /不支持/);
   assert.match(await run('model', 'unknown'), /不可用/);
@@ -152,15 +137,10 @@ try {
   assert.match(await run('harness', 'pi'), /provider\/gamma/);
   assert.deepEqual(session.feishuRuntimeSelection, { tool: 'pi', model: 'provider/gamma', effort: '', thinking: false });
   assert.match(await run('effort', 'high'), /不支持/);
-  assert.match(await run('follow'), /重置为 Default/);
-  assert.equal(session.feishuRuntimeSelection?.tool, 'pi');
   assert.match(await run('status'), /provider\/gamma/);
   assert.match(await run('model', 'beta', { ...summary, threadId: 'unbound' }), /话题/);
   assert.match(await run('model', '', { ...summary, threadId: '' }), /provider\/gamma/);
   assert.match(await run('status', '', { ...summary, threadId: '', chatType: 'p2p', chatId: 'private' }), /当前 Session/);
-  assert.match(await run('default', 'harness codex', { ...summary, threadId: 'unbound' }), /新 Session 的 Default/);
-  assert.match(await run('default', 'model beta', { ...summary, threadId: 'unbound' }), /新 Session 的 Default/);
-  assert.equal(selection.model, 'beta', 'Default command should update the shared default selection');
   assert.equal(calls.some(call => call.path === '/api/sessions' && call.method === 'POST'), false, 'commands never create AI sessions');
 
   const replies = [];
@@ -175,7 +155,8 @@ try {
   await handleMessage(runtime, { ...summary, messageText: '/status' }, 'test', helpers);
   assert.match(replies.at(-1), /当前 Session/);
   await handleMessage(runtime, { ...summary, messageId: 'm2', messageText: '/help' }, 'test', helpers);
-  assert.match(replies.at(-1), /\/follow/);
+  assert.doesNotMatch(replies.at(-1), /\/follow|\/default/);
+  assert.match(replies.at(-1), /\/tier/);
   assert.match(replies.at(-1), /短名：\/m model、\/q quick/);
   runtime.botIdentity = { openId: 'this-bot' };
   const botControl = await handleMessage(runtime, { ...summary, messageText: '/model provider/gamma',

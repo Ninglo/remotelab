@@ -253,8 +253,8 @@ can be overridden per group with `groups` below.
 
 ### Harness and model commands
 
-Runtime selection has two levels. `Default` is copied when a new Session is
-created; an existing Session keeps its own snapshot until explicitly changed.
+Every new Standard Session starts from Auto. An existing Session keeps its own
+runtime snapshot until explicitly changed.
 Task commands use one primary reply action, optional modifiers, then task text.
 The short mobile-friendly form is `/thread task text`. Put `--harness`,
 `--model`, and `--effort` before the task text when needed. The connector also
@@ -280,21 +280,15 @@ Multi-line form:
 请分析这个问题并给出修复方案。
 ```
 
-```text
-/default model gpt-5.6
-/default effort high
-```
-
 Inside an existing task thread or private conversation, use these commands:
 
 | Command | Behavior |
 | --- | --- |
 | `/status` | Show the Harness, model and effort in the current scope. |
-| `/default` or `/default <harness\|model\|effort> <value>` | Show or change the Default used by new Sessions. |
 | `/harness` or `/harness <id>` | List available Harnesses or change the current Session. |
 | `/model` or `/model <id>` | List the current Harness's models or change the current Session. |
 | `/effort` or `/effort <level>` | List supported reasoning levels or change the current Session. |
-| `/follow` | Copy the current Default into this Session. |
+| `/tier` or `/tier <sota\|quality\|balanced\|economy>` | List or change the current Session's model tier. |
 | `/mute` | Stop automatic responses in the current topic or chat; explicit mentions still wake the Bot once. |
 | `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and the task-command format. |
@@ -338,15 +332,17 @@ Lists and `/status` are read-only. In a group with mention-only responses, menti
 the Bot unless it has already joined the current thread.
 
 Command-only blocks execute directly without launching an AI turn or creating a
-task. `/default ...` changes only the shared Default. The other setters change
-an existing Session when one is bound, or apply to the one task in the same
-command block. Peer Bots cannot invoke these control commands.
+task. New Standard Sessions always start from Auto. Runtime setters change an
+existing Session when one is bound, or apply to the one task in the same
+command block. The next new Session starts from Auto again. Peer Bots cannot
+invoke these control commands.
 
 When a connector creates a new Session, its selected Harness/model/effort is
-written as part of Session creation and sent with the first prompt. There is no
+written as part of Session creation and sent with the first prompt. Auto is used
+when no Session-local override was supplied. There is no
 separate "set effort, then send the task" step. Running and already queued
 Requests retain the selection frozen at admission. The Inbox saves a setter's
-exact plan before applying it, so retries do not re-resolve changing Defaults.
+exact plan before applying it, so retries keep the admitted Session snapshot.
 
 ### Mute a discussion
 

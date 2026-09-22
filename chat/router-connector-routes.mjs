@@ -34,7 +34,7 @@ import {
   selectAssistantReplyEvent,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
-import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { createSerialTaskQueue, pathExists, readJson, writeJsonAtomic } from './fs-utils.mjs';
 import { readBody } from '../lib/utils.mjs';
 import {
@@ -482,7 +482,7 @@ async function resolveShortcutRuntime(payload) {
     };
   }
 
-  const uiSelection = await loadUiRuntimeSelection();
+  const uiSelection = getAutoRuntimeSelection();
   const resolved = resolveExternalRuntimeSelection({
     uiSelection,
     mode: 'ui',

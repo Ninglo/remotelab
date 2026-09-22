@@ -37,10 +37,8 @@ async function loadRuntimePresetCatalog() {
 function inferCurrentRuntimePreset(session) {
   const storedTier = typeof session?.runtimeTier === 'string' ? session.runtimeTier : '';
   if (runtimePresetCatalog.some((preset) => preset.id === storedTier)) return storedTier;
-  if (session?.tool === 'codex' && session?.model === 'auto') return 'auto';
   const exact = runtimePresetCatalog.find((preset) => (
-    preset.id !== 'auto'
-    && preset.model === session?.model
+    preset.model === session?.model
     && (preset.effort || '') === (session?.effort || '')
   ));
   return exact?.id || 'custom';
@@ -49,7 +47,14 @@ function inferCurrentRuntimePreset(session) {
 function syncRuntimePresetUi() {
   if (!runtimePresetSelect) return;
   const session = typeof getCurrentSession === 'function' ? getCurrentSession() : null;
-  const visible = Boolean(currentSessionId && session && !isQuickSessionUi(session) && session.tool === 'codex');
+  const visible = Boolean(
+    currentSessionId
+    && session
+    && !isQuickSessionUi(session)
+    && session.tool === 'codex'
+    && session.model !== 'auto'
+    && runtimePresetCatalog.length > 0
+  );
   runtimePresetSelect.hidden = !visible;
   if (!visible) return;
   runtimePresetSelect.innerHTML = '';
@@ -57,9 +62,7 @@ function syncRuntimePresetUi() {
     const option = document.createElement('option');
     option.value = preset.id;
     option.textContent = t(`tooling.preset.${preset.id}`);
-    option.title = preset.id === 'auto'
-      ? t('tooling.presetTitle')
-      : `${preset.model} / ${preset.effort}`;
+    option.title = `${preset.model} / ${preset.effort}`;
     runtimePresetSelect.appendChild(option);
   }
   const inferred = inferCurrentRuntimePreset(session);
@@ -981,9 +984,8 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     inlineModelSelect.style.display = (currentToolModels.length > 0 || toolId === "codex") ? "" : "none";
     applyCurrentModelReasoningUi({ sessionPreferences });
     syncRuntimePresetUi();
-    // Runtime controls belong to the attached Session or the pending draft.
-    // They never rewrite the shared Default, which remains Auto unless an
-    // explicit /default command or API call changes it.
+    // Runtime controls belong to the attached Session or pending draft. The
+    // next draft always starts again from the immutable Auto default.
   } catch (error) {
     console.warn("[models] Failed to load model picker:", error?.message || error);
     resetCurrentModelPickerUi();

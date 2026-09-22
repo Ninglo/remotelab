@@ -217,13 +217,6 @@ async function main() {
   let server = await startServer({ home, port });
 
   try {
-    const defaultRuntimeRes = await request(port, 'POST', '/api/runtime-selection', {
-      selectedTool: 'fake-codex',
-      selectedModel: 'fake-model',
-      selectedEffort: 'low',
-      reasoningKind: 'enum',
-    });
-    assert.equal(defaultRuntimeRes.status, 200, 'Default runtime selection should be configured');
     const session = await createSession(port);
 
     const createTriggerRes = await request(port, 'POST', '/api/triggers', {
@@ -298,8 +291,8 @@ async function main() {
         scheduledAt: new Date(Date.now() + 200).toISOString(), text: 'Publish the scheduled reply.', tool: 'fake-codex',
       });
       assert.equal(response.status, 201);
-      assert.equal(response.json.trigger.model, 'fake-model', 'trigger should snapshot the matching Default model');
-      assert.equal(response.json.trigger.effort, 'low', 'trigger should snapshot the matching Default effort');
+      assert.equal(response.json.trigger.model, 'fake-model', 'an explicit Harness should resolve its matching model');
+      assert.equal(response.json.trigger.effort, 'low', 'an explicit Harness should resolve its matching effort');
       assert.deepEqual(response.json.trigger.sessionTemplate.conversation, binding, 'scheduled conversation belongs to the creation template');
       const executed = await waitFor(async () => {
         const value = await request(port, 'GET', `/api/triggers/${response.json.trigger.id}`);
@@ -495,9 +488,9 @@ async function main() {
     assert.equal(scheduleRes.json.schedule.sessionTemplate.tool, 'fake-codex');
     assert.equal(scheduleRes.json.schedule.sessionTemplate.internalRole, 'scheduled_execution');
     assert.equal(scheduleRes.json.schedule.sessionTemplate.conversation.target.chatId, 'oc_source_test');
-    assert.equal(scheduleRes.json.schedule.tool, 'fake-codex', 'schedule should snapshot the matching Default Harness');
-    assert.equal(scheduleRes.json.schedule.model, 'fake-model', 'schedule should snapshot the matching Default model');
-    assert.equal(scheduleRes.json.schedule.effort, 'low', 'schedule should snapshot the matching Default effort');
+    assert.equal(scheduleRes.json.schedule.tool, 'fake-codex', 'schedule should persist the explicit Harness');
+    assert.equal(scheduleRes.json.schedule.model, 'fake-model', 'schedule should resolve the explicit Harness model');
+    assert.equal(scheduleRes.json.schedule.effort, 'low', 'schedule should resolve the explicit Harness effort');
     const scheduleId = scheduleRes.json.schedule.id;
     const cancelSchedule = await request(port, 'PATCH', `/api/schedules/${scheduleId}`, {
       enabled: false,
@@ -513,10 +506,10 @@ async function main() {
     });
     const defaultProfileSchedule = await request(port, 'POST', '/api/schedules', {
       sessionId: alternateSource.id,
-      title: 'Atomic Default profile',
+      title: 'Immutable Auto profile',
       cron: '0 10 * * *',
       timezone: 'Asia/Shanghai',
-      text: 'Use the complete Default profile',
+      text: 'Use Auto for the new execution Session',
     });
     assert.equal(defaultProfileSchedule.status, 201);
     assert.deepEqual(
@@ -526,9 +519,9 @@ async function main() {
         effort: defaultProfileSchedule.json.schedule.effort,
       },
       { tool: '', model: '', effort: '' },
-      'a schedule without overrides should resolve the latest Default at execution, not snapshot it',
+      'a schedule without overrides should store Auto policy rather than a mutable runtime snapshot',
     );
-    assert.equal(defaultProfileSchedule.json.schedule.runtimePolicy, 'follow_default');
+    assert.equal(defaultProfileSchedule.json.schedule.runtimePolicy, 'auto');
     assert.equal(defaultProfileSchedule.json.schedule.sessionTemplate.tool, 'source-harness');
 
     const switchedHarnessSchedule = await request(port, 'POST', '/api/schedules', {
@@ -547,7 +540,7 @@ async function main() {
         effort: switchedHarnessSchedule.json.schedule.effort,
       },
       { tool: 'source-harness', model: 'source-model', effort: 'high' },
-      'changing Harness should resolve that Harness model and effort defaults instead of carrying the Default pair across',
+      'changing Harness should resolve that Harness model and effort defaults',
     );
     // Recreate an upgrade after old admission succeeded but its trigger receipt was lost.
     await stopServer(server);

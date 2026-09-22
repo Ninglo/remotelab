@@ -206,7 +206,7 @@ ShareSnapshots. A ShareSnapshot never grants access to its source Session.
 
 ## Persistence
 
-Default runtime state lives in `~/.config/remotelab/`:
+Runtime state lives in `~/.config/remotelab/`:
 
 | Path | Purpose |
 |---|---|

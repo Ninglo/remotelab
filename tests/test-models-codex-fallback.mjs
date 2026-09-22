@@ -103,8 +103,8 @@ try {
   process.env.TYPESAFE_KEY_FILE = join(tempHome, 'missing-typesafe.env');
   const unconfigured = await import(`${pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href}?without-key`);
   const withoutKey = await unconfigured.getModelsForTool('codex');
-  assert.equal(withoutKey.defaultModel, 'gpt-5.6-sol');
-  assert.equal(withoutKey.models.some(model => model.id === 'auto'), false);
+  assert.equal(withoutKey.defaultModel, 'auto', 'new Sessions start from Auto even when Jev must fall back');
+  assert.equal(withoutKey.models.some(model => model.id === 'auto'), true);
 } finally {
   delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
   delete process.env.TYPESAFE_API_KEY;

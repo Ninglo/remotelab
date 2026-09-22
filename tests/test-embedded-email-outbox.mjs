@@ -18,7 +18,6 @@ const { requests } = await import('../chat/requests.mjs');
 const { buildReplyDeliveries, normalizeSourceDeliveryPlan } = await import('../chat/source-deliveries.mjs');
 const { buildEmailSourceRouteId } = await import('../lib/agent-mail-source-delivery.mjs');
 const { startEmbeddedMailWorker } = await import('../lib/embedded-mail-worker.mjs');
-const { saveUiRuntimeSelection } = await import('../lib/runtime-selection.mjs');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function waitFor(fn, label) {
   const deadline = Date.now() + 20000;
@@ -79,7 +78,6 @@ try {
         const queuedItem = (await mailbox.findQueueItem(item.id, mailboxRoot)).item;
         assert.deepEqual(queuedItem.automation.preparedSubmission.options, JSON.parse(JSON.stringify(options)));
         await writeFile(queuedItem.storage.rawPath, 'Changed email content after admission');
-        await saveUiRuntimeSelection({ selectedTool: 'pi', selectedModel: 'changed-model' });
         throw new Error('Simulated crash after durable admission');
       }
       assert.equal(duplicate, true, 'restart retries exact text/options and the existing request, not new AI work');

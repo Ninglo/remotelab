@@ -25,7 +25,7 @@ import {
   updateQueueItem,
 } from '../lib/agent-mailbox.mjs';
 import { resolveExternalRuntimeSelection } from '../lib/external-runtime-selection.mjs';
-import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
 
 const DEFAULT_OWNER_CONFIG_DIR = join(homedir(), '.config', 'remotelab');
 const DEFAULT_GUEST_REGISTRY_FILE = join(DEFAULT_OWNER_CONFIG_DIR, 'guest-instances.json');
@@ -406,10 +406,7 @@ async function submitApprovedItem(item, rootDir, automation, runtime) {
   const effectiveRuntime = runtimeMatchesTarget(runtime, runtimeTarget)
     ? runtime
     : createRemoteLabRuntime(runtimeTarget.baseUrl, { authFile: runtimeTarget.authFile });
-  const targetSelectionFile = runtimeTarget.configDir
-    ? join(runtimeTarget.configDir, 'ui-runtime-selection.json')
-    : undefined;
-  const uiSelection = await loadUiRuntimeSelection(targetSelectionFile);
+  const uiSelection = getAutoRuntimeSelection();
   const runtimeSelection = resolveReplyRuntimeSelection(automation, uiSelection);
 
   // ─── PHASE 1: create or reuse session (durable) ───────────────────────────

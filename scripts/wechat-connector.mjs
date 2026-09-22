@@ -18,7 +18,7 @@ import {
   buildAssistantReplyAttachmentFallbackText,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
-import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
 import {
   loadConnectorSurfaceTemplate,
   renderConnectorSurfaceTemplate,
@@ -203,14 +203,6 @@ function resolveOptionalPath(value, baseDir, fallbackPath) {
   return resolve(trimmed);
 }
 
-function defaultRuntimeSelectionPath(storageDir) {
-  const normalizedStorageDir = resolveHomePath(storageDir, DEFAULT_STORAGE_DIR);
-  const baseDir = basename(normalizedStorageDir) === 'wechat-connector'
-    ? dirname(normalizedStorageDir)
-    : normalizedStorageDir;
-  return join(baseDir, 'ui-runtime-selection.json');
-}
-
 function parsePositiveInteger(value, fallback) {
   const parsed = Number.parseInt(String(value || ''), 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -365,7 +357,6 @@ Config shape:
     "apiBaseUrl": "${DEFAULT_API_BASE_URL}",
     "sessionFolder": "${homedir()}",
     "runtimeSelectionMode": "${DEFAULT_RUNTIME_SELECTION_MODE}",
-    "runtimeSelectionPath": "${join(dirname(DEFAULT_STORAGE_DIR), 'ui-runtime-selection.json')}",
     "sessionTool": "${DEFAULT_SESSION_TOOL}",
     "model": "",
     "effort": "",
@@ -445,11 +436,6 @@ function normalizeConfig(value, options = {}) {
     runtimeSelectionMode: normalizeExternalRuntimeSelectionMode(
       normalized.runtimeSelectionMode,
       DEFAULT_RUNTIME_SELECTION_MODE,
-    ),
-    runtimeSelectionPath: resolveOptionalPath(
-      normalized.runtimeSelectionPath,
-      dirname(resolvedConfigPath),
-      defaultRuntimeSelectionPath(storageDir),
     ),
     sessionTool: trimString(normalized.sessionTool || DEFAULT_SESSION_TOOL) || DEFAULT_SESSION_TOOL,
     model: trimString(normalized.model),
@@ -1997,7 +1983,7 @@ async function resolveDefaultWeChatTarget(runtime, preferredAccountId = '') {
 }
 
 async function resolveWeChatRuntimeSelection(runtime) {
-  const uiSelection = await loadUiRuntimeSelection(runtime?.config?.runtimeSelectionPath);
+  const uiSelection = getAutoRuntimeSelection();
   return resolveExternalRuntimeSelection({
     uiSelection,
     mode: runtime?.config?.runtimeSelectionMode || DEFAULT_RUNTIME_SELECTION_MODE,
@@ -2120,7 +2106,7 @@ async function submitWeChatMessageAsync(runtime, summary, {
       },
       text: buildRemoteLabMessage(messageSummary),
       tool: runtimeSelection.tool,
-      runtimeSelectionScope: 'default',
+      runtimeSelectionScope: 'auto',
       sourceContext: buildMessageSourceContext({ ...messageSummary, sourceRouteId }),
       ...(attachmentResolution.attachments.length > 0 ? { attachments: attachmentResolution.attachments } : {}),
       ...(runtimeSelection.thinking ? { thinking: true } : {}),

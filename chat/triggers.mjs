@@ -1,6 +1,6 @@
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
 import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
-import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
 import { completeRuntimeProfile, normalizeRuntimeProfile, resolveRuntimeProfile, runtimeProfileFromUiSelection } from '../lib/runtime-profile.mjs';
 import { getModelsForTool } from './models.mjs';
 import { randomBytes } from 'crypto';
@@ -779,13 +779,13 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
 }
 
 // Resolve once, before creating a Session or admitting work. Persisting the
-// resolved profile makes retries/restarts independent of later Default edits.
+// resolved profile makes retries and restarts deterministic.
 async function resolveExecutionRuntime(trigger, session = null) {
   if (trigger.executionRuntime) return trigger;
   let profile;
   let thinking = trigger.thinking === true;
-  if (trigger.runtimePolicy === 'follow_default') {
-    const selected = session || runtimeProfileFromUiSelection(await loadUiRuntimeSelection());
+  if (trigger.runtimePolicy === 'auto') {
+    const selected = session || runtimeProfileFromUiSelection(getAutoRuntimeSelection());
     profile = resolveRuntimeProfile(selected, {}, trigger.sessionTemplate?.tool);
     thinking = session?.thinking === true;
   } else {

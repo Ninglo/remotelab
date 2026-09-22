@@ -61,17 +61,18 @@ If multiple tools are installed and the user has no strong preference, prefer `C
 RemoteLab setup is the primary configuration UX.
 
 - the AI should ask which installed tool(s) the user wants enabled
-- the AI should ask for default model and reasoning preferences where the tool supports them
-- these answers should seed defaults for new sessions
+- new Standard Sessions always start from Codex Auto
+- model and reasoning choices apply only to the Session being created or edited
 - the current chat turn's tool/model choice remains the runtime source of truth
 - background helpers such as auto-naming or summarization should inherit the current turn selection rather than silently switching providers
 
-### Optional Jev auto model routing
+### Jev auto model routing
 
-When a TypeSafe API key is configured, the CodeX model list defaults to `Auto
-(Jev)` for new selections without a saved preference. Selecting it for a new
-Standard Session asks Jev to choose one of four service tiers from the first
-user message. The default tier mappings are:
+Every new Standard Session starts from `Auto (Jev)`. Auto is an immutable
+product default rather than a saved instance setting. Changing the Harness,
+model, tier, or effort affects only the current Session or the new Session draft;
+the next new Session starts from Auto again. Jev chooses one of four service
+tiers from the first user message. The default tier mappings are:
 
 - `sota`: GPT-6 Astra with `xhigh` reasoning. Jev may choose it only when the
   user explicitly requests the strongest/SOTA model, maximum reasoning, or
@@ -85,7 +86,8 @@ user message. The default tier mappings are:
 
 RemoteLab persists the concrete model and effort on the Session, so later turns
 keep the same native provider context. A user-selected concrete model always
-bypasses Jev. Uncertain decisions and routing failures use the `quality` tier.
+bypasses Jev. Uncertain decisions, a missing TypeSafe key, and routing failures
+use the `quality` tier.
 
 Store the key in the service environment as `TYPESAFE_API_KEY`, or in the
 instance config directory as a private `typesafe.env` file:

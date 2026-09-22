@@ -27,8 +27,8 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {})
   // later messages. Connector commands update the Session explicitly before
   // the next message arrives.
   const connectorRequest = options.sourceContext?.connector || options.sourceDelivery?.connector;
-  // Connector workers mark ordinary messages as carrying the shared Default
-  // snapshot. An unmarked connector request remains an explicit API override
+  // Connector workers mark ordinary messages as carrying the Auto snapshot.
+  // An unmarked connector request remains an explicit API override
   // when it is partial (for example, a tool-only switch). Complete unmarked
   // snapshots remain compatible with older connector callers.
   const completeConnectorSnapshot = connectorRequest
@@ -36,7 +36,7 @@ export async function resolveSessionRuntimeSelection(session = {}, options = {})
     && typeof options.model === 'string'
     && typeof options.effort === 'string';
   const carriesDefaultSnapshot = connectorRequest && (
-    options.runtimeSelectionScope === 'default' || session.feishuRuntimeSelection || completeConnectorSnapshot
+    ['auto', 'default'].includes(options.runtimeSelectionScope) || session.feishuRuntimeSelection || completeConnectorSnapshot
   );
   const requested = migrateLegacySessionRuntimeFields(carriesDefaultSnapshot ? {} : options);
   const savedProfile = normalizeRuntimeProfile(saved);
