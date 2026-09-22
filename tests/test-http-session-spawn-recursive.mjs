@@ -188,6 +188,12 @@ function setupTempHome() {
   writeFileSync(
     join(configDir, 'auth-sessions.json'),
     JSON.stringify({
+      'primary-session': {
+        expiry: Date.now() + 60 * 60 * 1000,
+        personId: 'person_primary',
+        personName: 'Primary',
+        identityId: 'identity_web_primary',
+      },
       'test-session': {
         expiry: Date.now() + 60 * 60 * 1000,
         personId: 'person_second',
@@ -473,6 +479,16 @@ try {
       serviceFork.json.session?.group,
       'Tests',
       'service-auth fork uses the source owner Person view instead of the primary Person view',
+    );
+
+    const browserFork = await request(port, 'POST', `/api/sessions/${manager.id}/fork`, {}, {
+      Cookie: 'session_token=primary-session',
+    });
+    assert.equal(browserFork.status, 201, browserFork.text);
+    assert.equal(
+      browserFork.json.session?.initiatedByIdentityId,
+      'identity_web_primary',
+      'an interactive browser fork belongs to the signed-in Person',
     );
 
     console.log('test-http-session-spawn-recursive: ok');
