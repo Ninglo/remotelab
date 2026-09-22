@@ -96,6 +96,7 @@ import {
   forkSession,
   getHistory,
   getSession,
+  getSessionRunInitiatorIdentity,
   getSessionSourceContext,
   mergeSessionPersonViewOwnership,
   renameSession,
@@ -172,6 +173,24 @@ function resolveTaskCreatorIdentity(authSession, sourceSession) {
   const sourceIdentityId = trimString(sourceSession?.initiatedByIdentityId);
   if (authSession?.authKind === 'service') return sourceIdentityId;
   return trimString(authSession?.identityId) || sourceIdentityId;
+}
+
+async function resolveDerivedSessionCreatorIdentity(authSession, sourceSession, sourceRunId = '') {
+  const sourceIdentityId = trimString(sourceSession?.initiatedByIdentityId);
+  if (authSession?.authKind !== 'service') {
+    return {
+      identityId: trimString(authSession?.identityId) || sourceIdentityId,
+      personId: trimString(authSession?.personId),
+    };
+  }
+  const runIdentityId = await getSessionRunInitiatorIdentity(sourceSession?.id, sourceRunId);
+  const identityId = runIdentityId || sourceIdentityId;
+  const people = identityId ? await listPeopleForClient() : [];
+  const person = people.find((entry) => entry.identities?.some((identity) => identity.id === identityId));
+  return {
+    identityId,
+    personId: trimString(person?.id) || trimString(authSession?.personId),
+  };
 }
 
 async function prepareScheduledTask(payload, { authSession = null } = {}) {
@@ -1224,10 +1243,11 @@ export async function handleControlRoutes({
         return true;
       }
       const forkOptions = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+      const initiator = await resolveDerivedSessionCreatorIdentity(authSession, source);
       const session = await forkSession(sessionId, {
         ...forkOptions,
-        initiatedByIdentityId: authSession?.identityId || source.initiatedByIdentityId || '',
-        viewPersonId: authSession?.personId || '',
+        initiatedByIdentityId: initiator.identityId,
+        viewPersonId: initiator.personId,
       });
       if (!session) {
         writeJson(res, 409, { error: 'Unable to fork session' });
@@ -1277,15 +1297,17 @@ export async function handleControlRoutes({
       }
 
       try {
+        const sourceRunId = typeof payload?.sourceRunId === 'string' ? payload.sourceRunId.trim() : '';
+        const initiator = await resolveDerivedSessionCreatorIdentity(authSession, source, sourceRunId);
         const outcome = await delegateSession(sessionId, {
           task,
           context: typeof payload?.context === 'string' ? payload.context.trim() : '',
-          sourceRunId: typeof payload?.sourceRunId === 'string' ? payload.sourceRunId.trim() : '',
+          sourceRunId,
           name: typeof payload?.name === 'string' ? payload.name.trim() : '',
           tool: typeof payload?.tool === 'string' ? payload.tool.trim() : '',
           internal: payload?.internal === true,
-          initiatedByIdentityId: authSession?.identityId || source.initiatedByIdentityId || '',
-          viewPersonId: authSession?.personId || '',
+          initiatedByIdentityId: initiator.identityId,
+          viewPersonId: initiator.personId,
         });
         if (!outcome?.session) {
           writeJson(res, 409, { error: 'Unable to delegate session' });

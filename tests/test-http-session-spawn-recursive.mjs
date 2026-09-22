@@ -10,6 +10,7 @@ import { spawn } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
+const serviceToken = 'f'.repeat(64);
 
 function randomPort() {
   return 38000 + Math.floor(Math.random() * 4000);
@@ -151,13 +152,48 @@ function setupTempHome() {
 
   writeFileSync(
     join(configDir, 'auth.json'),
-    JSON.stringify({ token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }, null, 2),
+    JSON.stringify({
+      version: 2,
+      serviceToken,
+      primaryPersonId: 'person_primary',
+      people: [
+        {
+          id: 'person_primary',
+          name: 'Primary',
+          credentials: [],
+          identities: [{
+            id: 'identity_web_primary',
+            kind: 'web',
+            realm: 'remotelab',
+            subjectId: 'person_primary',
+            displayName: 'Primary',
+          }],
+        },
+        {
+          id: 'person_second',
+          name: 'Second',
+          credentials: [],
+          identities: [{
+            id: 'identity_web_second',
+            kind: 'web',
+            realm: 'remotelab',
+            subjectId: 'person_second',
+            displayName: 'Second',
+          }],
+        },
+      ],
+    }, null, 2),
     'utf8',
   );
   writeFileSync(
     join(configDir, 'auth-sessions.json'),
     JSON.stringify({
-      'test-session': { expiry: Date.now() + 60 * 60 * 1000, role: 'owner' },
+      'test-session': {
+        expiry: Date.now() + 60 * 60 * 1000,
+        personId: 'person_second',
+        personName: 'Second',
+        identityId: 'identity_web_second',
+      },
     }, null, 2),
     'utf8',
   );
@@ -304,6 +340,7 @@ try {
 
   try {
     manager = await createSession(port, 'Recursive spawn manager');
+    assert.equal(manager.initiatedByIdentityId, 'identity_web_second', 'the parent belongs to the signed-in second Person');
     for (const sourceRunId of [42, 'missing-run']) {
       const invalid = await request(port, 'POST', `/api/sessions/${manager.id}/delegate`, { task: 'Invalid source', sourceRunId });
       assert.equal(invalid.status, 400, 'invalid source run must fail before child admission');
@@ -364,6 +401,7 @@ try {
     for (const child of childSessions) {
       assert.equal(child.sourceId, 'chat', 'unbound handoff sessions must appear under Chat UI origin');
       assert.equal(child.sourceName, 'Chat', 'children must not retain the parent connector label');
+      assert.equal(child.initiatedByIdentityId, 'identity_web_second', 'service-auth handoff inherits the human source-run identity');
       assert.equal(child.conversation, undefined, 'handoff must not inherit a conversation binding');
       assert.equal(child.externalTriggerId, undefined, 'handoff must not inherit the parent routing key');
     }
@@ -420,6 +458,22 @@ try {
       );
       assert.match(childReply?.content || '', /finished from fake codex/, 'spawned session should still execute its own task');
     }
+
+    const serviceFork = await request(port, 'POST', `/api/sessions/${manager.id}/fork`, {}, {
+      Cookie: '',
+      Authorization: `Bearer ${serviceToken}`,
+    });
+    assert.equal(serviceFork.status, 201, serviceFork.text);
+    assert.equal(
+      serviceFork.json.session?.initiatedByIdentityId,
+      'identity_web_second',
+      'service-auth fork inherits the source Session identity instead of the primary Person',
+    );
+    assert.equal(
+      serviceFork.json.session?.group,
+      'Tests',
+      'service-auth fork uses the source owner Person view instead of the primary Person view',
+    );
 
     console.log('test-http-session-spawn-recursive: ok');
   } catch (error) {

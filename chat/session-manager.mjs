@@ -2033,6 +2033,15 @@ export async function getRunState(runId) {
   return { ...effectiveRun, ...(publication ? { replyPublication: publication } : {}), ...(connectors ? { connectors } : {}) };
 }
 
+export async function getSessionRunInitiatorIdentity(sessionId, runId) {
+  const normalizedSessionId = trimString(sessionId);
+  const normalizedRunId = trimString(runId);
+  if (!normalizedSessionId || !normalizedRunId) return '';
+  const record = await requests.byRunId(normalizedRunId);
+  if (!record || record.sessionId !== normalizedSessionId) return '';
+  return trimString(record.options?.initiatedByIdentityId);
+}
+
 export async function createSession(folder, tool, name, extra = {}) {
   const requestedExecutionProfile = normalizeSessionExecutionProfile(extra.executionProfile);
   const quickRuntime = requestedExecutionProfile === QUICK_SESSION_PROFILE
