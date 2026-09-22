@@ -703,6 +703,21 @@ export function buildMessageSourceContext(summary) {
       ...(fileCount > 0 ? { fileCount } : {}),
     };
   }
+  if (Array.isArray(summary?.conversationContext?.messages)) {
+    const messages = summary.conversationContext.messages
+      .map((entry) => ({
+        sender: trimString(entry?.sender),
+        time: trimString(entry?.time),
+        text: trimString(entry?.text),
+      }))
+      .filter((entry) => entry.sender && entry.time && entry.text);
+    if (messages.length > 0) {
+      context.conversationContext = {
+        messages,
+        ...(summary.conversationContext.truncated === true ? { truncated: true } : {}),
+      };
+    }
+  }
   return context;
 }
 

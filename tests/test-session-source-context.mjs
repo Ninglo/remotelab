@@ -146,8 +146,8 @@ try {
   assert.deepEqual(firstManifest.modelContextSlots.map(slot => slot.id), [
     'remotelab_startup', 'source_runtime', 'session_instructions', 'turn_context',
   ]);
-  assert.match(firstManifest.managerTurnContext, /msg_source_context_1/);
-  assert.doesNotMatch(firstManifest.managerTurnContext, /threadId/);
+  assert.match(firstManifest.managerTurnContext, /当前发言人：Alice/);
+  assert.doesNotMatch(firstManifest.managerTurnContext, /msg_source_context_1|threadId/);
 
   // Request options are durable snapshots; queueing later input cannot overwrite
   // the sender/message attached to an earlier turn or its replay.
@@ -169,10 +169,11 @@ try {
   assert.deepEqual(secondManifest.modelContextSlots.map(slot => slot.id), [
     'source_runtime', 'session_instructions', 'turn_context',
   ]);
-  assert.match(secondManifest.managerTurnContext, /msg_source_context_2/);
-  assert.match(secondManifest.managerTurnContext, /thread-2/);
-  assert.match(secondManifest.managerTurnContext, /truncated/);
-  assert.doesNotMatch(secondManifest.managerTurnContext, /msg_source_context_1|Alice|mutated-after-admission/);
+  assert.match(secondManifest.managerTurnContext, /当前发言人：Bob/);
+  assert.match(secondManifest.managerTurnContext, /long quoted context/);
+  assert.ok(secondManifest.managerTurnContext.length < 10_000, 'visible source context stays bounded');
+  assert.doesNotMatch(secondManifest.managerTurnContext,
+    /msg_source_context_1|msg_source_context_2|thread-2|Alice|mutated-after-admission/);
   assert.deepEqual((await getSessionSourceContext(session.id, { requestId: 'req-source-context-2' })).message, secondSnapshot);
   const duplicate = await submitHttpMessage(session.id, 'hello', [], firstOptions);
   assert.equal(duplicate.duplicate, true);

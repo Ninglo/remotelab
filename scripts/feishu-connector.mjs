@@ -56,6 +56,7 @@ import {
   summarizeFeishuEvent as summarizeEvent,
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
+import { loadFeishuConversationContext } from '../connectors/feishu/conversation-context.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
   hydrateFeishuDocumentCommentSummary,
@@ -1018,12 +1019,20 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       code: QUICK_PROFILE_CONFLICT,
     });
   }
-  const attachmentResolution = await resolveFeishuMessageAttachments(runtime, effectiveSummary, {
-    sessionId: session.id,
-  });
-  const messageSummary = attachmentResolution.failures.length > 0
-    ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
-    : effectiveSummary;
+  const [attachmentResolution, conversationContext] = await Promise.all([
+    resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
+    loadFeishuConversationContext(runtime, effectiveSummary).catch((error) => {
+      console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
+      return null;
+    }),
+  ]);
+  const messageSummary = {
+    ...effectiveSummary,
+    ...(conversationContext ? { conversationContext } : {}),
+    ...(attachmentResolution.failures.length > 0
+      ? { attachmentDownloadFailures: attachmentResolution.failures }
+      : {}),
+  };
   // Session identity follows main-vs-thread topology. Each request still owns
   // an immutable delivery snapshot so delayed replies return to the location
   // selected for that inbound message.

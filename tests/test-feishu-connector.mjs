@@ -1826,6 +1826,9 @@ const topicMetadataRuntime = createRuntimeContext({
   handledMessagesPath: join(tempHome, 'topic-metadata-handled-messages.json'),
   messageIndexPath: join(tempHome, 'topic-metadata-message-index.json'),
 });
+topicMetadataRuntime.appClient = {
+  im: { v1: { message: { list: async () => ({ code: 0, data: { items: [], has_more: false } }) } } },
+};
 topicMetadataRuntime.chatMetadataCache.set('chat_topic_metadata_1', {
   name: 'Topic Metadata Chat',
   groupMessageType: 'thread',

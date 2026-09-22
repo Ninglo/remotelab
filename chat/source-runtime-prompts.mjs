@@ -6,7 +6,7 @@ function normalizeSourceKey(value) {
   return trimString(value).toLowerCase();
 }
 
-const SOURCE_CONTEXT_HELP = 'Current input metadata is in the per-turn Context. For full source metadata, use `remotelab api GET "/api/sessions/$REMOTELAB_SESSION_ID/source-context?requestId=REQUEST_ID" --base-url "$REMOTELAB_CHAT_BASE_URL"` with REQUEST_ID from this turn Context; this CLI supplies instance authentication, unlike a bare HTTP request.';
+const SOURCE_CONTEXT_HELP = 'Current input metadata is in the per-turn Context. If more transport metadata is genuinely needed, use `remotelab api GET "/api/sessions/$REMOTELAB_SESSION_ID/source-context?requestId=$REMOTELAB_REQUEST_ID" --base-url "$REMOTELAB_CHAT_BASE_URL"`; the runtime supplies both IDs and instance authentication.';
 
 function buildFeishuRuntimePrompt(session) {
   const sourceName = trimString(session?.sourceName) || 'Feishu';
