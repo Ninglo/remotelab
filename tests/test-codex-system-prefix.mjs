@@ -18,12 +18,8 @@ try {
   const withDeveloperInstructions = buildCodexArgs('Say hello.', {
     developerInstructions: 'Use plain prose.',
   });
-  const developerInstructionIndex = withDeveloperInstructions.indexOf('-c');
-  assert.notEqual(developerInstructionIndex, -1);
-  assert.equal(
-    withDeveloperInstructions[developerInstructionIndex + 1],
-    'developer_instructions="Use plain prose."',
-  );
+  assert.equal(withDeveloperInstructions.includes('features.respect_system_proxy=true'), true);
+  assert.equal(withDeveloperInstructions.includes('developer_instructions="Use plain prose."'), true);
 
   const withoutDeveloperInstructions = buildCodexArgs('Say hello.', {
     developerInstructions: '',
