@@ -105,6 +105,8 @@ assert.equal(initializedRuntimeProfile.configDir, join(tempHome, 'config', 'lark
 assert.equal(initializedRuntimeProfile.appId, 'cli_runtime_test');
 assert.equal(initializedRuntimeProfile.appSecret, 'runtime_secret');
 assert.equal(initializedRuntimeProfile.brand, 'feishu');
+assert.equal(initializedRuntimeProfile.profileName, 'default');
+assert.equal(initializedRuntimeProfile.legacyConfigDir, '');
 assert.equal(initializedRuntimeProfile.cliPath, join(repoRoot, 'node_modules', '.bin', 'lark-cli'));
 
 const runtime = {

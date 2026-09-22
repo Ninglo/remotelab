@@ -375,6 +375,7 @@ async function initializeFeishuInstanceRuntime(config, options = {}) {
   const instanceRoot = trimString(process.env.REMOTELAB_INSTANCE_ROOT)
     || trimString(config?.sessionFolder)
     || homedir();
+  const profileName = trimString(config?.sourceRouteId) || 'default';
   const runtimeCellEnvironment = buildInstanceRuntimeCellEnvironment({
     instanceRoot,
     projectRoot: PROJECT_ROOT,
@@ -386,8 +387,12 @@ async function initializeFeishuInstanceRuntime(config, options = {}) {
     appId: config?.appId,
     appSecret: config?.appSecret,
     brand: config?.region === 'lark-global' ? 'lark' : 'feishu',
+    profileName,
     configDir: trimString(process.env.LARKSUITE_CLI_CONFIG_DIR)
       || runtimeCellEnvironment.LARKSUITE_CLI_CONFIG_DIR,
+    legacyConfigDir: trimString(config?.storageDir)
+      ? join(config.storageDir, 'lark-cli', profileName)
+      : '',
     cliPath: join(PROJECT_ROOT, 'node_modules', '.bin', 'lark-cli'),
     baseEnv: {
       ...process.env,
