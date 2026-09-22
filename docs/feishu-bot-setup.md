@@ -232,14 +232,18 @@ Notes:
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
 These are the only two message policies. `accessPolicy` decides who may use the
-Bot. `responsePolicy.group` defaults to `mention_only`: group messages require an
-explicit mention of this Bot to start a conversation. Once the Bot has joined a
-thread, human replies in that same thread need no further mention and continue
-its existing Session. Participation is persisted per Bot and thread, including
-threads created by a Bot reply; it survives connector restarts. Other threads
-and ordinary group chatter still require a mention. An existing group Session,
-quoting a message outside a thread, mentioning another user, or `@all` cannot
-activate a thread. Set the policy to `all` to accept every human group message.
+Bot. `responsePolicy.group` defaults to `mention_only`: ordinary group messages
+require an explicit mention of this Bot to start a conversation. Native Feishu
+topic groups default to `all`, because each topic is already an intentional AI
+conversation surface. An exact `groups[chatId].responseMode` override can narrow
+a topic group back to `mention_only` or widen an ordinary group to `all`.
+
+Once the Bot has joined a Thread in an ordinary group, human replies in that
+same Thread need no further mention and continue its existing Session.
+Participation is persisted per Bot and Thread, including Threads created by a
+Bot reply; it survives connector restarts. Other Threads and ordinary group
+chatter still require a mention. An existing group Session, quoting a message
+outside a Thread, mentioning another user, or `@all` cannot activate a Thread.
 Private messages are always admitted immediately after access control.
 The response filter runs before commands, reactions, attachments and AI submission,
 including stored-message replay. Mention matching uses the Bot's API identity.
@@ -396,9 +400,10 @@ Session identity.
 `replyPolicy.group` defaults to `thread`; `replyPolicy.private` defaults to
 `inline`. `replyPolicy.chats[chatId]` and `groups[chatId].replyMode` override the
 default with `inline` or `thread`. `groups[chatId]` also supports
-`responseMode` (`all`/`mention_only`) and an optional `systemPrompt`. The latter
-is appended to global instructions when creating a Session; existing Sessions
-keep their instruction snapshot.
+`responseMode` (`all`/`mention_only`) and an optional `systemPrompt`. Topic
+groups use `all` when no exact chat override exists; ordinary groups fall back
+to `responsePolicy.group`. The prompt is appended to global instructions when
+creating a Session; existing Sessions keep their instruction snapshot.
 
 Precedence is: topic-group or existing-Thread topology → explicit `/inline` or
 `/thread` → exact chat-ID override → chat-type default. `/thread` starts a blank

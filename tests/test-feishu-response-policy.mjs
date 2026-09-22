@@ -39,6 +39,15 @@ try {
   await check('this Bot mention is admitted and acknowledged', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit']);
   await check('private chat always responds immediately', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit']);
   await check('all group mode admits every message', {}, ['reaction', 'submit'], { group: 'all' });
+  await check('chat-mode topic groups admit plain text by default', {
+    chatMode: 'topic', messageId: 'topic-default-root',
+  }, ['reaction', 'submit']);
+  await check('thread-type topic groups admit plain text by default', {
+    groupMessageType: 'thread', messageId: 'thread-type-default-root',
+  }, ['reaction', 'submit']);
+  await check('ordinary group threads still need an invitation', {
+    threadId: 'ordinary-group-thread',
+  }, []);
 
   runtime.config.groups = { 'group-1': { responseMode: 'all', systemPrompt: 'Group instructions' } };
   await check('group override admits plain text without a file or mention', {}, ['reaction', 'submit']);
@@ -46,6 +55,9 @@ try {
   await check('self remains excluded under group override', { sender: { senderType: 'app', openId: 'bot-self' } }, []);
   runtime.config.groups = { 'group-1': { responseMode: 'mention_only' } };
   await check('group override can narrow global all', {}, [], { group: 'all' });
+  await check('group override can narrow the topic-group default', {
+    chatMode: 'topic', groupMessageType: 'thread', messageId: 'topic-explicit-mention-root',
+  }, []);
   delete runtime.config.groups;
 
   effects = [];
@@ -156,9 +168,9 @@ try {
   await check('native topic replies can identify the joined topic by root ID', {
     chatMode: 'topic', messageId: 'topic-reply', rootId: 'topic-root',
   }, ['reaction', 'submit']);
-  await check('a different topic root stays silent', {
+  await check('a different native topic is admitted by the topic-group default', {
     chatMode: 'topic', messageId: 'other-topic-reply', rootId: 'other-topic-root',
-  }, []);
+  }, ['reaction', 'submit']);
 
   // Sending a reply may assign a new Feishu thread ID to an admitted group root.
   await recordFeishuThreadSessionBinding(runtime, base, 'outbound-session', { threadId: 'created-by-reply' });

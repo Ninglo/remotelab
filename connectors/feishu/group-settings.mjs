@@ -1,3 +1,5 @@
+import { isFeishuTopicChat } from './index.mjs';
+
 // Per-chat overrides change ordinary intake and reply placement, never infer
 // Session identity from message content.
 export function normalizeFeishuGroups(value = {}) {
@@ -18,7 +20,12 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const group = config.groups?.[summary.chatId] || {};
   const privateChat = ['p2p', 'private'].includes(String(summary.chatType || '').trim().toLowerCase());
   return {
-    responseMode: group.responseMode ?? config.responsePolicy?.group ?? 'mention_only',
+    // A Feishu topic is already an intentional conversation surface. Admit its
+    // human messages by default, while retaining mention-only ordinary groups
+    // and allowing an exact chat override to narrow either behavior.
+    responseMode: group.responseMode ?? (isFeishuTopicChat(summary)
+      ? 'all'
+      : config.responsePolicy?.group ?? 'mention_only'),
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     systemPrompt: [config.systemPrompt, group.systemPrompt].filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
