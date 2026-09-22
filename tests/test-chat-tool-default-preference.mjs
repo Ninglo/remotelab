@@ -12,8 +12,8 @@ const layoutToolingSource = readFileSync(join(repoRoot, 'static', 'chat', 'layou
 
 assert.match(
   bootstrapSource,
-  /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-astra";/,
-  'the browser default should stay aligned with the GPT-6 Astra product default',
+  /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";/,
+  'the browser default should stay aligned with the GPT-5.6 Sol product default',
 );
 
 function extractFunctionSource(source, functionName) {
@@ -64,23 +64,24 @@ const migrateRetiredCodexModelLocalStorageSource = extractFunctionSource(
 );
 
 const localStorageValues = new Map([
-  ['selectedModel_codex', 'gpt-5.4'],
+  ['selectedModel_codex', 'gpt-6-astra'],
+  ['selectedModel_pi', 'openai-codex/gpt-6-astra'],
+  ['selectedModel_pi_openai-codex', 'openai-codex/gpt-6-astra'],
   ['selectedEffort_codex', 'xhigh'],
 ]);
 
 const context = {
   console,
   DEFAULT_TOOL_ID: 'codex',
-  PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-6-astra',
+  PRODUCT_DEFAULT_CODEX_MODEL: 'gpt-5.6-sol',
   CURRENT_CODEX_MODEL_IDS: new Set([
-    'gpt-6-astra',
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-5.6-luna',
     'gpt-5.5',
     'gpt-5.2',
   ]),
-  RETIRED_CODEX_MODEL_IDS: new Set([]),
+  RETIRED_CODEX_MODEL_IDS: new Set(['gpt-6-astra']),
   LEGACY_AUTO_PREFERRED_TOOL_IDS: new Set(['codex', 'micro-agent']),
   LEGACY_REMOVED_TOOL_IDS: new Set(['micro-agent']),
   localStorage: {
@@ -178,9 +179,11 @@ assert.equal(
 context.migrateRetiredCodexModelLocalStorage();
 assert.equal(
   localStorageValues.get('selectedModel_codex'),
-  'gpt-6-astra',
-  'stale GPT-5.4 browser preferences should migrate to GPT-6 Astra',
+  'gpt-5.6-sol',
+  'retired Astra browser preferences should migrate to Sol',
 );
+assert.equal(localStorageValues.get('selectedModel_pi'), 'openai-codex/gpt-5.6-sol');
+assert.equal(localStorageValues.get('selectedModel_pi_openai-codex'), 'openai-codex/gpt-5.6-sol');
 assert.equal(
   localStorageValues.get('selectedEffort_codex'),
   'xhigh',

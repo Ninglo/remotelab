@@ -302,7 +302,7 @@ values, then the session's saved preferences for the same tool/model, then the
 provider catalog defaults. The resolved snapshot is persisted separately from
 the submitted payload, so retries keep their original identity and queued runs
 retain the accepted configuration across preference changes and restarts.
-RemoteLab's Codex product default is `gpt-6-astra` with `low` effort; native CLI
+RemoteLab's Codex product default is `gpt-5.6-sol` with `low` effort; native CLI
 configuration and recently used models only enrich the model catalog. Explicit
 model/effort choices remain supported. Feishu continues to inherit the synced
 WebUI selection unless configured in pinned mode.

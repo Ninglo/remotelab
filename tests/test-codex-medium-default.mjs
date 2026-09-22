@@ -10,12 +10,13 @@ import {
 } from '../lib/legacy-micro-agent.mjs';
 
 const bootstrap = await readFile(new URL('../static/chat/bootstrap.js', import.meta.url), 'utf8');
-assert.equal(PRODUCT_DEFAULT_CODEX_MODEL, 'gpt-6-astra');
+assert.equal(PRODUCT_DEFAULT_CODEX_MODEL, 'gpt-5.6-sol');
 assert.equal(PRODUCT_DEFAULT_CODEX_EFFORT, 'low');
-assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-astra";/);
+assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";/);
 assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_EFFORT = "low";/);
 assert.match(bootstrap, /CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "gpt6-low-v1"/);
-assert.equal(normalizeCodexModelId('gpt-5.4'), 'gpt-6-astra', 'major-only GPT-6 IDs must participate in version comparison');
+assert.equal(normalizeCodexModelId('gpt-5.4'), 'gpt-5.6-sol');
+assert.equal(normalizeCodexModelId('gpt-6-astra'), 'gpt-5.6-sol', 'retired Astra selections must normalize to Sol');
 assert.equal(normalizeCodexModelId('gpt-5.6-sol'), 'gpt-5.6-sol', 'one-time migration must not permanently ban explicit older-model choices');
 
 const start = bootstrap.indexOf('function migrateCodexEffortDefaultLocalStorage()');
@@ -27,7 +28,7 @@ const values = new Map([
   ['selectedEffort_codex_gpt-6-astra', 'max'],
   ['selectedModel_pi', 'openai-codex/gpt-5.6-luna'],
   ['selectedModel_pi_openai-codex', 'openai-codex/gpt-5.6-sol'],
-  ['selectedEffort_pi_openai-codex/gpt-6-astra', 'max'],
+  ['selectedEffort_pi_openai-codex/gpt-5.6-sol', 'max'],
   ['selectedModel_claude', 'opus'],
   ['selectedEffort_claude', 'high'],
   ['selectedModel_pi_moonshotai', 'moonshotai/kimi-k3'],
@@ -40,13 +41,12 @@ const context = {
   localStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) },
 };
 vm.runInNewContext(`${source}\nmigrateCodexEffortDefaultLocalStorage();`, context);
-assert.equal(values.get('selectedModel_codex'), 'gpt-6-astra');
+assert.equal(values.get('selectedModel_codex'), 'gpt-5.6-sol');
 assert.equal(values.get('selectedEffort_codex'), 'low');
-assert.equal(values.get('selectedEffort_codex_gpt-6-astra'), 'low');
-assert.equal(values.get('selectedModel_pi'), 'openai-codex/gpt-6-astra');
-assert.equal(values.get('selectedModel_pi_openai-codex'), 'openai-codex/gpt-6-astra');
+assert.equal(values.get('selectedModel_pi'), 'openai-codex/gpt-5.6-sol');
+assert.equal(values.get('selectedModel_pi_openai-codex'), 'openai-codex/gpt-5.6-sol');
 assert.equal(values.get('selectedEffort_pi'), 'low');
-assert.equal(values.get('selectedEffort_pi_openai-codex/gpt-6-astra'), 'low');
+assert.equal(values.get('selectedEffort_pi_openai-codex/gpt-5.6-sol'), 'low');
 assert.equal(values.get('selectedModel_claude'), 'opus');
 assert.equal(values.get('selectedEffort_claude'), 'high');
 assert.equal(values.get('selectedModel_pi_moonshotai'), 'moonshotai/kimi-k3');

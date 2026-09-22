@@ -1068,17 +1068,16 @@ let currentTokens = 0;
 const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
-const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-astra";
+const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 const PRODUCT_DEFAULT_CODEX_EFFORT = "low";
 const CURRENT_CODEX_MODEL_IDS = new Set([
-  "gpt-6-astra",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
   "gpt-5.5",
   "gpt-5.2",
 ]);
-const RETIRED_CODEX_MODEL_IDS = new Set([]);
+const RETIRED_CODEX_MODEL_IDS = new Set(["gpt-6-astra"]);
 const CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "gpt6-low-v1";
 
 function normalizeStoredToolId(value) {
@@ -1160,13 +1159,16 @@ function migrateLegacyMicroAgentLocalStorage() {
 }
 
 function migrateRetiredCodexModelLocalStorage() {
-  const storageKey = `selectedModel_${DEFAULT_TOOL_ID}`;
-  const storedModel = typeof localStorage.getItem(storageKey) === "string"
-    ? localStorage.getItem(storageKey).trim()
-    : "";
-  const normalizedModel = normalizeStoredCodexModelId(storedModel);
-  if (!normalizedModel || normalizedModel === storedModel) return;
-  localStorage.setItem(storageKey, normalizedModel);
+  for (const storageKey of ["selectedModel_codex", "selectedModel_pi", "selectedModel_pi_openai-codex"]) {
+    const storedModel = typeof localStorage.getItem(storageKey) === "string"
+      ? localStorage.getItem(storageKey).trim()
+      : "";
+    const providerPrefix = storedModel.startsWith("openai-codex/") ? "openai-codex/" : "";
+    const modelId = providerPrefix ? storedModel.slice(providerPrefix.length) : storedModel;
+    const normalizedModelId = normalizeStoredCodexModelId(modelId);
+    if (!normalizedModelId || normalizedModelId === modelId) continue;
+    localStorage.setItem(storageKey, `${providerPrefix}${normalizedModelId}`);
+  }
 }
 
 migrateLegacyMicroAgentLocalStorage();

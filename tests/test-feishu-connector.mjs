@@ -1549,7 +1549,7 @@ try {
   assert.equal(planningSubmittedPayload?.requestId, 'feishu:msg_planning_scope');
   assert.equal(
     planningSubmittedPayload?.model,
-    'gpt-6-astra',
+    'gpt-5.6-sol',
     'Feishu should upgrade stale inherited Codex UI models before submitting a message',
   );
   assert.equal(reply.sessionId, 'sess_feishu_planning_1');

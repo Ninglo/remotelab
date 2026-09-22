@@ -11,8 +11,8 @@ import {
 
 const catalog = parsePiModelList(`
 provider              model             context  max-out  thinking  images
-openai                gpt-5.4           272K     128K     yes       yes
-openai-codex          gpt-5.4           272K     128K     yes       yes
+openai                gpt-5.6-sol       272K     128K     yes       yes
+openai-codex          gpt-5.6-sol       272K     128K     yes       yes
 deepseek              deepseek-chat     128K     8K       no        no
 kimi-for-coding       kimi-k2           128K     32K      yes       no
 `);
@@ -20,7 +20,7 @@ kimi-for-coding       kimi-k2           128K     32K      yes       no
 assert.deepEqual(
   catalog.map((model) => ({ id: model.id, label: model.label })),
   [
-    { id: 'openai-codex/gpt-5.4', label: 'gpt-5.4' },
+    { id: 'openai-codex/gpt-5.6-sol', label: 'gpt-5.6-sol' },
     { id: 'deepseek/deepseek-chat', label: 'deepseek-chat' },
     { id: 'kimi-for-coding/kimi-k2', label: 'kimi-k2' },
   ],
@@ -116,23 +116,13 @@ assert.deepEqual(
   })),
   [
     {
-      id: 'openai-codex/gpt-6-astra',
-      provider: 'openai-codex',
-      levels: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
-      control: '',
-      default: 'low',
-      defaultEffort: 'low',
-      providerDefault: true,
-      kind: 'enum',
-    },
-    {
       id: 'openai-codex/gpt-5.6-sol',
       provider: 'openai-codex',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
       control: '',
-      default: 'medium',
-      defaultEffort: 'medium',
-      providerDefault: false,
+      default: 'low',
+      defaultEffort: 'low',
+      providerDefault: true,
       kind: 'enum',
     },
     {
@@ -178,6 +168,8 @@ assert.deepEqual(
   ],
   'Pi RPC metadata should expose provider grouping and each model’s real thinking control shape',
 );
+assert.equal(rpcCatalog.some((model) => model.id === 'openai-codex/gpt-6-astra'), false,
+  'retired Astra routes must not be exposed by Pi discovery');
 const glmFlashCatalog = parsePiRpcModels([
   {
     provider: 'glm-api',

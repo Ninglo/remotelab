@@ -181,7 +181,7 @@ try {
     assert.equal(patched.json.session?.workflowState, 'waiting_user', 'PATCH should persist the normalized workflow state');
     assert.equal(patched.json.session?.workflowPriority, 'high', 'PATCH should persist the normalized workflow priority');
     assert.equal(patched.json.session?.tool, 'codex', 'PATCH should persist the tool');
-    assert.equal(patched.json.session?.model, 'gpt-6-astra', 'PATCH should persist the model');
+    assert.equal(patched.json.session?.model, 'gpt-5.6-sol', 'PATCH should migrate a retired Astra model to Sol');
     assert.equal(patched.json.session?.effort, 'high', 'PATCH should persist the effort');
     assert.equal(patched.json.session?.thinking, true, 'PATCH should persist the thinking flag');
     assert.equal(patched.json.session?.lastReviewedAt, reviewStamp, 'PATCH should persist the session review timestamp');
@@ -202,7 +202,7 @@ try {
     const detail = await request(port, 'GET', `/api/sessions/${older.id}`);
     assert.equal(detail.status, 200, 'session detail should remain readable after the patch');
     assert.equal(detail.json.session?.thinking, true, 'detail should expose persisted thinking');
-    assert.equal(detail.json.session?.model, 'gpt-6-astra', 'detail should expose persisted model');
+    assert.equal(detail.json.session?.model, 'gpt-5.6-sol', 'detail should expose the migrated model');
     assert.equal(detail.json.session?.workflowState, 'waiting_user', 'detail should expose persisted workflow state');
     assert.equal(detail.json.session?.workflowPriority, 'high', 'detail should expose persisted workflow priority');
     assert.equal(detail.json.session?.lastReviewedAt, reviewStamp, 'detail should expose the persisted review timestamp');
@@ -260,7 +260,7 @@ try {
     assert.equal(staleModelPatch.status, 200, 'PATCH should accept stale Codex models by upgrading them');
     assert.equal(
       staleModelPatch.json.session?.model,
-      'gpt-6-astra',
+      'gpt-5.6-sol',
       'stale Codex session preferences should upgrade to the product default model',
     );
     assert.equal(staleModelPatch.json.session?.effort, 'xhigh', 'model upgrade should preserve the requested effort');

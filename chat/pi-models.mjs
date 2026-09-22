@@ -3,7 +3,11 @@ import { promisify } from 'util';
 import { PI_AGENT_DIR } from '../lib/config.mjs';
 import { getPiBaselineModels } from '../lib/codex-model-catalog.mjs';
 import { ensurePiModelBaseline } from './pi-model-baseline.mjs';
-import { PRODUCT_DEFAULT_CODEX_MODEL, PRODUCT_DEFAULT_CODEX_EFFORT } from '../lib/legacy-micro-agent.mjs';
+import {
+  isStaleCodexModelId,
+  PRODUCT_DEFAULT_CODEX_MODEL,
+  PRODUCT_DEFAULT_CODEX_EFFORT,
+} from '../lib/legacy-micro-agent.mjs';
 
 const execFileAsync = promisify(execFile);
 const PI_MODEL_CACHE_TTL_MS = 30_000;
@@ -40,6 +44,7 @@ function isGptFamilyModel(modelId) {
 
 function shouldExposeRoute(provider, modelId) {
   if (!provider || !modelId) return false;
+  if (provider === 'openai-codex' && isStaleCodexModelId(modelId)) return false;
   // GPT-family choices in Pi intentionally use the Codex subscription/login
   // path. Do not expose API-key variants of the same family as duplicate
   // product choices.

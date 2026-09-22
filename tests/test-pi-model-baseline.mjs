@@ -103,7 +103,7 @@ try {
 const fs = require('fs');
 const path = require('path');
 const config = JSON.parse(fs.readFileSync(path.join(process.env.PI_CODING_AGENT_DIR, 'models.json')));
-if (!config.providers['openai-codex'].models.some(m => m.id === 'gpt-6-astra')) process.exit(99);
+if (!config.providers['openai-codex'].models.some(m => m.id === 'gpt-5.6-sol')) process.exit(99);
 const scenario = process.env.TEST_PI_SCENARIO;
 if (scenario === 'failed' || (scenario === 'text' && process.argv.includes('rpc'))) process.exit(1);
 if (process.argv.includes('--list-models')) {
@@ -130,7 +130,7 @@ if (process.argv.includes('--list-models')) {
   assert(found.models.some((model) => model.id === 'deepseek/deepseek-chat'));
   assert(!found.models.some((model) => model.provider === 'openai'));
   assert.equal(found.defaultModel, 'openai-codex/gpt-5.6-sol');
-  assert.equal(found.models[0].id, 'openai-codex/gpt-6-astra');
+  assert.equal(found.models[0].id, 'openai-codex/gpt-5.6-sol');
   assert.equal(found.models[0].providerDefault, true);
   assert.equal(found.models[0].reasoning.default, 'low');
   assert.equal(found.models[1].providerDefault, undefined);

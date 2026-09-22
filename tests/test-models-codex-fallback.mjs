@@ -58,7 +58,6 @@ try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
   const result = await getModelsForTool('codex');
   const hardcodedModelIds = [
-    'gpt-6-astra',
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-5.6-luna',
@@ -68,21 +67,23 @@ try {
 
   assert.equal(
     result.defaultModel,
-    'gpt-6-astra',
+    'gpt-5.6-sol',
     'stale configured/recent Codex models should not override the product default',
   );
   assert.deepEqual(
     result.models.slice(0, 4).map((model) => model.id),
-    ['gpt-6-astra', 'gpt-5.3-codex', 'gpt-5.4', 'gpt-5.2-codex'],
-    'Codex should put the product default first while retaining configured + recent session models',
+    ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5'],
+    'Codex should put the product default first while excluding stale configured and recent models',
   );
   assert.deepEqual(
     hardcodedModelIds.every((modelId) => result.models.some((model) => model.id === modelId)),
     true,
     'Codex should always expose the hardcoded baseline model catalog',
   );
-  assert.equal(result.models.find(model => model.id === 'gpt-6-astra').defaultEffort, 'low',
-    'provider cache defaults must not restore medium when switching to the product-default model');
+  assert.equal(result.models.some(model => model.id === 'gpt-6-astra'), false,
+    'retired Astra cache entries must not leak back into the picker');
+  assert.equal(result.models.find(model => model.id === 'gpt-5.6-sol').defaultEffort, 'low',
+    'the product-default model should keep the product effort default');
   assert.deepEqual(result.effortLevels, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
   assert.deepEqual(result.reasoning, {
     kind: 'enum',
@@ -93,7 +94,7 @@ try {
   writeFileSync(join(codexDir, 'config.toml'), 'model = "gpt-5.6-sol"\nmodel_reasoning_effort = "xhigh"\n');
   const fresh = await import(`${pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href}?product-default`);
   const configured = await fresh.getModelsForTool('codex');
-  assert.equal(configured.defaultModel, 'gpt-6-astra', 'a supported CLI model must not replace the RemoteLab product default');
+  assert.equal(configured.defaultModel, 'gpt-5.6-sol', 'a supported CLI model must not replace the RemoteLab product default');
   assert.equal(configured.reasoning.default, 'low', 'CLI effort must not replace the product default');
   assert.ok(configured.models.some(model => model.id === 'gpt-5.6-sol'), 'explicit older model selection remains available');
 } finally {

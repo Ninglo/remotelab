@@ -5,6 +5,7 @@ import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { discoverPiModels } from './pi-models.mjs';
 import { CODEX_MODEL_CATALOG } from '../lib/codex-model-catalog.mjs';
 import {
+  isStaleCodexModelId,
   PRODUCT_DEFAULT_CODEX_EFFORT,
   PRODUCT_DEFAULT_CODEX_MODEL,
 } from '../lib/legacy-micro-agent.mjs';
@@ -127,7 +128,7 @@ function buildCodexReasoning(levels = DEFAULT_CODEX_REASONING_LEVELS, defaultVal
 
 function buildCodexCacheModel(rawModel) {
   const id = trimString(rawModel?.slug);
-  if (!id) return null;
+  if (!id || isStaleCodexModelId(id)) return null;
   const reasoning = buildCodexReasoning(
     (rawModel?.supported_reasoning_levels || []).map((level) => level?.effort),
     id === PRODUCT_DEFAULT_CODEX_MODEL
@@ -161,7 +162,7 @@ function buildHardcodedCodexModel(modelSpec) {
 
 function buildDetectedCodexModel(modelId) {
   const id = trimString(modelId);
-  if (!id) return null;
+  if (!id || isStaleCodexModelId(id)) return null;
   return {
     id,
     label: id,

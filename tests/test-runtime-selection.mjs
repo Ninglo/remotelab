@@ -46,13 +46,13 @@ try {
     reasoningKind: 'enum',
   });
   assert.equal(second.selectedTool, 'codex');
-  assert.equal(second.selectedModel, 'gpt-6-astra');
+  assert.equal(second.selectedModel, 'gpt-5.6-sol');
   assert.equal(second.selectedEffort, 'high');
   assert.equal(second.reasoningKind, 'enum');
 
   const loadedSecond = await loadUiRuntimeSelection();
   assert.equal(loadedSecond?.selectedTool, 'codex');
-  assert.equal(loadedSecond?.selectedModel, 'gpt-6-astra');
+  assert.equal(loadedSecond?.selectedModel, 'gpt-5.6-sol');
   assert.equal(loadedSecond?.selectedEffort, 'high');
   assert.equal(loadedSecond?.reasoningKind, 'enum');
 
@@ -64,10 +64,19 @@ try {
   });
   assert.equal(
     staleCodex.selectedModel,
-    'gpt-6-astra',
+    'gpt-5.6-sol',
     'stale Codex UI runtime selections should upgrade to the product default model',
   );
   assert.equal(staleCodex.selectedEffort, 'xhigh');
+
+  const retiredAstra = await saveUiRuntimeSelection({
+    selectedTool: 'codex',
+    selectedModel: 'gpt-6-astra',
+    selectedEffort: 'ultra',
+    reasoningKind: 'enum',
+  });
+  assert.equal(retiredAstra.selectedModel, 'gpt-5.6-sol');
+  assert.equal(retiredAstra.selectedEffort, 'ultra', 'retiring Astra should preserve a Sol-compatible effort');
 
   const currentOlderCodex = await saveUiRuntimeSelection({
     selectedTool: 'codex',
@@ -90,7 +99,7 @@ try {
         reasoningKind: 'enum',
       },
     }).model,
-    'gpt-6-astra',
+    'gpt-5.6-sol',
     'external connectors should not inherit stale Codex UI models',
   );
 
