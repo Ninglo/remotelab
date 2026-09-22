@@ -68,8 +68,8 @@ RemoteLab setup is the primary configuration UX.
 
 ### Optional Jev auto model routing
 
-When a TypeSafe API key is configured, the CodeX model list includes `Auto
-(Jev)`. Selecting it for a new Standard Session asks Jev to choose Luna, Sol,
+When a TypeSafe API key is configured, the CodeX model list defaults to `Auto
+(Jev)` for new selections without a saved preference. Selecting it for a new Standard Session asks Jev to choose Luna, Sol,
 or Astra plus a reasoning level from the first user message. RemoteLab persists
 that concrete selection on the Session, so later turns keep the same native
 provider context. A user-selected concrete model always bypasses Jev.

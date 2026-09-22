@@ -377,9 +377,10 @@ async function getCodexModels() {
   const configuredModel = configuredSettings.model;
   const recentModels = await readCodexRecentModels(codexHomeDir);
   // Native CLI preferences enrich the catalog, but are not RemoteLab defaults.
-  const defaultModel = PRODUCT_DEFAULT_CODEX_MODEL;
+  const autoConfigured = await isJevAutoConfigured();
+  const defaultModel = autoConfigured ? JEV_AUTO_MODEL_ID : PRODUCT_DEFAULT_CODEX_MODEL;
   const modelMap = createBaseCodexModelMap();
-  if (await isJevAutoConfigured()) modelMap.set(JEV_AUTO_MODEL_ID, JEV_AUTO_CODEX_MODEL);
+  if (autoConfigured) modelMap.set(JEV_AUTO_MODEL_ID, JEV_AUTO_CODEX_MODEL);
 
   try {
     const raw = await readFile(join(codexHomeDir, 'models_cache.json'), 'utf-8');
@@ -404,6 +405,7 @@ async function getCodexModels() {
     [
       ...(modelMap.has(JEV_AUTO_MODEL_ID) ? [JEV_AUTO_MODEL_ID] : []),
       defaultModel,
+      PRODUCT_DEFAULT_CODEX_MODEL,
       configuredModel,
       ...recentModels,
       ...HARDCODED_CODEX_MODEL_IDS,
