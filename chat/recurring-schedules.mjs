@@ -1,4 +1,5 @@
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate } from '../lib/scheduled-session.mjs';
+import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { createHash, randomBytes } from 'crypto';
 import { spawn } from 'child_process';
 
@@ -343,10 +344,7 @@ function normalizeStoredSchedule(value) {
     misfirePolicy: 'latest_once',
     overlapPolicy: 'latest_once',
     maxOpenOccurrences: Math.max(1, Number.parseInt(raw.maxOpenOccurrences, 10) || DEFAULT_MAX_OPEN_OCCURRENCES),
-    tool: trimString(raw.tool),
-    model: trimString(raw.model),
-    effort: trimString(raw.effort),
-    thinking: raw.thinking === true,
+    ...scheduledRuntimeIntent(raw),
     nextRunAt: normalizeTimestamp(raw.nextRunAt),
     lastScheduledAt: normalizeTimestamp(raw.lastScheduledAt),
     missedCount: Math.max(0, Number.parseInt(raw.missedCount, 10) || 0),
@@ -456,6 +454,7 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     gate,
     alerts,
     tool: input.tool,
+    runtimePolicy: input.runtimePolicy,
     model: input.model,
     effort: input.effort,
     thinking: input.thinking,
@@ -551,6 +550,7 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     const next = normalizeStoredSchedule({
       ...current,
       ...patch,
+      ...patchScheduledRuntime(current, patch),
       sourceSessionId,
       sessionTemplate,
       text,
@@ -817,6 +817,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
             text: current.text,
             scheduledAt: occurrences.latestAt,
             tool: current.tool,
+            runtimePolicy: current.runtimePolicy,
             model: current.model,
             effort: current.effort,
             thinking: current.thinking,

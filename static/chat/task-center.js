@@ -35,6 +35,8 @@
   const sessionSelect = document.getElementById("taskCenterSession");
   const sessionLabel = document.getElementById("taskCenterSessionLabel");
   const sessionHelp = document.getElementById("taskCenterSessionHelp");
+  const runtimePolicySelect = document.getElementById("taskCenterRuntimePolicy");
+  const runtimeHelp = document.getElementById("taskCenterRuntimeHelp");
   const notificationSelect = document.getElementById("taskCenterNotification");
   const createCancel = document.getElementById("taskCenterCreateCancel");
   const createSubmit = document.getElementById("taskCenterCreateSubmit");
@@ -144,8 +146,17 @@
     if (sessionHelp) {
       sessionHelp.textContent = fixed
         ? translate("tasks.form.fixedHelp", "Each run is queued into this Session.")
-        : translate("tasks.form.newHelp", "Each run creates a new Session from this Session's folder and runtime.");
+        : translate("tasks.form.newHelp", "Each run creates a new Session in the template's folder; model policy is configured below.");
     }
+    syncRuntimeHelp();
+  }
+
+  function syncRuntimeHelp() {
+    if (!runtimeHelp) return;
+    const source = activeSessions().find(entry => entry.id === sessionSelect?.value);
+    runtimeHelp.textContent = runtimePolicySelect?.value === "fixed"
+      ? [source?.tool, source?.model, source?.effort].filter(Boolean).join(" · ")
+      : translate("tasks.runtime.help", "New Sessions use the latest Default. Reused Sessions keep their own runtime.");
   }
 
   function renderSessionOptions() {
@@ -176,6 +187,7 @@
         ? currentSessionId
         : candidates[0].id;
     sessionSelect.value = preferred;
+    syncRuntimeHelp();
   }
 
   function setFormVisible(visible) {
@@ -356,12 +368,19 @@
       task.nextRunAt ? formatDateTime(task.nextRunAt) : translate("tasks.time.none", "Not scheduled"),
     );
     addMetaRow(meta, translate("tasks.meta.execution", "Execution"), taskTargetText(task));
+    const runtime = task.runtime;
+    addMetaRow(meta, translate("tasks.runtime.label", "Model policy"),
+      runtime?.runtimePolicy === "follow_default"
+        ? translate("tasks.runtime.follow", "Follow Default") + " · " + translate("tasks.runtime.help", "New Sessions use the latest Default. Reused Sessions keep their own runtime.")
+        : translate("tasks.runtime.fixed", "Fixed") + " · " + [runtime?.tool, runtime?.model, runtime?.effort].filter(Boolean).join(" · "));
     addMetaRow(meta, translate("tasks.meta.delivery", "Delivery"), notificationText(task));
     if (task.kind === "recurring") {
       addMetaRow(meta, translate("tasks.meta.lifetime", "Lifetime"), lifetimeText(task));
       addMetaRow(meta, translate("tasks.meta.admission", "Admission"), gateText(task));
     }
     const execution = task.lastExecution;
+    if (execution?.runtime) addMetaRow(meta, translate("tasks.runtime.last", "Last run configuration"),
+      [execution.runtime.tool, execution.runtime.model, execution.runtime.effort].filter(Boolean).join(" · "));
     addMetaRow(
       meta,
       translate("tasks.meta.lastRun", "Last run"),
@@ -378,6 +397,13 @@
 
     if (Array.isArray(task.actions) && task.actions.length > 0) {
       const actions = createNode("div", "task-card-actions");
+      if (runtime?.runtimePolicy === "fixed") {
+        const follow = createNode("button", "task-center-action", translate("tasks.runtime.useDefault", "Follow Default from now on"));
+        follow.type = "button";
+        follow.disabled = Boolean(actionTaskId);
+        follow.addEventListener("click", () => void useDefaultRuntime(task));
+        actions.appendChild(follow);
+      }
       for (const action of task.actions) {
         const button = createNode("button", `task-center-action${action === "cancel" ? " danger" : ""}`, actionLabel(action));
         button.type = "button";
@@ -464,6 +490,11 @@
     }
     const body = {
       kind,
+      runtimePolicy: runtimePolicySelect?.value === "fixed" ? "fixed" : "follow_default",
+      ...(runtimePolicySelect?.value === "fixed" ? (() => {
+        const source = activeSessions().find(entry => entry.id === sessionSelect.value);
+        return { tool: source?.tool, model: source?.model, effort: source?.effort, thinking: source?.thinking === true };
+      })() : {}),
       title: titleInput?.value?.trim() || "",
       prompt: promptInput?.value?.trim() || "",
       target: {
@@ -523,6 +554,24 @@
       renderTasks();
     }
   }
+
+  async function useDefaultRuntime(task) {
+    if (actionTaskId) return;
+    actionTaskId = task.id;
+    renderTasks();
+    try {
+      const payload = await fetchJsonOrRedirect(`/api/automation-tasks/${encodeURIComponent(task.id)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runtimePolicy: "follow_default" }), revalidate: false,
+      });
+      tasks = tasks.map(entry => entry.id === task.id ? payload.task : entry);
+    } catch (error) {
+      if (typeof showSystemToast === "function") showSystemToast(error.message, "error");
+    } finally { actionTaskId = ""; renderTasks(); }
+  }
+
+  runtimePolicySelect?.addEventListener("change", syncRuntimeHelp);
+  sessionSelect?.addEventListener("change", syncRuntimeHelp);
 
   createToggle?.addEventListener("click", () => setFormVisible(Boolean(form?.hidden)));
   createCancel?.addEventListener("click", () => setFormVisible(false));

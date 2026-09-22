@@ -525,10 +525,11 @@ async function main() {
         model: defaultProfileSchedule.json.schedule.model,
         effort: defaultProfileSchedule.json.schedule.effort,
       },
-      { tool: 'fake-codex', model: 'fake-model', effort: 'low' },
-      'a schedule without overrides should snapshot the complete Default profile, not mix it with the source Session Harness',
+      { tool: '', model: '', effort: '' },
+      'a schedule without overrides should resolve the latest Default at execution, not snapshot it',
     );
-    assert.equal(defaultProfileSchedule.json.schedule.sessionTemplate.tool, 'fake-codex');
+    assert.equal(defaultProfileSchedule.json.schedule.runtimePolicy, 'follow_default');
+    assert.equal(defaultProfileSchedule.json.schedule.sessionTemplate.tool, 'source-harness');
 
     const switchedHarnessSchedule = await request(port, 'POST', '/api/schedules', {
       sessionId: sourceSession.id,

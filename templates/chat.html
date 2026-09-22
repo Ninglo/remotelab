@@ -186,6 +186,14 @@
             <small id="taskCenterSessionHelp" data-i18n="tasks.form.fixedHelp">Each run is queued into this Session.</small>
           </label>
           <label class="task-center-field">
+            <span data-i18n="tasks.runtime.label">Model policy</span>
+            <select id="taskCenterRuntimePolicy">
+              <option value="follow_default" data-i18n="tasks.runtime.follow">Follow Default</option>
+              <option value="fixed" data-i18n="tasks.runtime.fixedSource">Pin template Session's runtime</option>
+            </select>
+            <small id="taskCenterRuntimeHelp"></small>
+          </label>
+          <label class="task-center-field">
             <span data-i18n="tasks.form.notification">Result delivery</span>
             <select id="taskCenterNotification">
               <option value="remotelab" data-i18n="tasks.notification.remotelab">RemoteLab only</option>

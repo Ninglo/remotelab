@@ -1,4 +1,8 @@
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
+import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
+import { loadUiRuntimeSelection } from '../lib/runtime-selection.mjs';
+import { completeRuntimeProfile, normalizeRuntimeProfile, resolveRuntimeProfile, runtimeProfileFromUiSelection } from '../lib/runtime-profile.mjs';
+import { getModelsForTool } from './models.mjs';
 import { randomBytes } from 'crypto';
 
 import { CHAT_TRIGGERS_FILE } from '../lib/config.mjs';
@@ -6,7 +10,7 @@ import { appendEvent } from './history.mjs';
 import { statusEvent } from './normalizer.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
 import { createSession, getSession, submitHttpMessage } from './session-manager.mjs';
-import { updateSessionConversation } from './session-conversations.mjs';
+import { findSessionConversation, updateSessionConversation } from './session-conversations.mjs';
 import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { requests } from './requests.mjs';
 import { getRun, isTerminalRunState, requestRunCancel } from './runs.mjs';
@@ -156,10 +160,8 @@ function normalizeStoredTrigger(value) {
     sessionTemplate,
     scheduledAt,
     text,
-    tool: trimString(raw.tool),
-    model: trimString(raw.model),
-    effort: trimString(raw.effort),
-    thinking: normalizeBoolean(raw.thinking, false),
+    ...scheduledRuntimeIntent(raw),
+    ...(raw.executionRuntime ? { executionRuntime: { ...normalizeRuntimeProfile(raw.executionRuntime), thinking: raw.executionRuntime.thinking === true } } : {}),
     alerts: normalizeTaskAlerts(raw.alerts),
     requestId,
     createdAt,
@@ -353,10 +355,7 @@ export async function createTrigger(input = {}) {
     sessionTemplate,
     scheduledAt,
     text,
-    tool: trimString(input.tool),
-    model: trimString(input.model),
-    effort: trimString(input.effort),
-    thinking: input.thinking === true,
+    ...scheduledRuntimeIntent(input),
     alerts: normalizeTaskAlerts(input.alerts),
     requestId: buildTriggerRequestId(id),
     createdAt,
@@ -490,6 +489,7 @@ export async function updateTrigger(triggerId, patch = {}) {
 
     const affectsDelivery = [
       'scheduledAt',
+      'runtimePolicy',
       'text',
       'tool',
       'model',
@@ -505,6 +505,12 @@ export async function updateTrigger(triggerId, patch = {}) {
 
     const next = { ...current };
     let changed = false;
+    const runtimePatch = patchScheduledRuntime(current, patch);
+    if (Object.keys(runtimePatch).length) {
+      Object.assign(next, runtimePatch);
+      delete next.executionRuntime;
+      changed = true;
+    }
 
     if (Object.prototype.hasOwnProperty.call(patch, 'title')) {
       const title = trimString(patch.title);
@@ -529,25 +535,6 @@ export async function updateTrigger(triggerId, patch = {}) {
       }
       if (text !== current.text) {
         next.text = text;
-        changed = true;
-      }
-    }
-
-    for (const field of ['tool', 'model', 'effort']) {
-      if (!Object.prototype.hasOwnProperty.call(patch, field)) continue;
-      const value = trimString(patch[field]);
-      if (value !== current[field]) {
-        next[field] = value;
-        changed = true;
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(patch, 'thinking')) {
-      if (typeof patch.thinking !== 'boolean') {
-        throw new Error('thinking must be a boolean');
-      }
-      if (patch.thinking !== current.thinking) {
-        next.thinking = patch.thinking;
         changed = true;
       }
     }
@@ -746,10 +733,10 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
       queued: !accepted.result && !await getRun(accepted.runId),
     } : await submitHttpMessage(session.id, current.text, [], {
       requestId: current.requestId,
-      tool: current.tool || undefined,
-      model: current.model || undefined,
-      effort: current.effort || undefined,
-      thinking: current.thinking === true,
+      tool: current.executionRuntime?.tool || current.tool || undefined,
+      model: current.executionRuntime?.model || current.model || undefined,
+      effort: current.executionRuntime?.effort || current.effort || undefined,
+      thinking: (current.executionRuntime || current).thinking === true,
       internalOperation: 'trigger_delivery',
       queueIfBusy: true,
       skipDispatch: true,
@@ -783,6 +770,31 @@ async function admitAndMarkTriggerDelivered(trigger, session) {
   });
 }
 
+// Resolve once, before creating a Session or admitting work. Persisting the
+// resolved profile makes retries/restarts independent of later Default edits.
+async function resolveExecutionRuntime(trigger, session = null) {
+  if (trigger.executionRuntime) return trigger;
+  let profile;
+  let thinking = trigger.thinking === true;
+  if (trigger.runtimePolicy === 'follow_default') {
+    const selected = session || runtimeProfileFromUiSelection(await loadUiRuntimeSelection());
+    profile = resolveRuntimeProfile(selected, {}, trigger.sessionTemplate?.tool);
+    thinking = session?.thinking === true;
+  } else {
+    profile = resolveRuntimeProfile(session || { tool: trigger.sessionTemplate?.tool }, trigger);
+  }
+  const executionRuntime = { ...completeRuntimeProfile(profile, await getModelsForTool(profile.tool)), thinking };
+  let updated;
+  await withTriggerMutation(async (triggers, save) => {
+    const current = triggers.find(entry => entry.id === trigger.id);
+    if (!current) throw new Error('Trigger disappeared while resolving runtime');
+    current.executionRuntime ||= executionRuntime;
+    await save(triggers);
+    updated = cloneTrigger(current);
+  });
+  return updated;
+}
+
 export async function ensureExecutionSession(trigger) {
   const template = normalizeSessionTemplate(trigger.sessionTemplate, trigger.tool);
   if (!template) throw new Error('Execution session template is missing');
@@ -794,6 +806,10 @@ export async function ensureExecutionSession(trigger) {
         && !await requests.byRequest(existingSessionId, trigger.requestId)) {
       await updateSessionConversation(existingSessionId, template.conversation);
     }
+    // An already admitted request owns its immutable runtime options.
+    if (!await requests.byRequest(existingSessionId, trigger.requestId)) {
+      trigger = await resolveExecutionRuntime(trigger, existing);
+    }
     return { trigger, session: existing };
   }
   if (template.reuse === 'fixed_session') {
@@ -803,6 +819,7 @@ export async function ensureExecutionSession(trigger) {
       error.code = 'SESSION_ARCHIVED';
       throw error;
     }
+    trigger = await resolveExecutionRuntime(trigger, session);
     let attached = null;
     await withTriggerMutation(async (triggers, saveTriggers) => {
       const index = triggers.findIndex((entry) => entry.id === trigger.id);
@@ -828,18 +845,25 @@ export async function ensureExecutionSession(trigger) {
     }
   }
   const scheduledLabel = trimString(trigger.scheduledAt).replace('T', ' ').replace('.000Z', 'Z');
+  // A conversation can also reuse a Session without a fixed/day template
+  // (for example CLI --conversation source). Preserve that Session's runtime.
+  if (!previousSession && template.conversation) {
+    const bound = await findSessionConversation(template.conversation);
+    if (bound) previousSession = await getExecutionSession(bound.id);
+  }
+  trigger = await resolveExecutionRuntime(trigger, previousSession);
   const session = previousSession || await createSession(
     template.folder,
-    trigger.tool || template.tool,
+    trigger.executionRuntime.tool,
     [template.name || trigger.title || 'Scheduled task', scheduledLabel].filter(Boolean).join(' · '),
     {
       group: template.group || 'Scheduled executions',
       description: template.description || `Execution for ${trigger.title || trigger.id}`,
       systemPrompt: template.systemPrompt,
       internalRole: template.internalRole,
-      model: trigger.model || undefined,
-      effort: trigger.effort || undefined,
-      thinking: trigger.thinking === true,
+      model: trigger.executionRuntime.model || undefined,
+      effort: trigger.executionRuntime.effort || undefined,
+      thinking: trigger.executionRuntime.thinking,
       externalTriggerId: identity,
       conversation: template.conversation,
     },

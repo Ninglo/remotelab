@@ -210,6 +210,16 @@ async function main() {
     });
     assert.equal(controllable.status, 201, controllable.text);
     const oneTimeId = controllable.json.task.id;
+    assert.equal(controllable.json.task.runtime.runtimePolicy, 'follow_default');
+    const pinnedRuntime = await request(port, 'PATCH', `/api/automation-tasks/${oneTimeId}`, { runtimePolicy: 'fixed' });
+    assert.equal(pinnedRuntime.status, 200, pinnedRuntime.text);
+    assert.equal(pinnedRuntime.json.task.runtime.runtimePolicy, 'fixed');
+    assert.ok(pinnedRuntime.json.task.runtime.model);
+    const followRuntime = await request(port, 'PATCH', `/api/automation-tasks/${oneTimeId}`, { runtimePolicy: 'follow_default' });
+    assert.equal(followRuntime.status, 200, followRuntime.text);
+    assert.equal(followRuntime.json.task.runtime.model, '');
+    const invalidRuntime = await request(port, 'PATCH', `/api/automation-tasks/${oneTimeId}`, { runtimePolicy: 'bad' });
+    assert.equal(invalidRuntime.status, 400);
     assert.deepEqual(controllable.json.task.actions, ['pause', 'cancel']);
 
     const paused = await request(port, 'POST', `/api/automation-tasks/${oneTimeId}/pause`);

@@ -12,6 +12,7 @@ import {
   updateRecurringSchedule,
 } from './recurring-schedules.mjs';
 import { getRun } from './runs.mjs';
+import { scheduledRuntimeIntent } from '../lib/scheduled-runtime-policy.mjs';
 
 const RECENT_EXECUTION_LIMIT = 5;
 
@@ -105,6 +106,7 @@ async function projectExecution(trigger) {
     completedAt: run?.completedAt || '',
     runId,
     sessionId: trimString(trigger.executionSessionId),
+    runtime: trigger.executionRuntime || null,
     error: trimString(run?.failureReason) || trimString(run?.error?.message)
       || trimString(run?.error) || trimString(trigger.lastError),
   };
@@ -146,6 +148,7 @@ async function projectOneTimeTask(trigger) {
     lifetime: { mode: 'bounded', maxExecutions: 1 },
     gate: { mode: 'direct' },
     target: projectTarget(trigger),
+    runtime: scheduledRuntimeIntent(trigger),
     resultDelivery,
     notification: resultDelivery,
     alerts: projectAlerts(trigger),
@@ -196,6 +199,7 @@ async function projectRecurringTask(schedule, occurrences) {
       ...(maxExecutions ? { remainingExecutions: Math.max(0, maxExecutions - admittedExecutions) } : {}),
     },
     target: projectTarget(schedule),
+    runtime: scheduledRuntimeIntent(schedule),
     resultDelivery,
     notification: resultDelivery,
     alerts: projectAlerts(schedule),

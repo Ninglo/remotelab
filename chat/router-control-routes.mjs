@@ -1,4 +1,5 @@
 import { buildScheduledSessionTemplate } from '../lib/scheduled-session.mjs';
+import { scheduledRuntimePolicy, scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
 import { findSessionConversation, requireConversation, updateSessionConversation } from './session-conversations.mjs';
 import { readFile, readdir } from 'fs/promises';
 import { basename, dirname, join, resolve } from 'path';
@@ -151,6 +152,8 @@ function trimString(value) {
 }
 
 async function applyScheduledRuntimeProfile(payload, sourceSession, uiSelection) {
+  const runtimePolicy = scheduledRuntimePolicy(payload);
+  if (runtimePolicy === 'follow_default') return { ...payload, ...scheduledRuntimeIntent(payload) };
   const defaultProfile = runtimeProfileFromUiSelection(uiSelection);
   const inheritedProfile = defaultProfile.tool
     ? defaultProfile
@@ -161,7 +164,7 @@ async function applyScheduledRuntimeProfile(payload, sourceSession, uiSelection)
     selectedProfile,
     await getModelsForTool(selectedProfile.tool),
   );
-  return { ...payload, ...profile };
+  return { ...payload, ...profile, runtimePolicy };
 }
 
 async function prepareScheduledTask(payload) {
@@ -181,6 +184,14 @@ async function prepareScheduledTask(payload) {
     input = { ...input, conversation };
   }
   return { ...input, sourceSessionId, sessionTemplate: buildScheduledSessionTemplate(input, sourceSession) };
+}
+
+async function prepareScheduledRuntimePatch(current, payload) {
+  const patch = patchScheduledRuntime(current, payload);
+  if (!Object.keys(patch).length) return payload;
+  const source = await getSession(current.sourceSessionId);
+  const resolved = await applyScheduledRuntimeProfile(patch, source, await loadUiRuntimeSelection());
+  return { ...payload, ...resolved };
 }
 
 async function prepareAutomationTask(payload = {}) {
@@ -474,6 +485,23 @@ export async function handleControlRoutes({
     else writeJson(res, 200, { task });
     return true;
   }
+  if (automationTaskMatch && req.method === 'PATCH' && !automationTaskMatch[2]) {
+    try {
+      const payload = JSON.parse(await readBody(req, 32768));
+      const id = automationTaskMatch[1];
+      const recurring = id.startsWith('sch_');
+      const current = await (recurring ? getRecurringSchedule(id) : getTrigger(id));
+      if (!current) { writeJson(res, 404, { error: 'Automation task not found' }); return true; }
+      if (Object.keys(payload).some(key => !['runtimePolicy', 'tool', 'model', 'effort', 'thinking'].includes(key))) {
+        throw new Error('Only runtime settings can be edited here');
+      }
+      const patch = await prepareScheduledRuntimePatch(current, payload);
+      await (recurring ? updateRecurringSchedule(id, patch) : updateTrigger(id, patch));
+      writeJson(res, 200, { task: await getAutomationTask(id) });
+      broadcastAll({ type: 'automation_tasks_updated', taskId: id });
+    } catch (error) { writeJson(res, 400, { error: error.message }); }
+    return true;
+  }
   if (automationTaskMatch && req.method === 'POST' && automationTaskMatch[2]) {
     try {
       const result = await applyAutomationTaskAction(automationTaskMatch[1], automationTaskMatch[2]);
@@ -565,7 +593,8 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'enabled must be a boolean' });
         return true;
       }
-      const trigger = await updateTrigger(triggerId, payload || {});
+      const current = await getTrigger(triggerId);
+      const trigger = current ? await updateTrigger(triggerId, await prepareScheduledRuntimePatch(current, payload || {})) : null;
       if (!trigger) {
         writeJson(res, 404, { error: 'Trigger not found' });
         return true;
@@ -634,7 +663,8 @@ export async function handleControlRoutes({
       if (Object.prototype.hasOwnProperty.call(payload, 'sessionId')) {
         throw new Error('The source session is immutable; create a new schedule instead');
       }
-      const schedule = await updateRecurringSchedule(scheduleId, payload);
+      const current = await getRecurringSchedule(scheduleId);
+      const schedule = current ? await updateRecurringSchedule(scheduleId, await prepareScheduledRuntimePatch(current, payload)) : null;
       if (!schedule) {
         writeJson(res, 404, { error: 'Schedule not found' });
         return true;
