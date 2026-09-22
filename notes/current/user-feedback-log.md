@@ -606,6 +606,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: composer attachment upload reliability and local file-asset defaults
 - Follow-up: consider visible upload progress and clearer failure copy for slow or interrupted mobile uploads
 
+### 2026-09-22 — settings and global actions should use a flatter, reachability-first layout
+
+- Source: direct owner review of the current RemoteLab Web UI
+- User slice: owner moving between Sessions, Tasks, and instance settings from phone and desktop
+- Observed friction or ask: Settings had become a long undifferentiated page, repeated containers made the interface feel heavy, the full-width header used space inefficiently, and New Session / Tasks still took too much effort to reach on mobile
+- Signal strength: direct review of the shipped interaction model followed by an explicit request to implement and iterate on a flatter version
+- Product implication: keep high-frequency actions one tap away, group Settings behind a stable five-part page directory, use spacing and typography before borders, and reserve framed cards for objects or states that genuinely need a boundary
+- Promote to: application shell, Settings information architecture, responsive navigation, and shared visual tokens
+- Follow-up: review the first implementation on real desktop and mobile surfaces, then tune density and grouping from concrete screenshots rather than adding more decorative material effects
+
 ### YYYY-MM-DD — short title
 
 - Source:

@@ -14,6 +14,7 @@ const compose = read("static", "chat", "compose.js");
 const sidebarUi = read("static", "chat", "sidebar-ui.js");
 const bootstrap = read("static", "chat", "bootstrap.js");
 const tooling = read("static", "chat", "tooling.js");
+const settingsUi = read("static", "chat", "settings-ui.js");
 
 assert.match(template, /<body[^>]*data-app-view="sessions"/, "the application shell should start in the Sessions workspace");
 assert.doesNotMatch(template, /class="app-rail"|class="navigation-drawer"/, "the application must not add a second navigation column");
@@ -21,6 +22,7 @@ assert.doesNotMatch(template, /id="(?:tabAgents|agentsPanel|tabSessions)"/, "the
 assert.doesNotMatch(template, /class="sidebar-header"/, "the sidebar should not repeat the product name");
 assert.doesNotMatch(template, /id="sessionListFooter"|data-i18n-build-label/, "build metadata should not occupy sidebar space");
 assert.doesNotMatch(template, /id="inlineAgentSelect"/, "the composer should not expose an Agent picker");
+assert.match(template, /class="header-quick-actions"[\s\S]*id="headerNewSessionBtn"[\s\S]*id="headerTasksBtn"/, "mobile chrome should keep New Session and Tasks one tap away");
 
 const sidebarStart = template.indexOf('<aside class="sidebar" id="sidebar">');
 const sidebarEnd = template.indexOf("</aside>", sidebarStart);
@@ -55,5 +57,14 @@ assert.match(sidebarUi, /function openApplicationNavigation\(\)[\s\S]*?openSideb
 assert.doesNotMatch(compose, /location\.(?:assign|replace|href)\s*=/, "workspace switches should not perform page navigation");
 assert.doesNotMatch(tooling, /\/api\/agents|inlineAgentSelect/, "owner tooling should not load or render Agent choices");
 assert.doesNotMatch(bootstrap, /function (?:set|get)PreferredAgentTemplate/, "the owner shell should not keep Agent preference state");
+
+for (const sectionId of ["settings-general", "settings-sessions", "settings-people", "settings-connections", "settings-device"]) {
+  assert.match(template, new RegExp(`data-settings-target="${sectionId}"`), `${sectionId} should be linked from the Settings directory`);
+  assert.match(template, new RegExp(`id="${sectionId}"[^>]*data-settings-section`), `${sectionId} should identify a Settings content group`);
+}
+assert.match(sidebarCss, /\.settings-layout\s*\{[\s\S]*grid-template-columns:\s*176px minmax\(0, 820px\)/, "desktop Settings should use a stable directory and content layout");
+assert.match(responsiveCss, /@media \(max-width:\s*767px\)[\s\S]*\.settings-toc\s*\{[\s\S]*overflow-x:\s*auto/, "mobile Settings should turn the directory into a horizontal sticky list");
+assert.match(settingsUi, /target\.scrollIntoView\(\{ behavior:/, "Settings directory links should jump within the page");
+assert.match(settingsUi, /settingsPanel\.addEventListener\("scroll"/, "Settings directory should track the visible section");
 
 console.log("Classic sidebar and single-page workspace contract tests passed.");

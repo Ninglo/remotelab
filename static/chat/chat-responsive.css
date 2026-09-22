@@ -60,8 +60,69 @@
     padding-right: 10px;
   }
 
+  .header-quick-actions {
+    display: flex;
+  }
+
+  .header-status {
+    max-width: none;
+  }
+
+  #statusText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   .settings-panel {
-    padding: 22px 16px calc(30px + var(--safe-bottom));
+    padding: 22px 16px calc(36px + var(--safe-bottom));
+  }
+
+  .settings-page-header {
+    margin-bottom: 20px;
+  }
+
+  .settings-layout {
+    display: block;
+  }
+
+  .settings-toc {
+    top: 0;
+    z-index: 4;
+    display: flex;
+    gap: 4px;
+    margin: 0 -16px 28px;
+    padding: 8px 16px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    scrollbar-width: none;
+  }
+
+  .settings-toc::-webkit-scrollbar { display: none; }
+
+  .settings-toc-link {
+    min-height: 34px;
+    flex: 0 0 auto;
+    padding: 7px 10px;
+    border-radius: 7px;
+  }
+
+  .settings-group {
+    scroll-margin-top: 62px;
+    margin-bottom: 44px;
+  }
+
+  .settings-section--inline {
+    display: block;
+  }
+
+  .settings-section--inline .settings-inline-form {
+    margin-top: 10px;
   }
 
   .settings-current-person {
@@ -91,17 +152,6 @@
     padding: 0 14px;
   }
 
-  .header-status {
-    max-width: 86px;
-  }
-
-  #statusText {
-    max-width: 72px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
   body.keyboard-open .messages {
     padding-top: 12px;
     padding-bottom: 12px;
@@ -127,6 +177,28 @@
   body.keyboard-open .input-actions-row {
     padding-top: 6px;
     padding-bottom: 8px;
+  }
+}
+
+@media (max-width: 520px) {
+  .header-quick-action:not(.header-quick-action--primary) {
+    width: 34px;
+    padding: 0;
+  }
+
+  .header-quick-action:not(.header-quick-action--primary) .header-quick-action-label {
+    display: none;
+  }
+}
+
+@media (max-width: 390px) {
+  .header-quick-action--primary {
+    width: 34px;
+    padding: 0;
+  }
+
+  .header-quick-action--primary .header-quick-action-label {
+    display: none;
   }
 }
 

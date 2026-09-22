@@ -229,8 +229,8 @@ body {
   padding: 0 16px;
   padding-top: var(--safe-top);
   background: var(--bg);
-  border-bottom: 1px solid var(--border);
-  height: calc(52px + var(--safe-top));
+  border-bottom: 0;
+  height: calc(48px + var(--safe-top));
   flex-shrink: 0;
   min-width: 0;
   overflow: hidden;
@@ -309,6 +309,53 @@ body {
   width: 18px;
   height: 18px;
 }
+.header-quick-actions {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.header-quick-action {
+  min-width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 580;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, transform 100ms ease;
+}
+.header-quick-action:hover,
+.header-quick-action.active {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+.header-quick-action--primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+.header-quick-action--primary:hover {
+  background: var(--text-secondary);
+  color: var(--bg);
+}
+.header-quick-action:active { transform: scale(0.97); }
+.header-quick-action:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+.header-quick-action .rl-icon {
+  width: 15px;
+  height: 15px;
+}
 .header-share-btn {
   display: inline-flex;
   align-items: center;
@@ -338,6 +385,9 @@ body {
 }
 body:not([data-app-view="sessions"]) .header-status,
 body:not([data-app-view="sessions"]) #shareSnapshotBtn {
+  display: none !important;
+}
+body.share-snapshot-mode .header-quick-actions {
   display: none !important;
 }
 .header-refresh-btn {

@@ -175,19 +175,98 @@ body:not([data-app-view="sessions"]) .session-item.active {
   min-width: 0;
   min-height: 0;
   display: none;
-  padding: clamp(22px, 4vw, 48px) clamp(18px, 5vw, 64px) 48px;
+  padding: clamp(24px, 4vw, 44px) clamp(20px, 4vw, 56px) 56px;
   overflow-y: auto;
+  scroll-behavior: smooth;
   background: var(--bg);
 }
 .settings-panel.visible { display: block; }
-.workspace-page-header,
-.settings-panel > .settings-section {
+.workspace-page-header {
   width: min(100%, 880px);
   margin-left: auto;
   margin-right: auto;
 }
 .workspace-page-header {
+  margin-bottom: 24px;
+}
+.settings-page-header,
+.settings-layout {
+  width: min(100%, 1120px);
+  margin-left: auto;
+  margin-right: auto;
+}
+.settings-page-header {
   margin-bottom: 30px;
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 820px);
+  align-items: start;
+  justify-content: space-between;
+  gap: clamp(36px, 5vw, 72px);
+}
+.settings-toc {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 2px;
+  padding: 2px 0;
+}
+.settings-toc-link {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.settings-toc-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.settings-toc-link.active {
+  background: var(--bg-tertiary);
+  color: var(--text);
+  font-weight: 640;
+}
+.settings-toc-link:focus-visible {
+  outline: 2px solid var(--focus-border);
+  outline-offset: 2px;
+}
+.settings-content {
+  min-width: 0;
+}
+.settings-group {
+  scroll-margin-top: 24px;
+  margin-bottom: 52px;
+}
+.settings-group:last-child {
+  margin-bottom: 0;
+}
+.settings-group-header {
+  margin-bottom: 16px;
+}
+.settings-group-header h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 660;
+  letter-spacing: -0.018em;
+}
+.settings-group-header p {
+  max-width: 620px;
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-group-body {
+  border-top: 1px solid var(--border);
 }
 .workspace-page-kicker {
   margin-bottom: 7px;
@@ -212,15 +291,18 @@ body:not([data-app-view="sessions"]) .session-item.active {
   line-height: 1.55;
 }
 .settings-section {
-  border-top: 1px solid var(--border);
-  padding: 22px 0;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
 }
-.settings-section:first-child {
-  border-top: 0;
+.settings-section--inline {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, 340px);
+  align-items: center;
+  gap: 28px;
 }
-.workspace-page-header + .settings-section {
-  border-top: 0;
-  padding-top: 0;
+.settings-section--inline .settings-inline-form {
+  width: 100%;
+  margin-top: 0;
 }
 .settings-section-title {
   font-size: 13px;
@@ -237,6 +319,9 @@ body:not([data-app-view="sessions"]) .session-item.active {
   display: grid;
   gap: 10px;
   margin-top: 8px;
+}
+.settings-inline-form--narrow {
+  max-width: 560px;
 }
 .settings-inline-input,
 .settings-inline-select,
@@ -433,8 +518,8 @@ body:not([data-app-view="sessions"]) .session-item.active {
   gap: 24px;
   margin-top: 14px;
   padding: 15px 16px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 10px;
   background: var(--bg-secondary);
 }
 .settings-current-person-profile {
@@ -495,8 +580,8 @@ body:not([data-app-view="sessions"]) .session-item.active {
   gap: 12px;
   margin-top: 14px;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 10px;
   background: var(--bg-secondary);
 }
 .settings-person-create[hidden] { display: none; }

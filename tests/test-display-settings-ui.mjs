@@ -8,6 +8,7 @@ const i18n = await readFile(new URL('../static/chat/i18n.js', import.meta.url), 
 const css = await readFile(new URL('../static/chat/chat-sidebar.css', import.meta.url), 'utf8');
 
 assert.match(settings, /id = "settingsDisplaySection"/);
+assert.match(settings, /#settings-device \.settings-group-body/, 'the side display belongs to the device settings group');
 assert.match(settings, /fetchJsonOrRedirect\("\/api\/display\/devices"/);
 assert.match(settings, /fetchJsonOrRedirect\("\/api\/display\/enrollments"/);
 assert.match(settings, /textContent = device\.name/);

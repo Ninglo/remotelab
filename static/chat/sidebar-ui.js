@@ -227,12 +227,15 @@ if (sortSessionListBtn) {
   });
 }
 
-newSessionBtn.addEventListener("click", async () => {
+async function handleNewSessionShortcutClick() {
   const created = await createNewSessionShortcut();
   if (created && typeof beginQuickEntryFocusRecovery === "function") {
     beginQuickEntryFocusRecovery();
   }
-});
+}
+
+newSessionBtn.addEventListener("click", handleNewSessionShortcutClick);
+headerNewSessionBtn?.addEventListener("click", handleNewSessionShortcutClick);
 
 standardProfileBtn?.addEventListener("click", () => setDraftExecutionProfile("standard"));
 quickProfileBtn?.addEventListener("click", () => setDraftExecutionProfile("quick"));

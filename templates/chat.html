@@ -30,6 +30,16 @@
     <span class="header-btn-label sr-only" data-i18n="nav.open">Open navigation</span>
   </button>
   <h1 id="headerTitle"><span class="header-product-name">RemoteLab</span></h1>
+  <nav class="header-quick-actions" aria-label="Quick actions" data-i18n-aria-label="nav.quickActions">
+    <button class="header-quick-action header-quick-action--primary" id="headerNewSessionBtn" type="button" title="New session" aria-label="New session" data-i18n-title="sidebar.newSession" data-i18n-aria-label="sidebar.newSession">
+      <span data-icon="plus" aria-hidden="true"></span>
+      <span class="header-quick-action-label" data-i18n="sidebar.newSession">New session</span>
+    </button>
+    <button class="header-quick-action" id="headerTasksBtn" type="button" title="Tasks" aria-label="Tasks" data-i18n-title="nav.tasks" data-i18n-aria-label="nav.tasks">
+      <span data-icon="tasks" aria-hidden="true"></span>
+      <span class="header-quick-action-label" data-i18n="nav.tasks">Tasks</span>
+    </button>
+  </nav>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
   <div class="header-status" role="status" aria-live="polite">
     <span class="status-dot" id="statusDot"></span>
@@ -221,121 +231,179 @@
         </div>
       </div>
       <div class="settings-panel" id="settingsPanel">
-        <header class="workspace-page-header">
+        <header class="workspace-page-header settings-page-header">
           <h2 data-i18n="nav.settings">Settings</h2>
           <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
         </header>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
-          <div class="settings-inline-form">
-            <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ariaLabel"></select>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.people.myViewTitle">My view</div>
-          <div class="settings-section-note" data-i18n="settings.people.myViewNote">Choose how the shared Session list opens for you. Your Spaces, groups, and sorting remain personal.</div>
-          <div class="settings-current-person" id="settingsCurrentPersonView">
-            <div class="settings-current-person-profile" id="settingsCurrentPersonSummary"></div>
-            <label class="settings-person-field settings-current-person-filter">
-              <span data-i18n="settings.people.defaultFilterLabel">Default Session filter</span>
-              <select class="settings-inline-select" id="settingsDefaultPersonFilter" aria-label="Default Session filter" data-i18n-aria-label="settings.people.defaultFilterLabel">
-                <option value="all" data-i18n="settings.people.allSessions">All sessions</option>
-                <option value="mine" data-i18n="settings.people.mySessions">My sessions</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div class="settings-section settings-people-section">
-          <div class="settings-section-heading">
-            <div>
-              <div class="settings-section-title" data-i18n="settings.people.title">People</div>
-              <div class="settings-section-note" data-i18n="settings.people.note">Readable handles identify people across Web sign-in and connected apps. They organize the interface, not access permissions.</div>
-            </div>
-            <button class="settings-app-btn settings-person-add-toggle" id="settingsPersonCreateToggle" type="button" aria-expanded="false" data-i18n="settings.people.add">Add person</button>
-          </div>
-          <div class="settings-person-create" id="settingsPersonCreatePanel" hidden>
-            <div class="settings-person-profile-grid">
-              <label class="settings-person-field">
-                <span data-i18n="settings.people.nameLabel">Name</span>
-                <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
-              </label>
-              <label class="settings-person-field">
-                <span data-i18n="settings.people.handleLabel">Username</span>
-                <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Generated automatically when left blank" data-i18n-placeholder="settings.people.handlePlaceholder">
-              </label>
-            </div>
-            <div class="settings-person-create-note" data-i18n="settings.people.createNote">Sign-in methods and connected apps can be managed after the person is created.</div>
-            <div class="settings-person-form-actions">
-              <button class="settings-app-btn" id="settingsPersonCreateCancel" type="button" data-i18n="action.cancel">Cancel</button>
-              <button class="settings-app-btn settings-person-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.create">Create person</button>
-            </div>
-          </div>
-          <div class="settings-app-empty inline-status settings-people-status" id="settingsPeopleStatus" role="status" aria-live="polite" hidden></div>
-          <div class="settings-people-list" id="settingsPeopleList"></div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.theme.title">Theme</div>
-          <div class="settings-inline-form">
-            <select class="settings-inline-select" id="uiThemeSelect" aria-label="Choose chat theme" data-i18n-aria-label="settings.theme.ariaLabel"></select>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.thinkingBlocks.title">Thinking</div>
-          <div class="settings-inline-form">
-            <select class="settings-inline-select" id="thinkingBlockDisplaySelect" aria-label="Choose how thinking blocks open" data-i18n-aria-label="settings.thinkingBlocks.ariaLabel"></select>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.autoArchive.title">自动归档</div>
-          <div class="settings-section-note" data-i18n="settings.autoArchive.note">按最后一次发消息的时间，把长期不活跃的会话移到 Archive。默认关闭。</div>
-          <div class="settings-inline-form">
-            <select class="settings-inline-select" id="sessionAutoArchiveSelect" aria-label="选择自动归档时间" data-i18n-aria-label="settings.autoArchive.ariaLabel"></select>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.voice.title">Voice Input</div>
-          <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. Any signed-in person can manage it.</div>
-          <div class="settings-inline-form">
-            <select class="settings-inline-select" id="voiceInputProviderSelect" aria-label="Choose a voice input transport" data-i18n-aria-label="settings.voice.providerAriaLabel"></select>
-            <input class="settings-inline-input" id="voiceInputAppId" type="text" autocomplete="off" placeholder="Doubao App ID" data-i18n-placeholder="settings.voice.appIdPlaceholder">
-            <input class="settings-inline-input" id="voiceInputAccessToken" type="text" autocomplete="off" placeholder="Doubao Access Token" data-i18n-placeholder="settings.voice.accessTokenPlaceholder">
-            <select class="settings-inline-select" id="voiceInputClusterPresetSelect" aria-label="Choose voice input model preset" data-i18n-aria-label="settings.voice.clusterPresetAriaLabel"></select>
-            <input class="settings-inline-input" id="voiceInputCluster" type="text" autocomplete="off" placeholder="Custom resource ID" data-i18n-placeholder="settings.voice.clusterCustomPlaceholder" hidden>
-            <input class="settings-inline-input" id="voiceInputGatewayApiKey" type="text" autocomplete="off" placeholder="AI Gateway API key" data-i18n-placeholder="settings.voice.gatewayApiKeyPlaceholder" hidden>
-            <input class="settings-inline-input" id="voiceInputGatewayUrl" type="text" autocomplete="off" placeholder="Realtime gateway URL" data-i18n-placeholder="settings.voice.gatewayUrlPlaceholder" hidden>
-            <input class="settings-inline-input" id="voiceInputGatewayModel" type="text" autocomplete="off" placeholder="Gateway model name" data-i18n-placeholder="settings.voice.gatewayModelPlaceholder" hidden>
-            <select class="settings-inline-select" id="voiceInputLanguageSelect" aria-label="Choose voice input language" data-i18n-aria-label="settings.voice.languageAriaLabel"></select>
-            <div class="settings-app-empty inline-status" id="voiceInputStatus" hidden></div>
-          </div>
-        </div>
-        <div class="settings-section" id="settingsPushSection" hidden>
-          <div class="settings-section-title" data-i18n="settings.push.title">Browser notifications</div>
-          <div class="settings-section-note" id="settingsPushStatus" role="status" aria-live="polite"></div>
-          <div class="settings-app-actions">
-            <button class="settings-app-btn" id="settingsPushEnableBtn" type="button" data-i18n="settings.push.enable">Enable browser notifications</button>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.install.title">Install App</div>
-          <div class="settings-section-note" id="settingsInstallNote" data-i18n="settings.install.note">Install RemoteLab on this device.</div>
-          <div class="settings-inline-form">
-            <div class="settings-inline-row">
-              <button class="settings-app-btn settings-inline-primary" id="settingsInstallAppBtn" type="button" data-i18n="settings.install.open">Install RemoteLab</button>
-            </div>
-            <div class="settings-app-empty inline-status" id="settingsInstallStatus" hidden></div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.connectors.title">Connectors</div>
-          <div class="settings-section-note" data-i18n="settings.connectors.note">Open connector login or authorization flows here.</div>
-          <div class="settings-apps-list" id="settingsConnectorsList">
-            <div class="settings-app-empty" data-i18n="settings.connectors.loading">Loading connectors…</div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.sessionPresentation.title">Session opening</div>
-          <div class="settings-apps-list" id="settingsSessionPresentationList">
-            <div class="settings-app-empty" data-i18n="settings.sessionPresentation.noSession">Select a session to set how it opens.</div>
+        <div class="settings-layout">
+          <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
+            <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
+            <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
+            <a class="settings-toc-link" href="#settings-people" data-settings-target="settings-people" data-i18n="settings.group.people">People</a>
+            <a class="settings-toc-link" href="#settings-connections" data-settings-target="settings-connections" data-i18n="settings.group.connections">Connections</a>
+            <a class="settings-toc-link" href="#settings-device" data-settings-target="settings-device" data-i18n="settings.group.device">This device</a>
+          </nav>
+
+          <div class="settings-content">
+            <section class="settings-group" id="settings-general" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-i18n="settings.group.general">General</h3>
+                <p data-i18n="settings.group.generalNote">Appearance and behavior for this browser.</p>
+              </header>
+              <div class="settings-group-body">
+                <div class="settings-section settings-section--inline">
+                  <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
+                  <div class="settings-inline-form">
+                    <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ariaLabel"></select>
+                  </div>
+                </div>
+                <div class="settings-section settings-section--inline">
+                  <div class="settings-section-title" data-i18n="settings.theme.title">Theme</div>
+                  <div class="settings-inline-form">
+                    <select class="settings-inline-select" id="uiThemeSelect" aria-label="Choose chat theme" data-i18n-aria-label="settings.theme.ariaLabel"></select>
+                  </div>
+                </div>
+                <div class="settings-section settings-section--inline">
+                  <div class="settings-section-title" data-i18n="settings.thinkingBlocks.title">Thinking</div>
+                  <div class="settings-inline-form">
+                    <select class="settings-inline-select" id="thinkingBlockDisplaySelect" aria-label="Choose how thinking blocks open" data-i18n-aria-label="settings.thinkingBlocks.ariaLabel"></select>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-group" id="settings-sessions" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-i18n="settings.group.sessions">Sessions</h3>
+                <p data-i18n="settings.group.sessionsNote">Defaults for the shared Session workspace.</p>
+              </header>
+              <div class="settings-group-body">
+                <div class="settings-section">
+                  <div class="settings-section-title" data-i18n="settings.people.myViewTitle">My view</div>
+                  <div class="settings-section-note" data-i18n="settings.people.myViewNote">Choose how the shared Session list opens for you. Your Spaces, groups, and sorting remain personal.</div>
+                  <div class="settings-current-person" id="settingsCurrentPersonView">
+                    <div class="settings-current-person-profile" id="settingsCurrentPersonSummary"></div>
+                    <label class="settings-person-field settings-current-person-filter">
+                      <span data-i18n="settings.people.defaultFilterLabel">Default Session filter</span>
+                      <select class="settings-inline-select" id="settingsDefaultPersonFilter" aria-label="Default Session filter" data-i18n-aria-label="settings.people.defaultFilterLabel">
+                        <option value="all" data-i18n="settings.people.allSessions">All sessions</option>
+                        <option value="mine" data-i18n="settings.people.mySessions">My sessions</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                <div class="settings-section settings-section--inline">
+                  <div>
+                    <div class="settings-section-title" data-i18n="settings.autoArchive.title">Auto archive</div>
+                    <div class="settings-section-note" data-i18n="settings.autoArchive.note">Move inactive Sessions to Archive based on their last message. Off by default.</div>
+                  </div>
+                  <div class="settings-inline-form">
+                    <select class="settings-inline-select" id="sessionAutoArchiveSelect" aria-label="Choose auto archive delay" data-i18n-aria-label="settings.autoArchive.ariaLabel"></select>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title" data-i18n="settings.sessionPresentation.title">Session opening</div>
+                  <div class="settings-apps-list" id="settingsSessionPresentationList">
+                    <div class="settings-app-empty" data-i18n="settings.sessionPresentation.noSession">Select a session to set how it opens.</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-group" id="settings-people" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-i18n="settings.group.people">People</h3>
+                <p data-i18n="settings.group.peopleNote">Profiles and sign-in methods for this shared instance.</p>
+              </header>
+              <div class="settings-group-body">
+                <div class="settings-section settings-people-section">
+                  <div class="settings-section-heading">
+                    <div>
+                      <div class="settings-section-title" data-i18n="settings.people.title">People</div>
+                      <div class="settings-section-note" data-i18n="settings.people.note">Readable handles identify people across Web sign-in and connected apps. They organize the interface, not access permissions.</div>
+                    </div>
+                    <button class="settings-app-btn settings-person-add-toggle" id="settingsPersonCreateToggle" type="button" aria-expanded="false" data-i18n="settings.people.add">Add person</button>
+                  </div>
+                  <div class="settings-person-create" id="settingsPersonCreatePanel" hidden>
+                    <div class="settings-person-profile-grid">
+                      <label class="settings-person-field">
+                        <span data-i18n="settings.people.nameLabel">Name</span>
+                        <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
+                      </label>
+                      <label class="settings-person-field">
+                        <span data-i18n="settings.people.handleLabel">Username</span>
+                        <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Generated automatically when left blank" data-i18n-placeholder="settings.people.handlePlaceholder">
+                      </label>
+                    </div>
+                    <div class="settings-person-create-note" data-i18n="settings.people.createNote">Sign-in methods and connected apps can be managed after the person is created.</div>
+                    <div class="settings-person-form-actions">
+                      <button class="settings-app-btn" id="settingsPersonCreateCancel" type="button" data-i18n="action.cancel">Cancel</button>
+                      <button class="settings-app-btn settings-person-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.create">Create person</button>
+                    </div>
+                  </div>
+                  <div class="settings-app-empty inline-status settings-people-status" id="settingsPeopleStatus" role="status" aria-live="polite" hidden></div>
+                  <div class="settings-people-list" id="settingsPeopleList"></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-group" id="settings-connections" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-i18n="settings.group.connections">Connections</h3>
+                <p data-i18n="settings.group.connectionsNote">External services and input transports.</p>
+              </header>
+              <div class="settings-group-body">
+                <div class="settings-section">
+                  <div class="settings-section-title" data-i18n="settings.connectors.title">Connectors</div>
+                  <div class="settings-section-note" data-i18n="settings.connectors.note">Open connector login or authorization flows here.</div>
+                  <div class="settings-apps-list" id="settingsConnectorsList">
+                    <div class="settings-app-empty" data-i18n="settings.connectors.loading">Loading connectors…</div>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title" data-i18n="settings.voice.title">Voice Input</div>
+                  <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. Any signed-in person can manage it.</div>
+                  <div class="settings-inline-form settings-inline-form--narrow">
+                    <select class="settings-inline-select" id="voiceInputProviderSelect" aria-label="Choose a voice input transport" data-i18n-aria-label="settings.voice.providerAriaLabel"></select>
+                    <input class="settings-inline-input" id="voiceInputAppId" type="text" autocomplete="off" placeholder="Doubao App ID" data-i18n-placeholder="settings.voice.appIdPlaceholder">
+                    <input class="settings-inline-input" id="voiceInputAccessToken" type="text" autocomplete="off" placeholder="Doubao Access Token" data-i18n-placeholder="settings.voice.accessTokenPlaceholder">
+                    <select class="settings-inline-select" id="voiceInputClusterPresetSelect" aria-label="Choose voice input model preset" data-i18n-aria-label="settings.voice.clusterPresetAriaLabel"></select>
+                    <input class="settings-inline-input" id="voiceInputCluster" type="text" autocomplete="off" placeholder="Custom resource ID" data-i18n-placeholder="settings.voice.clusterCustomPlaceholder" hidden>
+                    <input class="settings-inline-input" id="voiceInputGatewayApiKey" type="text" autocomplete="off" placeholder="AI Gateway API key" data-i18n-placeholder="settings.voice.gatewayApiKeyPlaceholder" hidden>
+                    <input class="settings-inline-input" id="voiceInputGatewayUrl" type="text" autocomplete="off" placeholder="Realtime gateway URL" data-i18n-placeholder="settings.voice.gatewayUrlPlaceholder" hidden>
+                    <input class="settings-inline-input" id="voiceInputGatewayModel" type="text" autocomplete="off" placeholder="Gateway model name" data-i18n-placeholder="settings.voice.gatewayModelPlaceholder" hidden>
+                    <select class="settings-inline-select" id="voiceInputLanguageSelect" aria-label="Choose voice input language" data-i18n-aria-label="settings.voice.languageAriaLabel"></select>
+                    <div class="settings-app-empty inline-status" id="voiceInputStatus" hidden></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-group" id="settings-device" data-settings-section>
+              <header class="settings-group-header">
+                <h3 data-i18n="settings.group.device">This device</h3>
+                <p data-i18n="settings.group.deviceNote">Browser notifications and app installation.</p>
+              </header>
+              <div class="settings-group-body">
+                <div class="settings-section" id="settingsPushSection" hidden>
+                  <div class="settings-section-title" data-i18n="settings.push.title">Browser notifications</div>
+                  <div class="settings-section-note" id="settingsPushStatus" role="status" aria-live="polite"></div>
+                  <div class="settings-app-actions">
+                    <button class="settings-app-btn" id="settingsPushEnableBtn" type="button" data-i18n="settings.push.enable">Enable browser notifications</button>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title" data-i18n="settings.install.title">Install App</div>
+                  <div class="settings-section-note" id="settingsInstallNote" data-i18n="settings.install.note">Install RemoteLab on this device.</div>
+                  <div class="settings-inline-form">
+                    <div class="settings-inline-row">
+                      <button class="settings-app-btn settings-inline-primary" id="settingsInstallAppBtn" type="button" data-i18n="settings.install.open">Install RemoteLab</button>
+                    </div>
+                    <div class="settings-app-empty inline-status" id="settingsInstallStatus" hidden></div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </div>

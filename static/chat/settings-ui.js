@@ -13,7 +13,63 @@ const voiceInputGatewayModel = document.getElementById("voiceInputGatewayModel")
 const voiceInputLanguageSelect = document.getElementById("voiceInputLanguageSelect");
 const voiceInputStatus = document.getElementById("voiceInputStatus");
 const sessionAutoArchiveSelect = document.getElementById("sessionAutoArchiveSelect");
+const settingsToc = document.getElementById("settingsToc");
 let voiceInputSettingsLoaded = false;
+
+function initSettingsNavigation() {
+  if (!settingsPanel || !settingsToc || settingsToc.dataset.bound === "true") return;
+  const links = Array.from(settingsToc.querySelectorAll("[data-settings-target]"));
+  const sections = links
+    .map((link) => document.getElementById(link.dataset.settingsTarget || ""))
+    .filter(Boolean);
+  if (links.length === 0 || sections.length === 0) return;
+
+  const setActiveSection = (sectionId) => {
+    for (const link of links) {
+      const active = link.dataset.settingsTarget === sectionId;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    }
+  };
+
+  for (const link of links) {
+    link.addEventListener("click", (event) => {
+      const target = document.getElementById(link.dataset.settingsTarget || "");
+      if (!target) return;
+      event.preventDefault();
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+      target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+      setActiveSection(target.id);
+    });
+  }
+
+  let updateQueued = false;
+  const updateActiveSection = () => {
+    updateQueued = false;
+    const remainingScroll = settingsPanel.scrollHeight - settingsPanel.scrollTop - settingsPanel.clientHeight;
+    if (remainingScroll <= 2) {
+      setActiveSection(sections[sections.length - 1].id);
+      return;
+    }
+    const panelTop = settingsPanel.getBoundingClientRect().top;
+    const activationLine = panelTop + (window.innerWidth < 768 ? 92 : 48);
+    let activeSection = sections[0];
+    for (const section of sections) {
+      if (section.getBoundingClientRect().top <= activationLine) activeSection = section;
+      else break;
+    }
+    setActiveSection(activeSection.id);
+  };
+  settingsPanel.addEventListener("scroll", () => {
+    if (updateQueued) return;
+    updateQueued = true;
+    window.requestAnimationFrame(updateActiveSection);
+  }, { passive: true });
+  window.addEventListener("resize", updateActiveSection);
+  settingsToc.dataset.bound = "true";
+  updateActiveSection();
+}
 
 function getSessionAutoArchiveOptions() {
   return [
@@ -592,7 +648,9 @@ function ensureCodexAuthSection() {
     </div>
     <div class="settings-app-empty inline-status" id="settingsCodexAuthError" hidden></div>
   `;
-  settingsPanel.prepend(section);
+  const connectionsBody = document.querySelector("#settings-connections .settings-group-body");
+  if (connectionsBody) connectionsBody.prepend(section);
+  else settingsPanel.prepend(section);
   document.getElementById("settingsCodexAuthCheckBtn")?.addEventListener("click", () => {
     void refreshCodexAuthStatus({ force: true });
   });
@@ -870,7 +928,11 @@ function ensurePiAuthSection() {
     </div>
     <div class="settings-app-empty inline-status" id="settingsPiAuthError" hidden></div>
   `;
-  settingsPanel.prepend(section);
+  const connectionsBody = document.querySelector("#settings-connections .settings-group-body");
+  const codexSection = document.getElementById("settingsCodexAuthSection");
+  if (codexSection?.parentElement === connectionsBody) codexSection.after(section);
+  else if (connectionsBody) connectionsBody.prepend(section);
+  else settingsPanel.prepend(section);
   document.getElementById("settingsPiAuthCheckBtn")?.addEventListener("click", () => {
     void refreshPiAuthStatus({ force: true });
   });
@@ -1931,6 +1993,7 @@ function renderSettingsSessionPresentationPanel() {
 }
 
 initUiLanguageSettings();
+initSettingsNavigation();
 ensureCodexAuthSection();
 void refreshCodexAuthStatus({ includeUsage: false });
 ensurePiAuthSection();

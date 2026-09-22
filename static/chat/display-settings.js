@@ -33,8 +33,8 @@
       <div class="settings-apps-list" id="settingsDisplayDevices"></div>
       <div class="settings-app-empty inline-status" id="settingsDisplayStatus" role="status" aria-live="polite"></div>
     `;
-    const myView = document.getElementById("settingsCurrentPersonView")?.closest(".settings-section");
-    if (myView) myView.after(section);
+    const deviceSettings = document.querySelector("#settings-device .settings-group-body");
+    if (deviceSettings) deviceSettings.prepend(section);
     else panel.appendChild(section);
     document.getElementById("settingsDisplayGenerate")?.addEventListener("click", () => void generateEnrollment());
     document.getElementById("settingsDisplayCopy")?.addEventListener("click", event => void copyCommand(event.currentTarget));

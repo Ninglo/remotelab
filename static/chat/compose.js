@@ -1231,6 +1231,7 @@ if (typeof setChatActiveTab === "function") {
 
 function switchTab(tab, { syncState = true } = {}) {
   const resolvedTabTasks = typeof tabTasks !== "undefined" ? tabTasks : null;
+  const resolvedHeaderTasksBtn = typeof headerTasksBtn !== "undefined" ? headerTasksBtn : null;
   const resolvedTabSettings = typeof tabSettings !== "undefined" ? tabSettings : null;
   const resolvedSidebarFilters = typeof sidebarFilters !== "undefined" ? sidebarFilters : null;
   const resolvedSessionList = typeof sessionList !== "undefined" ? sessionList : null;
@@ -1267,6 +1268,11 @@ function switchTab(tab, { syncState = true } = {}) {
     if (activeTab === "tasks") resolvedTabTasks.setAttribute?.("aria-current", "page");
     else resolvedTabTasks.removeAttribute?.("aria-current");
   }
+  if (resolvedHeaderTasksBtn) {
+    resolvedHeaderTasksBtn.classList.toggle("active", activeTab === "tasks");
+    if (activeTab === "tasks") resolvedHeaderTasksBtn.setAttribute?.("aria-current", "page");
+    else resolvedHeaderTasksBtn.removeAttribute?.("aria-current");
+  }
   if (resolvedTabSettings) {
     resolvedTabSettings.classList.toggle("active", activeTab === "settings");
     if (activeTab === "settings") resolvedTabSettings.setAttribute?.("aria-current", "page");
@@ -1301,6 +1307,9 @@ function switchTab(tab, { syncState = true } = {}) {
 
 if (typeof tabTasks !== "undefined" && tabTasks) {
   tabTasks.addEventListener("click", () => switchTab("tasks"));
+}
+if (typeof headerTasksBtn !== "undefined" && headerTasksBtn) {
+  headerTasksBtn.addEventListener("click", () => switchTab("tasks"));
 }
 if (typeof tabSettings !== "undefined" && tabSettings) {
   tabSettings.addEventListener("click", () => switchTab("settings"));
