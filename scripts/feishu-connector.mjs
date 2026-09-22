@@ -998,6 +998,18 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       throw new Error(result.json?.error || `Unable to read bound Session (${result.response?.status || 'unknown'})`);
     }
     session = result.json.session;
+    const configuredSystemPrompt = sessionPayload.systemPrompt.trim();
+    const currentSystemPrompt = typeof session.systemPrompt === 'string' ? session.systemPrompt.trim() : '';
+    if (!isQuickSession(session) && configuredSystemPrompt !== currentSystemPrompt) {
+      const updated = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`, {
+        method: 'PATCH',
+        body: { systemPrompt: configuredSystemPrompt },
+      });
+      if (!updated.response?.ok || !updated.json?.session?.id) {
+        throw new Error(updated.json?.error || `Unable to update bound Session instructions (${updated.response?.status || 'unknown'})`);
+      }
+      session = updated.json.session;
+    }
   } else {
     session = await createConnectorSession(requester, sessionPayload);
   }

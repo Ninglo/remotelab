@@ -1217,6 +1217,7 @@ function applyAttachedSessionState(id, session) {
   }
   updateStatus("connected", session);
   if (typeof renderDeliveryIssues === "function") renderDeliveryIssues(session);
+  if (typeof renderSessionInstructions === "function") renderSessionInstructions(session);
   if (typeof renderQueuedMessagePanel === "function") {
     renderQueuedMessagePanel(session);
   }
@@ -1307,6 +1308,7 @@ function getComparableAttachedSessionStateSignature(session) {
     effort: typeof session.effort === "string" ? session.effort : null,
     thinking: session.thinking === true ? true : null,
     executionProfile: session.executionProfile || null,
+    systemPrompt: typeof session.systemPrompt === "string" ? session.systemPrompt : null,
   });
 }
 

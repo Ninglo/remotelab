@@ -2,7 +2,7 @@
 .chat-area {
   flex: 1;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   overflow: hidden;
   min-height: 0;
   min-width: 0;
@@ -10,6 +10,48 @@
 .chat-area[hidden] { display: none; }
 .chat-area > * {
   min-width: 0;
+}
+
+.session-instructions-panel {
+  padding: 10px var(--chat-gutter) 0;
+}
+.session-instructions-panel[hidden] { display: none; }
+.session-instructions-panel details {
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.session-instructions-panel summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  list-style-position: inside;
+}
+.session-instructions-note {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.session-instructions-panel pre {
+  max-height: min(32vh, 280px);
+  margin: 0;
+  padding: 0 12px 12px;
+  overflow: auto;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .gesture-pill {

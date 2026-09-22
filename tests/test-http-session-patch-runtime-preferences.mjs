@@ -171,6 +171,7 @@ try {
       model: 'gpt-6-astra',
       effort: 'high',
       thinking: true,
+      systemPrompt: 'Persist the meeting transcript for the daily review.',
       lastReviewedAt: reviewStamp,
     });
     assert.equal(patched.status, 200, 'PATCH should accept pinned and runtime preference fields together');
@@ -182,6 +183,11 @@ try {
     assert.equal(patched.json.session?.model, 'gpt-6-astra', 'PATCH should persist the model');
     assert.equal(patched.json.session?.effort, 'high', 'PATCH should persist the effort');
     assert.equal(patched.json.session?.thinking, true, 'PATCH should persist the thinking flag');
+    assert.equal(
+      patched.json.session?.systemPrompt,
+      'Persist the meeting transcript for the daily review.',
+      'PATCH should persist Session instructions for connector and UI alignment',
+    );
     assert.equal(patched.json.session?.lastReviewedAt, reviewStamp, 'PATCH should persist the session review timestamp');
 
     const newest = await createSession(port, 'Newest session');
@@ -204,6 +210,11 @@ try {
     assert.equal(detail.json.session?.workflowState, 'waiting_user', 'detail should expose persisted workflow state');
     assert.equal(detail.json.session?.workflowPriority, 'high', 'detail should expose persisted workflow priority');
     assert.equal(detail.json.session?.lastReviewedAt, reviewStamp, 'detail should expose the persisted review timestamp');
+    assert.equal(
+      detail.json.session?.systemPrompt,
+      'Persist the meeting transcript for the daily review.',
+      'detail should expose the same Session instructions shown to the model',
+    );
 
     const invalidPinned = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
       pinned: 'yes',
@@ -214,6 +225,11 @@ try {
       thinking: 'maybe',
     });
     assert.equal(invalidThinking.status, 400, 'invalid thinking values should be rejected');
+
+    const invalidSystemPrompt = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
+      systemPrompt: { text: 'not a string' },
+    });
+    assert.equal(invalidSystemPrompt.status, 400, 'invalid Session instructions should be rejected');
 
     const invalidWorkflowState = await request(port, 'PATCH', `/api/sessions/${older.id}`, {
       workflowState: 'running',
