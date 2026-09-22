@@ -69,10 +69,20 @@ RemoteLab setup is the primary configuration UX.
 ### Optional Jev auto model routing
 
 When a TypeSafe API key is configured, the CodeX model list defaults to `Auto
-(Jev)` for new selections without a saved preference. Selecting it for a new Standard Session asks Jev to choose Luna, Sol,
-or Astra plus a reasoning level from the first user message. RemoteLab persists
-that concrete selection on the Session, so later turns keep the same native
-provider context. A user-selected concrete model always bypasses Jev.
+(Jev)` for new selections without a saved preference. Selecting it for a new
+Standard Session asks Jev to choose one of three service tiers from the first
+user message. The default tier mappings are:
+
+- `quality`: GPT-5.6 Sol with `high` reasoning. This is the conservative default
+  for serious work, research, development, debugging, and contextual tasks.
+- `balanced`: GPT-5.6 Terra with `medium` reasoning for clearly bounded,
+  low-consequence routine work.
+- `economy`: GPT-5.6 Luna with `low` reasoning only for greetings, casual
+  entertainment, or an explicit cheapest/fastest request.
+
+RemoteLab persists the concrete model and effort on the Session, so later turns
+keep the same native provider context. A user-selected concrete model always
+bypasses Jev. Uncertain decisions and routing failures use the `quality` tier.
 
 Store the key in the service environment as `TYPESAFE_API_KEY`, or in the
 instance config directory as a private `typesafe.env` file:
@@ -86,10 +96,23 @@ The file must be readable only by the service user. The optional
 file. `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`, and
 `TYPESAFE_TIMEOUT_MS` override the API URL, Jev model, and routing timeout.
 
-Routing failures, missing credentials, material high-risk probability, and
-malformed responses fall back to CodeX Astra with high reasoning. The persisted routing
-receipt contains the chosen route, confidence summary, latency, and fallback
-reason; it never contains the API key or user prompt.
+The tier mappings can be changed without changing the routing prompt. Create
+`jev-routing.json` in the instance configuration directory, or point
+`JEV_TIER_CONFIG_FILE` at another JSON file:
+
+```json
+{
+  "quality": { "model": "gpt-5.6-sol", "effort": "high" },
+  "balanced": { "model": "gpt-5.6-terra", "effort": "medium" },
+  "economy": { "model": "gpt-5.6-luna", "effort": "low" }
+}
+```
+
+The file is read for each new Auto Session, so future SOTA or sweet-spot model
+changes do not require code changes or a service restart. Missing or invalid
+fields keep their tier defaults. The persisted routing receipt contains the
+chosen tier, concrete route, confidence summary, latency, and fallback reason;
+it never contains the API key or user prompt.
 
 ## [HUMAN] checkpoints
 

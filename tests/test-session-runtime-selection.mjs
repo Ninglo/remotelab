@@ -36,9 +36,7 @@ try {
       json: async () => ({
         model: 'jev-test',
         answers: {
-          model_tier: { choice: 'luna', confidence: 0.9, probabilities: { luna: 0.9, sol: 0.08, astra: 0.02 } },
-          depth: { choice: 'quick', confidence: 0.9, probabilities: { quick: 0.9, balanced: 0.06, deep: 0.03, maximum: 0.01 } },
-          risk: { choice: 'low', confidence: 0.9, probabilities: { low: 0.9, medium: 0.08, high: 0.02 } },
+          service_tier: { choice: 'economy', confidence: 0.9, probabilities: { quality: 0.02, balanced: 0.03, economy: 0.95 } },
         },
       }),
     });

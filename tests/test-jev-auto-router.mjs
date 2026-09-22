@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setIsolatedTestHome } from './isolate-test-environment.mjs';
@@ -8,94 +8,100 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const testHome = await mkdtemp(join(tmpdir(), 'remotelab-jev-routing-'));
 setIsolatedTestHome(testHome);
 test.after(() => rm(testHome, { recursive: true, force: true }));
-const { applyJevAutoPolicy, resolveJevAutoRoute } = await import('../lib/jev-auto-router.mjs');
+const { applyJevAutoPolicy, normalizeJevTierProfiles, resolveJevAutoRoute } = await import('../lib/jev-auto-router.mjs');
 
-function choice(selected, confidence, options) {
-  const selectedProbability = confidence >= 0.6 ? 0.8 : 0.45;
-  const remainder = (1 - selectedProbability) / (options.length - 1);
+function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
+  const defaults = {
+    quality: { quality: 0.9, balanced: 0.08, economy: 0.02 },
+    balanced: { quality: 0.1, balanced: 0.85, economy: 0.05 },
+    economy: { quality: 0.02, balanced: 0.03, economy: 0.95 },
+  };
   return {
-    choice: selected,
-    confidence,
-    probabilities: Object.fromEntries(options.map(option => [
-      option,
-      option === selected ? selectedProbability : remainder,
-    ])),
+    service_tier: {
+      choice: tier,
+      confidence,
+      probabilities: probabilities || defaults[tier],
+    },
   };
 }
 
-function answers({ model = 'luna', modelConfidence = 0.9, depth = 'quick', depthConfidence = 0.9,
-  risk = 'low', riskConfidence = 0.9 } = {}) {
-  return {
-    model_tier: choice(model, modelConfidence, ['luna', 'sol', 'astra']),
-    depth: choice(depth, depthConfidence, ['quick', 'balanced', 'deep', 'maximum']),
-    risk: choice(risk, riskConfidence, ['low', 'medium', 'high']),
-  };
-}
-
-test('low-risk mechanical work routes to Luna at low effort', () => {
-  const route = applyJevAutoPolicy(answers());
+test('three service tiers map to fixed model and effort profiles', () => {
   assert.deepEqual(
-    { tool: route.tool, model: route.model, effort: route.effort },
-    { tool: 'codex', model: 'gpt-5.6-luna', effort: 'low' },
+    (({ tool, model, effort }) => ({ tool, model, effort }))(applyJevAutoPolicy(answer('quality'))),
+    { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high' },
+  );
+  assert.deepEqual(
+    (({ model, effort }) => ({ model, effort }))(applyJevAutoPolicy(answer('balanced'))),
+    { model: 'gpt-5.6-terra', effort: 'medium' },
+  );
+  assert.deepEqual(
+    (({ model, effort }) => ({ model, effort }))(applyJevAutoPolicy(answer('economy'))),
+    { model: 'gpt-5.6-luna', effort: 'low' },
   );
 });
 
-test('uncertainty only escalates model and effort', () => {
-  const route = applyJevAutoPolicy(answers({
-    model: 'luna',
-    modelConfidence: 0.4,
-    depth: 'deep',
-    depthConfidence: 0.3,
+test('uncertain downgrade and material quality probability return to quality', () => {
+  const uncertain = applyJevAutoPolicy(answer('economy', 0.4, {
+    quality: 0.3, balanced: 0.15, economy: 0.55,
   }));
-  assert.equal(route.model, 'gpt-5.6-sol');
-  assert.equal(route.effort, 'high');
-  assert.deepEqual(route.policy.reasons, ['model_uncertain', 'depth_uncertain']);
+  assert.equal(uncertain.policy.tier, 'quality');
+  assert.deepEqual(uncertain.policy.reasons, ['tier_uncertain']);
+
+  const mixed = applyJevAutoPolicy(answer('balanced', 0.9, {
+    quality: 0.26, balanced: 0.7, economy: 0.04,
+  }));
+  assert.equal(mixed.policy.tier, 'quality');
+  assert.deepEqual(mixed.policy.reasons, ['quality_probability']);
 });
 
-test('high or materially probable high risk uses the premium Sol safety floor', () => {
-  assert.equal(applyJevAutoPolicy(answers({ risk: 'high' })).model, 'gpt-5.6-sol');
-  const uncertain = applyJevAutoPolicy(answers({ model: 'luna', riskConfidence: 0.4 }));
-  assert.equal(uncertain.model, 'gpt-5.6-sol');
-  assert.equal(uncertain.effort, 'high');
-  assert.equal(uncertain.policy.reasons[0], 'high_risk_probability');
+test('tier profiles are configurable while invalid fields keep safe defaults', () => {
+  const profiles = normalizeJevTierProfiles({
+    quality: { model: 'future-sota', effort: 'high' },
+    balanced: { model: 'sweet-spot', effort: 'medium' },
+    economy: { model: '', effort: 'invalid' },
+  });
+  assert.deepEqual(profiles, {
+    quality: { model: 'future-sota', effort: 'high' },
+    balanced: { model: 'sweet-spot', effort: 'medium' },
+    economy: { model: 'gpt-5.6-luna', effort: 'low' },
+  });
 });
 
-test('ordinary medium risk below the safety threshold keeps the selected tier', () => {
-  const input = answers({ model: 'sol', depth: 'balanced', risk: 'medium' });
-  input.risk = {
-    choice: 'medium',
-    confidence: 0.46,
-    probabilities: { low: 0.32, medium: 0.46, high: 0.22 },
-  };
-  const route = applyJevAutoPolicy(input);
-  assert.equal(route.model, 'gpt-5.6-sol');
-  assert.equal(route.effort, 'medium');
-  assert.deepEqual(route.policy.reasons, []);
-});
-
-test('successful API decisions return a bounded receipt without prompt or key', async () => {
+test('successful API decisions use the tier config file and return a bounded receipt', async () => {
+  const tierConfigFile = join(testHome, 'jev-routing.json');
+  await writeFile(tierConfigFile, JSON.stringify({
+    quality: { model: 'future-sota', effort: 'high' },
+    balanced: { model: 'sweet-spot', effort: 'medium' },
+    economy: { model: 'cheap-model', effort: 'low' },
+  }));
   const route = await resolveJevAutoRoute('Read package.json and return the version.', {
     apiKey: 'private-test-key',
+    tierConfigFile,
     fetchImpl: async (_url, request) => {
       assert.equal(request.headers.authorization, 'Bearer private-test-key');
+      const body = JSON.parse(request.body);
+      assert.deepEqual(Object.keys(body.questions), ['service_tier']);
+      assert.match(body.questions.service_tier.instructions, /Choose quality by default/);
       return {
         ok: true,
-        json: async () => ({ model: 'jev-test', answers: answers() }),
+        json: async () => ({ model: 'jev-test', answers: answer('balanced') }),
       };
     },
   });
-  assert.equal(route.model, 'gpt-5.6-luna');
-  assert.equal(route.autoRoutingReceipt.status, 'routed');
+  assert.equal(route.model, 'sweet-spot');
+  assert.equal(route.effort, 'medium');
+  assert.equal(route.autoRoutingReceipt.decision.tier, 'balanced');
   const serialized = JSON.stringify(route.autoRoutingReceipt);
   assert.doesNotMatch(serialized, /private-test-key|package\.json/);
 });
 
-test('API failures fall back to Sol without throwing', async () => {
+test('API failures fall back to the configured quality tier without throwing', async () => {
   const route = await resolveJevAutoRoute('Do work', {
     apiKey: 'private-test-key',
+    tierProfiles: { quality: { model: 'configured-quality', effort: 'high' } },
     fetchImpl: async () => ({ ok: false, status: 503 }),
   });
-  assert.equal(route.model, 'gpt-5.6-sol');
+  assert.equal(route.model, 'configured-quality');
   assert.equal(route.effort, 'high');
   assert.equal(route.autoRoutingReceipt.reason, 'http_503');
 });
