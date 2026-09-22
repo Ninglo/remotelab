@@ -95,7 +95,7 @@ try {
   const manifest = JSON.parse(await readFile(join(config, 'chat-runs', accepted.run.id, 'manifest.json'), 'utf8'));
   assert.equal(contexts[0].content, manifest.modelContext);
   assert.ok(manifest.prompt.includes(`<private>\n${manifest.managerTurnContext}\n</private>`));
-  assert.match(contexts[0].content, /original-message/);
+  assert.match(contexts[0].content, /Original sender/);
   assert.equal(history.find(event => event.type === 'message' && event.role === 'user').content, 'work');
   const starts = (await readFile(join(root, 'starts'), 'utf8')).trim().split('\n');
   assert.equal(starts.filter(x => x === accepted.run.id).length, 1, 'recovery must not execute AI twice');
