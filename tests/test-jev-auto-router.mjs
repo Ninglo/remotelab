@@ -52,10 +52,10 @@ test('uncertainty only escalates model and effort', () => {
   assert.deepEqual(route.policy.reasons, ['model_uncertain', 'depth_uncertain']);
 });
 
-test('high or materially probable high risk uses the Astra safety floor', () => {
-  assert.equal(applyJevAutoPolicy(answers({ risk: 'high' })).model, 'gpt-6-astra');
+test('high or materially probable high risk uses the premium Sol safety floor', () => {
+  assert.equal(applyJevAutoPolicy(answers({ risk: 'high' })).model, 'gpt-5.6-sol');
   const uncertain = applyJevAutoPolicy(answers({ model: 'luna', riskConfidence: 0.4 }));
-  assert.equal(uncertain.model, 'gpt-6-astra');
+  assert.equal(uncertain.model, 'gpt-5.6-sol');
   assert.equal(uncertain.effort, 'high');
   assert.equal(uncertain.policy.reasons[0], 'high_risk_probability');
 });
@@ -90,12 +90,12 @@ test('successful API decisions return a bounded receipt without prompt or key', 
   assert.doesNotMatch(serialized, /private-test-key|package\.json/);
 });
 
-test('API failures fall back to Astra without throwing', async () => {
+test('API failures fall back to Sol without throwing', async () => {
   const route = await resolveJevAutoRoute('Do work', {
     apiKey: 'private-test-key',
     fetchImpl: async () => ({ ok: false, status: 503 }),
   });
-  assert.equal(route.model, 'gpt-6-astra');
+  assert.equal(route.model, 'gpt-5.6-sol');
   assert.equal(route.effort, 'high');
   assert.equal(route.autoRoutingReceipt.reason, 'http_503');
 });

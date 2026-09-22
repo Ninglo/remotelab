@@ -218,6 +218,7 @@ import {
   PRODUCT_DEFAULT_CODEX_MODEL,
   PRODUCT_DEFAULT_TOOL_ID,
 } from '../lib/legacy-micro-agent.mjs';
+import { clampReasoningEffort } from '../lib/reasoning-effort-policy.mjs';
 import {
   getSessionPersonView,
   mergeSessionPersonViews,
@@ -249,7 +250,7 @@ function normalizeLegacyRuntimeRequest({
       model: normalizedTool === PRODUCT_DEFAULT_TOOL_ID
         ? normalizeCodexModelId(model)
         : model,
-      effort,
+      effort: clampReasoningEffort(effort),
       thinking,
     };
   }

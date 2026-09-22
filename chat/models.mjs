@@ -11,6 +11,7 @@ import {
   PRODUCT_DEFAULT_CODEX_MODEL,
 } from '../lib/legacy-micro-agent.mjs';
 import { isJevAutoConfigured, JEV_AUTO_MODEL_ID } from '../lib/jev-auto-router.mjs';
+import { limitReasoningCatalog } from '../lib/reasoning-effort-policy.mjs';
 
 // Claude Code has no model cache file — hardcode the known aliases.
 // These alias names are stable; the full model IDs behind them update automatically.
@@ -316,6 +317,10 @@ async function readCodexRecentModels(codexHomeDir) {
  * - effortLevels: string[] | null (null means the tool has no reasoning control)
  */
 export async function getModelsForTool(toolId, options = {}) {
+  return limitReasoningCatalog(await getUnrestrictedModelsForTool(toolId, options));
+}
+
+async function getUnrestrictedModelsForTool(toolId, options = {}) {
   if (toolId === 'claude') {
     const levels = ['none', 'low', 'medium', 'high'];
     const defaultReasoning = {

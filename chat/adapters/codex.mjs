@@ -8,6 +8,7 @@ import {
   IS_GUEST_INSTANCE,
 } from '../../lib/config.mjs';
 import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
+import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 
 /**
  * Codex CLI adapter.
@@ -383,8 +384,9 @@ export function buildCodexArgs(prompt, options = {}) {
   if (options.model) {
     args.push('-m', options.model);
   }
-  if (options.reasoningEffort) {
-    args.push('-c', `model_reasoning_effort=${options.reasoningEffort}`);
+  const reasoningEffort = clampReasoningEffort(options.reasoningEffort);
+  if (reasoningEffort) {
+    args.push('-c', `model_reasoning_effort=${reasoningEffort}`);
   }
 
   const effectivePrompt = resolveCodexSystemPrefix(options) + prompt;

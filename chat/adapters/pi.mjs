@@ -6,6 +6,7 @@ import {
   toolUseEvent,
   usageEvent,
 } from '../normalizer.mjs';
+import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 
 function textFromContent(content) {
   if (typeof content === 'string') return content;
@@ -224,7 +225,8 @@ export function buildPiArgs(prompt, options = {}) {
     args.push('--no-session');
   }
   if (options.model) args.push('--model', String(options.model));
-  if (options.thinking) args.push('--thinking', String(options.thinking));
+  const thinking = clampReasoningEffort(options.thinking);
+  if (thinking) args.push('--thinking', thinking);
   args.push(String(prompt || '').replaceAll('\0', ''));
   return args;
 }

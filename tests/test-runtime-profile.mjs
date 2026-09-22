@@ -8,6 +8,11 @@ import {
   runtimeProfileFromUiSelection,
   runtimeProfileToUiSelection,
 } from '../lib/runtime-profile.mjs';
+import {
+  GUEST_MAX_REASONING_EFFORT,
+  clampReasoningEffort,
+  limitReasoningCatalog,
+} from '../lib/reasoning-effort-policy.mjs';
 
 const catalog = {
   defaultModel: 'default-model',
@@ -18,6 +23,38 @@ const catalog = {
     { id: 'plain-model', reasoning: { kind: 'none' } },
   ],
 };
+
+assert.equal(GUEST_MAX_REASONING_EFFORT, 'xhigh');
+assert.equal(clampReasoningEffort('ultra', { isGuestInstance: true }), 'xhigh');
+assert.equal(clampReasoningEffort('max', { isGuestInstance: true }), 'xhigh');
+assert.equal(clampReasoningEffort('xhigh', { isGuestInstance: true }), 'xhigh');
+assert.equal(clampReasoningEffort('ultra', { isGuestInstance: false }), 'ultra');
+
+const limitedCatalog = limitReasoningCatalog({
+  models: [{
+    id: 'sol',
+    reasoning: {
+      kind: 'enum',
+      label: 'Thinking',
+      levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+      default: 'ultra',
+    },
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    defaultEffort: 'ultra',
+  }],
+  effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+  reasoning: {
+    kind: 'enum',
+    label: 'Thinking',
+    levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    default: 'ultra',
+  },
+}, { isGuestInstance: true });
+
+assert.deepEqual(limitedCatalog.effortLevels, ['low', 'medium', 'high', 'xhigh']);
+assert.deepEqual(limitedCatalog.models[0].effortLevels, ['low', 'medium', 'high', 'xhigh']);
+assert.equal(limitedCatalog.models[0].defaultEffort, 'xhigh');
+assert.equal(limitedCatalog.reasoning.default, 'xhigh');
 
 assert.deepEqual(normalizeRuntimeProfile({ harness: ' codex ', model: ' model ', effort: ' high ' }), {
   tool: 'codex', model: 'model', effort: 'high',
@@ -52,5 +89,8 @@ assert.deepEqual(completeRuntimeProfile({ tool: 'fake', model: 'strong-model' },
 assert.deepEqual(completeRuntimeProfile({ tool: 'fake', model: 'plain-model', effort: 'high' }, catalog), {
   tool: 'fake', model: 'plain-model', effort: '',
 });
+assert.deepEqual(completeRuntimeProfile({ tool: 'fake', model: 'strong-model', effort: 'ultra' }, catalog), {
+  tool: 'fake', model: 'strong-model', effort: 'high',
+}, 'unsupported effort values must resolve to the selected model default');
 
 console.log('runtime profile tests passed');

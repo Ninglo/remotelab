@@ -44,6 +44,24 @@ try {
     'danger-full-access',
     'guest codex runs should default to full local filesystem access when the boundary is relaxed',
   );
+  const cappedArgs = buildCodexArgs('Say hello.', { reasoningEffort: 'ultra' });
+  assert.equal(
+    cappedArgs.includes('model_reasoning_effort=xhigh'),
+    true,
+    'guest Codex runs must clamp ultra effort to xhigh at the process boundary',
+  );
+  assert.equal(
+    cappedArgs.includes('model_reasoning_effort=ultra'),
+    false,
+    'guest Codex runs must never pass ultra through to the Harness',
+  );
+
+  const modelsModuleUrl = pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href;
+  const { getModelsForTool } = await import(`${modelsModuleUrl}?t=${Date.now()}`);
+  const catalog = await getModelsForTool('codex');
+  assert.equal(catalog.effortLevels.includes('max'), false, 'guest model controls must hide max');
+  assert.equal(catalog.effortLevels.includes('ultra'), false, 'guest model controls must hide ultra');
+  assert.equal(catalog.effortLevels.includes('xhigh'), true, 'guest model controls should retain xhigh');
 
   process.env.REMOTELAB_CODEX_DISABLE_APPS = '0';
   const { buildCodexArgs: buildCodexArgsWithApps } = await import(`${guestModuleUrl}?t=${Date.now() + 1}`);

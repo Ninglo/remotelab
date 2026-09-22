@@ -47,6 +47,12 @@ try {
     false,
     'owner Codex runs should keep apps enabled by default',
   );
+  const ownerUltraArgs = buildCodexArgs('Say hello.', { reasoningEffort: 'ultra' });
+  assert.equal(
+    ownerUltraArgs.includes('model_reasoning_effort=ultra'),
+    true,
+    'owner Codex runs should not inherit the guest xhigh cap',
+  );
 
   const runtimePolicyUrl = pathToFileURL(join(repoRoot, 'chat', 'runtime-policy.mjs')).href;
   const { applyProviderRuntimeEnv } = await import(`${runtimePolicyUrl}?t=${Date.now()}`);

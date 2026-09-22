@@ -1,4 +1,5 @@
 import { buildCodexArgs } from '../adapters/codex.mjs';
+import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
 
 const nativeStatus = value => value === 'inProgress' ? 'in_progress' : value === 'declined' ? 'failed' : value;
 const textInput = text => [{ type: 'text', text: String(text), text_elements: [] }];
@@ -35,7 +36,7 @@ function execItem(item) {
 export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => {}, onError = () => {}, options = {}, cwd } = {}) {
   if (typeof send !== 'function') throw new TypeError('Codex driver requires send');
   const configuredOptions = { ...options, threadId: options.threadId || options.codexThreadId,
-    reasoningEffort: options.reasoningEffort || options.effort };
+    reasoningEffort: clampReasoningEffort(options.reasoningEffort || options.effort) };
   const legacyArgs = buildCodexArgs('', configuredOptions);
   const args = ['app-server', '--listen', 'stdio://'];
   let sandbox = 'danger-full-access';
@@ -100,8 +101,8 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
     const result = await request('turn/start', {
       threadId, input: textInput(text),
       ...(id ? { clientUserMessageId: id } : {}),
-      ...(options.model ? { model: options.model } : {}),
-      ...(options.reasoningEffort || options.effort ? { effort: options.reasoningEffort || options.effort } : {}),
+      ...(configuredOptions.model ? { model: configuredOptions.model } : {}),
+      ...(configuredOptions.reasoningEffort ? { effort: configuredOptions.reasoningEffort } : {}),
       ...(options.serviceTier ? { serviceTier: options.serviceTier } : {}),
     });
     const turnId = result?.turn?.id;
