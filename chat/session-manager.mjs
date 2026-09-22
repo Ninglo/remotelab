@@ -2356,6 +2356,22 @@ export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT
   return projectSessionPersonView(await enrichSessionMeta(result.meta), personId);
 }
 
+export async function updateSessionSystemPrompt(id, systemPrompt) {
+  const nextSystemPrompt = typeof systemPrompt === 'string' ? systemPrompt.trim() : '';
+  const result = await mutateSessionMeta(id, (session) => {
+    const currentSystemPrompt = typeof session.systemPrompt === 'string' ? session.systemPrompt : '';
+    if (currentSystemPrompt === nextSystemPrompt) return false;
+    if (nextSystemPrompt) session.systemPrompt = nextSystemPrompt;
+    else delete session.systemPrompt;
+    session.updatedAt = nowIso();
+    return true;
+  });
+
+  if (!result.meta) return null;
+  if (result.changed) broadcastSessionInvalidation(id);
+  return enrichSessionMeta(result.meta);
+}
+
 export async function mergeSessionPersonViewOwnership(sourcePersonId, targetPersonId) {
   const sourceId = typeof sourcePersonId === 'string' ? sourcePersonId.trim() : '';
   const targetId = typeof targetPersonId === 'string' ? targetPersonId.trim() : '';

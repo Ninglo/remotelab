@@ -106,6 +106,7 @@ import {
   updateSessionGrouping,
   updateSessionLastReviewedAt,
   updateSessionRuntimePreferences,
+  updateSessionSystemPrompt,
   updateSessionWorkflowClassification,
 } from './session-manager.mjs';
 
@@ -945,6 +946,7 @@ export async function handleControlRoutes({
     const hasSpacePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'space');
     const hasGroupPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'group');
     const hasDescriptionPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'description');
+    const hasSystemPromptPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'systemPrompt');
     const hasSidebarOrderPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'sidebarOrder');
     const hasActiveAgreementsPatch = Object.prototype.hasOwnProperty.call(patch || {}, 'activeAgreements');
     const hasWorkflowStatePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'workflowState');
@@ -985,6 +987,10 @@ export async function handleControlRoutes({
     }
     if (hasDescriptionPatch && patch.description !== null && typeof patch.description !== 'string') {
       writeJson(res, 400, { error: 'description must be a string or null' });
+      return true;
+    }
+    if (hasSystemPromptPatch && patch.systemPrompt !== null && typeof patch.systemPrompt !== 'string') {
+      writeJson(res, 400, { error: 'systemPrompt must be a string or null' });
       return true;
     }
     if (hasSidebarOrderPatch && patch.sidebarOrder !== null && (!Number.isInteger(patch.sidebarOrder) || patch.sidebarOrder < 1)) {
@@ -1092,6 +1098,9 @@ export async function handleControlRoutes({
       session = await updateSessionAgreements(sessionId, {
         activeAgreements: patch.activeAgreements ?? [],
       }) || session;
+    }
+    if (hasSystemPromptPatch) {
+      session = await updateSessionSystemPrompt(sessionId, patch.systemPrompt || '') || session;
     }
     if (hasWorkflowStatePatch || hasWorkflowPriorityPatch) {
       session = await updateSessionWorkflowClassification(sessionId, {
