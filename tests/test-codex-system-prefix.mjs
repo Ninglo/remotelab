@@ -2,7 +2,9 @@
 import assert from 'assert/strict';
 
 const previousDeveloperInstructions = process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS;
+const previousHttpsProxy = process.env.HTTPS_PROXY;
 delete process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS;
+process.env.HTTPS_PROXY = 'http://proxy.example.test:8080';
 
 const { buildCodexArgs } = await import(`../chat/adapters/codex.mjs?t=${Date.now()}`);
 
@@ -35,5 +37,10 @@ try {
     delete process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS;
   } else {
     process.env.REMOTELAB_CODEX_DEVELOPER_INSTRUCTIONS = previousDeveloperInstructions;
+  }
+  if (previousHttpsProxy === undefined) {
+    delete process.env.HTTPS_PROXY;
+  } else {
+    process.env.HTTPS_PROXY = previousHttpsProxy;
   }
 }
