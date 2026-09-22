@@ -819,7 +819,8 @@ function renderReasoningInto(container, evt) {
 }
 
 function renderManagerContextInto(container, evt) {
-  return renderActivityNote(container, evt, "context");
+  const title = evt?.contextKind === "model" ? t("activity.modelContext") : evt?.title;
+  return renderActivityNote(container, { ...evt, ...(title ? { title } : {}) }, "context");
 }
 
 function collectHiddenBlockToolNames(events) {

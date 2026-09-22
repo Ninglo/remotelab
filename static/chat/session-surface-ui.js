@@ -242,33 +242,6 @@ function renderDeliveryIssues(session) {
   panel.append(disclosure);
 }
 
-function renderSessionInstructions(session) {
-  const panel = document.getElementById("sessionInstructionsPanel");
-  const details = document.getElementById("sessionInstructionsDetails");
-  const text = document.getElementById("sessionInstructionsText");
-  if (!panel || !details || !text) return;
-
-  const prompt = typeof session?.systemPrompt === "string" ? session.systemPrompt.trim() : "";
-  const sessionId = typeof session?.id === "string" ? session.id : "";
-  const signature = JSON.stringify([sessionId, prompt]);
-  if (!prompt) {
-    panel.hidden = true;
-    panel.dataset.signature = "";
-    details.open = false;
-    text.textContent = "";
-    return;
-  }
-
-  const preserveOpen = panel.dataset.sessionId === sessionId && details.open;
-  if (panel.dataset.signature !== signature) {
-    text.textContent = prompt;
-    panel.dataset.signature = signature;
-  }
-  panel.dataset.sessionId = sessionId;
-  panel.hidden = false;
-  details.open = preserveOpen;
-}
-
 function renderSessionScopeContext(session) {
   const parts = [];
   const sourceName = typeof getEffectiveSessionSourceName === "function"

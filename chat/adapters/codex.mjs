@@ -282,7 +282,7 @@ function encodeTomlString(value) {
   return JSON.stringify(String(value || ''));
 }
 
-function resolveDeveloperInstructions(options = {}) {
+export function resolveCodexDeveloperInstructions(options = {}) {
   if (Object.prototype.hasOwnProperty.call(options, 'developerInstructions')) {
     return typeof options.developerInstructions === 'string'
       ? options.developerInstructions.trim()
@@ -292,6 +292,12 @@ function resolveDeveloperInstructions(options = {}) {
     return CODEX_DEVELOPER_INSTRUCTIONS.trim();
   }
   return '';
+}
+
+export function resolveCodexSystemPrefix(options = {}) {
+  return Object.prototype.hasOwnProperty.call(options, 'systemPrefix')
+    ? String(options.systemPrefix || '')
+    : CODEX_SYSTEM_PREFIX;
 }
 
 function envFlagEnabled(value, fallback = false) {
@@ -350,7 +356,7 @@ export function resolveCodexConfigOverrides(options = {}, env = process.env) {
  */
 export function buildCodexArgs(prompt, options = {}) {
   const args = ['exec'];
-  const developerInstructions = resolveDeveloperInstructions(options);
+  const developerInstructions = resolveCodexDeveloperInstructions(options);
   const disableApps = Object.prototype.hasOwnProperty.call(options, 'disableApps')
     ? options.disableApps === true
     : (IS_GUEST_INSTANCE && envFlagEnabled(process.env.REMOTELAB_CODEX_DISABLE_APPS, true));
@@ -381,7 +387,7 @@ export function buildCodexArgs(prompt, options = {}) {
     args.push('-c', `model_reasoning_effort=${options.reasoningEffort}`);
   }
 
-  const effectivePrompt = (options.systemPrefix ?? CODEX_SYSTEM_PREFIX) + prompt;
+  const effectivePrompt = resolveCodexSystemPrefix(options) + prompt;
 
   if (options.threadId) {
     args.push('resume', options.threadId, effectivePrompt);

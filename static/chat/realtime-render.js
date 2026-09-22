@@ -22,9 +22,6 @@ function showEmpty() {
   if (typeof renderDeliveryIssues === "function") {
     renderDeliveryIssues(typeof getCurrentSession === "function" ? getCurrentSession() : null);
   }
-  if (typeof renderSessionInstructions === "function") {
-    renderSessionInstructions(null);
-  }
   messagesInner.innerHTML = "";
   messagesInner.appendChild(emptyState);
   if (typeof renderQueuedMessagePanel === "function") {

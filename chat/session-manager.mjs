@@ -31,6 +31,10 @@ import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
+  resolveCodexDeveloperInstructions,
+  resolveCodexSystemPrefix,
+} from './adapters/codex.mjs';
+import {
   isCodexMissingRolloutFailure,
   isCodexResumeUnavailableFailure,
 } from './provider-runtime-errors.mjs';
@@ -57,6 +61,11 @@ import {
 import { appendUsageLedgerRecord, buildUsageLedgerRecord } from './usage-ledger.mjs';
 import { triggerSessionStateSuggestion } from './session-state-classifier.mjs';
 import { buildSourceRuntimePrompt } from './source-runtime-prompts.mjs';
+import {
+  createModelContextSlot,
+  describeModelContextSlots,
+  renderModelContextSlots,
+} from './model-context-slots.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
 import {
@@ -1354,10 +1363,35 @@ async function findAssistantAttachmentMessageForRun(sessionId, runId) {
   return null;
 }
 
-async function buildManagerTurnContextText(session, options = {}) {
-  return buildTurnContextHook(session, {
+async function buildManagerTurnContextSlots(session, options = {}) {
+  const slots = [];
+  const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
+  if (sourceRuntimePrompt) {
+    slots.push(createModelContextSlot(
+      'source_runtime',
+      'Source/runtime instructions (backend-owned for this session source)',
+      sourceRuntimePrompt,
+    ));
+  }
+  if (shouldIncludeSessionSystemPrompt(session)) {
+    slots.push(createModelContextSlot(
+      'session_instructions',
+      'Session instructions',
+      session.systemPrompt,
+    ));
+  }
+  slots.push(createModelContextSlot(
+    'turn_context',
+    'Per-turn context',
+    await buildTurnContextHook(session, {
     sourceContext: normalizeSourceContext(options.sourceContext, Infinity), requestId: options.requestId,
-  });
+    }),
+  ));
+  return slots.filter(Boolean);
+}
+
+async function buildManagerTurnContextText(session, options = {}) {
+  return renderModelContextSlots(await buildManagerTurnContextSlots(session, options));
 }
 
 function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
@@ -1422,7 +1456,7 @@ function shouldPersistManagerTurnContext() {
   return !IS_GUEST_INSTANCE;
 }
 
-export async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}, preparedTurnContext = null) {
+async function buildPromptPackage(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}, preparedTurnContext = null) {
   const toolDefinition = await getToolDefinitionAsync(effectiveTool);
   const promptMode = toolDefinition?.promptMode === 'bare-user'
     ? 'bare-user'
@@ -1436,6 +1470,7 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
       && (currentSnapshot.userMessageCount || 0) > 0
     : resumeState.hasResume;
   let continuationContext = '';
+  const modelContextSlots = [];
 
   if (!hasResume && options.skipSessionContinuation !== true) {
     const contextHead = await getContextHead(sessionId);
@@ -1474,16 +1509,24 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
         sessionId,
         ...(isDelegatedChild ? { includeSessionSpawn: false } : {}),
       });
-      let preamble = systemContext;
-      const sourceRuntimePrompt = buildSourceRuntimePrompt(session);
-      if (sourceRuntimePrompt) {
-        preamble += `\n\n---\n\nSource/runtime instructions (backend-owned for this session source):\n${sourceRuntimePrompt}`;
-      }
-      if (shouldIncludeSessionSystemPrompt(session)) {
-        preamble += `\n\n---\n\nSession instructions:\n${session.systemPrompt}`;
-      }
-      actualText = `${preamble}\n\n---\n\n${actualText}`;
+      modelContextSlots.push(createModelContextSlot(
+        'remotelab_startup',
+        'RemoteLab startup context',
+        systemContext,
+        { delivery: 'fresh-provider' },
+      ));
+      actualText = `${systemContext}\n\n---\n\n${actualText}`;
     }
+    if (continuationContext) {
+      modelContextSlots.push(createModelContextSlot(
+        'continuation',
+        'Continuation context',
+        continuationContext,
+        { delivery: 'fresh-provider' },
+      ));
+    }
+    const turnSlots = await buildManagerTurnContextSlots(session, options);
+    modelContextSlots.push(...turnSlots);
   } else if (flattenPrompt) {
     const flatMessage = actualText.replace(/\s+/g, ' ').trim();
     if (continuationContext) {
@@ -1493,11 +1536,49 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
     }
   }
 
+  const developerInstructions = typeof options.developerInstructions === 'string'
+    ? options.developerInstructions.trim()
+    : '';
+  if (developerInstructions) {
+    modelContextSlots.unshift(createModelContextSlot(
+      'remotelab_developer_instructions',
+      'Developer instructions supplied by RemoteLab',
+      developerInstructions,
+      { delivery: 'developer' },
+    ));
+  }
+  const systemPrefix = typeof options.systemPrefix === 'string' ? options.systemPrefix : '';
+  if (systemPrefix) {
+    modelContextSlots.unshift(createModelContextSlot(
+      'remotelab_system_prefix',
+      'System prefix supplied by RemoteLab',
+      systemPrefix,
+      { delivery: 'prompt-prefix' },
+    ));
+  }
+
   if (flattenPrompt && promptMode === 'default') {
     actualText = actualText.replace(/\s+/g, ' ').trim();
   }
 
-  return actualText;
+  return {
+    prompt: actualText,
+    modelContext: renderModelContextSlots(modelContextSlots),
+    modelContextSlots: describeModelContextSlots(modelContextSlots),
+  };
+}
+
+export async function buildPrompt(sessionId, session, text, previousTool, effectiveTool, snapshot = null, options = {}, preparedTurnContext = null) {
+  return (await buildPromptPackage(
+    sessionId,
+    session,
+    text,
+    previousTool,
+    effectiveTool,
+    snapshot,
+    options,
+    preparedTurnContext,
+  )).prompt;
 }
 
 function normalizeRunEvents(run, events) {
@@ -2963,10 +3044,15 @@ async function ensureRequestInput(record, manifest) {
       ...(sourceContext ? { sourceContext } : {}),
     }));
   }
-  if (manifest.managerTurnContext && shouldPersistManagerTurnContext()
+  const visibleModelContext = typeof manifest.modelContext === 'string' && manifest.modelContext.trim()
+    ? manifest.modelContext.trim()
+    : manifest.managerTurnContext;
+  if (visibleModelContext && shouldPersistManagerTurnContext()
     && !events.some(event => event.type === 'manager_context' && event.runId === record.runId)) {
-    await appendEvent(record.sessionId, managerContextEvent(manifest.managerTurnContext, {
+    await appendEvent(record.sessionId, managerContextEvent(visibleModelContext, {
       requestId: record.requestId, responseId: record.responseId, runId: record.runId,
+      contextKind: 'model',
+      contextSlots: Array.isArray(manifest.modelContextSlots) ? manifest.modelContextSlots : [],
     }));
   }
 }
@@ -3056,6 +3142,30 @@ async function prepareRequestRun(record) {
 
   const managerTurnContext = effectiveToolDefinition?.promptMode === 'bare-user'
     ? '' : await buildManagerTurnContextText(session, { ...options, requestId });
+  const requestedDeveloperInstructions = options.executionProfile === QUICK_SESSION_PROFILE
+    ? getQuickSessionDeveloperInstructions()
+    : (typeof options.developerInstructions === 'string' ? options.developerInstructions.trim() : '');
+  const developerInstructions = effectiveRuntimeFamily === 'codex-json'
+    ? resolveCodexDeveloperInstructions(
+      options.executionProfile === QUICK_SESSION_PROFILE
+        || Object.prototype.hasOwnProperty.call(options, 'developerInstructions')
+        ? { developerInstructions: requestedDeveloperInstructions }
+        : {},
+    )
+    : requestedDeveloperInstructions;
+  const systemPrefix = effectiveRuntimeFamily === 'codex-json'
+    ? resolveCodexSystemPrefix(options)
+    : '';
+  const promptPackage = await buildPromptPackage(
+    sessionId,
+    session,
+    normalizedText,
+    previousTool,
+    effectiveTool,
+    snapshot,
+    { ...options, requestId, developerInstructions, systemPrefix },
+    managerTurnContext,
+  );
 
   const run = await createRun({
     status: {
@@ -3089,8 +3199,10 @@ async function prepareRequestRun(record) {
       tool: effectiveTool,
       ...(effectiveRuntimeFamily ? { runtimeFamily: effectiveRuntimeFamily } : {}),
       inputMode: effectiveToolDefinition?.inputMode === 'native' ? 'native' : 'batch',
-      prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options, managerTurnContext),
+      prompt: promptPackage.prompt,
       managerTurnContext,
+      modelContext: promptPackage.modelContext,
+      modelContextSlots: promptPackage.modelContextSlots,
       internalOperation: options.internalOperation || null,
       viewPersonId: typeof options.viewPersonId === 'string' ? options.viewPersonId.trim() : '',
       ...(options.executionProfile ? { executionProfile: options.executionProfile } : {}),
@@ -3124,9 +3236,8 @@ async function prepareRequestRun(record) {
         codexThreadId: persistedCodexThreadId || undefined,
         antigravityConversationId: persistedAntigravityConversationId || undefined,
         executionProfile: options.executionProfile || undefined,
-        developerInstructions: options.executionProfile === QUICK_SESSION_PROFILE
-          ? getQuickSessionDeveloperInstructions()
-          : undefined,
+        developerInstructions: developerInstructions || undefined,
+        systemPrefix: systemPrefix || undefined,
         disableApps: options.executionProfile === QUICK_SESSION_PROFILE ? false : undefined,
         sessionStartPreflightPurpose: options.internalOperation === 'trigger_delivery'
           ? 'scheduled_user_work'
@@ -3156,7 +3267,12 @@ async function prepareRequestRun(record) {
     session = await enrichSessionMeta(activeSession);
   }
 
-  await ensureRequestInput(record, { forkBaseSeq: snapshot.latestSeq, managerTurnContext });
+  await ensureRequestInput(record, {
+    forkBaseSeq: snapshot.latestSeq,
+    managerTurnContext,
+    modelContext: promptPackage.modelContext,
+    modelContextSlots: promptPackage.modelContextSlots,
+  });
 
   if (!options.internalOperation && isFirstRecordedUserMessage && isSessionAutoRenamePending(session)) {
     const draftName = buildTemporarySessionName(recordedUserText);

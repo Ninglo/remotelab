@@ -100,6 +100,29 @@ assert.match(resumedPrompt, /Current user message:/);
 assert.doesNotMatch(resumedPrompt, /RemoteLab Session and Scheduling Capabilities/);
 assert.match(resumedPrompt, /Agent 更像执行器，Manager 负责统一任务语义和边界/);
 
+const resumedPromptWithUpdatedInstructions = await buildPrompt(
+  'session-test-updated-instructions',
+  {
+    ...baseSession,
+    codexThreadId: 'thread-test-updated-instructions',
+    sourceId: 'feishu',
+    sourceName: 'Feishu',
+    sourceContext: { chatType: 'group' },
+    systemPrompt: 'Persist recordings as source material for the daily review.',
+  },
+  '继续。',
+  'codex',
+  'codex',
+  null,
+  {},
+);
+assert.match(resumedPromptWithUpdatedInstructions, /Source\/runtime instructions/,
+  'source-owned rules should be refreshed on every turn');
+assert.match(resumedPromptWithUpdatedInstructions, /Session instructions/,
+  'Session instructions should be refreshed on every turn');
+assert.match(resumedPromptWithUpdatedInstructions, /Persist recordings as source material for the daily review/);
+assert.match(resumedPromptWithUpdatedInstructions, /<private>[\s\S]*Session instructions[\s\S]*<\/private>/);
+
 const splitPrompt = await buildPrompt(
   'session-test-6',
   baseSession,
@@ -133,7 +156,7 @@ const feishuSourcePrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned for this session source\):/);
+assert.match(feishuSourcePrompt, /Source\/runtime instructions \(backend-owned for this session source\)/);
 assert.match(feishuSourcePrompt, /same RemoteLab executor you would be in ChatUI/);
 assert.match(feishuSourcePrompt, /Do not collapse action requests into a one-line acknowledgement/);
 assert.match(feishuSourcePrompt, /Do not include emoji characters, emoticons, or sticker aliases/);

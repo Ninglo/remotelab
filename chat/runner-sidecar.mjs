@@ -344,6 +344,9 @@ async function main() {
     model: manifest.options?.model,
     effort: manifest.options?.effort,
     developerInstructions: manifest.options?.developerInstructions,
+    ...(Object.prototype.hasOwnProperty.call(manifest.options || {}, 'systemPrefix')
+      ? { systemPrefix: manifest.options.systemPrefix }
+      : {}),
     disableApps: manifest.options?.disableApps === true,
     executionProfile: manifest.options?.executionProfile,
     codexConfigOverrides: manifest.options?.codexConfigOverrides,

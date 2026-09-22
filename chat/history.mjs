@@ -14,12 +14,13 @@ const EVENT_FILE_WIDTH = 9;
 const BODY_FIELD_BY_TYPE = {
   message: 'content',
   reasoning: 'content',
+  manager_context: 'content',
   tool_use: 'toolInput',
   tool_result: 'output',
   file_change: 'diff',
 };
-const ALWAYS_EXTERNALIZE_TYPES = new Set(['reasoning', 'file_change']);
-const DEFERRED_INDEX_BODY_TYPES = new Set(['message', 'reasoning', 'tool_use', 'tool_result', 'file_change']);
+const ALWAYS_EXTERNALIZE_TYPES = new Set(['reasoning', 'manager_context', 'file_change']);
+const DEFERRED_INDEX_BODY_TYPES = new Set(['message', 'reasoning', 'manager_context', 'tool_use', 'tool_result', 'file_change']);
 const INLINE_BODY_LIMITS = {
   message: 64 * 1024,
   reasoning: 0,
@@ -30,6 +31,7 @@ const INLINE_BODY_LIMITS = {
 const PREVIEW_LIMITS = {
   message: 1600,
   reasoning: 1600,
+  manager_context: 1600,
   tool_use: 800,
   tool_result: 1200,
   status: 800,

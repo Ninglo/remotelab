@@ -90,6 +90,7 @@ try {
   const session = await createSession(home, 'fake-codex', 'Feishu source context test', {
     sourceId: 'feishu',
     sourceName: 'Feishu',
+    systemPrompt: 'Persist recordings as source material for the daily review.',
     sourceContext: {
       connector: 'feishu',
       chatType: 'group',
@@ -137,10 +138,16 @@ try {
   assert.equal(latestUserEvent?.content, 'hello');
   const firstManifest = await getRunManifest(outcome.run.id);
   const firstContext = history.find(event => event.type === 'manager_context').content;
-  assert.equal(firstContext, firstManifest.managerTurnContext);
-  assert.ok(firstManifest.prompt.includes(`<private>\n${firstContext}\n</private>`));
-  assert.match(firstContext, /msg_source_context_1/);
-  assert.doesNotMatch(firstContext, /threadId/);
+  assert.equal(firstContext, firstManifest.modelContext);
+  assert.ok(firstManifest.prompt.includes(`<private>\n${firstManifest.managerTurnContext}\n</private>`));
+  assert.match(firstContext, /RemoteLab startup context/);
+  assert.match(firstContext, /Source\/runtime instructions/);
+  assert.match(firstContext, /Persist recordings as source material for the daily review/);
+  assert.deepEqual(firstManifest.modelContextSlots.map(slot => slot.id), [
+    'remotelab_startup', 'source_runtime', 'session_instructions', 'turn_context',
+  ]);
+  assert.match(firstManifest.managerTurnContext, /msg_source_context_1/);
+  assert.doesNotMatch(firstManifest.managerTurnContext, /threadId/);
 
   // Request options are durable snapshots; queueing later input cannot overwrite
   // the sender/message attached to an earlier turn or its replay.
@@ -156,17 +163,21 @@ try {
   const secondManifest = await getRunManifest(second.run.id);
   const secondHistory = await getHistory(session.id);
   const secondContext = secondHistory.find(event => event.type === 'manager_context' && event.runId === second.run.id).content;
-  assert.equal(secondContext, secondManifest.managerTurnContext);
-  assert.ok(secondManifest.prompt.includes(`<private>\n${secondContext}\n</private>`));
-  assert.match(secondContext, /msg_source_context_2/);
-  assert.match(secondContext, /thread-2/);
-  assert.match(secondContext, /truncated/);
-  assert.doesNotMatch(secondContext, /msg_source_context_1|Alice|mutated-after-admission/);
+  assert.equal(secondContext, secondManifest.modelContext);
+  assert.ok(secondManifest.prompt.includes(`<private>\n${secondManifest.managerTurnContext}\n</private>`));
+  assert.doesNotMatch(secondContext, /RemoteLab startup context/);
+  assert.deepEqual(secondManifest.modelContextSlots.map(slot => slot.id), [
+    'source_runtime', 'session_instructions', 'turn_context',
+  ]);
+  assert.match(secondManifest.managerTurnContext, /msg_source_context_2/);
+  assert.match(secondManifest.managerTurnContext, /thread-2/);
+  assert.match(secondManifest.managerTurnContext, /truncated/);
+  assert.doesNotMatch(secondManifest.managerTurnContext, /msg_source_context_1|Alice|mutated-after-admission/);
   assert.deepEqual((await getSessionSourceContext(session.id, { requestId: 'req-source-context-2' })).message, secondSnapshot);
   const duplicate = await submitHttpMessage(session.id, 'hello', [], firstOptions);
   assert.equal(duplicate.duplicate, true);
   assert.equal(duplicate.run.id, outcome.run.id);
-  assert.equal((await getRunManifest(outcome.run.id)).managerTurnContext, firstContext);
+  assert.equal((await getRunManifest(outcome.run.id)).modelContext, firstContext);
   assert.equal((await getHistory(session.id)).filter(event => event.type === 'manager_context' && event.runId === outcome.run.id).length, 1);
   assert.equal((await requests.byRequest(session.id, 'req-source-context-2')).options.sourceContext.messageId, 'msg_source_context_2');
 

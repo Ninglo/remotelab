@@ -93,8 +93,8 @@ try {
   const contexts = history.filter(event => event.type === 'manager_context' && event.runId === accepted.run.id);
   assert.equal(contexts.length, 1, 'recovery preserves exactly one Context for the prepared prompt');
   const manifest = JSON.parse(await readFile(join(config, 'chat-runs', accepted.run.id, 'manifest.json'), 'utf8'));
-  assert.equal(contexts[0].content, manifest.managerTurnContext);
-  assert.ok(manifest.prompt.includes(`<private>\n${contexts[0].content}\n</private>`));
+  assert.equal(contexts[0].content, manifest.modelContext);
+  assert.ok(manifest.prompt.includes(`<private>\n${manifest.managerTurnContext}\n</private>`));
   assert.match(contexts[0].content, /original-message/);
   assert.equal(history.find(event => event.type === 'message' && event.role === 'user').content, 'work');
   const starts = (await readFile(join(root, 'starts'), 'utf8')).trim().split('\n');

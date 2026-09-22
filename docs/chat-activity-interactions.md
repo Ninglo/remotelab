@@ -11,7 +11,7 @@ No history rewrite is needed to upgrade existing conversations.
 | Reasoning | Reasoning disclosure | Markdown and deferred full body |
 | Plan (`todo_list`) | Plan disclosure | Checklist |
 | Assistant commentary | Normal readable message within activity | No redundant timestamp within the activity block |
-| Manager context / context operation | Title and phase | Summary, content and reason |
+| Model context / context operation | One disclosure inside Thought, or a visible operation title and phase | RemoteLab-owned prompt slots delivered for that Run, or the operation summary, content and reason |
 | Provider notice / error | Bounded summary; failures accented | Full notice |
 | Context barrier | Quiet divider | No hidden operation |
 | Usage | Low-emphasis token summary | Exact values on hover; composer context remains authoritative |

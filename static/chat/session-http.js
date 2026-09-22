@@ -1217,7 +1217,6 @@ function applyAttachedSessionState(id, session) {
   }
   updateStatus("connected", session);
   if (typeof renderDeliveryIssues === "function") renderDeliveryIssues(session);
-  if (typeof renderSessionInstructions === "function") renderSessionInstructions(session);
   if (typeof renderQueuedMessagePanel === "function") {
     renderQueuedMessagePanel(session);
   }

@@ -13,6 +13,7 @@ const { appendEvents, readEventBody, readEventsAfter } = await import('./chat/hi
 try {
   const sessionId = 'history-index-contract';
   const longReasoning = 'thinking '.repeat(900);
+  const modelContext = '## Session instructions\n\nPersist this transcript.';
   const shortToolInput = 'echo hello';
   const shortToolResult = 'hello';
   const events = [];
@@ -26,8 +27,9 @@ try {
   }
 
   events.splice(10, 0, { type: 'reasoning', content: longReasoning });
-  events.splice(11, 0, { type: 'tool_use', id: 'tool-1', toolName: 'shell', toolInput: shortToolInput });
-  events.splice(12, 0, { type: 'tool_result', output: shortToolResult, exitCode: 0 });
+  events.splice(11, 0, { type: 'manager_context', content: modelContext, contextKind: 'model' });
+  events.splice(12, 0, { type: 'tool_use', id: 'tool-1', toolName: 'shell', toolInput: shortToolInput });
+  events.splice(13, 0, { type: 'tool_result', output: shortToolResult, exitCode: 0 });
 
   await appendEvents(sessionId, events);
 
@@ -47,6 +49,12 @@ try {
   assert.equal(reasoning.bodyAvailable, true, 'reasoning event should expose a lazy body');
   assert.equal(reasoning.bodyLoaded, false, 'reasoning body should stay unloaded in the event index');
 
+  const context = eventIndex.find((event) => event.type === 'manager_context');
+  assert.ok(context, 'model context event should be present');
+  assert.equal(context.content, '', 'model context should be deferred from the main event index');
+  assert.equal(context.bodyAvailable, true, 'model context should expose a lazy body');
+  assert.equal(context.bodyLoaded, false, 'model context should stay unloaded in the event index');
+
   const toolUse = eventIndex.find((event) => event.type === 'tool_use');
   assert.ok(toolUse, 'tool use event should be present');
   assert.equal(toolUse.toolInput, '', 'tool input should be deferred from the event index');
@@ -64,6 +72,9 @@ try {
 
   const reasoningBody = await readEventBody(sessionId, reasoning.seq);
   assert.equal(reasoningBody?.value, longReasoning, 'reasoning body should load on demand');
+
+  const contextBody = await readEventBody(sessionId, context.seq);
+  assert.equal(contextBody?.value, modelContext, 'model context should load on demand');
 
   const toolUseBody = await readEventBody(sessionId, toolUse.seq);
   assert.equal(toolUseBody?.value, shortToolInput, 'inline tool input should still load on demand');
