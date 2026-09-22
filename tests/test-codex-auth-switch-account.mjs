@@ -78,25 +78,6 @@ assert.equal(switchResponse.capture.status, 200);
 assert.equal(switchResponse.capture.payload?.codexAuth?.phase, 'awaiting');
 assert.equal(switchCalls, 1, 'account switch should be one server-side auth transaction');
 
-let switchCalls = 0;
-const switchResponse = createResponseCapture();
-await handleCodexAuthRoutes({
-  req: { method: 'POST' },
-  res: switchResponse.res,
-  pathname: '/api/codex-auth/switch-account',
-  authSession: { role: 'owner' },
-  writeJson: switchResponse.writeJson,
-  authManager: {
-    async switchAccount() {
-      switchCalls += 1;
-      return { available: true, loggedIn: false, phase: 'awaiting', deviceLoginActive: true, userCode: 'redacted' };
-    },
-  },
-});
-assert.equal(switchResponse.capture.status, 200);
-assert.equal(switchResponse.capture.payload?.codexAuth?.phase, 'awaiting');
-assert.equal(switchCalls, 1, 'owner switch should be one server-side auth transaction');
-
 const settingsSource = readFileSync(join(repoRoot, 'static', 'chat', 'settings-ui.js'), 'utf8');
 assert.match(settingsSource, /id="settingsCodexAuthSwitchBtn"/);
 assert.match(settingsSource, /window\.confirm\(copy\.switchConfirm\)/);
