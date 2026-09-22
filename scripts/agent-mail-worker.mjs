@@ -8,6 +8,7 @@ import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
 
 import { AUTH_FILE } from '../lib/config.mjs';
+import { readServiceToken } from '../lib/auth-config.mjs';
 import { buildEmailSourceRouteId, buildEmailSourceDelivery, buildEmailSourceDeliveryTarget } from '../lib/agent-mail-source-delivery.mjs';
 import { processEmailSourceDeliveryOnce } from '../lib/agent-mail-source-delivery-sender.mjs';
 import { findMailboxRuntimeByName, loadMailboxRuntimeRegistry } from '../lib/mailbox-runtime-registry.mjs';
@@ -104,14 +105,9 @@ Examples:
   node scripts/agent-mail-worker.mjs --interval-ms 5000`);
 }
 
-async function readOwnerToken(authFile = AUTH_FILE) {
+async function readConnectorToken(authFile = AUTH_FILE) {
   const resolvedAuthFile = normalizeAuthFile(authFile) || AUTH_FILE;
-  const auth = JSON.parse(await readFile(resolvedAuthFile, 'utf8'));
-  const token = trimString(auth?.token);
-  if (!token) {
-    throw new Error(`No owner token found in ${resolvedAuthFile}`);
-  }
-  return token;
+  return readServiceToken(resolvedAuthFile);
 }
 
 function normalizeBaseUrl(baseUrl) {
@@ -237,7 +233,7 @@ function createRemoteLabRuntime(baseUrl, { authFile = '' } = {}) {
     authFile: normalizedAuthFile,
     authToken: '',
     authCookie: '',
-    readOwnerToken: async () => readOwnerToken(normalizedAuthFile || AUTH_FILE),
+    readServiceToken: async () => readConnectorToken(normalizedAuthFile || AUTH_FILE),
   };
 }
 
@@ -250,9 +246,9 @@ async function ensureAuthCookie(runtime, forceRefresh = false) {
     runtime.authToken = '';
   }
   if (!runtime.authToken) {
-    runtime.authToken = typeof runtime.readOwnerToken === 'function'
-      ? await runtime.readOwnerToken()
-      : await readOwnerToken();
+    runtime.authToken = typeof runtime.readServiceToken === 'function'
+      ? await runtime.readServiceToken()
+      : await readConnectorToken();
   }
   const login = typeof runtime.loginWithToken === 'function' ? runtime.loginWithToken : loginWithToken;
   runtime.authCookie = await login(runtime.baseUrl, runtime.authToken);
@@ -656,7 +652,7 @@ async function runEmailSourceDeliverySweep({ rootDir, runtime }) {
       allErrors.push({ error: 'Guest mailbox route has no bound authentication file', guestBaseUrl });
       continue;
     }
-    // Never send the root instance's owner token to another guest.
+    // Never send the root instance's service token to another instance.
     const guestRuntime = createRemoteLabRuntime(guestBaseUrl, { authFile: guest.authFile });
     const guestResult = await drainEmailDeliveriesFromInstance({
       requestFn: (path, opts = {}) => requestRemoteLab(guestRuntime, path, opts),

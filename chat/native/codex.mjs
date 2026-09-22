@@ -233,7 +233,7 @@ export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => 
   function start(prompt) {
     if (initialization) return Promise.reject(new Error('Codex driver already started'));
     initialization = inputOperation(async () => {
-      await request('initialize', { clientInfo: { name: 'remotelab', version: '0.3.2' } });
+      await request('initialize', { clientInfo: { name: 'remotelab', version: '1.0.0' } });
       send({ method: 'initialized' });
       const resumeId = configuredOptions.threadId;
       const result = await request(resumeId ? 'thread/resume' : 'thread/start', {

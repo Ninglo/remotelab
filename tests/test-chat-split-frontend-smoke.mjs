@@ -27,6 +27,7 @@ const filesToParse = [
   join(repoRoot, 'static', 'chat', 'instance-settings.js'),
   join(repoRoot, 'static', 'chat', 'voice-input.js'),
   join(repoRoot, 'static', 'chat', 'settings-ui.js'),
+  join(repoRoot, 'static', 'chat', 'task-center.js'),
   join(repoRoot, 'static', 'chat', 'sidebar-ui.js'),
   join(repoRoot, 'static', 'chat', 'compose.js'),
   join(repoRoot, 'static', 'chat', 'init.js'),
@@ -331,6 +332,7 @@ const orderedFiles = [
   'instance-settings.js',
   'voice-input.js',
   'settings-ui.js',
+  'task-center.js',
   'sidebar-ui.js',
   'compose.js',
 ];
@@ -355,6 +357,12 @@ assert.equal(typeof context.readNavigationStateFromLocation, 'function');
 assert.equal(typeof context.createNewSessionShortcut, 'function');
 assert.equal(typeof context.createSortSessionListShortcut, 'function');
 assert.equal(typeof context.switchTab, 'function');
+assert.equal(context.normalizeSidebarTab('tasks'), 'tasks', 'Task Center deep links should preserve the tasks tab');
+context.switchTab('tasks', { syncState: false });
+assert.equal(getElementById('tabTasks').classList.contains('active'), true, 'Tasks tab should become active');
+assert.equal(getElementById('taskCenterPanel').classList.contains('visible'), true, 'Task Center panel should become visible');
+assert.equal(getElementById('sessionWorkspace').hidden, true, 'Task Center should replace the Session workspace rather than enter a transcript');
+assert.equal(getElementById('sessionList').style.display, '', 'the Session list should remain intact as Sessions-local navigation');
 
 console.log('test-chat-split-frontend-smoke: ok');
 process.exit(0);

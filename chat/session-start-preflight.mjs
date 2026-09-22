@@ -83,7 +83,13 @@ export async function readSessionStartPreflightPolicy(options = {}) {
   const policy = normalizePolicy(await readJson(options.configFile || SESSION_START_PREFLIGHT_CONFIG_FILE));
   if (!policy?.enabled) return null;
   if (options.freshProviderSession !== true) return null;
-  if (trimString(options.internalOperation) && !policy.includeInternalOperations) return null;
+  const purpose = trimString(options.purpose);
+  if (purpose === 'metadata' || purpose === 'maintenance') return null;
+  if (
+    trimString(options.internalOperation)
+    && purpose !== 'scheduled_user_work'
+    && !policy.includeInternalOperations
+  ) return null;
   if (!matchesOptionalList(policy.tools, options.tool)) return null;
   if (!matchesOptionalList(policy.runtimeFamilies, options.runtimeFamily)) return null;
   if (!matchesOptionalList(policy.models, options.model)) return null;
@@ -113,6 +119,60 @@ export function classifySessionStartPreflightAnswer(answer, policy = {}) {
   return { status: 'loaded', answer: normalized.slice(0, 240), reason: 'accepted_answer' };
 }
 
+function quotePreflightActivityValue(value, maximumLength = 320) {
+  const normalized = trimString(value).replace(/\s+/g, ' ');
+  const clipped = normalized.length > maximumLength
+    ? `${normalized.slice(0, Math.max(0, maximumLength - 1)).trimEnd()}…`
+    : normalized;
+  return JSON.stringify(clipped || 'unknown');
+}
+
+function formatPreflightRetryDelay(milliseconds) {
+  const value = Number(milliseconds);
+  if (!Number.isFinite(value) || value <= 0) return 'immediately';
+  if (value < 1000) return `in ${Math.round(value)} ms`;
+  const seconds = Math.round(value / 1000);
+  return `in ${seconds} second${seconds === 1 ? '' : 's'}`;
+}
+
+export function formatSessionStartPreflightActivity(options = {}) {
+  const state = trimString(options.state);
+  const attempt = boundedInteger(options.attempt, 1, 1, MAX_ATTEMPTS);
+  const maxAttempts = boundedInteger(options.maxAttempts, DEFAULT_MAX_ATTEMPTS, 1, MAX_ATTEMPTS);
+  const answer = quotePreflightActivityValue(options.answer, 240);
+
+  if (state === 'attempt') {
+    if (attempt > 1) {
+      return `Session start preflight retry (attempt ${attempt}/${maxAttempts}): sending the same freshness probe to a newly created provider session. The real request is still waiting.`;
+    }
+    return `Session start preflight (attempt ${attempt}/${maxAttempts}): sending the configured freshness probe to a new provider session before the real request. Its reply is used only to keep or replace that provider session.\n\nProbe: ${quotePreflightActivityValue(options.prompt)}`;
+  }
+  if (state === 'loaded') {
+    const replacement = options.hadRestart === true ? ' in the replacement provider session' : '';
+    return `Session start preflight passed${replacement} with answer ${answer}. Starting the real request now.`;
+  }
+  if (state === 'restart_required' || state === 'exhausted') {
+    const marker = quotePreflightActivityValue(options.matchedAnswer || options.answer, 240);
+    if (state === 'exhausted') {
+      const continuation = options.continuesRealRequest === true
+        ? ' No warming attempts remain, so RemoteLab is continuing with the original request instead of failing the run.'
+        : ' No warming attempts remain.';
+      return `Session start preflight returned ${answer}, matching the configured stale marker ${marker}.${continuation}`;
+    }
+    return `Session start preflight returned ${answer}, matching the configured stale marker ${marker}. Closing this provider session and trying a new one ${formatPreflightRetryDelay(options.retryDelayMs)}; the real request has not been sent yet.`;
+  }
+  if (state === 'cancelled') {
+    return `Session start preflight was cancelled after attempt ${attempt}/${maxAttempts}; the real request was not sent.`;
+  }
+  if (state === 'error') {
+    const continuation = options.continuesRealRequest === true
+      ? ' RemoteLab is continuing with the original request instead of failing the run.'
+      : '';
+    return `Session start preflight could not produce a usable warming result: ${quotePreflightActivityValue(options.error || options.reason, 240)}.${continuation}`;
+  }
+  return '';
+}
+
 function assistantTextParts(event, runtimeFamily) {
   if (!event || typeof event !== 'object') return [];
   if (runtimeFamily === 'codex-json') {
@@ -138,6 +198,10 @@ function assistantTextParts(event, runtimeFamily) {
       .map((block) => trimString(block.text))
       .filter(Boolean);
   }
+  if (runtimeFamily === 'antigravity-stream-json') {
+    if (event.event !== 'result') return [];
+    return [trimString(event.result?.response)].filter(Boolean);
+  }
   return [];
 }
 
@@ -152,6 +216,15 @@ export function createSessionStartPreflightCapture(runtimeFamily) {
         providerIdentityEvent = { type: 'thread.started', thread_id: event.thread_id };
       } else if (runtimeFamily === 'claude-stream-json' && event.session_id && !providerIdentityEvent) {
         providerIdentityEvent = { type: 'system', subtype: 'init', session_id: event.session_id };
+      } else if (
+        runtimeFamily === 'antigravity-stream-json'
+        && event.event === 'init'
+        && !providerIdentityEvent
+      ) {
+        const conversationId = trimString(event.conversation_id) || trimString(event.init?.conversation_id);
+        if (conversationId) {
+          providerIdentityEvent = { event: 'init', conversation_id: conversationId, init: event.init || {} };
+        }
       }
     },
     answer() {

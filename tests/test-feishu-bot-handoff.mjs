@@ -52,15 +52,16 @@ try {
   await ignored({ sender: { senderType: 'system' } });
 
   await send();
-  assert.equal(effects[1].forkCommand, true);
-  assert.equal(effects[1].forkText, 'please help');
+  assert.equal(effects[1].startThread, true);
+  assert.equal(effects[1].conversationKind, 'thread');
+  assert.equal(effects[1].messageText, '@_user_1 please help');
   assert.equal(effects[1].botHandoffMessageId, 'handoff');
   assert.equal(effects[1].replyInThread, true);
-  await ignored({ messageId: 'before-reply', rootId: 'handoff', messageText: '/fork\n\nagain' });
+  await ignored({ messageId: 'before-reply', rootId: 'handoff', messageText: '/thread\n\nagain' });
 
   // Retry after a crash retains the original reservation. Distinct bot events do not.
   rt = runtime();
-  assert.equal(await claimFeishuBotHandoff(rt, { ...base, forkCommand: true }), true);
+  assert.equal(await claimFeishuBotHandoff(rt, { ...effects[1] }), true);
   await ignored({ messageId: 'different-bot', parentId: 'handoff', sender: { senderType: 'bot', openId: 'ou_third' } });
 
   // Delivery acknowledgement persists the server-assigned thread and reply aliases.
@@ -95,17 +96,15 @@ try {
   rt = runtime();
   await restoreFeishuBotHandoffScopes(rt);
   await ignored({ messageId: 'after-receipt-restart', threadId: 'restored-thread', parentId: 'restored-outbound' });
-  await ignored({ messageId: 'empty-fork-followup', threadId: 'created-thread', messageText: '/fork' });
+  await ignored({ messageId: 'empty-thread-followup', threadId: 'created-thread', messageText: '/thread' });
   await recordFeishuThreadSessionBinding(rt, { ...base, threadId: 'session-alias' }, 'session-handoff');
   await ignored({ messageId: 'session-followup', threadId: 'session-alias' });
 
-  // Human continuation and explicit human forks still work; neither resets the quota.
+  // Human continuation stays in the topology-bound Thread and does not reset the quota.
   await send({ messageId: 'human', threadId: 'created-thread', sender: { senderType: 'user' }, messageText: 'continue please' });
-  assert.equal(effects.at(-1).forkCommand, undefined);
-  await send({ messageId: 'human-fork', threadId: 'created-thread', sender: { senderType: 'user' }, messageText: '/fork\n\nnew task' });
-  assert.equal(effects.at(-1).forkCommand, true);
+  assert.equal(effects.at(-1).conversationKind, 'thread');
   rt = runtime();
-  await ignored({ messageId: 'after-human-fork', threadId: 'created-thread' });
+  await ignored({ messageId: 'after-human', threadId: 'created-thread' });
 
   // One shared quota, not one allowance per peer bot, even under concurrent admission.
   const concurrent = await Promise.all(['one', 'two'].map(messageId => send({
@@ -125,9 +124,9 @@ try {
   await send({ messageId: 'private-first', chatType: 'p2p', chatId: 'private-chat' });
   rt = runtime();
   await ignored({ messageId: 'private-second', chatType: 'p2p', chatId: 'private-chat' });
-  await send({ messageId: 'shared-first', messageText: '/continue\n\nshared task' });
+  await send({ messageId: 'shared-first', messageText: '/inline shared task' });
   rt = runtime();
-  await ignored({ messageId: 'shared-second', messageText: '/continue\n\nanother task' });
+  await ignored({ messageId: 'shared-second', messageText: '/inline another task' });
   assert.equal((await send({ messageId: 'tenant-isolation', tenantKey: 'other', threadId: 'created-thread' })).sessionId, 'session-tenant-isolation');
   assert.equal((await send({ messageId: 'chat-isolation', chatId: 'other-chat', threadId: 'created-thread' })).sessionId, 'session-chat-isolation');
   rt = { ...runtime(), config: { ...runtime().config, sourceRouteId: 'other-route' } };
@@ -145,7 +144,7 @@ try {
     rt = runtime();
     rt.config.botHandoffPolicy = unlimited;
     assert.equal((await send({ messageId, threadId: 'created-thread' })).sessionId, `session-${messageId}`);
-    assert.equal(effects.at(-1).forkCommand, undefined, 'unlimited admission preserves thread continuation');
+    assert.equal(effects.at(-1).conversationKind, 'thread', 'unlimited admission preserves thread continuation');
   }
   await ignored({ messageId: 'unlimited-unmentioned', mentions: [] });
   await ignored({ messageId: 'unlimited-self', sender: { senderType: 'bot', openId: 'ou_self' } });
@@ -156,18 +155,19 @@ try {
     await assert.rejects(loadConfig(configPath), /Unsupported botHandoffPolicy/);
   }
 
-  // Bot admission must not alter the routing policy selected for human messages.
-  for (const [name, patch, sessionPolicy, expectedThread] of [
-    ['default-fork', {}, undefined, true],
-    ['explicit-continue', { messageText: '/continue\n\ntask' }, undefined, false],
-    ['group-continue', {}, { defaultMode: 'continue' }, false],
-    ['group-override', {}, { defaultMode: 'fork', groups: { 'parity-group-override': 'continue' } }, false],
-    ['explicit-fork', { messageText: '/fork\n\ntask' }, { defaultMode: 'continue' }, true],
-    ['private', { chatType: 'p2p' }, undefined, false],
-    ['existing-thread', { threadId: 'parity-thread' }, { defaultMode: 'continue' }, true],
+  // Bot admission must not alter the reply mode selected for human messages.
+  for (const [name, patch, replyPolicy, groups, expectedThread] of [
+    ['default-thread', {}, undefined, undefined, true],
+    ['explicit-inline', { messageText: '/inline task' }, undefined, undefined, false],
+    ['group-inline', {}, { group: 'inline', private: 'inline', chats: {} }, undefined, false],
+    ['group-override', {}, { group: 'thread', private: 'inline', chats: {} }, { 'parity-group-override': { replyMode: 'inline' } }, false],
+    ['explicit-thread', { messageText: '/thread task' }, { group: 'inline', private: 'inline', chats: {} }, undefined, true],
+    ['private', { chatType: 'p2p' }, undefined, undefined, false],
+    ['existing-thread', { threadId: 'parity-thread' }, { group: 'inline', private: 'inline', chats: {} }, undefined, true],
   ]) {
     rt = runtime();
-    rt.config.sessionPolicy = sessionPolicy;
+    rt.config.replyPolicy = replyPolicy;
+    rt.config.groups = groups;
     const summary = { ...base, ...patch, chatId: `parity-${name}` };
     if (patch.threadId) await recordFeishuThreadSessionBinding(rt, summary, `parity-session-${name}`);
     const routed = [];
@@ -182,7 +182,7 @@ try {
       });
     }
     assert.equal(routed.length, 2, `${name}: both senders are admitted`);
-    for (const field of ['forkCommand', 'forkText', 'continueCommand', 'replyInThread']) {
+    for (const field of ['conversationKind', 'startThread', 'replyInThread']) {
       assert.equal(routed[1][field], routed[0][field], `${name}: bot and human ${field} match`);
     }
     assert.equal(shouldReplyInFeishuThread(routed[1]), expectedThread, `${name}: common outbound routing`);

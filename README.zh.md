@@ -10,7 +10,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 
 ![RemoteLab 跨端演示](docs/readme-multisurface-demo.png)
 
-> 当前基线：`v0.3` —— owner-first 的 session 运行时、落盘的持久历史、内建 Welcome 引导和示例会话、可复用的 Agent 打包能力，以及同时兼容手机和桌面的无构建 Web UI。
+> 当前基线：`v1.0` —— 支持多人共享 Session、每人独立侧边栏视图、落盘持久历史、内建 Welcome 引导，以及同时兼容手机和桌面的无构建 Web UI。
 
 > 同一套系统可以从桌面、手机，以及飞书 / 邮件这类接入面进入。
 
@@ -71,7 +71,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 - 模型接入、机器、权限、连接与运维复杂度应该尽量封装在服务内部；普通用户面对的应该是一个开箱即用的入口，而不是一套需要先理解和配置的技术栈。
 - 最好的切入点是简单、明确、回报快的数字工作：数据整理、分析、文件处理、报表、通知、脚本化重复操作。
 - 手机 + 桌面 + 真机执行是组合优势：用户可以随手发上下文，AI 在真实机器上做重活，结果和审批再回到最方便的设备上。
-- `Session`、`Agent`、并发和分发仍然重要，但它们更像能力层或后续放大的方向，不应该压过首期价值验证。
+- 持久 `Session`、并发和可复用的本地工作流仍然重要，但它们更像能力层，不应该压过首期价值验证。
 
 ### RemoteLab 是什么
 
@@ -80,7 +80,7 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 - 一个尽量把模型、机器、权限与运维复杂度封装在服务端的低门槛 AI 服务
 - 一个让手机端发起、桌面端继续、AI 在本机执行的跨端控制面
 - 一个帮助人类在长任务中恢复上下文、而不是反复重讲需求的持久化工作线程系统
-- 一个可以把验证过的自动化 workflow 封装成可复用 `Agent` 的 packaging layer
+- 一个可以把验证过的自动化继续、分派或定时执行的持久 Session 层
 
 ### RemoteLab 不是什么
 
@@ -95,16 +95,16 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 ### 两条核心产品线
 
 1. **先帮用户解决重复数字工作。** RemoteLab 要能接住一个模糊但反复出现的任务，帮用户澄清输入、输出和约束，然后尽快把它变成一个能稳定省时间的自动化流程。
-2. **再把被验证的 workflow 包装和复用。** 当某个自动化真的帮用户省下时间后，再把它沉淀成 `Agent`、模板或其他可复用入口，逐步扩展到同一个人或相邻人群的类似问题。
+2. **再复用被验证的 workflow。** 当某个自动化真的帮用户省下时间后，可以显式地从来源 Session 创建新 Session，或者把它纳入定时执行。
 
 ### 产品语法
 
 当前产品模型刻意保持简单：
 
-- `Instance` —— 一个用户的独立 RemoteLab 环境；同一宿主机可以运行多个 guest instance
-- `Session` —— 该用户实例内部的一条持久化工作线程
+- `Instance` —— 一套隔离的 RemoteLab 环境；同一宿主机可以运行多个 guest instance
+- `Person` —— 用于归因和个人 UI 偏好的已认证用户身份，不承担 Session 权限隔离
+- `Session` —— 实例内所有已认证 Person 共享的一条持久化工作线程
 - `Run` —— 会话内部的一次执行尝试
-- `Agent` —— 启动会话用的可复用 workflow / policy package
 - `Share snapshot` —— 不可变的只读会话导出
 
 这些模型背后的架构假设是：
@@ -112,7 +112,10 @@ RemoteLab 的目标，不是只服务已经很会用 AI 的少数人，而是把
 - HTTP 是规范状态路径，WebSocket 只负责提示“有东西变了”
 - 浏览器是控制面，不是系统事实来源
 - 运行时进程可以丢，持久状态必须落在磁盘上
-- 每个实例默认单 owner；不同用户使用独立 guest instance，同一实例内的 visitor 访问通过 `Agents` 进行 scope 控制
+- 每个已认证 Person 都拥有实例的完整使用权；未认证请求不能进入工作台
+- Person 身份只用于归因和前端筛选，不用于可见性或权限控制
+- 每个 Person 只有一个可读 Handle；Web 用户名直接使用它，飞书身份会自动与之归并
+- Session 标题、消息、运行状态与工作流状态全员共享；Space、Group 和侧边栏顺序属于每个 Person 的独立视图
 - 前端保持轻量、无框架，并兼容不同端的使用方式
 
 ### 为什么这个边界重要
@@ -123,7 +126,7 @@ RemoteLab 在几个点上是刻意有立场的：
 - **通过用户可达的界面交付，而不是甩本地路径。** AI 可以操作这台机器，但用户协作面应该是 RemoteLab 和显式暴露的产品界面；如果结果只存在于宿主机本地，还不算完成交付。
 - **不重造执行器这一层。** RemoteLab 不应该把主要精力花在优化单任务 Agent 内部实现细节上。
 - **强调上下文恢复，不堆原始日志。** 比起终端连续性，durable session 更重要。
-- **强调 workflow packaging，不只是分享 prompt。** `Agent` 不是一段复制粘贴文本，而是一种可复用的工作形态。
+- **显式复用已经验证的工作。** 定时、分派和继续都围绕持久 Session 展开，不再维护第二套模板对象模型。
 - **接入最强工具，并保持可替换。** 它更像一层稳定抽象，让更强执行器出现时可以被快速接入，而不是把自己做成重闭环 runtime。
 
 ### 你现在可以做什么
@@ -136,7 +139,8 @@ RemoteLab 在几个点上是刻意有立场的：
 - 直接往聊天里粘贴截图
 - 界面自动跟随系统亮色 / 暗色外观
 - 生成不可变的只读分享快照
-- 用 Agent 链接做 visitor 范围内的入口流转
+- 按发起 Person 筛选 Session，但不隐藏其他人的工作
+- 每个 Person 可以把同一批共享 Session 放入不同 Space、Group，并采用不同侧边栏顺序
 
 ### Provider 说明
 
@@ -209,7 +213,7 @@ RemoteLab 在几个点上是刻意有立场的：
 - 发送消息时，界面会在后台不断重新拉取规范 HTTP 状态
 - 关掉浏览器后再回来，不会丢失会话线程
 - 生成不可变的只读会话分享快照
-- 按需配置基于 Agent 的 visitor 流程和推送通知
+- 在设置中添加更多 Person 与登录凭据，并按需启用推送通知
 
 ### 日常使用
 
@@ -230,7 +234,7 @@ remotelab restart chat
 3. `docs/README.md` —— 文档分层和同步规则
 4. `notes/current/core-domain-contract.md` —— 当前领域模型 / 重构基线
 5. `notes/README.md` —— 笔记分桶和清理规则
-6. `docs/setup.md`、`docs/external-message-protocol.md`、`docs/creating-apps.md`、`docs/feishu-bot-setup.md` 这类专题文档
+6. `docs/setup.md`、`docs/external-message-protocol.md`、`docs/feishu-bot-setup.md` 这类专题文档
 
 ---
 
@@ -348,7 +352,7 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 | `SESSION_EXPIRY` | `2592000000` | Cookie 有效期（毫秒，30 天） |
 | `SECURE_COOKIES` | `1` | Tailscale 或本地 HTTP 访问时设为 `0`（无 HTTPS） |
 | `REMOTELAB_INSTANCE_ROOT` | 未设置 | 可选的额外实例数据根目录；设置后默认使用 `<root>/config` + `<root>/memory` |
-| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、apps、push、provider runtime home |
+| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | 可选的运行时数据/配置目录覆盖，包含 auth、sessions、runs、push、provider runtime home |
 | `REMOTELAB_PUBLIC_PAGES_DIR` | `<config>/public-pages` | 可选的静态页面本机存储目录覆盖；默认永远不指向 Git 工作区 |
 | `REMOTELAB_PUBLIC_PAGES_BASE_URL` | `<public-base>/public-pages` | 可选的静态页面公网 URL 前缀覆盖 |
 | `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | 可选的用户 memory 目录覆盖，供 pointer-first 启动使用 |
@@ -359,12 +363,11 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 
 | 路径 | 内容 |
 |------|------|
-| `~/.config/remotelab/auth.json` | 访问 token + 密码哈希 |
-| `~/.config/remotelab/auth-sessions.json` | Owner / visitor 登录会话 |
+| `~/.config/remotelab/auth.json` | People、登录凭据、外部身份与 connector service token |
+| `~/.config/remotelab/auth-sessions.json` | 映射到 Person 的浏览器登录会话 |
 | `~/.config/remotelab/chat-sessions.json` | Chat 会话元数据 |
 | `~/.config/remotelab/chat-history/` | 每个会话的事件存储（`meta.json`、`context.json`、`events/*.json`、`bodies/*.txt`） |
 | `~/.config/remotelab/chat-runs/` | 持久化 run manifest、spool 输出和最终结果 |
-| `~/.config/remotelab/apps.json` | App 模板定义 |
 | `~/.config/remotelab/shared-snapshots/` | 不可变的只读会话分享快照 |
 | `~/.config/remotelab/public-pages/` | 当前实例发布的本机静态页面 |
 | `~/.remotelab/memory/` | pointer-first 启动时使用的机器私有 memory |
@@ -382,7 +385,7 @@ remotelab guest-instance converge --all    # 把所有 guest 实例收敛到当�
 - `HttpOnly` + `Secure` + `SameSite=Strict` 的认证 cookie（Tailscale 模式下关闭 `Secure`）
 - 登录失败按 IP 限流，并做指数退避
 - 默认服务只绑定 `127.0.0.1`，不直接暴露到公网；如需局域网访问，设置 `CHAT_BIND_HOST=0.0.0.0`
-- 分享快照是只读的，并与 owner 聊天面隔离
+- 分享快照是只读的，并与已认证工作台隔离
 - CSP 头使用基于 nonce 的脚本白名单
 
 ## 手动起第二实例

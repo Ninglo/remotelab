@@ -8,8 +8,8 @@ function renderRealtimeIcon(name, className = "") {
 }
 
 function resolveWsUrl(path) {
-  if (typeof withVisitorModeUrl === "function") {
-    return withVisitorModeUrl(path);
+  if (typeof resolveProductRequestUrl === "function") {
+    return resolveProductRequestUrl(path);
   }
   return typeof path === "string" ? path : String(path || "");
 }
@@ -102,8 +102,6 @@ async function dispatchAction(msg) {
           name: msg.name || "",
           sourceId: msg.sourceId || "",
           sourceName: msg.sourceName || "",
-          templateId: msg.templateId || "",
-          templateName: msg.templateName || "",
           sourceContext: msg.sourceContext,
           ...(msg.executionProfile ? { executionProfile: msg.executionProfile } : {}),
         };
@@ -139,7 +137,7 @@ async function dispatchAction(msg) {
           attachSession(session.id, session, {
             forceComposerFocus: msg.forceComposerFocus === true,
           });
-          if (!visitorMode && typeof fetchSessionsList === "function") {
+          if (typeof fetchSessionsList === "function") {
             void fetchSessionsList({ forceFresh: true }).catch(() => {});
           }
         } else {
@@ -220,15 +218,15 @@ async function dispatchAction(msg) {
           if (data.session) {
             const session = upsertSession(data.session) || data.session;
             renderSessionList();
-            if (archivingCurrentSession && typeof restoreOwnerSessionSelection === "function") {
-              restoreOwnerSessionSelection();
+            if (archivingCurrentSession && typeof restoreSessionSelection === "function") {
+              restoreSessionSelection();
             } else if (currentSessionId === msg.sessionId) {
               applyAttachedSessionState(msg.sessionId, session);
             }
           } else if (archivingCurrentSession) {
             await fetchSessionsList();
-            if (typeof restoreOwnerSessionSelection === "function") {
-              restoreOwnerSessionSelection();
+            if (typeof restoreSessionSelection === "function") {
+              restoreSessionSelection();
             }
           } else if (currentSessionId === msg.sessionId) {
             await refreshCurrentSession();
@@ -360,44 +358,8 @@ async function dispatchAction(msg) {
         }
         return true;
       }
-      case "apply_template": {
-        const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(msg.sessionId || currentSessionId)}/apply-template`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ templateId: msg.templateId }),
-        });
-        if (data.session) {
-          const session = upsertSession(data.session) || data.session;
-          renderSessionList();
-          if (currentSessionId === session.id) {
-            applyAttachedSessionState(session.id, session);
-          }
-        }
-        await refreshCurrentSession();
-        return true;
-      }
-      case "save_template": {
-        await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(msg.sessionId || currentSessionId)}/save-template`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: msg.name || "" }),
-        });
-        return true;
-      }
       case "cancel":
         await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(currentSessionId)}/cancel`, {
-          method: "POST",
-        });
-        await refreshCurrentSession();
-        return true;
-      case "compact":
-        await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(currentSessionId)}/compact`, {
-          method: "POST",
-        });
-        await refreshCurrentSession();
-        return true;
-      case "drop_tools":
-        await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(currentSessionId)}/drop-tools`, {
           method: "POST",
         });
         await refreshCurrentSession();
@@ -439,8 +401,8 @@ function applyOptimisticSessionArchiveState(sessionId, archived) {
   const next = buildOptimisticArchivedSession(previous, archived);
   if (!next) return null;
   upsertSession(next);
-  if (typeof refreshAppCatalog === "function") {
-    refreshAppCatalog();
+  if (typeof refreshSessionCatalog === "function") {
+    refreshSessionCatalog();
   }
   if (currentSessionId === sessionId) {
     applyAttachedSessionState(sessionId, next);
@@ -452,8 +414,8 @@ function applyOptimisticSessionArchiveState(sessionId, archived) {
 function restoreOptimisticSessionSnapshot(session) {
   if (!session?.id) return;
   upsertSession(session);
-  if (typeof refreshAppCatalog === "function") {
-    refreshAppCatalog();
+  if (typeof refreshSessionCatalog === "function") {
+    refreshSessionCatalog();
   }
   if (currentSessionId === session.id) {
     applyAttachedSessionState(session.id, session);
@@ -479,6 +441,9 @@ function handleWsMessage(msg) {
       if (archivedSessionsLoaded) {
         fetchArchivedSessions({ forceFresh: true }).catch(() => {});
       }
+      if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") === "tasks") {
+        window.RemoteLabTaskCenter?.refresh?.({ force: true }).catch(() => {});
+      }
       break;
 
     case "session_invalidated":
@@ -488,7 +453,7 @@ function handleWsMessage(msg) {
       }
       if (msg.sessionId === currentSessionId) {
         refreshCurrentSession({ forceFresh: true }).catch(() => {});
-      } else if (!visitorMode) {
+      } else {
         refreshSidebarSession(msg.sessionId, { forceFresh: true }).catch(() => {});
       }
       break;
@@ -509,6 +474,22 @@ function handleWsMessage(msg) {
       }
       break;
 
+    case "people_updated":
+      if (typeof requestPeople === "function") {
+        requestPeople().then(() => {
+          if (typeof renderPeopleSettings === "function") void renderPeopleSettings();
+        }).catch((error) => {
+          console.warn("[people_updated] failed to refresh people:", error?.message || error);
+        });
+      }
+      break;
+
+    case "automation_tasks_updated":
+      if ((typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") === "tasks") {
+        window.RemoteLabTaskCenter?.refresh?.({ force: true }).catch(() => {});
+      }
+      break;
+
     case "error":
       console.error("WS error:", msg.message);
       break;
@@ -517,11 +498,7 @@ function handleWsMessage(msg) {
 
 // ---- Status ----
 function canStartSessionFromDetachedComposer() {
-  return !currentSessionId
-    && !visitorMode
-    && (typeof hasAuthCapability === "function"
-      ? hasAuthCapability("createSession")
-      : true);
+  return !currentSessionId;
 }
 
 function updateStatus(connState, session = getCurrentSession()) {
@@ -541,9 +518,6 @@ function updateStatus(connState, session = getCurrentSession()) {
     inlineProviderSelect.disabled = true;
     inlineModelSelect.disabled = true;
     effortSelect.disabled = true;
-    if (typeof syncSessionTemplateControls === "function") {
-      syncSessionTemplateControls();
-    }
     if (typeof syncComposerVoiceCleanupToggle === "function") {
       syncComposerVoiceCleanupToggle();
     }
@@ -620,13 +594,10 @@ function updateStatus(connState, session = getCurrentSession()) {
   sendBtn.setAttribute("aria-label", sendBtn.title);
   cancelBtn.style.display = runIsActive && hasSession ? "flex" : "none";
   setAttachmentPickerDisabled(!composerEnabled);
-  inlineToolSelect.disabled = visitorMode;
+  inlineToolSelect.disabled = false;
   inlineProviderSelect.disabled = !composerEnabled;
   inlineModelSelect.disabled = !composerEnabled;
   effortSelect.disabled = !composerEnabled;
-  if (typeof syncSessionTemplateControls === "function") {
-    syncSessionTemplateControls();
-  }
   if (typeof syncComposerVoiceCleanupToggle === "function") {
     syncComposerVoiceCleanupToggle();
   }

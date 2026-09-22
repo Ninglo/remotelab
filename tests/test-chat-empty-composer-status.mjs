@@ -45,7 +45,6 @@ const context = {
   console,
   shareSnapshotMode: false,
   currentSessionId: null,
-  visitorMode: false,
   sessionStatus: 'idle',
   statusDot: element(),
   statusText: element(),

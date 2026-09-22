@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { commentCandidates, reconcileDocumentBinding, readBindingJson, writeBindingJson, bindingKey, bindingsDirectory, readDocumentComments } from '../connectors/feishu/document-bindings.mjs';
+import { commentCandidates, reconcileDocumentBinding, readBindingJson, writeBindingJson, bindingKey, bindingsDirectory, readDocumentComments, resolveCommentAuthorNames } from '../connectors/feishu/document-bindings.mjs';
 import { canForwardNativeRequest } from '../chat/native-request-dispatch.mjs';
 import { normalizeScheduledSessionTemplate, scheduledSessionIdentity } from '../lib/scheduled-session.mjs';
 
@@ -16,10 +16,24 @@ const comments = [{ comment_id: 'c', quote: 'anchor text', relation: { content_d
   reply('old', 'history', 'human', 1), reply('new', 'first'), reply('own', 'assistant reply', 'bot'),
 ] }];
 const state = { seen: {} };
-assert.equal(commentCandidates(binding, comments, state, { openId: 'bot' }).length, 1);
+const candidates = commentCandidates(binding, comments, state, { openId: 'bot' }, { human: '张三' });
+assert.equal(candidates.length, 1);
+assert.match(candidates[0].payload.text, /文档原文：\nanchor text/);
+assert.match(candidates[0].payload.text, /张三（本轮）：first/);
+assert.match(candidates[0].payload.text, /日报 Bot：assistant reply/);
+assert.match(candidates[0].payload.text, /Meta ID：feishu-comment:[a-f0-9]{24}/);
+assert.doesNotMatch(candidates[0].payload.text, /commentId|replyId|fileToken|\"relation\"|human|bot/);
+assert.equal(candidates[0].payload.requestId, candidates[0].payload.sourceContext.commentMetaId);
+assert.equal(candidates[0].payload.sourceContext.commentId, 'c');
 assert.ok(state.seen['c:old']);
 assert.ok(state.seen['c:own']);
 assert.throws(() => commentCandidates(binding, comments, state, {}), /identity/);
+await writeBindingJson(join(storageDir, 'lark-cli', 'bot-profile', 'config.json'), {
+  apps: [{ appId: 'app', users: [{ userOpenId: 'human', userName: '张三' }] }],
+});
+assert.deepEqual(await resolveCommentAuthorNames({
+  config: { storageDir, botId: 'bot-profile', appId: 'app' },
+}, comments, { openId: 'bot' }), { human: '张三' });
 const payloads = [], accepted = new Set(), reactions = [];
 let failAck = true;
 const runtime = { config: { storageDir }, botIdentity: { openId: 'bot' },

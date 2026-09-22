@@ -36,9 +36,11 @@
   --chat-gutter: 16px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
-  --sidebar-width: 300px;
+  --sidebar-width: 288px;
   --sidebar-width-expanded: min(80vw, calc(100vw - 240px));
   --sidebar-mobile-width: 320px;
+  --sidebar-row-height: 40px;
+  --sidebar-row-radius: 8px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -334,6 +336,10 @@ body {
   color: var(--text-muted);
   line-height: 1;
 }
+body:not([data-app-view="sessions"]) .header-status,
+body:not([data-app-view="sessions"]) #shareSnapshotBtn {
+  display: none !important;
+}
 .header-refresh-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; padding: 0; border-radius: 999px;
@@ -364,19 +370,6 @@ body {
 .status-dot.rename-failed { background: var(--issue); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
 #statusText { font-size: 12px; color: var(--text-muted); }
-.session-list-footer {
-  padding: 2px 12px 0;
-  font-size: 10px;
-  color: var(--text-muted);
-  opacity: 0.68;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  user-select: text;
-}
-.session-list-footer.hidden { display: none; }
-
 /* ---- App container ---- */
 .app-container {
   display: flex;
@@ -384,4 +377,13 @@ body {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.app-workspace {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
 }

@@ -5,13 +5,20 @@ const readline = require('node:readline');
 if (!process.argv.includes('app-server')) process.exit(2);
 
 const sequenceFile = process.env.PREFLIGHT_SEQUENCE_FILE || '';
+const configuredAnswers = String(process.env.PREFLIGHT_ANSWERS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 let answer = process.env.PREFLIGHT_ANSWER || '3.1';
 if (sequenceFile) {
   let sequence = 0;
   try { sequence = Number.parseInt(fs.readFileSync(sequenceFile, 'utf8'), 10) || 0; } catch {}
   fs.writeFileSync(sequenceFile, String(sequence + 1));
-  answer = sequence === 0 ? '2.5' : '3.1';
+  answer = configuredAnswers.length > 0
+    ? configuredAnswers[Math.min(sequence, configuredAnswers.length - 1)]
+    : sequence === 0 ? '2.5' : '3.1';
 }
+if (answer === '__EMPTY__') answer = '';
 const logPath = process.env.PREFLIGHT_LOG || '';
 let turnSequence = 0;
 const emit = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);

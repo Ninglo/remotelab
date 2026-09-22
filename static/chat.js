@@ -25,6 +25,7 @@
     "chat/instance-settings.js",
     "chat/voice-input.js",
     "chat/settings-ui.js",
+    "chat/task-center.js",
     "chat/sidebar-ui.js",
     "chat/compose.js",
     "chat/gestures.js",

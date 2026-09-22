@@ -1,26 +1,18 @@
 import { readFile } from 'fs/promises';
 import { performance } from 'perf_hooks';
-import { SESSION_EXPIRY } from '../lib/config.mjs';
 import {
+  auth,
   sessions,
   saveAuthSessionsAsync,
-  verifyTokenAsync,
-  authenticatePasswordAsync,
+  authenticateTokenAsync,
+  authenticatePasswordIdentityAsync,
+  createAuthenticatedSession,
   generateToken,
   parseCookies,
   getAuthSession,
-  getVisitorAuthSession,
-  getVisitorSessionToken,
   setCookie,
-  setVisitorCookie,
   clearCookie,
-  clearVisitorCookie,
 } from '../lib/auth.mjs';
-import { getAgentByShareToken } from './apps.mjs';
-import {
-  normalizeSessionPrincipalId,
-  resolveAuthSessionPrincipalId,
-} from './session-source-resolution.mjs';
 import {
   createInstallHandoff,
   normalizeInstallHandoffToken,
@@ -91,16 +83,15 @@ function getRequestProductBasePath(req) {
   return normalizeForwardedPrefix(req?.headers?.['x-forwarded-prefix']);
 }
 
-async function mintOwnerSessionFromInstallHandoff(handoffToken) {
+async function mintAuthenticatedSessionFromInstallHandoff(handoffToken) {
   const handoffSession = await redeemInstallHandoff(handoffToken);
   if (!handoffSession) return null;
 
   const sessionToken = generateToken();
-  sessions.set(sessionToken, {
-    expiry: Date.now() + SESSION_EXPIRY,
-    role: 'owner',
+  sessions.set(sessionToken, createAuthenticatedSession({
+    personId: handoffSession.personId || auth.primaryPersonId,
     ...(handoffSession.preferredLanguage ? { preferredLanguage: handoffSession.preferredLanguage } : {}),
-  });
+  }));
   await saveAuthSessionsAsync();
 
   return {
@@ -109,38 +100,9 @@ async function mintOwnerSessionFromInstallHandoff(handoffToken) {
   };
 }
 
-async function createSharedAgentVisitorSession(agent) {
-  const principalId = `prn_${generateToken().slice(0, 24)}`;
-  return {
-    principalId,
-    visitorId: principalId,
-    role: 'visitor',
-    principalKind: 'agent_guest',
-    surfaceMode: 'agent_scoped',
-    agentId: typeof agent?.id === 'string' ? agent.id : '',
-    agentName: typeof agent?.name === 'string' ? agent.name : '',
-    agentTool: typeof agent?.tool === 'string' ? agent.tool : '',
-    capabilities: {
-      listSessions: true,
-      createSession: true,
-      renameSession: true,
-      archiveSession: true,
-      pinSession: true,
-      forkSession: false,
-      uploadAttachments: true,
-      downloadArtifacts: true,
-      switchAgents: false,
-      manageAgents: false,
-      changeRuntime: false,
-      organizeSessionList: false,
-      publishShareSnapshot: false,
-    },
-  };
-}
-
 if (pathname === '/m/continue' && req.method === 'GET') {
   const authSession = getAuthSession(req);
-  if (authSession?.role === 'owner') {
+  if (authSession) {
     res.writeHead(302, buildHeaders({
       'Location': '/?skipInstall=1',
       'Cache-Control': 'no-store, max-age=0, must-revalidate',
@@ -163,7 +125,7 @@ if (pathname === '/m/continue' && req.method === 'GET') {
     return true;
   }
 
-  const nextSession = await mintOwnerSessionFromInstallHandoff(handoffToken);
+  const nextSession = await mintAuthenticatedSessionFromInstallHandoff(handoffToken);
   if (!nextSession) {
     res.writeHead(302, buildHeaders({
       'Location': '/login',
@@ -200,7 +162,7 @@ if (pathname === '/api/install/handoff/redeem' && req.method === 'POST') {
     res.end(JSON.stringify({ error: 'Install handoff token is required' }));
     return true;
   }
-  const nextSession = await mintOwnerSessionFromInstallHandoff(handoffToken);
+  const nextSession = await mintAuthenticatedSessionFromInstallHandoff(handoffToken);
   if (!nextSession) {
     res.writeHead(401, buildHeaders({
       'Content-Type': 'application/json',
@@ -224,7 +186,7 @@ if (pathname === '/m/install' && req.method === 'GET') {
     typeof parsedUrl.query?.h === 'string' ? parsedUrl.query.h : '',
   );
 
-  if (!currentHandoffToken && authSession?.role === 'owner') {
+  if (!currentHandoffToken && authSession) {
     const handoff = await createInstallHandoff(authSession);
     const params = new URLSearchParams();
     params.set('h', handoff.token);
@@ -276,13 +238,11 @@ if (queryToken) {
     res.end('Too many failed attempts. Please try again later.');
     return true;
   }
-  if (await verifyTokenAsync(queryToken)) {
+  const authenticatedIdentity = await authenticateTokenAsync(queryToken);
+  if (authenticatedIdentity) {
     clearFailedAttempts(ip);
     const sessionToken = generateToken();
-    sessions.set(sessionToken, {
-      expiry: Date.now() + SESSION_EXPIRY,
-      role: 'owner',
-    });
+    sessions.set(sessionToken, createAuthenticatedSession(authenticatedIdentity));
     await saveAuthSessionsAsync();
     const redirectParams = new URLSearchParams();
     for (const [key, value] of Object.entries(parsedUrl.query || {})) {
@@ -316,22 +276,19 @@ if (pathname === '/login' && req.method === 'POST') {
   const params = new URLSearchParams(body);
   const type = params.get('type');
   const nextPath = safeLoginNextPath(params.get('next'));
-  let authenticated = false;
+  let authenticatedIdentity = null;
   if (type === 'token') {
-    authenticated = await verifyTokenAsync(params.get('token') || '');
+    authenticatedIdentity = await authenticateTokenAsync(params.get('token') || '');
   } else if (type === 'password') {
-    authenticated = await authenticatePasswordAsync(
+    authenticatedIdentity = await authenticatePasswordIdentityAsync(
       params.get('username') || '',
       params.get('password') || '',
     );
   }
-  if (authenticated) {
+  if (authenticatedIdentity) {
     clearFailedAttempts(ip);
     const sessionToken = generateToken();
-    sessions.set(sessionToken, {
-      expiry: Date.now() + SESSION_EXPIRY,
-      role: 'owner',
-    });
+    sessions.set(sessionToken, createAuthenticatedSession(authenticatedIdentity));
     await saveAuthSessionsAsync();
     res.writeHead(302, { 'Location': nextPath, 'Set-Cookie': setCookie(sessionToken) });
   } else {
@@ -382,98 +339,18 @@ if (pathname === '/login') {
   return true;
 }
 
-// Logout — clear both owner and visitor session cookies
+// Logout
 if (pathname === '/logout') {
   const cookies = parseCookies(req.headers.cookie || '');
-  const ownerToken = cookies.session_token;
-  const visitorToken = cookies.visitor_session_token;
-  if (ownerToken) { sessions.delete(ownerToken); }
-  if (visitorToken) { sessions.delete(visitorToken); }
-  if (ownerToken || visitorToken) { await saveAuthSessionsAsync(); }
+  const sessionToken = cookies.session_token;
+  if (sessionToken) {
+    sessions.delete(sessionToken);
+    await saveAuthSessionsAsync();
+  }
   res.writeHead(302, {
     'Location': '/login',
-    'Set-Cookie': [clearCookie(), clearVisitorCookie()],
+    'Set-Cookie': clearCookie(),
   });
-  res.end();
-  return true;
-}
-
-if (/^\/app\/[^/]+$/.test(pathname) && req.method === 'GET') {
-  res.writeHead(404, buildHeaders({
-    'Content-Type': 'text/plain',
-    'Cache-Control': 'no-store, max-age=0, must-revalidate',
-  }));
-  res.end('Not found');
-  return true;
-}
-
-const sharedAgentMatch = pathname.match(/^\/agent\/([^/]+)$/);
-if (sharedAgentMatch && req.method === 'GET') {
-  const shareToken = sharedAgentMatch[1];
-  const agent = await getAgentByShareToken(shareToken);
-  if (!agent) {
-    res.writeHead(404, buildHeaders({
-      'Content-Type': 'text/plain',
-      'Cache-Control': 'no-store, max-age=0, must-revalidate',
-    }));
-    res.end('Shared agent not found');
-    return true;
-  }
-
-  const existingVisitor = getVisitorAuthSession(req);
-  const existingVisitorToken = getVisitorSessionToken(req);
-  const existingVisitorPrincipalId = resolveAuthSessionPrincipalId(existingVisitor);
-  const existingVisitorId = normalizeSessionPrincipalId(existingVisitor?.visitorId || existingVisitorPrincipalId);
-  const scopedAgentId = typeof existingVisitor?.agentId === 'string'
-    ? existingVisitor.agentId.trim()
-    : '';
-  const canReuseScopedPrincipal = !!(
-    existingVisitorToken
-    && existingVisitor
-    && scopedAgentId
-    && scopedAgentId === agent.id
-    && existingVisitorPrincipalId
-  );
-
-  const sharedPrincipal = canReuseScopedPrincipal
-    ? {
-      ...existingVisitor,
-      expiry: Date.now() + SESSION_EXPIRY,
-      role: 'visitor',
-      principalKind: typeof existingVisitor?.principalKind === 'string' && existingVisitor.principalKind.trim()
-        ? existingVisitor.principalKind.trim()
-        : 'agent_guest',
-      principalId: existingVisitorPrincipalId,
-      visitorId: existingVisitorId || existingVisitorPrincipalId,
-      agentId: agent.id,
-      agentName: typeof agent?.name === 'string' ? agent.name : '',
-      agentTool: typeof agent?.tool === 'string' ? agent.tool : '',
-    }
-    : {
-      expiry: Date.now() + SESSION_EXPIRY,
-      ...await createSharedAgentVisitorSession(agent),
-    };
-  if (!sharedPrincipal?.agentId || !sharedPrincipal?.principalId) {
-    res.writeHead(500, buildHeaders({
-      'Content-Type': 'text/plain',
-      'Cache-Control': 'no-store, max-age=0, must-revalidate',
-    }));
-    res.end('Failed to start shared agent session');
-    return true;
-  }
-
-  const visitorSessionToken = canReuseScopedPrincipal
-    ? existingVisitorToken
-    : generateToken();
-  sessions.set(visitorSessionToken, sharedPrincipal);
-  await saveAuthSessionsAsync();
-
-  res.writeHead(302, buildHeaders({
-    'Location': '/?visitor=1',
-    'Cache-Control': 'no-store, max-age=0, must-revalidate',
-    'Referrer-Policy': 'no-referrer',
-    'Set-Cookie': setVisitorCookie(visitorSessionToken),
-  }));
   res.end();
   return true;
 }

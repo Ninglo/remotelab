@@ -97,9 +97,21 @@ const {
   forkSession,
   renameSession,
   getSession,
+  isSessionStateSuggestionCurrent,
   sendMessage,
   killAll,
 } = sessionManager;
+
+assert.equal(isSessionStateSuggestionCurrent([
+  { seq: 1, type: 'message', role: 'user', runId: 'root-run' },
+  { seq: 2, type: 'message', role: 'user', runId: 'steered-request-run' },
+], { classifiedUserMessageSeq: 2 }), true,
+'a classifier that read the steered message remains current even when its request run id differs');
+assert.equal(isSessionStateSuggestionCurrent([
+  { seq: 1, type: 'message', role: 'user', runId: 'root-run' },
+  { seq: 2, type: 'message', role: 'user', runId: 'later-run' },
+], { classifiedUserMessageSeq: 1 }), false,
+'a classifier that did not read a later user message must remain stale');
 
 async function waitFor(predicate, description, timeoutMs = 4000) {
   const start = Date.now();
@@ -128,6 +140,17 @@ const running = await getSession(session.id);
 assert.equal(running?.name, 'Refactor the…', 'the deterministic draft title should be available while the Harness runs');
 assert.equal(running?.autoRenamePending, true);
 assert.equal(running?.space || '', '', 'semantic classification should wait for the completed turn');
+
+await sendMessage(session.id, 'A short follow-up must not replace the initial draft title.', [], {
+  tool: 'fake-codex',
+  model: 'fake-model',
+  effort: 'low',
+});
+assert.equal(
+  (await getSession(session.id))?.name,
+  'Refactor the…',
+  'follow-ups received before semantic naming must not replace the first substantive draft',
+);
 
 await waitFor(
   async () => (await getSession(session.id))?.activity?.run?.state === 'idle',

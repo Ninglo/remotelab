@@ -10,7 +10,6 @@ import * as Lark from '@larksuiteoapi/node-sdk';
 
 import { createKeyedTaskQueue, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { createConnectorInbox } from '../lib/connector-inbox.mjs';
-import { normalizeConversationTarget } from '../lib/conversation-target.mjs';
 import {
   handleFeishuRuntimeCommands,
   prepareFeishuRuntimeCommandPlan,
@@ -21,6 +20,7 @@ import { handleFeishuMuteCommand } from '../connectors/feishu/conversation-setti
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
+import { readServiceToken } from '../lib/auth-config.mjs';
 import {
   normalizeExternalRuntimeSelectionMode,
   resolveExternalRuntimeSelection,
@@ -39,7 +39,6 @@ import {
   LEGACY_DEFAULT_FEISHU_SESSION_SYSTEM_PROMPT as LEGACY_DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
   buildFeishuApiUuid,
-  buildFeishuForkExternalTriggerId,
   buildFeishuPostContent,
   buildFeishuTopicId,
   buildMessageSourceContext,
@@ -49,6 +48,7 @@ import {
   buildSessionSourceContext,
   compileFeishuReplyText,
   isFeishuDocumentCommentSummary,
+  isFeishuTopicChat,
   normalizeFeishuMode,
   normalizeReplyText,
   sanitizeIdPart,
@@ -71,7 +71,13 @@ import {
 } from '../connectors/feishu/reply-attachments.mjs';
 import { resolveFeishuFormulaImage } from '../connectors/feishu/math-renderer.mjs';
 import { withTimeout } from '../lib/connector-driver-transports.mjs';
-import { normalizeFeishuSessionPolicy, resolveFeishuSessionMode } from '../connectors/feishu/session-policy.mjs';
+import { normalizeFeishuReplyPolicy } from '../connectors/feishu/reply-policy.mjs';
+import {
+  applyFeishuReplyRouting,
+  buildFeishuRequestDeliveryTarget,
+  buildFeishuSessionConversationTarget,
+  buildFeishuSessionExternalTriggerId,
+} from '../connectors/feishu/reply-routing.mjs';
 import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
 import {
@@ -89,6 +95,7 @@ import {
   createConnectorSession,
   submitConnectorMessage,
 } from '../lib/connector-turn-flow.mjs';
+import { isQuickSession } from '../lib/quick-session-profile.mjs';
 import {
   findFeishuThreadSessionBinding,
   recordFeishuMessageSession,
@@ -110,6 +117,7 @@ const DEFAULT_RUNTIME_SELECTION_MODE = 'ui';
 const DEFAULT_FEISHU_API_TIMEOUT_MS = 10_000;
 const DEFAULT_PROCESSING_REACTION_TIMEOUT_MS = 10_000;
 const CONNECTOR_PID_FILENAME = 'connector.pid';
+const QUICK_PROFILE_CONFLICT = 'FEISHU_QUICK_PROFILE_CONFLICT';
 const updateSenderIndex = createKeyedTaskQueue();
 
 function parseArgs(argv) {
@@ -322,9 +330,9 @@ async function loadConfig(pathname) {
   const appSecret = trimString(parsed?.appSecret);
   if (!appId) throw new Error(`Missing appId in ${pathname}`);
   if (!appSecret) throw new Error(`Missing appSecret in ${pathname}`);
-  for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'processingReaction', 'silentConfirmationText']) {
+  for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
     if (Object.hasOwn(parsed, legacyKey)) {
-      throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy and responsePolicy`);
+      throw new Error(`Unsupported legacy Feishu config key ${legacyKey}; use accessPolicy, responsePolicy and replyPolicy`);
     }
   }
   const configDir = dirname(pathname);
@@ -343,7 +351,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
-    sessionPolicy: normalizeFeishuSessionPolicy(parsed?.sessionPolicy),
+    replyPolicy: normalizeFeishuReplyPolicy(parsed?.replyPolicy),
     botHandoffPolicy: normalizeFeishuBotHandoffPolicy(parsed?.botHandoffPolicy),
     accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
       baseDir: configDir,
@@ -601,13 +609,8 @@ function buildSessionName() {
   return '';
 }
 
-async function readOwnerToken() {
-  const auth = JSON.parse(await readFile(AUTH_FILE, 'utf8'));
-  const token = trimString(auth?.token);
-  if (!token) {
-    throw new Error(`No owner token found in ${AUTH_FILE}`);
-  }
-  return token;
+async function readConnectorToken() {
+  return readServiceToken(AUTH_FILE);
 }
 
 async function loginWithToken(baseUrl, token) {
@@ -682,6 +685,7 @@ function createRuntimeContext(config, storagePaths) {
       loggerLevel: resolveLoggerLevel(config.loggerLevel),
     }),
     chatMetadataCache: new Map(),
+    userProfileCache: new Map(),
     botIdentity: null,
     authToken: '',
     authCookie: '',
@@ -763,6 +767,108 @@ async function enrichSummaryWithChatMetadata(runtime, summary) {
   };
 }
 
+async function loadFeishuUserProfile(runtime, openId) {
+  const normalizedOpenId = trimString(openId);
+  if (!normalizedOpenId || !runtime?.appClient?.contact?.v3?.user?.get) return null;
+  if (!runtime.userProfileCache) runtime.userProfileCache = new Map();
+  if (runtime.userProfileCache.has(normalizedOpenId)) {
+    return await runtime.userProfileCache.get(normalizedOpenId);
+  }
+
+  const pending = (async () => {
+    try {
+      const timeoutMs = Math.min(
+        normalizePositiveTimeout(runtime?.config?.apiTimeoutMs, DEFAULT_FEISHU_API_TIMEOUT_MS),
+        5_000,
+      );
+      const response = await withTimeout(
+        () => runtime.appClient.contact.v3.user.get({
+          params: { user_id_type: 'open_id' },
+          path: { user_id: normalizedOpenId },
+        }),
+        timeoutMs,
+        'Feishu user profile lookup',
+      );
+      if (response.code !== undefined && response.code !== 0) {
+        throw new Error(response.msg || `Failed to load Feishu user profile (${response.code})`);
+      }
+      const user = response.data?.user || response.data || {};
+      const profile = {
+        name: trimString(user.name || user.nickname),
+        englishName: trimString(user.en_name),
+      };
+      return profile.name || profile.englishName ? profile : null;
+    } catch (error) {
+      console.warn(`[feishu-connector] failed to load user profile for ${normalizedOpenId}: ${error?.message || error}`);
+      return null;
+    }
+  })();
+  runtime.userProfileCache.set(normalizedOpenId, pending);
+  const profile = await pending;
+  runtime.userProfileCache.set(normalizedOpenId, profile);
+  return profile;
+}
+
+async function enrichSummaryWithSenderProfile(runtime, summary) {
+  if (!summary || typeof summary !== 'object') return summary;
+  const sender = summary.sender && typeof summary.sender === 'object' ? summary.sender : {};
+  if (trimString(sender.senderType).toLowerCase() !== 'user') return summary;
+  const profile = await loadFeishuUserProfile(runtime, sender.openId);
+  if (!profile) return summary;
+  return {
+    ...summary,
+    sender: {
+      ...sender,
+      name: trimString(sender.name) || profile.name || profile.englishName,
+      englishName: trimString(sender.englishName) || profile.englishName,
+    },
+  };
+}
+
+async function reconcileKnownFeishuPeople(runtime) {
+  const knownSendersPath = trimString(runtime?.storagePaths?.knownSendersPath);
+  if (!knownSendersPath) return { checked: 0, matched: 0 };
+  let records = [];
+  try {
+    const stored = JSON.parse(await readFile(knownSendersPath, 'utf8'));
+    records = Object.values(stored?.senders || {}).filter((sender) => (
+      trimString(sender?.senderType).toLowerCase() === 'user'
+      && trimString(sender?.openId)
+      && trimString(sender?.userId)
+    ));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    return { checked: 0, matched: 0 };
+  }
+
+  let cursor = 0;
+  let matched = 0;
+  const workerCount = Math.min(4, records.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < records.length) {
+      const sender = records[cursor];
+      cursor += 1;
+      const enriched = await enrichSummaryWithSenderProfile(runtime, { sender });
+      const resolved = await requestRemoteLab(runtime, '/api/people/reconcile-external-identity', {
+        method: 'POST',
+        body: {
+          kind: FEISHU_CONNECTOR_ID,
+          realm: runtime.config.sourceRouteId || 'default',
+          subjectId: sender.openId,
+          stableSubjectId: sender.unionId || sender.userId || sender.openId,
+          displayName: enriched?.sender?.name || '',
+          englishName: enriched?.sender?.englishName || '',
+        },
+      });
+      if (!resolved.response.ok) {
+        throw new Error(resolved.json?.error || `RemoteLab identity reconciliation failed (${resolved.response.status})`);
+      }
+      if (resolved.json?.matched === true) matched += 1;
+    }
+  }));
+  return { checked: records.length, matched };
+}
+
 async function ensureAuthCookie(runtime, forceRefresh = false) {
   if (!forceRefresh && runtime.authCookie) {
     return runtime.authCookie;
@@ -772,9 +878,9 @@ async function ensureAuthCookie(runtime, forceRefresh = false) {
     runtime.authToken = '';
   }
   if (!runtime.authToken) {
-    runtime.authToken = typeof runtime.readOwnerToken === 'function'
-      ? await runtime.readOwnerToken()
-      : await readOwnerToken();
+    runtime.authToken = typeof runtime.readServiceToken === 'function'
+      ? await runtime.readServiceToken()
+      : await readConnectorToken();
   }
   const login = typeof runtime.loginWithToken === 'function' ? runtime.loginWithToken : loginWithToken;
   runtime.authCookie = await login(runtime.config.chatBaseUrl, runtime.authToken);
@@ -851,15 +957,16 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       requestId: submission.requestId, responseId: submission.responseId,
       duplicate: submission.duplicate, queued: submission.queued };
   }
-  const effectiveSummary = await applyDefaultFork(runtime, {
-    ...await enrichSummaryWithChatMetadata(runtime, summary),
+  const summaryWithChatMetadata = await enrichSummaryWithChatMetadata(runtime, summary);
+  const effectiveSummary = applyFeishuReplyRouting(runtime.config, {
+    ...await enrichSummaryWithSenderProfile(runtime, summaryWithChatMetadata),
     sourceRouteId: runtime.config.sourceRouteId,
   });
-  const isForkCommand = effectiveSummary.forkCommand === true;
   const isQuickCommand = effectiveSummary.quickMode === true;
-  const externalTriggerId = isForkCommand
-    ? buildFeishuForkExternalTriggerId(effectiveSummary)
-    : buildExternalTriggerId(effectiveSummary);
+  const externalTriggerId = buildFeishuSessionExternalTriggerId(
+    effectiveSummary,
+    runtime.config.sourceRouteId || 'default',
+  );
   const runtimeSelection = effectiveSummary.runtimeSelectionOverride
     || await resolveFeishuRuntimeSelection(runtime);
   const sessionPayload = {
@@ -874,9 +981,8 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     conversation: {
       connector: 'feishu',
       sourceRouteId: runtime.config.sourceRouteId || 'default',
-      target: normalizeConversationTarget(effectiveSummary),
+      target: buildFeishuSessionConversationTarget(effectiveSummary),
     },
-    ...(isForkCommand ? { replaceConversation: true } : {}),
     externalTriggerId,
     sourceContext: buildSessionSourceContext(effectiveSummary),
     ...(isQuickCommand ? { executionProfile: 'quick' } : {}),
@@ -884,23 +990,32 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
   };
-  const threadBinding = isForkCommand
-    ? null
-    : await findFeishuThreadSessionBinding(runtime, effectiveSummary);
-  const session = threadBinding?.sessionId
-    ? { id: threadBinding.sessionId }
-    : await createConnectorSession(requester, sessionPayload);
+  const threadBinding = await findFeishuThreadSessionBinding(runtime, effectiveSummary);
+  let session;
+  if (threadBinding?.sessionId) {
+    const result = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`);
+    if (!result.response?.ok || !result.json?.session?.id) {
+      throw new Error(result.json?.error || `Unable to read bound Session (${result.response?.status || 'unknown'})`);
+    }
+    session = result.json.session;
+  } else {
+    session = await createConnectorSession(requester, sessionPayload);
+  }
+  if (isQuickCommand && !isQuickSession(session)) {
+    throw Object.assign(new Error('Quick profile conflicts with the Session already bound to this conversation'), {
+      code: QUICK_PROFILE_CONFLICT,
+    });
+  }
   const attachmentResolution = await resolveFeishuMessageAttachments(runtime, effectiveSummary, {
     sessionId: session.id,
   });
   const messageSummary = attachmentResolution.failures.length > 0
     ? { ...effectiveSummary, attachmentDownloadFailures: attachmentResolution.failures }
     : effectiveSummary;
-  // Snapshot the request's actual reply location without changing the mode
-  // selected at conversation entry. Forks set replyInThread explicitly and
-  // bound Feishu threads carry a topic/thread id; continue-mode group roots
-  // intentionally remain ordinary group messages.
-  const requestDeliveryTarget = normalizeConversationTarget(messageSummary);
+  // Session identity follows main-vs-thread topology. Each request still owns
+  // an immutable delivery snapshot so delayed replies return to the location
+  // selected for that inbound message.
+  const requestDeliveryTarget = buildFeishuRequestDeliveryTarget(messageSummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
     text: buildRemoteLabMessage(messageSummary),
@@ -1144,25 +1259,7 @@ function extractLocalCommand(summary) {
   const commandText = stripLeadingMentionTokens(rawText);
   const parsed = parseFeishuCommandBlock(commandText);
   if (parsed.error) return parsed;
-  if (parsed.commands.some(command => ['fork', 'quick', 'continue'].includes(command.name))
-    && !['group', 'topic'].includes(chatType)) {
-    return { commands: [], body: '', error: '/fork、/quick 和 /continue 只能在群聊或话题中使用。' };
-  }
   return parsed.commands.length > 0 ? parsed : null;
-}
-
-function isFeishuGroupSummary(summary) {
-  return [summary?.chatType, summary?.chatMode, summary?.groupMessageType]
-    .map(normalizeFeishuMode).some(mode => ['group', 'topic', 'thread'].includes(mode));
-}
-
-async function applyDefaultFork(runtime, summary) {
-  if (isFeishuDocumentCommentSummary(summary) || summary.forkCommand || summary.continueCommand) return summary;
-  if (!isFeishuGroupSummary(summary) || resolveFeishuSessionMode(runtime.config, summary) === 'continue'
-    || await findFeishuThreadSessionBinding(runtime, summary)) return summary;
-  return { ...summary, forkCommand: true, replyInThread: true,
-    forkText: trimString(stripLeadingMentionTokens(summary.messageText || summary.textPreview)),
-  };
 }
 
 async function queueFeishuReply(runtime, summary, text) {
@@ -1186,9 +1283,13 @@ async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
 
 async function prepareFeishuMessage(runtime, summary, helpers) {
   if (!isProcessableMessage(summary)) return { receipt: { ignored: true } };
+  if (trimString(summary?.messageType).toLowerCase() === 'merge_forward') {
+    return { receipt: { ignored: true, reason: 'merge_forward_context_only' } };
+  }
+  summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  if (command && !command.error && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))
+  if (command && !command.error && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))
     && /^\s*@_[A-Za-z0-9_]+/.test(summary.messageText || summary.textPreview || summary.rawContent || '')
     && !mentionsFeishuBot(runtime, summary)) {
     return { receipt: { ignored: true, reason: 'command_for_other_recipient' } };
@@ -1199,29 +1300,34 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
   if (command && command.error) return { summary, command };
-  if (command?.body && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))) summary = {
+  if (command?.body && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
-  if (command && !commandNames.some(name => ['fork', 'quick', 'continue'].includes(name))) {
+  if (command && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))) {
     if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
     return { summary, command };
   }
-  if (commandNames.includes('fork')) summary = {
-    ...summary, forkCommand: true, forkText: command.body, replyInThread: true,
-    messageText: command.body, textPreview: command.body,
+  if (commandNames.includes('inline') && buildFeishuTopicId(summary)) {
+    if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
+    const error = isFeishuTopicChat(summary)
+      ? '话题群只支持 Thread；请使用 /thread，或直接发送任务正文。'
+      : 'Thread 内不能切换为 inline；请直接发送任务正文。';
+    return { summary, command: { ...command, error } };
+  }
+  if (commandNames.includes('inline')) summary = {
+    ...summary, replyModeOverride: 'inline', messageText: command.body, textPreview: command.body,
+  };
+  if (commandNames.includes('thread')) summary = {
+    ...summary, replyModeOverride: 'thread', messageText: command.body, textPreview: command.body,
   };
   if (commandNames.includes('quick')) summary = {
-    ...summary, forkCommand: true, quickMode: true, forkText: command.body, replyInThread: true,
+    ...summary, quickMode: true,
     messageText: command.body, textPreview: command.body,
   };
-  if (commandNames.includes('continue')) summary = {
-    ...summary, continueCommand: true, messageText: command.body, textPreview: command.body,
-  };
-  if (command?.body && !commandNames.includes('fork') && !commandNames.includes('quick') && !commandNames.includes('continue')) summary = {
+  if (command?.body && !commandNames.includes('inline') && !commandNames.includes('thread') && !commandNames.includes('quick')) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
-  summary = { ...summary, commandBlock: command };
-  summary = await applyDefaultFork(runtime, summary);
+  summary = applyFeishuReplyRouting(runtime.config, { ...summary, commandBlock: command });
   if (isFeishuBotSender(summary) && runtime.config.botHandoffPolicy !== 'unlimited') {
     const binding = await findFeishuThreadSessionBinding(runtime, summary);
     if (!await claimFeishuBotHandoff(runtime, summary, binding?.sessionId)) {
@@ -1235,7 +1341,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 async function processFeishuMessage(runtime, summary, command, helpers) {
   if (command?.error) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, command.error);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  const taskCommand = commandNames.some(name => ['fork', 'quick', 'continue'].includes(name));
+  const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick'].includes(name));
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute'].includes(name))) {
     return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');
@@ -1255,7 +1361,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     });
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
   }
-  if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要正文，例如：/fork 帮我调查这个问题。');
+  if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要正文，例如：/thread 帮我调查这个问题。');
   if (command && command.body && command.commands.some(entry => ['default', 'harness', 'model', 'effort', 'follow'].includes(entry.name))) {
     const commandPlan = helpers.preparedRuntimeCommand || await prepareFeishuRuntimeCommandPlan(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
@@ -1277,7 +1383,16 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   } catch (error) {
     console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
   }
-  const receipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(runtime, summary);
+  let receipt;
+  try {
+    receipt = await (helpers.submitRemoteLabRequest || submitRemoteLabRequest)(runtime, summary);
+  } catch (error) {
+    if (error?.code === QUICK_PROFILE_CONFLICT) {
+      return enqueue(runtime, summary,
+        '当前主线或话题已经绑定 Standard Session，不能原地切换为 Quick；请新开一个话题后使用 /quick。');
+    }
+    throw error;
+  }
   await recordFeishuBotHandoffScope(runtime, summary, { sessionId: receipt.sessionId });
   if (runtime.storagePaths?.messageIndexPath) {
     await recordFeishuMessageSession(runtime, summary, receipt.sessionId, { externalTriggerId: receipt.externalTriggerId });
@@ -1314,7 +1429,6 @@ export {
   DEFAULT_SESSION_SYSTEM_PROMPT,
   buildExternalTriggerId,
   buildFeishuInboxKey,
-  buildFeishuForkExternalTriggerId,
   buildFeishuTopicId,
   buildMessageSourceContext,
   buildRemoteLabMessage,
@@ -1326,6 +1440,7 @@ export {
   createRuntimeContext,
   downloadFeishuMessageResource,
   ensureAuthCookie,
+  enrichSummaryWithSenderProfile,
   ensureAllowedSendersFile,
   extractLocalCommand,
   findFeishuThreadSessionBinding,
@@ -1340,6 +1455,7 @@ export {
   normalizeAllowedSenders,
   normalizeReplyText,
   releaseConnectorPidLock,
+  reconcileKnownFeishuPeople,
   recordFeishuThreadSessionBinding,
   resolveFeishuMessageAttachments,
   resolveFeishuOutboundFileType,
@@ -1440,6 +1556,11 @@ async function main() {
   inbox.start();
   await wsClient.start({ eventDispatcher });
   startSourceDeliveryPoller(runtime);
+  void reconcileKnownFeishuPeople(runtime)
+    .then(({ checked, matched }) => {
+      if (checked > 0) console.log(`[feishu-connector] person reconciliation complete (checked=${checked}, matched=${matched})`);
+    })
+    .catch((error) => console.warn(`[feishu-connector] person reconciliation failed: ${error?.message || error}`));
   console.log(`[feishu-connector] persistent connection ready (${config.region})`);
   console.log(`[feishu-connector] access policy: ${config.accessPolicy.mode}`);
   console.log(`[feishu-connector] response policy: ${JSON.stringify(config.responsePolicy)}`);

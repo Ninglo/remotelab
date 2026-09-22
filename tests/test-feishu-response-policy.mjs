@@ -82,12 +82,12 @@ try {
 
   const { resolveFeishuGroupSettings } = await import('../connectors/feishu/group-settings.mjs');
   await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', systemPrompt: 'Global instructions',
-    sessionPolicy: { defaultMode: 'continue', groups: { 'group-1': 'continue' } },
-    groups: { 'group-1': { responseMode: 'all', sessionMode: 'fork', systemPrompt: 'Group instructions' } },
+    replyPolicy: { group: 'inline', private: 'inline', chats: { 'group-1': 'inline' } },
+    groups: { 'group-1': { responseMode: 'all', replyMode: 'thread', systemPrompt: 'Group instructions' } },
   }));
   const groupConfig = await loadConfig(configPath);
   assert.deepEqual(resolveFeishuGroupSettings(groupConfig, base), {
-    responseMode: 'all', sessionMode: 'fork', systemPrompt: 'Global instructions\n\nGroup instructions',
+    responseMode: 'all', replyMode: 'thread', systemPrompt: 'Global instructions\n\nGroup instructions',
   });
   assert.equal(resolveFeishuGroupSettings(groupConfig, { chatId: 'other' }).systemPrompt, 'Global instructions');
   for (const groups of [{ 'group-1': { fileOnly: true } }, { 'group-1': { responseMode: 'typo' } }, { 'group-1': { systemPrompt: 123 } }]) {
@@ -102,7 +102,7 @@ try {
   await check('omitting the group setting admits explicit Bot mentions', { mentions: [{ openId: 'bot-self' }] }, ['reaction', 'submit'], {});
   await check('omitting the group setting still admits private messages', { chatType: 'p2p', chatMode: 'private' }, ['reaction', 'submit'], {});
 
-  for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'processingReaction', 'silentConfirmationText']) {
+  for (const legacyKey of ['intakePolicy', 'groupReplyPolicy', 'sessionPolicy', 'processingReaction', 'silentConfirmationText']) {
     await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', [legacyKey]: {} }));
     await assert.rejects(loadConfig(configPath), new RegExp(legacyKey));
   }

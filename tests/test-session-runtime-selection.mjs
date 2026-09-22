@@ -28,12 +28,39 @@ try {
   assert.equal((await resolveSessionRuntimeSelection({ ...defaults, effort: 'ultra' }, { model: 'gpt-5.6-luna' })).effort, 'medium', 'a different model resolves its own default effort');
   assert.equal((await resolveSessionRuntimeSelection({ tool: 'unlisted-tool' })).model, '', 'unknown runtime defaults remain explicitly unresolved');
   assert.deepEqual(await resolveSessionRuntimeSelection({ tool: 'micro-agent' }), defaults);
+  const previousFetch = globalThis.fetch;
+  process.env.TYPESAFE_API_KEY = 'private-test-key';
+  try {
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({
+        model: 'jev-test',
+        answers: {
+          model_tier: { choice: 'luna', confidence: 0.9, probabilities: { luna: 0.9, sol: 0.08, astra: 0.02 } },
+          depth: { choice: 'quick', confidence: 0.9, probabilities: { quick: 0.9, balanced: 0.06, deep: 0.03, maximum: 0.01 } },
+          risk: { choice: 'low', confidence: 0.9, probabilities: { low: 0.9, medium: 0.08, high: 0.02 } },
+        },
+      }),
+    });
+    const auto = await resolveSessionRuntimeSelection(
+      { tool: 'codex', model: 'auto' },
+      { autoRoutingText: 'Read package.json and return the version.' },
+    );
+    assert.deepEqual(
+      { tool: auto.tool, model: auto.model, effort: auto.effort },
+      { tool: 'codex', model: 'gpt-5.6-luna', effort: 'low' },
+    );
+    assert.equal(auto.autoRoutingReceipt.status, 'routed');
+  } finally {
+    globalThis.fetch = previousFetch;
+    delete process.env.TYPESAFE_API_KEY;
+  }
   assert.deepEqual(
     await resolveSessionRuntimeSelection(
       { executionProfile: 'quick', tool: 'claude', model: 'opus', effort: 'high', thinking: true },
       { tool: 'pi', model: 'provider/model', effort: 'max', thinking: true },
     ),
-    { tool: 'codex', model: 'gpt-5.6-luna', effort: 'low', thinking: false },
+    { tool: 'codex', model: 'gpt-5.6-terra', effort: 'low', thinking: false },
     'Quick Sessions ignore every per-message and persisted runtime override',
   );
   const pinned = { tool: 'codex', model: 'gpt-5.6-sol', effort: 'high', thinking: false };

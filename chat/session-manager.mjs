@@ -26,6 +26,7 @@ import { randomBytes } from 'crypto';
 import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
 import { IS_GUEST_INSTANCE, CONFIG_DIR } from '../lib/config.mjs';
+import { DEFAULT_PERSON_ID, SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
 import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
@@ -56,7 +57,6 @@ import {
 import { appendUsageLedgerRecord, buildUsageLedgerRecord } from './usage-ledger.mjs';
 import { triggerSessionStateSuggestion } from './session-state-classifier.mjs';
 import { buildSourceRuntimePrompt } from './source-runtime-prompts.mjs';
-import { buildAgentInvocationContextBoundary } from './session-agent-context-boundary.mjs';
 import { sendCompletionPush } from './push.mjs';
 import { buildSystemContext } from './system-prompt.mjs';
 import {
@@ -70,9 +70,10 @@ import {
   buildSessionControlState,
   buildSessionWorkState,
 } from './session-control-state.mjs';
-import { broadcastOwners, getClientsMatching } from './ws-clients.mjs';
+import { broadcastAll } from './ws-clients.mjs';
 import {
   buildTemporarySessionName,
+  DEFAULT_SESSION_NAME,
   isSessionAutoRenamePending,
   isSessionTitleLocked,
   normalizeGeneratedSessionTitle,
@@ -123,7 +124,6 @@ import {
 import {
   findSessionByExternalTriggerId,
   findSessionMeta,
-  findSessionMetaCached,
   loadSessionsMeta,
   mutateSessionMeta,
   withSessionsMetaMutation,
@@ -131,14 +131,6 @@ import {
 import { dispatchSessionConnectorActions, sanitizeAllCompletionTargets } from '../lib/connector-action-dispatcher.mjs';
 import { buildRunConnectorSurface, buildSessionConnectorSurface } from './session-connectors.mjs';
 import { getSessionLocalBridgeSurface } from './local-bridge-store.mjs';
-import {
-  DEFAULT_APP_ID,
-  createApp,
-  getApp,
-  getBuiltinApp,
-  listApps,
-  normalizeAppId,
-} from './apps.mjs';
 import { publishLocalFileAssetFromPath } from './file-assets.mjs';
 import {
   normalizeSessionWorkSummary,
@@ -159,8 +151,6 @@ import {
 import {
   applyCompactionWorkerResult,
   INTERNAL_SESSION_ROLE_CONTEXT_COMPACTOR,
-  maybeAutoCompact,
-  queueContextCompaction,
 } from './session-auto-compaction.mjs';
 import {
   findLatestAssistantMessageForRun,
@@ -201,24 +191,15 @@ import {
   normalizePublishedResultAssetAttachments,
 } from './session-result-files.mjs';
 import {
-  buildSavedTemplateContextContent,
+  DEFAULT_SESSION_SOURCE_ID,
   formatSessionSourceNameFromId,
   hasRequestedSessionSourceHint,
+  normalizeSessionSourceId,
   normalizeSessionSourceName,
-  normalizeSessionTemplateName,
-  normalizeSessionVisitorName,
-  parseTimestampMs,
-  resolveAuthSessionAgentId,
-  resolveAuthSessionPrincipalId,
-  resolveRequestedSessionPrincipalFields,
   resolveRequestedSessionSourceId,
   resolveRequestedSessionSourceName,
-  resolveSessionAgentId,
-  resolveSessionPrincipalId,
   resolveSessionSourceId,
   resolveSessionSourceName,
-  resolveSessionTemplateId,
-  resolveSessionTemplateName,
 } from './session-source-resolution.mjs';
 import {
   isLegacyMicroAgentToolId,
@@ -228,16 +209,15 @@ import {
   PRODUCT_DEFAULT_CODEX_MODEL,
   PRODUCT_DEFAULT_TOOL_ID,
 } from '../lib/legacy-micro-agent.mjs';
+import {
+  getSessionPersonView,
+  mergeSessionPersonViews,
+  normalizeSessionSidebarOrder,
+  projectSessionPersonView,
+  updateSessionPersonView,
+} from './session-person-view.mjs';
 
-const VISITOR_TURN_GUARDRAIL = [
-  '<private>',
-  'RemoteLab access context:',
-  '- This turn came from a share-link visitor, not the authenticated owner.',
-  '- The visitor is authorized only for the shared Agent and this visitor session; owner-private and sibling-instance state is outside that scope.',
-  '</private>',
-].join('\n');
-
-const INTERNAL_SESSION_ROLE_AGENT_DELEGATE = 'agent_delegate';
+const INTERNAL_SESSION_ROLE_DELEGATE = 'session_delegate';
 
 const OBSERVED_RUN_POLL_INTERVAL_MS = 250;
 const DETACHED_RUN_RESULT_SYNTHESIS_GRACE_MS = 1500;
@@ -246,13 +226,6 @@ const MAX_DELEGATION_DEPTH = 3;
 const DELEGATION_RATE_WINDOW_MS = 60_000;
 const DELEGATION_RATE_MAX_PER_WINDOW = 8;
 const _delegationTimestamps = [];
-
-function normalizeSessionSidebarOrder(value) {
-  const parsed = typeof value === 'number'
-    ? value
-    : parseInt(String(value || '').trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
-}
 
 function normalizeLegacyRuntimeRequest({
   tool = '',
@@ -571,8 +544,8 @@ function isContextCompactorSession(meta) {
 }
 
 function hasExplicitSessionSource(meta) {
-  const sourceId = normalizeAppId(meta?.sourceId);
-  if (!sourceId || sourceId === DEFAULT_APP_ID) {
+  const sourceId = normalizeSessionSourceId(meta?.sourceId);
+  if (!sourceId || sourceId === DEFAULT_SESSION_SOURCE_ID) {
     return false;
   }
   return true;
@@ -588,7 +561,6 @@ function isWelcomeStarterSession(meta) {
 
 function isWorkSummaryEnabledForSession(meta) {
   if (!meta || isInternalSession(meta)) return false;
-  if (meta.visitorId) return false;
   if (normalizeSessionWorkSummary(meta.workSummary)) return true;
   if (isWelcomeStarterSession(meta)) return true;
   return !hasExplicitSessionSource(meta);
@@ -606,7 +578,7 @@ function shouldRetireWelcomeOnboarding(meta) {
   return Number(meta.messageCount || 0) >= 2;
 }
 
-function shouldIncludeSessionTemplateInstructions(session) {
+function shouldIncludeSessionSystemPrompt(session) {
   const systemPrompt = typeof session?.systemPrompt === 'string' ? session.systemPrompt.trim() : '';
   if (!systemPrompt) return false;
   if (!isWelcomeStarterSession(session)) return true;
@@ -800,13 +772,19 @@ async function syncDetachedRunUnlocked(sessionId, runId) {
       : {}),
   })) || run;
 
-  if (run.claudeSessionId || run.codexThreadId) {
-    sessionChanged = await persistResumeIds(sessionId, run.claudeSessionId, run.codexThreadId) || sessionChanged;
+  if (run.claudeSessionId || run.codexThreadId || run.antigravityConversationId) {
+    sessionChanged = await persistResumeIds(
+      sessionId,
+      run.claudeSessionId,
+      run.codexThreadId,
+      run.antigravityConversationId,
+    ) || sessionChanged;
   }
 
   const isStructuredRuntime = projection.runtimeInvocation.isClaudeFamily
     || projection.runtimeInvocation.isCodexFamily
-    || projection.runtimeInvocation.isPiFamily;
+    || projection.runtimeInvocation.isPiFamily
+    || projection.runtimeInvocation.isAntigravityFamily;
   let result = await getRunResult(runId);
   if (!result && !isTerminalRunState(run.state)) {
     const reconciled = await synthesizeDetachedRunTermination(runId, run);
@@ -1030,9 +1008,9 @@ const {
   sanitizeAllCompletionTargets,
   findAssistantAttachmentMessageForRun,
   findResultAssetMessageForRun,
-  getCompactionServices,
   getRun,
   getRunManifest,
+  getSessionPersonView,
   getSession,
   getSessionQueueCount,
   getWorkSummaryFollowupServices,
@@ -1041,7 +1019,6 @@ const {
   isTerminalRunState,
   loadHistory,
   maybeApplyAssistantWorkSummary,
-  maybeAutoCompact,
   normalizeAttachmentSizeBytes,
   normalizePublishedResultAssetAttachments,
   nowIso,
@@ -1052,7 +1029,7 @@ const {
   updateRun,
 });
 
-async function persistResumeIds(sessionId, claudeSessionId, codexThreadId) {
+async function persistResumeIds(sessionId, claudeSessionId, codexThreadId, antigravityConversationId) {
   return (await mutateSessionMeta(sessionId, (session) => {
     let changed = false;
     if (claudeSessionId && session.claudeSessionId !== claudeSessionId) {
@@ -1061,6 +1038,13 @@ async function persistResumeIds(sessionId, claudeSessionId, codexThreadId) {
     }
     if (codexThreadId && session.codexThreadId !== codexThreadId) {
       session.codexThreadId = codexThreadId;
+      changed = true;
+    }
+    if (
+      antigravityConversationId
+      && session.antigravityConversationId !== antigravityConversationId
+    ) {
+      session.antigravityConversationId = antigravityConversationId;
       changed = true;
     }
     if (changed) {
@@ -1079,6 +1063,10 @@ async function clearPersistedResumeIds(sessionId) {
     }
     if (session.codexThreadId) {
       delete session.codexThreadId;
+      changed = true;
+    }
+    if (session.antigravityConversationId) {
+      delete session.antigravityConversationId;
       changed = true;
     }
     if (changed) {
@@ -1117,24 +1105,17 @@ async function enrichSessionMeta(meta, _options = {}) {
     recentFollowUpRequestIds,
     activeRunId,
     activeRun,
-    agentId,
     managerState: _managerState,
     workState: _workState,
     ...rest
   } = meta;
   const sourceId = resolveSessionSourceId(meta);
   const sourceName = resolveSessionSourceName(meta, sourceId);
-  const templateId = resolveSessionTemplateId(meta);
-  const templateName = resolveSessionTemplateName(meta);
-  const scopedAgentId = meta?.visitorId ? resolveSessionAgentId(meta) : '';
   const session = {
     ...rest,
     entryMode: resolveSessionEntryMode(meta.entryMode),
     sourceId,
     sourceName,
-    ...(scopedAgentId ? { agentId: scopedAgentId } : {}),
-    ...(templateId ? { templateId } : {}),
-    ...(templateName ? { templateName } : {}),
     latestSeq: snapshot.latestSeq,
     lastEventAt: snapshot.lastEventAt,
     lastUserMessageAt: snapshot.lastUserMessageAt,
@@ -1164,7 +1145,10 @@ async function enrichSessionMeta(meta, _options = {}) {
 
 async function enrichSessionMetaForClient(meta, options = {}) {
   if (!meta) return null;
-  const session = await enrichSessionMeta(meta, options);
+  const session = projectSessionPersonView(
+    await enrichSessionMeta(meta, options),
+    options.viewPersonId,
+  );
   if (options.includeQueuedMessages) {
     session.queuedMessages = getFollowUpQueue(meta).map(serializeQueuedFollowUp);
   }
@@ -1254,139 +1238,16 @@ async function reconcileSessionsMetaList(list) {
   return changed ? loadSessionsMeta() : list;
 }
 
-function sendToClients(clients, msg) {
-  const data = JSON.stringify(msg);
-  for (const client of clients) {
-    try {
-      client.send(data);
-    } catch {}
-  }
-}
-
 function broadcastSessionsInvalidation() {
-  broadcastOwners({ type: 'sessions_invalidated' });
+  broadcastAll({ type: 'sessions_invalidated' });
 }
 
-function getAuthPrincipalId(authSession) {
-  return resolveAuthSessionPrincipalId(authSession);
-}
-
-function getAuthAgentId(authSession) {
-  return resolveAuthSessionAgentId(authSession);
-}
-
-function getSessionScopedAgentId(session) {
-  return resolveSessionAgentId(session);
-}
-
-function getSessionScopedPrincipalId(session) {
-  return resolveSessionPrincipalId(session);
-}
-
-function isAgentScopedAuthSession(authSession) {
-  return !!(
-    authSession
-    && authSession.role === 'visitor'
-    && String(authSession?.surfaceMode || '').trim() === 'agent_scoped'
-    && getAuthAgentId(authSession)
-    && getAuthPrincipalId(authSession)
-  );
-}
-
-function isSessionVisibleToAuthSession(authSession, sessionId, session) {
-  if (!authSession) return false;
-  if (authSession.role === 'owner') {
-    return shouldExposeSession(session);
-  }
-  if (isAgentScopedAuthSession(authSession)) {
-    return getSessionScopedAgentId(session) === getAuthAgentId(authSession)
-      && getSessionScopedPrincipalId(session) === getAuthPrincipalId(authSession);
-  }
-  return typeof authSession?.sessionId === 'string' && authSession.sessionId === sessionId;
-}
-
-function broadcastScopedSessionsInvalidation(session) {
-  const clients = getClientsMatching((client) => {
-    const authSession = client._authSession;
-    if (!authSession) return false;
-    if (authSession.role === 'owner') {
-      return shouldExposeSession(session);
-    }
-    return isSessionVisibleToAuthSession(authSession, session?.id, session);
-  });
-  sendToClients(clients, { type: 'sessions_invalidated' });
+function broadcastScopedSessionsInvalidation(_session) {
+  broadcastSessionsInvalidation();
 }
 
 function broadcastSessionInvalidation(sessionId) {
-  const session = findSessionMetaCached(sessionId);
-  const clients = getClientsMatching((client) => {
-    const authSession = client._authSession;
-    return isSessionVisibleToAuthSession(authSession, sessionId, session);
-  });
-  sendToClients(clients, { type: 'session_invalidated', sessionId });
-}
-
-
-async function resolveAppTemplateFreshness(app) {
-  const templateContext = app?.templateContext || null;
-  const sourceSessionId = typeof templateContext?.sourceSessionId === 'string'
-    ? templateContext.sourceSessionId.trim()
-    : '';
-  const templateUpdatedAt = typeof templateContext?.updatedAt === 'string'
-    ? templateContext.updatedAt.trim()
-    : '';
-  const savedFromSourceUpdatedAt = typeof templateContext?.sourceSessionUpdatedAt === 'string'
-    ? templateContext.sourceSessionUpdatedAt.trim()
-    : '';
-
-  if (!sourceSessionId) {
-    return {
-      templateFreshness: 'unknown',
-      sourceSessionId: '',
-      sourceSessionName: typeof templateContext?.sourceSessionName === 'string'
-        ? templateContext.sourceSessionName.trim()
-        : '',
-      templateUpdatedAt,
-      savedFromSourceUpdatedAt,
-      currentSourceUpdatedAt: '',
-    };
-  }
-
-  const sourceSession = await findSessionMeta(sourceSessionId);
-  if (!sourceSession) {
-    return {
-      templateFreshness: 'source_missing',
-      sourceSessionId,
-      sourceSessionName: typeof templateContext?.sourceSessionName === 'string'
-        ? templateContext.sourceSessionName.trim()
-        : '',
-      templateUpdatedAt,
-      savedFromSourceUpdatedAt,
-      currentSourceUpdatedAt: '',
-    };
-  }
-
-  const currentSourceUpdatedAt = typeof sourceSession.updatedAt === 'string' && sourceSession.updatedAt.trim()
-    ? sourceSession.updatedAt.trim()
-    : (typeof sourceSession.created === 'string' ? sourceSession.created.trim() : '');
-  const baselineMs = parseTimestampMs(savedFromSourceUpdatedAt || templateUpdatedAt);
-  const currentMs = parseTimestampMs(currentSourceUpdatedAt);
-
-  return {
-    templateFreshness: baselineMs > 0 && currentMs > baselineMs ? 'stale' : 'current',
-    sourceSessionId,
-    sourceSessionName: sourceSession.name || (typeof templateContext?.sourceSessionName === 'string'
-      ? templateContext.sourceSessionName.trim()
-      : ''),
-    templateUpdatedAt,
-    savedFromSourceUpdatedAt,
-    currentSourceUpdatedAt,
-  };
-}
-
-async function sessionHasTemplateContextEvent(sessionId) {
-  const history = await loadHistory(sessionId, { includeBodies: false });
-  return history.some((event) => event?.type === 'template_context');
+  broadcastAll({ type: 'session_invalidated', sessionId });
 }
 
 function isPreparedForkContextCurrent(prepared, snapshot, contextHead) {
@@ -1505,6 +1366,7 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
       hasResume: false,
       claudeSessionId: null,
       codexThreadId: null,
+      antigravityConversationId: null,
     };
   }
 
@@ -1518,6 +1380,7 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
       hasResume: !!claudeSessionId,
       claudeSessionId,
       codexThreadId: null,
+      antigravityConversationId: null,
     };
   }
 
@@ -1527,6 +1390,17 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
       hasResume: !!codexThreadId,
       claudeSessionId: null,
       codexThreadId,
+      antigravityConversationId: null,
+    };
+  }
+
+  if (tool === 'antigravity' || family === 'antigravity-stream-json') {
+    const antigravityConversationId = session?.antigravityConversationId || null;
+    return {
+      hasResume: !!antigravityConversationId,
+      claudeSessionId: null,
+      codexThreadId: null,
+      antigravityConversationId,
     };
   }
 
@@ -1534,6 +1408,7 @@ function resolveResumeState(toolId, session, options = {}, runtimeFamily = '') {
     hasResume: false,
     claudeSessionId: null,
     codexThreadId: null,
+    antigravityConversationId: null,
   };
 }
 
@@ -1604,18 +1479,10 @@ export async function buildPrompt(sessionId, session, text, previousTool, effect
       if (sourceRuntimePrompt) {
         preamble += `\n\n---\n\nSource/runtime instructions (backend-owned for this session source):\n${sourceRuntimePrompt}`;
       }
-      if (shouldIncludeSessionTemplateInstructions(session)) {
-        preamble += `\n\n---\n\nTemplate instructions (follow these for this session):\n${session.systemPrompt}`;
-      }
-      const agentInvocationContextBoundary = buildAgentInvocationContextBoundary(session);
-      if (agentInvocationContextBoundary) {
-        preamble += `\n\n---\n\n${agentInvocationContextBoundary}`;
+      if (shouldIncludeSessionSystemPrompt(session)) {
+        preamble += `\n\n---\n\nSession instructions:\n${session.systemPrompt}`;
       }
       actualText = `${preamble}\n\n---\n\n${actualText}`;
-    }
-
-    if (session.visitorId) {
-      actualText = `${actualText}\n\n---\n\n${VISITOR_TURN_GUARDRAIL}`;
     }
   } else if (flattenPrompt) {
     const flatMessage = actualText.replace(/\s+/g, ' ').trim();
@@ -1783,6 +1650,13 @@ async function finalizeDetachedRun(sessionId, run, manifest, fullNormalizedEvent
       }
       if (run.codexThreadId && session.codexThreadId !== run.codexThreadId) {
         session.codexThreadId = run.codexThreadId;
+        changed = true;
+      }
+      if (
+        run.antigravityConversationId
+        && session.antigravityConversationId !== run.antigravityConversationId
+      ) {
+        session.antigravityConversationId = run.antigravityConversationId;
         changed = true;
       }
     }
@@ -1967,26 +1841,22 @@ export async function startDetachedRunObservers() {
 }
 
 export async function listSessions({
-  includeVisitor = false,
   includeArchived = true,
-  templateId = '',
   sourceId = '',
   includeQueuedMessages = false,
+  viewPersonId = DEFAULT_PERSON_ID,
 } = {}) {
   const metas = await reconcileTerminalActiveSessionsMetaList(await loadSessionsMeta(), {
     includeArchived: true,
   });
-  const normalizedTemplateId = normalizeAppId(templateId);
-  const normalizedSourceId = normalizeAppId(sourceId);
+  const normalizedSourceId = normalizeSessionSourceId(sourceId);
   const filtered = metas
-    .filter((meta) => includeVisitor || !meta.visitorId)
     .filter((meta) => shouldExposeSession(meta))
     .filter((meta) => includeArchived || !meta.archived)
-    .filter((meta) => !normalizedTemplateId || resolveSessionTemplateId(meta) === normalizedTemplateId)
     .filter((meta) => !normalizedSourceId || resolveSessionSourceId(meta) === normalizedSourceId)
     .sort((a, b) => {
-      const sidebarOrderA = normalizeSessionSidebarOrder(a?.sidebarOrder);
-      const sidebarOrderB = normalizeSessionSidebarOrder(b?.sidebarOrder);
+      const sidebarOrderA = normalizeSessionSidebarOrder(getSessionPersonView(a, viewPersonId).sidebarOrder);
+      const sidebarOrderB = normalizeSessionSidebarOrder(getSessionPersonView(b, viewPersonId).sidebarOrder);
       if (sidebarOrderA && sidebarOrderB && sidebarOrderA !== sidebarOrderB) {
         return sidebarOrderA - sidebarOrderB;
       }
@@ -1998,7 +1868,7 @@ export async function listSessions({
     issueCounts.set(issue.sessionId, (issueCounts.get(issue.sessionId) || 0) + 1);
   }
   return Promise.all(filtered.map(async (meta) => ({
-    ...await enrichSessionMetaForClient(meta, { includeQueuedMessages }),
+    ...await enrichSessionMetaForClient(meta, { includeQueuedMessages, viewPersonId }),
     deliveryIssueCount: issueCounts.get(meta.id) || 0,
   })));
 }
@@ -2095,13 +1965,15 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedConversation = requireConversation(extra.conversation);
   if (requestedConversation && !extra.sourceId) extra = { ...extra, sourceId: requestedConversation.connector };
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
-  const { createdByPrincipalId: requestedCreatedByPrincipalId, visitorId: requestedVisitorId } = resolveRequestedSessionPrincipalFields(extra);
-  const requestedTemplateId = requestedExecutionProfile ? '' : normalizeAppId(extra.templateId || extra.agentId);
-  const requestedTemplateName = requestedExecutionProfile ? '' : normalizeSessionTemplateName(extra.templateName);
+  const requestedInitiatedByIdentityId = typeof extra.initiatedByIdentityId === 'string'
+    ? (extra.initiatedByIdentityId.trim() || SYSTEM_IDENTITY_ID)
+    : SYSTEM_IDENTITY_ID;
+  const requestedViewPersonId = typeof extra.viewPersonId === 'string' && extra.viewPersonId.trim()
+    ? extra.viewPersonId.trim()
+    : DEFAULT_PERSON_ID;
   const requestedSourceId = resolveRequestedSessionSourceId(extra);
   const requestedSourceName = resolveRequestedSessionSourceName(extra, requestedSourceId);
   const hasRequestedSourceHint = hasRequestedSessionSourceHint(extra);
-  const requestedVisitorName = normalizeSessionVisitorName(extra.visitorName);
   const requestedSpace = normalizeSessionSpace(extra.space || '');
   const requestedGroup = normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
@@ -2140,8 +2012,7 @@ export async function createSession(folder, tool, name, extra = {}) {
       await persist(current);
     };
     if (requestedConversation) {
-      if (requestedVisitorId) throw new Error('Visitor Sessions cannot bind external conversations');
-      const bound = metas.find(meta => !meta.visitorId && sameConversation(meta.conversation, requestedConversation));
+      const bound = metas.find(meta => sameConversation(meta.conversation, requestedConversation));
       if (bound && extra.replaceConversation !== true) return { session: bound, created: false, changed: false };
       const existing = metas[existingIndex];
       if (bound && existing && Object.hasOwn(existing, 'conversation')) {
@@ -2165,14 +2036,11 @@ export async function createSession(folder, tool, name, extra = {}) {
         let changed = false;
         if (requestedConversation && !updated.conversation) { updated.conversation = requestedConversation; changed = true; }
 
-        if (requestedSpace && updated.space !== requestedSpace) {
-          updated.space = requestedSpace;
-          changed = true;
-        }
-
-        if (requestedGroup && updated.group !== requestedGroup) {
-          updated.group = requestedGroup;
-          changed = true;
+        if (requestedSpace || requestedGroup) {
+          changed = updateSessionPersonView(updated, requestedViewPersonId, {
+            ...(requestedSpace ? { space: requestedSpace } : {}),
+            ...(requestedGroup ? { group: requestedGroup } : {}),
+          }) || changed;
         }
 
         if (requestedDescription && updated.description !== requestedDescription) {
@@ -2181,13 +2049,13 @@ export async function createSession(folder, tool, name, extra = {}) {
         }
 
         const refreshedInitialNaming = resolveInitialSessionName(name, {
-          group: requestedGroup || updated.group || '',
+          group: requestedGroup || getSessionPersonView(updated, requestedViewPersonId).group || '',
           sourceId: hasRequestedSourceHint
             ? requestedSourceId
-            : ((updated.sourceId || '') === DEFAULT_APP_ID ? '' : (updated.sourceId || '')),
+            : ((updated.sourceId || '') === DEFAULT_SESSION_SOURCE_ID ? '' : (updated.sourceId || '')),
           sourceName: hasRequestedSourceHint
             ? requestedSourceName
-            : ((updated.sourceId || '') === DEFAULT_APP_ID ? '' : (updated.sourceName || '')),
+            : ((updated.sourceId || '') === DEFAULT_SESSION_SOURCE_ID ? '' : (updated.sourceName || '')),
           externalTriggerId: externalTriggerId || updated.externalTriggerId || '',
         });
         if (isSessionAutoRenamePending(updated) && !refreshedInitialNaming.autoRenamePending) {
@@ -2226,28 +2094,8 @@ export async function createSession(folder, tool, name, extra = {}) {
           changed = true;
         }
 
-        if (!isQuickSession(updated) && requestedTemplateId && updated.templateId !== requestedTemplateId) {
-          updated.templateId = requestedTemplateId;
-          changed = true;
-        }
-
-        if (!isQuickSession(updated) && requestedTemplateName && updated.templateName !== requestedTemplateName) {
-          updated.templateName = requestedTemplateName;
-          changed = true;
-        }
-
-        if (requestedCreatedByPrincipalId && updated.createdByPrincipalId !== requestedCreatedByPrincipalId) {
-          updated.createdByPrincipalId = requestedCreatedByPrincipalId;
-          changed = true;
-        }
-
-        if (requestedVisitorId && updated.visitorId !== requestedVisitorId) {
-          updated.visitorId = requestedVisitorId;
-          changed = true;
-        }
-
-        if (requestedVisitorName && updated.visitorName !== requestedVisitorName) {
-          updated.visitorName = requestedVisitorName;
+        if (requestedInitiatedByIdentityId && !updated.initiatedByIdentityId) {
+          updated.initiatedByIdentityId = requestedInitiatedByIdentityId;
           changed = true;
         }
 
@@ -2339,17 +2187,17 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (requestedExecutionProfile) session.executionProfile = requestedExecutionProfile;
     if (!initialNaming.autoRenamePending) session.titleLocked = true;
 
-    if (requestedSpace) session.space = requestedSpace;
-    if (requestedGroup) session.group = requestedGroup;
+    if (requestedSpace || requestedGroup) {
+      updateSessionPersonView(session, requestedViewPersonId, {
+        ...(requestedSpace ? { space: requestedSpace } : {}),
+        ...(requestedGroup ? { group: requestedGroup } : {}),
+      });
+    }
     if (requestedDescription) session.description = requestedDescription;
     if (workflowState) session.workflowState = workflowState;
     if (workflowPriority) session.workflowPriority = workflowPriority;
     if (requestedSourceName) session.sourceName = requestedSourceName;
-    if (requestedTemplateId) session.templateId = requestedTemplateId;
-    if (requestedTemplateName) session.templateName = requestedTemplateName;
-    if (requestedCreatedByPrincipalId) session.createdByPrincipalId = requestedCreatedByPrincipalId;
-    if (requestedVisitorId) session.visitorId = requestedVisitorId;
-    if (requestedVisitorName) session.visitorName = requestedVisitorName;
+    if (requestedInitiatedByIdentityId) session.initiatedByIdentityId = requestedInitiatedByIdentityId;
     if (requestedStarterPreset) session.starterPreset = requestedStarterPreset;
     if (requestedSystemPrompt) session.systemPrompt = requestedSystemPrompt;
     if (requestedModel) session.model = requestedModel;
@@ -2380,7 +2228,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     broadcastScopedSessionsInvalidation(created.session);
   }
 
-  return enrichSessionMeta(created.session);
+  return projectSessionPersonView(await enrichSessionMeta(created.session), requestedViewPersonId);
 }
 
 export async function setSessionArchived(id, archived = true) {
@@ -2463,35 +2311,25 @@ export async function renameSession(id, name, options = {}) {
 
   if (!result.meta) return null;
   broadcastSessionInvalidation(id);
-  return enrichSessionMeta(result.meta);
+  return projectSessionPersonView(
+    await enrichSessionMeta(result.meta),
+    options.viewPersonId || DEFAULT_PERSON_ID,
+  );
 }
 
-export async function updateSessionGrouping(id, patch = {}) {
+export async function updateSessionGrouping(id, patch = {}, { personId = DEFAULT_PERSON_ID } = {}) {
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
-    if (Object.prototype.hasOwnProperty.call(patch, 'space')) {
-      const nextSpace = normalizeSessionSpace(patch.space || '');
-      if (nextSpace) {
-        if (session.space !== nextSpace) {
-          session.space = nextSpace;
-          changed = true;
-        }
-      } else if (session.space) {
-        delete session.space;
-        changed = true;
-      }
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'group')) {
-      const nextGroup = normalizeSessionGroup(patch.group || '');
-      if (nextGroup) {
-        if (session.group !== nextGroup) {
-          session.group = nextGroup;
-          changed = true;
-        }
-      } else if (session.group) {
-        delete session.group;
-        changed = true;
-      }
+    if (
+      Object.prototype.hasOwnProperty.call(patch, 'space')
+      || Object.prototype.hasOwnProperty.call(patch, 'group')
+      || Object.prototype.hasOwnProperty.call(patch, 'sidebarOrder')
+    ) {
+      changed = updateSessionPersonView(session, personId, {
+        ...(Object.prototype.hasOwnProperty.call(patch, 'space') ? { space: patch.space } : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, 'group') ? { group: patch.group } : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, 'sidebarOrder') ? { sidebarOrder: patch.sidebarOrder } : {}),
+      }) || changed;
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'description')) {
       const nextDescription = normalizeSessionDescription(patch.description || '');
@@ -2505,18 +2343,6 @@ export async function updateSessionGrouping(id, patch = {}) {
         changed = true;
       }
     }
-    if (Object.prototype.hasOwnProperty.call(patch, 'sidebarOrder')) {
-      const nextSidebarOrder = normalizeSessionSidebarOrder(patch.sidebarOrder);
-      if (nextSidebarOrder) {
-        if (session.sidebarOrder !== nextSidebarOrder) {
-          session.sidebarOrder = nextSidebarOrder;
-          changed = true;
-        }
-      } else if (session.sidebarOrder) {
-        delete session.sidebarOrder;
-        changed = true;
-      }
-    }
     if (changed) {
       session.updatedAt = nowIso();
     }
@@ -2527,7 +2353,26 @@ export async function updateSessionGrouping(id, patch = {}) {
   if (result.changed) {
     broadcastSessionInvalidation(id);
   }
-  return enrichSessionMeta(result.meta);
+  return projectSessionPersonView(await enrichSessionMeta(result.meta), personId);
+}
+
+export async function mergeSessionPersonViewOwnership(sourcePersonId, targetPersonId) {
+  const sourceId = typeof sourcePersonId === 'string' ? sourcePersonId.trim() : '';
+  const targetId = typeof targetPersonId === 'string' ? targetPersonId.trim() : '';
+  if (!sourceId || !targetId || sourceId === targetId) return { updatedSessions: 0 };
+  const result = await withSessionsMetaMutation(async (metas, persist) => {
+    let updatedSessions = 0;
+    for (let index = 0; index < metas.length; index += 1) {
+      const draft = { ...metas[index] };
+      if (!mergeSessionPersonViews(draft, sourceId, targetId)) continue;
+      metas[index] = draft;
+      updatedSessions += 1;
+    }
+    if (updatedSessions > 0) await persist(metas);
+    return { updatedSessions };
+  });
+  if (result.updatedSessions > 0) broadcastSessionsInvalidation();
+  return result;
 }
 
 async function updateSessionWorkSummary(id, workSummary) {
@@ -2556,15 +2401,25 @@ async function updateSessionWorkSummary(id, workSummary) {
   return await maybeRetireWelcomeOnboarding(id, enriched) || enriched;
 }
 
-async function applySessionStateSuggestion(id, suggestion = {}, expectedRunId = '') {
+export function isSessionStateSuggestionCurrent(history = [], suggestion = {}) {
+  const classifiedUserMessageSeq = Number.isInteger(suggestion?.classifiedUserMessageSeq)
+    ? suggestion.classifiedUserMessageSeq
+    : 0;
+  if (classifiedUserMessageSeq <= 0) return false;
+  const latestUserMessage = [...history].reverse().find(
+    (event) => event?.type === 'message' && event.role === 'user' && Number.isInteger(event.seq),
+  );
+  return !latestUserMessage || latestUserMessage.seq <= classifiedUserMessageSeq;
+}
+
+async function applySessionStateSuggestion(id, suggestion = {}, classification = {}, viewPersonId = DEFAULT_PERSON_ID) {
   if (!suggestion?.ok) return getSession(id);
 
-  if (expectedRunId) {
-    const history = await loadHistory(id, { includeBodies: false });
-    const latestUserMessage = [...history].reverse().find((event) => event?.type === 'message' && event.role === 'user');
-    if (latestUserMessage?.runId && latestUserMessage.runId !== expectedRunId) {
-      return getSession(id);
-    }
+  const history = await loadHistory(id, { includeBodies: false });
+  if (!isSessionStateSuggestionCurrent(history, {
+    classifiedUserMessageSeq: classification.classifiedUserMessageSeq,
+  })) {
+    return getSession(id);
   }
 
   const nextSpace = normalizeSessionSpace(suggestion.space || '');
@@ -2594,15 +2449,15 @@ async function applySessionStateSuggestion(id, suggestion = {}, expectedRunId = 
         changed = true;
       }
     }
-    for (const [key, value] of [
-      ['space', nextSpace],
-      ['group', nextGroup],
-      ['description', nextDescription],
-    ]) {
-      if (value && session[key] !== value) {
-        session[key] = value;
-        changed = true;
-      }
+    if (nextSpace || nextGroup) {
+      changed = updateSessionPersonView(session, viewPersonId, {
+        ...(nextSpace ? { space: nextSpace } : {}),
+        ...(nextGroup ? { group: nextGroup } : {}),
+      }) || changed;
+    }
+    if (nextDescription && session.description !== nextDescription) {
+      session.description = nextDescription;
+      changed = true;
     }
     const currentWorkflowState = normalizeSessionWorkflowState(session.workflowState || '');
     const currentWorkflowPriority = normalizeSessionWorkflowPriority(session.workflowPriority || '');
@@ -2631,7 +2486,7 @@ async function applySessionStateSuggestion(id, suggestion = {}, expectedRunId = 
     broadcastSessionInvalidation(id);
     broadcastSessionsInvalidation();
   }
-  const enriched = await enrichSessionMeta(result.meta);
+  const enriched = projectSessionPersonView(await enrichSessionMeta(result.meta), viewPersonId);
   return await maybeRetireWelcomeOnboarding(id, enriched) || enriched;
 }
 
@@ -2858,90 +2713,6 @@ async function updateSessionTool(id, tool) {
   return enrichSessionMeta(result.meta);
 }
 
-async function applySessionTemplateMetadata(id, template, extra = {}) {
-  const result = await mutateSessionMeta(id, (session) => {
-    let changed = false;
-    const nextTemplateId = normalizeAppId(template?.id);
-    const nextTemplateName = typeof template?.name === 'string' ? template.name.trim() : '';
-    const nextSystemPrompt = typeof template?.systemPrompt === 'string' ? template.systemPrompt : '';
-    const nextTool = normalizeLegacyToolId(template?.tool);
-    const migratingLegacyMicroAgent = isLegacyMicroAgentToolId(template?.tool);
-
-    if (nextTemplateId) {
-      if (session.templateId !== nextTemplateId) {
-        session.templateId = nextTemplateId;
-        changed = true;
-      }
-    } else if (session.templateId) {
-      delete session.templateId;
-      changed = true;
-    }
-
-    if (nextTemplateName) {
-      if (session.templateName !== nextTemplateName) {
-        session.templateName = nextTemplateName;
-        changed = true;
-      }
-    } else if (session.templateName) {
-      delete session.templateName;
-      changed = true;
-    }
-
-    if (nextSystemPrompt) {
-      if (session.systemPrompt !== nextSystemPrompt) {
-        session.systemPrompt = nextSystemPrompt;
-        changed = true;
-      }
-    } else if (session.systemPrompt) {
-      delete session.systemPrompt;
-      changed = true;
-    }
-
-    if (nextTool && session.tool !== nextTool) {
-      session.tool = nextTool;
-      changed = true;
-    }
-    if (migratingLegacyMicroAgent) {
-      if ((session.model || '') !== PRODUCT_DEFAULT_CODEX_MODEL) {
-        session.model = PRODUCT_DEFAULT_CODEX_MODEL;
-        changed = true;
-      }
-      if ((session.effort || '') !== PRODUCT_DEFAULT_CODEX_EFFORT) {
-        session.effort = PRODUCT_DEFAULT_CODEX_EFFORT;
-        changed = true;
-      }
-      if (session.thinking !== false) {
-        session.thinking = false;
-        changed = true;
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(extra, 'templateAppliedAt')) {
-      const templateAppliedAt = typeof extra.templateAppliedAt === 'string' ? extra.templateAppliedAt.trim() : '';
-      if (templateAppliedAt) {
-        if (session.templateAppliedAt !== templateAppliedAt) {
-          session.templateAppliedAt = templateAppliedAt;
-          changed = true;
-        }
-      } else if (session.templateAppliedAt) {
-        delete session.templateAppliedAt;
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      session.updatedAt = nowIso();
-    }
-    return changed;
-  });
-
-  if (!result.meta) return null;
-  if (result.changed) {
-    broadcastSessionInvalidation(id);
-  }
-  return enrichSessionMeta(result.meta);
-}
-
 export async function updateSessionRuntimePreferences(id, patch = {}) {
   const hasFeishuRuntimePatch = Object.prototype.hasOwnProperty.call(patch || {}, 'feishuRuntimeSelection');
   const feishuRuntimeSelection = hasFeishuRuntimePatch ? normalizeExternalRuntimeOverride(patch.feishuRuntimeSelection) : null;
@@ -3063,94 +2834,6 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
   return enrichSessionMeta(result.meta);
 }
 
-async function hasBlockingInteractiveRun(session) {
-  if (!session || !isSessionRunning(session)) return false;
-  const runId = getSessionRunId(session);
-  if (!runId) return true;
-  const run = await getRun(runId);
-  if (!run || isTerminalRunState(run.state)) return false;
-  return true;
-}
-
-export async function saveSessionAsTemplate(sessionId, name = '') {
-  const session = await getSession(sessionId);
-  if (!session) return null;
-  if (session.visitorId) return null;
-  if (await hasBlockingInteractiveRun(session)) return null;
-
-  const [snapshot, contextHead] = await Promise.all([
-    getHistorySnapshot(sessionId),
-    getContextHead(sessionId),
-  ]);
-  const prepared = await getOrPrepareForkContext(sessionId, snapshot, contextHead);
-  const templateContent = buildSavedTemplateContextContent(prepared);
-
-  if (!templateContent && !(session.systemPrompt || '').trim()) {
-    return null;
-  }
-
-  return createApp({
-    name: name || `Template - ${session.name || 'Session'}`,
-    systemPrompt: session.systemPrompt || '',
-    welcomeMessage: '',
-    skills: [],
-    tool: session.tool || 'codex',
-    templateContext: templateContent
-      ? {
-          content: templateContent,
-          sourceSessionId: session.id,
-          sourceSessionName: session.name || '',
-          sourceSessionUpdatedAt: session.updatedAt || session.created || nowIso(),
-          updatedAt: nowIso(),
-        }
-      : null,
-  });
-}
-
-export async function applyTemplateToSession(sessionId, templateId, options = {}) {
-  const session = await getSession(sessionId);
-  if (!session) return null;
-  if (session.visitorId && options?.allowVisitor !== true) return null;
-  if (isSessionRunning(session)) return null;
-  if ((session.messageCount || 0) > 0) return null;
-
-  const template = await getApp(templateId);
-  if (!template) return null;
-
-  if (await sessionHasTemplateContextEvent(sessionId)) {
-    return null;
-  }
-
-  const templateFreshness = await resolveAppTemplateFreshness(template);
-  const shouldAppendWelcome = options?.appendWelcome === true;
-  const welcomeMessage = typeof template?.welcomeMessage === 'string'
-    ? template.welcomeMessage.trim()
-    : '';
-
-  const appliedAt = nowIso();
-  const updatedSession = await applySessionTemplateMetadata(sessionId, template, {
-    templateAppliedAt: appliedAt,
-  });
-  if (!updatedSession) return null;
-
-  if (template.templateContext?.content) {
-    await appendEvent(sessionId, {
-      type: 'template_context',
-      templateId: template.id,
-      templateName: template.name || 'Template',
-      content: template.templateContext.content,
-      ...templateFreshness,
-      timestamp: Date.now(),
-    });
-    await clearForkContext(sessionId);
-  }
-
-  if (shouldAppendWelcome && welcomeMessage) {
-    await appendEvent(sessionId, messageEvent('assistant', welcomeMessage));
-  }
-
-  return getSession(sessionId);
-}
 const deliveryIssueObserver = createSourceDeliveryIssueObserver();
 const nativeRequestDispatcher = createNativeRequestDispatcher({
   store: requests, getRun, getManifest: getRunManifest, runDirectory: runDir,
@@ -3160,7 +2843,7 @@ const nativeRequestDispatcher = createNativeRequestDispatcher({
     const tool = await getToolDefinitionAsync(manifest.tool);
     const context = tool?.promptMode === 'bare-user' ? '' : await buildManagerTurnContextText(session, { ...record.options, requestId: record.requestId });
     let text = tool?.promptMode === 'bare-user' ? record.text
-      : [wrapPrivatePromptBlock(context), `Current user message:\n${record.text}`, ...(session.visitorId ? [VISITOR_TURN_GUARDRAIL] : [])].filter(Boolean).join('\n\n---\n\n');
+      : [wrapPrivatePromptBlock(context), `Current user message:\n${record.text}`].filter(Boolean).join('\n\n---\n\n');
     if (tool?.flattenPrompt) text = text.replace(/\s+/g, ' ').trim();
     return { text: prependAttachmentPaths(text, attachments), context };
   },
@@ -3205,7 +2888,10 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   options = applyQuickSessionRuntime(session, options);
   if (options.requireIdle && requestRuntime.active(sessionId).length) throw Object.assign(new Error('Session is busy'), { code: 'SESSION_BUSY' });
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
-  const runtimeSelection = await resolveSessionRuntimeSelection(session, options);
+  const runtimeSelection = await resolveSessionRuntimeSelection(session, {
+    ...options,
+    autoRoutingText: text?.trim(),
+  });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
   const activeRequest = requestRuntime.active(sessionId)[0];
   const activeManifest = activeRequest ? await getRunManifest(activeRequest.runId) : null;
@@ -3225,10 +2911,22 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const nativeFollowUp = activeNative && !activeRun?.cancelRequested && canForwardNativeRequest(record, activeRequest);
   const queued = !record.result && !record.nativeDispatchRunId && !nativeFollowUp && requestRuntime.active(sessionId)[0]?.key !== record.key;
   if (!options.internalOperation && options.recordUserMessage !== false) {
-    const draftName = isSessionAutoRenamePending(session) ? buildTemporarySessionName(record.text) : '';
-    await mutateSessionMeta(sessionId, draft => { delete draft.workflowState; delete draft.workflowPriority; if (draftName) draft.name = draftName; return true; });
-    if (draftName) session.name = draftName;
-    delete session.workflowState; delete session.workflowPriority;
+    const draftName = isSessionAutoRenamePending(session)
+      ? buildTemporarySessionName(record.text)
+      : '';
+    const mutation = await mutateSessionMeta(sessionId, draft => {
+      delete draft.workflowState;
+      delete draft.workflowPriority;
+      if (
+        draftName
+        && isSessionAutoRenamePending(draft)
+        && normalizeSessionName(draft.name) === DEFAULT_SESSION_NAME
+      ) {
+        draft.name = draftName;
+      }
+      return true;
+    });
+    if (mutation.meta) session = mutation.meta;
   }
   broadcastSessionInvalidation(sessionId);
   return { requestId: record.requestId, duplicate, queued,
@@ -3323,16 +3021,21 @@ async function prepareRequestRun(record) {
       ? 'claude-stream-json'
       : effectiveTool === 'codex'
         ? 'codex-json'
-        : effectiveTool === 'pi' ? 'pi-json' : null);
+        : effectiveTool === 'pi'
+          ? 'pi-json'
+          : effectiveTool === 'antigravity' ? 'antigravity-stream-json' : null);
 
   const {
     claudeSessionId: persistedClaudeSessionId,
     codexThreadId: persistedCodexThreadId,
+    antigravityConversationId: persistedAntigravityConversationId,
   } = resolveResumeState(effectiveTool, session, options, effectiveRuntimeFamily);
   const freshProviderSession = options.freshThread === true || (
     effectiveRuntimeFamily === 'pi-json'
       ? previousTool !== effectiveTool || (snapshot.userMessageCount || 0) === 0
-      : !persistedClaudeSessionId && !persistedCodexThreadId
+      : !persistedClaudeSessionId
+        && !persistedCodexThreadId
+        && !persistedAntigravityConversationId
   );
 
   const managerTurnContext = effectiveToolDefinition?.promptMode === 'bare-user'
@@ -3351,9 +3054,14 @@ async function prepareRequestRun(record) {
       thinking: options.thinking === true,
       claudeSessionId: persistedClaudeSessionId,
       codexThreadId: persistedCodexThreadId,
-      providerResumeId: persistedCodexThreadId || persistedClaudeSessionId || null,
+      antigravityConversationId: persistedAntigravityConversationId,
+      providerResumeId: persistedCodexThreadId
+        || persistedClaudeSessionId
+        || persistedAntigravityConversationId
+        || null,
       internalOperation: options.internalOperation || null,
       executionProfile: options.executionProfile || null,
+      autoRoutingReceipt: options.autoRoutingReceipt || null,
     },
     manifest: {
       sessionId,
@@ -3368,7 +3076,9 @@ async function prepareRequestRun(record) {
       prompt: await buildPrompt(sessionId, session, normalizedText, previousTool, effectiveTool, snapshot, options, managerTurnContext),
       managerTurnContext,
       internalOperation: options.internalOperation || null,
+      viewPersonId: typeof options.viewPersonId === 'string' ? options.viewPersonId.trim() : '',
       ...(options.executionProfile ? { executionProfile: options.executionProfile } : {}),
+      ...(options.autoRoutingReceipt ? { autoRoutingReceipt: options.autoRoutingReceipt } : {}),
       ...(normalizeSourceDeliveryPlan(options.sourceDelivery)
         ? { sourceDelivery: normalizeSourceDeliveryPlan(options.sourceDelivery) }
         : {}),
@@ -3396,12 +3106,20 @@ async function prepareRequestRun(record) {
         freshProviderSession,
         claudeSessionId: persistedClaudeSessionId || undefined,
         codexThreadId: persistedCodexThreadId || undefined,
+        antigravityConversationId: persistedAntigravityConversationId || undefined,
         executionProfile: options.executionProfile || undefined,
         developerInstructions: options.executionProfile === QUICK_SESSION_PROFILE
           ? getQuickSessionDeveloperInstructions()
           : undefined,
-        disableApps: options.executionProfile === QUICK_SESSION_PROFILE || undefined,
-        skipSessionStartPreflight: options.executionProfile === QUICK_SESSION_PROFILE || undefined,
+        disableApps: options.executionProfile === QUICK_SESSION_PROFILE ? false : undefined,
+        sessionStartPreflightPurpose: options.internalOperation === 'trigger_delivery'
+          ? 'scheduled_user_work'
+          : options.internalOperation
+            ? 'maintenance'
+            : 'interactive_user_work',
+        skipSessionStartPreflight: options.skipSessionStartPreflight === true
+          || options.executionProfile === QUICK_SESSION_PROFILE
+          || undefined,
       },
     },
   });
@@ -3413,6 +3131,7 @@ async function prepareRequestRun(record) {
       draft.model = options.model || '';
       draft.effort = options.effort || '';
       draft.thinking = options.thinking === true;
+      if (options.autoRoutingReceipt) draft.autoRouting = options.autoRoutingReceipt;
     }
     draft.updatedAt = nowIso();
     return true;
@@ -3497,15 +3216,17 @@ export async function getHistory(sessionId) {
 }
 
 export async function forkSession(sessionId, options = {}) {
+  const viewPersonId = typeof options.viewPersonId === 'string' && options.viewPersonId.trim()
+    ? options.viewPersonId.trim()
+    : DEFAULT_PERSON_ID;
   const requestedExternalTriggerId = typeof options.externalTriggerId === 'string' ? options.externalTriggerId.trim() : '';
   if (requestedExternalTriggerId) {
     const existing = await findSessionByExternalTriggerId(requestedExternalTriggerId);
-    if (existing) return await getSession(existing.id) || existing;
+    if (existing) return await getSession(existing.id, { viewPersonId }) || existing;
   }
 
-  const source = await getSession(sessionId);
+  const source = await getSession(sessionId, { viewPersonId });
   if (!source) return null;
-  if (source.visitorId) return null;
 
   const running = isSessionRunning(source);
   let forkThroughSeq;
@@ -3541,8 +3262,10 @@ export async function forkSession(sessionId, options = {}) {
     description: typeof options.description === 'string' && options.description.trim() ? options.description.trim() : (source.description || ''),
     sourceId: typeof options.sourceId === 'string' && options.sourceId.trim() ? options.sourceId.trim() : (source.sourceId || ''),
     sourceName: typeof options.sourceName === 'string' && options.sourceName.trim() ? options.sourceName.trim() : (source.sourceName || ''),
-    templateId: typeof options.templateId === 'string' && options.templateId.trim() ? options.templateId.trim() : (source.templateId || ''),
-    templateName: typeof options.templateName === 'string' && options.templateName.trim() ? options.templateName.trim() : (source.templateName || ''),
+    initiatedByIdentityId: typeof options.initiatedByIdentityId === 'string' && options.initiatedByIdentityId.trim()
+      ? options.initiatedByIdentityId.trim()
+      : (source.initiatedByIdentityId || ''),
+    viewPersonId,
     systemPrompt: Object.prototype.hasOwnProperty.call(options, 'systemPrompt') && typeof options.systemPrompt === 'string' ? options.systemPrompt : (source.systemPrompt || ''),
     activeAgreements: source.activeAgreements || [],
     externalTriggerId: requestedExternalTriggerId,
@@ -3581,13 +3304,15 @@ export async function forkSession(sessionId, options = {}) {
   }
 
   broadcastSessionsInvalidation();
-  return getSession(child.id);
+  return getSession(child.id, { viewPersonId });
 }
 
 export async function delegateSession(sessionId, payload = {}) {
-  const source = await getSession(sessionId);
+  const viewPersonId = typeof payload.viewPersonId === 'string' && payload.viewPersonId.trim()
+    ? payload.viewPersonId.trim()
+    : DEFAULT_PERSON_ID;
+  const source = await getSession(sessionId, { viewPersonId });
   if (!source) return null;
-  if (source.visitorId) return null;
 
   const task = typeof payload?.task === 'string' ? payload.task.trim() : '';
   if (!task) {
@@ -3622,9 +3347,11 @@ export async function delegateSession(sessionId, payload = {}) {
 
   const child = await createSession(source.folder, nextTool, requestedName || '', {
     // Handoff creates an independent Chat UI session without a connector target.
-    sourceId: DEFAULT_APP_ID,
-    templateId: source.templateId || '',
-    templateName: source.templateName || '',
+    sourceId: DEFAULT_SESSION_SOURCE_ID,
+    initiatedByIdentityId: typeof payload.initiatedByIdentityId === 'string' && payload.initiatedByIdentityId.trim()
+      ? payload.initiatedByIdentityId.trim()
+      : (source.initiatedByIdentityId || ''),
+    viewPersonId,
     systemPrompt: source.systemPrompt || '',
     activeAgreements: source.activeAgreements || [],
     model: selection.model,
@@ -3632,7 +3359,7 @@ export async function delegateSession(sessionId, payload = {}) {
     thinking: selection.thinking,
     delegatedFromSessionId: source.id,
     delegationDepth: sourceDepth + 1,
-    ...(runInternally ? { internalRole: INTERNAL_SESSION_ROLE_AGENT_DELEGATE } : {}),
+    ...(runInternally ? { internalRole: INTERNAL_SESSION_ROLE_DELEGATE } : {}),
   });
   if (!child) return null;
 
@@ -3644,6 +3371,8 @@ export async function delegateSession(sessionId, payload = {}) {
   });
   const outcome = await submitHttpMessage(child.id, handoffText, [], {
     requestId: createInternalRequestId('delegate'),
+    initiatedByIdentityId: typeof payload.initiatedByIdentityId === 'string' ? payload.initiatedByIdentityId.trim() : '',
+    viewPersonId,
     ...selection,
   });
 
@@ -3656,55 +3385,10 @@ export async function delegateSession(sessionId, payload = {}) {
   }
 
   return {
-    session: outcome.session || await getSession(child.id) || child,
+    session: await getSession(child.id, { viewPersonId }) || outcome.session || child,
     run: outcome.run || null,
     sessionUrl: buildSessionNavigationHref(child.id),
   };
-}
-
-export async function dropToolUse(sessionId) {
-  const session = await getSession(sessionId);
-  if (!session) return false;
-
-  const history = await loadHistory(sessionId);
-  const textEvents = history.filter((event) => event.type === 'message');
-  const transcript = textEvents
-    .map((event) => `[${event.role === 'user' ? 'User' : 'Assistant'}]: ${event.content || ''}`)
-    .join('\n\n');
-
-  await clearPersistedResumeIds(sessionId);
-  if (transcript.trim()) {
-    const snapshot = await getHistorySnapshot(sessionId);
-    await setContextHead(sessionId, {
-      mode: 'summary',
-      summary: `[Previous conversation — tool results removed]\n\n${transcript}`,
-      activeFromSeq: snapshot.latestSeq,
-      compactedThroughSeq: snapshot.latestSeq,
-      updatedAt: nowIso(),
-      source: 'drop_tool_use',
-    });
-  } else {
-    await clearContextHead(sessionId);
-  }
-
-  const kept = textEvents.length;
-  const dropped = history.filter((event) => ['tool_use', 'tool_result', 'file_change'].includes(event.type)).length;
-  const dropEvent = statusEvent(`Tool results dropped — ${dropped} tool events removed from context, ${kept} messages kept`);
-  await appendEvent(sessionId, dropEvent);
-  broadcastSessionInvalidation(sessionId);
-  return true;
-}
-
-export async function compactSession(sessionId) {
-  const session = await getSession(sessionId);
-  if (!session) return false;
-  if (getSessionQueueCount(session) > 0) return false;
-  const runId = getSessionRunId(session);
-  if (runId) {
-    const run = await getRun(runId);
-    if (run && !isTerminalRunState(run.state)) return false;
-  }
-  return queueContextCompaction(sessionId, session, null, { automatic: false }, getCompactionServices());
 }
 
 export async function drainRequestRuntime() {

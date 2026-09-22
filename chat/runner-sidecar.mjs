@@ -32,6 +32,7 @@ import {
 } from './provider-runtime-queue.mjs';
 import {
   appendSessionStartPreflightEvent,
+  formatSessionStartPreflightActivity,
   formatSessionStartPreflightDay,
   readSessionStartPreflightPolicy,
 } from './session-start-preflight.mjs';
@@ -204,6 +205,17 @@ function captureResume(run, parsed) {
       providerResumeId: parsed.thread_id,
     };
   }
+  const antigravityConversationId = parsed.event === 'init'
+    ? (parsed.conversation_id || parsed.init?.conversation_id)
+    : parsed.event === 'result'
+      ? parsed.result?.conversation_id
+      : null;
+  if (antigravityConversationId) {
+    return {
+      antigravityConversationId,
+      providerResumeId: antigravityConversationId,
+    };
+  }
   return null;
 }
 
@@ -326,6 +338,7 @@ async function main() {
     dangerouslySkipPermissions: true,
     claudeSessionId: manifest.options?.claudeSessionId,
     codexThreadId: manifest.options?.codexThreadId,
+    antigravityConversationId: manifest.options?.antigravityConversationId,
     piSessionId: manifest.sessionId,
     thinking: manifest.options?.thinking,
     model: manifest.options?.model,
@@ -344,6 +357,7 @@ async function main() {
       model: manifest.options?.model,
       freshProviderSession: manifest.options?.freshProviderSession === true,
       internalOperation: manifest.internalOperation,
+      purpose: manifest.options?.sessionStartPreflightPurpose,
     })
     : null;
   const sessionStartPreflightStartedAt = sessionStartPreflightPolicy ? nowIso() : '';
@@ -377,6 +391,23 @@ async function main() {
       });
       return null;
     }
+  };
+
+  const recordSessionStartPreflightActivity = async (content, metadata = {}) => {
+    if (!sessionStartPreflightPolicy || !String(content || '').trim()) return;
+    const payload = {
+      type: 'remotelab.activity',
+      activityType: 'session_start_preflight',
+      presentation: 'reasoning',
+      content: String(content).trim(),
+      ...metadata,
+    };
+    await appendRunSpoolRecord(runId, {
+      ts: nowIso(),
+      stream: 'stdout',
+      line: JSON.stringify(payload),
+      json: payload,
+    });
   };
 
   if (sessionStartPreflightPolicy) {
@@ -514,13 +545,14 @@ async function main() {
 
   let providerRuntimeLease = null;
 
-  const runToolAttempt = async (invocation, preflightAttempt = 0) => {
-    const preflightAttemptStartedAt = sessionStartPreflightPolicy ? nowIso() : '';
+  const runToolAttempt = async (invocation, preflightAttempt = 0, options = {}) => {
+    const useSessionStartPreflight = !!sessionStartPreflightPolicy && options.skipSessionStartPreflight !== true;
+    const preflightAttemptStartedAt = useSessionStartPreflight ? nowIso() : '';
     const resolvedCommand = await resolveCommand(invocation.command);
     if (manifest.inputMode === 'native') return runNativeHost({
       directory: runDir(runId), command: resolvedCommand, runtimeFamily: invocation.runtimeFamily,
       options: invocationOptions, prompt, cwd: resolvedFolder.cwd, env: spawnEnv,
-      ...(sessionStartPreflightPolicy
+      ...(useSessionStartPreflight
         ? {
           startPreflight: {
             prompt: sessionStartPreflightPolicy.prompt,
@@ -556,6 +588,23 @@ async function main() {
           && preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) {
           outcome = 'exhausted';
         }
+        const activityState = outcome === 'exhausted'
+          ? 'exhausted'
+          : ['loaded', 'restart_required', 'error'].includes(result?.status)
+            ? result.status
+            : 'error';
+        await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+          state: activityState,
+          attempt: preflightAttempt,
+          maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+          answer: result?.answer || '',
+          matchedAnswer: result?.matchedAnswer || '',
+          reason: result?.reason || '',
+          error: result?.error ? normalizeErrorMessage(result.error) : '',
+          retryDelayMs: sessionStartPreflightPolicy.retryDelayMs,
+          hadRestart: sessionStartPreflightHadRestart,
+          continuesRealRequest: activityState === 'exhausted' || activityState === 'error',
+        }), { phase: activityState, attempt: preflightAttempt });
         if (outcome && !sessionStartPreflightCompleted) {
           sessionStartPreflightCompleted = true;
           await recordSessionStartPreflightEvent({
@@ -740,6 +789,12 @@ async function main() {
     while (true) {
       preflightAttempt += 1;
       if (sessionStartPreflightPolicy) {
+        await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+          state: 'attempt',
+          attempt: preflightAttempt,
+          maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+          prompt: sessionStartPreflightPolicy.prompt,
+        }), { phase: 'attempt', attempt: preflightAttempt });
         await updateRun(runId, (draft) => ({
           ...draft,
           sessionStartPreflight: {
@@ -753,15 +808,21 @@ async function main() {
       }
       attempt = await runToolAttempt(initialInvocation, preflightAttempt);
       current = await getRun(runId) || run;
-      if (!sessionStartPreflightPolicy || attempt.preflight?.status !== 'restart_required') break;
-      if (preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) {
-        attempt = {
-          ...attempt,
-          code: 1,
-          error: new Error(`Session start preflight still matched ${attempt.preflight.matchedAnswer || 'a restart answer'} after ${preflightAttempt} attempts`),
-        };
+      if (!sessionStartPreflightPolicy || !attempt.preflight) break;
+
+      const preflightExhausted = attempt.preflight.status === 'restart_required'
+        && preflightAttempt >= sessionStartPreflightPolicy.maxAttempts;
+      const preflightErrored = attempt.preflight.status === 'error';
+      if ((preflightExhausted || preflightErrored) && current.cancelRequested !== true) {
+        // Preflight is warming and observability, not an admission gate. Keep
+        // the original prompt in this same durable run and execute it once the
+        // warming attempts are exhausted or cannot produce a usable answer.
+        attempt = await runToolAttempt(initialInvocation, 0, { skipSessionStartPreflight: true });
+        current = await getRun(runId) || current;
         break;
       }
+      if (attempt.preflight.status !== 'restart_required') break;
+      if (preflightAttempt >= sessionStartPreflightPolicy.maxAttempts) break;
 
       await releaseProviderLease();
       const retryAtMs = Date.now() + sessionStartPreflightPolicy.retryDelayMs;
@@ -792,6 +853,11 @@ async function main() {
             completedAt: nowIso(),
           });
         }
+        await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+          state: 'cancelled',
+          attempt: preflightAttempt,
+          maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+        }), { phase: 'cancelled', attempt: preflightAttempt });
         await updateRun(runId, (draft) => ({
           ...draft,
           sessionStartPreflight: {
@@ -825,6 +891,13 @@ async function main() {
         neededNewSession: sessionStartPreflightHadRestart,
         completedAt: nowIso(),
       });
+      await recordSessionStartPreflightActivity(formatSessionStartPreflightActivity({
+        state: outcome,
+        attempt: preflightAttempt,
+        maxAttempts: sessionStartPreflightPolicy.maxAttempts,
+        reason: current.cancelRequested === true ? 'cancelled_during_preflight' : 'preflight_process_failed',
+        error: attempt?.error ? normalizeErrorMessage(attempt.error) : '',
+      }), { phase: outcome, attempt: preflightAttempt });
       await updateRun(runId, (draft) => ({
         ...draft,
         sessionStartPreflight: {

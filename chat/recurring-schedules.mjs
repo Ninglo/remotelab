@@ -1,12 +1,19 @@
 import { normalizeScheduledSessionTemplate as normalizeSessionTemplate } from '../lib/scheduled-session.mjs';
-import { randomBytes } from 'crypto';
+import { scheduledRuntimeIntent, patchScheduledRuntime } from '../lib/scheduled-runtime-policy.mjs';
+import { createHash, randomBytes } from 'crypto';
+import { spawn } from 'child_process';
 
 import { CHAT_RECURRING_SCHEDULES_FILE } from '../lib/config.mjs';
 import { createSerialTaskQueue, readJson, statOrNull, writeJsonAtomic } from './fs-utils.mjs';
 
 const DEFAULT_TIMEZONE = 'Asia/Shanghai';
-const DEFAULT_POLL_MS = 15000;
-const DEFAULT_MAX_OPEN_OCCURRENCES = 10;
+const DEFAULT_POLL_MS = 1000;
+const DEFAULT_MAX_OPEN_OCCURRENCES = 1;
+const MIN_INTERVAL_SECONDS = 10;
+const DEFAULT_GATE_TIMEOUT_SECONDS = 5;
+const MAX_GATE_TIMEOUT_SECONDS = 30;
+const MAX_GATE_SOURCE_BYTES = 64 * 1024;
+const MAX_GATE_OUTPUT_BYTES = 16 * 1024;
 const MAX_CRON_SEARCH_MINUTES = 5 * 366 * 24 * 60;
 
 let schedulesCache = null;
@@ -31,6 +38,114 @@ function nowIso(value = Date.now()) {
 function normalizeTimestamp(value) {
   const parsed = Date.parse(trimString(value));
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
+}
+
+function positiveInteger(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function normalizeCadence(raw, { strict = false } = {}) {
+  const cadence = raw?.cadence && typeof raw.cadence === 'object' ? raw.cadence : {};
+  const type = trimString(cadence.type || raw?.scheduleType).toLowerCase();
+  if (strict && type && !['cron', 'interval'].includes(type)) {
+    throw new Error('cadence.type must be cron or interval');
+  }
+  const intervalValue = cadence.everySeconds ?? raw?.everySeconds ?? raw?.intervalSeconds;
+  if (type === 'interval' || intervalValue !== undefined) {
+    const everySeconds = positiveInteger(intervalValue);
+    if (everySeconds < MIN_INTERVAL_SECONDS) {
+      if (strict) throw new Error(`everySeconds must be at least ${MIN_INTERVAL_SECONDS}`);
+      throw new Error('Invalid interval cadence');
+    }
+    return { type: 'interval', everySeconds };
+  }
+  return {
+    type: 'cron',
+    cron: parseCronExpression(raw?.cron).expression,
+    timezone: validateTimezone(raw?.timezone),
+  };
+}
+
+function normalizeLifetime(value, { strict = false } = {}) {
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const requestedMode = trimString(raw.mode).toLowerCase();
+  const hasBound = raw.maxExecutions !== undefined || raw.maxChecks !== undefined || trimString(raw.endsAt);
+  const mode = requestedMode || (hasBound ? 'bounded' : 'continuous');
+  if (!['continuous', 'bounded'].includes(mode)) throw new Error('lifetime.mode must be continuous or bounded');
+  if (mode === 'continuous') {
+    if (strict && hasBound) throw new Error('continuous lifetime cannot include bounded limits');
+    return { mode };
+  }
+  const maxExecutions = positiveInteger(raw.maxExecutions);
+  const maxChecks = positiveInteger(raw.maxChecks);
+  const endsAt = normalizeTimestamp(raw.endsAt);
+  if (strict) {
+    if (raw.maxExecutions !== undefined && !maxExecutions) throw new Error('lifetime.maxExecutions must be a positive integer');
+    if (raw.maxChecks !== undefined && !maxChecks) throw new Error('lifetime.maxChecks must be a positive integer');
+    if (trimString(raw.endsAt) && !endsAt) throw new Error('lifetime.endsAt must be a valid timestamp');
+  }
+  if (!maxExecutions && !maxChecks && !endsAt) {
+    throw new Error('bounded lifetime requires maxExecutions, maxChecks, or endsAt');
+  }
+  return {
+    mode,
+    ...(maxExecutions ? { maxExecutions } : {}),
+    ...(maxChecks ? { maxChecks } : {}),
+    ...(endsAt ? { endsAt } : {}),
+  };
+}
+
+function normalizeGate(value, { strict = false } = {}) {
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const mode = trimString(raw.mode).toLowerCase() || 'direct';
+  if (!['direct', 'script'].includes(mode)) throw new Error('gate.mode must be direct or script');
+  if (mode === 'direct') return { mode };
+  const runtime = trimString(raw.runtime || raw.language).toLowerCase() || 'bash';
+  if (!['bash', 'python', 'node'].includes(runtime)) throw new Error('gate.runtime must be bash, python, or node');
+  const source = typeof raw.source === 'string'
+    ? raw.source
+    : typeof raw.script?.source === 'string'
+      ? raw.script.source
+      : '';
+  if (!source.trim()) throw new Error('gate.source is required for script gates');
+  if (Buffer.byteLength(source, 'utf8') > MAX_GATE_SOURCE_BYTES) {
+    throw new Error(`gate.source must not exceed ${MAX_GATE_SOURCE_BYTES} bytes`);
+  }
+  const requestedTimeout = raw.timeoutSeconds ?? raw.script?.timeoutSeconds;
+  const timeoutSeconds = requestedTimeout === undefined
+    ? DEFAULT_GATE_TIMEOUT_SECONDS
+    : positiveInteger(requestedTimeout);
+  if (!timeoutSeconds || timeoutSeconds > MAX_GATE_TIMEOUT_SECONDS) {
+    throw new Error(`gate.timeoutSeconds must be between 1 and ${MAX_GATE_TIMEOUT_SECONDS}`);
+  }
+  const cooldownSeconds = raw.cooldownSeconds === undefined ? 0 : Number(raw.cooldownSeconds);
+  if (!Number.isInteger(cooldownSeconds) || cooldownSeconds < 0) {
+    if (strict) throw new Error('gate.cooldownSeconds must be a non-negative integer');
+    throw new Error('Invalid gate cooldown');
+  }
+  return {
+    mode,
+    runtime,
+    source,
+    snapshotSha256: createHash('sha256').update(source).digest('hex'),
+    timeoutSeconds,
+    cooldownSeconds,
+  };
+}
+
+function normalizeAlerts(value) {
+  const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const mode = trimString(raw.mode).toLowerCase() || 'remotelab';
+  if (!['none', 'remotelab'].includes(mode)) {
+    throw new Error('alerts.mode must be none or remotelab');
+  }
+  const on = Array.isArray(raw.on)
+    ? [...new Set(raw.on.map((entry) => trimString(entry).toLowerCase()).filter((entry) => (
+      ['gate_error', 'execution_failure', 'completed'].includes(entry)
+    )))]
+    : ['gate_error', 'execution_failure'];
+  return { mode, on };
 }
 
 
@@ -184,42 +299,71 @@ function getLatestCronOccurrenceAtOrBefore(expression, timezone, at) {
   throw new Error('Unable to find previous cron occurrence within five years');
 }
 
+function getNextScheduleOccurrence(schedule, after) {
+  if (schedule.cadence?.type === 'interval') {
+    const afterMs = typeof after === 'string' ? Date.parse(after) : Number(after);
+    if (!Number.isFinite(afterMs)) throw new Error('after must be a valid timestamp');
+    return new Date(afterMs + schedule.cadence.everySeconds * 1000).toISOString();
+  }
+  return getNextCronOccurrence(schedule.cron, schedule.timezone, after);
+}
+
 function normalizeStoredSchedule(value) {
   const raw = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const sourceSessionId = trimString(raw.sourceSessionId) || trimString(raw.sessionId);
   const text = trimString(raw.text);
   const sessionTemplate = normalizeSessionTemplate(raw.sessionTemplate, raw.tool, raw);
   if (!text || !sourceSessionId || !sessionTemplate) return null;
-  const cron = parseCronExpression(raw.cron).expression;
-  const timezone = validateTimezone(raw.timezone);
+  const cadence = normalizeCadence(raw);
+  const cron = cadence.type === 'cron' ? cadence.cron : '';
+  const timezone = cadence.type === 'cron' ? cadence.timezone : '';
+  const lifetime = normalizeLifetime(raw.lifetime);
+  const gate = normalizeGate(raw.gate);
   const createdAt = normalizeTimestamp(raw.createdAt) || nowIso();
-  const enabled = raw.enabled !== false && trimString(raw.status) !== 'cancelled';
+  const requestedStatus = trimString(raw.status).toLowerCase();
+  let status = 'active';
+  if (requestedStatus === 'paused') status = 'paused';
+  else if (requestedStatus === 'cancelled') status = 'cancelled';
+  else if (requestedStatus === 'completed') status = 'completed';
+  else if (raw.enabled === false) status = 'cancelled';
+  const enabled = status === 'active';
   return {
     id: /^sch_[a-f0-9]{24}$/.test(trimString(raw.id)) ? trimString(raw.id) : createScheduleId(),
-    status: enabled ? 'active' : 'cancelled',
+    status,
     enabled,
     sourceSessionId,
     sessionTemplate,
     title: trimString(raw.title),
     text,
+    cadence,
     cron,
     timezone,
+    lifetime,
+    gate,
+    alerts: normalizeAlerts(raw.alerts),
     misfirePolicy: 'latest_once',
-    overlapPolicy: 'queue',
+    overlapPolicy: 'latest_once',
     maxOpenOccurrences: Math.max(1, Number.parseInt(raw.maxOpenOccurrences, 10) || DEFAULT_MAX_OPEN_OCCURRENCES),
-    tool: trimString(raw.tool),
-    model: trimString(raw.model),
-    effort: trimString(raw.effort),
-    thinking: raw.thinking === true,
+    ...scheduledRuntimeIntent(raw),
     nextRunAt: normalizeTimestamp(raw.nextRunAt),
     lastScheduledAt: normalizeTimestamp(raw.lastScheduledAt),
     missedCount: Math.max(0, Number.parseInt(raw.missedCount, 10) || 0),
     skippedCount: Math.max(0, Number.parseInt(raw.skippedCount, 10) || 0),
+    checkCount: Math.max(0, Number.parseInt(raw.checkCount, 10) || 0),
+    matchCount: Math.max(0, Number.parseInt(raw.matchCount, 10) || 0),
+    gateSkipCount: Math.max(0, Number.parseInt(raw.gateSkipCount, 10) || 0),
+    gateErrorCount: Math.max(0, Number.parseInt(raw.gateErrorCount, 10) || 0),
+    deduplicatedCount: Math.max(0, Number.parseInt(raw.deduplicatedCount, 10) || 0),
+    lastCheckAt: normalizeTimestamp(raw.lastCheckAt),
+    lastMatchedAt: normalizeTimestamp(raw.lastMatchedAt),
+    lastGateMatched: raw.lastGateMatched === true,
+    lastGateReason: trimString(raw.lastGateReason),
     lastError: trimString(raw.lastError),
     lastErrorAt: normalizeTimestamp(raw.lastErrorAt),
     createdAt,
     updatedAt: normalizeTimestamp(raw.updatedAt) || createdAt,
     cancelledAt: normalizeTimestamp(raw.cancelledAt),
+    completedAt: normalizeTimestamp(raw.completedAt),
   };
 }
 
@@ -287,9 +431,16 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     throw new Error('sessionTemplate with folder and tool is required');
   }
   if (!text) throw new Error('text is required');
-  const cron = parseCronExpression(input.cron).expression;
-  const timezone = validateTimezone(input.timezone);
+  const cadence = normalizeCadence(input, { strict: true });
+  const lifetime = normalizeLifetime(input.lifetime, { strict: true });
+  const gate = normalizeGate(input.gate, { strict: true });
+  const alerts = normalizeAlerts(input.alerts);
   const createdAt = nowIso(options.now);
+  const seed = {
+    cadence,
+    cron: cadence.type === 'cron' ? cadence.cron : '',
+    timezone: cadence.type === 'cron' ? cadence.timezone : '',
+  };
   const schedule = normalizeStoredSchedule({
     id: createScheduleId(),
     status: input.enabled === false ? 'cancelled' : 'active',
@@ -298,14 +449,17 @@ export async function createRecurringSchedule(input = {}, options = {}) {
     sessionTemplate,
     title: input.title,
     text,
-    cron,
-    timezone,
+    ...seed,
+    lifetime,
+    gate,
+    alerts,
     tool: input.tool,
+    runtimePolicy: input.runtimePolicy,
     model: input.model,
     effort: input.effort,
     thinking: input.thinking,
     maxOpenOccurrences: input.maxOpenOccurrences,
-    nextRunAt: getNextCronOccurrence(cron, timezone, createdAt),
+    nextRunAt: getNextScheduleOccurrence(seed, createdAt),
     createdAt,
     updatedAt: createdAt,
   });
@@ -342,31 +496,76 @@ export async function updateRecurringSchedule(scheduleId, patch = {}) {
     if (Object.prototype.hasOwnProperty.call(patch, 'thinking') && typeof patch.thinking !== 'boolean') {
       throw new Error('thinking must be a boolean');
     }
-    const enabled = Object.prototype.hasOwnProperty.call(patch, 'enabled')
-      ? patch.enabled === true
-      : current.enabled;
+    const hasRequestedStatus = Object.prototype.hasOwnProperty.call(patch, 'status');
+    const requestedStatus = hasRequestedStatus
+      ? trimString(patch.status).toLowerCase()
+      : '';
+    if (hasRequestedStatus && !['active', 'paused', 'cancelled'].includes(requestedStatus)) {
+      throw new Error('status must be active, paused, or cancelled');
+    }
+    if (hasRequestedStatus && Object.prototype.hasOwnProperty.call(patch, 'enabled')
+        && patch.enabled !== (requestedStatus === 'active')) {
+      throw new Error('enabled conflicts with status');
+    }
+    if (requestedStatus === 'active' && ['cancelled', 'completed'].includes(current.status)) {
+      throw new Error(`${current.status === 'completed' ? 'Completed' : 'Cancelled'} schedules cannot be resumed`);
+    }
+    const nextStatus = requestedStatus || (Object.prototype.hasOwnProperty.call(patch, 'enabled')
+      ? (patch.enabled === true ? 'active' : 'cancelled')
+      : current.status);
+    const enabled = nextStatus === 'active';
     if (Object.prototype.hasOwnProperty.call(patch, 'enabled') && typeof patch.enabled !== 'boolean') {
       throw new Error('enabled must be a boolean');
     }
-    const cron = Object.prototype.hasOwnProperty.call(patch, 'cron')
-      ? parseCronExpression(patch.cron).expression
-      : current.cron;
-    const timezone = Object.prototype.hasOwnProperty.call(patch, 'timezone')
-      ? validateTimezone(patch.timezone)
-      : current.timezone;
+    const cadencePatchRequested = ['cadence', 'scheduleType', 'everySeconds', 'intervalSeconds', 'cron', 'timezone']
+      .some((field) => Object.prototype.hasOwnProperty.call(patch, field));
+    let cadence = current.cadence;
+    if (cadencePatchRequested) {
+      const patchCadence = patch.cadence && typeof patch.cadence === 'object' ? patch.cadence : null;
+      const explicitlyInterval = trimString(patchCadence?.type || patch.scheduleType).toLowerCase() === 'interval'
+        || Object.hasOwn(patch, 'everySeconds') || Object.hasOwn(patch, 'intervalSeconds');
+      const explicitlyCron = trimString(patchCadence?.type || patch.scheduleType).toLowerCase() === 'cron'
+        || Object.hasOwn(patch, 'cron');
+      cadence = normalizeCadence({
+        ...current,
+        ...patch,
+        ...(explicitlyInterval ? { cron: undefined } : {}),
+        cadence: patchCadence || (explicitlyCron
+          ? { type: 'cron' }
+          : explicitlyInterval
+            ? { type: 'interval' }
+            : current.cadence),
+      }, { strict: true });
+    }
+    const cron = cadence.type === 'cron' ? cadence.cron : '';
+    const timezone = cadence.type === 'cron' ? cadence.timezone : '';
+    const lifetime = Object.hasOwn(patch, 'lifetime')
+      ? normalizeLifetime(patch.lifetime, { strict: true })
+      : current.lifetime;
+    const gate = Object.hasOwn(patch, 'gate')
+      ? normalizeGate(patch.gate, { strict: true })
+      : current.gate;
+    const alerts = Object.hasOwn(patch, 'alerts') ? normalizeAlerts(patch.alerts) : current.alerts;
+    const cadenceChanged = JSON.stringify(cadence) !== JSON.stringify(current.cadence);
     const next = normalizeStoredSchedule({
       ...current,
       ...patch,
+      ...patchScheduledRuntime(current, patch),
       sourceSessionId,
       sessionTemplate,
       text,
+      cadence,
       cron,
       timezone,
+      lifetime,
+      gate,
+      alerts,
       enabled,
-      status: enabled ? 'active' : 'cancelled',
-      cancelledAt: enabled ? '' : updatedAt,
-      nextRunAt: enabled && (!current.enabled || cron !== current.cron || timezone !== current.timezone)
-        ? getNextCronOccurrence(cron, timezone, updatedAt)
+      status: nextStatus,
+      cancelledAt: nextStatus === 'cancelled' ? (current.cancelledAt || updatedAt) : '',
+      completedAt: nextStatus === 'completed' ? (current.completedAt || updatedAt) : '',
+      nextRunAt: enabled && (!current.enabled || cadenceChanged)
+        ? getNextScheduleOccurrence({ cadence, cron, timezone }, updatedAt)
         : current.nextRunAt,
       updatedAt,
     });
@@ -391,17 +590,145 @@ export async function deleteRecurringSchedule(scheduleId) {
 }
 
 function collectDueOccurrences(schedule, nowMs) {
+  if (schedule.cadence?.type === 'interval') {
+    const firstMs = Date.parse(schedule.nextRunAt);
+    const stepMs = schedule.cadence.everySeconds * 1000;
+    if (!Number.isFinite(firstMs) || firstMs > nowMs) {
+      return { dueCount: 0, latestAt: '', nextRunAt: schedule.nextRunAt };
+    }
+    const dueCount = Math.floor((nowMs - firstMs) / stepMs) + 1;
+    const latestMs = firstMs + ((dueCount - 1) * stepMs);
+    return {
+      dueCount,
+      latestAt: new Date(latestMs).toISOString(),
+      nextRunAt: new Date(latestMs + stepMs).toISOString(),
+    };
+  }
   const due = [];
   let cursor = schedule.nextRunAt;
   for (let index = 0; index < 10000 && cursor && Date.parse(cursor) <= nowMs; index += 1) {
     due.push(cursor);
-    cursor = getNextCronOccurrence(schedule.cron, schedule.timezone, cursor);
+    cursor = getNextScheduleOccurrence(schedule, cursor);
   }
   if (cursor && Date.parse(cursor) <= nowMs) {
     due[due.length - 1] = getLatestCronOccurrenceAtOrBefore(schedule.cron, schedule.timezone, nowMs);
-    cursor = getNextCronOccurrence(schedule.cron, schedule.timezone, nowMs);
+    cursor = getNextScheduleOccurrence(schedule, nowMs);
   }
-  return { due, nextRunAt: cursor };
+  return { dueCount: due.length, latestAt: due.at(-1) || '', nextRunAt: cursor };
+}
+
+export function parseGateOutput(value) {
+  const output = trimString(value);
+  if (/^yes$/i.test(output)) return { trigger: true, reason: '', dedupeKey: '' };
+  if (/^no$/i.test(output)) return { trigger: false, reason: '', dedupeKey: '' };
+  let parsed;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    throw new Error('Gate output must be yes, no, or one JSON object');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || typeof parsed.trigger !== 'boolean') {
+    throw new Error('Gate JSON must contain a boolean trigger field');
+  }
+  return {
+    trigger: parsed.trigger,
+    reason: trimString(parsed.reason).slice(0, 500),
+    dedupeKey: trimString(parsed.dedupeKey).slice(0, 500),
+  };
+}
+
+function gateCommand(runtime) {
+  if (runtime === 'python') return { command: 'python3', args: ['-'] };
+  if (runtime === 'node') return { command: process.execPath, args: ['-'] };
+  return { command: '/bin/bash', args: ['--noprofile', '--norc', '-s'] };
+}
+
+export async function runScheduleGate(schedule, scheduledAt) {
+  if (schedule.gate?.mode !== 'script') return { trigger: true, reason: '', dedupeKey: '' };
+  const { command, args } = gateCommand(schedule.gate.runtime);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: schedule.sessionTemplate?.folder || process.cwd(),
+      env: {
+        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+        HOME: process.env.HOME || '',
+        LANG: process.env.LANG || 'C.UTF-8',
+        REMOTELAB_TASK_ID: schedule.id,
+        REMOTELAB_TASK_CHECK_AT: scheduledAt,
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let outputBytes = 0;
+    let settled = false;
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      handler(value);
+    };
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish(reject, new Error(`Gate timed out after ${schedule.gate.timeoutSeconds}s`));
+    }, schedule.gate.timeoutSeconds * 1000);
+    child.on('error', (error) => finish(reject, error));
+    child.stdout.on('data', (chunk) => {
+      outputBytes += chunk.length;
+      if (outputBytes > MAX_GATE_OUTPUT_BYTES) {
+        child.kill('SIGKILL');
+        finish(reject, new Error(`Gate output exceeded ${MAX_GATE_OUTPUT_BYTES} bytes`));
+        return;
+      }
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+      if (stderr.length > 2000) stderr = stderr.slice(-2000);
+    });
+    child.on('close', (code, signal) => {
+      if (settled) return;
+      if (code !== 0) {
+        const detail = trimString(stderr);
+        finish(reject, new Error(`Gate exited with ${signal || code}${detail ? `: ${detail}` : ''}`));
+        return;
+      }
+      try {
+        finish(resolve, parseGateOutput(stdout));
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(schedule.gate.source);
+  });
+}
+
+function lifetimeCompletionReason(schedule, nowMs, counts = {}) {
+  if (schedule.lifetime?.mode !== 'bounded') return '';
+  if (schedule.lifetime.endsAt && nowMs >= Date.parse(schedule.lifetime.endsAt)) return 'end_time_reached';
+  if (schedule.lifetime.maxChecks && schedule.checkCount >= schedule.lifetime.maxChecks) return 'check_limit_reached';
+  if (schedule.lifetime.maxExecutions
+      && Number(counts.admittedExecutions || 0) >= schedule.lifetime.maxExecutions) {
+    return 'execution_limit_reached';
+  }
+  return '';
+}
+
+async function completeSchedule(scheduleId, reason, now) {
+  await withScheduleMutation(async (schedules, save) => {
+    const index = schedules.findIndex((entry) => entry.id === scheduleId);
+    if (index === -1 || schedules[index].status !== 'active') return;
+    const current = schedules[index];
+    current.status = 'completed';
+    current.enabled = false;
+    current.nextRunAt = '';
+    current.completedAt = now;
+    current.lastGateReason = reason;
+    current.updatedAt = now;
+    schedules[index] = normalizeStoredSchedule(current);
+    await save(schedules);
+  });
 }
 
 export async function materializeDueRecurringSchedulesNow(options = {}) {
@@ -409,49 +736,121 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
   const nowMs = Date.parse(now);
   const createScheduledTrigger = options.createScheduledTrigger;
   const countOpenScheduleTriggers = options.countOpenScheduleTriggers || (async () => 0);
+  const getScheduleTriggerCounts = options.getScheduleTriggerCounts || (async () => ({
+    admittedExecutions: 0,
+    pendingAdmissions: 0,
+  }));
+  const executeGate = options.runGate || runScheduleGate;
   if (typeof createScheduledTrigger !== 'function') throw new Error('createScheduledTrigger is required');
   let materialized = 0;
   let skipped = 0;
   let failed = 0;
-  const candidates = (await listRecurringSchedules()).filter((entry) => (
+  let schedules = await listRecurringSchedules();
+  for (const schedule of schedules.filter((entry) => entry.status === 'active' && entry.lifetime?.mode === 'bounded')) {
+    const counts = schedule.lifetime.maxExecutions ? await getScheduleTriggerCounts(schedule.id) : {};
+    const reason = lifetimeCompletionReason(schedule, nowMs, counts);
+    if (reason) await completeSchedule(schedule.id, reason, now);
+  }
+  schedules = await listRecurringSchedules();
+  const candidates = schedules.filter((entry) => (
     entry.enabled && entry.nextRunAt && Date.parse(entry.nextRunAt) <= nowMs
   ));
   for (const candidate of candidates) {
     try {
+      const occurrences = collectDueOccurrences(candidate, nowMs);
+      if (!occurrences.latestAt) continue;
+      const counts = await getScheduleTriggerCounts(candidate.id);
+      const reservedExecutions = Number(counts.admittedExecutions || 0) + Number(counts.pendingAdmissions || 0);
+      const atExecutionCapacity = candidate.lifetime?.maxExecutions
+        && reservedExecutions >= candidate.lifetime.maxExecutions;
+      const openCount = await countOpenScheduleTriggers(candidate.id);
+      let gateResult = { trigger: true, reason: '', dedupeKey: '' };
+      let gateError = null;
+      if (!atExecutionCapacity && openCount < candidate.maxOpenOccurrences) {
+        const cooldownUntil = Date.parse(candidate.lastMatchedAt || '')
+          + (candidate.gate?.cooldownSeconds || 0) * 1000;
+        if (candidate.gate?.cooldownSeconds && Number.isFinite(cooldownUntil) && nowMs < cooldownUntil) {
+          gateResult = { trigger: false, reason: 'cooldown_active', dedupeKey: '' };
+        } else {
+          try {
+            gateResult = await executeGate(candidate, occurrences.latestAt);
+          } catch (error) {
+            gateError = error;
+          }
+        }
+      }
       await withScheduleMutation(async (schedules, save) => {
         const index = schedules.findIndex((entry) => entry.id === candidate.id);
         if (index === -1) return;
         const current = schedules[index];
         if (!current.enabled || !current.nextRunAt || Date.parse(current.nextRunAt) > nowMs) return;
-        const occurrences = collectDueOccurrences(current, nowMs);
-        if (occurrences.due.length === 0) return;
-        const latestAt = occurrences.due.at(-1);
-        const openCount = await countOpenScheduleTriggers(current.id);
-        if (openCount >= current.maxOpenOccurrences) {
+        const currentOccurrences = collectDueOccurrences(current, nowMs);
+        if (!currentOccurrences.latestAt || currentOccurrences.latestAt !== occurrences.latestAt) return;
+        if (atExecutionCapacity || openCount >= current.maxOpenOccurrences) {
           current.skippedCount += 1;
           skipped += 1;
+        } else if (gateError) {
+          current.checkCount += 1;
+          current.gateErrorCount += 1;
+          current.lastCheckAt = occurrences.latestAt;
+          current.lastGateMatched = false;
+          current.lastGateReason = 'gate_error';
+          current.lastError = gateError.message || 'Gate execution failed';
+          current.lastErrorAt = now;
+          failed += 1;
+        } else if (!gateResult.trigger) {
+          current.checkCount += 1;
+          current.gateSkipCount += 1;
+          current.lastCheckAt = occurrences.latestAt;
+          current.lastGateMatched = false;
+          current.lastGateReason = gateResult.reason || 'condition_not_met';
+          current.lastError = '';
+          current.lastErrorAt = '';
         } else {
-          await createScheduledTrigger({
+          const dedupeSuffix = gateResult.dedupeKey
+            ? `gate:${createHash('sha256').update(gateResult.dedupeKey).digest('hex')}`
+            : occurrences.latestAt;
+          const createdTrigger = await createScheduledTrigger({
             sourceSessionId: current.sourceSessionId,
             sessionTemplate: current.sessionTemplate,
             title: current.title,
             text: current.text,
-            scheduledAt: latestAt,
+            scheduledAt: occurrences.latestAt,
             tool: current.tool,
+            runtimePolicy: current.runtimePolicy,
             model: current.model,
             effort: current.effort,
             thinking: current.thinking,
             scheduleId: current.id,
-            occurrenceId: `${current.id}:${latestAt}`,
+            occurrenceId: `${current.id}:${dedupeSuffix}`,
           });
-          current.lastScheduledAt = latestAt;
-          materialized += 1;
+          current.checkCount += 1;
+          current.matchCount += 1;
+          current.lastCheckAt = occurrences.latestAt;
+          current.lastMatchedAt = occurrences.latestAt;
+          current.lastGateMatched = true;
+          current.lastGateReason = gateResult.reason || 'condition_met';
+          current.lastError = '';
+          current.lastErrorAt = '';
+          if (createdTrigger?.deduplicated) {
+            current.deduplicatedCount += 1;
+            current.lastGateReason = gateResult.reason || 'deduplicated';
+            skipped += 1;
+          } else {
+            current.lastScheduledAt = occurrences.latestAt;
+            materialized += 1;
+          }
         }
-        current.missedCount += Math.max(0, occurrences.due.length - 1);
+        current.missedCount += Math.max(0, occurrences.dueCount - 1);
         current.nextRunAt = occurrences.nextRunAt;
-        current.lastError = '';
-        current.lastErrorAt = '';
         current.updatedAt = now;
+        const completionReason = lifetimeCompletionReason(current, nowMs, counts);
+        if (completionReason) {
+          current.status = 'completed';
+          current.enabled = false;
+          current.nextRunAt = '';
+          current.completedAt = now;
+        }
         schedules[index] = normalizeStoredSchedule(current);
         await save(schedules);
       });
@@ -473,7 +872,7 @@ export async function materializeDueRecurringSchedulesNow(options = {}) {
 
 export function startRecurringScheduleScheduler(options = {}) {
   if (schedulerTimer) return schedulerTimer;
-  const pollMs = Math.max(250, Number.parseInt(options.pollMs, 10) || DEFAULT_POLL_MS);
+  const pollMs = Math.max(250, Number.parseInt(options.pollMs || process.env.REMOTELAB_SCHEDULE_POLL_MS, 10) || DEFAULT_POLL_MS);
   const tick = () => {
     if (schedulerTickPromise) return schedulerTickPromise;
     schedulerTickPromise = materializeDueRecurringSchedulesNow(options)

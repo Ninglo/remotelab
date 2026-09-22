@@ -12,7 +12,6 @@ import {
   buildFeishuMessageIndexRecord,
   buildFeishuOutboundMessageIndexRecord,
   buildFeishuPostContent,
-  buildFeishuForkExternalTriggerId,
   buildFeishuTopicId,
   buildMessageSourceContext,
   buildRemoteLabMessage,
@@ -25,6 +24,7 @@ import {
   summarizeFeishuEvent,
   summarizeFeishuLegacyMessageEvent,
 } from '../connectors/feishu/index.mjs';
+import { buildFeishuSessionExternalTriggerId } from '../connectors/feishu/reply-routing.mjs';
 
 const repoRoot = process.cwd();
 const manifest = JSON.parse(await readFile(join(repoRoot, 'connectors', 'feishu', 'manifest.json'), 'utf8'));
@@ -118,20 +118,29 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
   topicId: 'thread_1',
   threadId: 'thread_1',
   rootId: 'om_topic_root_1',
+  sender: {
+    openId: 'ou_user_1',
+    userId: 'u_user_1',
+    senderType: 'user',
+    tenantKey: 'tenant_1',
+    isInternal: true,
+  },
 });
 assert.deepEqual(buildMessageSourceContext(topicSummary).attachments, { imageCount: 1 });
 assert.equal(buildMessageSourceContext(topicSummary).sourceRouteId, 'bot-alpha');
-const forkSummary = {
-  ...topicSummary,
-  messageId: 'om_fork_command_1',
+const newThreadSummary = {
+  ...textSummary,
+  messageId: 'om_thread_root_1',
   sourceRouteId: 'bot-alpha',
+  conversationKind: 'thread',
+  replyInThread: true,
 };
 assert.equal(
-  buildFeishuForkExternalTriggerId(forkSummary),
-  'feishu:fork:bot-alpha:tenant_1:oc_chat_1:om_fork_command_1',
+  buildFeishuSessionExternalTriggerId(newThreadSummary, 'bot-alpha'),
+  'feishu:thread:bot-alpha:tenant_1:oc_chat_1:om_thread_root_1',
 );
-assert.equal(buildMessageSourceContext(forkSummary).messageId, 'om_fork_command_1');
-assert.equal(buildMessageSourceContext(forkSummary).threadId, 'thread_1');
+assert.equal(buildMessageSourceContext(newThreadSummary).messageId, 'om_thread_root_1');
+assert.equal(buildMessageSourceContext(newThreadSummary).threadId, undefined);
 assert.deepEqual(buildFeishuMessageIndexRecord(topicSummary, 'session-1'), {
   connector: 'feishu',
   accountId: 'tenant_1',

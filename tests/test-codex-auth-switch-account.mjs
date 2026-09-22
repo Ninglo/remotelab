@@ -22,13 +22,13 @@ function createResponseCapture() {
 }
 
 let logoutCalls = 0;
-const ownerResponse = createResponseCapture();
-const ownerHandled = await handleCodexAuthRoutes({
+const primaryResponse = createResponseCapture();
+const primaryHandled = await handleCodexAuthRoutes({
   req: { method: 'POST' },
-  res: ownerResponse.res,
+  res: primaryResponse.res,
   pathname: '/api/codex-auth/logout',
-  authSession: { role: 'owner' },
-  writeJson: ownerResponse.writeJson,
+  authSession: { personId: 'person_primary' },
+  writeJson: primaryResponse.writeJson,
   authManager: {
     async logout() {
       logoutCalls += 1;
@@ -37,18 +37,18 @@ const ownerHandled = await handleCodexAuthRoutes({
   },
 });
 
-assert.equal(ownerHandled, true);
-assert.equal(ownerResponse.capture.status, 200);
-assert.equal(ownerResponse.capture.payload?.codexAuth?.loggedIn, false);
-assert.equal(logoutCalls, 1, 'owner logout should clear only the manager bound to this instance');
+assert.equal(primaryHandled, true);
+assert.equal(primaryResponse.capture.status, 200);
+assert.equal(primaryResponse.capture.payload?.codexAuth?.loggedIn, false);
+assert.equal(logoutCalls, 1, 'authenticated logout should clear only the manager bound to this instance');
 
-const visitorResponse = createResponseCapture();
+const secondPersonResponse = createResponseCapture();
 await handleCodexAuthRoutes({
   req: { method: 'POST' },
-  res: visitorResponse.res,
+  res: secondPersonResponse.res,
   pathname: '/api/codex-auth/logout',
-  authSession: { role: 'visitor' },
-  writeJson: visitorResponse.writeJson,
+  authSession: { personId: 'person_second' },
+  writeJson: secondPersonResponse.writeJson,
   authManager: {
     async logout() {
       logoutCalls += 1;
@@ -56,8 +56,27 @@ await handleCodexAuthRoutes({
     },
   },
 });
-assert.equal(visitorResponse.capture.status, 403);
-assert.equal(logoutCalls, 1, 'visitor logout must not reach the instance auth manager');
+assert.equal(secondPersonResponse.capture.status, 200);
+assert.equal(logoutCalls, 2, 'every authenticated person has full instance controls');
+
+let switchCalls = 0;
+const switchResponse = createResponseCapture();
+await handleCodexAuthRoutes({
+  req: { method: 'POST' },
+  res: switchResponse.res,
+  pathname: '/api/codex-auth/switch-account',
+  authSession: { personId: 'person_primary' },
+  writeJson: switchResponse.writeJson,
+  authManager: {
+    async switchAccount() {
+      switchCalls += 1;
+      return { available: true, loggedIn: false, phase: 'awaiting', deviceLoginActive: true, userCode: 'redacted' };
+    },
+  },
+});
+assert.equal(switchResponse.capture.status, 200);
+assert.equal(switchResponse.capture.payload?.codexAuth?.phase, 'awaiting');
+assert.equal(switchCalls, 1, 'account switch should be one server-side auth transaction');
 
 let switchCalls = 0;
 const switchResponse = createResponseCapture();

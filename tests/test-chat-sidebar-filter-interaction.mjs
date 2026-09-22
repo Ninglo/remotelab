@@ -33,6 +33,7 @@ function harness({ origin = '__all__' } = {}) {
       set value(next) { value = String(next); },
       get options() { return this.children; },
       appendChild(child) { child.parentNode = this; this.children.push(child); return child; },
+      replaceChildren(...children) { this.children = []; children.forEach(child => this.appendChild(child)); },
       remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(x => x !== this); },
       setAttribute() {}, querySelector() { return element(); },
       addEventListener(type, fn) { if (!listeners.has(type)) listeners.set(type, []); listeners.get(type).push(fn); },
@@ -50,10 +51,11 @@ function harness({ origin = '__all__' } = {}) {
     marked: { use() {} },
     sessions: fixtures.map(s => ({ ...s })), currentSessionId: 'feishu', hasAttachedSession: true,
     hasLoadedSessions: true, archivedSessionCount: 1, archivedSessionsLoaded: true, archivedSessionsLoading: false,
-    sessionStatus: 'idle', activeTab: 'sessions', visitorMode: false, pendingNavigationState: {},
-    sidebarFilters: element(), sourceFilterSelect: element('select'), sessionList: element(), sidebarSpaceSwitcher: element(),
+    sessionStatus: 'idle', activeTab: 'sessions', pendingNavigationState: {},
+    sidebarFilters: element(), sourceFilterSelect: element('select'), personFilterSelect: element('select'), sessionList: element(), sidebarSpaceSwitcher: element(),
     ACTIVE_SESSION_STORAGE_KEY: 'activeSessionId', ACTIVE_SIDEBAR_TAB_STORAGE_KEY: 'activeSidebarTab',
     ACTIVE_SOURCE_FILTER_STORAGE_KEY: 'activeSourceFilter', LEGACY_ACTIVE_SOURCE_FILTER_STORAGE_KEY: 'activeAppFilter',
+    ACTIVE_PERSON_FILTER_STORAGE_KEY: 'activePersonFilter:test', bootstrapPersonFilterDefault: '__all__',
     ACTIVE_SESSION_SPACE_STORAGE_KEY: 'activeSessionSpace', COLLAPSED_GROUPS_STORAGE_KEY: 'collapsed',
     SESSION_SPACE_ALL_VALUE: '__all_spaces__', SESSION_SPACE_LOOSE_VALUE: '__loose_space__',
     activeSessionSpace: '__all_spaces__', sessionSearchQuery: '', collapsedFolders: {},
@@ -61,6 +63,7 @@ function harness({ origin = '__all__' } = {}) {
     normalizeSessionRecord: value => value, getComparableSessionStateSignature: JSON.stringify,
     esc: value => String(value ?? ''), renderUiIcon: () => '', getShortFolder: value => value,
     getSessionDisplayName: s => s.name, getFilteredSessionEmptyText: () => 'No matching sessions',
+    getPeopleDirectory: () => [],
     getSessionGroupInfo: s => ({ key: s.space || 'Loose', title: s.space || 'Loose', label: s.space || 'Loose' }),
   });
   context.window = context;
@@ -68,7 +71,7 @@ function harness({ origin = '__all__' } = {}) {
   for (const file of ['session-store.js', 'session-state-model.js']) vm.runInContext(source(file), context);
   context.chatStoreModel = context.RemoteLabChatStore;
   context.sessionStateModel = context.RemoteLabSessionStateModel;
-  vm.runInContext(bootstrap.slice(bootstrap.indexOf('const FILTER_ALL_VALUE'), bootstrap.indexOf('const PREFERRED_AGENT_TEMPLATE_STORAGE_KEY')), context);
+  vm.runInContext(bootstrap.slice(bootstrap.indexOf('const FILTER_ALL_VALUE'), bootstrap.indexOf('const THINKING_BLOCK_DISPLAY_STORAGE_KEY')), context);
   // Use the real Store wrappers, catalog listeners, HTTP refresh path and list rendering.
   vm.runInContext(bootstrap.slice(bootstrap.indexOf('const chatStore ='), bootstrap.indexOf('function getChatStoreSession')), context);
   for (const file of ['bootstrap-session-catalog.js', 'session-list-ui.js', 'session-http-list-state.js']) {

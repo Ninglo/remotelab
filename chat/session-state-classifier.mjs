@@ -18,7 +18,7 @@ import {
 } from './session-workflow-state.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
 
-const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi']);
+const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi', 'antigravity']);
 // Cost boundary: title/group/space and state synchronization are routine metadata
 // tasks, not foreground problem solving. This call can run after every normal
 // turn: use a small, low-cost model, with high reasoning effort to improve
@@ -285,6 +285,9 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
   if (lastTurnEvents.length === 0) {
     return { ok: false, skipped: 'no_history' };
   }
+  const classifiedUserMessageSeq = lastTurnEvents.find(
+    (event) => event?.type === 'message' && event.role === 'user' && Number.isInteger(event.seq),
+  )?.seq || 0;
   const turnText = formatTurnForPrompt(lastTurnEvents);
   if (!turnText.trim()) {
     return { ok: false, skipped: 'empty_turn' };
@@ -385,6 +388,7 @@ async function runSessionStateSuggestion(sessionMeta, _options = {}) {
 
   return {
     ok: true,
+    classifiedUserMessageSeq,
     title: nextTitle,
     space: nextSpace,
     group: nextGroup,

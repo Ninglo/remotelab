@@ -1,1091 +1,249 @@
 # RemoteLab Project Architecture
 
-This document is the top-down map of the **current shipped architecture** of RemoteLab.
+This document describes the shipped `v1` architecture. Historical proposals in
+`notes/` are useful context, but they do not override this contract.
 
-Use it when you need to:
+## Product model
 
-- understand the whole system quickly
-- find the right code area before changing behavior
-- separate **current implementation** from **directional design notes**
-- onboard a future model or human collaborator without re-discovering the repo from scratch
+RemoteLab has one interactive work object: the **Session**.
 
-It complements, rather than replaces:
+- An **Instance** is the deployment and data-isolation boundary.
+- A **Person** is a human profile used for attribution and UI preferences. Sign-in methods are attached separately.
+- An **Identity** is one way a Person appears: a web credential, a Feishu sender,
+  another connector sender, or the system identity.
+- A **Session** is a durable shared work thread.
+- A **Run** is one execution attempt inside a Session.
+- A **ShareSnapshot** is an immutable, unauthenticated, read-only publication.
 
-- `AGENTS.md` — repo operating rules and high-level constraints
-- `docs/README.md` / `notes/README.md` — documentation taxonomy and note buckets
-- `notes/` — deeper design discussions, grouped by status (`current`, `directional`, `archive`, `local`)
-- `docs/external-message-protocol.md` — canonical integration contract for external connectors
-- `README.md` / `README.zh.md` — user-facing overview and setup
+There is no interactive Agent/template object and no Visitor role. Unauthenticated
+requests cannot enter the workbench. Every authenticated Person has full access to
+every Session and control surface in the instance.
 
----
+Identity is deliberately not an authorization boundary. It supports:
 
-## 0. Documentation precedence
+- attribution: who initiated a Session or turn;
+- frontend filtering: All, Mine, a specific Person, System, or Unassigned;
+- personal organization: Space, Group, and sidebar order.
 
-When docs overlap, use this order:
+It must never prevent one authenticated Person from viewing, opening, modifying,
+continuing, archiving, or otherwise operating another Person's Session.
 
-1. `AGENTS.md` — repo rules, constraints, and active priorities
-2. this file — current shipped architecture and code map
-3. `notes/current/core-domain-contract.md` — current domain/refactor baseline
-4. other `notes/` docs — deeper discussion, interpreted by their bucket (`current`, `directional`, `archive`, `local`)
+## Shared state and personal views
 
-### 0.1 Surface docs that should move with architecture
+The Session is the shared truth. These fields are global:
 
-When the architecture changes materially, keep these docs aligned as part of the same pass:
+- title and description;
+- transcript and attachments;
+- selected runtime and provider continuation IDs;
+- active/queued Run state;
+- workflow state, priority, lifecycle, archive/pin state;
+- connector bindings and delivery state;
+- work summary and agreements.
 
-- `README.md` / `README.zh.md` — user-facing product shape, setup path, and operator expectations
-- `docs/README.md` / `notes/README.md` — doc taxonomy and cleanup rules
-- `AGENTS.md` — repo operating rules and self-hosting workflow constraints
+Organization is a projection for one Person:
 
----
-
-## 1. What RemoteLab is
-
-RemoteLab is an **endpoint-flexible AI automation workbench that helps people hand repetitive digital work to AI on a real computer**.
-
-The core product shape is:
-
-- the user steers work from phone or desktop, whichever is most convenient
-- strong executors run on the owner’s macOS/Linux machine
-- RemoteLab sits above them as a guided-intake, execution, context-recovery, and workflow-packaging layer
-- the agent is treated more like a person operating a full computer than a sandboxed in-browser chatbot
-- the browser is mainly a control surface and a status surface, not the system of record
-
-RemoteLab is explicitly **not** trying to be:
-
-- a terminal emulator
-- a traditional editor-first IDE
-- a generic multi-user SaaS chat app
-- a closed all-in-one executor stack
-
-Important product assumptions that shape the code:
-
-- **Single owner per instance** is the base model; separate users run in isolated guest instances
-- **Session** is the main work object inside one user's instance, not a user-isolation boundary
-- **Source and Agent are orthogonal session dimensions**
-- **shareable-agent infrastructure still lives in the internal app/template layer**
-- **HTTP is the canonical state path**
-- **WebSocket is only an invalidation hint**
-- **filesystem-first persistence** is preferred over a database until proven necessary
-- **frontend stays endpoint-flexible and protocol-light**, with explicit client state boundaries instead of hidden UI orchestration
-
-### 1.1 Core domain nouns
-
-Use these product nouns when reading or changing current code:
-
-- **Source / Channel** — where a session was triggered from
-  - examples: RemoteLab web UI, email, Feishu, API, automation
-- **Agent** — the reusable behavior/context definition that shapes a session
-  - examples: Chat, Drawing, Report Cleanup, Invoice Follow-up
-- **Space** — an AI-managed broad context boundary used to switch between durable areas of work
-- **Project / Group** — a concrete recoverable workstream inside a Space
-- **Session** — one concrete work thread
-- **Conversation binding** — optional external address on a Session; browser, connector and timer inputs share its reply route
-- **Run** — one execution attempt inside a session
-
-The intended relationship is:
-
-```text
-Source -> Session <- Agent
-             |  \
-             |   -> Space -> Project / Group
-             -> Run
+```json
+{
+  "personViews": {
+    "person_alice": {
+      "space": "Product",
+      "group": "RemoteLab",
+      "sidebarOrder": 120
+    },
+    "person_bob": {
+      "space": "Operations",
+      "group": "This week",
+      "sidebarOrder": 20
+    }
+  }
+}
 ```
 
-Important compatibility note:
+The same Session may therefore appear in different Spaces, Groups, and positions
+for different People. The HTTP Session list/detail routes project the requesting
+Person's view onto `space`, `group`, and `sidebarOrder`; callers do not need to
+interpret the raw view map.
 
-- user-facing product language is moving toward **Agent**
-- current storage and API compatibility still use **app/template** terminology in several places
-- in session metadata today, `sourceId/sourceName` represent the trigger surface, while `templateId/templateName` represent the applied reusable agent/template
-- `space/group/description` are presentation metadata suggested by AI; `Loose` is the explicit fallback for temporary or ambiguous sessions
+The post-turn Session classifier preserves this boundary. Shared suggestions such
+as title, description, workflow state, and work summary update the Session itself.
+Space and Group suggestions update only the Person whose turn triggered the run.
+The manual **Sort List** flow follows the same rule.
 
-The binding implementation is deliberately shared: `lib/conversation-target.mjs`
-normalizes identity, `chat/session-conversations.mjs` owns metadata updates,
-and `chat/source-deliveries.mjs` publishes durable reply snapshots. Feishu
-intake resolves this binding; one-time and recurring timers use
-`lib/scheduled-session.mjs` to create or resolve the same kind of Session.
-`connectors/feishu/group-settings.mjs` only controls ordinary intake and initial
-instructions. [Contract and migration](../notes/current/session-conversations.md).
+## Authentication and identity
 
-### 1.2 Connector product model
+`auth.json` is a versioned document managed by `lib/auth-config.mjs`. It stores:
 
-External connectors should be designed from a **capability-first** model, not from channel-specific one-off rules.
+- `people`: display profiles with one readable `handle` each;
+- `credentials`: web token/password records mapped to a Person and web identity;
+- `identities`: web, connector, and system identities mapped to People when appropriate;
+- `serviceToken`: machine-to-machine authentication for local connectors and workers.
 
-First classify the connector by protocol capability:
+Browser authentication creates an entry in `auth-sessions.json` containing the
+resolved `personId` and `identityId`. `/api/auth/me` returns the current Person.
+Settings keeps the current Person's default filter under **My view**, while the People
+directory shows compact profile summaries and expands credentials or resolved identities
+only on demand. System attribution is not presented as a manageable Person. A Person may
+be created without immediately issuing a token or password; sign-in methods are attached
+separately afterward.
 
-- **Gateway-capable**
-  - the upstream surface can support a shared ingress that receives messages for multiple RemoteLab instances and routes them
-  - the same connector can still be bound directly to one instance when a private deployment is preferred
-- **Instance-only**
-  - the upstream surface cannot act as a shared multi-instance gateway
-  - the connector must terminate directly at one RemoteLab instance
+External connector senders are discovered on admission. For Feishu, the durable
+provider identity is scoped by connector route/application and prefers the sender's
+`openId`. The connector performs a cached, fail-open profile lookup so the server can
+derive a readable pinyin-style handle. Matching is automatic in this order: an
+existing provider identity, an exact handle/Web username, the same stable proposed
+handle across connector routes, then one unambiguous display-name match. If nothing
+matches, the server creates a discovered Person with a short stable suffix such as
+`jiujianian-a31f`. A later enriched message or a Web Person created with that handle
+automatically coalesces the records. Coalescing also transfers the discovered
+Person's Session views; target-Person values win when both sides already classify
+the same Session field. The manual identity endpoint remains only as a repair path
+for ambiguous or incorrect upstream directory data.
 
-Then classify the product/deployment shape separately:
+The service token authenticates connector processes; the sender carried in
+`sourceContext` determines human attribution. If no human sender exists, the
+system identity is used.
 
-- **Official managed**
-  - RemoteLab runs and maintains the ingress/bot/service as a product surface
-- **User owned**
-  - the user creates or binds their own upstream app/account/bot and RemoteLab only provides the adapter/runtime
-
-The key architecture rule is:
-
-> A Gateway-capable connector can also run in single-instance mode.
-> An Instance-only connector cannot be promoted into a shared gateway.
-
-Current examples:
-
-- **Email** — Gateway-capable, usually shipped as an official managed gateway
-- **Feishu** — Gateway-capable, can be either an official managed shared bot or a user-owned instance-local bot
-- **WeChat** — Instance-only, treated as an instance-local private ingress rather than a shared routing layer
-
-Implementation consequence:
-
-- Gateway-capable connectors belong in a routing-aware ingress layer and need target-instance resolution.
-- Instance-only connectors belong to the instance lifecycle itself: bind state, sync cursors, and long-running workers live with that instance.
-- For guest instances, WeChat follows the instance-local model and is seeded/autostarted when the instance is created so later account binding is fast and local to that instance.
-- A ready instance-local WeChat binding exposes the manifest-declared `wechat:send_text` action through the shared connector capability registry. The default target is the WeChat user who bound that instance's bot; an explicit WeChat-backed RemoteLab session may be used as the target instead. The action disappears from the health-checked capability catalog when the binding is unavailable.
-
----
-
-## 2. Fast orientation for future models
-
-If you need to understand the repo fast, read in this order:
-
-1. `AGENTS.md`
-2. this file
-3. `chat-server.mjs`
-4. `chat/router.mjs`
-5. `chat/session-manager.mjs`
-6. `static/chat/` (or `static/chat.js` as the compatibility loader)
-
-Then branch by the change you need:
-
-- runtime / message execution → `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `chat/adapters/*.mjs`
-- HTTP / API / role checks → `chat/router.mjs`, `lib/auth.mjs`, `chat/middleware.mjs`
-- UI / cross-endpoint behavior → `templates/chat.html`, `static/chat/`, `static/sw.js`
-- chat frontend state/render boundary → `docs/frontend-chat-architecture.md`
-- Agent/template compatibility layer, share metadata, and builder flow → `chat/apps.mjs`, `chat/router-control-routes.mjs`, `chat/session-manager.mjs`
-- source routing / source-specific behavior → `chat/session-source-resolution.mjs`, `chat/source-runtime-prompts.mjs`, `docs/external-message-protocol.md`
-- session labeling / rename / grouping → `chat/session-state-classifier.mjs`, `chat/session-naming.mjs`
-- memory activation / startup prompt → `chat/system-prompt.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md`
-- manager / prompt / memory ownership model → `notes/current/model-sovereign-control-architecture.md`, `notes/current/prompt-layer-topology.md`, `notes/current/manager-policy-persistence.md`
-- manager/work-state projection → `chat/session-control-state.mjs`, `chat/history.mjs`, `notes/current/session-control-state-phase1.md`
-- provider/tool extensibility → `lib/tools.mjs`, `chat/models.mjs`, `notes/directional/provider-architecture.md`
-- external mail / webhook automation → `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-completion-targets.mjs`, `scripts/agent-mail-*.mjs`
-
----
-
-## 3. Runtime topology
-
-### 3.1 Permanent service topology
-
-RemoteLab currently works as a **single chat/control plane** plus optional side subsystems:
-
-| Service | Port | Role | Status |
-|---|---:|---|---|
-| `chat-server.mjs` | `7690` | main chat/control plane | primary / stable |
-
-Optional side subsystem:
-
-| Service | Default port | Role |
-|---|---:|---|
-| `scripts/agent-mail-http-bridge.mjs` | `7694` | receives trusted inbound email webhooks for agent-mail flows |
-
-### 3.2 End-to-end shape
+## Runtime topology
 
 ```text
-Browser / client surface
-   │
-   ▼
-Cloudflare Tunnel
-   │
-   ▼
-chat-server.mjs  (:7690)
-   │
-   ├── HTTP control plane
-   ├── auth / owner-visitor policy
-   ├── session + run orchestration
-   ├── durable history + run storage
-   ├── thin WebSocket invalidation
-   └── run execution plane
-           ├── launch      (`chat/run-launcher.mjs`)
-           ├── execute     (`chat/runner-sidecar.mjs`)
-           ├── project     (`chat/run-projection.mjs`)
-           └── reconcile   (`chat/run-reconciler.mjs`)
-                │
-                ▼
-   local CLI tool (`claude`, `codex`, or compatible wrapper)
+Browser / connector
+        |
+        v
+chat-server.mjs (:7690)
+  |-- HTTP canonical reads and mutations
+  |-- authenticated Person/Identity resolution
+  |-- Session and Request admission
+  |-- thin WebSocket invalidation hints
+  |-- durable history, Run, delivery, and metadata stores
+        |
+        v
+detached runner -> raw spool/status/result -> normalized Session events
 ```
 
-### 3.3 Bot instance runtime cells
+`chat-server.mjs` is the single shipped chat/control plane. HTTP is canonical;
+WebSocket only announces that clients should refetch. Detached execution survives
+control-plane restarts through durable Request/Run state and reconciliation.
+
+## Core files
+
+### Identity and authentication
+
+- `lib/auth-config.mjs` — auth document schema, migration, People, credentials,
+  identities, and service-token helpers.
+- `lib/auth.mjs` — login verification and authenticated browser sessions.
+- `chat/router-public-routes.mjs` — login/logout and ShareSnapshot routes.
+- `chat/router-control-routes.mjs` — People/sign-in management APIs.
+
+### Sessions and personal views
+
+- `chat/session-manager.mjs` — Session lifecycle, message admission, Runs, forks,
+  delegation, and projection.
+- `chat/session-meta-store.mjs` — durable Session metadata normalization.
+- `chat/session-person-view.mjs` — normalization, projection, and mutation of
+  per-Person Space/Group/sidebar-order state.
+- `chat/session-state-classifier.mjs` — post-turn classification request.
+- `chat/session-turn-completion.mjs` — applies shared and per-Person classifier
+  results using the Run's `viewPersonId`.
+- `chat/session-label-context.mjs` — projects the requesting Person's hierarchy
+  into the classification prompt.
+- `chat/router-session-main-routes.mjs` — Session list/detail/create/message
+  routes and initiator resolution.
+
+### Durable execution
+
+- `chat/requests.mjs` and `chat/request-runtime.mjs` — durable admission and ordered execution.
+- `chat/runs.mjs` — Run manifests and terminal outcomes.
+- `chat/run-launcher.mjs` and `chat/runner-sidecar.mjs` — detached execution.
+- `chat/run-projection.mjs` — native output to normalized events.
+- `chat/run-reconciler.mjs` — recovery and missing-result settlement.
+- `chat/history.mjs` — canonical append-only Session history.
+
+### Frontend
+
+- `templates/chat.html` — application shell, Person filter, and Settings panels.
+- `static/chat/bootstrap.js` — authenticated Person and People directory state.
+- `static/chat/session-store.js` — client Session store and active Person filter.
+- `docs/frontend-chat-architecture.md` — frontend state ownership and rendering boundary.
+- `static/chat/bootstrap-session-catalog.js` — composition of Person, origin,
+  Space, search, and archive filters.
+- `static/chat/settings-ui.js` — People, handle, credential, resolved-identity, and default
+  filter management.
+- `static/chat/session-list-ui.js` and `static/chat/sidebar-ui.js` — rendering of
+  the current Person's projected view.
+- `static/chat/realtime.js` — invalidation handling; no canonical state ownership.
+
+### Connectors
+
+- `connectors/feishu/index.mjs` and `scripts/feishu-connector.mjs` — Feishu
+  ingestion, sender attribution, binding, and delivery.
+- `scripts/wechat-connector.mjs` — WeChat ingestion and delivery.
+- `scripts/agent-mail-worker.mjs` — mailbox ingestion and delivery. “Agent
+  Mailbox” is the mailbox subsystem's proper name, not an interactive product object.
+- `chat/source-deliveries.mjs` — durable connector outbox.
+
+## API shape
+
+Important authenticated routes include:
 
-A deployed Bot instance is treated as a VM-like runtime cell even when it is
-implemented with a Linux user plus systemd sandboxing rather than a literal VM.
-
-The cell owns:
-
-- one dedicated OS user and home directory
-- one instance root containing config, memory, workspace, temporary files, and
-  executor state
-- one environment contract shared by `chat-server`, connector services, and
-  every harness child process
-- instance-local tool credentials and profiles, including the canonical
-  `config/lark-cli` Bot profile
-
-Connectors provide transport. They do not broker general application API
-access. For Feishu, the connector initializes the instance's lark-cli Bot
-profile from the connector's existing app credentials, then the harness invokes
-`lark-cli` directly. Feishu decides the actual API scope from the published app
-permissions. This keeps new domains such as Base and Doc writes out of
-RemoteLab's connector surface.
-
-The isolation boundary is the runtime cell, not a prompt persona. Sibling Bot
-instances must not share homes, CLI profiles, executor state, connector secrets,
-or writable paths.
-
-### 3.4 Development operating model
-
-When developing RemoteLab itself, the intended workflow is:
-
-- use `7690` as the default coding/operator plane
-- restart the running service to pick up backend changes from the current source tree
-- rely on clean restart recovery instead of a permanent second validation plane
-
-Operationally this matters because RemoteLab now boots directly from the current source tree after restart and optimizes for **logical continuity after restart**, not for pretending transport continuity exists while the active process restarts.
-
----
-
-## 4. Architecture layers
-
-The chat plane can be understood as four layers.
-
-### 4.1 Entry and transport layer
-
-Responsible for listening, routing, auth gating, caching, and WS upgrades.
-
-- `chat-server.mjs`
-- `chat/router.mjs`
-- `chat/ws.mjs`
-- `chat/ws-clients.mjs`
-- `chat/middleware.mjs`
-- `lib/auth.mjs`
-- `lib/config.mjs`
-
-This layer decides:
-
-- who is authenticated
-- whether the caller is owner or visitor
-- which HTTP resource is being accessed
-- whether the browser should re-fetch because something changed
-
-### 4.2 Control-plane / domain layer
-
-Responsible for product semantics and long-lived business rules.
-
-- `chat/session-manager.mjs`
-- `chat/history.mjs`
-- `chat/runs.mjs`
-- `chat/session-state-classifier.mjs`
-- `chat/apps.mjs`
-- `chat/shares.mjs`
-- `chat/push.mjs`
-- `lib/agent-mail-completion-targets.mjs`
-- `chat/session-continuation.mjs`
-- `chat/session-naming.mjs`
-
-This is where RemoteLab’s actual product behavior lives.
-
-### 4.3 Runtime layer
-
-Responsible for launching, executing, projecting, and reconciling run attempts while keeping product policy in the chat control plane.
-
-- `chat/process-runner.mjs`
-- `chat/run-launcher.mjs`
-- `chat/runner-sidecar.mjs`
-- `chat/run-projection.mjs`
-- `chat/run-reconciler.mjs`
-- `chat/adapters/claude.mjs`
-- `chat/adapters/codex.mjs`
-- `chat/models.mjs`
-- `lib/tools.mjs`
-
-This layer should stay comparatively thin and avoid absorbing product policy.
-
-### 4.4 Frontend layer
-
-Responsible for rendering HTTP-derived state in an endpoint-flexible UI that works well on phone and desktop.
-
-- `templates/chat.html`
-- `templates/login.html`
-- `static/chat/`
-- `static/chat.js` (compatibility loader)
-- `static/sw.js`
-
-Important: the frontend is **vanilla JS** with **no build step**.
-
-Use `docs/frontend-chat-architecture.md` for the file-level chat frontend boundary and state-ownership contract.
-
-## 5. Repo map by concern
-
-```text
-remotelab/
-├── chat-server.mjs                 # main HTTP + WS server for chat plane
-├── cli.js                          # `remotelab ...` entrypoint
-├── chat/                           # chat-plane business logic
-│   ├── router.mjs                  # all primary HTTP routes
-│   ├── session-manager.mjs         # canonical session/run orchestration
-│   ├── history.mjs                 # normalized event persistence
-│   ├── runs.mjs                    # durable run manifest/status/spool/result storage
-│   ├── process-runner.mjs          # tool/runtime invocation abstraction
-│   ├── run-launcher.mjs            # detached run launch strategy
-│   ├── runner-sidecar.mjs          # raw execution sidecar
-│   ├── run-projection.mjs          # raw spool -> normalized run events
-│   ├── run-reconciler.mjs          # run liveness + terminal reconciliation
-│   ├── session-state-classifier.mjs              # one post-turn Session-state classification call
-│   ├── session-work-summary.mjs    # provider-neutral current work state shared across Harnesses
-│   ├── apps.mjs                    # Agent template CRUD
-│   ├── shares.mjs                  # immutable read-only snapshot creation
-│   ├── settings.mjs                # user settings persistence
-│   ├── push.mjs                    # web push
-│   ├── ws.mjs / ws-clients.mjs     # invalidation-only realtime
-│   ├── system-prompt.mjs           # startup prompt assembly
-│   ├── turn-context-hook.mjs       # per-turn external context hook
-│   ├── prompt-assets/              # editable prompt text assets
-│   ├── session-continuation.mjs    # cross-turn / cross-tool handoff context
-│   ├── session-naming.mjs          # session title/group normalization helpers
-│   └── adapters/                   # CLI-output → normalized-events adapters
-├── lib/                            # shared helpers
-│   ├── auth.mjs                    # token/password auth + auth sessions
-│   ├── config.mjs                  # ports, config paths, memory paths
-│   ├── tools.mjs                   # tool discovery + simple provider configs
-│   ├── agent-mailbox.mjs           # mailbox queue + allowlist + message ingest
-│   ├── agent-mail-http-bridge.mjs  # source trust checks for inbound email bridge
-│   └── agent-mail-outbound.mjs     # outbound email delivery
-├── static/                         # browser JS + manifest + service worker
-├── templates/                      # no-build HTML templates
-├── scripts/                        # operational scripts and side services
-├── notes/                          # internal notes bucketed by status
-├── docs/                           # user/developer docs
-├── memory/                         # shared system memory (repo-level)
-└── tests/                          # scenario-style validation scripts
-```
-
----
-
-## 6. Core persisted objects
-
-RemoteLab’s persistent model is built around a few durable objects.
-
-### 6.1 Auth session
-
-Represents a logged-in browser (owner or visitor).
-
-Key fields:
-
-- `expiry`
-- `role` = `owner` or `visitor`
-- visitor-only fields such as `agentId`, `visitorId`, `sessionId`
-
-Stored in:
-
-- `~/.config/remotelab/auth.json`
-- `~/.config/remotelab/auth-sessions.json`
-
-### 6.2 Chat session metadata
-
-Represents one work thread / conversation.
-
-Common fields include:
-
-- `id`
-- `folder`
-- `tool`
-- `name`
-- `group`
-- `description`
-- `created`, `updatedAt`
-- `activeRunId`
-- `claudeSessionId`, `codexThreadId`
-- `sourceId`, `sourceName`, `templateId`, `templateName`, `visitorId`
-- `systemPrompt`
-- `completionTargets`
-- `externalTriggerId`
-- `forkedFromSessionId`, `forkedFromSeq`, `rootSessionId`, `forkedAt`
-- `archived`
-
-Stored in:
-
-- `~/.config/remotelab/chat-sessions.json`
-
-### 6.3 Normalized event
-
-Represents canonical session history after tool-specific raw output has been normalized.
-
-Current event families:
-
-- `message`
-- `tool_use`
-- `tool_result`
-- `file_change`
-- `reasoning`
-- `status`
-- `usage`
-
-Implementation note:
-
-- older docs may refer to “JSONL history”
-- **current code stores session history as append-only per-event JSON files plus externalized body blobs**, not one JSONL file per session
-- run spool output is still JSONL
-
-### 6.4 Run
-
-Represents one submitted tool execution attempt.
-
-Key fields include:
-
-- `id`
-- `sessionId`
-- `requestId`
-- `state` = `accepted` / `running` / `completed` / `failed` / `cancelled`
-- `tool`, `model`, `effort`, `thinking`
-- `providerResumeId`, `claudeSessionId`, `codexThreadId`
-- `runnerProcessId`, `toolProcessId`
-- `normalizedLineCount`, `normalizedByteOffset`
-- `contextInputTokens`
-
-### 6.5 Agent
-
-Represents a reusable, shareable session definition, not a live session.
-
-Key fields include:
-
-- `id`
-- `name`
-- `systemPrompt`
-- `welcomeMessage`
-- `skills`
-- `tool`
-- `shareToken`
-- optional `templateContext` snapshot metadata, including source-session freshness timestamps when the Agent was saved from a prior session
-
-### 6.6 Share snapshot
-
-Represents an immutable, read-only capture of a session’s sanitized history.
-
-It is intentionally separate from the live session.
-
-### 6.7 Session workflow projection
-
-Represents owner-facing session organization views such as the sidebar and session list ordering.
-
-It is not a separate durable object. It is derived from canonical session metadata plus live activity.
-
-Key fields per session include:
-
-- `name`
-- `group`
-- `description`
-- `workflowState`
-- `workflowPriority`
-- `pinned`
-- `updatedAt`
-- live `activity`
-
----
-
-## 7. On-disk storage layout
-
-### 7.1 Main config directory
-
-Most runtime state lives under:
-
-- `~/.config/remotelab/` on macOS/Linux
-
-Important files and directories:
-
-```text
-auth.json
-auth-sessions.json
-tools.json
-chat-sessions.json
-apps.json
-vapid-keys.json
-push-subscriptions.json
-images/
-shared-snapshots/
-chat-history/
-chat-runs/
-```
-
-### 7.2 Session history layout
-
-For each session:
-
-```text
-chat-history/<sessionId>/
-├── meta.json
-├── context.json
-├── events/
-│   ├── 000000001.json
-│   ├── 000000002.json
-│   └── ...
-└── bodies/
-    ├── evt_000000001_content.txt
-    └── ...
-```
-
-Notes:
-
-- `meta.json` tracks counts and latest sequence
-- `context.json` stores compaction / summary-head state
-- large or always-externalized event bodies are written into `bodies/`
-
-### 7.3 Run layout
-
-For each run:
-
-```text
-chat-runs/<runId>/
-├── status.json
-├── manifest.json
-├── spool.jsonl
-├── result.json
-└── artifacts/
-    └── *.txt
-```
-
-Notes:
-
-- `manifest.json` is the control-plane → runner contract snapshot
-- `spool.jsonl` is raw durable runtime output
-- `artifacts/` stores large externalized spool text blocks
-
-### 7.4 Memory layout
-
-RemoteLab has a separate memory system for model activation:
-
-- user-level private memory: `~/.remotelab/memory/`
-- repo-level shared system memory: `memory/system.md`
-
-This memory system is conceptually part of architecture because it affects session startup behavior and future-agent ergonomics.
-
----
-
-## 8. Main request and execution flow
-
-This is the most important flow in the current architecture.
-
-### 8.1 Browser boot
-
-1. Browser loads `templates/chat.html` and `static/chat.js`, which boots the module split under `static/chat/`
-2. Frontend calls `/api/auth/me` to detect owner vs visitor
-3. Frontend bootstraps via HTTP:
-   - list sessions
-   - fetch current session detail
-   - fetch session events
-4. Frontend opens `/ws`
-5. WebSocket is used only to learn **something changed**
-6. Frontend re-fetches canonical state via HTTP
-
-### 8.2 Send message
-
-1. the chat frontend (`static/chat/` via `static/chat.js`) generates a `requestId`
-2. browser `POST`s to `/api/sessions/:id/messages`
-3. `chat/router.mjs` validates access and payload
-4. router calls `submitHttpMessage()` in `chat/session-manager.mjs`
-
-### 8.3 Session manager creates durable work
-
-`submitHttpMessage()` does the following:
-
-1. durably dedupe by `(sessionId, requestId)` via the Request store
-2. reject archived sessions; forward compatible active inputs to the native Harness, retaining sequential handling for explicit batch-only runtimes
-3. persist uploaded images into `images/`
-4. build the effective prompt
-5. create a durable run record + manifest
-6. mark the session’s `activeRunId`
-7. append the normalized user message event
-8. apply a deterministic draft title for a new unnamed Session
-9. spawn a detached runner directly
-
-There is no pre-turn semantic dispatch gate or planner. The selected Harness owns task interpretation, planning, tool use, decomposition, steering and self-review. Active built-in Harnesses receive additional messages through the detached sidecar's bidirectional control channel without waiting for the root task to finish; each input retains its durable identity and receipt. The steps creating a Run apply to a new execution; steered inputs reference the existing execution. See [Native Harness input](native-harness-input.md) for protocol, lifecycle and recovery details.
-
-### 8.4 Prompt construction
-
-Prompt construction combines multiple layers:
-
-- first-turn RemoteLab capability and pointer projection from `chat/system-prompt.mjs` + `chat/prompt-assets/`
-- per-turn pointer projection from `chat/turn-context-hook.mjs`
-- provider-neutral current work summary from `session.workSummary` / `workState.summary`
-- agent-level `systemPrompt` when the session came from an Agent
-- continuation context when resuming or switching tools
-- summary-head context from `context.json` after compaction
-- visitor-specific guardrail block for shared Agent sessions
-
-RemoteLab does not inject a global behavior constitution or a default provider-specific developer-instruction overlay. Prompt layers describe RemoteLab state, scope, capabilities, and explicit session context; the selected Harness keeps its native task semantics and safety model.
-
-This is an important architectural decision: **session continuity is reconstructed from durable state, not from one immortal in-memory process**.
-
-This list describes the current shipped prompt assembly, not the full target ownership model. For the control-layer boundary where prompt should become a projection over manager state, memory activation, and durable work-state objects, see `notes/current/model-sovereign-control-architecture.md`.
-
-### 8.5 Detached runner execution
-
-1. `chat/run-launcher.mjs` chooses the detached launch strategy and starts `chat/runner-sidecar.mjs`
-2. sidecar loads `manifest.json`
-3. sidecar resolves the actual CLI command through `chat/process-runner.mjs` + `lib/tools.mjs`
-4. sidecar spawns the tool in the session folder / resolved cwd; built-in native transports retain writable stdin and a private control socket for active inputs
-5. sidecar writes raw stdout/stderr into `spool.jsonl`
-6. sidecar updates `status.json` and `result.json`
-7. sidecar captures provider-native resume identifiers when present
-
-### 8.6 Control-plane observation and normalization
-
-1. `chat/session-manager.mjs` watches the run directory
-2. on `spool.jsonl`, `status.json`, or `result.json` changes, it re-syncs the run
-3. `chat/run-projection.mjs` reads raw spool deltas and uses the correct adapter:
-   - `chat/adapters/claude.mjs`
-   - `chat/adapters/codex.mjs`
-4. adapter output is converted into normalized events
-5. normalized events are appended into the session history store
-6. when a detached run is missing a terminal artifact, `chat/run-reconciler.mjs` decides whether it is still alive or should be synthesized into a terminal result
-6. the session status is updated and broadcast as invalidation
-
-### 8.7 Finalization after run completion
-
-When a run becomes terminal:
-
-- active run markers are cleared from the session
-- resume IDs are persisted back to session metadata
-- completion targets may dispatch side effects such as email replies
-- web push may fire
-- one non-blocking Session-state classifier may refresh:
-  - final session title, Space, Project group, and hidden description
-  - workflow state and priority
-  - the provider-neutral current work summary shared across Harnesses
-- selective durable memory writeback may promote reusable cross-session knowledge
-- auto-compaction may run as a conservative fallback if current context exceeds the known model window (or an explicit token override)
-
-### 8.8 Browser convergence
-
-After any of the above changes:
-
-- server sends a WS invalidation such as `session_invalidated` or `sessions_invalidated`
-- browser re-fetches the affected HTTP resources
-- UI renders canonical state from HTTP data, not from streamed partial mutations
-
-This is the heart of the current architecture.
-
----
-
-## 9. Other important flows
-
-### 9.1 Restart recovery flow
-
-This is a key design goal of the chat plane.
-
-If `chat-server` restarts while a run is active:
-
-- the detached sidecar may keep running
-- raw output keeps landing in `chat-runs/<runId>/`
-- on startup, `startDetachedRunObservers()` rehydrates active run observers
-- the control plane re-reads durable files, re-normalizes any unconsumed spool lines, and converges back to correct state
-
-The promise is **restart-safe logical recovery**, not zero-disruption socket continuity.
-
-### 9.2 Agent share flow
-
-Visitor entry goes through `/agent/:shareToken`.
-
-The current flow is:
-
-1. find the Agent by share token
-2. mint an agent-scoped visitor auth session
-3. redirect into the shared chat surface with a scoped visitor cookie
-4. let that scoped visitor create and manage one or more sessions under the shared Agent
-5. apply the Agent template and welcome behavior when those sessions are created
-6. redirect to the main chat UI in visitor mode
-
-Visitor limits are enforced by role-aware routing and session scoping.
-
-### 9.3 Share snapshot flow
-
-Owner can `POST /api/sessions/:id/share`.
-
-The flow is:
-
-1. load the live session + normalized history
-2. sanitize events and inline image data where needed
-3. write an immutable snapshot file
-4. render it via `templates/chat.html` in `shareSnapshotMode`, hydrated by `/share-payload/:id.js`
-
-The shared page is intentionally read-only and more tightly sandboxed than the main app.
-
-### 9.4 Session-state classification flow
-
-After a normal turn completes, `chat/session-state-classifier.mjs` makes one non-blocking call on the dedicated low-cost Codex `gpt-5.6-luna` / `high` route. Routine title/group/state metadata does not need the foreground problem-solving model; higher reasoning effort on the small model is intentional to improve topic/group consistency. Keep both model and reasoning effort independent of product defaults so chat-model upgrades cannot silently increase this per-turn cost; custom runtime adapters retain their compatible source route.
-
-That single call refreshes the Session's provider-neutral projection:
-
-- `title`, `space`, `group`, and `description`
-- `workflowState` and `workflowPriority`
-- persisted `workSummary`, exposed as `workState.summary`
-
-It replaces the former separate label, workstream, workflow, task-card, and global Project-organizer calls. It does not review or continue the user-facing answer and does not block reply publication.
-
-### 9.5 Context compaction and “drop tools”
-
-RemoteLab already contains two explicit context-management mechanisms:
-
-- **Compact**: ask the model to summarize the session into a continuation summary and store it in `context.json`
-- **Drop tools**: keep message transcript but strip past tool-result context from future continuation state
-
-Current auto-compaction now runs through a hidden companion session per parent session:
-
-- the visible session keeps its full history for the user
-- a hidden compactor session generates the fresh continuation package
-- the visible session inserts a context barrier marker plus a user-visible handoff message
-- `context.json` becomes the authoritative live continuation head for future turns
-
-This keeps continuity visible to the user while making it explicit that older messages above the barrier are no longer in current context.
-
-### 9.6 Web push flow
-
-The browser registers a service worker and a push subscription.
-
-When a run completes:
-
-- `chat/push.mjs` sends a push payload
-- `static/sw.js` suppresses notifications if the app is already visible
-- clicking the notification re-opens the relevant session URL
-
-### 9.7 Agent-mail / external automation flow
-
-This is an adjacent subsystem rather than the central chat path, but it matters architecturally.
-
-Pieces:
-
-- `lib/agent-mailbox.mjs` — mailbox queues, message ingest, allowlists, identity
-- `lib/agent-mail-http-bridge.mjs` — trust evaluation for inbound webhook sources
-- `scripts/agent-mail-http-bridge.mjs` — small HTTP ingress service for Cloudflare Email Worker webhooks
-- `lib/agent-mail-completion-targets.mjs` — attach outbound email reply delivery to finished runs
-- `lib/agent-mail-outbound.mjs` — outbound email delivery
-
-This subsystem shows the direction that **external channels should behave as clients of the same durable session protocol**, not as a separate architecture universe.
-
-### 9.8 Session fork flow
-
-The shipped fork model is intentionally narrow and exact.
-
-Current flow:
-
-1. owner triggers `POST /api/sessions/:id/fork`
-2. server validates access and rejects sessions that still have unstable active execution state
-3. child session metadata is created by copying parent base fields into a fresh session record
-4. full normalized history is materialized into the child history store
-5. copied events drop parent execution identity such as `runId` and `requestId`
-6. child session clears live execution linkage such as `activeRunId`, `activeRun`, provider resume ids, `externalTriggerId`, and `completionTargets`
-7. current context head is copied so the child starts from the same durable RemoteLab-side continuation state
-8. parent remains open; fork is a preparation action, not an implicit context switch
-
-Current product contract:
-
-- v1 is **head fork** only: clone the session as it exists now
-- fork is **hard clone + hard isolation**, not a shared-thread branch
-- historical `Fork from here` is deferred until RemoteLab can preserve exact pre-compaction fork state without approximation
-- the sidebar remains flat; lineage metadata exists, but there is no full tree UI subsystem yet
-
----
-
-## 10. Frontend architecture
-
-The frontend is intentionally simple but still architecturally important.
-
-### 10.1 Main characteristics
-
-- no framework
-- no bundler
-- no compile step
-- modular browser controller files under `static/chat/`, booted by `static/chat.js`
-
-### 10.2 Core frontend rules
-
-- HTTP reads are canonical
-- WS only hints a refresh
-- optimistic UI is allowed, but canonical state still comes from HTTP
-- ETag-based revalidation is used for many GET reads
-- per-session event fetching is snapshot-style for visible timeline content, with hidden blocks loaded lazily as separate immutable resources
-
-### 10.3 Main frontend responsibilities
-
-The main chat frontend (`static/chat/`, loaded by `static/chat.js`) is responsible for:
-
-- bootstrapping owner vs visitor mode
-- listing sessions and rendering the sidebar
-- attaching to one active session
-- fetching a visible event timeline plus lazy hidden-event blocks
-- rendering normalized event types
-- managing pending-message recovery on refresh
-- managing inline tool/model/reasoning selectors
-- handling session archive/rename actions
-- rendering the session-first sidebar / workflow projection
-- registering push notifications
-
-### 10.4 Share snapshot frontend
-
-Share snapshots reuse the main chat shell (`templates/chat.html` + `static/chat/`) with `shareSnapshotMode` bootstrapped from `/share-payload/:id.js`.
-
-That mode additionally:
-
-- hides sidebar/session-management UI via visitor-mode layout rules
-- disables live auth/bootstrap and websocket attachment
-- renders frozen snapshot events through the same chat timeline components
-- keeps `<private>` / `<hide>` content filtered out before publication
-
----
-
-## 11. HTTP and WS surface
-
-The main chat plane is almost entirely driven through `chat/router.mjs`.
-
-### 11.1 Core HTTP resources
-
-Sessions:
-
-- `GET /api/sessions`
-- `GET /api/sessions/archived`
-- `POST /api/sessions`
-- `GET /api/sessions/:id`
-- `PATCH /api/sessions/:id`
-- `GET /api/sessions/:id/events?filter=visible|all`
-- `GET /api/sessions/:id/events/blocks/:startSeq-:endSeq`
-- `GET /api/sessions/:id/events/:seq/body`
-- `POST /api/sessions/:id/messages`
-- `POST /api/sessions/:id/cancel`
-- `POST /api/sessions/:id/compact`
-- `POST /api/sessions/:id/drop-tools`
-- `POST /api/sessions/:id/share`
-
-`GET /api/sessions` is the owner sidebar collection and returns active-session metadata only. Archived sessions are fetched separately through `GET /api/sessions/archived` so the default bootstrap path stays small without introducing pagination.
-
-The session event route is display-first by default: `GET /api/sessions/:id/events?filter=visible` returns the visible timeline needed for the current UI, including inline user/assistant messages and synthetic collapsed blocks for hidden reasoning/tool steps. Expanding a collapsed block triggers `GET /api/sessions/:id/events/blocks/:startSeq-:endSeq`, which returns the hidden events with inline bodies and can be cached immutably. `filter=all` still exposes the raw deferred-body event index for debugging or compatibility, but the common-path transport now avoids shipping hidden tool/reasoning payloads up front.
-
-Runs:
-
-- `GET /api/runs/:id`
-- `POST /api/runs/:id/cancel`
-
-Tooling and settings:
-
-- `GET /api/tools`
-- `POST /api/tools`
-- `GET /api/models?tool=...`
-- `GET /api/autocomplete`
-- `GET /api/browse`
-- `GET /api/media/:filename` (with legacy `/api/images/:filename` alias)
-
-Agents and shares:
-
-- `GET /api/agents`
-- `POST /api/agents`
-- `PATCH /api/agents/:id`
-- `DELETE /api/agents/:id`
-- `GET /agent/:shareToken`
-- `GET /share/:snapshotId`
-
-Implementation note:
-
-- `GET /api/agents` is the owner Agent CRUD surface
-- durable storage still reuses the internal app/template layer and `apps.json`
-
-Auth and push:
-
-- `POST /login`
-- `GET /login`
-- `GET /logout`
 - `GET /api/auth/me`
-- `GET /api/push/vapid-public-key`
-- `POST /api/push/subscribe`
+- `GET|POST /api/people`
+- `PATCH /api/people/:id`
+- `POST /api/people/:id/credentials`
+- `DELETE /api/people/:id/credentials/:credentialId`
+- `POST /api/people/:id/identities`
+- `POST /api/people/reconcile-external-identity` (connector service only)
+- `GET|POST /api/sessions`
+- `GET|PATCH /api/sessions/:id`
+- `POST /api/sessions/:id/messages`
+- `POST /api/sessions/:id/fork`
 
-### 11.2 WebSocket semantics
+All authenticated routes operate against the complete instance Session set. The
+Person filter is a client-side convenience over attribution metadata, not a
+server-side visibility predicate.
 
-`/ws` is intentionally push-only from server to browser.
+Public routes are limited to login/install/static assets and immutable
+ShareSnapshots. A ShareSnapshot never grants access to its source Session.
 
-Current message families are small invalidations such as:
+## Persistence
 
-- session invalidated
-- session list invalidated
-- sidebar invalidated
+Default runtime state lives in `~/.config/remotelab/`:
 
-The browser does not rely on WS to carry canonical message content.
-
----
-
-## 12. Tool and provider model
-
-The currently shipped implementation uses a pragmatic tool abstraction.
-
-### 12.1 Current state
-
-- built-in tools are declared in `lib/tools.mjs`
-- current first-class runtime families are:
-  - `claude-stream-json`
-  - `codex-json`
-- simple custom tool configs can be saved via `/api/tools`
-- models/reasoning metadata are returned by `/api/models`
-
-### 12.2 Current abstraction split
-
-- `lib/tools.mjs` decides what tools exist and whether commands resolve locally
-- `chat/process-runner.mjs` turns a tool selection into command + args + adapter
-- `chat/adapters/*.mjs` parse raw CLI JSONL output into normalized events
-- `chat/models.mjs` provides frontend-facing model/reasoning options
-
-### 12.3 Directional note
-
-The current abstraction is intentionally pragmatic. Keep it simple until multiple local runtime families or local provider configs create a concrete pressure to generalize it further.
-
----
-
-## 13. Memory activation architecture
-
-RemoteLab’s model behavior is shaped not only by chat history but also by the **pointer-first memory system**.
-
-Current implementation pieces:
-
-- `chat/system-prompt.mjs` prepends a small capability and memory-pointer map
-- `chat/turn-context-hook.mjs` injects a lightweight per-turn pointer block plus a stable writable context root
-- user-level memory lives under `~/.remotelab/memory/`
-- shared system memory lives in `memory/system.md`
-- the broader manager/prompt/memory ownership model is described in `notes/current/model-sovereign-control-architecture.md`
-
-The key architectural rule is:
-
-- memory should be **large on disk, small in active context**
-
-This matters because future model-driven development sessions depend on loading only the right memory slices for the current scope.
-
----
-
-## 14. Architectural constraints and invariants
-
-These constraints are part of the architecture, not incidental implementation details.
-
-- the shipped architecture no longer includes a built-in terminal fallback plane
-- RemoteLab stays framework-light: Node built-ins + `ws`
-- frontend remains vanilla JS without build tooling
-- single-owner-per-instance remains the default product assumption; host-level multi-user isolation uses separate guest instances
-- owner/visitor is a scoped access model inside one instance, not full multi-user infrastructure
-- chat plane should remain HTTP-canonical and restart-cheap
-- runtime layer should stay thinner than the control plane
-- new durable product semantics should prefer filesystem-first persistence
-
----
-
-## 15. Where to change what
-
-Use this as the practical code-finding guide.
-
-| If you need to change... | Open these files first |
+| Path | Purpose |
 |---|---|
-| login, cookies, owner/visitor roles | `lib/auth.mjs`, `chat/router.mjs`, `chat/middleware.mjs` |
-| session creation / rename / archive | `chat/router.mjs`, `chat/session-manager.mjs`, `chat/session-naming.mjs`, `static/chat/` |
-| message submission or run lifecycle | `static/chat/`, `chat/router.mjs`, `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs` |
-| tool execution details | `chat/process-runner.mjs`, `chat/adapters/*.mjs`, `lib/tools.mjs` |
-| restart recovery behavior | `chat/session-manager.mjs`, `chat/runs.mjs`, `chat/runner-sidecar.mjs`, `notes/current/self-hosting-dev-restarts.md` |
-| event persistence / long-output handling | `chat/history.mjs`, `chat/runs.mjs`, `chat/fs-utils.mjs` |
-| post-turn Session classification / work summary | `chat/session-state-classifier.mjs`, `chat/session-manager.mjs`, `chat/session-work-summary.mjs`, `chat/session-naming.mjs` |
-| Agent templates or visitor flow | `chat/apps.mjs`, `chat/router.mjs`, `chat/session-manager.mjs`, `static/chat/`, `docs/creating-apps.md` |
-| share snapshots | `chat/shares.mjs`, `chat/router.mjs`, `templates/chat.html`, `static/chat/` |
-| push notifications | `chat/push.mjs`, `static/sw.js`, `static/chat/` |
-| model/tool picker behavior | `lib/tools.mjs`, `chat/models.mjs`, `static/chat/` |
-| pointer-first memory startup | `chat/system-prompt.mjs`, `chat/turn-context-hook.mjs`, `chat/prompt-assets/`, `notes/current/memory-activation-architecture.md` |
-| inbound/outbound mail automation | `lib/agent-mailbox.mjs`, `lib/agent-mail-http-bridge.mjs`, `lib/agent-mail-outbound.mjs`, `lib/agent-mail-completion-targets.mjs`, `scripts/agent-mail-*.mjs` |
+| `auth.json` | People, credentials, identities, service token |
+| `auth-sessions.json` | browser login sessions |
+| `chat-sessions.json` | Session metadata, including `personViews` |
+| `chat-history/` | canonical per-Session event history |
+| `chat-runs/` | Run manifests, spool, and results |
+| `chat-requests/` | durable admission and execution state |
+| `shared-snapshots/` | immutable read-only publications |
+| `public-pages/` | instance-local static publications |
 
----
+Instance roots can override config, memory, and workspace locations. Do not use
+Session labels or Person records as a substitute for a separate instance when a
+real deployment/data isolation boundary is required.
 
-## 16. Tests and validation surfaces
+## Invariants
 
-There is no single monolithic test harness. Validation is currently scenario-based and file-oriented.
+1. Session is the only interactive product work object.
+2. Authentication is binary: full instance access or no workbench access.
+3. Person/Identity metadata never narrows Session visibility.
+4. Space, Group, and sidebar order are always per-Person view state.
+5. Shared Session state cannot be silently copied into a personal view or vice versa.
+6. HTTP is canonical; WebSocket is invalidation only.
+7. Durable state must survive browser and control-plane restarts.
+8. ShareSnapshot is immutable and read-only.
+9. Connector service authentication and human sender attribution are separate.
+10. Tests that touch state use isolated config, memory, workspace, and provider homes.
 
-High-value clusters:
+## Validation
 
-- HTTP/runtime and restart work:
-  - `tests/test-http-runtime-phase1.mjs`
-  - `tests/test-run-spool-delta.mjs`
-  - `tests/test-session-status-broadcast.mjs`
-- session behavior:
-  - `tests/test-session-grouping.mjs`
-  - `tests/test-session-state-labeling.mjs`
-  - `tests/test-session-state-classification.mjs`
-  - `tests/test-session-work-summary.mjs`
-  - `tests/test-session-route-utils.mjs`
-  - `tests/test-session-tool-reuse.mjs`
-- Codex integration and resume behavior:
-  - `tests/test-codex-singleshot.mjs`
-  - `tests/test-codex-resume.mjs`
-  - `tests/test-codex-resume-bug.mjs`
-  - `tests/test-codex-multistep.mjs`
-  - `tests/test-codex-realworld.mjs`
-  - `tests/test-codex-issues.mjs`
-- sharing and push-adjacent surfaces:
-  - `tests/test-share-snapshot.mjs`
-- agent-mail subsystem:
-  - `tests/test-agent-mailbox.mjs`
-  - `tests/test-agent-mail-http-bridge.mjs`
-  - `tests/test-agent-mail-worker.mjs`
-  - `tests/test-agent-mail-reply.mjs`
+For a change touching this architecture, exercise at least:
 
-Operational validation also matters:
-
-- `scripts/chat-instance.sh` is only an ad-hoc helper for optional manual instances on explicitly chosen ports; it is not part of the shipped service topology
-
----
-
-## 17. Current architecture vs direction notes
-
-This repo already contains several design notes that point beyond the current code.
-
-### 17.1 Already largely shipped
-
-- HTTP-first control plane with detached runners
-- thin WS invalidation model
-- restart-safe recovery from durable run + history files
-- owner / visitor identity split
-- Agent templates + share links
-- session label suggestions
-- pointer-first memory activation
-
-### 17.2 Directional but not fully realized yet
-
-- lighter local runtime/provider config when multiple local tool families create a real need
-- agent-centric architecture where default chat becomes a built-in Agent/policy model
-- richer autonomy / deferred triggers / background execution
-- deeper external channel unification (mail, repo bots, other message sources)
-- single-source active-run transcript projection with side-effect-free read paths
-- potentially broader runtime/provider cleanup after the current HTTP-first boundaries settle
-- broader theming beyond the current automatic system light/dark baseline
-- further icon-system cleanup beyond the current shipped Codicons subset
-
-Use these notes when needed:
-
-- `notes/message-transport-architecture.md`
-- `notes/directional/provider-architecture.md`
-- `notes/directional/app-centric-architecture.md`
-- `notes/directional/ai-driven-interaction.md`
-- `notes/directional/autonomous-execution.md`
-- `notes/directional/single-source-transcript-architecture.md`
-- `notes/directional/ui-theming.md`
-- `notes/directional/ui-icons.md`
-- `notes/current/self-hosting-dev-restarts.md`
-
----
-
-## 18. Short version
-
-If you only remember one mental model, remember this:
-
-> RemoteLab is a **filesystem-backed HTTP control plane for long-lived AI work sessions**, with **detached CLI runners**, **normalized append-only session history**, **thin WebSocket invalidation**, and a **minimal endpoint-flexible web UI** that always converges back to durable state.
-
-Everything else in the repo is either:
-
-- product semantics layered on top of that core
-- or a future-direction note about making that core more general
+- two authenticated People can list and mutate the same Session;
+- each Person can independently classify/order that Session;
+- filtering by Person changes convenience views only;
+- a Feishu sender becomes a filterable external identity/Person;
+- anonymous workbench routes reject access;
+- ShareSnapshot remains readable and immutable;
+- restart-gate, smoke, integration, and trigger suites remain green.

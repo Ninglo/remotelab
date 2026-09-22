@@ -7,7 +7,7 @@
 For this machine, a **local poller** is the simplest reliable default:
 
 - no extra public webhook surface needs to be exposed from GitHub into the laptop
-- it reuses the existing local `gh` auth and RemoteLab owner auth
+- it reuses the existing local `gh` auth and RemoteLab service auth
 - it can enrich the repair prompt with local repo paths, workflow context, failed jobs, and log excerpts before the model starts working
 
 The monitor is intentionally bounded and action-oriented:
@@ -101,7 +101,7 @@ Recommended policy:
 
 Natural next steps if this works well:
 
-- push a short owner notification when a repair session starts or finishes
+- push a short instance notification when a repair Session starts or finishes
 - group repeated failures into a single long-lived incident session per branch/workflow
 - auto-comment on the related GitHub issue/PR when the session concludes
 - promote from polling to GitHub webhook delivery only if near-real-time response becomes worth the extra surface area

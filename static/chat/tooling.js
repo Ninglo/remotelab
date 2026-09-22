@@ -5,40 +5,23 @@ function t(key, vars) {
 
 let runtimeSelectionSyncPromise = Promise.resolve();
 let lastSyncedRuntimeSelectionPayload = '';
-const HIDDEN_INLINE_AGENT_IDS = new Set([
-  "email",
-]);
-let inlineAgentCatalog = [];
-let inlineAgentCatalogLoaded = false;
 
 function canChangeRuntimeSelectionFromUi() {
   return typeof canChangeRuntimeSelection === "function"
     ? canChangeRuntimeSelection()
-    : !visitorMode;
-}
-
-function canSwitchAgentsFromUi() {
-  return typeof canSwitchAgents === "function"
-    ? canSwitchAgents()
-    : !visitorMode;
+    : true;
 }
 
 function canPublishShareSnapshotsFromUi() {
   return typeof canPublishShareSnapshots === "function"
     ? canPublishShareSnapshots()
-    : !visitorMode;
+    : true;
 }
 
 function canForkSessionsFromUi() {
   return typeof canForkSessions === "function"
     ? canForkSessions()
-    : !visitorMode;
-}
-
-function canManageAgentsFromUi() {
-  return typeof canManageAgents === "function"
-    ? canManageAgents()
-    : !visitorMode;
+    : true;
 }
 
 function buildRuntimeSelectionPayload() {
@@ -222,7 +205,7 @@ function slugifyToolValue(value) {
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return normalized || "my-agent";
+  return normalized || "my-tool";
 }
 
 function getSelectedToolDefinition(toolId = selectedTool) {
@@ -281,8 +264,8 @@ function syncQuickAddControls() {
 }
 
 function getAddToolDraft() {
-  const name = (addToolNameInput?.value || "").trim() || "My Agent";
-  const command = (addToolCommandInput?.value || "").trim() || "my-agent";
+  const name = (addToolNameInput?.value || "").trim() || "My Tool";
+  const command = (addToolCommandInput?.value || "").trim() || "my-tool";
   const runtimeFamily =
     addToolRuntimeFamilySelect?.value || "claude-stream-json";
   const models = parseModelLines(addToolModelsInput?.value || "");
@@ -451,7 +434,7 @@ function syncShareButton() {
   if (!shareSnapshotBtn) return;
   const publishShareSnapshotsEnabled = typeof canPublishShareSnapshots === "function"
     ? canPublishShareSnapshots()
-    : !visitorMode;
+    : true;
   const visible = publishShareSnapshotsEnabled && !!currentSessionId;
   shareSnapshotBtn.style.display = visible ? "" : "none";
   if (!visible) {
@@ -463,7 +446,7 @@ function syncForkButton() {
   if (!forkSessionBtn) return;
   const forkSessionsEnabled = typeof canForkSessions === "function"
     ? canForkSessions()
-    : !visitorMode;
+    : true;
   const visible = forkSessionsEnabled && !!currentSessionId;
   forkSessionBtn.style.display = visible ? "" : "none";
   if (!visible) {
@@ -505,7 +488,7 @@ function getShareSnapshotBaseUrl() {
 async function shareCurrentSessionSnapshot() {
   const publishShareSnapshotsEnabled = typeof canPublishShareSnapshots === "function"
     ? canPublishShareSnapshots()
-    : !visitorMode;
+    : true;
   if (!currentSessionId || !publishShareSnapshotsEnabled || !shareSnapshotBtn) return;
 
   const currentSession = getCurrentSession();
@@ -562,7 +545,7 @@ async function shareCurrentSessionSnapshot() {
 async function forkCurrentSession() {
   const forkSessionsEnabled = typeof canForkSessions === "function"
     ? canForkSessions()
-    : !visitorMode;
+    : true;
   if (!currentSessionId || !forkSessionsEnabled || !forkSessionBtn) return;
 
   const original = forkSessionBtn.dataset.originalLabel || forkSessionBtn.textContent;
@@ -596,11 +579,11 @@ function syncAddToolModal() {
 }
 
 function openAddToolModal() {
-  if (!canManageAgentsFromUi() || !canChangeRuntimeSelectionFromUi()) return;
+  if (!canChangeRuntimeSelectionFromUi()) return;
   if (!addToolModal) return;
-  if (!addToolNameInput.value.trim()) addToolNameInput.value = "My Agent";
+  if (!addToolNameInput.value.trim()) addToolNameInput.value = "My Tool";
   if (!addToolCommandInput.value.trim()) {
-    addToolCommandInput.value = "my-agent";
+    addToolCommandInput.value = "my-tool";
   }
   const selectedToolDef = getSelectedToolDefinition();
   if (selectedToolDef?.runtimeFamily) {
@@ -692,7 +675,7 @@ function renderInlineToolOptions(selectedValue, emptyMessage = "No tools found")
 
   const addMoreOpt = document.createElement("option");
   addMoreOpt.value = ADD_MORE_TOOL_VALUE;
-  addMoreOpt.textContent = t("settings.apps.addToolMore");
+  addMoreOpt.textContent = t("tooling.addMore");
   inlineToolSelect.appendChild(addMoreOpt);
 
   if (selectedValue && toolsList.some((tool) => tool.id === selectedValue)) {
@@ -700,119 +683,6 @@ function renderInlineToolOptions(selectedValue, emptyMessage = "No tools found")
   } else if (toolsList[0]) {
     inlineToolSelect.value = toolsList[0].id;
   }
-}
-
-function normalizeInlineAgentOptionName(value) {
-  return typeof value === "string" && value.trim()
-    ? value.trim().replace(/\s+/g, " ")
-    : "";
-}
-
-function shouldShowInlineAgentOption(app) {
-  if (!app?.id || HIDDEN_INLINE_AGENT_IDS.has(app.id)) {
-    return false;
-  }
-  if (app.id === DEFAULT_APP_ID) {
-    return true;
-  }
-  return app.templateSelectable !== false;
-}
-
-function sortInlineAgentCatalog(apps = []) {
-  return [...apps].sort((left, right) => {
-    if (left?.id === DEFAULT_APP_ID) return -1;
-    if (right?.id === DEFAULT_APP_ID) return 1;
-    if (left?.builtin && !right?.builtin) return -1;
-    if (!left?.builtin && right?.builtin) return 1;
-    return String(left?.name || "").localeCompare(String(right?.name || ""));
-  });
-}
-
-function findInlineAgentById(agentId) {
-  if (!agentId) return null;
-  return inlineAgentCatalog.find((agent) => agent?.id === agentId) || null;
-}
-
-function getInlineAgentOptions() {
-  const visibleAgents = sortInlineAgentCatalog(
-    inlineAgentCatalog.filter((app) => shouldShowInlineAgentOption(app) && app.id !== DEFAULT_APP_ID),
-  );
-  return [
-    { id: "", name: t("compose.agent.default") },
-    ...visibleAgents.map((app) => ({
-      id: app.id,
-      name: normalizeInlineAgentOptionName(app.name) || t("settings.apps.untitled"),
-    })),
-  ];
-}
-
-function renderInlineAgentOptions(selectedValue = "") {
-  if (!inlineAgentSelect) return;
-  inlineAgentSelect.disabled = !canSwitchAgentsFromUi();
-  inlineAgentSelect.innerHTML = "";
-
-  for (const optionData of getInlineAgentOptions()) {
-    const option = document.createElement("option");
-    option.value = optionData.id;
-    option.textContent = optionData.name;
-    inlineAgentSelect.appendChild(option);
-  }
-
-  const renderedOptions = Array.isArray(inlineAgentSelect.options)
-    ? inlineAgentSelect.options
-    : Array.from(inlineAgentSelect.options || []);
-  if (renderedOptions.some((option) => option.value === selectedValue)) {
-    inlineAgentSelect.value = selectedValue;
-  } else {
-    inlineAgentSelect.value = "";
-  }
-}
-
-async function refreshInlineAgentPicker({ force = false } = {}) {
-  if (!inlineAgentSelect) return;
-  if (!canSwitchAgentsFromUi()) {
-    inlineAgentSelect.disabled = true;
-    inlineAgentSelect.innerHTML = "";
-    return;
-  }
-
-  if (force || !inlineAgentCatalogLoaded) {
-    inlineAgentSelect.disabled = true;
-    inlineAgentSelect.innerHTML = "";
-    const loadingOption = document.createElement("option");
-    loadingOption.value = "";
-    loadingOption.textContent = t("compose.agent.loading");
-    inlineAgentSelect.appendChild(loadingOption);
-    try {
-      const data = await fetchJsonOrRedirect("/api/agents");
-      inlineAgentCatalog = Array.isArray(data?.agents) ? data.agents : [];
-      inlineAgentCatalogLoaded = true;
-    } catch (error) {
-      console.warn("[agents] Failed to load inline agents:", error?.message || error);
-      inlineAgentCatalog = [];
-      inlineAgentCatalogLoaded = true;
-      renderInlineAgentOptions("");
-      inlineAgentSelect.title = t("compose.agent.loadingFailed");
-      inlineAgentSelect.disabled = false;
-      return;
-    }
-  }
-
-  const preferredAgentId = typeof getPreferredAgentTemplateId === "function"
-    ? getPreferredAgentTemplateId()
-    : "";
-  const preferredAgent = findInlineAgentById(preferredAgentId);
-  if (preferredAgentId && !preferredAgent) {
-    if (typeof setPreferredAgentTemplate === "function") {
-      setPreferredAgentTemplate("");
-    }
-    renderInlineAgentOptions("");
-    return;
-  }
-
-  renderInlineAgentOptions(preferredAgentId);
-  inlineAgentSelect.title = t("compose.agent.title");
-  inlineAgentSelect.disabled = false;
 }
 
 function getVisiblePrimaryToolOptions() {
@@ -896,7 +766,6 @@ async function loadInlineTools({ skipModelLoad = false } = {}) {
     if (!skipModelLoad) {
       await loadModelsForCurrentTool();
     }
-    void refreshInlineAgentPicker();
   } catch (err) {
     allToolsList = [];
     toolsList = [];
@@ -920,26 +789,6 @@ inlineToolSelect.addEventListener("change", async () => {
   await loadModelsForCurrentTool();
   queueRuntimeSelectionSync();
   persistCurrentSessionToolPreferences();
-});
-
-if (inlineAgentSelect) {
-  inlineAgentSelect.addEventListener("change", () => {
-    const nextAgentId = inlineAgentSelect.value || "";
-    const nextAgent = findInlineAgentById(nextAgentId);
-    if (typeof setPreferredAgentTemplate === "function") {
-      setPreferredAgentTemplate(nextAgentId, {
-        name: nextAgent?.name || "",
-      });
-    }
-  });
-}
-
-window.addEventListener("remotelab:preferred-agent-change", () => {
-  void refreshInlineAgentPicker();
-});
-
-window.addEventListener("remotelab:localechange", () => {
-  void refreshInlineAgentPicker();
 });
 
 // ---- Provider / model select ----

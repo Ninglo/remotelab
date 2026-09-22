@@ -8,7 +8,7 @@ export { normalizeConversation as normalizeSourceDeliveryPlan } from '../lib/con
 import { randomBytes } from 'node:crypto';
 import { requests, requestKey, appendDeliveries } from './requests.mjs';
 import { serialQueue } from '../lib/durable-records.mjs';
-import { broadcastOwners } from './ws-clients.mjs';
+import { broadcastAll } from './ws-clients.mjs';
 import { buildDeliveryNotice, deliveryIssue, DELIVERY_LEASE_MS } from './source-delivery-issues.mjs';
 import {
   getSourceDeliverySignalVersion,
@@ -144,7 +144,7 @@ async function mutateDelivery(id, update) {
     return next;
   });
   await requests.archiveFinished(key);
-  broadcastOwners({ type: 'session_invalidated', sessionId: record.sessionId });
+  broadcastAll({ type: 'session_invalidated', sessionId: record.sessionId });
   return record.deliveries[index];
 }
 

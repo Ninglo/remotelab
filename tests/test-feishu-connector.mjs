@@ -26,6 +26,7 @@ const {
   claimConnectorPidLock,
   compileFeishuReplyText,
   ensureAuthCookie,
+  enrichSummaryWithSenderProfile,
   ensureAllowedSendersFile,
   extractLocalCommand,
   submitRemoteLabRequest,
@@ -52,6 +53,34 @@ const {
   stopSourceDeliveryPoller,
   summarizeEvent,
 } = await import(pathToFileURL(join(repoRoot, 'scripts', 'feishu-connector.mjs')).href);
+
+let userProfileLookups = 0;
+const userProfileRuntime = {
+  config: { apiTimeoutMs: 1_000 },
+  userProfileCache: new Map(),
+  appClient: {
+    contact: { v3: { user: { get: async (payload) => {
+      userProfileLookups += 1;
+      assert.equal(payload.params.user_id_type, 'open_id');
+      assert.equal(payload.path.user_id, 'ou_profile_1');
+      return { code: 0, data: { user: { name: '酒嘉年', en_name: 'Jianian Jiu' } } };
+    } } } },
+  },
+};
+const profileSummary = await enrichSummaryWithSenderProfile(userProfileRuntime, {
+  sender: { senderType: 'user', openId: 'ou_profile_1' },
+});
+assert.equal(profileSummary.sender.name, '酒嘉年');
+assert.equal(profileSummary.sender.englishName, 'Jianian Jiu');
+assert.equal(
+  buildSessionSourceContext(profileSummary).sender.englishName,
+  'Jianian Jiu',
+  'the normalized source context should carry the readable Feishu profile to identity resolution',
+);
+await enrichSummaryWithSenderProfile(userProfileRuntime, {
+  sender: { senderType: 'user', openId: 'ou_profile_1' },
+});
+assert.equal(userProfileLookups, 1, 'Feishu user profiles should be cached by openId');
 
 const connectorLauncherSource = await readFile(join(repoRoot, 'scripts', 'feishu-connector.mjs'), 'utf8');
 assert.ok(
@@ -118,6 +147,46 @@ const accepted = await handleMessage(runtime, summary, 'test', {
   sendFeishuText: async () => { throw new Error('admission must not send a reply'); },
 });
 assert.equal(accepted.sessionId, 'session_test_1');
+
+let mergeForwardSubmissions = 0;
+const mergeForwardRoot = {
+  ...summary,
+  messageId: 'msg_merge_forward_root_1',
+  chatType: 'group',
+  threadId: 'thread_merge_forward_1',
+  messageType: 'merge_forward',
+  rawContent: 'Merged and Forwarded Message',
+};
+assert.deepEqual(await handleMessage(runtime, mergeForwardRoot, 'test', {
+  submitRemoteLabRequest: async () => {
+    mergeForwardSubmissions += 1;
+    return { sessionId: 'session_merge_forward_wrong' };
+  },
+}), { ignored: true, reason: 'merge_forward_context_only' });
+assert.equal(mergeForwardSubmissions, 0, 'a merge-forward root must not create a Session');
+
+let mergeForwardReplySummary;
+const mergeForwardReply = await handleMessage(runtime, {
+  ...summary,
+  messageId: 'msg_merge_forward_reply_1',
+  chatType: 'group',
+  threadId: 'thread_merge_forward_1',
+  rootId: 'msg_merge_forward_root_1',
+  parentId: 'msg_merge_forward_root_1',
+  messageType: 'text',
+  messageText: '分析上面转发的内容',
+  textPreview: '分析上面转发的内容',
+}, 'test', {
+  addProcessingReaction: async () => null,
+  submitRemoteLabRequest: async (_runtime, inboundSummary) => {
+    mergeForwardReplySummary = inboundSummary;
+    return { sessionId: 'session_merge_forward_reply_1' };
+  },
+});
+assert.equal(mergeForwardReply.sessionId, 'session_merge_forward_reply_1');
+assert.equal(mergeForwardReplySummary.conversationKind, 'thread');
+assert.equal(mergeForwardReplySummary.replyInThread, true, 'the first reply keeps the normal topic admission path');
+
 await assert.rejects(handleMessage(runtime, summary, 'test', {
   submitRemoteLabRequest: async () => { throw new Error('control plane offline'); },
 }), /offline/, 'Inbox must retain failed handoffs for recovery');
@@ -426,6 +495,12 @@ assert.deepEqual(buildSessionSourceContext(topicSummary), {
   topicId: 'thread_topic_1',
   threadId: 'thread_topic_1',
   rootId: 'msg_topic_root_1',
+  sender: {
+    openId: 'ou_topic_1',
+    senderType: 'user',
+    tenantKey: 'tenant_topic_1',
+    isInternal: true,
+  },
 });
 assert.deepEqual(buildMessageSourceContext(topicSummary), {
   connector: 'feishu',
@@ -505,7 +580,7 @@ const authRefreshRuntime = {
   authCookie: 'session_token=stale-cookie',
   authToken: 'stale-token',
   config: { chatBaseUrl: 'http://127.0.0.1:7690' },
-  readOwnerToken: async () => 'fresh-token',
+  readServiceToken: async () => 'fresh-token',
   loginWithToken: async (_baseUrl, token) => `session_token=${token}`,
 };
 
@@ -518,7 +593,7 @@ assert.equal(
 assert.equal(
   await ensureAuthCookie(authRefreshRuntime, true),
   'session_token=fresh-token',
-  'forced auth refresh should re-read the current owner token before logging in again',
+  'forced auth refresh should re-read the current service token before logging in again',
 );
 assert.equal(authRefreshRuntime.authToken, 'fresh-token');
 assert.equal(authRefreshRuntime.authCookie, 'session_token=fresh-token');
@@ -1116,46 +1191,47 @@ accessRuntime.chatMetadataCache.set('chat_group_approve_1', {
 
 assert.equal(extractLocalCommand(groupCommandSummary), null, 'access policy has no chat-approval command path');
 
-const forkCommand = extractLocalCommand({
+const threadCommand = extractLocalCommand({
   ...groupCommandSummary,
-  messageId: 'msg_group_fork_1',
-  messageText: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈',
-  textPreview: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈',
+  messageId: 'msg_group_thread_1',
+  messageText: '@_user_1 /thread 调研这个问题\n并保留 @_user_2 的反馈',
+  textPreview: '@_user_1 /thread 调研这个问题\n并保留 @_user_2 的反馈',
 });
-assert.deepEqual(forkCommand, {
-  commands: [{ name: 'fork' }],
+assert.deepEqual(threadCommand, {
+  commands: [{ name: 'thread' }],
   body: '调研这个问题\n并保留 @_user_2 的反馈',
 });
 assert.deepEqual(extractLocalCommand({
   ...groupCommandSummary,
-  messageId: 'msg_group_empty_fork_1',
-  messageText: '@_user_1 /fork',
-  textPreview: '@_user_1 /fork',
+  messageId: 'msg_group_empty_thread_1',
+  messageText: '@_user_1 /thread',
+  textPreview: '@_user_1 /thread',
 }), {
-  commands: [{ name: 'fork' }],
+  commands: [{ name: 'thread' }],
   body: '',
 });
 
-const forkSummary = { ...groupCommandSummary, messageId: 'msg_group_fork_1',
-  messageText: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈',
-  textPreview: '@_user_1 /fork 调研这个问题\n并保留 @_user_2 的反馈' };
-let generatedForkSummary;
-const forkResult = await handleMessage(accessRuntime, forkSummary, 'test', {
+const threadSummary = { ...groupCommandSummary, messageId: 'msg_group_thread_1',
+  messageText: '@_user_1 /thread 调研这个问题\n并保留 @_user_2 的反馈',
+  textPreview: '@_user_1 /thread 调研这个问题\n并保留 @_user_2 的反馈' };
+let generatedThreadSummary;
+const threadResult = await handleMessage(accessRuntime, threadSummary, 'test', {
   addProcessingReaction: async () => null,
   submitRemoteLabRequest: async (_runtime, inboundSummary) => {
-    generatedForkSummary = inboundSummary;
-    return { sessionId: 'sess_fork_command_1', runId: 'run_fork_command_1', requestId: 'feishu:msg_group_fork_1', externalTriggerId: 'feishu:fork:bot-1:tenant_group_1:chat_group_approve_1:msg_group_fork_1' };
+    generatedThreadSummary = inboundSummary;
+    return { sessionId: 'sess_thread_command_1', runId: 'run_thread_command_1', requestId: 'feishu:msg_group_thread_1', externalTriggerId: 'feishu:thread:bot-1:tenant_group_1:chat_group_approve_1:msg_group_thread_1' };
   },
 });
-assert.equal(generatedForkSummary.forkCommand, true);
-assert.equal(generatedForkSummary.forkText, '调研这个问题\n并保留 @_user_2 的反馈');
-assert.equal(generatedForkSummary.replyInThread, true);
-assert.equal(forkResult.sessionId, 'sess_fork_command_1');
+assert.equal(generatedThreadSummary.startThread, true);
+assert.equal(generatedThreadSummary.conversationKind, 'thread');
+assert.equal(generatedThreadSummary.messageText, '调研这个问题\n并保留 @_user_2 的反馈');
+assert.equal(generatedThreadSummary.replyInThread, true);
+assert.equal(threadResult.sessionId, 'sess_thread_command_1');
 let releaseDetachedReaction;
 let detachedReactionStarted = false;
 let detachedSubmitStarted = false;
 const detachedResult = await handleMessage(accessRuntime, {
-  ...forkSummary,
+  ...threadSummary,
   messageId: 'msg_group_detached_reaction_1',
 }, 'test', {
   addProcessingReaction: () => {
@@ -1172,12 +1248,12 @@ assert.equal(detachedReactionStarted, true);
 assert.equal(detachedResult.sessionId, 'sess_detached_reaction_1', 'reaction completion must not gate request admission');
 releaseDetachedReaction();
 await Promise.resolve();
-let emptyForkReply;
-await handleMessage(accessRuntime, { ...groupCommandSummary, messageId: 'empty-fork', messageText: '/fork', textPreview: '/fork' }, 'test', {
-  submitRemoteLabRequest: async () => { throw new Error('empty fork must not start AI'); },
-  queueFeishuReply: async (_runtime, _summary, text) => { emptyForkReply = text; return { deliveryId: 'usage-delivery' }; },
+let emptyThreadReply;
+await handleMessage(accessRuntime, { ...groupCommandSummary, messageId: 'empty-thread', messageText: '/thread', textPreview: '/thread' }, 'test', {
+  submitRemoteLabRequest: async () => { throw new Error('empty thread command must not start AI'); },
+  queueFeishuReply: async (_runtime, _summary, text) => { emptyThreadReply = text; return { deliveryId: 'usage-delivery' }; },
 });
-assert.equal(emptyForkReply, '任务命令需要正文，例如：/fork 帮我调查这个问题。');
+assert.equal(emptyThreadReply, '任务命令需要正文，例如：/thread 帮我调查这个问题。');
 
 let createdPayload = null;
 let submittedPayload = null;
@@ -1390,15 +1466,15 @@ try {
   assert.equal(createdPayload?.effort, 'high', 'the first connector request snapshots its effort at Session creation');
   assert.equal(createdPayload?.name, '', 'Feishu connector should let RemoteLab auto-rename sessions from the turn content');
   assert.equal(createdPayload?.systemPrompt, 'Reply with plain text only.');
-  assert.equal(createdPayload?.externalTriggerId, 'feishu:p2p:chat_for_scope');
+  assert.equal(createdPayload?.externalTriggerId, 'feishu:main:default:unknown:chat_for_scope');
   assert.equal(createdPayload?.sourceContext?.chatType, 'p2p');
   assert.equal(createdPayload?.sourceContext?.chatId, 'chat_for_scope');
   assert.ok(Buffer.byteLength(JSON.stringify(createdPayload)) < 10240,
     'long Feishu text must not overflow the Session creation request limit');
   assert.deepEqual(createdPayload?.conversation?.target, {
-    chatType: 'p2p',
     chatId: 'chat_for_scope',
-    messageId: 'msg_for_scope',
+    chatType: 'p2p',
+    conversationKind: 'main',
   });
   assert.equal(submittedPayload?.tool, 'claude');
   assert.equal(submittedPayload?.model, 'claude-sonnet-4-5');
@@ -1435,7 +1511,7 @@ try {
   assert.deepEqual(submittedPayload.sourceDelivery, {
     connector: 'feishu',
     sourceRouteId: 'default',
-    target: { chatType: 'p2p', chatId: 'chat_for_scope', messageId: 'msg_for_scope' },
+    target: { chatType: 'p2p', chatId: 'chat_for_scope', conversationKind: 'main', messageId: 'msg_for_scope' },
   }, 'each connector request snapshots its own reply destination');
 } finally {
   await new Promise((resolve) => server.close(resolve));
@@ -1859,7 +1935,7 @@ try {
       tenantKey: 'tenant_topic_metadata_1',
     },
   });
-  assert.equal(topicMetadataSessionPayload?.externalTriggerId, 'feishu:fork:default:tenant_topic_metadata_1:chat_topic_metadata_1:msg_topic_metadata_test_1');
+  assert.equal(topicMetadataSessionPayload?.externalTriggerId, 'feishu:thread:default:tenant_topic_metadata_1:chat_topic_metadata_1:msg_topic_metadata_test_1');
   assert.equal(topicMetadataSessionPayload?.sourceContext?.chatType, 'group');
   assert.equal(topicMetadataSessionPayload?.conversation?.target?.replyInThread, true);
   assert.equal(topicMetadataSubmittedPayload?.sourceContext?.messageId, 'msg_topic_metadata_test_1');
@@ -1873,10 +1949,10 @@ try {
 console.log('ok - admission returns the durable receipt without waiting for AI or sending');
 console.log('ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments');
 console.log('ok - mention tokens are rendered inbound and compiled outbound');
-console.log('ok - topic metadata fallback preserves default fork and threaded delivery');
+console.log('ok - topic metadata fallback preserves default thread delivery');
 console.log('ok - whitelist file reloads without restart');
 console.log('ok - whitelist access stays limited to explicit sender identities');
-console.log('ok - /fork accepts task text and binds its reply Thread to the new Session');
+console.log('ok - /thread accepts task text and binds its reply Thread to the new Session');
 console.log('ok - generated Feishu sessions use the feishu app scope');
 console.log('ok - queued and preparing replies return acceptance immediately');
 console.log('ok - source delivery worker persists external receipts');

@@ -900,7 +900,7 @@ function sendMessage(existingRequestId) {
         text: outboundText || "(attachment)",
       };
       msg.requestId = requestId;
-      if (!visitorMode && !quickSession) {
+      if (!quickSession) {
         if (sendTool) msg.tool = sendTool;
         if (sendModel) msg.model = sendModel;
         if (sendReasoningKind === "enum" && sendEffort) {
@@ -935,16 +935,6 @@ function sendMessage(existingRequestId) {
 }
 
 cancelBtn.addEventListener("click", () => dispatchAction({ action: "cancel" }));
-
-compactBtn.addEventListener("click", () => {
-  if (!currentSessionId) return;
-  dispatchAction({ action: "compact" });
-});
-
-dropToolsBtn.addEventListener("click", () => {
-  if (!currentSessionId) return;
-  dispatchAction({ action: "drop_tools" });
-});
 
 sendBtn.addEventListener("click", () => sendMessage());
 msgInput.addEventListener("keydown", (e) => {
@@ -1216,13 +1206,13 @@ function restoreFailedSendState(sessionId, text, images, requestId = "") {
   }
 }
 
-// ---- Sidebar tabs ----
+// ---- Application views ----
 let activeTab = normalizeSidebarTab(
   (typeof getActiveSidebarTabValue === "function" ? getActiveSidebarTabValue() : "") ||
     pendingNavigationState.tab ||
     localStorage.getItem(ACTIVE_SIDEBAR_TAB_STORAGE_KEY) ||
     "sessions",
-); // "sessions" | "agents" | "settings"
+); // "sessions" | "tasks" | "settings"
 
 if (typeof setChatActiveTab === "function") {
   setChatActiveTab(activeTab, {
@@ -1240,16 +1230,15 @@ if (typeof setChatActiveTab === "function") {
 }
 
 function switchTab(tab, { syncState = true } = {}) {
-  const resolvedTabSessions = typeof tabSessions !== "undefined" ? tabSessions : null;
-  const resolvedTabAgents = typeof tabAgents !== "undefined" ? tabAgents : null;
+  const resolvedTabTasks = typeof tabTasks !== "undefined" ? tabTasks : null;
   const resolvedTabSettings = typeof tabSettings !== "undefined" ? tabSettings : null;
   const resolvedSidebarFilters = typeof sidebarFilters !== "undefined" ? sidebarFilters : null;
   const resolvedSessionList = typeof sessionList !== "undefined" ? sessionList : null;
   const resolvedSidebarSearch = typeof sidebarSearch !== "undefined" ? sidebarSearch : null;
   const resolvedSidebarSpaceSwitcher = typeof sidebarSpaceSwitcher !== "undefined" ? sidebarSpaceSwitcher : null;
-  const resolvedAgentsPanel = typeof agentsPanel !== "undefined" ? agentsPanel : null;
+  const resolvedTaskCenterPanel = typeof taskCenterPanel !== "undefined" ? taskCenterPanel : null;
   const resolvedSettingsPanel = typeof settingsPanel !== "undefined" ? settingsPanel : null;
-  const resolvedSessionListFooter = typeof sessionListFooter !== "undefined" ? sessionListFooter : null;
+  const resolvedSessionWorkspace = typeof sessionWorkspace !== "undefined" ? sessionWorkspace : null;
   const resolvedSortSessionListBtn = typeof sortSessionListBtn !== "undefined" ? sortSessionListBtn : null;
   const resolvedNewSessionBtn = typeof newSessionBtn !== "undefined" ? newSessionBtn : null;
   const nextTab = normalizeSidebarTab(tab);
@@ -1271,40 +1260,47 @@ function switchTab(tab, { syncState = true } = {}) {
     }
   }
   const showingSessions = activeTab === "sessions";
-  const showingAgents = activeTab === "agents";
+  const showingTasks = activeTab === "tasks";
   const showingSettings = activeTab === "settings";
-  if (resolvedTabSessions) {
-    resolvedTabSessions.classList.toggle("active", activeTab === "sessions");
-  }
-  if (resolvedTabAgents) {
-    resolvedTabAgents.classList.toggle("active", activeTab === "agents");
+  if (resolvedTabTasks) {
+    resolvedTabTasks.classList.toggle("active", activeTab === "tasks");
+    if (activeTab === "tasks") resolvedTabTasks.setAttribute?.("aria-current", "page");
+    else resolvedTabTasks.removeAttribute?.("aria-current");
   }
   if (resolvedTabSettings) {
     resolvedTabSettings.classList.toggle("active", activeTab === "settings");
+    if (activeTab === "settings") resolvedTabSettings.setAttribute?.("aria-current", "page");
+    else resolvedTabSettings.removeAttribute?.("aria-current");
+  }
+  if (typeof renderHeaderWorkspaceTitle === "function") {
+    renderHeaderWorkspaceTitle(activeTab);
+  } else if (document.body?.dataset) {
+    document.body.dataset.appView = activeTab;
   }
   if (typeof syncSidebarFiltersVisibility === "function") {
-    syncSidebarFiltersVisibility(showingSessions);
+    syncSidebarFiltersVisibility(true);
   } else if (resolvedSidebarFilters) {
-    resolvedSidebarFilters.classList.toggle("hidden", !showingSessions);
+    resolvedSidebarFilters.classList.toggle("hidden", false);
   }
-  if (resolvedSessionList) resolvedSessionList.style.display = showingSessions ? "" : "none";
-  if (resolvedSidebarSearch) resolvedSidebarSearch.style.display = showingSessions ? "" : "none";
-  if (resolvedSidebarSpaceSwitcher) resolvedSidebarSpaceSwitcher.style.display = showingSessions ? "" : "none";
-  if (resolvedAgentsPanel) resolvedAgentsPanel.classList.toggle("visible", showingAgents);
+  if (resolvedSessionList) resolvedSessionList.style.display = "";
+  if (resolvedSidebarSearch) resolvedSidebarSearch.style.display = "";
+  if (resolvedSidebarSpaceSwitcher) resolvedSidebarSpaceSwitcher.style.display = "";
+  if (resolvedTaskCenterPanel) resolvedTaskCenterPanel.classList.toggle("visible", showingTasks);
   if (resolvedSettingsPanel) resolvedSettingsPanel.classList.toggle("visible", showingSettings);
-  if (resolvedSessionListFooter) resolvedSessionListFooter.classList.toggle("hidden", !showingSessions);
-  if (resolvedSortSessionListBtn) resolvedSortSessionListBtn.classList.toggle("hidden", !showingSessions);
-  if (resolvedNewSessionBtn) resolvedNewSessionBtn.classList.toggle("hidden", !showingSessions);
+  if (resolvedSessionWorkspace) resolvedSessionWorkspace.hidden = !showingSessions;
+  if (resolvedSortSessionListBtn) resolvedSortSessionListBtn.classList.toggle("hidden", false);
+  if (resolvedNewSessionBtn) resolvedNewSessionBtn.classList.toggle("hidden", false);
+  if (showingTasks) void window.RemoteLabTaskCenter?.onTabShown?.();
+  if (!showingSessions && typeof isDesktop === "boolean" && !isDesktop && typeof closeSidebarFn === "function") {
+    closeSidebarFn();
+  }
   if (syncState) {
     syncBrowserState();
   }
 }
 
-if (typeof tabSessions !== "undefined" && tabSessions) {
-  tabSessions.addEventListener("click", () => switchTab("sessions"));
-}
-if (typeof tabAgents !== "undefined" && tabAgents) {
-  tabAgents.addEventListener("click", () => switchTab("agents"));
+if (typeof tabTasks !== "undefined" && tabTasks) {
+  tabTasks.addEventListener("click", () => switchTab("tasks"));
 }
 if (typeof tabSettings !== "undefined" && tabSettings) {
   tabSettings.addEventListener("click", () => switchTab("settings"));

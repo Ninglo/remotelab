@@ -49,6 +49,20 @@ assert.deepEqual(
   ['--mode', 'json', '--provider', 'deepseek', '--approve', '--no-session', '--model', 'deepseek-chat'],
 );
 
+const antigravityInvocation = buildRuntimeInvocation('antigravity-stream-json', 'Ping', {
+  antigravityConversationId: 'conversation-1',
+  model: 'gemini-test',
+  effort: 'high',
+}, 'antigravity');
+assert.equal(antigravityInvocation.isAntigravityFamily, true);
+assert.equal(antigravityInvocation.isCodexFamily, false);
+assert.equal(antigravityInvocation.runtimeFamily, 'antigravity-stream-json');
+assert.ok(antigravityInvocation.args.includes('--conversation'));
+assert.equal(
+  antigravityInvocation.args[antigravityInvocation.args.indexOf('--conversation') + 1],
+  'conversation-1',
+);
+
 const manifestFallbackInvocation = await createToolInvocation('missing-runtime', 'Ping', {
   runtimeFamily: 'codex-json',
   model: 'fake-model',

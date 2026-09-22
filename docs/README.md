@@ -44,7 +44,7 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - a good doc includes the prompt, one-round input packet, target state, exact config artifacts or paths, and concise validation
 - avoid full command-by-command walkthroughs for steps the AI can execute or repair on its own
 - write for low-interruption handoff: the human should usually be able to answer once, walk away, and return to a completed, automatically validated result; stop only for an inaccessible browser/credential step, hard authorization, or an irreversible high-impact action not already clearly scoped
-- in product-facing docs, lead with the user problem and payoff: helping ordinary people hand repetitive digital work to AI with low operational overhead; session/app/orchestration terms belong later unless the doc is explicitly about architecture
+- in product-facing docs, lead with the user problem and payoff: helping ordinary people hand repetitive digital work to AI with low operational overhead; internal orchestration terms belong later unless the doc is explicitly about architecture
 
 ## What Lives In `docs/`
 
@@ -58,7 +58,6 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 - `external-message-protocol.md` — canonical integration contract for external channels
 - [Native Harness input](native-harness-input.md) — active input transport, native lifecycle, recovery and validation
 - [Session start preflight](session-start-preflight.md) — optional fresh-provider knowledge probe, replacement retry, and daily outcome statistics
-- `creating-apps.md` — user/developer guide for Agents
 
 ### Supporting Internal Contracts
 
@@ -70,11 +69,10 @@ For setup, deployment, connector, and feature-rollout docs, assume the operator 
 
 ### Focused Integrations
 
-- `automation-apps.md` — automation-as-Agent pattern for owner-side recurring workflows and review sessions
 - `cloudflare-email-worker.md` — model-first Cloudflare Email Worker deployment contract
 - `feishu-bot-setup.md` — model-first operator + console contract for the RemoteLab Feishu connector
 - `github-auto-triage.md` — model-first GitHub intake and auto-reply rollout contract
-- `remote-capability-monitor.md` — remote-agent capability monitoring backed by a RemoteLab Agent and review session
+- `remote-capability-monitor.md` — remote-agent capability monitoring backed by a durable review Session
 - `tunnel-diagnostics.md` — Cloudflare Tunnel latency probe workflow for separating app cost from edge/tunnel cost
 - `voice-connector.md` — model-first wake-word speaker/microphone connector contract for RemoteLab
 

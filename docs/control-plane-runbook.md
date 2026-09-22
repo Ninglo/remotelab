@@ -13,7 +13,7 @@ It is written for repeated operator use. Do not put secrets, PATs, auth tokens, 
 - region: `sfo3`
 - size: `s-2vcpu-4gb`
 - image: `ubuntu-24-04-x64`
-- primary owner service: `remotelab` on `127.0.0.1:7690`
+- primary instance service: `remotelab` on `127.0.0.1:7690`
 - primary public ingress: Cloudflare Tunnel on `https://thelab.jiujianian.dev`
 
 ### Legacy mainland compatibility
@@ -45,7 +45,7 @@ It is written for repeated operator use. Do not put secrets, PATs, auth tokens, 
 ### Secrets rule
 
 - keep access tokens out of this repo
-- owner access tokens live in host-side auth files, not in documentation
+- Person access tokens and the service token live in host-side auth files, not in documentation
 
 ## Live Services
 
@@ -70,11 +70,11 @@ Current intent:
 
 ## Access Model
 
-### Owner access
+### Authenticated access
 
 - public hostname: `https://thelab.jiujianian.dev`
-- access pattern: `https://thelab.jiujianian.dev/?token=<owner-token>`
-- owner token source: host-side auth file on the control-plane machine
+- access pattern: `https://thelab.jiujianian.dev/?token=<person-token>`
+- Person token source: host-side auth file on the control-plane machine
 
 ### Legacy trial access
 
@@ -160,7 +160,7 @@ launchctl load ~/Library/LaunchAgents/com.remotelab.natapp.dual-proxy.plist
 launchctl load ~/Library/LaunchAgents/cn.natapp.jojotry.7699.plist
 ```
 
-### If the DigitalOcean owner service is down
+### If the DigitalOcean instance service is down
 
 1. Check `remotelab` and `cloudflared-thelab`.
 2. Verify `127.0.0.1:7690` on the host.
@@ -202,4 +202,4 @@ Avoid a design where every trial consumes a separate tunnel.
 - confirm whether the change touches the local Mac, the DigitalOcean host, or both
 - confirm whether the proposal introduces a shared credential across two hosts
 - confirm whether the plan increases tunnel count linearly with trial count
-- verify one public owner URL and one public trial URL after the change
+- verify one public authenticated URL and one public trial URL after the change

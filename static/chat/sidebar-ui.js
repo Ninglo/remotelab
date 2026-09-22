@@ -10,6 +10,11 @@ function closeSidebarFn() {
   sidebarOverlay.classList.remove("open");
 }
 
+function openApplicationNavigation() {
+  openSidebar();
+  return true;
+}
+
 function openSessionsSidebar() {
   if (typeof switchTab === "function") {
     switchTab("sessions");
@@ -32,8 +37,8 @@ function isQuickSessionUi(session = typeof getCurrentSession === "function" ? ge
 function syncQuickSessionUi(session = typeof getCurrentSession === "function" ? getCurrentSession() : null) {
   const attached = Boolean(currentSessionId && session);
   const quick = attached ? isQuickSessionUi(session) : getDraftExecutionProfile() === "quick";
-  if (sessionProfileControl) sessionProfileControl.hidden = attached || visitorMode;
-  if (quickProfileBadge) quickProfileBadge.hidden = !attached || !quick || visitorMode;
+  if (sessionProfileControl) sessionProfileControl.hidden = attached;
+  if (quickProfileBadge) quickProfileBadge.hidden = !attached || !quick;
   if (runtimeSelectionControls) runtimeSelectionControls.hidden = quick;
   if (standardProfileBtn) {
     standardProfileBtn.classList.toggle("active", !quick);
@@ -46,7 +51,7 @@ function syncQuickSessionUi(session = typeof getCurrentSession === "function" ? 
 }
 
 function setDraftExecutionProfile(profile) {
-  if (currentSessionId || visitorMode) return false;
+  if (currentSessionId) return false;
   pendingNewSessionCreateOptions = {
     ...(pendingNewSessionCreateOptions || {}),
     ...(profile === "quick" ? { executionProfile: "quick" } : {}),
@@ -58,11 +63,7 @@ function setDraftExecutionProfile(profile) {
 
 function getActiveComposerSessionId() {
   if (currentSessionId) return currentSessionId;
-  const canCreateSession = !visitorMode
-    && (typeof hasAuthCapability === "function"
-      ? hasAuthCapability("createSession")
-      : true);
-  return canCreateSession ? DETACHED_COMPOSER_SESSION_ID : "";
+  return DETACHED_COMPOSER_SESSION_ID;
 }
 
 function isNewSessionDraftActive() {
@@ -75,12 +76,6 @@ function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions ||
   const model = typeof selectedModel === "string" ? selectedModel : "";
   const effort = typeof selectedEffort === "string" ? selectedEffort : "";
   if (!quick && !tool) return null;
-  const preferredAgentId = typeof getPreferredAgentTemplateId === "function"
-    ? getPreferredAgentTemplateId()
-    : "";
-  const preferredAgentName = typeof getPreferredAgentTemplateName === "function"
-    ? getPreferredAgentTemplateName()
-    : "";
   return {
     action: "create",
     folder: typeof window.remotelabGetDefaultSessionFolder === "function"
@@ -89,8 +84,6 @@ function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions ||
     tool: quick ? "codex" : tool,
     sourceId: DEFAULT_APP_ID,
     sourceName: DEFAULT_WEB_SOURCE_NAME,
-    templateId: quick ? "" : preferredAgentId,
-    templateName: quick ? "" : preferredAgentName,
     forceComposerFocus: true,
     ...(quick ? { executionProfile: "quick" } : {}),
     ...(!quick && model ? { model } : {}),
@@ -192,10 +185,10 @@ function createNewSessionShortcut({
 }
 
 function createSortSessionListShortcut() {
-  return organizeSessionListWithAgent({ closeSidebar: false });
+  return organizeSessionList({ closeSidebar: false });
 }
 
-menuBtn.addEventListener("click", openSessionsSidebar);
+menuBtn.addEventListener("click", openApplicationNavigation);
 closeSidebar.addEventListener("click", closeSidebarFn);
 sidebarOverlay.addEventListener("click", (e) => {
   if (e.target === sidebarOverlay && !isDesktop) closeSidebarFn();

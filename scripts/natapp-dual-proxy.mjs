@@ -235,7 +235,7 @@ function buildUpstreamHeaders(headers, route) {
 
     if (cookies.length === 0 && route.cookiePrefix === 'owner__') {
       cookies = parseCookieHeader(headers.cookie)
-        .filter((cookie) => cookie.name === 'session_token' || cookie.name === 'visitor_session_token');
+        .filter((cookie) => cookie.name === 'session_token');
     }
 
     if (cookies.length > 0) {
@@ -300,7 +300,6 @@ function rewritePrefixedBody(body, contentType, route) {
     [/\/marked\.min\.js\b/g, `${prefix}/marked.min.js`],
     [/\/chat\//g, `${prefix}/chat/`],
     [/\/static\//g, `${prefix}/static/`],
-    [/\/visitor\//g, `${prefix}/visitor/`],
     [/\/share-receive\b/g, `${prefix}/share-receive`],
     [/\/share\//g, `${prefix}/share/`],
     [/\/app\//g, `${prefix}/app/`],

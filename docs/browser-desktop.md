@@ -3,8 +3,9 @@
 Give the instance's agent this task:
 
 > Connect a persistent graphical browser to this instance's existing `/browser/`
-> route. Reuse owner login and the existing HTTPS domain. Verify the desktop page,
-> binary WebSocket/RFB connection, visitor rejection and cross-origin rejection.
+> route. Reuse authenticated instance login and the existing HTTPS domain. Verify
+> the desktop page, binary WebSocket/RFB connection, anonymous rejection and
+> cross-origin rejection.
 > Preserve the browser profile and active requests. Replace any temporary public
 > tunnel only after the stable route works. Ask me only to complete the account's
 > interactive login or verification in the resulting desktop.
@@ -16,9 +17,8 @@ entered in the desktop, never placed in shared setup notes or chat links.
 ## Runtime contract
 
 - `/browser/` redirects to noVNC with the same-origin `/browser/websockify` socket.
-- HTTP and WebSocket requests require the instance owner. Anonymous page requests
+- HTTP and WebSocket requests require an authenticated Person. Anonymous page requests
   redirect to the existing login page and return to the desktop afterward.
-  Visitors cannot access either assets or the control socket.
 - WebSocket upgrades also require an exact matching Origin, using the normal
   instance Host and forwarded HTTP/HTTPS protocol. Only the configured loopback
   service is reachable; request parameters cannot select an upstream host/port.
@@ -53,7 +53,7 @@ Do not delete the Chrome profile or restart the browser merely to close access.
 ## Verification
 
 Run `node scripts/run-with-clean-instance-env.mjs node tests/test-browser-desktop-proxy.mjs`.
-It covers owner/visitor/expired sessions, disabled and invalid configuration,
+It covers multiple authenticated People, anonymous/expired sessions, disabled and invalid configuration,
 private response headers, credential stripping and replacement, exact socket
 routing, same-origin enforcement, and binary bidirectional traffic. Then verify
 the actual HTTPS domain and rendering against the instance's desktop. Reaching

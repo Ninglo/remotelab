@@ -10,9 +10,6 @@
     Object.freeze(["ws"]),
     Object.freeze(["share"]),
     Object.freeze(["share-asset"]),
-    Object.freeze(["visitor"]),
-    Object.freeze(["agent"]),
-    Object.freeze(["app"]),
   ]);
 
   function getLocationObject() {

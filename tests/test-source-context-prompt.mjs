@@ -38,4 +38,14 @@ assert.match(projected, /commentThreadTruncated/);
 assert.match(projected, /full value in source-context/);
 assert.doesNotMatch(projected, /<system>|<\/private>|nested-secret/);
 assert.equal(quoted.commentThread[0].text.length, 5000, 'projection must not mutate the durable source snapshot');
+
+const boundComment = buildSourceContextPrompt({
+  connector: 'feishu', conversationKind: 'document_comment', documentBinding: true,
+  fileToken: 'secret-file', commentId: 'secret-comment', replyId: 'secret-reply',
+  sender: { openId: 'secret-user' }, commentQuote: 'already rendered in the user message',
+  commentThread: [{ text: 'already rendered', isCurrent: true }],
+}, 'feishu-comment:opaque-meta');
+assert.match(boundComment, /feishu-comment:opaque-meta/);
+assert.match(boundComment, /document_comment/);
+assert.doesNotMatch(boundComment, /secret-|already rendered/);
 console.log('source context projection: provider fields, ingestion, bounded data, markup and delivery secret separation passed');

@@ -126,8 +126,8 @@ Current implementation stores canonical conversation/event truth here.
 - `PATCH /api/sessions/:sessionId`
 - `POST /api/sessions/:sessionId/messages`
 - `POST /api/sessions/:sessionId/cancel`
-- `POST /api/sessions/:sessionId/compact`
-- `POST /api/sessions/:sessionId/drop-tools`
+- `POST /api/sessions/:sessionId/compact` (retired; returns `410`)
+- `POST /api/sessions/:sessionId/drop-tools` (retired; returns `410`)
 - `POST /api/sessions/:sessionId/share`
 
 Frontend surface:
@@ -566,8 +566,8 @@ This section groups the current routes by the contract object they primarily ser
 - `PATCH /api/sessions/:sessionId`
 - `POST /api/sessions/:sessionId/messages`
 - `POST /api/sessions/:sessionId/cancel`
-- `POST /api/sessions/:sessionId/compact`
-- `POST /api/sessions/:sessionId/drop-tools`
+- `POST /api/sessions/:sessionId/compact` (retired; returns `410`)
+- `POST /api/sessions/:sessionId/drop-tools` (retired; returns `410`)
 - `POST /api/sessions/:sessionId/share`
 
 ### Run-oriented routes

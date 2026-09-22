@@ -9,6 +9,7 @@ import {
   buildFeishuTopicId,
 } from './index.mjs';
 import { sameConversation } from '../../lib/conversation-target.mjs';
+import { buildFeishuSessionConversationTarget } from './reply-routing.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -19,7 +20,10 @@ function getFeishuAccountId(summary) {
 }
 
 function getFeishuThreadId(summary, explicitThreadId = '') {
-  return trimString(explicitThreadId) || buildFeishuTopicId(summary);
+  return trimString(explicitThreadId) || buildFeishuTopicId(summary)
+    || (summary?.conversationKind === 'thread'
+      ? trimString(summary?.rootId) || trimString(summary?.parentId) || trimString(summary?.messageId)
+      : '');
 }
 
 function buildFeishuThreadBindingMessageId(threadId) {
@@ -78,7 +82,7 @@ export async function findFeishuThreadSessionBinding(runtime, summary) {
   const chatId = trimString(summary?.chatId);
   if (!messageId || !chatId) return null;
   const conversation = { connector: FEISHU_CONNECTOR_ID,
-    sourceRouteId: runtime.config?.sourceRouteId || 'default', target: summary };
+    sourceRouteId: runtime.config?.sourceRouteId || 'default', target: buildFeishuSessionConversationTarget(summary) };
   const request = runtime.requestRemoteLab;
   if (request) {
     const result = await request('/api/session-conversations/resolve', { method: 'POST', body: { conversation } });

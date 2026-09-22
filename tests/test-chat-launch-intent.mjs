@@ -158,7 +158,6 @@ function createHarness({ href, search, isStandalone = true, userAgent = 'Android
     menuBtn: createElement(),
     sortSessionListBtn: createElement(),
     newSessionBtn: createElement(),
-    inlineAgentSelect: createElement(),
     inlineToolSelect: createElement(),
     inlineProviderSelect: createElement(),
     inlineModelSelect: createElement(),
@@ -168,14 +167,12 @@ function createHarness({ href, search, isStandalone = true, userAgent = 'Android
     contextTokens: createElement(),
     saveTemplateBtn: createElement(),
     sessionTemplateRow: createElement(),
-    tabAgents: createElement(),
-    agentsPanel: createElement(),
     settingsPanel: createElement(),
     statusText: createElement(),
     msgInput: createElement(),
+    currentPerson: null,
     currentSessionId: 'persisted-session',
     hasAttachedSession: true,
-    visitorMode: false,
     shareSnapshotMode: false,
     pendingNavigationState: { sessionId: 'url-session', tab: 'settings' },
     initResponsiveLayout() {},
@@ -202,7 +199,7 @@ function createHarness({ href, search, isStandalone = true, userAgent = 'Android
       });
       return Promise.resolve();
     },
-    restoreOwnerSessionSelection() {
+    restoreSessionSelection() {
       restoreCalls.push(true);
     },
     connect() {
@@ -222,20 +219,14 @@ function createHarness({ href, search, isStandalone = true, userAgent = 'Android
     },
     getBootstrapAuthInfo() {
       return {
-        role: 'owner',
-        surfaceMode: 'owner',
-        capabilities: {
-          createSession: true,
+        person: {
+          id: 'person_default',
+          name: 'Primary person',
+          identityId: 'identity_web_default',
         },
       };
     },
-    isAgentScopedMode() {
-      return false;
-    },
     canChangeRuntimeSelection() {
-      return true;
-    },
-    hasAuthCapability() {
       return true;
     },
     setChatCurrentSession(sessionId, { hasAttachedSession = false } = {}) {

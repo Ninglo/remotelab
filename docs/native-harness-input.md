@@ -12,6 +12,7 @@ input is not a claim that an already-running model call has consumed it.
 | Codex | App Server, JSON-RPC over stdio | `turn/steer`, with `expectedTurnId`; `turn/start` only after a definite no-active-turn rejection | `turn/interrupt` |
 | Pi | `--mode rpc` | `prompt` with `streamingBehavior: "steer"` | `clear_queue`, then `abort` |
 | Claude Code | `--input-format stream-json --output-format stream-json` | streamed user messages with UUIDs | native interrupt control request |
+| Antigravity | `--input-format stream-json --output-format stream-json` | FIFO streamed user messages; acceptance is recorded at the matching `user_input` step | bounded process-signal fallback; the protocol has no in-band interrupt message |
 
 The built-in tools select native input. Custom tools retain their existing batch
 contract unless their tool record explicitly declares `"inputMode": "native"`.
@@ -66,7 +67,8 @@ the native interrupt cannot finish.
 ## Completion and streamed output
 
 Native lifecycle events determine completion. A single `turn.completed`, Pi
-`agent_end`, or Claude `result` is insufficient if the Harness has more work.
+`agent_end`, Claude `result`, or Antigravity `result` is insufficient if the
+Harness has more work.
 RemoteLab does not terminalize native runs from intermediate spool status events.
 This also lets native error recovery finish before RemoteLab declares failure.
 
@@ -76,7 +78,10 @@ with projection state for replay deduplication. Pi retains its structured
 tool/text/thinking events. Claude tracks input UUIDs and acknowledgement events;
 `queued_turn_count: 0` alone does not establish that all submitted messages have
 finished. Thinking projection state survives observer restarts, and cumulative
-Claude cost is converted into per-result deltas.
+Claude cost is converted into per-result deltas. Antigravity preserves official
+conversation IDs across detached runs, projects completed response and tool
+steps, and derives per-turn usage from step usage instead of the protocol's
+cumulative conversation totals.
 
 The implementation uses Harness integration protocols. It does not depend on a
 particular model's `async` tool flag or promise that arbitrary inference streams
@@ -100,7 +105,8 @@ input. See [Feishu ingress verification](../notes/current/feishu-ingress-dispatc
 
 `npm test` includes native protocol, transport, request dispatch, detached
 recovery and connector regressions. The native-only gate is
-`npm run test:native-harness`.
+`npm run test:native-harness`; Antigravity protocol coverage also runs through
+`npm run test:antigravity`.
 
 Optional real CLI tests use isolated homes, dummy credentials and loopback mock
 model APIs, with the first inference held while another message is submitted:
@@ -112,9 +118,10 @@ REMOTELAB_NATIVE_CLAUDE_BIN=/path/to/claude \
 npm run test:native-installed
 ```
 
-Validated versions on 2026-09-10: Codex CLI 0.153.4, Pi 0.85.0 and Claude Code
-2.1.267. Tests establish actual CLI protocol behavior against simulated model
-responses; they are not production Feishu or live-model acceptance tests.
+Validated versions include Codex CLI 0.153.4, Pi 0.85.0, Claude Code 2.1.267,
+and Antigravity CLI 1.2.7 (installed and auth-gated on 2026-09-20). Tests
+establish actual CLI protocol behavior against simulated model responses; they
+are not production Feishu or live-model acceptance tests.
 Older Claude versions can acknowledge at the replay/consumption boundary rather
 than immediately; the driver still writes later inputs without waiting on that
 acknowledgement. Older CLI versions in general are not certified by these tests.
@@ -131,3 +138,4 @@ Official protocol references:
 - [Codex App Server](https://developers.openai.com/codex/app-server)
 - [Pi RPC](https://pi.dev/docs/latest/rpc)
 - [Claude streaming input](https://code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode)
+- [Antigravity headless mode](https://antigravity.google/docs/cli/headless/)

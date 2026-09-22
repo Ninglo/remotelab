@@ -15,10 +15,19 @@ import { normalizeSessionAgreements } from './session-agreements.mjs';
 import { normalizeSessionEntryMode } from './session-entry-mode.mjs';
 import { normalizeStoredSessionFolder } from './session-folder.mjs';
 import { normalizeSessionWorkSummary } from './session-work-summary.mjs';
-import { DEFAULT_APP_ID, getBuiltinApp, normalizeAppId } from './apps.mjs';
+import {
+  DEFAULT_SESSION_SOURCE_ID,
+  formatSessionSourceNameFromId,
+  normalizeSessionSourceId,
+} from './session-source-resolution.mjs';
 import { getConnectorDirectSessionName } from './session-naming.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { migrateLegacySessionRuntimeFields } from '../lib/legacy-micro-agent.mjs';
+import { DEFAULT_PERSON_ID, DEFAULT_WEB_IDENTITY_ID, SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
+import {
+  normalizeSessionPersonViews,
+  updateSessionPersonView,
+} from './session-person-view.mjs';
 
 let sessionsMetaCache = null;
 let sessionsMetaCacheFileVersion = null;
@@ -36,28 +45,9 @@ function normalizeStoredTimestamp(value) {
   return Number.isFinite(time) ? new Date(time).toISOString() : '';
 }
 
-function normalizeStoredSidebarOrder(value) {
-  const parsed = typeof value === 'number'
-    ? value
-    : parseInt(String(value || '').trim(), 10);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
-}
-
 function normalizeStoredSessionSourceName(value) {
   if (typeof value !== 'string') return '';
   return value.trim().replace(/\s+/g, ' ');
-}
-
-function normalizeStoredSessionTemplateName(value) {
-  return normalizeStoredSessionSourceName(value);
-}
-
-function formatStoredSourceNameFromId(sourceId) {
-  const normalized = typeof sourceId === 'string' ? sourceId.trim() : '';
-  if (!normalized) return 'Chat';
-  return normalized
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function normalizeStoredSessionSourceFields(normalized) {
@@ -66,17 +56,17 @@ function normalizeStoredSessionSourceFields(normalized) {
   // Older visible handoffs copied the parent's origin without its routing.
   // Only repair independently delegated sessions with no external target.
   if (typeof normalized.delegatedFromSessionId === 'string' && normalized.delegatedFromSessionId.trim()
-    && !normalized.internalRole && !normalized.visitorId
+    && !normalized.internalRole
     && !normalized.conversation && !normalized.sourceContext && !normalized.externalTriggerId
     && !normalized.completionTargets?.length
-    && normalized.sourceId !== DEFAULT_APP_ID) {
-    normalized.sourceId = DEFAULT_APP_ID;
-    normalized.sourceName = getBuiltinApp(DEFAULT_APP_ID).name;
+    && normalized.sourceId !== DEFAULT_SESSION_SOURCE_ID) {
+    normalized.sourceId = DEFAULT_SESSION_SOURCE_ID;
+    normalized.sourceName = 'Chat';
     changed = true;
   }
 
-  const explicitSourceId = normalizeAppId(normalized.sourceId);
-  const nextSourceId = explicitSourceId || DEFAULT_APP_ID;
+  const explicitSourceId = normalizeSessionSourceId(normalized.sourceId);
+  const nextSourceId = explicitSourceId || DEFAULT_SESSION_SOURCE_ID;
 
   if (normalized.sourceId !== nextSourceId) {
     normalized.sourceId = nextSourceId;
@@ -85,9 +75,8 @@ function normalizeStoredSessionSourceFields(normalized) {
 
   const explicitSourceName = normalizeStoredSessionSourceName(normalized.sourceName);
   let nextSourceName = explicitSourceName;
-  if (!nextSourceName && nextSourceId !== DEFAULT_APP_ID) {
-    const builtinSource = getBuiltinApp(nextSourceId);
-    nextSourceName = builtinSource?.name || formatStoredSourceNameFromId(nextSourceId);
+  if (!nextSourceName && nextSourceId !== DEFAULT_SESSION_SOURCE_ID) {
+    nextSourceName = formatSessionSourceNameFromId(nextSourceId);
   }
 
   if (nextSourceName) {
@@ -97,39 +86,6 @@ function normalizeStoredSessionSourceFields(normalized) {
     }
   } else if (Object.prototype.hasOwnProperty.call(normalized, 'sourceName')) {
     delete normalized.sourceName;
-    changed = true;
-  }
-
-  return changed;
-}
-
-function normalizeStoredSessionTemplateFields(normalized) {
-  let changed = false;
-
-  const nextTemplateId = normalizeAppId(normalized.templateId || normalized.agentId);
-  if (nextTemplateId) {
-    if (normalized.templateId !== nextTemplateId) {
-      normalized.templateId = nextTemplateId;
-      changed = true;
-    }
-  } else if (Object.prototype.hasOwnProperty.call(normalized, 'templateId')) {
-    delete normalized.templateId;
-    changed = true;
-  }
-
-  const nextTemplateName = normalizeStoredSessionTemplateName(normalized.templateName);
-  if (nextTemplateName) {
-    if (normalized.templateName !== nextTemplateName) {
-      normalized.templateName = nextTemplateName;
-      changed = true;
-    }
-  } else if (Object.prototype.hasOwnProperty.call(normalized, 'templateName')) {
-    delete normalized.templateName;
-    changed = true;
-  }
-
-  if (Object.prototype.hasOwnProperty.call(normalized, 'agentId')) {
-    delete normalized.agentId;
     changed = true;
   }
 
@@ -209,18 +165,23 @@ function normalizeStoredSessionMeta(meta) {
     }
   }
 
-  for (const legacyField of ['appId', 'appName', 'templateAppId', 'templateAppName']) {
-    if (Object.prototype.hasOwnProperty.call(normalized, legacyField)) {
-      delete normalized[legacyField];
-      changed = true;
-    }
-  }
-
   changed = normalizeStoredSessionSourceFields(normalized) || changed;
-  changed = normalizeStoredSessionTemplateFields(normalized) || changed;
   changed = normalizeStoredStarterPreset(normalized) || changed;
   changed = normalizeStoredTitleLock(normalized) || changed;
   changed = normalizeStoredConnectorDirectTitle(normalized) || changed;
+
+  const identityId = typeof normalized.initiatedByIdentityId === 'string'
+    ? normalized.initiatedByIdentityId.trim()
+    : '';
+  const nextIdentityId = identityId || (
+    normalized.sourceId === DEFAULT_SESSION_SOURCE_ID
+      ? DEFAULT_WEB_IDENTITY_ID
+      : SYSTEM_IDENTITY_ID
+  );
+  if (normalized.initiatedByIdentityId !== nextIdentityId) {
+    normalized.initiatedByIdentityId = nextIdentityId;
+    changed = true;
+  }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'folder')) {
     const nextFolder = normalizeStoredSessionFolder(normalized.folder);
@@ -269,17 +230,26 @@ function normalizeStoredSessionMeta(meta) {
     }
   }
 
-  if (Object.prototype.hasOwnProperty.call(normalized, 'sidebarOrder')) {
-    const nextSidebarOrder = normalizeStoredSidebarOrder(normalized.sidebarOrder);
-    if (nextSidebarOrder) {
-      if (normalized.sidebarOrder !== nextSidebarOrder) {
-        normalized.sidebarOrder = nextSidebarOrder;
-        changed = true;
-      }
-    } else {
-      delete normalized.sidebarOrder;
-      changed = true;
-    }
+  const normalizedPersonViews = normalizeSessionPersonViews(normalized.personViews);
+  if (JSON.stringify(normalized.personViews || {}) !== JSON.stringify(normalizedPersonViews)) {
+    if (Object.keys(normalizedPersonViews).length > 0) normalized.personViews = normalizedPersonViews;
+    else delete normalized.personViews;
+    changed = true;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(normalized, 'space')
+    || Object.prototype.hasOwnProperty.call(normalized, 'group')
+    || Object.prototype.hasOwnProperty.call(normalized, 'sidebarOrder')
+  ) {
+    changed = updateSessionPersonView(normalized, DEFAULT_PERSON_ID, {
+      ...(Object.prototype.hasOwnProperty.call(normalized, 'space') ? { space: normalized.space } : {}),
+      ...(Object.prototype.hasOwnProperty.call(normalized, 'group') ? { group: normalized.group } : {}),
+      ...(Object.prototype.hasOwnProperty.call(normalized, 'sidebarOrder') ? { sidebarOrder: normalized.sidebarOrder } : {}),
+    }) || changed;
+    delete normalized.space;
+    delete normalized.group;
+    delete normalized.sidebarOrder;
+    changed = true;
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'entryMode')) {

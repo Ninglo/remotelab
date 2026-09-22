@@ -6,7 +6,7 @@ Backend `session.activity` now exposes only orthogonal live control-plane activi
 
 - `activity.run.state` / `activity.run.phase`
 - `activity.queue.state` / `activity.queue.count`
-- `activity.compact.state`
+- `activity.compact.state` (legacy compatibility only; no new RemoteLab compaction is scheduled)
 
 Semantic post-turn state is durable Session metadata maintained by the single Session-state classifier:
 

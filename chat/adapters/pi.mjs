@@ -109,6 +109,10 @@ export function createPiAdapter() {
       }
 
       switch (event.type) {
+        case 'remotelab.activity':
+          return event.presentation === 'reasoning' && typeof event.content === 'string' && event.content.trim()
+            ? [reasoningEvent(event.content.trim())]
+            : [];
         case 'agent_start':
         case 'turn_start':
           return [statusEvent('thinking')];

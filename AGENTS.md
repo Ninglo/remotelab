@@ -13,7 +13,8 @@ A web app that turns a real macOS/Linux machine into an AI automation workbench 
 
 **Not** a terminal emulator, a traditional editor-first IDE, or a chatbot. It's an **AI workbench / control console for human-AI collaboration** — the user does not need a perfect spec up front; RemoteLab should help discover the right problem, propose a workable workflow, and keep execution plus context coherent.
 
-- Single owner per instance; host-level multi-user isolation uses separate guest instances, never Session labels
+- Multiple authenticated People may share one instance; identity is for attribution and frontend views, never Session authorization
+- Every authenticated Person has full access to every Session; unauthenticated requests cannot enter the workbench
 - First wedge: repetitive digital work that can be automated quickly
 - Phone + desktop are both first-class control surfaces
 - Node.js, no external frameworks (only `ws` for WebSocket)
@@ -45,7 +46,7 @@ For setup, deployment, integration, and feature-activation docs, use a model-fir
 - keep automatable command-by-command flow inside the AI conversation or scripts, not as a long manual cookbook
 - minimize human interruption so the operator can hand off the task and return to a completed result; request input only for inaccessible credentials/browser actions, hard authorization, or irreversible high-impact actions that were not already clearly scoped
 
-For unattended Agent workflows, low-loss, reversible, auditable actions execute by default. A review, acceptance, or confirmation state is not a safety boundary unless someone is actually notified and the action protects hard authorization, irreversible high loss, or material financial/legal/third-party impact. Otherwise execute, record, verify, and retry or surface failure with a recovery path.
+For unattended AI workflows, low-loss, reversible, auditable actions execute by default. A review, acceptance, or confirmation state is not a safety boundary unless someone is actually notified and the action protects hard authorization, irreversible high loss, or material financial/legal/third-party impact. Otherwise execute, record, verify, and retry or surface failure with a recovery path.
 
 ---
 
@@ -65,7 +66,7 @@ Browser / app surface ──HTTPS──→ Cloudflare Tunnel ──→ chat-serv
 
 | Service | Port | Domain | Role |
 |---------|------|--------|------|
-| `chat-server.mjs` | **7690** | production chat domain | **Primary** — the shipped owner chat/control plane |
+| `chat-server.mjs` | **7690** | production chat domain | **Primary** — the shipped shared workbench/control plane |
 
 **Dev workflow**: use the normal `7690` service as the single chat/control plane. Restarting it should boot the current source tree directly; RemoteLab relies on clean restart recovery rather than a separate release snapshot or permanent validation plane.
 
@@ -94,7 +95,7 @@ remotelab/
 │   ├── ws.mjs               # WebSocket invalidation channel only
 │   ├── session-state-classifier.mjs       # one non-blocking post-turn Session-state classifier
 │   ├── session-work-summary.mjs # provider-neutral current work state shared across Harnesses
-│   ├── apps.mjs             # Agent (template) CRUD & persistence (89 lines)
+│   ├── session-person-view.mjs # per-Person Space/Group/sidebar order projection
 │   ├── system-prompt.mjs    # Build system context injected into AI sessions (83 lines)
 │   ├── normalizer.mjs       # Convert tool output → standard event format (45 lines)
 │   ├── middleware.mjs        # Auth checks, rate limiting, IP detection (80 lines)
@@ -106,7 +107,8 @@ remotelab/
 │       └── codex.mjs        # Codex CLI output parser (207 lines)
 │
 ├── lib/                     # ── Shared modules (used by both services) ──
-│   ├── auth.mjs             # Token/password verification, session cookies
+│   ├── auth-config.mjs      # People, credentials, identities, service token
+│   ├── auth.mjs             # Authentication and browser sessions
 │   ├── config.mjs           # Environment variables, paths, defaults
 │   ├── tools.mjs            # CLI tool discovery (which), custom tool registration
 │   ├── utils.mjs            # Utilities (read body, path handling)
@@ -136,11 +138,11 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 
 | File | Content |
 |------|---------|
-| `auth.json` | Access token + password hash |
+| `auth.json` | People, credentials, external identities, and connector service token |
+| `auth-sessions.json` | Authenticated browser sessions mapped to People |
 | `chat-sessions.json` | All session metadata |
 | `chat-history/` | Per-session event store (`meta.json`, `context.json`, `events/*.json`, `bodies/*.txt`) |
 | `public-pages/` | Instance-local static publications served under `/public-pages/`; never generated inside the Git checkout |
-| `apps.json` | Agent definitions (templates) |
 
 ---
 
@@ -152,7 +154,7 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 | GET | `/login` | Login page |
 | POST | `/login` | Authenticate (token or password) |
 | GET | `/logout` | Clear session |
-| GET | `/api/auth/me` | Current user info (role: owner\|visitor) |
+| GET | `/api/auth/me` | Current authenticated Person and identity |
 
 ### Sessions
 | Method | Path | Purpose |
@@ -161,14 +163,16 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 | POST | `/api/sessions` | Create new session |
 | PATCH | `/api/sessions/{id}` | Update session metadata (`name`, `archived`) |
 
-### Agents (Owner only)
+### People and sign-in
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/api/agents` | List all agents |
-| POST | `/api/agents` | Create agent |
-| PATCH | `/api/agents/{id}` | Update agent |
-| DELETE | `/api/agents/{id}` | Delete agent |
-| GET | `/agent/{shareToken}` | Visitor entry (public, no auth) |
+| GET | `/api/people` | List People, identities, and credential metadata |
+| POST | `/api/people` | Create a Person |
+| PATCH | `/api/people/{id}` | Rename or update a Person |
+| POST | `/api/people/{id}/credentials` | Add a token or password credential |
+| DELETE | `/api/people/{id}/credentials/{credentialId}` | Remove a credential |
+| POST | `/api/people/{id}/identities` | Repair an exceptional external-identity match manually |
+| POST | `/api/people/reconcile-external-identity` | Connector-service-only automatic identity reconciliation |
 
 ### Tools & Models
 | Method | Path | Purpose |
@@ -190,20 +194,19 @@ Additional instances can override this with `REMOTELAB_INSTANCE_ROOT`, `REMOTELA
 ## Key Product Concepts
 
 ### Instances
-User isolation boundary. One host may run several single-owner guest instances; each instance owns separate config, memory, workspace, auth, Connectors, and runtime permissions.
+Deployment and data-isolation boundary. One host may run several guest instances; each instance owns separate config, memory, workspace, auth, Connectors, and runtime permissions. Multiple authenticated People can collaborate inside one instance.
 
 ### Sessions
-Unit of work inside one user's instance = one durable chat/task context with one AI tool. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts. Sessions do not isolate users.
+The one durable product object for a work thread. Persisted across disconnects. Resume IDs (`claudeSessionId`, `codexThreadId`) stored in metadata so AI context survives server restarts. Session title, transcript, runtime, workflow state and lifecycle are shared by all authenticated People.
 
-### Agents
-Reusable AI workflows shareable via link. Each Agent defines: name, systemPrompt, skills, tool. When a Visitor clicks the share link → auto-creates a scoped Session with the Agent's system prompt injected.
+### People and identities
+A Person is a human-facing profile with one readable `handle`. Person profiles exist independently from sign-in credentials, so creating a Person does not need to issue a token or password. The handle is the Web username and the automatic connector-binding key. Feishu identities retain the route-scoped sender ID (preferring `openId`) as the durable provider identity, while the connector resolves the sender profile and the server auto-links by handle or one unambiguous name match. Newly discovered people receive stable pinyin-style handles with a short collision suffix. Identity is used for attribution and frontend filtering only; it never hides or protects Sessions.
 
-### Owner / Visitor Model
-- **Owner**: Full access. Logs in with token or password.
-- **Visitor**: Accesses only a specific Agent via share link. Sees chat-only UI (no sidebar). Each Visitor gets an independent Session. This is NOT multi-user — Visitors are scoped guests.
+### Per-Person Session views
+Every Person may organize the same shared Sessions differently. `space`, `group`, and `sidebarOrder` live under `session.personViews[personId]` and are projected for the requesting Person. Automatic sorting/classification updates only the Person whose turn triggered it. Shared fields remain global.
 
 ### Session State Classification
-After each completed normal turn, `session-state-classifier.mjs` makes one non-blocking classification call on the dedicated low-cost Codex `gpt-5.6-luna` / `high` route (intentionally independent of foreground model defaults; chat-model upgrades must not increase routine metadata costs) that refreshes `title`, broad AI-managed `space`, workstream `group`, hidden `description`, workflow state, and the provider-neutral current work summary. The sidebar renders Space as a context switcher above Project groups; `Loose` is the reserved Space for genuinely temporary or ambiguous work. This classifier keeps drifting Sessions organized but does not review, continue, or route the Harness answer.
+After each completed normal turn, `session-state-classifier.mjs` makes one non-blocking classification call on the dedicated low-cost Codex `gpt-5.6-luna` / `high` route (intentionally independent of foreground model defaults; chat-model upgrades must not increase routine metadata costs). It refreshes shared title, hidden description, workflow state, and provider-neutral work summary, plus the triggering Person's `space` and `group` view. The sidebar renders Space as a context switcher above Project groups; `Loose` is reserved for temporary or ambiguous work. The classifier organizes Sessions but does not review, continue, or route the Harness answer.
 
 ### Memory System (Pointer-First)
 
@@ -238,13 +241,14 @@ Post-turn memory writeback review uses an independent `gpt-5.6-sol` / `low` sele
 3. **Restart-safe recovery** — prefer durable restart/reload recovery over maintaining a permanent second chat plane
 4. **Vanilla JS frontend** — no build tools, no framework
 5. **Every change = new commit** — never use `--amend`, only new commits
-6. **Single Owner Per Instance** — no in-process multi-user account infrastructure; use isolated guest instances for different users
-7. **Agent-driven first** — new features prefer conversation/Skill over dedicated UI
-8. **ES Modules** — `"type": "module"`, all `.mjs` files
-9. **Template style** — `{{PLACEHOLDER}}` substitution, nonce-injected scripts
-10. **Zero sync I/O** — No `readFileSync`, `statSync`, `existsSync`, `readdirSync`, `writeFileSync`, `execFileSync`, `spawnSync`, or any other synchronous fs/child_process call in shipped code. Use `fs/promises` and `child_process.execFile` (with promise wrapper) exclusively. If converting sync to async would break something, that means the sync code was hiding a real ordering/concurrency problem — fix the root cause, don't keep the sync crutch. The only tolerated exception is test files (`tests/`).
-11. **Hermetic test state** — never run a state-backed test directly inside a live instance unless it uses `tests/isolate-test-environment.mjs`; prefer `node scripts/run-with-clean-instance-env.mjs node tests/<file>.mjs` for targeted runs. Tests must never inherit a live `REMOTELAB_INSTANCE_ROOT`, config directory, memory directory, or provider home.
-12. **Main-only source control** — `origin/main` is the only durable development and standard-fleet release branch. Before starting a change, fetch remote state and fast-forward or reconcile the local `main`; never force-push over work from another machine. Commit and push each coherent durable change to `main` promptly instead of accumulating long-lived feature branches or worktrees. If branch protection requires a check before `main` can advance, use a disposable integration branch only to run that check, advance `main` to the exact verified commit, then delete the integration branch. Preserve and reconcile uncommitted or unreviewed work before cleanup. A rollout is complete only when active standard instances report the same `origin/main` commit; product forks such as MigLab stay explicitly separate.
+6. **Shared authenticated instance** — all authenticated People have complete use rights; Person identity only controls attribution, filters, and personal Session organization
+7. **Session-only product model** — do not reintroduce interactive Agent/template or Visitor role objects; `ShareSnapshot` remains the only unauthenticated read-only publication
+8. **Conversation-driven first** — new features prefer conversation/Skill over dedicated UI
+9. **ES Modules** — `"type": "module"`, all `.mjs` files
+10. **Template style** — `{{PLACEHOLDER}}` substitution, nonce-injected scripts
+11. **Zero sync I/O** — No `readFileSync`, `statSync`, `existsSync`, `readdirSync`, `writeFileSync`, `execFileSync`, `spawnSync`, or any other synchronous fs/child_process call in shipped code. Use `fs/promises` and `child_process.execFile` (with promise wrapper) exclusively. If converting sync to async would break something, that means the sync code was hiding a real ordering/concurrency problem — fix the root cause, don't keep the sync crutch. The only tolerated exception is test files (`tests/`).
+12. **Hermetic test state** — never run a state-backed test directly inside a live instance unless it uses `tests/isolate-test-environment.mjs`; prefer `node scripts/run-with-clean-instance-env.mjs node tests/<file>.mjs` for targeted runs. Tests must never inherit a live `REMOTELAB_INSTANCE_ROOT`, config directory, memory directory, or provider home.
+13. **Main-only source control** — `origin/main` is the only durable development and standard-fleet release branch. Before starting a change, fetch remote state and fast-forward or reconcile the local `main`; never force-push over work from another machine. Commit and push each coherent durable change to `main` promptly instead of accumulating long-lived feature branches or worktrees. If branch protection requires a check before `main` can advance, use a disposable integration branch only to run that check, advance `main` to the exact verified commit, then delete the integration branch. Preserve and reconcile uncommitted or unreviewed work before cleanup. A rollout is complete only when active standard instances report the same `origin/main` commit; product forks such as MigLab stay explicitly separate.
 
 ---
 
@@ -253,12 +257,13 @@ Post-turn memory writeback review uses an independent `gpt-5.6-sol` / `low` sele
 Current operating rule: prefer product slices that help non-expert users — especially time-valuable middle managers / owner-operators who both delegate work and still personally absorb repetitive digital admin chores — hand off repetitive digital work quickly from phone or desktop and see clear value fast. Treat multi-session orchestration, richer project structure, and broader workflow distribution as enabling layers unless they directly improve that mainstream automation path.
 
 ### Done (recent)
-- [x] Owner/Visitor dual-role identity
-- [x] Agent system (CRUD API, share tokens, visitor flow)
+- [x] Multi-person identity with token/password sign-in and connector identity attribution
+- [x] Per-Person Session filtering and independent Space/Group/sidebar-order views
+- [x] Retire interactive Agent templates and Visitor roles; retain immutable ShareSnapshot publication
 - [x] Resume ID persistence (survives server restarts)
 - [x] Web push notifications
 - [x] Mobile capture + desktop execution handoff baseline
-- [x] Session-first owner flow baseline
+- [x] Session-only shared workbench baseline
 - [x] Baseline multi-session fan-out with bounded cross-session context carry
 - [x] Remove voice-input UI/backend and the leftover hidden transcript-cleanup send path
 - [x] Contract the semantic manager layer: remove pre-turn dispatch, reply self-check/repair, separate task/workflow classifiers, global Project organizer, and delegation reuse heuristics; keep one Session-state classifier plus cross-Harness memory/continuity
@@ -268,7 +273,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [ ] Guided intake / problem discovery — help users describe messy repetitive work, attach examples, and converge on a concrete automation brief without assuming expert prompting
 - [ ] Fast repetitive-work automation loops — optimize for data cleanup, report generation, export/import, file processing, notifications, and other simple scriptable chores that can save hours per week quickly
 - [ ] State-first, decision-first output shaping — default summaries should tell non-expert users what changed, whether input is needed now, and what outcome to expect next
-- [ ] `Welcome Agent` / guided onboarding — on first launch, seed a built-in guide Agent that explains capabilities in plain language, asks about the owner's background, repetitive-work pain point, current workflow, and sample inputs, then routes them into either a high-fit starter `Agent` or one concrete first automation `Session` instead of an empty session list
+- [ ] Guided Welcome Session — on first launch, explain capabilities in plain language, ask about the Person's background, repetitive-work pain point, current workflow, and sample inputs, then route them into one concrete first automation Session instead of an empty session list
 - [ ] Keep runtime/tool wiring pragmatic and local-first — only generalize the current tool abstraction when a concrete local-runtime need appears; do not reintroduce third-party domain-provider or cloud skill distribution paths by default
 - [x] Produce a precise file-level concept→implementation guide so future sessions can route directly to the right files with less repo spelunking → `docs/implementation-recipes.md`
 
@@ -276,7 +281,7 @@ Current operating rule: prefer product slices that help non-expert users — esp
 - [ ] Context carry/cache confirmation — validate and tune compaction, prepared fork context, summary/refs reuse, and any cross-session handoff packet so continued or spawned work stays fast and bounded
 - [ ] Universal control inbox / dispatcher session — a high-trust intake surface that can later orchestrate several focused sessions when useful, without becoming one giant work thread
 - [ ] Deferred triggers (AI-initiated actions, scheduled follow-ups)
-- [ ] Evolve the `Welcome Agent` into the right long-term intake surface — once the first-run flow proves valuable, decide whether it should stay a dismissible starter, become a persistent control inbox, or merge with the universal dispatcher session
+- [ ] Evolve the Welcome Session into the right long-term intake surface — once the first-run flow proves valuable, decide whether it should stay a dismissible starter, become a persistent control inbox, or merge with the universal dispatcher Session
 - [ ] Queued follow-up composer buffer — while a session is still streaming a reply, let the user stage another message in a buffer and auto-submit it as a fresh turn immediately after the active response finishes; external connectors like Feishu should share the same staged-turn contract and later define an interrupt/replace policy
 - [ ] Session fork follow-ups — extend the shipped hard-clone head-fork with optional `Fork from here`, lightweight lineage navigation, and exact historical fork support when compaction-safe snapshots exist
 - [ ] Broaden theming beyond system light/dark — keep v1 system-driven, then add optional explicit theme selection and more color palettes, preferably reusing VS Code-style open theme configs/tokens where that fits cleanly
@@ -302,7 +307,6 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Product Surface Lifecycle | `notes/current/product-surface-lifecycle.md` | Current rule for keep/iterate/retire decisions on shipped feature surfaces |
 | External Message Protocol | `docs/external-message-protocol.md` | Canonical connector contract for email/GitHub/bot integrations using sessions, messages, runs, and events |
 | Core Philosophy | `notes/directional/core-philosophy.md` | Historical philosophy note; use it for framing, not as the current implementation checklist |
-| Agent-Centric Architecture | `notes/directional/app-centric-architecture.md` | Historical/consolidated direction note for treating default chat and shared Agents as one policy model |
 | Provider Architecture | `notes/directional/provider-architecture.md` | Open provider/model abstraction, local JS/JSON extension path, migration plan |
 | Product Vision | `notes/directional/product-vision.md` | Product rationale and open questions; not the canonical shipped-status tracker |
 | Super-Individual Workbench | `notes/directional/super-individual-workbench.md` | Historical memo from the earlier super-individual framing; still useful background on control-plane boundaries, but not the current target-user statement |
@@ -310,6 +314,5 @@ Current operating rule: prefer product slices that help non-expert users — esp
 | Autonomous Execution | `notes/directional/autonomous-execution.md` | P2 background execution vision |
 | Message Transport Architecture | `notes/message-transport-architecture.md` | Historical transport/runtime rationale after the HTTP-first architecture landed |
 | Memory Activation Architecture | `notes/current/memory-activation-architecture.md` | Pointer-first memory loading, routing layers, pruning rules |
-| Creating Agents | `docs/creating-apps.md` | User-facing guide for Agent creation |
 | Setup Guide | `docs/setup.md` | Installation, service setup (LaunchAgent/systemd) |
 | System Memory | `memory/system.md` | Cross-deployment learnings (context continuity, testing strategy) |

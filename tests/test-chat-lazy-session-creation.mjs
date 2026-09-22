@@ -65,7 +65,6 @@ const context = {
   Promise,
   currentSessionId: 'existing-session',
   hasAttachedSession: true,
-  visitorMode: false,
   isDesktop: true,
   preferredTool: 'codex',
   selectedTool: 'codex',
@@ -84,12 +83,6 @@ const context = {
   },
   hasAuthCapability(name) {
     return name === 'createSession';
-  },
-  getPreferredAgentTemplateId() {
-    return 'agent-review';
-  },
-  getPreferredAgentTemplateName() {
-    return 'Review';
   },
   switchTab() {},
   settleAttachedSessionSidebarState() {
@@ -140,7 +133,6 @@ assert.equal(quickAction.executionProfile, 'quick');
 assert.equal(quickAction.tool, 'codex');
 assert.equal(quickAction.model, undefined, 'Quick should hide and omit model selection details');
 assert.equal(quickAction.effort, undefined, 'Quick should hide and omit effort selection details');
-assert.equal(quickAction.templateId, '', 'Quick should not apply a selected Agent template');
 
 const opened = context.createNewSessionShortcut({
   sourceContext: { channel: 'pwa_shortcut' },
@@ -162,14 +154,12 @@ assert.equal(calls.dispatch[0]?.action, 'create');
 assert.equal(calls.dispatch[0]?.tool, 'codex');
 assert.equal(calls.dispatch[0]?.model, 'gpt-5.6-sol');
 assert.equal(calls.dispatch[0]?.effort, 'xhigh');
-assert.equal(calls.dispatch[0]?.templateId, 'agent-review');
 assert.equal(calls.dispatch[0]?.sourceContext?.channel, 'pwa_shortcut');
 assert.equal(context.currentSessionId, 'created-session');
 assert.equal(context.readPendingCreateOptions(), null, 'creation metadata should clear after materialization');
 
 const restoreCalls = [];
 const restoreContext = {
-  visitorMode: false,
   activeTab: 'sessions',
   pendingNavigationState: null,
   currentSessionId: null,
@@ -188,11 +178,11 @@ const restoreContext = {
 };
 restoreContext.globalThis = restoreContext;
 vm.runInNewContext(
-  `${extractFunction('restoreOwnerSessionSelection', sessionHttpSource)}\nglobalThis.restoreOwnerSessionSelection = restoreOwnerSessionSelection;`,
+  `${extractFunction('restoreSessionSelection', sessionHttpSource)}\nglobalThis.restoreSessionSelection = restoreSessionSelection;`,
   restoreContext,
   { filename: 'session-http-lazy-session.js' },
 );
-restoreContext.restoreOwnerSessionSelection();
+restoreContext.restoreSessionSelection();
 assert.equal(restoreCalls.length, 1, 'background list refreshes should preserve the local new-session surface');
 assert.equal(restoreCalls[0]?.sessionId, null);
 

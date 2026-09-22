@@ -10,7 +10,7 @@ It does not care much whether the control surface is a phone, tablet, or desktop
 
 ![RemoteLab across surfaces](docs/readme-multisurface-demo.png)
 
-> Current baseline: `v0.3` — an owner-first session runtime, durable on-disk history, a built-in Welcome flow with concrete example sessions, reusable Agent packaging, and a no-build web UI that works across phone and desktop.
+> Current baseline: `v1.0` — a multi-person shared Session workbench with durable on-disk history, per-person sidebar views, a built-in Welcome flow, and a no-build web UI that works across phone and desktop.
 
 > Reach the same system from desktop, phone, and integration surfaces like Feishu or email-driven flows.
 
@@ -70,7 +70,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - The first screen cannot be a blank session list. New users need a built-in Welcome flow with concrete example transcripts and one clear first automation path, not an empty sidebar and a generic text box.
 - The best wedge is simple, fast-payback digital work: data cleanup, analysis, file processing, reports, notifications, and other repetitive scriptable tasks.
 - Phone + desktop + real-machine execution is the product advantage: capture context anywhere, let the machine do the heavy work, and inspect results or resolve the rare true blocker from the most convenient device.
-- `Session`, `Agent`, and reusable local workflow building blocks still matter, but they are enabling layers or later multipliers rather than the first headline.
+- Durable `Session` threads and reusable local workflow building blocks still matter, but they are enabling layers rather than the first headline.
 
 ### What RemoteLab is
 
@@ -78,7 +78,7 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 - an AI collaboration entry point that helps users turn vague problems into executable plans
 - a cross-surface control plane where people can start from phone, continue from desktop, and let the machine do the work
 - a durable work-thread system that helps humans recover context instead of repeatedly re-explaining the task
-- a packaging layer that can turn proven automations into reusable `Agents`
+- a durable Session layer that lets proven automations be scheduled, forked, or continued
 
 ### What RemoteLab is not
 
@@ -93,16 +93,16 @@ The first goal is concrete: in a short conversation, help a user hand off a tedi
 ### Two core product layers
 
 1. **First, solve repetitive digital work.** RemoteLab should accept a messy but recurring task, help the user clarify inputs, outputs, and constraints, and turn it into an automation that reliably saves time.
-2. **Then package and reuse what works.** Once an automation proves valuable, RemoteLab can turn it into an `Agent`, template, or other reusable entry point for the same user or nearby user groups.
+2. **Then reuse what works.** Once an automation proves valuable, RemoteLab can schedule it or start another Session from an explicit source Session.
 
 ### Product grammar
 
 The current product model is intentionally simple:
 
-- `Instance` — one user's isolated RemoteLab environment; a host may run several guest instances
-- `Session` — one durable work thread inside that user's instance
+- `Instance` — one isolated RemoteLab environment; a host may run several guest instances
+- `Person` — an authenticated human identity used for attribution and UI preferences, never for Session authorization
+- `Session` — one durable work thread shared by every authenticated Person in the instance
 - `Run` — one execution attempt inside a session
-- `Agent` — a reusable workflow / policy package for starting sessions
 - `Share snapshot` — an immutable read-only export of a session
 
 The architectural assumptions behind that model:
@@ -110,7 +110,10 @@ The architectural assumptions behind that model:
 - HTTP is the canonical state path and WebSocket only hints that something changed
 - the browser is a control surface, not the system of record
 - runtime processes are disposable; durable state lives on disk
-- each instance is single-owner first; separate users use isolated guest instances, while visitor access inside one instance is scoped through `Agents`
+- every authenticated Person has full instance access; unauthenticated requests cannot enter the workbench
+- Person identity controls attribution and frontend filtering only, never visibility or authorization
+- each Person has one readable handle; Web usernames use it and Feishu identities bind to it automatically
+- Session title, transcript, runtime and workflow state are shared; Space, Group and sidebar order are per-Person views
 - the frontend stays framework-light and endpoint-flexible
 
 ### Why this boundary matters
@@ -121,7 +124,7 @@ RemoteLab is opinionated in a few ways:
 - **Deliver through reachable surfaces, not host paths.** The AI may operate the machine, but the user collaborates through RemoteLab and explicitly exposed product surfaces. A result that only exists on the host is not a finished handoff.
 - **Do not rebuild the executor layer.** RemoteLab should not spend most of its energy optimizing single-task agent internals.
 - **Recover context, do not dump logs.** Durable sessions matter more than raw terminal continuity.
-- **Package workflows, do not just share prompts.** `Agents` are reusable operating shapes, not just copy-pasted text.
+- **Reuse proven work explicitly.** Scheduling, delegation and continuation all point at durable Sessions instead of creating a second template object model.
 - **Integrate the strongest tools, keep them replaceable.** The point is a stable abstraction layer so better executors can be adopted quickly as the ecosystem evolves.
 
 ### What you can do
@@ -135,7 +138,8 @@ RemoteLab is opinionated in a few ways:
 - paste screenshots directly into the chat
 - let the UI follow your system light/dark appearance automatically
 - create immutable read-only share snapshots
-- create Agent links for visitor-scoped entry flows
+- filter Sessions by initiating Person without hiding anyone else's work
+- let each Person organize the same shared Sessions into independent Spaces, Groups and sidebar order
 
 ### Provider note
 
@@ -143,6 +147,7 @@ RemoteLab is opinionated in a few ways:
 - That is not because executor choice is the product. The opposite is true: RemoteLab should stay adapter-first and integrate the strongest executors available locally.
 - API-key / local-CLI style integrations are usually a cleaner fit for a self-hosted control plane than consumer-login-based remote wrappers.
 - `Claude Code` still works in RemoteLab, and any other compatible local tool can fit as long as its auth and terms work for your setup.
+- `Antigravity` (`agy`) is a built-in native Harness when the official CLI is installed. Authenticate once with an interactive `agy` session; RemoteLab then uses its documented headless `stream-json` protocol and official conversation IDs.
 - Over time, the goal is portability across executors, not loyalty to one closed runtime.
 - In practice, the main risk is usually the underlying provider auth / terms, not the binary name by itself. Make your own call based on the provider and account type behind that tool.
 
@@ -208,7 +213,7 @@ Open your RemoteLab URL on the device you want to use:
 - send messages while the UI re-fetches canonical HTTP state in the background
 - leave and come back later without losing the conversation thread
 - share immutable read-only snapshots of a session
-- optionally configure Agent-based visitor flows and push notifications
+- add more People and sign-in credentials in Settings, and optionally enable push notifications
 
 ### Daily usage
 
@@ -229,7 +234,7 @@ If you are refreshing yourself after several architecture iterations, use this r
 3. `docs/README.md` — documentation taxonomy and sync rules
 4. `notes/current/core-domain-contract.md` — current domain/refactor baseline
 5. `notes/README.md` — note buckets and cleanup policy
-6. focused guides such as `docs/setup.md`, `docs/external-message-protocol.md`, `docs/creating-apps.md`, and `docs/feishu-bot-setup.md`
+6. focused guides such as `docs/setup.md`, `docs/external-message-protocol.md`, and `docs/feishu-bot-setup.md`
 
 ---
 
@@ -347,7 +352,7 @@ RemoteLab boots the current source tree directly after restart. First check [sta
 | `SESSION_EXPIRY` | `2592000000` | Cookie lifetime in ms (30 days) |
 | `SECURE_COOKIES` | `1` | Set `0` for Tailscale or local HTTP access (no HTTPS) |
 | `REMOTELAB_INSTANCE_ROOT` | unset | Optional isolated data root for an additional instance; defaults to `<root>/config` + `<root>/memory` when set |
-| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, apps, push, and provider-managed homes |
+| `REMOTELAB_CONFIG_DIR` | `~/.config/remotelab` | Optional runtime data/config override for auth, sessions, runs, push, and provider-managed homes |
 | `REMOTELAB_PUBLIC_PAGES_DIR` | `<config>/public-pages` | Optional local storage override for published static pages; never points into the Git checkout by default |
 | `REMOTELAB_PUBLIC_PAGES_BASE_URL` | `<public-base>/public-pages` | Optional external URL base override for static page links |
 | `REMOTELAB_MEMORY_DIR` | `~/.remotelab/memory` | Optional user-memory override for pointer-first startup files |
@@ -359,12 +364,11 @@ These are the default paths when no instance overrides are set.
 
 | Path | Contents |
 |------|----------|
-| `~/.config/remotelab/auth.json` | Access token + password hash |
-| `~/.config/remotelab/auth-sessions.json` | Owner/visitor auth sessions |
+| `~/.config/remotelab/auth.json` | People, credentials, external identities, and the connector service token |
+| `~/.config/remotelab/auth-sessions.json` | Authenticated browser sessions mapped to People |
 | `~/.config/remotelab/chat-sessions.json` | Chat session metadata |
 | `~/.config/remotelab/chat-history/` | Per-session event store (`meta.json`, `context.json`, `events/*.json`, `bodies/*.txt`) |
 | `~/.config/remotelab/chat-runs/` | Durable run manifests, spool output, and final results |
-| `~/.config/remotelab/apps.json` | App template definitions |
 | `~/.config/remotelab/shared-snapshots/` | Immutable read-only session share snapshots |
 | `~/.config/remotelab/public-pages/` | Instance-local published static pages |
 | `~/.remotelab/memory/` | Private machine-specific memory used for pointer-first startup |
@@ -397,7 +401,7 @@ These are the default paths when no instance overrides are set.
 - `HttpOnly` + `Secure` + `SameSite=Strict` auth cookies (`Secure` disabled in Tailscale mode)
 - per-IP rate limiting with exponential backoff on failed login
 - default: services bind to `127.0.0.1` only — no direct external exposure; set `CHAT_BIND_HOST=0.0.0.0` for LAN access
-- share snapshots are read-only and isolated from the owner chat surface
+- share snapshots are read-only and isolated from the authenticated workbench
 - CSP headers with nonce-based script allowlist
 
 ## Troubleshooting

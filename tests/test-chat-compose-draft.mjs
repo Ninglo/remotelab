@@ -190,7 +190,6 @@ function createContext({
     saveTemplateBtn: makeEventTarget(),
     tabSessions: makeEventTarget(),
     tabSettings: makeEventTarget(),
-    sessionListFooter: makeEventTarget(),
     sortSessionListBtn: makeEventTarget(),
     newSessionBtn: makeEventTarget(),
     settingsPanel: {
@@ -218,7 +217,6 @@ function createContext({
     createRequestId() {
       return 'req_test';
     },
-    visitorMode: false,
     isDesktop: true,
     selectedTool: null,
     selectedModel: null,

@@ -15,7 +15,7 @@ import {
   PUBLIC_PAGES_DIR,
 } from '../lib/config.mjs';
 import {
-  getAuthSession, refreshAuthSession,
+  getAuthSession, listPeopleForClient, refreshAuthSession,
 } from '../lib/auth.mjs';
 import { normalizeInstallHandoffToken } from '../lib/install-handoffs.mjs';
 import { saveUiRuntimeSelection } from '../lib/runtime-selection.mjs';
@@ -23,10 +23,8 @@ import { getAvailableToolsAsync, saveSimpleToolAsync } from '../lib/tools.mjs';
 import {
   appendAssistantMessage,
   cancelActiveRun,
-  compactSession,
   createSession,
   delegateSession,
-  dropToolUse,
   forkSession,
   getHistory,
   getRunState,
@@ -39,7 +37,6 @@ import {
   listSessions,
   renameSession,
   resolveAttachmentMimeType,
-  saveSessionAsTemplate,
   sendMessage,
   submitHttpMessage,
   setSessionArchived,
@@ -81,6 +78,7 @@ import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
 import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
+import { handleDisplayPublicRoutes, handleDisplaySettingsRoutes } from './router-display-routes.mjs';
 import { handleLocalBridgeOwnerRoutes, handleLocalBridgePublicRoutes } from './router-local-bridge-routes.mjs';
 import {
   handleCalendarFeedRoute,
@@ -89,12 +87,6 @@ import {
 } from './router-connector-routes.mjs';
 import { handleSessionMainRoutes } from './router-session-main-routes.mjs';
 import { getBootstrapInstanceSettings } from './instance-settings.mjs';
-import {
-  resolveAuthSessionAgentId,
-  resolveAuthSessionPrincipalId,
-  resolveSessionAgentId,
-  resolveSessionPrincipalId,
-} from './session-source-resolution.mjs';
 import {
   buildFileAssetDirectUrl,
   createFileAssetUploadIntent,
@@ -354,7 +346,7 @@ async function resolveRequestedSessionAttachments(authSession, requestedAttachme
   const allowLocalPaths = options?.allowLocalPaths === true;
   const createdBy = typeof options?.createdBy === 'string' && options.createdBy.trim()
     ? options.createdBy.trim()
-    : (authSession?.role === 'visitor' ? 'visitor' : 'owner');
+    : (authSession?.personId || 'authenticated');
   const uploadedAttachments = requestedAttachments.filter((attachment) => Buffer.isBuffer(attachment?.buffer) || typeof attachment?.data === 'string');
   const existingAttachments = requestedAttachments.filter((attachment) => typeof attachment?.filename === 'string' && attachment.filename.trim() && !attachment?.assetId);
   const localPathAttachments = requestedAttachments.filter((attachment) => typeof attachment?.localPath === 'string' && attachment.localPath.trim());
@@ -404,10 +396,7 @@ async function resolveRequestedSessionAttachments(authSession, requestedAttachme
       error.statusCode = 400;
       throw error;
     }
-    if (!(authSession && (
-      authSession.role === 'owner'
-      || await canAccessSession(authSession, asset.sessionId)
-    ))) {
+    if (!authSession) {
       const error = new Error('Forbidden');
       error.statusCode = 403;
       throw error;
@@ -623,149 +612,35 @@ function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function getAuthPrincipalId(authSession) {
-  return resolveAuthSessionPrincipalId(authSession);
-}
-
-function getAuthPrincipalKind(authSession) {
-  if (authSession?.role === 'owner') return 'owner';
-  return trimString(authSession?.principalKind) || 'visitor';
-}
-
-function getAuthSurfaceMode(authSession) {
-  if (authSession?.role === 'owner') return 'owner';
-  return trimString(authSession?.surfaceMode) || 'visitor';
-}
-
-function getAuthScopeAgentId(authSession) {
-  return resolveAuthSessionAgentId(authSession);
-}
-
-function isAgentScopedAuthSession(authSession) {
-  return !!(
-    authSession
-    && authSession.role === 'visitor'
-    && getAuthSurfaceMode(authSession) === 'agent_scoped'
-    && getAuthScopeAgentId(authSession)
-    && getAuthPrincipalId(authSession)
-  );
-}
-
-function getAuthCapabilities(authSession) {
-  if (!authSession || authSession.role === 'owner') {
-    return {
-      listSessions: true,
-      createSession: true,
-      renameSession: true,
-      archiveSession: true,
-      pinSession: true,
-      forkSession: true,
-      uploadAttachments: true,
-      downloadArtifacts: true,
-      switchAgents: true,
-      manageAgents: true,
-      changeRuntime: true,
-      organizeSessionList: true,
-      publishShareSnapshot: true,
-    };
-  }
-
-  const stored = authSession?.capabilities && typeof authSession.capabilities === 'object'
-    ? authSession.capabilities
-    : {};
-  if (!isAgentScopedAuthSession(authSession)) {
-    return {
-      listSessions: false,
-      createSession: false,
-      renameSession: false,
-      archiveSession: false,
-      pinSession: false,
-      forkSession: false,
-      uploadAttachments: stored.uploadAttachments !== false,
-      downloadArtifacts: stored.downloadArtifacts !== false,
-      switchAgents: false,
-      manageAgents: false,
-      changeRuntime: false,
-      organizeSessionList: false,
-      publishShareSnapshot: false,
-    };
-  }
-  return {
-    listSessions: stored.listSessions !== false,
-    createSession: stored.createSession !== false,
-    renameSession: stored.renameSession !== false,
-    archiveSession: stored.archiveSession !== false,
-    pinSession: stored.pinSession !== false,
-    forkSession: stored.forkSession === true,
-    uploadAttachments: stored.uploadAttachments !== false,
-    downloadArtifacts: stored.downloadArtifacts !== false,
-    switchAgents: stored.switchAgents === true,
-    manageAgents: stored.manageAgents === true,
-    changeRuntime: stored.changeRuntime === true,
-    organizeSessionList: stored.organizeSessionList === true,
-    publishShareSnapshot: stored.publishShareSnapshot === true,
-  };
-}
-
-function getSessionAgentId(session) {
-  return resolveSessionAgentId(session);
-}
-
-function getSessionPrincipalId(session) {
-  return resolveSessionPrincipalId(session);
-}
-
 function isSessionVisibleToAuthSession(authSession, session) {
-  if (!authSession || !session) return false;
-  if (authSession.role === 'owner') return true;
-  if (isAgentScopedAuthSession(authSession)) {
-    return getSessionAgentId(session) === getAuthScopeAgentId(authSession)
-      && getSessionPrincipalId(session) === getAuthPrincipalId(authSession);
-  }
-  return trimString(authSession?.sessionId) === trimString(session?.id);
+  return !!(authSession && session);
 }
 
 function buildAuthInfo(authSession) {
   if (!authSession) return null;
   const info = {
-    role: authSession.role === 'visitor' ? 'visitor' : 'owner',
-    principalKind: getAuthPrincipalKind(authSession),
-    surfaceMode: getAuthSurfaceMode(authSession),
-    capabilities: getAuthCapabilities(authSession),
+    person: {
+      id: authSession.personId,
+      name: authSession.personName,
+      identityId: authSession.identityId,
+    },
   };
   if (typeof authSession.preferredLanguage === 'string' && authSession.preferredLanguage.trim()) {
     info.preferredLanguage = authSession.preferredLanguage.trim();
-  }
-  if (info.role === 'visitor') {
-    const agentId = getAuthScopeAgentId(authSession);
-    const principalId = getAuthPrincipalId(authSession);
-    info.agentId = agentId;
-    if (authSession.sessionId) {
-      info.sessionId = authSession.sessionId;
-    }
-    if (authSession.visitorId) {
-      info.visitorId = authSession.visitorId;
-    }
-    if (principalId) {
-      info.principalId = principalId;
-    }
-    if (agentId) {
-      info.currentAgent = {
-        id: agentId,
-        name: trimString(authSession.agentName),
-        tool: trimString(authSession.agentTool),
-      };
-    }
   }
   return info;
 }
 
 async function buildChatPageBootstrap(authSession) {
-  const settings = await getBootstrapInstanceSettings(authSession);
+  const [settings, people] = await Promise.all([
+    getBootstrapInstanceSettings(authSession),
+    listPeopleForClient(),
+  ]);
   return {
     auth: buildAuthInfo(authSession),
     assetUploads: getFileAssetBootstrapConfig(),
     defaultSessionFolder: MANAGED_WORK_ROOT_DIR,
+    people,
     settings,
   };
 }
@@ -1226,10 +1101,7 @@ const IMMUTABLE_PRIVATE_EVENT_CACHE_CONTROL = 'private, max-age=1296000, immutab
 const SHARE_RESOURCE_CACHE_CONTROL = 'public, no-cache, max-age=0, must-revalidate';
 
 async function canAccessSession(authSession, sessionId) {
-  if (!authSession) return false;
-  if (authSession.role !== 'visitor') return true;
-  const session = await getSession(sessionId);
-  return isSessionVisibleToAuthSession(authSession, session);
+  return !!(authSession && sessionId);
 }
 
 async function requireSessionAccess(res, authSession, sessionId) {
@@ -1378,7 +1250,7 @@ async function writeSnapshotPage(req, res, shareId, {
     const body = renderPageTemplate(sharePage, pageNonce, {
       ...buildTemplateReplacements(pageBuildInfo, productBasePath),
       ...(snapshot ? buildShareSnapshotPageReplacements(req, shareId, snapshot, productBasePath) : {}),
-      BODY_CLASS: 'visitor-mode share-snapshot-mode',
+      BODY_CLASS: 'share-snapshot-mode',
       BOOTSTRAP_SCRIPT_TAGS: `<script src="share-payload/${shareId}.js"></script>`,
     });
     writeCachedResponse(req, res, {
@@ -1401,29 +1273,6 @@ function serializeJsonForScript(value) {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
-}
-
-function isOwnerOnlyRoute(pathname, method) {
-  if (pathname.startsWith('/api/codex-auth') && ['GET', 'POST'].includes(method)) return true;
-  if (pathname === '/api/triggers' && (method === 'GET' || method === 'POST')) return true;
-  if (pathname.startsWith('/api/triggers/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
-  if (pathname === '/api/schedules' && ['GET', 'POST'].includes(method)) return true;
-  if (pathname.startsWith('/api/schedules/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
-  if (pathname === '/api/source-deliveries' && ['GET', 'POST'].includes(method)) return true;
-  if (pathname === '/api/source-deliveries/claim' && method === 'POST') return true;
-  if (pathname.startsWith('/api/source-deliveries/') && method === 'POST') return true;
-  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/share') && method === 'POST') return true;
-  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/fork') && method === 'POST') return true;
-  if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/delegate') && method === 'POST') return true;
-  if (pathname === '/api/models' && method === 'GET') return true;
-  if (pathname === '/api/tools' && (method === 'GET' || method === 'POST')) return true;
-  if (pathname === '/api/autocomplete' && method === 'GET') return true;
-  if (pathname === '/api/browse' && method === 'GET') return true;
-  if (pathname === '/api/push/vapid-public-key' && method === 'GET') return true;
-  if (pathname === '/api/push/subscribe' && method === 'POST') return true;
-  if (pathname === '/api/agents' && (method === 'GET' || method === 'POST')) return true;
-  if (pathname.startsWith('/api/agents/') && ['GET', 'PATCH', 'DELETE'].includes(method)) return true;
-  return false;
 }
 
 function parseSharePayloadRoute(pathname) {
@@ -1499,7 +1348,7 @@ export async function handleRequest(req, res) {
       const manifest = {
         ...manifestTemplate,
         // Launch through the HTTP-only login bridge, never the install guide.
-        // Existing owner cookies take precedence over the short-lived handoff.
+        // Existing authenticated cookies take precedence over the short-lived handoff.
         start_url: handoffToken
           ? `m/continue?h=${encodeURIComponent(handoffToken)}`
           : 'm/continue',
@@ -1560,16 +1409,20 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (await handleDisplayPublicRoutes({ req, res, pathname, writeJson })) {
+    return;
+  }
+
   // Auth required from here on
   if (await handleBrowserDesktopRequest(req, res)) return;
   if (!await requireAuth(req, res)) return;
   const authSession = getAuthSession(req);
-  if (authSession?.role !== 'owner' && isOwnerOnlyRoute(pathname, req.method)) {
-    writeJson(res, 403, { error: 'Owner access required' });
-    return;
-  }
 
   // ---- API endpoints ----
+
+  if (await handleDisplaySettingsRoutes({ req, res, pathname, authSession, writeJson })) {
+    return;
+  }
 
   if (await handleConnectorSurfaceRoutes({
     req,
@@ -1618,9 +1471,6 @@ export async function handleRequest(req, res) {
     readSessionMessagePayload,
     requireSessionAccess,
     isSessionVisibleToAuthSession,
-    getAuthPrincipalId,
-    getAuthScopeAgentId,
-    isAgentScopedAuthSession,
     resolveRequestedSessionAttachments,
     writeJson,
     writeJsonCached,

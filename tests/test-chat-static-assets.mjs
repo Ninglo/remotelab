@@ -11,7 +11,9 @@ import { spawn } from 'child_process';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(__dirname);
 const cookie = 'session_token=test-session';
-const visitorCookie = 'visitor_session_token=visitor-session';
+const secondPersonCookie = 'session_token=second-person-session';
+const primaryAccessToken = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const serviceToken = 'service-service-service-service-service-service-service-service';
 
 function randomPort() {
   return 43000 + Math.floor(Math.random() * 10000);
@@ -95,19 +97,44 @@ function setupTempHome() {
 
   writeFileSync(
     join(configDir, 'auth.json'),
-    JSON.stringify({ token: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }, null, 2),
+    JSON.stringify({
+      version: 2,
+      serviceToken,
+      primaryPersonId: 'person_alpha',
+      people: [
+        {
+          id: 'person_alpha',
+          name: 'Alpha',
+          handle: 'zhangyu95',
+          credentials: [{ id: 'credential_alpha', type: 'token', token: primaryAccessToken }],
+          identities: [{ id: 'identity_web_alpha', kind: 'web', realm: 'remotelab', subjectId: 'person_alpha', displayName: 'Alpha' }],
+          preferences: { defaultSessionPersonFilter: 'all' },
+        },
+        {
+          id: 'person_beta',
+          name: 'Beta',
+          credentials: [{ id: 'credential_beta', type: 'token', token: 'beta-beta-beta-beta-beta-beta-beta-beta-beta-beta-beta-beta' }],
+          identities: [{ id: 'identity_web_beta', kind: 'web', realm: 'remotelab', subjectId: 'person_beta', displayName: 'Beta' }],
+          preferences: { defaultSessionPersonFilter: 'mine' },
+        },
+      ],
+    }, null, 2),
     'utf8',
   );
   writeFileSync(
     join(configDir, 'auth-sessions.json'),
     JSON.stringify({
-      'test-session': { expiry: Date.now() + 60 * 60 * 1000, role: 'owner' },
-      'visitor-session': {
+      'test-session': {
         expiry: Date.now() + 60 * 60 * 1000,
-        role: 'visitor',
-        agentId: 'shared-agent',
-        sessionId: 'visitor-session-id',
-        visitorId: 'visitor-123',
+        personId: 'person_alpha',
+        personName: 'Alpha',
+        identityId: 'identity_web_alpha',
+      },
+      'second-person-session': {
+        expiry: Date.now() + 60 * 60 * 1000,
+        personId: 'person_beta',
+        personName: 'Beta',
+        identityId: 'identity_web_beta',
         preferredLanguage: 'zh-CN',
       },
     }, null, 2),
@@ -184,22 +211,25 @@ async function main() {
   const sessionsFile = join(home, '.config', 'remotelab', 'auth-sessions.json');
   const port = randomPort();
   const server = await startServer({ home, port });
-  let ownerWs = null;
-  let ownerWsMessages = [];
-  let visitorWs = null;
-  let visitorWsMessages = [];
+  let primaryWs = null;
+  let primaryWsMessages = [];
+  let secondPersonWs = null;
+  let secondPersonWsMessages = [];
 
   try {
     const authMe = await request(port, 'GET', '/api/auth/me');
-    assert.equal(authMe.status, 200, 'auth info endpoint should work for owner session');
+    assert.equal(authMe.status, 200, 'auth info endpoint should work for an authenticated person');
     assert.equal(authMe.headers['set-cookie']?.length, 1, 'auth info should refresh a near-expiry auth cookie');
     assert.match(authMe.headers['set-cookie'][0], /SameSite=Lax/i, 'auth cookie should use SameSite=Lax for better PWA compatibility');
     assert.match(authMe.headers['set-cookie'][0], /Max-Age=2592000/i, 'auth cookie should include an explicit Max-Age');
     const authMeJson = JSON.parse(authMe.text);
-    assert.equal(authMeJson.role, 'owner', 'auth info should identify the owner principal');
-    assert.equal(authMeJson.surfaceMode, 'owner', 'owner auth should stay on the owner surface');
-    assert.equal(authMeJson.principalKind, 'owner', 'owner auth should advertise the owner principal kind');
-    assert.equal(authMeJson.capabilities?.manageAgents, true, 'owner auth should expose owner capabilities');
+    assert.deepEqual(authMeJson.person, {
+      id: 'person_alpha',
+      name: 'Alpha',
+      identityId: 'identity_web_alpha',
+    });
+    assert.equal('role' in authMeJson, false, 'auth info should not expose a legacy role');
+    assert.equal('capabilities' in authMeJson, false, 'auth info should not expose per-user capabilities');
     const refreshedSessions = JSON.parse(readFileSync(sessionsFile, 'utf8'));
     assert.ok(
       refreshedSessions['test-session']?.expiry > Date.now() + 29 * 24 * 60 * 60 * 1000,
@@ -207,7 +237,7 @@ async function main() {
     );
 
     const page = await request(port, 'GET', '/');
-    assert.equal(page.status, 200, 'chat page should render for owner session');
+    assert.equal(page.status, 200, 'chat page should render for an authenticated person');
     assert.match(page.text, /<meta name="color-scheme" content="light dark">/);
     assert.match(page.text, /<meta name="theme-color" content="#ffffff" media="\(prefers-color-scheme: light\)">/);
     assert.match(page.text, /<meta name="theme-color" content="#161618" media="\(prefers-color-scheme: dark\)">/);
@@ -215,10 +245,8 @@ async function main() {
     const bootstrapMatch = page.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
     assert.ok(bootstrapMatch, 'chat page should inline bootstrap payload');
     const bootstrap = JSON.parse(bootstrapMatch[1]);
-    assert.equal(bootstrap.auth?.role, 'owner', 'bootstrap payload should include owner auth');
-    assert.equal(bootstrap.auth?.surfaceMode, 'owner', 'bootstrap auth should identify the owner surface');
-    assert.equal(bootstrap.auth?.principalKind, 'owner', 'bootstrap auth should identify the owner principal kind');
-    assert.equal(bootstrap.auth?.capabilities?.createSession, true, 'bootstrap auth should expose owner capabilities');
+    assert.deepEqual(bootstrap.auth?.person, authMeJson.person, 'bootstrap should identify the signed-in person');
+    assert.equal(bootstrap.people?.some((person) => person.id === 'person_beta'), true, 'bootstrap should include the shared people directory');
     assert.equal(bootstrap.defaultSessionFolder, join(home, '.remotelab', 'workspace'), 'bootstrap should expose the managed default session folder');
     assert.equal(bootstrap.settings?.voiceInput?.configured, false, 'bootstrap should expose default instance voice settings');
     assert.equal(bootstrap.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration', 'bootstrap should expose the recommended default voice resource');
@@ -239,61 +267,68 @@ async function main() {
     assert.match(page.text, /<script src="chat\/instance-settings\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/task-center\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /id="taskCenterPanel"/, 'chat page should expose the Task Center surface');
+    assert.match(page.text, /id="settingsPeopleList"/, 'settings should expose people management');
+    assert.match(page.text, /id="settingsCurrentPersonView"/, 'settings should separate the current Person view from the directory');
+    assert.match(page.text, /id="settingsPersonCreatePanel" hidden/, 'the add-Person form should stay collapsed until requested');
+    assert.doesNotMatch(page.text, /id="settingsPersonCredentialType"/, 'creating a Person should not mix profile and credential setup');
+    assert.match(page.text, /id="personFilterSelect"/, 'the session sidebar should expose a person filter');
     assert.match(page.text, /id="sessionAutoArchiveSelect"/);
     assert.match(page.text, /<script src="chat\/sidebar-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/compose\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /hydrateVoiceSettingsFromBootstrap/, 'chat page should not inline extra voice-settings hydration fallbacks');
 
-    const ownerSettingsBefore = await request(port, 'GET', '/api/settings');
-    assert.equal(ownerSettingsBefore.status, 200, 'owner should be able to read instance settings');
-    const ownerSettingsBeforeJson = JSON.parse(ownerSettingsBefore.text);
-    assert.equal(ownerSettingsBeforeJson.settings?.voiceInput?.configured, false, 'instance settings should start unconfigured in a fresh home');
-    assert.equal(ownerSettingsBeforeJson.settings?.googleOAuth?.configured, false, 'google oauth settings should start unconfigured in a fresh home');
-    assert.equal(ownerSettingsBeforeJson.settings?.sessionAutoArchive?.enabled, false, 'auto archive should be disabled by default');
-    assert.equal(ownerSettingsBeforeJson.settings?.sessionAutoArchive?.inactiveAfterHours, 24, 'auto archive should default to 24 hours when enabled');
+    const settingsBefore = await request(port, 'GET', '/api/settings');
+    assert.equal(settingsBefore.status, 200, 'authenticated people should be able to read instance settings');
+    const settingsBeforeJson = JSON.parse(settingsBefore.text);
+    assert.equal(settingsBeforeJson.settings?.voiceInput?.configured, false, 'instance settings should start unconfigured in a fresh home');
+    assert.equal(settingsBeforeJson.settings?.googleOAuth?.configured, false, 'google oauth settings should start unconfigured in a fresh home');
+    assert.equal(settingsBeforeJson.settings?.sessionAutoArchive?.enabled, false, 'auto archive should be disabled by default');
+    assert.equal(settingsBeforeJson.settings?.sessionAutoArchive?.inactiveAfterHours, 24, 'auto archive should default to 24 hours when enabled');
 
-    const visitorSettingsPatch = await request(port, 'PATCH', '/api/settings', {
+    const secondPersonSettingsPatch = await request(port, 'PATCH', '/api/settings', {
       settings: {
         voiceInput: {
-          appId: 'blocked-app',
+          appId: 'second-person-app',
         },
       },
-    }, { Cookie: visitorCookie });
-    assert.equal(visitorSettingsPatch.status, 403, 'visitor should not be able to edit instance settings');
+    }, { Cookie: secondPersonCookie });
+    assert.equal(secondPersonSettingsPatch.status, 200, 'every authenticated person should have full instance access');
 
-    const ownerWsConnection = await connectWs(port, cookie);
-    ownerWs = ownerWsConnection.socket;
-    ownerWsMessages = ownerWsConnection.messages;
-    const visitorWsConnection = await connectWs(port, visitorCookie);
-    visitorWs = visitorWsConnection.socket;
-    visitorWsMessages = visitorWsConnection.messages;
+    const primaryWsConnection = await connectWs(port, cookie);
+    primaryWs = primaryWsConnection.socket;
+    primaryWsMessages = primaryWsConnection.messages;
+    const secondPersonWsConnection = await connectWs(port, secondPersonCookie);
+    secondPersonWs = secondPersonWsConnection.socket;
+    secondPersonWsMessages = secondPersonWsConnection.messages;
 
-    const ownerSettingsUpdate = await request(port, 'PATCH', '/api/settings', {
+    const settingsUpdate = await request(port, 'PATCH', '/api/settings', {
       settings: {
         voiceInput: {
           appId: '3785118246',
-          accessToken: 'token-owner',
+          accessToken: 'voice-token',
           resourceId: 'volc.seedasr.sauc.duration',
           language: 'en-US',
         },
       },
     });
-    assert.equal(ownerSettingsUpdate.status, 200, 'owner should be able to save instance settings');
-    const ownerSettingsUpdateJson = JSON.parse(ownerSettingsUpdate.text);
-    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.appId, '3785118246');
-    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.accessToken, 'token-owner');
-    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration');
-    assert.equal(ownerSettingsUpdateJson.settings?.voiceInput?.configured, true);
+    assert.equal(settingsUpdate.status, 200, 'authenticated people should be able to save instance settings');
+    const settingsUpdateJson = JSON.parse(settingsUpdate.text);
+    assert.equal(settingsUpdateJson.settings?.voiceInput?.appId, '3785118246');
+    assert.equal(settingsUpdateJson.settings?.voiceInput?.accessToken, 'voice-token');
+    assert.equal(settingsUpdateJson.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration');
+    assert.equal(settingsUpdateJson.settings?.voiceInput?.configured, true);
 
-    const ownerAutoArchiveUpdate = await request(port, 'PATCH', '/api/settings', {
+    const autoArchiveUpdate = await request(port, 'PATCH', '/api/settings', {
       settings: { sessionAutoArchive: { enabled: true, inactiveAfterHours: 72 } },
     });
-    assert.equal(ownerAutoArchiveUpdate.status, 200, 'owner should be able to configure session auto archive');
-    const ownerAutoArchiveUpdateJson = JSON.parse(ownerAutoArchiveUpdate.text);
-    assert.equal(ownerAutoArchiveUpdateJson.settings?.sessionAutoArchive?.enabled, true);
-    assert.equal(ownerAutoArchiveUpdateJson.settings?.sessionAutoArchive?.inactiveAfterHours, 72);
+    assert.equal(autoArchiveUpdate.status, 200, 'authenticated people should be able to configure session auto archive');
+    const autoArchiveUpdateJson = JSON.parse(autoArchiveUpdate.text);
+    assert.equal(autoArchiveUpdateJson.settings?.sessionAutoArchive?.enabled, true);
+    assert.equal(autoArchiveUpdateJson.settings?.sessionAutoArchive?.inactiveAfterHours, 72);
 
-    const ownerGoogleOAuthUpdate = await request(port, 'PATCH', '/api/settings', {
+    const googleOAuthUpdate = await request(port, 'PATCH', '/api/settings', {
       settings: {
         googleOAuth: {
           clientId: 'google-client-id',
@@ -302,47 +337,38 @@ async function main() {
         },
       },
     });
-    assert.equal(ownerGoogleOAuthUpdate.status, 200, 'owner should be able to save google oauth settings');
-    const ownerGoogleOAuthUpdateJson = JSON.parse(ownerGoogleOAuthUpdate.text);
-    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.clientId, 'google-client-id');
-    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.clientSecret, 'google-client-secret');
-    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.redirectUri, 'https://chat.example.com/api/connectors/gmail/google/callback');
-    assert.equal(ownerGoogleOAuthUpdateJson.settings?.googleOAuth?.configured, true);
+    assert.equal(googleOAuthUpdate.status, 200, 'authenticated people should be able to save google oauth settings');
+    const googleOAuthUpdateJson = JSON.parse(googleOAuthUpdate.text);
+    assert.equal(googleOAuthUpdateJson.settings?.googleOAuth?.clientId, 'google-client-id');
+    assert.equal(googleOAuthUpdateJson.settings?.googleOAuth?.clientSecret, 'google-client-secret');
+    assert.equal(googleOAuthUpdateJson.settings?.googleOAuth?.redirectUri, 'https://chat.example.com/api/connectors/gmail/google/callback');
+    assert.equal(googleOAuthUpdateJson.settings?.googleOAuth?.configured, true);
     await waitFor(
       () => (
-        ownerWsMessages.some((msg) => msg.type === 'instance_settings_updated' && msg.updatedAt)
-        && visitorWsMessages.some((msg) => msg.type === 'instance_settings_updated' && msg.updatedAt)
+        primaryWsMessages.some((msg) => msg.type === 'instance_settings_updated' && msg.updatedAt)
+        && secondPersonWsMessages.some((msg) => msg.type === 'instance_settings_updated' && msg.updatedAt)
       ),
       'instance settings websocket update',
     );
 
-    const visitorSettingsRead = await request(port, 'GET', '/api/settings', null, { Cookie: visitorCookie });
-    assert.equal(visitorSettingsRead.status, 200, 'visitor should be able to read sanitized instance settings');
-    const visitorSettingsReadJson = JSON.parse(visitorSettingsRead.text);
-    assert.equal(visitorSettingsReadJson.settings?.voiceInput?.appId, '3785118246');
-    assert.equal(visitorSettingsReadJson.settings?.voiceInput?.accessToken, '', 'visitor settings payload should not expose secrets');
-    assert.equal(visitorSettingsReadJson.settings?.voiceInput?.configured, true, 'visitor settings payload should still expose readiness');
-    assert.equal(visitorSettingsReadJson.settings?.googleOAuth?.clientId, 'google-client-id');
-    assert.equal(visitorSettingsReadJson.settings?.googleOAuth?.clientSecret, '', 'visitor settings payload should not expose google oauth secrets');
-    assert.equal(visitorSettingsReadJson.settings?.googleOAuth?.configured, true, 'visitor settings payload should still expose google oauth readiness');
+    const secondPersonSettingsRead = await request(port, 'GET', '/api/settings', null, { Cookie: secondPersonCookie });
+    assert.equal(secondPersonSettingsRead.status, 200, 'the second person should read full instance settings');
+    const secondPersonSettingsReadJson = JSON.parse(secondPersonSettingsRead.text);
+    assert.equal(secondPersonSettingsReadJson.settings?.voiceInput?.accessToken, 'voice-token');
+    assert.equal(secondPersonSettingsReadJson.settings?.googleOAuth?.clientSecret, 'google-client-secret');
 
-    const visitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: visitorCookie });
-    assert.equal(visitorPage.status, 200, 'chat page should also render for visitor session');
-    const visitorBootstrapMatch = visitorPage.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
-    assert.ok(visitorBootstrapMatch, 'visitor page should inline bootstrap payload');
-    const visitorBootstrap = JSON.parse(visitorBootstrapMatch[1]);
-    assert.equal(visitorBootstrap.auth?.role, 'visitor', 'visitor page should inline visitor auth');
-    assert.equal(visitorBootstrap.auth?.surfaceMode, 'visitor', 'legacy visitor bootstrap should stay on visitor surface mode');
-    assert.equal(visitorBootstrap.auth?.principalKind, 'visitor', 'legacy visitor bootstrap should preserve the visitor principal kind');
-    assert.equal(visitorBootstrap.auth?.agentId, 'shared-agent', 'legacy visitor bootstrap should keep the shared agent id');
-    assert.equal(visitorBootstrap.auth?.preferredLanguage, 'zh-CN', 'legacy visitor bootstrap should retain preferred language');
-    assert.equal(visitorBootstrap.auth?.sessionId, 'visitor-session-id', 'legacy visitor bootstrap should expose the pinned session id');
-    assert.equal(visitorBootstrap.auth?.visitorId, 'visitor-123', 'legacy visitor bootstrap should expose visitor identity');
-    assert.equal(visitorBootstrap.auth?.capabilities?.listSessions, false, 'legacy visitor bootstrap should not expose multi-session list access');
-    assert.equal(visitorBootstrap.settings?.voiceInput?.accessToken, '', 'visitor bootstrap should not inline voice secrets');
-    assert.equal(visitorBootstrap.settings?.voiceInput?.configured, true, 'visitor bootstrap should still expose shared voice readiness');
-    assert.equal(visitorBootstrap.settings?.googleOAuth?.clientSecret, '', 'visitor bootstrap should not inline google oauth secrets');
-    assert.equal(visitorBootstrap.settings?.googleOAuth?.configured, true, 'visitor bootstrap should still expose google oauth readiness');
+    const secondPersonPage = await request(port, 'GET', '/', null, { Cookie: secondPersonCookie });
+    assert.equal(secondPersonPage.status, 200, 'chat page should render for a second authenticated person');
+    const secondPersonBootstrapMatch = secondPersonPage.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
+    assert.ok(secondPersonBootstrapMatch, 'second-person page should inline bootstrap payload');
+    const secondPersonBootstrap = JSON.parse(secondPersonBootstrapMatch[1]);
+    assert.deepEqual(secondPersonBootstrap.auth?.person, {
+      id: 'person_beta',
+      name: 'Beta',
+      identityId: 'identity_web_beta',
+    });
+    assert.equal(secondPersonBootstrap.auth?.preferredLanguage, 'zh-CN');
+    assert.equal(secondPersonBootstrap.people?.some((person) => person.id === 'person_alpha'), true);
     assert.match(page.text, /<script src="chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.doesNotMatch(page.text, /id="accountFilterSelect"/);
@@ -378,8 +404,8 @@ async function main() {
     assert.doesNotMatch(page.text, /id="voiceInputBtn"/);
     assert.doesNotMatch(page.text, /id="voiceFileInput"/);
     assert.doesNotMatch(page.text, /id="voiceCleanupToggle"/);
-    assert.match(page.text, /class="header-btn header-btn--sessions" id="menuBtn"/, 'mobile header should expose an icon-only session-list entry');
-    assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label sr-only" data-i18n="nav\.sessions">Sessions</, 'session button should keep its localized label available to assistive technology only');
+    assert.match(page.text, /class="header-btn header-btn--sessions" id="menuBtn"/, 'mobile header should expose an icon-only application-navigation entry');
+    assert.match(page.text, /id="menuBtn"[\s\S]*class="header-btn-label sr-only" data-i18n="nav\.open">Open navigation</, 'navigation button should keep its localized label available to assistive technology only');
     assert.doesNotMatch(page.text, /id="forkSessionBtn"/, 'fork should no longer occupy the top header');
     assert.match(page.text, /class="header-status"[\s\S]*id="statusText"[\s\S]*id="shareSnapshotBtn"/, 'run status should sit immediately before the share action');
     assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"[\s\S]*class="header-action-label sr-only"/, 'share should render as an icon-only action with an accessible label');
@@ -432,7 +458,7 @@ async function main() {
       chatInputStylesheet.text,
       chatResponsiveStylesheet.text,
     ].join('\n');
-    assert.match(combinedChatStyles, /\.header-btn,\s*\.sidebar-tab,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'sidebar interactions should suppress the mobile tap highlight flash');
+    assert.match(combinedChatStyles, /\.header-btn,\s*\.sidebar-nav-button,\s*\.sidebar-filter-select,\s*\.new-session-btn,\s*\.session-action-btn,\s*\.session-item,\s*\.folder-group-header,\s*\.archived-section-header\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/, 'application sidebar interactions should suppress the mobile tap highlight flash');
     assert.match(combinedChatStyles, /--app-height:\s*100dvh/);
     assert.match(combinedChatStyles, /\.input-config-row\s*\{[\s\S]*overflow-x:\s*auto;[\s\S]*touch-action:\s*pan-x;/, 'runtime controls should remain horizontally scrollable on mobile');
     assert.match(combinedChatStyles, /\.tool-select,\s*\.provider-select,\s*\.model-select,\s*\.effort-select\s*\{[\s\S]*field-sizing:\s*content;/, 'runtime pickers should size from the selected text when supported');
@@ -450,7 +476,8 @@ async function main() {
     assert.match(combinedChatStyles, /\.queued-panel-details\s*\{[\s\S]*?max-height:\s*min\(36vh, 320px\);[\s\S]*?overflow-y:\s*auto;/, 'expanded queue details should stay scroll-bounded instead of covering the chat surface');
     assert.match(combinedChatStyles, /\.queued-panel-details\[hidden\]\s*\{[\s\S]*?display:\s*none;/, 'queue details should support a collapsed summary-only state');
     assert.doesNotMatch(combinedChatStyles, /\.sidebar-overlay\.collapsed/, 'desktop sidebar should no longer render a collapsed state');
-    assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'desktop modals should offset against the fixed-width sidebar');
+    assert.match(combinedChatStyles, /\.modal-backdrop\s*\{[\s\S]*?padding-left:\s*calc\(var\(--sidebar-width\) \+ 24px\);/, 'modals should offset against the one persistent desktop sidebar');
+    assert.doesNotMatch(combinedChatStyles, /--app-rail-width|\.app-rail|\.navigation-drawer/, 'the classic layout should not retain a second application rail');
     assert.match(combinedChatStyles, /body\.keyboard-open \.messages/);
     assert.match(combinedChatStyles, /body\.keyboard-open \.input-area/);
     assert.doesNotMatch(combinedChatStyles, /--app-top-offset/);
@@ -473,9 +500,9 @@ async function main() {
     assert.equal(manifestJson.shortcuts[0]?.url, './?intent=new-session', 'manifest shortcut should stay inside the current product scope');
     assert.equal(manifestJson.icons[0]?.src, 'icon.svg', 'manifest icons should resolve relative to the current product scope');
 
-    const prefixedPage = await request(port, 'GET', '/', null, { 'x-forwarded-prefix': '/owner' });
+    const prefixedPage = await request(port, 'GET', '/', null, { 'x-forwarded-prefix': '/lab' });
     assert.equal(prefixedPage.status, 200, 'chat page should still render behind a forwarded product prefix');
-    assert.match(prefixedPage.text, /<base href="\/owner\/">/, 'chat page should advertise the forwarded product prefix through base href');
+    assert.match(prefixedPage.text, /<base href="\/lab\/">/, 'chat page should advertise the forwarded product prefix through base href');
     assert.match(prefixedPage.text, /<link rel="manifest" href="manifest\.json\?v=/, 'chat page should keep the manifest link relative inside a prefixed surface');
     assert.match(prefixedPage.text, /<link rel="stylesheet" href="chat\/chat\.css\?v=/, 'chat page should keep the split stylesheet inside the forwarded product scope');
     assert.match(prefixedPage.text, /<script src="chat\/product-paths\.js(?:\?v=[^"]*)?"/, 'chat page should continue to load the product-path helper under a prefix');
@@ -490,118 +517,217 @@ async function main() {
 
     const prefixedLoginPage = await request(port, 'GET', '/login', null, {
       Cookie: '',
-      'x-forwarded-prefix': '/owner',
+      'x-forwarded-prefix': '/lab',
     });
     assert.equal(prefixedLoginPage.status, 200, 'login page should still render behind a forwarded product prefix');
-    assert.match(prefixedLoginPage.text, /<base href="\/owner\/">/, 'login page should advertise the forwarded product prefix through base href');
+    assert.match(prefixedLoginPage.text, /<base href="\/lab\/">/, 'login page should advertise the forwarded product prefix through base href');
     assert.match(prefixedLoginPage.text, /<form id="pw-form" method="POST" action="login">/, 'login password form should stay inside the forwarded product scope');
     assert.match(prefixedLoginPage.text, /<form id="token-form" class="hidden" method="POST" action="login">/, 'login token form should stay inside the forwarded product scope');
 
-    const agents = await request(port, 'GET', '/api/agents');
-    assert.equal(agents.status, 200, 'owner agents endpoint should be available');
-    const agentList = JSON.parse(agents.text);
-    assert.ok(Array.isArray(agentList.agents), 'owner agents endpoint should return a collection');
+    for (const removedPath of ['/api/agents', '/api/apps', '/api/users', '/api/visitors']) {
+      const removed = await request(port, 'GET', removedPath);
+      assert.equal(removed.status, 404, `${removedPath} should be absent from the product surface`);
+    }
+    for (const removedPath of ['/agent/example-token', '/visitor/example-token']) {
+      const removed = await request(port, 'GET', removedPath, null, { Cookie: '' });
+      assert.equal(removed.status, 302, `${removedPath} should be treated as an unauthenticated unknown path`);
+      assert.equal(removed.headers.location, '/login');
+    }
 
-    const legacyApps = await request(port, 'GET', '/api/apps');
-    assert.equal(legacyApps.status, 404, 'legacy owner apps endpoint should be absent from the product surface');
+    const peopleResponse = await request(port, 'GET', '/api/people');
+    assert.equal(peopleResponse.status, 200, 'people directory should be available to authenticated people');
+    const peopleJson = JSON.parse(peopleResponse.text);
+    assert.equal(peopleJson.people?.some((person) => person.id === 'person_alpha'), true);
+    assert.equal(peopleJson.people?.some((person) => person.id === 'person_beta'), true);
+    assert.equal(peopleJson.people?.some((person) => person.system === true), true);
+    assert.equal(peopleJson.people?.find((person) => person.id === 'person_alpha')?.handle, 'zhangyu95');
+    assert.match(
+      peopleJson.people?.find((person) => person.id === 'person_beta')?.handle || '',
+      /^beta-[a-f0-9]{4}$/,
+      'legacy People should receive readable stable handles during normalization',
+    );
 
-    const users = await request(port, 'GET', '/api/users');
-    assert.equal(users.status, 404, 'owner users endpoint should be absent from the product surface');
-
-    const visitors = await request(port, 'GET', '/api/visitors');
-    assert.equal(visitors.status, 404, 'owner visitors endpoint should be absent from the product surface');
-
-    const legacyAgentShare = await request(port, 'GET', '/app/example-token', null, { Cookie: '' });
-    assert.equal(legacyAgentShare.status, 404, 'legacy app share route should stay absent');
-
-    const agentShare = await request(port, 'GET', '/agent/example-token', null, { Cookie: '' });
-    assert.equal(agentShare.status, 404, 'interactive agent share route should reject unknown tokens');
-
-    const visitorShare = await request(port, 'GET', '/visitor/example-token');
-    assert.equal(visitorShare.status, 404, 'interactive visitor share route should be absent');
-
-    const createdAgent = await request(port, 'POST', '/api/agents', {
-      name: 'Shared Drawing Agent',
-      systemPrompt: 'You are a shared drawing agent.',
-      welcomeMessage: 'Welcome to the shared drawing agent.',
-      tool: 'codex',
+    const profileOnlyCreate = await request(port, 'POST', '/api/people', {
+      name: 'Profile Only',
+      handle: 'profile-only',
+      credentialType: 'none',
     });
-    assert.equal(createdAgent.status, 201, 'owner should be able to create a shareable agent');
-    const createdAgentJson = JSON.parse(createdAgent.text);
-    assert.ok(createdAgentJson.shareToken, 'created agent should include a share token');
+    assert.equal(profileOnlyCreate.status, 201, 'a Person profile should be creatable before choosing a sign-in method');
+    const profileOnlyJson = JSON.parse(profileOnlyCreate.text);
+    assert.equal(profileOnlyJson.issuedToken, '');
+    assert.equal('credentialId' in profileOnlyJson, false);
+    const profileOnlyPerson = profileOnlyJson.people?.find((person) => person.id === profileOnlyJson.personId);
+    assert.equal(profileOnlyPerson?.handle, 'profile-only');
+    assert.deepEqual(profileOnlyPerson?.credentials, []);
+    assert.deepEqual(profileOnlyPerson?.identities, []);
 
-    const legacySharedEntry = await request(port, 'GET', `/app/${createdAgentJson.shareToken}`, null, { Cookie: '' });
-    assert.equal(legacySharedEntry.status, 404, 'legacy app share links should stay removed');
-
-    const sharedEntry = await request(port, 'GET', `/agent/${createdAgentJson.shareToken}`, null, { Cookie: '' });
-    assert.equal(sharedEntry.status, 302, 'shared agent route should mint a visitor session and redirect into visitor mode');
-    assert.equal(sharedEntry.headers.location, '/?visitor=1');
-    assert.ok(Array.isArray(sharedEntry.headers['set-cookie']), 'shared agent route should set a visitor cookie');
-    const sharedVisitorCookie = sharedEntry.headers['set-cookie'][0].split(';')[0];
-    assert.match(sharedVisitorCookie, /^visitor_session_token=/);
-
-    const sharedVisitorPage = await request(port, 'GET', '/?visitor=1', null, { Cookie: sharedVisitorCookie });
-    assert.equal(sharedVisitorPage.status, 200, 'shared visitor session should be able to open the chat surface');
-    const sharedVisitorBootstrapMatch = sharedVisitorPage.text.match(/window\.__REMOTELAB_BOOTSTRAP__ = ([^;]+);/);
-    assert.ok(sharedVisitorBootstrapMatch, 'shared visitor page should inline bootstrap payload');
-    const sharedVisitorBootstrap = JSON.parse(sharedVisitorBootstrapMatch[1]);
-    assert.equal(sharedVisitorBootstrap.auth?.role, 'visitor');
-    assert.equal(sharedVisitorBootstrap.auth?.surfaceMode, 'agent_scoped', 'shared agent bootstrap should identify the agent-scoped surface');
-    assert.equal(sharedVisitorBootstrap.auth?.principalKind, 'agent_guest', 'shared agent bootstrap should identify the shared guest principal');
-    assert.equal(sharedVisitorBootstrap.auth?.agentId, createdAgentJson.id);
-    assert.equal(sharedVisitorBootstrap.auth?.currentAgent?.id, createdAgentJson.id, 'shared agent bootstrap should expose the current agent context');
-    assert.equal(sharedVisitorBootstrap.auth?.currentAgent?.tool, 'codex', 'shared agent bootstrap should expose the current agent tool');
-    assert.ok(sharedVisitorBootstrap.auth?.principalId, 'shared visitor bootstrap should expose a principal identity');
-    assert.ok(sharedVisitorBootstrap.auth?.visitorId, 'shared visitor bootstrap should expose a visitor identity');
-    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.listSessions, true, 'shared agent bootstrap should allow listing sessions');
-    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.createSession, true, 'shared agent bootstrap should allow creating sessions');
-    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.changeRuntime, false, 'shared agent bootstrap should keep runtime selection disabled');
-    assert.equal(sharedVisitorBootstrap.auth?.capabilities?.switchAgents, false, 'shared agent bootstrap should keep agent switching disabled');
-
-    const sharedAuthMe = await request(port, 'GET', '/api/auth/me?visitor=1', null, { Cookie: sharedVisitorCookie });
-    assert.equal(sharedAuthMe.status, 200, 'shared visitor auth endpoint should resolve on the visitor cookie');
-    const sharedAuthMeJson = JSON.parse(sharedAuthMe.text);
-    assert.equal(sharedAuthMeJson.surfaceMode, 'agent_scoped', 'shared visitor auth should report the agent-scoped surface');
-    assert.equal(sharedAuthMeJson.currentAgent?.id, createdAgentJson.id, 'shared visitor auth should expose current agent metadata');
-    assert.ok(sharedAuthMeJson.principalId, 'shared visitor auth should expose a principal id');
-
-    const sharedCreated = await request(port, 'POST', '/api/sessions?visitor=1', {
-      name: 'Shared guest workspace session',
-    }, { Cookie: sharedVisitorCookie });
-    assert.equal(sharedCreated.status, 201, 'shared visitors should be able to create sessions inside the shared agent workspace');
-    const sharedCreatedJson = JSON.parse(sharedCreated.text);
-    assert.equal(sharedCreatedJson.session?.templateId, createdAgentJson.id, 'shared visitor sessions should be pinned to the shared agent template');
-    assert.equal(sharedCreatedJson.session?.agentId, createdAgentJson.id, 'shared visitor sessions should persist the shared agent id');
-    assert.equal(sharedCreatedJson.session?.visitorId, sharedVisitorBootstrap.auth?.principalId, 'shared visitor sessions should be isolated to the minted principal');
-    assert.equal(sharedCreatedJson.session?.tool, 'codex', 'shared visitor sessions should inherit the shared agent tool');
-    assert.equal(sharedCreatedJson.session?.folder, join(home, '.remotelab', 'workspace'), 'shared visitor sessions should default to the managed work root');
-
-    const defaultOwnerCreated = await request(port, 'POST', '/api/sessions', {
-      tool: 'codex',
-      name: 'Owner default workspace session',
+    const browserReconcile = await request(port, 'POST', '/api/people/reconcile-external-identity', {
+      kind: 'feishu',
+      realm: 'bot-alpha',
+      subjectId: 'ou_browser_forbidden',
+      displayName: 'Alpha',
     });
-    assert.equal(defaultOwnerCreated.status, 201, 'owner sessions should be creatable without an explicit folder');
-    const defaultOwnerCreatedJson = JSON.parse(defaultOwnerCreated.text);
-    assert.equal(defaultOwnerCreatedJson.session?.folder, join(home, '.remotelab', 'workspace'), 'owner sessions without a folder should default to the managed work root');
+    assert.equal(browserReconcile.status, 403, 'identity reconciliation should be connector-service only');
+    const peopleCountBeforeNoMatch = profileOnlyJson.people.length;
+    const noMatchReconcile = await request(port, 'POST', '/api/people/reconcile-external-identity', {
+      kind: 'feishu',
+      realm: 'bot-alpha',
+      subjectId: 'ou_no_match',
+      displayName: 'No Matching Person',
+    }, { Cookie: '', Authorization: `Bearer ${serviceToken}` });
+    assert.equal(noMatchReconcile.status, 200);
+    assert.equal(JSON.parse(noMatchReconcile.text).matched, false);
+    assert.equal(
+      JSON.parse((await request(port, 'GET', '/api/people')).text).people.length,
+      peopleCountBeforeNoMatch,
+      'startup reconciliation must not create People for unrelated known senders',
+    );
 
-    const sharedList = await request(port, 'GET', '/api/sessions?visitor=1', null, { Cookie: sharedVisitorCookie });
-    assert.equal(sharedList.status, 200, 'shared visitors should be able to list their workspace sessions');
-    const sharedListJson = JSON.parse(sharedList.text);
-    assert.equal(sharedListJson.sessions?.length, 1, 'shared visitor list should expose only the visitor-owned workspace session');
-    assert.equal(sharedListJson.sessions?.[0]?.id, sharedCreatedJson.session.id, 'shared visitor list should contain the created workspace session');
+    const betaCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'Beta workspace session',
+    }, { Cookie: secondPersonCookie });
+    assert.equal(betaCreated.status, 201, 'the second person should be able to create sessions');
+    const betaCreatedJson = JSON.parse(betaCreated.text);
+    assert.equal(betaCreatedJson.session?.initiatedByIdentityId, 'identity_web_beta');
+    assert.equal(betaCreatedJson.session?.folder, join(home, '.remotelab', 'workspace'));
 
-    const sharedRenamed = await request(port, 'PATCH', `/api/sessions/${sharedCreatedJson.session.id}?visitor=1`, {
-      name: 'Shared guest workspace session renamed',
-    }, { Cookie: sharedVisitorCookie });
-    assert.equal(sharedRenamed.status, 200, 'shared visitors should be able to rename their workspace session');
-    assert.match(sharedRenamed.text, /Shared guest workspace session renamed/);
+    const defaultCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'Alpha default workspace session',
+    });
+    assert.equal(defaultCreated.status, 201, 'the primary person should be able to create sessions');
+    const defaultCreatedJson = JSON.parse(defaultCreated.text);
+    assert.equal(defaultCreatedJson.session?.initiatedByIdentityId, 'identity_web_alpha');
+    assert.equal(defaultCreatedJson.session?.folder, join(home, '.remotelab', 'workspace'));
+
+    const serviceCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'System automation session',
+    }, { Cookie: '', Authorization: `Bearer ${serviceToken}` });
+    assert.equal(serviceCreated.status, 201);
+    const serviceCreatedJson = JSON.parse(serviceCreated.text);
+    assert.equal(
+      serviceCreatedJson.session?.initiatedByIdentityId,
+      'identity_system',
+      'senderless service-token work should be attributed to System, not a Person',
+    );
+    const serviceLogin = await request(port, 'GET', `/?token=${encodeURIComponent(serviceToken)}`, null, { Cookie: '' });
+    assert.equal(serviceLogin.status, 302);
+    const serviceCookie = String(serviceLogin.headers['set-cookie']?.[0] || '').split(';')[0];
+    const serviceCookieCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'System cookie automation session',
+    }, { Cookie: serviceCookie });
+    assert.equal(serviceCookieCreated.status, 201);
+    assert.equal(
+      JSON.parse(serviceCookieCreated.text).session?.initiatedByIdentityId,
+      'identity_system',
+      'service-token login cookies should preserve System attribution for connector clients',
+    );
+
+    const feishuCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'Feishu attributed session',
+      sourceId: 'feishu',
+      sourceContext: {
+        connector: 'feishu',
+        sourceRouteId: 'bot-alpha',
+        sender: { openId: 'ou_feishu_person_1', unionId: 'on_feishu_person_1' },
+      },
+    }, { Cookie: '', Authorization: `Bearer ${serviceToken}` });
+    assert.equal(feishuCreated.status, 201);
+    const feishuCreatedJson = JSON.parse(feishuCreated.text);
+    assert.notEqual(feishuCreatedJson.session?.initiatedByIdentityId, 'identity_system');
+    const peopleAfterFeishu = JSON.parse((await request(port, 'GET', '/api/people')).text).people;
+    const discoveredFeishuPerson = peopleAfterFeishu.find((person) => person.identities?.some(
+      (identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha',
+    ));
+    assert.equal(
+      discoveredFeishuPerson?.identities?.some((identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha'),
+      true,
+      'Feishu sender IDs should discover a filterable person identity without restricting Session access',
+    );
+    assert.match(discoveredFeishuPerson.handle, /^feishu-[a-f0-9]{4}$/);
+    const enrichedFeishuCreated = await request(port, 'POST', '/api/sessions', {
+      tool: 'codex',
+      name: 'Feishu automatically linked session',
+      sourceId: 'feishu',
+      sourceContext: {
+        connector: 'feishu',
+        sourceRouteId: 'bot-alpha',
+        sender: {
+          openId: 'ou_feishu_person_1',
+          unionId: 'on_feishu_person_1',
+          name: '张予',
+        },
+      },
+    }, { Cookie: '', Authorization: `Bearer ${serviceToken}` });
+    assert.equal(enrichedFeishuCreated.status, 201);
+    assert.equal(
+      JSON.parse(enrichedFeishuCreated.text).session?.initiatedByIdentityId,
+      feishuCreatedJson.session?.initiatedByIdentityId,
+      'profile enrichment should preserve the durable provider identity',
+    );
+    const peopleAfterIdentityMerge = JSON.parse((await request(port, 'GET', '/api/people')).text).people;
+    assert.equal(peopleAfterIdentityMerge.some((person) => person.id === discoveredFeishuPerson.id), false);
+    assert.equal(
+      peopleAfterIdentityMerge.find((person) => person.id === 'person_alpha')?.identities?.some(
+        (identity) => identity.kind === 'feishu' && identity.realm === 'bot-alpha',
+      ),
+      true,
+      'an enriched Feishu identity should automatically coalesce with the matching Web Person',
+    );
+
+    const betaList = await request(port, 'GET', '/api/sessions', null, { Cookie: secondPersonCookie });
+    assert.equal(betaList.status, 200, 'the second person should list every Session');
+    const betaListJson = JSON.parse(betaList.text);
+    assert.equal(betaListJson.sessions?.some((session) => session.id === betaCreatedJson.session.id), true);
+    assert.equal(betaListJson.sessions?.some((session) => session.id === defaultCreatedJson.session.id), true, 'identity is a filter label, not a visibility boundary');
+
+    const crossPersonRename = await request(port, 'PATCH', `/api/sessions/${defaultCreatedJson.session.id}`, {
+      name: 'Alpha session renamed by Beta',
+    }, { Cookie: secondPersonCookie });
+    assert.equal(crossPersonRename.status, 200, 'the second person should be able to modify another person’s Session');
+    assert.match(crossPersonRename.text, /Alpha session renamed by Beta/);
+
+    const alphaViewPatch = await request(port, 'PATCH', `/api/sessions/${defaultCreatedJson.session.id}`, {
+      space: 'Alpha Space',
+      group: 'Alpha Group',
+      sidebarOrder: 3,
+    });
+    assert.equal(alphaViewPatch.status, 200);
+    assert.equal(JSON.parse(alphaViewPatch.text).session?.group, 'Alpha Group');
+
+    const betaViewBeforePatch = await request(
+      port,
+      'GET',
+      `/api/sessions/${defaultCreatedJson.session.id}`,
+      null,
+      { Cookie: secondPersonCookie },
+    );
+    assert.equal(JSON.parse(betaViewBeforePatch.text).session?.group, undefined, 'another person starts with an independent Session layout');
+
+    const betaViewPatch = await request(port, 'PATCH', `/api/sessions/${defaultCreatedJson.session.id}`, {
+      space: 'Beta Space',
+      group: 'Beta Group',
+      sidebarOrder: 1,
+    }, { Cookie: secondPersonCookie });
+    assert.equal(betaViewPatch.status, 200);
+    assert.equal(JSON.parse(betaViewPatch.text).session?.group, 'Beta Group');
+
+    const alphaViewAfterBetaPatch = await request(port, 'GET', `/api/sessions/${defaultCreatedJson.session.id}`);
+    const alphaViewSession = JSON.parse(alphaViewAfterBetaPatch.text).session;
+    assert.equal(alphaViewSession?.space, 'Alpha Space');
+    assert.equal(alphaViewSession?.group, 'Alpha Group');
+    assert.equal(alphaViewSession?.sidebarOrder, 3, 'one person’s sorting must not overwrite another person’s UI view');
 
     const createdChat = await request(port, 'POST', '/api/sessions', {
       folder: home,
       tool: 'codex',
-      name: 'Owner chat session',
+      name: 'Alpha chat session',
     });
-    assert.equal(createdChat.status, 201, 'owner chat session should be creatable over HTTP');
+    assert.equal(createdChat.status, 201, 'chat session should be creatable over HTTP');
     const createdChatJson = JSON.parse(createdChat.text);
 
     const createdGithub = await request(port, 'POST', '/api/sessions', {
@@ -634,20 +760,15 @@ async function main() {
       'other sessions should remain visible after pinning',
     );
 
-    const sharedListAfterOwnerCreates = await request(port, 'GET', '/api/sessions?visitor=1', null, { Cookie: sharedVisitorCookie });
-    assert.equal(sharedListAfterOwnerCreates.status, 200, 'shared visitors should still list sessions after owner creates more sessions');
-    const sharedListAfterOwnerCreatesJson = JSON.parse(sharedListAfterOwnerCreates.text);
-    assert.equal(
-      sharedListAfterOwnerCreatesJson.sessions?.some((session) => session.id === createdChatJson.session.id),
-      false,
-      'shared visitors should not see owner sessions outside their scoped workspace',
-    );
+    const betaListAfterAlphaCreates = await request(port, 'GET', '/api/sessions', null, { Cookie: secondPersonCookie });
+    assert.equal(betaListAfterAlphaCreates.status, 200);
+    assert.equal(JSON.parse(betaListAfterAlphaCreates.text).sessions?.some((session) => session.id === createdChatJson.session.id), true);
 
     const githubOnly = await request(port, 'GET', '/api/sessions?sourceId=github');
     assert.equal(githubOnly.status, 200, 'source-filtered session list should load');
     assert.match(githubOnly.text, /"sourceId":"github"/);
     assert.match(githubOnly.text, /"sourceName":"GitHub"/);
-    assert.doesNotMatch(githubOnly.text, /"name":"Owner chat session"/);
+    assert.doesNotMatch(githubOnly.text, /"name":"Alpha chat session"/);
 
     const splitAsset = await request(port, 'GET', '/chat/bootstrap.js');
     assert.equal(splitAsset.status, 200, 'split chat asset should load');
@@ -870,7 +991,7 @@ async function main() {
     const sidebarUiAsset = await request(port, 'GET', '/chat/sidebar-ui.js');
     assert.equal(sidebarUiAsset.status, 200, 'sidebar ui asset should load');
     assert.match(sidebarUiAsset.text, /function openSidebar\(/);
-    assert.match(sidebarUiAsset.text, /menuBtn\.addEventListener\("click", openSessionsSidebar\);/, 'header session button should always open the sessions tab');
+    assert.match(sidebarUiAsset.text, /menuBtn\.addEventListener\("click", openApplicationNavigation\);/, 'the mobile header button should open the application navigation without changing workspaces');
     assert.doesNotMatch(sidebarUiAsset.text, /setSessionViewMode|viewInboxBtn|viewProjectsBtn/, 'sidebar controller should not retain the removed Inbox/Projects toggle');
     assert.match(sidebarUiAsset.text, /function createNewSessionShortcut\([\s\S]*?forceComposerFocus = true/, 'new-session drafts should reclaim composer focus by default');
     assert.match(sidebarUiAsset.text, /function materializeNewSessionShortcut\(\)/, 'the first send should have an explicit session-materialization path');
@@ -885,8 +1006,9 @@ async function main() {
     assert.match(settingsUiAsset.text, /function initVoiceInputSettings\(/);
     assert.match(settingsUiAsset.text, /function initSessionAutoArchiveSettings\(/);
     assert.match(settingsUiAsset.text, /function renderVoiceInputClusterOptions\(/);
-    assert.match(settingsUiAsset.text, /\/api\/pi-auth\/sync-codex/, 'Pi should reuse the machine Codex login');
-    assert.doesNotMatch(settingsUiAsset.text, /Pi · OpenAI[\s\S]*separate from the Codex CLI login/, 'Pi should not expose a second Codex login');
+    assert.doesNotMatch(settingsUiAsset.text, /\/api\/pi-auth\/sync-codex/, 'Pi should not copy the machine Codex login');
+    assert.match(settingsUiAsset.text, /\/api\/pi-auth\/device-login/, 'Pi should expose its own device login');
+    assert.match(settingsUiAsset.text, /separate from the Codex CLI login/, 'Pi should explain that login state is independent');
 
     const instanceSettingsAsset = await request(port, 'GET', '/chat/instance-settings.js');
     assert.equal(instanceSettingsAsset.status, 200, 'instance settings asset should load');
@@ -921,7 +1043,7 @@ async function main() {
     assert.equal(initAssetReload.status, 200, 'init asset should load');
     assert.match(initAssetReload.text, /typeof getBootstrapAuthInfo === "function"/);
     assert.match(initAssetReload.text, /loadInlineTools\(\{ skipModelLoad: true \}\)/);
-    assert.match(initAssetReload.text, /bootstrapViaHttp\(\{ deferOwnerRestore: true \}\)/);
+    assert.match(initAssetReload.text, /bootstrapViaHttp\(\{ deferSelectionRestore: true \}\)/);
     assert.match(initAssetReload.text, /intent !== "new-session"/, 'init should recognize the quick-entry launch intent');
     assert.match(initAssetReload.text, /forceComposerFocus: true/, 'launch intent should request a one-time forced composer focus');
     assert.match(page.text, /id="settingsInstallAppBtn"/, 'settings page should expose a direct install button');
@@ -1017,8 +1139,8 @@ async function main() {
     });
     assert.equal(loader304.status, 304, 'loader should also support conditional GETs');
   } finally {
-    try { ownerWs?.close(); } catch {}
-    try { visitorWs?.close(); } catch {}
+    try { primaryWs?.close(); } catch {}
+    try { secondPersonWs?.close(); } catch {}
     await stopServer(server);
     rmSync(home, { recursive: true, force: true });
   }

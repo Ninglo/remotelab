@@ -1,6 +1,7 @@
 import { createClaudeAdapter, buildClaudeArgs } from './adapters/claude.mjs';
 import { createCodexAdapter, buildCodexArgs } from './adapters/codex.mjs';
 import { createPiAdapter, buildPiArgs } from './adapters/pi.mjs';
+import { createAntigravityAdapter, buildAntigravityArgs } from './adapters/antigravity.mjs';
 import { resolvePiModelRoute } from './pi-models.mjs';
 import { ensurePiModelBaseline } from './pi-model-baseline.mjs';
 import { expandSessionFolder } from './session-folder.mjs';
@@ -85,8 +86,18 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
       isClaudeFamily: false,
       isCodexFamily: false,
       isPiFamily: true,
+      isAntigravityFamily: false,
       runtimeFamily: normalizedRuntimeFamily,
     };
+  } else if (normalizedRuntimeFamily === 'antigravity-stream-json') {
+    adapter = createAntigravityAdapter();
+    args = buildAntigravityArgs(prompt, {
+      conversationId: options.antigravityConversationId,
+      model: options.model,
+      effort: options.effort,
+      sandbox: String(process.env.IS_SANDBOX || '').trim() === '1',
+      dangerouslySkipPermissions: allowDangerousPermissionSkip,
+    });
   } else {
     throw new Error(`Tool "${toolId}" uses unsupported runtimeFamily "${normalizedRuntimeFamily}"`);
   }
@@ -97,6 +108,7 @@ export function buildRuntimeInvocation(runtimeFamily, prompt, options = {}, tool
     isClaudeFamily: normalizedRuntimeFamily === 'claude-stream-json',
     isCodexFamily: normalizedRuntimeFamily === 'codex-json',
     isPiFamily: normalizedRuntimeFamily === 'pi-json',
+    isAntigravityFamily: normalizedRuntimeFamily === 'antigravity-stream-json',
     runtimeFamily: normalizedRuntimeFamily,
   };
 }
@@ -111,7 +123,9 @@ export async function createToolInvocation(toolId, prompt, options = {}) {
       ? 'claude-stream-json'
       : toolId === 'codex'
         ? 'codex-json'
-        : toolId === 'pi' ? 'pi-json' : null);
+        : toolId === 'pi'
+          ? 'pi-json'
+          : toolId === 'antigravity' ? 'antigravity-stream-json' : null);
   const runtimeInvocation = buildRuntimeInvocation(runtimeFamily, prompt, options, toolId);
   if (runtimeInvocation.isPiFamily) {
     // Direct / scheduled runs must work before anyone opens the model picker.

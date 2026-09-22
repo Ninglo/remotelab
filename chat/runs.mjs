@@ -200,6 +200,10 @@ function mergeRunRecords(current, proposed) {
   merged.providerResumeId = pickDefined(proposed?.providerResumeId, current?.providerResumeId);
   merged.claudeSessionId = pickDefined(proposed?.claudeSessionId, current?.claudeSessionId);
   merged.codexThreadId = pickDefined(proposed?.codexThreadId, current?.codexThreadId);
+  merged.antigravityConversationId = pickDefined(
+    proposed?.antigravityConversationId,
+    current?.antigravityConversationId,
+  );
   merged.runnerProcessId = pickDefined(proposed?.runnerProcessId, current?.runnerProcessId);
   merged.runnerUnitName = pickDefined(proposed?.runnerUnitName, current?.runnerUnitName);
   merged.runnerUnitScope = pickDefined(proposed?.runnerUnitScope, current?.runnerUnitScope);
@@ -227,6 +231,7 @@ export function createRunRecord(input = {}) {
     model: input.model || null,
     effort: input.effort || null,
     thinking: input.thinking === true,
+    ...(input.autoRoutingReceipt ? { autoRoutingReceipt: clone(input.autoRoutingReceipt) } : {}),
     createdAt: input.createdAt || now,
     startedAt: input.startedAt || null,
     updatedAt: input.updatedAt || now,
@@ -237,6 +242,7 @@ export function createRunRecord(input = {}) {
     result: input.result || null,
     claudeSessionId: input.claudeSessionId || null,
     codexThreadId: input.codexThreadId || null,
+    antigravityConversationId: input.antigravityConversationId || null,
     runnerProcessId: input.runnerProcessId || null,
     runnerUnitName: input.runnerUnitName || null,
     runnerUnitScope: input.runnerUnitScope || null,

@@ -80,6 +80,12 @@ export function createCodexAdapter() {
           events.push(statusEvent('completed'));
           break;
 
+        case 'remotelab.activity':
+          if (obj.presentation === 'reasoning' && typeof obj.content === 'string' && obj.content.trim()) {
+            events.push(reasoningEvent(obj.content.trim()));
+          }
+          break;
+
         case 'remotelab.context_metrics':
           events.push(usageEvent({
             contextTokens: obj.contextTokens,

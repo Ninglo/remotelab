@@ -53,8 +53,9 @@ function scopeKeys(summary, { sessionId = '', threadId = '', messageId = '' } = 
     ...[summary.threadId, summary.topicId, threadId]
       .map(trimString).filter(Boolean).map(id => `thread:${id}`),
     ...(sessionId ? [`session:${sessionId}`] : []),
-    // Private chats and /continue reuse a session even without a thread binding.
-    ...(!summary.forkCommand ? [`conversation:${buildExternalTriggerId(summary)}`] : []),
+    // Main timelines share one Session. Thread Sessions use their explicit
+    // message/root/thread aliases instead of consuming the main quota.
+    ...(summary.conversationKind !== 'thread' ? [`conversation:${buildExternalTriggerId(summary)}`] : []),
   ])];
 }
 
@@ -73,7 +74,7 @@ export async function claimFeishuBotHandoff(runtime, summary, sessionId = '') {
 }
 
 // Link newly assigned session/thread/outbound IDs back to the initial admission.
-// Human forks and replies inherit a consumed thread quota, but never consume one.
+// Human-created threads and replies inherit a consumed quota, but never consume one.
 export async function recordFeishuBotHandoffScope(runtime, summary, aliases = {}) {
   if (!summary?.chatId) return;
   const store = handoffStore(runtime);

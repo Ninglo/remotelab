@@ -11,10 +11,6 @@ export async function handleCodexAuthRoutes({
 }) {
   if (!pathname.startsWith('/api/codex-auth')) return false;
   res.setHeader?.('Cache-Control', 'private, no-store');
-  if (authSession?.role !== 'owner') {
-    writeJson(res, 403, { error: 'Owner access required' });
-    return true;
-  }
 
   if (pathname === '/api/codex-auth/status' && req.method === 'GET') {
     try {

@@ -646,7 +646,7 @@ print_success "Created: credentials.txt (saved securely)"
 print_header "Step 7: Starting Services"
 
 print_info "Seeding starter sessions..."
-if node "$SCRIPT_DIR/scripts/backfill-owner-bootstrap.mjs" >/dev/null 2>&1; then
+if node "$SCRIPT_DIR/scripts/backfill-bootstrap.mjs" >/dev/null 2>&1; then
     print_success "Starter sessions seeded"
 else
     print_warning "Starter session bootstrap failed; continuing without seeded example sessions"

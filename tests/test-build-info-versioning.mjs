@@ -208,7 +208,11 @@ async function main() {
 
     const chatPage = await request(port, '/');
     assert.equal(chatPage.status, 200, 'chat page should render');
-    assert.match(chatPage.text, new RegExp(escapeRegex(`Build ${initial.label}`)));
+    assert.doesNotMatch(
+      chatPage.text,
+      new RegExp(escapeRegex(`>Build ${initial.label}<`)),
+      'chat navigation should not spend visible space on build metadata',
+    );
     assert.match(chatPage.text, new RegExp(escapeRegex(initial.title)));
 
     mkdirSync(publicPageProbeDir, { recursive: true });

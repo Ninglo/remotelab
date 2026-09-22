@@ -18,7 +18,7 @@ Probe specific routes:
 
 ```bash
 npm run diag:tunnel -- \
-  --path /api/sessions?view=refs&includeVisitor=1 \
+  --path /api/sessions?view=refs \
   --path /api/models \
   --path /chat/ui.js \
   --warm 3
@@ -33,7 +33,7 @@ npm run diag:tunnel -- --remote-base https://remotelab.example.com
 ## What the script does
 
 - reads `~/.cloudflared/config.yml` to find the port `7690` hostname
-- reuses the owner token from `~/.config/remotelab/auth.json` for `/api/*` probes
+- reuses the primary web token from `~/.config/remotelab/auth.json` for `/api/*` probes
 - appends a unique `_perf=...` query marker to every `/api/*` request
 - matches that marker against `~/.config/remotelab/api-logs/*.jsonl` to recover the app's own `responseStartMs` / `durationMs`
 - probes `/cdn-cgi/trace` on the same hostname so you can see the current Cloudflare colo
@@ -61,4 +61,3 @@ This script is designed to answer the product question “should we keep Cloudfl
 - keep Tunnel when the local app is the clear bottleneck and the tunnel adds little
 - optimize app caching when local `304` work is large
 - consider another ingress path when static assets and stable `304`s are still slow over the tunnel while local origin is fast
-

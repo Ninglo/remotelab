@@ -67,9 +67,12 @@ try {
   assert.match(replies.at(-1), /\/unmute/);
   await send('/mute unexpected');
   assert.equal(replies.at(-1), '/mute 不接受参数（第 1 行）');
-  await send('/fork\n\nexplicit task');
-  assert.deepEqual(effects, ['reaction', 'submit'], 'explicit task commands remain available');
   effects.length = 0;
+  const replyCountBeforeExplicitThread = replies.length;
+  await send('/thread\n\nexplicit task');
+  assert.equal(replies.length, replyCountBeforeExplicitThread);
+  assert.deepEqual(effects, ['reaction', 'submit'],
+    '/thread explicitly continues the fixed Thread instead of trying to split it');
 
   runtime = makeRuntime();
   await silent('still muted after restart');

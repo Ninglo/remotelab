@@ -7,16 +7,25 @@
   .header #menuBtn { display: none; }
 
   .sidebar-overlay {
-    display: block !important; position: static; background: none;
-    width: var(--sidebar-width); flex-shrink: 0;
-    border-right: 1px solid var(--border); z-index: auto;
-    transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    display: block !important;
+    position: static;
+    width: var(--sidebar-width);
+    flex-shrink: 0;
+    background: none;
+    border-right: 1px solid var(--border);
+    z-index: auto;
   }
 
   .sidebar {
-    position: static; left: auto; width: 100%; height: 100%;
-    border-right: none; z-index: auto; transition: none; padding-top: 0;
+    position: static;
+    width: 100%;
+    height: 100%;
+    padding-top: 0;
+    border-right: 0;
+    box-shadow: none;
+    transition: none;
   }
+  .sidebar-primary-nav { padding-top: 10px; }
   .sidebar-overlay.open .sidebar { left: auto; }
   .sidebar-close-btn { display: none; }
 
@@ -49,6 +58,37 @@
     gap: 6px;
     padding-left: 10px;
     padding-right: 10px;
+  }
+
+  .settings-panel {
+    padding: 22px 16px calc(30px + var(--safe-bottom));
+  }
+
+  .settings-current-person {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .settings-current-person-filter {
+    width: 100%;
+  }
+
+  .settings-person-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-person-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 13px;
+  }
+
+  .settings-person-manage {
+    display: none;
+  }
+
+  .settings-person-body {
+    padding: 0 14px;
   }
 
   .header-status {
@@ -96,10 +136,6 @@
   }
 }
 
-/* ---- Visitor mode: chat-only, no sidebar ---- */
-body.visitor-mode .sidebar-overlay { display: none !important; }
-body.visitor-mode .header #menuBtn { display: none !important; }
-body.visitor-mode .gesture-pill { display: none !important; }
 body.share-snapshot-mode .input-area {
   opacity: 1;
 }

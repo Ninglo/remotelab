@@ -49,7 +49,7 @@ Usage:
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
   remotelab trigger                  Manage durable session triggers
-  remotelab schedule                 Manage recurring cron schedules
+  remotelab schedule                 Manage recurring automated tasks
   remotelab usage-summary            Summarize local Codex token usage
   remotelab session-preflight        Inspect session-start preflight status and daily statistics
   remotelab quick-stats              Summarize Quick Session latency by source

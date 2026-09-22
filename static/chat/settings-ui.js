@@ -67,21 +67,434 @@ function initSessionAutoArchiveSettings() {
   sessionAutoArchiveSelect.dataset.bound = "true";
 }
 
-const HIDDEN_MANAGED_AGENT_IDS = new Set([
-  "email",
-]);
-const CREATE_AGENT_STARTER_PRESET = "create_agent";
-let managedAppsCache = [];
-let managedAppsLoaded = false;
 const settingsConnectorsList = document.getElementById("settingsConnectorsList");
+const settingsPeopleList = document.getElementById("settingsPeopleList");
+const settingsCurrentPersonSummary = document.getElementById("settingsCurrentPersonSummary");
+const settingsDefaultPersonFilter = document.getElementById("settingsDefaultPersonFilter");
+const settingsPersonCreateToggle = document.getElementById("settingsPersonCreateToggle");
+const settingsPersonCreatePanel = document.getElementById("settingsPersonCreatePanel");
+const settingsPersonName = document.getElementById("settingsPersonName");
+const settingsPersonUsername = document.getElementById("settingsPersonUsername");
+const settingsPersonCreate = document.getElementById("settingsPersonCreate");
+const settingsPersonCreateCancel = document.getElementById("settingsPersonCreateCancel");
+const settingsPeopleStatus = document.getElementById("settingsPeopleStatus");
 let connectorSurfacesCache = [];
 let connectorSurfacesLoaded = false;
 let expandedConnectorSurfaceId = "";
 let codexAuthState = null;
 let codexAuthPollTimer = null;
+let piAuthPollTimer = null;
 let codexAuthRequestId = 0;
 const CODEX_AUTH_MUTATION_TIMEOUT_MS = 20_000;
 let piAuthState = null;
+function setPeopleStatus(message = "", { error = false } = {}) {
+  if (!settingsPeopleStatus) return;
+  settingsPeopleStatus.hidden = !message;
+  settingsPeopleStatus.textContent = message;
+  settingsPeopleStatus.classList.toggle("error", error);
+}
+
+async function requestPeople(path = "/api/people", options = {}) {
+  const payload = await fetchJsonOrRedirect(path, {
+    revalidate: false,
+    ...options,
+    headers: options.body ? { "Content-Type": "application/json", ...(options.headers || {}) } : options.headers,
+  });
+  if (Array.isArray(payload?.people)) {
+    replacePeopleDirectory(payload.people);
+    if (typeof refreshSessionCatalog === "function") refreshSessionCatalog();
+  }
+  return payload;
+}
+
+function getPersonInitials(person) {
+  const name = String(person?.name || person?.handle || "?").trim();
+  if (!name) return "?";
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length > 1) return words.slice(0, 2).map((word) => Array.from(word)[0]).join("").toUpperCase();
+  const characters = Array.from(name);
+  return characters.length > 0 ? characters[0].toUpperCase() : "?";
+}
+
+function getPersonTone(person) {
+  let hash = 0;
+  for (const character of String(person?.handle || person?.id || "")) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+  return String(Math.abs(hash) % 5);
+}
+
+function buildPersonAvatar(person, className = "") {
+  const avatar = document.createElement("div");
+  avatar.className = `settings-person-avatar${className ? ` ${className}` : ""}`;
+  avatar.dataset.tone = getPersonTone(person);
+  avatar.textContent = getPersonInitials(person);
+  avatar.setAttribute("aria-hidden", "true");
+  return avatar;
+}
+
+function buildPersonBadge(text, variant = "") {
+  const badge = document.createElement("span");
+  badge.className = `settings-person-badge${variant ? ` ${variant}` : ""}`;
+  badge.textContent = text;
+  return badge;
+}
+
+function getConnectedIdentities(person) {
+  return (person.identities || []).filter((identity) => identity.kind !== "web" && identity.kind !== "system");
+}
+
+function buildPersonSummaryMeta(person) {
+  const meta = document.createElement("div");
+  meta.className = "settings-person-summary-meta";
+  const identities = getConnectedIdentities(person);
+  const identityCounts = new Map();
+  for (const identity of identities) {
+    const kind = identity.kind === "feishu" ? "Feishu" : identity.kind;
+    identityCounts.set(kind, (identityCounts.get(kind) || 0) + 1);
+  }
+  for (const [kind, count] of identityCounts) meta.appendChild(buildPersonBadge(count > 1 ? `${kind} ×${count}` : kind, "connected"));
+  const passwords = (person.credentials || []).filter((credential) => credential.type === "password");
+  const tokens = (person.credentials || []).filter((credential) => credential.type === "token");
+  if (passwords.length > 0) meta.appendChild(buildPersonBadge(t("settings.people.passwordAccess")));
+  if (tokens.length > 0) meta.appendChild(buildPersonBadge(tokens.length > 1 ? `${t("settings.people.token")} ×${tokens.length}` : t("settings.people.token")));
+  if (passwords.length === 0 && tokens.length === 0) meta.appendChild(buildPersonBadge(t("settings.people.noWebSignIn"), "muted"));
+  return meta;
+}
+
+function buildPersonSection(title, note = "") {
+  const section = document.createElement("section");
+  section.className = "settings-person-detail-section";
+  const heading = document.createElement("div");
+  heading.className = "settings-person-detail-heading";
+  const label = document.createElement("h4");
+  label.textContent = title;
+  heading.appendChild(label);
+  if (note) {
+    const description = document.createElement("p");
+    description.textContent = note;
+    heading.appendChild(description);
+  }
+  section.appendChild(heading);
+  return section;
+}
+
+function buildCredentialRow(person, credential) {
+  const row = document.createElement("div");
+  row.className = "settings-person-data-row";
+  const icon = document.createElement("div");
+  icon.className = "settings-person-data-icon";
+  icon.textContent = credential.type === "password" ? "P" : "T";
+  icon.setAttribute("aria-hidden", "true");
+  row.appendChild(icon);
+  const copy = document.createElement("div");
+  copy.className = "settings-person-data-copy";
+  const title = document.createElement("strong");
+  title.textContent = credential.type === "password"
+    ? t("settings.people.passwordAccess")
+    : (credential.label || t("settings.people.token"));
+  const detail = document.createElement("span");
+  detail.textContent = credential.type === "password"
+    ? `@${credential.username || person.handle}`
+    : `•••• ${credential.tokenSuffix || ""}`;
+  copy.append(title, detail);
+  row.appendChild(copy);
+  const remove = document.createElement("button");
+  remove.className = "settings-person-text-btn danger";
+  remove.type = "button";
+  remove.textContent = t("action.remove");
+  remove.addEventListener("click", async () => {
+    if (!window.confirm(t("settings.people.removeCredentialConfirm"))) return;
+    remove.disabled = true;
+    try {
+      await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials/${encodeURIComponent(credential.id)}`, { method: "DELETE" });
+      await renderPeopleSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      remove.disabled = false;
+    }
+  });
+  row.appendChild(remove);
+  return row;
+}
+
+function buildIdentityRow(identity) {
+  const row = document.createElement("div");
+  row.className = "settings-person-data-row";
+  const icon = document.createElement("div");
+  icon.className = "settings-person-data-icon connected";
+  icon.textContent = identity.kind === "feishu" ? "飞" : String(identity.kind || "?").slice(0, 1).toUpperCase();
+  icon.setAttribute("aria-hidden", "true");
+  row.appendChild(icon);
+  const copy = document.createElement("div");
+  copy.className = "settings-person-data-copy";
+  const title = document.createElement("strong");
+  title.textContent = identity.kind === "feishu" ? "Feishu" : identity.kind;
+  const detail = document.createElement("span");
+  detail.textContent = [identity.displayName, identity.realm].filter(Boolean).join(" · ");
+  copy.append(title, detail);
+  row.appendChild(copy);
+  const status = document.createElement("span");
+  status.className = "settings-person-connected-status";
+  status.textContent = t("settings.people.connected");
+  row.appendChild(status);
+  return row;
+}
+
+function buildPersonCard(person) {
+  const card = document.createElement("details");
+  card.className = "settings-person-card";
+  const summary = document.createElement("summary");
+  summary.className = "settings-person-summary";
+  summary.appendChild(buildPersonAvatar(person));
+  const summaryCopy = document.createElement("div");
+  summaryCopy.className = "settings-person-summary-copy";
+  const titleRow = document.createElement("div");
+  titleRow.className = "settings-person-title-row";
+  const title = document.createElement("strong");
+  title.textContent = person.name;
+  titleRow.appendChild(title);
+  if (person.id === currentPerson?.id) titleRow.appendChild(buildPersonBadge(t("settings.people.you"), "current"));
+  const handle = document.createElement("span");
+  handle.className = "settings-person-handle";
+  handle.textContent = `@${person.handle}`;
+  summaryCopy.append(titleRow, handle, buildPersonSummaryMeta(person));
+  summary.appendChild(summaryCopy);
+  const manage = document.createElement("span");
+  manage.className = "settings-person-manage";
+  manage.textContent = t("settings.people.manage");
+  summary.appendChild(manage);
+  card.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "settings-person-body";
+  const profile = buildPersonSection(t("settings.people.profile"), t("settings.people.profileNote"));
+  const profileGrid = document.createElement("div");
+  profileGrid.className = "settings-person-profile-grid";
+  const nameField = document.createElement("label");
+  nameField.className = "settings-person-field";
+  const nameLabel = document.createElement("span");
+  nameLabel.textContent = t("settings.people.nameLabel");
+  const name = document.createElement("input");
+  name.className = "settings-inline-input";
+  name.value = person.name;
+  name.maxLength = 120;
+  nameField.append(nameLabel, name);
+  const handleField = document.createElement("label");
+  handleField.className = "settings-person-field";
+  const handleLabel = document.createElement("span");
+  handleLabel.textContent = t("settings.people.handleLabel");
+  const handleInput = document.createElement("input");
+  handleInput.className = "settings-inline-input";
+  handleInput.value = person.handle || "";
+  handleInput.autocomplete = "username";
+  handleField.append(handleLabel, handleInput);
+  profileGrid.append(nameField, handleField);
+  profile.appendChild(profileGrid);
+  const profileActions = document.createElement("div");
+  profileActions.className = "settings-person-form-actions";
+  const save = document.createElement("button");
+  save.className = "settings-app-btn settings-person-primary";
+  save.type = "button";
+  save.textContent = t("action.save");
+  save.addEventListener("click", async () => {
+    save.disabled = true;
+    try {
+      await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: name.value, handle: handleInput.value }),
+      });
+      setPeopleStatus(t("settings.people.saved"));
+      await renderPeopleSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      save.disabled = false;
+    }
+  });
+  profileActions.appendChild(save);
+  profile.appendChild(profileActions);
+  body.appendChild(profile);
+
+  const credentials = person.credentials || [];
+  const signIn = buildPersonSection(t("settings.people.signIn"), t("settings.people.signInNote"));
+  const credentialList = document.createElement("div");
+  credentialList.className = "settings-person-data-list";
+  for (const credential of credentials) credentialList.appendChild(buildCredentialRow(person, credential));
+  if (credentials.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "settings-person-empty-state";
+    empty.textContent = t("settings.people.noSignInMethods");
+    credentialList.appendChild(empty);
+  }
+  signIn.appendChild(credentialList);
+  const credentialActions = document.createElement("div");
+  credentialActions.className = "settings-person-form-actions left";
+  if (!credentials.some((credential) => credential.type === "password")) {
+    const addPassword = document.createElement("button");
+    addPassword.className = "settings-app-btn";
+    addPassword.type = "button";
+    addPassword.textContent = t("settings.people.addPassword");
+    addPassword.addEventListener("click", async () => {
+      const password = window.prompt(t("settings.people.passwordPrompt"), "") || "";
+      if (!password) return;
+      addPassword.disabled = true;
+      try {
+        await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials`, {
+          method: "POST",
+          body: JSON.stringify({ type: "password", password }),
+        });
+        setPeopleStatus(t("settings.people.passwordAdded"));
+        await renderPeopleSettings();
+      } catch (error) {
+        setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+        addPassword.disabled = false;
+      }
+    });
+    credentialActions.appendChild(addPassword);
+  }
+  const addToken = document.createElement("button");
+  addToken.className = "settings-app-btn";
+  addToken.type = "button";
+  addToken.textContent = t("settings.people.addToken");
+  addToken.addEventListener("click", async () => {
+    addToken.disabled = true;
+    try {
+      const result = await requestPeople(`/api/people/${encodeURIComponent(person.id)}/credentials`, {
+        method: "POST",
+        body: JSON.stringify({ type: "token" }),
+      });
+      setPeopleStatus(`${t("settings.people.copyToken")}: ${result.issuedToken || ""}`);
+      await renderPeopleSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      addToken.disabled = false;
+    }
+  });
+  credentialActions.appendChild(addToken);
+  signIn.appendChild(credentialActions);
+  body.appendChild(signIn);
+
+  const identities = getConnectedIdentities(person);
+  const connections = buildPersonSection(t("settings.people.connectedApps"), t("settings.people.connectedAppsNote"));
+  const identityList = document.createElement("div");
+  identityList.className = "settings-person-data-list";
+  for (const identity of identities) identityList.appendChild(buildIdentityRow(identity));
+  if (identities.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "settings-person-empty-state";
+    empty.textContent = t("settings.people.noConnectedApps");
+    identityList.appendChild(empty);
+  }
+  connections.appendChild(identityList);
+  body.appendChild(connections);
+  card.appendChild(body);
+  return card;
+}
+
+function renderCurrentPersonSettings(people = getPeopleDirectory()) {
+  if (!settingsCurrentPersonSummary || !settingsDefaultPersonFilter) return;
+  const person = people.find((entry) => entry.id === currentPerson?.id && entry.system !== true);
+  settingsCurrentPersonSummary.replaceChildren();
+  if (!person) {
+    settingsDefaultPersonFilter.disabled = true;
+    return;
+  }
+  settingsCurrentPersonSummary.appendChild(buildPersonAvatar(person, "small"));
+  const copy = document.createElement("div");
+  copy.className = "settings-current-person-copy";
+  const name = document.createElement("strong");
+  name.textContent = person.name;
+  const handle = document.createElement("span");
+  handle.textContent = `@${person.handle}`;
+  copy.append(name, handle);
+  settingsCurrentPersonSummary.appendChild(copy);
+  settingsDefaultPersonFilter.disabled = false;
+  settingsDefaultPersonFilter.value = person.preferences?.defaultSessionPersonFilter === "mine" ? "mine" : "all";
+}
+
+async function renderPeopleSettings({ refresh = false } = {}) {
+  if (!settingsPeopleList) return;
+  if (refresh) {
+    try {
+      await requestPeople();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.loadFailed"), { error: true });
+    }
+  }
+  const people = getPeopleDirectory();
+  renderCurrentPersonSettings(people);
+  const visiblePeople = people
+    .filter((person) => person.system !== true)
+    .sort((left, right) => {
+      if (left.id === currentPerson?.id) return -1;
+      if (right.id === currentPerson?.id) return 1;
+      return String(left.name || "").localeCompare(String(right.name || ""));
+    });
+  settingsPeopleList.replaceChildren(...visiblePeople.map((person) => buildPersonCard(person)));
+}
+
+function setPersonCreateExpanded(expanded) {
+  if (!settingsPersonCreatePanel || !settingsPersonCreateToggle) return;
+  settingsPersonCreatePanel.hidden = !expanded;
+  settingsPersonCreateToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  if (expanded) settingsPersonName?.focus();
+}
+
+function resetPersonCreateForm() {
+  if (settingsPersonName) settingsPersonName.value = "";
+  if (settingsPersonUsername) settingsPersonUsername.value = "";
+}
+
+function initPeopleSettings() {
+  if (!settingsPeopleList) return;
+  settingsPersonCreateToggle?.addEventListener("click", () => {
+    setPersonCreateExpanded(settingsPersonCreatePanel?.hidden !== false);
+  });
+  settingsPersonCreateCancel?.addEventListener("click", () => {
+    resetPersonCreateForm();
+    setPersonCreateExpanded(false);
+  });
+  settingsDefaultPersonFilter?.addEventListener("change", async () => {
+    const person = getPeopleDirectory().find((entry) => entry.id === currentPerson?.id);
+    if (!person) return;
+    settingsDefaultPersonFilter.disabled = true;
+    try {
+      await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ defaultSessionPersonFilter: settingsDefaultPersonFilter.value }),
+      });
+      renderCurrentPersonSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+      renderCurrentPersonSettings();
+    }
+  });
+  settingsPersonCreate?.addEventListener("click", async () => {
+    const name = settingsPersonName?.value.trim() || "";
+    if (!name) return setPeopleStatus(t("settings.people.nameRequired"), { error: true });
+    settingsPersonCreate.disabled = true;
+    setPeopleStatus("");
+    try {
+      const result = await requestPeople("/api/people", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          handle: settingsPersonUsername?.value || "",
+          credentialType: "none",
+        }),
+      });
+      resetPersonCreateForm();
+      setPersonCreateExpanded(false);
+      setPeopleStatus(result.issuedToken
+        ? `${t("settings.people.copyToken")}: ${result.issuedToken}`
+        : t("settings.people.added"));
+      await renderPeopleSettings();
+    } catch (error) {
+      setPeopleStatus(error?.message || t("settings.people.saveFailed"), { error: true });
+    } finally {
+      settingsPersonCreate.disabled = false;
+    }
+  });
+  void renderPeopleSettings();
+}
 function getCodexAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
@@ -391,24 +804,42 @@ function getPiAuthCopy() {
   const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
   return isChinese ? {
     title: "Pi · OpenAI 登录",
-    note: "Pi 复用本机 Codex 登录，不再维护第二套 OpenAI 账号。",
+    note: "供 Pi 中的 GPT / Codex 模型使用，与 Codex CLI 登录相互独立。",
     checking: "检测中…",
-    authenticated: "已同步",
-    loggedOut: "未同步",
-    unavailable: "未安装 Pi",
-    failed: "同步异常",
+    authenticated: "已登录",
+    awaiting: "等待登录",
+    loggedOut: "未登录",
+    unavailable: "未安装 Pi 或 Codex",
+    failed: "登录异常",
     check: "检查状态",
-    start: "同步 Codex 登录",
+    start: "获取登录码",
+    retry: "重新获取",
+    open: "打开登录页",
+    copy: "复制验证码",
+    copied: "已复制",
+    switchAccount: "更换账号",
+    switching: "正在退出…",
+    switchConfirm: "将清除 Pi 的 OpenAI 登录，并立即生成新的登录码。确定继续吗？",
+    logoutFailed: "Pi 退出失败",
   } : {
     title: "Pi · OpenAI login",
-    note: "Pi reuses this machine's Codex login instead of maintaining a second OpenAI account.",
+    note: "Used by GPT / Codex models in Pi. This is separate from the Codex CLI login.",
     checking: "Checking…",
-    authenticated: "Synced",
-    loggedOut: "Not synced",
-    unavailable: "Pi is not installed",
-    failed: "Sync issue",
+    authenticated: "Signed in",
+    awaiting: "Waiting for sign-in",
+    loggedOut: "Signed out",
+    unavailable: "Pi or Codex is not installed",
+    failed: "Login issue",
     check: "Check status",
-    start: "Sync Codex login",
+    start: "Get login code",
+    retry: "Get a new code",
+    open: "Open login page",
+    copy: "Copy code",
+    copied: "Copied",
+    switchAccount: "Switch account",
+    switching: "Signing out…",
+    switchConfirm: "This clears Pi's OpenAI login and immediately generates a new login code. Continue?",
+    logoutFailed: "Pi logout failed",
   };
 }
 
@@ -428,6 +859,14 @@ function ensurePiAuthSection() {
     <div class="settings-app-actions">
       <button class="settings-app-btn" id="settingsPiAuthCheckBtn" type="button"></button>
       <button class="settings-app-btn" id="settingsPiAuthLoginBtn" type="button"></button>
+      <button class="settings-app-btn" id="settingsPiAuthSwitchBtn" type="button" hidden></button>
+    </div>
+    <div class="settings-app-card" id="settingsPiAuthDevice" hidden>
+      <div class="settings-app-name" id="settingsPiAuthCode"></div>
+      <div class="settings-app-actions">
+        <a class="settings-app-btn" id="settingsPiAuthLink" target="_blank" rel="noopener noreferrer"></a>
+        <button class="settings-app-btn" id="settingsPiAuthCopyBtn" type="button"></button>
+      </div>
     </div>
     <div class="settings-app-empty inline-status" id="settingsPiAuthError" hidden></div>
   `;
@@ -436,9 +875,32 @@ function ensurePiAuthSection() {
     void refreshPiAuthStatus({ force: true });
   });
   document.getElementById("settingsPiAuthLoginBtn")?.addEventListener("click", () => {
-    void syncPiCodexLogin();
+    void startPiDeviceLogin();
+  });
+  document.getElementById("settingsPiAuthSwitchBtn")?.addEventListener("click", () => {
+    void switchPiAccount();
+  });
+  document.getElementById("settingsPiAuthCopyBtn")?.addEventListener("click", async (event) => {
+    const code = String(piAuthState?.userCode || "");
+    if (!code) return;
+    if (typeof copyText === "function") await copyText(code);
+    else await navigator.clipboard.writeText(code);
+    const copy = getPiAuthCopy();
+    temporarilyUpdateButtonLabel(event.currentTarget, copy.copied, { resetLabel: copy.copy });
   });
   return section;
+}
+
+function stopPiAuthPolling() {
+  if (piAuthPollTimer) window.clearInterval(piAuthPollTimer);
+  piAuthPollTimer = null;
+}
+
+function startPiAuthPolling() {
+  if (piAuthPollTimer) return;
+  piAuthPollTimer = window.setInterval(() => {
+    void refreshPiAuthStatus({ silent: true });
+  }, 2500);
 }
 
 function renderPiAuthPanel({ checking = false } = {}) {
@@ -450,14 +912,23 @@ function renderPiAuthPanel({ checking = false } = {}) {
   const pill = document.getElementById("settingsPiAuthPill");
   const checkBtn = document.getElementById("settingsPiAuthCheckBtn");
   const loginBtn = document.getElementById("settingsPiAuthLoginBtn");
+  const switchBtn = document.getElementById("settingsPiAuthSwitchBtn");
+  const device = document.getElementById("settingsPiAuthDevice");
+  const code = document.getElementById("settingsPiAuthCode");
+  const link = document.getElementById("settingsPiAuthLink");
+  const copyBtn = document.getElementById("settingsPiAuthCopyBtn");
   const error = document.getElementById("settingsPiAuthError");
+  const awaiting = !state.loggedIn && state.deviceLoginActive && state.userCode;
 
   title.textContent = copy.title;
   note.textContent = copy.note;
   checkBtn.textContent = copy.check;
-  loginBtn.textContent = copy.start;
+  loginBtn.textContent = awaiting ? copy.retry : copy.start;
   loginBtn.hidden = state.loggedIn === true;
   loginBtn.disabled = checking || state.available === false;
+  switchBtn.textContent = copy.switchAccount;
+  switchBtn.hidden = state.loggedIn !== true;
+  switchBtn.disabled = checking || state.available === false;
   checkBtn.disabled = checking;
 
   let statusLabel = copy.loggedOut;
@@ -466,13 +937,22 @@ function renderPiAuthPanel({ checking = false } = {}) {
   else if (state.loggedIn) {
     statusLabel = copy.authenticated;
     tone = "ready";
-  } else if (state.available === false) statusLabel = copy.unavailable;
+  } else if (awaiting) statusLabel = copy.awaiting;
+  else if (state.available === false) statusLabel = copy.unavailable;
   else if (state.phase === "failed") statusLabel = copy.failed;
   pill.className = `settings-connector-pill ${tone}`;
   pill.textContent = statusLabel;
 
+  device.hidden = !awaiting;
+  code.textContent = awaiting ? state.userCode : "";
+  link.textContent = copy.open;
+  link.href = awaiting ? state.verificationUri : "";
+  copyBtn.textContent = copy.copy;
   error.hidden = !state.error;
   error.textContent = state.error || "";
+
+  if (state.deviceLoginActive) startPiAuthPolling();
+  else stopPiAuthPolling();
 }
 
 async function refreshPiAuthStatus({ silent = false } = {}) {
@@ -489,111 +969,43 @@ async function refreshPiAuthStatus({ silent = false } = {}) {
   renderPiAuthPanel();
 }
 
-async function syncPiCodexLogin() {
+async function startPiDeviceLogin() {
   const loginBtn = document.getElementById("settingsPiAuthLoginBtn");
   if (loginBtn) loginBtn.disabled = true;
   try {
-    const data = await fetchJsonOrRedirect("/api/pi-auth/sync-codex", {
+    const data = await fetchJsonOrRedirect("/api/pi-auth/device-login", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ restart: true }),
       revalidate: false,
     });
     piAuthState = data?.piAuth || {};
-    if (
-      piAuthState.loggedIn === true
-      && selectedTool === "pi"
-      && typeof loadModelsForCurrentTool === "function"
-    ) {
-      await loadModelsForCurrentTool({ refresh: true });
-    }
   } catch (error) {
-    piAuthState = { phase: "failed", error: error?.message || "Pi login sync failed" };
+    piAuthState = { phase: "failed", error: error?.message || "Pi login failed" };
   }
   renderPiAuthPanel();
 }
 
-function canManageAgentsFromUi() {
-  return typeof canManageAgents === "function"
-    ? canManageAgents()
-    : !visitorMode;
-}
-
-function isAgentScopedModeFromUi() {
-  return typeof isAgentScopedMode === "function"
-    ? isAgentScopedMode()
-    : false;
-}
-
-function showSettingsAgentsMessage(message) {
-  if (!settingsAgentsList) return;
-  settingsAgentsList.innerHTML = `<div class="settings-app-empty">${message}</div>`;
-}
-
-function resolveSettingsAppKind(app) {
-  return app?.builtin
-    ? t("settings.apps.kind.builtin")
-    : t("settings.apps.kind.custom");
-}
-
-function describeSettingsApp(app) {
-  if (!app?.id) return "";
-  if (app.id === "chat") {
-    return t("settings.apps.label.defaultConversation");
+async function switchPiAccount() {
+  const copy = getPiAuthCopy();
+  if (!window.confirm(copy.switchConfirm)) return;
+  const switchBtn = document.getElementById("settingsPiAuthSwitchBtn");
+  if (switchBtn) {
+    switchBtn.disabled = true;
+    switchBtn.textContent = copy.switching;
   }
-  if (app.builtin) {
-    return t("settings.apps.label.builtinAgent");
+  try {
+    const data = await fetchJsonOrRedirect("/api/pi-auth/logout", {
+      method: "POST",
+      revalidate: false,
+    });
+    piAuthState = data?.piAuth || {};
+    renderPiAuthPanel();
+    await startPiDeviceLogin();
+  } catch (error) {
+    piAuthState = { phase: "failed", error: error?.message || copy.logoutFailed };
+    renderPiAuthPanel();
   }
-  return t("settings.apps.label.customAgent");
-}
-
-function shouldShowManagedApp(app) {
-  if (!app?.id) return false;
-  return !HIDDEN_MANAGED_AGENT_IDS.has(app.id);
-}
-
-function sortManagedApps(apps = []) {
-  return [...apps].sort((left, right) => {
-    if (left?.id === "chat") return -1;
-    if (right?.id === "chat") return 1;
-    if (left?.builtin && !right?.builtin) return -1;
-    if (!left?.builtin && right?.builtin) return 1;
-    return String(left?.name || "").localeCompare(String(right?.name || ""));
-  });
-}
-
-async function fetchManagedApps() {
-  if (visitorMode || !canManageAgentsFromUi()) return [];
-  const data = typeof fetchJsonOrRedirect === "function"
-    ? await fetchJsonOrRedirect("/api/agents")
-    : await fetch("/api/agents").then((response) => response.json());
-  const apps = Array.isArray(data?.agents) ? data.agents : [];
-  managedAppsCache = apps;
-  managedAppsLoaded = true;
-  return apps;
-}
-
-function buildManagedAgentShareUrl(app) {
-  const shareToken = typeof app?.shareToken === "string" ? app.shareToken.trim() : "";
-  if (!shareToken) return "";
-  if (typeof window.remotelabResolveProductUrl === "function") {
-    return window.remotelabResolveProductUrl(`/agent/${encodeURIComponent(shareToken)}`);
-  }
-  return new URL(`/agent/${encodeURIComponent(shareToken)}`, window.location.origin).toString();
-}
-
-async function copyManagedAgentShareLink(app) {
-  const shareUrl = buildManagedAgentShareUrl(app);
-  if (!shareUrl) {
-    throw new Error(t("settings.apps.shareUnavailable"));
-  }
-  if (typeof copyText === "function") {
-    await copyText(shareUrl);
-    return shareUrl;
-  }
-  if (navigator.clipboard?.writeText && window.isSecureContext) {
-    await navigator.clipboard.writeText(shareUrl);
-    return shareUrl;
-  }
-  throw new Error(t("settings.apps.shareFailed"));
 }
 
 function temporarilyUpdateButtonLabel(button, label, {
@@ -609,222 +1021,6 @@ function temporarilyUpdateButtonLabel(button, label, {
     button.textContent = previousLabel;
     button.disabled = false;
   }, durationMs);
-}
-
-async function openManagedAppSession(app, { rememberPreference = true } = {}) {
-  const tool = typeof app?.tool === "string" && app.tool.trim()
-    ? app.tool.trim()
-    : (preferredTool || selectedTool || toolsList[0]?.id || "");
-  if (!tool || typeof dispatchAction !== "function") {
-    throw new Error(t("settings.apps.openFailed"));
-  }
-  if (typeof switchTab === "function") {
-    switchTab("sessions");
-  }
-  if (typeof closeSidebarFn === "function" && !isDesktop) {
-    closeSidebarFn();
-  }
-  if (rememberPreference && typeof setPreferredAgentTemplate === "function") {
-    setPreferredAgentTemplate(app.id || "", { name: app.name || "" });
-  }
-  await dispatchAction({
-    action: "create",
-    folder: typeof window.remotelabGetDefaultSessionFolder === "function"
-      ? window.remotelabGetDefaultSessionFolder()
-      : "~",
-    tool,
-    sourceId: DEFAULT_APP_ID,
-    sourceName: DEFAULT_WEB_SOURCE_NAME,
-    templateId: app.id || "",
-    templateName: app.name || "",
-  });
-}
-
-async function deleteManagedApp(app) {
-  if (!app?.id || app.builtin) return;
-  const confirmed = typeof window.confirm !== "function"
-    ? true
-    : window.confirm(t("settings.apps.deleteConfirm", {
-      name: app.name || t("settings.apps.untitled"),
-    }));
-  if (!confirmed) return;
-  if (typeof fetchJsonOrRedirect === "function") {
-    await fetchJsonOrRedirect(`/api/agents/${encodeURIComponent(app.id)}`, {
-      method: "DELETE",
-    });
-  } else {
-    const response = await fetch(`/api/agents/${encodeURIComponent(app.id)}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      throw new Error(t("settings.apps.deleteFailed"));
-    }
-  }
-  await renderSettingsAgentsPanel({ force: true });
-}
-
-function buildManagedAppCard(app) {
-  const card = document.createElement("div");
-  card.className = "settings-app-card";
-
-  const header = document.createElement("div");
-  header.className = "settings-app-card-header";
-
-  const name = document.createElement("div");
-  name.className = "settings-app-name";
-  name.textContent = app?.name || t("settings.apps.untitled");
-  header.appendChild(name);
-
-  const kind = document.createElement("div");
-  kind.className = "settings-app-kind";
-  kind.textContent = resolveSettingsAppKind(app);
-  header.appendChild(kind);
-  card.appendChild(header);
-
-  const description = document.createElement("div");
-  description.className = "settings-app-description";
-  description.textContent = describeSettingsApp(app);
-  card.appendChild(description);
-
-  const meta = document.createElement("div");
-  meta.className = "settings-app-meta";
-  meta.textContent = t("settings.apps.meta.defaultTool", {
-    tool: app?.tool || t("settings.apps.toolNotSet"),
-  });
-  card.appendChild(meta);
-
-  const actions = document.createElement("div");
-  actions.className = "settings-app-actions";
-
-  const openBtn = document.createElement("button");
-  openBtn.type = "button";
-  openBtn.className = "settings-app-btn";
-  openBtn.textContent = t("settings.apps.openSession");
-  openBtn.addEventListener("click", async () => {
-    openBtn.disabled = true;
-    try {
-      await openManagedAppSession(app);
-    } catch (error) {
-      openBtn.disabled = false;
-      showSettingsAgentsMessage(error?.message || t("settings.apps.openFailed"));
-    }
-  });
-  actions.appendChild(openBtn);
-
-  if (!app?.builtin) {
-    if (typeof app?.shareToken === "string" && app.shareToken.trim()) {
-      const shareBtn = document.createElement("button");
-      shareBtn.type = "button";
-      shareBtn.className = "settings-app-btn";
-      shareBtn.textContent = t("settings.apps.copyLink");
-      shareBtn.addEventListener("click", async () => {
-        const defaultLabel = t("settings.apps.copyLink");
-        shareBtn.disabled = true;
-        try {
-          await copyManagedAgentShareLink(app);
-          temporarilyUpdateButtonLabel(shareBtn, t("action.copied"), {
-            resetLabel: defaultLabel,
-            keepDisabled: true,
-          });
-        } catch (error) {
-          console.warn("[agents] Failed to copy share link:", error?.message || error);
-          temporarilyUpdateButtonLabel(shareBtn, t("settings.apps.shareFailed"), {
-            resetLabel: defaultLabel,
-            keepDisabled: true,
-          });
-        }
-      });
-      actions.appendChild(shareBtn);
-    }
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "settings-app-btn";
-    deleteBtn.textContent = t("settings.apps.delete");
-    deleteBtn.addEventListener("click", async () => {
-      deleteBtn.disabled = true;
-      try {
-        await deleteManagedApp(app);
-      } catch (error) {
-        deleteBtn.disabled = false;
-        showSettingsAgentsMessage(error?.message || t("settings.apps.deleteFailed"));
-      }
-    });
-    actions.appendChild(deleteBtn);
-  }
-
-  card.appendChild(actions);
-  return card;
-}
-
-async function renderSettingsAgentsPanel({ force = false } = {}) {
-  if (!settingsAgentsList) return;
-  if (visitorMode || !canManageAgentsFromUi()) {
-    settingsAgentsList.innerHTML = `<div class="settings-app-empty">${t("settings.apps.ownerOnly")}</div>`;
-    if (createAgentBtn) createAgentBtn.disabled = true;
-    return;
-  }
-
-  if (createAgentBtn) {
-    createAgentBtn.disabled = false;
-  }
-
-  if (force || !managedAppsLoaded) {
-    settingsAgentsList.innerHTML = `<div class="settings-app-empty">${t("settings.apps.loading")}</div>`;
-    try {
-      await fetchManagedApps();
-      if (typeof refreshInlineAgentPicker === "function") {
-        void refreshInlineAgentPicker({ force: true });
-      }
-    } catch (error) {
-      settingsAgentsList.innerHTML = `<div class="settings-app-empty">${error?.message || t("settings.apps.loadingFailed")}</div>`;
-      return;
-    }
-  }
-
-  const visibleApps = sortManagedApps(managedAppsCache.filter((app) => shouldShowManagedApp(app)));
-  settingsAgentsList.innerHTML = "";
-  if (visibleApps.length === 0) {
-    settingsAgentsList.innerHTML = `<div class="settings-app-empty">${t("settings.apps.none")}</div>`;
-    return;
-  }
-  for (const app of visibleApps) {
-    settingsAgentsList.appendChild(buildManagedAppCard(app));
-  }
-}
-
-async function createAgentBuilderSession() {
-  if (createAgentBtn) {
-    createAgentBtn.disabled = true;
-  }
-  try {
-    const tool = preferredTool || selectedTool || toolsList[0]?.id || "";
-    if (!tool || typeof dispatchAction !== "function") {
-      throw new Error(t("settings.apps.openFailed"));
-    }
-    if (typeof switchTab === "function") {
-      switchTab("sessions");
-    }
-    if (typeof closeSidebarFn === "function" && !isDesktop) {
-      closeSidebarFn();
-    }
-    await dispatchAction({
-      action: "create",
-      folder: typeof window.remotelabGetDefaultSessionFolder === "function"
-        ? window.remotelabGetDefaultSessionFolder()
-        : "~",
-      tool,
-      name: t("settings.apps.create"),
-      sourceId: DEFAULT_APP_ID,
-      sourceName: DEFAULT_WEB_SOURCE_NAME,
-      starterPreset: CREATE_AGENT_STARTER_PRESET,
-      forceComposerFocus: true,
-    });
-  } finally {
-    if (createAgentBtn) {
-      createAgentBtn.disabled = false;
-    }
-  }
 }
 
 function renderUiLanguageOptions(selectEl, selectedValue = "auto") {
@@ -1136,7 +1332,7 @@ function setVoiceInputStatus(message, { hidden = false } = {}) {
 function canManageInstanceSettingsFromUi() {
   return typeof window.remotelabCanManageInstanceSettings === "function"
     ? window.remotelabCanManageInstanceSettings()
-    : !visitorMode;
+    : true;
 }
 
 function getCurrentVoiceInputSettings() {
@@ -1189,14 +1385,9 @@ function getVoiceInputStatusMessage(config, {
   if (saving) return t("settings.voice.statusSaving");
   if (loadFailed) return t("settings.voice.statusLoadFailed");
   if (saveFailed) return t("settings.voice.statusSaveFailed");
-  if (canManageInstanceSettingsFromUi()) {
-    return config?.configured === true
-      ? t("settings.voice.statusStored")
-      : t("settings.voice.statusIncomplete");
-  }
   return config?.configured === true
-    ? t("settings.voice.statusOwnerOnlyConfigured")
-    : t("settings.voice.statusOwnerOnlyIncomplete");
+    ? t("settings.voice.statusStored")
+    : t("settings.voice.statusIncomplete");
 }
 
 function syncVoiceInputSettings() {
@@ -1355,7 +1546,7 @@ function renderPushNotificationSettings() {
   const button = document.getElementById("settingsPushEnableBtn");
   const statusEl = document.getElementById("settingsPushStatus");
   if (!section || !button || !statusEl) return;
-  section.hidden = !isOwnerPushFeatureEnabled();
+  section.hidden = !isPushFeatureEnabled();
   if (section.hidden) return;
 
   const supported = supportsBrowserPushSettings();
@@ -1383,7 +1574,7 @@ function renderPushNotificationSettings() {
 }
 
 async function enablePushNotificationsFromSettings() {
-  if (!isOwnerPushFeatureEnabled() || !supportsBrowserPushSettings() || pushNotificationPermissionPending) return;
+  if (!isPushFeatureEnabled() || !supportsBrowserPushSettings() || pushNotificationPermissionPending) return;
   pushNotificationPermissionPending = true;
   pushNotificationPermissionError = "";
   renderPushNotificationSettings();
@@ -1420,7 +1611,7 @@ function renderInstallSettingsPanel() {
     ? window.remotelabGetInstallFlowState()
     : { promptReady: false, standalone: false, mobileEligible: false };
 
-  installBtn.disabled = visitorMode;
+  installBtn.disabled = false;
   installBtn.textContent = state.promptReady
     ? t("settings.install.promptReady")
     : t("settings.install.open");
@@ -1460,7 +1651,7 @@ function initInstallSettings() {
 }
 
 function canManageConnectorSurfacesFromUi() {
-  return !visitorMode && !isAgentScopedModeFromUi();
+  return true;
 }
 
 function resolveConnectorSurfaceUrl(entryUrl) {
@@ -1599,10 +1790,6 @@ function buildConnectorSurfaceCard(surface) {
 
 async function renderSettingsConnectorsPanel({ force = false } = {}) {
   if (!settingsConnectorsList) return;
-  if (!canManageConnectorSurfacesFromUi()) {
-    settingsConnectorsList.innerHTML = `<div class="settings-app-empty">${t("settings.connectors.ownerOnly")}</div>`;
-    return;
-  }
 
   if (force || !connectorSurfacesLoaded) {
     settingsConnectorsList.innerHTML = `<div class="settings-app-empty">${t("settings.connectors.loading")}</div>`;
@@ -1660,7 +1847,6 @@ function renderManagedSessionEntryModeOptions(selectEl, selectedValue = "resume"
 }
 
 function getManagedSettingsSession() {
-  if (visitorMode || isAgentScopedModeFromUi()) return null;
   if (typeof getCurrentSession === "function") {
     return getCurrentSession();
   }
@@ -1671,10 +1857,6 @@ function getManagedSettingsSession() {
 
 function renderSettingsSessionPresentationPanel() {
   if (!settingsSessionPresentationList) return;
-  if (visitorMode || isAgentScopedModeFromUi()) {
-    settingsSessionPresentationList.innerHTML = `<div class="settings-app-empty">${t("settings.sessionPresentation.ownerOnly")}</div>`;
-    return;
-  }
   const session = getManagedSettingsSession();
   settingsSessionPresentationList.innerHTML = "";
   if (!session?.id) {
@@ -1756,36 +1938,19 @@ void refreshPiAuthStatus();
 initThemeSettings();
 initThinkingBlockDisplaySettings();
 initSessionAutoArchiveSettings();
+initPeopleSettings();
 void initVoiceInputSettings();
 initInstallSettings();
 initPushNotificationSettings();
 void renderSettingsConnectorsPanel();
 renderSettingsSessionPresentationPanel();
-void renderSettingsAgentsPanel();
-
-if (createAgentBtn && createAgentBtn.dataset.bound !== "true") {
-  createAgentBtn.addEventListener("click", () => {
-    void createAgentBuilderSession().catch((error) => {
-      if (settingsAgentsList) {
-        settingsAgentsList.innerHTML = `<div class="settings-app-empty">${error?.message || t("settings.apps.openFailed")}</div>`;
-      }
-    });
-  });
-  createAgentBtn.dataset.bound = "true";
-}
-
-if (tabAgents && tabAgents.dataset.appsBound !== "true") {
-  tabAgents.addEventListener("click", () => {
-    void renderSettingsAgentsPanel({ force: true });
-  });
-  tabAgents.dataset.appsBound = "true";
-}
 
 if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
   tabSettings.addEventListener("click", () => {
     renderPushNotificationSettings();
     void refreshCodexAuthStatus({ force: true });
     void refreshPiAuthStatus({ force: true });
+    void renderPeopleSettings({ refresh: true });
     void renderSettingsConnectorsPanel({ force: true });
   });
   tabSettings.dataset.connectorsBound = "true";
@@ -1800,6 +1965,7 @@ window.addEventListener("remotelab:localechange", () => {
   syncThemeSelect();
   syncThinkingBlockDisplaySelect();
   syncSessionAutoArchiveSettings();
+  void renderPeopleSettings();
   if (voiceInputSettingsLoaded) {
     syncVoiceInputSettings();
   }
@@ -1807,7 +1973,6 @@ window.addEventListener("remotelab:localechange", () => {
   renderPushNotificationSettings();
   void renderSettingsConnectorsPanel();
   renderSettingsSessionPresentationPanel();
-  void renderSettingsAgentsPanel();
 });
 
 window.addEventListener("remotelab:pushstatechange", renderPushNotificationSettings);

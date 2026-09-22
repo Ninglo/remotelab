@@ -131,8 +131,6 @@ function createContext() {
     },
     pendingNavigationState: null,
     activeTab: 'sessions',
-    visitorMode: false,
-    visitorSessionId: null,
     currentSessionId: 'current-session',
     hasAttachedSession: true,
     hasLoadedSessions: true,
@@ -214,6 +212,7 @@ function createContext() {
       context.sessions.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
     },
     refreshAppCatalog() {},
+    refreshSessionCatalog() {},
     renderSessionList() {
       renderCalls.push(context.sessions.map((session) => session.id));
     },
@@ -376,11 +375,9 @@ let restoreCalls = 0;
 
 const bootstrapContext = {
   console,
-  visitorMode: false,
-  visitorSessionId: null,
   currentSessionId: 'session-bootstrap',
   attachSession() {
-    throw new Error('owner deferred bootstrap should not attach a placeholder session');
+    throw new Error('deferred bootstrap should not attach a placeholder session');
   },
   refreshCurrentSession() {
     refreshStartedBeforeList = !listResolved;
@@ -394,7 +391,7 @@ const bootstrapContext = {
       };
     });
   },
-  restoreOwnerSessionSelection() {
+  restoreSessionSelection() {
     restoreCalls += 1;
   },
 };
@@ -404,14 +401,14 @@ vm.runInNewContext(bootstrapSnippet, bootstrapContext, {
   filename: 'chat-bootstrap-parallel-runtime.js',
 });
 
-const bootstrapPromise = bootstrapContext.bootstrapViaHttp({ deferOwnerRestore: true });
+const bootstrapPromise = bootstrapContext.bootstrapViaHttp({ deferSelectionRestore: true });
 
 assert.equal(
   refreshStartedBeforeList,
   true,
-  'deferred owner bootstrap should start refreshing the current session before the session list finishes loading',
+  'deferred bootstrap should start refreshing the current session before the session list finishes loading',
 );
-assert.equal(typeof resolveList, 'function', 'deferred owner bootstrap should still start the session list request');
+assert.equal(typeof resolveList, 'function', 'deferred bootstrap should still start the session list request');
 
 resolveList();
 await bootstrapPromise;
@@ -419,7 +416,7 @@ await bootstrapPromise;
 assert.equal(
   restoreCalls,
   0,
-  'deferred owner bootstrap should leave final session selection to the later restore pass',
+  'deferred bootstrap should leave final session selection to the later restore pass',
 );
 
 console.log('test-session-http-ref-hydration: ok');

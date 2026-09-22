@@ -16,7 +16,7 @@ These recipes complement `AGENTS.md` (constraints, priorities) and `docs/project
 |---|---|
 | `chat/router-session-main-routes.mjs` | Session GET/POST: list, detail, events, messages, cancel, fork, share |
 | `chat/router-control-routes.mjs` | PATCH/DELETE + non-session resources: runs, tools, apps, settings, push, browse |
-| `chat/router-public-routes.mjs` | Unauthenticated: `/agent/:token`, `/share/:id`, `/login`, static files |
+| `chat/router-public-routes.mjs` | Unauthenticated: `/share/:id`, `/login`, install handoff, static files |
 
 > **Gotcha:** `PATCH /api/sessions/:id` lives in `router-control-routes.mjs`, not `router-session-main-routes.mjs`. Session-main handles GET/POST on the session resource; control-routes handles PATCH/configuration.
 
@@ -59,28 +59,24 @@ Business logic lives in `chat/session-manager.mjs` (or its extracted helpers). K
 
 ```javascript
 // session-manager.mjs exports:
-import { updateSession } from './session-manager.mjs';
+import { updateSessionGrouping } from './session-manager.mjs';
 
-// updateSession(sessionId, patch) — updates metadata and persists
-// Returns: updated session object
-```
-
-For naming specifically:
-```javascript
-import { applySessionRename } from './session-naming.mjs';
-// applySessionRename(session, { name, group }) — normalizes and applies rename
+// Personal Space/Group/sidebar order requires the requesting Person.
+const updated = await updateSessionGrouping(sessionId, { group }, {
+  personId: authSession.personId,
+});
 ```
 
 ### Step 4 — Notify connected clients
 
 ```javascript
-import { broadcastOwners } from './ws-clients.mjs';
+import { broadcastAll } from './ws-clients.mjs';
 
 // After the mutation:
-broadcastOwners({ type: 'session_invalidated', sessionId });
+broadcastAll({ type: 'session_invalidated', sessionId });
 
 // For changes that affect the session list (new/delete/archive):
-broadcastOwners({ type: 'sessions_invalidated' });
+broadcastAll({ type: 'sessions_invalidated' });
 ```
 
 **WS message types:**
@@ -269,7 +265,7 @@ The backend returns these fields per session (from `chat/session-api-shapes.mjs`
 {
   id, name, tool, model, thinking, effort,
   archived, pinned, folder, group, description,
-  sidebarOrder, visitorId, messageCount,
+  sidebarOrder, initiatedByIdentityId, messageCount,
   activity: {
     run: { state: 'running'|'idle', phase?, requestId? },
     queue: { count: number }
@@ -280,7 +276,9 @@ The backend returns these fields per session (from `chat/session-api-shapes.mjs`
 }
 ```
 
-If you need a new field: add it in `session-api-shapes.mjs` → `stripSessionShape()`.
+`group` and `sidebarOrder` are projections of the requesting Person's
+`personViews[personId]`; they are not global Session fields. If you need a new
+field, decide whether it is shared Session truth or per-Person view state first.
 
 ### Step 3 — Modify the grouping logic
 
@@ -379,15 +377,11 @@ These are the functions you'll call most often when extending RemoteLab.
 
 ```javascript
 // Session mutations (chat/session-manager.mjs)
-updateSession(sessionId, patch)               // → updated session
+updateSessionGrouping(sessionId, patch, { personId }) // → Person-projected session
 deleteSession(sessionId)                      // → void
-
-// Session naming (chat/session-naming.mjs)
-applySessionRename(session, { name, group })  // → void (mutates session)
 
 // WS broadcast (chat/ws-clients.mjs)
 broadcastAll(msg)                             // → void, to all clients
-broadcastOwners(msg)                          // → void, to owner clients only
 
 // JSON response (passed into route handlers)
 writeJson(res, statusCode, body)              // → void

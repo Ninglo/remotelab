@@ -539,7 +539,7 @@ await test('agent-mail-worker: new submissions use sourceDelivery in message pay
     );
 
     const runtime = createRemoteLabRuntime(`http://127.0.0.1:${port}`, {});
-    runtime.readOwnerToken = async () => 'test-token-1234567890abcdef1234567890abcdef12345678';
+    runtime.readServiceToken = async () => 'test-token-1234567890abcdef1234567890abcdef12345678';
     await runSweep({ rootDir: workerMailboxRoot, baseUrl: `http://127.0.0.1:${port}`, runtime });
 
     assert.equal(sessionCreates.length, 1);
@@ -594,7 +594,7 @@ await test('agent-mail-worker: explicit legacy completionTargets in automation a
       'lct.eml', workerMR2, { text: 'legacy ct test' },
     );
     const runtime2 = createRemoteLabRuntime(`http://127.0.0.1:${port2}`, {});
-    runtime2.readOwnerToken = async () => 'test-token-1234567890abcdef1234567890abcdef12345678';
+    runtime2.readServiceToken = async () => 'test-token-1234567890abcdef1234567890abcdef12345678';
     await runSweep({ rootDir: workerMR2, baseUrl: `http://127.0.0.1:${port2}`, runtime: runtime2 });
     assert.equal(sessionCreates2.length, 1);
     const calCT = (sessionCreates2[0].completionTargets || []).find((t) => t.type === 'calendar');
@@ -813,7 +813,7 @@ await test('agent-mail-worker: preparedSessionId persisted; crash-after-session 
     );
 
     const durRuntime = createRemoteLabRuntime(`http://127.0.0.1:${p18}`, {});
-    durRuntime.readOwnerToken = async () => 'tok-durable-1234567890abcdef1234567890abcdef1234';
+    durRuntime.readServiceToken = async () => 'tok-durable-1234567890abcdef1234567890abcdef1234';
 
     // First sweep: session created, message submit destroyed (connection loss)
     const sweep1 = await runSweep({ rootDir: durMailboxRoot, baseUrl: `http://127.0.0.1:${p18}`, runtime: durRuntime });
@@ -900,7 +900,7 @@ await test('runEmailSourceDeliverySweep: claims email deliveries from guest inst
       pathToFileURL(join(repoRoot, 'scripts', 'agent-mail-worker.mjs')).href + `?t=${Date.now()}`
     );
     const rootRuntime19 = createRemoteLabRuntime(`http://127.0.0.1:${rootPort19}`, {});
-    rootRuntime19.readOwnerToken = async () => 'tok-guest-sweep-1234567890abcdef12345678';
+    rootRuntime19.readServiceToken = async () => 'tok-guest-sweep-1234567890abcdef12345678';
 
     await sweepFn19({ rootDir: guestMailboxRoot19, runtime: rootRuntime19 });
 

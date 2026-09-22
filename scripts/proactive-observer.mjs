@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'timers/promises'
 import { fileURLToPath, pathToFileURL } from 'url'
 
 import { AUTH_FILE, CHAT_PORT } from '../lib/config.mjs'
+import { readServiceToken } from '../lib/auth-config.mjs'
 import {
   buildAssistantReplyAttachmentFallbackText,
   selectAssistantReplyEvent,
@@ -534,13 +535,8 @@ async function logObserverEvent(runtime, type, payload = {}) {
   })
 }
 
-async function readOwnerToken() {
-  const auth = JSON.parse(await readFile(AUTH_FILE, 'utf8'))
-  const token = trimString(auth?.token)
-  if (!token) {
-    throw new Error(`No owner token found in ${AUTH_FILE}`)
-  }
-  return token
+async function readConnectorToken() {
+  return readServiceToken(AUTH_FILE)
 }
 
 async function loginWithToken(baseUrl, token) {
@@ -610,9 +606,9 @@ async function ensureAuthCookie(runtime, forceRefresh = false) {
     runtime.authToken = ''
   }
   if (!runtime.authToken) {
-    runtime.authToken = typeof runtime.readOwnerToken === 'function'
-      ? await runtime.readOwnerToken()
-      : await readOwnerToken()
+    runtime.authToken = typeof runtime.readServiceToken === 'function'
+      ? await runtime.readServiceToken()
+      : await readConnectorToken()
   }
   const login = typeof runtime.loginWithToken === 'function' ? runtime.loginWithToken : loginWithToken
   runtime.authCookie = await login(runtime.config.chatBaseUrl, runtime.authToken)

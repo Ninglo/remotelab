@@ -21,7 +21,7 @@ export function shouldAutoArchiveSession(session, settings, { now = Date.now() }
   if (!normalized.enabled || !session || session.archived === true || session.pinned === true) return false;
   if (session.activeRunId || session.activity?.run?.state === 'running') return false;
   if (Number(session.activity?.queue?.count || 0) > 0 || (Array.isArray(session.followUpQueue) && session.followUpQueue.length > 0)) return false;
-  if (session.visitorId || session.internalRole) return false;
+  if (session.internalRole) return false;
   const activityAt = parseTimestamp(session.lastUserMessageAt)
     || parseTimestamp(session.lastEventAt)
     || parseTimestamp(session.updatedAt)

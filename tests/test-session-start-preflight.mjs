@@ -26,6 +26,7 @@ const {
   appendSessionStartPreflightEvent,
   classifySessionStartPreflightAnswer,
   collectSessionStartPreflightStats,
+  formatSessionStartPreflightActivity,
   readSessionStartPreflightPolicy,
 } = await import('../chat/session-start-preflight.mjs');
 const { runSessionStartPreflightCommand } = await import('../lib/session-start-preflight-command.mjs');
@@ -37,9 +38,42 @@ try {
   assert.equal(await readSessionStartPreflightPolicy({
     configFile, tool: 'codex', runtimeFamily: 'codex-json', model: 'gpt-test', freshProviderSession: false,
   }), null, 'resumed provider sessions must not repeat the gate');
+  assert.equal(await readSessionStartPreflightPolicy({
+    configFile,
+    tool: 'codex',
+    runtimeFamily: 'codex-json',
+    model: 'gpt-test',
+    freshProviderSession: true,
+    internalOperation: 'context_compaction_worker',
+    purpose: 'maintenance',
+  }), null, 'silent maintenance work must not run startup preflight');
+  assert.equal((await readSessionStartPreflightPolicy({
+    configFile,
+    tool: 'codex',
+    runtimeFamily: 'codex-json',
+    model: 'gpt-test',
+    freshProviderSession: true,
+    internalOperation: 'trigger_delivery',
+    purpose: 'scheduled_user_work',
+  }))?.enabled, true, 'scheduled user work may retain startup preflight even though delivery plumbing is internal');
   assert.equal(classifySessionStartPreflightAnswer('Gemini 2.5 Pro', { restartAnswers: ['2.5'] }).status, 'restart_required');
   assert.equal(classifySessionStartPreflightAnswer('3.1', { restartAnswers: ['2.5'] }).status, 'loaded');
   assert.equal(classifySessionStartPreflightAnswer('', { restartAnswers: ['2.5'] }).status, 'error');
+  assert.match(formatSessionStartPreflightActivity({
+    state: 'attempt', attempt: 1, maxAttempts: 3, prompt: 'Which model version?',
+  }), /Probe: "Which model version\?"/);
+  assert.match(formatSessionStartPreflightActivity({
+    state: 'restart_required', attempt: 1, maxAttempts: 3, answer: '2.5', matchedAnswer: '2.5', retryDelayMs: 60_000,
+  }), /trying a new one in 60 seconds/);
+  assert.match(formatSessionStartPreflightActivity({
+    state: 'loaded', attempt: 2, maxAttempts: 3, answer: '3.1', hadRestart: true,
+  }), /passed in the replacement provider session with answer "3.1"/);
+  assert.match(formatSessionStartPreflightActivity({
+    state: 'exhausted', attempt: 3, maxAttempts: 3, answer: '2.5', matchedAnswer: '2.5', continuesRealRequest: true,
+  }), /continuing with the original request instead of failing the run/);
+  assert.match(formatSessionStartPreflightActivity({
+    state: 'error', attempt: 1, maxAttempts: 3, reason: 'empty_answer', continuesRealRequest: true,
+  }), /continuing with the original request instead of failing the run/);
 
   const eventsDir = join(root, 'events');
   const base = { day: '2026-09-17', timeZone: 'Asia/Shanghai', tool: 'codex', runtimeFamily: 'codex-json', model: 'gpt-test' };

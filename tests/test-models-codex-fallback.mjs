@@ -53,6 +53,7 @@ process.env.HOME = tempHome;
 process.env.REMOTELAB_CONFIG_DIR = join(tempHome, '.config', 'remotelab');
 delete process.env.REMOTELAB_INSTANCE_ROOT;
 process.env.REMOTELAB_MACHINE_CODEX_HOME = codexDir;
+process.env.TYPESAFE_API_KEY = 'private-test-key';
 
 try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
@@ -67,14 +68,15 @@ try {
 
   assert.equal(
     result.defaultModel,
-    'gpt-5.6-sol',
-    'stale configured/recent Codex models should not override the product default',
+    'auto',
+    'configured Jev is the default for new Codex selections',
   );
   assert.deepEqual(
-    result.models.slice(0, 4).map((model) => model.id),
-    ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5'],
-    'Codex should put the product default first while excluding stale configured and recent models',
+    result.models.slice(0, 5).map((model) => model.id),
+    ['auto', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5'],
+    'Codex should expose Jev auto first while excluding retired or stale configured and recent models',
   );
+  assert.deepEqual(result.models[0].reasoning, { kind: 'none', label: 'Thinking' });
   assert.deepEqual(
     hardcodedModelIds.every((modelId) => result.models.some((model) => model.id === modelId)),
     true,
@@ -94,11 +96,19 @@ try {
   writeFileSync(join(codexDir, 'config.toml'), 'model = "gpt-5.6-sol"\nmodel_reasoning_effort = "xhigh"\n');
   const fresh = await import(`${pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href}?product-default`);
   const configured = await fresh.getModelsForTool('codex');
-  assert.equal(configured.defaultModel, 'gpt-5.6-sol', 'a supported CLI model must not replace the RemoteLab product default');
+  assert.equal(configured.defaultModel, 'auto', 'CLI model preferences must not replace the configured Jev default');
   assert.equal(configured.reasoning.default, 'low', 'CLI effort must not replace the product default');
   assert.ok(configured.models.some(model => model.id === 'gpt-5.6-sol'), 'explicit older model selection remains available');
+  delete process.env.TYPESAFE_API_KEY;
+  process.env.TYPESAFE_KEY_FILE = join(tempHome, 'missing-typesafe.env');
+  const unconfigured = await import(`${pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href}?without-key`);
+  const withoutKey = await unconfigured.getModelsForTool('codex');
+  assert.equal(withoutKey.defaultModel, 'gpt-5.6-sol');
+  assert.equal(withoutKey.models.some(model => model.id === 'auto'), false);
 } finally {
   delete process.env.REMOTELAB_MACHINE_CODEX_HOME;
+  delete process.env.TYPESAFE_API_KEY;
+  delete process.env.TYPESAFE_KEY_FILE;
   rmSync(tempHome, { recursive: true, force: true });
 }
 

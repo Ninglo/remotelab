@@ -90,11 +90,21 @@ try {
   const calls = (await requests()).trim().split('\n').map(s => JSON.parse(s).method);
   assert.ok(calls.every(method => ['initialize', 'initialized', 'account/read', 'account/rateLimits/read'].includes(method)), 'no AI turns or threads');
   for (const pathname of ['/api/codex-auth/status', '/api/codex-auth/rate-limits']) {
-    for (const role of ['visitor', undefined]) {
+    for (const personId of ['person_primary', 'person_second']) {
       let code;
-      await handleCodexAuthRoutes({ req: { method: 'GET' }, res: {}, pathname, authSession: { role }, writeJson: (_r, status) => { code = status; }, authManager: {} });
-      assert.equal(code, 403);
+      await handleCodexAuthRoutes({
+        req: { method: 'GET' },
+        res: {},
+        pathname,
+        authSession: { personId },
+        writeJson: (_r, status) => { code = status; },
+        authManager: {
+          async getStatus() { return { loggedIn: true }; },
+          async getRateLimits() { return { status: 'ready', buckets: [] }; },
+        },
+      });
+      assert.equal(code, 200);
     }
   }
-  console.log('Codex account, usage, cache, privacy, switch and owner-boundary tests passed');
+  console.log('Codex account, usage, cache, privacy, switch and shared-instance tests passed');
 } finally { await rm(home, { recursive: true, force: true }); }

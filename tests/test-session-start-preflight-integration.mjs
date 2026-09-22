@@ -47,6 +47,7 @@ const env = {
   REMOTELAB_USER_SHELL_ENV_B64: Buffer.from(JSON.stringify({ shell: '/bin/sh', mode: 'test', env: {} })).toString('base64'),
   PREFLIGHT_LOG: logPath,
   PREFLIGHT_SEQUENCE_FILE: sequenceFile,
+  PREFLIGHT_ANSWERS: '2.5,3.1,2.5,2.5,2.5,__EMPTY__',
 };
 
 const child = fork(join(repo, 'tests/fixtures/native-codex-controller.mjs'), [], {
@@ -84,29 +85,74 @@ const until = async (predicate, label) => {
 
 try {
   await Promise.race([once(child, 'message'), once(child, 'exit').then(() => { throw new Error(errors); })]);
-  const session = await rpc('create');
-  const accepted = await rpc('accept', session.id, 'REAL_USER_PROMPT', [], { requestId: 'preflight-integration' });
-  await until(async () => (await rpc('response', session.id, 'preflight-integration'))?.state === 'ready', 'preflight-protected answer');
-  const response = await rpc('response', session.id, 'preflight-integration');
-  assert.equal(response.payload.text, 'actual visible answer');
-  const history = await rpc('history', session.id);
+  const recoveredSession = await rpc('create');
+  const recovered = await rpc('accept', recoveredSession.id, 'REAL_USER_PROMPT_AFTER_PASS', [], { requestId: 'preflight-recovered' });
+  await until(async () => (await rpc('response', recoveredSession.id, 'preflight-recovered'))?.state === 'ready', 'replacement preflight answer');
+  assert.equal((await rpc('response', recoveredSession.id, 'preflight-recovered')).payload.text, 'actual visible answer');
+  const recoveredHistory = await rpc('history', recoveredSession.id);
+  const recoveredThought = recoveredHistory
+    .filter((event) => event.type === 'reasoning')
+    .map((event) => event.content)
+    .join('\n');
+  assert.match(recoveredThought, /Probe: "PREFLIGHT_MARKER"/);
+  assert.match(recoveredThought, /matching the configured stale marker "2.5"/);
+  assert.match(recoveredThought, /preflight retry \(attempt 2\/3\)/i);
+  assert.match(recoveredThought, /passed in the replacement provider session with answer "3.1"/);
+
+  const exhaustedSession = await rpc('create');
+  const exhausted = await rpc('accept', exhaustedSession.id, 'ORIGINAL_PROMPT_AFTER_EXHAUSTION', [], { requestId: 'preflight-exhausted' });
+  await until(async () => (await rpc('response', exhaustedSession.id, 'preflight-exhausted'))?.state === 'ready', 'fail-open preflight answer');
+  assert.equal((await rpc('response', exhaustedSession.id, 'preflight-exhausted')).payload.text, 'actual visible answer');
+  const exhaustedHistory = await rpc('history', exhaustedSession.id);
   assert.deepEqual(
-    history.filter((event) => event.type === 'message' && event.role === 'assistant').map((event) => event.content),
+    exhaustedHistory.filter((event) => event.type === 'message' && event.role === 'assistant').map((event) => event.content),
     ['actual visible answer'],
-    'probe replies stay out of canonical user history',
+    'probe replies stay out of canonical assistant messages when warming is exhausted',
   );
+  const exhaustedThought = exhaustedHistory
+    .filter((event) => event.type === 'reasoning')
+    .map((event) => event.content)
+    .join('\n');
+  assert.match(exhaustedThought, /preflight retry \(attempt 3\/3\)/i);
+  assert.match(exhaustedThought, /continuing with the original request instead of failing the run/i);
+
+  const erroredSession = await rpc('create');
+  const errored = await rpc('accept', erroredSession.id, 'ORIGINAL_PROMPT_AFTER_PROBE_ERROR', [], { requestId: 'preflight-error' });
+  await until(async () => (await rpc('response', erroredSession.id, 'preflight-error'))?.state === 'ready', 'probe-error fail-open answer');
+  assert.equal((await rpc('response', erroredSession.id, 'preflight-error')).payload.text, 'actual visible answer');
+  const erroredThought = (await rpc('history', erroredSession.id))
+    .filter((event) => event.type === 'reasoning')
+    .map((event) => event.content)
+    .join('\n');
+  assert.match(erroredThought, /could not produce a usable warming result/i);
+  assert.match(erroredThought, /continuing with the original request instead of failing the run/i);
+
   const prompts = (await readFile(logPath, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse);
-  assert.deepEqual(prompts.map((entry) => entry.text), ['PREFLIGHT_MARKER', 'PREFLIGHT_MARKER', 'REAL_USER_PROMPT']);
+  assert.deepEqual(prompts.map((entry) => entry.text), [
+    'PREFLIGHT_MARKER',
+    'PREFLIGHT_MARKER',
+    'REAL_USER_PROMPT_AFTER_PASS',
+    'PREFLIGHT_MARKER',
+    'PREFLIGHT_MARKER',
+    'PREFLIGHT_MARKER',
+    'ORIGINAL_PROMPT_AFTER_EXHAUSTION',
+    'PREFLIGHT_MARKER',
+    'ORIGINAL_PROMPT_AFTER_PROBE_ERROR',
+  ]);
 
   const { stdout } = await execFileAsync(process.execPath, [join(repo, 'cli.js'), 'session-preflight', 'stats', '--days', '1', '--json'], { env });
   const stats = JSON.parse(stdout);
-  assert.equal(stats.totals.triggered, 1);
+  assert.equal(stats.totals.triggered, 3);
   assert.equal(stats.totals.normalLoads, 0);
-  assert.equal(stats.totals.neededNewSession, 1);
+  assert.equal(stats.totals.neededNewSession, 2);
   assert.equal(stats.totals.loadedAfterRestart, 1);
-  assert.equal(stats.totals.neededNewSessionRate, 1);
-  assert.equal(accepted.run.id.length > 0, true);
-  console.log('session start preflight integration: stale provider replaced, real prompt isolated, daily statistics verified');
+  assert.equal(stats.totals.exhausted, 1);
+  assert.equal(stats.totals.errors, 1);
+  assert.equal(stats.totals.neededNewSessionRate, 0.6667);
+  assert.equal(recovered.run.id.length > 0, true);
+  assert.equal(exhausted.run.id.length > 0, true);
+  assert.equal(errored.run.id.length > 0, true);
+  console.log('session start preflight integration: replacement, exhaustion and probe errors all preserve the original prompt');
 } finally {
   if (child.exitCode === null && child.signalCode === null) {
     const exited = once(child, 'exit');

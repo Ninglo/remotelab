@@ -1,6 +1,6 @@
 # Prefix Bridge Routing
 
-RemoteLab treats path-prefixed bridge ingress as an optional auxiliary surface, not the primary routing model. Primary product entrypoints should use dedicated hostnames such as `thelab.jiujianian.dev` and `owner.jiujianian-dev-world.win`.
+RemoteLab treats path-prefixed bridge ingress as an optional auxiliary surface, not the primary routing model. Primary product entrypoints should use dedicated hostnames such as `thelab.jiujianian.dev`.
 
 ## Rules
 
@@ -17,7 +17,7 @@ RemoteLab treats path-prefixed bridge ingress as an optional auxiliary surface, 
 
 ## Current Prefix-Bridge Shape
 
-- The live deployment should use subdomain-style hostnames for owner and guest-facing entrypoints.
+- The live deployment should use subdomain-style hostnames for primary and guest-instance entrypoints.
 - Legacy path-prefixed bridges such as `/owner/` should stay disabled unless they are explicitly re-enabled for a temporary migration.
 
 ## Configuration

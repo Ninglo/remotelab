@@ -66,6 +66,31 @@ RemoteLab setup is the primary configuration UX.
 - the current chat turn's tool/model choice remains the runtime source of truth
 - background helpers such as auto-naming or summarization should inherit the current turn selection rather than silently switching providers
 
+### Optional Jev auto model routing
+
+When a TypeSafe API key is configured, the CodeX model list defaults to `Auto
+(Jev)` for new selections without a saved preference. Selecting it for a new Standard Session asks Jev to choose Luna, Sol,
+or Astra plus a reasoning level from the first user message. RemoteLab persists
+that concrete selection on the Session, so later turns keep the same native
+provider context. A user-selected concrete model always bypasses Jev.
+
+Store the key in the service environment as `TYPESAFE_API_KEY`, or in the
+instance config directory as a private `typesafe.env` file:
+
+```text
+TYPESAFE_API_KEY=...
+```
+
+The file must be readable only by the service user. The optional
+`TYPESAFE_KEY_FILE` environment variable may point to a different private env
+file. `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`, and
+`TYPESAFE_TIMEOUT_MS` override the API URL, Jev model, and routing timeout.
+
+Routing failures, missing credentials, material high-risk probability, and
+malformed responses fall back to CodeX Astra with high reasoning. The persisted routing
+receipt contains the chosen route, confidence summary, latency, and fallback
+reason; it never contains the API key or user prompt.
+
 ## [HUMAN] checkpoints
 
 1. Cloudflare authentication via browser if `cloudflared tunnel login` requires it (Cloudflare mode only).
@@ -84,7 +109,7 @@ The AI should do the rest inside the conversation:
 - do not require the human to pre-clone the repo; if `~/code/remotelab` is missing, fetch this contract from its canonical URL, clone `https://github.com/Ninglo/remotelab.git` into `~/code/remotelab`, otherwise update the existing repo, then run `npm install` and expose the CLI with `npm link` if needed
 - prefer `remotelab setup` when it cleanly fits the environment; for cpolar or Tailscale mode, configure the service directly when the current setup flow is still Cloudflare-oriented
 - generate access auth with `remotelab generate-token`; optionally add password auth with `remotelab set-password`
-- configure the boot-managed owner stack based on network mode:
+- configure the boot-managed instance stack based on network mode:
   - **Cloudflare**: chat plane on `127.0.0.1:7690`, Cloudflare tunnel for the public URL
   - **cpolar**: chat plane on `127.0.0.1:7690`, cpolar HTTP tunnel for the public URL, prefer `cn_vip` / China VIP for mainland-facing access, and use either a quick random URL or a reserved stable subdomain based on the user's sharing need
   - **Tailscale**: chat plane on `0.0.0.0:7690` (via `CHAT_BIND_HOST=0.0.0.0`), `SECURE_COOKIES=0` for HTTP access. Note: `0.0.0.0` listens on all interfaces; on untrusted networks, configure a firewall to restrict port `7690` to the Tailscale subnet (`100.64.0.0/10`)
@@ -98,7 +123,7 @@ The AI should do the rest inside the conversation:
 
 | Surface | Expected state |
 | --- | --- |
-| Primary chat service | boot-managed owner service (`remotelab.service` on Linux) on `http://127.0.0.1:7690` |
+| Primary chat service | boot-managed instance service (`remotelab.service` on Linux) on `http://127.0.0.1:7690` |
 | Public access | Cloudflare Tunnel routing `https://[subdomain].[domain]` to port `7690` |
 | Auth | `~/.config/remotelab/auth.json` exists and the token is known to the user |
 | Tunnel config | `~/.cloudflared/config.yml` exists |
@@ -108,7 +133,7 @@ The AI should do the rest inside the conversation:
 
 | Surface | Expected state |
 | --- | --- |
-| Primary chat service | boot-managed owner service on `http://127.0.0.1:7690` |
+| Primary chat service | boot-managed instance service on `http://127.0.0.1:7690` |
 | Public access | cpolar HTTP tunnel routes a public hostname to port `7690` |
 | Mainland access | the returned URL opens directly for users in mainland China without a VPN |
 | Tunnel mode | random temporary URL for quick validation, or a reserved stable subdomain when the user asked for long-lived sharing |
@@ -119,7 +144,7 @@ The AI should do the rest inside the conversation:
 
 | Surface | Expected state |
 | --- | --- |
-| Primary chat service | boot-managed owner service (`remotelab.service` on Linux) on `http://0.0.0.0:7690` |
+| Primary chat service | boot-managed instance service (`remotelab.service` on Linux) on `http://0.0.0.0:7690` |
 | Access | `http://[hostname].[tailnet].ts.net:7690` reachable from phone on the same tailnet |
 | Auth | `~/.config/remotelab/auth.json` exists and the token is known to the user |
 | Environment | `CHAT_BIND_HOST=0.0.0.0` and `SECURE_COOKIES=0` set in the service config |

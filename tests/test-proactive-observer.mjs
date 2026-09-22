@@ -160,7 +160,7 @@ try {
       enabled: false,
     },
   }, {
-    readOwnerToken: async () => 'owner-token',
+    readServiceToken: async () => 'service-token',
     loginWithToken: async () => 'session_token=ok',
     listenForSpeech: async () => '我今天情绪挺好，给我放首歌',
     speakReply: async (_runtime, text) => {

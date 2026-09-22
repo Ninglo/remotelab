@@ -3,6 +3,16 @@ import { test } from 'node:test';
 import { createClaudeDriver } from '../chat/native/claude.mjs';
 import { createClaudeAdapter } from '../chat/adapters/claude.mjs';
 
+test('Claude adapter projects RemoteLab preflight activity into the thought block', () => {
+  const events = createClaudeAdapter().parseLine(JSON.stringify({
+    type: 'remotelab.activity',
+    presentation: 'reasoning',
+    content: 'Session start preflight passed.',
+  }));
+  assert.equal(events[0]?.type, 'reasoning');
+  assert.equal(events[0]?.content, 'Session start preflight passed.');
+});
+
 function harness(options = {}) {
   const sent = [], events = [], settled = [], errors = [];
   const driver = createClaudeDriver({ send: (m) => sent.push(m), onEvent: (m) => events.push(m),

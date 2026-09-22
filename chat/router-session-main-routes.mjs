@@ -2,6 +2,8 @@ import { homedir } from 'os';
 import { join, resolve } from 'path';
 
 import { IS_GUEST_INSTANCE, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
+import { resolveOrCreateExternalIdentity } from '../lib/auth.mjs';
+import { SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { appendEvent, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
@@ -10,7 +12,6 @@ import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-disp
 import { clampGuestSessionFolder } from './session-folder.mjs';
 import { resolveStarterPresetDefinition } from './starter-session-content.mjs';
 import {
-  applyTemplateToSession,
   cancelActiveRun,
   removeQueuedMessage,
   createSession,
@@ -21,6 +22,7 @@ import {
   getSessionSourceContext,
   getSessionTimelineEvents,
   listSessions,
+  mergeSessionPersonViewOwnership,
   sendMessage,
   submitHttpMessage,
 } from './session-manager.mjs';
@@ -63,12 +65,45 @@ async function getSessionListItemForClient(id, options = {}) {
   return createSessionListItem(await getSession(id, options));
 }
 
-function getGrantedCapability(authSession, capability, fallback = false) {
-  if (authSession?.role === 'owner') return true;
-  if (!capability) return fallback;
-  return authSession?.capabilities?.[capability] === true
-    ? true
-    : fallback;
+function trimString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function resolveSessionInitiator(authSession, sourceId, sourceContext) {
+  const context = sourceContext && typeof sourceContext === 'object' ? sourceContext : {};
+  const sender = context.sender && typeof context.sender === 'object' ? context.sender : {};
+  const kind = trimString(context.connector || sourceId).toLowerCase();
+  const subjectId = trimString(
+    sender.openId
+    || sender.userId
+    || sender.unionId
+    || sender.address
+    || sender.login,
+  );
+  if (kind && subjectId) {
+    const resolved = await resolveOrCreateExternalIdentity({
+      kind,
+      realm: trimString(context.sourceRouteId || sender.tenantKey || context.tenantKey),
+      subjectId,
+      stableSubjectId: trimString(sender.unionId || sender.userId || subjectId),
+      displayName: trimString(sender.name || sender.displayName || sender.address || sender.login),
+      englishName: trimString(sender.englishName),
+      handleHint: trimString(sender.handle || sender.username || sender.login),
+    });
+    if (resolved?.identityId) {
+      if (resolved.sourcePersonId && resolved.targetPersonId) {
+        await mergeSessionPersonViewOwnership(resolved.sourcePersonId, resolved.targetPersonId);
+      }
+      return resolved;
+    }
+  }
+  if (authSession?.authKind === 'service') {
+    return { identityId: SYSTEM_IDENTITY_ID, personId: SYSTEM_PERSON_ID };
+  }
+  return {
+    identityId: trimString(authSession?.identityId) || SYSTEM_IDENTITY_ID,
+    personId: trimString(authSession?.personId) || SYSTEM_PERSON_ID,
+  };
 }
 
 export async function handleSessionMainRoutes({
@@ -83,37 +118,23 @@ export async function handleSessionMainRoutes({
   isDirectoryPath,
   readSessionMessagePayload,
   requireSessionAccess,
-  isSessionVisibleToAuthSession,
-  getAuthPrincipalId,
-  getAuthScopeAgentId,
-  isAgentScopedAuthSession,
   resolveRequestedSessionAttachments,
   writeJson,
   writeJsonCached,
 }) {
   if (sessionGetRoute?.kind === 'list' || sessionGetRoute?.kind === 'archived-list') {
-    if (authSession?.role === 'visitor' && !getGrantedCapability(authSession, 'listSessions')) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
-    const includeVisitor = authSession?.role === 'owner'
-      && ['1', 'true', 'yes'].includes(String(parsedUrl.query.includeVisitor || '').toLowerCase());
     const view = typeof parsedUrl.query.view === 'string'
       ? String(parsedUrl.query.view || '').trim().toLowerCase()
       : '';
     const sessionList = await listSessionListItemsForClient({
-      includeVisitor: includeVisitor || isAgentScopedAuthSession(authSession),
       includeArchived: true,
-      templateId: typeof parsedUrl.query.templateId === 'string' ? parsedUrl.query.templateId : '',
       sourceId: typeof parsedUrl.query.sourceId === 'string' ? parsedUrl.query.sourceId : '',
+      viewPersonId: authSession?.personId || '',
     });
-    const visibleSessions = authSession?.role === 'owner'
-      ? sessionList
-      : sessionList.filter((session) => isSessionVisibleToAuthSession(authSession, session));
     const folderFilter = parsedUrl.query.folder;
     const filtered = folderFilter
-      ? visibleSessions.filter((session) => session.folder === folderFilter)
-      : visibleSessions;
+      ? sessionList.filter((session) => session.folder === folderFilter)
+      : sessionList;
     const archivedSessions = filtered.filter((session) => session?.archived === true);
     const activeSessions = filtered.filter((session) => session?.archived !== true);
     const targetSessions = sessionGetRoute.kind === 'archived-list'
@@ -141,8 +162,8 @@ export async function handleSessionMainRoutes({
       ? String(parsedUrl.query.view || '').trim().toLowerCase()
       : '';
     const session = view === 'summary' || view === 'sidebar'
-      ? await getSessionListItemForClient(sessionId)
-      : await getSessionForClient(sessionId, { includeQueuedMessages: true });
+      ? await getSessionListItemForClient(sessionId, { viewPersonId: authSession?.personId || '' })
+      : await getSessionForClient(sessionId, { includeQueuedMessages: true, viewPersonId: authSession?.personId || '' });
     if (!session) {
       writeJson(res, 404, { error: 'Session not found' });
       return true;
@@ -162,7 +183,7 @@ export async function handleSessionMainRoutes({
       writeJsonCached(req, res, { sessionId, filter: 'all', events });
       return true;
     }
-    const session = await getSessionForClient(sessionId);
+    const session = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });
     if (!session) {
       writeJson(res, 404, { error: 'Session not found' });
       return true;
@@ -208,7 +229,7 @@ export async function handleSessionMainRoutes({
       endSeq,
     } = sessionGetRoute;
     if (!await requireSessionAccess(res, authSession, sessionId)) return true;
-    const session = await getSessionForClient(sessionId);
+    const session = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });
     if (!session) {
       writeJson(res, 404, { error: 'Session not found' });
       return true;
@@ -292,14 +313,17 @@ export async function handleSessionMainRoutes({
           sessionId,
         });
         const messageOptions = {
-          tool: authSession?.role === 'visitor' ? undefined : payload.tool || undefined,
-          thinking: authSession?.role === 'visitor' ? false : !!payload.thinking,
-          model: authSession?.role === 'visitor' ? undefined : payload.model || undefined,
-          effort: authSession?.role === 'visitor' ? undefined : payload.effort || undefined,
-          sourceDelivery: authSession?.role === 'visitor' ? undefined : payload.sourceDelivery,
-          sourceContext: authSession?.role === 'visitor' ? undefined : payload.sourceContext,
+          tool: payload.tool || undefined,
+          thinking: !!payload.thinking,
+          model: payload.model || undefined,
+          effort: payload.effort || undefined,
+          sourceDelivery: payload.sourceDelivery,
+          sourceContext: payload.sourceContext,
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         };
+        const initiator = await resolveSessionInitiator(authSession, payload.sourceId, payload.sourceContext);
+        messageOptions.initiatedByIdentityId = initiator.identityId;
+        messageOptions.viewPersonId = initiator.personId;
         const outcome = requestId
           ? await submitHttpMessage(sessionId, payload.text.trim(), [], {
               ...messageOptions,
@@ -312,7 +336,9 @@ export async function handleSessionMainRoutes({
           queued: outcome.queued,
           run: outcome.run,
           response: outcome.response || null,
-          session: createClientSessionDetail(outcome.session),
+          session: createClientSessionDetail(await getSession(sessionId, {
+            viewPersonId: authSession?.personId || initiator.personId,
+          }) || outcome.session),
         });
       } catch (error) {
         const statusCode = ['SESSION_ARCHIVED', 'SESSION_BUSY'].includes(error?.code) ? 409 : 400;
@@ -325,7 +351,7 @@ export async function handleSessionMainRoutes({
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       const run = await cancelActiveRun(sessionId);
       if (!run) {
-        const session = await getSessionForClient(sessionId);
+        const session = await getSessionForClient(sessionId, { viewPersonId: authSession?.personId || '' });
         if (session && session.activity?.run?.state !== 'running') {
           writeJson(res, 200, { run: null, session });
           return true;
@@ -339,10 +365,6 @@ export async function handleSessionMainRoutes({
   }
 
   if (pathname === '/api/sessions' && req.method === 'POST') {
-    if (authSession?.role === 'visitor' && !getGrantedCapability(authSession, 'createSession')) {
-      writeJson(res, 403, { error: 'Access denied' });
-      return true;
-    }
     let body;
     try {
       body = await readBody(req, SESSION_CREATION_MAX_BYTES);
@@ -361,8 +383,6 @@ export async function handleSessionMainRoutes({
         name,
         sourceId,
         sourceName,
-        templateId,
-        templateName,
         group,
         description,
         starterPreset,
@@ -377,26 +397,17 @@ export async function handleSessionMainRoutes({
         sourceContext,
         executionProfile,
       } = payload;
-      const agentScoped = isAgentScopedAuthSession(authSession);
-      const scopedAgentId = getAuthScopeAgentId(authSession);
-      const scopedPrincipalId = getAuthPrincipalId(authSession);
       const requestedFolder = typeof folder === 'string' ? folder.trim() : '';
-      const requestedEffectiveFolder = agentScoped
-        ? MANAGED_WORK_ROOT_DIR
-        : (requestedFolder
-          ? (requestedFolder.startsWith('~')
-            ? join(homedir(), requestedFolder.slice(1))
-            : resolve(requestedFolder))
-          : MANAGED_WORK_ROOT_DIR);
+      const requestedEffectiveFolder = requestedFolder
+        ? (requestedFolder.startsWith('~')
+          ? join(homedir(), requestedFolder.slice(1))
+          : resolve(requestedFolder))
+        : MANAGED_WORK_ROOT_DIR;
       const effectiveFolder = clampGuestSessionFolder(requestedEffectiveFolder, {
         isGuestInstance: IS_GUEST_INSTANCE,
         managedWorkRoot: MANAGED_WORK_ROOT_DIR,
       }).folder;
-      const effectiveTool = agentScoped
-        ? (typeof authSession?.agentTool === 'string' && authSession.agentTool.trim()
-          ? authSession.agentTool.trim()
-          : tool)
-        : tool;
+      const effectiveTool = tool;
       const requestedStarterPreset = normalizeSessionStarterPreset(starterPreset);
       const starterDefinition = requestedStarterPreset
         ? resolveStarterPresetDefinition(requestedStarterPreset)
@@ -407,11 +418,6 @@ export async function handleSessionMainRoutes({
       if (executionProfile !== undefined && !requestedExecutionProfile) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'executionProfile must be quick when provided' }));
-        return true;
-      }
-      if (requestedExecutionProfile === QUICK_SESSION_PROFILE && agentScoped) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Owner access required for Quick Session' }));
         return true;
       }
       if (!effectiveTool) {
@@ -440,45 +446,27 @@ export async function handleSessionMainRoutes({
         return true;
       }
       const createOptions = {
-        sourceId: agentScoped ? 'share_link' : (typeof sourceId === 'string' ? sourceId : ''),
-        sourceName: agentScoped ? 'Share Link' : (typeof sourceName === 'string' ? sourceName : ''),
-        templateId: agentScoped ? scopedAgentId : (typeof templateId === 'string' ? templateId : ''),
-        templateName: agentScoped
-          ? (typeof authSession?.agentName === 'string' ? authSession.agentName : '')
-          : (typeof templateName === 'string' ? templateName : ''),
+        sourceId: typeof sourceId === 'string' ? sourceId : '',
+        sourceName: typeof sourceName === 'string' ? sourceName : '',
         group: group || '',
         description: description || '',
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
         ...(requestedExecutionProfile ? { executionProfile: requestedExecutionProfile } : {}),
       };
-      if (requestedExecutionProfile) {
-        createOptions.templateId = '';
-        createOptions.templateName = '';
-      }
       if (Object.hasOwn(payload, 'conversation')) {
-        if (authSession?.role !== 'owner') { writeJson(res, 403, { error: 'Owner access required' }); return true; }
         createOptions.conversation = payload.conversation;
         createOptions.replaceConversation = payload.replaceConversation === true;
       }
       if (requestedStarterPreset) {
         createOptions.starterPreset = requestedStarterPreset;
       }
-      if (agentScoped) {
-        createOptions.createdByPrincipalId = scopedPrincipalId;
-        createOptions.visitorName = 'Guest';
-      }
       if (!requestedExecutionProfile && Object.prototype.hasOwnProperty.call(payload, 'systemPrompt')) {
         createOptions.systemPrompt = explicitSystemPrompt;
-      } else if (!requestedExecutionProfile && !createOptions.templateId && starterDefinition?.systemPrompt) {
+      } else if (!requestedExecutionProfile && starterDefinition?.systemPrompt) {
         createOptions.systemPrompt = starterDefinition.systemPrompt;
       }
       if (Object.prototype.hasOwnProperty.call(payload, 'internalRole')) {
-        if (agentScoped) {
-          res.writeHead(403, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Owner access required' }));
-          return true;
-        }
         if (internalRole !== null && typeof internalRole !== 'string') {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'internalRole must be a string when provided' }));
@@ -489,29 +477,33 @@ export async function handleSessionMainRoutes({
       if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
         createOptions.sourceContext = sourceContext;
       }
-      if (!agentScoped) {
-        if (typeof model === 'string' && model.trim()) createOptions.model = model.trim();
-        if (typeof effort === 'string' && effort.trim()) createOptions.effort = effort.trim();
-        if (thinking === true) createOptions.thinking = true;
-      }
-      const initialWelcomeMessage = requestedExecutionProfile || createOptions.templateId
+      const initiator = await resolveSessionInitiator(
+        authSession,
+        createOptions.sourceId,
+        createOptions.sourceContext,
+      );
+      createOptions.initiatedByIdentityId = initiator.identityId;
+      createOptions.viewPersonId = initiator.personId;
+      if (typeof model === 'string' && model.trim()) createOptions.model = model.trim();
+      if (typeof effort === 'string' && effort.trim()) createOptions.effort = effort.trim();
+      if (thinking === true) createOptions.thinking = true;
+      const initialWelcomeMessage = requestedExecutionProfile
         ? ''
         : (Object.prototype.hasOwnProperty.call(payload, 'welcomeMessage')
           ? explicitWelcomeMessage
           : (starterDefinition?.welcomeMessage || ''));
       let session = await createSession(effectiveFolder, effectiveTool, name || '', createOptions);
-      if (createOptions.templateId) {
-        session = await applyTemplateToSession(session.id, createOptions.templateId, {
-          appendWelcome: true,
-          allowVisitor: agentScoped,
-        }) || session;
-      } else if (initialWelcomeMessage) {
+      if (initialWelcomeMessage) {
         await appendEvent(session.id, messageEvent('assistant', initialWelcomeMessage));
         session = await getSession(session.id) || session;
       }
 
       res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ session: createClientSessionDetail(session) }));
+      res.end(JSON.stringify({
+        session: createClientSessionDetail(await getSession(session.id, {
+          viewPersonId: authSession?.personId || initiator.personId,
+        }) || session),
+      }));
     } catch {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid request body' }));

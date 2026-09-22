@@ -13,7 +13,7 @@ const setupStart = sessionHttpSource.indexOf('let pushNotificationSetupState =')
 if (setupStart === -1) throw new Error('Missing setupPushNotifications');
 const setupSnippet = `${sessionHttpSource.slice(setupStart)}\nglobalThis.setupPushNotifications = setupPushNotifications;`;
 
-function createHarness({ existingSubscription, permission = 'granted', saveStatus = 200, saveBody = { ok: true }, keyStatus = 200, registrationError = null, subscribeError = null, owner = true, supported = true, prefix = '', redirected = false } = {}) {
+function createHarness({ existingSubscription, permission = 'granted', saveStatus = 200, saveBody = { ok: true }, keyStatus = 200, registrationError = null, subscribeError = null, enabled = true, supported = true, prefix = '', redirected = false } = {}) {
   const fetchCalls = [];
   const subscriptionPayload = { endpoint: existingSubscription ? 'https://push.example/existing' : 'https://push.example/new' };
   const subscribeCalls = [];
@@ -51,12 +51,11 @@ function createHarness({ existingSubscription, permission = 'granted', saveStatu
     console,
     Notification: notification,
     CustomEvent: class CustomEvent { constructor(type) { this.type = type; } },
-    shouldEnableOwnerPushFeatures: () => owner,
+    shouldEnablePushFeatures: () => enabled,
     JSON,
     Promise,
     encodeURIComponent,
     buildAssetVersion: 'build-test',
-    visitorMode: false,
     navigator: {
       serviceWorker: {
         register() {
@@ -142,7 +141,7 @@ for (const options of [
 for (const options of [
   { permission: 'default' },
   { permission: 'denied' },
-  { owner: false },
+  { enabled: false },
   { supported: false },
 ]) {
   const harness = createHarness(options);

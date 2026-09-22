@@ -1,6 +1,6 @@
 # Remote Capability Monitor
 
-The remote capability monitor is a recurring RemoteLab automation Agent that scouts the remote-control coding-agent space and feeds the result back into a reviewable RemoteLab session.
+The remote capability monitor is a recurring automation that scouts the remote-control coding-agent space and feeds the result back into a reviewable RemoteLab Session.
 
 It is meant to answer a focused question continuously:
 
@@ -33,16 +33,16 @@ The intended flow is:
 
 1. fetch and score source updates
 2. write a local report and JSON summary
-3. create or reuse a stable RemoteLab review session under an automation Agent
+3. create or reuse a stable RemoteLab review Session
 4. submit the digest into that session
 5. let the AI produce the review/proposal inside RemoteLab
-6. optionally notify the owner with a deep link into that session
+6. optionally notify authenticated People with a deep link into that Session
 
 That makes the real review surface a normal RemoteLab session instead of an external dashboard.
 
-## Agent pattern
+## Session pattern
 
-A good monitor rollout uses a dedicated Agent, for example `Agent Radar`, with:
+A good monitor rollout uses a dedicated Session, for example `Capability Radar`, with:
 
 - a system prompt focused on competitive/product judgment
 - a stable session identity via `externalTriggerId`
@@ -53,7 +53,7 @@ This keeps the automation:
 - reviewable
 - resumable
 - easy to follow up on
-- grouped cleanly in the owner UI
+- grouped cleanly in each Person's UI view
 
 ## Shared vs local split
 
@@ -67,7 +67,7 @@ Machine-local setup stays outside the repo:
 - notifier channels
 - scheduler setup
 - auth/token files
-- concrete Agent/session IDs for that machine
+- concrete Session IDs for that machine
 
 ## Local config shape
 
@@ -86,8 +86,10 @@ Typical local config includes:
     "authFile": "~/.config/remotelab/auth.json",
     "sessionFolder": "~/code/remotelab",
     "session": {
-      "agentId": "app_...",
-      "externalTriggerId": "automation:agent-radar:remote-capability-scout"
+      "enabled": true,
+      "name": "Capability Radar",
+      "group": "Automation",
+      "externalTriggerId": "automation:remote-capability-monitor"
     }
   },
   "sources": []

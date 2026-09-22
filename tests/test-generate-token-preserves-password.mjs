@@ -35,18 +35,29 @@ try {
   assert.equal(result.status, 0, `generate-token should succeed: ${result.stderr}`);
 
   const updated = JSON.parse(readFileSync(authPath, 'utf8'));
-  assert.equal(updated.username, 'ninglo', 'generate-token should preserve username');
+  assert.equal(updated.version, 2, 'generate-token should migrate legacy auth to the people document');
+  assert.equal(updated.people[0].name, 'ninglo', 'generate-token should preserve the primary person name');
+  const passwordCredential = updated.people[0].credentials.find((entry) => entry.type === 'password');
+  const tokenCredential = updated.people[0].credentials.find((entry) => entry.type === 'token');
+  assert.equal(passwordCredential.username, 'ninglo', 'generate-token should preserve username');
   assert.equal(
-    updated.passwordHash,
+    passwordCredential.passwordHash,
     'scrypt$16384$8$1$0123456789abcdef0123456789abcdef$abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd',
     'generate-token should preserve password hash',
   );
-  assert.match(updated.token, /^[0-9a-f]{64}$/, 'generate-token should write a new 256-bit hex token');
+  assert.match(tokenCredential.token, /^[0-9a-f]{64}$/, 'generate-token should write a new 256-bit hex token');
   assert.notEqual(
-    updated.token,
+    tokenCredential.token,
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     'generate-token should replace the previous token',
   );
+  assert.match(updated.serviceToken, /^[0-9a-f]{64}$/, 'migration should issue a dedicated service token');
+  assert.notEqual(
+    updated.serviceToken,
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'the legacy person token must not double as a service identity',
+  );
+  assert.notEqual(updated.serviceToken, tokenCredential.token, 'person and service credentials must remain distinct');
   assert.match(
     result.stdout,
     /http:\/\/127\.0\.0\.1:7692\/\?token=/,

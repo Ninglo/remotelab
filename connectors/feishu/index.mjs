@@ -478,14 +478,6 @@ export function buildExternalTriggerId(summary) {
   return `feishu:${sanitizeIdPart(summary?.chatType || 'chat')}:${chatId}`;
 }
 
-export function buildFeishuForkExternalTriggerId(summary) {
-  const sourceRouteId = sanitizeIdPart(summary?.sourceRouteId || 'default');
-  const tenantKey = sanitizeIdPart(summary?.tenantKey || summary?.sender?.tenantKey || 'unknown_tenant');
-  const chatId = sanitizeIdPart(summary?.chatId || 'unknown_chat');
-  const messageId = sanitizeIdPart(summary?.messageId || 'unknown_message');
-  return `feishu:fork:${sourceRouteId}:${tenantKey}:${chatId}:${messageId}`;
-}
-
 export function buildFeishuConversationQueueKey(summary) {
   if (trimString(summary?.chatId)) {
     return buildExternalTriggerId(summary);
@@ -552,10 +544,33 @@ export function isSupportedRemoteLabInboundMessage(summary) {
 }
 
 export function buildRemoteLabMessage(summary) {
-  const rawMessage = (summary?.forkCommand ? trimString(summary?.forkText) : '')
-    || trimString(summary?.messageText) || trimString(summary?.textPreview);
+  const rawMessage = trimString(summary?.messageText) || trimString(summary?.textPreview);
   return renderMentionPreview(rawMessage, summary?.mentions) || rawMessage
     || trimString(summary?.contentSummary) || '[non-text or empty message]';
+}
+
+function buildFeishuSenderContext(summary) {
+  const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
+  const senderEnglishName = trimString(summary?.sender?.englishName);
+  const senderOpenId = trimString(summary?.sender?.openId);
+  const senderUserId = trimString(summary?.sender?.userId);
+  const senderUnionId = trimString(summary?.sender?.unionId);
+  const senderType = trimString(summary?.sender?.senderType);
+  const senderTenantKey = trimString(summary?.sender?.tenantKey);
+  const tenantKey = trimString(summary?.tenantKey);
+  if (!senderName && !senderEnglishName && !senderOpenId && !senderUserId && !senderUnionId && !senderType && !senderTenantKey) {
+    return null;
+  }
+  return {
+    ...(senderName ? { name: senderName } : {}),
+    ...(senderEnglishName ? { englishName: senderEnglishName } : {}),
+    ...(senderOpenId ? { openId: senderOpenId } : {}),
+    ...(senderUserId ? { userId: senderUserId } : {}),
+    ...(senderUnionId ? { unionId: senderUnionId } : {}),
+    ...(senderType ? { senderType } : {}),
+    ...(senderTenantKey ? { tenantKey: senderTenantKey } : {}),
+    ...(tenantKey && senderTenantKey ? { isInternal: tenantKey === senderTenantKey } : {}),
+  };
 }
 
 export function buildSessionSourceContext(summary) {
@@ -569,6 +584,8 @@ export function buildSessionSourceContext(summary) {
     };
     const sourceRouteId = trimString(summary?.sourceRouteId);
     if (sourceRouteId) context.sourceRouteId = sourceRouteId;
+    const sender = buildFeishuSenderContext(summary);
+    if (sender) context.sender = sender;
     return context;
   }
   const topicId = buildFeishuTopicId(summary);
@@ -591,6 +608,8 @@ export function buildSessionSourceContext(summary) {
   if (threadId) context.threadId = threadId;
   const rootId = trimString(summary?.rootId);
   if (rootId) context.rootId = rootId;
+  const sender = buildFeishuSenderContext(summary);
+  if (sender) context.sender = sender;
   return context;
 }
 
@@ -658,23 +677,8 @@ export function buildMessageSourceContext(summary) {
   if (groupMessageType) context.groupMessageType = groupMessageType;
   const chatMode = trimString(summary?.chatMode);
   if (chatMode) context.chatMode = chatMode;
-  const senderName = trimString(summary?.sender?.name || summary?.sender?.displayName);
-  const senderOpenId = trimString(summary?.sender?.openId);
-  const senderUserId = trimString(summary?.sender?.userId);
-  const senderUnionId = trimString(summary?.sender?.unionId);
-  const senderType = trimString(summary?.sender?.senderType);
-  const senderTenantKey = trimString(summary?.sender?.tenantKey);
-  if (senderName || senderOpenId || senderUserId || senderUnionId || senderType || senderTenantKey) {
-    context.sender = {
-      ...(senderName ? { name: senderName } : {}),
-      ...(senderOpenId ? { openId: senderOpenId } : {}),
-      ...(senderUserId ? { userId: senderUserId } : {}),
-      ...(senderUnionId ? { unionId: senderUnionId } : {}),
-      ...(senderType ? { senderType } : {}),
-      ...(senderTenantKey ? { tenantKey: senderTenantKey } : {}),
-      ...(tenantKey && senderTenantKey ? { isInternal: tenantKey === senderTenantKey } : {}),
-    };
-  }
+  const sender = buildFeishuSenderContext(summary);
+  if (sender) context.sender = sender;
   const mentions = (Array.isArray(summary?.mentions) ? summary.mentions : [])
     .map((mention) => {
       const name = mentionDisplayName(mention);

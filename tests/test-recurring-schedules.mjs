@@ -12,6 +12,8 @@ const {
   listRecurringSchedules,
   materializeDueRecurringSchedulesNow,
   parseCronExpression,
+  parseGateOutput,
+  runScheduleGate,
   updateRecurringSchedule,
 } = await import('../chat/recurring-schedules.mjs');
 
@@ -49,7 +51,7 @@ const schedule = await createRecurringSchedule({
 assert.match(schedule.id, /^sch_[a-f0-9]{24}$/);
 assert.equal(schedule.nextRunAt, '2026-07-27T00:01:00.000Z');
 assert.equal(schedule.misfirePolicy, 'latest_once');
-assert.equal(schedule.overlapPolicy, 'queue');
+assert.equal(schedule.overlapPolicy, 'latest_once');
 
 const result = await materializeDueRecurringSchedulesNow({
   now: '2026-07-27T00:05:20.000Z',
@@ -113,5 +115,103 @@ assert.equal(isolated.failed, 1, 'one broken schedule should be reported');
 assert.equal(isolated.materialized, 1, 'one broken schedule must not block healthy schedules');
 await updateRecurringSchedule(badSchedule.id, { enabled: false });
 await updateRecurringSchedule(healthySchedule.id, { enabled: false });
+
+assert.deepEqual(parseGateOutput('yes'), { trigger: true, reason: '', dedupeKey: '' });
+assert.deepEqual(parseGateOutput('{"trigger":false,"reason":"unchanged"}'), {
+  trigger: false, reason: 'unchanged', dedupeKey: '',
+});
+assert.throws(() => parseGateOutput('maybe'), /Gate output/);
+await assert.rejects(() => createRecurringSchedule({
+  sourceSessionId: 'invalid-interval',
+  sessionTemplate: { folder: '/tmp', tool: 'codex' },
+  text: 'invalid',
+  everySeconds: 10.5,
+}), /everySeconds/);
+await assert.rejects(() => createRecurringSchedule({
+  sourceSessionId: 'invalid-lifetime',
+  sessionTemplate: { folder: '/tmp', tool: 'codex' },
+  text: 'invalid',
+  everySeconds: 10,
+  lifetime: { mode: 'continuous', maxExecutions: 2 },
+}), /continuous lifetime/);
+assert.deepEqual(await runScheduleGate({
+  id: 'sch_gate_runtime',
+  sessionTemplate: { folder: '/tmp' },
+  gate: { mode: 'script', runtime: 'bash', source: 'printf \'%s\\n\' \'{"trigger":true,"reason":"changed"}\'', timeoutSeconds: 2 },
+}, '2026-07-27T00:00:00.000Z'), { trigger: true, reason: 'changed', dedupeKey: '' });
+await assert.rejects(() => runScheduleGate({
+  id: 'sch_bad_gate_runtime',
+  sessionTemplate: { folder: '/tmp' },
+  gate: { mode: 'script', runtime: 'bash', source: 'echo maybe', timeoutSeconds: 2 },
+}, '2026-07-27T00:00:00.000Z'), /Gate output/);
+
+const gatedTriggers = [];
+const gated = await createRecurringSchedule({
+  sourceSessionId: 'gated-session',
+  sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Gated execution' },
+  text: 'Inspect the change',
+  everySeconds: 10,
+  lifetime: { mode: 'bounded', maxExecutions: 2, maxChecks: 3 },
+  gate: { mode: 'script', runtime: 'bash', source: 'echo yes', timeoutSeconds: 2 },
+}, { now: '2026-07-27T01:00:00.000Z' });
+assert.equal(gated.cadence.type, 'interval');
+assert.equal(gated.cadence.everySeconds, 10);
+assert.equal(gated.nextRunAt, '2026-07-27T01:00:10.000Z');
+assert.equal(gated.gate.snapshotSha256.length, 64);
+assert.equal(gated.lifetime.maxExecutions, 2);
+
+const gatedResult = await materializeDueRecurringSchedulesNow({
+  now: '2026-07-27T01:00:35.000Z',
+  countOpenScheduleTriggers: async () => 0,
+  getScheduleTriggerCounts: async () => ({ admittedExecutions: 0, pendingAdmissions: 0 }),
+  runGate: async () => ({ trigger: true, reason: 'changed', dedupeKey: 'revision-1' }),
+  createScheduledTrigger: async (input) => {
+    gatedTriggers.push(input);
+    return { id: 'trg_gated', ...input };
+  },
+});
+assert.equal(gatedResult.materialized, 1);
+assert.equal(gatedTriggers[0].scheduledAt, '2026-07-27T01:00:30.000Z');
+assert.match(gatedTriggers[0].occurrenceId, new RegExp(`^${gated.id}:gate:`));
+const gatedAfter = await listRecurringSchedules({ sessionId: 'gated-session' });
+assert.equal(gatedAfter[0].missedCount, 2);
+assert.equal(gatedAfter[0].checkCount, 1);
+assert.equal(gatedAfter[0].matchCount, 1);
+
+await materializeDueRecurringSchedulesNow({
+  now: '2026-07-27T01:00:36.000Z',
+  countOpenScheduleTriggers: async () => 0,
+  getScheduleTriggerCounts: async (scheduleId) => scheduleId === gated.id
+    ? { admittedExecutions: 2, pendingAdmissions: 0 }
+    : { admittedExecutions: 0, pendingAdmissions: 0 },
+  runGate: async () => { throw new Error('completed schedules must not run gates'); },
+  createScheduledTrigger: async () => { throw new Error('completed schedules must not create triggers'); },
+});
+const completedGated = (await listRecurringSchedules({ sessionId: 'gated-session' }))[0];
+assert.equal(completedGated.status, 'completed');
+assert.equal(completedGated.enabled, false);
+assert.equal(completedGated.nextRunAt, '');
+
+const failingGate = await createRecurringSchedule({
+  sourceSessionId: 'failing-gate-session',
+  sessionTemplate: { folder: '/tmp', tool: 'codex', name: 'Failing gate' },
+  text: 'Must not be admitted',
+  everySeconds: 10,
+  gate: { mode: 'script', runtime: 'bash', source: 'echo malformed', timeoutSeconds: 2 },
+}, { now: '2026-07-27T02:00:00.000Z' });
+let failClosedAdmissions = 0;
+const failClosed = await materializeDueRecurringSchedulesNow({
+  now: '2026-07-27T02:00:12.000Z',
+  countOpenScheduleTriggers: async () => 0,
+  getScheduleTriggerCounts: async () => ({ admittedExecutions: 0, pendingAdmissions: 0 }),
+  createScheduledTrigger: async () => { failClosedAdmissions += 1; },
+});
+assert.equal(failClosed.failed, 1);
+assert.equal(failClosedAdmissions, 0, 'a malformed gate result must fail closed');
+const failedGateState = (await listRecurringSchedules({ sessionId: 'failing-gate-session' }))[0];
+assert.equal(failedGateState.gateErrorCount, 1);
+assert.equal(failedGateState.checkCount, 1);
+assert.equal(failedGateState.nextRunAt, '2026-07-27T02:00:20.000Z', 'gate errors advance cadence instead of hot-looping');
+await updateRecurringSchedule(failingGate.id, { enabled: false });
 
 console.log('RecurringSchedule model tests passed.');

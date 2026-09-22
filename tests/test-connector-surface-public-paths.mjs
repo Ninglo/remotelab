@@ -166,7 +166,7 @@ try {
   });
   assert.equal(privateHandled, true, 'private connector path should still be handled by proxy routes');
   assert.equal(privateProxyRes.statusCode, 403);
-  assert.match(privateProxyRes.body.toString('utf8'), /Owner access required/);
+  assert.match(privateProxyRes.body.toString('utf8'), /Authentication required/);
 
   const gmailCallbackReq = {
     method: 'GET',

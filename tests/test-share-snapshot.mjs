@@ -263,7 +263,7 @@ async function main() {
   assert.match(publicShareRes.body, /<base href="\/">/, 'share page should set a root base href on unprefixed surfaces');
   assert.match(publicShareRes.body, /href="favicon\.ico\?v=/, 'share page should fingerprint icon URLs for immutable caching');
   assert.match(publicShareRes.body, /href="icon\.svg\?v=/, 'share page should fingerprint svg icon URLs for immutable caching');
-  assert.match(publicShareRes.body, /<body class="visitor-mode share-snapshot-mode">/, 'share page should boot directly into read-only chat mode');
+  assert.match(publicShareRes.body, /<body[^>]*class="[^"]*\bshare-snapshot-mode\b[^"]*"[^>]*>/, 'share page should boot directly into read-only chat mode');
   assert.match(publicShareRes.body, /href="chat\/chat\.css\?v=/, 'share page should reuse the main chat stylesheet');
   assert.match(publicShareRes.body, /src="chat\/bootstrap\.js\?v=/, 'share page should reuse the main chat frontend bootstrap');
   assert.ok(publicShareRes.body.includes(`share-payload/${shareId}.js`), 'share shell should bootstrap an external payload resource inside the product scope');

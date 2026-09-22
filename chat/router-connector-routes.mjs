@@ -426,26 +426,22 @@ async function handleWeChatLoginOpenRequest({
 } = {}) {
   const requestUrl = new URL(req.url || pathname || WECHAT_LOGIN_OPEN_PATH, 'http://127.0.0.1');
   const publicPathname = prependProductBasePath(pathname, getRequestProductBasePath(req));
-  const ownerAccess = authSession?.role === 'owner';
-  const publicGrantAccess = ownerAccess || await verifyWeChatLoginOpenRequest({
+  const authenticatedAccess = !!authSession;
+  const publicGrantAccess = authenticatedAccess || await verifyWeChatLoginOpenRequest({
     pathname: publicPathname,
     searchParams: requestUrl.searchParams,
   });
 
   if (!publicGrantAccess) {
-    if (ownerAccess) {
-      writeJson(res, 403, { error: 'Owner access required' });
-    } else {
-      res.writeHead(403, buildHeaders({
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
-      }));
-      res.end('WeChat login link is invalid or expired.');
-    }
+    res.writeHead(403, buildHeaders({
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
+    }));
+    res.end('WeChat login link is invalid or expired.');
     return true;
   }
 
-  const { surface, qrcodeUrl } = await getWeChatLoginQrUrl({ autoStart: ownerAccess });
+  const { surface, qrcodeUrl } = await getWeChatLoginQrUrl({ autoStart: authenticatedAccess });
   if (surface?.capabilityState === 'ready') {
     res.writeHead(409, buildHeaders({
       'Content-Type': 'text/plain; charset=utf-8',
@@ -1215,10 +1211,6 @@ export async function handleConnectorSurfaceRoutes({
   nonce,
 }) {
   if (isConnectorSurfaceListRoute(pathname)) {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     writeJson(res, 200, {
       surfaces: await listResolvedConnectorSurfaceInfo({
         nonce,
@@ -1230,10 +1222,6 @@ export async function handleConnectorSurfaceRoutes({
 
   const infoConnectorId = parseConnectorSurfaceInfoRoute(pathname);
   if (infoConnectorId) {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     const surface = await getReachableConnectorSurface(infoConnectorId, {
       clearStale: true,
       timeoutMs: 500,
@@ -1276,10 +1264,8 @@ export async function handleConnectorSurfaceRoutes({
   if (!surface?.baseUrl) {
     return false;
   }
-
-  const isPublicProxyPath = isConnectorSurfacePublicPath(surface, route.tailPath);
-  if (authSession?.role !== 'owner' && !isPublicProxyPath) {
-    writeJson(res, 403, { error: 'Owner access required' });
+  if (!authSession && !isConnectorSurfacePublicPath(surface, route.tailPath || '/')) {
+    writeJson(res, 403, { error: 'Authentication required' });
     return true;
   }
 
@@ -1339,10 +1325,6 @@ export async function handleConnectorApiRoutes({
   serializeJsonForScript,
 }) {
   if (pathname === GMAIL_CONNECTOR_PAGE_PATH && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     res.writeHead(200, buildHeaders({
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
@@ -1359,10 +1341,6 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === WECHAT_LOGIN_PAGE_PATH && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
 
     let template = '';
     try {
@@ -1412,10 +1390,6 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === WECHAT_LOGIN_STATUS_PATH && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     const productBasePath = getRequestProductBasePath(req);
     writeJson(res, 200, await getWeChatLoginSurface({
       autoStart: true,
@@ -1427,10 +1401,6 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === GMAIL_STATUS_PATH && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     res.writeHead(200, buildHeaders({
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'private, no-store, max-age=0, must-revalidate',
@@ -1442,10 +1412,6 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === GMAIL_CREDENTIALS_PATH && req.method === 'POST') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
 
     let payload;
     try {
@@ -1491,10 +1457,6 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === GMAIL_AUTHORIZE_PATH && req.method === 'POST') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
 
     let payload;
     try {
@@ -1574,10 +1536,6 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === WECHAT_LOGIN_QR_PATH && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     const { surface, qrcodeUrl } = await getWeChatLoginQrUrl({ autoStart: true });
     if (surface?.capabilityState === 'ready') {
       res.writeHead(409, buildHeaders({
@@ -1807,19 +1765,11 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === '/api/connectors/calendar/google/status' && req.method === 'GET') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
     writeJson(res, 200, await getCalendarAuthStatus(req));
     return true;
   }
 
   if (pathname === '/api/connectors/calendar/google/authorize' && req.method === 'POST') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
 
     let payload;
     try {
@@ -1877,10 +1827,6 @@ export async function handleConnectorApiRoutes({
   }
 
   if (pathname === '/api/shortcut' && req.method === 'POST') {
-    if (authSession?.role !== 'owner') {
-      writeJson(res, 403, { error: 'Owner access required' });
-      return true;
-    }
 
     let payload;
     try {
@@ -1929,8 +1875,6 @@ export async function handleConnectorApiRoutes({
           {
             sourceId: 'shortcut',
             sourceName: 'Shortcut',
-            templateId: trimString(payload.templateId),
-            templateName: trimString(payload.templateName),
             group: trimString(payload.group) || 'Shortcuts',
             description: trimString(payload.description) || 'Request created from the Shortcut connector.',
             externalTriggerId,

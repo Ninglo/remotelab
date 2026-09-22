@@ -8,7 +8,12 @@ import { join } from 'node:path';
 const tempRoot = await mkdtemp(join(tmpdir(), 'remotelab-connector-multi-route-'));
 const configDir = join(tempRoot, 'config');
 await mkdir(configDir, { recursive: true });
-await writeFile(join(configDir, 'auth.json'), `${JSON.stringify({ token: 'owner-token' })}\n`, 'utf8');
+await writeFile(join(configDir, 'auth.json'), `${JSON.stringify({
+  version: 2,
+  serviceToken: 'owner-token',
+  primaryPersonId: 'person_default',
+  people: [{ id: 'person_default', name: 'Administrator', credentials: [] }],
+})}\n`, 'utf8');
 
 process.env.HOME = tempRoot;
 process.env.REMOTELAB_CONFIG_DIR = configDir;

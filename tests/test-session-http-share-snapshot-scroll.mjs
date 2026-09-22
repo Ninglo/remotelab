@@ -91,8 +91,6 @@ function createContext({ shareSnapshotMode = false, entryMode = 'resume' } = {})
     },
     pendingNavigationState: null,
     activeTab: 'sessions',
-    visitorMode: false,
-    visitorSessionId: null,
     currentSessionId: shareSnapshotMode ? 'share_snapshot:snap_test' : 'session_regular',
     hasAttachedSession: true,
     hasLoadedSessions: true,
@@ -167,6 +165,7 @@ function createContext({ shareSnapshotMode = false, entryMode = 'resume' } = {})
     },
     sortSessionsInPlace() {},
     refreshAppCatalog() {},
+    refreshSessionCatalog() {},
     renderSessionList() {},
     clearMessages() {
       messagesInner.children = [];

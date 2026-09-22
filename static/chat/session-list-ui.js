@@ -139,10 +139,9 @@ function renderSessionList() {
       emptyText.textContent = getFilteredSessionEmptyText();
       empty.appendChild(emptyText);
 
-      const canRestoreStarterSessions = !visitorMode
-        && getCurrentSourceFilter() === FILTER_ALL_VALUE
+      const canRestoreStarterSessions = getCurrentSourceFilter() === FILTER_ALL_VALUE
         && !(typeof sessionSearchQuery === "string" && sessionSearchQuery.trim())
-        && typeof restoreOwnerBootstrapSessions === "function";
+        && typeof restoreBootstrapSessions === "function";
       if (canRestoreStarterSessions) {
         const restoreButton = document.createElement("button");
         restoreButton.type = "button";
@@ -153,7 +152,7 @@ function renderSessionList() {
           restoreButton.disabled = true;
           restoreButton.textContent = t("sidebar.restoringStarterSessions");
           try {
-            await restoreOwnerBootstrapSessions();
+            await restoreBootstrapSessions();
           } catch (error) {
             console.warn("[sessions] Failed to restore starter sessions:", error?.message || error);
             restoreButton.textContent = t("sidebar.restoreStarterSessions");
@@ -287,6 +286,7 @@ function renderArchivedSection() {
         </div>`;
       div.addEventListener("click", (e) => {
         if (e.target.closest(".session-action-btn")) return;
+        if (typeof switchTab === "function") switchTab("sessions");
         attachSession(s.id, s);
         if (!isDesktop) closeSidebarFn();
       });

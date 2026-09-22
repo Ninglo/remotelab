@@ -12,7 +12,7 @@ let swipeGestureActionInFlight = false;
 
 function canUseSwipeGestures() {
   if (!gesturePill) return false;
-  if (isDesktop || visitorMode) return false;
+  if (isDesktop) return false;
   if (sidebarOverlay?.classList.contains("open")) return false;
   if (addToolModal && !addToolModal.hidden) return false;
   return true;

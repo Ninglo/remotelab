@@ -1,6 +1,4 @@
-function restoreOwnerSessionSelection() {
-  if (visitorMode) return;
-
+function restoreSessionSelection() {
   const currentTab = typeof getActiveSidebarTabValue === "function"
     ? getActiveSidebarTabValue()
     : activeTab;
@@ -54,13 +52,13 @@ function restoreOwnerSessionSelection() {
 function canOrganizeSessionListFromUi() {
   return typeof canOrganizeSessionList === "function"
     ? canOrganizeSessionList()
-    : !visitorMode;
+    : true;
 }
 
-function isOwnerPushFeatureEnabled() {
-  return typeof shouldEnableOwnerPushFeatures === "function"
-    ? shouldEnableOwnerPushFeatures()
-    : !visitorMode;
+function isPushFeatureEnabled() {
+  return typeof shouldEnablePushFeatures === "function"
+    ? shouldEnablePushFeatures()
+    : true;
 }
 
 if (
@@ -144,12 +142,6 @@ function canQueueForegroundRefresh() {
   }
   if (document.visibilityState === "hidden") {
     return false;
-  }
-  if (visitorMode) {
-    return Boolean(
-      currentSessionId
-      || (typeof visitorSessionId !== "undefined" && visitorSessionId),
-    );
   }
   return true;
 }
@@ -795,7 +787,7 @@ function stageSessionReviewedForAttachedSession(session) {
 }
 
 async function syncSessionReviewedToServer(session, stampOverride = "") {
-  if (!session?.id || visitorMode) return session;
+  if (!session?.id) return session;
   const stamp = normalizeSessionReviewStamp(stampOverride) || getSessionReviewStamp(session);
   if (!stamp) return session;
   if (getSessionReviewStampTime(stamp) <= getSessionReviewStampTime(normalizeSessionReviewStamp(session?.lastReviewedAt))) {
@@ -953,7 +945,7 @@ function upsertSession(session) {
     }
     sortSessionsInPlace();
   }
-  refreshAppCatalog();
+  refreshSessionCatalog();
   return typeof getChatStoreSession === "function"
     ? getChatStoreSession(session.id)
     : normalized;
@@ -978,7 +970,6 @@ async function fetchSessionSidebar(sessionId, { forceFresh = false } = {}) {
 }
 
 async function fetchArchivedSessions({ forceFresh = false } = {}) {
-  if (visitorMode) return [];
   if (archivedSessionsRefreshPromise) {
     return archivedSessionsRefreshPromise;
   }
@@ -1081,7 +1072,6 @@ async function updateSessionRecord(sessionId, payload = {}) {
 }
 
 async function fetchSessionsList({ forceFresh = false } = {}) {
-  if (visitorMode) return [];
   const requestSequence = ++sessionsListRequestSequence;
   const requestMutationEpoch = sessionListMutationEpoch;
   const archiveMutationEpoch = typeof getSessionArchiveMutationEpoch === "function"
@@ -1118,9 +1108,8 @@ async function fetchSessionsList({ forceFresh = false } = {}) {
   return sessions;
 }
 
-async function restoreOwnerBootstrapSessions() {
-  if (visitorMode) return null;
-  const data = await fetchJsonOrRedirect('/api/bootstrap/owner-sessions/restore', {
+async function restoreBootstrapSessions() {
+  const data = await fetchJsonOrRedirect('/api/bootstrap/sessions/restore', {
     method: 'POST',
   });
   await fetchSessionsList({ forceFresh: true });
@@ -1135,15 +1124,15 @@ async function restoreOwnerBootstrapSessions() {
       return data;
     }
   }
-  restoreOwnerSessionSelection();
+  restoreSessionSelection();
   return data;
 }
 
-async function organizeSessionListWithAgent({ closeSidebar = false } = {}) {
+async function organizeSessionList({ closeSidebar = false } = {}) {
   const allowOrganize = typeof canOrganizeSessionList === "function"
     ? canOrganizeSessionList()
-    : !visitorMode;
-  if (visitorMode || !allowOrganize) return false;
+    : true;
+  if (!allowOrganize) return false;
   if (sessionListOrganizerInFlight) return sessionListOrganizerInFlight;
 
   const payload = buildSessionListOrganizerPayload();
@@ -1212,8 +1201,6 @@ function applyAttachedSessionState(id, session) {
   }
   currentTokens = 0;
   contextTokens.style.display = "none";
-  compactBtn.style.display = "none";
-  dropToolsBtn.style.display = "none";
 
   const displayName = getSessionDisplayName(session);
   if (typeof renderHeaderSessionTitle === "function") {
@@ -1558,7 +1545,7 @@ async function refreshCurrentSession(
 }
 
 async function refreshSidebarSession(sessionId, { forceFresh = false } = {}) {
-  if (!sessionId || visitorMode) return null;
+  if (!sessionId) return null;
   if (sessionId === currentSessionId) {
     return refreshCurrentSession({ forceFresh });
   }
@@ -1584,7 +1571,7 @@ async function refreshSidebarSession(sessionId, { forceFresh = false } = {}) {
           } else {
             sessions = nextSessions;
           }
-          refreshAppCatalog();
+          refreshSessionCatalog();
           renderSessionList();
         }
         return null;
@@ -1606,13 +1593,6 @@ async function refreshRealtimeViews({
   forceFresh = false,
   refreshMode = "full",
 } = {}) {
-  if (visitorMode) {
-    if (currentSessionId) {
-      await refreshCurrentSession({ viewportIntent, forceFresh }).catch(() => {});
-    }
-    return;
-  }
-
   const useForegroundPlan = refreshMode === "foreground";
   const shouldRefreshSessionsList = useForegroundPlan
     ? shouldRefreshForegroundSessionList({ forceFresh })
@@ -1621,7 +1601,7 @@ async function refreshRealtimeViews({
     await fetchSessionsList({ forceFresh }).catch(() => {});
   }
   if (pendingNavigationState) {
-    restoreOwnerSessionSelection();
+    restoreSessionSelection();
   }
   const shouldRefreshCurrent = useForegroundPlan
     ? shouldRefreshForegroundCurrentSession({ forceFresh })
@@ -1641,7 +1621,7 @@ async function refreshRealtimeViews({
 }
 
 function startParallelCurrentSessionBootstrap() {
-  if (visitorMode || !currentSessionId) return;
+  if (!currentSessionId) return;
   refreshCurrentSession({ viewportIntent: "session_entry" }).catch((error) => {
     if (error?.message === "Session not found") return;
     console.warn(
@@ -1651,23 +1631,13 @@ function startParallelCurrentSessionBootstrap() {
   });
 }
 
-async function bootstrapViaHttp({ deferOwnerRestore = false } = {}) {
-  if (visitorMode && visitorSessionId) {
-    if (typeof setChatCurrentSession === "function") {
-      setChatCurrentSession(visitorSessionId, { hasAttachedSession: false });
-    } else {
-      currentSessionId = visitorSessionId;
-    }
-    attachSession(visitorSessionId, { id: visitorSessionId, name: "Session", status: "idle" });
-    await refreshCurrentSession();
-    return;
-  }
-  if (deferOwnerRestore) {
+async function bootstrapViaHttp({ deferSelectionRestore = false } = {}) {
+  if (deferSelectionRestore) {
     startParallelCurrentSessionBootstrap();
   }
   await fetchSessionsList();
-  if (!deferOwnerRestore) {
-    restoreOwnerSessionSelection();
+  if (!deferSelectionRestore) {
+    restoreSessionSelection();
   }
 }
 
@@ -1702,7 +1672,6 @@ async function bootstrapShareSnapshotView() {
     archivedSessionsLoaded = false;
     currentSessionId = session.id;
   }
-  visitorSessionId = session.id;
   attachSession(session.id, normalizedSession);
   return normalizedSession;
 }
@@ -1721,10 +1690,10 @@ function updatePushNotificationSetupState(status, error = "") {
 }
 
 async function setupPushNotifications() {
-  const ownerPushFeaturesEnabled = typeof shouldEnableOwnerPushFeatures === "function"
-    ? shouldEnableOwnerPushFeatures()
-    : !visitorMode;
-  if (!ownerPushFeaturesEnabled) return updatePushNotificationSetupState("disabled");
+  const pushFeaturesEnabled = typeof shouldEnablePushFeatures === "function"
+    ? shouldEnablePushFeatures()
+    : true;
+  if (!pushFeaturesEnabled) return updatePushNotificationSetupState("disabled");
   if (!("PushManager" in window) || !navigator.serviceWorker || !("Notification" in window)) {
     return updatePushNotificationSetupState("unsupported");
   }

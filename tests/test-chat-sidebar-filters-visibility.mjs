@@ -59,12 +59,12 @@ function createFilterControl(display = '') {
   };
 }
 
-function createHarness({ activeTab = 'sessions', visitorMode = false } = {}) {
+function createHarness({ activeTab = 'sessions' } = {}) {
   const state = { toggles: [] };
   const context = {
     console,
     activeTab,
-    visitorMode,
+    personFilterSelect: createFilterControl(''),
     sourceFilterSelect: createFilterControl(''),
     sidebarFilters: {
       classList: {
@@ -99,16 +99,9 @@ assert.deepEqual(
   'sessions tab should show sidebar filters by default',
 );
 
-const visitorHarness = createHarness({ activeTab: 'sessions', visitorMode: true });
-visitorHarness.context.syncSidebarFiltersVisibility();
-assert.deepEqual(
-  visitorHarness.state.toggles,
-  [{ className: 'hidden', force: true }],
-  'visitor mode should always hide owner-only sidebar filters',
-);
-
 const hiddenSourceHarness = createHarness({ activeTab: 'sessions' });
 hiddenSourceHarness.context.sourceFilterSelect.style.display = 'none';
+hiddenSourceHarness.context.personFilterSelect.style.display = 'none';
 hiddenSourceHarness.context.syncSidebarFiltersVisibility();
 assert.deepEqual(
   hiddenSourceHarness.state.toggles,

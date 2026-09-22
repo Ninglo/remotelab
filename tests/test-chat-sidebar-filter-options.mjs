@@ -121,9 +121,9 @@ function createHarness({
     ],
     DEFAULT_APP_ID: 'chat',
     DEFAULT_APP_NAME: 'Chat',
-    visitorMode: false,
     activeTab: 'sessions',
     getActiveSourceFilterValue() { return activeSourceFilter; },
+    personFilterSelect: null,
     sourceFilterSelect: createSelect(''),
     sidebarFilters: {
       classList: {

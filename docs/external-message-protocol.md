@@ -110,17 +110,19 @@ The connector can add a short preface such as actor, source, URL, or thread titl
 
 ## Session conversation binding
 
-The owner API accepts `conversation: { connector, sourceRouteId, target }` on
+The authenticated API accepts `conversation: { connector, sourceRouteId, target }` on
 `POST /api/sessions` and `PATCH /api/sessions/:id`. Set it to `null` to detach.
 `POST /api/session-conversations/resolve` with `{ conversation }` returns the
 bound Session ID, including archived Sessions. Creating with an already bound
-topic reuses that Session atomically; a normal history fork does not inherit it.
-The Feishu explicit `/fork` path uses `replaceConversation: true` to transfer
-the topic to a fresh Session. Retried creation keeps the same Session.
+conversation reuses that Session atomically; a normal history fork does not
+inherit it. Retried creation keeps the same Session.
 
-For Feishu, a group-only target (`chatId`) means a new topic on first output.
-A target with an existing root message (`rootId`, `messageId`, `replyInThread:
-true`) means that topic. Thread/topic aliases can resolve an existing binding;
+For Feishu, `conversationKind: "main"` with a `chatId` is the chat's stable
+mainline Session. `conversationKind: "thread"` with an existing root message
+(`rootId`, `messageId`, `replyInThread: true`) identifies that Thread. A newly
+requested Thread initially uses the inbound root `messageId`; the publication
+receipt adds Feishu's server-assigned `threadId`. Thread/topic aliases can
+resolve an existing binding;
 an outbound reply anchor must be an actual Feishu message ID. The connector
 reports `messageId` and optional `threadId` with the send acknowledgement.
 The core binds the new root before completing the outbox record. Pending parts
@@ -173,7 +175,7 @@ second final-delivery owner.
 
 ## 4. Authentication
 
-Today, the simplest machine-to-machine path is the same owner auth used by the browser UI:
+Machine-to-machine callers use the instance `serviceToken` stored in `auth.json`:
 
 1. bootstrap a session cookie with `GET /?token=...`
 2. reuse the returned `session_token` cookie for later API calls
@@ -182,7 +184,7 @@ Example:
 
 ```bash
 BASE_URL="https://your.remotelab.host"
-TOKEN="YOUR_OWNER_TOKEN"
+TOKEN="YOUR_SERVICE_TOKEN"
 
 curl -sS -L \
   -c cookie.jar \
@@ -192,10 +194,9 @@ curl -sS -L \
 
 After that, reuse `cookie.jar` on HTTP requests and WebSocket upgrades.
 
-Current note:
-
-- this is owner-scope auth
-- visitor auth is for shared Agents, not for automation connectors
+The service token grants the same complete instance API access as a signed-in
+Person, but it identifies the caller as a service. Human attribution comes from
+the connector sender in `sourceContext`, not from the service credential.
 
 ---
 
@@ -215,9 +216,7 @@ Useful optional fields for connectors:
 - `name` — optional seed title; omit it unless you already have concrete thread/task context
 - `sourceId` — stable connector/runtime source id such as `feishu`, `email`, or `wechat`
 - `sourceName` — human-facing connector/runtime source name such as `Feishu`, `Email`, or `WeChat`
-- `templateId` — optional Agent id when this connector should run under a reusable Agent definition
-- `templateName` — human-facing label for that Agent
-- `group` — top-level grouping such as `Mail`, `GitHub`, `Bots`
+- `group` — initial grouping in the initiating Person's view, such as `Mail`, `GitHub`, `Bots`
 - `description` — short human-facing description
 - `systemPrompt` — optional connector-specific override; keep it minimal and use it only for constraints not already handled by backend-owned source logic
 - `conversation` — optional `{ connector, sourceRouteId, target }`; all user-visible replies from this Session use it
@@ -234,16 +233,12 @@ Naming policy for connector-created sessions:
 
 - prefer letting RemoteLab auto-rename after the actual inbound message lands
 - only send `name` when it already contains clear thread-specific context
-- do not repeat provider/source/group words already stored in `group`, `sourceName`, `templateName`, or other metadata
+- do not repeat provider/source/group words already stored in `group`, `sourceName`, or other metadata
 - generic names such as `Feishu group`, `GitHub issue`, or `Mail reply` are treated as temporary and may be discarded
 
-For recurring owner-side automations, prefer treating the connector as an Automation Agent:
-
-- create a normal RemoteLab Agent for the automation's identity and prompt
-- use that Agent's `id`, `name`, and `systemPrompt` as `templateId`, `templateName`, and `systemPrompt` when creating/reusing the review session
-- keep one stable `externalTriggerId` per automation thread so review stays in one durable session
-
-See `automation-apps.md` for the higher-level product pattern.
+For recurring automations, keep one stable `externalTriggerId` per review thread
+so review stays in one durable Session. If each occurrence should be independent,
+use the scheduler's `new_session` mode with an explicit source Session.
 
 Example:
 
@@ -268,11 +263,11 @@ Important behavior:
 
 - if an unarchived session with the same `externalTriggerId` already exists, RemoteLab returns that session instead of creating a new one
 - this is the main dedupe mechanism for “one external thread → one RemoteLab session”
-- task/topic sessions with no meaningful seed `name` use the normal temporary title and post-turn AI naming; neither Feishu `/fork` tasks nor default history-copy forks need a special prefix
-- long-lived Feishu private chats (`feishu:p2p:<chat>`) and WeChat direct chats (`wechat:<account>:<peer>`) default to a fixed `<sourceName> 私聊` title; topic/fork sessions inside those chats remain AI-named
+- task/topic sessions with no meaningful seed `name` use the normal temporary title and post-turn AI naming; Feishu Thread tasks do not need a special prefix
+- long-lived Feishu mainline Sessions (`feishu:main:<route>:<tenant>:<chat>`) and WeChat direct chats (`wechat:<account>:<peer>`) default to a fixed source title; Thread Sessions remain AI-named
 - older AI-named direct chats adopt the fixed identity when metadata loads without advancing activity timestamps; explicit/manual names stay locked and are preserved
 - an explicit name supplied when copying a session remains a manual title; default forks do not inherit the parent title lock. Existing locked titles are not guessed to be automatic from their wording alone
-- the owner sidebar source grouping derives from session metadata rather than a hardcoded frontend list
+- sidebar origin grouping derives from Session metadata rather than a hardcoded frontend list
 
 ---
 
@@ -287,7 +282,7 @@ Required fields:
 - `requestId` — unique per inbound update inside that session
 - `text` — normalized message body to append as the next user message
 
-Optional owner-only fields:
+Optional authenticated fields:
 
 - `tool`
 - `model`
@@ -304,14 +299,15 @@ the submitted payload, so retries keep their original identity and queued runs
 retain the accepted configuration across preference changes and restarts.
 RemoteLab's Codex product default is `gpt-5.6-sol` with `low` effort; native CLI
 configuration and recently used models only enrich the model catalog. Explicit
-model/effort choices remain supported. Feishu continues to inherit the synced
-WebUI selection unless configured in pinned mode.
+Harness/model/effort profiles remain supported. Feishu continues to inherit the
+synced WebUI profile unless configured in pinned mode.
 
 The first durable connector admission notice includes the session link, model,
 effort and Harness from that same snapshot. Unknown provider defaults are shown
 as delegated to the Harness rather than guessed. Starting an ordinary user run
-also saves its model/effort on the session for the WebUI. Later turns do not
-repeat the creation notice; internal operations do not replace user preferences.
+also saves its complete Harness/model/effort profile on the Session for the
+WebUI. Later turns do not repeat the creation notice; internal operations do not
+replace user preferences.
 Email retains its single final-message behavior.
 
 Example:
@@ -368,7 +364,7 @@ Current `session.activity` shape:
 - `activity.run.state` — coarse run state: `running` or `idle`
 - `activity.run.phase` — underlying durable run phase such as `accepted`, `running`, `completed`, `failed`, or `cancelled` when available
 - `activity.queue.state` / `activity.queue.count` — follow-up backlog state
-- `activity.compact.state` — background compaction state: `idle` or `pending`
+- `activity.compact.state` — legacy compatibility state for an already-persisted compaction worker; new Sessions do not schedule RemoteLab compaction
 
 Title, Space, Project group, workflow state, and `workState.summary` are durable post-turn Session projections. They are refreshed asynchronously by one classifier and are not part of the live `session.activity` state machine.
 
@@ -382,7 +378,7 @@ This means connectors should treat `requestId` as the idempotency key for one up
 
 ### Source-delivery contract
 
-Set `conversation` when creating a Session, or PATCH it on an owner Session. If
+Set `conversation` when creating a Session, or PATCH it on an authenticated Session. If
 the current inbound message is also the reply anchor, submit `sourceDelivery`
 with that message. Otherwise the request snapshots the Session binding as its
 `deliveryPlan`. In both cases the resolved plan is persisted separately from
@@ -400,7 +396,7 @@ the original options so retries retain their admission fingerprint.
 
 Supported connectors are `feishu`, `wechat`, and `email`. Targets are adapter-specific, validated routing data; credentials remain in instance bindings. Email targets contain `to`, an optional bound reply alias `from`, `subject`, `inReplyTo`, `references` (an array), and thread/message identifiers. Email text and attachments form one delivery; IM text and attachments have separately tracked delivery records.
 
-The independent sender uses owner-authenticated APIs:
+The independent sender uses service-authenticated APIs:
 
 - `POST /api/source-deliveries/claim` with `connector` and `sourceRouteId` returns a delivery and lease, or no available work.
 - `POST /api/source-deliveries/:id/complete` with `leaseId` and `externalId` acknowledges a durable upstream receipt. Repeated acknowledgements of the same receipt are harmless.
@@ -440,7 +436,7 @@ Connect to:
 
 `GET /ws`
 
-with the owner cookie.
+with the authenticated service cookie.
 
 Important rule:
 
@@ -492,7 +488,7 @@ Large or deferred event bodies can be fetched with:
 
 `GET /api/sessions/:sessionId/events/:seq/body`
 
-For owner chat sessions, the main event index is completeness-first: it returns the full event list, while heavy thinking/tool bodies stay deferred behind the event-body route.
+For authenticated workbench Sessions, the main event index is completeness-first: it returns the full event list, while heavy thinking/tool bodies stay deferred behind the event-body route.
 
 Current normalized event types include:
 
@@ -582,7 +578,7 @@ Explicit email completion targets remain a compatibility/automation path. New in
 If you are integrating another tool today, the most stable approach is:
 
 1. keep your source wrapper outside RemoteLab
-2. authenticate as the owner
+2. authenticate with the service token
 3. create or reuse one session per upstream thread
 4. submit each inbound update as a new user message
 5. bind the Session conversation and snapshot the current inbound reply anchor in `sourceDelivery` when it differs from the long-lived binding

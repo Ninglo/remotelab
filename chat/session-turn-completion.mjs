@@ -1,4 +1,5 @@
 import { requests } from './requests.mjs';
+import { DEFAULT_PERSON_ID } from '../lib/auth-config.mjs';
 
 export function createSessionTurnCompletionHelpers(services) {
   const {
@@ -11,7 +12,6 @@ export function createSessionTurnCompletionHelpers(services) {
     dispatchSessionConnectorActions,
     findAssistantAttachmentMessageForRun,
     findResultAssetMessageForRun,
-    getCompactionServices,
     getRun,
     getRunManifest,
     getSession,
@@ -22,7 +22,6 @@ export function createSessionTurnCompletionHelpers(services) {
     isTerminalRunState,
     loadHistory,
     maybeApplyAssistantWorkSummary,
-    maybeAutoCompact,
     normalizeAttachmentSizeBytes,
     normalizePublishedResultAssetAttachments,
     nowIso,
@@ -161,7 +160,7 @@ export function createSessionTurnCompletionHelpers(services) {
     return didPublish;
   }
 
-  function scheduleSessionStateSuggestion(session, run) {
+  function scheduleSessionStateSuggestion(session, run, manifest = {}) {
     if (
       !session?.id
       || !run
@@ -172,12 +171,17 @@ export function createSessionTurnCompletionHelpers(services) {
       return false;
     }
 
+    const viewPersonId = trimString(manifest.viewPersonId) || DEFAULT_PERSON_ID;
+    const personView = typeof services.getSessionPersonView === 'function'
+      ? services.getSessionPersonView(session, viewPersonId)
+      : {};
     const suggestionDone = triggerSessionStateSuggestion({
       id: session.id,
       folder: session.folder,
       name: session.name || '',
-      space: session.space || '',
-      group: session.group || '',
+      space: personView.space || '',
+      group: personView.group || '',
+      viewPersonId,
       description: session.description || '',
       sourceName: session.sourceName || '',
       workflowState: session.workflowState || '',
@@ -194,7 +198,9 @@ export function createSessionTurnCompletionHelpers(services) {
 
     suggestionDone.then(async (result) => {
       if (!result?.ok) return;
-      await applySessionStateSuggestion(session.id, result, run.id);
+      await applySessionStateSuggestion(session.id, result, {
+        classifiedUserMessageSeq: result.classifiedUserMessageSeq,
+      }, viewPersonId);
     }).catch((error) => {
       console.error(`[session-state] Failed to update session state for ${session.id?.slice(0, 8)}: ${error.message}`);
     });
@@ -223,15 +229,8 @@ export function createSessionTurnCompletionHelpers(services) {
     if (allowCompletionEffects && !hasQueuedFollowUps) {
       await queueSessionCompletionTargets(session, finalizedRun, manifest);
       if (finalizedRun.state === 'completed') {
-        scheduleSessionStateSuggestion(session, finalizedRun);
+        scheduleSessionStateSuggestion(session, finalizedRun, manifest);
       }
-    }
-
-    const autoCompactionQueued = allowCompletionEffects && !hasQueuedFollowUps
-      ? await maybeAutoCompact(sessionId, session, finalizedRun, manifest, getCompactionServices())
-      : false;
-    if (autoCompactionQueued) {
-      return { session, sessionChanged };
     }
 
     if (allowCompletionEffects && !hasQueuedFollowUps) {

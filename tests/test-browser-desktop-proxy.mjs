@@ -12,11 +12,20 @@ setIsolatedTestHome(testHome);
 const configDir = join(testHome, '.config/remotelab');
 await mkdir(configDir, { recursive: true });
 const token = 'a'.repeat(64);
-await writeFile(join(configDir, 'auth.json'), JSON.stringify({ token }));
+const serviceToken = 'c'.repeat(64);
+await writeFile(join(configDir, 'auth.json'), JSON.stringify({
+  version: 2,
+  serviceToken,
+  primaryPersonId: 'person_primary',
+  people: [
+    { id: 'person_primary', name: 'Primary', credentials: [{ type: 'token', token }] },
+    { id: 'person_second', name: 'Second', credentials: [{ type: 'token', token: 'b'.repeat(64) }] },
+  ],
+}));
 await writeFile(join(configDir, 'auth-sessions.json'), JSON.stringify({
-  owner: { role: 'owner', expiry: Date.now() + 60000 },
-  visitor: { role: 'visitor', visitorId: 'v', agentId: 'a', expiry: Date.now() + 60000 },
-  expired: { role: 'owner', expiry: Date.now() - 1 },
+  primary: { personId: 'person_primary', expiry: Date.now() + 60000 },
+  second: { personId: 'person_second', expiry: Date.now() + 60000 },
+  expired: { personId: 'person_primary', expiry: Date.now() - 1 },
 }));
 const { handleBrowserDesktopRequest, handleBrowserDesktopUpgrade } =
   await import('../chat/browser-desktop-proxy.mjs');
@@ -54,8 +63,9 @@ server.on('upgrade', (req, socket, head) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
-const owner = { Cookie: 'session_token=owner' };
-const request = (path, headers = owner, method = 'GET') => fetch(`${base}${path}`, {
+const primary = { Cookie: 'session_token=primary' };
+const second = { Cookie: 'session_token=second' };
+const request = (path, headers = primary, method = 'GET') => fetch(`${base}${path}`, {
   headers, method, redirect: 'manual',
 });
 async function rejectedUpgrade(headers, expected, path = '/browser/websockify') {
@@ -73,13 +83,12 @@ try {
   const anonymous = await request('/browser/', {});
   assert.equal(anonymous.status, 302);
   assert.equal(anonymous.headers.get('location'), '/login?next=%2Fbrowser%2F');
-  assert.equal((await request('/browser/app/ui.js', { Cookie: 'visitor_session_token=visitor' })).status, 403);
   assert.equal((await request('/browser/', { Cookie: 'session_token=expired' })).status, 302);
   assert.equal(received.length, 0, 'Rejected users must not reach upstream');
   const entry = await request('/browser/');
   assert.equal(entry.status, 302);
   assert.match(entry.headers.get('location'), /path=browser%2Fwebsockify/);
-  const page = await request('/browser/vnc.html', { ...owner, Authorization: `Bearer ${token}` });
+  const page = await request('/browser/vnc.html', { ...primary, Authorization: `Bearer ${token}` });
   assert.equal(page.status, 200);
   assert.equal(await page.text(), '<html>desktop</html>');
   assert.equal(page.headers.get('set-cookie'), null);
@@ -89,15 +98,15 @@ try {
   assert.equal(received.at(-1).headers.cookie, undefined);
   assert.equal(received.at(-1).headers.authorization, `Basic ${Buffer.from('desktop:private-upstream-password').toString('base64')}`);
   assert.equal((await request('/browser/app/ui.js')).headers.get('content-type'), 'text/javascript');
-  assert.equal((await request('/browser/vnc.html', owner, 'POST')).status, 405);
+  assert.equal((await request('/browser/app/ui.js', second)).status, 200, 'every authenticated person can use the shared desktop');
+  assert.equal((await request('/browser/vnc.html', primary, 'POST')).status, 405);
   assert.equal((await request('/browser/websockify')).status, 426);
   await rejectedUpgrade({ Origin: base }, 401);
-  await rejectedUpgrade({ Origin: base, Cookie: 'visitor_session_token=visitor' }, 403);
-  await rejectedUpgrade(owner, 403);
-  await rejectedUpgrade({ ...owner, Origin: 'https://attacker.invalid' }, 403);
-  await rejectedUpgrade({ ...owner, Origin: base }, 404, '/browser/other-socket');
+  await rejectedUpgrade(primary, 403);
+  await rejectedUpgrade({ ...primary, Origin: 'https://attacker.invalid' }, 403);
+  await rejectedUpgrade({ ...primary, Origin: base }, 404, '/browser/other-socket');
   const ws = new WebSocket(`${base.replace('http:', 'ws:')}/browser/websockify`, ['binary'], {
-    headers: { ...owner, Origin: base },
+    headers: { ...second, Origin: base },
   });
   const banner = await once(ws, 'message');
   assert.equal(banner[0].toString(), 'RFB 003.008\n');
@@ -114,8 +123,8 @@ try {
   assert.equal((await request('/browser/vnc.html')).status, 503);
   await rm(configFile);
   assert.equal((await request('/browser/')).status, 404);
-  await rejectedUpgrade({ ...owner, Origin: base }, 404);
-  console.log('browser-desktop-proxy: HTTP owner/visitor/expiry, private headers, assets, binary WS, Origin, disabled/config validation passed');
+  await rejectedUpgrade({ ...primary, Origin: base }, 404);
+  console.log('browser-desktop-proxy: authenticated people, expiry, private headers, assets, binary WS, Origin, disabled/config validation passed');
 } finally {
   for (const ws of upstreamWs.clients) ws.terminate();
   upstreamWs.close();

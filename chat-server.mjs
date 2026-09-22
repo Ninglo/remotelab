@@ -66,6 +66,7 @@ triggers.startTriggerScheduler();
 recurringSchedules.startRecurringScheduleScheduler({
   createScheduledTrigger: triggers.createScheduledTrigger,
   countOpenScheduleTriggers: triggers.countOpenScheduleTriggers,
+  getScheduleTriggerCounts: triggers.getScheduleTriggerCounts,
   onMaterialized: () => triggers.processDueTriggersNow(),
 });
 sessionAutoArchive.startSessionAutoArchive();

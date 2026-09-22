@@ -107,7 +107,6 @@ function createContext() {
     },
     pendingNavigationState: null,
     activeTab: 'sessions',
-    visitorMode: false,
     currentSessionId: 'current-session',
     hasAttachedSession: true,
     sessions: [
@@ -175,6 +174,7 @@ function createContext() {
       context.sessions.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
     },
     refreshAppCatalog() {},
+    refreshSessionCatalog() {},
     renderSessionList() {
       renderCalls.push(context.sessions.map((session) => session.id));
     },

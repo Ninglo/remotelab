@@ -77,7 +77,6 @@ function createHarness() {
     Promise,
     Element: FakeElement,
     isDesktop: false,
-    visitorMode: false,
     sidebarOverlay,
     addToolModal: { hidden: true },
     openSessionsSidebarCalls: 0,

@@ -6,7 +6,6 @@ import {
   setContextHead,
 } from './history.mjs';
 import { contextOperationEvent, messageEvent, statusEvent } from './normalizer.mjs';
-import { buildTemplateFreshnessNotice } from './session-continuation.mjs';
 import { formatAttachmentContextLine, getMessageAttachments } from './attachment-utils.mjs';
 import { updateRun } from './runs.mjs';
 import { readLatestCodexSessionMetrics } from './codex-session-metrics.mjs';
@@ -271,16 +270,6 @@ function formatCompactionMessage(event) {
   return `[${label}]\n${parts.join('\n')}`;
 }
 
-function formatCompactionTemplateContext(event) {
-  const content = normalizeCompactionText(event.content);
-  if (!content) return '';
-  const name = normalizeCompactionText(event.templateName) || 'template';
-  const freshnessNotice = buildTemplateFreshnessNotice(event);
-  return freshnessNotice
-    ? `[Applied template context: ${name}]\n${freshnessNotice}\n\n${content}`
-    : `[Applied template context: ${name}]\n${content}`;
-}
-
 function formatCompactionStatus(event) {
   const content = clipCompactionEventText(event.content, 1000);
   if (!content) return '';
@@ -293,7 +282,6 @@ function prepareConversationOnlyContinuationBody(events) {
     .map((event) => {
       if (!event || !event.type) return '';
       if (event.type === 'message') return formatCompactionMessage(event);
-      if (event.type === 'template_context') return formatCompactionTemplateContext(event);
       if (event.type === 'status') return formatCompactionStatus(event);
       return '';
     })
@@ -454,100 +442,6 @@ async function ensureContextCompactorSession(sourceSessionId, session, run, serv
   });
 
   return created;
-}
-
-export async function queueContextCompaction(sessionId, session, run, { automatic = false } = {}, services = {}) {
-  const runtimeState = services.ensureSessionRuntimeState(sessionId);
-  if (runtimeState.pendingCompact) return false;
-
-  const snapshot = await getHistorySnapshot(sessionId);
-  const compactionSource = await buildCompactionSourcePayload(sessionId, {
-    uptoSeq: snapshot.latestSeq,
-  });
-  if (!compactionSource) return false;
-
-  const compactorSession = await ensureContextCompactorSession(sessionId, session, run, services);
-  if (!compactorSession) return false;
-
-  runtimeState.pendingCompact = true;
-
-  const statusText = automatic
-    ? getAutoCompactStatusText(run)
-    : 'Auto Compress is condensing older context…';
-  const compactQueuedEvent = statusEvent(statusText);
-  await services.appendEvent(sessionId, compactQueuedEvent);
-  await services.appendEvent(sessionId, buildQueuedCompactionOperation(
-    sessionId,
-    compactorSession.id,
-    compactionSource,
-    run,
-    { automatic },
-  ));
-  services.broadcastSessionInvalidation(sessionId);
-
-  try {
-    await services.sendMessage(compactorSession.id, buildContextCompactionPrompt({
-      session,
-      existingSummary: compactionSource.existingSummary,
-      conversationBody: compactionSource.conversationBody,
-      toolIndex: compactionSource.toolIndex,
-      automatic,
-    }), [], {
-      tool: run?.tool || session.tool,
-      model: run?.model || undefined,
-      effort: run?.effort || undefined,
-      thinking: false,
-      recordUserMessage: false,
-      queueIfBusy: false,
-      freshThread: true,
-      skipSessionContinuation: true,
-      internalOperation: 'context_compaction_worker',
-      compactionTargetSessionId: sessionId,
-      compactionSourceSeq: compactionSource.targetSeq,
-      compactionToolIndex: compactionSource.toolIndex,
-      compactionReason: automatic ? 'automatic' : 'manual',
-    });
-    return true;
-  } catch (error) {
-    runtimeState.pendingCompact = false;
-    const failure = statusEvent(`error: failed to compact context: ${error.message}`);
-    await services.appendEvent(sessionId, failure);
-    await services.appendEvent(sessionId, buildFailedCompactionOperation(sessionId, error.message, {
-      automatic,
-      workerSessionId: compactorSession.id,
-    }));
-    services.broadcastSessionInvalidation(sessionId);
-    return false;
-  }
-}
-
-export async function maybeAutoCompact(sessionId, session, run, manifest, services = {}) {
-  if (!session || !run) return false;
-  if (manifest?.internalOperation) return false;
-  if (services.getSessionQueueCount(session) > 0) return false;
-  let effectiveRun = run;
-  let contextTokens = getRunCurrentContextTokens(run);
-  let autoCompactTokens = getAutoCompactContextTokens(run);
-  if (!Number.isInteger(contextTokens) || !Number.isFinite(autoCompactTokens)) {
-    const refreshed = await refreshCodexContextMetrics(run);
-    if (refreshed) {
-      effectiveRun = {
-        ...run,
-        contextInputTokens: refreshed.contextTokens,
-        ...(Number.isInteger(refreshed.contextWindowTokens)
-          ? { contextWindowTokens: refreshed.contextWindowTokens }
-          : {}),
-      };
-      contextTokens = refreshed.contextTokens;
-      autoCompactTokens = getAutoCompactContextTokens(effectiveRun);
-    }
-  }
-  if (!Number.isInteger(contextTokens) || !Number.isFinite(autoCompactTokens)) return false;
-  if (!shouldAutoCompactRun({
-    ...effectiveRun,
-    contextInputTokens: contextTokens,
-  })) return false;
-  return queueContextCompaction(sessionId, session, effectiveRun, { automatic: true }, services);
 }
 
 export async function applyCompactionWorkerResult(targetSessionId, run, manifest, services = {}) {

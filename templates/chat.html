@@ -20,14 +20,14 @@
 <title>{{PAGE_TITLE}}</title>
 <link rel="stylesheet" href="chat/chat.css?v={{ASSET_VERSION}}">
 </head>
-<body class="{{BODY_CLASS}}">
+<body class="{{BODY_CLASS}}" data-app-view="sessions">
 <div class="app-shell">
 
 <!-- Header -->
 <div class="header">
-  <button class="header-btn header-btn--sessions" id="menuBtn" title="Sessions" aria-label="Sessions" data-i18n-title="nav.sessions" data-i18n-aria-label="nav.sessions">
+  <button class="header-btn header-btn--sessions" id="menuBtn" title="Open navigation" aria-label="Open navigation" data-i18n-title="nav.open" data-i18n-aria-label="nav.open">
     <span class="header-btn-icon" data-icon="menu" aria-hidden="true"></span>
-    <span class="header-btn-label sr-only" data-i18n="nav.sessions">Sessions</span>
+    <span class="header-btn-label sr-only" data-i18n="nav.open">Open navigation</span>
   </button>
   <h1 id="headerTitle"><span class="header-product-name">RemoteLab</span></h1>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
@@ -42,37 +42,236 @@
 </div>
 
 <div class="app-container">
-  <!-- Sidebar overlay -->
+  <!-- Single-page application sidebar -->
   <div class="sidebar-overlay" id="sidebarOverlay">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-tabs">
-        <button class="sidebar-tab active" id="tabSessions" data-i18n="nav.sessions">Sessions</button>
-        <button class="sidebar-tab" id="tabAgents" data-i18n="nav.agents">Agent</button>
-        <button class="sidebar-tab" id="tabSettings" data-i18n="nav.settings">Settings</button>
-        <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
-      </div>
+      <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
+      <nav class="sidebar-primary-nav" aria-label="Main actions" data-i18n-aria-label="nav.application">
+        <button class="sidebar-nav-button new-session-btn" id="newSessionBtn" type="button">
+          <span class="sidebar-nav-icon" data-icon="plus" aria-hidden="true"></span>
+          <span data-i18n="sidebar.newSession">New Session</span>
+        </button>
+        <button class="sidebar-nav-button" id="tabTasks" type="button">
+          <span class="sidebar-nav-icon" data-icon="tasks" aria-hidden="true"></span>
+          <span data-i18n="nav.tasks">Tasks</span>
+        </button>
+      </nav>
       <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
-      <div class="sidebar-list" id="sessionList"></div>
       <div class="sidebar-filters" id="sidebarFilters">
+        <select class="sidebar-filter-select" id="personFilterSelect" aria-label="Filter sessions by person" data-i18n-aria-label="sidebar.filter.person"></select>
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
       </div>
-      <div class="settings-panel" id="agentsPanel">
-        <div class="settings-section">
-          <div class="settings-section-title" data-i18n="settings.apps.title">Agents</div>
-          <div class="settings-app-actions">
-            <button class="settings-app-btn" id="createAgentBtn" type="button" data-i18n="settings.apps.create">Create Agent</button>
+      <div class="sidebar-list" id="sessionList"></div>
+      <nav class="sidebar-footer-nav" aria-label="Settings" data-i18n-aria-label="nav.settings">
+        <button class="sidebar-nav-button" id="tabSettings" type="button">
+          <span class="sidebar-nav-icon" data-icon="gear" aria-hidden="true"></span>
+          <span data-i18n="nav.settings">Settings</span>
+        </button>
+      </nav>
+    </aside>
+  </div>
+
+  <div class="app-workspace">
+      <div class="settings-panel task-center-panel" id="taskCenterPanel">
+        <header class="workspace-page-header task-center-header">
+          <div>
+            <div class="workspace-page-kicker" data-i18n="tasks.kicker">Automation</div>
+            <h2 data-i18n="tasks.title">Task Center</h2>
+            <p data-i18n="tasks.note">See every scheduled task, where it runs, and what happened last.</p>
           </div>
-          <div class="settings-apps-list" id="settingsAgentsList">
-            <div class="settings-app-empty" data-i18n="settings.apps.loading">Loading agents…</div>
+          <button class="task-center-primary" id="taskCenterCreateToggle" type="button" data-i18n="tasks.new">New task</button>
+        </header>
+        <form class="task-center-form" id="taskCenterForm" hidden>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.name">Name</span>
+            <input id="taskCenterTitle" type="text" maxlength="120" required placeholder="Daily project review" data-i18n-placeholder="tasks.form.namePlaceholder">
+          </label>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.prompt">Instructions</span>
+            <textarea id="taskCenterPrompt" rows="4" required placeholder="Review the latest project state and decide the next action." data-i18n-placeholder="tasks.form.promptPlaceholder"></textarea>
+          </label>
+          <div class="task-center-grid">
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.timing">Timing</span>
+              <select id="taskCenterKind">
+                <option value="one_time" data-i18n="tasks.kind.oneTime">One time</option>
+                <option value="recurring" data-i18n="tasks.kind.recurring">Recurring</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterOnceField">
+              <span data-i18n="tasks.form.runAt">Run at</span>
+              <input id="taskCenterScheduledAt" type="datetime-local">
+            </label>
           </div>
+          <div class="task-center-grid" id="taskCenterRecurringFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.cadence">Cadence</span>
+              <select id="taskCenterCadence">
+                <option value="cron" data-i18n="tasks.form.cadenceCron">Calendar (cron)</option>
+                <option value="interval" data-i18n="tasks.form.cadenceInterval">Interval</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterCronField">
+              <span data-i18n="tasks.form.cron">Cron</span>
+              <input id="taskCenterCron" type="text" value="0 9 * * 1-5" spellcheck="false">
+            </label>
+            <label class="task-center-field" id="taskCenterIntervalField" hidden>
+              <span data-i18n="tasks.form.everySeconds">Every (seconds)</span>
+              <input id="taskCenterEverySeconds" type="number" value="60" min="10" step="1">
+              <small data-i18n="tasks.form.intervalHelp">Minimum 10 seconds. Missed checks collapse to the latest one.</small>
+            </label>
+            <label class="task-center-field" id="taskCenterTimezoneField">
+              <span data-i18n="tasks.form.timezone">Timezone</span>
+              <input id="taskCenterTimezone" type="text" value="Asia/Shanghai" spellcheck="false">
+            </label>
+          </div>
+          <div class="task-center-grid" id="taskCenterLifetimeFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.lifetime">Lifetime</span>
+              <select id="taskCenterLifetime">
+                <option value="continuous" data-i18n="tasks.form.continuous">Continuous</option>
+                <option value="bounded" data-i18n="tasks.form.finite">Finite</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterMaxExecutionsField" hidden>
+              <span data-i18n="tasks.form.agentAdmissions">Agent admissions</span>
+              <input id="taskCenterMaxExecutions" type="number" value="1" min="1" step="1">
+              <small data-i18n="tasks.form.admissionLimitHelp">Checks that return no do not consume this limit.</small>
+            </label>
+          </div>
+          <div class="task-center-grid" id="taskCenterGateFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.admission">Admission</span>
+              <select id="taskCenterGateMode">
+                <option value="direct" data-i18n="tasks.form.admissionDirect">Run Agent every time</option>
+                <option value="script" data-i18n="tasks.form.admissionScript">Check with a script first</option>
+              </select>
+            </label>
+            <label class="task-center-field" id="taskCenterGateRuntimeField" hidden>
+              <span data-i18n="tasks.form.scriptRuntime">Script runtime</span>
+              <select id="taskCenterGateRuntime">
+                <option value="bash">Bash</option>
+                <option value="python">Python</option>
+                <option value="node">Node.js</option>
+              </select>
+            </label>
+          </div>
+          <div id="taskCenterGateScriptFields" hidden>
+            <label class="task-center-field">
+              <span data-i18n="tasks.form.conditionScript">Condition script</span>
+              <textarea id="taskCenterGateSource" rows="5" spellcheck="false" placeholder="echo no"></textarea>
+              <small data-i18n="tasks.form.conditionScriptHelp">Print exactly yes/no, or JSON with a boolean trigger. Errors fail closed. The script is snapshotted when the task is created.</small>
+            </label>
+            <div class="task-center-grid">
+              <label class="task-center-field">
+                <span data-i18n="tasks.form.timeoutSeconds">Timeout (seconds)</span>
+                <input id="taskCenterGateTimeout" type="number" value="5" min="1" max="30" step="1">
+              </label>
+              <label class="task-center-field">
+                <span data-i18n="tasks.form.cooldownSeconds">Cooldown (seconds)</span>
+                <input id="taskCenterGateCooldown" type="number" value="0" min="0" step="1">
+              </label>
+            </div>
+          </div>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.execution">Execution</span>
+            <select id="taskCenterTargetMode">
+              <option value="fixed_session" data-i18n="tasks.target.fixed">Wake one fixed Session</option>
+              <option value="new_session" data-i18n="tasks.target.new">Create a new Session each run</option>
+            </select>
+          </label>
+          <label class="task-center-field">
+            <span id="taskCenterSessionLabel" data-i18n="tasks.form.session">Session</span>
+            <select id="taskCenterSession" required></select>
+            <small id="taskCenterSessionHelp" data-i18n="tasks.form.fixedHelp">Each run is queued into this Session.</small>
+          </label>
+          <label class="task-center-field">
+            <span data-i18n="tasks.runtime.label">Model policy</span>
+            <select id="taskCenterRuntimePolicy">
+              <option value="follow_default" data-i18n="tasks.runtime.follow">Follow Default</option>
+              <option value="fixed" data-i18n="tasks.runtime.fixedSource">Pin template Session's runtime</option>
+            </select>
+            <small id="taskCenterRuntimeHelp"></small>
+          </label>
+          <label class="task-center-field">
+            <span data-i18n="tasks.form.notification">Result delivery</span>
+            <select id="taskCenterNotification">
+              <option value="remotelab" data-i18n="tasks.notification.remotelab">RemoteLab only</option>
+              <option value="source_conversation" data-i18n="tasks.notification.source">Session's connected source</option>
+            </select>
+          </label>
+          <div class="task-center-safety" data-i18n="tasks.form.safety">Execution and delivery are configured separately. Pausing or cancelling prevents future admissions; it does not terminate a run already in progress.</div>
+          <div class="task-center-form-actions">
+            <button class="task-center-secondary" id="taskCenterCreateCancel" type="button" data-i18n="action.close">Close</button>
+            <button class="task-center-primary" id="taskCenterCreateSubmit" type="submit" data-i18n="tasks.form.create">Create task</button>
+          </div>
+          <div class="task-center-feedback" id="taskCenterFormStatus" role="status" aria-live="polite"></div>
+        </form>
+        <div class="task-center-toolbar">
+          <select id="taskCenterFilter" aria-label="Filter tasks" data-i18n-aria-label="tasks.filter.ariaLabel">
+            <option value="all" data-i18n="tasks.filter.all">All tasks</option>
+            <option value="active" data-i18n="tasks.filter.active">Active</option>
+            <option value="paused" data-i18n="tasks.filter.paused">Paused</option>
+            <option value="history" data-i18n="tasks.filter.history">History</option>
+          </select>
+          <button class="task-center-icon-btn" id="taskCenterRefresh" type="button" title="Refresh tasks" aria-label="Refresh tasks" data-i18n-title="tasks.refresh" data-i18n-aria-label="tasks.refresh" data-icon="refresh"></button>
+        </div>
+        <div class="task-center-list" id="taskCenterList">
+          <div class="task-center-empty" data-i18n="tasks.loading">Loading tasks…</div>
         </div>
       </div>
       <div class="settings-panel" id="settingsPanel">
+        <header class="workspace-page-header">
+          <h2 data-i18n="nav.settings">Settings</h2>
+          <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
+        </header>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.language.title">Language</div>
           <div class="settings-inline-form">
-            <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ownerAriaLabel"></select>
+            <select class="settings-inline-select" id="uiLanguageSelect" aria-label="Choose interface language" data-i18n-aria-label="settings.language.ariaLabel"></select>
           </div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-section-title" data-i18n="settings.people.myViewTitle">My view</div>
+          <div class="settings-section-note" data-i18n="settings.people.myViewNote">Choose how the shared Session list opens for you. Your Spaces, groups, and sorting remain personal.</div>
+          <div class="settings-current-person" id="settingsCurrentPersonView">
+            <div class="settings-current-person-profile" id="settingsCurrentPersonSummary"></div>
+            <label class="settings-person-field settings-current-person-filter">
+              <span data-i18n="settings.people.defaultFilterLabel">Default Session filter</span>
+              <select class="settings-inline-select" id="settingsDefaultPersonFilter" aria-label="Default Session filter" data-i18n-aria-label="settings.people.defaultFilterLabel">
+                <option value="all" data-i18n="settings.people.allSessions">All sessions</option>
+                <option value="mine" data-i18n="settings.people.mySessions">My sessions</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="settings-section settings-people-section">
+          <div class="settings-section-heading">
+            <div>
+              <div class="settings-section-title" data-i18n="settings.people.title">People</div>
+              <div class="settings-section-note" data-i18n="settings.people.note">Readable handles identify people across Web sign-in and connected apps. They organize the interface, not access permissions.</div>
+            </div>
+            <button class="settings-app-btn settings-person-add-toggle" id="settingsPersonCreateToggle" type="button" aria-expanded="false" data-i18n="settings.people.add">Add person</button>
+          </div>
+          <div class="settings-person-create" id="settingsPersonCreatePanel" hidden>
+            <div class="settings-person-profile-grid">
+              <label class="settings-person-field">
+                <span data-i18n="settings.people.nameLabel">Name</span>
+                <input class="settings-inline-input" id="settingsPersonName" type="text" maxlength="120" autocomplete="off" placeholder="Name" data-i18n-placeholder="settings.people.namePlaceholder">
+              </label>
+              <label class="settings-person-field">
+                <span data-i18n="settings.people.handleLabel">Username</span>
+                <input class="settings-inline-input" id="settingsPersonUsername" type="text" autocomplete="username" placeholder="Generated automatically when left blank" data-i18n-placeholder="settings.people.handlePlaceholder">
+              </label>
+            </div>
+            <div class="settings-person-create-note" data-i18n="settings.people.createNote">Sign-in methods and connected apps can be managed after the person is created.</div>
+            <div class="settings-person-form-actions">
+              <button class="settings-app-btn" id="settingsPersonCreateCancel" type="button" data-i18n="action.cancel">Cancel</button>
+              <button class="settings-app-btn settings-person-primary" id="settingsPersonCreate" type="button" data-i18n="settings.people.create">Create person</button>
+            </div>
+          </div>
+          <div class="settings-app-empty inline-status settings-people-status" id="settingsPeopleStatus" role="status" aria-live="polite" hidden></div>
+          <div class="settings-people-list" id="settingsPeopleList"></div>
         </div>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.theme.title">Theme</div>
@@ -95,7 +294,7 @@
         </div>
         <div class="settings-section">
           <div class="settings-section-title" data-i18n="settings.voice.title">Voice Input</div>
-          <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. The owner can keep the relay setup or try direct gateway voice input here.</div>
+          <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. Any signed-in person can manage it.</div>
           <div class="settings-inline-form">
             <select class="settings-inline-select" id="voiceInputProviderSelect" aria-label="Choose a voice input transport" data-i18n-aria-label="settings.voice.providerAriaLabel"></select>
             <input class="settings-inline-input" id="voiceInputAppId" type="text" autocomplete="off" placeholder="Doubao App ID" data-i18n-placeholder="settings.voice.appIdPlaceholder">
@@ -140,13 +339,9 @@
           </div>
         </div>
       </div>
-      <div class="session-list-footer" id="sessionListFooter" title="Build {{BUILD_TITLE}}" data-i18n-build-label="{{BUILD_LABEL}}">Build {{BUILD_LABEL}}</div>
-      <button class="new-session-btn" id="newSessionBtn" data-i18n="sidebar.newSession">+ New Session</button>
-    </aside>
-  </div>
 
   <!-- Chat area -->
-  <main class="chat-area">
+  <main class="chat-area" id="sessionWorkspace">
     <div class="messages" id="messages">
       <div class="messages-inner" id="messagesInner">
         <div class="empty-state" id="emptyState">
@@ -173,7 +368,6 @@
             </div>
             <span class="quick-profile-badge" id="quickProfileBadge" hidden data-i18n="quick.lockedBadge">Quick · locked</span>
             <div class="runtime-selection-controls" id="runtimeSelectionControls">
-              <select class="tool-select" id="inlineAgentSelect" disabled title="Choose agent for the next session" aria-label="Choose agent for the next session" data-i18n-title="compose.agent.title" data-i18n-aria-label="compose.agent.ariaLabel"></select>
               <select class="tool-select" id="inlineToolSelect" disabled></select>
               <select class="provider-select" id="inlineProviderSelect" disabled style="display:none" title="Choose model provider" aria-label="Choose model provider" data-i18n-title="tooling.providerTitle" data-i18n-aria-label="tooling.providerAriaLabel"></select>
               <select class="model-select" id="inlineModelSelect" disabled></select>
@@ -182,8 +376,6 @@
           </div>
           <div class="input-config-group right">
             <span id="contextTokens" class="context-status" style="display:none" role="status" aria-live="polite"></span>
-            <button class="compact-btn" id="compactBtn" style="display:none" title="Ask model to summarize conversation, then reset context" data-i18n="action.compact">Compact</button>
-            <button class="compact-btn" id="dropToolsBtn" style="display:none" title="Remove past tool results from context (no model call)" data-i18n="action.dropTools">Drop tools</button>
           </div>
         </div>
         <div class="input-wrapper">
@@ -237,6 +429,7 @@
       </div>
     </div>
   </main>
+  </div>
 </div>
 </div>
 
@@ -245,31 +438,31 @@
 <div class="modal-backdrop" id="addToolModal" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addToolModalTitle">
     <div class="modal-header">
-      <div class="modal-title" id="addToolModalTitle" data-i18n="modal.addAgentsTitle">Add more agents</div>
+      <div class="modal-title" id="addToolModalTitle" data-i18n="modal.addToolsTitle">Add more tools</div>
       <button class="modal-close" id="closeAddToolModal" type="button" aria-label="Close" data-i18n-aria-label="action.close" data-icon="close">&times;</button>
     </div>
     <div class="modal-body">
-      <p class="modal-lead" data-i18n="modal.addAgentsLead">
-        RemoteLab is not limited to the builtin agents. For simple tools, save a lightweight config here and the picker refreshes immediately.
+      <p class="modal-lead" data-i18n="modal.addToolsLead">
+        RemoteLab is not limited to the builtin tools. For simple tools, save a lightweight config here and the picker refreshes immediately.
         If you need custom parsing or runtime behavior, use the advanced path below.
       </p>
 
-        <div class="provider-helper-card">
-          <div class="provider-helper-card-header">
-            <div class="provider-helper-card-title" data-i18n="modal.quickAddTitle">Quick add</div>
-            <button class="modal-btn primary" id="saveToolConfigBtn" type="button" data-i18n="modal.saveRefresh">Save &amp; refresh</button>
-          </div>
+      <div class="provider-helper-card">
+        <div class="provider-helper-card-header">
+          <div class="provider-helper-card-title" data-i18n="modal.quickAddTitle">Quick add</div>
+          <button class="modal-btn primary" id="saveToolConfigBtn" type="button" data-i18n="modal.saveRefresh">Save &amp; refresh</button>
+        </div>
         <p data-i18n="modal.quickAddBody">
-          Use this for wrappers or simple command-based agents that speak an existing runtime family and accept that family's core prompt/model/reasoning flags. We save the config for you and refresh the picker without restarting the service.
+          Use this for wrappers or simple command-based tools that speak an existing runtime family and accept that family's core prompt/model/reasoning flags. We save the config for you and refresh the picker without restarting the service.
         </p>
         <div class="provider-helper-grid">
           <div class="provider-helper-field">
             <label for="addToolNameInput" data-i18n="modal.name">Name</label>
-            <input id="addToolNameInput" type="text" value="My Agent" autocomplete="off">
+            <input id="addToolNameInput" type="text" value="My Tool" autocomplete="off">
           </div>
           <div class="provider-helper-field">
             <label for="addToolCommandInput" data-i18n="modal.command">Command</label>
-            <input id="addToolCommandInput" type="text" value="my-agent" autocomplete="off">
+            <input id="addToolCommandInput" type="text" value="my-tool" autocomplete="off">
           </div>
           <div class="provider-helper-field">
             <label for="addToolRuntimeFamilySelect" data-i18n="modal.runtimeFamily">Runtime family</label>
@@ -313,8 +506,8 @@
           If the simple setup is not enough, start a dedicated technical session and paste this setup brief.
         </p>
         <ul>
-          <li data-i18n="modal.advancedBullet1">It asks the agent to decide whether simple setup is enough or whether deeper integration is needed.</li>
-          <li data-i18n="modal.advancedBullet2">It points the agent at the relevant technical notes and keeps the changes minimal.</li>
+          <li data-i18n="modal.advancedBullet1">It asks the implementation session to decide whether simple setup is enough or deeper integration is needed.</li>
+          <li data-i18n="modal.advancedBullet2">It points that session at the relevant technical notes and keeps the changes minimal.</li>
         </ul>
         <div class="provider-helper-code"><code id="providerPromptCode"></code></div>
       </div>
@@ -350,6 +543,8 @@
 <script src="chat/instance-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/display-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/task-center.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/compose.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/gestures.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

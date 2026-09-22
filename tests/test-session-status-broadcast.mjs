@@ -72,7 +72,6 @@ const wsClients = await import(
 
 const {
   createSession,
-  dropToolUse,
   getRunState,
   killAll,
   submitHttpMessage,
@@ -100,111 +99,96 @@ async function waitFor(predicate, description, timeoutMs = 8000) {
   throw new Error(`Timed out: ${description}`);
 }
 
-const ownerWs = makeWs({ role: 'owner' });
-const visitorWs = makeWs({ role: 'visitor', sessionId: 'placeholder' });
-setWss({ clients: new Set([ownerWs, visitorWs]) });
+const alphaWs = makeWs({ personId: 'person_alpha', identityId: 'identity_web_alpha' });
+const betaWs = makeWs({ personId: 'person_beta', identityId: 'identity_web_beta' });
+setWss({ clients: new Set([alphaWs, betaWs]) });
 
-const ownerSessionA = await createSession(tempHome, 'fake-codex', 'Owner A', {
+const alphaSession = await createSession(tempHome, 'fake-codex', 'Alpha task', {
   group: 'Tests',
-  description: 'Owner invalidation test A',
+  description: 'Shared invalidation test A',
 });
 assert.equal(
-  ownerWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
+  alphaWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
   true,
-  'creating an owner session should invalidate the owner session list',
+  'creating a session should invalidate every authenticated session list',
 );
-ownerWs.messages = [];
+assert.equal(betaWs.messages.some((msg) => msg.type === 'sessions_invalidated'), true);
+alphaWs.messages = [];
+betaWs.messages = [];
 
-await createSession(tempHome, 'fake-codex', 'Owner B', {
+await createSession(tempHome, 'fake-codex', 'Shared task B', {
   group: 'Tests',
-  description: 'Owner invalidation test B',
+  description: 'Shared invalidation test B',
 });
 assert.equal(
-  ownerWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
+  alphaWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
   true,
-  'creating another owner session should also invalidate the owner session list',
+  'creating another session should also invalidate the shared session list',
 );
-ownerWs.messages = [];
+alphaWs.messages = [];
+betaWs.messages = [];
 
-const ownerOutcome = await submitHttpMessage(ownerSessionA.id, 'Say hello', [], {
-  requestId: 'owner-run',
+const alphaOutcome = await submitHttpMessage(alphaSession.id, 'Say hello', [], {
+  requestId: 'alpha-run',
   tool: 'fake-codex',
   model: 'fake-model',
   effort: 'low',
 });
 
 await waitFor(
-  () => ownerWs.messages.some(
-    (msg) => msg.type === 'session_invalidated' && msg.sessionId === ownerSessionA.id,
+  () => alphaWs.messages.some(
+    (msg) => msg.type === 'session_invalidated' && msg.sessionId === alphaSession.id,
   ),
-  'owner should receive invalidation for its session',
+  'Alpha should receive invalidation for the shared Session',
 );
 
 await waitFor(() => {
-  return getRunState(ownerOutcome.run.id).then((run) => run && ['completed', 'failed', 'cancelled'].includes(run.state));
-}, 'owner run should complete');
+  return getRunState(alphaOutcome.run.id).then((run) => run && ['completed', 'failed', 'cancelled'].includes(run.state));
+}, 'Alpha run should complete');
 
 assert.equal(
-  ownerWs.messages.some((msg) => ['session', 'event', 'history'].includes(msg.type)),
+  alphaWs.messages.some((msg) => ['session', 'event', 'history'].includes(msg.type)),
   false,
-  'owner websocket should not receive state-bearing payloads',
+  'websockets should not receive state-bearing payloads',
 );
 
-ownerWs.messages = [];
-const dropResult = await dropToolUse(ownerSessionA.id);
-assert.equal(dropResult, true, 'drop tool use should succeed for owner session');
-assert.equal(
-  ownerWs.messages.some(
-    (msg) => msg.type === 'session_invalidated' && msg.sessionId === ownerSessionA.id,
-  ),
-  true,
-  'drop tool use should still invalidate the affected session',
-);
-assert.equal(
-  ownerWs.messages.some((msg) => msg.type === 'sessions_invalidated'),
-  false,
-  'drop tool use should not invalidate the whole owner session list',
-);
-
-const visitorSession = await createSession(tempHome, 'fake-codex', 'Visitor A', {
-  visitorId: 'visitor-1',
+const betaSession = await createSession(tempHome, 'fake-codex', 'Beta task', {
   group: 'Tests',
-  description: 'Visitor invalidation test',
+  description: 'Second Person invalidation test',
 });
-visitorWs._authSession.sessionId = visitorSession.id;
-ownerWs.messages = [];
-visitorWs.messages = [];
+alphaWs.messages = [];
+betaWs.messages = [];
 
-const visitorOutcome = await submitHttpMessage(visitorSession.id, 'Visitor run', [], {
-  requestId: 'visitor-run',
+const betaOutcome = await submitHttpMessage(betaSession.id, 'Beta run', [], {
+  requestId: 'beta-run',
   tool: 'fake-codex',
   model: 'fake-model',
   effort: 'low',
 });
 
 await waitFor(
-  () => visitorWs.messages.some(
-    (msg) => msg.type === 'session_invalidated' && msg.sessionId === visitorSession.id,
+  () => betaWs.messages.some(
+    (msg) => msg.type === 'session_invalidated' && msg.sessionId === betaSession.id,
   ),
-  'visitor should receive invalidation for its own session',
+  'Beta should receive invalidation for the shared Session',
 );
 
 await waitFor(() => {
-  return getRunState(visitorOutcome.run.id).then((run) => run && ['completed', 'failed', 'cancelled'].includes(run.state));
-}, 'visitor run should complete');
+  return getRunState(betaOutcome.run.id).then((run) => run && ['completed', 'failed', 'cancelled'].includes(run.state));
+}, 'Beta run should complete');
 
 assert.equal(
-  ownerWs.messages.some(
-    (msg) => msg.type === 'session_invalidated' && msg.sessionId === visitorSession.id,
+  alphaWs.messages.some(
+    (msg) => msg.type === 'session_invalidated' && msg.sessionId === betaSession.id,
   ),
   true,
-  'owner clients should receive visitor session invalidations for unified session views',
+  'all authenticated clients should receive Session invalidations',
 );
 
 assert.equal(
-  visitorWs.messages.some((msg) => ['session', 'event', 'history'].includes(msg.type)),
+  betaWs.messages.some((msg) => ['session', 'event', 'history'].includes(msg.type)),
   false,
-  'visitor websocket should stay invalidation-only',
+  'Beta websocket should stay invalidation-only',
 );
 
 await killAll();
