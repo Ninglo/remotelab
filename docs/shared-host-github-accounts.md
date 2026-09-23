@@ -8,7 +8,7 @@
 
 One person has one Unix user, one RemoteLab runtime running as that user, one GitHub CLI login and SSH key in that user's home, and a separate checkout. The checkout records that person's Git author and uses only their SSH key for Git network operations. GitHub grants read and write rights to that person's account as usual. Several people can use the same physical host and the same remote repository.
 
-RemoteLab's `Person` record identifies who used its UI or connector. It does not select a Unix user for the current shared instance. Putting several people's GitHub tokens or private SSH keys under the same Unix user does not preserve different permission levels: tasks running as that user can use all of them. Use separate runtimes for this trial. On Linux, `remotelab guest-instance create NAME` already creates an isolated service user when host isolation is enabled. Existing personal Unix users are also suitable when each has a separate RemoteLab service.
+RemoteLab's `Person` record identifies who used its UI or connector. It does not select a Unix user for the current shared instance. Putting several people's GitHub tokens or private SSH keys under the same Unix user does not preserve different permission levels: tasks running as that user can use all of them. Use separate runtimes for this trial. On Linux, the host administrator can use `remotelab guest-instance create NAME --isolated` to create a dedicated service user. Existing personal Unix users are also suitable when each has a separate RemoteLab service.
 
 ## One person's setup
 
