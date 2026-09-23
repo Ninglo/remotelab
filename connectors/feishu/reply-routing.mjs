@@ -31,7 +31,11 @@ export function buildFeishuSessionConversationTarget(summary) {
     });
   }
   const topicId = buildFeishuTopicId(summary);
-  const rootId = trimString(summary?.rootId) || trimString(summary?.parentId)
+  // A new thread starts on the inbound message even when that message is
+  // itself an inline reply to an older message. Its inherited root_id is not
+  // the root of the new thread.
+  const rootId = (summary?.startThread === true ? trimString(summary?.messageId) : '')
+    || trimString(summary?.rootId) || trimString(summary?.parentId)
     || (!topicId ? trimString(summary?.messageId) : '');
   return normalizeConversationTarget({
     ...summary,
@@ -45,6 +49,8 @@ export function buildFeishuRequestDeliveryTarget(summary) {
   return normalizeConversationTarget({
     ...summary,
     conversationKind: isFeishuThreadConversation(summary) ? 'thread' : 'main',
+    ...(summary?.startThread === true && trimString(summary?.messageId)
+      ? { rootId: trimString(summary.messageId) } : {}),
   });
 }
 
@@ -54,7 +60,8 @@ export function buildFeishuSessionExternalTriggerId(summary, sourceRouteId = 'de
   const tenant = safe(summary?.tenantKey || summary?.sender?.tenantKey);
   const chat = safe(summary?.chatId);
   if (isFeishuThreadConversation(summary)) {
-    const topic = buildFeishuTopicId(summary) || trimString(summary?.rootId)
+    const topic = (summary?.startThread === true ? trimString(summary?.messageId) : '')
+      || buildFeishuTopicId(summary) || trimString(summary?.rootId)
       || trimString(summary?.parentId) || trimString(summary?.messageId);
     return `feishu:thread:${route}:${tenant}:${chat}:${safe(topic)}`;
   }

@@ -20,7 +20,9 @@ function getFeishuAccountId(summary) {
 }
 
 function getFeishuThreadId(summary, explicitThreadId = '') {
-  return trimString(explicitThreadId) || buildFeishuTopicId(summary)
+  return trimString(explicitThreadId)
+    || (summary?.startThread === true ? trimString(summary?.messageId) : '')
+    || buildFeishuTopicId(summary)
     || (summary?.conversationKind === 'thread'
       ? trimString(summary?.rootId) || trimString(summary?.parentId) || trimString(summary?.messageId)
       : '');

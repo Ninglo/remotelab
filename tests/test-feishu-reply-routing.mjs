@@ -9,6 +9,7 @@ import { sameConversation } from '../lib/conversation-target.mjs';
 import { normalizeFeishuReplyPolicy, resolveFeishuReplyMode } from '../connectors/feishu/reply-policy.mjs';
 import {
   applyFeishuReplyRouting,
+  buildFeishuRequestDeliveryTarget,
   buildFeishuSessionConversationTarget,
   buildFeishuSessionExternalTriggerId,
 } from '../connectors/feishu/reply-routing.mjs';
@@ -41,6 +42,15 @@ const threadSummary = applyFeishuReplyRouting(policy, {
 assert.equal(threadSummary.conversationKind, 'thread');
 assert.equal(threadSummary.startThread, true);
 assert.equal(buildFeishuSessionConversationTarget(threadSummary).rootId, 'root-1');
+const nestedThreadSummary = applyFeishuReplyRouting(policy, {
+  tenantKey: 'tenant', chatId: 'group', chatType: 'group',
+  messageId: 'reply-root', rootId: 'forward-message', parentId: 'forward-message',
+  messageText: 'new thread from an inline reply',
+});
+assert.equal(nestedThreadSummary.startThread, true);
+assert.equal(buildFeishuSessionConversationTarget(nestedThreadSummary).rootId, 'reply-root');
+assert.equal(buildFeishuRequestDeliveryTarget(nestedThreadSummary).rootId, 'reply-root');
+assert.match(buildFeishuSessionExternalTriggerId(nestedThreadSummary, 'bot'), /:reply-root$/);
 assert.notEqual(
   buildFeishuSessionExternalTriggerId(threadSummary, 'bot'),
   buildFeishuSessionExternalTriggerId({ ...threadSummary, messageId: 'root-2', rootId: 'root-2' }, 'bot'),
@@ -117,6 +127,21 @@ try {
   assert.notEqual(secondThread.sessionId, firstThread.sessionId);
   assert.equal(submitted.at(-1).body.sourceDelivery.target.replyInThread, true);
   assert.equal(submitted.at(-1).body.sourceDelivery.target.conversationKind, 'thread');
+
+  const inlineReplyThread = await submitRemoteLabRequest(runtime, {
+    ...base, messageId: 'reply-root', rootId: 'thread-root-1', parentId: 'thread-root-1',
+    messageText: 'start a thread from a reply',
+  });
+  assert.notEqual(inlineReplyThread.sessionId, firstThread.sessionId,
+    'a new thread on a reply must not reuse the reply parent Session');
+  assert.equal(sessions.find(item => item.id === inlineReplyThread.sessionId).conversation.target.rootId, 'reply-root');
+  assert.equal(submitted.at(-1).body.sourceDelivery.target.rootId, 'reply-root');
+  const inlineReplyFollowup = await submitRemoteLabRequest(runtime, {
+    ...base, messageId: 'reply-followup', rootId: 'reply-root', parentId: 'reply-root',
+    threadId: 'provider-reply-thread', messageText: 'continue the new thread',
+  });
+  assert.equal(inlineReplyFollowup.sessionId, inlineReplyThread.sessionId,
+    'a follow-up with the provider thread ID reuses the Session started on the reply');
 
   await recordFeishuThreadSessionBinding(runtime, {
     ...base, messageId: 'thread-root-1', conversationKind: 'thread', replyInThread: true,

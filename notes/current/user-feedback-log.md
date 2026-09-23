@@ -584,6 +584,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Entry template
 
+### 2026-09-23 — a Feishu thread on an inline reply created two Sessions
+
+- Source: owner screenshot and live connector event, Session, and delivery receipts
+- User slice: owner continuing an agent conversation inside a Feishu thread
+- Observed friction or ask: the first mention and a later mention shown in one thread opened separate RemoteLab Sessions
+- Signal strength: reproduced from the stored event shape: the first mention had a parent message ID but no thread ID; its first bot reply returned the new thread ID
+- Product implication: when RemoteLab starts a thread from a message that is already an inline reply, the new thread root is that inbound message, not its inherited parent ID. Session identity, reply destination, and local binding must use the same root.
+- Promote to: Feishu thread routing regression coverage and connector release
+- Follow-up: verify a naturally occurring thread started from an inline reply reuses one Session on its next mention
+
 ### 2026-09-17 — fresh provider sessions need a measurable preflight gate
 
 - Source: direct owner request with a concrete version-probe workflow
