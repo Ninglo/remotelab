@@ -49,15 +49,19 @@ try {
   const previousFetch = globalThis.fetch;
   process.env.TYPESAFE_API_KEY = 'private-test-key';
   try {
-    globalThis.fetch = async () => ({
-      ok: true,
-      json: async () => ({
-        model: 'jev-test',
-        answers: {
-          service_tier: { choice: 'economy', confidence: 0.9, probabilities: { quick: 0, sota: 0, quality: 0.02, balanced: 0.03, economy: 0.95 } },
-        },
-      }),
-    });
+    let routingCalls = 0;
+    globalThis.fetch = async () => {
+      routingCalls += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          model: 'jev-test',
+          answers: {
+            service_tier: { choice: 'economy', confidence: 0.9, probabilities: { quick: 0, sota: 0, quality: 0.02, balanced: 0.03, economy: 0.95 } },
+          },
+        }),
+      };
+    };
     const auto = await resolveSessionRuntimeSelection(
       { tool: 'codex', model: 'auto' },
       { autoRoutingText: 'Read package.json and return the version.' },
@@ -67,6 +71,16 @@ try {
       { tool: 'codex', model: 'gpt-6-luna', effort: 'low' },
     );
     assert.equal(auto.autoRoutingReceipt.status, 'routed');
+    const followUp = await resolveSessionRuntimeSelection(
+      { ...auto, autoRouting: auto.autoRoutingReceipt },
+      { autoRoutingText: 'A later message with a very different task.' },
+    );
+    assert.deepEqual(
+      { tool: followUp.tool, model: followUp.model, effort: followUp.effort },
+      { tool: auto.tool, model: auto.model, effort: auto.effort },
+      'later messages keep the concrete first-turn selection',
+    );
+    assert.equal(routingCalls, 1, 'the router runs only for the initial Auto selection');
   } finally {
     globalThis.fetch = previousFetch;
     delete process.env.TYPESAFE_API_KEY;

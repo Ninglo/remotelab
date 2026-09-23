@@ -35,32 +35,27 @@ function isQuickSessionUi(session = typeof getCurrentSession === "function" ? ge
 }
 
 function getActiveRuntimeModeUi(session = typeof getCurrentSession === "function" ? getCurrentSession() : null) {
-  if (!currentSessionId || !session) return getDraftRuntimeMode();
-  return session.model === "auto" || session.autoRouting ? "auto" : "custom";
+  if (!currentSessionId) return getDraftRuntimeMode();
+  if (!session) return null;
+  if (session.lastUserMessageAt || session.autoRouting) return null;
+  return session.tool === "codex" && (!session.model || session.model === "auto") ? "auto" : "custom";
 }
 
 function syncQuickSessionUi(session = typeof getCurrentSession === "function" ? getCurrentSession() : null) {
   const attached = Boolean(currentSessionId && session);
   const quick = attached && isQuickSessionUi(session);
-  const auto = !quick && getActiveRuntimeModeUi(session) === "auto";
-  if (sessionProfileControl) sessionProfileControl.hidden = quick;
+  const mode = getActiveRuntimeModeUi(session);
+  const auto = mode === "auto";
+  if (sessionProfileControl) sessionProfileControl.hidden = quick || mode === null;
   if (quickProfileBadge) quickProfileBadge.hidden = !attached || !quick;
   if (runtimeSelectionControls) runtimeSelectionControls.hidden = quick || auto;
-  if (autoRuntimeBadge) {
-    autoRuntimeBadge.hidden = !auto;
-    const concreteModel = attached && session?.model && session.model !== "auto" ? session.model : "";
-    const tier = attached && session?.runtimeTier ? ` · ${t(`tooling.preset.${session.runtimeTier}`)}` : "";
-    autoRuntimeBadge.textContent = concreteModel
-      ? `Auto${tier} → ${concreteModel} · ${session.effort || ""}`
-      : t("runtime.pending");
-  }
   if (autoModeBtn) {
     autoModeBtn.classList.toggle("active", auto);
     autoModeBtn.setAttribute("aria-pressed", auto ? "true" : "false");
   }
   if (customModeBtn) {
-    customModeBtn.classList.toggle("active", !auto && !quick);
-    customModeBtn.setAttribute("aria-pressed", !auto && !quick ? "true" : "false");
+    customModeBtn.classList.toggle("active", mode === "custom");
+    customModeBtn.setAttribute("aria-pressed", mode === "custom" ? "true" : "false");
   }
 }
 
@@ -79,7 +74,8 @@ function setDraftRuntimeMode(mode) {
 async function selectRuntimeMode(mode) {
   if (!currentSessionId) return setDraftRuntimeMode(mode);
   const session = typeof getCurrentSession === "function" ? getCurrentSession() : null;
-  if (!session || isQuickSessionUi(session) || getActiveRuntimeModeUi(session) === mode) return false;
+  const currentMode = getActiveRuntimeModeUi(session);
+  if (!session || isQuickSessionUi(session) || currentMode === null || currentMode === mode) return false;
   const auto = mode === "auto";
   const result = await dispatchAction({
     action: "session_preferences",

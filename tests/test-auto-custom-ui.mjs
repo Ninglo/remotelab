@@ -35,7 +35,6 @@ const context = {
   sessionProfileControl: element(),
   quickProfileBadge: element(),
   runtimeSelectionControls: element(),
-  autoRuntimeBadge: element(),
   autoModeBtn: element(),
   customModeBtn: element(),
   t(key) { return key; },
@@ -66,13 +65,10 @@ assert.equal(context.mode(null), 'custom');
 assert.equal(context.runtimeSelectionControls.hidden, false);
 
 context.currentSessionId = 'session-1';
-context.current = {
-  tool: 'codex', model: 'gpt-6-sol', effort: 'low', runtimeTier: 'quick',
-  autoRouting: { status: 'routed', decision: { tier: 'quick' } },
-};
+context.current = { tool: 'codex', model: 'auto', effort: '' };
 context.sync(context.current);
 assert.equal(context.mode(context.current), 'auto');
-assert.match(context.autoRuntimeBadge.textContent, /gpt-6-sol · low/);
+assert.equal(context.sessionProfileControl.hidden, false);
 assert.equal(context.runtimeSelectionControls.hidden, true);
 
 await context.select('custom');
@@ -83,6 +79,24 @@ assert.equal(context.runtimeSelectionControls.hidden, false);
 await context.select('auto');
 assert.equal(actions.at(-1).model, 'auto');
 assert.equal(context.mode(context.current), 'auto');
+
+context.current = {
+  tool: 'codex', model: 'gpt-6-sol', effort: 'low', runtimeTier: 'quick',
+  lastUserMessageAt: '2026-09-23T12:00:00Z',
+  autoRouting: { status: 'routed', decision: { tier: 'quick' } },
+};
+context.sync(context.current);
+assert.equal(context.mode(context.current), null);
+assert.equal(context.sessionProfileControl.hidden, true);
+assert.equal(context.runtimeSelectionControls.hidden, false);
+const actionCount = actions.length;
+assert.equal(await context.select('auto'), false);
+assert.equal(actions.length, actionCount, 'a started Session cannot return to Auto');
+
+context.current = { tool: 'codex', model: 'gpt-6-sol', effort: 'medium', lastUserMessageAt: '2026-09-23T12:00:00Z' };
+context.sync(context.current);
+assert.equal(context.sessionProfileControl.hidden, true);
+assert.equal(context.runtimeSelectionControls.hidden, false);
 
 context.current.executionProfile = 'quick';
 context.sync(context.current);

@@ -313,7 +313,6 @@ const sessionProfileControl = document.getElementById("sessionProfileControl");
 const autoModeBtn = document.getElementById("autoModeBtn");
 const customModeBtn = document.getElementById("customModeBtn");
 const quickProfileBadge = document.getElementById("quickProfileBadge");
-const autoRuntimeBadge = document.getElementById("autoRuntimeBadge");
 const runtimeSelectionControls = document.getElementById("runtimeSelectionControls");
 const cancelBtn = document.getElementById("cancelBtn");
 const contextTokens = document.getElementById("contextTokens");

@@ -51,7 +51,6 @@ function syncRuntimePresetUi() {
     currentSessionId
     && session
     && !isQuickSessionUi(session)
-    && (typeof getActiveRuntimeModeUi !== 'function' || getActiveRuntimeModeUi(session) === 'custom')
     && session.tool === 'codex'
     && session.model !== 'auto'
     && runtimePresetCatalog.length > 0
@@ -937,13 +936,13 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     if (savedModel !== rawSavedModel) {
       localStorage.setItem(`selectedModel_${toolId}`, savedModel);
     }
-    const customCodex = toolId === "codex"
+    const concreteCodex = toolId === "codex"
       && typeof getActiveRuntimeModeUi === "function"
-      && getActiveRuntimeModeUi() === "custom";
-    const visibleModels = customCodex ? currentToolModels.filter((model) => model.id !== "auto") : currentToolModels;
-    const defaultModel = customCodex ? "gpt-6-sol" : data.defaultModel || "";
+      && getActiveRuntimeModeUi() !== "auto";
+    const visibleModels = concreteCodex ? currentToolModels.filter((model) => model.id !== "auto") : currentToolModels;
+    const defaultModel = concreteCodex ? "gpt-6-sol" : data.defaultModel || "";
     const attachedModel = sessionPreferences?.hasModel ? sessionPreferences.model : "";
-    const requestedModel = customCodex && attachedModel === "auto"
+    const requestedModel = concreteCodex && attachedModel === "auto"
       ? defaultModel
       : attachedModel || (!currentSessionId ? defaultModel : savedModel);
 
@@ -983,7 +982,7 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
           : visibleModels[0]?.id || "";
       }
       renderInlineModelOptions(visibleModels, {
-        includeDefault: !customCodex,
+        includeDefault: !concreteCodex,
         selectedValue: selectedModel,
       });
     }

@@ -68,10 +68,13 @@ RemoteLab setup is the primary configuration UX.
 
 ### Jev auto model routing
 
-The composer has an Auto / Custom switch. New Web Sessions start in Auto,
-which is a routing strategy rather than a model. Jev chooses one of five tiers
-from the first user message; the composer then shows the concrete model and
-effort. Custom exposes the Harness, model, and effort controls. The next new
+Before the first message, the composer has an Auto / Custom switch. New Web
+Sessions start in Auto, which is a one-time routing strategy rather than a
+model. Jev chooses one of five tiers from the first user message. Custom
+exposes the Harness, model, and effort controls immediately. After the first
+message, the switch disappears and both paths use the ordinary runtime
+dropdowns showing the concrete model and effort. Later messages keep that
+selection unless the user changes it; they do not run Jev again. The next new
 Session starts in Auto again. The default tier mappings are:
 
 - `quick`: GPT-6 Sol with `low` reasoning and a short-answer developer prompt
