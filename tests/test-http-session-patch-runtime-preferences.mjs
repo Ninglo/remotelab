@@ -137,7 +137,7 @@ try {
     assert.equal(quickCreate.status, 201, 'Quick Session creation should succeed for owners');
     assert.equal(quickCreate.json.session?.executionProfile, 'quick');
     assert.equal(quickCreate.json.session?.tool, 'codex', 'Quick Session should pin its single Harness');
-    assert.equal(quickCreate.json.session?.model, 'gpt-5.6-terra', 'Quick Session should pin its single model');
+    assert.equal(quickCreate.json.session?.model, 'gpt-6-sol', 'Quick Session should pin its single model');
     assert.equal(quickCreate.json.session?.effort, 'low', 'Quick Session should pin its single effort');
     assert.equal(quickCreate.json.session?.thinking, false, 'Quick Session should disable the legacy thinking flag');
     assert.equal(quickCreate.json.session?.systemPrompt, undefined, 'Quick Session should not apply a custom system prompt');
@@ -302,7 +302,7 @@ try {
     assert.equal(staleModelPatch.status, 200, 'PATCH should accept stale Codex models by upgrading them');
     assert.equal(
       staleModelPatch.json.session?.model,
-      'gpt-5.6-sol',
+      'gpt-6-sol',
       'stale Codex session preferences should upgrade to the product default model',
     );
     assert.equal(staleModelPatch.json.session?.effort, 'xhigh', 'model upgrade should preserve the requested effort');

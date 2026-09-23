@@ -27,7 +27,7 @@ const DEDICATED_SESSION_STATE_SOURCE_TOOLS = new Set(['claude', 'codex', 'pi', '
 // chat model must NOT silently upgrade this background classifier's cost.
 export const SESSION_STATE_CLASSIFIER_RUNTIME = Object.freeze({
   tool: 'codex',
-  model: 'gpt-5.6-luna',
+  model: 'gpt-6-luna',
   effort: 'high',
   thinking: false,
 });

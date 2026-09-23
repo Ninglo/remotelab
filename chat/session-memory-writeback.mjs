@@ -25,8 +25,8 @@ export function memoryReviewRuntimeSelection(tool) {
   return {
     tool,
     model: tool === 'pi'
-      ? 'openai-codex/gpt-5.6-sol'
-      : tool === 'codex' ? 'gpt-5.6-sol' : undefined,
+      ? 'openai-codex/gpt-6-sol'
+      : tool === 'codex' ? 'gpt-6-sol' : undefined,
     effort: 'low',
     thinking: false,
   };

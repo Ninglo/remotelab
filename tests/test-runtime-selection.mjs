@@ -32,7 +32,7 @@ try {
     selectedEffort: 'xhigh',
     reasoningKind: 'enum',
   });
-  assert.equal(normalizedLegacy.selectedModel, 'gpt-5.6-sol');
+  assert.equal(normalizedLegacy.selectedModel, 'gpt-6-sol');
   assert.equal(normalizedLegacy.selectedEffort, 'xhigh');
 
   assert.equal(

@@ -77,17 +77,22 @@ tiers from the first user message. The default tier mappings are:
 - `sota`: GPT-6 Astra with `xhigh` reasoning. Jev may choose it only when the
   user explicitly requests the strongest/SOTA model, maximum reasoning, or
   explicitly marks the task as extremely important and asks for top quality.
-- `quality`: GPT-5.6 Sol with `high` reasoning. This is the conservative default
+- `quality`: GPT-6 Sol with `high` reasoning. This is the conservative default
   for serious work, research, development, debugging, and contextual tasks.
-- `balanced`: GPT-5.6 Terra with `medium` reasoning for clearly bounded,
+- `balanced`: GPT-6 Sol with `medium` reasoning for clearly bounded,
   low-consequence routine work.
-- `economy`: GPT-5.6 Luna with `low` reasoning only for greetings, casual
+- `economy`: GPT-6 Luna with `low` reasoning only for greetings, casual
   entertainment, or an explicit cheapest/fastest request.
 
 RemoteLab persists the concrete model and effort on the Session, so later turns
 keep the same native provider context. A user-selected concrete model always
 bypasses Jev. Uncertain decisions, a missing TypeSafe key, and routing failures
 use the `quality` tier.
+
+GPT-6 Sol and Luna availability rolls out by ChatGPT workspace and Codex CLI
+version. Before enabling these mappings on an existing instance, update Codex,
+refresh the native model catalog, and run one real low-effort canary for each
+model. Do not switch the tier file when either canary is rejected.
 
 Store the key in the service environment as `TYPESAFE_API_KEY`, or in the
 instance config directory as a private `typesafe.env` file:
@@ -108,9 +113,9 @@ The tier mappings can be changed without changing the routing prompt. Create
 ```json
 {
   "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
-  "quality": { "model": "gpt-5.6-sol", "effort": "high" },
-  "balanced": { "model": "gpt-5.6-terra", "effort": "medium" },
-  "economy": { "model": "gpt-5.6-luna", "effort": "low" }
+  "quality": { "model": "gpt-6-sol", "effort": "high" },
+  "balanced": { "model": "gpt-6-sol", "effort": "medium" },
+  "economy": { "model": "gpt-6-luna", "effort": "low" }
 }
 ```
 

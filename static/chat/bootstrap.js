@@ -998,10 +998,12 @@ let currentTokens = 0;
 const DEFAULT_TOOL_ID = "codex";
 const LEGACY_AUTO_PREFERRED_TOOL_IDS = new Set(["codex", "micro-agent"]);
 const LEGACY_REMOVED_TOOL_IDS = new Set(["micro-agent"]);
-const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-sol";
 const PRODUCT_DEFAULT_CODEX_EFFORT = "low";
 const CURRENT_CODEX_MODEL_IDS = new Set([
   "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
@@ -1105,7 +1107,7 @@ function migrateCodexEffortDefaultLocalStorage() {
   localStorage.setItem(`selectedEffort_pi_openai-codex/${PRODUCT_DEFAULT_CODEX_MODEL}`, PRODUCT_DEFAULT_CODEX_EFFORT);
   for (const key of ["selectedModel_codex", "selectedModel_pi", "selectedModel_pi_openai-codex"]) {
     const model = (localStorage.getItem(key) || "").trim();
-    if (!/^(?:openai-codex\/)?(?:gpt-5(?:\.\d+)?(?:-[a-z0-9.-]+)?|gpt-6-astra)$/.test(model)) continue;
+    if (!/^(?:openai-codex\/)?(?:gpt-5(?:\.\d+)?(?:-[a-z0-9.-]+)?|gpt-6(?:-[a-z0-9.-]+)?)$/.test(model)) continue;
     localStorage.setItem(key, key === "selectedModel_codex"
       ? PRODUCT_DEFAULT_CODEX_MODEL
       : `openai-codex/${PRODUCT_DEFAULT_CODEX_MODEL}`);

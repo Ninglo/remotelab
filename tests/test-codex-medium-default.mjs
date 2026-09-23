@@ -10,12 +10,12 @@ import {
 } from '../lib/legacy-micro-agent.mjs';
 
 const bootstrap = await readFile(new URL('../static/chat/bootstrap.js', import.meta.url), 'utf8');
-assert.equal(PRODUCT_DEFAULT_CODEX_MODEL, 'gpt-5.6-sol');
+assert.equal(PRODUCT_DEFAULT_CODEX_MODEL, 'gpt-6-sol');
 assert.equal(PRODUCT_DEFAULT_CODEX_EFFORT, 'low');
-assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";/);
+assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_MODEL = "gpt-6-sol";/);
 assert.match(bootstrap, /const PRODUCT_DEFAULT_CODEX_EFFORT = "low";/);
 assert.match(bootstrap, /CODEX_EFFORT_DEFAULT_MIGRATION_VERSION = "gpt6-low-v1"/);
-assert.equal(normalizeCodexModelId('gpt-5.4'), 'gpt-5.6-sol');
+assert.equal(normalizeCodexModelId('gpt-5.4'), 'gpt-6-sol');
 assert.equal(normalizeCodexModelId('gpt-6-astra'), 'gpt-6-astra', 'explicit Astra selections must remain available');
 assert.equal(normalizeCodexModelId('gpt-5.6-sol'), 'gpt-5.6-sol', 'one-time migration must not permanently ban explicit older-model choices');
 
@@ -41,12 +41,12 @@ const context = {
   localStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) },
 };
 vm.runInNewContext(`${source}\nmigrateCodexEffortDefaultLocalStorage();`, context);
-assert.equal(values.get('selectedModel_codex'), 'gpt-5.6-sol');
+assert.equal(values.get('selectedModel_codex'), 'gpt-6-sol');
 assert.equal(values.get('selectedEffort_codex'), 'low');
-assert.equal(values.get('selectedModel_pi'), 'openai-codex/gpt-5.6-sol');
-assert.equal(values.get('selectedModel_pi_openai-codex'), 'openai-codex/gpt-5.6-sol');
+assert.equal(values.get('selectedModel_pi'), 'openai-codex/gpt-6-sol');
+assert.equal(values.get('selectedModel_pi_openai-codex'), 'openai-codex/gpt-6-sol');
 assert.equal(values.get('selectedEffort_pi'), 'low');
-assert.equal(values.get('selectedEffort_pi_openai-codex/gpt-5.6-sol'), 'low');
+assert.equal(values.get('selectedEffort_pi_openai-codex/gpt-6-sol'), 'low');
 assert.equal(values.get('selectedModel_claude'), 'opus');
 assert.equal(values.get('selectedEffort_claude'), 'high');
 assert.equal(values.get('selectedModel_pi_moonshotai'), 'moonshotai/kimi-k3');

@@ -9,7 +9,7 @@ that explicitly ask for or genuinely require them.
 Quick uses the normal RemoteLab Session, history, context, delivery, and memory
 pipelines. It does not introduce a second execution service. The profile:
 
-- pins one runtime (`codex`, `gpt-5.6-terra`, `low` by default);
+- pins one runtime (`codex`, `gpt-6-sol`, `low` by default);
 - omits custom Session instructions;
 - tells the model to return a concise final answer and avoid unnecessary tool
   use or progress updates;
@@ -20,7 +20,7 @@ The fixed runtime can be configured before the service starts:
 
 ```bash
 REMOTELAB_QUICK_TOOL=codex
-REMOTELAB_QUICK_MODEL=gpt-5.6-terra
+REMOTELAB_QUICK_MODEL=gpt-6-sol
 REMOTELAB_QUICK_EFFORT=low
 ```
 

@@ -59,6 +59,8 @@ try {
   const { getModelsForTool } = await import(pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href);
   const result = await getModelsForTool('codex');
   const hardcodedModelIds = [
+    'gpt-6-sol',
+    'gpt-6-luna',
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-5.6-luna',
@@ -73,7 +75,7 @@ try {
   );
   assert.deepEqual(
     result.models.slice(0, 5).map((model) => model.id),
-    ['auto', 'gpt-5.6-sol', 'gpt-6-astra', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+    ['auto', 'gpt-6-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-5.6-sol'],
     'Codex should expose Jev auto first followed by the current model catalog',
   );
   assert.deepEqual(result.models[0].reasoning, { kind: 'none', label: 'Thinking' });
@@ -84,7 +86,7 @@ try {
   );
   assert.equal(result.models.some(model => model.id === 'gpt-6-astra'), true,
     'Astra must remain available for explicit SOTA sessions');
-  assert.equal(result.models.find(model => model.id === 'gpt-5.6-sol').defaultEffort, 'low',
+  assert.equal(result.models.find(model => model.id === 'gpt-6-sol').defaultEffort, 'low',
     'the product-default model should keep the product effort default');
   assert.deepEqual(result.effortLevels, ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
   assert.deepEqual(result.reasoning, {
@@ -93,6 +95,19 @@ try {
     levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     default: 'low',
   });
+  writeFileSync(join(codexDir, 'models_cache.json'), JSON.stringify({ models: [{
+    slug: 'gpt-future-refresh',
+    display_name: 'Future Refresh',
+    visibility: 'list',
+    default_reasoning_level: 'medium',
+    supported_reasoning_levels: ['low', 'medium'].map(effort => ({ effort })),
+  }] }));
+  const refreshed = await getModelsForTool('codex', { refresh: true });
+  assert.equal(
+    refreshed.models.some((model) => model.id === 'gpt-future-refresh'),
+    true,
+    'an explicit refresh should invalidate the in-process Codex model cache',
+  );
   writeFileSync(join(codexDir, 'config.toml'), 'model = "gpt-5.6-sol"\nmodel_reasoning_effort = "xhigh"\n');
   const fresh = await import(`${pathToFileURL(join(repoRoot, 'chat', 'models.mjs')).href}?product-default`);
   const configured = await fresh.getModelsForTool('codex');

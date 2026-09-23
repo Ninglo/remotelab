@@ -8,7 +8,7 @@ const home = await mkdtemp(join(tmpdir(), 'memory-review-selection-'));
 setIsolatedTestHome(home);
 try {
   const { memoryReviewRuntimeSelection, maybeRunMemoryWriteback } = await import('../chat/session-memory-writeback.mjs');
-  for (const [tool, model] of [['pi', 'openai-codex/gpt-5.6-sol'], ['codex', 'gpt-5.6-sol']]) {
+  for (const [tool, model] of [['pi', 'openai-codex/gpt-6-sol'], ['codex', 'gpt-6-sol']]) {
     const foreground = { tool, model: 'gpt-6-astra', effort: 'high', thinking: true };
     const selected = { ...foreground, ...memoryReviewRuntimeSelection(tool) };
     assert.deepEqual(selected, { tool, model, effort: 'low', thinking: false });

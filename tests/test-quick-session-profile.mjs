@@ -12,7 +12,7 @@ assert.equal(normalizeSessionExecutionProfile(' QUICK '), 'quick');
 assert.equal(normalizeSessionExecutionProfile('standard'), '');
 assert.equal(isQuickSession({ executionProfile: 'quick' }), true);
 assert.deepEqual(getQuickSessionRuntimeProfile({}), {
-  tool: 'codex', model: 'gpt-5.6-terra', effort: 'low', thinking: false,
+  tool: 'codex', model: 'gpt-6-sol', effort: 'low', thinking: false,
 });
 assert.deepEqual(
   applyQuickSessionRuntime(
@@ -20,7 +20,7 @@ assert.deepEqual(
     { tool: 'claude', model: 'opus', effort: 'high', thinking: true, sourceContext: { connector: 'feishu' } },
   ),
   {
-    tool: 'codex', model: 'gpt-5.6-terra', effort: 'low', thinking: false,
+    tool: 'codex', model: 'gpt-6-sol', effort: 'low', thinking: false,
     executionProfile: 'quick', sourceContext: { connector: 'feishu' },
   },
 );

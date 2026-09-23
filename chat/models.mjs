@@ -342,7 +342,7 @@ async function getUnrestrictedModelsForTool(toolId, options = {}) {
     };
   }
   if (toolId === 'codex') {
-    return getCodexModels();
+    return getCodexModels({ refresh: options.refresh === true });
   }
   if (toolId === 'pi') {
     return discoverPiModels({ refresh: options.refresh === true });
@@ -374,8 +374,8 @@ async function getUnrestrictedModelsForTool(toolId, options = {}) {
   };
 }
 
-async function getCodexModels() {
-  if (codexModelsCache) {
+async function getCodexModels(options = {}) {
+  if (codexModelsCache && options.refresh !== true) {
     return codexModelsCache;
   }
   const codexHomeDir = resolveCodexHomeDir();

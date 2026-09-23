@@ -21,6 +21,26 @@ const ids = CODEX_MODEL_CATALOG.map((model) => `openai-codex/${model.id}`);
 try {
   const baselineCosts = Object.fromEntries(getPiBaselineModels().map((model) => [model.id, model.cost]));
   assert.deepEqual(
+    [baselineCosts['gpt-6-sol'], baselineCosts['gpt-6-luna']],
+    [
+      {
+        input: 2,
+        output: 10,
+        cacheRead: 0.2,
+        cacheWrite: 2.5,
+        tiers: [{ inputTokensAbove: 272000, input: 4, output: 15, cacheRead: 0.4, cacheWrite: 5 }],
+      },
+      {
+        input: 0.1,
+        output: 0.5,
+        cacheRead: 0.01,
+        cacheWrite: 0.125,
+        tiers: [{ inputTokensAbove: 272000, input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0.25 }],
+      },
+    ],
+    'GPT-6 Sol and Luna should expose current Standard and long-context rates',
+  );
+  assert.deepEqual(
     baselineCosts['gpt-5.6-sol'],
     {
       input: 4,
@@ -103,7 +123,7 @@ try {
 const fs = require('fs');
 const path = require('path');
 const config = JSON.parse(fs.readFileSync(path.join(process.env.PI_CODING_AGENT_DIR, 'models.json')));
-if (!config.providers['openai-codex'].models.some(m => m.id === 'gpt-5.6-sol')) process.exit(99);
+if (!config.providers['openai-codex'].models.some(m => m.id === 'gpt-6-sol')) process.exit(99);
 const scenario = process.env.TEST_PI_SCENARIO;
 if (scenario === 'failed' || (scenario === 'text' && process.argv.includes('rpc'))) process.exit(1);
 if (process.argv.includes('--list-models')) {
@@ -129,7 +149,7 @@ if (process.argv.includes('--list-models')) {
   assert(found.models.some((model) => model.id === 'openai-codex/gpt-future'));
   assert(found.models.some((model) => model.id === 'deepseek/deepseek-chat'));
   assert(!found.models.some((model) => model.provider === 'openai'));
-  assert.equal(found.defaultModel, 'openai-codex/gpt-5.6-sol');
+  assert.equal(found.defaultModel, 'openai-codex/gpt-5.6-sol', 'an explicit current Pi route should remain selected');
   assert.equal(found.models[0].id, 'openai-codex/gpt-6-astra');
   assert.equal(found.models[0].providerDefault, undefined);
   assert.equal(found.models[0].reasoning.default, 'medium');

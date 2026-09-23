@@ -11,8 +11,8 @@ import {
 
 const catalog = parsePiModelList(`
 provider              model             context  max-out  thinking  images
-openai                gpt-5.6-sol       272K     128K     yes       yes
-openai-codex          gpt-5.6-sol       272K     128K     yes       yes
+openai                gpt-6-sol         272K     128K     yes       yes
+openai-codex          gpt-6-sol         272K     128K     yes       yes
 deepseek              deepseek-chat     128K     8K       no        no
 kimi-for-coding       kimi-k2           128K     32K      yes       no
 `);
@@ -20,7 +20,7 @@ kimi-for-coding       kimi-k2           128K     32K      yes       no
 assert.deepEqual(
   catalog.map((model) => ({ id: model.id, label: model.label })),
   [
-    { id: 'openai-codex/gpt-5.6-sol', label: 'gpt-5.6-sol' },
+    { id: 'openai-codex/gpt-6-sol', label: 'gpt-6-sol' },
     { id: 'deepseek/deepseek-chat', label: 'deepseek-chat' },
     { id: 'kimi-for-coding/kimi-k2', label: 'kimi-k2' },
   ],
@@ -47,7 +47,7 @@ const rpcCatalog = parsePiRpcModels([
   },
   {
     provider: 'openai-codex',
-    id: 'gpt-5.6-sol',
+    id: 'gpt-6-sol',
     reasoning: true,
     thinkingLevelMap: {
       off: null,
@@ -126,7 +126,7 @@ assert.deepEqual(
       kind: 'enum',
     },
     {
-      id: 'openai-codex/gpt-5.6-sol',
+      id: 'openai-codex/gpt-6-sol',
       provider: 'openai-codex',
       levels: ['low', 'medium', 'high', 'xhigh', 'max'],
       control: '',

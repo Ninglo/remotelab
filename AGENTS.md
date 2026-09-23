@@ -206,11 +206,11 @@ A Person is a human-facing profile with one readable `handle`. Person profiles e
 Every Person may organize the same shared Sessions differently. `space`, `group`, and `sidebarOrder` live under `session.personViews[personId]` and are projected for the requesting Person. Automatic sorting/classification updates only the Person whose turn triggered it. Shared fields remain global.
 
 ### Session State Classification
-After each completed normal turn, `session-state-classifier.mjs` makes one non-blocking classification call on the dedicated low-cost Codex `gpt-5.6-luna` / `high` route (intentionally independent of foreground model defaults; chat-model upgrades must not increase routine metadata costs). It refreshes shared title, hidden description, workflow state, and provider-neutral work summary, plus the triggering Person's `space` and `group` view. The sidebar renders Space as a context switcher above Project groups; `Loose` is reserved for temporary or ambiguous work. The classifier organizes Sessions but does not review, continue, or route the Harness answer.
+After each completed normal turn, `session-state-classifier.mjs` makes one non-blocking classification call on the dedicated low-cost Codex `gpt-6-luna` / `high` route (intentionally independent of foreground model defaults; chat-model upgrades must not increase routine metadata costs). It refreshes shared title, hidden description, workflow state, and provider-neutral work summary, plus the triggering Person's `space` and `group` view. The sidebar renders Space as a context switcher above Project groups; `Loose` is reserved for temporary or ambiguous work. The classifier organizes Sessions but does not review, continue, or route the Harness answer.
 
 ### Memory System (Pointer-First)
 
-Post-turn memory writeback review uses an independent `gpt-5.6-sol` / `low` selection for Codex and `openai-codex/gpt-5.6-sol` / `low` for Pi. Foreground defaults and the Luna Session-state classifier are separate policies; changing them must not change memory-review cost.
+Post-turn memory writeback review uses an independent `gpt-6-sol` / `low` selection for Codex and `openai-codex/gpt-6-sol` / `low` for Pi. Foreground defaults and the Luna Session-state classifier are separate policies; changing them must not change memory-review cost.
 - **Storage tiers** still matter:
   - System-level (`memory/system.md` in repo): universal learnings shared across deployments
   - User-level (`~/.remotelab/memory/`): machine-specific knowledge, private
