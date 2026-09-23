@@ -44,6 +44,7 @@ Usage:
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab mail                     Manage agent mailbox and send outbound email
   remotelab gmail                    Manage the bound Gmail mailbox connector
+  remotelab github-workspace         Prepare and verify a person's GitHub checkout
   remotelab connector                Invoke Connector capabilities (owner may target a managed guest)
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab local-bridge            Manage linked local helper bridges for a session
@@ -167,6 +168,17 @@ switch (command) {
     } catch (error) {
       console.error(error.message || String(error));
       process.exit(1);
+    }
+    break;
+  }
+
+  case 'github-workspace': {
+    const { runGithubWorkspaceCommand } = await import(scriptPath('lib/github-workspace-command.mjs'));
+    try {
+      process.exitCode = await runGithubWorkspaceCommand(args);
+    } catch (error) {
+      console.error(error.message || String(error));
+      process.exitCode = 1;
     }
     break;
   }
