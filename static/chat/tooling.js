@@ -51,6 +51,7 @@ function syncRuntimePresetUi() {
     currentSessionId
     && session
     && !isQuickSessionUi(session)
+    && (typeof getActiveRuntimeModeUi !== 'function' || getActiveRuntimeModeUi(session) === 'custom')
     && session.tool === 'codex'
     && session.model !== 'auto'
     && runtimePresetCatalog.length > 0
@@ -936,9 +937,15 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
     if (savedModel !== rawSavedModel) {
       localStorage.setItem(`selectedModel_${toolId}`, savedModel);
     }
-    const defaultModel = data.defaultModel || "";
+    const customCodex = toolId === "codex"
+      && typeof getActiveRuntimeModeUi === "function"
+      && getActiveRuntimeModeUi() === "custom";
+    const visibleModels = customCodex ? currentToolModels.filter((model) => model.id !== "auto") : currentToolModels;
+    const defaultModel = customCodex ? "gpt-6-sol" : data.defaultModel || "";
     const attachedModel = sessionPreferences?.hasModel ? sessionPreferences.model : "";
-    const requestedModel = attachedModel || (!currentSessionId ? defaultModel : savedModel);
+    const requestedModel = customCodex && attachedModel === "auto"
+      ? defaultModel
+      : attachedModel || (!currentSessionId ? defaultModel : savedModel);
 
     if (toolId === "pi") {
       const providers = getPiProviderCatalog();
@@ -970,13 +977,13 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       inlineProviderSelect.innerHTML = "";
       inlineProviderSelect.style.display = "none";
       selectedModel = requestedModel;
-      if (!selectedModel || !currentToolModels.some((model) => model.id === selectedModel)) {
-        selectedModel = currentToolModels.some((model) => model.id === defaultModel)
+      if (!selectedModel || !visibleModels.some((model) => model.id === selectedModel)) {
+        selectedModel = visibleModels.some((model) => model.id === defaultModel)
           ? defaultModel
-          : "";
+          : visibleModels[0]?.id || "";
       }
-      renderInlineModelOptions(currentToolModels, {
-        includeDefault: true,
+      renderInlineModelOptions(visibleModels, {
+        includeDefault: !customCodex,
         selectedValue: selectedModel,
       });
     }

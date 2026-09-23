@@ -25,10 +25,8 @@ assert.deepEqual(
   },
 );
 const developerInstructions = getQuickSessionDeveloperInstructions();
-assert.match(developerInstructions, /Do not proactively use tools/);
-assert.match(developerInstructions, /explicitly requests tool use/);
-assert.match(developerInstructions, /use the necessary available capabilities/);
-assert.doesNotMatch(developerInstructions, /Do not call tools/);
-assert.doesNotMatch(developerInstructions, /requires a Standard Session/);
+assert.match(developerInstructions, /Answer directly and concisely/);
+assert.match(developerInstructions, /Use tools when the user explicitly requests them/);
+assert.equal(getQuickSessionDeveloperInstructions('Custom quick prompt.'), 'Custom quick prompt.');
 
 console.log('test-quick-session-profile: ok');

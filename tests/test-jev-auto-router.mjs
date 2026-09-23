@@ -10,13 +10,16 @@ setIsolatedTestHome(testHome);
 test.after(() => rm(testHome, { recursive: true, force: true }));
 const {
   applyJevAutoPolicy,
+  getJevRoutingSettings,
   normalizeJevTierProfiles,
   resolveJevAutoRoute,
   resolveJevTierPreset,
+  updateJevRoutingSettings,
 } = await import('../lib/jev-auto-router.mjs');
 
 function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
   const defaults = {
+    quick: { quick: 0.92, sota: 0.005, quality: 0.055, balanced: 0.015, economy: 0.005 },
     sota: { sota: 0.92, quality: 0.06, balanced: 0.015, economy: 0.005 },
     quality: { sota: 0.01, quality: 0.9, balanced: 0.07, economy: 0.02 },
     balanced: { sota: 0.005, quality: 0.095, balanced: 0.85, economy: 0.05 },
@@ -26,12 +29,16 @@ function answer(tier = 'quality', confidence = 0.9, probabilities = null) {
     service_tier: {
       choice: tier,
       confidence,
-      probabilities: probabilities || defaults[tier],
+      probabilities: { quick: 0, ...(probabilities || defaults[tier]) },
     },
   };
 }
 
-test('four service tiers map to fixed model and effort profiles', () => {
+test('five service tiers map to fixed model and effort profiles', () => {
+  assert.deepEqual(
+    (({ model, effort }) => ({ model, effort }))(applyJevAutoPolicy(answer('quick'))),
+    { model: 'gpt-6-sol', effort: 'low' },
+  );
   assert.deepEqual(
     (({ tool, model, effort }) => ({ tool, model, effort }))(applyJevAutoPolicy(answer('sota'))),
     { tool: 'codex', model: 'gpt-6-astra', effort: 'xhigh' },
@@ -62,6 +69,11 @@ test('uncertain downgrade and material quality probability return to quality', (
   }));
   assert.equal(mixed.policy.tier, 'quality');
   assert.deepEqual(mixed.policy.reasons, ['quality_probability']);
+
+  const riskyQuick = applyJevAutoPolicy(answer('quick', 0.9, {
+    quick: 0.72, sota: 0, quality: 0.22, balanced: 0.06, economy: 0,
+  }));
+  assert.equal(riskyQuick.policy.tier, 'quality');
 });
 
 test('uncertain SOTA requests return to quality', () => {
@@ -80,6 +92,7 @@ test('tier profiles are configurable while invalid fields keep safe defaults', (
     economy: { model: '', effort: 'invalid' },
   });
   assert.deepEqual(profiles, {
+    quick: { model: 'gpt-6-sol', effort: 'low' },
     sota: { model: 'frontier', effort: 'xhigh' },
     quality: { model: 'future-sota', effort: 'high' },
     balanced: { model: 'sweet-spot', effort: 'medium' },
@@ -102,7 +115,8 @@ test('successful API decisions use the tier config file and return a bounded rec
       assert.equal(request.headers.authorization, 'Bearer private-test-key');
       const body = JSON.parse(request.body);
       assert.deepEqual(Object.keys(body.questions), ['service_tier']);
-      assert.match(body.questions.service_tier.instructions, /Choose quality by default/);
+      assert.match(body.questions.service_tier.instructions, /Choose quality if context/);
+      assert.ok(body.questions.service_tier.criteria.quick);
       return {
         ok: true,
         json: async () => ({ model: 'jev-test', answers: answer('balanced') }),
@@ -127,6 +141,17 @@ test('session presets resolve through the same configurable tier map', async () 
   });
   await assert.rejects(() => resolveJevTierPreset('auto', { tierConfigFile }), /Unknown Jev tier/);
   await assert.rejects(() => resolveJevTierPreset('unknown', { tierConfigFile }), /Unknown Jev tier/);
+});
+
+test('routing settings persist five tiers and the Quick prompt without exposing credentials', async () => {
+  const tierConfigFile = join(testHome, 'settings-routing.json');
+  const settings = await updateJevRoutingSettings({
+    tiers: { quick: { model: 'gpt-6-sol', effort: 'low' } },
+    quickPrompt: 'Answer briefly and use tools when needed.',
+  }, { tierConfigFile });
+  assert.equal(settings.tiers.quick.effort, 'low');
+  assert.equal((await getJevRoutingSettings({ tierConfigFile })).quickPrompt, 'Answer briefly and use tools when needed.');
+  await assert.rejects(() => updateJevRoutingSettings({ tiers: { quick: { model: 'auto', effort: 'low' } } }, { tierConfigFile }), /Invalid model or effort/);
 });
 
 test('API failures fall back to the configured quality tier without throwing', async () => {

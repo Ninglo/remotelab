@@ -328,6 +328,38 @@ body:not([data-app-view="sessions"]) .session-item.active {
   font-size: 12px;
   line-height: 1.5;
 }
+.auto-routing-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+  max-width: 700px;
+}
+.auto-routing-tier-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.7fr) minmax(120px, 1.5fr) minmax(90px, 0.8fr);
+  align-items: center;
+  gap: 7px;
+}
+.auto-routing-tier-row > span { font-size: 12px; color: var(--text-secondary); }
+.auto-routing-prompt-field, .auto-routing-preview-field { max-width: 700px; margin-top: 14px; }
+.auto-routing-preview-field { margin-top: 20px; }
+.auto-routing-preview-details {
+  max-width: 700px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+.auto-routing-preview-details[hidden] { display: none; }
+@media (max-width: 720px) {
+  .auto-routing-tier-grid { grid-template-columns: 1fr; }
+}
 .settings-inline-form {
   display: grid;
   gap: 10px;

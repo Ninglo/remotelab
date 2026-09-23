@@ -411,7 +411,8 @@ async function main() {
     assert.match(page.text, /id="shareSnapshotBtn"[\s\S]*data-icon="share"[\s\S]*class="header-action-label sr-only"/, 'share should render as an icon-only action with an accessible label');
     assert.match(page.text, /class="input-config-row"[\s\S]*class="input-wrapper"/, 'composer should keep tooling controls above the dedicated input shell');
     assert.match(page.text, /id="inlineToolSelect"[\s\S]*id="inlineProviderSelect"[\s\S]*id="inlineModelSelect"/, 'Pi controls should split provider and model into adjacent pickers');
-    assert.match(page.text, /id="sessionProfileControl"[\s\S]*id="quickProfileBtn"[\s\S]*id="runtimeSelectionControls"/, 'new-session composer should expose Quick before runtime details');
+    assert.match(page.text, /id="sessionProfileControl"[\s\S]*id="autoModeBtn"[\s\S]*id="customModeBtn"[\s\S]*id="runtimeSelectionControls"/, 'composer should expose Auto and Custom before runtime details');
+    assert.match(page.text, /id="autoRoutingTierGrid"[\s\S]*id="autoRoutingQuickPrompt"[\s\S]*id="autoRoutingPreviewBtn"/, 'Settings should expose Auto tier, Quick prompt, and preview controls');
     assert.match(page.text, /id="msgInput"[\s\S]*class="input-actions-row"[\s\S]*id="imgBtn"[\s\S]*id="voiceBtn"[\s\S]*id="sendBtn"/, 'composer should stack textarea above the action row so buttons no longer squeeze the text width');
     assert.match(page.text, /id="quickEntryFocusPrompt" hidden/, 'chat page should include the quick-entry focus recovery prompt shell');
     assert.match(page.text, /It will appear in the sidebar only after you send/, 'the empty state should explain that abandoned drafts do not create sessions');

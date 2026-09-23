@@ -126,7 +126,7 @@
   color: var(--text);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
-.quick-profile-badge {
+.quick-profile-badge, .auto-runtime-badge {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
@@ -140,6 +140,7 @@
 }
 .session-profile-control[hidden],
 .quick-profile-badge[hidden],
+.auto-runtime-badge[hidden],
 .runtime-selection-controls[hidden] {
   display: none;
 }

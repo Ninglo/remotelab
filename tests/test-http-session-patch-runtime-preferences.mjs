@@ -221,6 +221,21 @@ try {
       presetCatalog.json.presets.map((preset) => preset.id),
       ['sota', 'quality', 'balanced', 'economy'],
     );
+    const autoSettings = await request(port, 'GET', '/api/auto-routing');
+    assert.equal(autoSettings.status, 200);
+    assert.equal(autoSettings.json.settings?.tiers?.quick?.model, 'gpt-6-sol');
+    const savedAutoSettings = await request(port, 'PATCH', '/api/auto-routing', {
+      tiers: { quick: { model: 'gpt-6-sol', effort: 'low' } },
+      quickPrompt: 'Answer briefly. Use tools when needed.',
+    });
+    assert.equal(savedAutoSettings.status, 200);
+    assert.equal(savedAutoSettings.json.settings?.quickPrompt, 'Answer briefly. Use tools when needed.');
+    const autoPreview = await request(port, 'POST', '/api/auto-routing/preview', {
+      task: 'Say hello.',
+      tiers: savedAutoSettings.json.settings.tiers,
+    });
+    assert.equal(autoPreview.status, 200);
+    assert.equal(autoPreview.json.receipt?.status, 'fallback', 'missing test key should use a visible fallback');
     const sotaPreset = await request(port, 'PATCH', `/api/sessions/${older.id}`, { runtimeTier: 'sota' });
     assert.equal(sotaPreset.status, 200);
     assert.equal(sotaPreset.json.session?.runtimeTier, 'sota');

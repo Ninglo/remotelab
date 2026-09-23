@@ -61,33 +61,38 @@ If multiple tools are installed and the user has no strong preference, prefer `C
 RemoteLab setup is the primary configuration UX.
 
 - the AI should ask which installed tool(s) the user wants enabled
-- new Standard Sessions always start from Codex Auto
+- new Web Sessions start in Auto; Custom exposes explicit Harness, model, and effort choices
 - model and reasoning choices apply only to the Session being created or edited
 - the current chat turn's tool/model choice remains the runtime source of truth
 - background helpers such as auto-naming or summarization should inherit the current turn selection rather than silently switching providers
 
 ### Jev auto model routing
 
-Every new Standard Session starts from `Auto (Jev)`. Auto is an immutable
-product default rather than a saved instance setting. Changing the Harness,
-model, tier, or effort affects only the current Session or the new Session draft;
-the next new Session starts from Auto again. Jev chooses one of four service
-tiers from the first user message. The default tier mappings are:
+The composer has an Auto / Custom switch. New Web Sessions start in Auto,
+which is a routing strategy rather than a model. Jev chooses one of five tiers
+from the first user message; the composer then shows the concrete model and
+effort. Custom exposes the Harness, model, and effort controls. The next new
+Session starts in Auto again. The default tier mappings are:
 
+- `quick`: GPT-6 Sol with `low` reasoning and a short-answer developer prompt
+  for self-contained, low-risk requests that need no tools or current facts.
+- `balanced`: GPT-6 Sol with `medium` reasoning for clearly bounded,
+  low-consequence routine work.
+- `quality`: GPT-6 Sol with `xhigh` reasoning. This is the conservative default
+  for serious work, research, development, debugging, and contextual tasks.
 - `sota`: GPT-6 Astra with `xhigh` reasoning. Jev may choose it only when the
   user explicitly requests the strongest/SOTA model, maximum reasoning, or
   explicitly marks the task as extremely important and asks for top quality.
-- `quality`: GPT-6 Sol with `xhigh` reasoning. This is the conservative default
-  for serious work, research, development, debugging, and contextual tasks.
-- `balanced`: GPT-6 Sol with `medium` reasoning for clearly bounded,
-  low-consequence routine work.
-- `economy`: GPT-6 Luna with `low` reasoning only for greetings, casual
-  entertainment, or an explicit cheapest/fastest request.
+- `economy`: GPT-6 Luna with `low` reasoning only when the user explicitly
+  prioritizes the lowest cost for casual, low-risk work.
 
 RemoteLab persists the concrete model and effort on the Session, so later turns
 keep the same native provider context. A user-selected concrete model always
 bypasses Jev. Uncertain decisions, a missing TypeSafe key, and routing failures
 use the `quality` tier.
+An Auto-selected Quick Session can still use tools when a later request needs
+them. Legacy Quick Sessions and Feishu `/quick` remain compatible, but the Web
+new-session switch no longer exposes Quick as a separate mode.
 
 GPT-6 Sol and Luna availability rolls out by ChatGPT workspace and Codex CLI
 version. Before enabling these mappings on an existing instance, update Codex,
@@ -106,16 +111,19 @@ The file must be readable only by the service user. The optional
 file. `TYPESAFE_BASE_URL`, `TYPESAFE_DEFAULT_MODEL`, and
 `TYPESAFE_TIMEOUT_MS` override the API URL, Jev model, and routing timeout.
 
-The tier mappings can be changed without changing the routing prompt. Create
-`jev-routing.json` in the instance configuration directory, or point
-`JEV_TIER_CONFIG_FILE` at another JSON file:
+The tier mappings and Quick developer prompt can be edited and route-tested in
+Settings → Sessions → Auto routing. They are saved in `jev-routing.json` in the
+instance configuration directory. `JEV_TIER_CONFIG_FILE` may point to another
+JSON file. The file can also be edited directly:
 
 ```json
 {
+  "quick": { "model": "gpt-6-sol", "effort": "low" },
   "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
   "quality": { "model": "gpt-6-sol", "effort": "xhigh" },
   "balanced": { "model": "gpt-6-sol", "effort": "medium" },
-  "economy": { "model": "gpt-6-luna", "effort": "low" }
+  "economy": { "model": "gpt-6-luna", "effort": "low" },
+  "quickPrompt": "Answer directly and concisely in the user's language..."
 }
 ```
 

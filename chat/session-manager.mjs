@@ -16,6 +16,7 @@ import {
   normalizeSessionExecutionProfile,
   QUICK_SESSION_PROFILE,
 } from '../lib/quick-session-profile.mjs';
+import { getJevRoutingSettings } from '../lib/jev-auto-router.mjs';
 import { resolveDelegationRuntime } from './session-delegation-runtime.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import { requests, appendDeliveries } from './requests.mjs';
@@ -2866,6 +2867,11 @@ export async function updateSessionRuntimePreferences(id, patch = {}) {
   const result = await mutateSessionMeta(id, (session) => {
     let changed = false;
 
+    if (session.autoRouting) {
+      delete session.autoRouting;
+      changed = true;
+    }
+
     if (hasRuntimeTierPatch) {
       if ((session.runtimeTier || '') !== runtimeTier) {
         if (runtimeTier) session.runtimeTier = runtimeTier;
@@ -3023,7 +3029,9 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   const savedImages = options.preSavedAttachments?.length ? options.preSavedAttachments : await saveAttachments(images);
   const runtimeSelection = await resolveSessionRuntimeSelection(session, {
     ...options,
-    autoRoutingText: text?.trim(),
+    autoRoutingText: savedImages.length
+      ? `${text?.trim() || ''}\n[This message has ${savedImages.length} attachment(s).]`
+      : text?.trim(),
   });
   const priorRequest = options.requestId ? await requests.byRequest(sessionId, options.requestId) : null;
   const activeRequest = requestRuntime.active(sessionId)[0];
@@ -3178,12 +3186,21 @@ async function prepareRequestRun(record) {
 
   const managerTurnContext = effectiveToolDefinition?.promptMode === 'bare-user'
     ? '' : await buildManagerTurnContextText(session, { ...options, requestId });
-  const requestedDeveloperInstructions = options.executionProfile === QUICK_SESSION_PROFILE
-    ? getQuickSessionDeveloperInstructions()
+  const autoQuick = options.autoRoutingReceipt?.decision?.tier === 'quick'
+    || (session.runtimeTier === 'quick'
+      && !options.autoRoutingReceipt
+      && options.tool === session.tool
+      && options.model === session.model
+      && options.effort === session.effort);
+  const quickPrompt = options.executionProfile === QUICK_SESSION_PROFILE || autoQuick
+    ? getQuickSessionDeveloperInstructions((await getJevRoutingSettings()).quickPrompt)
+    : '';
+  const requestedDeveloperInstructions = quickPrompt
+    ? [quickPrompt, typeof options.developerInstructions === 'string' ? options.developerInstructions.trim() : ''].filter(Boolean).join('\n\n')
     : (typeof options.developerInstructions === 'string' ? options.developerInstructions.trim() : '');
   const developerInstructions = effectiveRuntimeFamily === 'codex-json'
     ? resolveCodexDeveloperInstructions(
-      options.executionProfile === QUICK_SESSION_PROFILE
+      quickPrompt
         || Object.prototype.hasOwnProperty.call(options, 'developerInstructions')
         ? { developerInstructions: requestedDeveloperInstructions }
         : {},
@@ -3282,6 +3299,7 @@ async function prepareRequestRun(record) {
             : 'interactive_user_work',
         skipSessionStartPreflight: options.skipSessionStartPreflight === true
           || options.executionProfile === QUICK_SESSION_PROFILE
+          || autoQuick
           || undefined,
       },
     },
@@ -3291,6 +3309,11 @@ async function prepareRequestRun(record) {
   const activeSession = (await mutateSessionMeta(sessionId, (draft) => {
     draft.activeRunId = run.id;
     if (!options.internalOperation && options.recordUserMessage !== false) {
+      if (!options.autoRoutingReceipt && draft.autoRouting
+        && (draft.tool !== options.tool || draft.model !== options.model || draft.effort !== options.effort)) {
+        delete draft.autoRouting;
+        delete draft.runtimeTier;
+      }
       draft.model = options.model || '';
       draft.effort = options.effort || '';
       draft.thinking = options.thinking === true;

@@ -26,39 +26,72 @@ function openSessionsSidebar() {
 const DETACHED_COMPOSER_SESSION_ID = "__new_session_draft__";
 let pendingNewSessionCreateOptions = null;
 
-function getDraftExecutionProfile() {
-  return pendingNewSessionCreateOptions?.executionProfile === "quick" ? "quick" : "standard";
+function getDraftRuntimeMode() {
+  return pendingNewSessionCreateOptions?.runtimeMode === "custom" ? "custom" : "auto";
 }
 
 function isQuickSessionUi(session = typeof getCurrentSession === "function" ? getCurrentSession() : null) {
   return session?.executionProfile === "quick";
 }
 
+function getActiveRuntimeModeUi(session = typeof getCurrentSession === "function" ? getCurrentSession() : null) {
+  if (!currentSessionId || !session) return getDraftRuntimeMode();
+  return session.model === "auto" || session.autoRouting ? "auto" : "custom";
+}
+
 function syncQuickSessionUi(session = typeof getCurrentSession === "function" ? getCurrentSession() : null) {
   const attached = Boolean(currentSessionId && session);
-  const quick = attached ? isQuickSessionUi(session) : getDraftExecutionProfile() === "quick";
-  if (sessionProfileControl) sessionProfileControl.hidden = attached;
+  const quick = attached && isQuickSessionUi(session);
+  const auto = !quick && getActiveRuntimeModeUi(session) === "auto";
+  if (sessionProfileControl) sessionProfileControl.hidden = quick;
   if (quickProfileBadge) quickProfileBadge.hidden = !attached || !quick;
-  if (runtimeSelectionControls) runtimeSelectionControls.hidden = quick;
-  if (standardProfileBtn) {
-    standardProfileBtn.classList.toggle("active", !quick);
-    standardProfileBtn.setAttribute("aria-pressed", quick ? "false" : "true");
+  if (runtimeSelectionControls) runtimeSelectionControls.hidden = quick || auto;
+  if (autoRuntimeBadge) {
+    autoRuntimeBadge.hidden = !auto;
+    const concreteModel = attached && session?.model && session.model !== "auto" ? session.model : "";
+    const tier = attached && session?.runtimeTier ? ` · ${t(`tooling.preset.${session.runtimeTier}`)}` : "";
+    autoRuntimeBadge.textContent = concreteModel
+      ? `Auto${tier} → ${concreteModel} · ${session.effort || ""}`
+      : t("runtime.pending");
   }
-  if (quickProfileBtn) {
-    quickProfileBtn.classList.toggle("active", quick);
-    quickProfileBtn.setAttribute("aria-pressed", quick ? "true" : "false");
+  if (autoModeBtn) {
+    autoModeBtn.classList.toggle("active", auto);
+    autoModeBtn.setAttribute("aria-pressed", auto ? "true" : "false");
+  }
+  if (customModeBtn) {
+    customModeBtn.classList.toggle("active", !auto && !quick);
+    customModeBtn.setAttribute("aria-pressed", !auto && !quick ? "true" : "false");
   }
 }
 
-function setDraftExecutionProfile(profile) {
+function setDraftRuntimeMode(mode) {
   if (currentSessionId) return false;
   pendingNewSessionCreateOptions = {
     ...(pendingNewSessionCreateOptions || {}),
-    ...(profile === "quick" ? { executionProfile: "quick" } : {}),
+    ...(mode === "custom" ? { runtimeMode: "custom" } : {}),
   };
-  if (profile !== "quick") delete pendingNewSessionCreateOptions.executionProfile;
+  if (mode !== "custom") delete pendingNewSessionCreateOptions.runtimeMode;
   if (typeof syncQuickSessionUi === "function") syncQuickSessionUi(null);
+  if (mode === "custom" && typeof loadModelsForCurrentTool === "function") void loadModelsForCurrentTool();
   return true;
+}
+
+async function selectRuntimeMode(mode) {
+  if (!currentSessionId) return setDraftRuntimeMode(mode);
+  const session = typeof getCurrentSession === "function" ? getCurrentSession() : null;
+  if (!session || isQuickSessionUi(session) || getActiveRuntimeModeUi(session) === mode) return false;
+  const auto = mode === "auto";
+  const result = await dispatchAction({
+    action: "session_preferences",
+    sessionId: currentSessionId,
+    tool: auto ? "codex" : session.tool || "codex",
+    model: auto ? "auto" : session.model && session.model !== "auto" ? session.model : "gpt-6-sol",
+    effort: auto ? "" : session.model && session.model !== "auto" ? session.effort || "low" : "low",
+    thinking: auto ? false : session.thinking === true,
+  });
+  if (result !== false && typeof loadModelsForCurrentTool === "function") await loadModelsForCurrentTool();
+  syncQuickSessionUi(typeof getCurrentSession === "function" ? getCurrentSession() : null);
+  return result !== false;
 }
 
 function getActiveComposerSessionId() {
@@ -72,16 +105,17 @@ function isNewSessionDraftActive() {
 
 function buildNewSessionCreateAction(options = pendingNewSessionCreateOptions || {}) {
   const quick = options?.executionProfile === "quick";
+  const auto = !quick && options?.runtimeMode !== "custom";
   const tool = selectedTool || preferredTool || toolsList[0]?.id;
-  const model = typeof selectedModel === "string" ? selectedModel : "";
-  const effort = typeof selectedEffort === "string" ? selectedEffort : "";
-  if (!quick && !tool) return null;
+  const model = auto ? "auto" : selectedModel === "auto" ? "gpt-6-sol" : typeof selectedModel === "string" ? selectedModel : "";
+  const effort = auto ? "" : selectedModel === "auto" ? "low" : typeof selectedEffort === "string" ? selectedEffort : "";
+  if (!quick && !auto && !tool) return null;
   return {
     action: "create",
     folder: typeof window.remotelabGetDefaultSessionFolder === "function"
       ? window.remotelabGetDefaultSessionFolder()
       : "~",
-    tool: quick ? "codex" : tool,
+    tool: quick || auto ? "codex" : tool,
     sourceId: DEFAULT_APP_ID,
     sourceName: DEFAULT_WEB_SOURCE_NAME,
     forceComposerFocus: true,
@@ -254,8 +288,8 @@ document.addEventListener("keydown", (event) => {
   void handleNewSessionShortcutClick();
 });
 
-standardProfileBtn?.addEventListener("click", () => setDraftExecutionProfile("standard"));
-quickProfileBtn?.addEventListener("click", () => setDraftExecutionProfile("quick"));
+autoModeBtn?.addEventListener("click", () => { void selectRuntimeMode("auto"); });
+customModeBtn?.addEventListener("click", () => { void selectRuntimeMode("custom"); });
 
 // ---- Attachment handling ----
 function createComposerAttachmentLocalId() {

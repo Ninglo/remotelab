@@ -25,7 +25,8 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 - Observed friction: the composer puts `Auto (Jev)` inside the model list while separately offering Standard and Quick, making the selected runtime unclear even though the first-turn route already persists a concrete model and Effort.
 - Product implication: present Auto / Custom as the user choice; expose the resolved model and Effort after Auto routes; evaluate Quick as an internal low-Effort tier rather than a third visible mode.
-- Evidence and limit: a five-tier Jev candidate matched 21/22 holdout synthetic first-message labels, with one conservative Quality escalation. GPT-6 Sol low and xhigh both answered 6/6 short tasks; low did not improve median latency in this small CLI check. No production UI or routing change followed from this experiment.
+- Evidence and limit: a five-tier Jev candidate matched 21/22 holdout synthetic first-message labels, with one conservative Quality escalation. GPT-6 Sol low and xhigh both answered 6/6 short tasks; low did not improve median latency in this small CLI check.
+- Implementation follow-up: the Web composer now uses Auto / Custom, the Auto router includes Quick with its own configurable prompt, and Settings exposes tier editing plus a read-only route preview. Legacy Quick Sessions and connector commands remain compatible.
 - Evaluation: `notes/archive/auto-custom-routing-eval-20260923/README.md`.
 
 ### 2026-09-15 — Codex login needs account identity and current limits

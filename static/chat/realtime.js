@@ -169,6 +169,7 @@ async function dispatchAction(msg) {
         if (Object.prototype.hasOwnProperty.call(msg, "tool")) payload.tool = msg.tool || "";
         if (Object.prototype.hasOwnProperty.call(msg, "model")) payload.model = msg.model || "";
         if (Object.prototype.hasOwnProperty.call(msg, "effort")) payload.effort = msg.effort || "";
+        if (Object.prototype.hasOwnProperty.call(msg, "thinking")) payload.thinking = msg.thinking === true;
         if (Object.prototype.hasOwnProperty.call(msg, "runtimeTier")) payload.runtimeTier = msg.runtimeTier || "";
         const data = await fetchJsonOrRedirect(`/api/sessions/${encodeURIComponent(msg.sessionId)}`, {
           method: "PATCH",

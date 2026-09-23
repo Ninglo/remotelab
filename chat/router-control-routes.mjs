@@ -15,7 +15,7 @@ import {
   updatePerson,
 } from '../lib/auth.mjs';
 import { getAutoRuntimeSelection } from '../lib/runtime-selection.mjs';
-import { getJevTierProfiles, resolveJevTierPreset } from '../lib/jev-auto-router.mjs';
+import { getJevRoutingSettings, getJevTierProfiles, resolveJevAutoRoute, resolveJevTierPreset, updateJevRoutingSettings } from '../lib/jev-auto-router.mjs';
 import { normalizeExternalRuntimeOverride } from '../lib/external-runtime-selection.mjs';
 import {
   completeRuntimeProfile,
@@ -1381,6 +1381,43 @@ export async function handleControlRoutes({
     writeJson(res, 200, {
       presets: ['sota', 'quality', 'balanced', 'economy'].map((id) => ({ id, ...profiles[id] })),
     });
+    return true;
+  }
+
+  if (pathname === '/api/auto-routing' && req.method === 'GET') {
+    writeJson(res, 200, { settings: await getJevRoutingSettings() });
+    return true;
+  }
+
+  if (pathname === '/api/auto-routing' && req.method === 'PATCH') {
+    try {
+      const body = await readBody(req, 32768);
+      const payload = JSON.parse(body || '{}');
+      writeJson(res, 200, { settings: await updateJevRoutingSettings(payload) });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Invalid Auto routing settings' });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/auto-routing/preview' && req.method === 'POST') {
+    try {
+      const body = await readBody(req, 32768);
+      const payload = JSON.parse(body || '{}');
+      const task = typeof payload.task === 'string' ? payload.task.trim() : '';
+      if (!task || task.length > 16000) throw new Error('task must be 1–16000 characters');
+      const route = await resolveJevAutoRoute(task, {
+        ...(payload.tiers && typeof payload.tiers === 'object' ? { tierProfiles: payload.tiers } : {}),
+      });
+      writeJson(res, 200, {
+        tier: route.autoRoutingReceipt?.decision?.tier || 'quality',
+        model: route.model,
+        effort: route.effort,
+        receipt: route.autoRoutingReceipt,
+      });
+    } catch (error) {
+      writeJson(res, 400, { error: error.message || 'Auto routing preview failed' });
+    }
     return true;
   }
 

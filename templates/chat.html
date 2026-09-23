@@ -304,6 +304,28 @@
                     <select class="settings-inline-select" id="sessionAutoArchiveSelect" aria-label="Choose auto archive delay" data-i18n-aria-label="settings.autoArchive.ariaLabel"></select>
                   </div>
                 </div>
+                <div class="settings-section" id="autoRoutingSettingsSection">
+                  <div class="settings-section-title" data-i18n="settings.autoRouting.title">Auto routing</div>
+                  <div class="settings-section-note" data-i18n="settings.autoRouting.note">Configure the five internal tiers and the Quick reply prompt. Changes apply to future turns.</div>
+                  <div class="auto-routing-tier-grid" id="autoRoutingTierGrid"></div>
+                  <label class="settings-person-field auto-routing-prompt-field">
+                    <span data-i18n="settings.autoRouting.quickPrompt">Quick reply prompt</span>
+                    <textarea class="settings-inline-textarea" id="autoRoutingQuickPrompt" rows="5" maxlength="4000"></textarea>
+                  </label>
+                  <div class="settings-person-form-actions left">
+                    <button class="settings-app-btn settings-person-primary" id="autoRoutingSaveBtn" type="button" data-i18n="settings.autoRouting.save">Save Auto settings</button>
+                    <span class="settings-section-note" id="autoRoutingSaveStatus" role="status" aria-live="polite"></span>
+                  </div>
+                  <label class="settings-person-field auto-routing-preview-field">
+                    <span data-i18n="settings.autoRouting.previewPrompt">Test first message</span>
+                    <textarea class="settings-inline-textarea" id="autoRoutingPreviewInput" rows="2" maxlength="16000"></textarea>
+                  </label>
+                  <div class="settings-person-form-actions left">
+                    <button class="settings-app-btn" id="autoRoutingPreviewBtn" type="button" data-i18n="settings.autoRouting.preview">Preview route</button>
+                    <span class="settings-section-note" id="autoRoutingPreviewResult" role="status" aria-live="polite"></span>
+                  </div>
+                  <pre class="auto-routing-preview-details" id="autoRoutingPreviewDetails" hidden></pre>
+                </div>
                 <div class="settings-section">
                   <div class="settings-section-title" data-i18n="settings.sessionPresentation.title">Session opening</div>
                   <div class="settings-apps-list" id="settingsSessionPresentationList">
@@ -433,11 +455,12 @@
         <div class="delivery-issues" id="deliveryIssues" role="status" aria-live="polite" hidden></div>
         <div class="input-config-row">
           <div class="input-config-group left">
-            <div class="session-profile-control" id="sessionProfileControl" role="group" aria-label="Session mode" data-i18n-aria-label="quick.modeAriaLabel">
-              <button class="session-profile-option active" id="standardProfileBtn" type="button" data-profile="standard" data-i18n="quick.standard">Standard</button>
-              <button class="session-profile-option" id="quickProfileBtn" type="button" data-profile="quick" data-i18n="quick.quick">Quick</button>
+            <div class="session-profile-control" id="sessionProfileControl" role="group" aria-label="Runtime mode" data-i18n-aria-label="runtime.modeAriaLabel">
+              <button class="session-profile-option active" id="autoModeBtn" type="button" data-profile="auto" data-i18n="runtime.auto">Auto</button>
+              <button class="session-profile-option" id="customModeBtn" type="button" data-profile="custom" data-i18n="runtime.custom">Custom</button>
             </div>
             <span class="quick-profile-badge" id="quickProfileBadge" hidden data-i18n="quick.lockedBadge">Quick · locked</span>
+            <span class="auto-runtime-badge" id="autoRuntimeBadge" role="status" aria-live="polite" hidden></span>
             <div class="runtime-selection-controls" id="runtimeSelectionControls">
               <select class="runtime-preset-select" id="runtimePresetSelect" hidden title="Session preset" aria-label="Session preset" data-i18n-title="tooling.presetTitle" data-i18n-aria-label="tooling.presetAriaLabel"></select>
               <select class="tool-select" id="inlineToolSelect" disabled></select>
@@ -615,6 +638,7 @@
 <script src="chat/instance-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/auto-routing-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/display-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/task-center.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/sidebar-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

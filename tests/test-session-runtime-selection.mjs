@@ -54,7 +54,7 @@ try {
       json: async () => ({
         model: 'jev-test',
         answers: {
-          service_tier: { choice: 'economy', confidence: 0.9, probabilities: { sota: 0, quality: 0.02, balanced: 0.03, economy: 0.95 } },
+          service_tier: { choice: 'economy', confidence: 0.9, probabilities: { quick: 0, sota: 0, quality: 0.02, balanced: 0.03, economy: 0.95 } },
         },
       }),
     });
