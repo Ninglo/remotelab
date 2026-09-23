@@ -7,6 +7,7 @@ import {
   usageEvent,
 } from '../normalizer.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
+import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 
 function textFromContent(content) {
   if (typeof content === 'string') return content;
@@ -224,7 +225,10 @@ export function buildPiArgs(prompt, options = {}) {
   } else {
     args.push('--no-session');
   }
-  if (options.model) args.push('--model', String(options.model));
+  const model = provider === 'openai-codex'
+    ? normalizeCodexModelId(options.model)
+    : String(options.model || '').trim();
+  if (model) args.push('--model', model);
   const thinking = clampReasoningEffort(options.thinking);
   if (thinking) args.push('--thinking', thinking);
   args.push(String(prompt || '').replaceAll('\0', ''));

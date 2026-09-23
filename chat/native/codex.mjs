@@ -1,5 +1,6 @@
 import { buildCodexArgs } from '../adapters/codex.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
+import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 
 const nativeStatus = value => value === 'inProgress' ? 'in_progress' : value === 'declined' ? 'failed' : value;
 const textInput = text => [{ type: 'text', text: String(text), text_elements: [] }];
@@ -35,7 +36,7 @@ function execItem(item) {
  */
 export function createCodexDriver({ send, onEvent = () => {}, onSettled = () => {}, onError = () => {}, options = {}, cwd } = {}) {
   if (typeof send !== 'function') throw new TypeError('Codex driver requires send');
-  const configuredOptions = { ...options, threadId: options.threadId || options.codexThreadId,
+  const configuredOptions = { ...options, model: normalizeCodexModelId(options.model), threadId: options.threadId || options.codexThreadId,
     reasoningEffort: clampReasoningEffort(options.reasoningEffort || options.effort) };
   const legacyArgs = buildCodexArgs('', configuredOptions);
   const args = ['app-server', '--listen', 'stdio://'];

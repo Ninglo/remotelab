@@ -9,6 +9,7 @@ import {
 } from '../../lib/config.mjs';
 import { sanitizeSpawnArgs } from '../spawn-arg-sanitizer.mjs';
 import { clampReasoningEffort } from '../../lib/reasoning-effort-policy.mjs';
+import { normalizeCodexModelId } from '../../lib/legacy-micro-agent.mjs';
 
 /**
  * Codex CLI adapter.
@@ -381,8 +382,9 @@ export function buildCodexArgs(prompt, options = {}) {
     args.push('-c', `developer_instructions=${encodeTomlString(developerInstructions)}`);
   }
 
-  if (options.model) {
-    args.push('-m', options.model);
+  const model = normalizeCodexModelId(options.model);
+  if (model) {
+    args.push('-m', model);
   }
   const reasoningEffort = clampReasoningEffort(options.reasoningEffort);
   if (reasoningEffort) {
