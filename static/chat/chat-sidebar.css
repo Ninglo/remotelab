@@ -28,11 +28,17 @@
   gap: 2px;
   padding: calc(48px + var(--safe-top)) 10px 8px;
 }
+.sidebar-action-nav {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 2px;
+  border-top: 1px solid var(--border);
+}
 .sidebar-footer-nav {
   display: grid;
   gap: 2px;
-  padding: 8px 10px calc(10px + var(--safe-bottom));
-  border-top: 1px solid var(--border);
+  padding: 4px 10px calc(10px + var(--safe-bottom));
+  border-top: 0;
 }
 .sidebar-nav-button {
   width: 100%;
@@ -189,25 +195,30 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .workspace-page-header {
   margin-bottom: 24px;
 }
-.settings-page-header,
 .settings-layout {
-  width: min(100%, 1120px);
+  width: min(100%, 1280px);
   margin-left: auto;
   margin-right: auto;
 }
 .settings-page-header {
+  width: 100%;
+  grid-column: 2;
+  margin-left: 0;
+  margin-right: 0;
   margin-bottom: 30px;
 }
 .settings-layout {
   display: grid;
-  grid-template-columns: 176px minmax(0, 820px);
+  grid-template-columns: 176px minmax(0, 960px);
   align-items: start;
-  justify-content: space-between;
-  gap: clamp(36px, 5vw, 72px);
+  justify-content: center;
+  column-gap: clamp(52px, 6vw, 88px);
 }
 .settings-toc {
   position: sticky;
   top: 0;
+  grid-column: 1;
+  grid-row: 2;
   display: grid;
   gap: 2px;
   padding: 2px 0;
@@ -239,6 +250,8 @@ body:not([data-app-view="sessions"]) .session-item.active {
   outline-offset: 2px;
 }
 .settings-content {
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
 }
 .settings-group {
@@ -1069,6 +1082,28 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .new-session-btn {
   color: var(--text);
   font-weight: 500;
+}
+.sidebar-action-nav .new-session-btn {
+  min-height: 42px;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 640;
+}
+.sidebar-action-nav .new-session-btn:hover {
+  background: var(--text-secondary);
+  color: var(--bg);
+}
+.sidebar-shortcut-hint {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: color-mix(in srgb, var(--bg) 68%, transparent);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 520;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 .new-session-btn.secondary {
   width: auto;

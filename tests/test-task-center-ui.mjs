@@ -11,7 +11,7 @@ const script = readFileSync(join(repoRoot, 'static', 'chat', 'task-center.js'), 
 const compose = readFileSync(join(repoRoot, 'static', 'chat', 'compose.js'), 'utf8');
 
 assert.match(template, /class="sidebar-nav-button" id="tabTasks"[^>]*>[\s\S]*data-i18n="nav\.tasks"/, 'Tasks must be a first-class row in the Session sidebar');
-assert.match(template, /<aside class="sidebar"[^>]*>[\s\S]*id="newSessionBtn"[\s\S]*id="tabTasks"[\s\S]*id="sessionList"[\s\S]*id="tabSettings"[\s\S]*<\/aside>/, 'Task Center and Settings should share one classic sidebar with Sessions');
+assert.match(template, /<aside class="sidebar"[^>]*>[\s\S]*id="tabTasks"[\s\S]*id="sessionList"[\s\S]*id="newSessionBtn"[\s\S]*id="tabSettings"[\s\S]*<\/aside>/, 'Task Center and Settings should share one classic sidebar with Sessions');
 assert.doesNotMatch(template, /class="app-rail"|id="tabAgents"|id="agentsPanel"/, 'Task Center must not introduce a separate navigation rail or Agent column');
 assert.match(template, /id="taskCenterPanel"/, 'Task Center needs its own management panel');
 assert.ok(

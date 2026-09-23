@@ -616,6 +616,16 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: application shell, Settings information architecture, responsive navigation, and shared visual tokens
 - Follow-up: review the first implementation on real desktop and mobile surfaces, then tune density and grouping from concrete screenshots rather than adding more decorative material effects
 
+### 2026-09-23 — settings title alignment and New Session reachability need a second pass
+
+- Source: annotated screenshot review of the first flat Settings implementation
+- User slice: owner navigating a wide desktop Settings page and frequently starting new work
+- Observed friction or ask: the Settings title aligned with the directory instead of the form content, leaving an awkward empty corridor; the directory should sit farther left, while New Session at the sidebar's top remained unnecessarily far from the user's working position
+- Signal strength: direct visual annotation after the first implementation was deployed
+- Product implication: align page titles with their primary content column, keep local page navigation in a clearly separate leading column, and place high-frequency creation actions in a reachable persistent zone with a discoverable keyboard shortcut
+- Promote to: Settings grid alignment, sidebar action placement, and global shortcut conventions
+- Follow-up: validate the bottom-sidebar placement and `Command/Control + Shift + Enter` on real desktop and mobile use
+
 ### YYYY-MM-DD — short title
 
 - Source:

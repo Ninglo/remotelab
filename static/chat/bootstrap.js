@@ -288,6 +288,7 @@ const uiLanguageSelect = document.getElementById("uiLanguageSelect");
 const thinkingBlockDisplaySelect = document.getElementById("thinkingBlockDisplaySelect");
 const sortSessionListBtn = document.getElementById("sortSessionListBtn");
 const newSessionBtn = document.getElementById("newSessionBtn");
+const newSessionShortcutHint = document.getElementById("newSessionShortcutHint");
 const headerNewSessionBtn = document.getElementById("headerNewSessionBtn");
 const headerTasksBtn = document.getElementById("headerTasksBtn");
 const messagesEl = document.getElementById("messages");

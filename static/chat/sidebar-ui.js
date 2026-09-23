@@ -237,6 +237,23 @@ async function handleNewSessionShortcutClick() {
 newSessionBtn.addEventListener("click", handleNewSessionShortcutClick);
 headerNewSessionBtn?.addEventListener("click", handleNewSessionShortcutClick);
 
+const shortcutPlatform = String(globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || "");
+if (newSessionShortcutHint) {
+  newSessionShortcutHint.textContent = /Mac|iPhone|iPad/i.test(shortcutPlatform) ? "⌘⇧↵" : "Ctrl ⇧ ↵";
+}
+
+document.addEventListener("keydown", (event) => {
+  const modifierPressed = event.metaKey || event.ctrlKey;
+  const isNewSessionShortcut = modifierPressed
+    && event.shiftKey
+    && !event.altKey
+    && event.key === "Enter";
+  if (!isNewSessionShortcut || event.defaultPrevented || event.repeat || event.isComposing) return;
+  if (document.body?.classList.contains("share-snapshot-mode") || newSessionBtn?.style.display === "none") return;
+  event.preventDefault();
+  void handleNewSessionShortcutClick();
+});
+
 standardProfileBtn?.addEventListener("click", () => setDraftExecutionProfile("standard"));
 quickProfileBtn?.addEventListener("click", () => setDraftExecutionProfile("quick"));
 

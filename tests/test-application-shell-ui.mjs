@@ -31,11 +31,11 @@ for (const id of ["newSessionBtn", "tabTasks", "sessionList", "tabSettings"]) {
   assert.match(sessionSidebarMarkup, new RegExp(`id="${id}"`), `${id} should live in the single Session sidebar`);
 }
 assert.ok(
-  sessionSidebarMarkup.indexOf('id="newSessionBtn"') < sessionSidebarMarkup.indexOf('id="tabTasks"')
-    && sessionSidebarMarkup.indexOf('id="tabTasks"') < sessionSidebarMarkup.indexOf('id="sourceFilterSelect"')
+  sessionSidebarMarkup.indexOf('id="tabTasks"') < sessionSidebarMarkup.indexOf('id="sourceFilterSelect"')
     && sessionSidebarMarkup.indexOf('id="sourceFilterSelect"') < sessionSidebarMarkup.indexOf('id="sessionList"')
-    && sessionSidebarMarkup.indexOf('id="sessionList"') < sessionSidebarMarkup.indexOf('id="tabSettings"'),
-  "the sidebar should group the origin filter with chats and keep Settings at the bottom",
+    && sessionSidebarMarkup.indexOf('id="sessionList"') < sessionSidebarMarkup.indexOf('id="newSessionBtn"')
+    && sessionSidebarMarkup.indexOf('id="newSessionBtn"') < sessionSidebarMarkup.indexOf('id="tabSettings"'),
+  "the sidebar should keep Tasks at the top and place New Session beside Settings in the reachable bottom zone",
 );
 assert.doesNotMatch(sessionSidebarMarkup, /<a\b/, "workspace switching should use in-page controls rather than page links");
 assert.doesNotMatch(sessionSidebarMarkup, /id="(?:agentsPanel|taskCenterPanel|settingsPanel)"/, "application workspaces must remain in the main pane");
@@ -62,9 +62,11 @@ for (const sectionId of ["settings-general", "settings-sessions", "settings-peop
   assert.match(template, new RegExp(`data-settings-target="${sectionId}"`), `${sectionId} should be linked from the Settings directory`);
   assert.match(template, new RegExp(`id="${sectionId}"[^>]*data-settings-section`), `${sectionId} should identify a Settings content group`);
 }
-assert.match(sidebarCss, /\.settings-layout\s*\{[\s\S]*grid-template-columns:\s*176px minmax\(0, 820px\)/, "desktop Settings should use a stable directory and content layout");
+assert.match(sidebarCss, /\.settings-layout\s*\{[\s\S]*grid-template-columns:\s*176px minmax\(0, 960px\)/, "desktop Settings should use a stable directory and content layout");
+assert.match(sidebarCss, /\.settings-page-header\s*\{[\s\S]*grid-column:\s*2/, "the Settings title should align with the content column");
 assert.match(responsiveCss, /@media \(max-width:\s*767px\)[\s\S]*\.settings-toc\s*\{[\s\S]*overflow-x:\s*auto/, "mobile Settings should turn the directory into a horizontal sticky list");
 assert.match(settingsUi, /target\.scrollIntoView\(\{ behavior:/, "Settings directory links should jump within the page");
 assert.match(settingsUi, /settingsPanel\.addEventListener\("scroll"/, "Settings directory should track the visible section");
+assert.match(sidebarUi, /event\.metaKey \|\| event\.ctrlKey[\s\S]*event\.shiftKey[\s\S]*event\.key === "Enter"/, "New Session should expose a cross-platform keyboard shortcut");
 
 console.log("Classic sidebar and single-page workspace contract tests passed.");

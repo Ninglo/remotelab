@@ -57,10 +57,6 @@
     <aside class="sidebar" id="sidebar">
       <button class="header-btn sidebar-close-btn" id="closeSidebar" title="Close sidebar" aria-label="Close sidebar" data-i18n-title="action.close" data-i18n-aria-label="action.close" data-icon="close">&#x2715;</button>
       <nav class="sidebar-primary-nav" aria-label="Main actions" data-i18n-aria-label="nav.application">
-        <button class="sidebar-nav-button new-session-btn" id="newSessionBtn" type="button">
-          <span class="sidebar-nav-icon" data-icon="plus" aria-hidden="true"></span>
-          <span data-i18n="sidebar.newSession">New Session</span>
-        </button>
         <button class="sidebar-nav-button" id="tabTasks" type="button">
           <span class="sidebar-nav-icon" data-icon="tasks" aria-hidden="true"></span>
           <span data-i18n="nav.tasks">Tasks</span>
@@ -72,6 +68,13 @@
         <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
+      <nav class="sidebar-action-nav" aria-label="Quick actions" data-i18n-aria-label="nav.quickActions">
+        <button class="sidebar-nav-button new-session-btn" id="newSessionBtn" type="button">
+          <span class="sidebar-nav-icon" data-icon="plus" aria-hidden="true"></span>
+          <span data-i18n="sidebar.newSession">New Session</span>
+          <kbd class="sidebar-shortcut-hint" id="newSessionShortcutHint" aria-hidden="true">Ctrl ⇧ ↵</kbd>
+        </button>
+      </nav>
       <nav class="sidebar-footer-nav" aria-label="Settings" data-i18n-aria-label="nav.settings">
         <button class="sidebar-nav-button" id="tabSettings" type="button">
           <span class="sidebar-nav-icon" data-icon="gear" aria-hidden="true"></span>
@@ -231,11 +234,11 @@
         </div>
       </div>
       <div class="settings-panel" id="settingsPanel">
-        <header class="workspace-page-header settings-page-header">
-          <h2 data-i18n="nav.settings">Settings</h2>
-          <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
-        </header>
         <div class="settings-layout">
+          <header class="workspace-page-header settings-page-header">
+            <h2 data-i18n="nav.settings">Settings</h2>
+            <p data-i18n="settings.page.note">Manage this browser, instance, connectors, and Session presentation.</p>
+          </header>
           <nav class="settings-toc" id="settingsToc" aria-label="Settings sections" data-i18n-aria-label="settings.navigation.ariaLabel">
             <a class="settings-toc-link active" href="#settings-general" data-settings-target="settings-general" aria-current="location" data-i18n="settings.group.general">General</a>
             <a class="settings-toc-link" href="#settings-sessions" data-settings-target="settings-sessions" data-i18n="settings.group.sessions">Sessions</a>
