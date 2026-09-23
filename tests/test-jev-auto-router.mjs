@@ -38,7 +38,7 @@ test('four service tiers map to fixed model and effort profiles', () => {
   );
   assert.deepEqual(
     (({ tool, model, effort }) => ({ tool, model, effort }))(applyJevAutoPolicy(answer('quality'))),
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'high' },
+    { tool: 'codex', model: 'gpt-6-sol', effort: 'xhigh' },
   );
   assert.deepEqual(
     (({ model, effort }) => ({ model, effort }))(applyJevAutoPolicy(answer('balanced'))),

@@ -77,7 +77,7 @@ tiers from the first user message. The default tier mappings are:
 - `sota`: GPT-6 Astra with `xhigh` reasoning. Jev may choose it only when the
   user explicitly requests the strongest/SOTA model, maximum reasoning, or
   explicitly marks the task as extremely important and asks for top quality.
-- `quality`: GPT-6 Sol with `high` reasoning. This is the conservative default
+- `quality`: GPT-6 Sol with `xhigh` reasoning. This is the conservative default
   for serious work, research, development, debugging, and contextual tasks.
 - `balanced`: GPT-6 Sol with `medium` reasoning for clearly bounded,
   low-consequence routine work.
@@ -113,7 +113,7 @@ The tier mappings can be changed without changing the routing prompt. Create
 ```json
 {
   "sota": { "model": "gpt-6-astra", "effort": "xhigh" },
-  "quality": { "model": "gpt-6-sol", "effort": "high" },
+  "quality": { "model": "gpt-6-sol", "effort": "xhigh" },
   "balanced": { "model": "gpt-6-sol", "effort": "medium" },
   "economy": { "model": "gpt-6-luna", "effort": "low" }
 }

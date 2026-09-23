@@ -12,7 +12,7 @@ try {
   const autoDefault = await resolveSessionRuntimeSelection({ tool: 'codex' });
   assert.deepEqual(
     { tool: autoDefault.tool, model: autoDefault.model, effort: autoDefault.effort, thinking: autoDefault.thinking },
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'high', thinking: false },
+    { tool: 'codex', model: 'gpt-6-sol', effort: 'xhigh', thinking: false },
     'an incomplete new Codex Session starts from Auto and safely falls back to quality',
   );
   assert.equal(autoDefault.autoRoutingReceipt.status, 'fallback');
@@ -36,7 +36,7 @@ try {
   );
   assert.deepEqual(
     { tool: switchedToCodex.tool, model: switchedToCodex.model, effort: switchedToCodex.effort },
-    { tool: 'codex', model: 'gpt-6-sol', effort: 'high' },
+    { tool: 'codex', model: 'gpt-6-sol', effort: 'xhigh' },
     'switching to Codex without a concrete model starts from Auto',
   );
   assert.equal((await resolveSessionRuntimeSelection({ ...defaults, effort: 'ultra' }, { model: 'gpt-5.6-luna' })).effort, 'medium', 'a different model resolves its own default effort');
