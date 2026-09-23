@@ -67,6 +67,6 @@ assert.match(sidebarCss, /\.settings-page-header\s*\{[\s\S]*grid-column:\s*2/, "
 assert.match(responsiveCss, /@media \(max-width:\s*767px\)[\s\S]*\.settings-toc\s*\{[\s\S]*overflow-x:\s*auto/, "mobile Settings should turn the directory into a horizontal sticky list");
 assert.match(settingsUi, /target\.scrollIntoView\(\{ behavior:/, "Settings directory links should jump within the page");
 assert.match(settingsUi, /settingsPanel\.addEventListener\("scroll"/, "Settings directory should track the visible section");
-assert.match(sidebarUi, /event\.metaKey \|\| event\.ctrlKey[\s\S]*event\.shiftKey[\s\S]*event\.key === "Enter"/, "New Session should expose a cross-platform keyboard shortcut");
+assert.match(sidebarUi, /event\.metaKey \|\| event\.ctrlKey[\s\S]*!event\.shiftKey[\s\S]*toLowerCase\(\) === "o"/, "New Session should expose Cmd\/Ctrl+O as a cross-platform keyboard shortcut");
 
 console.log("Classic sidebar and single-page workspace contract tests passed.");

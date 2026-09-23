@@ -239,15 +239,15 @@ headerNewSessionBtn?.addEventListener("click", handleNewSessionShortcutClick);
 
 const shortcutPlatform = String(globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || "");
 if (newSessionShortcutHint) {
-  newSessionShortcutHint.textContent = /Mac|iPhone|iPad/i.test(shortcutPlatform) ? "⌘⇧↵" : "Ctrl ⇧ ↵";
+  newSessionShortcutHint.textContent = /Mac|iPhone|iPad/i.test(shortcutPlatform) ? "⌘O" : "Ctrl O";
 }
 
 document.addEventListener("keydown", (event) => {
   const modifierPressed = event.metaKey || event.ctrlKey;
   const isNewSessionShortcut = modifierPressed
-    && event.shiftKey
+    && !event.shiftKey
     && !event.altKey
-    && event.key === "Enter";
+    && String(event.key || "").toLowerCase() === "o";
   if (!isNewSessionShortcut || event.defaultPrevented || event.repeat || event.isComposing) return;
   if (document.body?.classList.contains("share-snapshot-mode") || newSessionBtn?.style.display === "none") return;
   event.preventDefault();
