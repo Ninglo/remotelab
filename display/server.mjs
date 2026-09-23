@@ -3,14 +3,16 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Resvg } from '@resvg/resvg-js';
 
 import { findPerson, loadAuthDocument } from '../lib/auth-config.mjs';
 import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
+import { emptySignalStore, makeStatusSnapshot, replaceSource, selectOfficialScene, validateSourcePacket } from './status-state.mjs';
+import { remotelabStatusSource } from './remotelab-status-source.mjs';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const bindHost = String(process.env.REMOTELAB_DISPLAY_BIND_HOST || '127.0.0.1').trim();
@@ -22,8 +24,17 @@ const stateFile = process.env.REMOTELAB_DISPLAY_STATE_FILE
   || join(configDir, 'display-devices.json');
 const adminTokenFile = process.env.REMOTELAB_DISPLAY_ADMIN_TOKEN_FILE
   || join(configDir, 'display-admin-token');
+const signalFile = process.env.REMOTELAB_DISPLAY_SIGNAL_FILE || join(configDir, 'display-signals.json');
+const renderMode = process.env.REMOTELAB_DISPLAY_RENDER_MODE || 'classic';
+if (!['classic', 'signals'].includes(renderMode)) throw new Error('Unknown display render mode');
+const themeUrl = process.env.REMOTELAB_DISPLAY_THEME_MODULE
+  ? pathToFileURL(resolve(process.env.REMOTELAB_DISPLAY_THEME_MODULE)).href
+  : new URL('./themes/official.mjs', import.meta.url).href;
+const theme = await import(themeUrl);
+if (typeof theme.renderTheme !== 'function') throw new TypeError('Display theme must export renderTheme(snapshot, context)');
 const enrollmentTtlMs = 10 * 60 * 1000;
 const saveState = createSerialTaskQueue();
+const saveSignals = createSerialTaskQueue();
 const client = createRemoteLabHttpClient({
   baseUrl: process.env.REMOTELAB_CHAT_BASE_URL || 'http://127.0.0.1:7690',
 });
@@ -77,6 +88,32 @@ async function updateState(mutator) {
     const result = await mutator(current);
     await writeJsonAtomic(stateFile, current);
     await chmod(stateFile, 0o600);
+    return result;
+  });
+}
+
+async function loadSignalStore() {
+  let raw;
+  try {
+    raw = await readFile(signalFile, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return emptySignalStore();
+    throw error;
+  }
+  const store = JSON.parse(raw);
+  if (store?.schemaVersion !== 1 || !store.people || typeof store.people !== 'object' || Array.isArray(store.people)) {
+    throw new Error('Invalid display signal store');
+  }
+  return store;
+}
+
+async function updateSignalStore(mutator) {
+  return saveSignals(async () => {
+    const result = await mutator(await loadSignalStore());
+    if (result.changed) {
+      await writeJsonAtomic(signalFile, result.store);
+      await chmod(signalFile, 0o600);
+    }
     return result;
   });
 }
@@ -289,12 +326,54 @@ function snapshotSvg(snapshot) {
 }
 
 async function renderFrame(personId) {
+  if (renderMode === 'signals') return renderSignalFrame(personId);
   const snapshot = await collectSnapshot(personId);
   const renderer = new Resvg(snapshotSvg(snapshot), {
     background: '#0b0f13',
     font: { loadSystemFonts: true, defaultFontFamily: 'sans-serif' },
   });
   return { png: Buffer.from(renderer.render().asPng()), snapshot };
+}
+
+async function collectStatusView(personId) {
+  await getPersonIdentityIds(personId);
+  let metrics = null;
+  try {
+    metrics = await collectSnapshot(personId);
+  } catch (error) {
+    if (error.status === 410) throw error;
+    console.error('[display] RemoteLab source unavailable:', error.message);
+  }
+  const nowMs = Date.now();
+  const store = await loadSignalStore();
+  const sourcePackets = { ...store.people?.[personId] };
+  if (metrics) sourcePackets.remotelab = validateSourcePacket(remotelabStatusSource(metrics, nowMs), nowMs);
+  else sourcePackets.remotelab = {
+    schemaVersion: 1, sequence: nowMs, label: 'RemoteLab',
+    observedAt: new Date(nowMs - 60_000).toISOString(),
+    validUntil: new Date(nowMs - 1).toISOString(), signals: [],
+  };
+  const snapshot = makeStatusSnapshot(sourcePackets, nowMs);
+  return { snapshot, scene: selectOfficialScene(snapshot, nowMs), metrics, nowMs };
+}
+
+async function renderSignalFrame(personId) {
+  const view = await collectStatusView(personId);
+  return { png: renderStatusPng(view), snapshot: view.metrics || { observedAt: view.snapshot.generatedAt }, view };
+}
+
+function renderStatusPng(view) {
+  const svg = theme.renderTheme(view.snapshot, { metrics: view.metrics, nowMs: view.nowMs });
+  if (typeof svg !== 'string') throw new TypeError('Display theme must return an SVG string');
+  const renderer = new Resvg(svg, {
+    background: '#0b1118',
+    font: { loadSystemFonts: true, defaultFontFamily: 'sans-serif' },
+  });
+  const rendered = renderer.render();
+  if (rendered.width !== 1920 || rendered.height !== 480) {
+    throw new TypeError('Display theme must render at 1920 × 480');
+  }
+  return Buffer.from(rendered.asPng());
 }
 
 async function handle(req, res) {
@@ -310,6 +389,27 @@ async function handle(req, res) {
   }
   if (pathname === '/agent.py' && req.method === 'GET') {
     sendText(res, 200, 'text/x-python; charset=utf-8', await readFile(join(moduleDir, 'agent.py')));
+    return;
+  }
+  const personStatusMatch = /^\/v1\/people\/([^/]+)\/(status|preview\.png)$/.exec(pathname);
+  if (personStatusMatch && req.method === 'GET') {
+    if (!await requireAdmin(req, res, url)) return;
+    const personId = decodeURIComponent(personStatusMatch[1]);
+    const view = await collectStatusView(personId);
+    if (personStatusMatch[2] === 'status') sendJson(res, 200, { snapshot: view.snapshot, scene: view.scene, metrics: view.metrics });
+    else sendText(res, 200, 'image/png', renderStatusPng(view));
+    return;
+  }
+  const sourceMatch = /^\/v1\/people\/([^/]+)\/sources\/([a-z][a-z0-9_-]{0,47})$/.exec(pathname);
+  if (sourceMatch && req.method === 'PUT') {
+    if (!await requireAdmin(req, res, url)) return;
+    const personId = decodeURIComponent(sourceMatch[1]);
+    const sourceId = sourceMatch[2];
+    await getPersonIdentityIds(personId);
+    if (sourceId === 'remotelab') throw Object.assign(new Error('remotelab is a reserved source'), { status: 400 });
+    const payload = await readRequestJson(req);
+    const result = await updateSignalStore((store) => replaceSource(store, personId, sourceId, payload));
+    sendJson(res, 200, { changed: result.changed, reason: result.reason });
     return;
   }
   if (pathname === '/v1/enrollments' && req.method === 'POST') {
@@ -439,8 +539,8 @@ async function handle(req, res) {
       });
       sendText(res, 200, 'image/png', png, {
         'X-RemoteLab-Display-Observed-At': snapshot.observedAt,
-        'X-RemoteLab-Display-Running': String(snapshot.running),
-        'X-RemoteLab-Display-Pending-Review': String(snapshot.pendingReview),
+        'X-RemoteLab-Display-Running': String(snapshot.running ?? ''),
+        'X-RemoteLab-Display-Pending-Review': String(snapshot.pendingReview ?? ''),
       });
       return;
     }

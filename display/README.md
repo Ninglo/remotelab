@@ -44,3 +44,59 @@ curl -fsSL 'https://your-remotelab.example/display/install.sh' | sh -s -- \
 
 The conservative USB framing in `agent.py` is derived from the MIT-licensed
 `thermalright-display-bridge` project in this workspace.
+
+## Signal-screen pilot
+
+The existing pairing, Person boundary, frame URL, and Mac USB agent stay unchanged. Set
+`REMOTELAB_DISPLAY_RENDER_MODE=signals` on the display sidecar to replace the fixed
+dashboard with an official one-signal-at-a-time theme. Without that setting the
+classic dashboard remains available for rollback. The built-in RemoteLab source
+currently reports running/queued Sessions, recent delivery-issue records, and
+results-to-browse. “Results to browse” is a heuristic **note**, not a confirmed
+request for user action. No Feishu or evaluator source is installed by this pilot.
+
+Trusted local adapters may `PUT /v1/people/{personId}/sources/{sourceId}` to the
+loopback sidecar using its administrator bearer token. This endpoint is not
+publicly proxied. Each update replaces one source's full snapshot and must use
+a monotonically increasing `sequence` that survives adapter restarts. A source
+may withdraw all its signals by sending `signals: []`. An adapter should send
+only short text safe for a visible screen:
+
+```json
+{
+  "schemaVersion": 1,
+  "sequence": 12,
+  "label": "Evaluation",
+  "observedAt": "2026-09-23T10:00:00+08:00",
+  "validUntil": "2026-09-23T10:05:00+08:00",
+  "signals": [{
+    "id": "run-42-decision",
+    "phase": "attention",
+    "urgency": "high",
+    "title": "评测等待确认",
+    "summary": "异常任务已暂停，请到评测页面决定下一步。",
+    "subject": "RoboDojo 评测",
+    "destination": "去评测页面处理",
+    "occurredAt": "2026-09-23T09:59:00+08:00",
+    "expiresAt": "2026-09-23T10:30:00+08:00",
+    "evidence": "confirmed"
+  }]
+}
+```
+
+`phase` is `attention`, `incident`, `upcoming` (requires `dueAt`), `result`,
+`progress`, or `note`. `evidence` is `confirmed` or `source_reported`; the
+official theme labels unverified attention as “待核对”. Both source and signal
+expiration suppress stale claims. The official scene selects one fresh signal
+in that phase order, shows stale data as “状态未更新”, and keeps RemoteLab counts in
+a small side panel. `GET /v1/people/{personId}/status` and `preview.png` expose
+the Person-scoped snapshot and preview to the local administrator only.
+
+`REMOTELAB_DISPLAY_THEME_MODULE=/absolute/path/theme.mjs` selects a locally
+trusted ES module exporting synchronous `renderTheme(snapshot, { metrics,
+nowMs })` that returns a 1920×480 SVG string. Custom theme code executes in the
+sidecar process and must not be installed from untrusted uploads. The sidecar
+converts SVG to PNG; the Mac agent still periodically pulls a full frame and
+sends it over USB. Run `node display/render-previews.mjs <output-directory>` to
+inspect official progress, confirmed-attention, and stale states before
+activating the pilot.

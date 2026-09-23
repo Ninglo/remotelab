@@ -57,6 +57,7 @@ async function waitFor(url, timeoutMs = 10_000) {
 
 const apiPort = await reservePort();
 const displayPort = await reservePort();
+let sessionsUnavailable = false;
 const api = createServer((req, res) => {
   if (req.url.startsWith('/?token=')) {
     res.writeHead(302, { Location: '/', 'Set-Cookie': 'session_token=test; Path=/' });
@@ -64,6 +65,7 @@ const api = createServer((req, res) => {
     return;
   }
   if (req.url === '/api/sessions') {
+    if (sessionsUnavailable) { res.writeHead(503); res.end('sessions unavailable'); return; }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ sessions: [
       {
@@ -87,7 +89,7 @@ const api = createServer((req, res) => {
 });
 await new Promise((resolve) => api.listen(apiPort, '127.0.0.1', resolve));
 
-const child = spawn(process.execPath, ['display/server.mjs'], {
+const displaySpawn = {
   cwd: new URL('..', import.meta.url).pathname,
   env: {
     ...process.env,
@@ -95,12 +97,18 @@ const child = spawn(process.execPath, ['display/server.mjs'], {
     REMOTELAB_CONFIG_DIR: configDir,
     REMOTELAB_CHAT_BASE_URL: `http://127.0.0.1:${apiPort}`,
     REMOTELAB_DISPLAY_PORT: String(displayPort),
+    REMOTELAB_DISPLAY_RENDER_MODE: 'signals',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
-});
+};
 let logs = '';
-child.stdout.on('data', (chunk) => { logs += chunk; });
-child.stderr.on('data', (chunk) => { logs += chunk; });
+function launchDisplay() {
+  const proc = spawn(process.execPath, ['display/server.mjs'], displaySpawn);
+  proc.stdout.on('data', (chunk) => { logs += chunk; });
+  proc.stderr.on('data', (chunk) => { logs += chunk; });
+  return proc;
+}
+let child = launchDisplay();
 
 try {
   await waitFor(`http://127.0.0.1:${displayPort}/healthz`);
@@ -149,6 +157,57 @@ try {
   assert.equal(frame.headers.get('x-remotelab-display-running'), '1');
   const png = Buffer.from(await frame.arrayBuffer());
   assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const sourcePath = `http://127.0.0.1:${displayPort}/v1/people/${personA}/sources/evaluation`;
+  const now = Date.now();
+  const sourcePacket = {
+    schemaVersion: 1, sequence: 1, label: 'Evaluation',
+    observedAt: new Date(now).toISOString(), validUntil: new Date(now + 60_000).toISOString(),
+    signals: [{
+      id: 'run-42', phase: 'attention', urgency: 'high', title: '评测等待确认',
+      summary: '请在原应用检查。', subject: 'RoboDojo', destination: '去评测页面',
+      occurredAt: new Date(now).toISOString(), expiresAt: new Date(now + 60_000).toISOString(),
+      evidence: 'confirmed',
+    }],
+  };
+  const sourceDenied = await fetch(sourcePath, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sourcePacket) });
+  assert.equal(sourceDenied.status, 401, 'only local admin authority can publish signals');
+  const sourceWrite = await fetch(sourcePath, { method: 'PUT', headers: publicHeaders, body: JSON.stringify(sourcePacket) });
+  assert.equal(sourceWrite.status, 200);
+  assert.equal((await sourceWrite.json()).changed, true);
+  const sourceAgain = await fetch(sourcePath, { method: 'PUT', headers: publicHeaders, body: JSON.stringify(sourcePacket) });
+  assert.equal((await sourceAgain.json()).reason, 'duplicate');
+  const sourceConflict = await fetch(sourcePath, { method: 'PUT', headers: publicHeaders, body: JSON.stringify({ ...sourcePacket, label: 'Changed' }) });
+  assert.equal(sourceConflict.status, 409);
+  const statusA = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/status`, { headers: publicHeaders });
+  assert.equal(statusA.status, 200);
+  assert.equal((await statusA.json()).scene.signal.title, '评测等待确认');
+  const statusB = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/status`, { headers: publicHeaders });
+  assert.equal(statusB.status, 200);
+  assert.equal((await statusB.json()).snapshot.signals.some((signal) => signal.sourceId === 'evaluation'), false);
+  const preview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/preview.png`, { headers: publicHeaders });
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get('content-type'), 'image/png');
+  const sourceFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
+  assert.equal(sourceFrame.status, 200);
+  assert.notDeepEqual(Buffer.from(await sourceFrame.arrayBuffer()), png, 'published signal should change the real device frame');
+  child.kill('SIGTERM');
+  await new Promise((resolve) => child.once('exit', resolve));
+  child = launchDisplay();
+  await waitFor(`http://127.0.0.1:${displayPort}/healthz`);
+  const recovered = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/status`, { headers: publicHeaders });
+  assert.equal((await recovered.json()).scene.signal.title, '评测等待确认', 'a source snapshot must survive sidecar restart');
+  const withdrawn = await fetch(sourcePath, {
+    method: 'PUT', headers: publicHeaders,
+    body: JSON.stringify({ ...sourcePacket, sequence: 2, signals: [] }),
+  });
+  assert.equal(withdrawn.status, 200);
+  sessionsUnavailable = true;
+  const staleStatus = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/status`, { headers: publicHeaders });
+  assert.equal((await staleStatus.json()).scene.kind, 'stale', 'unavailable RemoteLab data must not be shown as fresh');
+  const staleFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
+  assert.equal(staleFrame.status, 200, `device should still receive an honest stale frame: ${staleFrame.status === 200 ? '' : await staleFrame.text()} ${logs.slice(-1200)}`);
+  sessionsUnavailable = false;
 
   const personADevices = await fetch(`http://127.0.0.1:${displayPort}/v1/devices?personId=${personA}`, {
     headers: { Authorization: `Bearer ${admin}` },
