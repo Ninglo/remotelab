@@ -16,7 +16,7 @@ The operator supplies the Unix username, its active RemoteLab systemd service na
 
 ```bash
 remotelab github-workspace prepare --unix-user PERSON_UNIX_USER --service REMOTELAB_SERVICE --auth-file INSTANCE_AUTH_JSON --account GITHUB_USER
-gh auth login --git-protocol ssh --skip-ssh-key
+gh auth login --web --git-protocol ssh
 gh ssh-key add PATH_FROM_PREPARE_OUTPUT --type authentication
 ssh -T -i PRIVATE_KEY_PATH_FROM_PREPARE_OUTPUT -o IdentitiesOnly=yes git@github.com
 remotelab github-workspace activate --unix-user PERSON_UNIX_USER --service REMOTELAB_SERVICE --auth-file INSTANCE_AUTH_JSON --account GITHUB_USER --repo OWNER/REPO --name "Git display name" --email VERIFIED_EMAIL
