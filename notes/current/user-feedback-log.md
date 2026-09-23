@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-23 — Auto belongs before model selection; Quick can be an internal tier
+
+- Observed friction: the composer puts `Auto (Jev)` inside the model list while separately offering Standard and Quick, making the selected runtime unclear even though the first-turn route already persists a concrete model and Effort.
+- Product implication: present Auto / Custom as the user choice; expose the resolved model and Effort after Auto routes; evaluate Quick as an internal low-Effort tier rather than a third visible mode.
+- Evidence and limit: a five-tier Jev candidate matched 21/22 holdout synthetic first-message labels, with one conservative Quality escalation. GPT-6 Sol low and xhigh both answered 6/6 short tasks; low did not improve median latency in this small CLI check. No production UI or routing change followed from this experiment.
+- Evaluation: `notes/archive/auto-custom-routing-eval-20260923/README.md`.
+
 ### 2026-09-15 — Codex login needs account identity and current limits
 
 - Observed friction: frequent account changes made a plain signed-in badge insufficient to identify the account currently used by the instance.

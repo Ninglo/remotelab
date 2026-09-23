@@ -1,0 +1,214 @@
+{
+  "summary": {
+    "low": {
+      "correct": 6,
+      "cases": 6,
+      "medianMs": 3670,
+      "totalInputTokens": 112125,
+      "totalOutputTokens": 54,
+      "totalReasoningTokens": 0
+    },
+    "xhigh": {
+      "correct": 6,
+      "cases": 6,
+      "medianMs": 3231,
+      "totalInputTokens": 112125,
+      "totalOutputTokens": 52,
+      "totalReasoningTokens": 0
+    }
+  },
+  "results": [
+    {
+      "id": "arithmetic",
+      "effort": "low",
+      "code": 0,
+      "ms": 2814,
+      "answer": "42",
+      "usage": {
+        "input_tokens": 18677,
+        "cached_input_tokens": 11776,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 5,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "arithmetic",
+      "effort": "xhigh",
+      "code": 0,
+      "ms": 2986,
+      "answer": "42",
+      "usage": {
+        "input_tokens": 18677,
+        "cached_input_tokens": 11776,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 5,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "date",
+      "effort": "xhigh",
+      "code": 0,
+      "ms": 12306,
+      "answer": "2026-10-03",
+      "usage": {
+        "input_tokens": 18692,
+        "cached_input_tokens": 11776,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 10,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "date",
+      "effort": "low",
+      "code": 0,
+      "ms": 3646,
+      "answer": "2026-10-03",
+      "usage": {
+        "input_tokens": 18692,
+        "cached_input_tokens": 7040,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 10,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "sort",
+      "effort": "low",
+      "code": 0,
+      "ms": 9800,
+      "answer": "2,5,11,17",
+      "usage": {
+        "input_tokens": 18690,
+        "cached_input_tokens": 11776,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 11,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "sort",
+      "effort": "xhigh",
+      "code": 0,
+      "ms": 3248,
+      "answer": "2,5,11,17",
+      "usage": {
+        "input_tokens": 18690,
+        "cached_input_tokens": 16896,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 11,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "translate",
+      "effort": "xhigh",
+      "code": 0,
+      "ms": 3214,
+      "answer": "明天见。",
+      "usage": {
+        "input_tokens": 18684,
+        "cached_input_tokens": 18432,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "translate",
+      "effort": "low",
+      "code": 0,
+      "ms": 3693,
+      "answer": "明天见。",
+      "usage": {
+        "input_tokens": 18684,
+        "cached_input_tokens": 11776,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 8,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "extract",
+      "effort": "low",
+      "code": 0,
+      "ms": 4611,
+      "answer": "红色。",
+      "usage": {
+        "input_tokens": 18695,
+        "cached_input_tokens": 16896,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 7,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "extract",
+      "effort": "xhigh",
+      "code": 0,
+      "ms": 2775,
+      "answer": "红色",
+      "usage": {
+        "input_tokens": 18695,
+        "cached_input_tokens": 11776,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 6,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "rewrite",
+      "effort": "xhigh",
+      "code": 0,
+      "ms": 8397,
+      "answer": "方便的话，请尽快回复我。",
+      "usage": {
+        "input_tokens": 18687,
+        "cached_input_tokens": 11776,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 12,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    },
+    {
+      "id": "rewrite",
+      "effort": "low",
+      "code": 0,
+      "ms": 3210,
+      "answer": "方便的话，请尽快回复我，谢谢。",
+      "usage": {
+        "input_tokens": 18687,
+        "cached_input_tokens": 16896,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 13,
+        "reasoning_output_tokens": 0
+      },
+      "error": "",
+      "correct": true
+    }
+  ]
+}

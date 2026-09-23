@@ -1,0 +1,870 @@
+{
+  "summary": {
+    "development": {
+      "cases": 31,
+      "candidateCorrect": 31,
+      "currentCorrectOnSharedTiers": 24,
+      "sharedTierCases": 24,
+      "candidateErrors": 0,
+      "currentFallbacks": 0
+    },
+    "holdout": {
+      "cases": 22,
+      "candidateCorrect": 21,
+      "currentCorrectOnSharedTiers": 17,
+      "sharedTierCases": 17,
+      "candidateErrors": 0,
+      "currentFallbacks": 0
+    }
+  },
+  "results": [
+    {
+      "set": "development",
+      "id": "b1",
+      "gold": "balanced",
+      "prompt": "读取当前项目 package.json 的 version 字段，只返回值。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 92,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.98,
+        "qualityProbability": 0.02,
+        "ms": 183
+      }
+    },
+    {
+      "set": "development",
+      "id": "b2",
+      "gold": "balanced",
+      "prompt": "列出这个目录里的三个 Markdown 文件名。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 167,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.89,
+        "qualityProbability": 0.09,
+        "ms": 185
+      }
+    },
+    {
+      "set": "development",
+      "id": "b3",
+      "gold": "balanced",
+      "prompt": "读取 workspace/names.csv 中的十个姓名，按拼音排序后输出列表。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 149,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.99,
+        "qualityProbability": 0.01,
+        "ms": 146
+      }
+    },
+    {
+      "set": "development",
+      "id": "b4",
+      "gold": "balanced",
+      "prompt": "明天下午三点在我的日历加一个“交周报”的提醒。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 119,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.94,
+        "qualityProbability": 0.02,
+        "ms": 181
+      }
+    },
+    {
+      "set": "development",
+      "id": "b5",
+      "gold": "balanced",
+      "prompt": "根据这份完整的三行表格计算合计和平均数。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 181,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.67,
+        "qualityProbability": 0.07,
+        "ms": 121
+      }
+    },
+    {
+      "set": "development",
+      "id": "b6",
+      "gold": "balanced",
+      "prompt": "读取 docs/email.md 里的三句话邮件，拟一个简短标题。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 178,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.95,
+        "qualityProbability": 0.02,
+        "ms": 186
+      }
+    },
+    {
+      "set": "development",
+      "id": "c1",
+      "gold": "quality",
+      "prompt": "修复生产服务里的竞态问题，跑相关测试并部署。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 169,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 1,
+        "qualityProbability": 1,
+        "ms": 131
+      }
+    },
+    {
+      "set": "development",
+      "id": "c2",
+      "gold": "quality",
+      "prompt": "帮我分析这个研究方向，找出关键实验和评测风险。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 156,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.95,
+        "qualityProbability": 0.95,
+        "ms": 125
+      }
+    },
+    {
+      "set": "development",
+      "id": "c3",
+      "gold": "quality",
+      "prompt": "结合我们前面的聊天内容，判断下一步该怎么处理。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 107,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.92,
+        "qualityProbability": 0.92,
+        "ms": 165
+      }
+    },
+    {
+      "set": "development",
+      "id": "c4",
+      "gold": "quality",
+      "prompt": "这批医疗检查结果意味着什么，我应该如何处理？",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 164,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 1,
+        "qualityProbability": 1,
+        "ms": 165
+      }
+    },
+    {
+      "set": "development",
+      "id": "c5",
+      "gold": "quality",
+      "prompt": "快点修好支付系统的金额计算错误并上线。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 153,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 1,
+        "qualityProbability": 1,
+        "ms": 163
+      }
+    },
+    {
+      "set": "development",
+      "id": "c6",
+      "gold": "quality",
+      "prompt": "设计一次数据库迁移，确保已有任务和正在运行的会话不会被改写。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 188,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.96,
+        "qualityProbability": 0.96,
+        "ms": 142
+      }
+    },
+    {
+      "set": "development",
+      "id": "c7",
+      "gold": "quality",
+      "prompt": "评估一个 Auto 路由策略：要比较速度、成本、误判和真实任务质量。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 235,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.87,
+        "qualityProbability": 0.87,
+        "ms": 217
+      }
+    },
+    {
+      "set": "development",
+      "id": "e1",
+      "gold": "economy",
+      "prompt": "只是随便打个招呼，请用最便宜的模型回复“嗨”。",
+      "current": "economy",
+      "currentStatus": "routed",
+      "currentMs": 104,
+      "candidate": {
+        "choice": "economy",
+        "final": "economy",
+        "confidence": 0.98,
+        "qualityProbability": 0,
+        "ms": 205
+      }
+    },
+    {
+      "set": "development",
+      "id": "e2",
+      "gold": "economy",
+      "prompt": "随便讲一个笑话，优先最低成本，不要求质量。",
+      "current": "economy",
+      "currentStatus": "routed",
+      "currentMs": 164,
+      "candidate": {
+        "choice": "economy",
+        "final": "economy",
+        "confidence": 0.99,
+        "qualityProbability": 0,
+        "ms": 141
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hb1",
+      "gold": "balanced",
+      "prompt": "查看项目 package.json 里 scripts.test 的值。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 126,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.95,
+        "qualityProbability": 0.05,
+        "ms": 194
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hb2",
+      "gold": "balanced",
+      "prompt": "统计桌面目录中每种图片扩展名的文件数。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 377,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.85,
+        "qualityProbability": 0.13,
+        "ms": 151
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hb3",
+      "gold": "balanced",
+      "prompt": "从附件表格里取三项数字求和，给出算式。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 139,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.9,
+        "qualityProbability": 0.09,
+        "ms": 83
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hb4",
+      "gold": "balanced",
+      "prompt": "在日历里添加明天早上九点的半小时会议。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 147,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.94,
+        "qualityProbability": 0.05,
+        "ms": 110
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hb5",
+      "gold": "balanced",
+      "prompt": "看一下本机 Git 当前在哪个分支。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 150,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.82,
+        "qualityProbability": 0.11,
+        "ms": 113
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hc1",
+      "gold": "quality",
+      "prompt": "把生产服务从旧接口迁到新接口，保证老数据可用并完成部署。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 106,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 1,
+        "qualityProbability": 1,
+        "ms": 109
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hc2",
+      "gold": "quality",
+      "prompt": "看这篇论文的实验，判断结论是否被数据支持。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 141,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.66,
+        "qualityProbability": 0.66,
+        "ms": 118
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hc3",
+      "gold": "quality",
+      "prompt": "核实今天这家公司最新融资额并给出处。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 155,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.98,
+        "qualityProbability": 0.98,
+        "ms": 161
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hc4",
+      "gold": "quality",
+      "prompt": "根据我们之前的结论决定项目下一步方向。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 176,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.99,
+        "qualityProbability": 0.99,
+        "ms": 132
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hc5",
+      "gold": "quality",
+      "prompt": "简单回答我现在能不能停药。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 132,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.97,
+        "qualityProbability": 0.97,
+        "ms": 135
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hc6",
+      "gold": "quality",
+      "prompt": "立刻删除所有重复订单并退款。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 156,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.98,
+        "qualityProbability": 0.98,
+        "ms": 93
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "he1",
+      "gold": "economy",
+      "prompt": "用最省钱的模型随便聊两句，不用保证回答质量。",
+      "current": "economy",
+      "currentStatus": "routed",
+      "currentMs": 165,
+      "candidate": {
+        "choice": "economy",
+        "final": "economy",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 139
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hm1",
+      "gold": "quality",
+      "prompt": "一句话告诉我刚才发来的合同有什么违约风险。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 136,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.83,
+        "qualityProbability": 0.83,
+        "ms": 113
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hm2",
+      "gold": "balanced",
+      "prompt": "请快点查一下当前服务器的磁盘剩余空间，只返回数字。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 109,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.61,
+        "qualityProbability": 0.61,
+        "ms": 126
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hm3",
+      "gold": "sota",
+      "prompt": "尽快答复，但必须使用最强的模型和最高推理档。",
+      "current": "sota",
+      "currentStatus": "routed",
+      "currentMs": 129,
+      "candidate": {
+        "choice": "sota",
+        "final": "sota",
+        "confidence": 0.99,
+        "qualityProbability": 0,
+        "ms": 99
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hm4",
+      "gold": "quality",
+      "prompt": "只回答“可以”或“不可以”：我们能立即关闭生产数据库备份吗？",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 123,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.81,
+        "qualityProbability": 0.81,
+        "ms": 145
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hq1",
+      "gold": "quick",
+      "prompt": "写一句生日祝福，不超过 15 字。",
+      "current": "economy",
+      "currentStatus": "routed",
+      "currentMs": 136,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 162
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hq2",
+      "gold": "quick",
+      "prompt": "把 “Please confirm receipt.” 翻译成中文，只给译文。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 140,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 112
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hq3",
+      "gold": "quick",
+      "prompt": "检查这句话有没有错别字，只回答修改后的句子：这个功能已经上线了。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 113,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 179
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hq4",
+      "gold": "quick",
+      "prompt": "2 + 2 等于几？只回答数字。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 111,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 0.96,
+        "qualityProbability": 0,
+        "ms": 194
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hq5",
+      "gold": "quick",
+      "prompt": "用一句话解释什么是 API，不用查资料。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 95,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 82
+      }
+    },
+    {
+      "set": "holdout",
+      "id": "hs1",
+      "gold": "sota",
+      "prompt": "使用当前最强模型和最高推理强度，仔细审查这个方案。",
+      "current": "sota",
+      "currentStatus": "routed",
+      "currentMs": 177,
+      "candidate": {
+        "choice": "sota",
+        "final": "sota",
+        "confidence": 0.97,
+        "qualityProbability": 0.03,
+        "ms": 178
+      }
+    },
+    {
+      "set": "development",
+      "id": "m1",
+      "gold": "quality",
+      "prompt": "一句话说清楚：生产数据库的数据丢失风险和恢复步骤。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 187,
+      "candidate": {
+        "choice": "quick",
+        "final": "quality",
+        "confidence": 0.57,
+        "qualityProbability": 0.4,
+        "ms": 223
+      }
+    },
+    {
+      "set": "development",
+      "id": "m2",
+      "gold": "balanced",
+      "prompt": "请尽快从当前文件里读出公开 SSH 公钥，只输出公钥。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 102,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.96,
+        "qualityProbability": 0.04,
+        "ms": 183
+      }
+    },
+    {
+      "set": "development",
+      "id": "m3",
+      "gold": "quality",
+      "prompt": "不要调用工具，只告诉我今天这只股票的最新价格，必须准确。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 148,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.95,
+        "qualityProbability": 0.95,
+        "ms": 118
+      }
+    },
+    {
+      "set": "development",
+      "id": "m4",
+      "gold": "quality",
+      "prompt": "用最便宜的模型告诉我这些症状是否需要急诊。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 122,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.94,
+        "qualityProbability": 0.94,
+        "ms": 105
+      }
+    },
+    {
+      "set": "development",
+      "id": "m5",
+      "gold": "quality",
+      "prompt": "把我刚才在另一个会话说的需求总结成一句话。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 115,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 0.79,
+        "qualityProbability": 0.79,
+        "ms": 243
+      }
+    },
+    {
+      "set": "development",
+      "id": "m6",
+      "gold": "balanced",
+      "prompt": "这个 Markdown 文件有没有“安装”标题？只回复是或否。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 149,
+      "candidate": {
+        "choice": "balanced",
+        "final": "balanced",
+        "confidence": 0.84,
+        "qualityProbability": 0.04,
+        "ms": 106
+      }
+    },
+    {
+      "set": "development",
+      "id": "m7",
+      "gold": "quick",
+      "prompt": "给我两个更简短的“收到，谢谢”表达。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 214,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 243
+      }
+    },
+    {
+      "set": "development",
+      "id": "m8",
+      "gold": "quality",
+      "prompt": "尽快完成线上权限系统的修复，兼容旧会话并验证回滚方案。",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 114,
+      "candidate": {
+        "choice": "quality",
+        "final": "quality",
+        "confidence": 1,
+        "qualityProbability": 1,
+        "ms": 145
+      }
+    },
+    {
+      "set": "development",
+      "id": "q1",
+      "gold": "quick",
+      "prompt": "你好！",
+      "current": "economy",
+      "currentStatus": "routed",
+      "currentMs": 143,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 198
+      }
+    },
+    {
+      "set": "development",
+      "id": "q2",
+      "gold": "quick",
+      "prompt": "把“我现在没空”改成更礼貌的一句话。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 154,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 247
+      }
+    },
+    {
+      "set": "development",
+      "id": "q3",
+      "gold": "quick",
+      "prompt": "只回答版本号：Gemini 的主版本是 3.0。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 148,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 0.83,
+        "qualityProbability": 0.1,
+        "ms": 192
+      }
+    },
+    {
+      "set": "development",
+      "id": "q4",
+      "gold": "quick",
+      "prompt": "Translate “see you tomorrow” into Chinese. Only the translation.",
+      "current": "quality",
+      "currentStatus": "routed",
+      "currentMs": 182,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 254
+      }
+    },
+    {
+      "set": "development",
+      "id": "q5",
+      "gold": "quick",
+      "prompt": "一句话解释什么是哈希函数，不用查资料。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 147,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 140
+      }
+    },
+    {
+      "set": "development",
+      "id": "q6",
+      "gold": "quick",
+      "prompt": "把这句话缩短到 20 字以内：我们将在核对数据之后尽快给出完整答复。",
+      "current": "balanced",
+      "currentStatus": "routed",
+      "currentMs": 190,
+      "candidate": {
+        "choice": "quick",
+        "final": "quick",
+        "confidence": 1,
+        "qualityProbability": 0,
+        "ms": 90
+      }
+    },
+    {
+      "set": "development",
+      "id": "s1",
+      "gold": "sota",
+      "prompt": "这次请使用最强的 GPT-6 Astra 和最高思考档位来分析。",
+      "current": "sota",
+      "currentStatus": "routed",
+      "currentMs": 140,
+      "candidate": {
+        "choice": "sota",
+        "final": "sota",
+        "confidence": 0.99,
+        "qualityProbability": 0,
+        "ms": 179
+      }
+    },
+    {
+      "set": "development",
+      "id": "s2",
+      "gold": "sota",
+      "prompt": "这是极其重要的决策，请用你最强的模型和最大推理努力处理。",
+      "current": "sota",
+      "currentStatus": "routed",
+      "currentMs": 118,
+      "candidate": {
+        "choice": "sota",
+        "final": "sota",
+        "confidence": 0.98,
+        "qualityProbability": 0.01,
+        "ms": 101
+      }
+    }
+  ]
+}
