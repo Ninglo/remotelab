@@ -88,11 +88,12 @@ const previewServer = createServer(async (req, res) => {
   let body = '';
   for await (const chunk of req) body += chunk;
   previewCall = { authorization: req.headers.authorization, personId: req.headers['x-preview-person-id'], body };
-  json(res, 200, { ok: true, frameId: 'sample-frame' });
+  json(res, 200, req.method === 'GET' ? { devices: [{ name: 'Test display' }] } : { ok: true, frameId: 'sample-frame' });
 });
 const previewPort = await listen(previewServer);
 process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_BASE_URL = `http://127.0.0.1:${previewPort}`;
 process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_TOKEN_FILE = previewTokenFile;
+process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_PERSON_ID = 'person-a';
 
 const main = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://main.test').pathname;
@@ -174,6 +175,19 @@ try {
   assert.equal(studio.response.status, 200);
   assert.equal(studio.payload.frameId, 'sample-frame');
   assert.deepEqual(previewCall, { authorization: 'Bearer preview-secret', personId: 'person-a', body: '{"version":14}' });
+  const privateToken = 'a'.repeat(64);
+  const deniedPublicStudio = await requestJson(`${base}/display/studio-preview`, {
+    method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '{}',
+  });
+  assert.equal(deniedPublicStudio.response.status, 401);
+  const publicStatus = await requestJson(`${base}/display/studio-preview/status`, { headers: { Authorization: `Bearer ${privateToken}` } });
+  assert.equal(publicStatus.response.status, 200);
+  assert.deepEqual(publicStatus.payload.devices, [{ name: 'Test display' }]);
+  const publicStudio = await requestJson(`${base}/display/studio-preview`, {
+    method: 'POST', headers: { Origin: base, Authorization: `Bearer ${privateToken}`, 'Content-Type': 'application/json' }, body: '{"version":14}',
+  });
+  assert.equal(publicStudio.response.status, 200);
+  assert.deepEqual(previewCall, { authorization: `Bearer ${privateToken}`, personId: 'person-a', body: '{"version":14}' });
 
   assert.equal(calls.find((call) => call.path === '/install.sh').authorization, '');
   assert.equal(calls.find((call) => call.path === '/v1/enrollments').body, JSON.stringify({ personId: 'person-a' }));
