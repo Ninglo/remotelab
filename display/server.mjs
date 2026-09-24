@@ -27,6 +27,7 @@ const adminTokenFile = process.env.REMOTELAB_DISPLAY_ADMIN_TOKEN_FILE
   || join(configDir, 'display-admin-token');
 const signalFile = process.env.REMOTELAB_DISPLAY_SIGNAL_FILE || join(configDir, 'display-signals.json');
 const personalFile = process.env.REMOTELAB_DISPLAY_PERSONAL_FILE || join(configDir, 'display-personal-content.json');
+const previewFile = process.env.REMOTELAB_DISPLAY_PREVIEW_FILE || join(configDir, 'display-preview-frames.json');
 const renderMode = process.env.REMOTELAB_DISPLAY_RENDER_MODE || 'classic';
 if (!['classic', 'signals'].includes(renderMode)) throw new Error('Unknown display render mode');
 const themeUrl = process.env.REMOTELAB_DISPLAY_THEME_MODULE
@@ -38,6 +39,7 @@ const enrollmentTtlMs = 10 * 60 * 1000;
 const saveState = createSerialTaskQueue();
 const saveSignals = createSerialTaskQueue();
 const savePersonal = createSerialTaskQueue();
+const savePreview = createSerialTaskQueue();
 let personalStorePromise;
 const preparedPersonal = new Map();
 const client = createRemoteLabHttpClient({
@@ -154,6 +156,23 @@ async function updatePersonal(personId, entry) {
     await chmod(personalFile, 0o600);
     personalStorePromise = Promise.resolve(next);
     preparedPersonal.delete(personId);
+  });
+}
+
+async function previewFor(personId) {
+  const entry = (await readJson(previewFile, { version: 1, people: {} })).people?.[personId];
+  if (!entry || Date.parse(entry.expiresAt) <= Date.now()) return null;
+  return entry;
+}
+
+async function updatePreview(personId, entry) {
+  return savePreview(async () => {
+    const current = await readJson(previewFile, { version: 1, people: {} });
+    const people = { ...current.people };
+    if (entry) people[personId] = entry;
+    else delete people[personId];
+    await writeJsonAtomic(previewFile, { version: 1, people });
+    await chmod(previewFile, 0o600);
   });
 }
 
@@ -365,6 +384,11 @@ function snapshotSvg(snapshot) {
 }
 
 async function renderFrame(personId) {
+  const preview = await previewFor(personId);
+  if (preview) {
+    await getPersonIdentityIds(personId);
+    return { png: Buffer.from(preview.pngBase64, 'base64'), snapshot: { observedAt: preview.updatedAt }, pollSeconds: 1 };
+  }
   const personal = await personalFor(personId);
   if (personal) {
     await getPersonIdentityIds(personId);
@@ -437,6 +461,32 @@ async function handle(req, res) {
   }
   if (pathname === '/agent.py' && req.method === 'GET') {
     sendText(res, 200, 'text/x-python; charset=utf-8', await readFile(join(moduleDir, 'agent.py')));
+    return;
+  }
+  const previewMatch = /^\/v1\/people\/([^/]+)\/preview-frame$/.exec(pathname);
+  if (previewMatch && ['GET', 'PUT', 'DELETE'].includes(req.method)) {
+    if (!await requireAdmin(req, res, url)) return;
+    const personId = decodeURIComponent(previewMatch[1]);
+    await getPersonIdentityIds(personId);
+    if (req.method === 'GET') {
+      const entry = await previewFor(personId);
+      sendJson(res, 200, entry ? { configured: true, frameId: entry.frameId, updatedAt: entry.updatedAt, expiresAt: entry.expiresAt } : { configured: false });
+      return;
+    }
+    if (req.method === 'DELETE') {
+      await updatePreview(personId, null);
+      sendJson(res, 200, { configured: false });
+      return;
+    }
+    const payload = await readRequestJson(req, 9 * 1024 * 1024);
+    if (typeof payload.pngBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(payload.pngBase64) || payload.pngBase64.length > 8 * 1024 * 1024) throw Object.assign(new Error('Invalid preview PNG'), { status: 400 });
+    const png = Buffer.from(payload.pngBase64, 'base64');
+    if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.readUInt32BE(16) !== 1920 || png.readUInt32BE(20) !== 480) throw Object.assign(new Error('Preview must be 1920 x 480 PNG'), { status: 400 });
+    const frameId = createHash('sha256').update(png).digest('hex').slice(0, 12);
+    const updatedAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await updatePreview(personId, { pngBase64: payload.pngBase64, frameId, updatedAt, expiresAt });
+    sendJson(res, 200, { configured: true, frameId, updatedAt, expiresAt });
     return;
   }
   const personStatusMatch = /^\/v1\/people\/([^/]+)\/(status|preview\.png|content|content\.gif)$/.exec(pathname);

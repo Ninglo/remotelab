@@ -20,6 +20,18 @@ function adminTokenFile() {
   return join(configDir, 'display-admin-token');
 }
 
+async function studioPreviewConfig() {
+  const configDir = process.env.REMOTELAB_CONFIG_DIR || join(homedir(), '.config', 'remotelab');
+  let stored = {};
+  try { stored = JSON.parse(await readFile(join(configDir, 'display-studio-preview.json'), 'utf8')); } catch {}
+  const baseUrl = trimString(process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_BASE_URL || stored.baseUrl);
+  return {
+    baseUrl: /^http:\/\/127\.0\.0\.1:\d+$/.test(baseUrl) ? baseUrl : '',
+    tokenFile: trimString(process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_TOKEN_FILE || stored.tokenFile),
+    personId: trimString(process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_PERSON_ID || stored.personId),
+  };
+}
+
 async function adminToken() {
   return trimString(await readFile(adminTokenFile(), 'utf8'));
 }
@@ -87,6 +99,29 @@ function publicDisplayPath(pathname, method) {
 }
 
 export async function handleDisplayPublicRoutes({ req, res, pathname, writeJson }) {
+  if ((pathname === '/display/studio-preview' && req.method === 'POST') || (pathname === '/display/studio-preview/status' && req.method === 'GET')) {
+    try {
+      const config = await studioPreviewConfig();
+      if (!config.baseUrl || !config.personId) { writeJson(res, 503, { error: '副屏预览通道未配置。' }); return true; }
+      const suppliedOrigin = singleHeader(req.headers.origin);
+      const forwarded = forwardedOriginHeaders(req);
+      const expectedOrigin = `${forwarded['X-Forwarded-Proto']}://${forwarded['X-Forwarded-Host']}`;
+      if (suppliedOrigin && suppliedOrigin !== expectedOrigin) { writeJson(res, 403, { error: '副屏预览请求来源不符。' }); return true; }
+      const authorization = singleHeader(req.headers.authorization);
+      if (!/^Bearer [a-f0-9]{64}$/.test(authorization)) { writeJson(res, 401, { error: '副屏预览专属链接无效。' }); return true; }
+      const body = req.method === 'POST' ? await readBody(req, 9 * 1024 * 1024) : undefined;
+      const response = await fetch(`${config.baseUrl}${req.method === 'POST' ? '/api/preview' : '/api/paired-device'}`, {
+        method: req.method,
+        headers: { Authorization: authorization, 'X-Preview-Person-Id': config.personId, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        ...(body !== undefined ? { body } : {}),
+        signal: AbortSignal.timeout(req.method === 'POST' ? 60_000 : 10_000),
+      });
+      await sendProxyResponse(res, response);
+    } catch (error) {
+      writeJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 503, { error: error?.code === 'BODY_TOO_LARGE' ? '画面或图片超过 9 MB。' : '副屏预览服务暂时不可用。' });
+    }
+    return true;
+  }
   const targetPath = publicDisplayPath(pathname, req.method);
   if (!targetPath) return false;
   try {
@@ -105,6 +140,28 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
   const personId = trimString(authSession?.personId);
   if (!personId) return false;
   try {
+    if (pathname === '/api/display/studio-preview' && req.method === 'POST') {
+      const config = await studioPreviewConfig();
+      const endpoint = config.baseUrl;
+      const tokenFile = config.tokenFile;
+      if (!endpoint || !tokenFile) { writeJson(res, 503, { error: '副屏预览通道未配置。' }); return true; }
+      const requestOrigin = trimString(req.headers.origin);
+      const expectedOrigin = `${forwardedOriginHeaders(req)['X-Forwarded-Proto']}://${forwardedOriginHeaders(req)['X-Forwarded-Host']}`;
+      if (requestOrigin !== expectedOrigin) { writeJson(res, 403, { error: '副屏预览请求来源不符。' }); return true; }
+      const raw = await readBody(req, 9 * 1024 * 1024);
+      const response = await fetch(`${endpoint.replace(/\/+$/, '')}/api/preview`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${trimString(await readFile(tokenFile, 'utf8'))}`,
+          'Content-Type': 'application/json',
+          'X-Preview-Person-Id': personId,
+        },
+        body: raw,
+        signal: AbortSignal.timeout(60_000),
+      });
+      await sendProxyResponse(res, response);
+      return true;
+    }
     if (pathname === '/api/display/content' && req.method === 'GET') {
       await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/content`, { authenticated: true });
       return true;
