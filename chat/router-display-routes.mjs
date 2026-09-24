@@ -105,6 +105,31 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
   const personId = trimString(authSession?.personId);
   if (!personId) return false;
   try {
+    if (pathname === '/api/display/studio-preview' && req.method === 'POST') {
+      const configDir = process.env.REMOTELAB_CONFIG_DIR || join(homedir(), '.config', 'remotelab');
+      let previewConfig = {};
+      try { previewConfig = JSON.parse(await readFile(join(configDir, 'display-studio-preview.json'), 'utf8')); } catch {}
+      const endpoint = trimString(process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_BASE_URL || previewConfig.baseUrl);
+      const tokenFile = trimString(process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_TOKEN_FILE || previewConfig.tokenFile);
+      if (!endpoint || !tokenFile) { writeJson(res, 503, { error: '副屏预览通道未配置。' }); return true; }
+      if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(endpoint)) { writeJson(res, 503, { error: '副屏预览通道只能使用本机地址。' }); return true; }
+      const requestOrigin = trimString(req.headers.origin);
+      const expectedOrigin = `${forwardedOriginHeaders(req)['X-Forwarded-Proto']}://${forwardedOriginHeaders(req)['X-Forwarded-Host']}`;
+      if (requestOrigin !== expectedOrigin) { writeJson(res, 403, { error: '副屏预览请求来源不符。' }); return true; }
+      const raw = await readBody(req, 9 * 1024 * 1024);
+      const response = await fetch(`${endpoint.replace(/\/+$/, '')}/api/preview`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${trimString(await readFile(tokenFile, 'utf8'))}`,
+          'Content-Type': 'application/json',
+          'X-Preview-Person-Id': personId,
+        },
+        body: raw,
+        signal: AbortSignal.timeout(60_000),
+      });
+      await sendProxyResponse(res, response);
+      return true;
+    }
     if (pathname === '/api/display/content' && req.method === 'GET') {
       await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/content`, { authenticated: true });
       return true;

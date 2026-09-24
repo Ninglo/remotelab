@@ -81,6 +81,18 @@ const sidecar = createServer(async (req, res) => {
 const sidecarPort = await listen(sidecar);
 process.env.REMOTELAB_DISPLAY_INTERNAL_BASE_URL = `http://127.0.0.1:${sidecarPort}`;
 process.env.REMOTELAB_DISPLAY_ADMIN_TOKEN_FILE = adminFile;
+const previewTokenFile = join(root, 'preview-token');
+await writeFile(previewTokenFile, 'preview-secret\n');
+let previewCall = null;
+const previewServer = createServer(async (req, res) => {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  previewCall = { authorization: req.headers.authorization, personId: req.headers['x-preview-person-id'], body };
+  json(res, 200, { ok: true, frameId: 'sample-frame' });
+});
+const previewPort = await listen(previewServer);
+process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_BASE_URL = `http://127.0.0.1:${previewPort}`;
+process.env.REMOTELAB_DISPLAY_STUDIO_PREVIEW_TOKEN_FILE = previewTokenFile;
 
 const main = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://main.test').pathname;
@@ -152,6 +164,17 @@ try {
   const other = await requestJson(`${base}/api/display/content`, { headers: { 'X-Test-Person': 'person-b' } });
   assert.equal(other.payload.personId, 'person-b');
 
+  const deniedStudio = await requestJson(`${base}/api/display/studio-preview`, {
+    method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{}',
+  });
+  assert.equal(deniedStudio.response.status, 403);
+  const studio = await requestJson(`${base}/api/display/studio-preview`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{"version":14}',
+  });
+  assert.equal(studio.response.status, 200);
+  assert.equal(studio.payload.frameId, 'sample-frame');
+  assert.deepEqual(previewCall, { authorization: 'Bearer preview-secret', personId: 'person-a', body: '{"version":14}' });
+
   assert.equal(calls.find((call) => call.path === '/install.sh').authorization, '');
   assert.equal(calls.find((call) => call.path === '/v1/enrollments').body, JSON.stringify({ personId: 'person-a' }));
   assert(calls.filter((call) => call.path.startsWith('/v1/devices?')).every(
@@ -162,6 +185,7 @@ try {
   await Promise.all([
     new Promise((resolve) => main.close(resolve)),
     new Promise((resolve) => sidecar.close(resolve)),
+    new Promise((resolve) => previewServer.close(resolve)),
   ]);
   await rm(root, { recursive: true, force: true });
 }
