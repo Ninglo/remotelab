@@ -48,6 +48,7 @@ async function sendProxyResponse(res, response) {
     'x-remotelab-display-observed-at',
     'x-remotelab-display-running',
     'x-remotelab-display-pending-review',
+    'x-remotelab-display-poll-seconds',
   ]) {
     const value = response.headers.get(name);
     if (value) headers[name] = value;
@@ -104,6 +105,32 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
   const personId = trimString(authSession?.personId);
   if (!personId) return false;
   try {
+    if (pathname === '/api/display/content' && req.method === 'GET') {
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/content`, { authenticated: true });
+      return true;
+    }
+    if (pathname === '/api/display/content.gif' && req.method === 'GET') {
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/content.gif`, { authenticated: true });
+      return true;
+    }
+    if (pathname === '/api/display/preview.png' && req.method === 'GET') {
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/preview.png`, { authenticated: true });
+      return true;
+    }
+    if (pathname === '/api/display/content' && req.method === 'PUT') {
+      const raw = await readBody(req, 4 * 1024 * 1024 + 1024);
+      let input;
+      try { input = JSON.parse(raw); } catch { writeJson(res, 400, { error: 'Invalid JSON' }); return true; }
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/content`, {
+        authenticated: true,
+        body: { sentence: input?.sentence, gifBase64: input?.gifBase64 },
+      });
+      return true;
+    }
+    if (pathname === '/api/display/content' && req.method === 'DELETE') {
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/content`, { authenticated: true });
+      return true;
+    }
     if (pathname === '/api/display/devices' && req.method === 'GET') {
       await proxy(req, res, `/v1/devices?personId=${encodeURIComponent(personId)}`, { authenticated: true });
       return true;
@@ -117,8 +144,10 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       await proxy(req, res, `/v1/devices/${device[1]}?personId=${encodeURIComponent(personId)}`, { authenticated: true });
       return true;
     }
-  } catch {
-    writeJson(res, 503, { error: 'Display service is unavailable' });
+  } catch (error) {
+    writeJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 503, {
+      error: error?.code === 'BODY_TOO_LARGE' ? 'GIF upload is too large' : 'Display service is unavailable',
+    });
     return true;
   }
   return false;

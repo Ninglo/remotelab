@@ -544,6 +544,63 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .settings-display-disconnect {
   color: var(--danger, #c64f4f);
 }
+.settings-display-personal {
+  margin-top: 20px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border);
+}
+.settings-display-personal .settings-display-devices-heading { margin-bottom: 5px; }
+.settings-display-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  aspect-ratio: 4 / 1;
+  min-height: 130px;
+  margin: 14px 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0b1118;
+  color: #f2f6f8;
+}
+.settings-display-preview-image {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  background: #151f29;
+  color: #91a6b5;
+  font-size: 12px;
+  text-align: center;
+}
+.settings-display-preview-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.settings-display-preview-text {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  font-size: clamp(15px, 2vw, 25px);
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.settings-display-field {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.settings-display-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+.settings-display-personal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* People */
 .settings-section-heading {

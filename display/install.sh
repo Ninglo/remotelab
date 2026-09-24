@@ -56,6 +56,8 @@ if ! "$python_bin" "$agent" check-usb; then
   fi
 fi
 
+"$python_bin" "$agent" check-device
+
 echo "Registering this display with $server_base …"
 "$python_bin" "$agent" enroll "$enrollment_url"
 

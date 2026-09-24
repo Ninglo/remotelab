@@ -16,6 +16,10 @@ assert.doesNotMatch(settings, /innerHTML\s*=\s*device\./, 'device metadata must 
 assert.match(i18n, /"settings\.display\.title": "Side display"/);
 assert.match(i18n, /"settings\.display\.title": "副屏"/);
 assert.match(css, /\.settings-display-command/);
+assert.match(settings, /\/api\/display\/content/);
+assert.match(settings, /settingsDisplayGif/);
+assert.match(settings, /settingsDisplaySentence/);
+assert.match(css, /\.settings-display-preview/);
 assert.match(template, /chat\/display-settings\.js/);
 
 console.log('ok - Settings includes a localized, person-scoped side display panel');

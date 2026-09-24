@@ -5,12 +5,23 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
+import { decodeGifFrames } from '../display/gif-frames.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'remotelab-display-test-'));
 const configDir = join(root, 'config');
 await mkdir(configDir, { recursive: true });
 const personA = 'person_display_a';
 const personB = 'person_display_b';
+const animatedGif = Buffer.from([
+  71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0, 255, 255, 255,
+  33, 249, 4, 0, 10, 0, 0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 1, 0,
+  33, 249, 4, 0, 10, 0, 0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x4c, 1, 0, 59,
+]);
+const decodedGif = decodeGifFrames(animatedGif);
+assert.equal(decodedGif.frames.length, 2);
+assert.notDeepEqual(decodedGif.frames[0].png, decodedGif.frames[1].png, 'GIF frames must actually differ');
+const installerSource = await readFile(new URL('../display/install.sh', import.meta.url), 'utf8');
+assert(installerSource.includes('check-device') && installerSource.indexOf('check-device') < installerSource.indexOf(' enroll "$enrollment_url"'), 'hardware must be checked before enrollment');
 await writeFile(join(configDir, 'auth.json'), JSON.stringify({
   version: 2,
   serviceToken: 'a'.repeat(64),
@@ -157,6 +168,37 @@ try {
   assert.equal(frame.headers.get('x-remotelab-display-running'), '1');
   const png = Buffer.from(await frame.arrayBuffer());
   assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+
+  const contentUrl = `http://127.0.0.1:${displayPort}/v1/people/${personA}/content`;
+  const contentPayload = { sentence: '今天先做好一件事', gifBase64: animatedGif.toString('base64') };
+  const deniedContent = await fetch(contentUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contentPayload) });
+  assert.equal(deniedContent.status, 401);
+  const savedContent = await fetch(contentUrl, { method: 'PUT', headers: publicHeaders, body: JSON.stringify(contentPayload) });
+  assert.equal(savedContent.status, 200);
+  assert.equal((await savedContent.json()).sentence, contentPayload.sentence);
+  const ownContent = await fetch(contentUrl, { headers: publicHeaders });
+  assert.equal((await ownContent.json()).configured, true);
+  const otherContent = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/content`, { headers: publicHeaders });
+  assert.equal((await otherContent.json()).configured, false, 'other people keep their own screen');
+  const image = await fetch(`${contentUrl}.gif`, { headers: publicHeaders });
+  assert.deepEqual(Buffer.from(await image.arrayBuffer()), animatedGif);
+  const personalFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
+  assert.equal(personalFrame.headers.get('x-remotelab-display-poll-seconds'), '0.45');
+  assert.notDeepEqual(Buffer.from(await personalFrame.arrayBuffer()), png);
+  const invalidGif = await fetch(contentUrl, { method: 'PUT', headers: publicHeaders, body: JSON.stringify({ sentence: 'still here', gifBase64: 'not-a-gif' }) });
+  assert.equal(invalidGif.status, 400);
+  const currentContent = await fetch(contentUrl, { headers: publicHeaders });
+  assert.equal((await currentContent.json()).sentence, contentPayload.sentence, 'failed upload must preserve saved content');
+  child.kill('SIGTERM');
+  await new Promise((resolve) => child.once('exit', resolve));
+  child = launchDisplay();
+  await waitFor(`http://127.0.0.1:${displayPort}/healthz`);
+  const persistedContent = await fetch(contentUrl, { headers: publicHeaders });
+  assert.equal((await persistedContent.json()).configured, true, 'personal content survives a restart');
+  const restoredStatus = await fetch(contentUrl, { method: 'DELETE', headers: publicHeaders });
+  assert.equal(restoredStatus.status, 200);
+  const afterDelete = await fetch(contentUrl, { headers: publicHeaders });
+  assert.equal((await afterDelete.json()).configured, false);
 
   const sourcePath = `http://127.0.0.1:${displayPort}/v1/people/${personA}/sources/evaluation`;
   const now = Date.now();

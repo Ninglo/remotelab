@@ -259,6 +259,7 @@ def run() -> None:
     worker = DisplayWorker()
     worker.start()
     retry_delay = 1
+    last_heartbeat = 0.0
     APP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     png_path = APP_DIR / "frame.png"
     jpeg_path = APP_DIR / "frame.jpg"
@@ -274,9 +275,15 @@ def run() -> None:
                     running=headers.get("x-remotelab-display-running", ""),
                     pending_review=headers.get("x-remotelab-display-pending-review", ""),
                 )
-                request_json(state["heartbeatUrl"], token=state["deviceToken"], data={"state": "running"})
+                if time.monotonic() - last_heartbeat >= 10:
+                    request_json(state["heartbeatUrl"], token=state["deviceToken"], data={"state": "running"})
+                    last_heartbeat = time.monotonic()
                 retry_delay = 1
-                stopping.wait(max(2, int(state.get("pollSeconds") or 8)))
+                try:
+                    poll_seconds = float(headers.get("x-remotelab-display-poll-seconds") or state.get("pollSeconds") or 8)
+                except (TypeError, ValueError):
+                    poll_seconds = 8
+                stopping.wait(max(0.45, min(30, poll_seconds)))
             except Exception as exc:
                 event("server_error", error=str(exc))
                 stopping.wait(retry_delay)
@@ -287,15 +294,19 @@ def run() -> None:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        raise SystemExit("usage: agent.py check-usb | enroll URL | run")
+        raise SystemExit("usage: agent.py check-usb | check-device | enroll URL | run")
     if sys.argv[1] == "check-usb":
         print(find_libusb())
+    elif sys.argv[1] == "check-device":
+        display = UsbDisplay()
+        display.close()
+        event("device_ready", device="0416:5408")
     elif sys.argv[1] == "enroll" and len(sys.argv) == 3:
         enroll(sys.argv[2])
     elif sys.argv[1] == "run":
         run()
     else:
-        raise SystemExit("usage: agent.py check-usb | enroll URL | run")
+        raise SystemExit("usage: agent.py check-usb | check-device | enroll URL | run")
 
 
 if __name__ == "__main__":

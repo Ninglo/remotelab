@@ -4,6 +4,29 @@
   const panel = document.getElementById("settingsPanel");
   const settingsTab = document.getElementById("tabSettings");
   let loaded = false;
+  let contentLoaded = false;
+  let contentConfigured = false;
+  let previewObjectUrl = "";
+
+  function personalCopy(key) {
+    const zh = {
+      heading: "我的副屏画面", note: "上传一张 GIF，写一句话。保存后，你配对的副屏会自动显示这张画面。",
+      gif: "动图（GIF，最多 3 MB、640 × 480、48 帧）", sentence: "一句话（最多 48 字）",
+      placeholder: "例如：我正在处理今天最重要的事", save: "保存并显示", reset: "恢复状态屏",
+      empty: "选择 GIF 后可在这里预览", saving: "正在保存画面…", saved: "画面已保存；设备配对后会自动显示。",
+      loading: "正在读取画面…", failed: "画面设置失败", tooLarge: "GIF 不能超过 3 MB。",
+      required: "请选择 GIF 并填写一句话。", resetDone: "已恢复状态屏。",
+    };
+    const en = {
+      heading: "My display", note: "Upload a GIF and write one sentence. Your paired display updates after saving.",
+      gif: "Animation (GIF, up to 3 MB, 640 × 480, 48 frames)", sentence: "One sentence (up to 48 characters)",
+      placeholder: "For example: Working on today's most important task", save: "Save and show", reset: "Restore status screen",
+      empty: "Choose a GIF to preview it here", saving: "Saving display…", saved: "Saved. Your display will show this after pairing.",
+      loading: "Loading display…", failed: "Could not save display", tooLarge: "GIF must be 3 MB or smaller.",
+      required: "Choose a GIF and enter one sentence.", resetDone: "Status screen restored.",
+    };
+    return (document.documentElement.lang || "").toLowerCase().startsWith("zh") ? zh[key] : en[key];
+  }
 
   function translate(key, vars) {
     return window.remotelabT ? window.remotelabT(key, vars) : key;
@@ -29,6 +52,21 @@
         <code id="settingsDisplayCommand"></code>
         <button class="settings-app-btn" id="settingsDisplayCopy" type="button"></button>
       </div>
+      <div class="settings-display-personal">
+        <div class="settings-display-devices-heading" id="settingsDisplayPersonalHeading"></div>
+        <p class="settings-section-note" id="settingsDisplayPersonalNote"></p>
+        <div class="settings-display-preview" id="settingsDisplayPreview">
+          <div class="settings-display-preview-image"><img id="settingsDisplayGifPreview" alt="" hidden><span id="settingsDisplayPreviewEmpty"></span></div>
+          <div class="settings-display-preview-text" id="settingsDisplaySentencePreview"></div>
+        </div>
+        <label class="settings-display-field"><span id="settingsDisplayGifLabel"></span><input id="settingsDisplayGif" type="file" accept="image/gif,.gif"></label>
+        <label class="settings-display-field"><span id="settingsDisplaySentenceLabel"></span><input id="settingsDisplaySentence" type="text" maxlength="48" autocomplete="off"></label>
+        <div class="settings-display-personal-actions">
+          <button class="settings-app-btn" id="settingsDisplaySave" type="button"></button>
+          <button class="settings-app-btn" id="settingsDisplayReset" type="button" hidden></button>
+        </div>
+        <div class="settings-app-empty inline-status" id="settingsDisplayPersonalStatus" role="status" aria-live="polite"></div>
+      </div>
       <div class="settings-display-devices-heading" data-display-copy="devices"></div>
       <div class="settings-apps-list" id="settingsDisplayDevices"></div>
       <div class="settings-app-empty inline-status" id="settingsDisplayStatus" role="status" aria-live="polite"></div>
@@ -38,6 +76,10 @@
     else panel.appendChild(section);
     document.getElementById("settingsDisplayGenerate")?.addEventListener("click", () => void generateEnrollment());
     document.getElementById("settingsDisplayCopy")?.addEventListener("click", event => void copyCommand(event.currentTarget));
+    document.getElementById("settingsDisplayGif")?.addEventListener("change", updatePersonalPreview);
+    document.getElementById("settingsDisplaySentence")?.addEventListener("input", updatePersonalPreview);
+    document.getElementById("settingsDisplaySave")?.addEventListener("click", () => void saveContent());
+    document.getElementById("settingsDisplayReset")?.addEventListener("click", () => void resetContent());
     renderCopy();
     return section;
   }
@@ -52,6 +94,113 @@
     const copy = document.getElementById("settingsDisplayCopy");
     if (generate && !generate.disabled) generate.textContent = translate("settings.display.generate");
     if (copy) copy.textContent = translate("settings.display.copy");
+    for (const [id, key] of [
+      ["settingsDisplayPersonalHeading", "heading"], ["settingsDisplayPersonalNote", "note"],
+      ["settingsDisplayGifLabel", "gif"], ["settingsDisplaySentenceLabel", "sentence"],
+      ["settingsDisplaySave", "save"], ["settingsDisplayReset", "reset"],
+      ["settingsDisplayPreviewEmpty", "empty"],
+    ]) {
+      const node = document.getElementById(id);
+      if (node) node.textContent = personalCopy(key);
+    }
+    const sentence = document.getElementById("settingsDisplaySentence");
+    if (sentence) sentence.placeholder = personalCopy("placeholder");
+  }
+
+  function personalStatus(message = "", error = false) {
+    const node = document.getElementById("settingsDisplayPersonalStatus");
+    if (!node) return;
+    node.textContent = message;
+    node.hidden = !message;
+    node.classList.toggle("error", error);
+  }
+
+  function updatePersonalPreview() {
+    const file = document.getElementById("settingsDisplayGif")?.files?.[0];
+    const image = document.getElementById("settingsDisplayGifPreview");
+    const empty = document.getElementById("settingsDisplayPreviewEmpty");
+    if (file && image) {
+      if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+      previewObjectUrl = URL.createObjectURL(file);
+      image.src = previewObjectUrl;
+      image.hidden = false;
+    }
+    if (empty) empty.hidden = Boolean(image?.src);
+    const sentence = document.getElementById("settingsDisplaySentence");
+    const preview = document.getElementById("settingsDisplaySentencePreview");
+    if (preview) preview.textContent = sentence?.value?.trim() || personalCopy("sentence");
+  }
+
+  async function loadContent({ force = false } = {}) {
+    if (contentLoaded && !force) return;
+    personalStatus(personalCopy("loading"));
+    try {
+      const payload = await fetchJsonOrRedirect("/api/display/content", { revalidate: false });
+      contentConfigured = Boolean(payload?.configured);
+      const sentence = document.getElementById("settingsDisplaySentence");
+      const image = document.getElementById("settingsDisplayGifPreview");
+      if (sentence) sentence.value = payload?.sentence || "";
+      if (image && contentConfigured) {
+        image.src = `/api/display/content.gif?v=${encodeURIComponent(payload.updatedAt || Date.now())}`;
+        image.hidden = false;
+      } else if (image) {
+        image.removeAttribute("src");
+        image.hidden = true;
+      }
+      const reset = document.getElementById("settingsDisplayReset");
+      if (reset) reset.hidden = !contentConfigured;
+      updatePersonalPreview();
+      personalStatus();
+      contentLoaded = true;
+    } catch (error) {
+      personalStatus(error?.message || personalCopy("failed"), true);
+    }
+  }
+
+  async function fileBase64(file) {
+    const result = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    return String(result).split(",", 2)[1] || "";
+  }
+
+  async function saveContent() {
+    const file = document.getElementById("settingsDisplayGif")?.files?.[0];
+    const sentence = document.getElementById("settingsDisplaySentence")?.value?.trim() || "";
+    if (!sentence || (!file && !contentConfigured)) { personalStatus(personalCopy("required"), true); return; }
+    if (file && file.size > 3 * 1024 * 1024) { personalStatus(personalCopy("tooLarge"), true); return; }
+    const button = document.getElementById("settingsDisplaySave");
+    if (button) button.disabled = true;
+    personalStatus(personalCopy("saving"));
+    try {
+      const gifBase64 = file ? await fileBase64(file) : undefined;
+      await fetchJsonOrRedirect("/api/display/content", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sentence, gifBase64 }), revalidate: false,
+      });
+      const input = document.getElementById("settingsDisplayGif");
+      if (input) input.value = "";
+      if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = ""; }
+      contentLoaded = false;
+      await loadContent({ force: true });
+      personalStatus(personalCopy("saved"));
+    } catch (error) { personalStatus(error?.message || personalCopy("failed"), true); }
+    finally { if (button) button.disabled = false; }
+  }
+
+  async function resetContent() {
+    const button = document.getElementById("settingsDisplayReset");
+    if (button) button.disabled = true;
+    try {
+      await fetchJsonOrRedirect("/api/display/content", { method: "DELETE", revalidate: false });
+      contentLoaded = false;
+      await loadContent({ force: true });
+      personalStatus(personalCopy("resetDone"));
+    } catch (error) { personalStatus(error?.message || personalCopy("failed"), true); }
+    finally { if (button) button.disabled = false; }
   }
 
   function setStatus(message = "", { error = false } = {}) {
@@ -157,7 +306,8 @@
 
   ensureSection();
   void load();
-  settingsTab?.addEventListener("click", () => void load({ force: true }));
+  void loadContent();
+  settingsTab?.addEventListener("click", () => { void load({ force: true }); void loadContent({ force: true }); });
   window.addEventListener("remotelab:localechange", () => {
     renderCopy();
     if (loaded) void load({ force: true });

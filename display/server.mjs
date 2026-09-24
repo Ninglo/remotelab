@@ -13,6 +13,7 @@ import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { emptySignalStore, makeStatusSnapshot, replaceSource, selectOfficialScene, validateSourcePacket } from './status-state.mjs';
 import { remotelabStatusSource } from './remotelab-status-source.mjs';
+import { normalizeSentence, prepareContent, renderPersonalPng } from './personal-content.mjs';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const bindHost = String(process.env.REMOTELAB_DISPLAY_BIND_HOST || '127.0.0.1').trim();
@@ -25,6 +26,7 @@ const stateFile = process.env.REMOTELAB_DISPLAY_STATE_FILE
 const adminTokenFile = process.env.REMOTELAB_DISPLAY_ADMIN_TOKEN_FILE
   || join(configDir, 'display-admin-token');
 const signalFile = process.env.REMOTELAB_DISPLAY_SIGNAL_FILE || join(configDir, 'display-signals.json');
+const personalFile = process.env.REMOTELAB_DISPLAY_PERSONAL_FILE || join(configDir, 'display-personal-content.json');
 const renderMode = process.env.REMOTELAB_DISPLAY_RENDER_MODE || 'classic';
 if (!['classic', 'signals'].includes(renderMode)) throw new Error('Unknown display render mode');
 const themeUrl = process.env.REMOTELAB_DISPLAY_THEME_MODULE
@@ -35,6 +37,9 @@ if (typeof theme.renderTheme !== 'function') throw new TypeError('Display theme 
 const enrollmentTtlMs = 10 * 60 * 1000;
 const saveState = createSerialTaskQueue();
 const saveSignals = createSerialTaskQueue();
+const savePersonal = createSerialTaskQueue();
+let personalStorePromise;
+const preparedPersonal = new Map();
 const client = createRemoteLabHttpClient({
   baseUrl: process.env.REMOTELAB_CHAT_BASE_URL || 'http://127.0.0.1:7690',
 });
@@ -115,6 +120,40 @@ async function updateSignalStore(mutator) {
       await chmod(signalFile, 0o600);
     }
     return result;
+  });
+}
+
+async function loadPersonalStore() {
+  if (!personalStorePromise) personalStorePromise = readJson(personalFile, { version: 1, people: {} });
+  try {
+    return await personalStorePromise;
+  } catch (error) {
+    personalStorePromise = null;
+    throw error;
+  }
+}
+
+async function personalFor(personId) {
+  const entry = (await loadPersonalStore()).people?.[personId];
+  if (!entry) return null;
+  const cached = preparedPersonal.get(personId);
+  if (cached?.updatedAt === entry.updatedAt) return cached.content;
+  const content = prepareContent(entry);
+  preparedPersonal.set(personId, { updatedAt: entry.updatedAt, content });
+  return content;
+}
+
+async function updatePersonal(personId, entry) {
+  return savePersonal(async () => {
+    const current = await loadPersonalStore();
+    const people = { ...current.people };
+    if (entry) people[personId] = entry;
+    else delete people[personId];
+    const next = { version: 1, people };
+    await writeJsonAtomic(personalFile, next);
+    await chmod(personalFile, 0o600);
+    personalStorePromise = Promise.resolve(next);
+    preparedPersonal.delete(personId);
   });
 }
 
@@ -326,13 +365,22 @@ function snapshotSvg(snapshot) {
 }
 
 async function renderFrame(personId) {
+  const personal = await personalFor(personId);
+  if (personal) {
+    await getPersonIdentityIds(personId);
+    return {
+      png: renderPersonalPng(personal),
+      snapshot: { observedAt: new Date().toISOString() },
+      pollSeconds: 0.45,
+    };
+  }
   if (renderMode === 'signals') return renderSignalFrame(personId);
   const snapshot = await collectSnapshot(personId);
   const renderer = new Resvg(snapshotSvg(snapshot), {
     background: '#0b0f13',
     font: { loadSystemFonts: true, defaultFontFamily: 'sans-serif' },
   });
-  return { png: Buffer.from(renderer.render().asPng()), snapshot };
+  return { png: Buffer.from(renderer.render().asPng()), snapshot, pollSeconds: 8 };
 }
 
 async function collectStatusView(personId) {
@@ -359,7 +407,7 @@ async function collectStatusView(personId) {
 
 async function renderSignalFrame(personId) {
   const view = await collectStatusView(personId);
-  return { png: renderStatusPng(view), snapshot: view.metrics || { observedAt: view.snapshot.generatedAt }, view };
+  return { png: renderStatusPng(view), snapshot: view.metrics || { observedAt: view.snapshot.generatedAt }, view, pollSeconds: 8 };
 }
 
 function renderStatusPng(view) {
@@ -391,13 +439,49 @@ async function handle(req, res) {
     sendText(res, 200, 'text/x-python; charset=utf-8', await readFile(join(moduleDir, 'agent.py')));
     return;
   }
-  const personStatusMatch = /^\/v1\/people\/([^/]+)\/(status|preview\.png)$/.exec(pathname);
+  const personStatusMatch = /^\/v1\/people\/([^/]+)\/(status|preview\.png|content|content\.gif)$/.exec(pathname);
   if (personStatusMatch && req.method === 'GET') {
     if (!await requireAdmin(req, res, url)) return;
     const personId = decodeURIComponent(personStatusMatch[1]);
+    await getPersonIdentityIds(personId);
+    if (personStatusMatch[2] === 'content' || personStatusMatch[2] === 'content.gif') {
+      const entry = (await loadPersonalStore()).people?.[personId];
+      if (personStatusMatch[2] === 'content') {
+        sendJson(res, 200, entry
+          ? { configured: true, sentence: entry.sentence, updatedAt: entry.updatedAt, animation: true }
+          : { configured: false, sentence: '', animation: false });
+      } else if (entry) sendText(res, 200, 'image/gif', Buffer.from(entry.gifBase64, 'base64'));
+      else sendJson(res, 404, { error: 'No GIF configured' });
+      return;
+    }
+    if (personStatusMatch[2] === 'preview.png') {
+      const personal = await personalFor(personId);
+      if (personal) { sendText(res, 200, 'image/png', renderPersonalPng(personal)); return; }
+    }
     const view = await collectStatusView(personId);
     if (personStatusMatch[2] === 'status') sendJson(res, 200, { snapshot: view.snapshot, scene: view.scene, metrics: view.metrics });
     else sendText(res, 200, 'image/png', renderStatusPng(view));
+    return;
+  }
+  const personContentMatch = /^\/v1\/people\/([^/]+)\/content$/.exec(pathname);
+  if (personContentMatch && (req.method === 'PUT' || req.method === 'DELETE')) {
+    if (!await requireAdmin(req, res, url)) return;
+    const personId = decodeURIComponent(personContentMatch[1]);
+    await getPersonIdentityIds(personId);
+    if (req.method === 'DELETE') {
+      await updatePersonal(personId, null);
+      sendJson(res, 200, { configured: false });
+      return;
+    }
+    const payload = await readRequestJson(req, 4 * 1024 * 1024 + 1024);
+    const sentence = normalizeSentence(payload.sentence);
+    const old = (await loadPersonalStore()).people?.[personId];
+    const gifBase64 = payload.gifBase64 || old?.gifBase64;
+    const prepared = prepareContent({ sentence, gifBase64 });
+    const entry = { sentence, gifBase64, updatedAt: new Date().toISOString() };
+    await updatePersonal(personId, entry);
+    preparedPersonal.set(personId, { updatedAt: entry.updatedAt, content: prepared });
+    sendJson(res, 200, { configured: true, sentence, updatedAt: entry.updatedAt, animation: true });
     return;
   }
   const sourceMatch = /^\/v1\/people\/([^/]+)\/sources\/([a-z][a-z0-9_-]{0,47})$/.exec(pathname);
@@ -531,16 +615,19 @@ async function handle(req, res) {
         sendJson(res, 409, { error: 'Display ownership is not configured' });
         return;
       }
-      const { png, snapshot } = await renderFrame(device.personId);
+      const { png, snapshot, pollSeconds } = await renderFrame(device.personId);
       const now = new Date().toISOString();
-      await updateState((state) => {
-        const current = state.devices.find((item) => item.id === device.id);
-        if (current) current.lastSeenAt = now;
-      });
+      if (Date.now() - Date.parse(device.lastSeenAt || '') > 10_000 || !device.lastSeenAt) {
+        await updateState((state) => {
+          const current = state.devices.find((item) => item.id === device.id);
+          if (current) current.lastSeenAt = now;
+        });
+      }
       sendText(res, 200, 'image/png', png, {
         'X-RemoteLab-Display-Observed-At': snapshot.observedAt,
         'X-RemoteLab-Display-Running': String(snapshot.running ?? ''),
         'X-RemoteLab-Display-Pending-Review': String(snapshot.pendingReview ?? ''),
+        'X-RemoteLab-Display-Poll-Seconds': String(pollSeconds || 8),
       });
       return;
     }

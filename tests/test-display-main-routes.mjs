@@ -61,6 +61,11 @@ const sidecar = createServer(async (req, res) => {
     json(res, 201, { command: `pair:${owner}:${req.headers['x-forwarded-host']}${req.headers['x-forwarded-prefix']}` });
     return;
   }
+  if (/^\/v1\/people\/[^/]+\/content$/.test(url.pathname)) {
+    if (req.headers.authorization !== `Bearer ${expectedAdmin}`) return json(res, 401, { error: 'bad admin' });
+    json(res, 200, { personId: url.pathname.split('/')[3], body: body ? JSON.parse(body) : null });
+    return;
+  }
   if (url.pathname === '/v1/devices' && req.method === 'GET') {
     if (req.headers.authorization !== `Bearer ${expectedAdmin}`) return json(res, 401, { error: 'bad admin' });
     json(res, 200, { devices: [{ id: `display-${url.searchParams.get('personId')}` }] });
@@ -135,6 +140,17 @@ try {
   });
   assert.equal(removed.response.status, 200);
   assert.equal(removed.payload.personId, 'person-a');
+
+  const content = await requestJson(`${base}/api/display/content`, {
+    method: 'PUT',
+    headers: { 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sentence: 'hello', gifBase64: 'R0lG', personId: 'person-b' }),
+  });
+  assert.equal(content.response.status, 200);
+  assert.equal(content.payload.personId, 'person-a');
+  assert.deepEqual(content.payload.body, { sentence: 'hello', gifBase64: 'R0lG' }, 'client cannot select another person');
+  const other = await requestJson(`${base}/api/display/content`, { headers: { 'X-Test-Person': 'person-b' } });
+  assert.equal(other.payload.personId, 'person-b');
 
   assert.equal(calls.find((call) => call.path === '/install.sh').authorization, '');
   assert.equal(calls.find((call) => call.path === '/v1/enrollments').body, JSON.stringify({ personId: 'person-a' }));

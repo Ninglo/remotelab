@@ -100,3 +100,20 @@ converts SVG to PNG; the Mac agent still periodically pulls a full frame and
 sends it over USB. Run `node display/render-previews.mjs <output-directory>` to
 inspect official progress, confirmed-attention, and stale states before
 activating the pilot.
+
+## Personal GIF and sentence
+
+In **Settings → Side display**, each signed-in Person can upload a GIF and save
+one sentence. Their paired displays then show the animation beside that sentence.
+The settings panel previews the GIF before saving; **Restore status screen**
+removes the personal content and returns to the existing signal or classic view.
+Content belongs to the signed-in Person, so another Person's display and editor
+remain separate. One Person's paired displays share the same content in this MVP.
+
+Uploads are limited to 3 MB, 48 frames, 30 seconds, and 307,200 pixels per frame.
+The sidecar decodes GIF frames once and sends a complete 1920 × 480 frame on each
+device request. The new macOS agent reads the frame interval returned by the
+server (0.45 seconds for personal content, 8 seconds for the status screen).
+The screen is sampled animation rather than full GIF frame-rate playback.
+The original GIF and sentence are stored in the private instance config file
+`display-personal-content.json` with mode `0600`; no GIF is sent to the USB agent.
