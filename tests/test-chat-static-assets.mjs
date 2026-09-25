@@ -247,6 +247,8 @@ async function main() {
     const bootstrap = JSON.parse(bootstrapMatch[1]);
     assert.deepEqual(bootstrap.auth?.person, authMeJson.person, 'bootstrap should identify the signed-in person');
     assert.equal(bootstrap.people?.some((person) => person.id === 'person_beta'), true, 'bootstrap should include the shared people directory');
+    assert.deepEqual(bootstrap.people?.find((person) => person.id === 'person_alpha')?.preferences?.voiceShortcut,
+      { enabled: false, binding: '' }, 'voice shortcuts should start disabled with no assigned keys per Person');
     assert.equal(bootstrap.defaultSessionFolder, join(home, '.remotelab', 'workspace'), 'bootstrap should expose the managed default session folder');
     assert.equal(bootstrap.settings?.voiceInput?.configured, false, 'bootstrap should expose default instance voice settings');
     assert.equal(bootstrap.settings?.voiceInput?.resourceId, 'volc.seedasr.sauc.duration', 'bootstrap should expose the recommended default voice resource');
@@ -266,6 +268,7 @@ async function main() {
     assert.match(page.text, /<script src="chat\/session-list-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/instance-settings\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/voice-input\.js(?:\?v=[^"]*)?"/);
+    assert.match(page.text, /<script src="chat\/voice-shortcut\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/settings-ui\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /<script src="chat\/task-center\.js(?:\?v=[^"]*)?"/);
     assert.match(page.text, /id="taskCenterPanel"/, 'chat page should expose the Task Center surface');

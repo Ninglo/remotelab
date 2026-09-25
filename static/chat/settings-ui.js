@@ -12,6 +12,12 @@ const voiceInputGatewayUrl = document.getElementById("voiceInputGatewayUrl");
 const voiceInputGatewayModel = document.getElementById("voiceInputGatewayModel");
 const voiceInputLanguageSelect = document.getElementById("voiceInputLanguageSelect");
 const voiceInputStatus = document.getElementById("voiceInputStatus");
+const voiceShortcutEnabled = document.getElementById("voiceShortcutEnabled");
+const voiceShortcutBinding = document.getElementById("voiceShortcutBinding");
+const voiceShortcutRecordBtn = document.getElementById("voiceShortcutRecordBtn");
+const voiceShortcutClearBtn = document.getElementById("voiceShortcutClearBtn");
+const voiceShortcutTripleOptionBtn = document.getElementById("voiceShortcutTripleOptionBtn");
+const voiceShortcutStatus = document.getElementById("voiceShortcutStatus");
 const sessionAutoArchiveSelect = document.getElementById("sessionAutoArchiveSelect");
 const settingsToc = document.getElementById("settingsToc");
 let voiceInputSettingsLoaded = false;
@@ -477,6 +483,7 @@ async function renderPeopleSettings({ refresh = false } = {}) {
   }
   const people = getPeopleDirectory();
   renderCurrentPersonSettings(people);
+  renderVoiceShortcutSettings(people);
   const visiblePeople = people
     .filter((person) => person.system !== true)
     .sort((left, right) => {
@@ -1595,6 +1602,268 @@ async function initVoiceInputSettings() {
   voiceInputAppId.dataset.bound = "true";
 }
 
+let voiceShortcutRecording = false;
+let voiceShortcutCandidate = "";
+let voiceShortcutOptionTaps = 0;
+let voiceShortcutOptionDown = false;
+let voiceShortcutLastOptionRelease = 0;
+let voiceShortcutShiftTaps = 0;
+let voiceShortcutShiftDown = false;
+let voiceShortcutLastShiftRelease = 0;
+let voiceShortcutDraft = null;
+let voiceShortcutDraftPersonId = "";
+let voiceShortcutEditVersion = 0;
+let voiceShortcutSavePromise = null;
+
+function getCurrentVoiceShortcutPreference(people = getPeopleDirectory()) {
+  if (voiceShortcutDraft && voiceShortcutDraftPersonId === currentPerson?.id) return voiceShortcutDraft;
+  return people.find((person) => person.id === currentPerson?.id)?.preferences?.voiceShortcut
+    || { enabled: false, binding: "" };
+}
+
+function renderVoiceShortcutSettings(people = getPeopleDirectory()) {
+  if (!voiceShortcutEnabled || !voiceShortcutBinding) return;
+  const hasPerson = people.some((person) => person.id === currentPerson?.id);
+  const preference = getCurrentVoiceShortcutPreference(people);
+  const conflict = window.RemoteLabVoiceShortcut?.getBindingConflict(preference.binding);
+  voiceShortcutEnabled.checked = preference.enabled === true;
+  voiceShortcutEnabled.disabled = !hasPerson;
+  voiceShortcutBinding.textContent = t("settings.voiceShortcut.current", {
+    binding: preference.binding
+      ? window.RemoteLabVoiceShortcut?.formatBinding(preference.binding) || preference.binding
+      : t("settings.voiceShortcut.notSet"),
+  }) + (conflict ? ` ${t(`settings.voiceShortcut.conflict.${conflict}`)}` : "");
+  voiceShortcutRecordBtn.disabled = !hasPerson;
+  voiceShortcutClearBtn.disabled = !hasPerson || !preference.binding;
+  voiceShortcutTripleOptionBtn.disabled = !hasPerson;
+  voiceShortcutRecordBtn.textContent = t(voiceShortcutRecording
+    ? "settings.voiceShortcut.finishRecording"
+    : "settings.voiceShortcut.record");
+  voiceShortcutRecordBtn.setAttribute("aria-pressed", voiceShortcutRecording ? "true" : "false");
+}
+
+function saveVoiceShortcutPreference(patch) {
+  const person = getPeopleDirectory().find((entry) => entry.id === currentPerson?.id);
+  if (!person) return Promise.resolve(false);
+  voiceShortcutDraft = { ...getCurrentVoiceShortcutPreference(), ...patch };
+  voiceShortcutDraftPersonId = person.id;
+  voiceShortcutEditVersion += 1;
+  renderVoiceShortcutSettings();
+  if (voiceShortcutStatus) voiceShortcutStatus.hidden = true;
+  if (voiceShortcutSavePromise) return voiceShortcutSavePromise;
+
+  voiceShortcutSavePromise = (async () => {
+    let saved = true;
+    while (voiceShortcutDraft && voiceShortcutDraftPersonId === person.id) {
+      const version = voiceShortcutEditVersion;
+      const preference = { ...voiceShortcutDraft };
+      try {
+        await requestPeople(`/api/people/${encodeURIComponent(person.id)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ voiceShortcut: preference }),
+        });
+      } catch (error) {
+        if (voiceShortcutStatus) {
+          voiceShortcutStatus.hidden = false;
+          voiceShortcutStatus.textContent = error?.message || t("settings.voiceShortcut.saveFailed");
+        }
+        voiceShortcutDraft = null;
+        saved = false;
+        break;
+      }
+      if (voiceShortcutEditVersion === version) {
+        voiceShortcutDraft = null;
+        break;
+      }
+    }
+    voiceShortcutSavePromise = null;
+    renderVoiceShortcutSettings();
+    return saved;
+  })();
+  return voiceShortcutSavePromise;
+}
+
+function showVoiceShortcutStatus(key, vars) {
+  if (!voiceShortcutStatus) return;
+  voiceShortcutStatus.hidden = false;
+  voiceShortcutStatus.textContent = t(key, vars);
+}
+
+function formatRecordedVoiceShortcut(binding) {
+  return window.RemoteLabVoiceShortcut?.formatBinding(binding) || binding;
+}
+
+function showRecordedVoiceShortcut(binding) {
+  const conflict = window.RemoteLabVoiceShortcut?.getBindingConflict(binding);
+  const warning = conflict ? ` ${t(`settings.voiceShortcut.conflict.${conflict}`)}` : "";
+  showVoiceShortcutStatus("settings.voiceShortcut.detected", {
+    binding: `${formatRecordedVoiceShortcut(binding)}${warning}`,
+  });
+}
+
+function resetVoiceShortcutTapCounts() {
+  voiceShortcutOptionTaps = 0;
+  voiceShortcutOptionDown = false;
+  voiceShortcutLastOptionRelease = 0;
+  voiceShortcutShiftTaps = 0;
+  voiceShortcutShiftDown = false;
+  voiceShortcutLastShiftRelease = 0;
+}
+
+function stopVoiceShortcutRecording() {
+  voiceShortcutRecording = false;
+  voiceShortcutCandidate = "";
+  resetVoiceShortcutTapCounts();
+  window.RemoteLabVoiceShortcut?.setRecording(false);
+  document.removeEventListener("keydown", recordVoiceShortcutKeydown, true);
+  document.removeEventListener("keyup", recordVoiceShortcutKeyup, true);
+  renderVoiceShortcutSettings();
+}
+
+function recordVoiceShortcutKeyup(event) {
+  if (event.code === "AltLeft" || event.code === "AltRight") {
+    voiceShortcutOptionDown = false;
+    voiceShortcutLastOptionRelease = Date.now();
+  }
+  if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+    voiceShortcutShiftDown = false;
+    voiceShortcutLastShiftRelease = Date.now();
+  }
+}
+
+function recordVoiceShortcutKeydown(event) {
+  if (event.code === "Escape" && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    stopVoiceShortcutRecording();
+    showVoiceShortcutStatus("settings.voiceShortcut.cancelled");
+    return;
+  }
+  if (event.repeat || event.isComposing) return;
+  const modifierChord = window.RemoteLabVoiceShortcut?.modifierChordFromEvent(event);
+  if (modifierChord) {
+    event.preventDefault();
+    event.stopPropagation();
+    resetVoiceShortcutTapCounts();
+    voiceShortcutCandidate = modifierChord;
+    showRecordedVoiceShortcut(modifierChord);
+    return;
+  }
+  if ((event.code === "AltLeft" || event.code === "AltRight")
+    && !event.ctrlKey && !event.shiftKey && !event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat || voiceShortcutOptionDown) return;
+    if (voiceShortcutLastOptionRelease && Date.now() - voiceShortcutLastOptionRelease > 650) voiceShortcutOptionTaps = 0;
+    if (voiceShortcutOptionTaps === 0) {
+      voiceShortcutCandidate = "";
+      showVoiceShortcutStatus("settings.voiceShortcut.waiting");
+    }
+    voiceShortcutOptionDown = true;
+    voiceShortcutOptionTaps += 1;
+    if (voiceShortcutOptionTaps === 3) {
+      voiceShortcutCandidate = "Alt*3";
+      voiceShortcutOptionTaps = 0;
+      showRecordedVoiceShortcut(voiceShortcutCandidate);
+    }
+    return;
+  }
+  if ((event.code === "ShiftLeft" || event.code === "ShiftRight")
+    && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat || voiceShortcutShiftDown) return;
+    if (voiceShortcutLastShiftRelease && Date.now() - voiceShortcutLastShiftRelease > 650) voiceShortcutShiftTaps = 0;
+    if (voiceShortcutShiftTaps === 0) {
+      voiceShortcutCandidate = "";
+      showVoiceShortcutStatus("settings.voiceShortcut.waiting");
+    }
+    voiceShortcutShiftDown = true;
+    voiceShortcutShiftTaps += 1;
+    if (voiceShortcutShiftTaps === 2) {
+      voiceShortcutCandidate = "Shift*2";
+      voiceShortcutShiftTaps = 0;
+      showRecordedVoiceShortcut(voiceShortcutCandidate);
+    }
+    return;
+  }
+  resetVoiceShortcutTapCounts();
+  if (["AltLeft", "AltRight", "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight"].includes(event.code)) {
+    event.preventDefault();
+    event.stopPropagation();
+    voiceShortcutCandidate = "";
+    showVoiceShortcutStatus("settings.voiceShortcut.waiting");
+    return;
+  }
+  const binding = window.RemoteLabVoiceShortcut?.bindingFromEvent(event);
+  if (!binding) {
+    if (!event.repeat && !["ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight"].includes(event.code)) {
+      event.preventDefault();
+      event.stopPropagation();
+      voiceShortcutCandidate = "";
+      showVoiceShortcutStatus("settings.voiceShortcut.unsupportedKey");
+    }
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  voiceShortcutCandidate = binding;
+  showRecordedVoiceShortcut(binding);
+}
+
+function initVoiceShortcutSettings() {
+  if (!voiceShortcutEnabled || voiceShortcutEnabled.dataset.bound === "true") return;
+  renderVoiceShortcutSettings();
+  voiceShortcutEnabled.addEventListener("change", () => {
+    if (!voiceShortcutEnabled.checked && voiceShortcutRecording) stopVoiceShortcutRecording();
+    void saveVoiceShortcutPreference({ enabled: voiceShortcutEnabled.checked });
+  });
+  voiceShortcutRecordBtn.addEventListener("click", () => {
+    if (voiceShortcutRecording) {
+      const binding = voiceShortcutCandidate;
+      if (window.RemoteLabVoiceShortcut?.getBindingConflict(binding) === "newSession") {
+        showVoiceShortcutStatus("settings.voiceShortcut.conflict.newSession");
+        return;
+      }
+      stopVoiceShortcutRecording();
+      if (!binding) {
+        showVoiceShortcutStatus("settings.voiceShortcut.noKeys");
+        return;
+      }
+      showVoiceShortcutStatus("settings.voiceShortcut.saving");
+      void saveVoiceShortcutPreference({ binding }).then((saved) => {
+        if (saved && getCurrentVoiceShortcutPreference().binding === binding) {
+          const warning = window.RemoteLabVoiceShortcut?.getBindingConflict(binding) === "browser"
+            ? ` ${t("settings.voiceShortcut.conflict.browser")}` : "";
+          showVoiceShortcutStatus("settings.voiceShortcut.saved", { binding: `${formatRecordedVoiceShortcut(binding)}${warning}` });
+        }
+      });
+      return;
+    }
+    voiceShortcutRecording = true;
+    voiceShortcutCandidate = "";
+    resetVoiceShortcutTapCounts();
+    window.RemoteLabVoiceShortcut?.setRecording(true);
+    document.addEventListener("keydown", recordVoiceShortcutKeydown, true);
+    document.addEventListener("keyup", recordVoiceShortcutKeyup, true);
+    renderVoiceShortcutSettings();
+    showVoiceShortcutStatus("settings.voiceShortcut.waiting");
+  });
+  voiceShortcutClearBtn.addEventListener("click", () => {
+    if (voiceShortcutRecording) stopVoiceShortcutRecording();
+    void saveVoiceShortcutPreference({ binding: "" });
+  });
+  voiceShortcutTripleOptionBtn.addEventListener("click", () => {
+    if (voiceShortcutRecording) stopVoiceShortcutRecording();
+    void saveVoiceShortcutPreference({ binding: "Alt*3" });
+  });
+  window.addEventListener("remotelab:localechange", () => renderVoiceShortcutSettings());
+  window.addEventListener("blur", () => {
+    if (voiceShortcutRecording) stopVoiceShortcutRecording();
+  });
+  voiceShortcutEnabled.dataset.bound = "true";
+}
+
 let pushNotificationPermissionPending = false;
 let pushNotificationPermissionError = "";
 
@@ -2003,6 +2272,7 @@ initThinkingBlockDisplaySettings();
 initSessionAutoArchiveSettings();
 initPeopleSettings();
 void initVoiceInputSettings();
+initVoiceShortcutSettings();
 initInstallSettings();
 initPushNotificationSettings();
 void renderSettingsConnectorsPanel();

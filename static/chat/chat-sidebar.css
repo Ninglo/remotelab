@@ -470,6 +470,28 @@ body:not([data-app-view="sessions"]) .session-item.active {
   gap: 8px;
   margin-top: 10px;
 }
+.settings-voice-shortcut {
+  margin-top: 14px;
+}
+.settings-voice-provider {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.settings-voice-shortcut-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-voice-shortcut-binding {
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
 .settings-app-btn {
   padding: 7px 10px;
   border-radius: 8px;

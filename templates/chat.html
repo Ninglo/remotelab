@@ -387,18 +387,37 @@
                 </div>
                 <div class="settings-section">
                   <div class="settings-section-title" data-i18n="settings.voice.title">Voice Input</div>
-                  <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. Any signed-in person can manage it.</div>
-                  <div class="settings-inline-form settings-inline-form--narrow">
-                    <select class="settings-inline-select" id="voiceInputProviderSelect" aria-label="Choose a voice input transport" data-i18n-aria-label="settings.voice.providerAriaLabel"></select>
-                    <input class="settings-inline-input" id="voiceInputAppId" type="text" autocomplete="off" placeholder="Doubao App ID" data-i18n-placeholder="settings.voice.appIdPlaceholder">
-                    <input class="settings-inline-input" id="voiceInputAccessToken" type="text" autocomplete="off" placeholder="Doubao Access Token" data-i18n-placeholder="settings.voice.accessTokenPlaceholder">
-                    <select class="settings-inline-select" id="voiceInputClusterPresetSelect" aria-label="Choose voice input model preset" data-i18n-aria-label="settings.voice.clusterPresetAriaLabel"></select>
-                    <input class="settings-inline-input" id="voiceInputCluster" type="text" autocomplete="off" placeholder="Custom resource ID" data-i18n-placeholder="settings.voice.clusterCustomPlaceholder" hidden>
-                    <input class="settings-inline-input" id="voiceInputGatewayApiKey" type="text" autocomplete="off" placeholder="AI Gateway API key" data-i18n-placeholder="settings.voice.gatewayApiKeyPlaceholder" hidden>
-                    <input class="settings-inline-input" id="voiceInputGatewayUrl" type="text" autocomplete="off" placeholder="Realtime gateway URL" data-i18n-placeholder="settings.voice.gatewayUrlPlaceholder" hidden>
-                    <input class="settings-inline-input" id="voiceInputGatewayModel" type="text" autocomplete="off" placeholder="Gateway model name" data-i18n-placeholder="settings.voice.gatewayModelPlaceholder" hidden>
-                    <select class="settings-inline-select" id="voiceInputLanguageSelect" aria-label="Choose voice input language" data-i18n-aria-label="settings.voice.languageAriaLabel"></select>
-                    <div class="settings-app-empty inline-status" id="voiceInputStatus" hidden></div>
+                  <div class="settings-voice-shortcut">
+                    <div class="settings-section-title" data-i18n="settings.voiceShortcut.title">Voice input shortcut</div>
+                    <div class="settings-section-note" data-i18n="settings.voiceShortcut.note">Personal setting. Off with no keys assigned by default; works only while this page is active.</div>
+                    <label class="settings-voice-shortcut-toggle">
+                      <input id="voiceShortcutEnabled" type="checkbox">
+                      <span data-i18n="settings.voiceShortcut.enable">Enable keyboard shortcut</span>
+                    </label>
+                    <div class="settings-voice-shortcut-binding" id="voiceShortcutBinding"></div>
+                    <div class="settings-app-actions">
+                      <button class="settings-app-btn" id="voiceShortcutRecordBtn" type="button" aria-pressed="false" data-i18n="settings.voiceShortcut.record">Start recording</button>
+                      <button class="settings-app-btn" id="voiceShortcutClearBtn" type="button" data-i18n="settings.voiceShortcut.clear">Clear shortcut</button>
+                      <button class="settings-app-btn" id="voiceShortcutTripleOptionBtn" type="button" data-i18n="settings.voiceShortcut.useTripleOption">Use Option three times (optional)</button>
+                    </div>
+                    <div class="settings-section-note" data-i18n="settings.voiceShortcut.recordHint">You can press Shift twice, Option three times, Shift + Option, or a key combination. Check the detected shortcut and conflict warning before saving. Esc cancels. This page cannot inspect your system shortcuts.</div>
+                    <div class="settings-app-empty inline-status" id="voiceShortcutStatus" role="status" hidden></div>
+                  </div>
+                  <div class="settings-voice-provider">
+                    <div class="settings-section-title" data-i18n="settings.voice.providerTitle">Speech recognition service</div>
+                    <div class="settings-section-note" data-i18n="settings.voice.note">Stored once for this RemoteLab instance. Any signed-in person can manage it.</div>
+                    <div class="settings-inline-form settings-inline-form--narrow">
+                      <select class="settings-inline-select" id="voiceInputProviderSelect" aria-label="Choose a voice input transport" data-i18n-aria-label="settings.voice.providerAriaLabel"></select>
+                      <input class="settings-inline-input" id="voiceInputAppId" type="text" autocomplete="off" placeholder="Doubao App ID" data-i18n-placeholder="settings.voice.appIdPlaceholder">
+                      <input class="settings-inline-input" id="voiceInputAccessToken" type="text" autocomplete="off" placeholder="Doubao Access Token" data-i18n-placeholder="settings.voice.accessTokenPlaceholder">
+                      <select class="settings-inline-select" id="voiceInputClusterPresetSelect" aria-label="Choose voice input model preset" data-i18n-aria-label="settings.voice.clusterPresetAriaLabel"></select>
+                      <input class="settings-inline-input" id="voiceInputCluster" type="text" autocomplete="off" placeholder="Custom resource ID" data-i18n-placeholder="settings.voice.clusterCustomPlaceholder" hidden>
+                      <input class="settings-inline-input" id="voiceInputGatewayApiKey" type="text" autocomplete="off" placeholder="AI Gateway API key" data-i18n-placeholder="settings.voice.gatewayApiKeyPlaceholder" hidden>
+                      <input class="settings-inline-input" id="voiceInputGatewayUrl" type="text" autocomplete="off" placeholder="Realtime gateway URL" data-i18n-placeholder="settings.voice.gatewayUrlPlaceholder" hidden>
+                      <input class="settings-inline-input" id="voiceInputGatewayModel" type="text" autocomplete="off" placeholder="Gateway model name" data-i18n-placeholder="settings.voice.gatewayModelPlaceholder" hidden>
+                      <select class="settings-inline-select" id="voiceInputLanguageSelect" aria-label="Choose voice input language" data-i18n-aria-label="settings.voice.languageAriaLabel"></select>
+                      <div class="settings-app-empty inline-status" id="voiceInputStatus" hidden></div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -636,6 +655,7 @@
 <script src="chat/session-list-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/instance-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/voice-input.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
+<script src="chat/voice-shortcut.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/settings-ui.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/auto-routing-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>
 <script src="chat/display-settings.js?v={{ASSET_VERSION}}" nonce="{{NONCE}}"></script>

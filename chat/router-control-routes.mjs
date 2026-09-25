@@ -360,6 +360,10 @@ export async function handleControlRoutes({
   if (personMatch && req.method === 'PATCH') {
     try {
       const payload = JSON.parse(await readBody(req, 32768) || '{}');
+      if (Object.prototype.hasOwnProperty.call(payload, 'voiceShortcut') && authSession?.personId !== personMatch[1]) {
+        writeJson(res, 403, { error: 'Voice shortcut can only be changed by its Person' });
+        return true;
+      }
       const updated = await updatePerson(personMatch[1], payload);
       if (!updated) {
         writeJson(res, 404, { error: 'Person not found' });
