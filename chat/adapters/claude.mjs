@@ -233,7 +233,7 @@ export function buildClaudeArgs(prompt, options = {}) {
   } else if (!effort && options.thinking) {
     args.push('--effort', 'high');
   }
-  // effort === 'none' → no --effort flag → thinking disabled
+  // Legacy effort === 'none' leaves the model's native effort default in place.
 
   return sanitizeSpawnArgs(args);
 }

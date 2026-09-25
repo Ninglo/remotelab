@@ -114,6 +114,7 @@ function cloneReasoningState(reasoning, fallbackLabel = t("tooling.thinking")) {
 
 function findCurrentToolModelRecord(modelId = selectedModel) {
   if (!Array.isArray(currentToolModels) || currentToolModels.length === 0) return null;
+  if (selectedTool === "claude" && !modelId) return null;
   if (modelId) {
     const matched = currentToolModels.find((model) => model.id === modelId);
     if (matched) return matched;
@@ -158,7 +159,7 @@ function applyCurrentModelReasoningUi({ sessionPreferences = null, preserveCurre
     const storedModelEffort = selectedTool && modelData?.id
       ? (localStorage.getItem(`selectedEffort_${selectedTool}_${modelData.id}`) || "")
       : "";
-    const storedEffort = storedModelEffort || (selectedTool
+    const storedEffort = storedModelEffort || (selectedTool && selectedTool !== "claude"
       ? (localStorage.getItem(`selectedEffort_${selectedTool}`) || "")
       : "");
     const preferredEffort = sessionPreferences?.hasEffort
@@ -975,8 +976,12 @@ async function loadModelsForCurrentTool({ refresh = false } = {}) {
       selectedModelProvider = "";
       inlineProviderSelect.innerHTML = "";
       inlineProviderSelect.style.display = "none";
-      selectedModel = requestedModel;
-      if (!selectedModel || !visibleModels.some((model) => model.id === selectedModel)) {
+      const nativeClaudeDefault = toolId === "claude"
+        && sessionPreferences?.hasModel
+        && sessionPreferences.model === "";
+      selectedModel = nativeClaudeDefault ? "" : requestedModel;
+      if ((!selectedModel && !nativeClaudeDefault)
+        || (selectedModel && !visibleModels.some((model) => model.id === selectedModel))) {
         selectedModel = visibleModels.some((model) => model.id === defaultModel)
           ? defaultModel
           : visibleModels[0]?.id || "";

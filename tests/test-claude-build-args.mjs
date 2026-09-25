@@ -34,4 +34,14 @@ assert.deepEqual(
   'explicit Claude effort should win over the legacy thinking fallback',
 );
 
+const legacyNone = buildClaudeArgs('hello world', {
+  model: 'claude-opus-5-5',
+  effort: 'none',
+});
+assert.deepEqual(
+  legacyNone.slice(-2),
+  ['--model', 'claude-opus-5-5'],
+  'legacy none must not pass an unsupported effort value to Claude Code',
+);
+
 console.log('test-claude-build-args: ok');
