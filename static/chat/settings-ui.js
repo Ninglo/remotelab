@@ -1695,6 +1695,11 @@ function formatRecordedVoiceShortcut(binding) {
 
 function showRecordedVoiceShortcut(binding) {
   const conflict = window.RemoteLabVoiceShortcut?.getBindingConflict(binding);
+  if (conflict === "newSession") {
+    voiceShortcutStatus.hidden = false;
+    voiceShortcutStatus.textContent = `${formatRecordedVoiceShortcut(binding)}: ${t("settings.voiceShortcut.conflict.newSession")}`;
+    return;
+  }
   const warning = conflict ? ` ${t(`settings.voiceShortcut.conflict.${conflict}`)}` : "";
   showVoiceShortcutStatus("settings.voiceShortcut.detected", {
     binding: `${formatRecordedVoiceShortcut(binding)}${warning}`,

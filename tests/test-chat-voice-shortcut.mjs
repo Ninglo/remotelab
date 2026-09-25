@@ -261,6 +261,7 @@ await new Promise((resolve) => setImmediate(resolve));
 recordControl.fire('click');
 recordKey('keydown', 'KeyO', { metaKey: true });
 assert.match(statusControl.textContent, /conflict.newSession/, 'in-page shortcut collision should be reported');
+assert.doesNotMatch(statusControl.textContent, /detected/, 'a blocked shortcut must not be described as ready to save');
 recordControl.fire('click');
 assert.equal(pending.length, 7, 'an in-page collision must not be saved');
 recordKey('keydown', 'KeyR', { ctrlKey: true });
