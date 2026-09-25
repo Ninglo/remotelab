@@ -644,12 +644,74 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: Settings grid alignment, sidebar action placement, and global shortcut conventions
 - Follow-up: validate the bottom-sidebar placement and `Command/Control + Shift + Enter` on real desktop and mobile use
 
+### 2026-09-23 — test an incremental memory and Skill review loop before automating promotion
+
+- Source: owner discussion after reducing always-on model context and restoring full Markdown context visibility
+- User slice: owner trying to keep long-lived memory and reusable capabilities useful without letting context grow by accumulation
+- Observed friction or ask: a daily scheduled review of memory and possible new Skills sounds useful, but the owner is unsure whether it will produce real value once running
+- Signal strength: direct product hypothesis; a later turn authorized a seven-run pilot to the Claude Tag discussion group, but outcomes are not yet observed
+- Product implication: evaluate a bounded incremental review that checks new candidates, stale/conflicting active context, and repeated successful workflows. Keep Skill creation and promotion tied to sourced repeated cases and actual reuse; record no-change days and review cost instead of manufacturing daily output.
+- Promote to: memory curation and capability-accumulation trial design if a scoped pilot is agreed
+- Follow-up: review the seven-run pilot's missed useful corrections, false positives, reuse of Skill candidates, and reading cost before adding an enduring schedule or automatic memory edits
+
+### 2026-09-25 — make voice input keyboard access opt-in per person
+
+- Source: direct user request after tracing a double-Fn microphone to the Mac's own dictation shortcut
+- User slice: a desktop Person who wants to start RemoteLab's in-page voice input without using the mouse or changing other people's keyboard behavior
+- Observed friction or ask: RemoteLab's voice button had no keyboard shortcut; the requested control is off by default, editable in Settings, and scoped to the signed-in Person. Three Option taps is a desired binding.
+- Signal strength: direct request, supported by inspection of the shipped voice-button handler
+- Product implication: keep shared voice-service credentials separate from individual shortcut preferences; reuse the button's recording path and treat OS-reserved shortcuts as outside the page's control
+- Promote to: desktop voice input settings and Person preferences
+- Follow-up: validate three Option taps in the user's Mac browser and check for OS shortcut conflicts
+
 ### 2026-09-25 — Claude Code model choices and effort must track the installed Harness
 
 - Source: direct request after the Claude Code picker fell behind current releases.
 - Observed friction or ask: Fable and Opus 5.5 were absent, and the available thinking effort levels were unclear.
 - Product implication: expose current aliases and useful pinned versions, show effort by model, and keep the installed Claude Code CLI current enough to run them. A model's native default remains available when no override is selected.
 - Follow-up: recheck the official Claude Code model and effort table when upgrading the CLI; verify the live picker and a real account canary.
+
+### 2026-09-25 — 副屏飞书提醒以真实已读状态和发送者为准
+
+- Source: direct user correction after the persistent new-message reminder was shipped.
+- Observed friction or ask: a notification should disappear when the user reads it in Feishu; the display should show who sent it, and the user asked whether message content is technically readable.
+- Product implication: use the authorized user's batch message read-status endpoint, resolve sender names through the existing Feishu app, and show only sender names on the shared display. Keep a clear fallback if read status is temporarily unavailable.
+- Follow-up: validate the live service and public preview, then verify an actual unread-to-read transition when a new message arrives.
+
+### 2026-09-25 — 副屏 Session 更新与定时提醒需可感知
+
+- Source: direct user report of lagging Session status and water, activity, and custom reminders not appearing as expected.
+- Observed friction or ask: data should refresh promptly, and timed reminders should remain visible long enough to be noticed and verified.
+- Product implication: avoid redraws caused only by poll timestamps, shorten the Session status check interval, retain timed reminders for ten minutes, and surface an empty custom reminder as incomplete configuration.
+- Follow-up: verify a real Session state transition and a timed reminder on the paired device; browser and service checks alone do not establish physical pixels.
+
+### 2026-09-25 — 副屏去重、结果来源、天气和飞书会话来源
+
+- Source: direct user feedback on the v46 display layout and Feishu reminders.
+- Observed friction or ask: remove repetitive headings and status labels; identify which Session produced a pending result with a short context; put time on the left and current weather on the right; summarize unread Feishu messages by group, topic or private conversation instead of sender name.
+- Product implication: separate work context from actionable reminders, use a configurable city with clearly credited weather data, and resolve Feishu chat metadata without exposing message bodies.
+- Follow-up: verify live group-name lookup, weather availability, rendering and current paired-device playback; clarify that individual topic titles are not present in the message-search metadata.
+
+### 2026-09-25 — 副屏天气城市定为北京
+
+- Source: direct user clarification after the configurable-city weather preview was published.
+- Observed friction or ask: the user's location for this display is Beijing, while the first weather preview defaulted to Shanghai.
+- Product implication: use Beijing for new drafts and migrate the old Shanghai default once; preserve later user edits and apply Beijing to the current paired-device preview.
+- Follow-up: verify the public preview, persisted active payload, sidecar frame, and matching device USB playback receipt.
+
+### 2026-09-25 — 副屏同步延迟和伪宠物动作
+
+- Source: direct user report after trying the Beijing weather version.
+- Observed friction or ask: Feishu reminders still feel delayed; quantify Session versus Feishu delay and remove whole-image pet motions that do not animate the character itself.
+- Product implication: measure message creation to first observation separately from API and device refresh, keep Feishu polling off the Session response path, and use only original character GIFs. Do not call image translation a new action.
+- Follow-up: verify real API timing, public page, removed assets, active paired frame, and USB playback receipt.
+
+### 2026-09-25 — 副屏提醒默认覆盖晚间并缩短飞书缓存
+
+- Source: direct correction after the latency review.
+- Observed friction or ask: the prior 09:00–18:00 default hid evening Feishu reminders, and a 3-second cache was still too slow.
+- Product implication: default to workdays 09:00–22:00, migrate the old default once, apply it to the current device, and shorten the single-flight Feishu cache to 1 second while preserving the 2-second display read interval.
+- Follow-up: verify evening visibility, actual API availability, and device playback after applying the current payload.
 
 ### YYYY-MM-DD — short title
 
