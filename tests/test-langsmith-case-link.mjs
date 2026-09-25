@@ -13,7 +13,8 @@ const { buildReplyPublicationPayload } = await import('../chat/reply-publication
 const id = 'a'.repeat(32), projectId = '46a89fbc-9740-40b8-a646-0179aa16d7f4';
 try {
   assert.equal(await readLangSmithCaseConfig(), null);
-  writeFileSync(join(dir, 'langsmith-case-link.json'), JSON.stringify({ enabled: true, projectId, stateDir: 'langsmith-live' }));
+  writeFileSync(join(dir, 'langsmith-case-link.json'), JSON.stringify({ enabled: true, projectId,
+    stateDir: 'langsmith-live', backfillStateDir: 'langsmith-backfill' }));
   const config = await readLangSmithCaseConfig();
   assert.equal(buildLangSmithCaseEntry({id, tool:'codex'}, config).url,
     `https://remote.example.test/api/sessions/${id}/langsmith`);
@@ -36,5 +37,10 @@ try {
   assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_case1'})).url,url.replace(`/run/${traceId}`,`/run/${childId}`));
   writeFileSync(statePath, JSON.stringify({projectId,tracked:{[id]:{latestSnapshot:{rootUrl:'https://evil.example/r/trace',traceId:'trace',revision:2}}}}));
   assert.equal(await getLatestLangSmithCase(id, config), null);
+  mkdirSync(join(dir, 'langsmith-backfill'));
+  writeFileSync(join(dir, 'langsmith-backfill', 'state.json'), JSON.stringify({projectId,sessions:{[id]:{
+    latestSnapshot:{rootUrl:url,traceId,revision:1,runIds:['run_case1','run_case2'],runNodeIds:{run_case1:childId}}}}}));
+  assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_case1'})).url,
+    url.replace(`/run/${traceId}`,`/run/${childId}`));
 } finally { rmSync(dir,{recursive:true,force:true}); }
 console.log('test-langsmith-case-link: ok');
