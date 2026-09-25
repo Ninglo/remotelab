@@ -1885,8 +1885,8 @@ function initVoiceShortcutSettings() {
       showVoiceShortcutStatus("settings.voiceShortcut.saving");
       void saveVoiceShortcutPreference({ binding, enabled: true }).then((saved) => {
         if (saved && getCurrentVoiceShortcutPreference().binding === binding) {
-          const warning = window.RemoteLabVoiceShortcut?.getBindingConflict(binding) === "browser"
-            ? ` ${t("settings.voiceShortcut.conflict.browser")}` : "";
+          const conflict = window.RemoteLabVoiceShortcut?.getBindingConflict(binding);
+          const warning = conflict ? ` ${t(`settings.voiceShortcut.conflict.${conflict}`)}` : "";
           showVoiceShortcutStatus("settings.voiceShortcut.saved", { binding: `${formatRecordedVoiceShortcut(binding)}${warning}` });
         }
       });

@@ -34,11 +34,13 @@ const attempt = await submit({
   events: [
     { type: 'down', modifier: 'Shift', shift: true, atMs: 12, key: 'secret' },
     { type: 'down', modifier: 'Alt', alt: true, shift: false, atMs: 35, key: 'secret' },
+    { type: 'down', modifier: 'CapsLock', shift: true, atMs: 45, key: 'secret' },
   ],
 });
 assert.equal(attempt.response.status, 200);
 assert.equal(attempt.lines.length, 1);
 assert.match(attempt.lines[0], /"modifier":"Shift"/);
+assert.match(attempt.lines[0], /"modifier":"CapsLock"/);
 assert.doesNotMatch(attempt.lines[0], /secret/, 'the diagnostic must never log raw key content');
 assert.equal((await submit({ attemptId: 'test-123', phase: 'start' }, '')).response.status, 401);
 assert.equal((await submit({ attemptId: 'bad id', phase: 'stop' })).response.status, 400);

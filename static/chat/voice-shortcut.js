@@ -35,7 +35,7 @@
   function formatBinding(binding) {
     if (binding === "Alt*3") return typeof t === "function" ? t("settings.voiceShortcut.tripleOption") : "Option ×3";
     if (binding === "Shift*2") return typeof t === "function" ? t("settings.voiceShortcut.doubleShift") : "Shift ×2";
-    const labels = { Ctrl: "Ctrl", Alt: "Option", Shift: "Shift", Meta: "⌘", Space: "Space", Enter: "Enter", Escape: "Esc", Tab: "Tab" };
+    const labels = { Ctrl: "Ctrl", Alt: "Option", Shift: "Shift", Meta: "⌘", CapsLock: "Caps Lock", Space: "Space", Enter: "Enter", Escape: "Esc", Tab: "Tab" };
     return String(binding || "").split("+").map((part) => labels[part] || part.replace(/^Key/, "").replace(/^Digit/, "")).join(" + ");
   }
 
@@ -62,22 +62,31 @@
     if (code === "ShiftLeft" || code === "ShiftRight" || event?.key === "Shift") return "Shift";
     if (code === "ControlLeft" || code === "ControlRight" || event?.key === "Control") return "Ctrl";
     if (code === "MetaLeft" || code === "MetaRight" || event?.key === "Meta") return "Meta";
+    if (code === "CapsLock" || event?.key === "CapsLock") return "CapsLock";
     return "";
   }
 
   function modifierChordFromEvent(event, pressed = pressedModifiers) {
     if (event?.repeat || event?.isComposing) return "";
-    if (!modifierFromEvent(event)) return "";
+    const modifier = modifierFromEvent(event);
+    if (!modifier) return "";
     const active = (name, flag, pressedName = name) => flag === true
       || event?.getModifierState?.(name) === true || pressed?.has(pressedName);
+    if ((modifier === "CapsLock" || modifier === "Shift") && pressed?.has("CapsLock")
+      && active("Shift", event.shiftKey) && !active("Alt", event.altKey)
+      && !active("Control", event.ctrlKey, "Ctrl") && !active("Meta", event.metaKey)) {
+      return "Shift+CapsLock";
+    }
     return active("Alt", event.altKey) && active("Shift", event.shiftKey)
       && !active("Control", event.ctrlKey, "Ctrl") && !active("Meta", event.metaKey)
+      && !pressed?.has("CapsLock")
       ? "Alt+Shift" : "";
   }
 
   function getBindingConflict(binding) {
     if (binding === "Ctrl+KeyO" || binding === "Meta+KeyO" || binding === "Ctrl+Meta+KeyO") return "newSession";
     if (/^(?:Ctrl|Meta)\+Key[RTLWNP]$/.test(binding)) return "browser";
+    if (binding === "Shift+CapsLock") return "system";
     return "";
   }
 
@@ -140,7 +149,7 @@
       return;
     }
     resetTaps();
-    if (preference.binding === "Alt+Shift") {
+    if (preference.binding === "Alt+Shift" || preference.binding === "Shift+CapsLock") {
       if (modifierChordFromEvent(event)) activateVoice(event);
       return;
     }

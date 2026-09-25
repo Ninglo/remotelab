@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import vm from 'vm';
 import { normalizeVoiceShortcutBinding } from '../lib/auth-config.mjs';
 
-for (const binding of ['Shift*2', 'Alt*3', 'Alt+Shift', 'Ctrl+Shift+KeyV']) {
+for (const binding of ['Shift*2', 'Alt*3', 'Alt+Shift', 'Shift+CapsLock', 'Ctrl+Shift+KeyV']) {
   assert.equal(normalizeVoiceShortcutBinding(binding), binding, `${binding} should be persisted unchanged`);
 }
 assert.equal(normalizeVoiceShortcutBinding('KeyV'), '', 'typing keys alone must be rejected');
@@ -121,23 +121,40 @@ key('keyup', 'AltLeft', { altKey: false });
 key('keydown', 'ShiftLeft', { shiftKey: false });
 assert.equal(key('keydown', 'AltLeft', { altKey: false, shiftKey: false }), true);
 assert.equal(clicks, 7, 'pressed modifier tracking should handle missing modifier flags');
+key('keyup', 'AltLeft', { altKey: false });
+key('keyup', 'ShiftLeft', { shiftKey: false });
+people[0].preferences.voiceShortcut.binding = 'Shift+CapsLock';
+key('keydown', 'ShiftLeft', { shiftKey: true });
+assert.equal(key('keydown', 'CapsLock', { shiftKey: false }), true);
+assert.equal(clicks, 8, 'Shift plus Caps Lock should work even when the second event loses shiftKey');
+key('keyup', 'CapsLock');
+key('keyup', 'ShiftLeft');
+key('keydown', 'CapsLock');
+assert.equal(key('keydown', 'ShiftLeft', { shiftKey: true }), true);
+assert.equal(clicks, 9, 'Caps Lock followed by Shift should also activate voice');
+key('keyup', 'ShiftLeft');
+key('keyup', 'CapsLock');
+key('keydown', 'ShiftLeft', { shiftKey: true, getModifierState: (name) => name === 'CapsLock' });
+assert.equal(clicks, 9, 'a latched Caps Lock state alone must not count as a held key');
+key('keyup', 'ShiftLeft');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Meta+KeyO'), 'newSession');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Ctrl+Meta+KeyO'), 'newSession');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Ctrl+KeyR'), 'browser');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Alt+Shift'), '');
+assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Shift+CapsLock'), 'system');
 
 people[0].preferences.voiceShortcut.binding = 'Ctrl+Shift+KeyV';
 assert.equal(key('keydown', 'KeyV', { ctrlKey: true, shiftKey: true }), true);
-assert.equal(clicks, 8, 'a configured chord should activate voice');
+assert.equal(clicks, 10, 'a configured chord should activate voice');
 key('keydown', 'KeyV', { ctrlKey: true });
-assert.equal(clicks, 8, 'the modifier set must match exactly');
+assert.equal(clicks, 10, 'the modifier set must match exactly');
 window.RemoteLabVoiceShortcut.setRecording(true);
 key('keydown', 'KeyV', { ctrlKey: true, shiftKey: true });
-assert.equal(clicks, 8, 'recording a new shortcut must not activate voice');
+assert.equal(clicks, 10, 'recording a new shortcut must not activate voice');
 window.RemoteLabVoiceShortcut.setRecording(false);
 button.disabled = true;
 key('keydown', 'KeyV', { ctrlKey: true, shiftKey: true });
-assert.equal(clicks, 8, 'the shortcut must honor the voice button disabled state');
+assert.equal(clicks, 10, 'the shortcut must honor the voice button disabled state');
 
 assert.equal(window.RemoteLabVoiceShortcut.bindingFromEvent({ code: 'KeyV', ctrlKey: true, shiftKey: true }), 'Ctrl+Shift+KeyV');
 assert.equal(window.RemoteLabVoiceShortcut.bindingFromEvent({ code: 'KeyV' }), '', 'bare typing keys should not be recorded');
@@ -322,10 +339,29 @@ assert.deepEqual(pending[10].preference, { enabled: true, binding: 'Shift*2' },
 pending[10].resolve();
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(enabledControl.checked, true);
+recordControl.fire('click');
+recordKey('keydown', 'CapsLock');
+assert.match(statusControl.textContent, /received.*Caps Lock/, 'Caps Lock alone should wait for a second key');
+recordKey('keyup', 'CapsLock');
+recordControl.fire('click');
+assert.match(statusControl.textContent, /incomplete/);
+assert.equal(pending.length, 11, 'Caps Lock alone must not be saved');
+recordControl.fire('click');
+recordKey('keydown', 'ShiftLeft', { shiftKey: true });
+recordKey('keydown', 'CapsLock', { shiftKey: false });
+assert.match(statusControl.textContent, /detected.*Shift \+ Caps Lock.*conflict.system/,
+  'the requested chord should be identified with a system-shortcut warning');
+recordControl.fire('click');
+assert.deepEqual(pending[11].preference, { enabled: true, binding: 'Shift+CapsLock' });
+pending[11].resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.match(statusControl.textContent, /saved.*Shift \+ Caps Lock.*conflict.system/);
 assert.ok(diagnostics.some(({ payload }) => payload.phase === 'start'));
 assert.ok(diagnostics.some(({ payload }) => payload.phase === 'stop' && payload.outcome === 'empty'
   && payload.events.length === 0), 'an empty attempt should be observable in the server log');
 assert.ok(diagnostics.some(({ payload }) => payload.phase === 'stop' && payload.outcome === 'confirmed'
   && payload.events.some((event) => event.modifier === 'Shift')), 'recorded modifiers should be observable');
+assert.ok(diagnostics.some(({ payload }) => payload.phase === 'stop' && payload.outcome === 'confirmed'
+  && payload.events.some((event) => event.modifier === 'CapsLock')), 'Caps Lock should be observable');
 assert.ok(diagnostics.every(({ url }) => url === '/api/voice-shortcut/recording-diagnostic'));
 console.log('test-chat-voice-shortcut: ok');

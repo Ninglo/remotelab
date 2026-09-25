@@ -325,7 +325,7 @@ export async function handleControlRoutes({
         writeJson(res, 400, { error: 'Invalid recording diagnostic' });
         return true;
       }
-      const allowedModifiers = new Set(['Alt', 'Shift', 'Ctrl', 'Meta', 'Other']);
+      const allowedModifiers = new Set(['Alt', 'Shift', 'Ctrl', 'Meta', 'CapsLock', 'Other']);
       const events = Array.isArray(payload.events) ? payload.events.slice(0, 24).map((event) => ({
         type: event?.type === 'up' ? 'up' : 'down',
         modifier: allowedModifiers.has(event?.modifier) ? event.modifier : 'Other',
