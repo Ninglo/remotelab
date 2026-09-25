@@ -14,12 +14,34 @@ import { JEV_AUTO_MODEL_ID } from '../lib/jev-auto-router.mjs';
 import { limitReasoningCatalog } from '../lib/reasoning-effort-policy.mjs';
 import { limitModelCatalog } from '../lib/model-availability-policy.mjs';
 
-// Claude Code has no model cache file — hardcode the known aliases.
-// These alias names are stable; the full model IDs behind them update automatically.
+// Claude Code has no model cache file. Keep its moving aliases alongside
+// pinned Anthropic model IDs so users can choose either behavior.
+const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CLAUDE_46_EFFORT_LEVELS = ['low', 'medium', 'high', 'max'];
+function claudeModel(id, label, levels, defaultEffort = 'high') {
+  return {
+    id,
+    label,
+    reasoning: levels
+      ? { kind: 'enum', label: 'Thinking', levels, default: defaultEffort }
+      : { kind: 'none', label: 'Thinking' },
+  };
+}
 const CLAUDE_MODELS = [
-  { id: 'sonnet', label: 'Sonnet 5' },
-  { id: 'opus',   label: 'Opus 5'   },
-  { id: 'haiku',  label: 'Haiku 4.5' },
+  claudeModel('sonnet', 'Sonnet (latest alias)', CLAUDE_EFFORT_LEVELS),
+  claudeModel('claude-sonnet-5', 'Sonnet 5', CLAUDE_EFFORT_LEVELS),
+  claudeModel('opus', 'Opus (latest alias)', CLAUDE_EFFORT_LEVELS, 'medium'),
+  claudeModel('claude-opus-5-5', 'Opus 5.5', CLAUDE_EFFORT_LEVELS, 'medium'),
+  claudeModel('fable', 'Fable (latest alias)', CLAUDE_EFFORT_LEVELS),
+  claudeModel('claude-fable-5-1', 'Fable 5.1', CLAUDE_EFFORT_LEVELS),
+  claudeModel('claude-fable-5', 'Fable 5', CLAUDE_EFFORT_LEVELS),
+  claudeModel('haiku', 'Haiku (latest alias)', null),
+  claudeModel('claude-haiku-4-5-20251001', 'Haiku 4.5', null),
+  claudeModel('claude-opus-5', 'Opus 5', CLAUDE_EFFORT_LEVELS),
+  claudeModel('claude-opus-4-8', 'Opus 4.8', CLAUDE_EFFORT_LEVELS),
+  claudeModel('claude-opus-4-7', 'Opus 4.7', CLAUDE_EFFORT_LEVELS, 'xhigh'),
+  claudeModel('claude-opus-4-6', 'Opus 4.6', CLAUDE_46_EFFORT_LEVELS),
+  claudeModel('claude-sonnet-4-6', 'Sonnet 4.6', CLAUDE_46_EFFORT_LEVELS),
 ];
 const DEFAULT_CODEX_REASONING_LEVELS = ['low', 'medium', 'high', 'xhigh'];
 const DEFAULT_CODEX_REASONING = Object.freeze({
@@ -323,23 +345,11 @@ export async function getModelsForTool(toolId, options = {}) {
 
 async function getUnrestrictedModelsForTool(toolId, options = {}) {
   if (toolId === 'claude') {
-    const levels = ['none', 'low', 'medium', 'high'];
-    const defaultReasoning = {
-      kind: 'enum',
-      label: 'Thinking',
-      levels,
-      default: 'medium',
-    };
     return {
-      models: CLAUDE_MODELS.map((model) => ({
-        ...model,
-        reasoning: defaultReasoning,
-        defaultEffort: 'medium',
-        effortLevels: levels,
-      })),
-      effortLevels: levels,
+      models: CLAUDE_MODELS.map((model) => buildResponseModel(model)),
+      effortLevels: null,
       defaultModel: null,
-      reasoning: defaultReasoning,
+      reasoning: { kind: 'none', label: 'Thinking' },
     };
   }
   if (toolId === 'codex') {

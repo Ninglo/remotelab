@@ -644,6 +644,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Promote to: Settings grid alignment, sidebar action placement, and global shortcut conventions
 - Follow-up: validate the bottom-sidebar placement and `Command/Control + Shift + Enter` on real desktop and mobile use
 
+### 2026-09-25 — Claude Code model choices and effort must track the installed Harness
+
+- Source: direct request after the Claude Code picker fell behind current releases.
+- Observed friction or ask: Fable and Opus 5.5 were absent, and the available thinking effort levels were unclear.
+- Product implication: expose current aliases and useful pinned versions, show effort by model, and keep the installed Claude Code CLI current enough to run them. A model's native default remains available when no override is selected.
+- Follow-up: recheck the official Claude Code model and effort table when upgrading the CLI; verify the live picker and a real account canary.
+
 ### YYYY-MM-DD — short title
 
 - Source:
