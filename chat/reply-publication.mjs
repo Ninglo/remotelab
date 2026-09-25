@@ -182,6 +182,7 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
   session = null,
   fullHistory = history,
   includeSessionEntry = true,
+  caseEntry = null,
 } = {}) {
   const displayEvents = buildSessionDisplayEvents(history, { sessionRunning: false })
     .filter((event) => event?.role === 'assistant')
@@ -201,6 +202,11 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
       payload.sessionEntry = sessionEntry;
       payload.text = appendSessionEntryFooter(payload.text, sessionEntry);
     }
+  }
+
+  if (caseEntry) {
+    payload.caseEntry = caseEntry;
+    payload.text = appendSessionEntryFooter(payload.text, caseEntry);
   }
 
   return payload;

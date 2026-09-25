@@ -29,6 +29,10 @@ export function parseSessionGetRoute(pathname) {
     return { kind: 'source-context', sessionId };
   }
 
+  if (parts.length === 4 && parts[3] === 'langsmith') {
+    return { kind: 'langsmith', sessionId };
+  }
+
   if (parts.length === 5 && parts[3] === 'responses' && parts[4]) {
     return { kind: 'response', sessionId, responseId: decodeURIComponent(parts[4]) };
   }

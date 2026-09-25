@@ -28,6 +28,7 @@ import {
 } from './session-manager.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { normalizeSessionExecutionProfile, QUICK_SESSION_PROFILE } from '../lib/quick-session-profile.mjs';
+import { readLangSmithCaseConfig, getLatestLangSmithCase } from '../lib/langsmith-case-link.mjs';
 
 export const SESSION_CREATION_MAX_BYTES = 64 * 1024;
 
@@ -221,6 +222,20 @@ export async function handleSessionMainRoutes({
       return true;
     }
     writeJson(res, 200, { sessionId, sourceContext });
+    return true;
+  }
+
+  if (sessionGetRoute?.kind === 'langsmith') {
+    const { sessionId } = sessionGetRoute;
+    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+    const config = await readLangSmithCaseConfig();
+    const latest = await getLatestLangSmithCase(sessionId, config, {
+      runId: typeof parsedUrl.query.runId === 'string' ? parsedUrl.query.runId : '',
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    if (!latest) { writeJson(res, 202, { status: 'pending', sessionId }); return true; }
+    res.writeHead(302, { Location: latest.url });
+    res.end();
     return true;
   }
 

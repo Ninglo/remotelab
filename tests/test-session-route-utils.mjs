@@ -27,6 +27,12 @@ assert.deepEqual(
 );
 
 assert.deepEqual(
+  parseSessionGetRoute('/api/sessions/session-123/langsmith'),
+  { kind: 'langsmith', sessionId: 'session-123' },
+  'LangSmith case links resolve to an authenticated Session route',
+);
+
+assert.deepEqual(
   parseSessionGetRoute('/api/sessions/session-123/events/blocks/10-20'),
   { kind: 'event-block', sessionId: 'session-123', startSeq: 10, endSeq: 20 },
   'collapsed event-block routes should parse normally',

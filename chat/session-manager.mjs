@@ -28,7 +28,8 @@ import { watch } from 'fs';
 import { writeFile } from 'fs/promises';
 import { IS_GUEST_INSTANCE, CONFIG_DIR } from '../lib/config.mjs';
 import { DEFAULT_PERSON_ID, SYSTEM_IDENTITY_ID } from '../lib/auth-config.mjs';
-import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { appendSessionEntryFooter, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { buildLangSmithCaseEntry, readLangSmithCaseConfig } from '../lib/langsmith-case-link.mjs';
 import { getToolDefinitionAsync } from '../lib/tools.mjs';
 import { createToolInvocation } from './process-runner.mjs';
 import {
@@ -1597,12 +1598,18 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   if (!record || record.result) return;
   if (run.state === 'completed') await maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents);
   const history = await loadHistory(sessionId, { includeBodies: true });
+  const session = await findSessionMeta(sessionId);
+  const caseConfig = await readLangSmithCaseConfig().catch(() => null);
   const payload = buildReplyPublicationPayload(collectReplyPublicationHistory(history, run), run, {
-    session: await findSessionMeta(sessionId), fullHistory: history,
+    session, fullHistory: history, caseEntry: buildLangSmithCaseEntry(session, caseConfig, {runId: run.id}),
     includeSessionEntry: !record.deliveries.some(delivery => delivery.kind === 'session_entry'),
   });
   const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
-  const deliveryPayload = run.state === 'completed' ? payload : { text: run.state === 'cancelled' ? '任务已取消。' : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`, attachments: [] };
+  const deliveryPayload = run.state === 'completed' ? payload : {
+    text: appendSessionEntryFooter(run.state === 'cancelled' ? '任务已取消。'
+      : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`, payload.caseEntry),
+    caseEntry: payload.caseEntry, attachments: [],
+  };
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null }, buildReplyDeliveries(plan, deliveryPayload).map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 
