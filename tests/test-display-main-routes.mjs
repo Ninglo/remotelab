@@ -99,6 +99,11 @@ const sidecar = createServer(async (req, res) => {
     json(res, 200, { connected: true, personId: url.pathname.split('/')[3] });
     return;
   }
+  if (/^\/v1\/people\/[^/]+\/todos(?:\/todo_[a-f0-9]{16})?$/.test(url.pathname)) {
+    if (req.headers.authorization !== `Bearer ${expectedAdmin}`) return json(res, 401, { error: 'bad admin' });
+    json(res, req.method === 'POST' ? 201 : 200, { personId: url.pathname.split('/')[3], body: body ? JSON.parse(body) : null });
+    return;
+  }
   if (url.pathname === '/v1/devices' && req.method === 'GET') {
     if (req.headers.authorization !== `Bearer ${expectedAdmin}`) return json(res, 401, { error: 'bad admin' });
     json(res, 200, { devices: [{ id: `display-${url.searchParams.get('personId')}` }] });
@@ -245,6 +250,20 @@ try {
   assert.equal(acknowledged.response.status, 200);
   assert.equal(acknowledged.payload.personId, 'person-a');
   assert.deepEqual(JSON.parse(calls.find((call) => call.path === '/v1/people/person-a/feishu/acknowledge').body), { observedAt: '2026-09-25T09:00:00.000Z' });
+
+  const deniedTodo = await requestJson(`${base}/api/display/todos`, {
+    method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{"title":"筛选候选人"}',
+  });
+  assert.equal(deniedTodo.response.status, 403);
+  const createdTodo = await requestJson(`${base}/api/display/todos`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{"title":"筛选候选人"}',
+  });
+  assert.equal(createdTodo.response.status, 201);
+  assert.equal(createdTodo.payload.personId, 'person-a');
+  const changedTodo = await requestJson(`${base}/api/display/todos/todo_aaaaaaaaaaaaaaaa`, {
+    method: 'PATCH', headers: { Origin: base, 'X-Test-Person': 'person-b', 'Content-Type': 'application/json' }, body: '{"status":"done"}',
+  });
+  assert.equal(changedTodo.payload.personId, 'person-b', 'the URL never chooses another Person');
 
   const deniedStudio = await requestJson(`${base}/api/display/studio-preview`, {
     method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{}',

@@ -34,6 +34,7 @@ ${includeSessionSpawn ? '- Independent RemoteLab Sessions: `remotelab session-sp
 - Web pages and previews: public static pages—\`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/stable-static-publish.md\`; local services and authenticated previews—\`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/guest-port-expose.md\`. CLI: \`remotelab publish static --help\`, \`remotelab preview --help\`.
 - Feishu resources and discussion threads: \`$REMOTELAB_PROJECT_ROOT/docs/platform-skills/feishu-cli.md\`; follow its pointer to the matching \`lark-cli\` skill.
 - Calendar and reminders: \`remotelab agenda --help\`.
+- Personal To do items with optional deadlines, status, and numeric progress: \`remotelab todo --help\`. A conversation can create or update them for its current Person.
 - User Gmail and Agent Mailbox: \`remotelab gmail status --json\`, \`remotelab gmail --help\`, \`remotelab mail --help\`.
 - Bound connector actions: \`remotelab connector list --json\`.
 - Linked local helper: \`remotelab local-bridge status --json\` and \`remotelab local-bridge status --help\`.

@@ -17,6 +17,7 @@ import { summarizeAutomationTasks, summarizeFeishuSessions } from './reminder-so
 import { createFeishuUserReminders } from './feishu-user-reminders.mjs';
 import { normalizeSentence, prepareContent, renderPersonalPng } from './personal-content.mjs';
 import { prepareAnimatedPreview, previewBundleId, previewFrameId, renderAnimatedPreview, renderAnimatedPreviewBundle, renderAnimatedPreviewJpeg, renderStaticPreviewJpeg } from './preview-animation.mjs';
+import { createTodoStore } from './todos.mjs';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const bindHost = String(process.env.REMOTELAB_DISPLAY_BIND_HOST || '127.0.0.1').trim();
@@ -31,6 +32,7 @@ const adminTokenFile = process.env.REMOTELAB_DISPLAY_ADMIN_TOKEN_FILE
 const signalFile = process.env.REMOTELAB_DISPLAY_SIGNAL_FILE || join(configDir, 'display-signals.json');
 const personalFile = process.env.REMOTELAB_DISPLAY_PERSONAL_FILE || join(configDir, 'display-personal-content.json');
 const previewFile = process.env.REMOTELAB_DISPLAY_PREVIEW_FILE || join(configDir, 'display-preview-frames.json');
+const todoStore = createTodoStore(process.env.REMOTELAB_DISPLAY_TODOS_FILE || join(configDir, 'display-todos.json'));
 const renderMode = process.env.REMOTELAB_DISPLAY_RENDER_MODE || 'classic';
 if (!['classic', 'signals'].includes(renderMode)) throw new Error('Unknown display render mode');
 const fastBundleIntervalMs = Number(process.env.REMOTELAB_DISPLAY_BUNDLE_INTERVAL_MS || 100);
@@ -608,6 +610,27 @@ async function handle(req, res) {
     sendJson(res, 200, result);
     return;
   }
+  const todosMatch = /^\/v1\/people\/([^/]+)\/todos(?:\/(todo_[a-f0-9]{16}))?$/.exec(pathname);
+  if (todosMatch && ['GET', 'POST', 'PATCH', 'DELETE'].includes(req.method)) {
+    if (!await requireAdmin(req, res, url)) return;
+    const personId = decodeURIComponent(todosMatch[1]);
+    await getPersonIdentityIds(personId);
+    if (!todosMatch[2] && req.method === 'GET') { sendJson(res, 200, { items: await todoStore.list(personId) }); return; }
+    if (!todosMatch[2] && req.method === 'POST') {
+      const input = await readRequestJson(req, 8 * 1024);
+      const item = await todoStore.create(personId, input, trimString(req.headers['x-remotelab-session-id']));
+      sendJson(res, 201, { item }); return;
+    }
+    if (todosMatch[2] && req.method === 'PATCH') {
+      const item = await todoStore.update(personId, todosMatch[2], await readRequestJson(req, 8 * 1024));
+      sendJson(res, item ? 200 : 404, item ? { item } : { error: 'To do not found' }); return;
+    }
+    if (todosMatch[2] && req.method === 'DELETE') {
+      const removed = await todoStore.remove(personId, todosMatch[2]);
+      sendJson(res, removed ? 200 : 404, removed ? { removed: true } : { error: 'To do not found' }); return;
+    }
+    sendJson(res, 405, { error: 'Unsupported To do operation' }); return;
+  }
   const personStatusMatch = /^\/v1\/people\/([^/]+)\/(status|preview\.png|content|content\.gif)$/.exec(pathname);
   if (personStatusMatch && req.method === 'GET') {
     if (!await requireAdmin(req, res, url)) return;
@@ -628,13 +651,14 @@ async function handle(req, res) {
       if (personal) { sendText(res, 200, 'image/png', renderPersonalPng(personal)); return; }
     }
     const feishuUser = personStatusMatch[2] === 'status' ? feishuUserReminders.latest(personId) : null;
-    const [view, automation] = await Promise.all([
+    const [view, automation, todo] = await Promise.all([
       collectStatusView(personId),
       personStatusMatch[2] === 'status' ? automationFor(personId) : null,
+      personStatusMatch[2] === 'status' ? todoStore.summary(personId) : null,
     ]);
     if (personStatusMatch[2] === 'status') {
       sendJson(res, 200, { snapshot: view.snapshot, scene: view.scene, metrics: view.metrics,
-        reminderSources: { feishu: view.metrics?.feishu || null, feishuUser, automation } });
+        reminderSources: { feishu: view.metrics?.feishu || null, feishuUser, automation, todo } });
     } else sendText(res, 200, 'image/png', renderStatusPng(view));
     return;
   }

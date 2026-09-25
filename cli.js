@@ -50,6 +50,7 @@ Usage:
   remotelab assistant-message        Append an assistant message with optional local-file attachments
   remotelab local-bridge            Manage linked local helper bridges for a session
   remotelab agenda                  Manage the instance calendar feed
+  remotelab todo                    Manage personal To do items and numeric progress
   remotelab trigger                  Manage durable session triggers
   remotelab schedule                 Manage recurring automated tasks
   remotelab usage-summary            Summarize local Codex token usage
@@ -109,6 +110,12 @@ switch (command) {
   case 'chat':
     await import(scriptPath('chat-server.mjs'));
     break;
+
+  case 'todo': {
+    const { runTodoCommand } = await import(scriptPath('lib/todo-command.mjs'));
+    process.exitCode = await runTodoCommand(args);
+    break;
+  }
 
   case 'release': {
     console.error('`remotelab release` has been removed. RemoteLab now runs the current source tree after restart. Use `remotelab restart chat` for the owner surface.');
