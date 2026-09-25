@@ -394,6 +394,55 @@ async function main() {
     assert.doesNotMatch(page.text, /id="googleOAuthRedirectUri"/);
     assert.doesNotMatch(page.text, /id="googleOAuthSaveBtn"/);
     assert.match(page.text, /id="voiceBtn"/);
+    assert.match(page.text, /id="voiceAvailabilityStatus"/, 'disabled voice input should explain why next to the microphone');
+    const voiceSettingsHtml = page.text.match(/<div class="settings-section">\s*<div class="settings-section-title" data-i18n="settings.voice.title">[\s\S]*?<\/section>/)?.[0] || '';
+    assert.match(voiceSettingsHtml, /id="voiceShortcutEnabled"/, 'shortcut toggle should be inside Voice Input settings');
+    assert.match(voiceSettingsHtml, /id="voiceShortcutRecordBtn"/, 'recording should be visible even before enabling');
+    assert.match(voiceSettingsHtml, /id="voiceShortcutClearBtn"/);
+    assert.ok(voiceSettingsHtml.indexOf('id="voiceShortcutRecordBtn"') < voiceSettingsHtml.indexOf('id="voiceInputProviderSelect"'),
+      'shortcut recording should appear before the speech service credentials, without scrolling through them');
+    assert.doesNotMatch(page.text.split('id="settings-sessions"')[1]?.split('id="settings-people"')[0] || '',
+      /voiceShortcut/, 'shortcut must not appear under Session opening');
+
+    const enabledWithoutKeys = await request(port, 'PATCH', '/api/people/person_alpha', {
+      voiceShortcut: { enabled: true },
+    });
+    assert.equal(enabledWithoutKeys.status, 200);
+    assert.deepEqual(JSON.parse(enabledWithoutKeys.text).people.find((person) => person.id === 'person_alpha')?.preferences?.voiceShortcut,
+      { enabled: true, binding: '' }, 'enabling must not silently assign Option three times');
+    const ownVoiceShortcutPatch = await request(port, 'PATCH', '/api/people/person_alpha', {
+      voiceShortcut: { binding: 'Ctrl+Shift+KeyV' },
+    });
+    assert.equal(ownVoiceShortcutPatch.status, 200, 'a Person should be able to record their voice shortcut');
+    let voiceShortcutPeople = JSON.parse(ownVoiceShortcutPatch.text).people;
+    assert.deepEqual(voiceShortcutPeople.find((person) => person.id === 'person_alpha')?.preferences?.voiceShortcut,
+      { enabled: true, binding: 'Ctrl+Shift+KeyV' });
+    for (const binding of ['Shift*2', 'Alt+Shift', 'Alt*3']) {
+      const savedShortcut = await request(port, 'PATCH', '/api/people/person_alpha', { voiceShortcut: { binding } });
+      assert.equal(savedShortcut.status, 200, `${binding} should save`);
+      assert.equal(JSON.parse(savedShortcut.text).people.find((person) => person.id === 'person_alpha')?.preferences?.voiceShortcut?.binding,
+        binding);
+    }
+    assert.equal(voiceShortcutPeople.find((person) => person.id === 'person_beta')?.preferences?.voiceShortcut?.enabled,
+      false, 'another Person should remain disabled');
+    const crossPersonVoicePatch = await request(port, 'PATCH', '/api/people/person_beta', {
+      voiceShortcut: { enabled: true, binding: 'Ctrl+Shift+KeyV' },
+    });
+    assert.equal(crossPersonVoicePatch.status, 403, 'one Person must not change another Person’s voice shortcut');
+    const invalidVoicePatch = await request(port, 'PATCH', '/api/people/person_alpha', {
+      voiceShortcut: { enabled: true, binding: 'KeyV' },
+    });
+    assert.equal(invalidVoicePatch.status, 400, 'bare typing keys should not become voice shortcuts');
+    const clearedVoiceShortcut = await request(port, 'PATCH', '/api/people/person_alpha', {
+      voiceShortcut: { binding: '' },
+    });
+    assert.equal(clearedVoiceShortcut.status, 200, 'a Person can clear the recorded keys');
+    assert.deepEqual(JSON.parse(clearedVoiceShortcut.text).people.find((person) => person.id === 'person_alpha')?.preferences?.voiceShortcut,
+      { enabled: true, binding: '' });
+    const voiceShortcutRead = await request(port, 'GET', '/api/people');
+    voiceShortcutPeople = JSON.parse(voiceShortcutRead.text).people;
+    assert.equal(voiceShortcutPeople.find((person) => person.id === 'person_beta')?.preferences?.voiceShortcut?.enabled,
+      false, 'a rejected update must not affect the other Person');
     assert.doesNotMatch(page.text, /id="settingsUsersList"/);
     assert.doesNotMatch(page.text, /id="settingsAppsList"/);
     assert.doesNotMatch(page.text, /id="newUserNameInput"/);

@@ -409,6 +409,16 @@
 .input-actions-group.right {
   margin-left: auto;
 }
+.voice-availability-status[hidden] {
+  display: none;
+}
+.voice-availability-status {
+  padding: 0 12px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+}
 .quick-entry-focus-prompt[hidden] {
   display: none !important;
 }

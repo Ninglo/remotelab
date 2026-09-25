@@ -60,6 +60,7 @@
   let voiceButtonFlashTimer = null;
 
   const voiceBtn = globalScope.document?.getElementById("voiceBtn") || null;
+  const voiceAvailabilityStatus = globalScope.document?.getElementById("voiceAvailabilityStatus") || null;
 
   function t(key, vars) {
     return globalScope.remotelabT ? globalScope.remotelabT(key, vars) : key;
@@ -315,6 +316,17 @@
       : null;
   }
 
+  function getVoiceUnavailableReason(config = readStoredVoiceInputConfig()) {
+    if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode === true) return t("voice.unavailable.snapshot");
+    if (globalScope.isSecureContext === false) return t("voice.unavailable.https");
+    if (!hasVoiceInputSupport()) return t("voice.unavailable.browser");
+    if (isVoiceInputServerOnly(config) || !isVoiceInputConfigured(config)) return t("voice.unavailable.setup");
+    if (!msgInput || msgInput.disabled) return t("voice.unavailable.composer");
+    const sessionId = typeof currentSessionId === "string" ? currentSessionId : "";
+    if (sessionId && getCurrentSessionSnapshot()?.id !== sessionId) return t("voice.unavailable.loading");
+    return "";
+  }
+
   function getVoiceButtonLabel() {
     switch (activeVoiceCapture.phase) {
       case "connecting":
@@ -322,13 +334,8 @@
       case "recording":
       case "stopping":
         return t("voice.button.stop");
-      default: {
-        const config = readStoredVoiceInputConfig();
-        if (!hasVoiceInputSupport()) return t("voice.button.unsupported");
-        if (isVoiceInputServerOnly(config)) return t("voice.button.setup");
-        if (!isVoiceInputConfigured(config)) return t("voice.button.setup");
-        return t("action.voiceInput");
-      }
+      default:
+        return getVoiceUnavailableReason() || t("action.voiceInput");
     }
   }
 
@@ -360,18 +367,16 @@
   function refreshVoiceButtonUi() {
     if (!voiceBtn) return;
     const config = readStoredVoiceInputConfig();
-    const currentSession = getCurrentSessionSnapshot();
-    const sessionId = typeof currentSessionId === "string" ? currentSessionId : "";
-    const shareSnapshotActive = typeof shareSnapshotMode !== "undefined" && shareSnapshotMode === true;
-    const canStart = hasVoiceInputSupport()
-      && isVoiceInputConfigured(config)
-      && !!sessionId
-      && !shareSnapshotActive;
+    const unavailableReason = getVoiceUnavailableReason(config);
     const isActive = isLiveVoiceCapturePhase();
     const showLiveCaptureState = !!activeVoiceCapture.audioContext
       && (activeVoiceCapture.phase === "connecting" || activeVoiceCapture.phase === "recording");
 
-    voiceBtn.disabled = isActive ? false : !canStart;
+    voiceBtn.disabled = isActive ? false : !!unavailableReason;
+    if (voiceAvailabilityStatus) {
+      voiceAvailabilityStatus.hidden = isActive || !unavailableReason;
+      voiceAvailabilityStatus.textContent = voiceAvailabilityStatus.hidden ? "" : unavailableReason;
+    }
     voiceBtn.classList.toggle("is-busy", activeVoiceCapture.phase === "connecting" || activeVoiceCapture.phase === "stopping");
     voiceBtn.classList.toggle("is-recording", showLiveCaptureState);
     if (!isActive) {
@@ -466,7 +471,7 @@
 
   function applyTranscriptToComposer(transcript) {
     if (!msgInput) return;
-    if (!activeVoiceCapture.sessionId || activeVoiceCapture.sessionId !== currentSessionId) {
+    if (activeVoiceCapture.sessionId !== (typeof currentSessionId === "string" ? currentSessionId : "") || msgInput.disabled) {
       void stopVoiceCapture({ abandon: true });
       return;
     }
@@ -958,16 +963,8 @@
     }
     if (!msgInput) return;
     const config = readStoredVoiceInputConfig();
-    if (!hasVoiceInputSupport()) {
-      return;
-    }
-    if (!isVoiceInputConfigured(config)) {
-      return;
-    }
-    const session = getCurrentSessionSnapshot();
-    if (!session?.id) {
-      return;
-    }
+    if (getVoiceUnavailableReason(config)) return;
+    const sessionId = typeof currentSessionId === "string" ? currentSessionId : "";
 
     const mediaStream = await globalScope.navigator.mediaDevices.getUserMedia({
       audio: {
@@ -978,7 +975,7 @@
       },
     });
 
-    activeVoiceCapture.sessionId = session.id;
+    activeVoiceCapture.sessionId = sessionId;
     activeVoiceCapture.phase = "connecting";
     activeVoiceCapture.baseText = msgInput.value || "";
     activeVoiceCapture.transcript = "";
