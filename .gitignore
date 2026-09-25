@@ -39,6 +39,10 @@ credentials.txt
 node_modules
 node_modules/
 
+# Python test artifacts
+__pycache__/
+*.pyc
+
 # Cloudflare worker local config
 cloudflare/email-worker/wrangler.jsonc
 cloudflare/**/.wrangler/
