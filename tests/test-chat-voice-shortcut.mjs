@@ -290,4 +290,19 @@ recordControl.fire('click');
 recordKey('keydown', 'Escape');
 assert.equal(pending.length, 9, 'Escape cancels without saving');
 assert.match(statusControl.textContent, /cancelled/);
+
+enabledControl.checked = false;
+enabledControl.fire('change');
+pending[9].resolve();
+await new Promise((resolve) => setImmediate(resolve));
+recordControl.fire('click');
+recordKey('keydown', 'ShiftLeft', { shiftKey: true });
+recordKey('keyup', 'ShiftLeft');
+recordKey('keydown', 'ShiftLeft', { shiftKey: true });
+recordControl.fire('click');
+assert.deepEqual(pending[10].preference, { enabled: true, binding: 'Shift*2' },
+  'confirming a shortcut should activate it even if the switch was previously off');
+pending[10].resolve();
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(enabledControl.checked, true);
 console.log('test-chat-voice-shortcut: ok');

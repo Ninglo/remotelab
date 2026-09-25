@@ -1836,7 +1836,7 @@ function initVoiceShortcutSettings() {
         return;
       }
       showVoiceShortcutStatus("settings.voiceShortcut.saving");
-      void saveVoiceShortcutPreference({ binding }).then((saved) => {
+      void saveVoiceShortcutPreference({ binding, enabled: true }).then((saved) => {
         if (saved && getCurrentVoiceShortcutPreference().binding === binding) {
           const warning = window.RemoteLabVoiceShortcut?.getBindingConflict(binding) === "browser"
             ? ` ${t("settings.voiceShortcut.conflict.browser")}` : "";
@@ -1860,7 +1860,7 @@ function initVoiceShortcutSettings() {
   });
   voiceShortcutTripleOptionBtn.addEventListener("click", () => {
     if (voiceShortcutRecording) stopVoiceShortcutRecording();
-    void saveVoiceShortcutPreference({ binding: "Alt*3" });
+    void saveVoiceShortcutPreference({ binding: "Alt*3", enabled: true });
   });
   window.addEventListener("remotelab:localechange", () => renderVoiceShortcutSettings());
   window.addEventListener("blur", () => {
