@@ -78,6 +78,7 @@ import { handlePublicRoutes } from './router-public-routes.mjs';
 import { handleControlRoutes } from './router-control-routes.mjs';
 import { handleCodexAuthRoutes } from './router-codex-auth-routes.mjs';
 import { handlePiAuthRoutes } from './router-pi-auth-routes.mjs';
+import { handleClaudeAuthRoutes } from './router-claude-auth-routes.mjs';
 import { handleDisplayPublicRoutes, handleDisplaySettingsRoutes } from './router-display-routes.mjs';
 import { handleLocalBridgeOwnerRoutes, handleLocalBridgePublicRoutes } from './router-local-bridge-routes.mjs';
 import {
@@ -1502,6 +1503,16 @@ export async function handleRequest(req, res) {
   }
 
   if (await handlePiAuthRoutes({
+    req,
+    res,
+    pathname,
+    authSession,
+    writeJson,
+  })) {
+    return;
+  }
+
+  if (await handleClaudeAuthRoutes({
     req,
     res,
     pathname,

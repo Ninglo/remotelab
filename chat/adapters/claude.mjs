@@ -206,7 +206,12 @@ export function createClaudeAdapter() {
  * Build the command-line arguments for spawning Claude Code.
  */
 export function buildClaudeArgs(prompt, options = {}) {
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
+  const args = [
+    '-p', prompt,
+    '--output-format', 'stream-json', '--verbose',
+    '--permission-prompts', 'none',
+    '--disallowedTools', 'AskUserQuestion',
+  ];
 
   if (options.maxTurns) {
     args.push('--max-turns', String(options.maxTurns));

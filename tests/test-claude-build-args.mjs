@@ -3,6 +3,15 @@ import assert from 'assert/strict';
 
 import { buildClaudeArgs } from '../chat/adapters/claude.mjs';
 
+const unattended = buildClaudeArgs('hello world', { dangerouslySkipPermissions: true });
+assert.deepEqual(
+  unattended.slice(0, 10),
+  ['-p', 'hello world', '--output-format', 'stream-json', '--verbose',
+    '--permission-prompts', 'none', '--disallowedTools', 'AskUserQuestion',
+    '--dangerously-skip-permissions'],
+  'Claude should auto-approve ordinary tools without exposing interactive question prompts',
+);
+
 const explicitEffort = buildClaudeArgs('hello world', {
   model: 'sonnet',
   effort: 'medium',

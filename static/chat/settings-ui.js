@@ -149,6 +149,9 @@ let piAuthPollTimer = null;
 let codexAuthRequestId = 0;
 const CODEX_AUTH_MUTATION_TIMEOUT_MS = 20_000;
 let piAuthState = null;
+let claudeAuthState = null;
+let claudeAuthPollTimer = null;
+let claudeAuthRequestId = 0;
 function setPeopleStatus(message = "", { error = false } = {}) {
   if (!settingsPeopleStatus) return;
   settingsPeopleStatus.hidden = !message;
@@ -1075,6 +1078,209 @@ async function switchPiAccount() {
     piAuthState = { phase: "failed", error: error?.message || copy.logoutFailed };
     renderPiAuthPanel();
   }
+}
+
+function getClaudeAuthCopy() {
+  const isChinese = String(document.documentElement.lang || "").toLowerCase().startsWith("zh");
+  return isChinese ? {
+    title: "Claude Code 登录",
+    note: "使用 Claude Code 官方登录。当前 API Key 若仍在，Claude 运行会继续优先使用 API Key；登录本身不会切换计费方式。",
+    checking: "检测中…",
+    authenticated: "Claude 账号已登录",
+    awaiting: "等待网页登录或授权码",
+    verifying: "正在验证授权码…",
+    loggedOut: "未登录 Claude 账号",
+    unavailable: "未安装 Claude Code",
+    failed: "登录异常",
+    apiKeyOverride: "当前运行使用 API Key",
+    check: "检查状态",
+    start: "登录 Claude 账号",
+    retry: "重新获取登录链接",
+    open: "打开 Claude 登录页",
+    codePlaceholder: "网页提示时，在这里粘贴授权码",
+    submitCode: "提交授权码",
+    logout: "退出 Claude 账号",
+    logoutConfirm: "退出这台机器上的 Claude Code 账号登录？API Key 不会被删除。",
+  } : {
+    title: "Claude Code login",
+    note: "Uses Claude Code's official sign-in. An existing API key still takes priority for Claude runs; signing in does not switch billing.",
+    checking: "Checking…",
+    authenticated: "Claude account signed in",
+    awaiting: "Waiting for browser sign-in or code",
+    verifying: "Verifying code…",
+    loggedOut: "Claude account signed out",
+    unavailable: "Claude Code is not installed",
+    failed: "Login issue",
+    apiKeyOverride: "Runs currently use an API key",
+    check: "Check status",
+    start: "Sign in to Claude",
+    retry: "Get a new login link",
+    open: "Open Claude sign-in",
+    codePlaceholder: "Paste the authorization code here if prompted",
+    submitCode: "Submit code",
+    logout: "Sign out of Claude",
+    logoutConfirm: "Sign out of Claude Code on this machine? The API key will remain available.",
+  };
+}
+
+function ensureClaudeAuthSection() {
+  if (!settingsPanel || !canManageInstanceSettingsFromUi()) return null;
+  let section = document.getElementById("settingsClaudeAuthSection");
+  if (section) return section;
+  section = document.createElement("div");
+  section.className = "settings-section";
+  section.id = "settingsClaudeAuthSection";
+  section.innerHTML = `
+    <div class="settings-section-title" id="settingsClaudeAuthTitle"></div>
+    <div class="settings-section-note" id="settingsClaudeAuthNote"></div>
+    <div class="settings-connector-status">
+      <span class="settings-connector-pill pending" id="settingsClaudeAuthPill"></span>
+    </div>
+    <div class="settings-app-empty inline-status" id="settingsClaudeAuthOverride" hidden></div>
+    <div class="settings-app-actions">
+      <button class="settings-app-btn" id="settingsClaudeAuthCheckBtn" type="button"></button>
+      <button class="settings-app-btn" id="settingsClaudeAuthLoginBtn" type="button"></button>
+      <button class="settings-app-btn" id="settingsClaudeAuthLogoutBtn" type="button" hidden></button>
+    </div>
+    <div class="settings-app-card" id="settingsClaudeAuthDevice" hidden>
+      <div class="settings-app-actions">
+        <a class="settings-app-btn" id="settingsClaudeAuthLink" target="_blank" rel="noopener noreferrer"></a>
+      </div>
+      <div class="settings-inline-form settings-inline-form--narrow">
+        <input class="settings-inline-input" id="settingsClaudeAuthCode" type="text" autocomplete="one-time-code" />
+        <button class="settings-app-btn settings-inline-primary" id="settingsClaudeAuthCodeBtn" type="button"></button>
+      </div>
+    </div>
+    <div class="settings-app-empty inline-status" id="settingsClaudeAuthError" hidden></div>
+  `;
+  const connectionsBody = document.querySelector("#settings-connections .settings-group-body");
+  const piSection = document.getElementById("settingsPiAuthSection");
+  if (piSection?.parentElement === connectionsBody) piSection.after(section);
+  else if (connectionsBody) connectionsBody.prepend(section);
+  else settingsPanel.prepend(section);
+  document.getElementById("settingsClaudeAuthCheckBtn")?.addEventListener("click", () => { void refreshClaudeAuthStatus(); });
+  document.getElementById("settingsClaudeAuthLoginBtn")?.addEventListener("click", () => { void startClaudeLogin(); });
+  document.getElementById("settingsClaudeAuthLogoutBtn")?.addEventListener("click", () => { void logoutClaude(); });
+  document.getElementById("settingsClaudeAuthCodeBtn")?.addEventListener("click", () => { void submitClaudeLoginCode(); });
+  document.getElementById("settingsClaudeAuthCode")?.addEventListener("input", () => { renderClaudeAuthPanel(); });
+  return section;
+}
+
+function renderClaudeAuthPanel({ checking = false } = {}) {
+  if (!ensureClaudeAuthSection()) return;
+  const copy = getClaudeAuthCopy();
+  const state = claudeAuthState || {};
+  const awaiting = state.loginActive && !!state.verificationUri;
+  const pill = document.getElementById("settingsClaudeAuthPill");
+  const loginBtn = document.getElementById("settingsClaudeAuthLoginBtn");
+  const logoutBtn = document.getElementById("settingsClaudeAuthLogoutBtn");
+  const codeInput = document.getElementById("settingsClaudeAuthCode");
+  const codeBtn = document.getElementById("settingsClaudeAuthCodeBtn");
+  const link = document.getElementById("settingsClaudeAuthLink");
+  document.getElementById("settingsClaudeAuthTitle").textContent = copy.title;
+  document.getElementById("settingsClaudeAuthNote").textContent = copy.note;
+  document.getElementById("settingsClaudeAuthCheckBtn").textContent = copy.check;
+  loginBtn.textContent = awaiting ? copy.retry : copy.start;
+  loginBtn.hidden = state.loggedIn === true;
+  loginBtn.disabled = checking || state.available === false;
+  logoutBtn.textContent = copy.logout;
+  logoutBtn.hidden = state.loggedIn !== true;
+  logoutBtn.disabled = checking;
+  const label = checking ? copy.checking : state.loginActive
+    ? (state.phase === "verifying" ? copy.verifying : copy.awaiting)
+    : state.loggedIn ? copy.authenticated
+      : state.available === false ? copy.unavailable
+        : state.phase === "failed" ? copy.failed : copy.loggedOut;
+  pill.className = `settings-connector-pill ${state.loggedIn ? "ready" : "pending"}`;
+  pill.textContent = label;
+  const override = document.getElementById("settingsClaudeAuthOverride");
+  override.hidden = state.apiKeyOverride !== true;
+  override.textContent = state.apiKeyOverride ? copy.apiKeyOverride : "";
+  const device = document.getElementById("settingsClaudeAuthDevice");
+  device.hidden = !awaiting;
+  link.textContent = copy.open;
+  link.href = awaiting ? state.verificationUri : "";
+  codeInput.placeholder = copy.codePlaceholder;
+  codeInput.disabled = state.phase === "verifying";
+  codeBtn.textContent = copy.submitCode;
+  codeBtn.disabled = state.phase === "verifying" || !codeInput.value.trim();
+  if (!awaiting) codeInput.value = "";
+  const error = document.getElementById("settingsClaudeAuthError");
+  error.hidden = !state.error;
+  error.textContent = state.error || "";
+  if (state.loginActive && !claudeAuthPollTimer) {
+    claudeAuthPollTimer = window.setInterval(() => { void refreshClaudeAuthStatus({ silent: true }); }, 2500);
+  } else if (!state.loginActive && claudeAuthPollTimer) {
+    window.clearInterval(claudeAuthPollTimer);
+    claudeAuthPollTimer = null;
+  }
+}
+
+async function refreshClaudeAuthStatus({ silent = false } = {}) {
+  if (!canManageInstanceSettingsFromUi()) return;
+  const requestId = ++claudeAuthRequestId;
+  renderClaudeAuthPanel({ checking: !silent });
+  try {
+    const data = await fetchJsonOrRedirect("/api/claude-auth/status", { cache: "no-store", revalidate: false });
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = data?.claudeAuth || {};
+  } catch (error) {
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = { phase: "failed", error: error?.message || "Claude status check failed" };
+  }
+  renderClaudeAuthPanel();
+}
+
+async function startClaudeLogin() {
+  const requestId = ++claudeAuthRequestId;
+  renderClaudeAuthPanel({ checking: true });
+  try {
+    const data = await fetchJsonOrRedirect("/api/claude-auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ restart: true }), revalidate: false,
+    });
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = data?.claudeAuth || {};
+  } catch (error) {
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = { phase: "failed", error: error?.message || "Claude login failed" };
+  }
+  renderClaudeAuthPanel();
+}
+
+async function submitClaudeLoginCode() {
+  const input = document.getElementById("settingsClaudeAuthCode");
+  const code = String(input?.value || "").trim();
+  if (!code) return;
+  const requestId = ++claudeAuthRequestId;
+  if (input) input.disabled = true;
+  try {
+    const data = await fetchJsonOrRedirect("/api/claude-auth/code", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }), revalidate: false,
+    });
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = data?.claudeAuth || {};
+  } catch (error) {
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = { ...(claudeAuthState || {}), error: error?.message || "Claude code verification failed" };
+  }
+  renderClaudeAuthPanel();
+}
+
+async function logoutClaude() {
+  if (!window.confirm(getClaudeAuthCopy().logoutConfirm)) return;
+  const requestId = ++claudeAuthRequestId;
+  renderClaudeAuthPanel({ checking: true });
+  try {
+    const data = await fetchJsonOrRedirect("/api/claude-auth/logout", { method: "POST", revalidate: false });
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = data?.claudeAuth || {};
+  } catch (error) {
+    if (requestId !== claudeAuthRequestId) return;
+    claudeAuthState = { ...(claudeAuthState || {}), error: error?.message || "Claude logout failed" };
+  }
+  renderClaudeAuthPanel();
 }
 
 function temporarilyUpdateButtonLabel(button, label, {
@@ -2328,6 +2534,8 @@ ensureCodexAuthSection();
 void refreshCodexAuthStatus({ includeUsage: false });
 ensurePiAuthSection();
 void refreshPiAuthStatus();
+ensureClaudeAuthSection();
+void refreshClaudeAuthStatus();
 initThemeSettings();
 initThinkingBlockDisplaySettings();
 initSessionAutoArchiveSettings();
@@ -2344,6 +2552,7 @@ if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
     renderPushNotificationSettings();
     void refreshCodexAuthStatus({ force: true });
     void refreshPiAuthStatus({ force: true });
+    void refreshClaudeAuthStatus();
     void renderPeopleSettings({ refresh: true });
     void renderSettingsConnectorsPanel({ force: true });
   });
@@ -2353,6 +2562,7 @@ if (tabSettings && tabSettings.dataset.connectorsBound !== "true") {
 window.addEventListener("remotelab:localechange", () => {
   renderCodexAuthPanel();
   renderPiAuthPanel();
+  renderClaudeAuthPanel();
   if (uiLanguageSelect) {
     syncUiLanguageSelect();
   }
