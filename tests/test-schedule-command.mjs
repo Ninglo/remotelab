@@ -116,7 +116,9 @@ assert.equal(requests.length, beforeInvalid, 'invalid binding must fail before a
 
 const listed = await run(['list']);
 assert.equal(listed.schedules.length, 1);
-assert.equal(requests.at(-1).query.get('sessionId'), 'sess-current');
+assert.equal(requests.at(-1).query.get('sessionId'), null, 'list should not silently filter to the current Session');
+await run(['list', '--session', 'sess-current']);
+assert.equal(requests.at(-1).query.get('sessionId'), 'sess-current', 'explicit Session filter should still work');
 
 const cancelled = await run(['cancel', schedule.id, '--include-active']);
 assert.equal(cancelled.schedule.status, 'cancelled');

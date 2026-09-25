@@ -1,18 +1,9 @@
-import { ensureDir } from './fs-utils.mjs';
-import { renderPromptAsset } from './prompt-asset-loader.mjs';
 import { buildLocalBridgePromptBlock } from './local-bridge-prompt.mjs';
-import { buildPromptPathMap, MODEL_CONTEXT_DIR } from './prompt-paths.mjs';
 import { buildSessionAgreementsPromptBlock } from './session-agreements.mjs';
 import { buildSourceContextPrompt } from './source-context-prompt.mjs';
-import { buildSessionDelegationCapability } from './session-delegation-capability.mjs';
-
-const TURN_CONTEXT_HOOK_ASSET = 'turn/context-hook.md';
 
 export async function buildTurnContextHook(session = {}, { sourceContext, requestId } = {}) {
-  await ensureDir(MODEL_CONTEXT_DIR);
   return [
-    await renderPromptAsset(TURN_CONTEXT_HOOK_ASSET, buildPromptPathMap()),
-    buildSessionDelegationCapability(session),
     buildLocalBridgePromptBlock(session),
     buildSessionAgreementsPromptBlock(session?.activeAgreements || []),
     buildSourceContextPrompt(sourceContext, requestId),

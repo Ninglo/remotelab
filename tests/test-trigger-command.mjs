@@ -181,6 +181,9 @@ await assert.rejects(createWith('--conversation', '{}'), /Invalid conversation/)
 await assert.rejects(createWith('--conversation', 'source', '--conversation-file', bindingPath), /Choose one/);
 assert.equal(requests.length, beforeInvalid, 'invalid binding must fail before admission');
 
+const allListed = JSON.parse((await runCli(['list', '--base-url', baseUrl, '--json'])).stdout);
+assert.equal(allListed.triggers.length, 1);
+assert.equal(requests.at(-1)?.query?.get('sessionId'), null, 'list should not silently filter to the current Session');
 const listed = JSON.parse((await runCli(['list', '--session', 'sess-current', '--base-url', baseUrl, '--json'])).stdout);
 assert.equal(listed.triggers.length, 1);
 assert.equal(requests.at(-1)?.query?.get('sessionId'), 'sess-current');

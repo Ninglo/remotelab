@@ -32,30 +32,30 @@ assert.match(context, /Task notes: ~\/instance-data\/memory\/tasks\//);
 assert.match(context, /Shared system memory: \[platform-shared-memory\]\/system\.md/);
 assert.match(context, /These are pointers, not an instruction to load every file/);
 
-assert.match(context, /RemoteLab Session and Scheduling Capabilities/);
-assert.match(context, /remotelab session-spawn --task "<task>" --json/);
+assert.match(context, /RemoteLab Core Workflows/);
 assert.match(context, /session-spawn --guide/);
 assert.doesNotMatch(context, /--internal --output-mode final-only/);
-assert.match(context, /remotelab trigger create --in 2h --text "<task>" --json/);
-assert.match(context, /remotelab schedule create --cron/);
-assert.match(context, /ordinary new Session by default/);
-assert.match(context, /an existing topic continues its bound Session/);
-assert.match(context, /long-running monitoring or background work/);
-assert.match(context, /group-only conversation target/);
-assert.match(context, /--source-request.*intentionally continue the source topic/);
-assert.match(context, /REMOTELAB_SESSION_ID/);
-assert.match(context, /session-test-123/);
+assert.match(context, /a Feishu discussion thread is a different surface/);
+assert.match(context, /Timed or recurring AI work uses a Trigger or Schedule/);
+assert.match(context, /RemoteLab Capability Directory/);
+assert.match(context, /remotelab preview --help/);
+assert.doesNotMatch(context, /Quick Tunnel/);
+for (const guide of ['stable-static-publish', 'guest-port-expose', 'feishu-cli', 'session-debug']) {
+  assert.match(context, new RegExp(`\\$REMOTELAB_PROJECT_ROOT/docs/platform-skills/${guide}\\.md`));
+  await fs.access(path.join(import.meta.dirname, '..', 'docs', 'platform-skills', `${guide}.md`));
+}
+for (const command of ['trigger create --help', 'schedule create --help', 'agenda --help', 'gmail status --json', 'mail --help', 'connector list --json', 'local-bridge status --json']) {
+  assert.ok(context.includes(`remotelab ${command}`), `${command} should be discoverable`);
+}
+assert.doesNotMatch(context, /--conversation-file|--gate-file|Events in feed:/);
 
 assert.match(context, /Instance Local Access/);
 assert.match(context, /running inside the instance-scoped environment `instance-data`/);
 assert.match(context, /instance workspace is ~\/instance-data\/workspace/);
 assert.match(context, /not applying a filesystem confinement boundary/);
 
-assert.match(context, /remotelab agenda add --title "Title" --start "ISO8601" --duration 60/);
-assert.match(context, /Subscription helper path: \/subscribe\/calendar/);
-assert.match(context, /\[点击订阅日历\]\(\/subscribe\/calendar\)/);
-assert.match(context, /actions exposed by the RemoteLab connector catalog/);
-assert.match(context, /absence here is not evidence that those capabilities are unavailable/);
+assert.doesNotMatch(context, /Subscription helper path: \/subscribe\/calendar/);
+assert.doesNotMatch(context, /If Gmail status is `ready`/);
 
 // RemoteLab projects runtime facts and capabilities. It must not grow a
 // second Harness policy stack through startup prose.

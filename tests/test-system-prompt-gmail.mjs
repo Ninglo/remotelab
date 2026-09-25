@@ -48,23 +48,12 @@ await ensureEmailConnectorBinding({
 const { buildSystemContext } = await import('../chat/system-prompt.mjs');
 const context = await buildSystemContext({ sessionId: 'session-test-gmail' });
 
-assert.match(context, /### Agent Mailbox/);
-assert.match(context, /Rowan <rowan@example\.com>/);
-assert.match(context, /remotelab mail send/);
-assert.match(context, /--text-file "<body-path>"/);
-assert.match(context, /never put literal `\\n` sequences in `--text`/);
-assert.match(context, /For multi-line replies or sends, use `--text-file` or `--stdin`/);
-assert.match(context, /monitoring alerts, reminders, reports, status updates, and proactive follow-ups must use this Agent Mailbox by default/);
-assert.match(context, /bound Gmail account belongs to the user; it is not the assistant's default sender/);
-assert.match(context, /Never switch from the Agent Mailbox to the user's Gmail merely because delivery from the Agent Mailbox fails/);
-assert.match(context, /### Gmail/);
-assert.match(context, /user-owned Gmail account/);
+assert.doesNotMatch(context, /rowan@example\.com/);
+assert.doesNotMatch(context, /### Agent Mailbox|### Gmail/);
 assert.match(context, /remotelab gmail status --json/);
 assert.match(context, /remotelab gmail --help/);
-assert.match(context, /\/connectors\/gmail/);
-assert.match(context, /Do not claim Gmail is unavailable, ask for IMAP credentials, or say there is no access until you have checked the live Gmail status/);
-assert.match(context, /If Gmail status is `ready`, use the Gmail CLI for that user-mailbox task/);
-assert.match(context, /A new alert, reminder, report, status update, or proactive follow-up from the assistant must use the ready Agent Mailbox above instead of Gmail/);
-assert.match(context, /remotelab gmail send --as-user/);
+assert.match(context, /remotelab mail --help/);
+assert.match(context, /User Gmail and Agent Mailbox/);
+assert.doesNotMatch(context, /literal `\\n`|\/connectors\/gmail/);
 
 console.log('test-system-prompt-gmail: ok');

@@ -18,9 +18,4 @@ RemoteLab is the transport and runtime substrate for this session. It projects d
 
 These are pointers, not an instruction to load every file. Bootstrap is the small startup index; project, skill, task, and shared-memory material can be opened when relevant to the current request.
 
-{{SESSION_SPAWN_SECTION}}
-
-### Memory Locations
-
-- User memory root: {{MEMORY_DIR_PATH}}/
-- Shared memory root: {{SYSTEM_MEMORY_DIR_PATH}}/
+{{CORE_WORKFLOWS_SECTION}}

@@ -22,9 +22,15 @@ Read the version-matched CLI skill before acting:
 
 ```bash
 lark-cli skills read lark-shared
+lark-cli skills read lark-im
 lark-cli skills read lark-doc
 lark-cli skills read lark-base
 ```
+
+Read `lark-im` when the request concerns group messages or discussion threads.
+A Feishu thread organizes messages in a chat; a RemoteLab Session is an AI work
+thread. For a handoff into a new RemoteLab Session, see
+`remotelab session-spawn --guide` before choosing a Feishu message action.
 
 Then use the corresponding direct CLI command. For a capability not covered by
 an existing skill, read `lark-openapi-explorer` and invoke the native OpenAPI

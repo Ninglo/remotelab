@@ -183,12 +183,10 @@ try {
   );
 
   const promptLog = readFileSync(promptLogPath, 'utf8');
-  assert.match(promptLog, /RemoteLab context pointers/);
   assert.match(promptLog, /Context Pointers/);
-  assert.match(promptLog, /Projects: ~\/\.remotelab\/memory\/projects\.md/);
-  assert.match(promptLog, /Tasks: ~\/\.remotelab\/memory\/tasks\//);
-  assert.match(promptLog, /Model context root:/);
-  assert.match(promptLog, /~\/\.remotelab\/memory\/model-context/);
+  assert.match(promptLog, /Project index:/);
+  assert.match(promptLog, /Task notes:/);
+  assert.match(promptLog, /RemoteLab Capability Directory/);
   assert.doesNotMatch(promptLog, /Likely scope-router matches for this turn/);
   assert.doesNotMatch(promptLog, /Recent related session imports for this turn/);
 

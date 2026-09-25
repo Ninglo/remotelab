@@ -17,19 +17,8 @@ export function buildLocalBridgePromptBlock(session = {}) {
     Array.isArray(surface.allowedRoots) && surface.allowedRoots.length > 0
       ? `- allowed roots: ${surface.allowedRoots.map((entry) => `\`${trimString(entry.alias)}\``).filter(Boolean).join(', ')}`
       : '',
-    '- Use the RemoteLab CLI, not raw HTTP, when you need local files for this session.',
-    '- Preferred commands:',
-    '  - `remotelab local-bridge status --json`',
-    '  - `remotelab local-bridge list --root <alias> --path <relPath> --json`',
-    '  - `remotelab local-bridge find --root <alias> --path <relPath> --query <text> --glob "*.ext" --json`',
-    '  - `remotelab local-bridge stat --root <alias> --path <relPath> --json`',
-    '  - `remotelab local-bridge read-text --root <alias> --path <relPath> --json`',
-    '  - `remotelab local-bridge stage --root <alias> --path <relPath> --json`',
-    '  - `remotelab local-bridge pack --root <alias> --path <relPath> --exclude "pattern1,pattern2" --json`',
-    '- `stage` uploads the selected local file into this RemoteLab session through the normal asset pipeline.',
-    '- `pack` archives an entire directory as tar.gz and uploads it. Use `--exclude` to skip patterns (e.g. `node_modules,.git`).',
-    '- Do not invent absolute local paths. Stay within the reported root aliases.',
+    '- Use `remotelab local-bridge status --help` for file operations within these root aliases; `remotelab local-bridge status --json` refreshes the live device state.',
+    '- `stage` and `pack` attach selected local content to this Session. Use reported root aliases rather than invented absolute device paths.',
   ];
   return lines.filter(Boolean).join('\n');
 }
-

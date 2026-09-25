@@ -19,9 +19,13 @@ try {
       const session = { ...source, ...(resumed ? { codexThreadId: 'codex-thread', claudeSessionId: 'claude-thread' } : {}) };
       const prompt = await buildPrompt('parent', session, 'Inspect the work', tool, tool, snapshot,
         { freshThread: !resumed, skipSessionContinuation: true });
-      assert.match(prompt, /session-spawn --guide/, `${tool} ${resumed ? 'resumed' : 'fresh'} exposes the shipped guide`);
-      assert.match(prompt, /user-visible independent session/, `${tool} exposes visible delegation semantics`);
-      assert.match(prompt, /sessionUrl/, 'the receipt link is the handoff, not a promised callback');
+      if (resumed) {
+        assert.doesNotMatch(prompt, /session-spawn --guide/, `${tool} resumed threads avoid repeating startup capabilities`);
+      } else {
+        assert.match(prompt, /session-spawn --guide/, `${tool} fresh threads expose the shipped guide`);
+        assert.match(prompt, /user-visible RemoteLab Session/, `${tool} exposes visible delegation semantics`);
+        assert.match(prompt, /session-spawn --guide/, 'startup points to the handoff receipt guide');
+      }
       assert.doesNotMatch(prompt, /--internal --output-mode final-only/, 'normal discovery must not recommend hiding work');
     }
     const child = await buildPrompt('child', { ...source, delegationDepth: 1 }, 'Execute this task', tool, tool, snapshot,

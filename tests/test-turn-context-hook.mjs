@@ -23,15 +23,10 @@ const hook = await buildTurnContextHook({
   },
 });
 
-assert.match(hook, /RemoteLab context pointers/);
-assert.match(hook, /Bootstrap: .*\/memory\/bootstrap\.md/);
-assert.match(hook, /Projects: .*\/memory\/projects\.md/);
-assert.match(hook, /Memory writeback targets: .*\/memory\/writeback-targets\.json/);
-assert.match(hook, /Auto user memory: .*\/memory\/model-context\/auto-user-memory\.md/);
-assert.match(hook, /Auto system memory: (?:.*\/memory|\[platform-shared-memory\])\/auto-system-memory\.md/);
-assert.match(hook, /Model context root: .*\/memory\/model-context/);
+assert.doesNotMatch(hook, /RemoteLab context pointers|writeback-targets|session-spawn/);
 assert.match(hook, /active working agreements/);
 assert.match(hook, /默认自然段表达。/);
+assert.equal(await buildTurnContextHook({}), '', 'an ordinary resumed turn should not replay startup context');
 assert.doesNotMatch(hook, /Current provider-neutral work summary/);
 assert.doesNotMatch(hook, /Reusable patterns/);
 assert.doesNotMatch(hook, /sales\.xlsx/);

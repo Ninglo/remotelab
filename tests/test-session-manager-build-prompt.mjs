@@ -62,19 +62,14 @@ const freshPrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(freshPrompt, /<private>[\s\S]*RemoteLab context pointers/);
+assert.match(freshPrompt, /<private>[\s\S]*active working agreements/);
 assert.match(freshPrompt, /User message:/);
-assert.match(freshPrompt, /active working agreements/);
 assert.match(freshPrompt, /默认用自然连贯的段落表达，不要自己起标题和列表/);
 assert.match(freshPrompt, /Context Pointers/);
-assert.match(freshPrompt, new RegExp(`Projects: ${memoryRootPattern}\\/projects\\.md`));
-assert.match(freshPrompt, new RegExp(`Memory writeback targets: ${memoryRootPattern}\\/writeback-targets\\.json`));
-assert.match(freshPrompt, new RegExp(`Auto user memory: ${memoryRootPattern}\\/model-context\\/auto-user-memory\\.md`));
-assert.match(freshPrompt, /Auto system memory: (?:.*\/memory|\[platform-shared-memory\])\/auto-system-memory\.md/);
-assert.match(freshPrompt, /Model context root:/);
-assert.match(freshPrompt, new RegExp(`${memoryRootPattern}\\/model-context`));
-assert.match(freshPrompt, /actions exposed by the RemoteLab connector catalog/);
-assert.match(freshPrompt, /absence here is not evidence/);
+assert.match(freshPrompt, /Project index:/);
+assert.match(freshPrompt, /RemoteLab Core Workflows/);
+assert.match(freshPrompt, /RemoteLab Capability Directory/);
+assert.doesNotMatch(freshPrompt, /Memory writeback targets:|Auto user memory:|Model context root:/);
 assert.doesNotMatch(freshPrompt, /standing authorization/);
 assert.doesNotMatch(freshPrompt, /brief self-review/);
 assert.doesNotMatch(freshPrompt, /Guest Privacy Boundary/);
@@ -95,9 +90,9 @@ const resumedPrompt = await buildPrompt(
   {},
 );
 
-assert.match(resumedPrompt, /<private>[\s\S]*RemoteLab context pointers/);
+assert.match(resumedPrompt, /<private>[\s\S]*active working agreements/);
 assert.match(resumedPrompt, /Current user message:/);
-assert.doesNotMatch(resumedPrompt, /RemoteLab Session and Scheduling Capabilities/);
+assert.doesNotMatch(resumedPrompt, /RemoteLab Core Workflows/);
 assert.match(resumedPrompt, /Agent 更像执行器，Manager 负责统一任务语义和边界/);
 
 const resumedPromptWithUpdatedInstructions = await buildPrompt(
@@ -135,7 +130,7 @@ const splitPrompt = await buildPrompt(
   { skipSessionContinuation: true },
 );
 
-assert.match(splitPrompt, /RemoteLab context pointers/);
+assert.match(splitPrompt, /RemoteLab Core Workflows/);
 assert.match(splitPrompt, /Context Pointers/);
 assert.doesNotMatch(splitPrompt, /Routing principle for this turn/);
 

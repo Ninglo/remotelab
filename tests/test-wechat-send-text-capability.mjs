@@ -75,10 +75,13 @@ try {
   assert.deepEqual(deliveries, [{ text: '今日资源日报', sessionId: '' }]);
 
   const context = await buildSystemContext({ sessionId: 'session-wechat-action-test' });
-  assert.match(context, /### Connector Actions/);
-  assert.match(context, /wechat:send_text/);
-  assert.match(context, /--text "<text>"/);
-  assert.match(context, /deterministic external delivery/);
+  assert.match(context, /remotelab connector list --json/);
+  assert.doesNotMatch(context, /wechat:send_text/);
+  stdout = '';
+  assert.equal(await runConnectorCommand(['list', '--json'], {
+    stdout: { write(chunk) { stdout += String(chunk); } },
+  }), 0);
+  assert.equal(JSON.parse(stdout).tools.some((tool) => tool.name === 'wechat:send_text'), true);
 
   const stopped = await controller.reconcile([]);
   assert.equal(stopped.ready, false);

@@ -45,7 +45,7 @@ const normalPrompt = await buildPrompt(
 
 assert.match(
   normalPrompt,
-  /RemoteLab Session and Scheduling Capabilities/,
+  /RemoteLab Core Workflows/,
   'Normal session must include the session and scheduling capabilities section',
 );
 assert.match(
@@ -67,7 +67,7 @@ const childPrompt = await buildPrompt(
 
 assert.doesNotMatch(
   childPrompt,
-  /## RemoteLab Session and Scheduling Capabilities/,
+  /## RemoteLab Core Workflows/,
   'Delegated child must NOT include the session and scheduling capabilities heading',
 );
 assert.doesNotMatch(
@@ -89,7 +89,7 @@ const grandchildPrompt = await buildPrompt(
 
 assert.doesNotMatch(
   grandchildPrompt,
-  /## RemoteLab Session and Scheduling Capabilities/,
+  /## RemoteLab Core Workflows/,
   'Grandchild session must NOT include spawn section',
 );
 
@@ -106,7 +106,7 @@ const depthZeroPrompt = await buildPrompt(
 
 assert.match(
   depthZeroPrompt,
-  /RemoteLab Session and Scheduling Capabilities/,
+  /RemoteLab Core Workflows/,
   'Session with delegationDepth=0 should still include spawn section',
 );
 
