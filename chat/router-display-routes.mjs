@@ -140,6 +140,35 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
   const personId = trimString(authSession?.personId);
   if (!personId) return false;
   try {
+    if (pathname === '/api/display/status' && req.method === 'GET') {
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/status`, { authenticated: true });
+      return true;
+    }
+    if (pathname === '/api/display/feishu/status' && req.method === 'GET') {
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/feishu/status`, { authenticated: true });
+      return true;
+    }
+    if (pathname === '/api/display/feishu/authorize' && req.method === 'POST') {
+      const origin = trimString(req.headers.origin);
+      const forwarded = forwardedOriginHeaders(req);
+      if (origin !== `${forwarded['X-Forwarded-Proto']}://${forwarded['X-Forwarded-Host']}`) {
+        writeJson(res, 403, { error: '飞书授权请求来源不符。' });
+        return true;
+      }
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/feishu/authorize`, { authenticated: true });
+      return true;
+    }
+    if (pathname === '/api/display/feishu/acknowledge' && req.method === 'POST') {
+      const origin = trimString(req.headers.origin);
+      const forwarded = forwardedOriginHeaders(req);
+      if (origin !== `${forwarded['X-Forwarded-Proto']}://${forwarded['X-Forwarded-Host']}`) {
+        writeJson(res, 403, { error: '飞书提醒操作来源不符。' });
+        return true;
+      }
+      const body = await readBody(req, 1024);
+      await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/feishu/acknowledge`, { authenticated: true, body });
+      return true;
+    }
     if (pathname === '/api/display/studio-preview' && req.method === 'POST') {
       const config = await studioPreviewConfig();
       const endpoint = config.baseUrl;

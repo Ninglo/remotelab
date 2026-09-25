@@ -42,6 +42,7 @@ const sidecar = createServer(async (req, res) => {
     method: req.method,
     path: `${url.pathname}${url.search}`,
     authorization: req.headers.authorization || '',
+    accept: req.headers.accept || '',
     forwardedHost: req.headers['x-forwarded-host'] || '',
     forwardedPrefix: req.headers['x-forwarded-prefix'] || '',
     body,
@@ -49,6 +50,33 @@ const sidecar = createServer(async (req, res) => {
   if (url.pathname === '/install.sh') {
     res.writeHead(200, { 'Content-Type': 'text/x-shellscript' });
     res.end('#!/bin/sh\n');
+    return;
+  }
+  if (url.pathname === '/v1/devices/display-aaaaaaaaaaaaaaaa/frame.png') {
+    if (req.headers.accept?.startsWith('application/vnd.remotelab.display-frames+json;v=2')) {
+      const current = req.headers.accept.endsWith(';id=fedcba987654');
+      if (current) { res.writeHead(304, { 'X-RemoteLab-Display-Poll-Seconds': '2' }); res.end(); return; }
+      res.writeHead(200, { 'Content-Type': 'application/vnd.remotelab.display-frames+json', 'X-RemoteLab-Display-Poll-Seconds': '2' });
+      res.end(JSON.stringify({ version: 2, frameId: '0123456789ab', bundleId: 'fedcba987654', intervalMs: 100, frames: ['/9g='] }));
+      return;
+    }
+    if (req.headers.accept?.startsWith('application/vnd.remotelab.display-frames+json;v=1')) {
+      const current = req.headers.accept.endsWith(';id=0123456789ab');
+      if (current) { res.writeHead(304, { 'X-RemoteLab-Display-Poll-Seconds': '2' }); res.end(); return; }
+      res.writeHead(200, { 'Content-Type': 'application/vnd.remotelab.display-frames+json', 'X-RemoteLab-Display-Poll-Seconds': '2' });
+      res.end(JSON.stringify({ version: 1, frameId: '0123456789ab', intervalMs: 180, frames: ['/9g='] }));
+      return;
+    }
+    const jpeg = req.headers.accept === 'image/jpeg';
+    res.writeHead(200, {
+      'Content-Type': jpeg ? 'image/jpeg' : 'image/png',
+      'X-RemoteLab-Display-Poll-Seconds': jpeg ? '0.18' : '0.45',
+    });
+    res.end(jpeg ? Buffer.from([0xff, 0xd8, 0xff, 0xd9]) : Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    return;
+  }
+  if (url.pathname === '/v1/devices/display-aaaaaaaaaaaaaaaa/heartbeat' && req.method === 'POST') {
+    json(res, 200, { accepted: JSON.parse(body).usbFrames });
     return;
   }
   if (url.pathname === '/v1/enroll/rld_enroll_test-token') {
@@ -64,6 +92,11 @@ const sidecar = createServer(async (req, res) => {
   if (/^\/v1\/people\/[^/]+\/content$/.test(url.pathname)) {
     if (req.headers.authorization !== `Bearer ${expectedAdmin}`) return json(res, 401, { error: 'bad admin' });
     json(res, 200, { personId: url.pathname.split('/')[3], body: body ? JSON.parse(body) : null });
+    return;
+  }
+  if (/^\/v1\/people\/[^/]+\/feishu\/acknowledge$/.test(url.pathname) && req.method === 'POST') {
+    if (req.headers.authorization !== `Bearer ${expectedAdmin}`) return json(res, 401, { error: 'bad admin' });
+    json(res, 200, { connected: true, personId: url.pathname.split('/')[3] });
     return;
   }
   if (url.pathname === '/v1/devices' && req.method === 'GET') {
@@ -125,6 +158,42 @@ try {
   });
   assert.equal(publicEnrollment.response.status, 201);
 
+  const negotiatedFrame = await fetch(`${base}/display/v1/devices/display-aaaaaaaaaaaaaaaa/frame.png`, {
+    headers: { Authorization: 'Bearer device-secret', Accept: 'image/jpeg' },
+  });
+  assert.equal(negotiatedFrame.status, 200);
+  assert.equal(negotiatedFrame.headers.get('content-type'), 'image/jpeg');
+  assert.equal(negotiatedFrame.headers.get('x-remotelab-display-poll-seconds'), '0.18');
+  assert.deepEqual([...Buffer.from(await negotiatedFrame.arrayBuffer())], [0xff, 0xd8, 0xff, 0xd9]);
+  assert.deepEqual(calls.find((call) => call.path.endsWith('/frame.png'))?.accept, 'image/jpeg');
+  const bundleAccept = 'application/vnd.remotelab.display-frames+json;v=1';
+  const proxiedBundle = await fetch(`${base}/display/v1/devices/display-aaaaaaaaaaaaaaaa/frame.png`, {
+    headers: { Authorization: 'Bearer device-secret', Accept: bundleAccept },
+  });
+  assert.equal(proxiedBundle.status, 200);
+  assert.equal(proxiedBundle.headers.get('content-type'), 'application/vnd.remotelab.display-frames+json');
+  assert.equal((await proxiedBundle.json()).frameId, '0123456789ab');
+  const currentBundle = await fetch(`${base}/display/v1/devices/display-aaaaaaaaaaaaaaaa/frame.png`, {
+    headers: { Authorization: 'Bearer device-secret', Accept: `${bundleAccept};id=0123456789ab` },
+  });
+  assert.equal(currentBundle.status, 304);
+  assert.equal(currentBundle.headers.get('x-remotelab-display-poll-seconds'), '2');
+  const fasterBundle = await fetch(`${base}/display/v1/devices/display-aaaaaaaaaaaaaaaa/frame.png`, {
+    headers: { Authorization: 'Bearer device-secret', Accept: bundleAccept.replace('v=1', 'v=2') },
+  });
+  assert.equal(fasterBundle.status, 200);
+  assert.equal((await fasterBundle.json()).intervalMs, 100);
+  const currentFasterBundle = await fetch(`${base}/display/v1/devices/display-aaaaaaaaaaaaaaaa/frame.png`, {
+    headers: { Authorization: 'Bearer device-secret', Accept: `${bundleAccept.replace('v=1', 'v=2')};id=fedcba987654` },
+  });
+  assert.equal(currentFasterBundle.status, 304);
+  const playbackReport = await requestJson(`${base}/display/v1/devices/display-aaaaaaaaaaaaaaaa/heartbeat`, {
+    method: 'POST', headers: { Authorization: 'Bearer device-secret', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usbFrames: 42 }),
+  });
+  assert.equal(playbackReport.payload.accepted, 42);
+  assert.equal(calls.find((call) => call.path.endsWith('/heartbeat'))?.authorization, 'Bearer device-secret');
+
   const denied = await requestJson(`${base}/api/display/devices`);
   assert.equal(denied.response.status, 401);
 
@@ -164,6 +233,18 @@ try {
   assert.deepEqual(content.payload.body, { sentence: 'hello', gifBase64: 'R0lG' }, 'client cannot select another person');
   const other = await requestJson(`${base}/api/display/content`, { headers: { 'X-Test-Person': 'person-b' } });
   assert.equal(other.payload.personId, 'person-b');
+
+  const deniedAck = await requestJson(`${base}/api/display/feishu/acknowledge`, {
+    method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a' },
+  });
+  assert.equal(deniedAck.response.status, 403);
+  const acknowledged = await requestJson(`${base}/api/display/feishu/acknowledge`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ observedAt: '2026-09-25T09:00:00.000Z' }),
+  });
+  assert.equal(acknowledged.response.status, 200);
+  assert.equal(acknowledged.payload.personId, 'person-a');
+  assert.deepEqual(JSON.parse(calls.find((call) => call.path === '/v1/people/person-a/feishu/acknowledge').body), { observedAt: '2026-09-25T09:00:00.000Z' });
 
   const deniedStudio = await requestJson(`${base}/api/display/studio-preview`, {
     method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a', 'Content-Type': 'application/json' }, body: '{}',

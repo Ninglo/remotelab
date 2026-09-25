@@ -13,7 +13,10 @@ import { createRemoteLabHttpClient } from '../lib/remotelab-http-client.mjs';
 import { createSerialTaskQueue, readJson, writeJsonAtomic } from '../chat/fs-utils.mjs';
 import { emptySignalStore, makeStatusSnapshot, replaceSource, selectOfficialScene, validateSourcePacket } from './status-state.mjs';
 import { remotelabStatusSource } from './remotelab-status-source.mjs';
+import { summarizeAutomationTasks, summarizeFeishuSessions } from './reminder-sources.mjs';
+import { createFeishuUserReminders } from './feishu-user-reminders.mjs';
 import { normalizeSentence, prepareContent, renderPersonalPng } from './personal-content.mjs';
+import { prepareAnimatedPreview, previewBundleId, previewFrameId, renderAnimatedPreview, renderAnimatedPreviewBundle, renderAnimatedPreviewJpeg, renderStaticPreviewJpeg } from './preview-animation.mjs';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const bindHost = String(process.env.REMOTELAB_DISPLAY_BIND_HOST || '127.0.0.1').trim();
@@ -30,6 +33,8 @@ const personalFile = process.env.REMOTELAB_DISPLAY_PERSONAL_FILE || join(configD
 const previewFile = process.env.REMOTELAB_DISPLAY_PREVIEW_FILE || join(configDir, 'display-preview-frames.json');
 const renderMode = process.env.REMOTELAB_DISPLAY_RENDER_MODE || 'classic';
 if (!['classic', 'signals'].includes(renderMode)) throw new Error('Unknown display render mode');
+const fastBundleIntervalMs = Number(process.env.REMOTELAB_DISPLAY_BUNDLE_INTERVAL_MS || 100);
+if (!Number.isInteger(fastBundleIntervalMs) || fastBundleIntervalMs < 50 || fastBundleIntervalMs > 500) throw new Error('Invalid display bundle interval');
 const themeUrl = process.env.REMOTELAB_DISPLAY_THEME_MODULE
   ? pathToFileURL(resolve(process.env.REMOTELAB_DISPLAY_THEME_MODULE)).href
   : new URL('./themes/official.mjs', import.meta.url).href;
@@ -165,6 +170,56 @@ async function previewFor(personId) {
   return entry;
 }
 
+const preparedPreviews = new Map();
+const preparedBundles = new Map();
+const animationDelivery = new Map();
+const devicePlayback = new Map();
+
+function trackAnimationDelivery(device, image, renderMs, format, bundleFrameCount = 0, sourceFrameId = '') {
+  const now = Date.now();
+  const frameId = createHash('sha256').update(image).digest('hex').slice(0, 12);
+  const recent = (animationDelivery.get(device.id)?.recent || []).filter((item) => now - item.at < 30_000);
+  recent.push({ at: now, frameId, renderMs, format, bundleFrameCount, sourceFrameId });
+  if (recent.length > 40) recent.shift();
+  animationDelivery.set(device.id, { personId: device.personId, recent });
+}
+
+function animationDeliveryFor(personId) {
+  const now = Date.now();
+  return [...animationDelivery.entries()].filter(([, item]) => item.personId === personId).map(([deviceId, item]) => {
+    const recent = item.recent.filter((sample) => now - sample.at < 30_000);
+    const span = recent.length > 1 ? recent.at(-1).at - recent[0].at : 0;
+    return { deviceId, samples: recent.length, averageIntervalMs: span > 0 ? Math.round(span / (recent.length - 1)) : null, averageRenderMs: recent.length ? Math.round(recent.reduce((sum, sample) => sum + sample.renderMs, 0) / recent.length) : null, distinctFrames: new Set(recent.map((sample) => sample.frameId)).size, lastFormat: recent.at(-1)?.format || null, bundleFrameCount: recent.at(-1)?.bundleFrameCount || 0, sourceFrameId: recent.at(-1)?.sourceFrameId || '', lastRequestAt: recent.at(-1)?.at || null };
+  });
+}
+
+function devicePlaybackFor(personId) {
+  return [...devicePlayback.entries()]
+    .filter(([, item]) => item.personId === personId)
+    .map(([deviceId, item]) => ({ deviceId, reportedAt: item.reportedAt, usbFrames: item.usbFrames,
+      usbAckMs: item.usbAckMs, usbFrameMs: item.usbFrameMs, animationFrames: item.animationFrames,
+      bundleFrameId: item.bundleFrameId, usbFps: item.usbFps,
+      targetIntervalMs: item.targetIntervalMs, actualIntervalMs: item.actualIntervalMs }));
+}
+
+function preparedPreviewFor(personId, entry) {
+  const cached = preparedPreviews.get(personId);
+  if (cached?.frameId === entry.frameId) return cached.value;
+  const value = prepareAnimatedPreview(Buffer.from(entry.pngBase64, 'base64'), entry.animations || []);
+  preparedPreviews.set(personId, { frameId: entry.frameId, value });
+  return value;
+}
+
+function preparedBundleFor(personId, entry, version, stage = 'full') {
+  const cacheKey = `${personId}:${version}:${stage}`;
+  const cached = preparedBundles.get(cacheKey);
+  if (cached?.frameId === entry.frameId) return cached.value;
+  const value = renderAnimatedPreviewBundle(preparedPreviewFor(personId, entry), entry.frameId,
+    version === 2 ? fastBundleIntervalMs : 180, version, stage);
+  preparedBundles.set(cacheKey, { frameId: entry.frameId, value });
+  return value;
+}
+
 async function updatePreview(personId, entry) {
   return savePreview(async () => {
     const current = await readJson(previewFile, { version: 1, people: {} });
@@ -173,6 +228,8 @@ async function updatePreview(personId, entry) {
     else delete people[personId];
     await writeJsonAtomic(previewFile, { version: 1, people });
     await chmod(previewFile, 0o600);
+    preparedPreviews.delete(personId);
+    for (const version of [1, 2]) for (const stage of ['starter', 'full']) preparedBundles.delete(`${personId}:${version}:${stage}`);
   });
 }
 
@@ -259,15 +316,28 @@ function timestampMs(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-async function getPersonIdentityIds(personId) {
+async function personIdentityInfo(personId) {
   const document = await loadAuthDocument({ persistMigration: true });
   const person = findPerson(document, personId);
   if (!person) throw Object.assign(new Error('Display owner no longer exists'), { status: 410 });
-  return new Set((person.identities || []).map((identity) => trimString(identity.id)).filter(Boolean));
+  return {
+    ids: new Set((person.identities || []).map((identity) => trimString(identity.id)).filter(Boolean)),
+    feishuLinked: (person.identities || []).some((identity) => identity.kind === 'feishu'),
+    feishuIdentity: (person.identities || []).find((identity) => identity.kind === 'feishu' && identity.realm === 'bot-2') || null,
+  };
+}
+
+const feishuUserReminders = createFeishuUserReminders({ configDir, identityFor: async (personId) => {
+  const identity = (await personIdentityInfo(personId)).feishuIdentity;
+  return identity ? { realm: identity.realm, openId: trimString(identity.subjectId) } : null;
+} });
+
+async function getPersonIdentityIds(personId) {
+  return (await personIdentityInfo(personId)).ids;
 }
 
 async function collectSnapshot(personId) {
-  const identityIds = await getPersonIdentityIds(personId);
+  const { ids: identityIds, feishuLinked } = await personIdentityInfo(personId);
   const result = await client.request('/api/sessions');
   if (!result.response.ok || !Array.isArray(result.json?.sessions)) {
     throw new Error(result.json?.error || result.text || 'RemoteLab sessions unavailable');
@@ -277,6 +347,7 @@ async function collectSnapshot(personId) {
   let running = 0;
   let queued = 0;
   let pendingReview = 0;
+  const pendingResults = [];
   let deliveryIssues = 0;
   const active = [];
   for (const session of result.json.sessions) {
@@ -298,11 +369,36 @@ async function collectSnapshot(personId) {
     const reviewedAt = timestampMs(session.lastReviewedAt);
     if (run.state !== 'running' && assistantAt >= cutoff && assistantAt > reviewedAt) {
       pendingReview += 1;
+      const name = trimString(session.name).replace(/\s+/g, ' ').slice(0, 36) || '未命名 Session';
+      const context = (trimString(session.workSummary?.summary) || trimString(session.description))
+        .replace(/\s+/g, ' ').slice(0, 68);
+      pendingResults.push({ name, context, assistantAt });
     }
     const latestAt = Math.max(timestampMs(session.lastEventAt), timestampMs(session.updatedAt));
     if (latestAt >= cutoff) deliveryIssues += Number(session.deliveryIssueCount || 0);
   }
-  return { running, queued, pendingReview, deliveryIssues, active, observedAt: new Date().toISOString() };
+  pendingResults.sort((a, b) => b.assistantAt - a.assistantAt);
+  return { running, queued, pendingReview, pendingResults: pendingResults.slice(0, 3).map(({ name, context }) => ({ name, context })), deliveryIssues, active,
+    feishu: summarizeFeishuSessions(result.json.sessions, identityIds, feishuLinked, now),
+    observedAt: new Date().toISOString() };
+}
+
+const automationCache = new Map();
+
+async function automationFor(personId) {
+  const cached = automationCache.get(personId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  try {
+    const identityIds = await getPersonIdentityIds(personId);
+    const result = await client.request('/api/automation-tasks');
+    if (!result.response.ok || !Array.isArray(result.json?.tasks)) throw new Error('Automation tasks unavailable');
+    const value = summarizeAutomationTasks(result.json.tasks, identityIds);
+    automationCache.set(personId, { value, expiresAt: Date.now() + 15_000 });
+    return value;
+  } catch (error) {
+    console.error('[display] automation reminder source unavailable:', error.message);
+    return { available: false, configured: 0, active: 0, failures24h: 0, nextRunAt: null };
+  }
 }
 
 function escapeXml(value) {
@@ -383,10 +479,14 @@ function snapshotSvg(snapshot) {
   </svg>`;
 }
 
-async function renderFrame(personId) {
+async function renderFrame(personId, jpeg = false) {
   const preview = await previewFor(personId);
   if (preview) {
     await getPersonIdentityIds(personId);
+    if (preview.animations?.length) {
+      const prepared = preparedPreviewFor(personId, preview);
+      return { png: jpeg ? renderAnimatedPreviewJpeg(prepared) : renderAnimatedPreview(prepared), snapshot: { observedAt: preview.updatedAt }, pollSeconds: jpeg ? 0.18 : 0.45, animated: true, jpeg, sourceFrameId: preview.frameId };
+    }
     return { png: Buffer.from(preview.pngBase64, 'base64'), snapshot: { observedAt: preview.updatedAt }, pollSeconds: 1 };
   }
   const personal = await personalFor(personId);
@@ -463,6 +563,10 @@ async function handle(req, res) {
     sendText(res, 200, 'text/x-python; charset=utf-8', await readFile(join(moduleDir, 'agent.py')));
     return;
   }
+  if (pathname === '/upgrade-agent.sh' && req.method === 'GET') {
+    sendText(res, 200, 'text/x-shellscript; charset=utf-8', await readFile(join(moduleDir, 'upgrade-agent.sh')));
+    return;
+  }
   const previewMatch = /^\/v1\/people\/([^/]+)\/preview-frame$/.exec(pathname);
   if (previewMatch && ['GET', 'PUT', 'DELETE'].includes(req.method)) {
     if (!await requireAdmin(req, res, url)) return;
@@ -470,7 +574,7 @@ async function handle(req, res) {
     await getPersonIdentityIds(personId);
     if (req.method === 'GET') {
       const entry = await previewFor(personId);
-      sendJson(res, 200, entry ? { configured: true, frameId: entry.frameId, updatedAt: entry.updatedAt, expiresAt: entry.expiresAt } : { configured: false });
+      sendJson(res, 200, entry ? { configured: true, frameId: entry.frameId, updatedAt: entry.updatedAt, expiresAt: entry.expiresAt, animationCount: entry.animations?.length || 0, animationDelivery: animationDeliveryFor(personId), devicePlayback: devicePlaybackFor(personId) } : { configured: false });
       return;
     }
     if (req.method === 'DELETE') {
@@ -482,11 +586,26 @@ async function handle(req, res) {
     if (typeof payload.pngBase64 !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(payload.pngBase64) || payload.pngBase64.length > 8 * 1024 * 1024) throw Object.assign(new Error('Invalid preview PNG'), { status: 400 });
     const png = Buffer.from(payload.pngBase64, 'base64');
     if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.readUInt32BE(16) !== 1920 || png.readUInt32BE(20) !== 480) throw Object.assign(new Error('Preview must be 1920 x 480 PNG'), { status: 400 });
-    const frameId = createHash('sha256').update(png).digest('hex').slice(0, 12);
+    const animations = payload.animations ?? [];
+    prepareAnimatedPreview(png, animations);
+    const frameId = previewFrameId(png, animations);
     const updatedAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await updatePreview(personId, { pngBase64: payload.pngBase64, frameId, updatedAt, expiresAt });
-    sendJson(res, 200, { configured: true, frameId, updatedAt, expiresAt });
+    await updatePreview(personId, { pngBase64: payload.pngBase64, animations, frameId, updatedAt, expiresAt });
+    sendJson(res, 200, { configured: true, frameId, updatedAt, expiresAt, animationCount: animations.length });
+    return;
+  }
+  const feishuAuthMatch = /^\/v1\/people\/([^/]+)\/feishu\/(authorize|status|acknowledge)$/.exec(pathname);
+  if (feishuAuthMatch && ((['authorize', 'acknowledge'].includes(feishuAuthMatch[2]) && req.method === 'POST') || (feishuAuthMatch[2] === 'status' && req.method === 'GET'))) {
+    if (!await requireAdmin(req, res, url)) return;
+    const personId = decodeURIComponent(feishuAuthMatch[1]);
+    const acknowledgement = feishuAuthMatch[2] === 'acknowledge' ? await readRequestJson(req, 1024) : null;
+    const result = feishuAuthMatch[2] === 'authorize'
+      ? await feishuUserReminders.begin(personId)
+      : feishuAuthMatch[2] === 'acknowledge'
+        ? await feishuUserReminders.acknowledge(personId, acknowledgement?.observedAt)
+        : await feishuUserReminders.status(personId);
+    sendJson(res, 200, result);
     return;
   }
   const personStatusMatch = /^\/v1\/people\/([^/]+)\/(status|preview\.png|content|content\.gif)$/.exec(pathname);
@@ -508,9 +627,15 @@ async function handle(req, res) {
       const personal = await personalFor(personId);
       if (personal) { sendText(res, 200, 'image/png', renderPersonalPng(personal)); return; }
     }
-    const view = await collectStatusView(personId);
-    if (personStatusMatch[2] === 'status') sendJson(res, 200, { snapshot: view.snapshot, scene: view.scene, metrics: view.metrics });
-    else sendText(res, 200, 'image/png', renderStatusPng(view));
+    const feishuUser = personStatusMatch[2] === 'status' ? feishuUserReminders.latest(personId) : null;
+    const [view, automation] = await Promise.all([
+      collectStatusView(personId),
+      personStatusMatch[2] === 'status' ? automationFor(personId) : null,
+    ]);
+    if (personStatusMatch[2] === 'status') {
+      sendJson(res, 200, { snapshot: view.snapshot, scene: view.scene, metrics: view.metrics,
+        reminderSources: { feishu: view.metrics?.feishu || null, feishuUser, automation } });
+    } else sendText(res, 200, 'image/png', renderStatusPng(view));
     return;
   }
   const personContentMatch = /^\/v1\/people\/([^/]+)\/content$/.exec(pathname);
@@ -644,7 +769,7 @@ async function handle(req, res) {
     else sendJson(res, 200, { ok: true });
     return;
   }
-  const deviceMatch = /^\/v1\/devices\/(display-[a-f0-9]{16})\/(frame\.png|heartbeat)$/.exec(pathname);
+  const deviceMatch = /^\/v1\/devices\/(display-[a-f0-9]{16})\/(frame\.(?:png|jpg)|heartbeat)$/.exec(pathname);
   if (deviceMatch) {
     const device = await authenticateDevice(req, deviceMatch[1]);
     if (!device) {
@@ -652,6 +777,23 @@ async function handle(req, res) {
       return;
     }
     if (deviceMatch[2] === 'heartbeat' && req.method === 'POST') {
+      const payload = req.headers['content-length'] || req.headers['transfer-encoding'] ? await readRequestJson(req, 1024) : {};
+      if (payload && typeof payload === 'object' && Number.isInteger(payload.usbFrames) && payload.usbFrames >= 0 && payload.usbFrames < 1_000_000_000
+        && Number.isInteger(payload.usbAckMs) && payload.usbAckMs > 0
+        && Number.isInteger(payload.usbFrameMs) && payload.usbFrameMs >= 0 && payload.usbFrameMs < 30_000
+        && Number.isInteger(payload.animationFrames) && payload.animationFrames >= 1 && payload.animationFrames <= 32
+        && (payload.bundleFrameId === '' || /^[a-f0-9]{12}$/.test(payload.bundleFrameId))) {
+        const previous = devicePlayback.get(device.id);
+        const reportMs = Date.now();
+        const frameDelta = payload.usbFrames - (previous?.usbFrames ?? payload.usbFrames);
+        const timeDelta = reportMs - (previous?.reportMs ?? reportMs);
+        const usbFps = frameDelta >= 0 && timeDelta > 0 ? Math.round(frameDelta * 10_000 / timeDelta) / 10 : null;
+        devicePlayback.set(device.id, { personId: device.personId, reportMs, reportedAt: new Date(reportMs).toISOString(),
+          usbFrames: payload.usbFrames, usbAckMs: payload.usbAckMs, usbFrameMs: payload.usbFrameMs,
+          animationFrames: payload.animationFrames, bundleFrameId: payload.bundleFrameId, usbFps,
+          targetIntervalMs: Number.isInteger(payload.targetIntervalMs) && payload.targetIntervalMs >= 50 && payload.targetIntervalMs <= 500 ? payload.targetIntervalMs : null,
+          actualIntervalMs: Number.isInteger(payload.actualIntervalMs) && payload.actualIntervalMs >= 0 && payload.actualIntervalMs <= 30_000 ? payload.actualIntervalMs : null });
+      }
       const now = new Date().toISOString();
       await updateState((state) => {
         const current = state.devices.find((item) => item.id === device.id);
@@ -660,12 +802,11 @@ async function handle(req, res) {
       sendJson(res, 200, { ok: true, lastSeenAt: now });
       return;
     }
-    if (deviceMatch[2] === 'frame.png' && req.method === 'GET') {
+    if (['frame.png', 'frame.jpg'].includes(deviceMatch[2]) && req.method === 'GET') {
       if (!device.personId) {
         sendJson(res, 409, { error: 'Display ownership is not configured' });
         return;
       }
-      const { png, snapshot, pollSeconds } = await renderFrame(device.personId);
       const now = new Date().toISOString();
       if (Date.now() - Date.parse(device.lastSeenAt || '') > 10_000 || !device.lastSeenAt) {
         await updateState((state) => {
@@ -673,11 +814,53 @@ async function handle(req, res) {
           if (current) current.lastSeenAt = now;
         });
       }
-      sendText(res, 200, 'image/png', png, {
+      const accept = String(req.headers.accept || '').trim();
+      const bundleRequest = deviceMatch[2] === 'frame.png'
+        ? /^application\/vnd\.remotelab\.display-frames\+json;v=([12])(?:;id=([a-f0-9]{12}))?$/.exec(accept)
+        : null;
+      if (bundleRequest) {
+        await getPersonIdentityIds(device.personId);
+        const preview = await previewFor(device.personId);
+        if (!preview?.animations?.length) {
+          sendText(res, 204, 'text/plain', '', { 'X-RemoteLab-Display-Poll-Seconds': '1' });
+          return;
+        }
+        const headers = {
+          'X-RemoteLab-Display-Observed-At': preview.updatedAt,
+          'X-RemoteLab-Display-Poll-Seconds': '2',
+          'X-RemoteLab-Display-Animated': '1',
+        };
+        const version = Number(bundleRequest[1]);
+        const intervalMs = version === 2 ? fastBundleIntervalMs : 180;
+        const fullBundleId = previewBundleId(preview.frameId, version, intervalMs);
+        if (bundleRequest[2] === fullBundleId) {
+          res.writeHead(304, { 'Cache-Control': 'no-store, max-age=0', ...headers });
+          res.end();
+          return;
+        }
+        const renderStarted = performance.now();
+        // Give the paired agent a small playable loop first. On its next poll,
+        // replace that loop with the complete one while USB playback continues.
+        const starterId = previewBundleId(preview.frameId, version, intervalMs, 'starter');
+        const stage = version === 2 && bundleRequest[2] !== starterId ? 'starter' : 'full';
+        const bundle = preparedBundleFor(device.personId, preview, version, stage);
+        trackAnimationDelivery(device, bundle.body, performance.now() - renderStarted, stage === 'starter' ? 'jpeg-bundle-starter' : 'jpeg-bundle', bundle.frameCount, preview.frameId);
+        sendText(res, 200, 'application/vnd.remotelab.display-frames+json', bundle.body, headers);
+        return;
+      }
+      const renderStarted = performance.now();
+      // The public display proxy already forwards Accept for frame.png. Negotiate
+      // JPEG there so paired agents can upgrade without changing their saved URL.
+      const wantsJpeg = deviceMatch[2] === 'frame.jpg' || (deviceMatch[2] === 'frame.png' && /(?:^|,)\s*image\/jpeg(?:\s*[,;]|\s*$)/i.test(String(req.headers.accept || '')));
+      const { png, snapshot, pollSeconds, animated, jpeg, sourceFrameId } = await renderFrame(device.personId, wantsJpeg);
+      const image = wantsJpeg && !jpeg ? renderStaticPreviewJpeg(png) : png;
+      if (animated) trackAnimationDelivery(device, image, performance.now() - renderStarted, wantsJpeg ? 'jpeg' : 'png', 0, sourceFrameId);
+      sendText(res, 200, wantsJpeg ? 'image/jpeg' : 'image/png', image, {
         'X-RemoteLab-Display-Observed-At': snapshot.observedAt,
         'X-RemoteLab-Display-Running': String(snapshot.running ?? ''),
         'X-RemoteLab-Display-Pending-Review': String(snapshot.pendingReview ?? ''),
         'X-RemoteLab-Display-Poll-Seconds': String(pollSeconds || 8),
+        'X-RemoteLab-Display-Animated': animated ? '1' : '0',
       });
       return;
     }

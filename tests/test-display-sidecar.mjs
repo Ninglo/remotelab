@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { decodeGifFrames } from '../display/gif-frames.mjs';
+import { prepareAnimatedPreview, previewBundleId, previewFrameId, renderAnimatedPreview, renderAnimatedPreviewJpeg } from '../display/preview-animation.mjs';
 
 const root = await mkdtemp(join(tmpdir(), 'remotelab-display-test-'));
 const configDir = join(root, 'config');
@@ -82,6 +83,8 @@ const api = createServer((req, res) => {
       {
         name: 'Display A session',
         initiatedByIdentityId: 'identity_display_a',
+        conversation: { connector: 'feishu' },
+        lastUserMessageAt: Date.now(),
         activity: { run: { state: 'running', startedAt: new Date().toISOString() }, queue: { count: 0 } },
         lastAssistantMessageAt: 0,
         deliveryIssueCount: 0,
@@ -93,6 +96,23 @@ const api = createServer((req, res) => {
         lastAssistantMessageAt: 0,
         deliveryIssueCount: 0,
       },
+      {
+        name: '项目审阅',
+        initiatedByIdentityId: 'identity_display_a',
+        activity: { run: { state: 'idle' }, queue: { count: 0 } },
+        lastAssistantMessageAt: Date.now(),
+        lastReviewedAt: 0,
+        workSummary: { summary: '整理本周进展' },
+        deliveryIssueCount: 0,
+      },
+    ] }));
+    return;
+  }
+  if (req.url === '/api/automation-tasks') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ tasks: [
+      { createdByIdentityId: 'identity_display_a', state: 'active', enabled: true, nextRunAt: new Date(Date.now() + 60_000).toISOString() },
+      { createdByIdentityId: 'identity_display_b', state: 'failed', enabled: false, lastExecution: { state: 'failed', completedAt: new Date().toISOString() } },
     ] }));
     return;
   }
@@ -123,6 +143,9 @@ let child = launchDisplay();
 
 try {
   await waitFor(`http://127.0.0.1:${displayPort}/healthz`);
+  const upgradeScript = await fetch(`http://127.0.0.1:${displayPort}/upgrade-agent.sh`);
+  assert.equal(upgradeScript.status, 200);
+  assert.match(await upgradeScript.text(), /Existing pairing and screen layout were kept/);
   const admin = (await readFile(join(configDir, 'display-admin-token'), 'utf8')).trim();
   const publicHeaders = {
     Authorization: `Bearer ${admin}`,
@@ -196,8 +219,83 @@ try {
   assert.equal((await savedPreview.json()).configured, true);
   const pairedPreviewFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
   assert.deepEqual(Buffer.from(await pairedPreviewFrame.arrayBuffer()), png, 'paired device must fetch the custom preview');
+  const jpegFramePath = framePath.replace(/frame\.png$/, 'frame.jpg');
+  const pairedJpegFrame = await fetch(`http://127.0.0.1:${displayPort}${jpegFramePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
+  assert.equal(pairedJpegFrame.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual([...Buffer.from(await pairedJpegFrame.arrayBuffer()).subarray(0, 2)], [255, 216]);
   const otherPreview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/preview-frame`, { headers: publicHeaders });
   assert.equal((await otherPreview.json()).configured, false, 'another Person must not inherit the preview');
+  const animation = [{ gifBase64: animatedGif.toString('base64'), box: { x: 100, y: 100, width: 40, height: 40 }, fit: 'contain' }];
+  const preparedAnimation = prepareAnimatedPreview(png, animation);
+  assert.notDeepEqual(renderAnimatedPreview(preparedAnimation, 0), renderAnimatedPreview(preparedAnimation, 450), 'different GIF frames must produce different complete display images');
+  assert.notDeepEqual(renderAnimatedPreviewJpeg(preparedAnimation, 0), renderAnimatedPreviewJpeg(preparedAnimation, 450), 'direct JPEG frames must animate too');
+  const animatedPreview = await fetch(previewUrl, { method: 'PUT', headers: publicHeaders, body: JSON.stringify({ pngBase64: png.toString('base64'), animations: animation }) });
+  assert.equal(animatedPreview.status, 200);
+  const animatedReceipt = await animatedPreview.json();
+  assert.equal(animatedReceipt.animationCount, 1);
+  assert.equal(animatedReceipt.frameId, previewFrameId(png, animation));
+  const animatedDeviceFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
+  assert.equal(animatedDeviceFrame.headers.get('x-remotelab-display-poll-seconds'), '0.45');
+  assert.notDeepEqual(Buffer.from(await animatedDeviceFrame.arrayBuffer()), png, 'device must receive the composed GIF frame');
+  const animatedJpegFrame = await fetch(`http://127.0.0.1:${displayPort}${jpegFramePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
+  assert.equal(animatedJpegFrame.headers.get('x-remotelab-display-poll-seconds'), '0.18');
+  assert.equal(animatedJpegFrame.headers.get('x-remotelab-display-animated'), '1');
+  assert.deepEqual([...Buffer.from(await animatedJpegFrame.arrayBuffer()).subarray(0, 2)], [255, 216]);
+  const negotiatedJpegFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: 'image/jpeg' } });
+  assert.equal(negotiatedJpegFrame.headers.get('content-type'), 'image/jpeg');
+  assert.equal(negotiatedJpegFrame.headers.get('x-remotelab-display-poll-seconds'), '0.18');
+  assert.deepEqual([...Buffer.from(await negotiatedJpegFrame.arrayBuffer()).subarray(0, 2)], [255, 216]);
+  const bundleAccept = 'application/vnd.remotelab.display-frames+json;v=1';
+  const animationBundle = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: bundleAccept } });
+  assert.equal(animationBundle.status, 200);
+  assert.equal(animationBundle.headers.get('content-type'), 'application/vnd.remotelab.display-frames+json');
+  const bundle = await animationBundle.json();
+  assert.equal(bundle.frameId, animatedReceipt.frameId);
+  assert.equal(bundle.intervalMs, 180);
+  assert.equal(bundle.frames.length, decodedGif.frames.length);
+  assert.notEqual(bundle.frames[0], bundle.frames[1], 'local loop must contain distinct composed GIF frames');
+  assert.deepEqual([...Buffer.from(bundle.frames[0], 'base64').subarray(0, 2)], [255, 216]);
+  const unchangedBundle = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: `${bundleAccept};id=${bundle.frameId}` } });
+  assert.equal(unchangedBundle.status, 304);
+  const fasterBundle = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: bundleAccept.replace('v=1', 'v=2') } });
+  assert.equal(fasterBundle.status, 200);
+  const faster = await fasterBundle.json();
+  assert.equal(faster.version, 2);
+  assert.equal(faster.intervalMs, 100);
+  assert.equal(faster.bundleId, previewBundleId(faster.frameId, 2, 100, 'starter'));
+  assert.notEqual(faster.bundleId, previewBundleId(faster.frameId, 2, 50), 'timing changes must invalidate the cached bundle');
+  assert.equal(faster.frames.length, decodedGif.frames.length);
+  assert.notEqual(faster.frames[0], faster.frames[1]);
+  const completedBundle = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: `${bundleAccept.replace('v=1', 'v=2')};id=${faster.bundleId}` } });
+  assert.equal(completedBundle.status, 200);
+  const completed = await completedBundle.json();
+  assert.equal(completed.bundleId, previewBundleId(completed.frameId, 2, 100));
+  assert.equal(completed.frames.length, decodedGif.frames.length);
+  const unchangedFastBundle = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}`, Accept: `${bundleAccept.replace('v=1', 'v=2')};id=${completed.bundleId}` } });
+  assert.equal(unchangedFastBundle.status, 304);
+  const wrongBundle = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: 'Bearer invalid-token', Accept: bundleAccept } });
+  assert.equal(wrongBundle.status, 401);
+  const animationStatus = await fetch(previewUrl, { headers: publicHeaders });
+  const animationState = await animationStatus.json();
+  assert.equal(animationState.animationDelivery[0]?.deviceId, joined.deviceId);
+  assert.equal(animationState.animationDelivery[0]?.samples, 6);
+  assert.equal(animationState.animationDelivery[0]?.lastFormat, 'jpeg-bundle');
+  assert.equal(animationState.animationDelivery[0]?.bundleFrameCount, decodedGif.frames.length);
+  assert.equal(animationState.animationDelivery[0]?.sourceFrameId, bundle.frameId);
+  const heartbeatPath = new URL(joined.heartbeatUrl).pathname.replace(/^\/display/, '');
+  const playbackReport = await fetch(`http://127.0.0.1:${displayPort}${heartbeatPath}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${joined.deviceToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usbFrames: 42, usbAckMs: Date.now(), usbFrameMs: 12,
+      animationFrames: faster.frames.length, bundleFrameId: faster.frameId, targetIntervalMs: 100, actualIntervalMs: 106 }),
+  });
+  assert.equal(playbackReport.status, 200);
+  const playbackStatus = await fetch(previewUrl, { headers: publicHeaders });
+  const playback = (await playbackStatus.json()).devicePlayback[0];
+  assert.equal(playback?.bundleFrameId, bundle.frameId);
+  assert.equal(playback?.targetIntervalMs, 100);
+  assert.equal(playback?.actualIntervalMs, 106);
+  const stillOtherPreview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/preview-frame`, { headers: publicHeaders });
+  assert.equal((await stillOtherPreview.json()).configured, false, 'GIF preview remains scoped to its Person');
   const invalidGif = await fetch(contentUrl, { method: 'PUT', headers: publicHeaders, body: JSON.stringify({ sentence: 'still here', gifBase64: 'not-a-gif' }) });
   assert.equal(invalidGif.status, 400);
   const currentContent = await fetch(contentUrl, { headers: publicHeaders });
@@ -210,6 +308,8 @@ try {
   assert.equal((await persistedContent.json()).configured, true, 'personal content survives a restart');
   const persistedPreview = await fetch(previewUrl, { headers: publicHeaders });
   assert.equal((await persistedPreview.json()).configured, true, 'preview survives a sidecar restart');
+  const persistedAnimatedFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
+  assert.equal(persistedAnimatedFrame.headers.get('x-remotelab-display-poll-seconds'), '0.45', 'animated preview survives a sidecar restart');
   const clearedPreview = await fetch(previewUrl, { method: 'DELETE', headers: publicHeaders });
   assert.equal(clearedPreview.status, 200);
   const restoredStatus = await fetch(contentUrl, { method: 'DELETE', headers: publicHeaders });
@@ -239,11 +339,24 @@ try {
   const sourceConflict = await fetch(sourcePath, { method: 'PUT', headers: publicHeaders, body: JSON.stringify({ ...sourcePacket, label: 'Changed' }) });
   assert.equal(sourceConflict.status, 409);
   const statusA = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/status`, { headers: publicHeaders });
+  const statusAJson = await statusA.json();
+  assert.equal(statusAJson.reminderSources.automation.configured, 1);
+  assert.equal(statusAJson.reminderSources.automation.active, 1);
+  assert.equal(statusAJson.reminderSources.automation.failures24h, 0, 'other Person failures stay private');
+  assert.equal(statusAJson.reminderSources.feishu.conversations, 1);
+  assert.equal(statusAJson.reminderSources.feishu.recentConversations, 1);
+  assert.equal(statusAJson.metrics.pendingReview, 1);
+  assert.deepEqual(statusAJson.metrics.pendingResults, [{ name: '项目审阅', context: '整理本周进展' }]);
   assert.equal(statusA.status, 200);
-  assert.equal((await statusA.json()).scene.signal.title, '评测等待确认');
+  assert.equal(statusAJson.scene.signal.title, '评测等待确认');
   const statusB = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personB}/status`, { headers: publicHeaders });
+  const statusBJson = await statusB.json();
+  assert.equal(statusBJson.reminderSources.automation.configured, 1);
+  assert.equal(statusBJson.reminderSources.automation.failures24h, 1);
+  assert.equal(statusBJson.reminderSources.feishu.conversations, 0, 'other Person Feishu sessions stay private');
+  assert.deepEqual(statusBJson.metrics.pendingResults, [], 'another Person result stays private');
   assert.equal(statusB.status, 200);
-  assert.equal((await statusB.json()).snapshot.signals.some((signal) => signal.sourceId === 'evaluation'), false);
+  assert.equal(statusBJson.snapshot.signals.some((signal) => signal.sourceId === 'evaluation'), false);
   const preview = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/preview.png`, { headers: publicHeaders });
   assert.equal(preview.status, 200);
   assert.equal(preview.headers.get('content-type'), 'image/png');
