@@ -19,8 +19,10 @@ const sessionHttpSource = readFileSync(join(repoRoot, 'static', 'chat', 'session
 
 assert.doesNotMatch(template, /sessionInstructionsPanel/, 'model context should not use a one-off panel above the transcript');
 assert.doesNotMatch(css, /session-instructions-panel/, 'the removed one-off panel should not retain special CSS');
-assert.match(uiSource, /contextKind === "model" \? t\("activity\.modelContext"\)/,
-  'model-owned context should render through the existing Thought activity surface');
+assert.match(uiSource, /evt\?\.contextKind === "model" \? t\("activity\.modelContext"\)/,
+  'model-owned context should retain a labeled Markdown view inside the Thought activity surface');
+assert.match(uiSource, /preserveHiddenBlocks/,
+  'model-owned context should preserve hidden-block text in that view');
 assert.match(
   sessionHttpSource,
   /systemPrompt: typeof session\.systemPrompt === "string" \? session\.systemPrompt : null/,

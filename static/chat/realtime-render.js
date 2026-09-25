@@ -414,6 +414,11 @@ function applyLazyBodyToNode(node, body) {
     renderActivityDiff(node, body.value);
     return;
   }
+  if (renderMode === 'markdown-full') {
+    if (typeof body?.value !== 'string') throw new Error('Context body unavailable');
+    renderMarkdownIntoNode(node, body.value, { preserveHiddenBlocks: true });
+    return;
+  }
   const value = formatDecodedDisplayText(body?.value || node.dataset.preview || "");
   if (renderMode === "markdown" && typeof renderMarkdownIntoNode === "function") {
     renderMarkdownIntoNode(node, value);

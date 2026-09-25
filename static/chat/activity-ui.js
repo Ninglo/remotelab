@@ -229,8 +229,9 @@ function renderActivityNote(container, evt, kind = 'note') {
   const { card, body } = createActivityDisclosure(title, { kind, meta: kind === 'context' ? String(evt.phase || '') : '' });
   const content = document.createElement('div');
   content.className = 'md-content';
-  renderMarkdownIntoNode(content, source);
-  markLazyEventBodyNode(content, evt, { preview: source, renderMode: 'markdown' });
+  const preserveHiddenBlocks = kind === 'context' && evt.contextKind === 'model';
+  renderMarkdownIntoNode(content, source, { preserveHiddenBlocks });
+  markLazyEventBodyNode(content, evt, { preview: source, renderMode: preserveHiddenBlocks ? 'markdown-full' : 'markdown' });
   body.append(content);
   if (evt.reason && evt.reason !== source) {
     const reason = document.createElement('p');

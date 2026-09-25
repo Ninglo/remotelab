@@ -221,9 +221,11 @@ function renderMathInMarkdownSource(source) {
   return rendered.replace(/\u0000MATH_PROTECTED_(\d+)\u0000/g, (_, index) => placeholders[Number(index)] || "");
 }
 
-function renderMarkdownIntoNode(node, markdown) {
+function renderMarkdownIntoNode(node, markdown, { preserveHiddenBlocks = false } = {}) {
   const source = typeof markdown === "string" ? markdown : "";
-  const visibleSource = formatDecodedDisplayText(source);
+  const visibleSource = preserveHiddenBlocks
+    ? source.replace(/<\/?(?:private|hide)>/gi, (tag) => tag.replace('<', '&lt;').replace('>', '&gt;'))
+    : formatDecodedDisplayText(source);
   const markdownSource = typeof renderMathInMarkdownSource === "function"
     ? renderMathInMarkdownSource(visibleSource)
     : visibleSource;
