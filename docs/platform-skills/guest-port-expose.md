@@ -14,9 +14,19 @@ A normal RemoteLab deployment already maps a stable hostname through Cloudflare 
 4. add one managed ingress route from that hostname to the service port;
 5. verify the public URL after the local service and ingress are both healthy.
 
-Do not make the application listen on `0.0.0.0` just to reach it through the public hostname. Do not use a temporary Quick Tunnel as formal delivery.
+Keep the application on loopback and verify the configured public route reaches the intended service.
 
 ## Managed guest command
+
+For a preview on the current RemoteLab instance with its own HTTP Basic login,
+use `remotelab preview expose --slug <name> --port <port> --json`. It checks that
+the loopback service challenges unauthenticated requests, then serves it at
+`<instance-domain>/preview/<name>/`. This reuses the instance's existing
+domain and tunnel. Keep the service under a restart-safe supervisor. Use
+`remotelab preview unexpose --slug <name>` to remove the route.
+
+Guest instances can instead assign a sibling hostname through the managed
+guest command below.
 
 For an isolated RemoteLab guest instance, use the built-in controlled route command:
 

@@ -40,6 +40,7 @@ Usage:
   remotelab validate-profile         Validate host + profile health and report degradation
   remotelab guest-instance           Create isolated guest instances on this machine
   remotelab publish                  Publish and manage static pages from instance-local storage
+  remotelab preview                  Expose an authenticated local preview on the stable instance domain
   remotelab chat                     Run chat server in foreground
   remotelab api                      Call the local RemoteLab HTTP API with owner auth
   remotelab mail                     Manage agent mailbox and send outbound email
@@ -123,6 +124,13 @@ switch (command) {
       console.error(error.message || String(error));
       process.exit(1);
     }
+    break;
+  }
+
+  case 'preview': {
+    const { runPreviewCommand } = await import(scriptPath('lib/preview-command.mjs'));
+    try { process.exitCode = await runPreviewCommand(args); }
+    catch (error) { console.error(error.message); process.exitCode = 1; }
     break;
   }
 

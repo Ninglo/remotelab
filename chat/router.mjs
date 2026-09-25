@@ -8,6 +8,7 @@ import { createHash } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { handleBrowserDesktopRequest } from './browser-desktop-proxy.mjs';
+import { handlePreviewProxy } from './preview-proxy.mjs';
 import {
   CHAT_IMAGES_DIR,
   FILE_ASSET_STORAGE_ENABLED,
@@ -1339,6 +1340,8 @@ export async function handleRequest(req, res) {
 
   const nonce = generateNonce();
   setSecurityHeaders(res, nonce);
+
+  if (await handlePreviewProxy(req, res, pathname)) return;
 
   if (pathname === '/manifest.install.json' && req.method === 'GET') {
     try {

@@ -12,6 +12,10 @@ RemoteLab owns the static file server and publish lifecycle. Public ingress is s
 - an ordinary publish does not call Cloudflare, Wrangler, or any provider API.
 
 Use Service Port Forwarding instead when the result needs a long-running process, API, database connection, WebSocket, or server-side state.
+Pages containing private task instructions or other internal data should stay
+behind authentication. For an existing loopback preview with HTTP Basic login,
+use `remotelab preview expose --slug <name> --port <port> --json` instead of
+copying its files into the public static directory.
 
 ## Publish
 

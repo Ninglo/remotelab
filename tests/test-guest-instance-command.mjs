@@ -715,7 +715,7 @@ try {
   assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /Static Page Publish/);
   assert.match(readFileSync(join(platformSkillsDir, 'stable-static-publish.md'), 'utf8'), /never live in the RemoteLab Git checkout/);
   assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Service Port Forwarding/);
-  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /Do not use a temporary Quick Tunnel/);
+  assert.match(readFileSync(join(platformSkillsDir, 'guest-port-expose.md'), 'utf8'), /verify the configured public route/);
 
   const syncedIndex = readFileSync(join(memoryDir, 'skills.md'), 'utf8');
   assert.match(syncedIndex, /## Local Skills/);
