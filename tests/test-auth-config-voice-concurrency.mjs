@@ -27,6 +27,13 @@ try {
   assert.deepEqual((await loadAuthDocument({ persistMigration: false })).people[0].preferences.futurePreference,
     { enabled: true }, 'normalization must preserve preferences added by newer releases');
 
+  await writeFile(authPath, JSON.stringify({ token: 'legacy-access-token' }));
+  assert.equal(await readPrimaryAccessToken(authPath), 'legacy-access-token');
+  const migrated = JSON.parse(await readFile(authPath, 'utf8'));
+  assert.equal(migrated.version, 2, 'legacy auth must still migrate on credential read');
+  assert.equal(await readServiceToken(authPath), migrated.serviceToken,
+    'the service token returned after migration must be the persisted token');
+
   await writeFile(authPath, JSON.stringify({
     version: 2,
     serviceToken: 'test-token',
