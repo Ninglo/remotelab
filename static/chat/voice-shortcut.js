@@ -150,7 +150,7 @@
     }
     resetTaps();
     if (preference.binding === "Alt+Shift" || preference.binding === "Shift+CapsLock") {
-      if (modifierChordFromEvent(event)) activateVoice(event);
+      if (modifierChordFromEvent(event) === preference.binding) activateVoice(event);
       return;
     }
     if (getBindingConflict(preference.binding) === "newSession") return;

@@ -142,6 +142,11 @@ assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Ctrl+Meta+KeyO'),
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Ctrl+KeyR'), 'browser');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Alt+Shift'), '');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Shift+CapsLock'), 'system');
+key('keydown', 'AltLeft');
+assert.equal(key('keydown', 'ShiftLeft', { altKey: true, shiftKey: true }), false);
+assert.equal(clicks, 9, 'Shift plus Option must not activate a Shift plus Caps Lock binding');
+key('keyup', 'ShiftLeft');
+key('keyup', 'AltLeft');
 
 people[0].preferences.voiceShortcut.binding = 'Ctrl+Shift+KeyV';
 assert.equal(key('keydown', 'KeyV', { ctrlKey: true, shiftKey: true }), true);
