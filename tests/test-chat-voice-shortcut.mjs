@@ -116,6 +116,11 @@ assert.equal(key('keydown', 'ShiftLeft', { altKey: true, shiftKey: true }), true
 assert.equal(clicks, 6, 'Shift plus Option should activate voice without a third key');
 key('keydown', 'ShiftLeft', { altKey: true, shiftKey: true, repeat: true });
 assert.equal(clicks, 6, 'modifier key repeat should not activate voice again');
+key('keyup', 'ShiftLeft', { shiftKey: false, altKey: true });
+key('keyup', 'AltLeft', { altKey: false });
+key('keydown', 'ShiftLeft', { shiftKey: false });
+assert.equal(key('keydown', 'AltLeft', { altKey: false, shiftKey: false }), true);
+assert.equal(clicks, 7, 'pressed modifier tracking should handle missing modifier flags');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Meta+KeyO'), 'newSession');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Ctrl+Meta+KeyO'), 'newSession');
 assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Ctrl+KeyR'), 'browser');
@@ -123,16 +128,16 @@ assert.equal(window.RemoteLabVoiceShortcut.getBindingConflict('Alt+Shift'), '');
 
 people[0].preferences.voiceShortcut.binding = 'Ctrl+Shift+KeyV';
 assert.equal(key('keydown', 'KeyV', { ctrlKey: true, shiftKey: true }), true);
-assert.equal(clicks, 7, 'a configured chord should activate voice');
+assert.equal(clicks, 8, 'a configured chord should activate voice');
 key('keydown', 'KeyV', { ctrlKey: true });
-assert.equal(clicks, 7, 'the modifier set must match exactly');
+assert.equal(clicks, 8, 'the modifier set must match exactly');
 window.RemoteLabVoiceShortcut.setRecording(true);
 key('keydown', 'KeyV', { ctrlKey: true, shiftKey: true });
-assert.equal(clicks, 7, 'recording a new shortcut must not activate voice');
+assert.equal(clicks, 8, 'recording a new shortcut must not activate voice');
 window.RemoteLabVoiceShortcut.setRecording(false);
 button.disabled = true;
 key('keydown', 'KeyV', { ctrlKey: true, shiftKey: true });
-assert.equal(clicks, 7, 'the shortcut must honor the voice button disabled state');
+assert.equal(clicks, 8, 'the shortcut must honor the voice button disabled state');
 
 assert.equal(window.RemoteLabVoiceShortcut.bindingFromEvent({ code: 'KeyV', ctrlKey: true, shiftKey: true }), 'Ctrl+Shift+KeyV');
 assert.equal(window.RemoteLabVoiceShortcut.bindingFromEvent({ code: 'KeyV' }), '', 'bare typing keys should not be recorded');
@@ -161,15 +166,17 @@ const tripleControl = control();
 const statusControl = control();
 const savedPeople = [{ id: 'alpha', preferences: { voiceShortcut: { enabled: false, binding: '' } } }];
 const pending = [];
-const settingsDocumentListeners = new Map();
+const diagnostics = [];
+const settingsWindowListeners = new Map();
 const settingsContext = vm.createContext({
-  window: { RemoteLabVoiceShortcut: window.RemoteLabVoiceShortcut, addEventListener() {} },
-  document: {
-    addEventListener(type, handler) { settingsDocumentListeners.set(type, handler); },
+  window: {
+    RemoteLabVoiceShortcut: window.RemoteLabVoiceShortcut,
+    addEventListener(type, handler) { settingsWindowListeners.set(type, handler); },
     removeEventListener(type, handler) {
-      if (settingsDocumentListeners.get(type) === handler) settingsDocumentListeners.delete(type);
+      if (settingsWindowListeners.get(type) === handler) settingsWindowListeners.delete(type);
     },
   },
+  document: {},
   currentPerson: { id: 'alpha' },
   getPeopleDirectory: () => savedPeople,
   requestPeople: (_url, options) => new Promise((resolve) => {
@@ -182,6 +189,10 @@ const settingsContext = vm.createContext({
       },
     });
   }),
+  fetch: (url, options) => {
+    diagnostics.push({ url, payload: JSON.parse(options.body) });
+    return Promise.resolve({ ok: true });
+  },
   voiceShortcutEnabled: enabledControl,
   voiceShortcutBinding: bindingLabel,
   voiceShortcutRecordBtn: recordControl,
@@ -218,7 +229,7 @@ await new Promise((resolve) => setImmediate(resolve));
 assert.equal(enabledControl.checked, true);
 
 function recordKey(type, code, extra = {}) {
-  settingsDocumentListeners.get(type)?.({
+  settingsWindowListeners.get(type)?.({
     code, altKey: code.startsWith('Alt'), ctrlKey: false, shiftKey: false,
     metaKey: false, repeat: false, preventDefault() {}, stopPropagation() {},
     ...extra,
@@ -251,7 +262,7 @@ await new Promise((resolve) => setImmediate(resolve));
 
 recordControl.fire('click');
 recordKey('keydown', 'ShiftLeft', { shiftKey: true });
-recordKey('keydown', 'AltLeft', { shiftKey: true, altKey: true });
+recordKey('keydown', 'AltLeft', { shiftKey: false, altKey: false });
 assert.match(statusControl.textContent, /detected.*Option \+ Shift/, 'modifier-only chord should be shown before saving');
 recordControl.fire('click');
 assert.deepEqual(pending[6].preference, { enabled: true, binding: 'Alt+Shift' });
@@ -285,7 +296,13 @@ await new Promise((resolve) => setImmediate(resolve));
 recordControl.fire('click');
 recordControl.fire('click');
 assert.equal(pending.length, 9, 'finishing without keys should not change the saved shortcut');
-assert.match(statusControl.textContent, /noKeys/);
+assert.match(statusControl.textContent, /noEvents/);
+recordControl.fire('click');
+recordKey('keydown', 'ShiftLeft', { shiftKey: true });
+assert.match(statusControl.textContent, /received.*Shift/, 'the first key should be acknowledged');
+recordControl.fire('click');
+assert.equal(pending.length, 9, 'an incomplete sequence should not change the saved shortcut');
+assert.match(statusControl.textContent, /incomplete/);
 recordControl.fire('click');
 recordKey('keydown', 'Escape');
 assert.equal(pending.length, 9, 'Escape cancels without saving');
@@ -305,4 +322,10 @@ assert.deepEqual(pending[10].preference, { enabled: true, binding: 'Shift*2' },
 pending[10].resolve();
 await new Promise((resolve) => setImmediate(resolve));
 assert.equal(enabledControl.checked, true);
+assert.ok(diagnostics.some(({ payload }) => payload.phase === 'start'));
+assert.ok(diagnostics.some(({ payload }) => payload.phase === 'stop' && payload.outcome === 'empty'
+  && payload.events.length === 0), 'an empty attempt should be observable in the server log');
+assert.ok(diagnostics.some(({ payload }) => payload.phase === 'stop' && payload.outcome === 'confirmed'
+  && payload.events.some((event) => event.modifier === 'Shift')), 'recorded modifiers should be observable');
+assert.ok(diagnostics.every(({ url }) => url === '/api/voice-shortcut/recording-diagnostic'));
 console.log('test-chat-voice-shortcut: ok');

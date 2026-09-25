@@ -1610,6 +1610,10 @@ let voiceShortcutLastOptionRelease = 0;
 let voiceShortcutShiftTaps = 0;
 let voiceShortcutShiftDown = false;
 let voiceShortcutLastShiftRelease = 0;
+const voiceShortcutPressedModifiers = new Set();
+let voiceShortcutAttemptId = "";
+let voiceShortcutAttemptStartedAt = 0;
+let voiceShortcutObservedEvents = [];
 let voiceShortcutDraft = null;
 let voiceShortcutDraftPersonId = "";
 let voiceShortcutEditVersion = 0;
@@ -1715,37 +1719,77 @@ function resetVoiceShortcutTapCounts() {
   voiceShortcutLastShiftRelease = 0;
 }
 
-function stopVoiceShortcutRecording() {
+function sendVoiceShortcutRecordingDiagnostic(phase, outcome = "") {
+  if (!voiceShortcutAttemptId || typeof fetch !== "function") return;
+  void fetch("/api/voice-shortcut/recording-diagnostic", {
+    method: "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      attemptId: voiceShortcutAttemptId,
+      phase,
+      outcome,
+      events: phase === "stop" ? voiceShortcutObservedEvents : [],
+    }),
+  }).catch(() => {});
+}
+
+function observeVoiceShortcutRecordingEvent(event, type) {
+  if (voiceShortcutObservedEvents.length >= 24) return;
+  voiceShortcutObservedEvents.push({
+    type,
+    modifier: window.RemoteLabVoiceShortcut?.modifierFromEvent(event) || "Other",
+    alt: event.altKey === true,
+    shift: event.shiftKey === true,
+    ctrl: event.ctrlKey === true,
+    meta: event.metaKey === true,
+    atMs: Date.now() - voiceShortcutAttemptStartedAt,
+  });
+}
+
+function stopVoiceShortcutRecording(outcome = "changed") {
+  sendVoiceShortcutRecordingDiagnostic("stop", outcome);
+  voiceShortcutAttemptId = "";
+  voiceShortcutObservedEvents = [];
   voiceShortcutRecording = false;
   voiceShortcutCandidate = "";
   resetVoiceShortcutTapCounts();
+  voiceShortcutPressedModifiers.clear();
   window.RemoteLabVoiceShortcut?.setRecording(false);
-  document.removeEventListener("keydown", recordVoiceShortcutKeydown, true);
-  document.removeEventListener("keyup", recordVoiceShortcutKeyup, true);
+  window.removeEventListener("keydown", recordVoiceShortcutKeydown, true);
+  window.removeEventListener("keyup", recordVoiceShortcutKeyup, true);
   renderVoiceShortcutSettings();
 }
 
 function recordVoiceShortcutKeyup(event) {
-  if (event.code === "AltLeft" || event.code === "AltRight") {
+  observeVoiceShortcutRecordingEvent(event, "up");
+  const modifier = window.RemoteLabVoiceShortcut?.modifierFromEvent(event);
+  if (modifier) voiceShortcutPressedModifiers.delete(modifier);
+  if (modifier === "Alt") {
     voiceShortcutOptionDown = false;
     voiceShortcutLastOptionRelease = Date.now();
   }
-  if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+  if (modifier === "Shift") {
     voiceShortcutShiftDown = false;
     voiceShortcutLastShiftRelease = Date.now();
   }
 }
 
 function recordVoiceShortcutKeydown(event) {
+  observeVoiceShortcutRecordingEvent(event, "down");
   if (event.code === "Escape" && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
     event.preventDefault();
     event.stopPropagation();
-    stopVoiceShortcutRecording();
+    stopVoiceShortcutRecording("cancelled");
     showVoiceShortcutStatus("settings.voiceShortcut.cancelled");
     return;
   }
   if (event.repeat || event.isComposing) return;
-  const modifierChord = window.RemoteLabVoiceShortcut?.modifierChordFromEvent(event);
+  const modifier = window.RemoteLabVoiceShortcut?.modifierFromEvent(event);
+  if (modifier) voiceShortcutPressedModifiers.add(modifier);
+  else voiceShortcutPressedModifiers.clear();
+  const modifierChord = window.RemoteLabVoiceShortcut?.modifierChordFromEvent(event, voiceShortcutPressedModifiers);
   if (modifierChord) {
     event.preventDefault();
     event.stopPropagation();
@@ -1754,7 +1798,7 @@ function recordVoiceShortcutKeydown(event) {
     showRecordedVoiceShortcut(modifierChord);
     return;
   }
-  if ((event.code === "AltLeft" || event.code === "AltRight")
+  if (modifier === "Alt"
     && !event.ctrlKey && !event.shiftKey && !event.metaKey) {
     event.preventDefault();
     event.stopPropagation();
@@ -1762,7 +1806,7 @@ function recordVoiceShortcutKeydown(event) {
     if (voiceShortcutLastOptionRelease && Date.now() - voiceShortcutLastOptionRelease > 650) voiceShortcutOptionTaps = 0;
     if (voiceShortcutOptionTaps === 0) {
       voiceShortcutCandidate = "";
-      showVoiceShortcutStatus("settings.voiceShortcut.waiting");
+      showVoiceShortcutStatus("settings.voiceShortcut.received", { binding: "Option" });
     }
     voiceShortcutOptionDown = true;
     voiceShortcutOptionTaps += 1;
@@ -1773,7 +1817,7 @@ function recordVoiceShortcutKeydown(event) {
     }
     return;
   }
-  if ((event.code === "ShiftLeft" || event.code === "ShiftRight")
+  if (modifier === "Shift"
     && !event.ctrlKey && !event.altKey && !event.metaKey) {
     event.preventDefault();
     event.stopPropagation();
@@ -1781,7 +1825,7 @@ function recordVoiceShortcutKeydown(event) {
     if (voiceShortcutLastShiftRelease && Date.now() - voiceShortcutLastShiftRelease > 650) voiceShortcutShiftTaps = 0;
     if (voiceShortcutShiftTaps === 0) {
       voiceShortcutCandidate = "";
-      showVoiceShortcutStatus("settings.voiceShortcut.waiting");
+      showVoiceShortcutStatus("settings.voiceShortcut.received", { binding: "Shift" });
     }
     voiceShortcutShiftDown = true;
     voiceShortcutShiftTaps += 1;
@@ -1793,11 +1837,11 @@ function recordVoiceShortcutKeydown(event) {
     return;
   }
   resetVoiceShortcutTapCounts();
-  if (["AltLeft", "AltRight", "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "MetaLeft", "MetaRight"].includes(event.code)) {
+  if (modifier) {
     event.preventDefault();
     event.stopPropagation();
     voiceShortcutCandidate = "";
-    showVoiceShortcutStatus("settings.voiceShortcut.waiting");
+    showVoiceShortcutStatus("settings.voiceShortcut.received", { binding: formatRecordedVoiceShortcut(modifier) });
     return;
   }
   const binding = window.RemoteLabVoiceShortcut?.bindingFromEvent(event);
@@ -1820,19 +1864,22 @@ function initVoiceShortcutSettings() {
   if (!voiceShortcutEnabled || voiceShortcutEnabled.dataset.bound === "true") return;
   renderVoiceShortcutSettings();
   voiceShortcutEnabled.addEventListener("change", () => {
-    if (!voiceShortcutEnabled.checked && voiceShortcutRecording) stopVoiceShortcutRecording();
+    if (!voiceShortcutEnabled.checked && voiceShortcutRecording) stopVoiceShortcutRecording("disabled");
     void saveVoiceShortcutPreference({ enabled: voiceShortcutEnabled.checked });
   });
   voiceShortcutRecordBtn.addEventListener("click", () => {
     if (voiceShortcutRecording) {
       const binding = voiceShortcutCandidate;
+      const observedCount = voiceShortcutObservedEvents.length;
       if (window.RemoteLabVoiceShortcut?.getBindingConflict(binding) === "newSession") {
         showVoiceShortcutStatus("settings.voiceShortcut.conflict.newSession");
         return;
       }
-      stopVoiceShortcutRecording();
+      stopVoiceShortcutRecording(binding ? "confirmed" : "empty");
       if (!binding) {
-        showVoiceShortcutStatus("settings.voiceShortcut.noKeys");
+        showVoiceShortcutStatus(observedCount
+          ? "settings.voiceShortcut.incomplete"
+          : "settings.voiceShortcut.noEvents");
         return;
       }
       showVoiceShortcutStatus("settings.voiceShortcut.saving");
@@ -1848,9 +1895,15 @@ function initVoiceShortcutSettings() {
     voiceShortcutRecording = true;
     voiceShortcutCandidate = "";
     resetVoiceShortcutTapCounts();
+    voiceShortcutPressedModifiers.clear();
+    voiceShortcutAttemptId = window.crypto?.randomUUID?.()
+      || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    voiceShortcutAttemptStartedAt = Date.now();
+    voiceShortcutObservedEvents = [];
+    sendVoiceShortcutRecordingDiagnostic("start");
     window.RemoteLabVoiceShortcut?.setRecording(true);
-    document.addEventListener("keydown", recordVoiceShortcutKeydown, true);
-    document.addEventListener("keyup", recordVoiceShortcutKeyup, true);
+    window.addEventListener("keydown", recordVoiceShortcutKeydown, true);
+    window.addEventListener("keyup", recordVoiceShortcutKeyup, true);
     renderVoiceShortcutSettings();
     showVoiceShortcutStatus("settings.voiceShortcut.waiting");
   });
@@ -1864,7 +1917,10 @@ function initVoiceShortcutSettings() {
   });
   window.addEventListener("remotelab:localechange", () => renderVoiceShortcutSettings());
   window.addEventListener("blur", () => {
-    if (voiceShortcutRecording) stopVoiceShortcutRecording();
+    if (voiceShortcutRecording) {
+      stopVoiceShortcutRecording("blurred");
+      showVoiceShortcutStatus("settings.voiceShortcut.interrupted");
+    }
   });
   voiceShortcutEnabled.dataset.bound = "true";
 }

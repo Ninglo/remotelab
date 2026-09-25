@@ -1,4 +1,5 @@
 import { constants } from 'fs';
+import { randomUUID } from 'crypto';
 import { access, mkdir, readFile, rename, rm, stat, writeFile } from 'fs/promises';
 import { dirname } from 'path';
 
@@ -33,14 +34,14 @@ export async function readJson(path, fallback = null) {
 
 export async function writeJsonAtomic(path, value) {
   await ensureDir(dirname(path));
-  const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`;
+  const tempPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
   await writeFile(tempPath, JSON.stringify(value, null, 2), 'utf8');
   await rename(tempPath, path);
 }
 
 export async function writeTextAtomic(path, value) {
   await ensureDir(dirname(path));
-  const tempPath = `${path}.tmp-${process.pid}-${Date.now()}`;
+  const tempPath = `${path}.tmp-${process.pid}-${randomUUID()}`;
   await writeFile(tempPath, value, 'utf8');
   await rename(tempPath, path);
 }

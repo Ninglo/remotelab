@@ -311,6 +311,42 @@ export async function handleControlRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  if (pathname === '/api/voice-shortcut/recording-diagnostic' && req.method === 'POST') {
+    if (!authSession?.personId) {
+      writeJson(res, 401, { error: 'Authentication required' });
+      return true;
+    }
+    try {
+      const payload = JSON.parse(await readBody(req, 4096) || '{}');
+      const attemptId = typeof payload.attemptId === 'string' && /^[a-zA-Z0-9-]{1,64}$/.test(payload.attemptId)
+        ? payload.attemptId : '';
+      const phase = payload.phase === 'start' ? 'start' : payload.phase === 'stop' ? 'stop' : '';
+      if (!attemptId || !phase) {
+        writeJson(res, 400, { error: 'Invalid recording diagnostic' });
+        return true;
+      }
+      const allowedModifiers = new Set(['Alt', 'Shift', 'Ctrl', 'Meta', 'Other']);
+      const events = Array.isArray(payload.events) ? payload.events.slice(0, 24).map((event) => ({
+        type: event?.type === 'up' ? 'up' : 'down',
+        modifier: allowedModifiers.has(event?.modifier) ? event.modifier : 'Other',
+        alt: event?.alt === true,
+        shift: event?.shift === true,
+        ctrl: event?.ctrl === true,
+        meta: event?.meta === true,
+        atMs: Number.isFinite(event?.atMs) ? Math.max(0, Math.min(60000, Math.round(event.atMs))) : 0,
+      })) : [];
+      const outcome = ['confirmed', 'empty', 'cancelled', 'blurred', 'disabled', 'changed'].includes(payload.outcome)
+        ? payload.outcome : '';
+      console.info('[voice-shortcut-recording]', JSON.stringify({
+        personId: authSession.personId, attemptId, phase, outcome, events,
+      }));
+      writeJson(res, 200, { ok: true });
+    } catch {
+      writeJson(res, 400, { error: 'Invalid recording diagnostic' });
+    }
+    return true;
+  }
+
   if (pathname === '/api/people' && req.method === 'GET') {
     writeJson(res, 200, { people: await listPeopleForClient() });
     return true;

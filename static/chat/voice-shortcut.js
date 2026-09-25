@@ -11,6 +11,7 @@
   let shiftTaps = 0;
   let shiftDown = false;
   let lastShiftRelease = 0;
+  const pressedModifiers = new Set();
 
   function currentPreference() {
     const personId = typeof currentPerson !== "undefined" ? currentPerson?.id : "";
@@ -55,10 +56,23 @@
     resetShiftTaps();
   }
 
-  function modifierChordFromEvent(event) {
+  function modifierFromEvent(event) {
+    const code = String(event?.code || "");
+    if (code === "AltLeft" || code === "AltRight" || event?.key === "Alt") return "Alt";
+    if (code === "ShiftLeft" || code === "ShiftRight" || event?.key === "Shift") return "Shift";
+    if (code === "ControlLeft" || code === "ControlRight" || event?.key === "Control") return "Ctrl";
+    if (code === "MetaLeft" || code === "MetaRight" || event?.key === "Meta") return "Meta";
+    return "";
+  }
+
+  function modifierChordFromEvent(event, pressed = pressedModifiers) {
     if (event?.repeat || event?.isComposing) return "";
-    if (!modifierCodes.has(event?.code)) return "";
-    return event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey ? "Alt+Shift" : "";
+    if (!modifierFromEvent(event)) return "";
+    const active = (name, flag, pressedName = name) => flag === true
+      || event?.getModifierState?.(name) === true || pressed?.has(pressedName);
+    return active("Alt", event.altKey) && active("Shift", event.shiftKey)
+      && !active("Control", event.ctrlKey, "Ctrl") && !active("Meta", event.metaKey)
+      ? "Alt+Shift" : "";
   }
 
   function getBindingConflict(binding) {
@@ -76,15 +90,19 @@
   globalScope.document?.addEventListener("keydown", (event) => {
     if (recording || event.defaultPrevented || event.isComposing) {
       resetTaps();
+      pressedModifiers.clear();
       return;
     }
+    const modifier = modifierFromEvent(event);
+    if (modifier) pressedModifiers.add(modifier);
+    else pressedModifiers.clear();
     const preference = currentPreference();
     if (preference.enabled !== true) {
       resetTaps();
       return;
     }
     if (preference.binding === "Alt*3") {
-      if (event.code !== "AltLeft" && event.code !== "AltRight") {
+      if (modifier !== "Alt") {
         resetTaps();
         return;
       }
@@ -103,7 +121,7 @@
       return;
     }
     if (preference.binding === "Shift*2") {
-      if (event.code !== "ShiftLeft" && event.code !== "ShiftRight") {
+      if (modifier !== "Shift") {
         resetTaps();
         return;
       }
@@ -132,28 +150,38 @@
   });
 
   globalScope.document?.addEventListener("keyup", (event) => {
-    if (event.code === "AltLeft" || event.code === "AltRight") {
+    const modifier = modifierFromEvent(event);
+    if (modifier) pressedModifiers.delete(modifier);
+    if (modifier === "Alt") {
       optionDown = false;
       lastOptionRelease = Date.now();
     }
-    if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+    if (modifier === "Shift") {
       shiftDown = false;
       lastShiftRelease = Date.now();
     }
   });
-  globalScope.addEventListener?.("blur", resetTaps);
+  globalScope.addEventListener?.("blur", () => {
+    resetTaps();
+    pressedModifiers.clear();
+  });
   globalScope.document?.addEventListener("visibilitychange", () => {
-    if (globalScope.document.hidden) resetTaps();
+    if (globalScope.document.hidden) {
+      resetTaps();
+      pressedModifiers.clear();
+    }
   });
 
   globalScope.RemoteLabVoiceShortcut = {
     bindingFromEvent,
+    modifierFromEvent,
     modifierChordFromEvent,
     formatBinding,
     getBindingConflict,
     setRecording(value) {
       recording = value === true;
       resetTaps();
+      pressedModifiers.clear();
     },
   };
 })(window);
