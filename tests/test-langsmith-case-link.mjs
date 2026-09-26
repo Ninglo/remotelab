@@ -7,25 +7,26 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'remotelab-langsmith-link-'));
 process.env.REMOTELAB_CONFIG_DIR = dir;
 process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://remote.example.test';
-const { readLangSmithCaseConfig, buildLangSmithCaseEntry, getLatestLangSmithCase } =
+const { readLangSmithCaseConfig, getLatestLangSmithCase } =
   await import('../lib/langsmith-case-link.mjs');
 const { buildReplyPublicationPayload } = await import('../chat/reply-publication.mjs');
+const { normalizeConnectorPublicationText } = await import('../lib/connector-turn-flow.mjs');
 const id = 'a'.repeat(32), projectId = '46a89fbc-9740-40b8-a646-0179aa16d7f4';
 try {
   assert.equal(await readLangSmithCaseConfig(), null);
   writeFileSync(join(dir, 'langsmith-case-link.json'), JSON.stringify({ enabled: true, projectId,
     stateDir: 'langsmith-live', backfillStateDir: 'langsmith-backfill' }));
   const config = await readLangSmithCaseConfig();
-  assert.equal(buildLangSmithCaseEntry({id, tool:'codex'}, config).url,
-    `https://remote.example.test/api/sessions/${id}/langsmith`);
-  assert.equal(buildLangSmithCaseEntry({id, tool:'codex'}, config, {runId:'run_case1'}).url,
-    `https://remote.example.test/api/sessions/${id}/langsmith?runId=run_case1`);
-  assert.equal(buildLangSmithCaseEntry({id, tool:'claude'}, config), null);
-  const caseEntry = buildLangSmithCaseEntry({id, tool:'codex'}, config, {runId:'run_case1'});
+  const caseEntry = { label: '查看 Agent Case',
+    url: `https://remote.example.test/api/sessions/${id}/langsmith?runId=run_case1` };
   const publication = buildReplyPublicationPayload([{seq:1,type:'message',role:'assistant',content:'任务完成。'}],
     {},{includeSessionEntry:false,caseEntry});
-  assert.equal(publication.caseEntry.url,caseEntry.url);
-  assert.ok(publication.text.includes(caseEntry.url));
+  assert.equal(publication.caseEntry, undefined);
+  assert.equal(publication.text, '任务完成。');
+  for (const includeAttachmentFallback of [true, false]) {
+    assert.equal(normalizeConnectorPublicationText({payload:{...publication,caseEntry}},
+      {includeAttachmentFallback}), '任务完成。', 'legacy case metadata must not add a reply footer');
+  }
   assert.equal(await getLatestLangSmithCase(id, config), null);
   mkdirSync(join(dir, 'langsmith-live'));
   const statePath = join(dir, 'langsmith-live', 'state.json');
