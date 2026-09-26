@@ -333,6 +333,11 @@ const feishuUserReminders = createFeishuUserReminders({ configDir, identityFor: 
   const identity = (await personIdentityInfo(personId)).feishuIdentity;
   return identity ? { realm: identity.realm, openId: trimString(identity.subjectId) } : null;
 } });
+const maintainFeishuGrants = () => void feishuUserReminders.maintain().catch((error) => {
+  console.warn(JSON.stringify({ event: 'display_feishu_maintenance_failed', code: trimString(error?.code) || 'unavailable' }));
+});
+maintainFeishuGrants();
+setInterval(maintainFeishuGrants, 60_000).unref();
 
 async function getPersonIdentityIds(personId) {
   return (await personIdentityInfo(personId)).ids;

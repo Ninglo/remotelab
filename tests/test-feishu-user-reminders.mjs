@@ -16,6 +16,8 @@ const readIds = new Set();
 let readStatusFailure = false;
 let numericTimestamps = false;
 let rejectRefresh = false;
+let emptyCalendar = false;
+let refreshCount = 0;
 const seen = [];
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 const fakeFetch = async (url, options) => {
@@ -29,8 +31,14 @@ const fakeFetch = async (url, options) => {
     return response({ device_code: `device-${codeNumber}`, user_code: `ABCD-${codeNumber}`,
       verification_uri: 'https://accounts.feishu.cn/oauth/authorize', expires_in: 240, interval: 5 });
   }
-  if (path.endsWith('/oauth/token') && new URLSearchParams(options.body).get('grant_type') === 'refresh_token' && rejectRefresh)
-    return response({ error: 'invalid_grant' }, 400);
+  if (path.endsWith('/oauth/token') && options.headers['Content-Type'] === 'application/json') {
+    assert.equal(JSON.parse(options.body).grant_type, 'refresh_token', 'Feishu v2 refresh requires JSON');
+    if (rejectRefresh) return response({ error: 'invalid_grant' }, 400);
+    refreshCount++;
+    return response({ access_token: `access-refresh-${refreshCount}`, refresh_token: `refresh-rotated-${refreshCount}`,
+      expires_in: 7200, refresh_token_expires_in: 604800,
+      scope: 'auth:user.id:read im:message:readonly search:message calendar:calendar:read calendar:calendar.event:read offline_access' });
+  }
   if (path.endsWith('/oauth/token')) return response({ access_token: `access-${codeNumber}`,
     refresh_token: `refresh-${codeNumber}`, expires_in: 7200, refresh_token_expires_in: 604800,
     scope: codeNumber >= 4 ? 'auth:user.id:read im:message:readonly search:message calendar:calendar:read calendar:calendar.event:read offline_access'
@@ -49,6 +57,7 @@ const fakeFetch = async (url, options) => {
     })) } });
   }
   if (path.endsWith('/calendar/v4/calendars/primary')) return response({ code: 0, data: { calendar_id: 'cal_main', type: 'primary' } });
+  if (path.endsWith('/events/instance_view') && emptyCalendar) return response({ code: 0, data: {} });
   if (path.endsWith('/events/instance_view')) return response({ code: 0, data: { items: [
     { event_id: 'evt_soon', summary: '项目同步', start_time: { timestamp: String(Math.floor(clock / 1000) + 300) }, status: 'confirmed', self_rsvp_status: 'accept' },
     { event_id: 'evt_declined', summary: '已拒绝', start_time: { timestamp: String(Math.floor(clock / 1000) + 300) }, status: 'confirmed', self_rsvp_status: 'decline' },
@@ -213,8 +222,18 @@ try {
   const calendar = await service.calendarSummary('person_a');
   assert.equal(calendar.available, true);
   assert.deepEqual(calendar.due.map((item) => item.title), ['项目同步']);
-  clock += 7_200_001;
-  assert.equal((await service.status('person_a')).connected, true, 'an expired access token refreshes before status is reported');
+  emptyCalendar = true;
+  clock += 60_001;
+  const empty = await service.calendarSummary('person_a');
+  assert.equal(empty.available, true, 'an empty successful Feishu calendar response is still connected');
+  assert.deepEqual(empty.due, []);
+  const beforeRefresh = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-reminders.json'), 'utf8')).people.person_a.token;
+  clock = beforeRefresh.expiresAt - 4 * 60_000;
+  await service.maintain();
+  const maintained = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-reminders.json'), 'utf8')).people.person_a.token;
+  assert.equal(refreshCount, 1, 'maintenance refreshes without an open preview');
+  assert.equal(maintained.refreshToken, 'refresh-rotated-1', 'one-use refresh token is durably replaced');
+  assert.equal((await service.status('person_a')).connected, true);
   rejectRefresh = true;
   clock += 7_200_001;
   const expired = await service.status('person_a');

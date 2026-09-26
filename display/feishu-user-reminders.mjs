@@ -224,13 +224,13 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       const entry = doc.people?.[personId];
       const token = entry?.token;
       if (!token || token.openId !== identity.openId || token.realm !== identity.realm) return null;
-      if (token.expiresAt > now() + 120_000) return token.accessToken;
+      if (token.expiresAt > now() + 5 * 60_000) return token.accessToken;
       if (entry.pending?.expiresAt > now()) return token.expiresAt > now() ? token.accessToken : null;
       if (!token.refreshToken || token.refreshExpiresAt <= now()) return null;
       const failed = refreshFailures.get(personId);
       if (failed?.until > now()) return token.expiresAt > now() ? token.accessToken : null;
       const app = await appFor(identity.realm);
-      const response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { form: {
+      const response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { data: {
         grant_type: 'refresh_token', refresh_token: token.refreshToken, client_id: app.appId, client_secret: app.appSecret,
       } });
       if (!response.ok || !clean(response.json.access_token)) {
@@ -339,8 +339,10 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       url.searchParams.set('end_time', String(end));
       const response = await request(url.toString(), { token });
       if (!response.ok) return { available: false, authorizationRequired: response.json?.code === 99991679, events: [] };
-      if (!Array.isArray(response.json?.data?.items)) throw new Error('Calendar events unavailable');
-      const events = response.json.data.items.filter((item) => item?.status !== 'cancelled'
+      // Feishu returns data: {} (without items) for an empty calendar window.
+      const items = response.json?.data?.items ?? [];
+      if (!Array.isArray(items)) throw new Error('Calendar events unavailable');
+      const events = items.filter((item) => item?.status !== 'cancelled'
         && !['decline', 'removed'].includes(item?.self_rsvp_status)).map((item) => {
         const allDay = Boolean(item?.start_time?.date && !item?.start_time?.timestamp);
         const startAt = allDay ? Date.parse(`${item.start_time.date.slice(0, 10)}T09:00:00+08:00`)
@@ -514,5 +516,17 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       return { connected: true, cleared };
     });
   }
-  return { begin, status, summary, latest, calendarSummary, acknowledge };
+  async function maintain() {
+    const doc = await document();
+    for (const [personId, entry] of Object.entries(doc.people || {})) {
+      if (!entry?.token?.refreshToken || entry.token.expiresAt > now() + 5 * 60_000) continue;
+      try {
+        const identity = await expected(personId);
+        if (identity) await accessToken(personId, identity);
+      } catch (error) {
+        console.warn(JSON.stringify({ event: 'display_feishu_maintenance_failed', personId, code: clean(error?.code) || 'unavailable' }));
+      }
+    }
+  }
+  return { begin, status, summary, latest, calendarSummary, acknowledge, maintain };
 }
