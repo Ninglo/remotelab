@@ -283,9 +283,12 @@ try {
   assert.deepEqual(previewCall, { authorization: 'Bearer preview-secret', personId: 'person-a', body: '{"version":14}' });
   const deniedStudioDelete = await requestJson(`${base}/api/display/studio-preview`, { method: 'DELETE' });
   assert.equal(deniedStudioDelete.response.status, 401);
-  const studioDelete = await requestJson(`${base}/api/display/studio-preview`, { method: 'DELETE', headers: { 'X-Test-Person': 'person-b' } });
+  const otherPersonDelete = await requestJson(`${base}/api/display/studio-preview`, { method: 'DELETE', headers: { 'X-Test-Person': 'person-b' } });
+  assert.equal(otherPersonDelete.response.status, 200);
+  assert.equal(previewDeleteCall, null, 'another Person cannot stop this paired studio');
+  const studioDelete = await requestJson(`${base}/api/display/studio-preview`, { method: 'DELETE', headers: { 'X-Test-Person': 'person-a' } });
   assert.equal(studioDelete.response.status, 200);
-  assert.deepEqual(previewDeleteCall, { authorization: 'Bearer preview-secret', personId: 'person-b' });
+  assert.deepEqual(previewDeleteCall, { authorization: 'Bearer preview-secret', personId: 'person-a' });
   const privateToken = 'a'.repeat(64);
   const deniedPublicStudio = await requestJson(`${base}/display/studio-preview`, {
     method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '{}',

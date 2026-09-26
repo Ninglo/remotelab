@@ -208,6 +208,7 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
     if (pathname === '/api/display/studio-preview' && req.method === 'DELETE') {
       const config = await studioPreviewConfig();
       if (!config.baseUrl || !config.tokenFile) { writeJson(res, 200, { ok: true, configured: false }); return true; }
+      if (config.personId && config.personId !== personId) { writeJson(res, 200, { ok: true, configured: false }); return true; }
       const response = await fetch(`${config.baseUrl}/api/preview`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${trimString(await readFile(config.tokenFile, 'utf8'))}`, 'X-Preview-Person-Id': personId },
