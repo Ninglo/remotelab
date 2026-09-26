@@ -726,6 +726,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: rotate refresh tokens in the background, record each new grant as an observation boundary, reconcile pregrant messages into a private audit instead of a new-message alert, and compare read status with newer read messages in the same ordinary chat.
 - Follow-up: verify live new-message and read transitions. A false read-status result alone cannot prove that a historical message is currently unread in the Feishu client.
 
+### 2026-09-26 — 话题提醒只认明确提及，矩阵默认得意黑
+
+- Source: direct user correction after using the display.
+- Observed friction or ask: topic replies without an exact mention were still read into the reminder feed; the Matrix preset should use Smiley Sans as its default full-screen font.
+- Product implication: remove the directed-reply exception, recheck already queued topic alerts, and update the Matrix theme preset while preserving explicitly chosen custom fonts.
+- Follow-up: verify the live Feishu summary, published editor, and paired display playback after the rule and preset are applied.
+
 ### YYYY-MM-DD — short title
 
 - Source:

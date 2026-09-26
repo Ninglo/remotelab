@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -193,12 +194,23 @@ try {
   clock += 5001;
   assert.equal((await service.summary('person_a')).newMessages, 0,
     'a new topic without @me is not a directed notification');
+  const topicReadsBefore = seen.filter(({ path }) => path.endsWith('/messages/mget')).length;
   messageIds = ['topicdirect', ...messageIds];
   clock += 5001;
   const directReply = await service.summary('person_a');
-  assert.equal(directReply.newMessages, 1, 'a reply whose parent message is mine remains actionable');
-  assert.deepEqual(directReply.sources, [{ label: '话题群 · AI 干活群', count: 1 }]);
-  assert.equal((await service.acknowledge('person_a', directReply.observedAt)).cleared, 1);
+  assert.equal(directReply.newMessages, 0, 'a reply to my topic without an exact @me is ignored');
+  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/mget')).length, topicReadsBefore,
+    'topic messages outside the @me search are not fetched for content');
+  const notificationPath = join(dir, 'display-private', 'feishu-notifications.json');
+  const legacy = JSON.parse(await readFile(notificationPath, 'utf8'));
+  const hash = (value) => createHash('sha256').update(value).digest('hex');
+  legacy.people.person_a.pending.push({ id: hash('om_topicdirect'), messageId: 'om_topicdirect',
+    chatId: 'oc_topic12345678', chatKey: hash('oc_topic12345678'), isP2p: false,
+    createdAt: clock, observedAt: clock, atMe: false, topicChecked: true });
+  await writeFile(notificationPath, JSON.stringify(legacy));
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 0,
+    'a legacy topic reply already in the queue is rechecked and removed');
   messageIds = ['frontier-new', 'frontier-old', ...messageIds];
   created.set('frontier-old', clock + 5001);
   created.set('frontier-new', clock + 10_002);
@@ -213,7 +225,7 @@ try {
   const saved = join(dir, 'display-private', 'feishu-reminders.json');
   assert.equal((await stat(saved)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(saved, 'utf8')).people.person_a.token.openId, 'ou_expected');
-  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 44);
+  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 46);
   const upgrade = await service.begin('person_a');
   assert.equal(upgrade.connected, true, 'message access remains available during calendar authorization');
   assert.equal(upgrade.calendarConnected, false);

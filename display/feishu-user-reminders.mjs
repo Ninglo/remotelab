@@ -400,7 +400,6 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         chatKey: item?.meta_data?.chat_id ? messageKey(item.meta_data.chat_id) : null,
         isP2p: item?.meta_data?.is_p2p_chat === true, createdAt: messageTime(item?.meta_data?.create_time) }))
         .filter((item) => item.messageId).map((item) => ({ ...item, id: messageKey(item.messageId) }));
-      const allKeys = incomingKeys.map((item) => item.id);
       const incomingByKey = new Map(incomingKeys.map((item) => [item.id, item]));
       const mentionKeys = new Set(mentions.json.data.items.map((item) => item?.meta_data?.message_id || item?.id).filter(Boolean).map(messageKey));
       const notifications = await queued(async () => {
@@ -420,29 +419,30 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
             chatId: saved.chatId || match.chatId, isP2p: saved.isP2p ?? match.isP2p } : saved;
         });
         const candidates = new Map([
-          ...pending.filter((item) => item.topicChecked !== true).map((item) => [item.id, item]),
+          ...pending.map((item) => [item.id, item]),
           ...incomingKeys.filter((item) => !known.has(item.id)).map((item) => [item.id, item]),
         ]);
         const chatIds = [...new Set([...candidates.values()].filter((item) => !item.isP2p)
           .map((item) => item.chatId).filter(Boolean))];
         const chatInfo = new Map(await Promise.all(chatIds.map(async (chatId) => [chatId,
           await chatSourceInfo(identity.realm, chatId, false)])));
-        const topicCandidates = [...candidates.values()].filter((item) => chatInfo.get(item.chatId)?.topic === true);
+        const topicMode = (item) => item.isP2p ? false : (chatInfo.get(item.chatId)?.topic ?? item.topicMode);
+        const topicCandidates = [...candidates.values()].filter((item) => topicMode(item) === true
+          && mentionKeys.has(item.id)
+          && (item.topicChecked !== true || item.atMe !== true));
         const details = await messageDetails(token, topicCandidates.map((item) => item.messageId));
-        const parents = await messageDetails(token, [...details.values()].map((item) => item.parent_id).filter(Boolean));
         const actionable = new Map([...candidates.values()].map((item) => {
           if (item.isP2p) return [item.id, { allowed: true, atMe: Boolean(item.atMe || mentionKeys.has(item.id)) }];
-          const info = chatInfo.get(item.chatId);
-          if (info?.topic === false) return [item.id, { allowed: true, atMe: Boolean(item.atMe || mentionKeys.has(item.id)) }];
-          if (info?.topic !== true) return [item.id, { allowed: false, atMe: false }];
+          if (topicMode(item) === false) return [item.id, { allowed: true, atMe: Boolean(item.atMe || mentionKeys.has(item.id)) }];
+          if (topicMode(item) !== true) return [item.id, { allowed: false, atMe: false }];
           const detail = details.get(item.messageId);
-          const atMe = detail?.mentions?.some((mention) => mention.id === identity.openId) === true;
-          const parent = parents.get(detail?.parent_id);
-          const directed = parent?.sender?.sender_type === 'user' && parent.sender.id === identity.openId;
-          return [item.id, { allowed: atMe || directed, atMe }];
+          const atMe = (item.topicChecked === true && item.atMe === true)
+            || (mentionKeys.has(item.id) && detail?.mentions?.some((mention) => mention.id === identity.openId) === true);
+          return [item.id, { allowed: atMe, atMe }];
         }));
-        pending = pending.filter((item) => item.topicChecked === true || actionable.get(item.id)?.allowed === true)
-          .map((item) => ({ ...item, atMe: actionable.get(item.id)?.atMe ?? item.atMe, topicChecked: true }));
+        pending = pending.filter((item) => actionable.get(item.id)?.allowed === true)
+          .map((item) => ({ ...item, atMe: actionable.get(item.id)?.atMe ?? item.atMe,
+            topicMode: topicMode(item), topicChecked: true }));
         // A new user grant is a new observation boundary. Search may return messages
         // from the disconnected interval, including ones read before reconnecting.
         // Keep an audit of that backfill instead of presenting it as new mail.
@@ -465,7 +465,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
             && (!Number.isFinite(item.createdAt) || item.createdAt >= current.initializedAt - 2_000)
             && (!Number.isFinite(grantAt) || Number.isFinite(item.createdAt) && item.createdAt >= grantAt)) {
             pending.push({ id: item.id, messageId: item.messageId, chatId: item.chatId,
-              chatKey: item.chatKey, isP2p: item.isP2p, createdAt: item.createdAt,
+              chatKey: item.chatKey, isP2p: item.isP2p, topicMode: topicMode(item), createdAt: item.createdAt,
               atMe: actionable.get(item.id).atMe, topicChecked: true, observedAt: now() });
           }
         }
@@ -478,11 +478,12 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         const read = await readStatuses(token, pending.length ? [...pending, ...frontier] : incomingKeys.slice(0, 1));
         pending = pending.filter((item) => {
           if (read.values.get(item.messageId) === true) return false;
-          if (!item.chatKey || !Number.isFinite(item.createdAt) || !item.isP2p && chatInfo.get(item.chatId)?.topic !== false) return true;
+          if (!item.chatKey || !Number.isFinite(item.createdAt) || topicMode(item) !== false) return true;
           return !frontier.some((newer) => newer.chatKey === item.chatKey && newer.createdAt > item.createdAt
             && read.values.get(newer.messageId) === true);
         });
-        for (const id of allKeys) known.add(id);
+        for (const item of incomingKeys) if (!sameIdentity || topicMode(item) === false
+          || (topicMode(item) === true && mentionKeys.has(item.id) && details.has(item.messageId))) known.add(item.id);
         doc.people ||= {};
         doc.people[personId] = { identityKey, initializedAt: current.initializedAt,
           grantBaselineAt: Number.isFinite(grantAt) ? grantAt : current.grantBaselineAt,
