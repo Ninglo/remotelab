@@ -51,6 +51,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   const calendarRefreshing = new Map();
   const tenantTokens = new Map();
   const chatSources = new Map();
+  const refreshRetryAt = new Map();
   const queued = (task) => {
     const running = lock.then(task);
     lock = running.catch(() => {});
@@ -105,10 +106,11 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   }
   function publicStatus(entry, linked = true) {
     const pending = entry?.pending;
+    const accessValid = Boolean(entry?.token?.accessToken && entry.token.expiresAt > now());
     return {
       linked,
-      connected: Boolean(entry?.token?.accessToken && hasMessageScope(entry.token.scope)),
-      calendarConnected: Boolean(entry?.token?.accessToken && hasCalendarScope(entry.token.scope)),
+      connected: accessValid && hasMessageScope(entry.token.scope),
+      calendarConnected: accessValid && hasCalendarScope(entry.token.scope),
       pending: Boolean(pending && pending.expiresAt > now()),
       verificationUrl: pending?.expiresAt > now() ? pending.verificationUrl : null,
       userCode: pending?.expiresAt > now() ? pending.userCode : null,
@@ -124,11 +126,12 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   async function begin(personId) {
     const identity = await expected(personId);
     if (!identity) return { linked: false, connected: false, pending: false, error: '当前账号尚未绑定飞书身份' };
+    await accessToken(personId, identity);
     return queued(async () => {
       const doc = await document();
       const entry = doc.people?.[personId] || {};
       if (entry.token && (entry.token.openId !== identity.openId || entry.token.realm !== identity.realm)) delete entry.token;
-      if (entry.token?.accessToken && hasRequiredScope(entry.token.scope)
+      if (entry.token?.accessToken && entry.token.expiresAt > now() && hasRequiredScope(entry.token.scope)
         && entry.token.openId === identity.openId && entry.token.realm === identity.realm) return publicStatus(entry);
       if (entry.pending?.expiresAt > now() && entry.pending.realm === identity.realm) return publicStatus(entry);
       const app = await appFor(identity.realm);
@@ -155,6 +158,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   async function status(personId) {
     const identity = await expected(personId);
     if (!identity) return { linked: false, connected: false, pending: false, error: '当前账号尚未绑定飞书身份' };
+    await accessToken(personId, identity);
     return queued(async () => {
       const doc = await document();
       const entry = doc.people?.[personId] || {};
@@ -221,16 +225,36 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       const token = entry?.token;
       if (!token || token.openId !== identity.openId || token.realm !== identity.realm) return null;
       if (token.expiresAt > now() + 120_000) return token.accessToken;
-      if (!token.refreshToken || token.refreshExpiresAt <= now()) return null;
+      if (!token.refreshToken || token.refreshExpiresAt <= now()) {
+        if (entry.error !== '飞书授权已过期，请重新连接') {
+          entry.error = '飞书授权已过期，请重新连接';
+          await save(doc);
+        }
+        return null;
+      }
+      if ((refreshRetryAt.get(personId) || 0) > now()) return token.expiresAt > now() ? token.accessToken : null;
       const app = await appFor(identity.realm);
-      const response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { form: {
-        grant_type: 'refresh_token', refresh_token: token.refreshToken, client_id: app.appId, client_secret: app.appSecret,
-      } });
-      if (!response.ok || !clean(response.json.access_token)) return null;
+      let response;
+      try {
+        response = await request(`${OPEN}/open-apis/authen/v2/oauth/token`, { form: {
+          grant_type: 'refresh_token', refresh_token: token.refreshToken, client_id: app.appId, client_secret: app.appSecret,
+        } });
+      } catch (error) { response = { ok: false, status: 0, json: { error: error.name === 'TimeoutError' ? 'timeout' : 'network_error' } }; }
+      if (!response.ok || !clean(response.json.access_token)) {
+        const code = clean(response.json.error) || String(response.json.code || response.status || 'unknown');
+        entry.error = ['invalid_grant', 'invalid_token', 'expired_token'].includes(code)
+          ? '飞书授权已失效，请重新连接' : '飞书令牌刷新暂时失败，稍后自动重试';
+        refreshRetryAt.set(personId, now() + (entry.error.includes('已失效') ? 60_000 : 15_000));
+        await save(doc);
+        process.stderr.write(JSON.stringify({ event: 'display_feishu_refresh_failed', personId, code }) + '\n');
+        return token.expiresAt > now() ? token.accessToken : null;
+      }
       entry.token = { ...token, accessToken: response.json.access_token,
         refreshToken: clean(response.json.refresh_token) || token.refreshToken,
         expiresAt: now() + seconds(response.json.expires_in, 7200) * 1000,
         refreshExpiresAt: now() + seconds(response.json.refresh_token_expires_in, 604800) * 1000 };
+      entry.error = '';
+      refreshRetryAt.delete(personId);
       await save(doc);
       return entry.token.accessToken;
     });
