@@ -221,5 +221,6 @@ try {
   assert.equal(expired.connected, false, 'a revoked token must not be shown as connected');
   assert.match(expired.error, /重新连接/);
   assert.equal((await service.begin('person_a')).pending, true, 'a failed refresh must allow a new user grant');
+  assert.equal((await service.status('person_a')).error, null, 'pending reauthorization should show the new consent action');
   console.log('ok - Feishu consent, person binding, real read status, chat sources, and acknowledgement');
 } finally { await rm(dir, { recursive: true, force: true }); }

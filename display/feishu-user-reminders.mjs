@@ -225,6 +225,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       const token = entry?.token;
       if (!token || token.openId !== identity.openId || token.realm !== identity.realm) return null;
       if (token.expiresAt > now() + 120_000) return token.accessToken;
+      if (entry.pending?.expiresAt > now()) return token.expiresAt > now() ? token.accessToken : null;
       if (!token.refreshToken || token.refreshExpiresAt <= now()) return null;
       const failed = refreshFailures.get(personId);
       if (failed?.until > now()) return token.expiresAt > now() ? token.accessToken : null;
