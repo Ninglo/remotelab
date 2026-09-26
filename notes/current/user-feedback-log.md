@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-26 — Explain missing LangSmith links in historical search
+
+- Observed friction: `/log` found historical Sessions but called every absent snapshot “no records,” including queued backfills and Sessions never covered by the collector.
+- Implementation: report disabled, untracked, pending, waiting, failed, unsupported date/type, and empty states separately. Resolve explicitly configured historical imports as well as live/backfill snapshots; label historical imports in the reply.
+- Validation: resolver, search, and Feishu command tests cover status propagation, historical import links, and fallback to a valid snapshot when another source is corrupt. Search remains read-only and does not start an upload or grant LangSmith access.
+
 ### 2026-09-26 — Remove automatic Agent Case links from replies
 
 - User request: retire the Agent Case link appended below assistant replies.

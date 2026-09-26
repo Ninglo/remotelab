@@ -1,4 +1,16 @@
-const USAGE = '用法：/log 关键词或问题\n例如：/log Auto Research 数据接入\n会返回最相关的 3 个历史 Session，以及会话和 LangSmith 链接。';
+const USAGE = '用法：/log 关键词或问题\n例如：/log Auto Research 数据接入\n会返回最相关的 3 个历史 Session，以及会话链接和已上传的 LangSmith 链接；尚未上传时显示原因。';
+
+const LANGSMITH_STATUS = {
+  disabled: '未启用上传',
+  missing: '尚未纳入上传',
+  pending: '等待上传',
+  waiting: '等待会话结束或服务恢复后上传',
+  failed: '上传失败',
+  unsupported_timestamp: '历史日期超出上传窗口，尚未导入',
+  unsupported: '该会话类型尚不支持上传',
+  empty: '没有可上传的运行记录',
+  unavailable: '上传状态暂不可用',
+};
 
 function safeTitle(value) {
   return String(value || '未命名会话').replace(/[\r\n]+/g, ' ').slice(0, 160)
@@ -21,8 +33,9 @@ export async function handleFeishuLogCommand(value, { request }) {
   for (const [index, session] of sessions.entries()) {
     lines.push('', `${index + 1}. ${safeTitle(session.title)}`,
       session.sessionUrl ? `[Session](${session.sessionUrl})` : '会话链接暂不可用',
-      session.langsmithUrl ? `[LangSmith](${session.langsmithUrl})`
-        : session.langsmithStatus === 'unavailable' ? 'LangSmith：暂不可用' : 'LangSmith：暂无记录');
+      session.langsmithUrl
+        ? `[LangSmith${session.langsmithKind === 'historical_import' ? '（历史日志导入）' : ''}](${session.langsmithUrl})`
+        : `LangSmith：${LANGSMITH_STATUS[session.langsmithStatus] || LANGSMITH_STATUS.unavailable}`);
   }
   if (result.json?.incomplete) lines.push('', '部分历史记录暂时未能读取，以上结果可能不完整。');
   return lines.join('\n');

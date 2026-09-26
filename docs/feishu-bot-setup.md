@@ -299,7 +299,9 @@ visible user/assistant messages, including archived Sessions. Everything after
 `/log` (including subsequent lines) is a literal search query, up to 1000 characters;
 do not combine it with other commands. Ranking uses keyword relevance with extra
 weight for titles and summaries, not recency. It returns at most three matches,
-and explicitly marks missing LangSmith records. It does not start an AI run,
+and distinguishes disabled uploading, Sessions outside collector coverage,
+pending/waiting uploads, upload failures, unsupported historical dates or tools,
+and empty histories. It does not start an AI run,
 create a Session, publish traces, or restore automatic links on ordinary replies.
 
 The authenticated `GET /api/sessions/search?q=...` endpoint uses the instance's
@@ -310,6 +312,16 @@ subsequent searches index only new events. The first search on a large history
 may need a retry while the index builds. Missing/corrupt indexes are rebuilt;
 unreadable histories are reported as incomplete results. Existing LangSmith
 snapshot links retain their normal LangSmith access requirements.
+
+`langsmith-case-link.json` can optionally name a `historyStateDir` alongside
+`stateDir` and `backfillStateDir`. Each directory is an instance-local basename
+containing `state.json` for the configured `projectId`. Historical imports use
+the same `sessions[id].latestSnapshot` shape as backfills, with
+`kind: "historical_import"`; `/log` labels those links explicitly. Publish a
+snapshot into this index only after verifying the uploaded content. Preserve
+original execution dates inside historical imports and distinguish import time
+from execution time. A bad source does not suppress a valid link from another
+configured source.
 
 `/inline` and `/thread` select reply topology; they do not copy or fork old
 context. In an ordinary chat group, `/inline` uses the chat's long-lived main

@@ -48,6 +48,15 @@ try {
   assert.match(result.sessions[0].sessionUrl, new RegExp(ids[0]));
   assert.equal(result.sessions[1].langsmithStatus, 'missing');
   assert.equal(result.incomplete, false);
+  for (const status of ['disabled', 'pending', 'waiting', 'failed', 'unsupported_timestamp']) {
+    const statusSearch = createSessionLogSearch({ ...opts, latestCase: async () => ({ status }) });
+    const found = (await statusSearch('Auto Research')).sessions[0];
+    assert.equal(found.langsmithStatus, status);
+    assert.equal(found.langsmithUrl, '');
+  }
+  const importedSearch = createSessionLogSearch({ ...opts,
+    latestCase: async () => ({ url: smithUrl, status: 'available', kind: 'historical_import' }) });
+  assert.equal((await importedSearch('Auto Research')).sessions[0].langsmithKind, 'historical_import');
   assert.deepEqual((await search('hiddenkeyword')).sessions, [], 'hidden prompts, reasoning and tool logs are excluded');
   assert.deepEqual((await search('notfoundanywhere')).sessions, [], 'do not fill results with unrelated Sessions');
   assert.equal((await search('scheduledneedle')).sessions[0].id, ids[5]);

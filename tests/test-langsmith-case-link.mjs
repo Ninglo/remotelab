@@ -7,13 +7,14 @@ import { join } from 'node:path';
 const dir = mkdtempSync(join(tmpdir(), 'remotelab-langsmith-link-'));
 process.env.REMOTELAB_CONFIG_DIR = dir;
 process.env.REMOTELAB_PUBLIC_BASE_URL = 'https://remote.example.test';
-const { readLangSmithCaseConfig, getLatestLangSmithCase } =
+const { readLangSmithCaseConfig, getLatestLangSmithCase, getLangSmithCaseStatus } =
   await import('../lib/langsmith-case-link.mjs');
 const { buildReplyPublicationPayload } = await import('../chat/reply-publication.mjs');
 const { normalizeConnectorPublicationText } = await import('../lib/connector-turn-flow.mjs');
 const id = 'a'.repeat(32), projectId = '46a89fbc-9740-40b8-a646-0179aa16d7f4';
 try {
   assert.equal(await readLangSmithCaseConfig(), null);
+  assert.equal((await getLangSmithCaseStatus(id, null)).status, 'disabled');
   writeFileSync(join(dir, 'langsmith-case-link.json'), JSON.stringify({ enabled: true, projectId,
     stateDir: 'langsmith-live', backfillStateDir: 'langsmith-backfill' }));
   const config = await readLangSmithCaseConfig();
@@ -28,6 +29,7 @@ try {
       {includeAttachmentFallback}), '任务完成。', 'legacy case metadata must not add a reply footer');
   }
   assert.equal(await getLatestLangSmithCase(id, config), null);
+  assert.equal((await getLangSmithCaseStatus(id, config)).status, 'missing');
   mkdirSync(join(dir, 'langsmith-live'));
   const statePath = join(dir, 'langsmith-live', 'state.json');
   const traceId = 'a'.repeat(8)+'-'+'a'.repeat(4)+'-'+'a'.repeat(4)+'-'+'a'.repeat(4)+'-'+'a'.repeat(12);
@@ -43,5 +45,31 @@ try {
     latestSnapshot:{rootUrl:url,traceId,revision:1,runIds:['run_case1','run_case2'],runNodeIds:{run_case1:childId}}}}}));
   assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_case1'})).url,
     url.replace(`/run/${traceId}`,`/run/${childId}`));
+  // A bad or corrupt source must not hide a valid snapshot from another source.
+  writeFileSync(statePath, JSON.stringify({projectId,tracked:{[id]:{latestSnapshot:{rootUrl:'not a URL',revision:99,runIds:Array(10).fill('run_bad')}}}}));
+  assert.equal((await getLatestLangSmithCase(id, config)).url, url);
+  writeFileSync(statePath, 'corrupt');
+  assert.equal((await getLatestLangSmithCase(id, config)).url, url);
+  rmSync(statePath);
+  const backfillPath = join(dir, 'langsmith-backfill', 'state.json');
+  for (const status of ['pending', 'waiting', 'failed', 'unsupported', 'unsupported_timestamp', 'empty']) {
+    writeFileSync(backfillPath, JSON.stringify({projectId,sessions:{[id]:{status}}}));
+    assert.equal((await getLangSmithCaseStatus(id, config)).status, status);
+    assert.equal(await getLatestLangSmithCase(id, config), null);
+  }
+  writeFileSync(statePath, JSON.stringify({projectId,tracked:{[id]:{lastError:'private error detail'}}}));
+  rmSync(backfillPath);
+  assert.deepEqual(await getLangSmithCaseStatus(id, config), {status:'failed'}, 'raw errors are not published');
+  writeFileSync(statePath, JSON.stringify({projectId:'wrong-project',tracked:{[id]:{status:'pending'}}}));
+  assert.equal((await getLangSmithCaseStatus(id, config)).status, 'unavailable');
+  mkdirSync(join(dir, 'langsmith-history'));
+  writeFileSync(join(dir, 'langsmith-history', 'state.json'), JSON.stringify({projectId,sessions:{[id]:{
+    latestSnapshot:{rootUrl:url,traceId,revision:1,kind:'historical_import',runIds:['run_case1'],runNodeIds:{run_case1:childId}}}}}));
+  config.historyStateDir = 'langsmith-history';
+  const imported = await getLangSmithCaseStatus(id, config, {runId:'run_case1'});
+  assert.equal(imported.kind, 'historical_import');
+  assert.equal(imported.url, url.replace(`/run/${traceId}`,`/run/${childId}`));
+  writeFileSync(join(dir, 'langsmith-case-link.json'), JSON.stringify({...config,historyStateDir:'../outside'}));
+  await assert.rejects(readLangSmithCaseConfig(), /Invalid LangSmith historyStateDir/);
 } finally { rmSync(dir,{recursive:true,force:true}); }
 console.log('test-langsmith-case-link: ok');

@@ -175,7 +175,7 @@ try {
     assert.match(replies.at(-1), /找到 2 个/);
     assert.match(replies.at(-1), /\[Session\]\(https:\/\/remote.example\/\?session=one\)/);
     assert.match(replies.at(-1), /\[LangSmith\]\(https:\/\/smith.langchain.com\/one\)/);
-    assert.match(replies.at(-1), /LangSmith：暂无记录/);
+    assert.match(replies.at(-1), /LangSmith：尚未纳入上传/);
     assert(replies.at(-1).includes('Data \\[draft\\]'));
     const post = JSON.parse(await buildFeishuPostContent(replies.at(-1)));
     const rendered = post.zh_cn.content.flat().map(part => part.text || '').join('\n');
@@ -185,6 +185,18 @@ try {
   }
   assert.equal(aiCalls, 0, '/log is read-only and must not submit AI tasks');
   const { handleFeishuLogCommand } = await import('../connectors/feishu/log-command.mjs');
+  for (const [status, label] of Object.entries({pending:'等待上传',failed:'上传失败',disabled:'未启用上传',
+    unsupported_timestamp:'历史日期超出上传窗口',unavailable:'上传状态暂不可用'})) {
+    const text = await handleFeishuLogCommand('history', { request: async () => ({ response: { ok: true },
+      json: { sessions: [{title:'History',langsmithStatus:status}] } }) });
+    assert.ok(text.includes(label));
+    assert.doesNotMatch(text, /暂无记录/);
+  }
+  const importedText = await handleFeishuLogCommand('history', { request: async () => ({ response: { ok: true },
+    json: { sessions: [{title:'History',langsmithKind:'historical_import',langsmithUrl:'https://smith.langchain.com/history'}] } }) });
+  assert.match(importedText, /\[LangSmith（历史日志导入）\]\(https:\/\/smith.langchain.com\/history\)/);
+  const importedPost = JSON.parse(await buildFeishuPostContent(importedText));
+  assert.match(JSON.stringify(importedPost), /LangSmith（历史日志导入）/);
   assert.match(await handleFeishuLogCommand('x'.repeat(1001), { request }), /1000/);
   assert.match(await handleFeishuLogCommand('nothing', { request: async () => ({ response: { ok: true }, json: { sessions: [] } }) }), /没有找到/);
   assert.match(await handleFeishuLogCommand('anything', { request: async () => { throw new Error('offline'); } }), /稍后重试/);
