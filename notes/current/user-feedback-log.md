@@ -45,6 +45,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Implementation: report disabled, untracked, pending, waiting, failed, unsupported date/type, and empty states separately. Resolve explicitly configured historical imports as well as live/backfill snapshots; label historical imports in the reply.
 - Validation: resolver, search, and Feishu command tests cover status propagation, historical import links, and fallback to a valid snapshot when another source is corrupt. Search remains read-only and does not start an upload or grant LangSmith access.
 
+### 2026-09-26 — `/log` should find the current topic first
+
+- Observed friction: asking `/log` to debug the current Session returned three unrelated historical Sessions, all without LangSmith links, even though the bound Session had a verified trace.
+- Product implication: resolve the active conversation binding for `/log` and clear current-Session wording; keep explicit historical keyword search available. Show the exact trace entry first and the Session page second.
+- Validation: connector tests cover bare `/log`, current wording, historical search and missing upload states; an isolated HTTP test checks authenticated JSON status and the existing browser redirect.
+
 ### 2026-09-26 — Remove automatic Agent Case links from replies
 
 - User request: retire the Agent Case link appended below assistant replies.

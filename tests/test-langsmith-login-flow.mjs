@@ -86,6 +86,16 @@ try {
   assert.equal(destination.headers.get('location'), rootUrl.replace(`/r/${traceId}`, `/r/${childId}`));
   const rootDestination = await request(`/api/sessions/${sessionId}/langsmith`, { headers: { Cookie: cookie } });
   assert.equal(rootDestination.headers.get('location'), rootUrl, 'a Session entry selects its root, not the project');
+  const statusResponse = await request(`/api/sessions/${sessionId}/langsmith?format=json`, { headers: { Cookie: cookie } });
+  assert.equal(statusResponse.status, 200);
+  assert.equal(statusResponse.headers.get('cache-control'), 'private, no-store');
+  const status = await statusResponse.json();
+  assert.equal(status.status, 'available');
+  assert.equal(status.langsmithUrl, rootUrl);
+  assert.equal(status.langsmithEntryUrl, base + `/api/sessions/${sessionId}/langsmith`);
+  assert.equal(status.sessionUrl, base + `/?session=${sessionId}&tab=sessions`);
+  assert.equal((await request(`/api/sessions/${sessionId}/langsmith?format=json`)).status, 302,
+    'unauthenticated status requests still require login');
   const search = await request('/api/sessions/search?q=Login', { headers: { Cookie: cookie } });
   const result = await search.json();
   assert.equal(result.sessions[0].langsmithEntryUrl, base + `/api/sessions/${sessionId}/langsmith`);

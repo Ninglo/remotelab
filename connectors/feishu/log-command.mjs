@@ -1,4 +1,13 @@
-const USAGE = '用法：/log 关键词或问题\n例如：/log Auto Research 数据接入\n会返回最相关的 3 个历史 Session，以及会话链接和已上传的 LangSmith 链接；尚未上传时显示原因。';
+import { findCommandSession } from './runtime-commands.mjs';
+
+const CURRENT_SESSION_QUERY = /(?:当前|这个|本次|这次)(?:这个|的)?\s*(?:session\b|会话|话题|线程|日志|trace\b)|^(?:当前|这个|本次|这次|current|here)$/iu;
+
+export function isCurrentSessionLogQuery(value) {
+  const query = String(value || '').trim().normalize('NFKC');
+  if (!query) return true;
+  if (/^(?:搜索|查找|历史)\s+/u.test(query)) return false;
+  return CURRENT_SESSION_QUERY.test(query);
+}
 
 const LANGSMITH_STATUS = {
   disabled: '未启用上传',
@@ -17,13 +26,33 @@ function safeTitle(value) {
     .replace(/[\\`*_{}\[\]()<>#!|]/g, '\\$&');
 }
 
-export async function handleFeishuLogCommand(value, { request }) {
+export async function handleFeishuLogCommand(value, { request, runtime, summary }) {
   const query = String(value || '').trim();
-  if (!query) return USAGE;
   if (query.length > 1000) return '检索内容过长，请把 /log 后的关键词或问题缩短到 1000 字以内。';
+  if (isCurrentSessionLogQuery(query)) {
+    if (!runtime || !summary) return '当前话题信息暂不可用，请稍后重试 /log。';
+    try {
+      const session = await findCommandSession(runtime, summary, request);
+      if (!session?.id) return '当前话题还没有关联 Session。检索历史会话可用 /log 关键词。';
+      const result = await request(`/api/sessions/${encodeURIComponent(session.id)}/langsmith?format=json`);
+      if (!result.response?.ok) return '当前 Session 的 LangSmith 状态暂不可用，请稍后重试 /log。';
+      const smith = result.json || {};
+      const lines = [`当前 Session：${safeTitle(session.name)}`];
+      if (smith.langsmithUrl) {
+        lines.push(`[LangSmith](${smith.langsmithEntryUrl || smith.langsmithUrl})`);
+      } else {
+        lines.push(`LangSmith：${LANGSMITH_STATUS[smith.status] || LANGSMITH_STATUS.unavailable}`);
+      }
+      if (smith.sessionUrl) lines.push(`[Session](${smith.sessionUrl})`);
+      return lines.join('\n');
+    } catch {
+      return '当前 Session 查询暂时不可用，请稍后重试 /log。';
+    }
+  }
   let result;
   try {
-    result = await request(`/api/sessions/search?q=${encodeURIComponent(query)}`);
+    const searchQuery = query.replace(/^(?:搜索|查找|历史)\s+/u, '');
+    result = await request(`/api/sessions/search?q=${encodeURIComponent(searchQuery)}`);
   } catch {
     return '历史会话检索暂时未完成，请稍后重试 /log。';
   }

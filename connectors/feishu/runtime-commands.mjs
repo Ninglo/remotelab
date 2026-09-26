@@ -16,7 +16,7 @@ const HELP = [
   '普通聊天群支持 inline/thread；话题群固定使用 Thread。Quick 是独立执行模式，不改变回复位置。',
   '短名：/m model、/q quick。',
   '/status — 查看当前范围的 Harness、模型和 Effort',
-  '/log 关键词或问题 — 检索最相关的 3 个历史 Session，附会话链接和 LangSmith 上传状态或链接',
+  '/log [关键词] — 默认查看当前 Session 的 LangSmith；输入历史关键词时检索相关 Session',
   '/harness [名称] — 查看或修改当前任务使用的 Harness',
   '/model [模型 ID] — 查看或修改当前任务使用的模型',
   '/effort [级别] — 查看或修改当前任务的 Effort',
@@ -36,7 +36,7 @@ async function requestJson(request, path, options) {
   return result.json;
 }
 
-async function findCommandSession(runtime, summary, request) {
+export async function findCommandSession(runtime, summary, request) {
   const binding = await findFeishuThreadSessionBinding(runtime, summary);
   if (binding?.sessionId) {
     return (await requestJson(request, `/api/sessions/${encodeURIComponent(binding.sessionId)}`)).session;

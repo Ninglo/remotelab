@@ -1353,6 +1353,8 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     if (commandNames.length !== 1) return enqueue(runtime, summary, '/log 请单独使用。');
     const text = await handleFeishuLogCommand(command.commands[0].value, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
+      runtime,
+      summary,
     });
     return enqueue(runtime, summary, text);
   }

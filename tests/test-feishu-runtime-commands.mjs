@@ -36,6 +36,10 @@ try {
     ] };
     else if (path === '/api/session-conversations/resolve') json = { sessionId: options.body?.conversation?.target?.conversationKind === 'main' ? 's1' : null };
     else if (path === '/api/sessions') json = { sessions: [{ ...session, externalTriggerId: 'feishu:p2p:private' }] };
+    else if (path === '/api/sessions/s1/langsmith?format=json') json = { status: 'available',
+      sessionUrl: 'https://remote.example/?session=s1&tab=sessions',
+      langsmithUrl: 'https://smith.langchain.com/o/workspace/projects/p/project/r/run',
+      langsmithEntryUrl: 'https://remote.example/api/sessions/s1/langsmith' };
     else if (path === '/api/sessions/s1') {
       if (options.method === 'PATCH') {
         if (Object.prototype.hasOwnProperty.call(options.body, 'runtimeTier')) {
@@ -160,7 +164,16 @@ try {
   assert.match(replies.at(-1), /\/log/);
   assert.match(replies.at(-1), /短名：\/m model、\/q quick/);
   await handleMessage(runtime, { ...summary, messageId: 'log-usage', messageText: '/log' }, 'test', helpers);
-  assert.match(replies.at(-1), /用法/);
+  assert.match(replies.at(-1), /当前 Session/);
+  assert.match(replies.at(-1), /\[LangSmith\]\(https:\/\/remote.example\/api\/sessions\/s1\/langsmith\)/);
+  assert.match(replies.at(-1), /\[Session\]\(https:\/\/remote.example\/\?session=s1&tab=sessions\)/);
+  assert(calls.some(call => call.path === '/api/sessions/s1/langsmith?format=json'));
+  await handleMessage(runtime, { ...summary, messageId: 'log-current',
+    messageText: '/log 我想 debug 下当前这个 session' }, 'test', helpers);
+  assert.match(replies.at(-1), /当前 Session/);
+  assert.doesNotMatch(replies.at(-1), /历史 Session/);
+  assert.equal(calls.some(call => call.path.startsWith('/api/sessions/search')), false,
+    'current Session lookup must bypass historical search');
   for (const chatType of ['p2p', 'group']) {
     await handleMessage(runtime, { ...summary, chatType, messageId: `log-${chatType}`, messageText: '/log Auto Research 数据接入' }, 'test', {
       ...helpers,
@@ -185,6 +198,16 @@ try {
   }
   assert.equal(aiCalls, 0, '/log is read-only and must not submit AI tasks');
   const { handleFeishuLogCommand } = await import('../connectors/feishu/log-command.mjs');
+  const { isCurrentSessionLogQuery } = await import('../connectors/feishu/log-command.mjs');
+  assert.equal(isCurrentSessionLogQuery('我想 debug 下当前这个 session'), true);
+  assert.equal(isCurrentSessionLogQuery('Auto Research 数据接入'), false);
+  assert.equal(isCurrentSessionLogQuery('搜索 当前会话'), false);
+  assert.match(await handleFeishuLogCommand('当前', { runtime,
+    summary: { ...summary, threadId: 'unbound', messageId: 'unbound' }, request }), /还没有关联 Session/);
+  assert.match(await handleFeishuLogCommand('当前', { runtime, summary,
+    request: async path => path === '/api/sessions/s1/langsmith?format=json'
+      ? { response: { ok: true }, json: { status: 'pending', sessionUrl: 'https://remote.example/?session=s1' } }
+      : request(path) }), /等待上传/);
   for (const [status, label] of Object.entries({pending:'等待上传',failed:'上传失败',disabled:'未启用上传',
     unsupported_timestamp:'历史日期超出上传窗口',unavailable:'上传状态暂不可用'})) {
     const text = await handleFeishuLogCommand('history', { request: async () => ({ response: { ok: true },

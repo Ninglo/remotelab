@@ -285,6 +285,7 @@ Inside an existing task thread or private conversation, use these commands:
 | Command | Behavior |
 | --- | --- |
 | `/status` | Show the Harness, model and effort in the current scope. |
+| `/log` or `/log 当前会话` | Show the Session bound to this topic or chat, with its LangSmith trace link or upload status. |
 | `/log keywords or question` | Search historical Sessions and return up to 3 matches with titles, Session links and available LangSmith trace links. |
 | `/harness` or `/harness <id>` | List available Harnesses or change the current Session. |
 | `/model` or `/model <id>` | List the current Harness's models or change the current Session. |
@@ -294,10 +295,17 @@ Inside an existing task thread or private conversation, use these commands:
 | `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and the task-command format. |
 
+`/log` defaults to the current topic's Session. Phrases such as
+`/log 我想 debug 下当前这个 session` also select it. The reply puts the LangSmith
+entry first, then the RemoteLab Session link; if no verified trace exists, it
+shows the actual upload status. `/log 搜索 当前会话` forces a historical search.
+Current lookup uses the same conversation binding as `/status`, and does not
+create a Session or upload a trace.
+
 `/log Auto Research 数据接入` searches titles, descriptions, work summaries and
-visible user/assistant messages, including archived Sessions. Everything after
-`/log` (including subsequent lines) is a literal search query, up to 1000 characters;
-do not combine it with other commands. Ranking uses keyword relevance with extra
+visible user/assistant messages, including archived Sessions. For historical
+search, the text after `/log` (including subsequent lines) is the query, up to
+1000 characters; do not combine it with other commands. Ranking uses keyword relevance with extra
 weight for titles and summaries, not recency. It returns at most three matches,
 and distinguishes disabled uploading, Sessions outside collector coverage,
 pending/waiting uploads, upload failures, unsupported historical dates or tools,
@@ -314,6 +322,8 @@ unreadable histories are reported as incomplete results. Existing LangSmith
 snapshot links retain their normal LangSmith access requirements.
 
 Chat results use the instance's `/api/sessions/{id}/langsmith` browser entry.
+The authenticated `?format=json` variant returns the exact current trace URL,
+browser entry and status for connector commands without following the redirect.
 An unauthenticated GET opens RemoteLab's username/password login page, retaining
 the destination (including `runId`) through failed and successful login attempts.
 After RemoteLab login, the entry redirects to the verified LangSmith URL.

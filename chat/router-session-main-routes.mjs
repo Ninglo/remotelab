@@ -28,7 +28,8 @@ import {
 } from './session-manager.mjs';
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { normalizeSessionExecutionProfile, QUICK_SESSION_PROFILE } from '../lib/quick-session-profile.mjs';
-import { readLangSmithCaseConfig, getLatestLangSmithCase } from '../lib/langsmith-case-link.mjs';
+import { readLangSmithCaseConfig, getLangSmithCaseStatus } from '../lib/langsmith-case-link.mjs';
+import { buildLangSmithCaseNavigationHref, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { searchSessionLogs } from './session-log-search.mjs';
 
 export const SESSION_CREATION_MAX_BYTES = 64 * 1024;
@@ -241,11 +242,20 @@ export async function handleSessionMainRoutes({
     const { sessionId } = sessionGetRoute;
     if (!await requireSessionAccess(res, authSession, sessionId)) return true;
     const config = await readLangSmithCaseConfig();
-    const latest = await getLatestLangSmithCase(sessionId, config, {
+    const latest = await getLangSmithCaseStatus(sessionId, config, {
       runId: typeof parsedUrl.query.runId === 'string' ? parsedUrl.query.runId : '',
     });
     res.setHeader('Cache-Control', 'private, no-store');
-    if (!latest) { writeJson(res, 202, { status: 'pending', sessionId }); return true; }
+    if (parsedUrl.query.format === 'json') {
+      writeJson(res, 200, { sessionId, status: latest.status,
+        sessionUrl: buildSessionNavigationHref(sessionId, { requireAbsolute: true }),
+        langsmithUrl: latest.url || '',
+        langsmithEntryUrl: latest.url
+          ? buildLangSmithCaseNavigationHref(sessionId, { requireAbsolute: true }) : '',
+        langsmithKind: latest.kind || '' });
+      return true;
+    }
+    if (!latest.url) { writeJson(res, 202, { status: latest.status, sessionId }); return true; }
     res.writeHead(302, { Location: latest.url });
     res.end();
     return true;
