@@ -719,6 +719,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: default to workdays 09:00–22:00, migrate the old default once, apply it to the current device, and shorten the single-flight Feishu cache to 1 second while preserving the 2-second display read interval.
 - Follow-up: verify evening visibility, actual API availability, and device playback after applying the current payload.
 
+### 2026-09-26 — 飞书重连不能把历史消息当成新未读
+
+- Source: direct user correction after Feishu reconnect.
+- Observed friction or ask: the user expects one continuing authorization; reconnection surfaced many messages already viewed in Feishu as fresh unread alerts, which then persisted.
+- Product implication: rotate refresh tokens in the background, record each new grant as an observation boundary, reconcile pregrant messages into a private audit instead of a new-message alert, and compare read status with newer read messages in the same ordinary chat.
+- Follow-up: verify live new-message and read transitions. A false read-status result alone cannot prove that a historical message is currently unread in the Feishu client.
+
 ### YYYY-MM-DD — short title
 
 - Source:

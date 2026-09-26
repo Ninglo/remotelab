@@ -200,7 +200,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
           entry.token = { realm: identity.realm, openId: identity.openId, accessToken: data.access_token,
             refreshToken: clean(data.refresh_token), expiresAt: now() + seconds(data.expires_in, 7200) * 1000,
             refreshExpiresAt: now() + seconds(data.refresh_token_expires_in, 604800) * 1000,
-            scope: clean(data.scope) };
+            scope: clean(data.scope), grantedAt: now() };
           const missing = missingGrant(entry.token.scope);
           entry.error = missing.length ? `飞书未授予${missing.join('、')}权限，请重新授权` : '';
           delete entry.pending;
@@ -378,6 +378,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
     if (!identity) return { connected: false, available: false, recentMessages: 0, mentions24h: 0 };
     const token = await accessToken(personId, identity);
     if (!token) return { connected: false, available: false, recentMessages: 0, mentions24h: 0 };
+    const grantAt = (await document()).people?.[personId]?.token?.grantedAt;
     const saved = cached.get(personId);
     if (saved?.expiresAt > now()) return saved.value;
     // Feishu's search schema requires a timezone offset and whole seconds.
@@ -405,8 +406,10 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       const notifications = await queued(async () => {
         const doc = await readJson(notificationFile, { version: 1, people: {} });
         const prior = doc.people?.[personId];
-        const current = prior?.identityKey === identityKey ? prior : { identityKey, known: [], pending: [], initializedAt: now() };
+        const sameIdentity = prior?.identityKey === identityKey;
+        const current = sameIdentity ? prior : { identityKey, known: [], pending: [], initializedAt: now() };
         current.initializedAt ||= now();
+        const newGrant = sameIdentity && Number.isFinite(grantAt) && grantAt > (current.grantBaselineAt || 0);
         const known = new Set(current.known || []);
         // Retain arrivals across refreshes; the recipient's actual read state below
         // clears them after they are read in Feishu.
@@ -440,9 +443,27 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         }));
         pending = pending.filter((item) => item.topicChecked === true || actionable.get(item.id)?.allowed === true)
           .map((item) => ({ ...item, atMe: actionable.get(item.id)?.atMe ?? item.atMe, topicChecked: true }));
-        if (prior?.identityKey === identityKey) {
+        // A new user grant is a new observation boundary. Search may return messages
+        // from the disconnected interval, including ones read before reconnecting.
+        // Keep an audit of that backfill instead of presenting it as new mail.
+        const historical = newGrant ? [...new Map([
+          ...incomingKeys.filter((item) => !known.has(item.id) && Number.isFinite(item.createdAt)
+            && item.createdAt < grantAt && actionable.get(item.id)?.allowed === true),
+          ...pending.filter((item) => Number.isFinite(item.createdAt) && item.createdAt < grantAt),
+        ].map((item) => [item.id, item])).values()] : [];
+        const historicalRead = await readStatuses(token, historical);
+        const reconciled = new Map((current.reconciled || []).map((item) => [item.id, item]));
+        for (const item of historical) reconciled.set(item.id, {
+          id: item.id, createdAt: item.createdAt, observedAt: item.observedAt || now(),
+          reconciledAt: now(), reason: 'reconnect_backfill',
+          apiIsRead: historicalRead.values.get(item.messageId) ?? null,
+        });
+        if (newGrant) pending = pending.filter((item) => !reconciled.has(item.id));
+        if (sameIdentity) {
           for (const item of incomingKeys) if (!known.has(item.id) && actionable.get(item.id)?.allowed === true
-            && (!Number.isFinite(item.createdAt) || item.createdAt >= current.initializedAt - 2_000)) {
+            && !reconciled.has(item.id)
+            && (!Number.isFinite(item.createdAt) || item.createdAt >= current.initializedAt - 2_000)
+            && (!Number.isFinite(grantAt) || Number.isFinite(item.createdAt) && item.createdAt >= grantAt)) {
             pending.push({ id: item.id, messageId: item.messageId, chatId: item.chatId,
               chatKey: item.chatKey, isP2p: item.isP2p, createdAt: item.createdAt,
               atMe: actionable.get(item.id).atMe, topicChecked: true, observedAt: now() });
@@ -451,11 +472,22 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         // A reply also clears an arrival when the read-status endpoint is unavailable.
         pending = pending.filter((item) => !item.chatKey || !Number.isFinite(item.createdAt) || !outgoing.some((sent) => sent.chatKey === item.chatKey
           && Number.isFinite(sent.createdAt) && sent.createdAt >= item.createdAt));
-        const read = await readStatuses(token, pending.length ? pending : incomingKeys.slice(0, 1));
-        pending = pending.filter((item) => read.values.get(item.messageId) !== true);
+        const pendingChats = new Set(pending.map((item) => item.chatKey).filter(Boolean));
+        const frontier = incomingKeys.filter((item) => pendingChats.has(item.chatKey)
+          && !pending.some((saved) => saved.id === item.id)).slice(0, 50);
+        const read = await readStatuses(token, pending.length ? [...pending, ...frontier] : incomingKeys.slice(0, 1));
+        pending = pending.filter((item) => {
+          if (read.values.get(item.messageId) === true) return false;
+          if (!item.chatKey || !Number.isFinite(item.createdAt) || !item.isP2p && chatInfo.get(item.chatId)?.topic !== false) return true;
+          return !frontier.some((newer) => newer.chatKey === item.chatKey && newer.createdAt > item.createdAt
+            && read.values.get(newer.messageId) === true);
+        });
         for (const id of allKeys) known.add(id);
         doc.people ||= {};
-        doc.people[personId] = { identityKey, initializedAt: current.initializedAt, known: [...known].slice(-1000), pending: pending.slice(-1000) };
+        doc.people[personId] = { identityKey, initializedAt: current.initializedAt,
+          grantBaselineAt: Number.isFinite(grantAt) ? grantAt : current.grantBaselineAt,
+          known: [...known].slice(-1000), pending: pending.slice(-1000),
+          reconciled: [...reconciled.values()].slice(-1000) };
         await saveNotifications(doc);
         return { ...doc.people[personId], readStateAvailable: read.available };
       });

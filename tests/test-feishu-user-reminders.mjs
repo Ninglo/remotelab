@@ -199,6 +199,13 @@ try {
   assert.equal(directReply.newMessages, 1, 'a reply whose parent message is mine remains actionable');
   assert.deepEqual(directReply.sources, [{ label: '话题群 · AI 干活群', count: 1 }]);
   assert.equal((await service.acknowledge('person_a', directReply.observedAt)).cleared, 1);
+  messageIds = ['frontier-new', 'frontier-old', ...messageIds];
+  created.set('frontier-old', clock + 5001);
+  created.set('frontier-new', clock + 10_002);
+  readIds.add('om_frontier-new');
+  clock += 10_002;
+  assert.equal((await service.summary('person_a')).newMessages, 0,
+    'a newer read message in an ordinary chat resolves an older false read-status result');
   const notifications = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-notifications.json'), 'utf8'));
   assert.equal(notifications.people.person_a.pending.length, 0);
   assert.equal((await stat(join(dir, 'display-private', 'feishu-notifications.json'))).mode & 0o777, 0o600);
@@ -206,7 +213,7 @@ try {
   const saved = join(dir, 'display-private', 'feishu-reminders.json');
   assert.equal((await stat(saved)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(saved, 'utf8')).people.person_a.token.openId, 'ou_expected');
-  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 42);
+  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 44);
   const upgrade = await service.begin('person_a');
   assert.equal(upgrade.connected, true, 'message access remains available during calendar authorization');
   assert.equal(upgrade.calendarConnected, false);
@@ -219,6 +226,10 @@ try {
   clock += 5000;
   const calendarGrant = await service.status('person_a');
   assert.equal(calendarGrant.calendarConnected, true);
+  messageIds = ['outage-old', ...messageIds];
+  clock += 5001;
+  created.set('outage-old', clock);
+  assert.equal((await service.summary('person_a')).newMessages, 1);
   const calendar = await service.calendarSummary('person_a');
   assert.equal(calendar.available, true);
   assert.deepEqual(calendar.due.map((item) => item.title), ['项目同步']);
@@ -241,5 +252,26 @@ try {
   assert.match(expired.error, /重新连接/);
   assert.equal((await service.begin('person_a')).pending, true, 'a failed refresh must allow a new user grant');
   assert.equal((await service.status('person_a')).error, null, 'pending reauthorization should show the new consent action');
+  messageIds = ['outage-during', ...messageIds];
+  created.set('outage-during', clock - 60_000);
+  rejectRefresh = false;
+  clock += 5000;
+  assert.equal((await service.status('person_a')).connected, true);
+  const reconnected = await service.summary('person_a');
+  assert.equal(reconnected.newMessages, 0, 'an old pending alert and disconnected backfill do not become new mail');
+  const afterReconnect = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-notifications.json'), 'utf8')).people.person_a;
+  assert.equal(afterReconnect.reconciled.filter((item) => item.reason === 'reconnect_backfill').length, 2,
+    'backfill stays in the private audit with Feishu read-status evidence');
+  assert(afterReconnect.reconciled.every((item) => item.apiIsRead === false));
+  messageIds = ['post-reconnect', ...messageIds];
+  clock += 5001;
+  created.set('post-reconnect', clock);
+  assert.equal((await service.summary('person_a')).newMessages, 1, 'a new message after reconnect still alerts');
+  const originalRefreshExpiry = maintained.refreshExpiresAt;
+  clock = originalRefreshExpiry + 1000;
+  await service.maintain();
+  const longLived = JSON.parse(await readFile(saved, 'utf8')).people.person_a.token;
+  assert(longLived.refreshExpiresAt > clock && longLived.grantedAt < clock,
+    'rotated refresh tokens retain consent beyond the first seven-day token lifetime');
   console.log('ok - Feishu consent, person binding, real read status, chat sources, and acknowledgement');
 } finally { await rm(dir, { recursive: true, force: true }); }
