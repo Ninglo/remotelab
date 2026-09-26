@@ -528,6 +528,7 @@ body:not([data-app-view="sessions"]) .session-item.active {
 }
 
 /* Side display */
+.settings-display-section .settings-section-heading { flex-wrap: wrap; }
 .settings-display-generate {
   flex: 0 0 auto;
 }
