@@ -20,7 +20,7 @@ export async function handleFeishuLogCommand(value, { request }) {
   const lines = [sessions.length ? `找到 ${sessions.length} 个相关历史 Session（按相关度排序）：` : '没有找到相关历史 Session，请换一组更具体的关键词。'];
   for (const [index, session] of sessions.entries()) {
     lines.push('', `${index + 1}. ${safeTitle(session.title)}`,
-      session.sessionUrl ? `[查看会话](${session.sessionUrl})` : '会话链接暂不可用',
+      session.sessionUrl ? `[Session](${session.sessionUrl})` : '会话链接暂不可用',
       session.langsmithUrl ? `[LangSmith](${session.langsmithUrl})`
         : session.langsmithStatus === 'unavailable' ? 'LangSmith：暂不可用' : 'LangSmith：暂无记录');
   }

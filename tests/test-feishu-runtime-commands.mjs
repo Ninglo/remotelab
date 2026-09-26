@@ -7,7 +7,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-feishu-commands-'));
 setIsolatedTestHome(home);
 try {
-  const { handleMessage, extractLocalCommand, recordFeishuThreadSessionBinding, summarizeEvent } = await import('../scripts/feishu-connector.mjs');
+  const { handleMessage, extractLocalCommand, recordFeishuThreadSessionBinding, summarizeEvent, buildFeishuPostContent } = await import('../scripts/feishu-connector.mjs');
   const { handleFeishuRuntimeCommand } = await import('../connectors/feishu/runtime-commands.mjs');
   const session = { id: 's1', tool: 'codex', model: 'alpha', effort: 'low' };
   const catalog = {
@@ -173,10 +173,15 @@ try {
       },
     });
     assert.match(replies.at(-1), /找到 2 个/);
-    assert.match(replies.at(-1), /\[查看会话\]\(https:\/\/remote.example\/\?session=one\)/);
+    assert.match(replies.at(-1), /\[Session\]\(https:\/\/remote.example\/\?session=one\)/);
     assert.match(replies.at(-1), /\[LangSmith\]\(https:\/\/smith.langchain.com\/one\)/);
     assert.match(replies.at(-1), /LangSmith：暂无记录/);
     assert(replies.at(-1).includes('Data \\[draft\\]'));
+    const post = JSON.parse(await buildFeishuPostContent(replies.at(-1)));
+    const rendered = post.zh_cn.content.flat().map(part => part.text || '').join('\n');
+    assert.match(rendered, /\[Session\]\(https:\/\/remote.example\/\?session=one\)/,
+      'link labels must survive Feishu outbound normalization');
+    assert.match(rendered, /\[LangSmith\]\(https:\/\/smith.langchain.com\/one\)/);
   }
   assert.equal(aiCalls, 0, '/log is read-only and must not submit AI tasks');
   const { handleFeishuLogCommand } = await import('../connectors/feishu/log-command.mjs');
