@@ -38,6 +38,28 @@ try {
   writeFileSync(statePath, JSON.stringify({projectId,tracked:{[id]:{latestSnapshot:{rootUrl:url,traceId,revision:2,runNodeIds:{run_case1:childId}}}}}));
   assert.equal((await getLatestLangSmithCase(id, config)).url,url);
   assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_case1'})).url,url.replace(`/run/${traceId}`,`/run/${childId}`));
+  const canonicalUrl = `https://smith.langchain.com/o/tenant/projects/p/${projectId}/r/${traceId}?trace_id=${traceId}&start_time=2026-09-26T05:19:48.685000`;
+  const snapshot = {rootUrl:canonicalUrl,traceId,revision:2,runNodeIds:{run_case1:childId}};
+  const writeSnapshot = value => writeFileSync(statePath, JSON.stringify({projectId,tracked:{[id]:{latestSnapshot:value}}}));
+  writeSnapshot(snapshot);
+  assert.equal((await getLatestLangSmithCase(id, config)).url, canonicalUrl);
+  assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_case1'})).url,
+    canonicalUrl.replace(`/r/${traceId}`, `/r/${childId}`), 'select a child while preserving trace and timestamp');
+  assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_unknown'})).url, canonicalUrl);
+  for (const rootUrl of [
+    `https://smith.langchain.com/o/tenant/projects/p/${projectId}/`,
+    `https://smith.langchain.com/o/tenant/projects/p/${projectId}/traces`,
+    canonicalUrl.replace(`/r/${traceId}`, `/r/${childId}`),
+    canonicalUrl.replace(`trace_id=${traceId}`, `trace_id=${childId}`),
+    canonicalUrl.replace(projectId, childId),
+    url.replace(`/trace/${traceId}`, `/trace/${childId}`),
+    url + '/extra',
+  ]) {
+    writeSnapshot({...snapshot,rootUrl});
+    assert.equal(await getLatestLangSmithCase(id, config), null, `reject nonmatching root: ${rootUrl}`);
+  }
+  writeSnapshot(snapshot);
+  assert.equal(await getLatestLangSmithCase(id, {...config,workspaceId:childId}), null, 'reject a stale workspace');
   writeFileSync(statePath, JSON.stringify({projectId,tracked:{[id]:{latestSnapshot:{rootUrl:'https://evil.example/r/trace',traceId:'trace',revision:2}}}}));
   assert.equal(await getLatestLangSmithCase(id, config), null);
   mkdirSync(join(dir, 'langsmith-backfill'));

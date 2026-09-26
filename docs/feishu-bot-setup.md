@@ -332,6 +332,15 @@ original execution dates inside historical imports and distinguish import time
 from execution time. A bad source does not suppress a valid link from another
 configured source.
 
+The snapshot URL must select its exact root run, using LangSmith's returned
+`/r/{rootId}` or `/trace/{traceId}/run/{rootId}` address. Project overview URLs
+and mismatched trace IDs are rejected. Run-specific entries support both URL
+forms and retain provider query parameters such as `trace_id` and `start_time`.
+An optional `workspaceId` also rejects links into an old workspace. When moving
+the collector to another account or project, migrate and verify historical
+traces too, then update `projectId`, `workspaceId` and all three state directories
+together. A project with the same name does not imply the same traces exist in it.
+
 `/inline` and `/thread` select reply topology; they do not copy or fork old
 context. In an ordinary chat group, `/inline` uses the chat's long-lived main
 Session and `/thread` creates a blank Session for a new Thread. A topic-mode

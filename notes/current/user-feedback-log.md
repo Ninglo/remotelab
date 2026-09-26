@@ -745,6 +745,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: remove the directed-reply exception, recheck already queued topic alerts, and update the Matrix theme preset while preserving explicitly chosen custom fonts.
 - Follow-up: verify the live Feishu summary, published editor, and paired display playback after the rule and preset are applied.
 
+### 2026-09-26 — LangSmith 链接必须定位到对应 Session
+
+- Source: direct user report after following a Session's LangSmith entry.
+- Observed friction or ask: the link exposed the project instead of selecting the requested Session.
+- Product implication: validate the exact root run and workspace, support both provider run URL forms, and migrate verified history indexes together with collector account changes.
+- Follow-up: verify each entry against the destination project's Session metadata and concrete run URL; distinguish API verification from authenticated browser acceptance.
+
 ### YYYY-MM-DD — short title
 
 - Source:
