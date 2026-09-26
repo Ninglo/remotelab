@@ -50,10 +50,10 @@ const fakeFetch = async (url, options) => {
   if (path.endsWith('/messages/mget')) {
     const ids = new URL(url).searchParams.getAll('message_ids');
     return response({ code: 0, data: { items: ids.map((message_id) => ({ message_id,
-      ...(message_id === 'om_topicroot' || message_id === 'om_topicmyroot' || message_id === 'om_topicotherroot'
-        ? {} : { parent_id: message_id === 'om_topicdirect' ? 'om_topicmyroot' : 'om_topicotherroot' }),
+      ...(['om_topicreply', 'om_topicmention', 'om_topicall', 'om_topicdirect', 'om_groupreply', 'om_groupmention'].includes(message_id)
+        ? { parent_id: message_id === 'om_topicdirect' ? 'om_topicmyroot' : 'om_topicotherroot' } : {}),
       sender: { sender_type: 'user', id: message_id === 'om_topicmyroot' ? 'ou_expected' : 'ou_other_person' },
-      ...(message_id === 'om_topicmention' ? { mentions: [{ id: 'ou_expected', id_type: 'open_id' }] }
+      ...(['om_topicmention', 'om_groupmention'].includes(message_id) ? { mentions: [{ id: 'ou_expected', id_type: 'open_id' }] }
         : message_id === 'om_topicall' ? { mentions: [{ id: 'all' }] } : {}),
     })) } });
   }
@@ -61,6 +61,8 @@ const fakeFetch = async (url, options) => {
   if (path.endsWith('/events/instance_view') && emptyCalendar) return response({ code: 0, data: {} });
   if (path.endsWith('/events/instance_view')) return response({ code: 0, data: { items: [
     { event_id: 'evt_soon', summary: '项目同步', start_time: { timestamp: String(Math.floor(clock / 1000) + 300) }, status: 'confirmed', self_rsvp_status: 'accept' },
+    { event_id: 'evt_25m', summary: '半小时内日程', start_time: { timestamp: String(Math.floor(clock / 1000) + 25 * 60) }, status: 'confirmed', self_rsvp_status: 'accept' },
+    { event_id: 'evt_31m', summary: '半小时外日程', start_time: { timestamp: String(Math.floor(clock / 1000) + 31 * 60) }, status: 'confirmed', self_rsvp_status: 'accept' },
     { event_id: 'evt_declined', summary: '已拒绝', start_time: { timestamp: String(Math.floor(clock / 1000) + 300) }, status: 'confirmed', self_rsvp_status: 'decline' },
   ] } });
   if (path.includes('/im/v1/chats/')) return response({ code: 0, data: path.includes('oc_main')
@@ -192,25 +194,44 @@ try {
     'a broad mention search hit without an exact @me does not alert in a topic');
   messageIds = ['topicroot', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 0,
-    'a new topic without @me is not a directed notification');
+  const topicRoot = await service.summary('person_a');
+  assert.equal(topicRoot.newMessages, 1,
+    'a top-level message in a topic chat is a group message even without @me');
+  assert.equal((await service.acknowledge('person_a', topicRoot.observedAt)).cleared, 1);
   const topicReadsBefore = seen.filter(({ path }) => path.endsWith('/messages/mget')).length;
   messageIds = ['topicdirect', ...messageIds];
   clock += 5001;
   const directReply = await service.summary('person_a');
   assert.equal(directReply.newMessages, 0, 'a reply to my topic without an exact @me is ignored');
-  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/mget')).length, topicReadsBefore,
-    'topic messages outside the @me search are not fetched for content');
+  assert(seen.filter(({ path }) => path.endsWith('/messages/mget')).length > topicReadsBefore,
+    'topic replies are classified by parent_id even when @me search misses them');
+  messageIds = ['groupreply', ...messageIds];
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 0,
+    'a reply thread inside an ordinary group also needs an exact @me');
+  messageIds = ['groupmention', ...messageIds];
+  mentionIds = ['groupmention', ...mentionIds];
+  clock += 5001;
+  const groupMention = await service.summary('person_a');
+  assert.equal(groupMention.newMessages, 1, 'a reply thread inside an ordinary group alerts when it mentions this user');
+  assert.equal((await service.acknowledge('person_a', groupMention.observedAt)).cleared, 1);
   const notificationPath = join(dir, 'display-private', 'feishu-notifications.json');
   const legacy = JSON.parse(await readFile(notificationPath, 'utf8'));
   const hash = (value) => createHash('sha256').update(value).digest('hex');
   legacy.people.person_a.pending.push({ id: hash('om_topicdirect'), messageId: 'om_topicdirect',
     chatId: 'oc_topic12345678', chatKey: hash('oc_topic12345678'), isP2p: false,
     createdAt: clock, observedAt: clock, atMe: false, topicChecked: true });
+  legacy.people.person_a.policyVersion = 1;
   await writeFile(notificationPath, JSON.stringify(legacy));
+  messageIds = ['topicmigration', ...messageIds];
   clock += 5001;
   assert.equal((await service.summary('person_a')).newMessages, 0,
-    'a legacy topic reply already in the queue is rechecked and removed');
+    'policy changes baseline old topic messages and remove stale topic replies');
+  messageIds = ['topicafter', ...messageIds];
+  clock += 5001;
+  const afterPolicy = await service.summary('person_a');
+  assert.equal(afterPolicy.newMessages, 1, 'new topic roots alert after the policy migration');
+  assert.equal((await service.acknowledge('person_a', afterPolicy.observedAt)).cleared, 1);
   messageIds = ['frontier-new', 'frontier-old', ...messageIds];
   created.set('frontier-old', clock + 5001);
   created.set('frontier-new', clock + 10_002);
@@ -225,7 +246,7 @@ try {
   const saved = join(dir, 'display-private', 'feishu-reminders.json');
   assert.equal((await stat(saved)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(saved, 'utf8')).people.person_a.token.openId, 'ou_expected');
-  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 46);
+  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 52);
   const upgrade = await service.begin('person_a');
   assert.equal(upgrade.connected, true, 'message access remains available during calendar authorization');
   assert.equal(upgrade.calendarConnected, false);
@@ -244,7 +265,7 @@ try {
   assert.equal((await service.summary('person_a')).newMessages, 1);
   const calendar = await service.calendarSummary('person_a');
   assert.equal(calendar.available, true);
-  assert.deepEqual(calendar.due.map((item) => item.title), ['项目同步']);
+  assert.deepEqual(calendar.due.map((item) => item.title), ['项目同步', '半小时内日程']);
   emptyCalendar = true;
   clock += 60_001;
   const empty = await service.calendarSummary('person_a');

@@ -332,7 +332,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         || primaryData?.calendars?.find((item) => item?.calendar?.type === 'primary')?.calendar?.calendar_id
         || primaryData?.calendars?.[0]?.calendar?.calendar_id;
       if (!calendarId) throw new Error('Primary calendar missing');
-      const start = Math.floor(now() / 1000) - 15 * 60;
+      const start = Math.floor(now() / 1000) - 30 * 60;
       const end = start + 25 * 60 * 60;
       const url = new URL(`${OPEN}/open-apis/calendar/v4/calendars/${encodeURIComponent(calendarId)}/events/instance_view`);
       url.searchParams.set('start_time', String(start));
@@ -362,7 +362,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
       calendarRefreshing.set(personId, task);
     }
     const value = saved?.value || { available: false, authorizationRequired: false, events: [] };
-    const due = (value.events || []).filter((item) => item.startAt - 15 * 60_000 <= now()
+    const due = (value.events || []).filter((item) => item.startAt - 30 * 60_000 <= now()
       && item.startAt + 10 * 60_000 > now()).slice(0, 3);
     const next = (value.events || []).find((item) => item.startAt > now());
     return { available: value.available, authorizationRequired: value.authorizationRequired,
@@ -406,8 +406,9 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         const doc = await readJson(notificationFile, { version: 1, people: {} });
         const prior = doc.people?.[personId];
         const sameIdentity = prior?.identityKey === identityKey;
-        const current = sameIdentity ? prior : { identityKey, known: [], pending: [], initializedAt: now() };
+        const current = sameIdentity ? prior : { identityKey, known: [], pending: [], initializedAt: now(), policyVersion: 2 };
         current.initializedAt ||= now();
+        const newPolicy = sameIdentity && current.policyVersion !== 2;
         const newGrant = sameIdentity && Number.isFinite(grantAt) && grantAt > (current.grantBaselineAt || 0);
         const known = new Set(current.known || []);
         // Retain arrivals across refreshes; the recipient's actual read state below
@@ -427,22 +428,23 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         const chatInfo = new Map(await Promise.all(chatIds.map(async (chatId) => [chatId,
           await chatSourceInfo(identity.realm, chatId, false)])));
         const topicMode = (item) => item.isP2p ? false : (chatInfo.get(item.chatId)?.topic ?? item.topicMode);
-        const topicCandidates = [...candidates.values()].filter((item) => topicMode(item) === true
-          && mentionKeys.has(item.id)
-          && (item.topicChecked !== true || item.atMe !== true));
-        const details = await messageDetails(token, topicCandidates.map((item) => item.messageId));
+        // A topic-mode chat contains both top-level messages and replies. The
+        // latter are identified by parent_id, including in ordinary group chats.
+        const groupCandidates = [...candidates.values()].filter((item) => !item.isP2p);
+        const details = await messageDetails(token, groupCandidates.map((item) => item.messageId));
+        if (groupCandidates.some((item) => !details.has(item.messageId))) throw new Error('Feishu message details unavailable');
         const actionable = new Map([...candidates.values()].map((item) => {
           if (item.isP2p) return [item.id, { allowed: true, atMe: Boolean(item.atMe || mentionKeys.has(item.id)) }];
-          if (topicMode(item) === false) return [item.id, { allowed: true, atMe: Boolean(item.atMe || mentionKeys.has(item.id)) }];
-          if (topicMode(item) !== true) return [item.id, { allowed: false, atMe: false }];
           const detail = details.get(item.messageId);
-          const atMe = (item.topicChecked === true && item.atMe === true)
-            || (mentionKeys.has(item.id) && detail?.mentions?.some((mention) => mention.id === identity.openId) === true);
-          return [item.id, { allowed: atMe, atMe }];
+          const isReply = Boolean(detail?.parent_id);
+          const atMe = isReply
+            ? detail?.mentions?.some((mention) => mention.id === identity.openId) === true
+            : Boolean(mentionKeys.has(item.id));
+          return [item.id, { allowed: !isReply || atMe, atMe }];
         }));
         pending = pending.filter((item) => actionable.get(item.id)?.allowed === true)
           .map((item) => ({ ...item, atMe: actionable.get(item.id)?.atMe ?? item.atMe,
-            topicMode: topicMode(item), topicChecked: true }));
+            topicMode: topicMode(item) }));
         // A new user grant is a new observation boundary. Search may return messages
         // from the disconnected interval, including ones read before reconnecting.
         // Keep an audit of that backfill instead of presenting it as new mail.
@@ -459,14 +461,14 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
           apiIsRead: historicalRead.values.get(item.messageId) ?? null,
         });
         if (newGrant) pending = pending.filter((item) => !reconciled.has(item.id));
-        if (sameIdentity) {
+        if (sameIdentity && !newPolicy) {
           for (const item of incomingKeys) if (!known.has(item.id) && actionable.get(item.id)?.allowed === true
             && !reconciled.has(item.id)
             && (!Number.isFinite(item.createdAt) || item.createdAt >= current.initializedAt - 2_000)
             && (!Number.isFinite(grantAt) || Number.isFinite(item.createdAt) && item.createdAt >= grantAt)) {
             pending.push({ id: item.id, messageId: item.messageId, chatId: item.chatId,
               chatKey: item.chatKey, isP2p: item.isP2p, topicMode: topicMode(item), createdAt: item.createdAt,
-              atMe: actionable.get(item.id).atMe, topicChecked: true, observedAt: now() });
+              atMe: actionable.get(item.id).atMe, observedAt: now() });
           }
         }
         // A reply also clears an arrival when the read-status endpoint is unavailable.
@@ -482,10 +484,10 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
           return !frontier.some((newer) => newer.chatKey === item.chatKey && newer.createdAt > item.createdAt
             && read.values.get(newer.messageId) === true);
         });
-        for (const item of incomingKeys) if (!sameIdentity || topicMode(item) === false
-          || (topicMode(item) === true && mentionKeys.has(item.id) && details.has(item.messageId))) known.add(item.id);
+        for (const item of incomingKeys) if (newPolicy || item.isP2p || details.has(item.messageId)) known.add(item.id);
         doc.people ||= {};
         doc.people[personId] = { identityKey, initializedAt: current.initializedAt,
+          policyVersion: 2,
           grantBaselineAt: Number.isFinite(grantAt) ? grantAt : current.grantBaselineAt,
           known: [...known].slice(-1000), pending: pending.slice(-1000),
           reconciled: [...reconciled.values()].slice(-1000) };

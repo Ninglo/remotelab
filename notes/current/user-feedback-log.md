@@ -751,6 +751,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: remove the directed-reply exception, recheck already queued topic alerts, and update the Matrix theme preset while preserving explicitly chosen custom fonts.
 - Follow-up: verify the live Feishu summary, published editor, and paired display playback after the rule and preset are applied.
 
+### 2026-09-26 — 副屏飞书提醒按消息层级判断
+
+- Source: direct user correction after the topic-message filter was applied.
+- Observed friction or ask: private and ordinary group messages should alert when unread; a top-level message in a topic chat is still a group message. Only replies inside a topic or conversation need an exact mention of the user. Calendar events should begin alerting about 30 minutes before they start.
+- Product implication: classify replies by the message's `parent_id`, not the chat's topic mode; retain the recipient read-state check and baseline existing messages when changing the filter so old items are not presented as new.
+- Follow-up: verify a new unread-to-read transition for each message class and an upcoming real calendar event. Message read status alone does not expose the client's exact notification badge.
+
 ### 2026-09-26 — LangSmith 链接必须定位到对应 Session
 
 - Source: direct user report after following a Session's LangSmith entry.
