@@ -34,7 +34,7 @@ export async function handleFeishuLogCommand(value, { request }) {
     lines.push('', `${index + 1}. ${safeTitle(session.title)}`,
       session.sessionUrl ? `[Session](${session.sessionUrl})` : '会话链接暂不可用',
       session.langsmithUrl
-        ? `[LangSmith${session.langsmithKind === 'historical_import' ? '（历史日志导入）' : ''}](${session.langsmithUrl})`
+        ? `[LangSmith${session.langsmithKind === 'historical_import' ? '（历史日志导入）' : ''}](${session.langsmithEntryUrl || session.langsmithUrl})`
         : `LangSmith：${LANGSMITH_STATUS[session.langsmithStatus] || LANGSMITH_STATUS.unavailable}`);
   }
   if (result.json?.incomplete) lines.push('', '部分历史记录暂时未能读取，以上结果可能不完整。');

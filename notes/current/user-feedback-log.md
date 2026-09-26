@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-26 — Chat links should open login, not an authentication error
+
+- Observed friction: opening a LangSmith entry shared in chat without a RemoteLab browser cookie returned a JSON authentication error instead of a login page.
+- Implementation: the existing entry now opens the username/password form and resumes the selected Session/run after login. `/log` uses that entry while retaining the raw provider URL in the search API.
+- Validation: an isolated HTTP test covers anonymous navigation, failed and successful password login, preserved run destinations, authenticated redirects, and unchanged authentication for other APIs. RemoteLab login does not grant LangSmith project access.
+
 ### 2026-09-26 — Explain missing LangSmith links in historical search
 
 - Observed friction: `/log` found historical Sessions but called every absent snapshot “no records,” including queued backfills and Sessions never covered by the collector.

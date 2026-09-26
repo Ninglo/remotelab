@@ -313,6 +313,15 @@ may need a retry while the index builds. Missing/corrupt indexes are rebuilt;
 unreadable histories are reported as incomplete results. Existing LangSmith
 snapshot links retain their normal LangSmith access requirements.
 
+Chat results use the instance's `/api/sessions/{id}/langsmith` browser entry.
+An unauthenticated GET opens RemoteLab's username/password login page, retaining
+the destination (including `runId`) through failed and successful login attempts.
+After RemoteLab login, the entry redirects to the verified LangSmith URL.
+LangSmith still requires its own account with project access. This does not
+publish the trace or grant new permissions. Other unauthenticated API requests
+continue to return JSON 401 responses. Search API clients receive both the raw
+`langsmithUrl` and the login-aware `langsmithEntryUrl`.
+
 `langsmith-case-link.json` can optionally name a `historyStateDir` alongside
 `stateDir` and `backfillStateDir`. Each directory is an instance-local basename
 containing `state.json` for the configured `projectId`. Historical imports use

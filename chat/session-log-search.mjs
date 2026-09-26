@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { CHAT_HISTORY_DIR, CONFIG_DIR } from '../lib/config.mjs';
 import { stripHiddenBlocks } from '../lib/reply-selection.mjs';
-import { buildSessionNavigationHref } from '../lib/session-navigation.mjs';
+import { buildLangSmithCaseNavigationHref, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { getLangSmithCaseStatus, readLangSmithCaseConfig } from '../lib/langsmith-case-link.mjs';
 import { loadSessionsMeta } from './session-meta-store.mjs';
 
@@ -55,6 +55,7 @@ export function createSessionLogSearch({
   readCaseConfig = readLangSmithCaseConfig,
   latestCase = getLangSmithCaseStatus,
   sessionHref = id => buildSessionNavigationHref(id, { requireAbsolute: true }),
+  caseHref = id => buildLangSmithCaseNavigationHref(id, { requireAbsolute: true }),
 } = {}) {
   const cache = new Map();
   let refreshPromise;
@@ -169,7 +170,8 @@ export function createSessionLogSearch({
       let unavailable = configError;
       try { snapshot = await latestCase(session.id, config); } catch { unavailable = true; }
       return { id: session.id, title: session.name || '未命名会话', sessionUrl: sessionHref(session.id),
-        langsmithUrl: snapshot?.url || '', langsmithKind: snapshot?.kind || '',
+        langsmithUrl: snapshot?.url || '', langsmithEntryUrl: snapshot?.url ? caseHref(session.id) : '',
+        langsmithKind: snapshot?.kind || '',
         langsmithStatus: snapshot?.url ? 'available' : unavailable ? 'unavailable' : snapshot?.status || 'missing' };
     }));
     return { sessions, incomplete };

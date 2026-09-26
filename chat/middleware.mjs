@@ -121,6 +121,17 @@ export async function requireAuth(req, res) {
   }
   const { authenticateBearerToken } = await import('../lib/auth.mjs');
   if (await authenticateBearerToken(req)) return true;
+  // This API-shaped URL is a browser entry shared in chat. Preserve its
+  // destination through the normal password login instead of showing JSON.
+  if (req.method === 'GET' && /^\/api\/sessions\/[0-9a-f]{32}\/langsmith$/.test(requestUrl.pathname)) {
+    const next = requestUrl.pathname + requestUrl.search;
+    res.writeHead(302, {
+      'Location': `/login?mode=pw&next=${encodeURIComponent(next)}`,
+      'Cache-Control': 'private, no-store',
+    });
+    res.end();
+    return false;
+  }
   if ((req.url || '').startsWith('/api/')) {
     res.writeHead(401, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not authenticated' }));

@@ -40,11 +40,14 @@ try {
   const smithUrl = 'https://smith.langchain.com/example';
   const opts = { historyDir, indexDir, list: async () => sessions,
     readCaseConfig: async () => ({}), latestCase: async id => id === ids[0] ? { url: smithUrl } : null,
-    sessionHref: id => `https://remote.example.test/?session=${id}&tab=sessions` };
+    sessionHref: id => `https://remote.example.test/?session=${id}&tab=sessions`,
+    caseHref: id => `https://remote.example.test/api/sessions/${id}/langsmith` };
   let search = createSessionLogSearch(opts);
   let result = await search('Auto Research');
   assert.deepEqual(result.sessions.map(s => s.id), ids.slice(0, 3), 'title, summary and early message hits are ranked, archives included');
   assert.equal(result.sessions[0].langsmithUrl, smithUrl);
+  assert.equal(result.sessions[0].langsmithEntryUrl, opts.caseHref(ids[0]));
+  assert.equal(result.sessions[1].langsmithEntryUrl, '');
   assert.match(result.sessions[0].sessionUrl, new RegExp(ids[0]));
   assert.equal(result.sessions[1].langsmithStatus, 'missing');
   assert.equal(result.incomplete, false);

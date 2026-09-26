@@ -197,6 +197,11 @@ try {
   assert.match(importedText, /\[LangSmith（历史日志导入）\]\(https:\/\/smith.langchain.com\/history\)/);
   const importedPost = JSON.parse(await buildFeishuPostContent(importedText));
   assert.match(JSON.stringify(importedPost), /LangSmith（历史日志导入）/);
+  const entry = 'https://remote.example/api/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/langsmith';
+  const loginText = await handleFeishuLogCommand('history', { request: async () => ({ response: { ok: true },
+    json: { sessions: [{title:'History',langsmithUrl:'https://smith.langchain.com/history',langsmithEntryUrl:entry}] } }) });
+  assert.ok(loginText.includes(`[LangSmith](${entry})`), 'chat links go through the browser login entry');
+  assert.ok(!loginText.includes('https://smith.langchain.com/history'));
   assert.match(await handleFeishuLogCommand('x'.repeat(1001), { request }), /1000/);
   assert.match(await handleFeishuLogCommand('nothing', { request: async () => ({ response: { ok: true }, json: { sessions: [] } }) }), /没有找到/);
   assert.match(await handleFeishuLogCommand('anything', { request: async () => { throw new Error('offline'); } }), /稍后重试/);
