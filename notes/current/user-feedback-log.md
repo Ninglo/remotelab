@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-26 — Keep the simple display editor while linking detailed settings
+
+- Observed friction: the expanded display studio needs a clear path back to RemoteLab; the existing GIF plus sentence editor remains useful. A disliked pet should leave both the picker and automatic rotation.
+- Product implication: link the two editors from the device settings area, keep the simple editor intact, and make switching display modes actually change the device source. The detailed editor's current pet catalog excludes the rejected frog.
+- Validation: route, settings UI, preview stream and browser checks cover navigation, mode handoff, and pet migration.
+
 ### 2026-09-26 — Chat links should open login, not an authentication error
 
 - Observed friction: opening a LangSmith entry shared in chat without a RemoteLab browser cookie returned a JSON authentication error instead of a login page.

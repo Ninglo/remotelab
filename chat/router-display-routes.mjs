@@ -205,6 +205,17 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       await sendProxyResponse(res, response);
       return true;
     }
+    if (pathname === '/api/display/studio-preview' && req.method === 'DELETE') {
+      const config = await studioPreviewConfig();
+      if (!config.baseUrl || !config.tokenFile) { writeJson(res, 200, { ok: true, configured: false }); return true; }
+      const response = await fetch(`${config.baseUrl}/api/preview`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${trimString(await readFile(config.tokenFile, 'utf8'))}`, 'X-Preview-Person-Id': personId },
+        signal: AbortSignal.timeout(10_000),
+      });
+      await sendProxyResponse(res, response);
+      return true;
+    }
     if (pathname === '/api/display/content' && req.method === 'GET') {
       await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/content`, { authenticated: true });
       return true;

@@ -75,6 +75,13 @@ function initSettingsNavigation() {
   window.addEventListener("resize", updateActiveSection);
   settingsToc.dataset.bound = "true";
   updateActiveSection();
+  const linkedSection = document.getElementById(window.location.hash.slice(1));
+  if (linkedSection && sections.includes(linkedSection)) {
+    window.requestAnimationFrame(() => {
+      linkedSection.scrollIntoView({ behavior: "auto", block: "start" });
+      setActiveSection(linkedSection.id);
+    });
+  }
 }
 
 function getSessionAutoArchiveOptions() {

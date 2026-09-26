@@ -122,9 +122,15 @@ process.env.REMOTELAB_DISPLAY_ADMIN_TOKEN_FILE = adminFile;
 const previewTokenFile = join(root, 'preview-token');
 await writeFile(previewTokenFile, 'preview-secret\n');
 let previewCall = null;
+let previewDeleteCall = null;
 const previewServer = createServer(async (req, res) => {
   let body = '';
   for await (const chunk of req) body += chunk;
+  if (req.method === 'DELETE') {
+    previewDeleteCall = { authorization: req.headers.authorization, personId: req.headers['x-preview-person-id'] };
+    json(res, 200, { ok: true, configured: false });
+    return;
+  }
   previewCall = { authorization: req.headers.authorization, personId: req.headers['x-preview-person-id'], body };
   json(res, 200, req.method === 'GET' ? { devices: [{ name: 'Test display' }] } : { ok: true, frameId: 'sample-frame' });
 });
@@ -275,6 +281,11 @@ try {
   assert.equal(studio.response.status, 200);
   assert.equal(studio.payload.frameId, 'sample-frame');
   assert.deepEqual(previewCall, { authorization: 'Bearer preview-secret', personId: 'person-a', body: '{"version":14}' });
+  const deniedStudioDelete = await requestJson(`${base}/api/display/studio-preview`, { method: 'DELETE' });
+  assert.equal(deniedStudioDelete.response.status, 401);
+  const studioDelete = await requestJson(`${base}/api/display/studio-preview`, { method: 'DELETE', headers: { 'X-Test-Person': 'person-b' } });
+  assert.equal(studioDelete.response.status, 200);
+  assert.deepEqual(previewDeleteCall, { authorization: 'Bearer preview-secret', personId: 'person-b' });
   const privateToken = 'a'.repeat(64);
   const deniedPublicStudio = await requestJson(`${base}/display/studio-preview`, {
     method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '{}',

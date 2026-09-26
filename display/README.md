@@ -105,6 +105,11 @@ activating the pilot.
 
 In **Settings → Side display**, each signed-in Person can upload a GIF and save
 one sentence. Their paired displays then show the animation beside that sentence.
+The same Settings section links to the detailed display editor at
+`/public-pages/secondary-display-studio/index.html`. The simple GIF editor remains
+available. Applying a detailed layout gives its live frame priority; saving a
+simple GIF or restoring the status screen stops that detailed preview stream so
+the selected simple or status view can take over immediately.
 The settings panel previews the GIF before saving; **Restore status screen**
 removes the personal content and returns to the existing signal or classic view.
 Content belongs to the signed-in Person, so another Person's display and editor

@@ -531,6 +531,8 @@ body:not([data-app-view="sessions"]) .session-item.active {
 .settings-display-generate {
   flex: 0 0 auto;
 }
+.settings-display-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.settings-display-details { display: inline-flex; align-items: center; text-decoration: none; }
 .settings-display-command {
   display: grid;
   gap: 10px;

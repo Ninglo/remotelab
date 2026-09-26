@@ -19,6 +19,10 @@ assert.match(css, /\.settings-display-command/);
 assert.match(settings, /\/api\/display\/content/);
 assert.match(settings, /settingsDisplayGif/);
 assert.match(settings, /settingsDisplaySentence/);
+assert.match(settings, /settingsDisplayDetails.*secondary-display-studio\/index\.html/);
+assert.match(settings, /fetchJsonOrRedirect\("\/api\/display\/studio-preview", \{ method: "DELETE"/);
+assert.match(settings, /id="settingsDisplaySave"/);
+assert.match(settings, /id="settingsDisplayReset"/);
 assert.match(css, /\.settings-display-preview/);
 assert.match(template, /chat\/display-settings\.js/);
 

@@ -10,20 +10,20 @@
 
   function personalCopy(key) {
     const zh = {
-      heading: "我的副屏画面", note: "上传一张 GIF，写一句话。保存后，你配对的副屏会自动显示这张画面。",
+      heading: "简版画面", note: "上传 GIF、写一句话。保存后会从详细画面切回这个简版画面。",
       gif: "动图（GIF，最多 3 MB、640 × 480、48 帧）", sentence: "一句话（最多 48 字）",
       placeholder: "例如：我正在处理今天最重要的事", save: "保存并显示", reset: "恢复状态屏",
       empty: "选择 GIF 后可在这里预览", saving: "正在保存画面…", saved: "画面已保存；设备配对后会自动显示。",
       loading: "正在读取画面…", failed: "画面设置失败", tooLarge: "GIF 不能超过 3 MB。",
-      required: "请选择 GIF 并填写一句话。", resetDone: "已恢复状态屏。",
+      required: "请选择 GIF 并填写一句话。", resetDone: "已恢复状态屏。", details: "打开详细设置 ↗",
     };
     const en = {
-      heading: "My display", note: "Upload a GIF and write one sentence. Your paired display updates after saving.",
+      heading: "Simple display", note: "Upload a GIF and write one sentence. Saving switches the display from detailed mode to this simple view.",
       gif: "Animation (GIF, up to 3 MB, 640 × 480, 48 frames)", sentence: "One sentence (up to 48 characters)",
       placeholder: "For example: Working on today's most important task", save: "Save and show", reset: "Restore status screen",
       empty: "Choose a GIF to preview it here", saving: "Saving display…", saved: "Saved. Your display will show this after pairing.",
       loading: "Loading display…", failed: "Could not save display", tooLarge: "GIF must be 3 MB or smaller.",
-      required: "Choose a GIF and enter one sentence.", resetDone: "Status screen restored.",
+      required: "Choose a GIF and enter one sentence.", resetDone: "Status screen restored.", details: "Detailed settings ↗",
     };
     return (document.documentElement.lang || "").toLowerCase().startsWith("zh") ? zh[key] : en[key];
   }
@@ -45,7 +45,10 @@
           <div class="settings-section-title" data-display-copy="title"></div>
           <div class="settings-section-note" data-display-copy="note"></div>
         </div>
-        <button class="settings-app-btn settings-display-generate" id="settingsDisplayGenerate" type="button"></button>
+        <div class="settings-display-heading-actions">
+          <a class="settings-app-btn settings-display-details" id="settingsDisplayDetails" href="/public-pages/secondary-display-studio/index.html"></a>
+          <button class="settings-app-btn settings-display-generate" id="settingsDisplayGenerate" type="button"></button>
+        </div>
       </div>
       <div class="settings-display-command" id="settingsDisplayCommandPanel" hidden>
         <div class="settings-section-note" data-display-copy="commandHelp"></div>
@@ -99,6 +102,7 @@
       ["settingsDisplayGifLabel", "gif"], ["settingsDisplaySentenceLabel", "sentence"],
       ["settingsDisplaySave", "save"], ["settingsDisplayReset", "reset"],
       ["settingsDisplayPreviewEmpty", "empty"],
+      ["settingsDisplayDetails", "details"],
     ]) {
       const node = document.getElementById(id);
       if (node) node.textContent = personalCopy(key);
@@ -181,6 +185,7 @@
         method: "PUT", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sentence, gifBase64 }), revalidate: false,
       });
+      await fetchJsonOrRedirect("/api/display/studio-preview", { method: "DELETE", revalidate: false });
       const input = document.getElementById("settingsDisplayGif");
       if (input) input.value = "";
       if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = ""; }
@@ -196,6 +201,7 @@
     if (button) button.disabled = true;
     try {
       await fetchJsonOrRedirect("/api/display/content", { method: "DELETE", revalidate: false });
+      await fetchJsonOrRedirect("/api/display/studio-preview", { method: "DELETE", revalidate: false });
       contentLoaded = false;
       await loadContent({ force: true });
       personalStatus(personalCopy("resetDone"));
