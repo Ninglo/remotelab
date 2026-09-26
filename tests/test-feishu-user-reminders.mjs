@@ -15,6 +15,7 @@ const created = new Map();
 const readIds = new Set();
 let readStatusFailure = false;
 let numericTimestamps = false;
+let rejectRefresh = false;
 const seen = [];
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 const fakeFetch = async (url, options) => {
@@ -28,6 +29,8 @@ const fakeFetch = async (url, options) => {
     return response({ device_code: `device-${codeNumber}`, user_code: `ABCD-${codeNumber}`,
       verification_uri: 'https://accounts.feishu.cn/oauth/authorize', expires_in: 240, interval: 5 });
   }
+  if (path.endsWith('/oauth/token') && new URLSearchParams(options.body).get('grant_type') === 'refresh_token' && rejectRefresh)
+    return response({ error: 'invalid_grant' }, 400);
   if (path.endsWith('/oauth/token')) return response({ access_token: `access-${codeNumber}`,
     refresh_token: `refresh-${codeNumber}`, expires_in: 7200, refresh_token_expires_in: 604800,
     scope: codeNumber >= 4 ? 'auth:user.id:read im:message:readonly search:message calendar:calendar:read calendar:calendar.event:read offline_access'
@@ -210,5 +213,13 @@ try {
   const calendar = await service.calendarSummary('person_a');
   assert.equal(calendar.available, true);
   assert.deepEqual(calendar.due.map((item) => item.title), ['项目同步']);
+  clock += 7_200_001;
+  assert.equal((await service.status('person_a')).connected, true, 'an expired access token refreshes before status is reported');
+  rejectRefresh = true;
+  clock += 7_200_001;
+  const expired = await service.status('person_a');
+  assert.equal(expired.connected, false, 'a revoked token must not be shown as connected');
+  assert.match(expired.error, /重新连接/);
+  assert.equal((await service.begin('person_a')).pending, true, 'a failed refresh must allow a new user grant');
   console.log('ok - Feishu consent, person binding, real read status, chat sources, and acknowledgement');
 } finally { await rm(dir, { recursive: true, force: true }); }
