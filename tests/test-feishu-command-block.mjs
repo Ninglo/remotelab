@@ -68,6 +68,12 @@ assert.deepEqual(parseFeishuCommandBlock('/thread -- --保留这个正文开头'
 assert.deepEqual(parseFeishuCommandBlock('/quick\n\n一句话解释这个概念'), {
   commands: [{ name: 'quick' }], body: '一句话解释这个概念',
 });
+for (const text of ['/sota 深入分析这个问题', '/sota\n深入分析这个问题', '@Task Bot /SOTA\n\n深入分析这个问题']) {
+  assert.deepEqual(parseFeishuCommandBlock(text), {
+    commands: [{ name: 'sota' }], body: '深入分析这个问题',
+  });
+}
+assert.deepEqual(parseFeishuCommandBlock('/sota'), { commands: [{ name: 'sota' }], body: '' });
 assert.deepEqual(parseFeishuCommandBlock('普通正文里提到 /thread 和 /model x'), {
   commands: [], body: '普通正文里提到 /thread 和 /model x',
 });
@@ -78,6 +84,7 @@ for (const body of [
   '/f/data 是一个普通路径',
   '/m/checkpoints/model.bin',
   '/q/archive/result.json',
+  '/sota/results.json',
   '/fork old command is ordinary text',
   '/continue old command is ordinary text',
   '/unknown',

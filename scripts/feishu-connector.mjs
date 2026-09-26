@@ -1295,7 +1295,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   summary = await (helpers.enrichSummaryWithChatMetadata || enrichSummaryWithChatMetadata)(runtime, summary);
   const command = extractLocalCommand(summary);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  if (command && !command.error && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))
+  if (command && !command.error && !commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name))
     && /^\s*@_[A-Za-z0-9_]+/.test(summary.messageText || summary.textPreview || summary.rawContent || '')
     && !mentionsFeishuBot(runtime, summary)) {
     return { receipt: { ignored: true, reason: 'command_for_other_recipient' } };
@@ -1306,10 +1306,10 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   }
   if (isFeishuDocumentCommentSummary(summary)) summary = await (helpers.hydrateSummary || hydrateFeishuDocumentCommentSummary)(runtime, summary);
   if (command && command.error) return { summary, command };
-  if (command?.body && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))) summary = {
+  if (command?.body && !commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name))) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
-  if (command && !commandNames.some(name => ['inline', 'thread', 'quick'].includes(name))) {
+  if (command && !commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name))) {
     if (isFeishuBotSender(summary)) return { receipt: { ignored: true, reason: 'bot_control_command' } };
     return { summary, command };
   }
@@ -1326,11 +1326,11 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
   if (commandNames.includes('thread')) summary = {
     ...summary, replyModeOverride: 'thread', messageText: command.body, textPreview: command.body,
   };
-  if (commandNames.includes('quick')) summary = {
-    ...summary, quickMode: true,
+  if (commandNames.includes('quick') || commandNames.includes('sota')) summary = {
+    ...summary, ...(commandNames.includes('quick') ? { quickMode: true } : {}),
     messageText: command.body, textPreview: command.body,
   };
-  if (command?.body && !commandNames.includes('inline') && !commandNames.includes('thread') && !commandNames.includes('quick')) summary = {
+  if (command?.body && !commandNames.includes('inline') && !commandNames.includes('thread') && !commandNames.includes('quick') && !commandNames.includes('sota')) summary = {
     ...summary, messageText: command.body, textPreview: command.body,
   };
   summary = applyFeishuReplyRouting(runtime.config, { ...summary, commandBlock: command });
@@ -1347,7 +1347,7 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 async function processFeishuMessage(runtime, summary, command, helpers) {
   if (command?.error) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, command.error);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
-  const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick'].includes(name));
+  const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name));
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (commandNames.includes('log')) {
     if (commandNames.length !== 1) return enqueue(runtime, summary, '/log 请单独使用。');
@@ -1375,7 +1375,7 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
   }
   if (command && taskCommand && !command.body) return enqueue(runtime, summary, '任务命令需要正文，例如：/thread 帮我调查这个问题。');
-  if (command && command.body && command.commands.some(entry => ['default', 'harness', 'model', 'effort', 'follow'].includes(entry.name))) {
+  if (command && command.body && command.commands.some(entry => ['harness', 'model', 'effort', 'tier', 'sota'].includes(entry.name))) {
     const commandPlan = helpers.preparedRuntimeCommand || await prepareFeishuRuntimeCommandPlan(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
       resolveDefault: () => (helpers.resolveFeishuRuntimeSelection || resolveFeishuRuntimeSelection)(runtime),

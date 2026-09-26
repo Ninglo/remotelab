@@ -226,6 +226,71 @@ try {
   assert.equal(quickSummary.conversationKind, 'thread');
   assert.equal(quickSummary.messageText, '只回答结论。');
 
+  let sotaPlan;
+  let sotaSummary;
+  let sotaSubmissions = 0;
+  const sotaHelpers = {
+    requestRemoteLab: request,
+    resolveFeishuRuntimeSelection: async () => ({ tool: 'codex', model: 'auto', effort: '', thinking: false }),
+    queueFeishuReply: async (_runtime, _summary, text) => replies.push(text),
+    addProcessingReaction: async () => null,
+    saveRuntimeCommand: async value => { sotaPlan = structuredClone(value); },
+    submitRemoteLabRequest: async (_runtime, inboundSummary) => {
+      assert.ok(sotaPlan, 'persist the runtime plan before submitting the task');
+      sotaSubmissions += 1;
+      sotaSummary = inboundSummary;
+      return { sessionId: 's1', runId: 'run-sota' };
+    },
+  };
+  const sotaSelection = { tool: 'codex', model: 'frontier', effort: 'xhigh', thinking: false, runtimeTier: 'sota' };
+  await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'sota-task',
+    messageText: '/sota 深入分析这个问题。' }, 'test', sotaHelpers);
+  assert.equal(sotaSummary.startThread, true);
+  assert.equal(sotaSummary.conversationKind, 'thread');
+  assert.equal(sotaSummary.messageText, '深入分析这个问题。');
+  assert.equal(sotaSummary.quickMode, undefined, 'SOTA retains Standard execution behavior');
+  assert.deepEqual(sotaSummary.runtimeSelectionOverride, sotaSelection, 'resolve the configured preset, not a hardcoded model');
+  assert.deepEqual(sotaPlan.selection, sotaSelection);
+  assert.equal(sotaPlan.operations.length, 0, 'a new thread does not change an existing Session');
+  const newSotaPlan = structuredClone(sotaPlan);
+
+  // In a bound thread, SOTA persists the tier before admitting the task.
+  await handleMessage(runtime, { ...summary, messageId: 'sota-follow-up', messageText: '/sota 继续深入分析。' }, 'test', sotaHelpers);
+  assert.equal(session.runtimeTier, 'sota');
+  assert.equal(session.model, 'frontier');
+  assert.equal(session.effort, 'xhigh');
+  assert.equal(sotaPlan.operations[0].sessionId, 's1');
+  assert.equal(sotaSummary.threadId, 'thread');
+  for (const chatType of ['p2p', 'topic']) {
+    await handleMessage(runtime, { ...summary, chatType, threadId: '', rootId: '',
+      messageId: `sota-${chatType}`, messageText: '/sota 处理这个任务。' }, 'test', sotaHelpers);
+    assert.equal(sotaSummary.conversationKind, chatType === 'topic' ? 'thread' : 'main');
+    assert.deepEqual(sotaSummary.runtimeSelectionOverride, sotaSelection);
+  }
+
+  const submittedBeforeInvalid = sotaSubmissions;
+  const sessionBeforeInvalidSota = structuredClone(session);
+  for (const messageText of ['/sota', '/sota --effort low 任务', '/sota\n/quick\n\n任务',
+    '/sota\n/thread\n\n任务', '/sota\n/tier economy\n\n任务', '/sota\n/sota\n\n任务']) {
+    await handleMessage(runtime, { ...summary, messageId: `invalid-${messageText}`, messageText }, 'test', sotaHelpers);
+    assert.match(replies.at(-1), /需要正文|单独使用|命令重复/);
+  }
+  assert.equal(sotaSubmissions, submittedBeforeInvalid);
+  assert.deepEqual(session, sessionBeforeInvalidSota, 'invalid shortcuts must not mutate the Session');
+  session.executionProfile = 'quick';
+  await handleMessage(runtime, { ...summary, messageId: 'sota-in-quick', messageText: '/sota 任务' }, 'test', sotaHelpers);
+  assert.match(replies.at(-1), /创建时固定/);
+  assert.equal(sotaSubmissions, submittedBeforeInvalid);
+  delete session.executionProfile;
+
+  // A saved SOTA plan can be replayed even when catalogs are unavailable.
+  await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'sota-retry',
+    messageText: '/sota 重试任务' }, 'test', { ...sotaHelpers,
+    preparedRuntimeCommand: newSotaPlan,
+    requestRemoteLab: async () => { throw new Error('must reuse the saved runtime plan'); },
+  });
+  assert.deepEqual(sotaSummary.runtimeSelectionOverride, sotaSelection);
+
   let commandBlockSummary;
   let commandBlockPlan;
   await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'command-block-task', messageText: '/thread --harness pi --model provider/gamma 请执行这个任务。' }, 'test', {

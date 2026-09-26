@@ -354,6 +354,16 @@ the fixed Quick runtime at the location selected by the chat topology and
 groups always remain threaded. A new topic may therefore start with `/quick`
 without conflicting with its Thread identity. An already-bound Standard
 Session cannot be converted in place; start a new topic for a new Quick Session.
+
+Use `/sota 深入分析这个问题` to run a task with the configured SOTA tier
+(default: Codex, GPT-6 Astra, `xhigh`). It follows the same reply placement as
+`/quick`: a new conversation creates a Standard Session with the SOTA runtime;
+an existing Standard Session switches to SOTA before the task is submitted.
+Following messages keep that selection. An existing Quick Session has a fixed
+runtime, so start a new topic to use SOTA. `/sota` requires task text and cannot
+be combined with other task or runtime commands. The existing `/tier sota`
+command still changes an existing Session without submitting a task.
+
 Only `/inline` and `/thread` accept `--harness <id>`, `--model <id>`, and
 `--effort <level>` before the task text. Use a standalone `--` before task text
 that itself starts with `--`.

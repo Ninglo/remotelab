@@ -11,7 +11,7 @@ import {
 const trim = value => typeof value === 'string' ? value.trim() : '';
 const CONFIG_COMMANDS = new Set(['harness', 'model', 'effort', 'tier']);
 const HELP = [
-  '任务命令可把正文写在同行：/inline [修饰参数] 正文、/thread [修饰参数] 正文、/quick 正文。',
+  '任务命令可把正文写在同行：/inline [修饰参数] 正文、/thread [修饰参数] 正文、/quick 正文、/sota 正文。',
   '/inline 和 /thread 的修饰参数：--harness <名称>、--model <模型 ID>、--effort <级别>。',
   '普通聊天群支持 inline/thread；话题群固定使用 Thread。Quick 是独立执行模式，不改变回复位置。',
   '短名：/m model、/q quick。',
@@ -26,6 +26,7 @@ const HELP = [
   '/inline [修饰参数] 正文 — 在群聊或私聊主线继续并直接回复',
   '/thread [修饰参数] 正文 — 从主线新建 Thread Session 并在线程中回复',
   '/quick 正文 — 在当前新主线或新话题创建 Quick Session；回复位置遵循聊天拓扑',
+  '/sota 正文 — 使用 SOTA 档位执行任务；已有 Standard Session 切换为 SOTA，回复位置遵循聊天拓扑',
   '/help — 查看命令',
 ].join('\n');
 
@@ -116,9 +117,12 @@ function validateCommandSet(commands) {
   if (commands.some(command => command.name === 'inline') && commands.some(command => command.name === 'thread')) {
     return '/inline 和 /thread 不能同时使用。';
   }
-  if (commands.some(command => command.name === 'quick')
-    && commands.some(command => ['inline', 'thread', 'harness', 'model', 'effort', 'tier'].includes(command.name))) {
-    return '/quick 需要单独使用，不能和任务或运行时配置命令组合。';
+  for (const shortcut of ['quick', 'sota']) {
+    if (commands.some(command => command.name === shortcut)
+      && commands.some(command => command.name !== shortcut
+        && ['inline', 'thread', 'quick', 'sota', 'harness', 'model', 'effort', 'tier'].includes(command.name))) {
+      return `/${shortcut} 需要单独使用，不能和任务或运行时配置命令组合。`;
+    }
   }
   return '';
 }
@@ -127,9 +131,14 @@ function validateCommandSet(commands) {
 export async function prepareFeishuRuntimeCommandPlan(runtime, summary, rawCommands, {
   request, resolveDefault, taskMode = false,
 } = {}) {
-  const commands = normalizeCommands(rawCommands);
-  const validationError = validateCommandSet(commands);
+  const inputCommands = normalizeCommands(rawCommands);
+  const validationError = validateCommandSet(inputCommands);
   if (validationError) return { error: validationError, text: validationError, operations: [] };
+  // Resolve the shortcut through the same configurable preset and durable
+  // command plan as /tier sota, including existing-Session and retry handling.
+  const commands = inputCommands.map(command => command.name === 'sota'
+    ? { name: 'tier', value: 'sota' }
+    : command);
 
   const getCatalog = async tool => requestJson(request, `/api/models?tool=${encodeURIComponent(tool)}`);
   const catalogs = new Map();

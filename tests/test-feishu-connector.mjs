@@ -1513,6 +1513,7 @@ try {
 }
 
 let planningSubmittedPayload = null;
+let planningCreatedPayload = null;
 const planningServer = http.createServer(async (req, res) => {
   let body = '';
   req.on('data', (chunk) => {
@@ -1521,6 +1522,7 @@ const planningServer = http.createServer(async (req, res) => {
   await new Promise((resolve) => req.on('end', resolve));
 
   if (req.method === 'POST' && req.url === '/api/sessions') {
+    planningCreatedPayload = JSON.parse(body || '{}');
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       session: {
@@ -1623,6 +1625,24 @@ try {
   assert.equal(reply.runId, null);
   assert.equal(reply.queued, false);
   assert.equal(reply.replyText, undefined);
+
+  const sotaRuntime = { tool: 'codex', model: 'configured-frontier', effort: 'xhigh', thinking: false, runtimeTier: 'sota' };
+  await submitRemoteLabRequest({
+    authCookie: 'session_token=test-cookie',
+    config: { chatBaseUrl: `http://127.0.0.1:${address.port}`, sessionFolder: repoRoot, sessionTool: 'codex' },
+  }, {
+    chatType: 'group', chatId: 'chat_sota_scope', messageId: 'msg_sota_scope',
+    messageText: '深入分析这个问题。', sender: { openId: 'ou_scope_test_sota' },
+    runtimeSelectionOverride: sotaRuntime,
+  });
+  for (const payload of [planningCreatedPayload, planningSubmittedPayload]) {
+    assert.equal(payload.tool, sotaRuntime.tool);
+    assert.equal(payload.model, sotaRuntime.model, 'SOTA is selected before the first request');
+    assert.equal(payload.effort, sotaRuntime.effort);
+    assert.equal(payload.executionProfile, undefined, 'SOTA uses a Standard Session');
+  }
+  assert.equal(planningCreatedPayload.conversation.target.conversationKind, 'thread');
+  assert.equal(planningSubmittedPayload.sourceDelivery.target.replyInThread, true);
 } finally {
   await new Promise((resolve) => planningServer.close(resolve));
 }

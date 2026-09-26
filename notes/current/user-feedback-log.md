@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-26 — Select SOTA with a task shortcut in chat
+
+- Observed friction: selecting the strongest tier takes a separate `/tier sota` command, while Quick already accepts a task directly.
+- Implementation: `/sota <task>` resolves the configured SOTA preset, follows the chat's reply placement, and persists the selection before submitting work. Bound Standard Sessions switch in place; fixed Quick Sessions explain how to start a new topic.
+- Validation: parser, runtime-command and connector tests cover task text, reply placement, first-request runtime, existing Sessions, invalid combinations, and retrying a saved selection.
+
 ### 2026-09-26 — Keep the simple display editor while linking detailed settings
 
 - Observed friction: the expanded display studio needs a clear path back to RemoteLab; the existing GIF plus sentence editor remains useful. A disliked pet should leave both the picker and automatic rotation.
