@@ -157,7 +157,33 @@ try {
   await handleMessage(runtime, { ...summary, messageId: 'm2', messageText: '/help' }, 'test', helpers);
   assert.doesNotMatch(replies.at(-1), /\/follow|\/default/);
   assert.match(replies.at(-1), /\/tier/);
+  assert.match(replies.at(-1), /\/log/);
   assert.match(replies.at(-1), /短名：\/m model、\/q quick/);
+  await handleMessage(runtime, { ...summary, messageId: 'log-usage', messageText: '/log' }, 'test', helpers);
+  assert.match(replies.at(-1), /用法/);
+  for (const chatType of ['p2p', 'group']) {
+    await handleMessage(runtime, { ...summary, chatType, messageId: `log-${chatType}`, messageText: '/log Auto Research 数据接入' }, 'test', {
+      ...helpers,
+      requestRemoteLab: async path => {
+        assert.equal(path, `/api/sessions/search?q=${encodeURIComponent('Auto Research 数据接入')}`);
+        return { response: { ok: true }, json: { sessions: [
+          { title: 'Auto Research', sessionUrl: 'https://remote.example/?session=one', langsmithUrl: 'https://smith.langchain.com/one' },
+          { title: 'Data [draft]', sessionUrl: 'https://remote.example/?session=two', langsmithStatus: 'missing' },
+        ] } };
+      },
+    });
+    assert.match(replies.at(-1), /找到 2 个/);
+    assert.match(replies.at(-1), /\[查看会话\]\(https:\/\/remote.example\/\?session=one\)/);
+    assert.match(replies.at(-1), /\[LangSmith\]\(https:\/\/smith.langchain.com\/one\)/);
+    assert.match(replies.at(-1), /LangSmith：暂无记录/);
+    assert(replies.at(-1).includes('Data \\[draft\\]'));
+  }
+  assert.equal(aiCalls, 0, '/log is read-only and must not submit AI tasks');
+  const { handleFeishuLogCommand } = await import('../connectors/feishu/log-command.mjs');
+  assert.match(await handleFeishuLogCommand('x'.repeat(1001), { request }), /1000/);
+  assert.match(await handleFeishuLogCommand('nothing', { request: async () => ({ response: { ok: true }, json: { sessions: [] } }) }), /没有找到/);
+  assert.match(await handleFeishuLogCommand('anything', { request: async () => { throw new Error('offline'); } }), /稍后重试/);
+  assert.match(await handleFeishuLogCommand('anything', { request: async () => ({ response: { ok: false } }) }), /暂时不可用/);
   runtime.botIdentity = { openId: 'this-bot' };
   const botControl = await handleMessage(runtime, { ...summary, messageText: '/model provider/gamma',
     mentions: [{ openId: 'this-bot' }], sender: { senderType: 'app' } }, 'test', helpers);

@@ -15,6 +15,7 @@ import {
   prepareFeishuRuntimeCommandPlan,
   applyFeishuRuntimeCommandPlan,
 } from '../connectors/feishu/runtime-commands.mjs';
+import { handleFeishuLogCommand } from '../connectors/feishu/log-command.mjs';
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
 import { handleFeishuMuteCommand } from '../connectors/feishu/conversation-settings.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
@@ -1348,6 +1349,13 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   const commandNames = command?.commands?.map(entry => entry.name) || [];
   const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick'].includes(name));
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
+  if (commandNames.includes('log')) {
+    if (commandNames.length !== 1) return enqueue(runtime, summary, '/log 请单独使用。');
+    const text = await handleFeishuLogCommand(command.commands[0].value, {
+      request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
+    });
+    return enqueue(runtime, summary, text);
+  }
   if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute'].includes(name))) {
     return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');
   }

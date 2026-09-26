@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from 'assert/strict';
 import { parseSessionGetRoute } from './chat/session-route-utils.mjs';
+assert.deepEqual(parseSessionGetRoute('/api/sessions/search'), { kind: 'search' });
 
 assert.deepEqual(
   parseSessionGetRoute('/api/sessions'),

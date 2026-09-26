@@ -285,6 +285,7 @@ Inside an existing task thread or private conversation, use these commands:
 | Command | Behavior |
 | --- | --- |
 | `/status` | Show the Harness, model and effort in the current scope. |
+| `/log keywords or question` | Search historical Sessions and return up to 3 matches with titles, Session links and available LangSmith trace links. |
 | `/harness` or `/harness <id>` | List available Harnesses or change the current Session. |
 | `/model` or `/model <id>` | List the current Harness's models or change the current Session. |
 | `/effort` or `/effort <level>` | List supported reasoning levels or change the current Session. |
@@ -292,6 +293,23 @@ Inside an existing task thread or private conversation, use these commands:
 | `/mute` | Stop automatic responses in the current topic or chat; explicit mentions still wake the Bot once. |
 | `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and the task-command format. |
+
+`/log Auto Research 数据接入` searches titles, descriptions, work summaries and
+visible user/assistant messages, including archived Sessions. Everything after
+`/log` (including subsequent lines) is a literal search query, up to 1000 characters;
+do not combine it with other commands. Ranking uses keyword relevance with extra
+weight for titles and summaries, not recency. It returns at most three matches,
+and explicitly marks missing LangSmith records. It does not start an AI run,
+create a Session, publish traces, or restore automatic links on ordinary replies.
+
+The authenticated `GET /api/sessions/search?q=...` endpoint uses the instance's
+normal shared Session access. Internal helper Sessions, hidden blocks, reasoning
+and tool output are excluded. A disposable index under
+`CONFIG_DIR/cache/session-log-search/` stores term counts and event cursors;
+subsequent searches index only new events. The first search on a large history
+may need a retry while the index builds. Missing/corrupt indexes are rebuilt;
+unreadable histories are reported as incomplete results. Existing LangSmith
+snapshot links retain their normal LangSmith access requirements.
 
 `/inline` and `/thread` select reply topology; they do not copy or fork old
 context. In an ordinary chat group, `/inline` uses the chat's long-lived main

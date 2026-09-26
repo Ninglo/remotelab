@@ -29,6 +29,7 @@ import {
 import { normalizeSessionStarterPreset } from './session-starter-preset.mjs';
 import { normalizeSessionExecutionProfile, QUICK_SESSION_PROFILE } from '../lib/quick-session-profile.mjs';
 import { readLangSmithCaseConfig, getLatestLangSmithCase } from '../lib/langsmith-case-link.mjs';
+import { searchSessionLogs } from './session-log-search.mjs';
 
 export const SESSION_CREATION_MAX_BYTES = 64 * 1024;
 
@@ -137,6 +138,17 @@ export async function handleSessionMainRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  if (sessionGetRoute?.kind === 'search') {
+    res.setHeader('Cache-Control', 'private, no-store');
+    try {
+      const query = typeof parsedUrl.query.q === 'string' ? parsedUrl.query.q : '';
+      writeJson(res, 200, await searchSessionLogs(query));
+    } catch (error) {
+      writeJson(res, error.statusCode === 400 ? 400 : 503, { error: error.statusCode === 400
+        ? error.message : 'Session search is temporarily unavailable' });
+    }
+    return true;
+  }
   if (sessionGetRoute?.kind === 'list' || sessionGetRoute?.kind === 'archived-list') {
     const view = typeof parsedUrl.query.view === 'string'
       ? String(parsedUrl.query.view || '').trim().toLowerCase()

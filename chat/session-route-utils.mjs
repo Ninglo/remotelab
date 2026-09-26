@@ -1,4 +1,5 @@
 export function parseSessionGetRoute(pathname) {
+  if (pathname === '/api/sessions/search') return { kind: 'search' };
   if (pathname === '/api/sessions') {
     return { kind: 'list' };
   }

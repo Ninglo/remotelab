@@ -97,6 +97,14 @@ try {
 
   assert.equal(bound.status, 201);
   const boundId = bound.body.session.id;
+  await request('PATCH', `/api/sessions/${boundId}`, { name: 'UniqueSearchNeedle' });
+  const searchReply = await request('GET', '/api/sessions/search?q=UniqueSearchNeedle');
+  assert.equal(searchReply.status, 200);
+  assert.equal(searchReply.body.sessions[0].id, boundId);
+  assert.equal(searchReply.body.sessions[0].sessionUrl, `https://fixture.example.test/?session=${boundId}&tab=sessions`);
+  assert.equal((await request('GET', '/api/sessions/search')).status, 400);
+  const unauthorizedSearch = await fetch(`http://127.0.0.1:${port}/api/sessions/search?q=UniqueSearchNeedle`, { redirect: 'manual' });
+  assert([401, 403].includes(unauthorizedSearch.status), 'history search requires authentication');
   assert.deepEqual(bound.body.session.conversation, conversation, 'creation must retain the optional conversation');
   const replay = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex',
     conversation: { ...conversation, target: { chatId: 'bound-chat', topicId: 'bound-thread' } } });
