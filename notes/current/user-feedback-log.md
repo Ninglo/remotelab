@@ -758,6 +758,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: classify replies by the message's `parent_id`, not the chat's topic mode; retain the recipient read-state check and baseline existing messages when changing the filter so old items are not presented as new.
 - Follow-up: verify a new unread-to-read transition for each message class and an upcoming real calendar event. Message read status alone does not expose the client's exact notification badge.
 
+### 2026-09-26 — 副屏未读漏报与主题使用埋点
+
+- Source: direct user report of one Feishu unread message missing from the display and a request to learn which display themes people use.
+- Observed friction or ask: compare the prior evening's and today's notification logic, keep genuinely unread ordinary messages visible, and record theme use without adding a website report.
+- Product implication: a known message can still be unread; a newer read message or outgoing reply in the same group must not clear it. Track theme selections separately from successful display applications, with only a pseudonymous Person key and theme ID in a private local event log.
+- Follow-up: verify a real unread-to-read transition and inspect the private theme event log after an authenticated selection and application. Report aggregate theme use only when requested.
+
 ### 2026-09-26 — LangSmith 链接必须定位到对应 Session
 
 - Source: direct user report after following a Session's LangSmith entry.

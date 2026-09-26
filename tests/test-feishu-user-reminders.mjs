@@ -148,25 +148,33 @@ try {
   messageIds = ['reply', ...messageIds];
   clock += 5001;
   created.set('reply', clock);
-  assert.equal((await service.summary('person_a')).newMessages, 0, 'a reply in the same chat clears its alert');
+  assert.equal((await service.summary('person_a')).newMessages, 1,
+    'replying in the same chat does not mark a still-unread message as read');
   messageIds = ['six', ...messageIds];
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 1, 'an older reply does not clear a later message');
+  assert.equal((await service.summary('person_a')).newMessages, 2);
   messageIds = messageIds.filter((id) => id !== 'reply');
   clock += 5001;
-  assert.equal((await service.summary('person_a')).newMessages, 1);
+  assert.equal((await service.summary('person_a')).newMessages, 2);
   clock += 30_001;
-  assert.equal((await service.summary('person_a')).newMessages, 1, 'an arrival remains visible until this display acknowledges it');
+  assert.equal((await service.summary('person_a')).newMessages, 2, 'arrivals remain visible until individually read or dismissed');
   const persistent = await service.summary('person_a');
   assert.equal(persistent.readStateAvailable, true);
-  assert.equal((await service.acknowledge('person_a', persistent.observedAt)).cleared, 1);
-  assert.equal((await service.summary('person_a')).newMessages, 0);
+  assert.equal((await service.acknowledge('person_a', persistent.observedAt)).cleared, 2);
+  assert.equal((await service.summary('person_a')).newMessages, 0, 'dismissed unread messages do not reappear');
   messageIds = ['seven', ...messageIds];
   clock += 5001;
   assert.equal((await service.summary('person_a')).newMessages, 1);
   readIds.add('om_seven');
   clock += 5001;
   assert.equal((await service.summary('person_a')).newMessages, 0, 'reading in Feishu clears the prompt without a display acknowledgement');
+  readIds.delete('om_seven');
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 1,
+    'a known message that is currently unread must be restored to the reminder feed');
+  readIds.add('om_seven');
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 0);
   messageIds = ['eight', ...messageIds];
   readStatusFailure = true;
   clock += 5001;
@@ -237,8 +245,21 @@ try {
   created.set('frontier-new', clock + 10_002);
   readIds.add('om_frontier-new');
   clock += 10_002;
-  assert.equal((await service.summary('person_a')).newMessages, 0,
-    'a newer read message in an ordinary chat resolves an older false read-status result');
+  const olderUnread = await service.summary('person_a');
+  assert.equal(olderUnread.newMessages, 1,
+    'a newer read message in the same group cannot clear an older unread message');
+  assert.equal((await service.acknowledge('person_a', olderUnread.observedAt)).cleared, 1);
+  messageIds = ['groupknown', ...messageIds];
+  readIds.add('om_groupknown');
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 0);
+  readIds.delete('om_groupknown');
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 1,
+    'a known ordinary group message must be restored if its own receipt is unread');
+  readIds.add('om_groupknown');
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 0);
   const notifications = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-notifications.json'), 'utf8'));
   assert.equal(notifications.people.person_a.pending.length, 0);
   assert.equal((await stat(join(dir, 'display-private', 'feishu-notifications.json'))).mode & 0o777, 0o600);
@@ -246,7 +267,7 @@ try {
   const saved = join(dir, 'display-private', 'feishu-reminders.json');
   assert.equal((await stat(saved)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(saved, 'utf8')).people.person_a.token.openId, 'ou_expected');
-  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 52);
+  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 62);
   const upgrade = await service.begin('person_a');
   assert.equal(upgrade.connected, true, 'message access remains available during calendar authorization');
   assert.equal(upgrade.calendarConnected, false);
@@ -295,7 +316,7 @@ try {
   const afterReconnect = JSON.parse(await readFile(join(dir, 'display-private', 'feishu-notifications.json'), 'utf8')).people.person_a;
   assert.equal(afterReconnect.reconciled.filter((item) => item.reason === 'reconnect_backfill').length, 2,
     'backfill stays in the private audit with Feishu read-status evidence');
-  assert(afterReconnect.reconciled.every((item) => item.apiIsRead === false));
+  assert(afterReconnect.reconciled.filter((item) => item.reason === 'reconnect_backfill').every((item) => item.apiIsRead === false));
   messageIds = ['post-reconnect', ...messageIds];
   clock += 5001;
   created.set('post-reconnect', clock);

@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { readBody } from '../lib/utils.mjs';
+import { appliedThemeFromPayload, recordDisplayTheme, validDisplayTheme } from './display-theme-analytics.mjs';
 
 const publicPrefix = '/display';
 
@@ -99,6 +100,28 @@ function publicDisplayPath(pathname, method) {
 }
 
 export async function handleDisplayPublicRoutes({ req, res, pathname, writeJson }) {
+  if (pathname === '/display/theme-selection' && req.method === 'POST') {
+    try {
+      const config = await studioPreviewConfig();
+      if (!config.baseUrl || !config.personId) { writeJson(res, 503, { error: '副屏预览通道未配置。' }); return true; }
+      const forwarded = forwardedOriginHeaders(req);
+      const origin = singleHeader(req.headers.origin);
+      if (origin !== `${forwarded['X-Forwarded-Proto']}://${forwarded['X-Forwarded-Host']}`) { writeJson(res, 403, { error: '请求来源不符。' }); return true; }
+      const authorization = singleHeader(req.headers.authorization);
+      if (!/^Bearer [a-f0-9]{64}$/.test(authorization)) { writeJson(res, 401, { error: '副屏预览专属链接无效。' }); return true; }
+      const verified = await fetch(`${config.baseUrl}/api/paired-device`, {
+        headers: { Authorization: authorization, 'X-Preview-Person-Id': config.personId }, signal: AbortSignal.timeout(10_000),
+      });
+      if (!verified.ok) { writeJson(res, 401, { error: '副屏预览专属链接无效。' }); return true; }
+      const theme = JSON.parse(await readBody(req, 1024))?.theme;
+      if (!validDisplayTheme(theme)) { writeJson(res, 400, { error: '未知副屏主题。' }); return true; }
+      await recordDisplayTheme({ personId: config.personId, theme, action: 'selected' });
+      writeJson(res, 202, { ok: true });
+    } catch (error) {
+      writeJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 503, { error: '主题选择暂时无法记录。' });
+    }
+    return true;
+  }
   if ((pathname === '/display/studio-preview' && req.method === 'POST') || (pathname === '/display/studio-preview/status' && req.method === 'GET')) {
     try {
       const config = await studioPreviewConfig();
@@ -116,6 +139,11 @@ export async function handleDisplayPublicRoutes({ req, res, pathname, writeJson 
         ...(body !== undefined ? { body } : {}),
         signal: AbortSignal.timeout(req.method === 'POST' ? 60_000 : 10_000),
       });
+      if (response.ok && body !== undefined) {
+        const theme = appliedThemeFromPayload(body);
+        if (theme) await recordDisplayTheme({ personId: config.personId, theme, action: 'applied' })
+          .catch((error) => console.warn(`[display-theme] Failed to record applied theme: ${error?.code || 'unavailable'}`));
+      }
       await sendProxyResponse(res, response);
     } catch (error) {
       writeJson(res, error?.code === 'BODY_TOO_LARGE' ? 413 : 503, { error: error?.code === 'BODY_TOO_LARGE' ? '画面或图片超过 9 MB。' : '副屏预览服务暂时不可用。' });
@@ -140,6 +168,17 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
   const personId = trimString(authSession?.personId);
   if (!personId) return false;
   try {
+    if (pathname === '/api/display/theme-selection' && req.method === 'POST') {
+      const forwarded = forwardedOriginHeaders(req);
+      if (trimString(req.headers.origin) !== `${forwarded['X-Forwarded-Proto']}://${forwarded['X-Forwarded-Host']}`) {
+        writeJson(res, 403, { error: '请求来源不符。' }); return true;
+      }
+      const theme = JSON.parse(await readBody(req, 1024))?.theme;
+      if (!validDisplayTheme(theme)) { writeJson(res, 400, { error: '未知副屏主题。' }); return true; }
+      await recordDisplayTheme({ personId, theme, action: 'selected' });
+      writeJson(res, 202, { ok: true });
+      return true;
+    }
     if (pathname === '/api/display/status' && req.method === 'GET') {
       await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/status`, { authenticated: true });
       return true;
@@ -202,6 +241,11 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
         body: raw,
         signal: AbortSignal.timeout(60_000),
       });
+      if (response.ok) {
+        const theme = appliedThemeFromPayload(raw);
+        if (theme) await recordDisplayTheme({ personId, theme, action: 'applied' })
+          .catch((error) => console.warn(`[display-theme] Failed to record applied theme: ${error?.code || 'unavailable'}`));
+      }
       await sendProxyResponse(res, response);
       return true;
     }

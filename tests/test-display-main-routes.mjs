@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -119,6 +119,7 @@ const sidecar = createServer(async (req, res) => {
 const sidecarPort = await listen(sidecar);
 process.env.REMOTELAB_DISPLAY_INTERNAL_BASE_URL = `http://127.0.0.1:${sidecarPort}`;
 process.env.REMOTELAB_DISPLAY_ADMIN_TOKEN_FILE = adminFile;
+process.env.REMOTELAB_CONFIG_DIR = root;
 const previewTokenFile = join(root, 'preview-token');
 await writeFile(previewTokenFile, 'preview-secret\n');
 let previewCall = null;
@@ -126,6 +127,9 @@ let previewDeleteCall = null;
 const previewServer = createServer(async (req, res) => {
   let body = '';
   for await (const chunk of req) body += chunk;
+  if (!['Bearer preview-secret', `Bearer ${'a'.repeat(64)}`].includes(req.headers.authorization)) {
+    json(res, 401, { error: 'bad preview token' }); return;
+  }
   if (req.method === 'DELETE') {
     previewDeleteCall = { authorization: req.headers.authorization, personId: req.headers['x-preview-person-id'] };
     json(res, 200, { ok: true, configured: false });
@@ -302,6 +306,48 @@ try {
   });
   assert.equal(publicStudio.response.status, 200);
   assert.deepEqual(previewCall, { authorization: `Bearer ${privateToken}`, personId: 'person-a', body: '{"version":14}' });
+
+  const anonymousTheme = await requestJson(`${base}/api/display/theme-selection`, {
+    method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '{"theme":"mist"}',
+  });
+  assert.equal(anonymousTheme.response.status, 401);
+  const wrongOriginTheme = await requestJson(`${base}/api/display/theme-selection`, {
+    method: 'POST', headers: { Origin: 'https://unrelated.example', 'X-Test-Person': 'person-a' }, body: '{"theme":"mist"}',
+  });
+  assert.equal(wrongOriginTheme.response.status, 403);
+  const invalidTheme = await requestJson(`${base}/api/display/theme-selection`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a' }, body: '{"theme":"invented"}',
+  });
+  assert.equal(invalidTheme.response.status, 400);
+  const selected = await requestJson(`${base}/api/display/theme-selection`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a' }, body: '{"theme":"mist"}',
+  });
+  assert.equal(selected.response.status, 202);
+  const publicDeniedTheme = await requestJson(`${base}/display/theme-selection`, {
+    method: 'POST', headers: { Origin: base, Authorization: `Bearer ${'b'.repeat(64)}` }, body: '{"theme":"rose"}',
+  });
+  assert.equal(publicDeniedTheme.response.status, 401);
+  const publicSelected = await requestJson(`${base}/display/theme-selection`, {
+    method: 'POST', headers: { Origin: base, Authorization: `Bearer ${privateToken}` }, body: '{"theme":"rose"}',
+  });
+  assert.equal(publicSelected.response.status, 202);
+  const appliedPayload = JSON.stringify({ version: 21, state: { theme: 'midnight' } });
+  const applied = await requestJson(`${base}/api/display/studio-preview`, {
+    method: 'POST', headers: { Origin: base, 'X-Test-Person': 'person-a' }, body: appliedPayload,
+  });
+  assert.equal(applied.response.status, 200);
+  const publicApplied = await requestJson(`${base}/display/studio-preview`, {
+    method: 'POST', headers: { Origin: base, Authorization: `Bearer ${privateToken}` }, body: appliedPayload,
+  });
+  assert.equal(publicApplied.response.status, 200);
+  const themeFile = join(root, 'display-theme-events.jsonl');
+  const themeEvents = (await readFile(themeFile, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(themeEvents.map(({ action, theme }) => [action, theme]), [
+    ['selected', 'mist'], ['selected', 'rose'], ['applied', 'midnight'], ['applied', 'midnight'],
+  ]);
+  assert.equal(new Set(themeEvents.map((event) => event.personHash)).size, 1);
+  assert(!JSON.stringify(themeEvents).includes('person-a'), 'analytics excludes raw Person IDs and editor payloads');
+  assert.equal((await stat(themeFile)).mode & 0o777, 0o600);
 
   assert.equal(calls.find((call) => call.path === '/install.sh').authorization, '');
   assert.equal(calls.find((call) => call.path === '/v1/enrollments').body, JSON.stringify({ personId: 'person-a' }));
