@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-26 — Remove automatic Agent Case links from replies
+
+- User request: retire the Agent Case link appended below assistant replies.
+- Implementation: reply publication and connector formatting no longer generate or append this footer, including failed and cancelled task notifications. Previously issued authenticated case URLs can still resolve for historical inspection.
+- Validation: `tests/test-langsmith-case-link.mjs` covers publication and connector formatting with legacy case metadata, alongside the existing snapshot lookup checks.
+
 ### 2026-09-23 — Auto belongs before model selection; Quick can be an internal tier
 
 - Observed friction: the composer puts `Auto (Jev)` inside the model list while separately offering Standard and Quick, making the selected runtime unclear even though the first-turn route already persists a concrete model and Effort.
