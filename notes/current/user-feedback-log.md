@@ -21,6 +21,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-27 — Login state must survive a failed session-file write
+
+- Observed friction: a user needed to sign in again every day even though RemoteLab issues 30-day cookies; the login page has no separate “remember me” option.
+- Cause: while the disk was full, direct writes truncated `auth-sessions.json`. Service restarts then failed to parse it and discarded existing browser sessions. Repeated service-token logins also grew the file rapidly.
+- Implementation: write a complete temporary file before replacing the session file, serialize writes, and reuse one service-token session. Keep the existing 30-day browser cookie behavior.
+- Validation: isolated persistence and HTTP tests cover a failed write preserving the prior file, write ordering, service-session deduplication, and repeated service-token login.
+
 ### 2026-09-26 — Select SOTA with a task shortcut in chat
 
 - Observed friction: selecting the strongest tier takes a separate `/tier sota` command, while Quick already accepts a task directly.

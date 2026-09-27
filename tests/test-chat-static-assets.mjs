@@ -683,6 +683,18 @@ async function main() {
     const serviceLogin = await request(port, 'GET', `/?token=${encodeURIComponent(serviceToken)}`, null, { Cookie: '' });
     assert.equal(serviceLogin.status, 302);
     const serviceCookie = String(serviceLogin.headers['set-cookie']?.[0] || '').split(';')[0];
+    const repeatedServiceLogin = await request(port, 'GET', `/?token=${encodeURIComponent(serviceToken)}`, null, { Cookie: '' });
+    assert.equal(repeatedServiceLogin.status, 302);
+    assert.equal(
+      String(repeatedServiceLogin.headers['set-cookie']?.[0] || '').split(';')[0],
+      serviceCookie,
+      'repeated service-token login should reuse its persisted session',
+    );
+    assert.equal(
+      Object.values(JSON.parse(readFileSync(sessionsFile, 'utf8'))).filter((session) => session.authKind === 'service').length,
+      1,
+      'service-token polling should not grow the session file',
+    );
     const serviceCookieCreated = await request(port, 'POST', '/api/sessions', {
       tool: 'codex',
       name: 'System cookie automation session',

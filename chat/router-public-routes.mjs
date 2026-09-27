@@ -7,6 +7,7 @@ import {
   authenticateTokenAsync,
   authenticatePasswordIdentityAsync,
   createAuthenticatedSession,
+  getOrCreateAuthenticatedSessionToken,
   generateToken,
   parseCookies,
   getAuthSession,
@@ -241,9 +242,8 @@ if (queryToken) {
   const authenticatedIdentity = await authenticateTokenAsync(queryToken);
   if (authenticatedIdentity) {
     clearFailedAttempts(ip);
-    const sessionToken = generateToken();
-    sessions.set(sessionToken, createAuthenticatedSession(authenticatedIdentity));
-    await saveAuthSessionsAsync();
+    const { token: sessionToken, created } = getOrCreateAuthenticatedSessionToken(authenticatedIdentity);
+    if (created) await saveAuthSessionsAsync();
     const redirectParams = new URLSearchParams();
     for (const [key, value] of Object.entries(parsedUrl.query || {})) {
       if (key === 'token') continue;
@@ -287,9 +287,8 @@ if (pathname === '/login' && req.method === 'POST') {
   }
   if (authenticatedIdentity) {
     clearFailedAttempts(ip);
-    const sessionToken = generateToken();
-    sessions.set(sessionToken, createAuthenticatedSession(authenticatedIdentity));
-    await saveAuthSessionsAsync();
+    const { token: sessionToken, created } = getOrCreateAuthenticatedSessionToken(authenticatedIdentity);
+    if (created) await saveAuthSessionsAsync();
     res.writeHead(302, { 'Location': nextPath, 'Set-Cookie': setCookie(sessionToken) });
   } else {
     recordFailedAttempt(ip);
