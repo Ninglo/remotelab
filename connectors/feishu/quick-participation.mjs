@@ -113,13 +113,17 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
     const handoffDecision = handoff?.choice === 'offer' && Number.isFinite(offerProbability)
       && offerProbability >= 0.9 ? 'offer' : 'none';
     const silentReaction = result?.answers?.silentReaction;
+    const reactionProbability = Number(silentReaction?.probabilities?.[silentReaction?.choice]);
+    const noReactionProbability = Number(silentReaction?.probabilities?.none);
     const reactionChoice = Object.hasOwn(SILENT_REACTION_EMOJI, silentReaction?.choice)
-      && Number(silentReaction?.probabilities?.[silentReaction.choice]) >= 0.8
+      && reactionProbability >= 0.5
+      && reactionProbability - noReactionProbability >= 0.03
       ? silentReaction.choice : 'none';
     return {
       decision: uncertain ? 'unknown' : decision,
       handoffDecision,
       silentReaction: uncertain || decision !== 'silent' ? 'none' : reactionChoice,
+      silentReactionProbability: Number.isFinite(reactionProbability) ? reactionProbability : null,
       handoffProbability: Number.isFinite(offerProbability) ? offerProbability : null,
       ...(uncertain ? { reason: 'low_support' } : {}),
       confidence: Number.isFinite(Number(answer.confidence)) ? Number(answer.confidence) : null,
@@ -261,6 +265,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
         reactionMode,
         decision: verdict.decision, reason: verdict.reason || '', confidence: verdict.confidence ?? null,
         silentReaction: verdict.silentReaction || 'none',
+        silentReactionProbability: verdict.silentReactionProbability ?? null,
         handoffDecision: verdict.handoffDecision || 'none',
         handoffProbability: verdict.handoffProbability ?? null,
         probabilities: verdict.probabilities || null, model: verdict.model || '',

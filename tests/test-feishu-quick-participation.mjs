@@ -105,6 +105,20 @@ try {
     } }) }),
   });
   assert.equal(praise.silentReaction, 'thanks');
+  const modestPraise = await classifyFeishuQuickParticipation('assistant: 完成了。\nuser: 谢谢你！', {
+    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+      participation: { choice: 'silent', probabilities: { reply: 0, silent: 1 } },
+      silentReaction: { choice: 'thanks', probabilities: { thanks: 0.52, none: 0.47, seen: 0.01 } },
+    } }) }),
+  });
+  assert.equal(modestPraise.silentReaction, 'thanks');
+  const ambiguousPraise = await classifyFeishuQuickParticipation('assistant: 完成了。\nuser: 嗯', {
+    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+      participation: { choice: 'silent', probabilities: { reply: 0, silent: 1 } },
+      silentReaction: { choice: 'thanks', probabilities: { thanks: 0.51, none: 0.49 } },
+    } }) }),
+  });
+  assert.equal(ambiguousPraise.silentReaction, 'none');
   assert.deepEqual(SILENT_REACTION_EMOJI, {
     thanks: 'THANKS', seen: 'GLANCE', surprise: 'WOW', puzzled: 'WHAT',
     setback: 'DULL', teary: 'TEARS',
