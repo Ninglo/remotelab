@@ -11,7 +11,7 @@ try {
     await import('../connectors/feishu/quick-participation.mjs');
   const config = {
     storageDir: home, appId: 'self-app',
-    groups: { pilot: { participationMode: 'ambient', quickReactions: true } },
+    groups: { pilot: { participationMode: 'ambient', quickReactions: true, contextReactions: true } },
     responsePolicy: { group: 'mention_only' },
   };
   const runtime = { config, botIdentity: { openId: 'bot' } };
@@ -26,6 +26,7 @@ try {
     classify: async context => {
       inputs.push(context);
       return { decision: inputs.length === 1 ? 'silent' : 'reply',
+        silentReaction: 'seen',
         handoffDecision: inputs.length === 2 ? 'offer' : 'none', confidence: 0.9, latencyMs: 50 };
     },
     react: async (summary, emojiType) => reactions.push([summary.messageId, emojiType]),
@@ -97,6 +98,13 @@ try {
   });
   assert.equal(handoff.handoffDecision, 'offer');
   assert.equal(weakSilent.handoffDecision, 'none');
+  const praise = await classifyFeishuQuickParticipation('A: 你做得很好，谢谢', {
+    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+      participation: { choice: 'silent', probabilities: { reply: 0.05, silent: 0.95 } },
+      silentReaction: { choice: 'thanks', probabilities: { thanks: 0.92, seen: 0.03, none: 0.05 } },
+    } }) }),
+  });
+  assert.equal(praise.silentReaction, 'thanks');
   console.log('test-feishu-quick-participation: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

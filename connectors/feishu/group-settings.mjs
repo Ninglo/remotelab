@@ -20,12 +20,14 @@ export function normalizeFeishuGroups(value = {}) {
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {
     if (!chatId.trim() || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid Feishu group settings');
     for (const key of Object.keys(raw)) {
-      if (!['responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+      if (!['responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'contextReactions', 'reactionFeedback'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
     }
     if (raw.responseMode !== undefined && !['all', 'mention_only'].includes(raw.responseMode)) throw new Error('Invalid group responseMode');
     if (raw.replyMode !== undefined && !['inline', 'thread'].includes(raw.replyMode)) throw new Error('Invalid group replyMode');
     if (raw.participationMode !== undefined && raw.participationMode !== 'ambient') throw new Error('Invalid group participationMode');
     if (raw.quickReactions !== undefined && typeof raw.quickReactions !== 'boolean') throw new Error('Invalid group quickReactions');
+    if (raw.contextReactions !== undefined && typeof raw.contextReactions !== 'boolean') throw new Error('Invalid group contextReactions');
+    if (raw.reactionFeedback !== undefined && typeof raw.reactionFeedback !== 'boolean') throw new Error('Invalid group reactionFeedback');
     if (raw.systemPrompt !== undefined && typeof raw.systemPrompt !== 'string') throw new Error('Group systemPrompt must be a string');
     return [chatId, { ...raw }];
   }));
