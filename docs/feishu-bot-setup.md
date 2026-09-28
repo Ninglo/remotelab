@@ -451,9 +451,12 @@ For groups with `reactionFeedback: true`, other human reactions on this Bot's
 replies are recorded as non-publishing feedback in the existing Session. A
 reaction on someone else's message is ignored. These signals do not change
 mute state or automatically become lasting instructions. Groups with
-`contextReactions: true` and `quickReactions: true` use a contextual silent
-reaction: clear praise or thanks gets `THUMBSUP`, a direct informational
-update gets `EatingFood`, and unrelated or ambiguous discussion gets none.
+`contextReactions: true` and `quickReactions: true` choose among `THANKS`
+(direct praise), `GLANCE` (a direct update), `WOW` (delightful surprise),
+`WHAT` (a lighthearted unexpected twist), `DULL` (the Bot's own minor
+mistake), and `TEARS` (playful or touching emotion). Unrelated, serious, or
+ambiguous discussion gets no reaction. The temporary `THINKING` reaction is
+removed after this contextual decision; it is not a final response.
 
 For reaction mute, the Feishu app must subscribe to
 `im.message.reaction.created_v1` ("新增消息表情回复") and publish that app
