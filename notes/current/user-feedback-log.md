@@ -816,6 +816,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: bind each group mainline to a service-owned Session, gate browser writes at the server, choose delivery from the current request, and keep group checkpoints out of personal memory. Save incremental nightly review state and retain source message IDs.
 - Follow-up: verify live chat IDs, first-message cutover, reply destination, read-only UI/API behavior, nightly checkpoint, and actual work handoff before extending the pilot.
 
+### 2026-09-28 — 飞书群聊入口应使用用户认识的名称
+
+- Source: direct user feedback while viewing the first group Session in the sidebar.
+- Observed friction or ask: the sidebar showed an opaque Feishu chat ID above the group name. Name the section “飞书群聊” so people can recognize it at a glance.
+- Product implication: keep chat IDs for routing and diagnostics, but show a plain section label and each group's name in the navigation.
+- Follow-up: verify the label after the browser loads the latest frontend files; an already open tab may still display its previous sidebar code until refreshed.
+
 ### YYYY-MM-DD — short title
 
 - Source:
