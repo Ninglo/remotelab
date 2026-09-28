@@ -205,6 +205,11 @@ export function createFeishuQuickParticipationPilot(runtime, {
     const decision = classify(contextFor(summary, recent));
     return (async () => {
       const verdict = await decision.catch(() => ({ decision: 'unknown', reason: 'request_error' }));
+      if (verdict.handoffDecision === 'offer' && typeof onHandoffCandidate === 'function') {
+        void Promise.resolve().then(() => onHandoffCandidate(summary)).catch(error => {
+          console.warn(`[feishu-quick-participation] handoff candidate ${summary.messageId}: ${error?.message || error}`);
+        });
+      }
       let statusReaction = 'skipped';
       let statusLatencyMs = null;
       // A handoff nomination needs a second source check. Do not mark it as
@@ -218,11 +223,6 @@ export function createFeishuQuickParticipationPilot(runtime, {
         statusLatencyMs = Math.round(performance.now() - started);
       }
       const readReceipt = await readReaction;
-      if (verdict.handoffDecision === 'offer' && typeof onHandoffCandidate === 'function') {
-        void Promise.resolve().then(() => onHandoffCandidate(summary)).catch(error => {
-          console.warn(`[feishu-quick-participation] handoff candidate ${summary.messageId}: ${error?.message || error}`);
-        });
-      }
       const record = {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
         reactionMode,
