@@ -39,6 +39,7 @@ let inThinkingBlock = false;
 
 // The Store owns the origin selection; localStorage only restores it on startup.
 function getCurrentSourceFilter() {
+  if (!sourceFilterSelect) return FILTER_ALL_VALUE;
   return normalizeSourceFilter(getActiveSourceFilterValue());
 }
 
@@ -413,9 +414,7 @@ function syncSidebarFiltersVisibility(showingSessions = null) {
   const hasVisibleControls = controls.length === 0
     ? true
     : controls.some((control) => isSidebarFilterControlVisible(control));
-  const visible = resolvedShowingSessions && hasVisibleControls
-    && (typeof getCurrentPersonFilter !== "function"
-      || getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE);
+  const visible = resolvedShowingSessions && hasVisibleControls;
   sidebarFilters.classList.toggle("hidden", !visible);
 }
 
@@ -434,6 +433,13 @@ function renderPersonFilterOptions() {
       ? t("sidebar.filter.mine")
       : person.name;
     entries.push([person.id, `${label} (${count})`]);
+  }
+  const groupCount = getSessionCountForPersonFilter(GROUP_FEED_FILTER_VALUE);
+  if (groupCount > 0 || selected === GROUP_FEED_FILTER_VALUE) {
+    entries.push([
+      GROUP_FEED_FILTER_VALUE,
+      `${t("sidebar.groupConversations")} (${groupCount})`,
+    ]);
   }
   const unassignedCount = getSessionCountForPersonFilter(PERSON_FILTER_UNASSIGNED_VALUE);
   if (unassignedCount > 0 || selected === PERSON_FILTER_UNASSIGNED_VALUE) {
@@ -517,16 +523,38 @@ if (sourceFilterSelect) {
 function commitPersonFilterSelection() {
   const selected = personFilterSelect?.value || FILTER_ALL_VALUE;
   if (selected === getCurrentPersonFilter()) return;
-  setChatActivePersonFilter(selected);
-  localStorage.setItem(ACTIVE_PERSON_FILTER_STORAGE_KEY, selected);
+  const current = typeof getCurrentSession === "function" ? getCurrentSession() : null;
+  if (current?.groupFeed !== true && current?.id
+    && getSessionPersonId(current) === currentPerson?.id) {
+    lastMineSessionId = current.id;
+  }
+  setPersonScope(selected);
+  const stillVisible = current && current.archived !== true && matchesCurrentFilters(current);
+  if (stillVisible) return;
+  const previousMine = selected === currentPerson?.id && lastMineSessionId
+    ? getActiveSessions().find((session) => session.id === lastMineSessionId && matchesCurrentFilters(session))
+    : null;
+  const target = previousMine || getLatestActiveSessionForCurrentFilters();
+  if (target) {
+    attachSession(target.id, target);
+    return;
+  }
+  if (typeof setChatCurrentSession === "function") {
+    setChatCurrentSession(null, { hasAttachedSession: false });
+  } else {
+    currentSessionId = null;
+    hasAttachedSession = false;
+  }
+  if (typeof resetAttachedSessionRenderState === "function") resetAttachedSessionRenderState();
+  if (typeof showEmpty === "function") showEmpty();
+  if (typeof renderHeaderSessionTitle === "function") renderHeaderSessionTitle("");
+  if (typeof syncBrowserState === "function") syncBrowserState({ sessionId: null, tab: "sessions" });
   renderSessionList();
-  renderPersonFilterOptions();
-  renderSourceFilterOptions();
 }
 
 let lastMineSessionId = null;
 
-function setGroupChatScope(personFilter) {
+function setPersonScope(personFilter) {
   setChatActivePersonFilter(personFilter);
   localStorage.setItem(ACTIVE_PERSON_FILTER_STORAGE_KEY, personFilter);
   sessionSearchQuery = "";
@@ -535,72 +563,6 @@ function setGroupChatScope(personFilter) {
   renderSourceFilterOptions();
   renderSessionList();
 }
-
-function syncGroupChatNavigation() {
-  const showingSessions = (typeof getActiveSidebarTabValue === "function"
-    ? getActiveSidebarTabValue() : activeTab) === "sessions";
-  const inGroupChats = getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE;
-  if (typeof groupChatsNavBtn !== "undefined" && groupChatsNavBtn) {
-    groupChatsNavBtn.hidden = !showingSessions || inGroupChats
-      || !getActiveSessions().some((session) => session.groupFeed === true);
-  }
-  if (typeof backToMineNavBtn !== "undefined" && backToMineNavBtn) {
-    backToMineNavBtn.hidden = !showingSessions || !inGroupChats;
-  }
-  if (typeof headerReturnToMineBtn !== "undefined" && headerReturnToMineBtn) {
-    headerReturnToMineBtn.hidden = !showingSessions || !inGroupChats;
-  }
-  if (typeof sortSessionListBtn !== "undefined" && sortSessionListBtn) {
-    sortSessionListBtn.classList.toggle("hidden", inGroupChats);
-  }
-}
-
-function openGroupChats() {
-  if (getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE) {
-    const current = typeof getCurrentSession === "function" ? getCurrentSession() : null;
-    if (current && current.groupFeed !== true && getSessionPersonId(current) === currentPerson?.id) {
-      lastMineSessionId = current.id;
-    }
-    setGroupChatScope(GROUP_FEED_FILTER_VALUE);
-  }
-  if (typeof switchTab === "function") switchTab("sessions");
-  const current = typeof getCurrentSession === "function" ? getCurrentSession() : null;
-  const target = current?.groupFeed === true ? current
-    : getActiveSessions().find((session) => session.groupFeed === true);
-  if (target && target.id !== currentSessionId) attachSession(target.id, target);
-  else renderSessionList();
-  if (!isDesktop) closeSidebarFn();
-}
-
-function returnToMineFromGroupChats() {
-  const mineFilter = currentPerson?.id || FILTER_ALL_VALUE;
-  setGroupChatScope(mineFilter);
-  if (typeof switchTab === "function") switchTab("sessions");
-  const previous = lastMineSessionId
-    ? getActiveSessions().find((session) => session.id === lastMineSessionId && matchesCurrentFilters(session))
-    : null;
-  const target = previous || getLatestActiveSessionForCurrentFilters();
-  if (target) {
-    attachSession(target.id, target);
-  } else {
-    if (typeof setChatCurrentSession === "function") {
-      setChatCurrentSession(null, { hasAttachedSession: false });
-    } else {
-      currentSessionId = null;
-      hasAttachedSession = false;
-    }
-    if (typeof resetAttachedSessionRenderState === "function") resetAttachedSessionRenderState();
-    if (typeof showEmpty === "function") showEmpty();
-    renderHeaderSessionTitle("");
-    syncBrowserState({ sessionId: null, tab: "sessions" });
-    renderSessionList();
-  }
-  if (!isDesktop) closeSidebarFn();
-}
-
-if (typeof groupChatsNavBtn !== "undefined") groupChatsNavBtn?.addEventListener("click", openGroupChats);
-if (typeof backToMineNavBtn !== "undefined") backToMineNavBtn?.addEventListener("click", returnToMineFromGroupChats);
-if (typeof headerReturnToMineBtn !== "undefined") headerReturnToMineBtn?.addEventListener("click", returnToMineFromGroupChats);
 
 if (personFilterSelect) {
   personFilterSelect.addEventListener("input", commitPersonFilterSelection);

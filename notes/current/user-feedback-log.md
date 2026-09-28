@@ -836,6 +836,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: show group histories under their own top-level navigation entry, exclude them from every Person's session list and counts, and provide a visible return to Mine both in the sidebar and beside the conversation title.
 - Follow-up: verify the two pilot groups appear only in the group area, personal counts stay unchanged, and return works on desktop and narrow screens.
 
+### 2026-09-28 — 群聊只占用现有会话归属选择器
+
+- Source: direct correction after seeing the extra group navigation, Space tabs and origin filter in the sidebar.
+- Observed friction or ask: keep only the existing Mine/Person selector in that area. Put “飞书群聊” beside the People in that selector, remove the extra group entry and return buttons, and avoid a special permission label in the group list.
+- Product implication: selecting a group or Person should show that scope's Sessions and give a direct way back through the same selector. Keep group Sessions out of personal counts and lists; do not create another navigation level for them.
+- Follow-up: verify switching Mine → group → Mine, the two pilot group names, no duplicate group heading or permission badge, and no leftover hidden origin or Space filter.
+
 ### YYYY-MM-DD — short title
 
 - Source:

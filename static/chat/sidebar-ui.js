@@ -146,7 +146,7 @@ async function createNewSessionShortcut({
   }
   if (typeof getCurrentPersonFilter === "function"
     && getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
-    setGroupChatScope(currentPerson?.id || FILTER_ALL_VALUE);
+    setPersonScope(currentPerson?.id || FILTER_ALL_VALUE);
   }
 
   const previousSessionId = currentSessionId;

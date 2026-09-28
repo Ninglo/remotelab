@@ -111,7 +111,6 @@ function renderSessionList() {
   sessionListRenderDepth += 1;
   try {
     sessionList.innerHTML = "";
-    if (typeof syncGroupChatNavigation === "function") syncGroupChatNavigation();
     renderSessionSpaceSwitcher();
     if (getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
       renderGroupFeedSection(getActiveSessions().filter((session) => session.groupFeed === true
@@ -193,17 +192,12 @@ function renderGroupFeedSection(activeSessions) {
       && matchesSearchQuery(session))
     : [];
   if (activeSessions.length === 0 && archivedSessions.length === 0) return;
-  const section = document.createElement("div");
-  section.className = "folder-group group-feed-section";
-  const header = document.createElement("div");
-  header.className = "folder-group-header";
-  header.innerHTML = `<span class="folder-name">${esc(t("sidebar.groupConversations"))}</span><span class="folder-count">${activeSessions.length + archivedSessions.length}</span>`;
   const items = document.createElement("div");
-  items.className = "folder-group-items";
+  items.className = "group-feed-items";
   for (const session of [...activeSessions, ...archivedSessions]) {
     const item = document.createElement("div");
     item.className = "session-item group-feed-item" + (session.id === currentSessionId ? " active" : "");
-    item.innerHTML = `<div class="session-item-info"><div class="session-item-name">${esc(getSessionDisplayName(session))}</div><div class="session-item-meta">${esc(session.archived === true ? t("status.archived") : t("sidebar.groupReadOnly"))}</div></div>`;
+    item.innerHTML = `<div class="session-item-info"><div class="session-item-name">${esc(getSessionDisplayName(session))}</div></div>`;
     item.addEventListener("click", () => {
       if (typeof switchTab === "function") switchTab("sessions");
       attachSession(session.id, session);
@@ -211,9 +205,7 @@ function renderGroupFeedSection(activeSessions) {
     });
     items.appendChild(item);
   }
-  section.appendChild(header);
-  section.appendChild(items);
-  sessionList.appendChild(section);
+  sessionList.appendChild(items);
 }
 
 function renderProjectsView(visibleSessions) {
@@ -470,10 +462,10 @@ function attachSession(id, session, { forceComposerFocus = false } = {}) {
     || session
     || { id };
   if (attachedSession.groupFeed === true && getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE) {
-    setGroupChatScope(GROUP_FEED_FILTER_VALUE);
+    setPersonScope(GROUP_FEED_FILTER_VALUE);
   } else if (attachedSession.groupFeed !== true && getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
     const personId = getSessionPersonId(attachedSession);
-    setGroupChatScope(personId === PERSON_FILTER_UNASSIGNED_VALUE ? FILTER_ALL_VALUE : personId);
+    setPersonScope(personId === PERSON_FILTER_UNASSIGNED_VALUE ? FILTER_ALL_VALUE : personId);
   }
   if (attachedSession.groupFeed !== true && getSessionPersonId(attachedSession) === currentPerson?.id) {
     lastMineSessionId = id;
@@ -486,7 +478,6 @@ function attachSession(id, session, { forceComposerFocus = false } = {}) {
     dispatchAction({ action: "attach", sessionId: id });
   }
   applyAttachedSessionState(id, attachedSession);
-  if (typeof syncGroupChatNavigation === "function") syncGroupChatNavigation();
   if (typeof stageSessionReviewedForAttachedSession === "function") {
     Promise.resolve(stageSessionReviewedForAttachedSession(attachedSession)).catch(() => {});
   }

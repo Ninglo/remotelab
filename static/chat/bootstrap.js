@@ -298,7 +298,6 @@ const queuedPanel = document.getElementById("queuedPanel");
 const msgInput = document.getElementById("msgInput");
 const sendBtn = document.getElementById("sendBtn");
 const headerTitle = document.getElementById("headerTitle");
-const headerReturnToMineBtn = document.getElementById("headerReturnToMineBtn");
 const refreshFrontendBtn = document.getElementById("refreshFrontendBtn");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
@@ -324,10 +323,6 @@ function renderHeaderSessionTitle(sessionName = "") {
   if (!headerTitle) return;
   renderedHeaderSessionName = typeof sessionName === "string" ? sessionName : "";
   const activeView = document.body?.dataset?.appView || "sessions";
-  if (headerReturnToMineBtn) {
-    headerReturnToMineBtn.hidden = activeView !== "sessions"
-      || !(typeof getCurrentSession === "function" && getCurrentSession()?.groupFeed === true);
-  }
   const workspaceLabel = activeView === "sessions"
     ? renderedHeaderSessionName
     : (typeof window.remotelabT === "function"
@@ -360,8 +355,6 @@ window.addEventListener("remotelab:localechange", () => {
 });
 const tabSessions = document.getElementById("tabSessions");
 const tabTasks = document.getElementById("tabTasks");
-const groupChatsNavBtn = document.getElementById("groupChatsNavBtn");
-const backToMineNavBtn = document.getElementById("backToMineNavBtn");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const personFilterSelect = document.getElementById("personFilterSelect");
@@ -1159,7 +1152,9 @@ let collapsedFolders = JSON.parse(
     "{}",
 );
 let sessionSearchQuery = "";
-let activeSessionSpace = localStorage.getItem(ACTIVE_SESSION_SPACE_STORAGE_KEY) || SESSION_SPACE_ALL_VALUE;
+let activeSessionSpace = sidebarSpaceSwitcher
+  ? (localStorage.getItem(ACTIVE_SESSION_SPACE_STORAGE_KEY) || SESSION_SPACE_ALL_VALUE)
+  : SESSION_SPACE_ALL_VALUE;
 
 try {
   localStorage.removeItem(LEGACY_SESSION_SEND_FAILURES_STORAGE_KEY);

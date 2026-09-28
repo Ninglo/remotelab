@@ -375,8 +375,8 @@ async function main() {
     assert.match(page.text, /<script src="chat\/init\.js(?:\?v=[^"]*)?"/);
     assert.doesNotMatch(page.text, /id="appFilterSelect"/);
     assert.doesNotMatch(page.text, /id="accountFilterSelect"/);
-    assert.match(page.text, /id="sourceFilterSelect"/);
-    assert.match(page.text, /id="sidebarSpaceSwitcher"/);
+    assert.doesNotMatch(page.text, /id="sourceFilterSelect"/);
+    assert.doesNotMatch(page.text, /id="sidebarSpaceSwitcher"/);
     assert.doesNotMatch(page.text, /id="sidebarViewSwitcher"/, 'sidebar should use the Space → Project hierarchy without a redundant view switcher');
     assert.doesNotMatch(page.text, /id="viewInbox"/);
     assert.doesNotMatch(page.text, /id="viewProjects"/);

@@ -32,9 +32,11 @@ function extractFunction(source, name) {
   throw new Error(`Cannot extract ${name}`);
 }
 
-for (const id of ['groupChatsNavBtn', 'backToMineNavBtn', 'headerReturnToMineBtn']) {
-  assert.match(template, new RegExp(`id="${id}"`));
+assert.match(template, /id="personFilterSelect"/);
+for (const id of ['groupChatsNavBtn', 'backToMineNavBtn', 'headerReturnToMineBtn', 'sourceFilterSelect', 'sidebarSpaceSwitcher']) {
+  assert.doesNotMatch(template, new RegExp(`id="${id}"`));
 }
+assert.doesNotMatch(extractFunction(list, 'renderGroupFeedSection'), /groupReadOnly/);
 
 const personal = { id: 'mine', initiatedByIdentityId: 'identity_mine' };
 const other = { id: 'other', initiatedByIdentityId: 'identity_other' };
@@ -44,21 +46,17 @@ let scope = 'person_mine';
 let current = personal;
 let attached = personal.id;
 const rendered = [];
-const navButton = () => ({ hidden: false, classList: { toggle() {} } });
+const personFilterSelect = { value: 'person_mine', children: [], replaceChildren(...entries) { this.children = entries; } };
 const context = vm.createContext({
   GROUP_FEED_FILTER_VALUE: '__group_feed__',
   FILTER_ALL_VALUE: '__all__',
   PERSON_FILTER_UNASSIGNED_VALUE: '__unassigned__',
   ACTIVE_PERSON_FILTER_STORAGE_KEY: 'person-filter',
-  activeTab: 'sessions',
   activeSessionSpace: '__all__',
   currentPerson: { id: 'person_mine' },
   currentSessionId: attached,
-  groupChatsNavBtn: navButton(),
-  backToMineNavBtn: navButton(),
-  headerReturnToMineBtn: navButton(),
-  sortSessionListBtn: navButton(),
-  sidebarSpaceSwitcher: { hidden: false },
+  personFilterSelect,
+  document: { activeElement: null, createElement: () => ({ value: '', textContent: '' }) },
   sessionList: { innerHTML: '' },
   sessionSearchQuery: '',
   sessionSearchInput: { value: '' },
@@ -68,6 +66,9 @@ const context = vm.createContext({
   localStorage: { setItem() {} },
   getCurrentPersonFilter: () => scope,
   setChatActivePersonFilter: (value) => { scope = value; },
+  getPeopleDirectory: () => [{ id: 'person_mine', name: 'Mine' }, { id: 'person_other', name: 'Other' }],
+  t: (key) => key,
+  syncSidebarFiltersVisibility() {},
   getSessionPersonId: (session) => session === personal ? 'person_mine'
     : session === other ? 'person_other' : '__unassigned__',
   getActiveSessions: () => active,
@@ -76,7 +77,6 @@ const context = vm.createContext({
   matchesSourceFilter: () => true,
   matchesSearchQuery: () => true,
   matchesSessionSpace: () => true,
-  renderPersonFilterOptions() {},
   renderSourceFilterOptions() {},
   renderSessionSpaceSwitcher() {},
   getVisiblePinnedSessions: () => [],
@@ -93,13 +93,15 @@ const context = vm.createContext({
   showEmpty() {},
   renderHeaderSessionTitle() {},
   syncBrowserState() {},
+  getLatestActiveSessionForCurrentFilters: () => active.find((session) => context.matchesCurrentFilters(session)) || null,
+  setChatCurrentSession: (id) => { attached = id; current = null; context.currentSessionId = id; },
+  resetAttachedSessionRenderState() {},
 });
 
 const names = [
   'getFilteredActiveSessions', 'matchesPersonFilter', 'matchesCurrentFilters',
   'getSessionCountForSourceFilter', 'getSessionCountForPersonFilter',
-  'setGroupChatScope', 'syncGroupChatNavigation', 'openGroupChats',
-  'returnToMineFromGroupChats',
+  'renderPersonFilterOptions', 'setPersonScope', 'commitPersonFilterSelection',
 ];
 vm.runInContext([
   'let lastMineSessionId = null;',
@@ -112,23 +114,23 @@ assert.equal(vm.runInContext('getSessionCountForPersonFilter("__all__")', contex
 assert.equal(vm.runInContext('getSessionCountForPersonFilter("__unassigned__")', context), 0);
 assert.equal(vm.runInContext('getSessionCountForSourceFilter("__all__")', context), 1);
 assert.equal(vm.runInContext('matchesPersonFilter(getActiveSessions()[0])', context), false);
+vm.runInContext('renderPersonFilterOptions()', context);
+assert.deepEqual(personFilterSelect.children.map((option) => option.value),
+  ['__all__', 'person_mine', 'person_other', '__group_feed__']);
 vm.runInContext('renderSessionList()', context);
 assert.deepEqual(rendered, [['personal', ['mine']], ['archive']]);
 
 rendered.length = 0;
-vm.runInContext('openGroupChats()', context);
+personFilterSelect.value = '__group_feed__';
+vm.runInContext('commitPersonFilterSelection()', context);
 assert.equal(scope, '__group_feed__');
 assert.equal(attached, 'group');
-assert.equal(context.backToMineNavBtn.hidden, false);
-assert.equal(context.headerReturnToMineBtn.hidden, false);
-assert.equal(context.groupChatsNavBtn.hidden, true);
 assert.deepEqual(rendered.at(-1), ['group', ['group']]);
 assert.equal(vm.runInContext('matchesPersonFilter(getActiveSessions()[0])', context), true);
 assert.equal(vm.runInContext('matchesCurrentFilters(getActiveSessions()[1])', context), false);
 
-vm.runInContext('returnToMineFromGroupChats()', context);
+personFilterSelect.value = 'person_mine';
+vm.runInContext('commitPersonFilterSelection()', context);
 assert.equal(scope, 'person_mine');
 assert.equal(attached, 'mine');
-assert.equal(context.groupChatsNavBtn.hidden, false);
-assert.equal(context.headerReturnToMineBtn.hidden, true);
 console.log('test-chat-group-feed-navigation: ok');

@@ -30,7 +30,6 @@
     <span class="header-btn-label sr-only" data-i18n="nav.open">Open navigation</span>
   </button>
   <h1 id="headerTitle"><span class="header-product-name">RemoteLab</span></h1>
-  <button class="header-return-mine-btn" id="headerReturnToMineBtn" type="button" data-i18n="sidebar.returnToMine" hidden>Back to Mine</button>
   <nav class="header-quick-actions" aria-label="Quick actions" data-i18n-aria-label="nav.quickActions">
     <button class="header-quick-action header-quick-action--primary" id="headerNewSessionBtn" type="button" title="New session" aria-label="New session" data-i18n-title="sidebar.newSession" data-i18n-aria-label="sidebar.newSession">
       <span data-icon="plus" aria-hidden="true"></span>
@@ -62,19 +61,9 @@
           <span class="sidebar-nav-icon" data-icon="tasks" aria-hidden="true"></span>
           <span data-i18n="nav.tasks">Automations</span>
         </button>
-        <button class="sidebar-nav-button" id="groupChatsNavBtn" type="button" hidden>
-          <span class="sidebar-nav-icon" data-icon="chat" aria-hidden="true"></span>
-          <span data-i18n="sidebar.groupConversations">飞书群聊</span>
-        </button>
-        <button class="sidebar-nav-button" id="backToMineNavBtn" type="button" hidden>
-          <span class="sidebar-nav-icon" aria-hidden="true">←</span>
-          <span data-i18n="sidebar.returnToMine">Back to Mine</span>
-        </button>
       </nav>
-      <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
       <div class="sidebar-filters" id="sidebarFilters">
         <select class="sidebar-filter-select" id="personFilterSelect" aria-label="Filter sessions by person" data-i18n-aria-label="sidebar.filter.person"></select>
-        <select class="sidebar-filter-select" id="sourceFilterSelect" aria-label="Filter sessions by origin" data-i18n-aria-label="sidebar.filter.origin"></select>
       </div>
       <div class="sidebar-list" id="sessionList"></div>
       <nav class="sidebar-action-nav" aria-label="Quick actions" data-i18n-aria-label="nav.quickActions">

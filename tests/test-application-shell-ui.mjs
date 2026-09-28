@@ -31,12 +31,15 @@ for (const id of ["newSessionBtn", "tabTasks", "sessionList", "tabSettings"]) {
   assert.match(sessionSidebarMarkup, new RegExp(`id="${id}"`), `${id} should live in the single Session sidebar`);
 }
 assert.ok(
-  sessionSidebarMarkup.indexOf('id="tabTasks"') < sessionSidebarMarkup.indexOf('id="sourceFilterSelect"')
-    && sessionSidebarMarkup.indexOf('id="sourceFilterSelect"') < sessionSidebarMarkup.indexOf('id="sessionList"')
+  sessionSidebarMarkup.indexOf('id="tabTasks"') < sessionSidebarMarkup.indexOf('id="personFilterSelect"')
+    && sessionSidebarMarkup.indexOf('id="personFilterSelect"') < sessionSidebarMarkup.indexOf('id="sessionList"')
     && sessionSidebarMarkup.indexOf('id="sessionList"') < sessionSidebarMarkup.indexOf('id="newSessionBtn"')
     && sessionSidebarMarkup.indexOf('id="newSessionBtn"') < sessionSidebarMarkup.indexOf('id="tabSettings"'),
   "the sidebar should keep Tasks at the top and place New Session beside Settings in the reachable bottom zone",
 );
+for (const id of ["groupChatsNavBtn", "backToMineNavBtn", "headerReturnToMineBtn", "sourceFilterSelect", "sidebarSpaceSwitcher"]) {
+  assert.doesNotMatch(template, new RegExp(`id="${id}"`), `${id} should not add another sidebar control`);
+}
 assert.doesNotMatch(sessionSidebarMarkup, /<a\b/, "workspace switching should use in-page controls rather than page links");
 assert.doesNotMatch(sessionSidebarMarkup, /id="(?:agentsPanel|taskCenterPanel|settingsPanel)"/, "application workspaces must remain in the main pane");
 
