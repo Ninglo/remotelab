@@ -302,7 +302,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
   }
   async function readStatuses(token, pending) {
     const ids = pending.map((item) => item.messageId).filter((id) => /^om_[a-zA-Z0-9_-]+$/.test(id || ''));
-    if (!ids.length) return { available: false, values: new Map() };
+    if (!ids.length) return { available: true, values: new Map() };
     const values = new Map();
     try {
       for (let index = 0; index < ids.length; index += 50) {
@@ -428,12 +428,15 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
         const topicMode = (item) => item.isP2p ? false : (chatInfo.get(item.chatId)?.topic ?? item.topicMode);
         // A topic-mode chat contains both top-level messages and replies. The
         // latter are identified by parent_id, including in ordinary group chats.
-        const groupCandidates = [...candidates.values()].filter((item) => !item.isP2p);
-        const details = await messageDetails(token, groupCandidates.map((item) => item.messageId));
-        if (groupCandidates.some((item) => !details.has(item.messageId))) throw new Error('Feishu message details unavailable');
+        // Recalled messages may disappear from search and have no read receipt.
+        // Recheck pending messages too, including private conversations.
+        const detailCandidates = [...candidates.values()];
+        const details = await messageDetails(token, detailCandidates.map((item) => item.messageId));
+        if (detailCandidates.some((item) => !details.has(item.messageId))) throw new Error('Feishu message details unavailable');
         const actionable = new Map([...candidates.values()].map((item) => {
-          if (item.isP2p) return [item.id, { allowed: true, atMe: Boolean(item.atMe || mentionKeys.has(item.id)) }];
           const detail = details.get(item.messageId);
+          if (detail?.deleted === true) return [item.id, { allowed: false, atMe: false }];
+          if (item.isP2p) return [item.id, { allowed: true, atMe: Boolean(item.atMe || mentionKeys.has(item.id)) }];
           const isReply = Boolean(detail?.parent_id);
           const atMe = isReply
             ? detail?.mentions?.some((mention) => mention.id === identity.openId) === true
@@ -463,8 +466,7 @@ export function createFeishuUserReminders({ configDir, identityFor, fetchImpl = 
           apiIsRead: historicalRead.values.get(item.messageId) ?? null,
         });
         if (newGrant) pending = pending.filter((item) => !reconciled.has(item.id));
-        const read = await readStatuses(token, [...candidates.values()].length
-          ? [...candidates.values()] : incomingKeys.slice(0, 1));
+        const read = await readStatuses(token, detailCandidates.filter((item) => details.get(item.messageId)?.deleted !== true));
         if (sameIdentity && !newPolicy) {
           const pendingIds = new Set(pending.map((item) => item.id));
           for (const item of incomingKeys) if (!pendingIds.has(item.id)

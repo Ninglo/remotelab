@@ -14,6 +14,8 @@ let messageIds = ['one', 'two'];
 let mentionIds = ['one'];
 const created = new Map();
 const readIds = new Set();
+const deletedIds = new Set();
+const invalidReadIds = new Set();
 let readStatusFailure = false;
 let numericTimestamps = false;
 let rejectRefresh = false;
@@ -50,6 +52,7 @@ const fakeFetch = async (url, options) => {
   if (path.endsWith('/messages/mget')) {
     const ids = new URL(url).searchParams.getAll('message_ids');
     return response({ code: 0, data: { items: ids.map((message_id) => ({ message_id,
+      deleted: deletedIds.has(message_id),
       ...(['om_topicreply', 'om_topicmention', 'om_topicall', 'om_topicdirect', 'om_groupreply', 'om_groupmention'].includes(message_id)
         ? { parent_id: message_id === 'om_topicdirect' ? 'om_topicmyroot' : 'om_topicotherroot' } : {}),
       sender: { sender_type: 'user', id: message_id === 'om_topicmyroot' ? 'ou_expected' : 'ou_other_person' },
@@ -72,8 +75,9 @@ const fakeFetch = async (url, options) => {
     if (readStatusFailure) return response({ code: 99991679, msg: 'read status unavailable' });
     const body = JSON.parse(options.body);
     assert(body.message_ids.length > 0 && body.message_ids.length <= 50);
-    return response({ code: 0, data: { items: body.message_ids.map((message_id) => ({ message_id,
-      is_read: readIds.has(message_id) })), invalid_message_ids: [] } });
+    const invalid = body.message_ids.filter((id) => deletedIds.has(id) || invalidReadIds.has(id));
+    return response({ code: 0, data: { items: body.message_ids.filter((id) => !invalid.includes(id)).map((message_id) => ({ message_id,
+      is_read: readIds.has(message_id) })), invalid_message_ids: invalid } });
   }
   if (path.endsWith('/messages/search')) {
     const body = JSON.parse(options.body);
@@ -83,7 +87,7 @@ const fakeFetch = async (url, options) => {
       meta_data: { message_id: `om_${id}`, from_id: ['mine', 'reply'].includes(id) ? 'ou_expected' : 'ou_other_person',
         chat_id: id === 'mine' ? 'oc_mine12345678' : id === 'four' ? 'oc_other12345678'
           : id.startsWith('topic') ? 'oc_topic12345678' : 'oc_main12345678',
-        is_p2p_chat: id === 'four', create_time: numericTimestamps
+        is_p2p_chat: ['four', 'recalledprivate'].includes(id), create_time: numericTimestamps
           ? String(created.get(id) || clock) : new Date(created.get(id) || clock).toISOString(),
         ...(id.startsWith('topic') ? { thread_id: 'omt_thread', thread_position: 3 } : {}) } })), has_more: false } });
   }
@@ -184,6 +188,31 @@ try {
   readIds.add('om_eight');
   clock += 5001;
   assert.equal((await service.summary('person_a')).newMessages, 0);
+  messageIds = ['recalledgroup', 'recalledprivate', ...messageIds];
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 2);
+  deletedIds.add('om_recalledgroup');
+  deletedIds.add('om_recalledprivate');
+  // Recalled messages can disappear from search while remaining in pending.
+  messageIds = messageIds.filter((id) => !id.startsWith('recalled'));
+  clock += 5001;
+  const recalled = await service.summary('person_a');
+  assert.equal(recalled.newMessages, 0, 'recalled group and private messages leave pending without a read receipt');
+  assert.equal(recalled.readStateAvailable, true, 'recalled IDs do not make valid read receipts look unavailable');
+  assert.deepEqual(recalled.sources, [], 'recalled chats no longer appear in reminder sources');
+  messageIds = ['recalledgroup', 'recalledprivate', ...messageIds];
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 0, 'stale search hits cannot restore recalled reminders');
+  messageIds = ['unknownreceipt', ...messageIds];
+  invalidReadIds.add('om_unknownreceipt');
+  clock += 5001;
+  const unknownReceipt = await service.summary('person_a');
+  assert.deepEqual([unknownReceipt.newMessages, unknownReceipt.readStateAvailable], [1, false],
+    'an invalid read receipt alone is not evidence that a message was recalled or read');
+  invalidReadIds.delete('om_unknownreceipt');
+  readIds.add('om_unknownreceipt');
+  clock += 5001;
+  assert.equal((await service.summary('person_a')).newMessages, 0);
   messageIds = ['topicreply', ...messageIds];
   clock += 5001;
   assert.equal((await service.summary('person_a')).newMessages, 0,
@@ -267,7 +296,7 @@ try {
   const saved = join(dir, 'display-private', 'feishu-reminders.json');
   assert.equal((await stat(saved)).mode & 0o777, 0o600);
   assert.equal(JSON.parse(await readFile(saved, 'utf8')).people.person_a.token.openId, 'ou_expected');
-  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 62);
+  assert.equal(seen.filter(({ path }) => path.endsWith('/messages/search')).length, 72);
   const upgrade = await service.begin('person_a');
   assert.equal(upgrade.connected, true, 'message access remains available during calendar authorization');
   assert.equal(upgrade.calendarConnected, false);
