@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-28 — Short praise still needs a visible response
+
+- Observed friction: two consecutive short acknowledgements praising the assistant were correctly left without a text reply, but the contextual reaction selector chose no reaction both times. The user noticed the missing response immediately.
+- Product implication: for unambiguous short praise, add a grateful reaction even if the contextual classifier selects none. Keep unrelated or ambiguous messages eligible for no reaction.
+- Implementation: the Feishu quick participation path recognizes short statements such as "这次对了" and uses `THANKS`; a regression test covers repeated messages.
+
 ### 2026-09-28 — Applied side-display layouts are persistent settings
 
 - Observed friction: an applied personal layout was automatically withdrawn after 24 hours and appeared to the user as a disconnected display, even though the computer was still online.

@@ -181,6 +181,9 @@ try {
   await expressive.handle({ ...base, messageId: 'surprise', messageText: '这个结果真惊喜' });
   await expressive.handle({ ...base, messageId: 'no-reaction', messageText: '两个人聊别的' });
   assert.deepEqual(contextualReactions, ['THINKING', 'WOW', 'THINKING']);
+  await expressive.handle({ ...base, messageId: 'praise-one', messageText: '这次对了' });
+  await expressive.handle({ ...base, messageId: 'praise-two', messageText: '这次对了' });
+  assert.deepEqual(contextualReactions.slice(3), ['THINKING', 'THANKS', 'THINKING', 'THANKS']);
   const mentionedReactions = [];
   const mentioned = createFeishuQuickParticipationPilot(runtime, {
     classify: async () => ({ decision: 'silent', silentReaction: 'none' }),

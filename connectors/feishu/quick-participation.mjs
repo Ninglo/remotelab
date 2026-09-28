@@ -40,6 +40,10 @@ function textOf(summary) {
   return text.slice(0, 1_200) || `[${summary?.messageType || '消息'}]`;
 }
 
+function isClearPraiseForAssistant(summary) {
+  return /^(?:这次|这回|这下|现在|终于)(?:就)?对了[。！!~]*$/.test(textOf(summary));
+}
+
 // The Session owns an explicitly requested reaction-only answer. The quick
 // classifier's "reply" includes that case, but OnIt would promise text and
 // create a third reaction when the Session adds the requested emoji.
@@ -265,7 +269,8 @@ export function createFeishuQuickParticipationPilot(runtime, {
         try {
           const emojiType = participationDecision === 'reply' ? 'OnIt'
             : !contextual ? 'EatingFood'
-              : SILENT_REACTION_EMOJI[verdict.silentReaction] || '';
+              : isClearPraiseForAssistant(summary) ? 'THANKS'
+                : SILENT_REACTION_EMOJI[verdict.silentReaction] || '';
           if (emojiType) await react(summary, emojiType);
           else statusReaction = 'skipped';
           if (emojiType) statusReaction = 'ok';
