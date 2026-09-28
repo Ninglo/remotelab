@@ -89,7 +89,7 @@ export async function classifyFeishuQuickParticipation(context, {
               silent: 'The assistant should stay silent now while retaining this message as context for later messages.',
             },
           },
-          emotion: {
+          ...(!includeHandoff ? { emotion: {
             type: 'choice',
             instructions: 'Choose exactly one fitting reaction for the newest message using the whole recent discussion. Prefer a warm, expressive response when the tone clearly supports it. This question only chooses a reaction; the participation question separately decides whether to start a text/task turn. Never treat serious loss, distress or another person\'s misfortune as a joke. Use quiet for ordinary human-to-human discussion or unclear tone.',
             criteria: {
@@ -102,8 +102,7 @@ export async function classifyFeishuQuickParticipation(context, {
               smile: 'A light friendly exchange or playful moment.',
               quiet: 'No expressive reaction fits, or the Bot should quietly leave the human conversation alone.',
             },
-          },
-          ...(!includeHandoff ? { reactionOnly: {
+          }, reactionOnly: {
             type: 'choice',
             instructions: 'Does the newest message explicitly ask this assistant only for an emoji reaction, with no text answer or task? A direct @ mention by itself is not enough. Choose yes only for a clear reaction-only request; choose no if the assistant should answer, investigate, or start work.',
             criteria: {

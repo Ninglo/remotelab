@@ -24,13 +24,25 @@ try {
     'the pilot must stay on the selected group mainline');
 
   const classified = await classifyFeishuQuickParticipation('Ada: 这个结果真惊喜', {
-    key: 'fixture', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+    key: 'fixture', includeHandoff: false, fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
       participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
       emotion: { choice: 'surprise' },
     } }) }),
   });
   assert.equal(classified.decision, 'silent');
   assert.equal(classified.emojiType, 'WOW');
+
+  await classifyFeishuQuickParticipation('Ada: old group', {
+    key: 'fixture', fetchImpl: async (_url, request) => {
+      const questions = JSON.parse(request.body).questions;
+      assert.equal(questions.emotion, undefined, 'other groups keep their original Jev request size');
+      assert.equal(questions.reactionOnly, undefined);
+      assert(questions.projectHandoff);
+      return { ok: true, json: async () => ({ answers: {
+        participation: { choice: 'silent', probabilities: { silent: 0.98, reply: 0.02 } },
+      } }) };
+    },
+  });
 
   const emojiOnly = await classifyFeishuQuickParticipation('Ada @Bot: 只回个表情就行，太惊喜了', {
     key: 'fixture', includeHandoff: false, fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
