@@ -414,7 +414,8 @@ function syncSidebarFiltersVisibility(showingSessions = null) {
     ? true
     : controls.some((control) => isSidebarFilterControlVisible(control));
   const visible = resolvedShowingSessions && hasVisibleControls
-    && getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE;
+    && (typeof getCurrentPersonFilter !== "function"
+      || getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE);
   sidebarFilters.classList.toggle("hidden", !visible);
 }
 
