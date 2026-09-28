@@ -41,14 +41,14 @@ function parseKeyFile(content) {
   return line?.replace(/^\s*TYPESAFE_API_KEY\s*=\s*/, '').replace(/^['"]|['"]$/g, '').trim() || '';
 }
 
-async function apiKey() {
+export async function feishuJevApiKey() {
   if (process.env.TYPESAFE_API_KEY?.trim()) return process.env.TYPESAFE_API_KEY.trim();
   const file = process.env.TYPESAFE_KEY_FILE?.trim() || join(CONFIG_DIR, 'typesafe.env');
   return parseKeyFile(await readFile(file, 'utf8').catch(() => ''));
 }
 
 export async function classifyFeishuQuickParticipation(context, { fetchImpl = fetch, key, timeoutMs = JEV_TIMEOUT_MS } = {}) {
-  const token = key || await apiKey();
+  const token = key || await feishuJevApiKey();
   if (!token) return { decision: 'unknown', reason: 'missing_key', latencyMs: 0 };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -69,6 +69,14 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
               silent: 'The assistant should stay silent now while retaining this message as context for later messages.',
             },
           },
+          projectHandoff: {
+            type: 'choice',
+            instructions: 'Decide whether the newest human message, in its recent discussion, clearly says a concrete direction has been settled and asks or strongly implies that the project work group should now start execution. Offer only for a specific actionable piece of work with an affirmative start signal. A question, tentative idea, ordinary status, human acknowledgement, or work already underway is not enough. This only nominates a proposal for a second check; it does not authorize execution.',
+            criteria: {
+              offer: 'A concrete direction is settled and the group now wants work to begin or be handed off.',
+              none: 'There is no clear new work handoff decision in the newest message.',
+            },
+          },
         },
       }),
       signal: controller.signal,
@@ -83,8 +91,14 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
     if (!Number.isFinite(replyProbability) || !Number.isFinite(silentProbability)
       || Math.abs(replyProbability + silentProbability - 1) > 0.03) throw new Error('invalid_probabilities');
     const uncertain = decision === 'reply' ? replyProbability < 0.7 : silentProbability < 0.85;
+    const handoff = result?.answers?.projectHandoff;
+    const offerProbability = Number(handoff?.probabilities?.offer);
+    const handoffDecision = handoff?.choice === 'offer' && Number.isFinite(offerProbability)
+      && offerProbability >= 0.9 ? 'offer' : 'none';
     return {
       decision: uncertain ? 'unknown' : decision,
+      handoffDecision,
+      handoffProbability: Number.isFinite(offerProbability) ? offerProbability : null,
       ...(uncertain ? { reason: 'low_support' } : {}),
       confidence: Number.isFinite(Number(answer.confidence)) ? Number(answer.confidence) : null,
       probabilities: answer.probabilities || null,
@@ -101,6 +115,7 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
 export function createFeishuQuickParticipationPilot(runtime, {
   classify = classifyFeishuQuickParticipation,
   react,
+  onHandoffCandidate = null,
   logPath = join(runtime.config.storageDir, 'quick-participation.jsonl'),
 } = {}) {
   const history = new Map();
@@ -176,21 +191,26 @@ export function createFeishuQuickParticipationPilot(runtime, {
     ].join('\n');
   }
 
-  function handle(summary, { receivedAt = performance.now() } = {}) {
+  function handle(summary, { receivedAt = performance.now(), reactionMode = 'normal' } = {}) {
     const recent = remember(summary);
     if (!recent || seen.has(summary.messageId)) return;
     seen.add(summary.messageId);
     if (seen.size > 5_000) seen.delete(seen.values().next().value);
     const started = receivedAt;
-    const readReaction = Promise.resolve().then(() => react(summary, 'THINKING'))
-      .then(() => ({ result: 'ok', latencyMs: Math.round(performance.now() - started) }),
-        () => ({ result: 'failed', latencyMs: Math.round(performance.now() - started) }));
+    const readReaction = reactionMode === 'none'
+      ? Promise.resolve({ result: 'skipped', latencyMs: null })
+      : Promise.resolve().then(() => react(summary, 'THINKING'))
+        .then(() => ({ result: 'ok', latencyMs: Math.round(performance.now() - started) }),
+          () => ({ result: 'failed', latencyMs: Math.round(performance.now() - started) }));
     const decision = classify(contextFor(summary, recent));
     return (async () => {
       const verdict = await decision.catch(() => ({ decision: 'unknown', reason: 'request_error' }));
       let statusReaction = 'skipped';
       let statusLatencyMs = null;
-      if (verdict.decision !== 'unknown' && performance.now() - started < MAX_STATUS_START_MS) {
+      // A handoff nomination needs a second source check. Do not mark it as
+      // silent or promise a reply before the proposal card has been validated.
+      if (reactionMode !== 'none' && verdict.handoffDecision !== 'offer' && verdict.decision !== 'unknown'
+        && performance.now() - started < MAX_STATUS_START_MS) {
         try {
           await react(summary, verdict.decision === 'reply' ? 'OnIt' : 'EatingFood');
           statusReaction = 'ok';
@@ -198,9 +218,17 @@ export function createFeishuQuickParticipationPilot(runtime, {
         statusLatencyMs = Math.round(performance.now() - started);
       }
       const readReceipt = await readReaction;
+      if (verdict.handoffDecision === 'offer' && typeof onHandoffCandidate === 'function') {
+        void Promise.resolve().then(() => onHandoffCandidate(summary)).catch(error => {
+          console.warn(`[feishu-quick-participation] handoff candidate ${summary.messageId}: ${error?.message || error}`);
+        });
+      }
       const record = {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
+        reactionMode,
         decision: verdict.decision, reason: verdict.reason || '', confidence: verdict.confidence ?? null,
+        handoffDecision: verdict.handoffDecision || 'none',
+        handoffProbability: verdict.handoffProbability ?? null,
         probabilities: verdict.probabilities || null, model: verdict.model || '',
         jevLatencyMs: verdict.latencyMs ?? null, totalLatencyMs: Math.round(performance.now() - started),
         readReaction: readReceipt.result, readLatencyMs: readReceipt.latencyMs,

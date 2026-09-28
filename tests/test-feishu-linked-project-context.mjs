@@ -71,8 +71,8 @@ try {
   const manyEvents = Array.from({ length: 12 }, (_, index) =>
     event(discussionChatId, `many-${index}`, 'a'.repeat(800), 12 - index)).join('\n');
   const bounded = selectLinkedFeishuMessages(manyEvents, projectLinks[0], workSummary);
-  assert.ok(bounded.length <= 8);
-  assert.ok(bounded.reduce((total, item) => total + item.text.length + 120, 0) <= 3600);
+  assert.ok(bounded.length <= 20);
+  assert.ok(bounded.reduce((total, item) => total + item.text.length + 120, 0) <= 6000);
   assert.equal(bounded.at(-1)?.messageId, 'many-11', 'the newest discussion must remain visible');
 } finally {
   await rm(directory, { recursive: true, force: true });

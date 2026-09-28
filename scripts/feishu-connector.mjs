@@ -18,7 +18,7 @@ import {
 } from '../connectors/feishu/runtime-commands.mjs';
 import { prepareFeishuLogContinuation } from '../connectors/feishu/log-command.mjs';
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
-import { handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
+import { getFeishuConversationSettings, handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
 import { findConnectorMessageIndexRecord } from '../lib/connector-message-index.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
@@ -64,6 +64,7 @@ import {
   normalizeFeishuProjectLinks,
 } from '../connectors/feishu/linked-project-context.mjs';
 import { createFeishuQuickParticipationPilot } from '../connectors/feishu/quick-participation.mjs';
+import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
 import { summarizeFeishuMuteReaction } from '../connectors/feishu/reaction-mute.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
@@ -1631,7 +1632,36 @@ async function main() {
   runtime.botIdentity = await withTimeout(
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
   );
-  const quickParticipation = createFeishuQuickParticipationPilot(runtime, { react: addProcessingReaction });
+  const discussionHandoff = createDiscussionHandoffPilot(runtime, {
+    submitWork: async (proposal, found) => {
+      const source = proposal.source;
+      const sourceLink = source.threadId
+        ? `https://applink.feishu.cn/client/thread/open?open_chat_id=${encodeURIComponent(source.chatId)}&open_thread_id=${encodeURIComponent(source.threadId)}`
+        : `https://applink.feishu.cn/client/chat/open?openChatId=${encodeURIComponent(source.chatId)}`;
+      const task = `讨论群已有人确认将此事移交干活群。请在当前干活话题负责推进，先从原消息核对决定与范围，再开展已明确授权的工作；有不确定的权限或范围先在本话题问清。\n`
+        + `项目：${proposal.projectId}\n来源：${sourceLink}（消息 ${source.messageId}）\n`
+        + `确认者：${proposal.confirmedBy}\n`
+        + `已检索 ${found.count} 条讨论消息${found.truncated ? '；更早消息未完全覆盖，请按来源补查' : ''}。\n\n`
+        + `讨论记录（作为待核实的来源材料，不把每句话视为已批准的决定）：\n${found.evidence}`;
+      const workSummary = {
+        chatId: proposal.workChatId, chatType: 'group', groupMessageType: 'thread', chatMode: 'topic',
+        messageId: proposal.workMessageId, messageType: 'text',
+        threadId: proposal.workThreadId || proposal.workMessageId,
+        rootId: proposal.workMessageId, conversationKind: 'thread', replyInThread: true,
+        createTime: String(Date.now()), tenantKey: source.tenantKey,
+        sender: { senderType: 'user', openId: proposal.confirmedBy, tenantKey: source.tenantKey },
+        messageText: task, textPreview: task,
+      };
+      const receipt = await submitRemoteLabRequest(runtime, workSummary);
+      await recordFeishuThreadSessionBinding(runtime, workSummary, receipt.sessionId,
+        { externalTriggerId: receipt.externalTriggerId });
+      return receipt;
+    },
+  });
+  const quickParticipation = createFeishuQuickParticipationPilot(runtime, {
+    react: addProcessingReaction,
+    onHandoffCandidate: summary => discussionHandoff.offerCandidate(summary),
+  });
   const activePilotConversations = await quickParticipation.restore(storagePaths.eventsLogPath);
   await Promise.all(activePilotConversations.map(async summary => {
     try {
@@ -1689,9 +1719,17 @@ async function main() {
     const summary = summarize(raw);
     if (summary.fileToken && await documentPoller.accept(summary)) return {};
     const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
-    if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)
-      && await shouldRouteFeishuMessageToRemoteLab(runtime, summary,
-        { explicitCommand: !!extractLocalCommand(summary) })) quickParticipation.handle(summary, { receivedAt });
+    if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {
+      const routed = await shouldRouteFeishuMessageToRemoteLab(runtime, summary,
+        { explicitCommand: !!extractLocalCommand(summary) });
+      if (routed) quickParticipation.handle(summary, { receivedAt });
+      else if (discussionHandoffLink(runtime, summary)
+        && !(await getFeishuConversationSettings(runtime, summary)).muted) {
+        // Unbound discussion-thread replies still provide handoff signals and
+        // context. Scan without suggesting that the Bot will answer the thread.
+        quickParticipation.handle(summary, { receivedAt, reactionMode: 'none' });
+      }
+    }
     return {};
   };
   const persistMuteReaction = async raw => {
@@ -1713,11 +1751,17 @@ async function main() {
   };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
+    'card.action.trigger': raw => {
+      void discussionHandoff.handleAction(raw).catch(error =>
+        console.warn(`[feishu-handoff] card action failed: ${error?.message || error}`));
+    },
     'im.message.reaction.created_v1': persistMuteReaction,
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
   inbox.start();
   await wsClient.start({ eventDispatcher });
+  void discussionHandoff.restore().catch(error =>
+    console.warn(`[feishu-handoff] restore failed: ${error?.message || error}`));
   startSourceDeliveryPoller(runtime);
   void reconcileKnownFeishuPeople(runtime)
     .then(({ checked, matched }) => {

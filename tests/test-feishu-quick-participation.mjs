@@ -21,29 +21,37 @@ try {
   };
   const reactions = [];
   const inputs = [];
+  const handoffCandidates = [];
   const pilot = createFeishuQuickParticipationPilot(runtime, {
     classify: async context => {
       inputs.push(context);
-      return { decision: inputs.length === 1 ? 'silent' : 'reply', confidence: 0.9, latencyMs: 50 };
+      return { decision: inputs.length === 1 ? 'silent' : 'reply',
+        handoffDecision: inputs.length === 2 ? 'offer' : 'none', confidence: 0.9, latencyMs: 50 };
     },
     react: async (summary, emojiType) => reactions.push([summary.messageId, emojiType]),
+    onHandoffCandidate: async summary => handoffCandidates.push(summary.messageId),
   });
   await pilot.handle({ ...base, messageId: 'first', messageText: '链接打不开。' });
   await pilot.handle({ ...base, messageId: 'second', messageText: '是机器人发的测试报告，下午要用。' });
   assert.deepEqual(reactions, [
     ['first', 'THINKING'], ['first', 'EatingFood'],
-    ['second', 'THINKING'], ['second', 'OnIt'],
+    ['second', 'THINKING'],
   ]);
   assert.match(inputs[1], /链接打不开/);
   assert.match(inputs[1], /下午要用/);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(handoffCandidates, ['second']);
   await pilot.handle({ ...base, messageId: 'second', messageText: '是机器人发的测试报告，下午要用。' });
   await pilot.handle({ ...base, chatId: 'other', messageId: 'other' });
   await pilot.handle({ ...base, threadId: 'thread', messageId: 'thread', messageText: '话题里的问题' });
   await pilot.handle({ ...base, sender: { senderType: 'bot', openId: 'other-bot' }, messageId: 'bot' });
-  assert.equal(reactions.length, 6);
+  assert.equal(reactions.length, 5);
   assert.doesNotMatch(inputs[2], /链接打不开/);
   const records = (await readFile(join(home, 'quick-participation.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.deepEqual(records.map(item => item.decision), ['silent', 'reply', 'reply']);
+  await pilot.handle({ ...base, threadId: 'unbound', messageId: 'unbound', messageText: '在话题里决定开工' },
+    { reactionMode: 'none' });
+  assert.equal(reactions.length, 5, 'unbound thread scanning must not add a reply reaction');
 
   const eventsPath = join(home, 'events.jsonl');
   await writeFile(eventsPath, `${JSON.stringify({ allowed: true, summary: { ...base, messageId: 'restored', messageText: '早上说过报告打不开。' } })}\n`);
@@ -81,6 +89,14 @@ try {
     }) }),
   });
   assert.equal(weakSilent.decision, 'unknown', 'weak silence must not promise to ignore a possible request');
+  const handoff = await classifyFeishuQuickParticipation('A: 方案定了，转干活群开始做', {
+    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
+      participation: { choice: 'reply', probabilities: { reply: 0.95, silent: 0.05 } },
+      projectHandoff: { choice: 'offer', probabilities: { offer: 0.94, none: 0.06 } },
+    } }) }),
+  });
+  assert.equal(handoff.handoffDecision, 'offer');
+  assert.equal(weakSilent.handoffDecision, 'none');
   console.log('test-feishu-quick-participation: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

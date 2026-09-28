@@ -2,8 +2,8 @@ import { open } from 'node:fs/promises';
 
 const MAX_EVENT_TAIL_BYTES = 2 * 1024 * 1024;
 const MAX_CONTEXT_AGE_MS = 24 * 60 * 60 * 1000;
-const MAX_CONTEXT_MESSAGES = 8;
-const MAX_CONTEXT_CHARACTERS = 3600;
+const MAX_CONTEXT_MESSAGES = 20;
+const MAX_CONTEXT_CHARACTERS = 6000;
 const MAX_MESSAGE_CHARACTERS = 900;
 
 const trimString = value => typeof value === 'string' ? value.trim() : '';
@@ -16,6 +16,10 @@ export function normalizeFeishuProjectLinks(value = []) {
     const discussionChatId = trimString(entry?.discussionChatId);
     const discussionChatName = trimString(entry?.discussionChatName);
     const workChatId = trimString(entry?.workChatId);
+    if (entry?.handoffCards !== undefined && typeof entry.handoffCards !== 'boolean') {
+      throw new Error('projectLink handoffCards must be a boolean');
+    }
+    const handoffCards = entry?.handoffCards === true;
     if (!projectId || !discussionChatId || !workChatId || discussionChatId === workChatId) {
       throw new Error('Each projectLink needs a projectId and two distinct chat IDs');
     }
@@ -24,7 +28,7 @@ export function normalizeFeishuProjectLinks(value = []) {
     }
     usedChats.add(discussionChatId);
     usedChats.add(workChatId);
-    return { projectId, discussionChatId, discussionChatName, workChatId };
+    return { projectId, discussionChatId, discussionChatName, workChatId, handoffCards };
   });
 }
 
