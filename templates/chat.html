@@ -35,9 +35,9 @@
       <span data-icon="plus" aria-hidden="true"></span>
       <span class="header-quick-action-label" data-i18n="sidebar.newSession">New session</span>
     </button>
-    <button class="header-quick-action" id="headerTasksBtn" type="button" title="Tasks" aria-label="Tasks" data-i18n-title="nav.tasks" data-i18n-aria-label="nav.tasks">
+    <button class="header-quick-action" id="headerTasksBtn" type="button" title="Automations" aria-label="Automations" data-i18n-title="nav.tasks" data-i18n-aria-label="nav.tasks">
       <span data-icon="tasks" aria-hidden="true"></span>
-      <span class="header-quick-action-label" data-i18n="nav.tasks">Tasks</span>
+      <span class="header-quick-action-label" data-i18n="nav.tasks">Automations</span>
     </button>
   </nav>
   <button class="header-refresh-btn" id="refreshFrontendBtn" type="button" title="Reload latest frontend" aria-label="Reload latest frontend" data-i18n-title="action.reloadFrontend" data-i18n-aria-label="action.reloadFrontend" data-icon="refresh" hidden></button>
@@ -59,7 +59,7 @@
       <nav class="sidebar-primary-nav" aria-label="Main actions" data-i18n-aria-label="nav.application">
         <button class="sidebar-nav-button" id="tabTasks" type="button">
           <span class="sidebar-nav-icon" data-icon="tasks" aria-hidden="true"></span>
-          <span data-i18n="nav.tasks">Tasks</span>
+          <span data-i18n="nav.tasks">Automations</span>
         </button>
       </nav>
       <div class="sidebar-space-switcher" id="sidebarSpaceSwitcher" hidden></div>
@@ -88,11 +88,11 @@
       <div class="settings-panel task-center-panel" id="taskCenterPanel">
         <header class="workspace-page-header task-center-header">
           <div>
-            <div class="workspace-page-kicker" data-i18n="tasks.kicker">Automation</div>
-            <h2 data-i18n="tasks.title">Task Center</h2>
-            <p data-i18n="tasks.note">See every scheduled task, where it runs, and what happened last.</p>
+            <div class="workspace-page-kicker" data-i18n="tasks.kicker">Scheduled and triggered AI work</div>
+            <h2 data-i18n="tasks.title">Automations</h2>
+            <p data-i18n="tasks.note">Manage AI work started by a schedule or trigger, and see where it runs and what happened last.</p>
           </div>
-          <button class="task-center-primary" id="taskCenterCreateToggle" type="button" data-i18n="tasks.new">New task</button>
+          <button class="task-center-primary" id="taskCenterCreateToggle" type="button" data-i18n="tasks.new">New automation</button>
         </header>
         <form class="task-center-form" id="taskCenterForm" hidden>
           <label class="task-center-field">
@@ -173,7 +173,7 @@
             <label class="task-center-field">
               <span data-i18n="tasks.form.conditionScript">Condition script</span>
               <textarea id="taskCenterGateSource" rows="5" spellcheck="false" placeholder="echo no"></textarea>
-              <small data-i18n="tasks.form.conditionScriptHelp">Print exactly yes/no, or JSON with a boolean trigger. Errors fail closed. The script is snapshotted when the task is created.</small>
+              <small data-i18n="tasks.form.conditionScriptHelp">Print exactly yes/no, or JSON with a boolean trigger. Errors fail closed. The script is snapshotted when the automation is created.</small>
             </label>
             <div class="task-center-grid">
               <label class="task-center-field">
@@ -216,21 +216,21 @@
           <div class="task-center-safety" data-i18n="tasks.form.safety">Execution and delivery are configured separately. Pausing or cancelling prevents future admissions; it does not terminate a run already in progress.</div>
           <div class="task-center-form-actions">
             <button class="task-center-secondary" id="taskCenterCreateCancel" type="button" data-i18n="action.close">Close</button>
-            <button class="task-center-primary" id="taskCenterCreateSubmit" type="submit" data-i18n="tasks.form.create">Create task</button>
+            <button class="task-center-primary" id="taskCenterCreateSubmit" type="submit" data-i18n="tasks.form.create">Create automation</button>
           </div>
           <div class="task-center-feedback" id="taskCenterFormStatus" role="status" aria-live="polite"></div>
         </form>
         <div class="task-center-toolbar">
-          <select id="taskCenterFilter" aria-label="Filter tasks" data-i18n-aria-label="tasks.filter.ariaLabel">
-            <option value="all" data-i18n="tasks.filter.all">All tasks</option>
+          <select id="taskCenterFilter" aria-label="Filter automations" data-i18n-aria-label="tasks.filter.ariaLabel">
+            <option value="all" data-i18n="tasks.filter.all">All automations</option>
             <option value="active" data-i18n="tasks.filter.active">Active</option>
             <option value="paused" data-i18n="tasks.filter.paused">Paused</option>
             <option value="history" data-i18n="tasks.filter.history">History</option>
           </select>
-          <button class="task-center-icon-btn" id="taskCenterRefresh" type="button" title="Refresh tasks" aria-label="Refresh tasks" data-i18n-title="tasks.refresh" data-i18n-aria-label="tasks.refresh" data-icon="refresh"></button>
+          <button class="task-center-icon-btn" id="taskCenterRefresh" type="button" title="Refresh automations" aria-label="Refresh automations" data-i18n-title="tasks.refresh" data-i18n-aria-label="tasks.refresh" data-icon="refresh"></button>
         </div>
         <div class="task-center-list" id="taskCenterList">
-          <div class="task-center-empty" data-i18n="tasks.loading">Loading tasks…</div>
+          <div class="task-center-empty" data-i18n="tasks.loading">Loading automations…</div>
         </div>
       </div>
       <div class="settings-panel" id="settingsPanel">

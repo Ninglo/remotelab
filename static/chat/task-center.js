@@ -343,7 +343,7 @@
       }
     } catch (error) {
       if (typeof showSystemToast === "function") {
-        showSystemToast(error?.message || translate("tasks.action.failed", "Task update failed"), "error");
+        showSystemToast(error?.message || translate("tasks.action.failed", "Automation update failed"), "error");
       }
     } finally {
       actionTaskId = "";
@@ -360,7 +360,7 @@
     card.dataset.state = task.state || "unknown";
     const main = createNode("div", "task-card-main");
     const heading = createNode("div", "task-card-heading");
-    heading.appendChild(createNode("div", "task-card-title", task.title || translate("tasks.untitled", "Untitled task")));
+    heading.appendChild(createNode("div", "task-card-title", task.title || translate("tasks.untitled", "Untitled automation")));
     heading.appendChild(createNode("span", "task-state-pill", stateLabel(task.state)));
     main.appendChild(heading);
     if (task.prompt) main.appendChild(createNode("div", "task-card-prompt", task.prompt));
@@ -439,7 +439,7 @@
     if (!list) return;
     list.replaceChildren();
     if (loading && !loaded) {
-      list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading tasks…")));
+      list.appendChild(createNode("div", "task-center-empty", translate("tasks.loading", "Loading automations…")));
       return;
     }
     if (loadError && tasks.length === 0) {
@@ -452,8 +452,8 @@
         "div",
         "task-center-empty",
         tasks.length === 0
-          ? translate("tasks.empty", "No automated tasks yet. Create one here or schedule work from a Session.")
-          : translate("tasks.emptyFiltered", "No tasks match this filter."),
+          ? translate("tasks.empty", "No automations yet. Create one here or schedule work from a Session.")
+          : translate("tasks.emptyFiltered", "No automations match this filter."),
       ));
       return;
     }
@@ -477,7 +477,7 @@
     } catch (error) {
       loaded = true;
       tasks = [];
-      loadError = error?.message || translate("tasks.loadFailed", "Failed to load tasks.");
+      loadError = error?.message || translate("tasks.loadFailed", "Failed to load automations.");
       return tasks;
     } finally {
       loading = false;
@@ -543,7 +543,7 @@
     };
     loading = true;
     if (createSubmit) createSubmit.disabled = true;
-    setFormStatus(translate("tasks.form.creating", "Creating task…"));
+    setFormStatus(translate("tasks.form.creating", "Creating automation…"));
     try {
       const payload = await fetchJsonOrRedirect("/api/automation-tasks", {
         method: "POST",
@@ -558,7 +558,7 @@
       if (scheduledAtInput) scheduledAtInput.value = toLocalDateTimeInput(new Date(Date.now() + 60 * 60 * 1000));
       setFormVisible(false);
     } catch (error) {
-      setFormStatus(error?.message || translate("tasks.form.createFailed", "Failed to create task."), { error: true });
+      setFormStatus(error?.message || translate("tasks.form.createFailed", "Failed to create automation."), { error: true });
     } finally {
       loading = false;
       if (createSubmit) createSubmit.disabled = false;

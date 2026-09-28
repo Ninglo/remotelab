@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-28 — Distinguish RemoteLab automations from project tasks
+
+- Observed friction: calling RemoteLab's scheduled and triggered AI work "Tasks" led users to confuse it with the separate Feishu project task list.
+- Product implication: label the RemoteLab surface "Automations" (自动化), explain its schedule and trigger scope, and retain existing task URLs and API identifiers for compatibility.
+- Project priority belongs to the Feishu action list and its review process; changing this UI label does not assign priority to people or their work.
+
 ### 2026-09-27 — Login state must survive a failed session-file write
 
 - Observed friction: a user needed to sign in again every day even though RemoteLab issues 30-day cookies; the login page has no separate “remember me” option.
