@@ -7,7 +7,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-feishu-quick-participation-'));
 setIsolatedTestHome(home);
 try {
-  const { classifyFeishuQuickParticipation, createFeishuQuickParticipationPilot, SILENT_REACTION_EMOJI } =
+  const { classifyFeishuQuickParticipation, createFeishuQuickParticipationPilot, isReactionOnlyRequest, SILENT_REACTION_EMOJI } =
     await import('../connectors/feishu/quick-participation.mjs');
   const { createQuickParticipationReaction } = await import('../scripts/feishu-connector.mjs');
   const sdkCalls = [];
@@ -167,6 +167,18 @@ try {
   await mentioned.handle({ ...base, messageId: 'direct-mention', messageText: '@bot 帮我看看',
     mentions: [{ openId: 'bot' }] });
   assert.deepEqual(mentionedReactions, ['THINKING', 'OnIt']);
+  assert.equal(isReactionOnlyRequest({ messageText: '茵蒂克丝回复个表情就行' }), true);
+  assert.equal(isReactionOnlyRequest({ messageText: '帮我看看，回文字' }), false);
+  const reactionOnly = createFeishuQuickParticipationPilot(runtime, {
+    classify: async () => ({ decision: 'reply', handoffDecision: 'none' }),
+    react: async (_summary, emojiType) => {
+      mentionedReactions.push(emojiType);
+      return { reactionId: emojiType };
+    },
+  });
+  await reactionOnly.handle({ ...base, messageId: 'reaction-only',
+    messageText: '测试下表情能不能正常回复，茵蒂克丝回复个表情就行' });
+  assert.deepEqual(mentionedReactions.slice(2), ['THINKING']);
   console.log('test-feishu-quick-participation: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

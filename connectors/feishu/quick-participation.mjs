@@ -40,6 +40,14 @@ function textOf(summary) {
   return text.slice(0, 1_200) || `[${summary?.messageType || '消息'}]`;
 }
 
+// The Session owns an explicitly requested reaction-only answer. The quick
+// classifier's "reply" includes that case, but OnIt would promise text and
+// create a third reaction when the Session adds the requested emoji.
+export function isReactionOnlyRequest(summary) {
+  const text = textOf(summary);
+  return /(?:只|仅|就|即可|就行|不要文字|不用文字|别回文字|不需要文字).{0,12}(?:表情|emoji|reaction)|(?:表情|emoji|reaction).{0,12}(?:就行|即可|就好|不要文字|不用文字|别回文字|不需要文字)|(?:react|reply)\s+(?:with\s+)?(?:an?\s+)?emoji\s+only/i.test(text);
+}
+
 function parseKeyFile(content) {
   const line = String(content).split(/\r?\n/).find(value => /^\s*TYPESAFE_API_KEY\s*=/.test(value));
   return line?.replace(/^\s*TYPESAFE_API_KEY\s*=\s*/, '').replace(/^['"]|['"]$/g, '').trim() || '';
@@ -248,7 +256,8 @@ export function createFeishuQuickParticipationPilot(runtime, {
       let statusLatencyMs = null;
       // A handoff nomination needs a second source check. Do not mark it as
       // silent or promise a reply before the proposal card has been validated.
-      if (reactionMode !== 'none' && verdict.handoffDecision !== 'offer' && participationDecision !== 'unknown'
+      if (reactionMode !== 'none' && !isReactionOnlyRequest(summary)
+        && verdict.handoffDecision !== 'offer' && participationDecision !== 'unknown'
         && performance.now() - started < MAX_STATUS_START_MS) {
         try {
           const emojiType = participationDecision === 'reply' ? 'OnIt'
