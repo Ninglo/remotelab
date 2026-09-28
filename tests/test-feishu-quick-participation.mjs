@@ -9,6 +9,30 @@ setIsolatedTestHome(home);
 try {
   const { classifyFeishuQuickParticipation, createFeishuQuickParticipationPilot, SILENT_REACTION_EMOJI } =
     await import('../connectors/feishu/quick-participation.mjs');
+  const { createQuickParticipationReaction } = await import('../scripts/feishu-connector.mjs');
+  const sdkCalls = [];
+  const boundReaction = createQuickParticipationReaction({ appClient: { im: { v1: {
+    messageReaction: { create: async request => {
+      sdkCalls.push(request);
+      return { code: 0, data: { reaction_id: 'reaction-1', reaction_type: request.data.reaction_type } };
+    } },
+  } } } });
+  assert.equal((await boundReaction({ messageId: 'inbound-1' }, 'THINKING')).reactionId, 'reaction-1');
+  assert.deepEqual(sdkCalls[0], {
+    path: { message_id: 'inbound-1' }, data: { reaction_type: { emoji_type: 'THINKING' } },
+  });
+  const callOrder = [];
+  const readFirst = createFeishuQuickParticipationPilot({
+    config: { storageDir: home, groups: { pilot: { quickReactions: true } } },
+    botIdentity: { openId: 'bot' },
+  }, {
+    logPath: join(home, 'read-first.jsonl'),
+    react: async () => { callOrder.push('reaction'); return { reactionId: 'read-1' }; },
+    classify: async () => { callOrder.push('classify'); return { decision: 'unknown' }; },
+  });
+  await readFirst.handle({ chatId: 'pilot', chatType: 'group', messageId: 'read-first',
+    createTime: String(Date.now()), sender: { senderType: 'user', openId: 'human' } });
+  assert.deepEqual(callOrder, ['reaction', 'classify']);
   const config = {
     storageDir: home, appId: 'self-app',
     groups: { pilot: { participationMode: 'ambient', quickReactions: true, contextReactions: true } },

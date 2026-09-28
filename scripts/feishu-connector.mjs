@@ -1119,6 +1119,10 @@ async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
   };
 }
 
+function createQuickParticipationReaction(runtime) {
+  return (summary, emojiType) => addProcessingReaction(runtime, summary, emojiType);
+}
+
 
 async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
   if (isFeishuDocumentCommentSummary(summary)) {
@@ -1583,6 +1587,7 @@ export {
   extractLocalCommand,
   findFeishuThreadSessionBinding,
   addProcessingReaction,
+  createQuickParticipationReaction,
   handleFeishuReactionMute,
   submitFeishuFeedback,
   submitRemoteLabRequest,
@@ -1671,7 +1676,7 @@ async function main() {
     },
   });
   const quickParticipation = createFeishuQuickParticipationPilot(runtime, {
-    react: addProcessingReaction,
+    react: createQuickParticipationReaction(runtime),
     onHandoffCandidate: summary => discussionHandoff.offerCandidate(summary),
   });
   const activePilotConversations = await quickParticipation.restore(storagePaths.eventsLogPath);
