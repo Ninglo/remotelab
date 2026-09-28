@@ -1,3 +1,4 @@
+import { realpath } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import { basename, isAbsolute, resolve } from 'path';
 
@@ -97,6 +98,43 @@ export function isUserVisiblePathAllowed(filePath, options = {}) {
 
   const resolvedPath = resolve(normalizedPath);
   return getUserVisibleRoots(options).some((rootPath) => isPathWithinRoot(resolvedPath, rootPath));
+}
+
+// Existing files can be named through either side of a workspace symlink.
+// Compare resolved paths so an alias to the workspace works, while a symlink
+// inside the workspace that escapes it remains outside the boundary.
+export async function resolveExistingPathWithinRoots(filePath, rootPaths = []) {
+  const normalizedPath = trimString(filePath);
+  if (!normalizedPath) return null;
+  let resolvedPath;
+  try {
+    resolvedPath = await realpath(normalizedPath);
+  } catch {
+    return null;
+  }
+  for (const rootPath of rootPaths) {
+    let resolvedRoot;
+    try {
+      resolvedRoot = await realpath(rootPath);
+    } catch {
+      continue;
+    }
+    if (isPathWithinRoot(resolvedPath, resolvedRoot)) return resolvedPath;
+  }
+  return null;
+}
+
+export async function resolveExistingUserVisiblePath(filePath, options = {}) {
+  const normalizedPath = trimString(filePath);
+  if (!normalizedPath) return null;
+  if (isScopedInstanceUserSurface(options) && isLocalAccessBoundaryEnforced(options)) {
+    return resolveExistingPathWithinRoots(normalizedPath, getUserVisibleRoots(options));
+  }
+  try {
+    return await realpath(normalizedPath);
+  } catch {
+    return null;
+  }
 }
 
 export function resolveUserVisiblePathInput(value, options = {}) {

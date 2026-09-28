@@ -63,6 +63,19 @@ assert.equal(
   'artifact blocks should still allow explicit relative local files',
 );
 
+const physicalWorkspacePath = '/data/remotelab-guests/muka-hr/workspace/report.pdf';
+const physicalWorkspaceReply = `下载：[打印版](${physicalWorkspacePath})\n\nArtifacts:\n- ${physicalWorkspacePath}`;
+assert.deepEqual(
+  extractAssistantArtifactBlockReferences(physicalWorkspaceReply).map((reference) => reference.candidate),
+  [physicalWorkspacePath],
+  'explicit artifact paths must not depend on a fixed list of mount names',
+);
+assert.equal(
+  stripAssistantArtifactDeliveryHints(physicalWorkspaceReply),
+  '下载：report.pdf',
+  'the visible reply must not present a server-local path as a clickable link',
+);
+
 assert.equal(
   extractAssistantResultFileReferences('`C:\\\\temp\\\\report.xlsx`').length,
   1,

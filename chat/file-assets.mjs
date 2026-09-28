@@ -27,7 +27,7 @@ import {
   statOrNull,
   writeJsonAtomic,
 } from './fs-utils.mjs';
-import { isUserVisiblePathAllowed } from './instance-visible-paths.mjs';
+import { resolveExistingUserVisiblePath } from './instance-visible-paths.mjs';
 
 const FILE_ASSET_ID_PATTERN = /^fasset_[a-f0-9]{24}$/;
 const runFileAssetMutation = createSerialTaskQueue();
@@ -720,10 +720,17 @@ export async function publishLocalFileAssetFromPath({
   if (!filePath) {
     throw createError('localPath must point to a file', 'FILE_ASSET_LOCAL_PATH_INVALID', 400);
   }
-  if (!allowInternalPath && !isUserVisiblePathAllowed(filePath)) {
-    throw createError('localPath is outside this instance workspace', 'FILE_ASSET_LOCAL_PATH_FORBIDDEN', 403);
+  const readablePath = await resolveExistingUserVisiblePath(
+    filePath,
+    allowInternalPath ? { enforceBoundary: false } : {},
+  );
+  if (!readablePath) {
+    if (await statOrNull(filePath)) {
+      throw createError('localPath is outside this instance workspace', 'FILE_ASSET_LOCAL_PATH_FORBIDDEN', 403);
+    }
+    throw createError('localPath must point to a file', 'FILE_ASSET_LOCAL_PATH_INVALID', 400);
   }
-  const fileStats = await statOrNull(filePath);
+  const fileStats = await statOrNull(readablePath);
   if (!fileStats?.isFile()) {
     throw createError('localPath must point to a file', 'FILE_ASSET_LOCAL_PATH_INVALID', 400);
   }
@@ -739,7 +746,7 @@ export async function publishLocalFileAssetFromPath({
     const localFilename = buildLocalObjectFilename(assetId, displayName);
     const targetPath = join(CHAT_FILE_ASSET_OBJECTS_DIR, localFilename);
     await ensureDir(CHAT_FILE_ASSET_OBJECTS_DIR);
-    await copyFile(filePath, targetPath);
+    await copyFile(readablePath, targetPath);
 
     const record = normalizeFileAssetRecord({
       id: assetId,
@@ -779,7 +786,7 @@ export async function publishLocalFileAssetFromPath({
   const response = await fetch(intent.upload.url, {
     method: 'PUT',
     headers: intent.upload.headers,
-    body: createReadStream(filePath),
+    body: createReadStream(readablePath),
     duplex: 'half',
   });
   if (!response.ok) {

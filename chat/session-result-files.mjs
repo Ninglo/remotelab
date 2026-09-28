@@ -7,11 +7,13 @@
 
 import { basename, dirname, extname, isAbsolute, resolve } from 'path';
 import { homedir, tmpdir } from 'os';
+import { INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED } from '../lib/config.mjs';
 import { statOrNull } from './fs-utils.mjs';
 import {
   getUserVisibleRoots,
   isScopedInstanceUserSurface,
-  isUserVisiblePathAllowed,
+  resolveExistingPathWithinRoots,
+  resolveExistingUserVisiblePath,
 } from './instance-visible-paths.mjs';
 import {
   normalizeAttachmentSizeBytes,
@@ -128,7 +130,10 @@ function looksLikeAssistantArtifactBlockLocalFileReference(value) {
   if (PRODUCT_LOCAL_ROUTE_RE.test(candidate)) return false;
   if (/^[?#]/.test(candidate)) return false;
   if (/[\r\n]/.test(candidate)) return false;
-  if (LOCAL_SEARCH_ROOT_PREFIX_RE.test(candidate)) return true;
+  // An explicit Artifacts block may use the physical side of any workspace
+  // mount (for example /data when the configured root is /var/lib). The
+  // collector validates the existing file against the resolved workspace.
+  if (candidate.startsWith('/')) return hasFileLikeBasename(candidate);
   if (EXPLICIT_LOCAL_RELATIVE_PATH_RE.test(candidate)) return hasFileLikeBasename(candidate);
   return hasFileLikeBasename(candidate);
 }
@@ -499,6 +504,10 @@ export function stripAssistantArtifactDeliveryHints(text = '') {
   const source = typeof text === 'string' ? text : '';
   if (!source) return source;
 
+  const declaredPaths = new Set(
+    extractAssistantArtifactBlockReferences(source).map((reference) => reference.candidate),
+  );
+
   const lines = source.split(/\r?\n/);
   const keptLines = [];
   let insideArtifactBlock = false;
@@ -533,7 +542,12 @@ export function stripAssistantArtifactDeliveryHints(text = '') {
   }
 
   let result = keptLines.join('\n');
-  for (const reference of extractAssistantResultFileReferences(result, { includeCodeSpans: false }).sort((left, right) => right.index - left.index)) {
+  const inlineFileReferences = extractAssistantTextFileReferences(
+    result,
+    { includeCodeSpans: false },
+    (candidate) => looksLikeAssistantInlineLocalFileReference(candidate) || declaredPaths.has(candidate),
+  );
+  for (const reference of inlineFileReferences.sort((left, right) => right.index - left.index)) {
     const replacement = reference.displayName || basename(reference.candidate);
     result = result.slice(0, reference.index) + replacement + result.slice(reference.index + reference.fullMatch.length);
   }
@@ -550,14 +564,12 @@ export function isPathWithinRoot(filePath, root) {
 
 function collectAllowedResultFileRoots(searchRoots = []) {
   if (isScopedInstanceUserSurface()) {
-    const roots = [];
-    for (const root of getUserVisibleRoots()) {
-      pushUnique(roots, resolve(root));
-    }
-    for (const root of searchRoots || []) {
-      const resolvedRoot = resolve(root);
-      if (!isUserVisiblePathAllowed(resolvedRoot)) continue;
-      pushUnique(roots, resolvedRoot);
+    const roots = getUserVisibleRoots();
+    // Preserve the existing relaxed mode for guests that intentionally use
+    // additional search roots. Under the local boundary, those roots cannot
+    // extend access beyond the visible workspace and need not be added.
+    if (!INSTANCE_LOCAL_ACCESS_BOUNDARY_ENFORCED) {
+      for (const root of searchRoots || []) pushUnique(roots, resolve(root));
     }
     return roots;
   }
@@ -591,16 +603,15 @@ export async function resolveExistingResultFilePath(candidate, searchRoots = [],
   const allowedRoots = collectAllowedResultFileRoots(searchRoots);
 
   for (const attempt of attempts) {
-    if (!allowedRoots.some((root) => isPathWithinRoot(attempt, root))) {
-      continue;
-    }
-    const stats = await statOrNull(attempt);
+    const resolvedPath = await resolveExistingPathWithinRoots(attempt, allowedRoots);
+    if (!resolvedPath) continue;
+    const stats = await statOrNull(resolvedPath);
     if (!stats?.isFile()) continue;
     if (minimumMtimeMs > 0 && Number.isFinite(stats.mtimeMs) && stats.mtimeMs + 1000 < minimumMtimeMs) {
       continue;
     }
     if (!Number.isFinite(stats.size) || stats.size <= 0) continue;
-    return attempt;
+    return resolvedPath;
   }
   return null;
 }
@@ -645,20 +656,24 @@ export async function collectGeneratedResultFilesFromRun(run, manifest, normaliz
       if (!localPath) continue;
       const resolvedPath = resolve(localPath);
       const allowInternalPath = event.allowInternalPath === true;
-      if (!allowInternalPath && !isUserVisiblePathAllowed(resolvedPath)) continue;
-      const stats = await statOrNull(resolvedPath);
+      const visiblePath = await resolveExistingUserVisiblePath(
+        resolvedPath,
+        allowInternalPath ? { enforceBoundary: false } : {},
+      );
+      if (!visiblePath) continue;
+      const stats = await statOrNull(visiblePath);
       if (!stats?.isFile() || !Number.isFinite(stats.size) || stats.size <= 0) continue;
       if (minimumMtimeMs > 0 && Number.isFinite(stats.mtimeMs) && stats.mtimeMs < minimumMtimeMs) {
         continue;
       }
-      if (!filesByPath.has(resolvedPath)) {
+      if (!filesByPath.has(visiblePath)) {
         const originalName = sanitizeOriginalAttachmentName(
-          event.originalName || basename(resolvedPath),
+          event.originalName || basename(visiblePath),
         );
-        filesByPath.set(resolvedPath, {
-          localPath: resolvedPath,
-          originalName: originalName || basename(resolvedPath),
-          mimeType: resolveAttachmentMimeType(event.mimeType, originalName || basename(resolvedPath)),
+        filesByPath.set(visiblePath, {
+          localPath: visiblePath,
+          originalName: originalName || basename(visiblePath),
+          mimeType: resolveAttachmentMimeType(event.mimeType, originalName || basename(visiblePath)),
           allowInternalPath,
           inline: event.disposition === 'inline',
         });
