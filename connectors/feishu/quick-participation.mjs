@@ -8,10 +8,14 @@ import { isFeishuBotSender, mentionsFeishuBot } from './response-policy.mjs';
 const MAX_MESSAGES = 20;
 const MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const MAX_CONTEXT_CHARACTERS = 5_000;
-const JEV_TIMEOUT_MS = 1_200;
-const MAX_STATUS_START_MS = 700;
+const JEV_TIMEOUT_MS = 1_600;
+const MAX_STATUS_START_MS = 1_900;
 const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
 const JEV_MODEL = 'jev-1.13.0';
+export const SILENT_REACTION_EMOJI = Object.freeze({
+  thanks: 'THANKS', seen: 'GLANCE', surprise: 'WOW', puzzled: 'WHAT',
+  setback: 'DULL', teary: 'TEARS',
+});
 
 function messageTime(summary) {
   const value = Number(summary?.createTime);
@@ -71,10 +75,14 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
           },
           silentReaction: {
             type: 'choice',
-            instructions: 'Only when participation is silent, choose an appropriate lightweight reaction to the newest message. Choose thanks only for clear praise or thanks directed at this assistant. Choose seen only for a direct informational update to this assistant that needs no response. Choose none for human-to-human conversation, ambiguous context, criticism, a request, or when a reaction might imply agreement or task completion.',
+            instructions: 'Only when participation is silent, choose one expressive Feishu reaction to the newest message in context. Use a reaction only if the message clearly concerns this assistant or its shared project discussion. Keep the tone warm and restrained. Choose none for unrelated human-to-human conversation, actionable requests or corrections, genuine distress, serious failures, ambiguous tone, or whenever a reaction could imply agreement, resolution, or completed work. Do not choose a negative or joking face for another person\'s hardship.',
             criteria: {
-              thanks: 'The newest message clearly praises or thanks this assistant.',
-              seen: 'The newest message gives this assistant a direct informational update needing no answer.',
+              thanks: 'Clear praise or thanks directed at this assistant; respond with a grateful face.',
+              seen: 'A direct informational update to this assistant needs only a quiet I saw it signal, without implying agreement or completion.',
+              surprise: 'A genuinely delightful or impressive new result deserves a brief positive surprise.',
+              puzzled: 'A lighthearted, plainly unexpected twist invites an expressive huh face, but no clarification is needed.',
+              setback: 'This assistant made a small, low-stakes blunder and can acknowledge its own embarrassment.',
+              teary: 'A playful or touching moment invites light tears; nobody is in genuine distress.',
               none: 'No reaction is appropriate.',
             },
           },
@@ -105,13 +113,17 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
     const handoffDecision = handoff?.choice === 'offer' && Number.isFinite(offerProbability)
       && offerProbability >= 0.9 ? 'offer' : 'none';
     const silentReaction = result?.answers?.silentReaction;
-    const reactionChoice = ['thanks', 'seen'].includes(silentReaction?.choice)
-      && Number(silentReaction?.probabilities?.[silentReaction.choice]) >= 0.85
+    const reactionProbability = Number(silentReaction?.probabilities?.[silentReaction?.choice]);
+    const noReactionProbability = Number(silentReaction?.probabilities?.none);
+    const reactionChoice = Object.hasOwn(SILENT_REACTION_EMOJI, silentReaction?.choice)
+      && reactionProbability >= 0.5
+      && reactionProbability - noReactionProbability >= 0.03
       ? silentReaction.choice : 'none';
     return {
       decision: uncertain ? 'unknown' : decision,
       handoffDecision,
       silentReaction: uncertain || decision !== 'silent' ? 'none' : reactionChoice,
+      silentReactionProbability: Number.isFinite(reactionProbability) ? reactionProbability : null,
       handoffProbability: Number.isFinite(offerProbability) ? offerProbability : null,
       ...(uncertain ? { reason: 'low_support' } : {}),
       confidence: Number.isFinite(Number(answer.confidence)) ? Number(answer.confidence) : null,
@@ -129,6 +141,7 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
 export function createFeishuQuickParticipationPilot(runtime, {
   classify = classifyFeishuQuickParticipation,
   react,
+  unreact = null,
   onHandoffCandidate = null,
   logPath = join(runtime.config.storageDir, 'quick-participation.jsonl'),
 } = {}) {
@@ -211,11 +224,13 @@ export function createFeishuQuickParticipationPilot(runtime, {
     seen.add(summary.messageId);
     if (seen.size > 5_000) seen.delete(seen.values().next().value);
     const started = receivedAt;
+    const contextual = runtime.config.groups?.[summary.chatId]?.contextReactions === true;
     const readReaction = reactionMode === 'none'
-      ? Promise.resolve({ result: 'skipped', latencyMs: null })
+      ? Promise.resolve({ result: 'skipped', latencyMs: null, reactionId: '' })
       : Promise.resolve().then(() => react(summary, 'THINKING'))
-        .then(() => ({ result: 'ok', latencyMs: Math.round(performance.now() - started) }),
-          () => ({ result: 'failed', latencyMs: Math.round(performance.now() - started) }));
+        .then(receipt => ({ result: 'ok', latencyMs: Math.round(performance.now() - started),
+          reactionId: receipt?.reactionId || '' }),
+          () => ({ result: 'failed', latencyMs: Math.round(performance.now() - started), reactionId: '' }));
     const decision = classify(contextFor(summary, recent));
     return (async () => {
       const verdict = await decision.catch(() => ({ decision: 'unknown', reason: 'request_error' }));
@@ -231,11 +246,9 @@ export function createFeishuQuickParticipationPilot(runtime, {
       if (reactionMode !== 'none' && verdict.handoffDecision !== 'offer' && verdict.decision !== 'unknown'
         && performance.now() - started < MAX_STATUS_START_MS) {
         try {
-          const contextual = runtime.config.groups?.[summary.chatId]?.contextReactions === true;
           const emojiType = verdict.decision === 'reply' ? 'OnIt'
             : !contextual ? 'EatingFood'
-              : verdict.silentReaction === 'thanks' ? 'THUMBSUP'
-                : verdict.silentReaction === 'seen' ? 'EatingFood' : '';
+              : SILENT_REACTION_EMOJI[verdict.silentReaction] || '';
           if (emojiType) await react(summary, emojiType);
           else statusReaction = 'skipped';
           if (emojiType) statusReaction = 'ok';
@@ -243,11 +256,16 @@ export function createFeishuQuickParticipationPilot(runtime, {
         statusLatencyMs = Math.round(performance.now() - started);
       }
       const readReceipt = await readReaction;
+      if (contextual && readReceipt.reactionId && typeof unreact === 'function') {
+        try { await unreact(summary, readReceipt.reactionId); }
+        catch (error) { console.warn(`[feishu-quick-participation] failed to clear thinking reaction ${summary.messageId}: ${error.message}`); }
+      }
       const record = {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
         reactionMode,
         decision: verdict.decision, reason: verdict.reason || '', confidence: verdict.confidence ?? null,
         silentReaction: verdict.silentReaction || 'none',
+        silentReactionProbability: verdict.silentReactionProbability ?? null,
         handoffDecision: verdict.handoffDecision || 'none',
         handoffProbability: verdict.handoffProbability ?? null,
         probabilities: verdict.probabilities || null, model: verdict.model || '',
