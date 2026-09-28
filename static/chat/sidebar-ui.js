@@ -144,6 +144,10 @@ async function createNewSessionShortcut({
   if (typeof switchTab === "function") {
     switchTab("sessions");
   }
+  if (typeof getCurrentPersonFilter === "function"
+    && getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
+    setGroupChatScope(currentPerson?.id || FILTER_ALL_VALUE);
+  }
 
   const previousSessionId = currentSessionId;
   if (previousSessionId && typeof settleAttachedSessionSidebarState === "function") {

@@ -298,6 +298,7 @@ const queuedPanel = document.getElementById("queuedPanel");
 const msgInput = document.getElementById("msgInput");
 const sendBtn = document.getElementById("sendBtn");
 const headerTitle = document.getElementById("headerTitle");
+const headerReturnToMineBtn = document.getElementById("headerReturnToMineBtn");
 const refreshFrontendBtn = document.getElementById("refreshFrontendBtn");
 const statusDot = document.getElementById("statusDot");
 const statusText = document.getElementById("statusText");
@@ -323,6 +324,10 @@ function renderHeaderSessionTitle(sessionName = "") {
   if (!headerTitle) return;
   renderedHeaderSessionName = typeof sessionName === "string" ? sessionName : "";
   const activeView = document.body?.dataset?.appView || "sessions";
+  if (headerReturnToMineBtn) {
+    headerReturnToMineBtn.hidden = activeView !== "sessions"
+      || !(typeof getCurrentSession === "function" && getCurrentSession()?.groupFeed === true);
+  }
   const workspaceLabel = activeView === "sessions"
     ? renderedHeaderSessionName
     : (typeof window.remotelabT === "function"
@@ -355,6 +360,8 @@ window.addEventListener("remotelab:localechange", () => {
 });
 const tabSessions = document.getElementById("tabSessions");
 const tabTasks = document.getElementById("tabTasks");
+const groupChatsNavBtn = document.getElementById("groupChatsNavBtn");
+const backToMineNavBtn = document.getElementById("backToMineNavBtn");
 const tabSettings = document.getElementById("tabSettings");
 const sourceFilterSelect = document.getElementById("sourceFilterSelect");
 const personFilterSelect = document.getElementById("personFilterSelect");
@@ -413,6 +420,7 @@ const SESSION_REVIEW_MARKERS_STORAGE_KEY = "sessionReviewedAtById";
 const SESSION_REVIEW_BASELINE_AT_STORAGE_KEY = "sessionReviewBaselineAt";
 const UI_THEME_STORAGE_KEY = "remotelab.theme";
 const FILTER_ALL_VALUE = "__all__";
+const GROUP_FEED_FILTER_VALUE = "__group_feed__";
 const SOURCE_FILTER_CHAT_VALUE = "chat_ui";
 const SOURCE_FILTER_FEISHU_VALUE = "feishu";
 const SOURCE_FILTER_EMAIL_VALUE = "email";

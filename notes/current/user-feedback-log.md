@@ -829,6 +829,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: keep chat IDs for routing and diagnostics, but show a plain section label and each group's name in the navigation.
 - Follow-up: verify the label after the browser loads the latest frontend files; an already open tab may still display its previous sidebar code until refreshed.
 
+### 2026-09-28 — 飞书群聊应独立于所有人的工作区
+
+- Source: direct user correction after opening a group Session in ChatUI.
+- Observed friction or ask: the group history appeared among personal Sessions and contributed to personal filter counts; after reading it, the user could not find an obvious way back to Mine.
+- Product implication: show group histories under their own top-level navigation entry, exclude them from every Person's session list and counts, and provide a visible return to Mine both in the sidebar and beside the conversation title.
+- Follow-up: verify the two pilot groups appear only in the group area, personal counts stay unchanged, and return works on desktop and narrow screens.
+
 ### YYYY-MM-DD — short title
 
 - Source:

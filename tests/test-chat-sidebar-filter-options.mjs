@@ -102,6 +102,7 @@ function createHarness({
       return key;
     },
     FILTER_ALL_VALUE: '__all__',
+    GROUP_FEED_FILTER_VALUE: '__group_feed__',
     SOURCE_FILTER_CHAT_VALUE: 'chat_ui',
     SOURCE_FILTER_FEISHU_VALUE: 'feishu',
     SOURCE_FILTER_EMAIL_VALUE: 'email',
@@ -123,6 +124,7 @@ function createHarness({
     DEFAULT_APP_NAME: 'Chat',
     activeTab: 'sessions',
     getActiveSourceFilterValue() { return activeSourceFilter; },
+    getCurrentPersonFilter() { return '__all__'; },
     personFilterSelect: null,
     sourceFilterSelect: createSelect(''),
     sidebarFilters: {

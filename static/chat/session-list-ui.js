@@ -60,6 +60,10 @@ function getSessionSpaceEntries() {
 
 function renderSessionSpaceSwitcher() {
   if (!sidebarSpaceSwitcher) return;
+  if (getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
+    sidebarSpaceSwitcher.hidden = true;
+    return;
+  }
   const entries = getSessionSpaceEntries();
   const namedEntries = entries.filter((entry) => entry.key !== SESSION_SPACE_LOOSE_VALUE);
   if (namedEntries.length === 0) {
@@ -107,13 +111,15 @@ function renderSessionList() {
   sessionListRenderDepth += 1;
   try {
     sessionList.innerHTML = "";
+    if (typeof syncGroupChatNavigation === "function") syncGroupChatNavigation();
     renderSessionSpaceSwitcher();
+    if (getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
+      renderGroupFeedSection(getActiveSessions().filter((session) => session.groupFeed === true
+        && matchesSearchQuery(session)));
+      return;
+    }
     const pinnedSessions = getVisiblePinnedSessions();
     const visibleSessions = getVisibleActiveSessions();
-    const groupFeedSessions = getActiveSessions().filter((session) => session.groupFeed === true
-      && matchesSourceFilter(session) && matchesSearchQuery(session));
-
-    renderGroupFeedSection(groupFeedSessions);
 
     // Pinned section — shown in both views
     if (pinnedSessions.length > 0) {
@@ -137,7 +143,7 @@ function renderSessionList() {
 
     renderProjectsView(visibleSessions);
 
-    if (pinnedSessions.length === 0 && visibleSessions.length === 0 && groupFeedSessions.length === 0) {
+    if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "session-filter-empty";
       const emptyText = document.createElement("div");
@@ -184,7 +190,7 @@ function renderSessionList() {
 function renderGroupFeedSection(activeSessions) {
   const archivedSessions = archivedSessionsLoaded
     ? getArchivedSessions().filter((session) => session.groupFeed === true
-      && matchesSourceFilter(session) && matchesSearchQuery(session))
+      && matchesSearchQuery(session))
     : [];
   if (activeSessions.length === 0 && archivedSessions.length === 0) return;
   const section = document.createElement("div");
@@ -463,6 +469,15 @@ function attachSession(id, session, { forceComposerFocus = false } = {}) {
   const attachedSession = (typeof getChatStoreSession === "function" ? getChatStoreSession(id) : null)
     || session
     || { id };
+  if (attachedSession.groupFeed === true && getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE) {
+    setGroupChatScope(GROUP_FEED_FILTER_VALUE);
+  } else if (attachedSession.groupFeed !== true && getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) {
+    const personId = getSessionPersonId(attachedSession);
+    setGroupChatScope(personId === PERSON_FILTER_UNASSIGNED_VALUE ? FILTER_ALL_VALUE : personId);
+  }
+  if (attachedSession.groupFeed !== true && getSessionPersonId(attachedSession) === currentPerson?.id) {
+    lastMineSessionId = id;
+  }
   if (typeof holdAttachedSessionSidebarState === "function") {
     holdAttachedSessionSidebarState(attachedSession);
   }
@@ -471,6 +486,7 @@ function attachSession(id, session, { forceComposerFocus = false } = {}) {
     dispatchAction({ action: "attach", sessionId: id });
   }
   applyAttachedSessionState(id, attachedSession);
+  if (typeof syncGroupChatNavigation === "function") syncGroupChatNavigation();
   if (typeof stageSessionReviewedForAttachedSession === "function") {
     Promise.resolve(stageSessionReviewedForAttachedSession(attachedSession)).catch(() => {});
   }

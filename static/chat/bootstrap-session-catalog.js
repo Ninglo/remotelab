@@ -48,7 +48,8 @@ const PERSON_FILTER_UNASSIGNED_VALUE = "__unassigned__";
 
 function getCurrentPersonFilter() {
   const value = getActivePersonFilterValue();
-  if (value === FILTER_ALL_VALUE || value === PERSON_FILTER_UNASSIGNED_VALUE) return value;
+  if (value === FILTER_ALL_VALUE || value === PERSON_FILTER_UNASSIGNED_VALUE
+    || value === GROUP_FEED_FILTER_VALUE) return value;
   return getPeopleDirectory().some((person) => person.id === value) ? value : FILTER_ALL_VALUE;
 }
 
@@ -302,7 +303,7 @@ function refreshSessionCatalog() {
 }
 
 function getFilteredActiveSessions({ ignoreSource = false, ignorePerson = false } = {}) {
-  return getActiveSessions().filter((session) => (
+  return getActiveSessions().filter((session) => session.groupFeed !== true && (
     (ignoreSource || matchesSourceFilter(session))
     && (ignorePerson || matchesPersonFilter(session))
   ));
@@ -325,6 +326,8 @@ function getSessionPersonId(session) {
 }
 
 function matchesPersonFilter(session, personFilter = getCurrentPersonFilter()) {
+  if (personFilter === GROUP_FEED_FILTER_VALUE) return session.groupFeed === true;
+  if (session.groupFeed === true) return false;
   if (personFilter === FILTER_ALL_VALUE) return true;
   return getSessionPersonId(session) === personFilter;
 }
@@ -351,6 +354,9 @@ function matchesSessionSpace(session, spaceFilter = activeSessionSpace) {
 }
 
 function matchesCurrentFilters(session) {
+  if (session.groupFeed === true) {
+    return getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE && matchesSearchQuery(session);
+  }
   return matchesSourceFilter(session)
     && matchesPersonFilter(session)
     && matchesSessionSpace(session, activeSessionSpace)
@@ -376,6 +382,9 @@ function getSessionCountForSourceFilter(sourceFilter) {
 }
 
 function getSessionCountForPersonFilter(personFilter) {
+  if (personFilter === GROUP_FEED_FILTER_VALUE) {
+    return getActiveSessions().filter((session) => session.groupFeed === true).length;
+  }
   const activeSessions = getFilteredActiveSessions({ ignorePerson: true });
   if (personFilter === FILTER_ALL_VALUE) return activeSessions.length;
   return activeSessions.filter((session) => getSessionPersonId(session) === personFilter).length;
@@ -404,7 +413,8 @@ function syncSidebarFiltersVisibility(showingSessions = null) {
   const hasVisibleControls = controls.length === 0
     ? true
     : controls.some((control) => isSidebarFilterControlVisible(control));
-  const visible = resolvedShowingSessions && hasVisibleControls;
+  const visible = resolvedShowingSessions && hasVisibleControls
+    && getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE;
   sidebarFilters.classList.toggle("hidden", !visible);
 }
 
@@ -512,6 +522,84 @@ function commitPersonFilterSelection() {
   renderPersonFilterOptions();
   renderSourceFilterOptions();
 }
+
+let lastMineSessionId = null;
+
+function setGroupChatScope(personFilter) {
+  setChatActivePersonFilter(personFilter);
+  localStorage.setItem(ACTIVE_PERSON_FILTER_STORAGE_KEY, personFilter);
+  sessionSearchQuery = "";
+  if (sessionSearchInput) sessionSearchInput.value = "";
+  renderPersonFilterOptions();
+  renderSourceFilterOptions();
+  renderSessionList();
+}
+
+function syncGroupChatNavigation() {
+  const showingSessions = (typeof getActiveSidebarTabValue === "function"
+    ? getActiveSidebarTabValue() : activeTab) === "sessions";
+  const inGroupChats = getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE;
+  if (typeof groupChatsNavBtn !== "undefined" && groupChatsNavBtn) {
+    groupChatsNavBtn.hidden = !showingSessions || inGroupChats
+      || !getActiveSessions().some((session) => session.groupFeed === true);
+  }
+  if (typeof backToMineNavBtn !== "undefined" && backToMineNavBtn) {
+    backToMineNavBtn.hidden = !showingSessions || !inGroupChats;
+  }
+  if (typeof headerReturnToMineBtn !== "undefined" && headerReturnToMineBtn) {
+    headerReturnToMineBtn.hidden = !showingSessions || !inGroupChats;
+  }
+  if (typeof sortSessionListBtn !== "undefined" && sortSessionListBtn) {
+    sortSessionListBtn.classList.toggle("hidden", inGroupChats);
+  }
+}
+
+function openGroupChats() {
+  if (getCurrentPersonFilter() !== GROUP_FEED_FILTER_VALUE) {
+    const current = typeof getCurrentSession === "function" ? getCurrentSession() : null;
+    if (current && current.groupFeed !== true && getSessionPersonId(current) === currentPerson?.id) {
+      lastMineSessionId = current.id;
+    }
+    setGroupChatScope(GROUP_FEED_FILTER_VALUE);
+  }
+  if (typeof switchTab === "function") switchTab("sessions");
+  const current = typeof getCurrentSession === "function" ? getCurrentSession() : null;
+  const target = current?.groupFeed === true ? current
+    : getActiveSessions().find((session) => session.groupFeed === true);
+  if (target && target.id !== currentSessionId) attachSession(target.id, target);
+  else renderSessionList();
+  if (!isDesktop) closeSidebarFn();
+}
+
+function returnToMineFromGroupChats() {
+  const mineFilter = currentPerson?.id || FILTER_ALL_VALUE;
+  setGroupChatScope(mineFilter);
+  if (typeof switchTab === "function") switchTab("sessions");
+  const previous = lastMineSessionId
+    ? getActiveSessions().find((session) => session.id === lastMineSessionId && matchesPersonFilter(session))
+    : null;
+  const target = previous || getLatestActiveSessionForCurrentFilters();
+  if (target) {
+    attachSession(target.id, target);
+  } else {
+    if (typeof setChatCurrentSession === "function") {
+      setChatCurrentSession(null, { hasAttachedSession: false });
+    } else {
+      currentSessionId = null;
+      hasAttachedSession = false;
+    }
+    if (typeof resetAttachedSessionRenderState === "function") resetAttachedSessionRenderState();
+    if (typeof showEmpty === "function") showEmpty();
+    renderHeaderSessionTitle("");
+    syncBrowserState({ sessionId: null, tab: "sessions" });
+    renderSessionList();
+  }
+  if (!isDesktop) closeSidebarFn();
+}
+
+if (typeof groupChatsNavBtn !== "undefined") groupChatsNavBtn?.addEventListener("click", openGroupChats);
+if (typeof backToMineNavBtn !== "undefined") backToMineNavBtn?.addEventListener("click", returnToMineFromGroupChats);
+if (typeof headerReturnToMineBtn !== "undefined") headerReturnToMineBtn?.addEventListener("click", returnToMineFromGroupChats);
 
 if (personFilterSelect) {
   personFilterSelect.addEventListener("input", commitPersonFilterSelection);
@@ -623,7 +711,8 @@ function resolveRestoreTargetSession() {
   }
   const filteredSession = getLatestActiveSessionForCurrentFilters();
   if (filteredSession) return filteredSession;
-  return getLatestActiveSession();
+  if (getCurrentPersonFilter() === GROUP_FEED_FILTER_VALUE) return null;
+  return getActiveSessions().find((session) => session.groupFeed !== true) || null;
 }
 
 function applyNavigationState(rawState) {

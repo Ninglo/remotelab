@@ -68,6 +68,7 @@
   color: var(--text);
   font-weight: 600;
 }
+.sidebar-nav-button[hidden] { display: none; }
 .sidebar-nav-icon {
   width: 18px;
   height: 18px;
