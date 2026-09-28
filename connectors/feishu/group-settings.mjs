@@ -8,8 +8,7 @@ const AMBIENT_SESSION_PROMPT = [
   'A message that only mentions you is feedback to reconsider the recent unanswered group messages together. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
 ].join('\n');
 
-// Per-chat overrides change ordinary intake and reply placement, never infer
-// Session identity from message content.
+// Per-chat overrides select intake policy and the mainline participation pilot.
 export function normalizeFeishuGroups(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('groups must be a chat-ID to settings object');
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {

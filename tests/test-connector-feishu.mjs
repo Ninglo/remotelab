@@ -159,7 +159,7 @@ assert.deepEqual(buildFeishuOutboundMessageIndexRecord(topicSummary, 'session-1'
   chatId: 'oc_chat_1',
   conversationId: 'thread_1',
   conversationKind: 'thread',
-  rootId: 'thread_1',
+  rootId: 'om_topic_root_1',
   externalTriggerId: 'feishu:topic:oc_chat_1:thread_1',
   sourceMessageId: 'om_topic_reply_1',
   direction: 'outbound',

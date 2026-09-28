@@ -1170,7 +1170,10 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       sessionId: receipt.sessionId, threadId: receipt.threadId, messageId: receipt.messageId,
     });
     if (receipt.sessionId && receipt.messageId && runtime.storagePaths?.messageIndexPath) {
-      await recordFeishuOutboundMessageSession(runtime, receipt.target, receipt.sessionId, receipt.messageId);
+      const outboundTarget = receipt.threadId
+        ? { ...receipt.target, threadId: receipt.threadId }
+        : receipt.target;
+      await recordFeishuOutboundMessageSession(runtime, outboundTarget, receipt.sessionId, receipt.messageId);
       if (receipt.target?.sourceKind !== 'ambient_thread_open') {
         await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
       }

@@ -754,7 +754,7 @@ export function buildFeishuOutboundMessageIndexRecord(summary, sessionId, outbou
     ...(trimString(summary?.chatId) ? { chatId: trimString(summary.chatId) } : {}),
     conversationId: topicId || buildExternalTriggerId(summary),
     conversationKind: isThread ? 'thread' : 'main',
-    ...(isThread && topicId ? { rootId: topicId } : {}),
+    ...(isThread && topicId ? { rootId: trimString(summary?.rootId || summary?.messageId || topicId) } : {}),
     externalTriggerId: buildExternalTriggerId(summary),
     sourceMessageId: trimString(summary?.messageId),
     direction: 'outbound',
