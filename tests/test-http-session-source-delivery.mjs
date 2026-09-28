@@ -17,7 +17,10 @@ const bin = join(home, '.local/bin');
 await mkdir(config, { recursive: true });
 await mkdir(bin, { recursive: true });
 await writeFile(join(config, 'auth.json'), JSON.stringify({ token: 'a'.repeat(64) }));
-await writeFile(join(config, 'auth-sessions.json'), JSON.stringify({ fixture: { expiry: Date.now() + 3600000, role: 'owner' } }));
+await writeFile(join(config, 'auth-sessions.json'), JSON.stringify({
+  fixture: { expiry: Date.now() + 3600000, role: 'owner' },
+  connector: { expiry: Date.now() + 3600000, role: 'owner', authKind: 'service' },
+}));
 await writeFile(join(config, 'tools.json'), JSON.stringify([{ id: 'fake-codex', name: 'Fixture Codex',
   command: 'fake-codex', runtimeFamily: 'codex-json', models: [{ id: 'fake-model', label: 'Fixture' }] }]));
 await writeFile(join(bin, 'fake-codex'), `#!/usr/bin/env node
@@ -63,10 +66,65 @@ async function request(method, path, body) {
   });
   return { status: res.status, body: await res.json() };
 }
+async function connectorRequest(method, path, body) {
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+    method, headers: { Cookie: 'session_token=connector', 'Content-Type': 'application/json' },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  return { status: res.status, body: await res.json() };
+}
 try {
   await waitFor(async () => {
     try { return (await request('GET', '/api/auth/me')).status === 200; } catch { return false; }
   }, 'server startup');
+  const groupFeedConversation = { connector: 'feishu', sourceRouteId: 'pilot-bot',
+    target: { chatId: 'pilot-group', tenantKey: 'pilot-tenant', chatType: 'group', conversationKind: 'main' } };
+  const legacyGroup = await request('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu',
+    externalTriggerId: 'feishu:main:pilot-bot:pilot-tenant:pilot-group',
+    conversation: groupFeedConversation,
+  });
+  assert.equal(legacyGroup.status, 201);
+  const deniedGroupFeed = await request('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu', groupFeed: true,
+    conversation: groupFeedConversation,
+  });
+  assert.equal(deniedGroupFeed.status, 403, 'a browser cannot create a group conversation');
+  const groupFeed = await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu', groupFeed: true,
+    externalTriggerId: 'feishu:group-feed:pilot-bot:pilot-tenant:pilot-group',
+    conversation: groupFeedConversation, replaceConversation: true,
+  });
+  assert.equal(groupFeed.status, 201);
+  assert.equal(groupFeed.body.session.groupFeed, true);
+  assert.notEqual(groupFeed.body.session.id, legacyGroup.body.session.id,
+    'the group-only route must begin with a clean Session');
+  assert.equal((await request('GET', `/api/sessions/${legacyGroup.body.session.id}`)).body.session.conversation, null,
+    'the old Session must not retain the group delivery binding');
+  assert.equal(groupFeed.body.session.initiatedByIdentityId, 'identity_system',
+    'group ownership must not depend on the first human sender');
+  const groupFeedId = groupFeed.body.session.id;
+  assert.equal((await connectorRequest('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', sourceId: 'feishu', groupFeed: true,
+    externalTriggerId: 'feishu:group-feed:pilot-bot:pilot-tenant:pilot-group',
+    conversation: groupFeedConversation, replaceConversation: true, systemPrompt: 'Updated observer rule',
+  })).body.session.id, groupFeedId, 'later group messages reuse the new mainline');
+  assert.equal((await request('GET', `/api/sessions/${groupFeedId}`)).body.session.conversation.target.chatId,
+    'pilot-group', 'refreshing the observer instructions must preserve its binding');
+  assert.equal((await request('POST', `/api/sessions/${groupFeedId}/messages`, { text: 'private contamination' })).status, 403);
+  assert.equal((await request('PATCH', `/api/sessions/${groupFeedId}`, { name: 'hijacked' })).status, 403);
+  assert.equal((await request('POST', '/api/sessions', {
+    folder: home, tool: 'fake-codex', conversation: groupFeedConversation, replaceConversation: true,
+  })).status, 403, 'browser cannot steal the group conversation binding');
+  const groupMessage = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
+    requestId: 'pilot-message', text: 'a genuine group message', tool: 'fake-codex', model: 'fake-model',
+  });
+  assert.equal(groupMessage.status, 202, 'the connector can continue the read-only group Session');
+  await waitFor(async () => {
+    const result = await request('GET', `/api/runs/${groupMessage.body.run.id}`);
+    return result.body.run?.state === 'completed';
+  }, 'group conversation response completion');
+  console.log('PASS: group conversation is shared for reading but only the connector can write or bind it');
   const longClaim = request('POST', '/api/source-deliveries/claim', {
     connector: 'feishu', sourceRouteId: 'long-poll-fixture', waitMs: 5000,
   });
@@ -82,7 +140,7 @@ try {
     leaseId: wokenClaim.body.claim.leaseId, externalId: 'long-poll-message',
   })).status, 200);
   console.log('PASS: route-scoped long claim wakes from a durable outbox commit');
-  // A conversation belongs to the Session, including browser-originated turns.
+  // Browser continuation keeps the Session context without implicitly posting to its source chat.
   const conversation = { connector: 'feishu', sourceRouteId: 'bound-bot',
     target: { chatId: 'bound-chat', threadId: 'bound-thread', rootId: 'bound-root', messageId: 'bound-root', replyInThread: true } };
   const bound = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', conversation });
@@ -115,13 +173,13 @@ try {
     requestId: 'browser-bound', text: 'Reply through the existing conversation.', tool: 'fake-codex', model: 'fake-model',
   });
   assert.equal(browser.status, 202);
-  const boundReply = await waitFor(async () => {
-    const result = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
-    return result.body.deliveries.find(item => item.runId === browser.body.run.id && item.kind === 'content');
-  }, 'browser reply through bound topic');
-  assert.deepEqual(boundReply.target, conversation.target);
+  await waitFor(async () => {
+    const result = await request('GET', `/api/runs/${browser.body.run.id}`);
+    return result.body.run?.state === 'completed';
+  }, 'browser continuation completion');
   const boundDeliveries = await request('GET', '/api/source-deliveries?connector=feishu&sourceRouteId=bound-bot');
-  assert(boundDeliveries.body.deliveries.some(item => item.text?.includes(boundId)), 'initial publication exposes the actual Session link');
+  assert(!boundDeliveries.body.deliveries.some(item => item.runId === browser.body.run.id),
+    'browser continuation must not publish into the bound Feishu conversation');
   const currentRootDelivery = { connector: 'feishu', sourceRouteId: 'bound-bot',
     target: { chatId: 'bound-chat', chatType: 'group', messageId: 'current-root' } };
   const continuedFromCurrentRoot = await request('POST', `/api/sessions/${boundId}/messages`, {
@@ -176,7 +234,9 @@ try {
   const newTopic = { connector: 'feishu', sourceRouteId: 'new-topic-bot', target: { chatId: 'new-topic-chat' } };
   const published = await request('POST', '/api/sessions', { folder: home, tool: 'fake-codex', conversation: newTopic });
   const publishedId = published.body.session.id;
-  await request('POST', `/api/sessions/${publishedId}/messages`, { requestId: 'new-topic-input', text: 'Publish into a new topic.' });
+  await request('POST', `/api/sessions/${publishedId}/messages`, {
+    requestId: 'new-topic-input', text: 'Publish into a new topic.', sourceDelivery: newTopic,
+  });
   const rootClaim = await waitFor(async () => {
     const result = await request('POST', '/api/source-deliveries/claim', { connector: 'feishu', sourceRouteId: 'new-topic-bot' });
     return result.body.claim;

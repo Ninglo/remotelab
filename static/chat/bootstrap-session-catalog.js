@@ -358,15 +358,15 @@ function matchesCurrentFilters(session) {
 }
 
 function getVisibleActiveSessions() {
-  return getActiveSessions().filter((session) => !session.pinned && matchesCurrentFilters(session));
+  return getActiveSessions().filter((session) => session.groupFeed !== true && !session.pinned && matchesCurrentFilters(session));
 }
 
 function getVisiblePinnedSessions() {
-  return getActiveSessions().filter((session) => session.pinned === true && matchesCurrentFilters(session));
+  return getActiveSessions().filter((session) => session.groupFeed !== true && session.pinned === true && matchesCurrentFilters(session));
 }
 
 function getVisibleArchivedSessions() {
-  return getArchivedSessions().filter((session) => matchesCurrentFilters(session));
+  return getArchivedSessions().filter((session) => session.groupFeed !== true && matchesCurrentFilters(session));
 }
 
 function getSessionCountForSourceFilter(sourceFilter) {

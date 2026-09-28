@@ -15,6 +15,7 @@ const [
   triggers,
   recurringSchedules,
   sessionAutoArchive,
+  groupFeedReview,
   tools,
   { ensureDir },
   guestWeChatConnectorStartup,
@@ -28,6 +29,7 @@ const [
   import('./chat/triggers.mjs'),
   import('./chat/recurring-schedules.mjs'),
   import('./chat/session-auto-archive.mjs'),
+  import('./chat/group-feed-review.mjs'),
   import('./lib/tools.mjs'),
   import('./chat/fs-utils.mjs'),
   import('./lib/guest-wechat-connector-startup.mjs'),
@@ -71,6 +73,7 @@ recurringSchedules.startRecurringScheduleScheduler({
   onMaterialized: () => triggers.processDueTriggersNow(),
 });
 sessionAutoArchive.startSessionAutoArchive();
+groupFeedReview.startGroupFeedReview();
 
 const mailWorker = await embeddedMailWorker.startEmbeddedMailWorker({
   createSession: sessionManager.createSession,
@@ -90,6 +93,7 @@ async function shutdown() {
   triggers.stopTriggerScheduler();
   recurringSchedules.stopRecurringScheduleScheduler();
   sessionAutoArchive.stopSessionAutoArchive();
+  groupFeedReview.stopGroupFeedReview();
   await sessionManager.killAll();
   process.exit(0);
 }

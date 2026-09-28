@@ -42,7 +42,8 @@ function getSessionSpaceEntries() {
   const spaces = new Map();
   for (const session of getActiveSessions()) {
     if (
-      !matchesSourceFilter(session)
+      session.groupFeed === true
+      || !matchesSourceFilter(session)
       || !matchesSearchQuery(session)
     ) continue;
     const value = getSessionSpaceValue(session);
@@ -109,6 +110,10 @@ function renderSessionList() {
     renderSessionSpaceSwitcher();
     const pinnedSessions = getVisiblePinnedSessions();
     const visibleSessions = getVisibleActiveSessions();
+    const groupFeedSessions = getActiveSessions().filter((session) => session.groupFeed === true
+      && matchesSourceFilter(session) && matchesSearchQuery(session));
+
+    renderGroupFeedSection(groupFeedSessions);
 
     // Pinned section — shown in both views
     if (pinnedSessions.length > 0) {
@@ -132,7 +137,7 @@ function renderSessionList() {
 
     renderProjectsView(visibleSessions);
 
-    if (pinnedSessions.length === 0 && visibleSessions.length === 0) {
+    if (pinnedSessions.length === 0 && visibleSessions.length === 0 && groupFeedSessions.length === 0) {
       const empty = document.createElement("div");
       empty.className = "session-filter-empty";
       const emptyText = document.createElement("div");
@@ -174,6 +179,35 @@ function renderSessionList() {
       refocusActiveSessionRenameInput();
     }
   }
+}
+
+function renderGroupFeedSection(activeSessions) {
+  const archivedSessions = archivedSessionsLoaded
+    ? getArchivedSessions().filter((session) => session.groupFeed === true
+      && matchesSourceFilter(session) && matchesSearchQuery(session))
+    : [];
+  if (activeSessions.length === 0 && archivedSessions.length === 0) return;
+  const section = document.createElement("div");
+  section.className = "folder-group group-feed-section";
+  const header = document.createElement("div");
+  header.className = "folder-group-header";
+  header.innerHTML = `<span class="folder-name">${esc(t("sidebar.groupConversations"))}</span><span class="folder-count">${activeSessions.length + archivedSessions.length}</span>`;
+  const items = document.createElement("div");
+  items.className = "folder-group-items";
+  for (const session of [...activeSessions, ...archivedSessions]) {
+    const item = document.createElement("div");
+    item.className = "session-item group-feed-item" + (session.id === currentSessionId ? " active" : "");
+    item.innerHTML = `<div class="session-item-info"><div class="session-item-name">${esc(getSessionDisplayName(session))}</div><div class="session-item-meta">${esc(session.archived === true ? t("status.archived") : t("sidebar.groupReadOnly"))}</div></div>`;
+    item.addEventListener("click", () => {
+      if (typeof switchTab === "function") switchTab("sessions");
+      attachSession(session.id, session);
+      if (!isDesktop) closeSidebarFn();
+    });
+    items.appendChild(item);
+  }
+  section.appendChild(header);
+  section.appendChild(items);
+  sessionList.appendChild(section);
 }
 
 function renderProjectsView(visibleSessions) {

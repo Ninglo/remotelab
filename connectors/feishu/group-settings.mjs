@@ -20,13 +20,20 @@ const QUICK_REACTION_SESSION_PROMPT = [
   'If the newest message explicitly asks for an emoji/reaction only, the connector adds only THINKING. Add exactly one suitable reaction yourself and do not send a text reply.',
 ].join('\n');
 
+const GROUP_FEED_SESSION_PROMPT = [
+  'This Session is the shared, read-only group timeline in RemoteLab. Humans participate through the Feishu group, not the RemoteLab Session composer.',
+  'Keep this timeline for observing the discussion, choosing reactions, and giving brief answers. Do not use this Session as a workspace for research, coding, file edits, reports, or long-running tasks.',
+  'When a group member clearly requests substantial work, start a separate work Session in an appropriate project workspace (never this group timeline folder), carry the source message link and bounded context into it, and report the work Session destination to the group. Keep the work process and its tool output out of this timeline.',
+  'A short answer that needs no tool use can be given directly in the group. Do not treat human-to-human discussion as a task.',
+].join('\n');
+
 // Per-chat overrides select intake policy and the mainline participation pilot.
 export function normalizeFeishuGroups(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('groups must be a chat-ID to settings object');
   return Object.fromEntries(Object.entries(value).map(([chatId, raw]) => {
     if (!chatId.trim() || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid Feishu group settings');
     for (const key of Object.keys(raw)) {
-      if (!['responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'contextReactions', 'reactionFeedback'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
+      if (!['responseMode', 'replyMode', 'systemPrompt', 'participationMode', 'quickReactions', 'contextReactions', 'reactionFeedback', 'groupFeed'].includes(key)) throw new Error(`Unsupported group setting: ${key}`);
     }
     if (raw.responseMode !== undefined && !['all', 'mention_only'].includes(raw.responseMode)) throw new Error('Invalid group responseMode');
     if (raw.replyMode !== undefined && !['inline', 'thread'].includes(raw.replyMode)) throw new Error('Invalid group replyMode');
@@ -34,6 +41,8 @@ export function normalizeFeishuGroups(value = {}) {
     if (raw.quickReactions !== undefined && typeof raw.quickReactions !== 'boolean') throw new Error('Invalid group quickReactions');
     if (raw.contextReactions !== undefined && typeof raw.contextReactions !== 'boolean') throw new Error('Invalid group contextReactions');
     if (raw.reactionFeedback !== undefined && typeof raw.reactionFeedback !== 'boolean') throw new Error('Invalid group reactionFeedback');
+    if (raw.groupFeed !== undefined && typeof raw.groupFeed !== 'boolean') throw new Error('Invalid group groupFeed');
+    if (raw.groupFeed === true && raw.participationMode !== 'ambient') throw new Error('groupFeed requires ambient participationMode');
     if (raw.systemPrompt !== undefined && typeof raw.systemPrompt !== 'string') throw new Error('Group systemPrompt must be a string');
     return [chatId, { ...raw }];
   }));
@@ -55,9 +64,11 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     ...(ambient ? { participationMode: 'ambient' } : {}),
+    ...(ambient && typeof group.groupFeed === 'boolean' ? { groupFeed: group.groupFeed } : {}),
     ...(group.quickReactions === true && !privateChat ? { quickReactions: true } : {}),
     systemPrompt: [config.systemPrompt, group.systemPrompt,
       group.quickReactions === true ? QUICK_REACTION_SESSION_PROMPT : '',
+      ambient && group.groupFeed === true ? GROUP_FEED_SESSION_PROMPT : '',
       ambient ? AMBIENT_SESSION_PROMPT : isFeishuTopicChat(summary) ? TOPIC_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
   };

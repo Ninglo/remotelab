@@ -966,14 +966,24 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const soleMention = ambient && mentionsFeishuBot(runtime, effectiveSummary)
     && !stripLeadingMentionTokens(effectiveSummary.messageText || effectiveSummary.textPreview || '').trim();
   const isQuickCommand = effectiveSummary.quickMode === true;
-  const externalTriggerId = buildFeishuSessionExternalTriggerId(
+  const baseExternalTriggerId = buildFeishuSessionExternalTriggerId(
     effectiveSummary,
     runtime.config.sourceRouteId || 'default',
   );
+  const groupFeed = groupSettings.groupFeed === true && ambient;
+  const groupFeedRollback = groupSettings.groupFeed === false && ambient;
+  const externalTriggerId = groupFeed
+    ? baseExternalTriggerId.replace('feishu:main:', 'feishu:group-feed:')
+    : groupFeedRollback
+      ? baseExternalTriggerId.replace('feishu:main:', 'feishu:legacy-return:')
+    : baseExternalTriggerId;
+  const groupFeedFolder = join(homedir(), '.remotelab', 'workspace', 'group-feed',
+    runtime.config.sourceRouteId || 'default', effectiveSummary.chatId);
+  if (groupFeed) await mkdir(groupFeedFolder, { recursive: true, mode: 0o700 });
   const runtimeSelection = effectiveSummary.runtimeSelectionOverride
     || await resolveFeishuRuntimeSelection(runtime);
   const sessionPayload = {
-    folder: runtime.config.sessionFolder,
+    folder: groupFeed ? groupFeedFolder : runtime.config.sessionFolder,
     tool: runtimeSelection.tool,
     name: buildSessionName(effectiveSummary),
     sourceId: FEISHU_CONNECTOR_ID,
@@ -987,6 +997,8 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       target: buildFeishuSessionConversationTarget(effectiveSummary),
     },
     externalTriggerId,
+    ...(groupFeed ? { groupFeed: true, replaceConversation: true }
+      : groupFeedRollback ? { replaceConversation: true } : {}),
     sourceContext: buildSessionSourceContext(effectiveSummary),
     ...(isQuickCommand ? { executionProfile: 'quick' } : {}),
     ...(runtimeSelection.model ? { model: runtimeSelection.model } : {}),

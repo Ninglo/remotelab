@@ -505,6 +505,26 @@ function canStartSessionFromDetachedComposer() {
 
 function updateStatus(connState, session = getCurrentSession()) {
   if (typeof syncQuickSessionUi === "function") syncQuickSessionUi(session);
+  if (session?.groupFeed === true) {
+    statusDot.className = "status-dot";
+    statusText.textContent = t("sidebar.groupReadOnly");
+    msgInput.disabled = true;
+    msgInput.placeholder = t("input.placeholder.groupReadOnly");
+    sendBtn.style.display = "";
+    sendBtn.disabled = true;
+    sendBtn.title = t("action.readOnly");
+    cancelBtn.style.display = "none";
+    setAttachmentPickerDisabled(true);
+    inlineToolSelect.disabled = true;
+    inlineProviderSelect.disabled = true;
+    inlineModelSelect.disabled = true;
+    effortSelect.disabled = true;
+    if (typeof syncComposerVoiceCleanupToggle === "function") syncComposerVoiceCleanupToggle();
+    syncForkButton();
+    syncShareButton();
+    if (typeof window.remotelabRefreshVoiceInputUi === "function") window.remotelabRefreshVoiceInputUi();
+    return;
+  }
   if (typeof shareSnapshotMode !== "undefined" && shareSnapshotMode) {
     statusDot.className = "status-dot";
     statusText.textContent = t("status.readOnlySnapshot");

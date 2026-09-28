@@ -809,6 +809,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: validate the exact root run and workspace, support both provider run URL forms, and migrate verified history indexes together with collector account changes.
 - Follow-up: verify each entry against the destination project's Session metadata and concrete run URL; distinguish API verification from authenticated browser acceptance.
 
+### 2026-09-28 — 群主线应独立可查，工作与私聊另走 Session
+
+- Source: direct user correction and pilot request.
+- Observed friction or ask: a private web continuation of a group-bound Session was published back to the group. The user wants a separate read-only area for group histories, with participation only through the source group; substantial work belongs in a separate project or personal work Session. Begin with a small exact-chat pilot and leave other groups on their current route.
+- Product implication: bind each group mainline to a service-owned Session, gate browser writes at the server, choose delivery from the current request, and keep group checkpoints out of personal memory. Save incremental nightly review state and retain source message IDs.
+- Follow-up: verify live chat IDs, first-message cutover, reply destination, read-only UI/API behavior, nightly checkpoint, and actual work handoff before extending the pilot.
+
 ### YYYY-MM-DD — short title
 
 - Source:

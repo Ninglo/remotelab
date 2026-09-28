@@ -165,6 +165,7 @@ export function createSessionTurnCompletionHelpers(services) {
       !session?.id
       || !run
       || session.archived
+      || session.groupFeed === true
       || isInternalSession(session)
       || trimString(session.executionProfile).toLowerCase() === 'quick'
     ) {

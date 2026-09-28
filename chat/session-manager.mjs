@@ -1869,7 +1869,7 @@ async function runDetachedRunPostFinalizationEffects(sessionId, finalizedRun, ma
 
 
 function scheduleDetachedRunMemoryWriteback(sessionId, session, finalizedRun, manifest) {
-  if (manifest?.internalOperation || isInternalSession(session)) {
+  if (manifest?.internalOperation || isInternalSession(session) || session?.groupFeed === true) {
     return false;
   }
   void (async () => {
@@ -2067,6 +2067,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     thinking: quickRuntime ? false : extra.thinking === true,
   });
   const requestedConversation = requireConversation(extra.conversation);
+  const requestedGroupFeed = extra.groupFeed === true;
   if (requestedConversation && !extra.sourceId) extra = { ...extra, sourceId: requestedConversation.connector };
   const externalTriggerId = typeof extra.externalTriggerId === 'string' ? extra.externalTriggerId.trim() : '';
   const requestedInitiatedByIdentityId = typeof extra.initiatedByIdentityId === 'string'
@@ -2078,8 +2079,8 @@ export async function createSession(folder, tool, name, extra = {}) {
   const requestedSourceId = resolveRequestedSessionSourceId(extra);
   const requestedSourceName = resolveRequestedSessionSourceName(extra, requestedSourceId);
   const hasRequestedSourceHint = hasRequestedSessionSourceHint(extra);
-  const requestedSpace = normalizeSessionSpace(extra.space || '');
-  const requestedGroup = normalizeSessionGroup(extra.group || '');
+  const requestedSpace = requestedGroupFeed ? '' : normalizeSessionSpace(extra.space || '');
+  const requestedGroup = requestedGroupFeed ? '' : normalizeSessionGroup(extra.group || '');
   const requestedDescription = normalizeSessionDescription(extra.description || '');
   const requestedStarterPreset = requestedExecutionProfile ? '' : normalizeSessionStarterPreset(extra.starterPreset);
   const hasRequestedSystemPrompt = !requestedExecutionProfile && Object.prototype.hasOwnProperty.call(extra, 'systemPrompt');
@@ -2117,9 +2118,13 @@ export async function createSession(folder, tool, name, extra = {}) {
     };
     if (requestedConversation) {
       const bound = metas.find(meta => sameConversation(meta.conversation, requestedConversation));
+      if (requestedGroupFeed && bound?.groupFeed === true
+          && bound.externalTriggerId !== externalTriggerId) {
+        return { session: bound, created: false, changed: false };
+      }
       if (bound && extra.replaceConversation !== true) return { session: bound, created: false, changed: false };
       const existing = metas[existingIndex];
-      if (bound && existing && Object.hasOwn(existing, 'conversation')) {
+      if (bound && existing && Object.hasOwn(existing, 'conversation') && !requestedGroupFeed) {
         // Replaying an old fork cannot steal the topic back from a later fork.
         return { session: existing, created: false, changed: false };
       }
@@ -2128,6 +2133,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (externalTriggerId) {
       if (existingIndex !== -1) {
         const existing = metas[existingIndex];
+        if (displaced?.id === existing.id) displaced = null;
         if (requestedExecutionProfile && existing.executionProfile !== requestedExecutionProfile) {
           throw new Error('Session execution profile is immutable');
         }
@@ -2138,6 +2144,12 @@ export async function createSession(folder, tool, name, extra = {}) {
         }
         const updated = { ...existing };
         let changed = false;
+        if (requestedGroupFeed && updated.groupFeed !== true) {
+          updated.groupFeed = true;
+          updated.initiatedByIdentityId = SYSTEM_IDENTITY_ID;
+          delete updated.personViews;
+          changed = true;
+        }
         if (requestedConversation && !updated.conversation) { updated.conversation = requestedConversation; changed = true; }
 
         if (requestedSpace || requestedGroup) {
@@ -2302,6 +2314,7 @@ export async function createSession(folder, tool, name, extra = {}) {
     if (workflowPriority) session.workflowPriority = workflowPriority;
     if (requestedSourceName) session.sourceName = requestedSourceName;
     if (requestedInitiatedByIdentityId) session.initiatedByIdentityId = requestedInitiatedByIdentityId;
+    if (requestedGroupFeed) session.groupFeed = true;
     if (requestedStarterPreset) session.starterPreset = requestedStarterPreset;
     if (requestedSystemPrompt) session.systemPrompt = requestedSystemPrompt;
     if (requestedModel) session.model = requestedModel;
@@ -3031,6 +3044,11 @@ export async function submitHttpMessage(sessionId, text, images, options = {}) {
   await ensureRequestSchema(CONFIG_DIR);
   let session = await findSessionMeta(sessionId);
   if (!session) throw new Error('Session not found');
+  if (session.groupFeed === true && options.allowGroupFeedWrite !== true) {
+    throw Object.assign(new Error('Group conversations accept messages only from their connector'), {
+      code: 'GROUP_FEED_READ_ONLY',
+    });
+  }
   // Archive is a sidebar visibility state. New work always reopens the
   // Session so connector and browser callers share the same continuation path.
   if (session.archived) {

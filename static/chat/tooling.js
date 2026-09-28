@@ -462,7 +462,8 @@ function syncShareButton() {
   const publishShareSnapshotsEnabled = typeof canPublishShareSnapshots === "function"
     ? canPublishShareSnapshots()
     : true;
-  const visible = publishShareSnapshotsEnabled && !!currentSessionId;
+  const visible = publishShareSnapshotsEnabled && !!currentSessionId
+    && getCurrentSession()?.groupFeed !== true;
   shareSnapshotBtn.style.display = visible ? "" : "none";
   if (!visible) {
     resetHeaderActionButton(shareSnapshotBtn);
@@ -474,7 +475,8 @@ function syncForkButton() {
   const forkSessionsEnabled = typeof canForkSessions === "function"
     ? canForkSessions()
     : true;
-  const visible = forkSessionsEnabled && !!currentSessionId;
+  const visible = forkSessionsEnabled && !!currentSessionId
+    && getCurrentSession()?.groupFeed !== true;
   forkSessionBtn.style.display = visible ? "" : "none";
   if (!visible) {
     resetHeaderActionButton(forkSessionBtn);

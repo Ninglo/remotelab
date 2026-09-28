@@ -3,6 +3,7 @@ import { join, resolve } from 'path';
 
 import { IS_GUEST_INSTANCE, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import { resolveOrCreateExternalIdentity } from '../lib/auth.mjs';
+import { findSessionConversation } from './session-conversations.mjs';
 import { SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
 import { appendEvent, findLatestUserMessage, readEventBody } from './history.mjs';
@@ -140,6 +141,15 @@ export async function handleSessionMainRoutes({
   writeJson,
   writeJsonCached,
 }) {
+  const routeParts = pathname.split('/').filter(Boolean);
+  if (req.method !== 'GET' && routeParts[0] === 'api' && routeParts[1] === 'sessions'
+      && routeParts[2] && authSession?.authKind !== 'service') {
+    const targetSession = await getSession(routeParts[2]);
+    if (targetSession?.groupFeed === true) {
+      writeJson(res, 403, { error: 'Group conversations are read-only here. Reply in the source chat.' });
+      return true;
+    }
+  }
   if (sessionGetRoute?.kind === 'search') {
     res.setHeader('Cache-Control', 'private, no-store');
     try {
@@ -395,6 +405,8 @@ export async function handleSessionMainRoutes({
           effort: payload.effort || undefined,
           sourceDelivery: payload.sourceDelivery,
           sourceContext: payload.sourceContext,
+          suppressSourceDelivery: authSession?.authKind !== 'service' && !payload.sourceDelivery,
+          allowGroupFeedWrite: authSession?.authKind === 'service',
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         };
         const initiator = await resolveSessionInitiator(authSession, payload.sourceId, payload.sourceContext);
@@ -473,6 +485,22 @@ export async function handleSessionMainRoutes({
         sourceContext,
         executionProfile,
       } = payload;
+      const groupFeed = payload.groupFeed === true;
+      if (groupFeed && (authSession?.authKind !== 'service'
+          || sourceId !== 'feishu'
+          || payload.conversation?.connector !== 'feishu'
+          || payload.conversation?.target?.conversationKind !== 'main'
+          || payload.conversation?.target?.chatType !== 'group')) {
+        writeJson(res, 403, { error: 'Only a Feishu connector may create a group conversation.' });
+        return true;
+      }
+      if (authSession?.authKind !== 'service' && payload.conversation) {
+        const existing = await findSessionConversation(payload.conversation);
+        if (existing?.groupFeed === true) {
+          writeJson(res, 403, { error: 'Group conversation bindings are managed by the connector.' });
+          return true;
+        }
+      }
       const requestedFolder = typeof folder === 'string' ? folder.trim() : '';
       const requestedEffectiveFolder = requestedFolder
         ? (requestedFolder.startsWith('~')
@@ -528,6 +556,7 @@ export async function handleSessionMainRoutes({
         description: description || '',
         completionTargets: Array.isArray(completionTargets) ? completionTargets : [],
         externalTriggerId: typeof externalTriggerId === 'string' ? externalTriggerId : '',
+        ...(groupFeed ? { groupFeed: true } : {}),
         ...(requestedExecutionProfile ? { executionProfile: requestedExecutionProfile } : {}),
       };
       if (Object.hasOwn(payload, 'conversation')) {
@@ -553,12 +582,14 @@ export async function handleSessionMainRoutes({
       if (Object.prototype.hasOwnProperty.call(payload, 'sourceContext')) {
         createOptions.sourceContext = sourceContext;
       }
-      const initiator = await resolveSessionCreationInitiator(
-        req,
-        authSession,
-        createOptions.sourceId,
-        createOptions.sourceContext,
-      );
+      const initiator = groupFeed
+        ? { identityId: SYSTEM_IDENTITY_ID, personId: SYSTEM_PERSON_ID }
+        : await resolveSessionCreationInitiator(
+          req,
+          authSession,
+          createOptions.sourceId,
+          createOptions.sourceContext,
+        );
       createOptions.initiatedByIdentityId = initiator.identityId;
       createOptions.viewPersonId = initiator.personId;
       if (typeof model === 'string' && model.trim()) createOptions.model = model.trim();
@@ -616,6 +647,10 @@ export async function handleSessionMainRoutes({
         return true;
       }
       if (!await requireSessionAccess(res, authSession, run.sessionId)) return true;
+      if (authSession?.authKind !== 'service' && (await getSession(run.sessionId))?.groupFeed === true) {
+        writeJson(res, 403, { error: 'Group conversations are read-only here. Reply in the source chat.' });
+        return true;
+      }
       const updated = await cancelActiveRun(run.sessionId);
       if (!updated) {
         const refreshed = await getRunState(runId);
