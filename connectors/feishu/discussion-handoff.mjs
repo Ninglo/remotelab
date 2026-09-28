@@ -418,8 +418,10 @@ export function createDiscussionHandoffPilot(runtime, {
         status: 'accepted', confirmedBy: action.operatorId, confirmedAt: new Date().toISOString() }));
       try { return await continueAccepted(current); }
       catch (error) {
-        await store.mutate(current.key, value => ({ ...value, lastError: String(error?.message || error).slice(0, 300) }));
-        await notifySource(current, 'failed').catch(() => {});
+        const latest = await store.mutate(current.key, value => ({ ...value,
+          lastError: String(error?.message || error).slice(0, 300) }));
+        // The work may already be complete when only the card update fails.
+        if (latest.status !== 'completed') await notifySource(latest, 'failed').catch(() => {});
         throw error;
       }
     });

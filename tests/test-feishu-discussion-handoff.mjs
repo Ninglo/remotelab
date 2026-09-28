@@ -15,7 +15,7 @@ const storageDir = await mkdtemp(join(tmpdir(), 'feishu-discussion-handoff-'));
 try {
   const link = { projectId: 'claude-tag', discussionChatId: 'oc_discussion',
     workChatId: 'oc_work', handoffCards: true };
-  const sent = { cards: [], roots: [], notices: [], noticeRequests: [], patches: [], tasks: [] };
+  const sent = { cards: [], roots: [], notices: [], noticeRequests: [], patches: [], tasks: [], failPatchOnce: false };
   const runtime = { config: { storageDir, projectLinks: [link] }, appClient: { im: { v1: { message: {
     reply: async request => {
       const content = JSON.parse(request.data.content);
@@ -34,6 +34,10 @@ try {
       return { code: 0, data: { message_id: `om_notice_${sent.notices.length}` } };
     },
     patch: async request => {
+      if (sent.failPatchOnce) {
+        sent.failPatchOnce = false;
+        throw new Error('simulated card update failure');
+      }
       sent.patches.push({ messageId: request.path.message_id, card: JSON.parse(request.data.content) });
       return { code: 0, data: {} };
     },
@@ -112,6 +116,17 @@ try {
   assert.equal(sent.notices.length, 3, 'renewal must send a new completed notice');
   await pilot.handleAction(renewedAction);
   assert.equal(sent.roots.length, 2, 'repeated clicks on the renewed card must not create more work');
+  const third = await pilot.offerCandidate({ ...summary, messageId: 'om_third', threadId: 'omt_third' });
+  sent.failPatchOnce = true;
+  const thirdAction = { event: { action: { value: { action: 'confirm', proposalId: third.key } },
+    context: { open_chat_id: link.discussionChatId, open_message_id: 'om_card4' },
+    operator: { operator_id: { open_id: 'ou_confirm' } } } };
+  await assert.rejects(() => pilot.handleAction(thirdAction), /simulated card update failure/);
+  assert.equal(sent.notices.length, 4, 'completed work must not receive a false failure notice');
+  const recovered = await pilot.handleAction(thirdAction);
+  assert.equal(recovered.status, 'completed');
+  assert.equal(sent.notices.length, 4, 'retrying the card update must not duplicate the source notice');
+  assert.equal(sent.roots.length, 3, 'retrying the card update must not duplicate work');
 
   const weak = await verifyDiscussionHandoff('还在讨论要不要做', {
     key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
