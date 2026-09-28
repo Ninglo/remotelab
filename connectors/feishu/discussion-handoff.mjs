@@ -191,9 +191,11 @@ async function listHumanMemberIds(runtime, chatId) {
 
 export async function verifyDiscussionHandoffTarget(runtime, workChatId) {
   const response = await runtime.appClient.im.v1.chat.get({ path: { chat_id: workChatId } });
-  if ((response?.code !== undefined && response.code !== 0)
-    || response?.data?.chat_mode !== 'topic' || response?.data?.chat_status !== 'normal') {
-    throw new Error(response?.msg || 'Handoff work chat is not an active topic chat');
+  if (response?.code !== undefined && response.code !== 0) {
+    throw new Error(response?.msg || 'Unable to verify handoff work chat');
+  }
+  if (response?.data?.chat_mode !== 'topic' || response?.data?.chat_status !== 'normal') {
+    throw new Error('Handoff work chat is not an active topic chat');
   }
   return true;
 }

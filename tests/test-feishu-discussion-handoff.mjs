@@ -91,7 +91,8 @@ try {
   assert.equal(weak.offer, false, 'weak model support cannot publish a card');
   const visibility = { source: { chatId: link.discussionChatId }, workChatId: link.workChatId };
   const memberRuntime = (ids, chatMode = 'topic') => ({ appClient: { im: { v1: {
-    chat: { get: async () => ({ code: 0, data: { chat_mode: chatMode, chat_status: 'normal' } }) },
+    chat: { get: async () => ({ code: 0, msg: 'success',
+      data: { chat_mode: chatMode, chat_status: 'normal' } }) },
     chatMembers: {
     get: async request => ({ code: 0, data: { items: ids[request.path.chat_id].map(member_id => ({ member_id })) } }),
   } } } } });
