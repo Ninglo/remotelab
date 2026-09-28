@@ -127,6 +127,17 @@ try {
   assert.equal(recovered.status, 'completed');
   assert.equal(sent.notices.length, 4, 'retrying the card update must not duplicate the source notice');
   assert.equal(sent.roots.length, 3, 'retrying the card update must not duplicate work');
+  const fourth = await pilot.offerCandidate({ ...summary, messageId: 'om_fourth', threadId: 'omt_fourth' });
+  const dismissFourth = cardMessageId => ({ event: { action: {
+    value: { action: 'dismiss', proposalId: fourth.key } },
+  context: { open_chat_id: link.discussionChatId, open_message_id: cardMessageId },
+  operator: { operator_id: { open_id: 'ou_confirm' } } } });
+  await pilot.handleAction(dismissFourth('om_card5'));
+  const firstDismissalUuid = sent.noticeRequests.at(-1).data.uuid;
+  await pilot.renewCard(fourth.key);
+  await pilot.handleAction(dismissFourth('om_card6'));
+  assert.notEqual(sent.noticeRequests.at(-1).data.uuid, firstDismissalUuid,
+    'a renewed card dismissal must not reuse the previous Feishu notice');
 
   const weak = await verifyDiscussionHandoff('还在讨论要不要做', {
     key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {

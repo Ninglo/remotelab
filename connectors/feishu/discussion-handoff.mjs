@@ -197,7 +197,7 @@ async function sendDiscussionNotice(runtime, proposal, status) {
   return checkedMessage(await runtime.appClient.im.v1.message.reply({
     path: { message_id: proposal.source.messageId },
     data: { msg_type: 'text', content: JSON.stringify({ text }), reply_in_thread: true,
-      uuid: `handoff-${status}-${proposal.key}` },
+      uuid: `handoff-${status}-${proposal.key}-${proposal.cardGeneration || 0}` },
   }), 'Discussion handoff notice');
 }
 
