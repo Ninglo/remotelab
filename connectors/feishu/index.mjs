@@ -725,6 +725,7 @@ export function buildMessageSourceContext(summary) {
       timestamp: Number(entry?.timestamp) || 0,
       text: trimString(entry?.text),
       threadId: trimString(entry?.threadId),
+      sender: trimString(entry?.sender),
     })).filter((entry) => entry.messageId && entry.timestamp && entry.text);
     if (messages.length > 0) {
       context.linkedProjectContext = {

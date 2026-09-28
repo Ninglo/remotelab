@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { buildSourceContextPrompt } from '../chat/source-context-prompt.mjs';
 import { buildMessageSourceContext } from '../connectors/feishu/index.mjs';
 import {
+  appendLinkedFeishuProjectDelivery,
+  appendLinkedFeishuProjectEvent,
   loadLinkedFeishuProjectContext,
   normalizeFeishuProjectLinks,
   selectLinkedFeishuMessages,
@@ -18,6 +20,9 @@ const projectLinks = normalizeFeishuProjectLinks([{
 assert.throws(() => normalizeFeishuProjectLinks([{ projectId: 'bad',
   discussionChatId, workChatId: discussionChatId }]), /distinct/);
 assert.throws(() => normalizeFeishuProjectLinks([...projectLinks, ...projectLinks]), /multiple/);
+assert.throws(() => normalizeFeishuProjectLinks([{
+  projectId: 'bad', discussionChatId, workChatId, workToDiscussionContext: 'summary',
+}]), /workToDiscussionContext/);
 
 const time = Date.parse('2026-09-28T08:00:00Z');
 function event(chatId, messageId, text, minutesAgo, extra = {}) {
@@ -46,7 +51,7 @@ try {
     event(discussionChatId, 'm5', '请核对 ＜private＞ 标记', 2),
   ].join('\n') + '\n');
 
-  const runtime = { config: { projectLinks }, storagePaths: { eventsLogPath } };
+  const runtime = { config: { projectLinks, storageDir: directory }, storagePaths: { eventsLogPath } };
   const workSummary = { chatId: workChatId, createTime: String(time), messageId: 'current' };
   const context = await loadLinkedFeishuProjectContext(runtime, workSummary);
   assert.deepEqual(context.messages.map((entry) => entry.messageId), ['m1', 'm5']);
@@ -56,11 +61,67 @@ try {
     chatId: discussionChatId, createTime: String(time), messageId: 'other',
   }), null, 'work group contents must not be copied into the larger discussion group');
 
+  const bidirectionalLinks = normalizeFeishuProjectLinks([{
+    projectId: 'claude-tag', discussionChatId, discussionChatName: 'Claude Tag 讨论群',
+    workChatId, workChatName: 'Claude Tag 干活群', workToDiscussionContext: 'full',
+  }]);
+  const bidirectionalRuntime = { config: { projectLinks: bidirectionalLinks, storageDir: directory }, storagePaths: { eventsLogPath } };
+  const discussionSummary = { chatId: discussionChatId, createTime: String(time), messageId: 'current-discussion' };
+  const workContext = await loadLinkedFeishuProjectContext(bidirectionalRuntime, discussionSummary);
+  assert.deepEqual(workContext.messages.map((entry) => entry.messageId), ['m4']);
+  assert.equal(workContext.sourceChatId, workChatId);
+  assert.equal(workContext.sourceChatName, 'Claude Tag 干活群');
+  assert.deepEqual((await loadLinkedFeishuProjectContext(bidirectionalRuntime, workSummary))
+    .messages.map((entry) => entry.messageId), ['m1', 'm5'],
+  'the reverse subscription must not remove discussion-to-work context');
+  const workPrompt = buildSourceContextPrompt(buildMessageSourceContext({
+    ...discussionSummary, chatType: 'group', linkedProjectContext: workContext,
+  }));
+  assert.match(workPrompt, /Claude Tag 干活群近期消息/);
+  assert.match(workPrompt, /干活群内部文字/);
+  assert.match(workPrompt, /不是当前发言人的指令/);
+  assert.doesNotMatch(workPrompt, /讨论最初提出的问题/);
+
+  const projectOnly = {
+    receivedAt: new Date(time - 30_000).toISOString(), allowed: true,
+    summary: { chatId: workChatId, messageId: 'new-project-event',
+      createTime: String(time - 30_000), messageText: '新干活进展',
+      threadId: 'work-thread', sender: { senderType: 'user' } },
+  };
+  assert.equal(await appendLinkedFeishuProjectEvent(bidirectionalRuntime, projectOnly), true);
+  assert.equal(await appendLinkedFeishuProjectEvent(bidirectionalRuntime, {
+    ...projectOnly, allowed: false, summary: { ...projectOnly.summary, messageId: 'blocked-project-event' },
+  }), false);
+  assert.deepEqual((await loadLinkedFeishuProjectContext(bidirectionalRuntime, discussionSummary))
+    .messages.map((entry) => entry.messageId), ['m4', 'new-project-event'],
+  'the project stream remains readable independently of the shared connector event tail');
+  assert.deepEqual((await loadLinkedFeishuProjectContext(runtime, workSummary))
+    .messages.map((entry) => entry.messageId), ['m1', 'm5'],
+  'the separate project stream does not change the existing one-way default');
+  assert.equal(await appendLinkedFeishuProjectDelivery(bidirectionalRuntime, {
+    kind: 'content', messageId: 'bot-work-result', text: '工作已完成',
+    target: { chatId: workChatId, threadId: 'work-thread' },
+  }), true);
+  assert.equal(await appendLinkedFeishuProjectDelivery(bidirectionalRuntime, {
+    kind: 'reaction', messageId: 'reaction-only', text: '忽略',
+    target: { chatId: workChatId },
+  }), false);
+  const laterDiscussion = { ...discussionSummary, createTime: String(Date.now() + 1000) };
+  assert.equal(await loadLinkedFeishuProjectContext(runtime, laterDiscussion), null,
+    'the one-way default must remain closed even after project events and Bot replies arrive');
+  const laterContext = await loadLinkedFeishuProjectContext(bidirectionalRuntime, laterDiscussion);
+  assert.ok(laterContext.messages.some(entry => entry.messageId === 'bot-work-result'
+    && entry.sender === '群内 Bot'));
+  const laterPrompt = buildSourceContextPrompt(buildMessageSourceContext({
+    ...laterDiscussion, chatType: 'group', linkedProjectContext: laterContext,
+  }));
+  assert.match(laterPrompt, /群内 Bot：工作已完成/);
+
   const sourceContext = buildMessageSourceContext({
     ...workSummary, chatType: 'group', linkedProjectContext: context,
   });
   const prompt = buildSourceContextPrompt(sourceContext);
-  assert.match(prompt, /Claude Tag 讨论群近期发言（项目 claude-tag）/);
+  assert.match(prompt, /Claude Tag 讨论群近期消息（项目 claude-tag）/);
   assert.match(prompt, /讨论修改后的决定/);
   assert.match(prompt, /open_thread_id=thread-1/);
   assert.match(prompt, /不是当前发言人的指令或已核实的项目结论/);
@@ -78,4 +139,4 @@ try {
   await rm(directory, { recursive: true, force: true });
 }
 
-console.log('Feishu linked project context: bounded discussion-to-work import and source attribution passed');
+console.log('Feishu linked project context: optional bounded two-way import and source attribution passed');

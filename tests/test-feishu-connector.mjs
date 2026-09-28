@@ -799,7 +799,10 @@ for (const [filename, mimeType, fileType, messageType] of [
   }
 }
 
-const sourceDeliveryResult = await processSourceDeliveryOnce({ config: { sourceRouteId: 'bot-alpha', storageDir: join(tempHome, 'delivery-worker') } }, {
+const sourceDeliveryRuntime = { config: { sourceRouteId: 'bot-alpha', storageDir: join(tempHome, 'delivery-worker'),
+  projectLinks: [{ projectId: 'delivery-pilot', discussionChatId: 'chat_discussion_1',
+    workChatId: 'chat_topic_1', workToDiscussionContext: 'full' }] } };
+const sourceDeliveryResult = await processSourceDeliveryOnce(sourceDeliveryRuntime, {
   requestRemoteLab: async (path, options = {}) => {
     sourceDeliveryRequests.push({ path, options });
     if (path === '/api/source-deliveries/claim') {
@@ -842,6 +845,12 @@ assert.equal(sourceDeliveryRequests[0].options.body.sourceRouteId, 'bot-alpha');
 assert.equal(sourceDeliveryRequests[0].options.body.waitMs, 0);
 assert.equal(sourceDeliveryRequests[1].path, '/api/source-deliveries/srcd_000000000000000000000001_0/complete');
 assert.equal(sourceDeliveryRequests[1].options.body.externalId, 'om_source_delivery_out');
+const { loadLinkedFeishuProjectContext } = await import('../connectors/feishu/linked-project-context.mjs');
+const deliveredProjectContext = await loadLinkedFeishuProjectContext(sourceDeliveryRuntime,
+  { chatId: 'chat_discussion_1', createTime: String(Date.now() + 1000) });
+assert.deepEqual(deliveredProjectContext.messages.map(entry => [entry.messageId, entry.text]),
+  [['om_source_delivery_out', '今天日期：2026-07-27']],
+  'a confirmed work-chat reply becomes visible to the linked discussion on its next turn');
 
 const reactionDeliveryRequests = [];
 const { createFeishuReadReactionStore } = await import('../connectors/feishu/read-reactions.mjs');

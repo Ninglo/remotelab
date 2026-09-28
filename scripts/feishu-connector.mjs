@@ -60,6 +60,8 @@ import {
 } from '../connectors/feishu/index.mjs';
 import { loadFeishuConversationContext } from '../connectors/feishu/conversation-context.mjs';
 import {
+  appendLinkedFeishuProjectDelivery,
+  appendLinkedFeishuProjectEvent,
   loadLinkedFeishuProjectContext,
   normalizeFeishuProjectLinks,
 } from '../connectors/feishu/linked-project-context.mjs';
@@ -613,6 +615,7 @@ async function recordConnectorEvent(runtime, sourceLabel, summary, raw, allowed)
     raw: runtime.config.storeRawEvents ? raw : undefined,
   };
   await appendJsonl(runtime.storagePaths.eventsLogPath, record);
+  await appendLinkedFeishuProjectEvent(runtime, record);
   console.log(`[feishu-connector] inbound event ${sourceLabel} (${allowed ? 'allowed' : 'blocked'})`, JSON.stringify(summarizeEventForLog(summary)));
   return allowed;
 }
@@ -1323,6 +1326,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
         await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
       }
     }
+    await appendLinkedFeishuProjectDelivery(runtime, receipt);
     const completed = await request(`/api/source-deliveries/${receipt.deliveryId}/complete`, { method: 'POST', body: {
       leaseId: receipt.leaseId, externalId: receipt.externalId, messageId: receipt.messageId, threadId: receipt.threadId,
     } });
@@ -1365,7 +1369,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || sent.reactionId || '', messageId: sent.message_id || '',
       threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary,
-      kind: delivery.kind });
+      kind: delivery.kind, ...(delivery.kind === 'content' ? { text: delivery.text } : {}) });
     let completed;
     await receipts.flush(async receipt => { completed = await acknowledge(receipt); }, replayOptions);
     return completed;

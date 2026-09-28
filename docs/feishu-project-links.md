@@ -10,30 +10,56 @@ Feishu Connector config:
     "discussionChatId": "oc_discussion",
     "discussionChatName": "Example discussion group",
     "workChatId": "oc_work",
+    "workChatName": "Example work group",
     "handoffCards": false
   }]
 }
 ```
 
-On a new message in the work chat, the Connector adds up to 20 recent human
-messages from the paired discussion chat to that message's source context. It
-uses only allowed events already stored by this Connector, looks back at most
-24 hours and at most 2 MiB of the event log, and limits the text to about 6,000
-characters. Thread replies are included when they arrived as Connector events;
+On a new message in the work chat, the Connector adds up to 20 recent messages
+from the paired discussion chat to that message's source context. It uses only
+allowed events already stored by this Connector, looks back at most
+24 hours and at most 2 MiB each of the event log and project message stream,
+and limits the text to about 6,000 characters. New human messages from either
+bound chat are written to the project stream before their AI turns run. Confirmed
+Bot text replies are written after delivery. This keeps recent project messages
+available when unrelated chats fill the Connector event-log tail. Thread
+replies are included when they arrived as Connector events;
 each excerpt carries its original message ID and chat or thread link. A failed
 context read does not block the current message.
 
-The direction is deliberately discussion to work. Work-chat messages are not
-copied into the larger discussion chat, and the feature does not create a new
-project ledger, send messages between chats, or change the scheduled daily
-review's source whitelist. The imported text is a lead for the receiving Agent,
+The default direction is discussion to work. Work-chat messages are not
+automatically posted to the larger discussion chat. The feature does not create
+a semantic project ledger, send messages between chats, or change the scheduled
+daily review's source whitelist. The imported text is a lead for the receiving Agent,
 not a fresh instruction or an accepted project decision. Verify original
 messages before relying on a decision or changing permissions or execution.
 
 This is a time-bounded context pilot. It is not a full message archive or a
 replacement for the project ledger. Messages absent from the Connector event
-log, attachments, older discussion, and later edits or recalls may require a
+logs, attachments, older discussion, and later edits or recalls may require a
 fresh source read.
+
+### Optional two-way context pilot
+
+For an explicitly approved pair, set `workToDiscussionContext: "full"` on its
+`projectLinks` entry. The work-chat side continues to receive recent discussion
+messages, and the discussion-chat side also receives recent human messages and
+confirmed Bot text replies from the work chat. Work topics keep their own
+Sessions; the other chat's excerpts appear only as attributed source context on
+the next local turn. A cross-chat
+message does not start a run, choose a reaction, or post a reply in the other
+chat. Each side keeps its own reply destination.
+
+This option exposes work-chat text to the discussion Session. Before enabling
+it, check the actual membership of both chats and obtain explicit approval if
+the discussion chat has members who cannot read the work chat. Group membership
+can change, so the pilot operator must recheck it. The existing bounds still
+apply: at most 20 messages from the other chat, within 24 hours and the
+last 2 MiB of each log, with about 6,000 characters of context. It does
+not provide a shared project summary, a per-Session unread cursor, or automatic
+Session rollover. Those need separate acceptance before relying on this as
+long-term project memory.
 
 For a selected project link, `handoffCards: true` enables the discussion-group
 handoff trial. The quick classifier nominates only a clear decision to start
