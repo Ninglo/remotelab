@@ -224,12 +224,15 @@ export function createFeishuQuickParticipationPilot(runtime, {
     if (seen.size > 5_000) seen.delete(seen.values().next().value);
     const started = receivedAt;
     const contextual = runtime.config.groups?.[summary.chatId]?.contextReactions === true;
+    // Start the read receipt before any classification or Session work.
     const readReaction = reactionMode === 'none'
       ? Promise.resolve({ result: 'skipped', latencyMs: null, reactionId: '' })
-      : Promise.resolve().then(() => react(summary, 'THINKING'))
-        .then(receipt => ({ result: 'ok', latencyMs: Math.round(performance.now() - started),
-          reactionId: receipt?.reactionId || '' }),
-          () => ({ result: 'failed', latencyMs: Math.round(performance.now() - started), reactionId: '' }));
+      : (async () => {
+        const receipt = await react(summary, 'THINKING');
+        if (!receipt?.reactionId) throw new Error('Feishu did not return a reaction ID');
+        return { result: 'ok', latencyMs: Math.round(performance.now() - started),
+          reactionId: receipt.reactionId };
+      })().catch(() => ({ result: 'failed', latencyMs: Math.round(performance.now() - started), reactionId: '' }));
     const decision = classify(contextFor(summary, recent));
     return (async () => {
       const verdict = await decision.catch(() => ({ decision: 'unknown', reason: 'request_error' }));
