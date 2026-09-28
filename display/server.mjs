@@ -374,7 +374,13 @@ async function collectSnapshot(personId) {
     queued += Math.max(0, queueCount);
     const assistantAt = timestampMs(session.lastAssistantMessageAt);
     const reviewedAt = timestampMs(session.lastReviewedAt);
-    if (run.state !== 'running' && assistantAt >= cutoff && assistantAt > reviewedAt) {
+    const sourceId = trimString(session.sourceId).toLowerCase();
+    // Match the chat sidebar's read-state scope. Connector replies are delivered
+    // on their own surface; a missing web review stamp is not an unread receipt.
+    const usesWebReview = (!sourceId || sourceId === 'chat') && !session.conversation
+      && !session.internalRole && !session.archived;
+    const busy = run.state === 'running' || queueCount > 0 || session.activity?.compact?.state === 'pending';
+    if (usesWebReview && !busy && assistantAt >= cutoff && assistantAt > reviewedAt) {
       pendingReview += 1;
       const name = trimString(session.name).replace(/\s+/g, ' ').slice(0, 36) || '未命名 Session';
       const context = (trimString(session.workSummary?.summary) || trimString(session.description))

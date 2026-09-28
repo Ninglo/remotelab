@@ -70,6 +70,17 @@ async function waitFor(url, timeoutMs = 10_000) {
 const apiPort = await reservePort();
 const displayPort = await reservePort();
 let sessionsUnavailable = false;
+const excludedResults = [
+  { name: 'Feishu result already delivered', sourceId: 'chat', conversation: { connector: 'feishu' } },
+  { name: 'Legacy Feishu result', sourceId: 'feishu' },
+  { name: 'Hidden scheduled result', internalRole: 'scheduled_execution' },
+  { name: 'Archived result', archived: true },
+  { name: 'Queued follow-up', activity: { run: { state: 'idle' }, queue: { state: 'queued', count: 1 } } },
+  { name: 'Compacting session', activity: { run: { state: 'idle' }, compact: { state: 'pending' } } },
+  { name: 'Reviewed result', lastReviewedAt: new Date(Date.now() + 60_000).toISOString() },
+  { name: 'Old result', lastAssistantMessageAt: Date.now() - 25 * 60 * 60 * 1000 },
+  { name: 'Another Person result', initiatedByIdentityId: 'identity_unrelated' },
+];
 const api = createServer((req, res) => {
   if (req.url.startsWith('/?token=')) {
     res.writeHead(302, { Location: '/', 'Set-Cookie': 'session_token=test; Path=/' });
@@ -105,6 +116,14 @@ const api = createServer((req, res) => {
         workSummary: { summary: '整理本周进展' },
         deliveryIssueCount: 0,
       },
+      ...excludedResults.map((overrides) => ({
+        sourceId: 'chat',
+        initiatedByIdentityId: 'identity_display_a',
+        activity: { run: { state: 'idle' }, queue: { count: 0 } },
+        lastAssistantMessageAt: Date.now(),
+        deliveryIssueCount: 0,
+        ...overrides,
+      })),
     ] }));
     return;
   }
@@ -357,9 +376,11 @@ try {
   assert.equal(statusAJson.reminderSources.automation.configured, 1);
   assert.equal(statusAJson.reminderSources.automation.active, 1);
   assert.equal(statusAJson.reminderSources.automation.failures24h, 0, 'other Person failures stay private');
-  assert.equal(statusAJson.reminderSources.feishu.conversations, 1);
+  assert.equal(statusAJson.reminderSources.feishu.conversations, 2, 'Feishu conversation metrics stay available');
   assert.equal(statusAJson.reminderSources.feishu.recentConversations, 1);
-  assert.equal(statusAJson.metrics.pendingReview, 1);
+  assert.equal(statusAJson.metrics.running, 1, 'running Feishu work still appears as active work');
+  assert.equal(statusAJson.metrics.queued, 1, 'queued work stays in the queue count');
+  assert.equal(statusAJson.metrics.pendingReview, 1, 'only idle, visible, unreviewed web results need review');
   assert.deepEqual(statusAJson.metrics.pendingResults, [{ name: '项目审阅', context: '整理本周进展' }]);
   assert.equal(statusA.status, 200);
   assert.equal(statusAJson.scene.signal.title, '评测等待确认');
