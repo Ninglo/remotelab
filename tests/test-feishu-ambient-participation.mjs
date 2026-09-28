@@ -31,6 +31,9 @@ try {
   assert.match(settings.systemPrompt, /feishu-reply:thread/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' }).responseMode, 'mention_only');
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread-1' }).participationMode, undefined);
+  assert.equal(resolveFeishuGroupSettings({ ...config,
+    groups: { [chatId]: { ...config.groups[chatId], responseMode: 'all' } },
+  }, { ...base, threadId: 'thread-1' }).responseMode, 'all');
   const effects = [];
   const runtime = { config, botIdentity: { openId: 'self' }, storagePaths: {}, };
   await handleMessage(runtime, base, 'test', {

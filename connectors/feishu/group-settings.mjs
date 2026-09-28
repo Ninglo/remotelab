@@ -2,10 +2,10 @@ import { isFeishuTopicChat } from './index.mjs';
 
 const AMBIENT_SESSION_PROMPT = [
   'This Feishu group sends its main-timeline messages to your continuing Session, including messages without an @ mention.',
-  'Read the recent group discussion and decide whether your participation helps. If no reply is warranted, return an empty final answer. Do not acknowledge every message.',
+  'Read the recent group discussion and decide whether your participation helps. If the newest human message explicitly @ mentions you, give a text reply unless it explicitly asks you to stay silent. Otherwise, if no reply is warranted, return an empty final answer. Do not acknowledge every message in text.',
   'When replying, use the normal final answer for a message on the group main timeline.',
   'If a substantial, distinct discussion should open as a Feishu Thread, begin your final answer with exactly <private>feishu-reply:thread</private>. RemoteLab will post the visible answer in a Thread rooted at the current inbound message. Do not use that marker for silence.',
-  'A message that only mentions you is feedback to reconsider the recent unanswered group messages together. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
+  'A message that only mentions you asks you to reconsider recent unanswered group messages together and reply. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
 ].join('\n');
 
 const TOPIC_SESSION_PROMPT = [

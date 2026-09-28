@@ -135,6 +135,14 @@ try {
   await expressive.handle({ ...base, messageId: 'surprise', messageText: '这个结果真惊喜' });
   await expressive.handle({ ...base, messageId: 'no-reaction', messageText: '两个人聊别的' });
   assert.deepEqual(contextualReactions, ['THINKING', 'WOW', 'THINKING']);
+  const mentionedReactions = [];
+  const mentioned = createFeishuQuickParticipationPilot(runtime, {
+    classify: async () => ({ decision: 'silent', silentReaction: 'none' }),
+    react: async (_summary, emojiType) => mentionedReactions.push(emojiType),
+  });
+  await mentioned.handle({ ...base, messageId: 'direct-mention', messageText: '@bot 帮我看看',
+    mentions: [{ openId: 'bot' }] });
+  assert.deepEqual(mentionedReactions, ['THINKING', 'OnIt']);
   console.log('test-feishu-quick-participation: ok');
 } finally {
   await rm(home, { recursive: true, force: true });
