@@ -718,6 +718,23 @@ export function buildMessageSourceContext(summary) {
       };
     }
   }
+  if (Array.isArray(summary?.linkedProjectContext?.messages)) {
+    const linked = summary.linkedProjectContext;
+    const messages = linked.messages.map((entry) => ({
+      messageId: trimString(entry?.messageId),
+      timestamp: Number(entry?.timestamp) || 0,
+      text: trimString(entry?.text),
+      threadId: trimString(entry?.threadId),
+    })).filter((entry) => entry.messageId && entry.timestamp && entry.text);
+    if (messages.length > 0) {
+      context.linkedProjectContext = {
+        projectId: trimString(linked.projectId),
+        sourceChatId: trimString(linked.sourceChatId),
+        sourceChatName: trimString(linked.sourceChatName),
+        messages,
+      };
+    }
+  }
   return context;
 }
 

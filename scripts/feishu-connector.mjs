@@ -59,6 +59,10 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
 import { loadFeishuConversationContext } from '../connectors/feishu/conversation-context.mjs';
+import {
+  loadLinkedFeishuProjectContext,
+  normalizeFeishuProjectLinks,
+} from '../connectors/feishu/linked-project-context.mjs';
 import { createFeishuQuickParticipationPilot } from '../connectors/feishu/quick-participation.mjs';
 import { summarizeFeishuMuteReaction } from '../connectors/feishu/reaction-mute.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
@@ -356,6 +360,7 @@ async function loadConfig(pathname) {
     storageDir,
     responsePolicy: normalizeFeishuResponsePolicy(parsed?.responsePolicy),
     groups: normalizeFeishuGroups(parsed?.groups),
+    projectLinks: normalizeFeishuProjectLinks(parsed?.projectLinks),
     replyPolicy: normalizeFeishuReplyPolicy(parsed?.replyPolicy),
     botHandoffPolicy: normalizeFeishuBotHandoffPolicy(parsed?.botHandoffPolicy),
     accessPolicy: normalizeAccessPolicy(parsed?.accessPolicy, {
@@ -1014,16 +1019,21 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       code: QUICK_PROFILE_CONFLICT,
     });
   }
-  const [attachmentResolution, conversationContext] = await Promise.all([
+  const [attachmentResolution, conversationContext, linkedProjectContext] = await Promise.all([
     resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
     loadFeishuConversationContext(runtime, effectiveSummary).catch((error) => {
       console.warn(`[feishu-connector] failed to load conversation context for ${effectiveSummary.messageId}: ${error?.message || error}`);
+      return null;
+    }),
+    loadLinkedFeishuProjectContext(runtime, effectiveSummary).catch((error) => {
+      console.warn(`[feishu-connector] failed to load linked project context for ${effectiveSummary.messageId}: ${error?.message || error}`);
       return null;
     }),
   ]);
   const messageSummary = {
     ...effectiveSummary,
     ...(conversationContext ? { conversationContext } : {}),
+    ...(linkedProjectContext ? { linkedProjectContext } : {}),
     ...(attachmentResolution.failures.length > 0
       ? { attachmentDownloadFailures: attachmentResolution.failures }
       : {}),
