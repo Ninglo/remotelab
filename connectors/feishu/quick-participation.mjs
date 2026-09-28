@@ -182,7 +182,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
     seen.add(summary.messageId);
     if (seen.size > 5_000) seen.delete(seen.values().next().value);
     const started = receivedAt;
-    const readReaction = Promise.resolve().then(() => react(summary, 'StatusReading'))
+    const readReaction = Promise.resolve().then(() => react(summary, 'THINKING'))
       .then(() => ({ result: 'ok', latencyMs: Math.round(performance.now() - started) }),
         () => ({ result: 'failed', latencyMs: Math.round(performance.now() - started) }));
     const decision = classify(contextFor(summary, recent));

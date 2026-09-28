@@ -31,8 +31,8 @@ try {
   await pilot.handle({ ...base, messageId: 'first', messageText: '链接打不开。' });
   await pilot.handle({ ...base, messageId: 'second', messageText: '是机器人发的测试报告，下午要用。' });
   assert.deepEqual(reactions, [
-    ['first', 'StatusReading'], ['first', 'EatingFood'],
-    ['second', 'StatusReading'], ['second', 'OnIt'],
+    ['first', 'THINKING'], ['first', 'EatingFood'],
+    ['second', 'THINKING'], ['second', 'OnIt'],
   ]);
   assert.match(inputs[1], /链接打不开/);
   assert.match(inputs[1], /下午要用/);
@@ -55,7 +55,7 @@ try {
   await restored.restore(eventsPath);
   await restored.handle({ ...base, messageId: 'now', messageText: '下午评审。' });
   assert.match(restoredInput, /早上说过报告打不开/);
-  assert.deepEqual(reactions.at(-1), ['restored-test', 'StatusReading']);
+  assert.deepEqual(reactions.at(-1), ['restored-test', 'THINKING']);
 
   restored.seedConversation({ ...base, threadId: 'ongoing' }, [
     { messageId: 'bot-reply', timestamp: Date.now(), senderType: 'app', senderId: 'self-app',
