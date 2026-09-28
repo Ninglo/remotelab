@@ -492,6 +492,18 @@ export async function findLatestAssistantMessage(sessionId, options = {}) {
   return null;
 }
 
+export async function findLatestUserMessage(sessionId, options = {}) {
+  const meta = await loadMeta(sessionId);
+  const match = typeof options.match === 'function' ? options.match : null;
+  for (let seq = meta.latestSeq; seq >= 1; seq -= 1) {
+    const stored = await loadStoredEvent(sessionId, seq);
+    if (stored?.type === 'message' && stored.role === 'user' && (!match || match(stored))) {
+      return options.includeBodies === true ? hydrateEvent(sessionId, stored) : stored;
+    }
+  }
+  return null;
+}
+
 export async function getHistorySnapshot(sessionId, options = {}) {
   const [meta, context] = await Promise.all([
     loadMeta(sessionId),

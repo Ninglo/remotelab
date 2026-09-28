@@ -5,9 +5,10 @@ import { IS_GUEST_INSTANCE, MANAGED_WORK_ROOT_DIR } from '../lib/config.mjs';
 import { resolveOrCreateExternalIdentity } from '../lib/auth.mjs';
 import { SYSTEM_IDENTITY_ID, SYSTEM_PERSON_ID } from '../lib/auth-config.mjs';
 import { readBody } from '../lib/utils.mjs';
-import { appendEvent, readEventBody } from './history.mjs';
+import { appendEvent, findLatestUserMessage, readEventBody } from './history.mjs';
 import { messageEvent } from './normalizer.mjs';
 import { createSessionDetail, createSessionListItem } from './session-api-shapes.mjs';
+import { getRun, getRunManifest } from './runs.mjs';
 import { buildEventBlockEvents, buildSessionDisplayEvents } from './session-display-events.mjs';
 import { clampGuestSessionFolder } from './session-folder.mjs';
 import { resolveStarterPresetDefinition } from './starter-session-content.mjs';
@@ -238,6 +239,28 @@ export async function handleSessionMainRoutes({
     return true;
   }
 
+  if (sessionGetRoute?.kind === 'latest-run') {
+    const { sessionId } = sessionGetRoute;
+    if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+    const session = await getSession(sessionId);
+    if (!session) { writeJson(res, 404, { error: 'Session not found' }); return true; }
+    // Read metadata only, before the new /log message is admitted.
+    const priorUser = await findLatestUserMessage(sessionId, { match: event =>
+      Boolean(event.runId) && event.sourceContext?.feishuParticipation !== 'feedback'
+        && !String(event.requestId || '').startsWith('feishu:feedback:') });
+    const activeRunId = session.activity?.run?.runId || '';
+    const activeRun = activeRunId ? await getRun(activeRunId) : null;
+    const activeManifest = activeRunId ? await getRunManifest(activeRunId) : null;
+    const runId = activeRun?.sessionId === sessionId
+      && !activeManifest?.internalOperation
+      && !String(activeRun.requestId || '').startsWith('feishu:feedback:')
+      ? activeRunId : priorUser?.runId || '';
+    const run = runId ? await getRun(runId) : null;
+    res.setHeader('Cache-Control', 'private, no-store');
+    writeJson(res, 200, { sessionId, runId: run?.sessionId === sessionId ? runId : '' });
+    return true;
+  }
+
   if (sessionGetRoute?.kind === 'langsmith') {
     const { sessionId } = sessionGetRoute;
     if (!await requireSessionAccess(res, authSession, sessionId)) return true;
@@ -248,10 +271,12 @@ export async function handleSessionMainRoutes({
     res.setHeader('Cache-Control', 'private, no-store');
     if (parsedUrl.query.format === 'json') {
       writeJson(res, 200, { sessionId, status: latest.status,
+        ...(typeof parsedUrl.query.runId === 'string' && parsedUrl.query.runId
+          ? { targetRunId: parsedUrl.query.runId, runMatched: latest.runMatched === true } : {}),
         sessionUrl: buildSessionNavigationHref(sessionId, { requireAbsolute: true }),
         langsmithUrl: latest.url || '',
         langsmithEntryUrl: latest.url
-          ? buildLangSmithCaseNavigationHref(sessionId, { requireAbsolute: true }) : '',
+          ? `${buildLangSmithCaseNavigationHref(sessionId, { requireAbsolute: true })}${latest.runMatched ? `?runId=${encodeURIComponent(parsedUrl.query.runId)}` : ''}` : '',
         langsmithKind: latest.kind || '' });
       return true;
     }

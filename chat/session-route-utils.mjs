@@ -30,6 +30,10 @@ export function parseSessionGetRoute(pathname) {
     return { kind: 'source-context', sessionId };
   }
 
+  if (parts.length === 4 && parts[3] === 'latest-run') {
+    return { kind: 'latest-run', sessionId };
+  }
+
   if (parts.length === 4 && parts[3] === 'langsmith') {
     return { kind: 'langsmith', sessionId };
   }

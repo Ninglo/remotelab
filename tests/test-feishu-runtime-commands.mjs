@@ -7,7 +7,7 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-feishu-commands-'));
 setIsolatedTestHome(home);
 try {
-  const { handleMessage, extractLocalCommand, recordFeishuThreadSessionBinding, summarizeEvent, buildFeishuPostContent } = await import('../scripts/feishu-connector.mjs');
+  const { handleMessage, extractLocalCommand, recordFeishuThreadSessionBinding, summarizeEvent } = await import('../scripts/feishu-connector.mjs');
   const { handleFeishuRuntimeCommand } = await import('../connectors/feishu/runtime-commands.mjs');
   const session = { id: 's1', tool: 'codex', model: 'alpha', effort: 'low' };
   const catalog = {
@@ -36,6 +36,7 @@ try {
     ] };
     else if (path === '/api/session-conversations/resolve') json = { sessionId: options.body?.conversation?.target?.conversationKind === 'main' ? 's1' : null };
     else if (path === '/api/sessions') json = { sessions: [{ ...session, externalTriggerId: 'feishu:p2p:private' }] };
+    else if (path === '/api/sessions/s1/latest-run') json = { sessionId: 's1', runId: 'run_prior' };
     else if (path === '/api/sessions/s1/langsmith?format=json') json = { status: 'available',
       sessionUrl: 'https://remote.example/?session=s1&tab=sessions',
       langsmithUrl: 'https://smith.langchain.com/o/workspace/projects/p/project/r/run',
@@ -149,12 +150,18 @@ try {
 
   const replies = [];
   let aiCalls = 0;
+  const logTurns = [];
   const helpers = {
     requestRemoteLab: request,
     resolveFeishuRuntimeSelection: async () => ({ ...selection }),
     queueFeishuReply: async (_runtime, _summary, text) => replies.push(text),
-    addProcessingReaction: async () => { throw new Error('commands must not start processing reactions'); },
-    submitRemoteLabRequest: async () => { aiCalls++; return { sessionId: 'unexpected' }; },
+    addProcessingReaction: async () => null,
+    submitRemoteLabRequest: async (_runtime, inboundSummary) => {
+      aiCalls++;
+      logTurns.push(inboundSummary);
+      assert(calls.some(call => call.path === '/api/sessions/s1/latest-run'), 'freeze the prior Run before admitting /log');
+      return { sessionId: 's1', runId: `run_log_${aiCalls}` };
+    },
   };
   await handleMessage(runtime, { ...summary, messageText: '/status' }, 'test', helpers);
   assert.match(replies.at(-1), /当前 Session/);
@@ -164,77 +171,37 @@ try {
   assert.match(replies.at(-1), /\/log/);
   assert.match(replies.at(-1), /短名：\/m model、\/q quick/);
   await handleMessage(runtime, { ...summary, messageId: 'log-usage', messageText: '/log' }, 'test', helpers);
-  assert.match(replies.at(-1), /当前 Session/);
-  assert.match(replies.at(-1), /\[LangSmith\]\(https:\/\/remote.example\/api\/sessions\/s1\/langsmith\)/);
-  assert.match(replies.at(-1), /\[Session\]\(https:\/\/remote.example\/\?session=s1&tab=sessions\)/);
-  assert(calls.some(call => call.path === '/api/sessions/s1/langsmith?format=json'));
+  assert.equal(aiCalls, 1);
+  assert.match(logTurns.at(-1).messageText, /当前会话/);
+  assert.deepEqual(logTurns.at(-1).logContinuation, { sessionId: 's1', runId: 'run_prior' });
+  assert.equal(replies.length, 2, '/log should not emit a connector-authored reply');
   await handleMessage(runtime, { ...summary, messageId: 'log-current',
     messageText: '/log 我想 debug 下当前这个 session' }, 'test', helpers);
-  assert.match(replies.at(-1), /当前 Session/);
-  assert.doesNotMatch(replies.at(-1), /历史 Session/);
-  assert.equal(calls.some(call => call.path.startsWith('/api/sessions/search')), false,
-    'current Session lookup must bypass historical search');
-  for (const chatType of ['p2p', 'group']) {
-    await handleMessage(runtime, { ...summary, chatType, messageId: `log-${chatType}`, messageText: '/log Auto Research 数据接入' }, 'test', {
-      ...helpers,
-      requestRemoteLab: async path => {
-        assert.equal(path, `/api/sessions/search?q=${encodeURIComponent('Auto Research 数据接入')}`);
-        return { response: { ok: true }, json: { sessions: [
-          { title: 'Auto Research', sessionUrl: 'https://remote.example/?session=one', langsmithUrl: 'https://smith.langchain.com/one' },
-          { title: 'Data [draft]', sessionUrl: 'https://remote.example/?session=two', langsmithStatus: 'missing' },
-        ] } };
-      },
-    });
-    assert.match(replies.at(-1), /找到 2 个/);
-    assert.match(replies.at(-1), /\[Session\]\(https:\/\/remote.example\/\?session=one\)/);
-    assert.match(replies.at(-1), /\[LangSmith\]\(https:\/\/smith.langchain.com\/one\)/);
-    assert.match(replies.at(-1), /LangSmith：尚未纳入上传/);
-    assert(replies.at(-1).includes('Data \\[draft\\]'));
-    const post = JSON.parse(await buildFeishuPostContent(replies.at(-1)));
-    const rendered = post.zh_cn.content.flat().map(part => part.text || '').join('\n');
-    assert.match(rendered, /\[Session\]\(https:\/\/remote.example\/\?session=one\)/,
-      'link labels must survive Feishu outbound normalization');
-    assert.match(rendered, /\[LangSmith\]\(https:\/\/smith.langchain.com\/one\)/);
-  }
-  assert.equal(aiCalls, 0, '/log is read-only and must not submit AI tasks');
-  const { handleFeishuLogCommand } = await import('../connectors/feishu/log-command.mjs');
-  const { isCurrentSessionLogQuery } = await import('../connectors/feishu/log-command.mjs');
-  assert.equal(isCurrentSessionLogQuery('我想 debug 下当前这个 session'), true);
-  assert.equal(isCurrentSessionLogQuery('Auto Research 数据接入'), false);
-  assert.equal(isCurrentSessionLogQuery('搜索 当前会话'), false);
-  assert.match(await handleFeishuLogCommand('当前', { runtime,
-    summary: { ...summary, threadId: 'unbound', messageId: 'unbound' }, request }), /还没有关联 Session/);
-  assert.match(await handleFeishuLogCommand('当前', { runtime, summary,
-    request: async path => path === '/api/sessions/s1/langsmith?format=json'
-      ? { response: { ok: true }, json: { status: 'pending', sessionUrl: 'https://remote.example/?session=s1' } }
-      : request(path) }), /等待上传/);
-  for (const [status, label] of Object.entries({pending:'等待上传',failed:'上传失败',disabled:'未启用上传',
-    unsupported_timestamp:'历史日期超出上传窗口',unavailable:'上传状态暂不可用'})) {
-    const text = await handleFeishuLogCommand('history', { request: async () => ({ response: { ok: true },
-      json: { sessions: [{title:'History',langsmithStatus:status}] } }) });
-    assert.ok(text.includes(label));
-    assert.doesNotMatch(text, /暂无记录/);
-  }
-  const importedText = await handleFeishuLogCommand('history', { request: async () => ({ response: { ok: true },
-    json: { sessions: [{title:'History',langsmithKind:'historical_import',langsmithUrl:'https://smith.langchain.com/history'}] } }) });
-  assert.match(importedText, /\[LangSmith（历史日志导入）\]\(https:\/\/smith.langchain.com\/history\)/);
-  const importedPost = JSON.parse(await buildFeishuPostContent(importedText));
-  assert.match(JSON.stringify(importedPost), /LangSmith（历史日志导入）/);
-  const entry = 'https://remote.example/api/sessions/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/langsmith';
-  const loginText = await handleFeishuLogCommand('history', { request: async () => ({ response: { ok: true },
-    json: { sessions: [{title:'History',langsmithUrl:'https://smith.langchain.com/history',langsmithEntryUrl:entry}] } }) });
-  assert.ok(loginText.includes(`[LangSmith](${entry})`), 'chat links go through the browser login entry');
-  assert.ok(!loginText.includes('https://smith.langchain.com/history'));
-  assert.match(await handleFeishuLogCommand('x'.repeat(1001), { request }), /1000/);
-  assert.match(await handleFeishuLogCommand('nothing', { request: async () => ({ response: { ok: true }, json: { sessions: [] } }) }), /没有找到/);
-  assert.match(await handleFeishuLogCommand('anything', { request: async () => { throw new Error('offline'); } }), /稍后重试/);
-  assert.match(await handleFeishuLogCommand('anything', { request: async () => ({ response: { ok: false } }) }), /暂时不可用/);
+  assert.equal(logTurns.at(-1).messageText, '我想 debug 下当前这个 session');
+  const prompt = '请解释失败原因\n并告诉我怎么查看 /model beta';
+  await handleMessage(runtime, { ...summary, messageId: 'log-question', messageText: `/log ${prompt}` }, 'test', helpers);
+  assert.equal(logTurns.at(-1).messageText, prompt, 'all following text reaches the model unchanged');
+  assert.equal(logTurns.at(-1).startThread, undefined, 'an existing topic is continued');
+  assert.equal(calls.some(call => call.path.startsWith('/api/sessions/search')), false);
+  await handleMessage(runtime, { ...summary, chatType: 'p2p', chatId: 'private', threadId: '',
+    messageId: 'log-private', messageText: '/log 私聊里的上一个 Run 怎么看？' }, 'test', helpers);
+  assert.equal(logTurns.at(-1).logContinuation.sessionId, 's1');
+  assert.equal(logTurns.at(-1).replyModeOverride, 'inline', 'private /log stays in the main conversation');
+  const { prepareFeishuLogContinuation } = await import('../connectors/feishu/log-command.mjs');
+  assert.match((await prepareFeishuLogContinuation('当前', { runtime,
+    summary: { ...summary, threadId: 'unbound', messageId: 'unbound' }, request })).error, /还没有关联 Session/);
+  assert.match((await prepareFeishuLogContinuation('x'.repeat(1001), { runtime, summary, request })).error, /1000/);
+  assert.match((await prepareFeishuLogContinuation('anything', { runtime, summary,
+    request: async () => { throw new Error('offline'); } })).error, /稍后重试/);
+  assert.match((await prepareFeishuLogContinuation('anything', { runtime, summary,
+    request: async path => path === '/api/sessions/s1/latest-run'
+      ? { response: { ok: false } } : request(path) })).error, /暂不可用/);
   runtime.botIdentity = { openId: 'this-bot' };
   const botControl = await handleMessage(runtime, { ...summary, messageText: '/model provider/gamma',
     mentions: [{ openId: 'this-bot' }], sender: { senderType: 'app' } }, 'test', helpers);
   assert.equal(botControl.reason, 'bot_control_command');
   assert.equal(session.feishuRuntimeSelection?.tool, 'pi', 'peer bots cannot change runtime preferences');
-  assert.equal(aiCalls, 0, 'control commands never run through a model');
+  assert.equal(aiCalls, 4, 'control commands still do not run through a model');
 
   let quickSummary;
   await handleMessage(runtime, { ...summary, threadId: '', rootId: '', messageId: 'quick-task', messageText: '/q 只回答结论。' }, 'test', {

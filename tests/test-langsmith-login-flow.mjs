@@ -13,6 +13,7 @@ const home = await mkdtemp(join(tmpdir(), 'remotelab-langsmith-login-'));
 setIsolatedTestHome(home);
 const config = join(home, '.config/remotelab');
 const sessionId = 'a'.repeat(32);
+const sessionWithRunId = 'd'.repeat(32);
 const projectId = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
 const traceId = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
 const childId = 'cccccccc-cccc-4ccc-cccc-cccccccccccc';
@@ -27,7 +28,19 @@ try {
   const hash = await promisify(scrypt)(password, salt, 32, { N: 16384, r: 8, p: 1 });
   await writeFile(join(config, 'auth.json'), JSON.stringify({ token: 'a'.repeat(64), username,
     passwordHash: `scrypt$16384$8$1$${salt.toString('hex')}$${hash.toString('hex')}` }));
-  await writeFile(join(config, 'chat-sessions.json'), JSON.stringify([{ id: sessionId, name: 'Login fixture', tool: 'codex', archived: true }]));
+  await writeFile(join(config, 'chat-sessions.json'), JSON.stringify([
+    { id: sessionId, name: 'Login fixture', tool: 'codex', archived: true },
+    { id: sessionWithRunId, name: 'Run fixture', tool: 'codex', archived: true },
+  ]));
+  const { appendEvent } = await import('../chat/history.mjs');
+  const { createRun } = await import('../chat/runs.mjs');
+  const { ensureRequestSchema } = await import('../lib/request-schema.mjs');
+  await ensureRequestSchema(config);
+  await createRun({ status: { id: 'run_prior', sessionId: sessionWithRunId,
+    state: 'completed', finalizedAt: new Date().toISOString() }, manifest: {} });
+  await appendEvent(sessionWithRunId, { type: 'message', role: 'user', content: 'earlier task', runId: 'run_prior' });
+  await appendEvent(sessionWithRunId, { type: 'message', role: 'user', content: 'mute feedback',
+    runId: 'run_feedback', sourceContext: { feishuParticipation: 'feedback' } });
   await writeFile(join(config, 'langsmith-case-link.json'), JSON.stringify({ enabled: true, projectId, stateDir: 'langsmith-live' }));
   await writeFile(join(config, 'langsmith-live/state.json'), JSON.stringify({ projectId, tracked: { [sessionId]: {
     latestSnapshot: { rootUrl, traceId, revision: 1, runNodeIds: { run_demo: childId } },
@@ -69,6 +82,7 @@ try {
   assert.ok(html.includes(`name="next" value="${entry}"`));
   assert.ok(html.includes("var usePw = 'pw' === 'pw'"));
   assert.equal((await request('/api/sessions')).status, 401, 'other APIs retain JSON authentication errors');
+  assert.equal((await request(`/api/sessions/${sessionWithRunId}/latest-run`)).status, 401);
   assert.equal((await request(entry, { method: 'POST' })).status, 401);
   const login = (secret, next = entry) => request('/login', { method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -93,6 +107,24 @@ try {
   assert.equal(status.status, 'available');
   assert.equal(status.langsmithUrl, rootUrl);
   assert.equal(status.langsmithEntryUrl, base + `/api/sessions/${sessionId}/langsmith`);
+  const runStatus = await (await request(`/api/sessions/${sessionId}/langsmith?format=json&runId=run_demo`, {
+    headers: { Cookie: cookie },
+  })).json();
+  assert.equal(runStatus.runMatched, true);
+  assert.equal(runStatus.langsmithEntryUrl, base + entry);
+  const fallbackStatus = await (await request(`/api/sessions/${sessionId}/langsmith?format=json&runId=run_unknown`, {
+    headers: { Cookie: cookie },
+  })).json();
+  assert.equal(fallbackStatus.runMatched, false);
+  assert.equal(fallbackStatus.langsmithUrl, rootUrl, 'root trace fallback is labeled separately');
+  const latestRun = await (await request(`/api/sessions/${sessionId}/latest-run`, {
+    headers: { Cookie: cookie },
+  })).json();
+  assert.deepEqual(latestRun, { sessionId, runId: '' });
+  const priorRun = await (await request(`/api/sessions/${sessionWithRunId}/latest-run`, {
+    headers: { Cookie: cookie },
+  })).json();
+  assert.deepEqual(priorRun, { sessionId: sessionWithRunId, runId: 'run_prior' });
   assert.equal(status.sessionUrl, base + `/?session=${sessionId}&tab=sessions`);
   assert.equal((await request(`/api/sessions/${sessionId}/langsmith?format=json`)).status, 302,
     'unauthenticated status requests still require login');

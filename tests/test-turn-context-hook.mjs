@@ -36,4 +36,12 @@ assert.doesNotMatch(hook, /Prefer RemoteLab-side execution/);
 assert.doesNotMatch(hook, /brief self-review/);
 assert.doesNotMatch(hook, /split into child sessions/);
 
+const logHook = await buildTurnContextHook({}, { sourceContext: {
+  connector: 'feishu', chatId: 'test-chat', feishuLog: { sessionId: 'session123', runId: 'run_prior' },
+} });
+assert.match(logHook, /Target Session: session123\. Prior Run: run_prior/);
+assert.match(logHook, /langsmith\?format=json&runId=run_prior/);
+assert.match(logHook, /read-only GET/);
+assert.doesNotMatch(await buildTurnContextHook({}, { sourceContext: { connector: 'feishu' } }), /Prior Run/);
+
 console.log('test-turn-context-hook: ok');

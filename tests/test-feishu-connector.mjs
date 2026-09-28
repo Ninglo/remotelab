@@ -1956,6 +1956,43 @@ try {
 }
 
 
+const logRequests = [];
+let logPayload;
+const logServer = http.createServer(async (req, res) => {
+  let body = '';
+  for await (const chunk of req) body += chunk;
+  logRequests.push(`${req.method} ${req.url}`);
+  res.setHeader('Content-Type', 'application/json');
+  if (req.url === '/api/sessions/sess_log_1' && ['GET', 'PATCH'].includes(req.method)) {
+    res.end(JSON.stringify({ session: { id: 'sess_log_1', tool: 'codex', systemPrompt: JSON.parse(body || '{}').systemPrompt || '' } }));
+  } else if (req.url === '/api/sessions/sess_log_1/messages' && req.method === 'POST') {
+    logPayload = JSON.parse(body);
+    res.writeHead(202);
+    res.end(JSON.stringify({ run: { id: 'run_log_new' }, response: { id: 'response_log_new' } }));
+  } else {
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: 'unexpected request' }));
+  }
+});
+await new Promise(resolve => logServer.listen(0, '127.0.0.1', resolve));
+try {
+  const receipt = await submitRemoteLabRequest({
+    authCookie: 'session_token=test-cookie',
+    config: { chatBaseUrl: `http://127.0.0.1:${logServer.address().port}`,
+      sessionFolder: repoRoot, sessionTool: 'codex', sourceRouteId: 'bot-2' },
+  }, { chatType: 'p2p', chatId: 'chat_log_1', messageId: 'msg_log_1',
+    messageText: '请核实上一个 Run\n失败在哪里', replyModeOverride: 'inline',
+    logContinuation: { sessionId: 'sess_log_1', runId: 'run_prior' } });
+  assert.equal(receipt.sessionId, 'sess_log_1');
+  assert.equal(logPayload.text, '请核实上一个 Run\n失败在哪里');
+  assert.deepEqual(logPayload.sourceContext.feishuLog, { sessionId: 'sess_log_1', runId: 'run_prior' });
+  assert.equal(logPayload.sourceDelivery.target.conversationKind, 'main');
+  assert.equal(logRequests.some(path => path === 'POST /api/sessions'), false,
+    '/log must continue the selected Session without creating another');
+} finally {
+  await new Promise(resolve => logServer.close(resolve));
+}
+
 console.log('ok - admission returns the durable receipt without waiting for AI or sending');
 console.log('ok - Feishu image payloads are downloaded and submitted as RemoteLab attachments');
 console.log('ok - mention tokens are rendered inbound and compiled outbound');

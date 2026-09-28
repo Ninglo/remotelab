@@ -16,7 +16,7 @@ import {
   prepareFeishuRuntimeCommandPlan,
   applyFeishuRuntimeCommandPlan,
 } from '../connectors/feishu/runtime-commands.mjs';
-import { handleFeishuLogCommand } from '../connectors/feishu/log-command.mjs';
+import { prepareFeishuLogContinuation } from '../connectors/feishu/log-command.mjs';
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
 import { handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
 import { findConnectorMessageIndexRecord } from '../lib/connector-message-index.mjs';
@@ -86,6 +86,7 @@ import {
   buildFeishuRequestDeliveryTarget,
   buildFeishuSessionConversationTarget,
   buildFeishuSessionExternalTriggerId,
+  isFeishuThreadConversation,
 } from '../connectors/feishu/reply-routing.mjs';
 import { createFeishuHttpInstance } from '../lib/feishu-http-client.mjs';
 import { loadReplayableSummariesByMessageIds } from '../lib/feishu-replay.mjs';
@@ -991,7 +992,9 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     ...(runtimeSelection.effort ? { effort: runtimeSelection.effort } : {}),
     ...(runtimeSelection.thinking ? { thinking: true } : {}),
   };
-  const threadBinding = await findFeishuThreadSessionBinding(runtime, effectiveSummary);
+  const threadBinding = effectiveSummary.logContinuation?.sessionId
+    ? { sessionId: effectiveSummary.logContinuation.sessionId }
+    : await findFeishuThreadSessionBinding(runtime, effectiveSummary);
   let session;
   if (threadBinding?.sessionId) {
     const result = await requester(`/api/sessions/${encodeURIComponent(threadBinding.sessionId)}`);
@@ -1044,13 +1047,19 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const requestDeliveryTarget = buildFeishuRequestDeliveryTarget(messageSummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
-    text: soleMention
-      ? '[群聊反馈：用户只 @ 了你。请重新审视最近仍未得到你回应的几条消息，结合后续讨论判断现在是否应该回复；没有必要时保持沉默。]'
-      : buildRemoteLabMessage(messageSummary),
+    text: messageSummary.logContinuation
+      ? messageSummary.messageText
+      : soleMention
+        ? '[群聊反馈：用户只 @ 了你。请重新审视最近仍未得到你回应的几条消息，结合后续讨论判断现在是否应该回复；没有必要时保持沉默。]'
+        : buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
     runtimeSelectionScope: 'auto',
     sourceContext: {
       ...buildMessageSourceContext(messageSummary),
+      ...(messageSummary.logContinuation ? { feishuLog: {
+        sessionId: messageSummary.logContinuation.sessionId,
+        runId: messageSummary.logContinuation.runId,
+      } } : {}),
       ...(ambient ? {
         feishuParticipation: 'ambient',
         feishuExplicitMention: mentionsFeishuBot(runtime, effectiveSummary),
@@ -1435,12 +1444,20 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   const enqueue = helpers.queueFeishuReply || queueFeishuReply;
   if (commandNames.includes('log')) {
     if (commandNames.length !== 1) return enqueue(runtime, summary, '/log 请单独使用。');
-    const text = await handleFeishuLogCommand(command.commands[0].value, {
+    const target = await prepareFeishuLogContinuation(command.commands[0].value, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
       runtime,
       summary,
     });
-    return enqueue(runtime, summary, text);
+    if (target.error) return enqueue(runtime, summary, target.error);
+    summary = {
+      ...summary,
+      messageText: target.question,
+      textPreview: target.question,
+      logContinuation: { sessionId: target.sessionId, runId: target.runId },
+      ...(isFeishuThreadConversation(summary) ? {} : { replyModeOverride: 'inline' }),
+    };
+    command = null;
   }
   if (command?.body && commandNames.some(name => ['help', 'status', 'mute', 'unmute'].includes(name))) {
     return enqueue(runtime, summary, '查询和静默命令不能带任务正文；请拆成单独消息。');

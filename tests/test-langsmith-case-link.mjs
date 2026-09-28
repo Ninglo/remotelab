@@ -46,6 +46,8 @@ try {
   assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_case1'})).url,
     canonicalUrl.replace(`/r/${traceId}`, `/r/${childId}`), 'select a child while preserving trace and timestamp');
   assert.equal((await getLatestLangSmithCase(id, config,{runId:'run_unknown'})).url, canonicalUrl);
+  assert.equal((await getLangSmithCaseStatus(id, config,{runId:'run_case1'})).runMatched, true);
+  assert.equal((await getLangSmithCaseStatus(id, config,{runId:'run_unknown'})).runMatched, false);
   for (const rootUrl of [
     `https://smith.langchain.com/o/tenant/projects/p/${projectId}/`,
     `https://smith.langchain.com/o/tenant/projects/p/${projectId}/traces`,

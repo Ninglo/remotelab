@@ -285,8 +285,7 @@ Inside an existing task thread or private conversation, use these commands:
 | Command | Behavior |
 | --- | --- |
 | `/status` | Show the Harness, model and effort in the current scope. |
-| `/log` or `/log 当前会话` | Show the Session bound to this topic or chat, with its LangSmith trace link or upload status. |
-| `/log keywords or question` | Search historical Sessions and return up to 3 matches with titles, Session links and available LangSmith trace links. |
+| `/log` or `/log <question>` | Continue the Session bound to this topic or chat. The model checks the Run that preceded `/log`, verifies its LangSmith status through read-only APIs, and answers the question with the relevant viewing steps. |
 | `/harness` or `/harness <id>` | List available Harnesses or change the current Session. |
 | `/model` or `/model <id>` | List the current Harness's models or change the current Session. |
 | `/effort` or `/effort <level>` | List supported reasoning levels or change the current Session. |
@@ -295,22 +294,22 @@ Inside an existing task thread or private conversation, use these commands:
 | `/unmute` | Restore the original response behavior in that topic or chat. |
 | `/help` | Show these commands and the task-command format. |
 
-`/log` defaults to the current topic's Session. Phrases such as
-`/log 我想 debug 下当前这个 session` also select it. The reply puts the LangSmith
-entry first, then the RemoteLab Session link; if no verified trace exists, it
-shows the actual upload status. `/log 搜索 当前会话` forces a historical search.
-Current lookup uses the same conversation binding as `/status`, and does not
-create a Session or upload a trace.
+`/log` resolves the current conversation binding, then freezes the prior Run
+before submitting a normal model turn in that same Session. The text after
+`/log`, including subsequent lines, is passed to the model as the user's
+question (up to 1000 characters). A bare `/log` supplies a default question.
+The model verifies the trace through the authenticated, read-only
+`GET /api/sessions/{id}/langsmith?format=json&runId={priorRunId}` endpoint and
+explains the relevant viewing or debugging steps. If that Run is not mapped
+into LangSmith, the response must distinguish a Session-level trace from a
+Run-specific link. `/log` does not create another Session or publish a trace.
+An unbound topic receives a short error instead of creating a Session.
 
-`/log Auto Research 数据接入` searches titles, descriptions, work summaries and
-visible user/assistant messages, including archived Sessions. For historical
-search, the text after `/log` (including subsequent lines) is the query, up to
-1000 characters; do not combine it with other commands. Ranking uses keyword relevance with extra
-weight for titles and summaries, not recency. It returns at most three matches,
-and distinguishes disabled uploading, Sessions outside collector coverage,
-pending/waiting uploads, upload failures, unsupported historical dates or tools,
-and empty histories. It does not start an AI run,
-create a Session, publish traces, or restore automatic links on ordinary replies.
+`GET /api/sessions/{id}/latest-run` returns the current active Run or the
+last user turn's Run ID without returning message bodies. The connector calls
+it before admitting `/log`, so the diagnostic target cannot become the new
+`/log` Run. The earlier historical Session search API remains available to
+the model for questions that explicitly ask about historical Sessions.
 
 The authenticated `GET /api/sessions/search?q=...` endpoint uses the instance's
 normal shared Session access. Internal helper Sessions, hidden blocks, reasoning
@@ -323,7 +322,9 @@ snapshot links retain their normal LangSmith access requirements.
 
 Chat results use the instance's `/api/sessions/{id}/langsmith` browser entry.
 The authenticated `?format=json` variant returns the exact current trace URL,
-browser entry and status for connector commands without following the redirect.
+browser entry and status for read-only clients without following the redirect.
+With `runId`, it also reports `runMatched`, so a root-trace fallback is not
+mistaken for a link to the requested Run.
 An unauthenticated GET opens RemoteLab's username/password login page, retaining
 the destination (including `runId`) through failed and successful login attempts.
 After RemoteLab login, the entry redirects to the verified LangSmith URL.
@@ -336,7 +337,7 @@ continue to return JSON 401 responses. Search API clients receive both the raw
 `stateDir` and `backfillStateDir`. Each directory is an instance-local basename
 containing `state.json` for the configured `projectId`. Historical imports use
 the same `sessions[id].latestSnapshot` shape as backfills, with
-`kind: "historical_import"`; `/log` labels those links explicitly. Publish a
+`kind: "historical_import"`; API clients can label those links explicitly. Publish a
 snapshot into this index only after verifying the uploaded content. Preserve
 original execution dates inside historical imports and distinguish import time
 from execution time. A bad source does not suppress a valid link from another

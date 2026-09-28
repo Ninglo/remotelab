@@ -10,7 +10,7 @@ for (const text of ['/log Auto Research 数据接入', '@Index /log Auto Researc
   assert.deepEqual(parseFeishuCommandBlock(text), { commands: [{ name: 'log', value: 'Auto Research 数据接入' }], body: '' });
 }
 assert.deepEqual(parseFeishuCommandBlock('/log\n帮我找历史对话\n/model beta'), {
-  commands: [{ name: 'log', value: '帮我找历史对话\n/model beta' }], body: '',
+  commands: [{ name: 'log', value: '\n帮我找历史对话\n/model beta' }], body: '',
 }, 'everything following /log is a literal query, not another command');
 assert.deepEqual(parseFeishuCommandBlock('/log'), { commands: [{ name: 'log', value: '' }], body: '' });
 assert.match(parseFeishuCommandBlock('/model alpha\n/log topic').error, /单独使用/);
