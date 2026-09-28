@@ -1613,6 +1613,7 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
       delete payload.reaction;
     }
   }
+  const feishuOutcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
   const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
   const deliveryPlan = resolveAmbientFeishuReplyPlan(record, plan, runHistory);
   const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
@@ -1625,7 +1626,8 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   };
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
     buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
-      ? null : deliveryPlan, deliveryPayload)
+      && !feishuOutcomeRequired
+      ? null : deliveryPlan, deliveryPayload, { requireFeishuOutcome: feishuOutcomeRequired })
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 
@@ -1665,7 +1667,9 @@ async function settleNativeRequest(record, run) {
     });
     await requestRuntime.refresh(root.key);
   }
-  await requests.settle(record.key, { ...root.result, executionRunId: run.id });
+  const outcomeRequired = record.options.sourceContext?.feishuOutcomeRequired === true;
+  await requests.settle(record.key, { ...root.result, executionRunId: run.id },
+    outcomeRequired ? buildReplyDeliveries(ownPlan, { text: '' }, { requireFeishuOutcome: true }) : []);
   await requests.mutate(record.key, current => ({ ...current, releasedAt: current.releasedAt || nowIso(), postCompletionPending: false }));
   await requestRuntime.refresh(record.key);
   await requests.archiveFinished(record.key);

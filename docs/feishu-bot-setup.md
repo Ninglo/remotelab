@@ -452,7 +452,10 @@ replies are recorded as non-publishing feedback in the existing Session. A
 reaction on someone else's message is ignored. These signals do not change
 mute state or automatically become lasting instructions. In groups with
 `quickReactions: true`, the connector immediately adds `THINKING` to each
-admitted human message. The Session model then decides whether to participate.
+admitted human message. This is a temporary receipt: after the final outcome
+reaction is confirmed, the connector removes its own `THINKING` reaction. It
+stores the temporary reaction ID across restarts so cleanup can be retried.
+The Session model then decides whether to participate.
 The same Session model chooses one outcome reaction by starting its final answer
 with `<private><feishu-reaction emoji="THANKS"/></private>`. The connector
 parses this private directive, binds it to the inbound message ID in the durable
@@ -462,6 +465,9 @@ for each message, cannot choose an arbitrary message ID, and does not use
 personal OAuth. Supported outcomes are `OnIt`, `EatingFood`, `OK`, `THUMBSUP`,
 `THANKS`, `GLANCE`, `SMILE`, `APPLAUSE`, `WOW`, `WHAT`, `DULL`, `TEARS`, `HUG`,
 and `COMFORT`. An invalid directive is removed and reported as a visible error.
+For a group with `quickReactions: true`, a missing or invalid outcome directive
+falls back to `EatingFood` in the durable delivery path. Each admitted message
+therefore has an outcome reaction even when the model gives no usable choice.
 This is a connector-native action selected through structured model output.
 An explicit model tool call would give immediate reaction feedback but needs a
 per-turn tool binding and round trip; launching the general connector CLI for
@@ -470,7 +476,9 @@ kept for handoff hints, not outcome reactions, because its independent guess
 can disagree with the Session that actually read and answered the discussion.
 A reaction-only final contains only the directive; reaction plus text puts the
 normal reply after it. Human-to-human discussion normally receives `EatingFood`
-without a text reply. The quick classifier remains for handoff nomination and
+without a text reply. If several inbound messages share one native turn, only
+the root message gets the model-selected reaction; the other messages get
+`EatingFood`. The quick classifier remains for handoff nomination and
 diagnostics but does not choose or post the outcome reaction. `contextReactions`
 is retained as a compatible setting but does not make an automatic reaction.
 Ambient group Sessions use the same light timeline instructions whether or not

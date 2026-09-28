@@ -16,6 +16,32 @@ try {
   const { buildFeishuAmbientIncompleteWorkNotice, buildReplyPublicationPayload } =
     await import('../chat/reply-publication.mjs');
   const { createQuickParticipationReaction, handleMessage } = await import('../scripts/feishu-connector.mjs');
+  const { createFeishuReadReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
+  const readStore = createFeishuReadReactionStore(home);
+  let readCreates = 0;
+  assert.equal((await readStore.add('read-message', async () => {
+    readCreates++;
+    return { reactionId: 'read-reaction' };
+  })).reactionId, 'read-reaction');
+  assert.equal((await createFeishuReadReactionStore(home).add('read-message', async () => {
+    readCreates++;
+    return { reactionId: 'unexpected' };
+  })).reactionId, 'read-reaction');
+  assert.equal(readCreates, 1, 'replayed inbound messages must reuse the existing receipt');
+  const removed = [];
+  assert.equal(await createFeishuReadReactionStore(home).remove('read-message', async (...args) => {
+    removed.push(args);
+  }), true);
+  assert.deepEqual(removed, [['read-message', 'read-reaction']]);
+  assert.equal(await readStore.remove('read-message', async () => {
+    throw new Error('already removed');
+  }), false);
+  await readStore.add('read-message-retry', async () => ({ reactionId: 'read-reaction-retry' }));
+  assert.equal(await createFeishuReadReactionStore(home).remove('read-message-retry', async () => {
+    const alreadyDeleted = new Error('reaction not found after a previous DELETE');
+    alreadyDeleted.code = 231011;
+    throw alreadyDeleted;
+  }), true, 'a successful but unrecorded DELETE can be reconciled after restart');
   const sdkCalls = [];
   const boundReaction = createQuickParticipationReaction({ appClient: { im: { v1: {
     messageReaction: { create: async request => {
@@ -242,6 +268,12 @@ try {
   const plan = { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'pilot', messageId: 'om_source' } };
   assert.deepEqual(buildReplyDeliveries(plan, textPayload).map(part => part.kind), ['reaction', 'content']);
   assert.deepEqual(buildReplyDeliveries(plan, reactionPayload).map(part => part.kind), ['reaction']);
+  assert.deepEqual(buildReplyDeliveries(plan, { text: '' }, { requireFeishuOutcome: true })
+    .map(part => [part.kind, part.emojiType]), [['reaction', 'EatingFood']],
+  'an empty model result still leaves one final reaction');
+  assert.deepEqual(buildReplyDeliveries(plan, { text: '答复', reaction: 'BAD' },
+    { requireFeishuOutcome: true }).map(part => part.emojiType || part.kind),
+  ['EatingFood', 'content']);
   assert.equal(buildReplyDeliveries({ ...plan, target: { chatId: 'pilot' } }, reactionPayload).length, 0,
     'a reaction needs the bound source message');
   const invalidPayload = buildReplyPublicationPayload(history('<private><feishu-reaction emoji="BAD"/></private>'), run,

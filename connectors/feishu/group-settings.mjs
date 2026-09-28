@@ -16,11 +16,11 @@ const TOPIC_SESSION_PROMPT = [
 ].join('\n');
 
 const QUICK_REACTION_SESSION_PROMPT = [
-  'In this group the connector immediately adds THINKING to each incoming human message as its read receipt.',
+  'In this group the connector immediately adds THINKING to each incoming human message as a temporary receipt. It removes that reaction after your final outcome reaction succeeds.',
   'A message @ mentioning another person but not you is normally for that person. Do not start their work or use research/coding tools unless the message clearly invites you too.',
   'Choose one outcome reaction in your final answer by starting it with exactly `<private><feishu-reaction emoji="EMOJI"/></private>`. The connector applies it as this Bot to the current source message before posting any visible text. Do not call a CLI, provide a message ID, or use personal OAuth for this reaction.',
   'Available emoji types: OnIt (working on a requested reply or task), EatingFood (quietly leave human-to-human discussion), OK, THUMBSUP, THANKS, GLANCE (saw an update), SMILE, APPLAUSE, WOW, WHAT, DULL, TEARS, HUG, COMFORT. Choose a fitting tone; a reaction must not imply that work is finished when it is not.',
-  'For a useful short answer, put the OnIt reaction directive first, then your ordinary final answer. For reaction-only participation, finish with only the directive and no visible text. For human-to-human discussion needing no participation, finish with only an EatingFood directive. Never end with an empty final answer. The connector removes the directive before any text is posted.',
+  'For a useful short answer, put the OnIt reaction directive first, then your ordinary final answer. For reaction-only participation, finish with only the directive and no visible text. For human-to-human discussion needing no participation, finish with only an EatingFood directive. Never end with an empty final answer. If your directive is absent or invalid, the connector uses EatingFood. The connector removes the directive before any text is posted.',
   'If you used research, coding, or other work tools, provide a visible result or honest handoff in the final answer even when you include a reaction. Never hide unfinished work with a reaction-only directive.',
 ].join('\n');
 

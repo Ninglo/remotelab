@@ -64,6 +64,7 @@ import {
   normalizeFeishuProjectLinks,
 } from '../connectors/feishu/linked-project-context.mjs';
 import { createFeishuQuickParticipationPilot } from '../connectors/feishu/quick-participation.mjs';
+import { createFeishuReadReactionStore } from '../connectors/feishu/read-reactions.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
 import { summarizeFeishuReactionFeedback } from '../connectors/feishu/reaction-mute.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
@@ -1069,6 +1070,8 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     runtimeSelectionScope: 'auto',
     sourceContext: {
       ...buildMessageSourceContext(messageSummary),
+      ...(resolveFeishuGroupSettings(runtime.config, effectiveSummary).quickReactions
+        ? { feishuOutcomeRequired: true } : {}),
       ...(messageSummary.logContinuation ? { feishuLog: {
         sessionId: messageSummary.logContinuation.sessionId,
         runId: messageSummary.logContinuation.runId,
@@ -1132,7 +1135,21 @@ async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
 }
 
 function createQuickParticipationReaction(runtime) {
-  return (summary, emojiType) => addProcessingReaction(runtime, summary, emojiType);
+  return (summary, emojiType) => emojiType === 'THINKING' && runtime.readReactionStore
+    ? runtime.readReactionStore.add(summary.messageId,
+      () => addProcessingReaction(runtime, summary, emojiType))
+    : addProcessingReaction(runtime, summary, emojiType);
+}
+
+async function removeProcessingReaction(runtime, messageId, reactionId) {
+  const response = await runtime.appClient.im.v1.messageReaction.delete({
+    path: { message_id: messageId, reaction_id: reactionId },
+  });
+  if (response.code !== undefined && response.code !== 0) {
+    const error = new Error(response.msg || 'Failed to remove Feishu processing reaction');
+    error.code = response.code;
+    throw error;
+  }
 }
 
 
@@ -1192,6 +1209,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   const request = helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options));
   const receipts = runtime.deliveryReceipts ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-receipts'));
   const failures = runtime.deliveryFailures ||= createDeliveryReceipts(join(runtime.config.storageDir, 'delivery-failures'));
+  const readReactionStore = runtime.readReactionStore ||=
+    createFeishuReadReactionStore(runtime.config.storageDir);
   const replayOptions = {
     continueOnError: true, limit: 10, budgetMs: 30_000,
     onError: (error, receipt) => console.error(`[feishu-connector] delivery acknowledgement deferred (${receipt.deliveryId}): ${error.message}`),
@@ -1205,6 +1224,11 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     return result.json.delivery;
   };
   const acknowledge = async receipt => {
+    if (receipt.kind === 'reaction') {
+      await readReactionStore.remove(receipt.target?.messageId,
+        (messageId, reactionId) => (helpers.removeProcessingReaction || removeProcessingReaction)(
+          runtime, messageId, reactionId));
+    }
     await recordFeishuBotHandoffScope(runtime, receipt.target, {
       sessionId: receipt.sessionId, threadId: receipt.threadId, messageId: receipt.messageId,
     });
@@ -1258,7 +1282,8 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     }
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || sent.reactionId || '', messageId: sent.message_id || '',
-      threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary });
+      threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary,
+      kind: delivery.kind });
     let completed;
     await receipts.flush(async receipt => { completed = await acknowledge(receipt); }, replayOptions);
     return completed;
@@ -1698,6 +1723,7 @@ async function main() {
       return receipt;
     },
   });
+  runtime.readReactionStore = createFeishuReadReactionStore(config.storageDir);
   const quickParticipation = createFeishuQuickParticipationPilot(runtime, {
     react: createQuickParticipationReaction(runtime),
     onHandoffCandidate: summary => discussionHandoff.offerCandidate(summary),

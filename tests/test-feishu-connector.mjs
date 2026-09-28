@@ -844,6 +844,11 @@ assert.equal(sourceDeliveryRequests[1].path, '/api/source-deliveries/srcd_000000
 assert.equal(sourceDeliveryRequests[1].options.body.externalId, 'om_source_delivery_out');
 
 const reactionDeliveryRequests = [];
+const { createFeishuReadReactionStore } = await import('../connectors/feishu/read-reactions.mjs');
+const reactionStore = createFeishuReadReactionStore(join(tempHome, 'reaction-delivery-worker'));
+await reactionStore.add('om_source_reaction', async () => ({ reactionId: 'temporary_reaction' }));
+const removedReactions = [];
+const reactionOrder = [];
 const reactionDeliveryResult = await processSourceDeliveryOnce({
   config: { sourceRouteId: 'bot-alpha', storageDir: join(tempHome, 'reaction-delivery-worker') },
 }, {
@@ -858,15 +863,25 @@ const reactionDeliveryResult = await processSourceDeliveryOnce({
     return { response: { ok: true }, json: { delivery: { state: 'delivered' } } };
   },
   addProcessingReaction: async (_runtime, target, emojiType) => {
+    reactionOrder.push('final-added');
     assert.equal(target.messageId, 'om_source_reaction');
     assert.equal(emojiType, 'THANKS');
     return { reactionId: 'reaction_receipt' };
+  },
+  removeProcessingReaction: async (_runtime, messageId, reactionId) => {
+    reactionOrder.push('temporary-removed');
+    removedReactions.push([messageId, reactionId]);
   },
   sendFeishuText: async () => { throw new Error('reaction directive must not become text'); },
 });
 assert.equal(reactionDeliveryResult.state, 'delivered');
 assert.equal(reactionDeliveryRequests[1].options.body.externalId, 'reaction_receipt');
 assert.equal(reactionDeliveryRequests[1].options.body.messageId, '');
+assert.deepEqual(removedReactions, [['om_source_reaction', 'temporary_reaction']]);
+assert.deepEqual(reactionOrder, ['final-added', 'temporary-removed']);
+assert.equal(await reactionStore.remove('om_source_reaction', async () => {
+  throw new Error('cleanup was already completed');
+}), false);
 
 let longPollSignal;
 const longPollRuntime = {};

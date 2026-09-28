@@ -24,8 +24,8 @@ Directional synthesis: `notes/directional/product-vision.md`
 ### 2026-09-28 — Short praise still needs a visible response
 
 - Observed friction: two consecutive short acknowledgements praising the assistant were correctly left without a text reply, but the contextual reaction selector chose no reaction both times. The user noticed the missing response immediately.
-- Product implication: for unambiguous short praise, add a grateful reaction even if the contextual classifier selects none. Keep unrelated or ambiguous messages eligible for no reaction.
-- Implementation: the Feishu quick participation path recognizes short statements such as "这次对了" and uses `THANKS`; a regression test covers repeated messages.
+- Product implication: each admitted message gets one final, visible outcome reaction. A temporary receipt may appear first, but must be removed after the outcome succeeds. If the assistant cannot choose an outcome, use `EatingFood` rather than leaving the message without a final reaction.
+- Implementation: the continuing Session selects the outcome, and the Feishu connector applies it as the Bot. The durable delivery path supplies the fallback and removes its own temporary reaction after the outcome succeeds; normal processing does not launch a CLI command per message.
 
 ### 2026-09-28 — Applied side-display layouts are persistent settings
 
