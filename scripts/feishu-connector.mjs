@@ -1119,18 +1119,6 @@ async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
   };
 }
 
-async function removeProcessingReaction(runtime, summary, reactionId) {
-  const messageId = trimString(summary?.messageId);
-  if (!messageId || !reactionId) return;
-  const deleteReaction = runtime?.appClient?.im?.v1?.messageReaction?.delete;
-  if (typeof deleteReaction !== 'function') return;
-  const response = await withTimeout(() => deleteReaction.call(runtime.appClient.im.v1.messageReaction, {
-    path: { message_id: messageId, reaction_id: reactionId },
-  }), DEFAULT_PROCESSING_REACTION_TIMEOUT_MS, 'Feishu reaction removal');
-  if (response.code !== undefined && response.code !== 0) {
-    throw new Error(response.msg || 'Failed to remove Feishu reaction');
-  }
-}
 
 async function sendFeishuText(runtime, summary, text, uuid = '', mentions = summary?.mentions) {
   if (isFeishuDocumentCommentSummary(summary)) {
@@ -1684,7 +1672,6 @@ async function main() {
   });
   const quickParticipation = createFeishuQuickParticipationPilot(runtime, {
     react: addProcessingReaction,
-    unreact: removeProcessingReaction,
     onHandoffCandidate: summary => discussionHandoff.offerCandidate(summary),
   });
   const activePilotConversations = await quickParticipation.restore(storagePaths.eventsLogPath);

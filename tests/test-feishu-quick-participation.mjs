@@ -124,7 +124,6 @@ try {
     setback: 'DULL', teary: 'TEARS',
   });
   const contextualReactions = [];
-  const cleared = [];
   const expressive = createFeishuQuickParticipationPilot(runtime, {
     classify: async context => ({ decision: 'silent',
       silentReaction: context.split('\n').at(-1).includes('惊喜') ? 'surprise' : 'none' }),
@@ -132,12 +131,10 @@ try {
       contextualReactions.push(emojiType);
       return { reactionId: emojiType === 'THINKING' ? 'temporary' : 'expressive' };
     },
-    unreact: async (_summary, reactionId) => cleared.push(reactionId),
   });
   await expressive.handle({ ...base, messageId: 'surprise', messageText: '这个结果真惊喜' });
   await expressive.handle({ ...base, messageId: 'no-reaction', messageText: '两个人聊别的' });
   assert.deepEqual(contextualReactions, ['THINKING', 'WOW', 'THINKING']);
-  assert.deepEqual(cleared, ['temporary', 'temporary']);
   console.log('test-feishu-quick-participation: ok');
 } finally {
   await rm(home, { recursive: true, force: true });
