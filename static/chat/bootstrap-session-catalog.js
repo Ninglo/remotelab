@@ -576,7 +576,7 @@ function returnToMineFromGroupChats() {
   setGroupChatScope(mineFilter);
   if (typeof switchTab === "function") switchTab("sessions");
   const previous = lastMineSessionId
-    ? getActiveSessions().find((session) => session.id === lastMineSessionId && matchesPersonFilter(session))
+    ? getActiveSessions().find((session) => session.id === lastMineSessionId && matchesCurrentFilters(session))
     : null;
   const target = previous || getLatestActiveSessionForCurrentFilters();
   if (target) {
