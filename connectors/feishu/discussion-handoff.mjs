@@ -8,6 +8,9 @@ import { feishuJevApiKey } from './quick-participation.mjs';
 const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
 const JEV_MODEL = 'jev-1.13.0';
 const VERIFY_TIMEOUT_MS = 1_800;
+// Quick nomination already requires 0.90. The source check must still choose
+// offer, but its probability can vary slightly on identical evidence.
+const VERIFY_OFFER_THRESHOLD = 0.80;
 const HISTORY_MESSAGES = 100;
 const HISTORY_CHARACTERS = 48_000;
 
@@ -59,6 +62,21 @@ export function buildDiscussionHandoffCard(proposal) {
   };
 }
 
+export function buildDiscussionHandoffResultCard(proposal) {
+  const dismissed = proposal.status === 'dismissed';
+  return {
+    schema: '2.0', config: { update_multi: true },
+    header: { template: 'blue', title: { tag: 'plain_text',
+      content: dismissed ? '已选择继续讨论' : '已移交干活群' } },
+    body: { elements: [
+      { tag: 'div', text: { tag: 'plain_text', content: dismissed
+        ? '本次没有创建干活话题。'
+        : '干活话题已创建，后续工作请在新话题继续。' } },
+      ...(!dismissed ? [{ tag: 'markdown', content: `[打开干活话题](${workLink(proposal)})` }] : []),
+    ] },
+  };
+}
+
 export function parseDiscussionHandoffAction(raw) {
   const event = raw?.event && typeof raw.event === 'object' ? raw.event : raw;
   const value = event?.action?.value;
@@ -101,8 +119,11 @@ export async function verifyDiscussionHandoff(evidence, { fetchImpl = fetch, key
     const result = await response.json();
     const answer = result?.answers?.transfer;
     const probability = Number(answer?.probabilities?.offer);
-    return { offer: answer?.choice === 'offer' && Number.isFinite(probability) && probability >= 0.88,
-      probability: Number.isFinite(probability) ? probability : null };
+    const offer = answer?.choice === 'offer' && Number.isFinite(probability)
+      && probability >= VERIFY_OFFER_THRESHOLD;
+    return { offer,
+      probability: Number.isFinite(probability) ? probability : null,
+      reason: offer ? '' : answer?.choice === 'offer' ? 'below_threshold' : 'not_handoff' };
   } catch (error) {
     return { offer: false, reason: error?.name === 'AbortError' ? 'timeout' : 'request_error' };
   } finally {
@@ -143,8 +164,17 @@ async function sendProposalCard(runtime, proposal, card) {
   return checkedMessage(await runtime.appClient.im.v1.message.reply({
     path: { message_id: proposal.source.messageId },
     data: { msg_type: 'interactive', content: JSON.stringify(card), reply_in_thread: true,
-      uuid: `project-handoff-card-${proposal.key}` },
+      uuid: `handoff-card-${proposal.key}-${proposal.cardGeneration || 0}` },
   }), 'Handoff card');
+}
+
+async function updateProposalCard(runtime, proposal, card) {
+  const response = await runtime.appClient.im.v1.message.patch({
+    path: { message_id: proposal.cardMessageId }, data: { content: JSON.stringify(card) },
+  });
+  if (response?.code !== undefined && response.code !== 0) {
+    throw new Error(response.msg || 'Handoff card update failed');
+  }
 }
 
 async function sendWorkTopic(runtime, proposal, found) {
@@ -167,7 +197,7 @@ async function sendDiscussionNotice(runtime, proposal, status) {
   return checkedMessage(await runtime.appClient.im.v1.message.reply({
     path: { message_id: proposal.source.messageId },
     data: { msg_type: 'text', content: JSON.stringify({ text }), reply_in_thread: true,
-      uuid: `project-handoff-notice-${status}-${proposal.key}` },
+      uuid: `handoff-${status}-${proposal.key}` },
   }), 'Discussion handoff notice');
 }
 
@@ -222,6 +252,7 @@ export function createDiscussionHandoffPilot(runtime, {
   }),
   verify = verifyDiscussionHandoff,
   sendCard = (proposal, card) => sendProposalCard(runtime, proposal, card),
+  updateCard = (proposal, card) => updateProposalCard(runtime, proposal, card),
   sendWorkRoot = (proposal, found) => sendWorkTopic(runtime, proposal, found),
   submitWork,
   notifySource = (proposal, status) => sendDiscussionNotice(runtime, proposal, status),
@@ -263,17 +294,54 @@ export function createDiscussionHandoffPilot(runtime, {
       await verifyTarget(link);
       const found = await evidenceFor(source, { atProposal: true });
       const verdict = await verify(found.evidence);
-      if (!verdict.offer) return null;
+      if (!verdict.offer) {
+        console.log(`[feishu-handoff] ${source.messageId} not offered: ${verdict.reason || 'verification_rejected'}`
+          + ` probability=${verdict.probability ?? 'unknown'} evidence=${found.count}`);
+        return null;
+      }
       const proposal = await store.mutate(key, current => current || {
         status: 'offering', projectId: link.projectId, workChatId: link.workChatId,
         source, createdAt: new Date().toISOString(), evidenceCount: found.count,
         evidenceTruncated: found.truncated,
+        verification: { probability: verdict.probability ?? null, reason: verdict.reason || '' },
       });
       if (proposal.status !== 'offering') return proposal;
       const receipt = await sendCard(proposal, buildDiscussionHandoffCard(proposal));
       return store.mutate(key, current => ({ ...current, status: 'offered',
         cardMessageId: trim(receipt?.message_id), offeredAt: new Date().toISOString() }));
     });
+  }
+
+  async function renewCard(key) {
+    return exclusive(key, async () => {
+      const current = await store.get(key);
+      if (!current || !['offered', 'dismissed'].includes(current.status)
+        || !runtime.config.projectLinks?.some(link => link.handoffCards === true
+          && link.discussionChatId === current.source.chatId && link.workChatId === current.workChatId)) return null;
+      await verifyTarget({ workChatId: current.workChatId });
+      const renewing = await store.mutate(key, value => ({ ...value, status: 'offering',
+        cardGeneration: (value.cardGeneration || 0) + 1,
+        dismissedBy: undefined, dismissedAt: undefined, cardPatchedAt: undefined }));
+      const receipt = await sendCard(renewing, buildDiscussionHandoffCard(renewing));
+      return store.mutate(key, value => ({ ...value, status: 'offered',
+        cardMessageId: trim(receipt?.message_id), offeredAt: new Date().toISOString() }));
+    });
+  }
+
+  async function patchResultCard(proposal) {
+    if (proposal.cardPatchedAt || !proposal.cardMessageId) return proposal;
+    await updateCard(proposal, buildDiscussionHandoffResultCard(proposal));
+    return store.mutate(proposal.key, value => ({ ...value, cardPatchedAt: new Date().toISOString() }));
+  }
+
+  async function continueDismissed(proposal) {
+    let current = proposal;
+    if (!current.sourceNoticeId) {
+      const notice = await notifySource(current, 'dismissed');
+      current = await store.mutate(current.key, value => ({ ...value,
+        sourceNoticeId: trim(notice?.message_id) }));
+    }
+    return patchResultCard(current);
   }
 
   async function continueAccepted(proposal) {
@@ -299,7 +367,33 @@ export function createDiscussionHandoffPilot(runtime, {
       current = await store.mutate(current.key, value => ({ ...value,
         sourceNoticeId: trim(notice?.message_id), status: 'completed', completedAt: new Date().toISOString() }));
     }
-    return current;
+    return patchResultCard(current);
+  }
+
+  async function actionFeedback(raw) {
+    const action = parseDiscussionHandoffAction(raw);
+    if (!action?.operatorId || !action.chatId || !action.cardMessageId) {
+      return { accepted: false, toast: { type: 'error', content: '无法识别这次点击，请刷新后重试。' } };
+    }
+    const current = await store.get(action.proposalId);
+    if (!current || current.source?.chatId !== action.chatId
+      || current.cardMessageId !== action.cardMessageId
+      || !runtime.config.projectLinks?.some(link => link.handoffCards === true
+        && link.discussionChatId === current.source.chatId && link.workChatId === current.workChatId)) {
+      return { accepted: false, toast: { type: 'warning', content: '这张卡片已失效，请使用原话题中的新卡片。' } };
+    }
+    if (current.status === 'dismissed') {
+      return { accepted: false, toast: { type: 'info', content: '已选择继续讨论，本次没有移交。' } };
+    }
+    if (current.status === 'completed') {
+      return { accepted: false, toast: { type: 'info', content: '这项工作已经移交，请打开卡片中的干活话题。' } };
+    }
+    if (current.status === 'offering' || (action.action === 'dismiss' && current.confirmedBy)) {
+      return { accepted: false, toast: { type: 'warning', content: '这张卡片正在处理，请稍后查看结果。' } };
+    }
+    return { accepted: true, toast: { type: 'info', content: action.action === 'confirm'
+      ? '已收到移交请求，完成后会在原话题留下干活链接。'
+      : '已收到继续讨论的选择，不会创建干活话题。' } };
   }
 
   async function handleAction(raw) {
@@ -311,12 +405,12 @@ export function createDiscussionHandoffPilot(runtime, {
         || (current.cardMessageId && current.cardMessageId !== action.cardMessageId)
         || !runtime.config.projectLinks?.some(link => link.handoffCards === true
           && link.discussionChatId === current.source.chatId && link.workChatId === current.workChatId)) return null;
+      if (current.status === 'offering') return current;
       if (action.action === 'dismiss') {
         if (current.status !== 'offered') return current;
         current = await store.mutate(current.key, value => ({ ...value,
           status: 'dismissed', dismissedBy: action.operatorId, dismissedAt: new Date().toISOString() }));
-        await notifySource(current, 'dismissed');
-        return current;
+        return continueDismissed(current);
       }
       if (current.status === 'dismissed') return current;
       if (!current.confirmedBy) current = await store.mutate(current.key, value => ({ ...value,
@@ -338,12 +432,15 @@ export function createDiscussionHandoffPilot(runtime, {
           const receipt = await sendCard(record, buildDiscussionHandoffCard(record));
           await store.mutate(record.key, value => ({ ...value, status: 'offered', cardMessageId: trim(receipt?.message_id) }));
         }).catch(error => console.warn(`[feishu-handoff] restore card ${record.key}: ${error.message}`));
-      } else if (record.confirmedBy && record.status !== 'completed') {
+      } else if (record.status === 'dismissed' && (!record.sourceNoticeId || !record.cardPatchedAt)) {
+        await exclusive(record.key, () => continueDismissed(record))
+          .catch(error => console.warn(`[feishu-handoff] restore dismissal ${record.key}: ${error.message}`));
+      } else if (record.confirmedBy && (record.status !== 'completed' || !record.cardPatchedAt)) {
         await exclusive(record.key, () => continueAccepted(record))
           .catch(error => console.warn(`[feishu-handoff] restore work ${record.key}: ${error.message}`));
       }
     }
   }
 
-  return { offerCandidate, handleAction, restore };
+  return { offerCandidate, renewCard, actionFeedback, handleAction, restore };
 }

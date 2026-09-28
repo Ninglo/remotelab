@@ -1764,9 +1764,13 @@ async function main() {
   };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
-    'card.action.trigger': raw => {
-      void discussionHandoff.handleAction(raw).catch(error =>
-        console.warn(`[feishu-handoff] card action failed: ${error?.message || error}`));
+    'card.action.trigger': async raw => {
+      const feedback = await discussionHandoff.actionFeedback(raw);
+      if (feedback.accepted) {
+        void discussionHandoff.handleAction(raw).catch(error =>
+          console.warn(`[feishu-handoff] card action failed: ${error?.message || error}`));
+      }
+      return { toast: feedback.toast };
     },
     'im.message.reaction.created_v1': persistReactionFeedback,
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
