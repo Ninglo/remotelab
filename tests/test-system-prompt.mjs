@@ -39,6 +39,8 @@ assert.match(context, /a Feishu discussion thread is a different surface/);
 assert.match(context, /Timed or recurring AI work uses a Trigger or Schedule/);
 assert.match(context, /RemoteLab Capability Directory/);
 assert.match(context, /remotelab preview --help/);
+assert.match(context, /\$REMOTELAB_PROJECT_ROOT\/skills\/feishu-auth-request\/SKILL\.md/);
+await fs.access(new URL('../skills/feishu-auth-request/SKILL.md', import.meta.url));
 assert.doesNotMatch(context, /Quick Tunnel/);
 for (const guide of ['stable-static-publish', 'guest-port-expose', 'feishu-cli', 'session-debug']) {
   assert.match(context, new RegExp(`\\$REMOTELAB_PROJECT_ROOT/docs/platform-skills/${guide}\\.md`));

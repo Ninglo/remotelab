@@ -36,6 +36,12 @@ Then use the corresponding direct CLI command. For a capability not covered by
 an existing skill, read `lark-openapi-explorer` and invoke the native OpenAPI
 through lark-cli rather than adding a RemoteLab wrapper.
 
+For a missing application or user scope, read
+[`feishu-auth-request`](../../skills/feishu-auth-request/SKILL.md) before
+requesting authorization. In particular, a missing Bot scope can be sent to
+the application owner through Feishu's dedicated `/page/scope-apply` page;
+the `scopes/apply` API serves a different, narrower case.
+
 Before a destructive or high-risk action, follow the CLI's own confirmation and
 risk policy. Feishu still enforces the app's published scopes and resource-level
 permissions.
