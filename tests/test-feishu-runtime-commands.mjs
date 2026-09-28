@@ -190,7 +190,8 @@ try {
   const { prepareFeishuLogContinuation } = await import('../connectors/feishu/log-command.mjs');
   assert.match((await prepareFeishuLogContinuation('当前', { runtime,
     summary: { ...summary, threadId: 'unbound', messageId: 'unbound' }, request })).error, /还没有关联 Session/);
-  assert.match((await prepareFeishuLogContinuation('x'.repeat(1001), { runtime, summary, request })).error, /1000/);
+  assert.equal((await prepareFeishuLogContinuation('x'.repeat(1001), { runtime, summary, request })).question,
+    'x'.repeat(1001), 'normal Session questions are not limited by the old search-query cap');
   assert.match((await prepareFeishuLogContinuation('anything', { runtime, summary,
     request: async () => { throw new Error('offline'); } })).error, /稍后重试/);
   assert.match((await prepareFeishuLogContinuation('anything', { runtime, summary,

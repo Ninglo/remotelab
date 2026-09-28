@@ -297,7 +297,7 @@ Inside an existing task thread or private conversation, use these commands:
 `/log` resolves the current conversation binding, then freezes the prior Run
 before submitting a normal model turn in that same Session. The text after
 `/log`, including subsequent lines, is passed to the model as the user's
-question (up to 1000 characters). A bare `/log` supplies a default question.
+question. A bare `/log` supplies a default question.
 The model verifies the trace through the authenticated, read-only
 `GET /api/sessions/{id}/langsmith?format=json&runId={priorRunId}` endpoint and
 explains the relevant viewing or debugging steps. If that Run is not mapped
