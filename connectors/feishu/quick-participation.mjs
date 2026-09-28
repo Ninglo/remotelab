@@ -233,6 +233,9 @@ export function createFeishuQuickParticipationPilot(runtime, {
     const decision = classify(contextFor(summary, recent));
     return (async () => {
       const verdict = await decision.catch(() => ({ decision: 'unknown', reason: 'request_error' }));
+      // A direct @ is an explicit request for a text turn. Keep the early
+      // reaction consistent with that routing even if the fast classifier errs.
+      const participationDecision = mentionsFeishuBot(runtime, summary) ? 'reply' : verdict.decision;
       if (verdict.handoffDecision === 'offer' && typeof onHandoffCandidate === 'function') {
         void Promise.resolve().then(() => onHandoffCandidate(summary)).catch(error => {
           console.warn(`[feishu-quick-participation] handoff candidate ${summary.messageId}: ${error?.message || error}`);
@@ -242,10 +245,10 @@ export function createFeishuQuickParticipationPilot(runtime, {
       let statusLatencyMs = null;
       // A handoff nomination needs a second source check. Do not mark it as
       // silent or promise a reply before the proposal card has been validated.
-      if (reactionMode !== 'none' && verdict.handoffDecision !== 'offer' && verdict.decision !== 'unknown'
+      if (reactionMode !== 'none' && verdict.handoffDecision !== 'offer' && participationDecision !== 'unknown'
         && performance.now() - started < MAX_STATUS_START_MS) {
         try {
-          const emojiType = verdict.decision === 'reply' ? 'OnIt'
+          const emojiType = participationDecision === 'reply' ? 'OnIt'
             : !contextual ? 'EatingFood'
               : SILENT_REACTION_EMOJI[verdict.silentReaction] || '';
           if (emojiType) await react(summary, emojiType);
@@ -258,7 +261,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
       const record = {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
         reactionMode,
-        decision: verdict.decision, reason: verdict.reason || '', confidence: verdict.confidence ?? null,
+        decision: participationDecision, reason: verdict.reason || '', confidence: verdict.confidence ?? null,
         silentReaction: verdict.silentReaction || 'none',
         silentReactionProbability: verdict.silentReactionProbability ?? null,
         handoffDecision: verdict.handoffDecision || 'none',

@@ -457,6 +457,10 @@ mute state or automatically become lasting instructions. Groups with
 mistake), and `TEARS` (playful or touching emotion). Unrelated, serious, or
 ambiguous discussion gets no additional reaction. `THINKING` remains on every
 admitted message as the immediate receipt, even when no text reply follows.
+For pilot groups that should admit every human message on the main timeline
+and in their topics or threads, set `responseMode: "all"` alongside
+`quickReactions: true`. An explicit @ mention asks for a text reply; the
+receipt and any later status reaction are independent of that reply.
 
 For reaction mute, the Feishu app must subscribe to
 `im.message.reaction.created_v1` ("新增消息表情回复") and publish that app
