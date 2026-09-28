@@ -1661,8 +1661,8 @@ async function main() {
     const receivedAt = performance.now();
     const summary = summarize(raw);
     if (summary.fileToken && await documentPoller.accept(summary)) return {};
-    await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
-    if (await isAllowedByPolicy(config.accessPolicy, summary)
+    const accepted = await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
+    if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)
       && await shouldRouteFeishuMessageToRemoteLab(runtime, summary,
         { explicitCommand: !!extractLocalCommand(summary) })) quickParticipation.handle(summary, { receivedAt });
     return {};
