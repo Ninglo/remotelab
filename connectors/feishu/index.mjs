@@ -741,13 +741,20 @@ export function buildFeishuOutboundMessageIndexRecord(summary, sessionId, outbou
   const messageId = trimString(outboundMessageId);
   const normalizedSessionId = trimString(sessionId);
   if (!messageId || !normalizedSessionId) return null;
+  const isThread = summary?.conversationKind === 'thread' || summary?.replyInThread === true
+    || Boolean(buildFeishuTopicId(summary));
+  const topicId = isThread
+    ? trimString(summary?.threadId || summary?.topicId || summary?.rootId || summary?.messageId)
+    : '';
   return {
     connector: FEISHU_CONNECTOR_ID,
     ...(trimString(summary?.tenantKey || summary?.sender?.tenantKey) ? { accountId: trimString(summary?.tenantKey || summary?.sender?.tenantKey) } : {}),
     messageId,
     sessionId: normalizedSessionId,
     ...(trimString(summary?.chatId) ? { chatId: trimString(summary.chatId) } : {}),
-    conversationId: buildFeishuTopicId(summary) || buildExternalTriggerId(summary),
+    conversationId: topicId || buildExternalTriggerId(summary),
+    conversationKind: isThread ? 'thread' : 'main',
+    ...(isThread && topicId ? { rootId: topicId } : {}),
     externalTriggerId: buildExternalTriggerId(summary),
     sourceMessageId: trimString(summary?.messageId),
     direction: 'outbound',

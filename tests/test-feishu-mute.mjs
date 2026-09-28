@@ -20,10 +20,12 @@ try {
     messageType: 'text', sender: { senderType: 'user', openId: 'human' }, mentions: [] };
   const effects = [];
   const replies = [];
+  const feedback = [];
   const helpers = {
     addProcessingReaction: async () => effects.push('reaction'),
     submitRemoteLabRequest: async () => { effects.push('submit'); return { sessionId: 's1' }; },
     queueFeishuReply: async (_runtime, _summary, text) => { replies.push(text); return { message_id: 'reply' }; },
+    submitFeishuFeedback: async (_runtime, summary, kind) => { feedback.push({ messageId: summary.messageId, kind }); },
     resolveFeishuRuntimeSelection: async () => ({ mode: 'ui', tool: 'codex', model: 'alpha', effort: 'low' }),
     requestRemoteLab: async path => {
       const json = path === '/api/sessions/s1' ? { session: { id: 's1' } }
@@ -50,6 +52,7 @@ try {
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, false);
   await send('/mute');
   assert.deepEqual(effects, [], '/mute is a local command, not an AI task');
+  assert.equal(feedback.at(-1).kind, 'mute_command');
   assert.match(replies.at(-1), /已静默当前话题/);
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, true);
   assert.equal(await shouldRouteFeishuMessageToRemoteLab(runtime, base), false);
@@ -90,6 +93,7 @@ try {
   await silent('second peer handoff', { mentions: [{ openId: 'self' }], sender: { senderType: 'app', openId: 'peer' } });
   await send('/unmute');
   assert.match(replies.at(-1), /已恢复当前话题/);
+  assert.equal(feedback.at(-1).kind, 'unmute_command');
   assert.equal((await getFeishuConversationSettings(runtime, base)).muted, false);
   await send('automatic continuation restored');
   assert.deepEqual(effects, ['reaction', 'submit']);

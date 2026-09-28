@@ -7,6 +7,7 @@ import { materializeFileAssetAttachments } from './file-assets.mjs';
 import { ensureRequestSchema } from '../lib/request-schema.mjs';
 import { buildReplyDeliveries } from './source-deliveries.mjs';
 import { buildSessionEntryDeliveries } from './session-entry-notification.mjs';
+import { resolveAmbientFeishuReplyPlan } from './ambient-feishu-reply.mjs';
 import { resolveSessionRuntimeSelection } from './session-runtime-selection.mjs';
 import {
   applyQuickSessionRuntime,
@@ -1600,15 +1601,21 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   const session = await findSessionMeta(sessionId);
   const payload = buildReplyPublicationPayload(collectReplyPublicationHistory(history, run), run, {
     session, fullHistory: history,
-    includeSessionEntry: !record.deliveries.some(delivery => delivery.kind === 'session_entry'),
+    includeSessionEntry: record.options.sourceContext?.feishuParticipation !== 'ambient'
+      && !record.deliveries.some(delivery => delivery.kind === 'session_entry'),
   });
   const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
+  const deliveryPlan = resolveAmbientFeishuReplyPlan(record, plan, collectReplyPublicationHistory(history, run));
+  const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
+    && record.options.sourceContext?.feishuExplicitMention !== true;
   const deliveryPayload = run.state === 'completed' ? payload : {
     text: run.state === 'cancelled' ? '任务已取消。'
       : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`,
     attachments: [],
   };
-  await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null }, buildReplyDeliveries(plan, deliveryPayload).map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
+  await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
+    buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed ? null : deliveryPlan, deliveryPayload)
+      .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 
 // Several user inputs can be consumed by one native turn. Each keeps its own

@@ -4,6 +4,7 @@ import { normalizeConversation as normalizeSourceDeliveryPlan } from '../lib/con
 // This is a transport notification, separate from model history and its result.
 // Adapters using the durable outbox need no special sender for session links.
 export function buildSessionEntryDeliveries(session, snapshot, options = {}) {
+  if (['ambient', 'feedback'].includes(options.sourceContext?.feishuParticipation)) return [];
   if (options.internalOperation || options.recordUserMessage === false || snapshot.userMessageCount > 0) return [];
   const plan = normalizeSourceDeliveryPlan(options.sourceDelivery);
   // Email has one final message per request, not a separate creation email.

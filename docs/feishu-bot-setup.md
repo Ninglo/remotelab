@@ -399,8 +399,9 @@ model's default effort. Invalid choices leave the current configuration intact.
 Lists and `/status` are read-only. In a group with mention-only responses, mention
 the Bot unless it has already joined the current thread.
 
-Command-only blocks execute directly without launching an AI turn or creating a
-task. New Standard Sessions always start from Auto. Runtime setters change an
+Command-only blocks execute directly without creating a task. Mute and unmute
+also add a non-publishing feedback turn when a Session already exists.
+New Standard Sessions always start from Auto. Runtime setters change an
 existing Session when one is bound, or apply to the one task in the same
 command block. The next new Session starts from Auto again. Peer Bots cannot
 invoke these control commands.
@@ -435,6 +436,21 @@ separate. In a private chat it affects that private conversation. Peer Bots
 cannot change these settings, and their explicitly mentioned handoffs retain
 the existing durable loop limits.
 
+Adding Feishu's `SHHH` ("[嘘]") reaction to a reply sent by this Bot also
+mutes the reply's own main timeline or Thread. The Connector checks its outbound
+message index before acting, so reacting to another sender's message has no
+effect. The operator must pass the same sender access policy as message input.
+The reaction itself produces no chat message. Removing it does not unmute;
+`/unmute` does. A mute or unmute command, and a
+`SHHH` reaction on a Bot reply, are also fed to the existing Session as
+non-publishing feedback so it can reconsider its preceding participation.
+The `/mute` setting still takes effect even when no Session exists.
+
+For reaction mute, the Feishu app must subscribe to
+`im.message.reaction.created_v1` ("新增消息表情回复") and publish that app
+version. The existing group-message read permission is required by Feishu for
+the event. Connector registration alone does not enable platform delivery.
+
 ### Reply placement, Session topology, and one-shot Bot handoffs
 
 Every chat has one long-lived main Session. Every Feishu Thread has one separate
@@ -442,6 +458,18 @@ Session. A message already inside a Thread always reuses that Thread's Session;
 reply settings and commands cannot move it back to the mainline or split it.
 The inbound message ID is only a delivery address and is never part of mainline
 Session identity.
+
+An exact `groups[chatId].participationMode: "ambient"` override changes the
+main timeline only. Every human mainline message enters the chat's continuing
+Session, including messages without an @ mention. The Session can return an
+empty answer to stay silent, a normal answer for an inline reply, or start its
+answer with `<private>feishu-reply:thread</private>` to place the visible answer
+in a Thread rooted at that input. The private marker is removed before
+publication. Ordinary observation turns have no processing reaction or
+Session-created notice; a standalone @ mention asks the Session to reconsider
+the recent unanswered discussion. The first Thread answer comes from the main
+Session; later Thread inputs use the normal independent Thread Session and
+receive the Thread history as context. Other chats keep their existing policy.
 
 ```json
 {
@@ -464,7 +492,8 @@ Session identity.
 `replyPolicy.group` defaults to `thread`; `replyPolicy.private` defaults to
 `inline`. `replyPolicy.chats[chatId]` and `groups[chatId].replyMode` override the
 default with `inline` or `thread`. `groups[chatId]` also supports
-`responseMode` (`all`/`mention_only`) and an optional `systemPrompt`. Topic
+`responseMode` (`all`/`mention_only`), optional `systemPrompt`, and the
+exact-chat `participationMode: "ambient"` pilot setting. Topic
 groups use `all` when no exact chat override exists; ordinary groups fall back
 to `responsePolicy.group`. The prompt is appended to global instructions when
 creating a Session; existing Sessions keep their instruction snapshot.

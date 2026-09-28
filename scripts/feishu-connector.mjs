@@ -17,7 +17,8 @@ import {
 } from '../connectors/feishu/runtime-commands.mjs';
 import { handleFeishuLogCommand } from '../connectors/feishu/log-command.mjs';
 import { parseFeishuCommandBlock } from '../connectors/feishu/command-parser.mjs';
-import { handleFeishuMuteCommand } from '../connectors/feishu/conversation-settings.mjs';
+import { handleFeishuMuteCommand, setFeishuConversationMuted } from '../connectors/feishu/conversation-settings.mjs';
+import { findConnectorMessageIndexRecord } from '../lib/connector-message-index.mjs';
 import { createDeliveryReceipts } from '../lib/delivery-receipts.mjs';
 import { classifyFeishuDeliveryError, feishuResponseError } from '../connectors/feishu/delivery-errors.mjs';
 import { AUTH_FILE, CHAT_PORT, CONFIG_DIR } from '../lib/config.mjs';
@@ -57,6 +58,7 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
 import { loadFeishuConversationContext } from '../connectors/feishu/conversation-context.mjs';
+import { summarizeFeishuMuteReaction } from '../connectors/feishu/reaction-mute.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
   hydrateFeishuDocumentCommentSummary,
@@ -948,6 +950,12 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     ...await enrichSummaryWithSenderProfile(runtime, summaryWithChatMetadata),
     sourceRouteId: runtime.config.sourceRouteId,
   });
+  const groupSettings = resolveFeishuGroupSettings(runtime.config, effectiveSummary);
+  const ambient = groupSettings.participationMode === 'ambient'
+    && effectiveSummary.conversationKind === 'main'
+    && !effectiveSummary.replyModeOverride;
+  const soleMention = ambient && mentionsFeishuBot(runtime, effectiveSummary)
+    && !stripLeadingMentionTokens(effectiveSummary.messageText || effectiveSummary.textPreview || '').trim();
   const isQuickCommand = effectiveSummary.quickMode === true;
   const externalTriggerId = buildFeishuSessionExternalTriggerId(
     effectiveSummary,
@@ -963,7 +971,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     sourceName: runtime.config.region === 'lark-global' ? LARK_CONNECTOR_NAME : FEISHU_CONNECTOR_NAME,
     group: FEISHU_CONNECTOR_NAME,
     description: buildSessionDescription(effectiveSummary),
-    systemPrompt: resolveFeishuGroupSettings(runtime.config, effectiveSummary).systemPrompt,
+    systemPrompt: groupSettings.systemPrompt,
     conversation: {
       connector: 'feishu',
       sourceRouteId: runtime.config.sourceRouteId || 'default',
@@ -1024,10 +1032,19 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   const requestDeliveryTarget = buildFeishuRequestDeliveryTarget(messageSummary);
   const payload = {
     requestId: buildRequestId(effectiveSummary),
-    text: buildRemoteLabMessage(messageSummary),
+    text: soleMention
+      ? '[群聊反馈：用户只 @ 了你。请重新审视最近仍未得到你回应的几条消息，结合后续讨论判断现在是否应该回复；没有必要时保持沉默。]'
+      : buildRemoteLabMessage(messageSummary),
     tool: runtimeSelection.tool,
     runtimeSelectionScope: 'auto',
-    sourceContext: buildMessageSourceContext(messageSummary),
+    sourceContext: {
+      ...buildMessageSourceContext(messageSummary),
+      ...(ambient ? {
+        feishuParticipation: 'ambient',
+        feishuExplicitMention: mentionsFeishuBot(runtime, effectiveSummary),
+        ...(soleMention ? { feishuFeedback: 'reconsider_unanswered' } : {}),
+      } : {}),
+    },
     sourceDelivery: {
       connector: 'feishu',
       sourceRouteId: runtime.config.sourceRouteId || 'default',
@@ -1154,7 +1171,9 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
     });
     if (receipt.sessionId && receipt.messageId && runtime.storagePaths?.messageIndexPath) {
       await recordFeishuOutboundMessageSession(runtime, receipt.target, receipt.sessionId, receipt.messageId);
-      await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
+      if (receipt.target?.sourceKind !== 'ambient_thread_open') {
+        await recordFeishuThreadSessionBinding(runtime, receipt.target, receipt.sessionId, { threadId: receipt.threadId });
+      }
     }
     const completed = await request(`/api/source-deliveries/${receipt.deliveryId}/complete`, { method: 'POST', body: {
       leaseId: receipt.leaseId, externalId: receipt.externalId, messageId: receipt.messageId, threadId: receipt.threadId,
@@ -1277,6 +1296,55 @@ async function queueFeishuReply(runtime, summary, text) {
   return { message_id: '', deliveryId: result.json.delivery.id };
 }
 
+async function submitFeishuFeedback(runtime, summary, kind, sessionId = '') {
+  const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
+  let targetSessionId = trimString(sessionId);
+  if (targetSessionId) {
+    const existing = await requester(`/api/sessions/${encodeURIComponent(targetSessionId)}`);
+    if (existing.response.status === 404) return { ignored: true, reason: 'feedback_session_deleted' };
+    if (!existing.response.ok) throw new Error(existing.json?.error || 'Unable to read feedback Session');
+  }
+  if (!targetSessionId) {
+    const routed = buildFeishuTopicId(summary)
+      ? applyFeishuReplyRouting(runtime.config, summary)
+      : { ...summary, conversationKind: 'main', replyInThread: false, startThread: false };
+    const conversation = {
+      connector: FEISHU_CONNECTOR_ID,
+      sourceRouteId: runtime.config.sourceRouteId || 'default',
+      target: buildFeishuSessionConversationTarget(routed),
+    };
+    const resolved = await requester('/api/session-conversations/resolve', {
+      method: 'POST', body: { conversation },
+    });
+    if (!resolved.response.ok) throw new Error(resolved.json?.error || 'Unable to resolve feedback Session');
+    targetSessionId = trimString(resolved.json?.sessionId);
+  }
+  if (!targetSessionId) return { ignored: true, reason: 'no_existing_session' };
+  const text = kind === 'mute_reaction'
+    ? '【群聊反馈】用户在你发出的消息上添加了 [嘘]，当前讨论已静默。请复盘上次介入是否过早或打断讨论，供之后判断使用。本轮不要回复，也不要执行任务。'
+    : kind === 'mute_command'
+      ? '【群聊反馈】用户单独要求静默当前讨论。请复盘刚才的回复是否不合时宜，供之后判断使用。本轮不要回复，也不要执行任务。'
+      : '【群聊反馈】用户恢复了当前讨论的自动响应。本轮只记录这一变化，不要回复，也不要执行任务。';
+  return submitConnectorMessage(requester, targetSessionId, {
+    requestId: `feishu:feedback:${kind}:${trimString(summary.eventId || summary.messageId)}`,
+    text,
+    sourceContext: {
+      ...buildMessageSourceContext(summary),
+      feishuParticipation: 'feedback',
+      feishuFeedback: kind,
+    },
+  });
+}
+
+async function handleFeishuReactionMute(runtime, summary, helpers = {}) {
+  if (summary.sourceKind !== 'reaction_mute') return { ignored: true };
+  if (summary.sender?.openId === runtime.botIdentity?.openId) return { ignored: true, reason: 'self_reaction' };
+  await setFeishuConversationMuted(runtime, summary, true);
+  await (helpers.submitFeishuFeedback || submitFeishuFeedback)(
+    runtime, summary, 'mute_reaction', summary.feedbackSessionId);
+  return { muted: true, chatId: summary.chatId, threadId: summary.threadId || '' };
+}
+
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
   // Publication can create thread aliases before its HTTP acknowledgement.
   // Fence only routing and bot admission against that publication; reaction,
@@ -1366,7 +1434,10 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
       if (commandNames.length !== 1) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, '静默命令不能和其他命令同时使用。');
       const muteCommand = command.commands[0];
       const text = await handleFeishuMuteCommand(runtime, summary, { type: muteCommand.name, text: muteCommand.value });
-      return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
+      const receipt = await (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, text);
+      await (helpers.submitFeishuFeedback || submitFeishuFeedback)(
+        runtime, summary, muteCommand.name === 'mute' ? 'mute_command' : 'unmute_command');
+      return receipt;
     }
     const text = await handleFeishuRuntimeCommands(runtime, summary, command.commands, {
       request: helpers.requestRemoteLab || ((path, options) => requestRemoteLab(runtime, path, options)),
@@ -1391,7 +1462,8 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     summary = { ...summary, runtimeSelectionOverride: commandPlan.selection };
   }
   try {
-    void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
+    if (resolveFeishuGroupSettings(runtime.config, summary).participationMode !== 'ambient'
+      || mentionsFeishuBot(runtime, summary)) void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
       .catch(error => {
         console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
       });
@@ -1428,13 +1500,17 @@ function initializeInbox(runtime) {
     conversationKey: entry => buildFeishuInboxKey(entry.summary),
     process: async (entry, update) => {
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
-      return allowed ? handleMessage(runtime, entry.summary, entry.sourceLabel, {
+      if (!allowed) return { blocked: true };
+      if (entry.summary.sourceKind === 'reaction_mute') {
+        return handleFeishuReactionMute(runtime, entry.summary);
+      }
+      return handleMessage(runtime, entry.summary, entry.sourceLabel, {
         preparedRuntimeCommand: entry.runtimeCommand,
         saveRuntimeCommand: runtimeCommand => update({ runtimeCommand }),
         submitRemoteLabRequest: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
           prepared: entry.submission, saveSubmission: submission => update({ submission }),
         }),
-      }) : { blocked: true };
+      });
     },
     onError: error => console.error(`[feishu-inbox] ${error.message}`),
   });
@@ -1460,6 +1536,8 @@ export {
   extractLocalCommand,
   findFeishuThreadSessionBinding,
   addProcessingReaction,
+  handleFeishuReactionMute,
+  submitFeishuFeedback,
   submitRemoteLabRequest,
   handleMessage,
   isAllowedByPolicy,
@@ -1564,8 +1642,26 @@ async function main() {
     await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
     return {};
   };
+  const persistMuteReaction = async raw => {
+    const event = raw?.event && typeof raw.event === 'object' ? raw.event : raw;
+    if (trimString(event?.reaction_type?.emoji_type).toUpperCase() !== 'SHHH') return {};
+    const messageId = trimString(event?.message_id);
+    if (!messageId) return {};
+    const outbound = await findConnectorMessageIndexRecord(storagePaths.messageIndexPath, {
+      connector: FEISHU_CONNECTOR_ID,
+      accountId: trimString(event.tenant_key || raw?.header?.tenant_key),
+      messageId,
+    });
+    const summary = summarizeFeishuMuteReaction(raw, outbound);
+    if (!summary) return {};
+    await inbox.accept(`reaction:${summary.eventId}`, {
+      summary, raw, sourceLabel: 'im.message.reaction.created_v1',
+    });
+    return {};
+  };
   const eventDispatcher = new Lark.EventDispatcher({}).register({
     'im.message.receive_v1': persist('im.message.receive_v1', summarizeEvent),
+    'im.message.reaction.created_v1': persistMuteReaction,
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
   inbox.start();
