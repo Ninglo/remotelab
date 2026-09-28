@@ -496,6 +496,38 @@ and in their topics or threads, set `responseMode: "all"` alongside
 the model includes `OnIt` before a normal answer. A message asking for only a
 reaction receives no visible text after the reaction is added.
 
+For a single group mainline pilot, add `jevReactions: true` to a group that
+already has `quickReactions: true`, `participationMode: "ambient"`, and
+`groupFeed: true`. Each admitted human message is first appended once to the
+same bound group Session, including messages that need no text answer. The
+connector sends the last 20 Session messages from at most the preceding two
+hours, capped at 5,000 characters, to one Jev judgment. Jev chooses whether
+text or task work is needed and one outcome from `WOW` (surprise), `TEARS`
+(touching moment), `DULL` (mild mishap), `APPLAUSE`, `HUG`, `COMFORT`, `SMILE`,
+or `EatingFood` (quiet fallback). A direct @ mention normally starts a Run;
+an explicit request for only an emoji stays reaction-only. When a Run is
+admitted, the outcome becomes `OnIt`. The connector records the judgment in
+the Session and queues the reaction in the durable source-delivery outbox; the
+Feishu Bot SDK sends it from that receipt. This path does not add a temporary
+`THINKING` or generic read reaction, and it does not ask the Harness to select
+or post the outcome. Ordinary social messages do not start a Harness Run.
+Commands still use their existing script response path after entering the
+Session. Only the selected group mainline gets this policy; topics, threads,
+and other groups keep their existing behavior. Disable `jevReactions` to
+return to the existing `quickReactions` flow.
+
+The observation and decision are keyed by Feishu message ID so connector
+replay reuses them. The short Jev window is an active-context limit, not a
+history deletion rule: all observed messages remain in the Session. The
+group-feed nightly review preserves incremental provenance and current work
+summary. A later work turn also uses the bounded Feishu conversation window
+(at most 100 messages, 24 hours, 4-hour activity gap, and 48,000 characters).
+The existing Session compactor can shorten a long Harness context when its
+token threshold is reached; it does not delete raw events. Automatic rotation
+or deletion of old group Sessions is not enabled by this pilot. Before adding
+either, define a measured trigger, carry-forward summary, and readback check
+for unresolved decisions and tasks.
+
 For reaction mute, the Feishu app must subscribe to
 `im.message.reaction.created_v1` ("新增消息表情回复") and publish that app
 version. The existing group-message read permission is required by Feishu for

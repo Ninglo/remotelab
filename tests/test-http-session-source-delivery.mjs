@@ -116,6 +116,49 @@ try {
   assert.equal((await request('POST', '/api/sessions', {
     folder: home, tool: 'fake-codex', conversation: groupFeedConversation, replaceConversation: true,
   })).status, 403, 'browser cannot steal the group conversation binding');
+  const observedSource = { connector: 'feishu', sourceRouteId: 'pilot-bot', tenantKey: 'pilot-tenant',
+    chatId: 'pilot-group', messageId: 'observed-one', sender: { name: 'Ada', openId: 'person-1' } };
+  const observePath = `/api/sessions/${groupFeedId}/observations`;
+  const observation = { sourceMessageId: 'observed-one', requestId: 'feishu:observed-one',
+    text: '这个结果真惊喜', sourceContext: observedSource };
+  assert.equal((await request('POST', observePath, observation)).status, 403,
+    'a browser cannot insert connector observations');
+  const observed = await connectorRequest('POST', observePath, observation);
+  assert.equal(observed.status, 201);
+  assert.equal(observed.body.recent.at(-1).text, observation.text);
+  assert.equal((await connectorRequest('POST', observePath, observation)).status, 200,
+    'connector retries keep a single Session message');
+  const decisionPath = `${observePath}/decision`;
+  assert.equal((await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-one', participation: 'silent', emojiType: 'WOW',
+  })).status, 200);
+  const stableDecision = await connectorRequest('POST', decisionPath, {
+    sourceMessageId: 'observed-one', participation: 'silent', emojiType: 'DULL',
+  });
+  assert.equal(stableDecision.body.decision.emojiType, 'WOW', 'a replay cannot revise an accepted outcome');
+  const observedEvents = (await request('GET', `/api/sessions/${groupFeedId}/events?filter=all`)).body.events;
+  assert.equal(observedEvents.filter(event => event.sourceMessageId === 'observed-one'
+    && event.type === 'message').length, 1);
+  assert.equal(observedEvents.filter(event => event.sourceMessageId === 'observed-one'
+    && event.type === 'reaction_decision').length, 1);
+  assert.equal((await request('POST', '/api/source-deliveries', {
+    responseId: 'jev:observed-one', sessionId: groupFeedId, reaction: 'WOW',
+    sourceDelivery: { ...groupFeedConversation,
+      target: { ...groupFeedConversation.target, messageId: 'observed-one' } },
+  })).status, 403, 'a browser cannot enqueue a Bot reaction');
+  const reaction = await connectorRequest('POST', '/api/source-deliveries', {
+    responseId: 'jev:observed-one', sessionId: groupFeedId, reaction: 'WOW',
+    sourceDelivery: { ...groupFeedConversation,
+      target: { ...groupFeedConversation.target, messageId: 'observed-one' } },
+  });
+  assert.equal(reaction.status, 202);
+  assert.equal(reaction.body.delivery.kind, 'reaction');
+  assert.equal(reaction.body.delivery.emojiType, 'WOW');
+  assert.equal((await connectorRequest('POST', '/api/source-deliveries', {
+    responseId: 'jev:observed-one', sessionId: groupFeedId, reaction: 'WOW',
+    sourceDelivery: { ...groupFeedConversation,
+      target: { ...groupFeedConversation.target, messageId: 'observed-one' } },
+  })).body.delivery.id, reaction.body.delivery.id, 'retry does not enqueue a second reaction');
   const groupMessage = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
     requestId: 'pilot-message', text: 'a genuine group message', tool: 'fake-codex', model: 'fake-model',
   });
@@ -124,6 +167,23 @@ try {
     const result = await request('GET', `/api/runs/${groupMessage.body.run.id}`);
     return result.body.run?.state === 'completed';
   }, 'group conversation response completion');
+  const workObservation = await connectorRequest('POST', observePath, {
+    sourceMessageId: 'observed-work', requestId: 'feishu:observed-work',
+    text: '请调查这个问题', sourceContext: { ...observedSource, messageId: 'observed-work' },
+  });
+  assert.equal(workObservation.status, 201);
+  const observedWorkRun = await connectorRequest('POST', `/api/sessions/${groupFeedId}/messages`, {
+    requestId: 'feishu:observed-work', text: '请调查这个问题', recordUserMessage: false,
+    tool: 'fake-codex', model: 'fake-model',
+  });
+  assert.equal(observedWorkRun.status, 202);
+  await waitFor(async () => {
+    const result = await request('GET', `/api/runs/${observedWorkRun.body.run.id}`);
+    return result.body.run?.state === 'completed';
+  }, 'observed work response completion');
+  const afterWork = (await request('GET', `/api/sessions/${groupFeedId}/events?filter=all`)).body.events;
+  assert.equal(afterWork.filter(event => event.type === 'message' && event.sourceMessageId === 'observed-work').length, 1,
+    'starting Harness after observation must not duplicate its user message');
   console.log('PASS: group conversation is shared for reading but only the connector can write or bind it');
   const longClaim = request('POST', '/api/source-deliveries/claim', {
     connector: 'feishu', sourceRouteId: 'long-poll-fixture', waitMs: 5000,

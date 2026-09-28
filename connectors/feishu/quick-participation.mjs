@@ -11,6 +11,24 @@ const MAX_CONTEXT_CHARACTERS = 5_000;
 const JEV_TIMEOUT_MS = 1_600;
 const JEV_URL = 'https://api.typesafe.ai/v1/systemone';
 const JEV_MODEL = 'jev-1.13.0';
+const EXPRESSIVE_REACTIONS = Object.freeze({
+  surprise: 'WOW', tears: 'TEARS', dull: 'DULL', applause: 'APPLAUSE',
+  hug: 'HUG', comfort: 'COMFORT', smile: 'SMILE', quiet: 'EatingFood',
+});
+
+export function buildFeishuSessionReactionContext(recent, { mentioned = false } = {}) {
+  const lines = (Array.isArray(recent) ? recent : []).map(entry =>
+    `${new Date(entry.time || Date.now()).toISOString()} ${entry.sender || '群成员'}: ${String(entry.text || '').slice(0, 1200)}`);
+  const selected = [];
+  let characters = 0;
+  for (const line of lines.reverse()) {
+    if (selected.length && characters + line.length > MAX_CONTEXT_CHARACTERS) break;
+    selected.push(line);
+    characters += line.length;
+  }
+  return [`You are the assistant in this ongoing Feishu group. The newest message is the last line. Assistant mentioned in newest message: ${mentioned}.`,
+    ...selected.reverse()].join('\n');
+}
 
 function messageTime(summary) {
   const value = Number(summary?.createTime);
@@ -27,7 +45,8 @@ function isPilotHumanMessage(runtime, summary) {
   if (summary?.sourceKind || summary?.chatType !== 'group' || !summary?.chatId || !summary?.messageId) return false;
   if (isFeishuBotSender(summary)) return false;
   if (runtime.botIdentity?.openId && summary.sender?.openId === runtime.botIdentity.openId) return false;
-  return resolveFeishuGroupSettings(runtime.config, summary).quickReactions === true;
+  const settings = resolveFeishuGroupSettings(runtime.config, summary);
+  return settings.quickReactions === true && settings.jevReactions !== true;
 }
 
 function textOf(summary) {
@@ -46,7 +65,9 @@ export async function feishuJevApiKey() {
   return parseKeyFile(await readFile(file, 'utf8').catch(() => ''));
 }
 
-export async function classifyFeishuQuickParticipation(context, { fetchImpl = fetch, key, timeoutMs = JEV_TIMEOUT_MS } = {}) {
+export async function classifyFeishuQuickParticipation(context, {
+  fetchImpl = fetch, key, timeoutMs = JEV_TIMEOUT_MS, includeHandoff = true,
+} = {}) {
   const token = key || await feishuJevApiKey();
   if (!token) return { decision: 'unknown', reason: 'missing_key', latencyMs: 0 };
   const controller = new AbortController();
@@ -68,14 +89,36 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
               silent: 'The assistant should stay silent now while retaining this message as context for later messages.',
             },
           },
-          projectHandoff: {
+          emotion: {
+            type: 'choice',
+            instructions: 'Choose exactly one fitting reaction for the newest message using the whole recent discussion. Prefer a warm, expressive response when the tone clearly supports it. This question only chooses a reaction; the participation question separately decides whether to start a text/task turn. Never treat serious loss, distress or another person\'s misfortune as a joke. Use quiet for ordinary human-to-human discussion or unclear tone.',
+            criteria: {
+              surprise: 'A genuinely surprising reveal or unexpectedly good result; react with delight.',
+              tears: 'A touching or lightly emotional moment where tearful empathy fits; not a casual response to serious harm.',
+              dull: 'A mild mishap or self-deprecating complaint where a shared "oh no" feels friendly; not serious distress.',
+              applause: 'Someone achieved something worth celebrating.',
+              hug: 'A person needs warm personal support.',
+              comfort: 'A difficult or sad situation calls for gentle sympathy.',
+              smile: 'A light friendly exchange or playful moment.',
+              quiet: 'No expressive reaction fits, or the Bot should quietly leave the human conversation alone.',
+            },
+          },
+          ...(!includeHandoff ? { reactionOnly: {
+            type: 'choice',
+            instructions: 'Does the newest message explicitly ask this assistant only for an emoji reaction, with no text answer or task? A direct @ mention by itself is not enough. Choose yes only for a clear reaction-only request; choose no if the assistant should answer, investigate, or start work.',
+            criteria: {
+              yes: 'The sender explicitly wants only a reaction on this message.',
+              no: 'The sender has not explicitly limited the assistant to a reaction.',
+            },
+          } } : {}),
+          ...(includeHandoff ? { projectHandoff: {
             type: 'choice',
             instructions: 'Decide whether the newest human message, in its recent discussion, clearly says a concrete direction has been settled and asks or strongly implies that the project work group should now start execution. Offer only for a specific actionable piece of work with an affirmative start signal. A question, tentative idea, ordinary status, human acknowledgement, or work already underway is not enough. This only nominates a proposal for a second check; it does not authorize execution.',
             criteria: {
               offer: 'A concrete direction is settled and the group now wants work to begin or be handed off.',
               none: 'There is no clear new work handoff decision in the newest message.',
             },
-          },
+          } } : {}),
         },
       }),
       signal: controller.signal,
@@ -94,8 +137,13 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
     const offerProbability = Number(handoff?.probabilities?.offer);
     const handoffDecision = handoff?.choice === 'offer' && Number.isFinite(offerProbability)
       && offerProbability >= 0.9 ? 'offer' : 'none';
+    const reactionOnly = result?.answers?.reactionOnly?.choice === 'yes'
+      && Number(result.answers.reactionOnly.probabilities?.yes) >= 0.85;
+    const emojiType = EXPRESSIVE_REACTIONS[result?.answers?.emotion?.choice] || 'EatingFood';
     return {
       decision: uncertain ? 'unknown' : decision,
+      reactionOnly,
+      emojiType,
       handoffDecision,
       handoffProbability: Number.isFinite(offerProbability) ? offerProbability : null,
       ...(uncertain ? { reason: 'low_support' } : {}),

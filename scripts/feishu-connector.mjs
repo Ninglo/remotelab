@@ -63,7 +63,11 @@ import {
   loadLinkedFeishuProjectContext,
   normalizeFeishuProjectLinks,
 } from '../connectors/feishu/linked-project-context.mjs';
-import { createFeishuQuickParticipationPilot } from '../connectors/feishu/quick-participation.mjs';
+import {
+  buildFeishuSessionReactionContext,
+  classifyFeishuQuickParticipation,
+  createFeishuQuickParticipationPilot,
+} from '../connectors/feishu/quick-participation.mjs';
 import { createFeishuReadReactionStore } from '../connectors/feishu/read-reactions.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
 import { summarizeFeishuReactionFeedback } from '../connectors/feishu/reaction-mute.mjs';
@@ -947,10 +951,15 @@ async function resolveFeishuRuntimeSelection(runtime) {
   });
 }
 
-async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveSubmission = async () => {} } = {}) {
+async function submitRemoteLabRequest(runtime, summary, {
+  prepared = null, saveSubmission = async () => {}, observeOnly = false, skipUserMessage = false,
+} = {}) {
   const requester = (path, options = {}) => requestRemoteLab(runtime, path, options);
   if (prepared) {
-    const submission = await submitConnectorMessage(requester, prepared.sessionId, prepared.payload);
+    const submission = await submitConnectorMessage(requester, prepared.sessionId, {
+      ...prepared.payload,
+      ...(skipUserMessage ? { recordUserMessage: false } : {}),
+    });
     return { ...prepared.receipt, sessionId: prepared.sessionId, runId: submission.runId,
       requestId: submission.requestId, responseId: submission.responseId,
       duplicate: submission.duplicate, queued: submission.queued };
@@ -1036,6 +1045,19 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
       code: QUICK_PROFILE_CONFLICT,
     });
   }
+  if (observeOnly) {
+    const sourceContext = buildMessageSourceContext(effectiveSummary);
+    const observed = await requester(`/api/sessions/${encodeURIComponent(session.id)}/observations`, {
+      method: 'POST', body: {
+        sourceMessageId: effectiveSummary.messageId,
+        requestId: buildRequestId(effectiveSummary),
+        text: buildRemoteLabMessage(effectiveSummary),
+        sourceContext,
+      },
+    });
+    if (!observed.response.ok) throw new Error(observed.json?.error || 'Unable to record Feishu message in Session');
+    return { sessionId: session.id, externalTriggerId, observation: observed.json };
+  }
   const [attachmentResolution, conversationContext, linkedProjectContext] = await Promise.all([
     resolveFeishuMessageAttachments(runtime, effectiveSummary, { sessionId: session.id }),
     loadFeishuConversationContext(runtime, effectiveSummary).catch((error) => {
@@ -1070,7 +1092,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
     runtimeSelectionScope: 'auto',
     sourceContext: {
       ...buildMessageSourceContext(messageSummary),
-      ...(resolveFeishuGroupSettings(runtime.config, effectiveSummary).quickReactions
+      ...(groupSettings.quickReactions && !groupSettings.jevReactions
         ? { feishuOutcomeRequired: true } : {}),
       ...(messageSummary.logContinuation ? { feishuLog: {
         sessionId: messageSummary.logContinuation.sessionId,
@@ -1098,7 +1120,67 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   } };
   await recordFeishuBotHandoffScope(runtime, effectiveSummary, { sessionId: session.id });
   await saveSubmission(handoff);
-  return submitRemoteLabRequest(runtime, summary, { prepared: handoff });
+  return submitRemoteLabRequest(runtime, summary, { prepared: handoff, skipUserMessage });
+}
+
+async function enqueueJevOutcomeReaction(runtime, summary, sessionId, emojiType) {
+  const delivery = await requestRemoteLab(runtime, '/api/source-deliveries', {
+    method: 'POST', body: {
+      sessionId,
+      responseId: `feishu-jev:${summary.messageId}`,
+      reaction: emojiType,
+      sourceDelivery: {
+        connector: 'feishu', sourceRouteId: runtime.config.sourceRouteId || 'default',
+        target: buildFeishuRequestDeliveryTarget(summary),
+      },
+    },
+  });
+  if (!delivery.response.ok || !delivery.json?.delivery?.id) {
+    throw new Error(delivery.json?.error || 'Unable to queue Jev reaction');
+  }
+  return delivery.json.delivery;
+}
+
+async function handleJevObservedMessage(runtime, summary, observationReceipt, helpers = {}) {
+  const { sessionId, externalTriggerId, observation } = observationReceipt;
+  if (!observation?.eventSeq) throw new Error('Feishu message was not recorded in Session');
+  await recordFeishuBotHandoffScope(runtime, summary, { sessionId });
+  if (runtime.storagePaths?.messageIndexPath) {
+    await recordFeishuMessageSession(runtime, summary, sessionId, { externalTriggerId });
+    await recordFeishuThreadSessionBinding(runtime, summary, sessionId, { externalTriggerId });
+  }
+
+  let decision = observation.decision;
+  if (!decision) {
+    const context = buildFeishuSessionReactionContext(observation.recent, {
+      mentioned: mentionsFeishuBot(runtime, summary),
+    });
+    const verdict = await (helpers.classifyJevReaction || ((context) =>
+      classifyFeishuQuickParticipation(context, { includeHandoff: false })))(context);
+    const participation = !verdict?.reactionOnly
+      && (mentionsFeishuBot(runtime, summary) || verdict?.decision === 'reply')
+      ? 'reply' : 'silent';
+    const emojiType = participation === 'reply' ? 'OnIt' : verdict?.emojiType || 'EatingFood';
+    const saved = await (helpers.recordJevDecision || ((sessionId, sourceMessageId, value) =>
+      requestRemoteLab(runtime, `/api/sessions/${encodeURIComponent(sessionId)}/observations/decision`, {
+        method: 'POST', body: { sourceMessageId, ...value },
+      })))(sessionId, summary.messageId, {
+      participation, emojiType, reason: verdict?.reason || '',
+    });
+    if (saved?.response && !saved.response.ok) throw new Error(saved.json?.error || 'Unable to record Jev decision');
+    decision = saved?.json?.decision || saved?.decision;
+    if (!decision) throw new Error('Jev decision was not durably recorded');
+  }
+
+  let workReceipt = null;
+  if (decision.participation === 'reply') {
+    workReceipt = await (helpers.submitRemoteLabRequest || ((runtime, summary, options) =>
+      submitRemoteLabRequest(runtime, summary, options)))(runtime, summary, { skipUserMessage: true });
+  }
+  const delivery = await (helpers.enqueueJevReaction || enqueueJevOutcomeReaction)(
+    runtime, summary, sessionId, decision.emojiType);
+  return { sessionId, externalTriggerId, decision, deliveryId: delivery.id,
+    ...(workReceipt ? { runId: workReceipt.runId, requestId: workReceipt.requestId } : {}) };
 }
 
 async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
@@ -1499,6 +1581,11 @@ async function prepareFeishuMessage(runtime, summary, helpers) {
 }
 
 async function processFeishuMessage(runtime, summary, command, helpers) {
+  const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
+  const jevObservation = groupSettings.jevReactions
+    ? await (helpers.observeRemoteLabMessage || ((runtime, summary) =>
+      submitRemoteLabRequest(runtime, summary, { observeOnly: true })))(runtime, summary)
+    : null;
   if (command?.error) return (helpers.queueFeishuReply || queueFeishuReply)(runtime, summary, command.error);
   const commandNames = command?.commands?.map(entry => entry.name) || [];
   const taskCommand = commandNames.some(name => ['inline', 'thread', 'quick', 'sota'].includes(name));
@@ -1555,8 +1642,8 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     });
     summary = { ...summary, runtimeSelectionOverride: commandPlan.selection };
   }
+  if (jevObservation) return handleJevObservedMessage(runtime, summary, jevObservation, helpers);
   try {
-    const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
     if (groupSettings.quickReactions && runtime.quickParticipation) {
       runtime.quickParticipation.handle(summary);
       await runtime.quickParticipation.waitForReadReceipt(summary.messageId);
@@ -1606,8 +1693,11 @@ function initializeInbox(runtime) {
       return handleMessage(runtime, entry.summary, entry.sourceLabel, {
         preparedRuntimeCommand: entry.runtimeCommand,
         saveRuntimeCommand: runtimeCommand => update({ runtimeCommand }),
-        submitRemoteLabRequest: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
-          prepared: entry.submission, saveSubmission: submission => update({ submission }),
+        submitRemoteLabRequest: (runtime, summary, options = {}) => submitRemoteLabRequest(runtime, summary, {
+          ...options, prepared: entry.submission, saveSubmission: submission => update({ submission }),
+        }),
+        observeRemoteLabMessage: (runtime, summary) => submitRemoteLabRequest(runtime, summary, {
+          observeOnly: true,
         }),
       });
     },
@@ -1788,7 +1878,9 @@ async function main() {
     if (!accepted.complete && await isAllowedByPolicy(config.accessPolicy, summary)) {
       const routed = await shouldRouteFeishuMessageToRemoteLab(runtime, summary,
         { explicitCommand: !!extractLocalCommand(summary) });
-      if (routed) quickParticipation.handle(summary, { receivedAt });
+      if (routed && !resolveFeishuGroupSettings(config, summary).jevReactions) {
+        quickParticipation.handle(summary, { receivedAt });
+      }
       else if (discussionHandoffLink(runtime, summary)
         && !(await getFeishuConversationSettings(runtime, summary)).muted) {
         // Unbound discussion-thread replies still provide handoff signals and

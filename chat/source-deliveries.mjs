@@ -1,4 +1,5 @@
 import { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
+import { FEISHU_OUTCOME_REACTIONS } from '../lib/feishu-reaction-directive.mjs';
 export { buildReplyDeliveries } from '../lib/reply-deliveries.mjs';
 import { refineConversation, sameConversation } from '../lib/conversation-target.mjs';
 import { findSessionMeta } from './session-meta-store.mjs';
@@ -97,14 +98,20 @@ export async function getSourceDelivery(id) {
 
 export async function enqueueSourceDelivery(input = {}) {
   const plan = normalizeSourceDeliveryPlan(input.sourceDelivery);
-  if (!plan || !input.responseId || (!input.text && !input.attachments?.length)) throw new Error('Delivery requires target, responseId and content');
+  const reaction = trimString(input.reaction);
+  if (reaction && (plan?.connector !== 'feishu' || !plan.target?.messageId
+      || !FEISHU_OUTCOME_REACTIONS.includes(reaction))) throw new Error('Invalid Feishu reaction delivery');
+  if (!plan || !input.responseId || (!input.text && !input.attachments?.length && !reaction)) {
+    throw new Error('Delivery requires target, responseId and content or a Feishu reaction');
+  }
   const sessionId = input.sessionId || 'outbound';
   const requestId = `outbound:${input.responseId}:${requestKey(plan.sourceRouteId, JSON.stringify(plan.target))}`;
   // This producer has no AI execution; it uses the same committed outbox aggregate.
-  const { record } = await requests.accept({ sessionId, requestId, text: input.text || '[attachment]',
+  const { record } = await requests.accept({ sessionId, requestId, text: input.text || (reaction ? '[reaction]' : '[attachment]'),
     options: { deliveryOnly: true, responseId: input.responseId },
-    result: { state: 'completed', payload: { text: input.text || '', attachments: input.attachments || [] } },
-    plans: buildReplyDeliveries(plan, { text: input.text, attachments: input.attachments }).map(part => ({ ...part, triggerId: input.triggerId || '', scheduleId: input.scheduleId || '', occurrenceId: input.occurrenceId || '' })),
+    result: { state: 'completed', payload: { text: input.text || '', attachments: input.attachments || [], reaction } },
+    plans: buildReplyDeliveries(plan, { text: input.text, attachments: input.attachments, reaction }).map(part => ({ ...part,
+      triggerId: input.triggerId || '', scheduleId: input.scheduleId || '', occurrenceId: input.occurrenceId || '' })),
   });
   return record.deliveries[0];
 }

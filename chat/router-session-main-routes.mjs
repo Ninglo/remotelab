@@ -33,6 +33,7 @@ import { normalizeSessionExecutionProfile, QUICK_SESSION_PROFILE } from '../lib/
 import { readLangSmithCaseConfig, getLangSmithCaseStatus } from '../lib/langsmith-case-link.mjs';
 import { buildLangSmithCaseNavigationHref, buildSessionNavigationHref } from '../lib/session-navigation.mjs';
 import { searchSessionLogs } from './session-log-search.mjs';
+import { observeSessionMessage, recordSessionObservationDecision } from './session-observations.mjs';
 
 export const SESSION_CREATION_MAX_BYTES = 64 * 1024;
 
@@ -374,6 +375,45 @@ export async function handleSessionMainRoutes({
     const sessionId = parts[2];
     const action = parts[3] || null;
 
+    if (parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'observations'
+        && (parts.length === 4 || (parts.length === 5 && parts[4] === 'decision'))) {
+      if (authSession?.authKind !== 'service') {
+        writeJson(res, 403, { error: 'Connector service authentication required' });
+        return true;
+      }
+      if (!await requireSessionAccess(res, authSession, sessionId)) return true;
+      try {
+        const payload = JSON.parse(await readBody(req, 512 * 1024));
+        const session = await getSession(sessionId);
+        if (session?.conversation?.connector !== 'feishu' || !session.groupFeed) {
+          writeJson(res, 400, { error: 'Observations require a bound Feishu group Session' });
+          return true;
+        }
+        if (parts.length === 5) {
+          const decision = await recordSessionObservationDecision(sessionId, payload.sourceMessageId, payload);
+          writeJson(res, 200, { decision });
+          return true;
+        }
+        if (payload?.sourceContext?.connector !== 'feishu'
+            || payload.sourceContext.chatId !== session.conversation.target?.chatId
+            || payload.sourceContext.sourceRouteId !== session.conversation.sourceRouteId
+            || (session.conversation.target?.tenantKey
+              && payload.sourceContext.tenantKey !== session.conversation.target.tenantKey)
+            || payload.sourceContext.messageId !== payload.sourceMessageId) {
+          writeJson(res, 400, { error: 'Observation source does not match the bound Feishu group' });
+          return true;
+        }
+        const initiator = await resolveSessionInitiator(authSession, 'feishu', payload.sourceContext);
+        const observed = await observeSessionMessage(sessionId, {
+          ...payload, initiatedByIdentityId: initiator.identityId,
+        });
+        writeJson(res, observed.duplicate ? 200 : 201, observed);
+      } catch (error) {
+        writeJson(res, 400, { error: error.message || 'Unable to record Feishu observation' });
+      }
+      return true;
+    }
+
     if (parts.length === 4 && parts[0] === 'api' && parts[1] === 'sessions' && sessionId && action === 'messages') {
       if (!await requireSessionAccess(res, authSession, sessionId)) return true;
       let body;
@@ -407,6 +447,8 @@ export async function handleSessionMainRoutes({
           sourceContext: payload.sourceContext,
           suppressSourceDelivery: authSession?.authKind !== 'service' && !payload.sourceDelivery,
           allowGroupFeedWrite: authSession?.authKind === 'service',
+          ...(authSession?.authKind === 'service' && payload.recordUserMessage === false
+            ? { recordUserMessage: false } : {}),
           ...(preSavedAttachments.length > 0 ? { preSavedAttachments } : {}),
         };
         const initiator = await resolveSessionInitiator(authSession, payload.sourceId, payload.sourceContext);

@@ -542,6 +542,10 @@ export async function getHistorySnapshot(sessionId, options = {}) {
   };
 }
 
+export async function getHistoryHeadSeq(sessionId) {
+  return (await loadMeta(sessionId)).latestSeq || 0;
+}
+
 export async function appendEvent(sessionId, event) {
   return runSessionMutation(sessionId, async () => appendEventUnlocked(sessionId, event));
 }

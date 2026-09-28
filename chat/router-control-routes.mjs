@@ -766,7 +766,14 @@ export async function handleControlRoutes({
   }
 
   if (pathname === '/api/source-deliveries' && req.method === 'POST') {
-    try { writeJson(res, 202, { delivery: await enqueueSourceDelivery(JSON.parse(await readBody(req, 1024 * 1024))) }); }
+    try {
+      const payload = JSON.parse(await readBody(req, 1024 * 1024));
+      if (payload.reaction && authSession?.authKind !== 'service') {
+        writeJson(res, 403, { error: 'Connector service authentication required for reactions' });
+        return true;
+      }
+      writeJson(res, 202, { delivery: await enqueueSourceDelivery(payload) });
+    }
     catch (error) { writeJson(res, 400, { error: error.message }); }
     return true;
   }
