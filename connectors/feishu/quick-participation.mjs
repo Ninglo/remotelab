@@ -82,10 +82,10 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
     const silentProbability = Number(answer?.probabilities?.silent);
     if (!Number.isFinite(replyProbability) || !Number.isFinite(silentProbability)
       || Math.abs(replyProbability + silentProbability - 1) > 0.03) throw new Error('invalid_probabilities');
-    const uncertain = Math.abs(replyProbability - silentProbability) < 0.2;
+    const uncertain = decision === 'reply' ? replyProbability < 0.7 : silentProbability < 0.85;
     return {
       decision: uncertain ? 'unknown' : decision,
-      ...(uncertain ? { reason: 'low_margin' } : {}),
+      ...(uncertain ? { reason: 'low_support' } : {}),
       confidence: Number.isFinite(Number(answer.confidence)) ? Number(answer.confidence) : null,
       probabilities: answer.probabilities || null,
       model: result.model || '',

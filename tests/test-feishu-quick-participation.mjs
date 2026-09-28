@@ -49,7 +49,7 @@ try {
   await writeFile(eventsPath, `${JSON.stringify({ allowed: true, summary: { ...base, messageId: 'restored', messageText: '早上说过报告打不开。' } })}\n`);
   let restoredInput = '';
   const restored = createFeishuQuickParticipationPilot(runtime, {
-    classify: async context => { restoredInput = context; return { decision: 'unknown', reason: 'low_margin' }; },
+    classify: async context => { restoredInput = context; return { decision: 'unknown', reason: 'low_support' }; },
     react: async (_summary, emojiType) => reactions.push(['restored-test', emojiType]),
   });
   await restored.restore(eventsPath);
@@ -73,7 +73,14 @@ try {
     }) }),
   });
   assert.equal(uncertain.decision, 'unknown');
-  assert.equal(uncertain.reason, 'low_margin');
+  assert.equal(uncertain.reason, 'low_support');
+  const weakSilent = await classifyFeishuQuickParticipation('A: 怎么压缩时间', {
+    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({
+      answers: { participation: { choice: 'silent', confidence: 0.7,
+        probabilities: { reply: 0.21, silent: 0.79 } } },
+    }) }),
+  });
+  assert.equal(weakSilent.decision, 'unknown', 'weak silence must not promise to ignore a possible request');
   console.log('test-feishu-quick-participation: ok');
 } finally {
   await rm(home, { recursive: true, force: true });
