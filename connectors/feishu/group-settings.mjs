@@ -8,6 +8,12 @@ const AMBIENT_SESSION_PROMPT = [
   'A message that only mentions you is feedback to reconsider the recent unanswered group messages together. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
 ].join('\n');
 
+const TOPIC_SESSION_PROMPT = [
+  'A Feishu topic is an intentional conversation with you.',
+  'Reply to each human message in the current topic, including messages without an @ mention, unless the user explicitly asks you to stay silent or this topic is muted.',
+  'Keep replies in the same topic.',
+].join('\n');
+
 // Per-chat overrides select intake policy and the mainline participation pilot.
 export function normalizeFeishuGroups(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('groups must be a chat-ID to settings object');
@@ -40,7 +46,8 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
       ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     ...(ambient ? { participationMode: 'ambient' } : {}),
-    systemPrompt: [config.systemPrompt, group.systemPrompt, ambient ? AMBIENT_SESSION_PROMPT : '']
+    systemPrompt: [config.systemPrompt, group.systemPrompt,
+      ambient ? AMBIENT_SESSION_PROMPT : isFeishuTopicChat(summary) ? TOPIC_SESSION_PROMPT : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
   };
 }

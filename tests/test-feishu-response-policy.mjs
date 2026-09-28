@@ -102,6 +102,11 @@ try {
     responseMode: 'all', replyMode: 'thread', systemPrompt: 'Global instructions\n\nGroup instructions',
   });
   assert.equal(resolveFeishuGroupSettings(groupConfig, { chatId: 'other' }).systemPrompt, 'Global instructions');
+  const topicDefaults = resolveFeishuGroupSettings(groupConfig, {
+    ...base, chatId: 'topic-chat', chatMode: 'topic', threadId: 'topic-1',
+  });
+  assert.equal(topicDefaults.responseMode, 'all');
+  assert.match(topicDefaults.systemPrompt, /Reply to each human message in the current topic/);
   for (const groups of [{ 'group-1': { fileOnly: true } }, { 'group-1': { responseMode: 'typo' } }, { 'group-1': { systemPrompt: 123 } }]) {
     await writeFile(configPath, JSON.stringify({ appId: 'test', appSecret: 'test', groups }));
     await assert.rejects(loadConfig(configPath), /group|Group/);
