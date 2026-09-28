@@ -1237,9 +1237,14 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
   return withFeishuHandoffLock(runtime, summary, async () => {
     let sent;
     try {
-      sent = delivery.attachment
-        ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
-        : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
+      sent = delivery.kind === 'reaction'
+        ? await (helpers.addProcessingReaction || addProcessingReaction)(runtime, summary, delivery.emojiType)
+        : delivery.attachment
+          ? await (helpers.sendFeishuAttachment || sendFeishuAttachment)(runtime, summary, delivery.attachment, delivery.id)
+          : await (helpers.sendFeishuText || sendFeishuText)(runtime, summary, delivery.text, delivery.id);
+      if (delivery.kind === 'reaction' && !sent?.reactionId) {
+        throw new Error('Feishu reaction did not return a receipt');
+      }
     } catch (error) {
       // Persist rejection evidence before acknowledging it, just like success
       // receipts. Restart must not turn a known rejection into an unknown send.
@@ -1248,9 +1253,11 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       await failures.flush(acknowledgeFailure, replayOptions);
       throw error;
     }
-    runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text, sent.thread_id);
+    if (delivery.kind !== 'reaction') {
+      runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text, sent.thread_id);
+    }
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
-      externalId: sent.message_id || sent.reply_id || '', messageId: sent.message_id || '',
+      externalId: sent.message_id || sent.reply_id || sent.reactionId || '', messageId: sent.message_id || '',
       threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary });
     let completed;
     await receipts.flush(async receipt => { completed = await acknowledge(receipt); }, replayOptions);
@@ -1525,6 +1532,10 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
   }
   try {
     const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
+    if (groupSettings.quickReactions && runtime.quickParticipation) {
+      runtime.quickParticipation.handle(summary);
+      await runtime.quickParticipation.waitForReadReceipt(summary.messageId);
+    }
     if (!groupSettings.quickReactions && (groupSettings.participationMode !== 'ambient'
       || mentionsFeishuBot(runtime, summary))) void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
       .catch(error => {

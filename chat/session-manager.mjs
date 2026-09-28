@@ -170,6 +170,7 @@ import {
 import { runDetachedAssistantPrompt } from './session-detached-assistant.mjs';
 import { loadCompletedTurnContext } from './session-turn-context.mjs';
 import {
+  buildFeishuAmbientIncompleteWorkNotice,
   buildReplyPublicationPayload,
   collectReplyPublicationHistory,
   normalizeReplyPublicationResponseIds,
@@ -1599,22 +1600,32 @@ async function commitRequestResult(sessionId, run, manifest, normalizedEvents) {
   if (run.state === 'completed') await maybePublishRunResultAssets(sessionId, run, manifest, normalizedEvents);
   const history = await loadHistory(sessionId, { includeBodies: true });
   const session = await findSessionMeta(sessionId);
-  const payload = buildReplyPublicationPayload(collectReplyPublicationHistory(history, run), run, {
+  const runHistory = collectReplyPublicationHistory(history, run);
+  const payload = buildReplyPublicationPayload(runHistory, run, {
     session, fullHistory: history,
     includeSessionEntry: record.options.sourceContext?.feishuParticipation !== 'ambient'
       && !record.deliveries.some(delivery => delivery.kind === 'session_entry'),
   });
+  if (run.state === 'completed' && record.options.sourceContext?.feishuParticipation === 'ambient') {
+    const notice = buildFeishuAmbientIncompleteWorkNotice(runHistory, payload, session);
+    if (notice) {
+      payload.text = notice;
+      delete payload.reaction;
+    }
+  }
   const plan = normalizeSourceDeliveryPlan(record.deliveryPlan || record.options.sourceDelivery);
-  const deliveryPlan = resolveAmbientFeishuReplyPlan(record, plan, collectReplyPublicationHistory(history, run));
+  const deliveryPlan = resolveAmbientFeishuReplyPlan(record, plan, runHistory);
   const ambientUnaddressed = record.options.sourceContext?.feishuParticipation === 'ambient'
     && record.options.sourceContext?.feishuExplicitMention !== true;
+  const ambientWorkStarted = runHistory.some(event => event?.type === 'tool_use' && event.role === 'assistant');
   const deliveryPayload = run.state === 'completed' ? payload : {
     text: run.state === 'cancelled' ? '任务已取消。'
       : `${record.options.triggerId ? '定时任务' : '任务'}执行失败：${run.failureReason || run.state}`,
     attachments: [],
   };
   await requests.settle(record.key, { state: run.state, payload, error: run.failureReason || null },
-    buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed ? null : deliveryPlan, deliveryPayload)
+    buildReplyDeliveries(run.state !== 'completed' && ambientUnaddressed && !ambientWorkStarted
+      ? null : deliveryPlan, deliveryPayload)
       .map(part => ({ ...part, triggerId: record.options.triggerId || '', scheduleId: record.options.scheduleId || '', occurrenceId: record.options.occurrenceId || '' })));
 }
 

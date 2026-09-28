@@ -28,7 +28,7 @@ function buildFeishuRuntimePrompt(session) {
     'Treat the inbound user message as the primary signal; connector metadata is only secondary context.',
     SOURCE_CONTEXT_HELP,
     'If essential context is missing, ask for the minimum additional context you need instead of guessing.',
-    chatType === 'group' ? 'This session maps to a group chat; if a message clearly does not require a response from you, output an empty string.' : '',
+    chatType === 'group' ? 'This session maps to a group chat; if a message clearly does not require a response from you, send no visible text. Follow any group-specific private marker instruction for that case.' : '',
     'Do not mention hidden connector, session, or run internals unless the user explicitly asks.',
   ].filter(Boolean).join('\n');
 }

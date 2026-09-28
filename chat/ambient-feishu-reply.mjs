@@ -1,4 +1,5 @@
 import { normalizeConversation } from '../lib/conversation-target.mjs';
+import { parseFeishuReactionDirective } from '../lib/feishu-reaction-directive.mjs';
 
 const THREAD_DIRECTIVE = '<private>feishu-reply:thread</private>';
 
@@ -9,7 +10,8 @@ export function resolveAmbientFeishuReplyPlan(record, plan, history = []) {
   if (conversation?.connector !== 'feishu' || target?.conversationKind !== 'main'
       || !target.chatId || !target.messageId) return plan;
   const lastAssistant = [...history].reverse().find(event => event?.type === 'message' && event.role === 'assistant');
-  const content = String(lastAssistant?.content || '').trimStart();
+  const final = String(lastAssistant?.content || '').trimStart();
+  const content = parseFeishuReactionDirective(final)?.text || final;
   if (!content.startsWith(THREAD_DIRECTIVE)) return plan;
   return normalizeConversation({
     ...conversation,

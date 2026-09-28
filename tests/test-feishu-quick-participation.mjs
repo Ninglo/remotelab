@@ -7,9 +7,15 @@ import { setIsolatedTestHome } from './isolate-test-environment.mjs';
 const home = await mkdtemp(join(tmpdir(), 'remotelab-feishu-quick-participation-'));
 setIsolatedTestHome(home);
 try {
-  const { classifyFeishuQuickParticipation, createFeishuQuickParticipationPilot, isReactionOnlyRequest, SILENT_REACTION_EMOJI } =
+  const { classifyFeishuQuickParticipation, createFeishuQuickParticipationPilot } =
     await import('../connectors/feishu/quick-participation.mjs');
-  const { createQuickParticipationReaction } = await import('../scripts/feishu-connector.mjs');
+  const { parseFeishuReactionDirective } = await import('../lib/feishu-reaction-directive.mjs');
+  const { buildReplyDeliveries } = await import('../lib/reply-deliveries.mjs');
+  const { resolveFeishuGroupSettings } = await import('../connectors/feishu/group-settings.mjs');
+  const { stripHiddenBlocks, classifyAssistantReplyCandidate, selectAssistantReplyEvent } = await import('../lib/reply-selection.mjs');
+  const { buildFeishuAmbientIncompleteWorkNotice, buildReplyPublicationPayload } =
+    await import('../chat/reply-publication.mjs');
+  const { createQuickParticipationReaction, handleMessage } = await import('../scripts/feishu-connector.mjs');
   const sdkCalls = [];
   const boundReaction = createQuickParticipationReaction({ appClient: { im: { v1: {
     messageReaction: { create: async request => {
@@ -54,7 +60,33 @@ try {
   assert.deepEqual(pilotReactionOrder, ['start:THINKING'], 'pilot status must wait for the read receipt');
   completeThinking();
   await orderedTurn;
-  assert.deepEqual(pilotReactionOrder, ['start:THINKING', 'done:THINKING', 'start:OnIt', 'done:OnIt']);
+  assert.deepEqual(pilotReactionOrder, ['start:THINKING', 'done:THINKING']);
+  const submitOrder = [];
+  let releaseRead;
+  let readStarted;
+  const readStartedPromise = new Promise(resolve => { readStarted = resolve; });
+  const readDone = new Promise(resolve => { releaseRead = resolve; });
+  const admissionRuntime = {
+    config: { sourceRouteId: 'bot-2', storageDir: home,
+      groups: { pilot: { participationMode: 'ambient', quickReactions: true } },
+      responsePolicy: { group: 'all' } },
+    botIdentity: { openId: 'bot' }, storagePaths: {},
+    quickParticipation: {
+      handle: () => { submitOrder.push('start:THINKING'); readStarted(); },
+      waitForReadReceipt: async () => { await readDone; submitOrder.push('done:THINKING'); },
+    },
+  };
+  const admission = handleMessage(admissionRuntime, {
+    chatId: 'pilot', chatType: 'group', messageId: 'om_admission', messageType: 'text',
+    messageText: '帮我看一下', sender: { senderType: 'user', openId: 'human' }, mentions: [],
+  }, 'test', { submitRemoteLabRequest: async () => {
+    submitOrder.push('submit'); return { sessionId: 'session' };
+  } });
+  await readStartedPromise;
+  assert.deepEqual(submitOrder, ['start:THINKING']);
+  releaseRead();
+  await admission;
+  assert.deepEqual(submitOrder, ['start:THINKING', 'done:THINKING', 'submit']);
   const config = {
     storageDir: home, appId: 'self-app',
     groups: { pilot: { participationMode: 'ambient', quickReactions: true, contextReactions: true } },
@@ -72,7 +104,6 @@ try {
     classify: async context => {
       inputs.push(context);
       return { decision: inputs.length === 1 ? 'silent' : 'reply',
-        silentReaction: 'seen',
         handoffDecision: inputs.length === 2 ? 'offer' : 'none', confidence: 0.9, latencyMs: 50 };
     },
     react: async (summary, emojiType) => reactions.push([summary.messageId, emojiType]),
@@ -81,8 +112,7 @@ try {
   await pilot.handle({ ...base, messageId: 'first', messageText: '链接打不开。' });
   await pilot.handle({ ...base, messageId: 'second', messageText: '是机器人发的测试报告，下午要用。' });
   assert.deepEqual(reactions, [
-    ['first', 'THINKING'], ['first', 'GLANCE'],
-    ['second', 'THINKING'],
+    ['first', 'THINKING'], ['second', 'THINKING'],
   ]);
   assert.match(inputs[1], /链接打不开/);
   assert.match(inputs[1], /下午要用/);
@@ -92,13 +122,13 @@ try {
   await pilot.handle({ ...base, chatId: 'other', messageId: 'other' });
   await pilot.handle({ ...base, threadId: 'thread', messageId: 'thread', messageText: '话题里的问题' });
   await pilot.handle({ ...base, sender: { senderType: 'bot', openId: 'other-bot' }, messageId: 'bot' });
-  assert.equal(reactions.length, 5);
+  assert.equal(reactions.length, 3);
   assert.doesNotMatch(inputs[2], /链接打不开/);
   const records = (await readFile(join(home, 'quick-participation.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.deepEqual(records.map(item => item.decision), ['silent', 'reply', 'reply']);
   await pilot.handle({ ...base, threadId: 'unbound', messageId: 'unbound', messageText: '在话题里决定开工' },
     { reactionMode: 'none' });
-  assert.equal(reactions.length, 5, 'unbound thread scanning must not add a reply reaction');
+  assert.equal(reactions.length, 3, 'unbound thread scanning must not add a reaction');
 
   const eventsPath = join(home, 'events.jsonl');
   await writeFile(eventsPath, `${JSON.stringify({ allowed: true, summary: { ...base, messageId: 'restored', messageText: '早上说过报告打不开。' } })}\n`);
@@ -144,31 +174,6 @@ try {
   });
   assert.equal(handoff.handoffDecision, 'offer');
   assert.equal(weakSilent.handoffDecision, 'none');
-  const praise = await classifyFeishuQuickParticipation('A: 你做得很好，谢谢', {
-    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-      participation: { choice: 'silent', probabilities: { reply: 0.05, silent: 0.95 } },
-      silentReaction: { choice: 'thanks', probabilities: { thanks: 0.92, seen: 0.03, none: 0.05 } },
-    } }) }),
-  });
-  assert.equal(praise.silentReaction, 'thanks');
-  const modestPraise = await classifyFeishuQuickParticipation('assistant: 完成了。\nuser: 谢谢你！', {
-    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-      participation: { choice: 'silent', probabilities: { reply: 0, silent: 1 } },
-      silentReaction: { choice: 'thanks', probabilities: { thanks: 0.52, none: 0.47, seen: 0.01 } },
-    } }) }),
-  });
-  assert.equal(modestPraise.silentReaction, 'thanks');
-  const ambiguousPraise = await classifyFeishuQuickParticipation('assistant: 完成了。\nuser: 嗯', {
-    key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {
-      participation: { choice: 'silent', probabilities: { reply: 0, silent: 1 } },
-      silentReaction: { choice: 'thanks', probabilities: { thanks: 0.51, none: 0.49 } },
-    } }) }),
-  });
-  assert.equal(ambiguousPraise.silentReaction, 'none');
-  assert.deepEqual(SILENT_REACTION_EMOJI, {
-    thanks: 'THANKS', seen: 'GLANCE', surprise: 'WOW', puzzled: 'WHAT',
-    setback: 'DULL', teary: 'TEARS',
-  });
   const contextualReactions = [];
   const expressive = createFeishuQuickParticipationPilot(runtime, {
     classify: async context => ({ decision: 'silent',
@@ -180,10 +185,10 @@ try {
   });
   await expressive.handle({ ...base, messageId: 'surprise', messageText: '这个结果真惊喜' });
   await expressive.handle({ ...base, messageId: 'no-reaction', messageText: '两个人聊别的' });
-  assert.deepEqual(contextualReactions, ['THINKING', 'WOW', 'THINKING']);
+  assert.deepEqual(contextualReactions, ['THINKING', 'THINKING']);
   await expressive.handle({ ...base, messageId: 'praise-one', messageText: '这次对了' });
   await expressive.handle({ ...base, messageId: 'praise-two', messageText: '这次对了' });
-  assert.deepEqual(contextualReactions.slice(3), ['THINKING', 'THANKS', 'THINKING', 'THANKS']);
+  assert.deepEqual(contextualReactions.slice(2), ['THINKING', 'THINKING']);
   const mentionedReactions = [];
   const mentioned = createFeishuQuickParticipationPilot(runtime, {
     classify: async () => ({ decision: 'silent', silentReaction: 'none' }),
@@ -191,9 +196,7 @@ try {
   });
   await mentioned.handle({ ...base, messageId: 'direct-mention', messageText: '@bot 帮我看看',
     mentions: [{ openId: 'bot' }] });
-  assert.deepEqual(mentionedReactions, ['THINKING', 'OnIt']);
-  assert.equal(isReactionOnlyRequest({ messageText: '茵蒂克丝回复个表情就行' }), true);
-  assert.equal(isReactionOnlyRequest({ messageText: '帮我看看，回文字' }), false);
+  assert.deepEqual(mentionedReactions, ['THINKING']);
   const reactionOnly = createFeishuQuickParticipationPilot(runtime, {
     classify: async () => ({ decision: 'reply', handoffDecision: 'none' }),
     react: async (_summary, emojiType) => {
@@ -203,7 +206,68 @@ try {
   });
   await reactionOnly.handle({ ...base, messageId: 'reaction-only',
     messageText: '测试下表情能不能正常回复，茵蒂克丝回复个表情就行' });
-  assert.deepEqual(mentionedReactions.slice(2), ['THINKING']);
+  assert.deepEqual(mentionedReactions.slice(1), ['THINKING']);
+  const prompt = resolveFeishuGroupSettings(runtime.config, base).systemPrompt;
+  assert.match(prompt, /<feishu-reaction emoji=/);
+  assert.match(prompt, /Keep this timeline for observing the discussion/,
+    'ambient timeline guard applies even without groupFeed');
+  assert.doesNotMatch(prompt, /connector call feishu:react_to_source/);
+  const onlyReaction = '<private><feishu-reaction emoji="THANKS"/></private>';
+  assert.deepEqual(parseFeishuReactionDirective(onlyReaction),
+    { emojiType: 'THANKS', text: '', invalid: false });
+  assert.equal(parseFeishuReactionDirective(`${onlyReaction}谢谢你`).text, '谢谢你');
+  assert.equal(parseFeishuReactionDirective('<private><feishu-reaction emoji="INVALID"/></private>').invalid, true);
+  assert.equal(stripHiddenBlocks(onlyReaction), '');
+  assert.equal(classifyAssistantReplyCandidate({ type: 'message', role: 'assistant', content: onlyReaction }).kind, 'suppress');
+  assert.equal(await selectAssistantReplyEvent([
+    { type: 'message', role: 'assistant', content: 'internal progress' },
+    { type: 'message', role: 'assistant', content: onlyReaction },
+  ]), null, 'reaction-only final must not publish earlier progress');
+
+  const feishuSession = { id: 'session', sourceId: 'feishu' };
+  const run = { id: 'run', responseId: 'response' };
+  const history = final => [
+    { seq: 1, type: 'message', role: 'user', content: '这次对了' },
+    { seq: 2, type: 'message', role: 'assistant', content: 'private commentary' },
+    { seq: 3, type: 'message', role: 'assistant', content: final },
+  ];
+  const reactionPayload = buildReplyPublicationPayload(history(onlyReaction), run,
+    { session: feishuSession, includeSessionEntry: false });
+  assert.equal(reactionPayload.text, '');
+  assert.equal(reactionPayload.reaction, 'THANKS');
+  const textPayload = buildReplyPublicationPayload(history('<private><feishu-reaction emoji="OnIt"/></private>简短回答'), run,
+    { session: feishuSession, includeSessionEntry: false });
+  assert.equal(textPayload.text, '简短回答');
+  assert.equal(textPayload.reaction, 'OnIt');
+  const plan = { connector: 'feishu', sourceRouteId: 'bot-2', target: { chatId: 'pilot', messageId: 'om_source' } };
+  assert.deepEqual(buildReplyDeliveries(plan, textPayload).map(part => part.kind), ['reaction', 'content']);
+  assert.deepEqual(buildReplyDeliveries(plan, reactionPayload).map(part => part.kind), ['reaction']);
+  assert.equal(buildReplyDeliveries({ ...plan, target: { chatId: 'pilot' } }, reactionPayload).length, 0,
+    'a reaction needs the bound source message');
+  const invalidPayload = buildReplyPublicationPayload(history('<private><feishu-reaction emoji="BAD"/></private>'), run,
+    { session: feishuSession, includeSessionEntry: false });
+  assert.equal(invalidPayload.reaction, undefined);
+  assert.match(invalidPayload.text, /表情指令无效/);
+  assert.doesNotMatch(invalidPayload.text, /feishu-reaction/);
+
+  const interruptedWork = [
+    { seq: 1, type: 'message', role: 'user', content: '@张思源 看一下 UI' },
+    { seq: 2, type: 'message', role: 'assistant', content: 'I will inspect the UI.' },
+    { seq: 3, type: 'tool_use', role: 'assistant', toolName: 'exec' },
+    { seq: 4, type: 'message', role: 'assistant', content: '' },
+  ];
+  const silentPayload = buildReplyPublicationPayload(interruptedWork, run,
+    { session: feishuSession, includeSessionEntry: false });
+  assert.equal(silentPayload.text, '', 'earlier commentary is not a completed Feishu reply');
+  assert.match(buildFeishuAmbientIncompleteWorkNotice(interruptedWork, silentPayload, feishuSession), /工作仍未完成/);
+  const wrongReactionPayload = buildReplyPublicationPayload([
+    ...interruptedWork.slice(0, -1),
+    { seq: 4, type: 'message', role: 'assistant', content: '<private><feishu-reaction emoji="EatingFood"/></private>' },
+  ], run, { session: feishuSession, includeSessionEntry: false });
+  assert.match(buildFeishuAmbientIncompleteWorkNotice(interruptedWork, wrongReactionPayload, feishuSession), /工作仍未完成/,
+    'reaction-only cannot conceal tool work');
+  assert.equal(buildFeishuAmbientIncompleteWorkNotice(interruptedWork.slice(0, 2), silentPayload), '',
+    'mere commentary without tool work does not trigger the incomplete-work notice');
   console.log('test-feishu-quick-participation: ok');
 } finally {
   await rm(home, { recursive: true, force: true });

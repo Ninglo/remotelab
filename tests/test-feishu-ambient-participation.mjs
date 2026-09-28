@@ -59,6 +59,9 @@ try {
   assert.equal(thread.target.replyInThread, true);
   assert.equal(thread.target.sourceKind, 'ambient_thread_open');
   assert.equal(resolveAmbientFeishuReplyPlan(record, plan, [
+    { type: 'message', role: 'assistant', content: '<private><feishu-reaction emoji="OnIt"/></private><private>feishu-reply:thread</private>另开话题处理。' },
+  ]).target.conversationKind, 'thread', 'reaction directive may precede a thread reply');
+  assert.equal(resolveAmbientFeishuReplyPlan(record, plan, [
     { type: 'message', role: 'assistant', content: '我来处理。' },
   ]).target.conversationKind, 'main');
   assert.equal(resolveAmbientFeishuReplyPlan(record, plan, [

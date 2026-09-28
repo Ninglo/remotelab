@@ -450,17 +450,43 @@ The `/mute` setting still takes effect even when no Session exists.
 For groups with `reactionFeedback: true`, other human reactions on this Bot's
 replies are recorded as non-publishing feedback in the existing Session. A
 reaction on someone else's message is ignored. These signals do not change
-mute state or automatically become lasting instructions. Groups with
-`contextReactions: true` and `quickReactions: true` choose among `THANKS`
-(direct praise), `GLANCE` (a direct update), `WOW` (delightful surprise),
-`WHAT` (a lighthearted unexpected twist), `DULL` (the Bot's own minor
-mistake), and `TEARS` (playful or touching emotion). Unrelated, serious, or
-ambiguous discussion gets no additional reaction. `THINKING` remains on every
-admitted message as the immediate receipt, even when no text reply follows.
+mute state or automatically become lasting instructions. In groups with
+`quickReactions: true`, the connector immediately adds `THINKING` to each
+admitted human message. The Session model then decides whether to participate.
+The same Session model chooses one outcome reaction by starting its final answer
+with `<private><feishu-reaction emoji="THANKS"/></private>`. The connector
+parses this private directive, binds it to the inbound message ID in the durable
+source-delivery outbox, and uses the configured Bot SDK identity to add the
+reaction before any ordinary text reply. The model does not start a CLI process
+for each message, cannot choose an arbitrary message ID, and does not use
+personal OAuth. Supported outcomes are `OnIt`, `EatingFood`, `OK`, `THUMBSUP`,
+`THANKS`, `GLANCE`, `SMILE`, `APPLAUSE`, `WOW`, `WHAT`, `DULL`, `TEARS`, `HUG`,
+and `COMFORT`. An invalid directive is removed and reported as a visible error.
+This is a connector-native action selected through structured model output.
+An explicit model tool call would give immediate reaction feedback but needs a
+per-turn tool binding and round trip; launching the general connector CLI for
+every message adds a process and source-context lookup. The fast classifier is
+kept for handoff hints, not outcome reactions, because its independent guess
+can disagree with the Session that actually read and answered the discussion.
+A reaction-only final contains only the directive; reaction plus text puts the
+normal reply after it. Human-to-human discussion normally receives `EatingFood`
+without a text reply. The quick classifier remains for handoff nomination and
+diagnostics but does not choose or post the outcome reaction. `contextReactions`
+is retained as a compatible setting but does not make an automatic reaction.
+Ambient group Sessions use the same light timeline instructions whether or not
+`groupFeed` is enabled in ChatUI. A message addressed only to another person is
+observed without tool work. If a Session nevertheless uses tools and completes
+without a visible final answer, RemoteLab posts an incomplete-work notice with
+the Session link, even if the final contained only a reaction directive. Earlier
+commentary is not treated as a completed answer, and the notice does not claim
+the task succeeded. The reaction delivery has a durable receipt and ordered
+claim, but the reaction create call has no message-send-style idempotency UUID: an unknown
+provider outcome requires reconciliation before deliberate retry.
 For pilot groups that should admit every human message on the main timeline
 and in their topics or threads, set `responseMode: "all"` alongside
-`quickReactions: true`. An explicit @ mention asks for a text reply; the
-receipt and any later status reaction are independent of that reply.
+`quickReactions: true`. An explicit @ mention normally asks for a text reply;
+the model includes `OnIt` before a normal answer. A message asking for only a
+reaction receives no visible text after the reaction is added.
 
 For reaction mute, the Feishu app must subscribe to
 `im.message.reaction.created_v1` ("新增消息表情回复") and publish that app

@@ -159,7 +159,9 @@ async function inspectAndClaimSourceDelivery(options = {}) {
     for (let entry of entries) {
       if (terminal(entry.state)) continue;
       const session = await findSessionMeta(entry.sessionId);
-      const refined = refineConversation(entry, session?.conversation);
+      // A reaction belongs to this request's inbound message, even when the
+      // continuing group Session has since advanced to a newer message.
+      const refined = entry.kind === 'reaction' ? null : refineConversation(entry, session?.conversation);
       const openingTopic = session?.conversation?.connector === 'feishu' && !sameConversation(session.conversation, session.conversation);
       const key = openingTopic ? `session:${entry.sessionId}` : targetKey(refined || entry);
       const claimedAt = Date.parse(entry.claimedAt);

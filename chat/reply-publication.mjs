@@ -1,13 +1,16 @@
 import {
   buildAssistantReplyAttachmentFallbackText,
   getAssistantReplyAttachments,
+  isFeishuNoTextDecision,
   stripHiddenBlocks,
 } from '../lib/reply-selection.mjs';
 import {
   appendSessionEntryFooter,
   buildSessionEntry,
+  buildSessionNavigationHref,
 } from '../lib/session-navigation.mjs';
 import { buildSessionDisplayEvents } from './session-display-events.mjs';
+import { parseFeishuReactionDirective } from '../lib/feishu-reaction-directive.mjs';
 
 function trimString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -121,6 +124,15 @@ export function collectReplyPublicationHistory(history = [], rootRun = {}) {
   });
 }
 
+export function buildFeishuAmbientIncompleteWorkNotice(history = [], payload = {}, session = null) {
+  if ((trimString(payload.text) && !payload.invalidReactionDirective)
+      || (payload.attachments || []).length > 0) return '';
+  if (!history.some(event => event?.type === 'tool_use' && event.role === 'assistant')) return '';
+  const url = session?.id ? buildSessionNavigationHref(session.id, { requireAbsolute: true }) : '';
+  return ['我开始检查这条消息，但本轮没有形成可交付的结论；这项工作仍未完成。',
+    ...(url ? [`查看已做的检查：${url}`] : [])].join('\n');
+}
+
 function collectPayloadAttachments(events = []) {
   const attachments = [];
   const seen = new Set();
@@ -186,13 +198,26 @@ export function buildReplyPublicationPayload(history = [], rootRun = {}, {
   const displayEvents = buildSessionDisplayEvents(history, { sessionRunning: false })
     .filter((event) => event?.role === 'assistant')
     .filter((event) => event.type === 'message' || event.type === 'attachment_delivery');
+  const lastAssistantMessage = [...history].reverse().find(event => event?.type === 'message' && event.role === 'assistant');
+  const reactionDirective = session?.sourceId === 'feishu'
+    ? parseFeishuReactionDirective(lastAssistantMessage?.content) : null;
+  const noTextDecision = reactionDirective
+    ? !stripHiddenBlocks(reactionDirective.text)
+    : isFeishuNoTextDecision(lastAssistantMessage?.content);
 
   const payload = {
     responseIds: getRunResponseIds(rootRun),
     displayEvents,
-    attachments: collectPayloadAttachments(displayEvents),
-    text: buildPayloadText(displayEvents),
+    attachments: noTextDecision ? [] : collectPayloadAttachments(displayEvents),
+    text: reactionDirective
+      ? (reactionDirective.invalid
+        ? ['这条消息的表情指令无效，表情未能添加。', stripHiddenBlocks(reactionDirective.text)]
+          .filter(Boolean).join('\n')
+        : stripHiddenBlocks(reactionDirective.text))
+      : noTextDecision ? '' : buildPayloadText(displayEvents),
   };
+  if (reactionDirective?.emojiType) payload.reaction = reactionDirective.emojiType;
+  if (reactionDirective?.invalid) payload.invalidReactionDirective = true;
 
   if (includeSessionEntry && (payload.text || payload.attachments.length)
       && isFirstUserTurnPublication(history, rootRun, fullHistory)) {

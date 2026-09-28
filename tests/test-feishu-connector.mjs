@@ -843,6 +843,31 @@ assert.equal(sourceDeliveryRequests[0].options.body.waitMs, 0);
 assert.equal(sourceDeliveryRequests[1].path, '/api/source-deliveries/srcd_000000000000000000000001_0/complete');
 assert.equal(sourceDeliveryRequests[1].options.body.externalId, 'om_source_delivery_out');
 
+const reactionDeliveryRequests = [];
+const reactionDeliveryResult = await processSourceDeliveryOnce({
+  config: { sourceRouteId: 'bot-alpha', storageDir: join(tempHome, 'reaction-delivery-worker') },
+}, {
+  requestRemoteLab: async (path, options = {}) => {
+    reactionDeliveryRequests.push({ path, options });
+    if (path === '/api/source-deliveries/claim') return { response: { ok: true }, json: { claim: {
+      leaseId: 'lease_reaction', delivery: {
+        id: 'srcd_000000000000000000000002_0', kind: 'reaction', emojiType: 'THANKS', text: '',
+        target: { chatId: 'chat_group', messageId: 'om_source_reaction', conversationKind: 'main' },
+      },
+    } } };
+    return { response: { ok: true }, json: { delivery: { state: 'delivered' } } };
+  },
+  addProcessingReaction: async (_runtime, target, emojiType) => {
+    assert.equal(target.messageId, 'om_source_reaction');
+    assert.equal(emojiType, 'THANKS');
+    return { reactionId: 'reaction_receipt' };
+  },
+  sendFeishuText: async () => { throw new Error('reaction directive must not become text'); },
+});
+assert.equal(reactionDeliveryResult.state, 'delivered');
+assert.equal(reactionDeliveryRequests[1].options.body.externalId, 'reaction_receipt');
+assert.equal(reactionDeliveryRequests[1].options.body.messageId, '');
+
 let longPollSignal;
 const longPollRuntime = {};
 const longPollLoop = startSourceDeliveryPoller(longPollRuntime, {

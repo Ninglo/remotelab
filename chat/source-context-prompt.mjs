@@ -72,6 +72,12 @@ function buildFeishuSourceContextPrompt(sourceContext) {
   if (chatName) lines.push(`群聊：${chatName}`);
   if (senderName) lines.push(`当前发言人：${senderName}`);
   if (createTime) lines.push(`发送时间：${createTime}`);
+  if (sourceContext.feishuParticipation === 'ambient' && Array.isArray(sourceContext.mentions)
+      && sourceContext.mentions.length > 0 && sourceContext.feishuExplicitMention !== true) {
+    const mentionedNames = sourceContext.mentions.slice(0, 5)
+      .map(mention => readableText(mention?.name, 100)).filter(Boolean);
+    if (mentionedNames.length > 0) lines.push(`当前消息提及：${mentionedNames.join('、')}（未提及此 Bot）`);
+  }
 
   const messages = Array.isArray(sourceContext.conversationContext?.messages)
     ? sourceContext.conversationContext.messages.slice(0, 100).map(renderConversationMessage).filter(Boolean)

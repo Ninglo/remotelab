@@ -150,6 +150,29 @@ await completeSourceDelivery(freshContinueDelivery.id, freshContinueClaim.leaseI
 assert.deepEqual((await findSessionMeta('fresh-continue-session')).conversation, freshContinue,
   'a continue-mode receipt must not rewrite the Session binding as a thread');
 
+// The group Session can advance before an older reaction is delivered. Keep
+// the original inbound message ID, and send that reaction before its text.
+const { requests } = await import('../chat/requests.mjs');
+const { buildReplyDeliveries } = await import('../lib/reply-deliveries.mjs');
+const oldReactionPlan = { connector: 'feishu', sourceRouteId: 'reaction-route',
+  target: { chatId: 'reaction-chat', conversationKind: 'main', messageId: 'old-inbound' } };
+await withSessionsMetaMutation(async (metas, save) => {
+  metas.push({ id: 'reaction-session', conversation: { ...oldReactionPlan,
+    target: { ...oldReactionPlan.target, messageId: 'new-inbound' } } });
+  await save(metas);
+});
+const reactionRequest = await requests.accept({ sessionId: 'reaction-session', requestId: 'reaction-request',
+  text: 'older request', options: { sourceDelivery: oldReactionPlan } });
+await requests.settle(reactionRequest.record.key, { state: 'completed' },
+  buildReplyDeliveries(oldReactionPlan, { reaction: 'THANKS', text: '谢谢' }));
+const reactionClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'reaction-route' });
+assert.equal(reactionClaim.delivery.kind, 'reaction');
+assert.equal(reactionClaim.delivery.target.messageId, 'old-inbound');
+await completeSourceDelivery(reactionClaim.delivery.id, reactionClaim.leaseId, { externalId: 'reaction-id' });
+const textClaim = await claimSourceDelivery({ connector: 'feishu', sourceRouteId: 'reaction-route' });
+assert.equal(textClaim.delivery.kind, 'content');
+await completeSourceDelivery(textClaim.delivery.id, textClaim.leaseId, { externalId: 'reply-id' });
+
 const legacyThread = {
   connector: 'feishu', sourceRouteId: 'continue-route',
   target: { chatId: 'continue-chat', messageId: 'old-root', rootId: 'old-root', threadId: 'old-thread', replyInThread: true },

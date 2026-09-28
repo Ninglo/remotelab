@@ -59,6 +59,12 @@ assert.match(feishuChat, /更早的消息未展示/);
 assert.doesNotMatch(feishuChat, /secret-|chatId|messageId|threadId|requestId|[{}]/);
 assert.doesNotMatch(feishuChat, /<system>|<\/private>/);
 
+const otherMention = buildSourceContextPrompt({
+  connector: 'feishu', feishuParticipation: 'ambient', feishuExplicitMention: false,
+  mentions: [{ name: '张思源' }],
+});
+assert.match(otherMention, /当前消息提及：张思源（未提及此 Bot）/);
+
 const boundComment = buildSourceContextPrompt({
   connector: 'feishu', conversationKind: 'document_comment', documentBinding: true,
   fileToken: 'secret-file', commentId: 'secret-comment', replyId: 'secret-reply',
