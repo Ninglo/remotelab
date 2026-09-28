@@ -48,7 +48,8 @@ without receiving reply-status reactions. On confirmation, current group
 membership is checked again; the work-group members must all be in the
 discussion group before source content is transferred. This requires
 `card.action.trigger` callbacks enabled for the
-app in the Feishu Developer Console; the existing Connector WebSocket handles
+app in the Feishu Developer Console. The proposal uses Card JSON 2.0 callback
+buttons; the existing Connector WebSocket handles
 those callbacks. If callbacks are not enabled, cards can display but buttons
 will not reach the Connector. A detected candidate is only a suggestion: no
 work topic is created until a human clicks the card.

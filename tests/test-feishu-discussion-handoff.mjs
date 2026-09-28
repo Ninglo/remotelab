@@ -20,7 +20,10 @@ try {
       const content = JSON.parse(request.data.content);
       if (request.data.msg_type === 'interactive') {
         sent.cards.push(request);
-        assert.equal(content.elements.at(-1).actions[0].value.action, 'confirm');
+        assert.equal(content.schema, '2.0');
+        const columns = content.body.elements.at(-1).columns;
+        assert.equal(columns[0].elements[0].behaviors[0].value.action, 'confirm');
+        assert.equal(columns[1].elements[0].behaviors[0].value.action, 'dismiss');
         return { code: 0, data: { message_id: 'om_card' } };
       }
       sent.notices.push(content.text);

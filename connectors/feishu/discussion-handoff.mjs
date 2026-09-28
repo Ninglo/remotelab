@@ -39,18 +39,23 @@ export function formatDiscussionEvidence(messages, sourceSummary) {
 export function buildDiscussionHandoffCard(proposal) {
   const excerpt = trim(proposal.source.messageText).slice(0, 240) || '讨论群提出了待执行事项。';
   return {
-    config: { wide_screen_mode: true },
+    schema: '2.0',
+    config: { update_multi: true },
     header: { template: 'blue', title: { tag: 'plain_text', content: '是否移交干活群施工？' } },
-    elements: [
+    body: { elements: [
       { tag: 'div', text: { tag: 'plain_text', content: excerpt } },
-      { tag: 'note', elements: [{ tag: 'plain_text', content: '确认后会新建干活群话题，并把本次讨论和原消息交给独立会话。' }] },
-      { tag: 'action', actions: [
-        { tag: 'button', type: 'primary', text: { tag: 'plain_text', content: '移交干活群' },
-          value: { action: 'confirm', proposalId: proposal.key } },
-        { tag: 'button', type: 'default', text: { tag: 'plain_text', content: '继续讨论' },
-          value: { action: 'dismiss', proposalId: proposal.key } },
+      { tag: 'markdown', content: '确认后会新建干活群话题，并把本次讨论和原消息交给独立会话。' },
+      { tag: 'column_set', columns: [
+        { tag: 'column', width: 'weighted', weight: 1, elements: [
+          { tag: 'button', type: 'primary_filled', text: { tag: 'plain_text', content: '移交干活群' },
+            behaviors: [{ type: 'callback', value: { action: 'confirm', proposalId: proposal.key } }] },
+        ] },
+        { tag: 'column', width: 'weighted', weight: 1, elements: [
+          { tag: 'button', type: 'default', text: { tag: 'plain_text', content: '继续讨论' },
+            behaviors: [{ type: 'callback', value: { action: 'dismiss', proposalId: proposal.key } }] },
+        ] },
       ] },
-    ],
+    ] },
   };
 }
 
