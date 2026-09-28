@@ -38,7 +38,10 @@ fresh source read.
 For a selected project link, `handoffCards: true` enables the discussion-group
 handoff trial. The quick classifier nominates only a clear decision to start
 work; the Connector then retrieves up to 100 messages (48,000 characters) from
-the source chat or thread and checks the decision again before posting a card
+the source chat or thread and checks the decision again before posting a card.
+Mainline handoff lookup covers the preceding 24 hours without the ordinary
+reply context's four-hour activity-gap cutoff; thread lookup remains bounded
+by message and character limits. A card is then posted
 under the source message. Clicking **Move to work group** creates one work-chat
 topic and a Session bound to it, with the retrieved discussion and source link.
 Clicking **Continue discussion** closes that proposal. Persistent records and
@@ -53,3 +56,6 @@ buttons; the existing Connector WebSocket handles
 those callbacks. If callbacks are not enabled, cards can display but buttons
 will not reach the Connector. A detected candidate is only a suggestion: no
 work topic is created until a human clicks the card.
+Before offering a card and again at confirmation, the Connector verifies that
+the configured work chat is an active topic chat. A stale link to a normal
+group fails closed instead of offering a handoff to that group.

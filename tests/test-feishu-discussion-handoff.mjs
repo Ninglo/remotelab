@@ -7,6 +7,7 @@ import {
   parseDiscussionHandoffAction,
   proposalKey,
   verifyDiscussionHandoff,
+  verifyDiscussionHandoffTarget,
   verifyDiscussionHandoffVisibility,
 } from '../connectors/feishu/discussion-handoff.mjs';
 
@@ -48,6 +49,7 @@ try {
       return { sessionId: 'session-work', runId: 'run-work' };
     },
     verifyVisibility: async () => true,
+    verifyTarget: async () => true,
   });
   const proposal = await pilot.offerCandidate(summary);
   assert.equal(proposal.status, 'offered');
@@ -88,7 +90,9 @@ try {
   });
   assert.equal(weak.offer, false, 'weak model support cannot publish a card');
   const visibility = { source: { chatId: link.discussionChatId }, workChatId: link.workChatId };
-  const memberRuntime = ids => ({ appClient: { im: { v1: { chatMembers: {
+  const memberRuntime = (ids, chatMode = 'topic') => ({ appClient: { im: { v1: {
+    chat: { get: async () => ({ code: 0, data: { chat_mode: chatMode, chat_status: 'normal' } }) },
+    chatMembers: {
     get: async request => ({ code: 0, data: { items: ids[request.path.chat_id].map(member_id => ({ member_id })) } }),
   } } } } });
   assert.equal(await verifyDiscussionHandoffVisibility(memberRuntime({
@@ -97,6 +101,32 @@ try {
   await assert.rejects(() => verifyDiscussionHandoffVisibility(memberRuntime({
     [link.discussionChatId]: ['a'], [link.workChatId]: ['b'],
   }), visibility), /not all/);
+  await assert.rejects(() => verifyDiscussionHandoffTarget(memberRuntime({}, 'group'), link.workChatId),
+    /not an active topic chat/);
+
+  const sourceTime = Date.now() - 1_000;
+  const historyItem = (messageId, createTime, text) => ({
+    message_id: messageId, create_time: String(createTime), msg_type: 'text',
+    sender: { sender_type: 'user', sender_name: '讨论成员' },
+    body: { content: JSON.stringify({ text }) },
+  });
+  const gapRuntime = { config: { storageDir: join(storageDir, 'gap-case'), projectLinks: [link] },
+    appClient: { im: { v1: { message: { list: async () => ({ code: 0, data: {
+      items: [historyItem('om_gap_source', sourceTime, '方向确定，现在开工'),
+        historyItem('om_earlier_decision', sourceTime - 6 * 60 * 60 * 1_000, '六小时前定下实施范围')],
+      has_more: false,
+    } }) } } } } };
+  const gapPilot = createDiscussionHandoffPilot(gapRuntime, {
+    verify: async evidence => ({ offer: evidence.includes('六小时前定下实施范围') }),
+    sendCard: async () => ({ message_id: 'om_gap_card' }),
+    submitWork: async () => ({ sessionId: 'unused' }),
+    verifyTarget: async () => true,
+  });
+  const gapProposal = await gapPilot.offerCandidate({ ...summary,
+    messageId: 'om_gap_source', messageText: '方向确定，现在开工', createTime: String(sourceTime) });
+  assert.equal(gapProposal.status, 'offered');
+  assert.equal(gapProposal.evidenceCount, 2,
+    'handoff lookup must retain decisions made over four hours before the start-work message');
   console.log('Feishu discussion handoff: evidence lookup, proposal card, confirmation and dedup passed');
 } finally {
   await rm(storageDir, { recursive: true, force: true });

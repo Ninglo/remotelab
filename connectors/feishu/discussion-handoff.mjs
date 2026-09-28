@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { createRecordStore } from '../../lib/durable-records.mjs';
-import { loadFeishuConversationContext } from './conversation-context.mjs';
+import { FEISHU_CONTEXT_MAX_AGE_MS, loadFeishuConversationContext } from './conversation-context.mjs';
 import { buildFeishuTopicId } from './index.mjs';
 import { feishuJevApiKey } from './quick-participation.mjs';
 
@@ -189,8 +189,18 @@ async function listHumanMemberIds(runtime, chatId) {
   return members;
 }
 
+export async function verifyDiscussionHandoffTarget(runtime, workChatId) {
+  const response = await runtime.appClient.im.v1.chat.get({ path: { chat_id: workChatId } });
+  if ((response?.code !== undefined && response.code !== 0)
+    || response?.data?.chat_mode !== 'topic' || response?.data?.chat_status !== 'normal') {
+    throw new Error(response?.msg || 'Handoff work chat is not an active topic chat');
+  }
+  return true;
+}
+
 export async function verifyDiscussionHandoffVisibility(runtime, proposal) {
-  const [discussion, work] = await Promise.all([
+  const [, discussion, work] = await Promise.all([
+    verifyDiscussionHandoffTarget(runtime, proposal.workChatId),
     listHumanMemberIds(runtime, proposal.source.chatId),
     listHumanMemberIds(runtime, proposal.workChatId),
   ]);
@@ -203,7 +213,10 @@ export async function verifyDiscussionHandoffVisibility(runtime, proposal) {
 export function createDiscussionHandoffPilot(runtime, {
   store = createRecordStore(join(runtime.config.storageDir, 'project-handoffs')),
   readHistory = (summary) => loadFeishuConversationContext(runtime, summary, {
-    maxMessages: HISTORY_MESSAGES, maxCharacters: HISTORY_CHARACTERS, includeMetadata: true,
+    maxMessages: HISTORY_MESSAGES, maxCharacters: HISTORY_CHARACTERS,
+    // A decision may follow an earlier discussion after a long pause. The
+    // ordinary reply context's four-hour activity gap must not cut it off.
+    maxGapMs: FEISHU_CONTEXT_MAX_AGE_MS, includeMetadata: true,
   }),
   verify = verifyDiscussionHandoff,
   sendCard = (proposal, card) => sendProposalCard(runtime, proposal, card),
@@ -211,6 +224,7 @@ export function createDiscussionHandoffPilot(runtime, {
   submitWork,
   notifySource = (proposal, status) => sendDiscussionNotice(runtime, proposal, status),
   verifyVisibility = proposal => verifyDiscussionHandoffVisibility(runtime, proposal),
+  verifyTarget = link => verifyDiscussionHandoffTarget(runtime, link.workChatId),
 } = {}) {
   const inFlight = new Map();
   const exclusive = (key, operation) => {
@@ -244,6 +258,7 @@ export function createDiscussionHandoffPilot(runtime, {
         && (source.threadId
           ? record.source?.threadId === source.threadId
           : !record.source?.threadId && Date.now() - Date.parse(record.createdAt) < 15 * 60_000))) return null;
+      await verifyTarget(link);
       const found = await evidenceFor(source, { atProposal: true });
       const verdict = await verify(found.evidence);
       if (!verdict.offer) return null;
