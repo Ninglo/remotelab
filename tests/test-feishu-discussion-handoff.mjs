@@ -102,6 +102,16 @@ try {
     action: { value: { action: 'confirm', proposalId: second.key } },
     context: { open_chat_id: link.discussionChatId, open_message_id: 'om_card2' } } })).accepted, false,
   'the previous card must not start work after renewal');
+  const renewedAction = { event: { action: { value: { action: 'confirm', proposalId: second.key } },
+    context: { open_chat_id: link.discussionChatId, open_message_id: 'om_card3' },
+    operator: { operator_id: { open_id: 'ou_confirm' } } } };
+  const renewedResult = await pilot.handleAction(renewedAction);
+  assert.equal(renewedResult.status, 'completed');
+  assert.equal(sent.roots.length, 2);
+  assert.equal(sent.tasks.length, 2);
+  assert.equal(sent.notices.length, 3, 'renewal must send a new completed notice');
+  await pilot.handleAction(renewedAction);
+  assert.equal(sent.roots.length, 2, 'repeated clicks on the renewed card must not create more work');
 
   const weak = await verifyDiscussionHandoff('还在讨论要不要做', {
     key: 'test-key', fetchImpl: async () => ({ ok: true, json: async () => ({ answers: {

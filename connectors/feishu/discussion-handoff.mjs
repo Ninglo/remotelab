@@ -321,7 +321,8 @@ export function createDiscussionHandoffPilot(runtime, {
       await verifyTarget({ workChatId: current.workChatId });
       const renewing = await store.mutate(key, value => ({ ...value, status: 'offering',
         cardGeneration: (value.cardGeneration || 0) + 1,
-        dismissedBy: undefined, dismissedAt: undefined, cardPatchedAt: undefined }));
+        dismissedBy: undefined, dismissedAt: undefined, cardPatchedAt: undefined,
+        sourceNoticeId: undefined, lastError: undefined }));
       const receipt = await sendCard(renewing, buildDiscussionHandoffCard(renewing));
       return store.mutate(key, value => ({ ...value, status: 'offered',
         cardMessageId: trim(receipt?.message_id), offeredAt: new Date().toISOString() }));
