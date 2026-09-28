@@ -294,6 +294,15 @@ try {
   assert.equal(studioDelete.response.status, 200);
   assert.deepEqual(previewDeleteCall, { authorization: 'Bearer preview-secret', personId: 'person-a' });
   const privateToken = 'a'.repeat(64);
+  const anonymousStatus = await requestJson(`${base}/api/display/studio-preview/status`);
+  assert.equal(anonymousStatus.response.status, 401);
+  const ownStatus = await requestJson(`${base}/api/display/studio-preview/status`, { headers: { 'X-Test-Person': 'person-a' } });
+  assert.equal(ownStatus.response.status, 200);
+  assert.deepEqual(ownStatus.payload.devices, [{ name: 'Test display' }]);
+  assert.deepEqual(previewCall, { authorization: 'Bearer preview-secret', personId: 'person-a', body: '' });
+  assert(!ownStatus.text.includes('preview-secret'), 'server credential must not be exposed to the browser');
+  const otherStatus = await requestJson(`${base}/api/display/studio-preview/status`, { headers: { 'X-Test-Person': 'person-b', 'X-Preview-Person-Id': 'person-a' } });
+  assert.equal(otherStatus.response.status, 403, 'browser headers cannot choose another Person for status reads');
   const deniedPublicStudio = await requestJson(`${base}/display/studio-preview`, {
     method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: '{}',
   });

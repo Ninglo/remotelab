@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-28 — Applied side-display layouts are persistent settings
+
+- Observed friction: an applied personal layout was automatically withdrawn after 24 hours and appeared to the user as a disconnected display, even though the computer was still online.
+- Product implication: retain applied layouts across time, transient service outages, and restarts until explicitly replaced or removed. Keep pairing, computer connectivity, current frame delivery, and USB playback separate in status reporting.
+- Implementation: remove the sidecar's implicit 24-hour layout expiry, read authenticated playback status without a short-lived browser grant, and test old records, restart persistence, and explicit removal.
+
 ### 2026-09-28 — Keep ordinary conclusions in the conversation
 
 - Observed friction: AI-generated documents sent alongside a normal answer split one conclusion across a chat reply and a file; the extra document was often less readable than the reply.

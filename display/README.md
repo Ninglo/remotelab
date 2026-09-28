@@ -32,6 +32,13 @@ curl -fsSL 'https://your-remotelab.example/display/install.sh' | sh -s -- \
 
 ## Security boundary
 
+Applied display layouts persist until the user replaces them or explicitly
+returns to the default display. They do not expire after 24 hours, including
+layouts saved by older versions, and survive sidecar restarts. The
+`preview-frame` endpoint retains its protocol name and returns `expiresAt: null`.
+Short-lived enrollment links and time-sensitive reminder signals keep their
+own expiration rules.
+
 - The enrollment link is single-use and expires after ten minutes.
 - Enrollments and device inventory are bound to the signed-in RemoteLab Person.
 - A device frame contains only Sessions initiated by identities linked to that Person.

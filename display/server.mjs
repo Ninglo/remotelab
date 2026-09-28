@@ -168,8 +168,9 @@ async function updatePersonal(personId, entry) {
 
 async function previewFor(personId) {
   const entry = (await readJson(previewFile, { version: 1, people: {} })).people?.[personId];
-  if (!entry || Date.parse(entry.expiresAt) <= Date.now()) return null;
-  return entry;
+  // Applied layouts are durable user settings, including records from the old
+  // 24-hour preview format. Only explicit removal or replacement withdraws them.
+  return entry ? { ...entry, expiresAt: null } : null;
 }
 
 const preparedPreviews = new Map();
@@ -603,7 +604,7 @@ async function handle(req, res) {
     prepareAnimatedPreview(png, animations);
     const frameId = previewFrameId(png, animations);
     const updatedAt = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = null;
     await updatePreview(personId, { pngBase64: payload.pngBase64, animations, frameId, updatedAt, expiresAt });
     sendJson(res, 200, { configured: true, frameId, updatedAt, expiresAt, animationCount: animations.length });
     return;

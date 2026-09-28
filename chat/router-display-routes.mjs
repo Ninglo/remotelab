@@ -222,6 +222,17 @@ export async function handleDisplaySettingsRoutes({ req, res, pathname, authSess
       await proxy(req, res, `/v1/people/${encodeURIComponent(personId)}/feishu/acknowledge`, { authenticated: true, body });
       return true;
     }
+    if (pathname === '/api/display/studio-preview/status' && req.method === 'GET') {
+      const config = await studioPreviewConfig();
+      if (!config.baseUrl || !config.tokenFile) { writeJson(res, 503, { error: '副屏预览通道未配置。' }); return true; }
+      if (config.personId && config.personId !== personId) { writeJson(res, 403, { error: '当前账号没有连接到这块副屏。' }); return true; }
+      const response = await fetch(`${config.baseUrl}/api/paired-device`, {
+        headers: { Authorization: `Bearer ${trimString(await readFile(config.tokenFile, 'utf8'))}`, 'X-Preview-Person-Id': personId },
+        signal: AbortSignal.timeout(15_000),
+      });
+      await sendProxyResponse(res, response);
+      return true;
+    }
     if (pathname === '/api/display/studio-preview' && req.method === 'POST') {
       const config = await studioPreviewConfig();
       const endpoint = config.baseUrl;

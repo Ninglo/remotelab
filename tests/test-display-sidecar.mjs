@@ -249,7 +249,16 @@ try {
   assert.equal(badPreview.status, 400, 'preview must be a full-size PNG');
   const savedPreview = await fetch(previewUrl, { method: 'PUT', headers: publicHeaders, body: JSON.stringify(previewPayload) });
   assert.equal(savedPreview.status, 200);
-  assert.equal((await savedPreview.json()).configured, true);
+  const savedPreviewReceipt = await savedPreview.json();
+  assert.equal(savedPreviewReceipt.configured, true);
+  assert.equal(savedPreviewReceipt.expiresAt, null, 'applied layouts have no automatic expiry');
+  const previewStoreFile = join(configDir, 'display-preview-frames.json');
+  const legacyPreviewStore = JSON.parse(await readFile(previewStoreFile, 'utf8'));
+  legacyPreviewStore.people[personA].updatedAt = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  legacyPreviewStore.people[personA].expiresAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  await writeFile(previewStoreFile, JSON.stringify(legacyPreviewStore));
+  const agedPreview = await fetch(previewUrl, { headers: publicHeaders });
+  assert.equal((await agedPreview.json()).expiresAt, null, 'old 24-hour records become durable without reapplying');
   const pairedPreviewFrame = await fetch(`http://127.0.0.1:${displayPort}${framePath}`, { headers: { Authorization: `Bearer ${joined.deviceToken}` } });
   assert.deepEqual(Buffer.from(await pairedPreviewFrame.arrayBuffer()), png, 'paired device must fetch the custom preview');
   const jpegFramePath = framePath.replace(/frame\.png$/, 'frame.jpg');
@@ -335,6 +344,9 @@ try {
   assert.equal((await currentContent.json()).sentence, contentPayload.sentence, 'failed upload must preserve saved content');
   child.kill('SIGTERM');
   await new Promise((resolve) => child.once('exit', resolve));
+  const legacyAnimatedStore = JSON.parse(await readFile(previewStoreFile, 'utf8'));
+  legacyAnimatedStore.people[personA].expiresAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  await writeFile(previewStoreFile, JSON.stringify(legacyAnimatedStore));
   child = launchDisplay();
   await waitFor(`http://127.0.0.1:${displayPort}/healthz`);
   const persistedContent = await fetch(contentUrl, { headers: publicHeaders });
@@ -345,6 +357,7 @@ try {
   assert.equal(persistedAnimatedFrame.headers.get('x-remotelab-display-poll-seconds'), '0.45', 'animated preview survives a sidecar restart');
   const clearedPreview = await fetch(previewUrl, { method: 'DELETE', headers: publicHeaders });
   assert.equal(clearedPreview.status, 200);
+  assert.equal((await (await fetch(previewUrl, { headers: publicHeaders })).json()).configured, false, 'explicit removal still withdraws a durable layout');
   const restoredStatus = await fetch(contentUrl, { method: 'DELETE', headers: publicHeaders });
   assert.equal(restoredStatus.status, 200);
   const afterDelete = await fetch(contentUrl, { headers: publicHeaders });
@@ -403,6 +416,7 @@ try {
   child = launchDisplay();
   await waitFor(`http://127.0.0.1:${displayPort}/healthz`);
   const recovered = await fetch(`http://127.0.0.1:${displayPort}/v1/people/${personA}/status`, { headers: publicHeaders });
+  assert.equal((await (await fetch(previewUrl, { headers: publicHeaders })).json()).configured, false, 'restart must not resurrect an explicitly removed layout');
   assert.equal((await recovered.json()).scene.signal.title, '评测等待确认', 'a source snapshot must survive sidecar restart');
   const withdrawn = await fetch(sourcePath, {
     method: 'PUT', headers: publicHeaders,
