@@ -82,6 +82,15 @@ assert.equal(groupCalls[0].params.container_id, 'chat-secret');
 assert.ok(groupCalls[0].params.start_time);
 assert.ok(groupCalls[0].params.end_time);
 
+const metadataContext = await loadFeishuConversationContext(runtimeFor([
+  textItem('bot-answer', '2026-09-22T10:45:00.000Z', '茵蒂克丝', '我会继续查。', 'app'),
+], []), {
+  chatId: 'chat-secret', chatType: 'group', createTime: at('2026-09-22T11:00:00.000Z'),
+}, { includeMetadata: true });
+assert.equal(metadataContext.messages[0].messageId, 'bot-answer');
+assert.equal(metadataContext.messages[0].senderType, 'app');
+assert.equal(metadataContext.messages[0].timestamp, Date.parse('2026-09-22T10:45:00.000Z'));
+
 const sourceContext = buildMessageSourceContext({
   chatId: 'chat-secret', messageId: 'current', chatType: 'group',
   createTime: at('2026-09-22T11:00:00.000Z'),

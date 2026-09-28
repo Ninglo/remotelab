@@ -210,13 +210,20 @@ export async function loadFeishuConversationContext(runtime, summary, options = 
   });
   const normalized = rawItems
     .filter((item) => !currentMessageId || trimString(item?.message_id) !== currentMessageId)
-    .map((item) => normalizeFeishuHistoryItem(item, { timeZone: options.timeZone }))
+    .map((item) => {
+      const message = normalizeFeishuHistoryItem(item, { timeZone: options.timeZone });
+      return message ? { ...message, messageId: trimString(item?.message_id),
+        senderType: trimString(item?.sender?.sender_type), senderId: trimString(item?.sender?.id) } : null;
+    })
     .filter((item) => item && item.timestamp <= now);
   const relevant = topicId ? normalized : keepCurrentActivity(normalized, maxGapMs);
   const fitted = fitCharacterBudget(relevant, maxCharacters);
   if (fitted.messages.length === 0) return null;
   return {
-    messages: fitted.messages.map(({ sender, time, text }) => ({ sender, time, text })),
+    messages: fitted.messages.map(({ sender, time, text, timestamp, messageId, senderType, senderId }) => ({
+      sender, time, text,
+      ...(options.includeMetadata ? { timestamp, messageId, senderType, senderId } : {}),
+    })),
     truncated: fitted.truncated || rawItems.length >= maxMessages,
   };
 }

@@ -3,6 +3,7 @@ import { normalizeFeishuGroups, resolveFeishuGroupSettings } from '../connectors
 
 import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'fs/promises';
 import { homedir } from 'os';
+import { performance } from 'node:perf_hooks';
 import { basename, dirname, join, resolve } from 'path';
 import { setTimeout as delay } from 'timers/promises';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -58,6 +59,7 @@ import {
   summarizeFeishuEventForLog as summarizeEventForLog,
 } from '../connectors/feishu/index.mjs';
 import { loadFeishuConversationContext } from '../connectors/feishu/conversation-context.mjs';
+import { createFeishuQuickParticipationPilot } from '../connectors/feishu/quick-participation.mjs';
 import { summarizeFeishuMuteReaction } from '../connectors/feishu/reaction-mute.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
@@ -1064,7 +1066,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   return submitRemoteLabRequest(runtime, summary, { prepared: handoff });
 }
 
-async function addProcessingReaction(runtime, summary) {
+async function addProcessingReaction(runtime, summary, emojiType = 'THINKING') {
   if (isFeishuDocumentCommentSummary(summary)) {
     return withTimeout(() => addFeishuCommentProcessingReaction(runtime, summary),
       DEFAULT_PROCESSING_REACTION_TIMEOUT_MS, 'Feishu comment processing reaction');
@@ -1081,7 +1083,7 @@ async function addProcessingReaction(runtime, summary) {
       },
       data: {
         reaction_type: {
-          emoji_type: 'THINKING',
+          emoji_type: emojiType,
         },
       },
     }),
@@ -1093,7 +1095,7 @@ async function addProcessingReaction(runtime, summary) {
   }
   return {
     reactionId: response.data.reaction_id,
-    emojiType: response.data?.reaction_type?.emoji_type || 'THINKING',
+    emojiType: response.data?.reaction_type?.emoji_type || emojiType,
   };
 }
 
@@ -1209,6 +1211,7 @@ async function processSourceDeliveryOnce(runtime, helpers = {}) {
       await failures.flush(acknowledgeFailure, replayOptions);
       throw error;
     }
+    runtime.quickParticipation?.rememberBotReply(summary, sent.message_id, delivery.text, sent.thread_id);
     await receipts.record({ deliveryId: delivery.id, leaseId: claim.leaseId,
       externalId: sent.message_id || sent.reply_id || '', messageId: sent.message_id || '',
       threadId: sent.thread_id || '', sessionId: delivery.sessionId, target: summary });
@@ -1465,8 +1468,9 @@ async function processFeishuMessage(runtime, summary, command, helpers) {
     summary = { ...summary, runtimeSelectionOverride: commandPlan.selection };
   }
   try {
-    if (resolveFeishuGroupSettings(runtime.config, summary).participationMode !== 'ambient'
-      || mentionsFeishuBot(runtime, summary)) void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
+    const groupSettings = resolveFeishuGroupSettings(runtime.config, summary);
+    if (!groupSettings.quickReactions && (groupSettings.participationMode !== 'ambient'
+      || mentionsFeishuBot(runtime, summary))) void Promise.resolve((helpers.addProcessingReaction || addProcessingReaction)(runtime, summary))
       .catch(error => {
         console.warn(`[feishu-connector] failed to add processing reaction for ${summary.messageId}: ${error?.message || error}`);
       });
@@ -1600,6 +1604,20 @@ async function main() {
   runtime.botIdentity = await withTimeout(
     () => resolveFeishuBotIdentity(runtime), config.apiTimeoutMs, 'Feishu Bot identity lookup',
   );
+  const quickParticipation = createFeishuQuickParticipationPilot(runtime, { react: addProcessingReaction });
+  const activePilotConversations = await quickParticipation.restore(storagePaths.eventsLogPath);
+  await Promise.all(activePilotConversations.map(async summary => {
+    try {
+      const context = await loadFeishuConversationContext(runtime,
+        { ...summary, messageId: '', createTime: String(Date.now()) },
+        { maxMessages: 30, maxAgeMs: 2 * 60 * 60 * 1000, maxCharacters: 10_000,
+          timeoutMs: 1_800, includeMetadata: true });
+      if (context?.messages?.length) quickParticipation.seedConversation(summary, context.messages);
+    } catch (error) {
+      console.warn(`[feishu-quick-participation] history refresh failed: ${error.message}`);
+    }
+  }));
+  runtime.quickParticipation = quickParticipation;
   await restoreFeishuBotHandoffScopes(runtime);
   const inbox = initializeInbox(runtime);
   const wsClient = new Lark.WSClient({
@@ -1640,9 +1658,13 @@ async function main() {
   });
 
   const persist = (sourceLabel, summarize) => async raw => {
+    const receivedAt = performance.now();
     const summary = summarize(raw);
     if (summary.fileToken && await documentPoller.accept(summary)) return {};
     await inbox.accept(summary.messageId || summary.eventId, { summary, raw, sourceLabel });
+    if (await isAllowedByPolicy(config.accessPolicy, summary)
+      && await shouldRouteFeishuMessageToRemoteLab(runtime, summary,
+        { explicitCommand: !!extractLocalCommand(summary) })) quickParticipation.handle(summary, { receivedAt });
     return {};
   };
   const persistMuteReaction = async raw => {
