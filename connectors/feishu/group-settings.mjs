@@ -15,9 +15,9 @@ const TOPIC_SESSION_PROMPT = [
 ].join('\n');
 
 const QUICK_REACTION_SESSION_PROMPT = [
-  'In this group the connector immediately adds THINKING to each incoming human message as its read receipt.',
-  'It may also add one outcome reaction: OnIt when a text reply is expected, or another emoji when no text reply is expected. Do not add another reaction to the same incoming message when the connector has already added an outcome reaction.',
-  'If the newest message explicitly asks for an emoji/reaction only, the connector adds only THINKING. Add exactly one suitable reaction yourself and do not send a text reply.',
+  'In this group the connector may add one status reaction after deciding whether to participate. It does not react merely because it received a message.',
+  'The status reaction is OnIt when a text reply is expected, or a context-appropriate emoji when no text reply is expected. Do not add another reaction to the same incoming message when the connector has already added a status reaction.',
+  'If the newest message explicitly asks for an emoji/reaction only, the connector leaves the reaction to you. Add exactly one suitable reaction yourself and do not send a text reply.',
 ].join('\n');
 
 // Per-chat overrides select intake policy and the mainline participation pilot.

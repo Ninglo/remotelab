@@ -232,20 +232,11 @@ export function createFeishuQuickParticipationPilot(runtime, {
     if (seen.size > 5_000) seen.delete(seen.values().next().value);
     const started = receivedAt;
     const contextual = runtime.config.groups?.[summary.chatId]?.contextReactions === true;
-    // Start the read receipt before any classification or Session work.
-    const readReaction = reactionMode === 'none'
-      ? Promise.resolve({ result: 'skipped', latencyMs: null, reactionId: '' })
-      : (async () => {
-        const receipt = await react(summary, 'THINKING');
-        if (!receipt?.reactionId) throw new Error('Feishu did not return a reaction ID');
-        return { result: 'ok', latencyMs: Math.round(performance.now() - started),
-          reactionId: receipt.reactionId };
-      })().catch(() => ({ result: 'failed', latencyMs: Math.round(performance.now() - started), reactionId: '' }));
     const decision = classify(contextFor(summary, recent));
     return (async () => {
       const verdict = await decision.catch(() => ({ decision: 'unknown', reason: 'request_error' }));
-      // A direct @ is an explicit request for a text turn. Keep the early
-      // reaction consistent with that routing even if the fast classifier errs.
+      // A direct @ is an explicit request for a text turn, even if the fast
+      // classifier is uncertain.
       const participationDecision = mentionsFeishuBot(runtime, summary) ? 'reply' : verdict.decision;
       if (verdict.handoffDecision === 'offer' && typeof onHandoffCandidate === 'function') {
         void Promise.resolve().then(() => onHandoffCandidate(summary)).catch(error => {
@@ -269,7 +260,6 @@ export function createFeishuQuickParticipationPilot(runtime, {
         } catch { statusReaction = 'failed'; }
         statusLatencyMs = Math.round(performance.now() - started);
       }
-      const readReceipt = await readReaction;
       const record = {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
         reactionMode,
@@ -280,7 +270,6 @@ export function createFeishuQuickParticipationPilot(runtime, {
         handoffProbability: verdict.handoffProbability ?? null,
         probabilities: verdict.probabilities || null, model: verdict.model || '',
         jevLatencyMs: verdict.latencyMs ?? null, totalLatencyMs: Math.round(performance.now() - started),
-        readReaction: readReceipt.result, readLatencyMs: readReceipt.latencyMs,
         statusReaction, statusLatencyMs,
       };
       await appendFile(logPath, `${JSON.stringify(record)}\n`, 'utf8').catch(error => {

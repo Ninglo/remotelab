@@ -803,6 +803,13 @@ Directional synthesis: `notes/directional/product-vision.md`
 - Product implication: validate the exact root run and workspace, support both provider run URL forms, and migrate verified history indexes together with collector account changes.
 - Follow-up: verify each entry against the destination project's Session metadata and concrete run URL; distinguish API verification from authenticated browser acceptance.
 
+### 2026-09-28 — 飞书群闲聊不应出现机器人已读表情
+
+- Source: direct feedback during a group participation pilot.
+- Observed friction or ask: the Bot added a `THINKING` reaction to human-to-human chat even though it sent no text; people read that reaction as the Bot joining the conversation.
+- Product implication: decide participation before adding a status reaction. No visible reaction is needed for uncertain or unrelated chatter; an explicit reaction-only request belongs to the Session.
+- Follow-up: verify on the live group that casual chat stays quiet while direct requests still receive one suitable reaction and the intended reply.
+
 ### YYYY-MM-DD — short title
 
 - Source:

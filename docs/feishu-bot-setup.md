@@ -225,9 +225,9 @@ Notes:
   binary and that same config visible to harness processes
 - `botId` / `sourceRouteId` remains transport addressing so replies, Topics and
   deferred results return through the Bot that owns the originating conversation
-- every admitted chat message receives a persistent `THINKING` reaction before
-  RemoteLab submission; this acknowledgement is fixed product behavior rather
-  than a third policy dimension, and failure to add it never blocks the request
+- in groups with `quickReactions: true`, a status reaction is added only after
+  the quick participation decision warrants one; receiving a message alone does
+  not add a reaction, and reaction failure never blocks the request
 - the connector forwards mostly the rendered user message plus mention-token hints, not a large blob of transport metadata
 - `accessPolicy.mode` defaults to `all`; use `whitelist` when only selected senders may use the Bot
 
@@ -455,12 +455,12 @@ mute state or automatically become lasting instructions. Groups with
 (direct praise), `GLANCE` (a direct update), `WOW` (delightful surprise),
 `WHAT` (a lighthearted unexpected twist), `DULL` (the Bot's own minor
 mistake), and `TEARS` (playful or touching emotion). Unrelated, serious, or
-ambiguous discussion gets no additional reaction. `THINKING` remains on every
-admitted message as the immediate receipt, even when no text reply follows.
+ambiguous discussion gets no reaction. The connector does not add a read receipt
+before deciding whether to participate.
 For pilot groups that should admit every human message on the main timeline
 and in their topics or threads, set `responseMode: "all"` alongside
 `quickReactions: true`. An explicit @ mention asks for a text reply; the
-receipt and any later status reaction are independent of that reply.
+status reaction and later text reply are separate outputs of that decision.
 
 For reaction mute, the Feishu app must subscribe to
 `im.message.reaction.created_v1` ("新增消息表情回复") and publish that app
