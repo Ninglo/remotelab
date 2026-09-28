@@ -8,6 +8,13 @@ const AMBIENT_SESSION_PROMPT = [
   'A message that only mentions you is feedback to reconsider the recent unanswered group messages together. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
 ].join('\n');
 
+const AMBIENT_TOPIC_PROMPT = [
+  'This Feishu topic chat sends every human message in the current topic to your continuing topic Session, including messages without an @ mention.',
+  'Read this topic discussion and decide whether your participation helps. If no reply is warranted, return an empty final answer. Do not acknowledge every message.',
+  'A normal final answer replies inside this topic. Keep different topics in their separate Sessions; do not move a reply to another topic.',
+  'A message that only mentions you is feedback to reconsider the recent unanswered messages in this topic. A mute signal is feedback that your previous participation may have been unwelcome. Treat feedback as context for your next judgment.',
+].join('\n');
+
 // Per-chat overrides select intake policy and the mainline participation pilot.
 export function normalizeFeishuGroups(value = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('groups must be a chat-ID to settings object');
@@ -27,9 +34,9 @@ export function normalizeFeishuGroups(value = {}) {
 export function resolveFeishuGroupSettings(config = {}, summary = {}) {
   const group = config.groups?.[summary.chatId] || {};
   const privateChat = ['p2p', 'private'].includes(String(summary.chatType || '').trim().toLowerCase());
+  const topicChat = isFeishuTopicChat(summary);
   const ambient = group.participationMode === 'ambient' && !privateChat
-    && !summary.threadId && !summary.topicId && summary.conversationKind !== 'thread'
-    && !isFeishuTopicChat(summary);
+    && (topicChat || (!summary.threadId && !summary.topicId && summary.conversationKind !== 'thread'));
   return {
     // A Feishu topic is already an intentional conversation surface. Admit its
     // human messages by default, while retaining mention-only ordinary groups
@@ -38,9 +45,9 @@ export function resolveFeishuGroupSettings(config = {}, summary = {}) {
       ? 'all'
       : config.responsePolicy?.group ?? 'mention_only'),
     replyMode: group.replyMode ?? config.replyPolicy?.chats?.[summary.chatId]
-      ?? (ambient ? 'inline' : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
+      ?? (ambient ? (topicChat ? 'thread' : 'inline') : privateChat ? config.replyPolicy?.private : config.replyPolicy?.group) ?? (privateChat ? 'inline' : 'thread'),
     ...(ambient ? { participationMode: 'ambient' } : {}),
-    systemPrompt: [config.systemPrompt, group.systemPrompt, ambient ? AMBIENT_SESSION_PROMPT : '']
+    systemPrompt: [config.systemPrompt, group.systemPrompt, ambient ? (topicChat ? AMBIENT_TOPIC_PROMPT : AMBIENT_SESSION_PROMPT) : '']
       .filter(value => typeof value === 'string' && value.trim()).join('\n\n'),
   };
 }

@@ -31,6 +31,13 @@ try {
   assert.match(settings.systemPrompt, /feishu-reply:thread/);
   assert.equal(resolveFeishuGroupSettings(config, { ...base, chatId: 'other-group' }).responseMode, 'mention_only');
   assert.equal(resolveFeishuGroupSettings(config, { ...base, threadId: 'thread-1' }).participationMode, undefined);
+  const topic = { ...base, chatId: 'topic-ambient', chatMode: 'topic',
+    threadId: 'topic-1', messageId: 'topic-question-1' };
+  config.groups[topic.chatId] = { participationMode: 'ambient' };
+  const topicSettings = resolveFeishuGroupSettings(config, topic);
+  assert.equal(topicSettings.responseMode, 'all');
+  assert.equal(topicSettings.replyMode, 'thread');
+  assert.match(topicSettings.systemPrompt, /continuing topic Session/);
   const effects = [];
   const runtime = { config, botIdentity: { openId: 'self' }, storagePaths: {}, };
   await handleMessage(runtime, base, 'test', {
@@ -42,6 +49,17 @@ try {
     },
   });
   assert.deepEqual(effects, ['submit'], 'ambient chatter enters the main Session without a processing reaction');
+  effects.length = 0;
+  await handleMessage(runtime, topic, 'test', {
+    addProcessingReaction: async () => effects.push('reaction'),
+    submitRemoteLabRequest: async (_runtime, summary) => {
+      effects.push('submit');
+      assert.equal(summary.conversationKind, 'thread');
+      assert.equal(summary.threadId, 'topic-1');
+      return { sessionId: 'topic-session' };
+    },
+  });
+  assert.deepEqual(effects, ['submit'], 'ambient topic chatter enters its topic Session without a processing reaction');
 
   const plan = {
     connector: 'feishu', sourceRouteId: 'bot-2',

@@ -952,7 +952,7 @@ async function submitRemoteLabRequest(runtime, summary, { prepared = null, saveS
   });
   const groupSettings = resolveFeishuGroupSettings(runtime.config, effectiveSummary);
   const ambient = groupSettings.participationMode === 'ambient'
-    && effectiveSummary.conversationKind === 'main'
+    && (effectiveSummary.conversationKind === 'main' || isFeishuTopicChat(effectiveSummary))
     && !effectiveSummary.replyModeOverride;
   const soleMention = ambient && mentionsFeishuBot(runtime, effectiveSummary)
     && !stripLeadingMentionTokens(effectiveSummary.messageText || effectiveSummary.textPreview || '').trim();
