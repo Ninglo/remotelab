@@ -1652,12 +1652,16 @@ async function settleNativeRequest(record, run) {
   if (ownPlan && !sharedBinding && ownDestination !== destination(rootPlan)) {
     const payload = root.result.state === 'completed' ? root.result.payload
       : { text: root.result.state === 'cancelled' ? '任务已取消。' : `任务执行失败：${root.result.error || root.result.state}`, attachments: [] };
+    // The model selected a reaction for the root input only. A native turn may
+    // fan the same text out to another destination, but must not react to a
+    // different inbound message on that model decision.
+    const destinationPayload = { ...payload, reaction: undefined };
     // Reserve each destination and its deliveries in the same durable commit.
     // The root owns publication even if an input receipt arrives after finalization.
     await requests.mutate(root.key, current => {
       if ((current.nativeReplyDestinations || []).includes(ownDestination)) return current;
       return { ...current, nativeReplyDestinations: [...(current.nativeReplyDestinations || []), ownDestination],
-        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, payload)) };
+        deliveries: appendDeliveries(current, buildReplyDeliveries(ownPlan, destinationPayload)) };
     });
     await requestRuntime.refresh(root.key);
   }
