@@ -65,7 +65,7 @@ import {
 } from '../connectors/feishu/linked-project-context.mjs';
 import { createFeishuQuickParticipationPilot } from '../connectors/feishu/quick-participation.mjs';
 import { createDiscussionHandoffPilot, discussionHandoffLink } from '../connectors/feishu/discussion-handoff.mjs';
-import { summarizeFeishuMuteReaction } from '../connectors/feishu/reaction-mute.mjs';
+import { summarizeFeishuReactionFeedback } from '../connectors/feishu/reaction-mute.mjs';
 import { startDocumentBindingEvents } from '../connectors/feishu/document-bindings.mjs';
 import {
   hydrateFeishuDocumentCommentSummary,
@@ -1350,7 +1350,9 @@ async function submitFeishuFeedback(runtime, summary, kind, sessionId = '') {
     ? '【群聊反馈】用户在你发出的消息上添加了 [嘘]，当前讨论已静默。请复盘上次介入是否过早或打断讨论，供之后判断使用。本轮不要回复，也不要执行任务。'
     : kind === 'mute_command'
       ? '【群聊反馈】用户单独要求静默当前讨论。请复盘刚才的回复是否不合时宜，供之后判断使用。本轮不要回复，也不要执行任务。'
-      : '【群聊反馈】用户恢复了当前讨论的自动响应。本轮只记录这一变化，不要回复，也不要执行任务。';
+      : kind === 'reaction_feedback'
+        ? `【群聊表情反馈】用户在你发出的消息上添加了 ${summary.reactionType}。这是针对该条回复的反馈线索，不代表事实正确、任务完成或长期行为指令。结合原消息理解并留作后续判断。本轮不要回复，也不要执行任务。`
+        : '【群聊反馈】用户恢复了当前讨论的自动响应。本轮只记录这一变化，不要回复，也不要执行任务。';
   return submitConnectorMessage(requester, targetSessionId, {
     requestId: `feishu:feedback:${kind}:${trimString(summary.eventId || summary.messageId)}`,
     text,
@@ -1369,6 +1371,15 @@ async function handleFeishuReactionMute(runtime, summary, helpers = {}) {
   await (helpers.submitFeishuFeedback || submitFeishuFeedback)(
     runtime, summary, 'mute_reaction', summary.feedbackSessionId);
   return { muted: true, chatId: summary.chatId, threadId: summary.threadId || '' };
+}
+
+async function handleFeishuReactionFeedback(runtime, summary, helpers = {}) {
+  if (summary.sourceKind === 'reaction_mute') return handleFeishuReactionMute(runtime, summary, helpers);
+  if (summary.sourceKind !== 'reaction_feedback') return { ignored: true };
+  if (summary.sender?.openId === runtime.botIdentity?.openId) return { ignored: true, reason: 'self_reaction' };
+  await (helpers.submitFeishuFeedback || submitFeishuFeedback)(
+    runtime, summary, 'reaction_feedback', summary.feedbackSessionId);
+  return { recorded: true, chatId: summary.chatId, reactionType: summary.reactionType };
 }
 
 async function handleMessage(runtime, summary, sourceLabel, helpers = {}) {
@@ -1536,8 +1547,8 @@ function initializeInbox(runtime) {
     process: async (entry, update) => {
       const allowed = await recordInboundEvent(runtime, entry.summary, entry.raw, entry.sourceLabel);
       if (!allowed) return { blocked: true };
-      if (entry.summary.sourceKind === 'reaction_mute') {
-        return handleFeishuReactionMute(runtime, entry.summary);
+      if (['reaction_mute', 'reaction_feedback'].includes(entry.summary.sourceKind)) {
+        return handleFeishuReactionFeedback(runtime, entry.summary);
       }
       return handleMessage(runtime, entry.summary, entry.sourceLabel, {
         preparedRuntimeCommand: entry.runtimeCommand,
@@ -1732,9 +1743,8 @@ async function main() {
     }
     return {};
   };
-  const persistMuteReaction = async raw => {
+  const persistReactionFeedback = async raw => {
     const event = raw?.event && typeof raw.event === 'object' ? raw.event : raw;
-    if (trimString(event?.reaction_type?.emoji_type).toUpperCase() !== 'SHHH') return {};
     const messageId = trimString(event?.message_id);
     if (!messageId) return {};
     const outbound = await findConnectorMessageIndexRecord(storagePaths.messageIndexPath, {
@@ -1742,7 +1752,9 @@ async function main() {
       accountId: trimString(event.tenant_key || raw?.header?.tenant_key),
       messageId,
     });
-    const summary = summarizeFeishuMuteReaction(raw, outbound);
+    const feedbackChats = new Set(Object.entries(config.groups || {})
+      .filter(([, settings]) => settings.reactionFeedback === true).map(([chatId]) => chatId));
+    const summary = summarizeFeishuReactionFeedback(raw, outbound, { feedbackChats });
     if (!summary) return {};
     await inbox.accept(`reaction:${summary.eventId}`, {
       summary, raw, sourceLabel: 'im.message.reaction.created_v1',
@@ -1755,7 +1767,7 @@ async function main() {
       void discussionHandoff.handleAction(raw).catch(error =>
         console.warn(`[feishu-handoff] card action failed: ${error?.message || error}`));
     },
-    'im.message.reaction.created_v1': persistMuteReaction,
+    'im.message.reaction.created_v1': persistReactionFeedback,
     'drive.notice.comment_add_v1': persist('drive.notice.comment_add_v1', summarizeFeishuDocumentCommentEvent),
   });
   inbox.start();

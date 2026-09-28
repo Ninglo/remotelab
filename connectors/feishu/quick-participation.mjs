@@ -69,6 +69,15 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
               silent: 'The assistant should stay silent now while retaining this message as context for later messages.',
             },
           },
+          silentReaction: {
+            type: 'choice',
+            instructions: 'Only when participation is silent, choose an appropriate lightweight reaction to the newest message. Choose thanks only for clear praise or thanks directed at this assistant. Choose seen only for a direct informational update to this assistant that needs no response. Choose none for human-to-human conversation, ambiguous context, criticism, a request, or when a reaction might imply agreement or task completion.',
+            criteria: {
+              thanks: 'The newest message clearly praises or thanks this assistant.',
+              seen: 'The newest message gives this assistant a direct informational update needing no answer.',
+              none: 'No reaction is appropriate.',
+            },
+          },
           projectHandoff: {
             type: 'choice',
             instructions: 'Decide whether the newest human message, in its recent discussion, clearly says a concrete direction has been settled and asks or strongly implies that the project work group should now start execution. Offer only for a specific actionable piece of work with an affirmative start signal. A question, tentative idea, ordinary status, human acknowledgement, or work already underway is not enough. This only nominates a proposal for a second check; it does not authorize execution.',
@@ -95,9 +104,14 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
     const offerProbability = Number(handoff?.probabilities?.offer);
     const handoffDecision = handoff?.choice === 'offer' && Number.isFinite(offerProbability)
       && offerProbability >= 0.9 ? 'offer' : 'none';
+    const silentReaction = result?.answers?.silentReaction;
+    const reactionChoice = ['thanks', 'seen'].includes(silentReaction?.choice)
+      && Number(silentReaction?.probabilities?.[silentReaction.choice]) >= 0.85
+      ? silentReaction.choice : 'none';
     return {
       decision: uncertain ? 'unknown' : decision,
       handoffDecision,
+      silentReaction: uncertain || decision !== 'silent' ? 'none' : reactionChoice,
       handoffProbability: Number.isFinite(offerProbability) ? offerProbability : null,
       ...(uncertain ? { reason: 'low_support' } : {}),
       confidence: Number.isFinite(Number(answer.confidence)) ? Number(answer.confidence) : null,
@@ -217,8 +231,14 @@ export function createFeishuQuickParticipationPilot(runtime, {
       if (reactionMode !== 'none' && verdict.handoffDecision !== 'offer' && verdict.decision !== 'unknown'
         && performance.now() - started < MAX_STATUS_START_MS) {
         try {
-          await react(summary, verdict.decision === 'reply' ? 'OnIt' : 'EatingFood');
-          statusReaction = 'ok';
+          const contextual = runtime.config.groups?.[summary.chatId]?.contextReactions === true;
+          const emojiType = verdict.decision === 'reply' ? 'OnIt'
+            : !contextual ? 'EatingFood'
+              : verdict.silentReaction === 'thanks' ? 'THUMBSUP'
+                : verdict.silentReaction === 'seen' ? 'EatingFood' : '';
+          if (emojiType) await react(summary, emojiType);
+          else statusReaction = 'skipped';
+          if (emojiType) statusReaction = 'ok';
         } catch { statusReaction = 'failed'; }
         statusLatencyMs = Math.round(performance.now() - started);
       }
@@ -227,6 +247,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
         reactionMode,
         decision: verdict.decision, reason: verdict.reason || '', confidence: verdict.confidence ?? null,
+        silentReaction: verdict.silentReaction || 'none',
         handoffDecision: verdict.handoffDecision || 'none',
         handoffProbability: verdict.handoffProbability ?? null,
         probabilities: verdict.probabilities || null, model: verdict.model || '',

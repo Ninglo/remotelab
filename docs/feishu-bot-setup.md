@@ -447,6 +447,14 @@ The reaction itself produces no chat message. Removing it does not unmute;
 non-publishing feedback so it can reconsider its preceding participation.
 The `/mute` setting still takes effect even when no Session exists.
 
+For groups with `reactionFeedback: true`, other human reactions on this Bot's
+replies are recorded as non-publishing feedback in the existing Session. A
+reaction on someone else's message is ignored. These signals do not change
+mute state or automatically become lasting instructions. Groups with
+`contextReactions: true` and `quickReactions: true` use a contextual silent
+reaction: clear praise or thanks gets `THUMBSUP`, a direct informational
+update gets `EatingFood`, and unrelated or ambiguous discussion gets none.
+
 For reaction mute, the Feishu app must subscribe to
 `im.message.reaction.created_v1` ("新增消息表情回复") and publish that app
 version. The existing group-message read permission is required by Feishu for

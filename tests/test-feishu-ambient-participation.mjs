@@ -11,7 +11,7 @@ try {
   const { resolveAmbientFeishuReplyPlan } = await import('../chat/ambient-feishu-reply.mjs');
   const { buildSessionEntryDeliveries } = await import('../chat/session-entry-notification.mjs');
   const { resolveSessionDeliveryPlan } = await import('../chat/session-conversations.mjs');
-  const { summarizeFeishuMuteReaction } = await import('../connectors/feishu/reaction-mute.mjs');
+  const { summarizeFeishuMuteReaction, summarizeFeishuReactionFeedback } = await import('../connectors/feishu/reaction-mute.mjs');
   const { handleFeishuReactionMute, handleMessage } = await import('../scripts/feishu-connector.mjs');
   const { getFeishuConversationSettings } = await import('../connectors/feishu/conversation-settings.mjs');
   const chatId = 'group-ambient';
@@ -78,6 +78,11 @@ try {
     user_id: { open_id: 'human' },
   };
   assert.equal(summarizeFeishuMuteReaction({ ...raw, reaction_type: { emoji_type: 'THUMBSUP' } }, outbound), null);
+  assert.equal(summarizeFeishuReactionFeedback({ ...raw, reaction_type: { emoji_type: 'THUMBSUP' } }, outbound,
+    { feedbackChats: new Set([chatId]) }).sourceKind, 'reaction_feedback');
+  assert.equal(summarizeFeishuReactionFeedback({ ...raw, reaction_type: { emoji_type: 'THUMBSUP' } }, outbound,
+    { feedbackChats: new Set(['other']) }), null);
+  assert.equal(summarizeFeishuReactionFeedback(raw, { ...outbound, direction: 'inbound' }), null);
   assert.equal(summarizeFeishuMuteReaction(raw, { ...outbound, direction: 'inbound' }), null);
   const summary = summarizeFeishuMuteReaction(raw, outbound);
   assert.equal(summary.chatId, chatId);
