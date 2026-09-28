@@ -141,7 +141,6 @@ export async function classifyFeishuQuickParticipation(context, { fetchImpl = fe
 export function createFeishuQuickParticipationPilot(runtime, {
   classify = classifyFeishuQuickParticipation,
   react,
-  unreact = null,
   onHandoffCandidate = null,
   logPath = join(runtime.config.storageDir, 'quick-participation.jsonl'),
 } = {}) {
@@ -256,10 +255,6 @@ export function createFeishuQuickParticipationPilot(runtime, {
         statusLatencyMs = Math.round(performance.now() - started);
       }
       const readReceipt = await readReaction;
-      if (contextual && readReceipt.reactionId && typeof unreact === 'function') {
-        try { await unreact(summary, readReceipt.reactionId); }
-        catch (error) { console.warn(`[feishu-quick-participation] failed to clear thinking reaction ${summary.messageId}: ${error.message}`); }
-      }
       const record = {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
         reactionMode,

@@ -455,8 +455,8 @@ mute state or automatically become lasting instructions. Groups with
 (direct praise), `GLANCE` (a direct update), `WOW` (delightful surprise),
 `WHAT` (a lighthearted unexpected twist), `DULL` (the Bot's own minor
 mistake), and `TEARS` (playful or touching emotion). Unrelated, serious, or
-ambiguous discussion gets no reaction. The temporary `THINKING` reaction is
-removed after this contextual decision; it is not a final response.
+ambiguous discussion gets no additional reaction. `THINKING` remains on every
+admitted message as the immediate receipt, even when no text reply follows.
 
 For reaction mute, the Feishu app must subscribe to
 `im.message.reaction.created_v1` ("新增消息表情回复") and publish that app
