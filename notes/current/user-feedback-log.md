@@ -21,6 +21,12 @@ Directional synthesis: `notes/directional/product-vision.md`
 
 ## Current carried-forward signals
 
+### 2026-09-28 — Keep ordinary conclusions in the conversation
+
+- Observed friction: AI-generated documents sent alongside a normal answer split one conclusion across a chat reply and a file; the extra document was often less readable than the reply.
+- Product implication: keep file delivery available, but make the conversation the default. Attach a file when requested or when the result needs a file for use, editing, or sharing. Keep the reply understandable on its own instead of making a document merely to repeat it.
+- Implementation: clarify this priority in the RemoteLab startup context; preserve explicit `Artifacts:` delivery and native connector attachments.
+
 ### 2026-09-28 — Distinguish RemoteLab automations from project tasks
 
 - Observed friction: calling RemoteLab's scheduled and triggered AI work "Tasks" led users to confuse it with the separate Feishu project task list.
