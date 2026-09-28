@@ -33,6 +33,28 @@ try {
   await readFirst.handle({ chatId: 'pilot', chatType: 'group', messageId: 'read-first',
     createTime: String(Date.now()), sender: { senderType: 'user', openId: 'human' } });
   assert.deepEqual(callOrder, ['reaction', 'classify']);
+  const pilotReactionOrder = [];
+  let completeThinking;
+  const orderedPilot = createFeishuQuickParticipationPilot({
+    config: { storageDir: home, groups: { pilot: { quickReactions: true, groupFeed: true } } },
+    botIdentity: { openId: 'bot' },
+  }, {
+    logPath: join(home, 'ordered-pilot.jsonl'),
+    classify: async () => ({ decision: 'reply', handoffDecision: 'none' }),
+    react: async (_summary, emojiType) => {
+      pilotReactionOrder.push(`start:${emojiType}`);
+      if (emojiType === 'THINKING') await new Promise(resolve => { completeThinking = resolve; });
+      pilotReactionOrder.push(`done:${emojiType}`);
+      return { reactionId: emojiType };
+    },
+  });
+  const orderedTurn = orderedPilot.handle({ chatId: 'pilot', chatType: 'group', messageId: 'ordered',
+    createTime: String(Date.now()), sender: { senderType: 'user', openId: 'human' } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(pilotReactionOrder, ['start:THINKING'], 'pilot status must wait for the read receipt');
+  completeThinking();
+  await orderedTurn;
+  assert.deepEqual(pilotReactionOrder, ['start:THINKING', 'done:THINKING', 'start:OnIt', 'done:OnIt']);
   const config = {
     storageDir: home, appId: 'self-app',
     groups: { pilot: { participationMode: 'ambient', quickReactions: true, contextReactions: true } },

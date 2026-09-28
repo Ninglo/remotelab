@@ -244,6 +244,8 @@ export function createFeishuQuickParticipationPilot(runtime, {
     const decision = classify(contextFor(summary, recent));
     return (async () => {
       const verdict = await decision.catch(() => ({ decision: 'unknown', reason: 'request_error' }));
+      const orderedReadReceipt = runtime.config.groups?.[summary.chatId]?.groupFeed === true
+        ? await readReaction : null;
       // A direct @ is an explicit request for a text turn. Keep the early
       // reaction consistent with that routing even if the fast classifier errs.
       const participationDecision = mentionsFeishuBot(runtime, summary) ? 'reply' : verdict.decision;
@@ -258,6 +260,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
       // silent or promise a reply before the proposal card has been validated.
       if (reactionMode !== 'none' && !isReactionOnlyRequest(summary)
         && verdict.handoffDecision !== 'offer' && participationDecision !== 'unknown'
+        && (!orderedReadReceipt || orderedReadReceipt.result === 'ok')
         && performance.now() - started < MAX_STATUS_START_MS) {
         try {
           const emojiType = participationDecision === 'reply' ? 'OnIt'
@@ -269,7 +272,7 @@ export function createFeishuQuickParticipationPilot(runtime, {
         } catch { statusReaction = 'failed'; }
         statusLatencyMs = Math.round(performance.now() - started);
       }
-      const readReceipt = await readReaction;
+      const readReceipt = orderedReadReceipt || await readReaction;
       const record = {
         at: new Date().toISOString(), chatId: summary.chatId, messageId: summary.messageId,
         reactionMode,
